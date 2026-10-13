@@ -20,6 +20,7 @@ import {
   reprintOrphanWarning,
   FINISH_LABELS,
   finishSaveStatus,
+  driveFileAddress,
   driveReplaceSteps,
   sizeOfferView,
   adoptedSizeNote,
@@ -335,6 +336,28 @@ describe("setupHint / finishReadiness", () => {
     expect(kept).not.toMatch(/replaces/);
     expect(kept).toMatch(/Saved position kept/);
     expect(kept).toMatch(/Finish/);
+    // In AR the way out is Done (polish round M3, Q-Done): the hint names
+    // the button the creator sees there, and never Finish, which is not on
+    // screen in a session.
+    for (const inTour of ["this-code", "other-codes", "none"] as const) {
+      const inAr = setupHint({
+        measured: true,
+        tourOpen: true,
+        inTour,
+        inAr: true,
+      });
+      expect(inAr).toMatch(/Done saves the tour/);
+      expect(inAr).not.toMatch(/tap Finish/);
+    }
+    expect(
+      setupHint({
+        measured: true,
+        tourOpen: true,
+        inTour: "this-code",
+        keptStored: true,
+        inAr: true,
+      }),
+    ).toBe("Saved position kept. Place pins and photos; Done saves the tour.");
     const settled = "settled" as const;
     expect(
       finishReadiness({ hasWork: false, tourOpen: true, manifest: settled }),
@@ -436,9 +459,12 @@ describe("printing a code that would strand an existing measurement", () => {
     // The three things a creator needs: that something is wrong, what it
     // will cost, and the way out. A warning without the last one leaves
     // them stuck at the point of no return.
-    expect(warning).toMatch(/step 4 again/i);
+    // Measuring is step 5 since polish round M2; no code "above" any more
+    // since M0b (r820 feedback R4: the old wording pointed at one).
+    expect(warning).toMatch(/measure them in step 5/i);
     expect(warning).toMatch(/original link/i);
     expect(warning).toMatch(/will not be found/i);
+    expect(warning).not.toMatch(/above/i);
   });
 
   it("warns when NO code number of the current link reaches any measurement", () => {
@@ -693,5 +719,39 @@ describe("authorStatusLine's ready line says what became of the code (UI round 1
     ["seen", "Code seen."],
   ] as const)("%s", (ready, text) => {
     expect(authorStatusLine("A", stable, align, false, ready).text).toBe(text);
+  });
+});
+
+describe("driveFileAddress (polish round M2, step 6)", () => {
+  // Why: the owner's way to replace a Drive tour is to open the file on
+  // the Drive website and upload over it there; the button copies the
+  // file's address for that. The tour is opened through the site's proxy
+  // or Drive's download host, so the address is rebuilt from the file id
+  // every Drive form carries - and anything that is not a Drive file gets
+  // no address rather than a wrong one.
+  it("rebuilds the file's Drive address from every form a Drive link takes", () => {
+    const address = "https://drive.google.com/file/d/AbC_12-3/view";
+    for (const url of [
+      "https://drive.google.com/file/d/AbC_12-3/view?usp=sharing",
+      "https://drive.google.com/open?id=AbC_12-3",
+      "https://drive.usercontent.google.com/download?id=AbC_12-3&export=download&confirm=t",
+      "https://gps.csutil.com/api/drive-proxy?id=AbC_12-3",
+      "https://www.googleapis.com/drive/v3/files/AbC_12-3?alt=media&key=k",
+    ]) {
+      expect(driveFileAddress(url)).toBe(address);
+    }
+  });
+
+  it("gives no address for other hosts, missing ids or unsafe ids", () => {
+    expect(driveFileAddress("https://www.dropbox.com/s/x/tour.zip")).toBeNull();
+    expect(
+      driveFileAddress("https://drive.google.com/drive/my-drive"),
+    ).toBeNull();
+    expect(
+      driveFileAddress("https://gps.csutil.com/api/drive-proxy?id=a%2Fb"),
+    ).toBeNull();
+    expect(driveFileAddress("not a url")).toBeNull();
+    // The share path counts on Drive only, never on a look-alike host.
+    expect(driveFileAddress("https://example.com/file/d/AbC/view")).toBeNull();
   });
 });

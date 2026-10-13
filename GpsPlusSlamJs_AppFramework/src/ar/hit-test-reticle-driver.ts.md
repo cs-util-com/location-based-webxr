@@ -102,3 +102,12 @@ handle.dispose();
   discipline and source-cancellation hygiene under every ordering.
 - The actual on-device hit-test behavior remains manually verified via
   `pnpm dev` in the consumer apps (device-only WebXR).
+
+## surfacePick (Tour Viewer polish round M5c)
+
+`HitTestReticleArgs.surfacePick?: () => SurfacePoint | null` - asked every frame; a point
+(world position and normal, e.g. from the app's occluder mesh) places the reticle there via
+`updateReticleAtSurface` instead of at the hit-test pose, and `isVisible`,
+`getWorldPosition` and `onSelect` report it. Null, or a throw, falls back to the
+hit-test. The hit-test source is requested either way. Tested in
+`hit-test-reticle-driver.test.ts` ("a surface pick").

@@ -240,7 +240,7 @@ describe("createSummaryPanel", () => {
     expect(load.drawn).toHaveLength(1);
   });
 
-  it("goes back into AR through the page's own Start AR setup", () => {
+  it("goes back into AR through the page's own Start creating", () => {
     const { dom, starts } = panel(deferredLoad().loadMap);
     dom.startAr.click();
     expect(starts()).toBe(1);

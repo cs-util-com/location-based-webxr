@@ -24,6 +24,7 @@ import {
   type PrintablePdfCode,
 } from './qr-print-pdf.js';
 import { MAX_HOME_PRINTABLE_SIDE_M } from './qr-print-plan.js';
+import { AUTHOR_DEFAULT_SIZE_M } from '../../ar/qr/qr-mint-level.js';
 
 /** A checkerboard of `size` modules - dense enough to exercise the run
  *  merging, and every row differs from the next. */
@@ -35,15 +36,35 @@ function checkerboard(size: number, caption = 'Code 1'): PrintablePdfCode {
   return { size, modules, caption };
 }
 
+/**
+ * How many filled rectangles a page draws besides the code's dark runs:
+ * the white quiet box and the 10 cm check bar. Read from a render of an
+ * all-light code rather than restated, so the counts below stay about the
+ * code itself.
+ */
+function baselineFills(sideM: number): number {
+  const light = new TextDecoder('latin1').decode(
+    buildQrPrintPdf(
+      [{ size: 4, modules: new Uint8Array(16), caption: 'light' }],
+      { sideM }
+    )
+  );
+  return (light.match(/ re f/g) ?? []).length;
+}
+
 describe('planPrintPdf', () => {
-  it('keeps every code inside the printable area (property)', () => {
-    // THE property. Everything else about this file is cosmetic next to
-    // "the ink is on the paper": a block that starts inside the margin, or
-    // ends past it, is a code that comes back from the printer clipped.
+  it('keeps all ink inside the margin and every quiet zone on the paper (property)', () => {
+    // THE property, restated for the polish round (M0b, the owner's P7: "as
+    // large as possible, as little margin as possible"). The margin exists
+    // because a printer cannot put INK into its unprintable border; the
+    // quiet zone is blank paper and may reach into it. So: the symbol, its
+    // caption and the check bar stay 6 mm inside the edge; the white
+    // quiet-zone box only has to be on the sheet; and no two codes (with
+    // their captions) overlap.
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 12 }),
-        fc.double({ min: 0.02, max: 0.17, noNaN: true }),
+        fc.double({ min: 0.02, max: 0.19, noNaN: true }),
         fc.constantFrom<'a4' | 'letter'>('a4', 'letter'),
         (count, sideM, paper) => {
           let plan;
@@ -53,18 +74,50 @@ describe('planPrintPdf', () => {
             return; // refused, which is the other correct answer
           }
           const margin = 6;
+          const caption = 8;
+          const eps = 1e-9;
+          const quiet = (plan.blockMm - plan.sideMm) / 2;
           for (const page of plan.pages) {
             for (const p of page) {
-              expect(p.xMm).toBeGreaterThanOrEqual(margin - 1e-9);
-              expect(p.yMm).toBeGreaterThanOrEqual(margin - 1e-9);
+              // The quiet box is on the sheet.
+              expect(p.xMm).toBeGreaterThanOrEqual(-eps);
               expect(p.xMm + plan.blockMm).toBeLessThanOrEqual(
-                plan.paper.widthMm - margin + 1e-9
+                plan.paper.widthMm + eps
               );
               expect(p.yMm + plan.blockMm).toBeLessThanOrEqual(
-                plan.paper.heightMm - margin + 1e-9
+                plan.paper.heightMm + eps
+              );
+              // The symbol is inside the margin.
+              expect(p.xMm + quiet).toBeGreaterThanOrEqual(margin - eps);
+              expect(p.xMm + quiet + plan.sideMm).toBeLessThanOrEqual(
+                plan.paper.widthMm - margin + eps
+              );
+              expect(p.yMm + quiet + plan.sideMm).toBeLessThanOrEqual(
+                plan.paper.heightMm - margin + eps
+              );
+              // The caption under the box clears the check bar's band.
+              expect(p.yMm - caption).toBeGreaterThanOrEqual(
+                plan.checkBar.yMm + plan.checkBar.bandMm - eps
               );
             }
+            // No two codes (box and caption) overlap.
+            for (const [i, a] of page.entries()) {
+              for (const b of page.slice(i + 1)) {
+                const apart =
+                  a.xMm + plan.blockMm <= b.xMm + eps ||
+                  b.xMm + plan.blockMm <= a.xMm + eps ||
+                  a.yMm + plan.blockMm <= b.yMm - caption + eps ||
+                  b.yMm + plan.blockMm <= a.yMm - caption + eps;
+                expect(apart).toBe(true);
+              }
+            }
           }
+          // The check bar is ink too: inside the margin.
+          expect(plan.checkBar.xMm).toBeGreaterThanOrEqual(margin - eps);
+          expect(plan.checkBar.yMm).toBeGreaterThanOrEqual(margin - eps);
+          expect(
+            plan.checkBar.xMm + plan.checkBar.lengthMm
+          ).toBeLessThanOrEqual(plan.paper.widthMm - margin + eps);
         }
       )
     );
@@ -92,13 +145,32 @@ describe('planPrintPdf', () => {
     expect(planPrintPdf(1, { sideM: 0.16 }).blockMm).toBeCloseTo(185.6, 6);
   });
 
-  it('puts two small codes on a page and one large one', () => {
-    // "One per page, two when the size allows" (the owner's request). At
-    // 16 cm two would need 37 cm of paper, so this is a small-code case.
-    expect(planPrintPdf(2, { sideM: 0.05 }).perPage).toBe(2);
+  it('packs as many codes as fit in rows and columns (A11)', () => {
+    // The owner printed five 5 cm codes and got two per page - most of each
+    // sheet empty. The page now holds a grid of as many as fit.
+    const small = planPrintPdf(5, { sideM: 0.05 });
+    expect(small.pages).toHaveLength(1);
+    expect(small.pages[0]).toHaveLength(5);
+    expect(small.columns).toBeGreaterThanOrEqual(3);
+    expect(small.perPage).toBe(small.columns * small.rows);
+    // 8 cm: two across, two down.
+    expect(planPrintPdf(4, { sideM: 0.08 }).perPage).toBe(4);
+    // A large code still gets its own page.
     expect(planPrintPdf(2, { sideM: 0.16 }).perPage).toBe(1);
-    // One code alone never shares a page with itself.
-    expect(planPrintPdf(1, { sideM: 0.05 }).perPage).toBe(1);
+  });
+
+  it('fits an 18 cm code on A4 and on Letter, and names 18 cm as the A4 ceiling (P7)', () => {
+    // The owner's default: as large as A4 allows. 18 cm plus its quiet zone
+    // is 208.8 mm against a 210 mm sheet - it fits only because the quiet
+    // zone may reach into the margin, which is blank paper.
+    expect(() => planPrintPdf(1, { sideM: 0.18 })).not.toThrow();
+    expect(() =>
+      planPrintPdf(1, { sideM: 0.18, paper: 'letter' })
+    ).not.toThrow();
+    // The ceiling is the largest whole millimetre: 18.1 cm still fits
+    // (209.96 mm with its quiet zone), 18.2 cm does not.
+    expect(maxPrintablePdfSideM('a4')).toBeGreaterThanOrEqual(0.18);
+    expect(maxPrintablePdfSideM('a4')).toBeLessThan(0.19);
   });
 
   it('refuses a size the paper cannot hold, and says which size would work', () => {
@@ -133,6 +205,30 @@ describe('planPrintPdf', () => {
     for (const bad of [0, -0.1, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(() => planPrintPdf(1, { sideM: bad }), String(bad)).toThrow(
         RangeError
+      );
+    }
+  });
+
+  // Why (PR #586 review): a comment and the sidecar once called the grid
+  // "top-anchored" while the code centred it; nothing pinned either. The
+  // stack sits midway between the check bar's band and the highest a box
+  // top may sit (the sheet's edge band, as the quiet zone is blank paper).
+  it('centres a page of codes vertically above the check bar', () => {
+    for (const [count, sideM] of [
+      [1, 0.1],
+      [3, 0.08],
+      [5, 0.05],
+    ] as const) {
+      const plan = planPrintPdf(count, { sideM });
+      const page = plan.pages[0] ?? [];
+      const top = Math.max(...page.map((p) => p.yMm + plan.blockMm));
+      const bottom = Math.min(...page.map((p) => p.yMm)) - 8; // the caption
+      const quiet = (plan.blockMm - plan.sideMm) / 2;
+      const ceiling = 297 - Math.max(0, 6 - quiet);
+      const floor = plan.checkBar.yMm + plan.checkBar.bandMm;
+      expect(ceiling - top, `${String(count)} at ${String(sideM)}`).toBeCloseTo(
+        bottom - floor,
+        6
       );
     }
   });
@@ -187,7 +283,8 @@ describe('buildQrPrintPdf', () => {
     const pdf = buildQrPrintPdf([checkerboard(21)], { sideM: 0.1 });
     const text = new TextDecoder('latin1').decode(pdf);
     const fills = (text.match(/ re f/g) ?? []).length;
-    expect(fills).toBe(221 + 1); // dark modules + the white quiet-zone box
+    // dark modules + the quiet box and the check bar
+    expect(fills).toBe(221 + baselineFills(0.1));
   });
 
   it("merges each row's dark modules into runs", () => {
@@ -201,7 +298,7 @@ describe('buildQrPrintPdf', () => {
     const pdf = buildQrPrintPdf([solid], { sideM: 0.1 });
     const text = new TextDecoder('latin1').decode(pdf);
     // Ten full rows collapse to ten rectangles, not a hundred.
-    expect((text.match(/ re f/g) ?? []).length).toBe(10 + 1);
+    expect((text.match(/ re f/g) ?? []).length).toBe(10 + baselineFills(0.1));
   });
 
   it('puts the caption on the page, with the characters a PDF string cannot carry removed', () => {
@@ -240,13 +337,16 @@ describe('buildQrPrintPdf', () => {
     const pdf = buildQrPrintPdf([topRowOnly], { sideM: 0.1 });
     const text = new TextDecoder('latin1').decode(pdf);
     // The one dark run must sit in the TOP quarter of the symbol box.
-    const runs = [
-      ...text.matchAll(/^([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+) re f$/gm),
-    ];
-    expect(runs.length).toBe(2); // the white quiet box, then the one dark run
     const quietMm = (plan.blockMm - plan.sideMm) / 2;
     const bottomOfSymbolPt =
       ((plan.pages[0]?.[0]?.yMm ?? 0) + quietMm) * (72 / 25.4);
+    // The code's rectangles: the check bar sits far below the symbol.
+    const runs = [
+      ...text.matchAll(/^([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+) re f$/gm),
+    ].filter(
+      (m) => Number(m[2]) >= bottomOfSymbolPt - 1 - quietMm * (72 / 25.4)
+    );
+    expect(runs.length).toBe(2); // the white quiet box, then the one dark run
     const symbolHeightPt = plan.sideMm * (72 / 25.4);
     // The drawn run (the last rectangle emitted for this code) starts in
     // the top quarter.
@@ -375,28 +475,24 @@ describe('the drawn page round-trips back to the matrix it was given', () => {
 });
 
 describe('the parts nothing else watches', () => {
-  it('puts two small codes on one page and the odd one alone (byte path)', () => {
-    // The two-per-page packing had no BYTE-level coverage at all: every
-    // other case in this file is one code per page, so the second slot's
-    // drawing and the odd-last-page geometry were unexercised - and §4 of
-    // the plan named that packing as the open "is it worth the complexity"
-    // question.
-    const codes = [1, 2, 3].map((n) => checkerboard(21, `Code ${String(n)}`));
+  it('fills a grid page and puts the rest on the next (byte path)', () => {
+    // The multi-code packing at the BYTE level: every slot of a full page
+    // is drawn, the odd one goes to its own page, and each page carries its
+    // check bar's label.
+    const codes = [1, 2, 3, 4, 5].map((n) =>
+      checkerboard(21, `Code ${String(n)}`)
+    );
     const text = new TextDecoder('latin1').decode(
-      buildQrPrintPdf(codes, { sideM: 0.05 })
+      buildQrPrintPdf(codes, { sideM: 0.08 })
     );
     expect(text).toContain('/Count 2');
     const streams = [...text.matchAll(/stream\n([\s\S]*?)\nendstream/g)].map(
       (m) => m[1] ?? ''
     );
     expect(streams).toHaveLength(2);
-    expect((streams[0]?.match(/ Tj/g) ?? []).length).toBe(2);
-    expect((streams[1]?.match(/ Tj/g) ?? []).length).toBe(1);
-    // Both slots carry ink, and one sits above the other.
-    const ys = [
-      ...(streams[0] ?? '').matchAll(/^[\d.]+ ([\d.]+) [\d.]+ [\d.]+ re f$/gm),
-    ].map((m) => Number(m[1]));
-    expect(Math.max(...ys)).toBeGreaterThan(Math.min(...ys));
+    expect((streams[0]?.match(/\(Code \d\) Tj/g) ?? []).length).toBe(4);
+    expect((streams[1]?.match(/\(Code \d\) Tj/g) ?? []).length).toBe(1);
+    for (const stream of streams) expect(stream).toContain('10 cm');
   });
 
   it('draws a symbol exactly as tall as it is wide', () => {
@@ -417,11 +513,14 @@ describe('the parts nothing else watches', () => {
     const ptPerMm = 72 / 25.4;
     const quietMm = (plan.blockMm - plan.sideMm) / 2;
     const bottom = ((plan.pages[0]?.[0]?.yMm ?? 0) + quietMm) * ptPerMm;
+    // The check bar's rectangles sit far below the code; leave them out.
+    const symbolRects = rects.filter((r) => r.y >= bottom - 1);
     const top = bottom + plan.sideMm * ptPerMm;
-    expect(Math.min(...rects.map((r) => r.y))).toBeGreaterThanOrEqual(
+    expect(symbolRects.length).toBeGreaterThan(0);
+    expect(Math.min(...symbolRects.map((r) => r.y))).toBeGreaterThanOrEqual(
       bottom - 0.02
     );
-    expect(Math.max(...rects.map((r) => r.y + r.h))).toBeLessThanOrEqual(
+    expect(Math.max(...symbolRects.map((r) => r.y + r.h))).toBeLessThanOrEqual(
       top + 0.02
     );
   });
@@ -438,15 +537,23 @@ describe('the parts nothing else watches', () => {
     const text = new TextDecoder('latin1').decode(
       buildQrPrintPdf([holey], { sideM: 0.05 })
     );
-    // Only the white quiet-zone box is drawn.
-    expect((text.match(/ re f/g) ?? []).length).toBe(1);
+    // Nothing but what an all-light matrix draws (the quiet box, the bar).
+    const light = new TextDecoder('latin1').decode(
+      buildQrPrintPdf(
+        [{ size: 4, modules: new Uint8Array(16), caption: 'holes' }],
+        { sideM: 0.05 }
+      )
+    );
+    expect((text.match(/ re f/g) ?? []).length).toBe(
+      (light.match(/ re f/g) ?? []).length
+    );
   });
 
   it('names a PDF ceiling larger than the browser-print one, and prints at it', () => {
-    // The panel shows homePrintWarning, which is about the browser's own
-    // dialog and is ~7 mm stricter. Without a separate number the panel
-    // tells an author their 17 cm code "will not scan" in the same breath
-    // as a PDF that prints it correctly.
+    // The print step judges sizes against THIS ceiling (it prints by PDF
+    // only). The browser-print ceiling is about the browser's own dialog
+    // and ~7 mm stricter; judged by it, a 17 cm code would be refused
+    // although the PDF prints it correctly.
     const ceiling = maxPrintablePdfSideM('a4');
     // Compared against the imported ceiling, not a copied 0.164: the browser
     // number moves if the quiet zone ever does, and a literal here would
@@ -455,6 +562,46 @@ describe('the parts nothing else watches', () => {
     expect(() => planPrintPdf(1, { sideM: ceiling })).not.toThrow();
     expect(() => planPrintPdf(1, { sideM: ceiling + 0.001 })).toThrow(
       RangeError
+    );
+  });
+});
+
+describe('the print-scale guards (polish round M0b, A10)', () => {
+  // Why: the owner's 16 cm code measured 15.3-15.5 cm - a print scaled by
+  // the dialog. A PDF cannot stop a printer from scaling, but it can ask
+  // the viewer not to, and give the person a ruler check on every page.
+  it('asks the viewer not to scale the print', () => {
+    const text = new TextDecoder('latin1').decode(
+      buildQrPrintPdf([checkerboard(21)], { sideM: 0.16 })
+    );
+    expect(text).toMatch(/\/ViewerPreferences << \/PrintScaling \/None >>/);
+  });
+
+  it('draws a 10 cm check bar, labelled, on every page', () => {
+    const plan = planPrintPdf(2, { sideM: 0.16 });
+    expect(plan.checkBar.lengthMm).toBe(100);
+    const text = new TextDecoder('latin1').decode(
+      buildQrPrintPdf([checkerboard(21), checkerboard(21)], { sideM: 0.16 })
+    );
+    const widthPt = (100 * 72) / 25.4;
+    const bars = [
+      ...text.matchAll(/^[\d.]+ [\d.]+ ([\d.]+) [\d.]+ re f$/gm),
+    ].filter((m) => Math.abs(Number(m[1]) - widthPt) < 0.02);
+    expect(bars).toHaveLength(2); // one per page
+    expect((text.match(/10 cm/g) ?? []).length).toBe(2);
+  });
+});
+
+describe('the authoring default size (polish round M0b, P7)', () => {
+  // Why: the Tour Viewer prefills this size and prints it by PDF only. A
+  // default the PDF refuses would greet every creator with an error.
+  it('is a size the PDF prints on A4 and on Letter', () => {
+    expect(AUTHOR_DEFAULT_SIZE_M).toBe(0.18);
+    expect(AUTHOR_DEFAULT_SIZE_M).toBeLessThanOrEqual(
+      maxPrintablePdfSideM('a4')
+    );
+    expect(AUTHOR_DEFAULT_SIZE_M).toBeLessThanOrEqual(
+      maxPrintablePdfSideM('letter')
     );
   });
 });

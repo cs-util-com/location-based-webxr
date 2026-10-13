@@ -23,6 +23,12 @@ import {
   OPEN_FILE_ADVICE_LABEL,
   offersFileOpen,
 } from "./open-errors.js";
+import {
+  linkStatusText,
+  printsUnverified,
+  type LinkStatus,
+} from "./link-check.js";
+import { hostOfLink } from "./tour-host.js";
 import { toStatsView } from "./stats-view.js";
 import { describeTourTrust } from "./tour-trust-view.js";
 import { codeTrustKey, linkTrustKey, trustStorage } from "./tour-trust.js";
@@ -54,11 +60,12 @@ import {
 /** The label on every button that opens a tour. "Open" until the second
  *  testing session (F6): nobody wants to open the zip, they want to know
  *  the link works - and a link that opens here is one the printed code can
- *  carry. */
-const OPEN_BUTTON_LABEL = "Test link";
-/** The step-1 button that opens a tour zip from the device (tour kit plan
- *  K0). */
-const OPEN_FILE_LABEL = "Open a file";
+ *  carry. "Check link" since polish round M2: the check runs by itself on
+ *  paste, so the button is the explicit retry. */
+const OPEN_BUTTON_LABEL = "Check link";
+/** The step-1 link that opens a tour zip from the device (tour kit plan
+ *  K0; a small link since polish round M2, A5). */
+const OPEN_FILE_LABEL = "Open it from this device";
 
 /** What an open reads: a link, or a file picked on this device (K0). */
 type TourSource = { kind: "link"; url: string } | { kind: "file"; file: File };
@@ -83,6 +90,9 @@ export interface ArchiveOpenDom {
   statsHeadline: HTMLDivElement;
   statsDetail: HTMLDivElement;
   errorBox: HTMLElement;
+  /** Step 2's status line under the link (polish round M2): what the
+   *  check found, in plain words. */
+  linkStatus: HTMLElement;
   gallery: HTMLUListElement;
   storagePanel: HTMLDetailsElement;
   clearCacheButton: HTMLButtonElement;
@@ -135,6 +145,9 @@ export function wireArchiveOpen(deps: {
     ctx.currentLevels = null;
     ctx.currentLevelTexts = null;
     ctx.tourManifest = null;
+    hooks.presentTourInfo(null, () =>
+      Promise.reject(new Error("no tour is open")),
+    );
     // The closing tour's story and HUD (tour kit plan K4).
     hooks.stopStations();
     ctx.rebuiltZip = null;
@@ -152,6 +165,9 @@ export function wireArchiveOpen(deps: {
     // plan §9 #8).
     ctx.finishError = null;
     hooks.resetFinishStep();
+    // The AR button reads the finish's failure ("Close AR"); it is gone
+    // now (scan-to-open in AR opens a tour mid-session - M3 review #3).
+    hooks.renderArEntry();
     // From here until an open SUCCEEDS there is no tour, and the page has
     // to say so: the print step goes back to asking for a link and step 4
     // offers to open one again. Both are hidden again below on success, so
@@ -228,10 +244,11 @@ export function wireArchiveOpen(deps: {
     // archive.origin is only the initial state (PR #357 review).
     const stats = ctx.session.stats();
     const view = toStatsView(stats, ctx.session.archive.size, stats.origin);
-    // The transfer numbers are the creator's (and ?debug=1's); a visitor's
-    // could stall below 100 % once the whole-file download stops (UI round
-    // 1, U1, review F11).
-    dom.statsPanel.hidden = deps.mode === "visitor" && !ctx.debug;
+    // The transfer numbers are a transport demo, shown only with ?debug=1
+    // since polish round M2 (a creator reads the steps, not byte counts);
+    // a visitor's could also stall below 100 % once the whole-file
+    // download stops (UI round 1, U1, review F11).
+    dom.statsPanel.hidden = !ctx.debug;
     dom.statsHeadline.textContent = view.headline;
     dom.statsDetail.textContent = view.detail;
   }
@@ -371,11 +388,11 @@ export function wireArchiveOpen(deps: {
       sources,
       storage: trustStorage(),
       nowMs: Date.now(),
-      audience: deps.mode,
     }).catch(() => null);
     if (ctx.session !== opened || lines === null) return;
     dom.tourTrust.textContent = lines.join("\n");
-    // A visitor's unsigned tour without a warning has no line (UI round 1).
+    // An unsigned tour without a warning has no line (UI round 1; for the
+    // creator too since the r820 feedback, R6).
     dom.tourTrust.hidden = lines.length === 0;
   }
 
@@ -441,6 +458,9 @@ export function wireArchiveOpen(deps: {
           if (ctx.session !== opened) return;
           ctx.tourManifest = manifest;
           ctx.tourManifestStatus = "settled";
+          hooks.presentTourInfo(manifest, (path) =>
+            opened.loadEntry(`${opened.manifestWrap}${path}`),
+          );
           ctx.scanEntries = new Set(
             manifest === null
               ? []
@@ -495,6 +515,7 @@ export function wireArchiveOpen(deps: {
           if (ctx.session !== opened) return;
           ctx.currentLevels = levels;
           ctx.currentLevelTexts = opened.levelTexts();
+          hooks.presentTourCodes();
           hooks.renderAuthorReadout();
           hooks.reconsiderScanGate(levels);
           // The controller caches a level (or the negative-cache
@@ -568,11 +589,69 @@ export function wireArchiveOpen(deps: {
     },
   });
 
+  /** The link the last check ran for: a paste followed by the field's
+   *  `change` must not check the same link twice. */
+  let lastChecked: string | null = null;
+  /** The link being checked right now: "Check link" tapped while it runs
+   *  (the field's `change` fires on that same blur) is not a retry
+   *  (PR #585 review). */
+  let checking: string | null = null;
+
+  /** Step 2's check (polish round M2, A13/A16): the open itself, with its
+   *  outcome in the status line. A link whose file is not there yet, or
+   *  that could not be asked offline, still goes on to printing - marked
+   *  unverified - so the creator gives the link once. */
+  async function checkLinkStep(url: string): Promise<void> {
+    lastChecked = url;
+    checking = url;
+    showLinkStatus({ kind: "checking" });
+    const outcome = await openUrl(url).finally(() => {
+      if (checking === url) checking = null;
+    });
+    if (outcome.kind === "opened") {
+      showLinkStatus({ kind: "found" });
+    } else if (outcome.kind === "failed") {
+      showLinkStatus({ kind: "failed", cause: outcome.cause }, url);
+      // Where the link points decides (M0c review): a missing file is a
+      // wrong link on a cloud host, "not there yet" on an own server.
+      if (printsUnverified(outcome.cause, hostOfLink(url))) {
+        // The status line is the whole message for a tolerated failure:
+        // the open's own error ("that file does not exist") would
+        // contradict its "that is fine for now" (PRs #584/#585 reviews).
+        dom.errorBox.textContent = "";
+        hooks.presentUnverifiedLink(url);
+      }
+    } else if (outcome.kind === "cancelled") {
+      // The creator stayed with the open tour: this link was not checked.
+      lastChecked = null;
+      dom.linkStatus.hidden = true;
+    }
+    // superseded: the newer check owns the line.
+  }
+
+  function showLinkStatus(status: LinkStatus, url?: string): void {
+    dom.linkStatus.textContent = linkStatusText(
+      status,
+      url === undefined ? null : hostOfLink(url),
+    );
+    dom.linkStatus.hidden = false;
+  }
+
   dom.form.addEventListener("submit", (event) => {
     event.preventDefault();
     const url = dom.linkInput.value.trim();
-    if (url !== "") void openUrl(url);
+    if (url !== "" && url !== checking) void checkLinkStep(url);
   });
+  // The check runs by itself (A16): on a paste - the value lands after the
+  // event, hence the deferral - and when the field is left with a new link.
+  const autoCheck = (): void => {
+    const url = dom.linkInput.value.trim();
+    if (url !== "" && url !== lastChecked) void checkLinkStep(url);
+  };
+  dom.linkInput.addEventListener("paste", () => {
+    setTimeout(autoCheck, 0);
+  });
+  dom.linkInput.addEventListener("change", autoCheck);
 
   // "Open a file" (tour kit plan K0): both buttons open the one picker;
   // the pick opens the tour. The value is cleared so picking the SAME file

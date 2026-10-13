@@ -22,9 +22,10 @@ import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { ViewerMode } from "./mode.js";
 
 /** After this long in `scanning` the visitor may continue with GPS only
- *  (DEC-N3). Its own clock, not the frame cadence: the no-frames case is
- *  exactly the case it exists for (plan review #11). */
-export const SCAN_GATE_ESCAPE_MS = 45_000;
+ *  (DEC-N3; 10 s since the owner's S1 scan card, polish round M4b, Q-Scan -
+ *  it was 45 s). Its own clock, not the frame cadence: the no-frames case
+ *  is exactly the case it exists for (plan review #11). */
+export const SCAN_GATE_ESCAPE_MS = 10_000;
 
 export type ScanGate =
   /** No session, or the gate was torn down with one. */
@@ -92,7 +93,7 @@ function allLockableIgnored(
  * The gate once the tour's levels are known: a scanning gate is waived
  * when none of them can lock, and when the levels could not be read at all
  * (M5 review #1: a corrupt or unreachable level file used to hold the
- * visitor at an unpassable gate for the full 45 s, with the failure written
+ * visitor at an unpassable gate until the escape clock, with the failure written
  * to a box outside the overlay). Every other state stands.
  */
 export function reconsiderScanGate(
@@ -108,6 +109,19 @@ export function reconsiderScanGate(
   return allLockableIgnored(levels, ignoredLevelIds)
     ? { kind: "passed", via: "ignored" }
     : gate;
+}
+
+/** Whether the visitor's scan card shows (polish round M4b, the owner's
+ *  S1): a visitor's running session whose gate waits for the code. It
+ *  closes by itself the moment the gate passes, however it passed. */
+export function scanCardShown(
+  mode: ViewerMode,
+  arStatus: string,
+  gate: ScanGate,
+): boolean {
+  return (
+    mode === "visitor" && arStatus === "running" && gate.kind === "scanning"
+  );
 }
 
 /** Whether placement may run under this gate. */

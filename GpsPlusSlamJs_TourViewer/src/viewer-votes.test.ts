@@ -521,7 +521,7 @@ describe(
 
 // Why (M2b review #8): since M2b the gate passes only on a lock that cast
 // votes, so a code that locks but never votes - no GPS zero yet, or a pose
-// that never converges - leaves the visitor at the gate. The 45 s escape
+// that never converges - leaves the visitor at the gate. The escape
 // is their way out; the e2e covers only a code that never locks, and the
 // wiring stubbed the clock away, so nothing proved a vote-less lock does
 // not cancel it.
@@ -550,7 +550,7 @@ describe(
         escapeOffered: false,
       });
       expect(v.escapeButton.hidden).toBe(true);
-      v.scheduled[0]!.run(); // 45 s later
+      v.scheduled[0]!.run(); // the escape clock elapsed
       expect(v.ctx.scanGate).toEqual({
         kind: "scanning",
         escapeOffered: true,

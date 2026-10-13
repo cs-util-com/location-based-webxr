@@ -1,0 +1,598 @@
+<!doctype html>
+<!-- Prototype V1 - The poster's continuation (visitor start page). Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="light">
+<title>Visitor start V1</title>
+<style>
+:root{
+  --paper:#f4eedf;--paper-hi:#fbf7ec;--paper-lo:#ebe3cf;
+  --ink:#2a2824;--ink-2:#5a554b;--line:#d9cfb7;--line-2:#b9ad93;
+  --red:#cf4428;--red-ink:#b23a1f;--red-deep:#7d2714;
+  --teal:#0f766e;--teal-tint:#e3eee8;--teal-line:#b4d1c8;
+  --warn-tint:#f6e1d6;--warn-line:#e2b19d;
+  --skin:#f0d6ba;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+html,body{margin:0}
+body{
+  min-height:100vh;font-family:var(--sans);color:var(--ink);background:var(--paper);
+  background-image:radial-gradient(circle at 18% 12%,rgba(255,255,255,.55),transparent 42%),radial-gradient(circle at 85% 88%,rgba(160,130,80,.10),transparent 50%);
+  -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overflow-x:hidden
+}
+button{font:inherit}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+:focus-visible{outline:3px solid var(--teal);outline-offset:3px}
+
+/* ---------- prototype label (not part of the design) ---------- */
+.proto-label{position:fixed;z-index:70;top:calc(8px + env(safe-area-inset-top));left:calc(8px + env(safe-area-inset-left));font:600 11px/1 system-ui,sans-serif;letter-spacing:.02em;padding:5px 9px;border-radius:999px;background:rgba(0,0,0,.6);color:#fff;pointer-events:none;white-space:nowrap}
+
+/* ---------- the sheet: the poster, continued ---------- */
+.sheet{position:relative;max-width:460px;margin:0 auto;padding:calc(52px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom))}
+.tape{display:none}
+
+.mast{text-align:center}
+.kicker{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-2)}
+.kicker::before,.kicker::after{content:"";flex:1;border-top:1.5px solid var(--line-2)}
+.mast h1{margin:0;font-family:var(--serif);font-weight:700;font-size:clamp(40px,12.5vw,58px);line-height:1;letter-spacing:-.01em;color:var(--ink);overflow-wrap:anywhere}
+.starts{display:inline-flex;align-items:center;gap:6px;margin:12px 0 0;font-size:17px;font-weight:700;color:var(--teal)}
+.starts svg{width:18px;height:18px;flex:none}
+.route{display:block;width:100%;max-width:300px;height:24px;margin:12px auto 6px}
+.route .rp{fill:none;stroke:var(--red);stroke-width:2.4;stroke-dasharray:5 5;stroke-linecap:round}
+.route circle{fill:var(--paper);stroke:var(--red);stroke-width:2.4}
+.route circle.first{fill:var(--teal);stroke:var(--teal)}
+.desc{margin:0;font-family:var(--serif);font-style:italic;font-size:21px;line-height:1.3;color:var(--ink)}
+
+/* loading: the name arrives with the tour file */
+.skel{display:block;height:.78em;margin:.12em auto;border-radius:6px;background:linear-gradient(90deg,var(--paper-lo) 0%,#f7f1e3 45%,var(--paper-lo) 90%);background-size:220% 100%;animation:shimmer 1.4s linear infinite}
+.desc .skel{height:.8em;margin-top:.25em}
+@keyframes shimmer{from{background-position:120% 0}to{background-position:-100% 0}}
+body[data-state=loading] .route .rp,body[data-state=failed] .route .rp{stroke:var(--line-2)}
+body[data-state=loading] .route circle,body[data-state=failed] .route circle{stroke:var(--line-2);fill:var(--paper)}
+body[data-state=failed] .starts{color:var(--ink-2)}
+
+/* ---------- illustration ---------- */
+.illo{margin:14px auto 4px;max-width:340px}
+.illo svg{display:block;width:100%;height:auto}
+.illo .ink{fill:none;stroke:var(--ink);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.illo .faint{fill:none;stroke:var(--line-2);stroke-width:1.6;stroke-linecap:round}
+.illo .sight{fill:none;stroke:var(--teal);stroke-width:2;stroke-linecap:round;stroke-dasharray:1 6}
+.illo .pin{opacity:0;transform-box:fill-box;transform-origin:50% 100%}
+.illo .spark{opacity:0;stroke:var(--teal);stroke-width:2.2;stroke-linecap:round;fill:none}
+body:not([data-state=loading]):not([data-state=failed]) .illo .pin{animation:pinDrop .8s cubic-bezier(.2,.9,.3,1.3) .2s both,pinBob 3.2s ease-in-out 1.2s infinite}
+body:not([data-state=loading]):not([data-state=failed]) .illo .spark{animation:spark 3.2s ease-in-out 1s infinite}
+body:not([data-state=loading]):not([data-state=failed]) .illo .sight{animation:sight 1.6s linear infinite}
+@keyframes pinDrop{from{opacity:0;transform:translateY(-22px) scale(.8)}to{opacity:1;transform:none}}
+@keyframes pinBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@keyframes spark{0%,100%{opacity:0}20%,60%{opacity:1}}
+@keyframes sight{to{stroke-dashoffset:-14}}
+body[data-state=failed] .illo,body[data-state=unsupported] .illo{opacity:.55;filter:grayscale(.8)}
+body[data-state=unsupported] .illo .pin{opacity:.5;animation:none}
+body[data-state=unsupported] .illo .spark{display:none}
+
+/* ---------- what the tour uses ---------- */
+.uses{margin:16px 0 18px}
+.uses h2{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:11.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2)}
+.uses h2::before,.uses h2::after{content:"";flex:1;border-top:1.5px solid var(--line)}
+.needs{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.needs li{text-align:center;padding:4px 2px}
+.needs .ic{width:44px;height:44px;margin:0 auto 6px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--ink);background:var(--paper-hi);color:var(--ink)}
+.needs li:nth-child(3) .ic{border-color:var(--teal);color:var(--teal)}
+.needs .ic svg{width:22px;height:22px}
+.needs b{display:block;font-size:14px;line-height:1.2}
+.needs small{display:block;margin-top:2px;font-size:12.5px;line-height:1.3;color:var(--ink-2)}
+
+/* ---------- the action block ---------- */
+.action{margin:0 0 18px}
+.track{list-style:none;margin:0 0 12px;padding:0;display:flex;align-items:center;justify-content:center;gap:0}
+.track li{display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:600;color:var(--ink-2);min-width:0}
+.track li+li::before{content:"";flex:0 1 34px;min-width:12px;width:34px;border-top:2px dashed var(--red);margin:0 8px 0 10px;opacity:.7}
+.track .dot{flex:none;width:28px;height:28px;border-radius:50%;border:2px solid var(--line-2);background:var(--paper-hi);display:grid;place-items:center;font-size:13px;font-weight:800;color:var(--ink-2);transition:background .25s,border-color .25s,box-shadow .25s}
+.track .dot svg{width:14px;height:14px}
+.track li.on{color:var(--ink)}
+.track li.on .dot{border-color:var(--red);color:var(--red-ink);box-shadow:0 0 0 4px rgba(207,68,40,.16)}
+.track li.done .dot{background:var(--teal);border-color:var(--teal);color:#fff}
+.track li.bad{color:var(--red-ink)}
+.track li.bad .dot{background:var(--red-ink);border-color:var(--red-ink);color:#fff}
+.track[hidden]{display:none}
+
+.status{margin:0 0 14px;padding:12px 14px;border-radius:12px;border:1.5px solid transparent}
+.status:empty{display:none}
+.status .s-title{display:flex;align-items:center;gap:8px;margin:0 0 3px;font-size:16px;font-weight:700;line-height:1.3}
+.status .s-title svg{width:18px;height:18px;flex:none}
+.status .s-text{margin:0;font-size:14.5px;line-height:1.45}
+.status ol{margin:6px 0 0;padding-left:22px;font-size:14.5px;line-height:1.45}
+.status ol li{margin:2px 0}
+.tone-plain{padding:0 2px;text-align:center}
+.tone-plain .s-title{justify-content:center}
+.tone-note{background:var(--teal-tint);border-color:var(--teal-line)}
+.tone-ok{background:var(--teal-tint);border-color:var(--teal-line)}
+.tone-ok .s-title{color:var(--teal)}
+.tone-warn{background:var(--warn-tint);border-color:var(--warn-line)}
+.tone-warn .s-title{color:var(--red-ink)}
+
+.progress{margin:0 0 14px}
+.progress[hidden]{display:none}
+.bar{position:relative;height:12px;border-radius:999px;background:repeating-linear-gradient(90deg,var(--line-2) 0 6px,transparent 6px 11px) 0 50%/100% 2px no-repeat}
+.fill{position:absolute;left:0;top:50%;height:5px;margin-top:-2.5px;width:35%;border-radius:999px;background:var(--red);transition:width .15s linear}
+.fill::after{content:"";position:absolute;right:-7px;top:50%;width:14px;height:14px;margin-top:-7px;border-radius:50%;background:var(--paper-hi);border:3px solid var(--red)}
+.ptext{margin:10px 0 0;text-align:center;font-size:14px;font-variant-numeric:tabular-nums;color:var(--ink-2)}
+
+.go{appearance:none;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:62px;padding:14px 20px;border:0;border-radius:14px;background:var(--red-ink);color:#fff;font-size:19px;font-weight:800;letter-spacing:.01em;cursor:pointer;box-shadow:0 4px 0 var(--red-deep);transition:transform .08s,box-shadow .08s,background .2s}
+.go svg{width:22px;height:22px;flex:none}
+.go:active:not(:disabled):not(.busy){transform:translateY(3px);box-shadow:0 1px 0 var(--red-deep)}
+.go:disabled{background:#d8cfbb;color:var(--ink-2);box-shadow:0 4px 0 #bdb29b;cursor:not-allowed}
+.go.busy{cursor:progress;background:#9c3a22}
+.go.done{background:var(--teal);box-shadow:0 4px 0 #0a4f49}
+.spin{flex:none;width:20px;height:20px;border-radius:50%;border:3px solid rgba(255,255,255,.4);border-top-color:#fff;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hint{margin:12px 0 0;text-align:center;font-size:13px;color:var(--ink-2)}
+.hint:empty{display:none}
+.linkbox{margin:12px 0 0;padding:10px 12px;border-radius:10px;border:1.5px dashed var(--line-2);background:var(--paper-hi);font:12.5px/1.4 ui-monospace,"Cascadia Mono",Consolas,monospace;color:var(--ink-2);word-break:break-all}
+.linkbox[hidden]{display:none}
+
+/* ---------- once AR starts ---------- */
+.once{display:grid;grid-template-columns:46px 1fr;gap:12px;align-items:start;margin:0 0 18px;padding:14px;border:2px dashed var(--line-2);border-radius:14px;transition:border-color .3s,background .3s}
+.once[hidden]{display:none}
+.once .qr{width:46px;height:46px}
+.once h2{margin:0 0 4px;font-size:15px;font-weight:800}
+.once ol{margin:0;padding-left:18px;font-size:14px;line-height:1.45}
+.once ol li{margin:1px 0}
+body[data-state=starting] .once{border-style:solid;border-color:var(--teal);background:var(--teal-tint);animation:glow 1.6s ease-in-out infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 0 0 rgba(15,118,110,0)}50%{box-shadow:0 0 0 6px rgba(15,118,110,.16)}}
+
+.make{margin:0;padding-top:12px;border-top:1.5px solid var(--line);text-align:center;font-size:14px;color:var(--ink-2)}
+.make a{display:inline-block;padding:12px 4px;color:var(--red-ink);font-weight:700;text-underline-offset:3px}
+
+/* ---------- simulated browser location prompt ---------- */
+.sys{position:fixed;inset:0;z-index:80;background:rgba(20,18,14,.45);display:flex;align-items:flex-start;justify-content:center;padding:calc(56px + env(safe-area-inset-top)) 12px 12px}
+.sys[hidden]{display:none}
+.sys-card{width:100%;max-width:360px;background:#fff;color:#1f1f1f;border-radius:20px;padding:18px 18px 12px;font-family:Roboto,var(--sans);box-shadow:0 18px 48px rgba(0,0,0,.35);animation:sysIn .25s ease-out both}
+@keyframes sysIn{from{opacity:0;transform:translateY(-10px)}}
+.sys-tag{display:inline-block;margin:0 0 10px;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6b6b;background:#efefef;border-radius:999px;padding:3px 8px}
+.sys-site{margin:0;font-size:13px;color:#555;word-break:break-all}
+.sys-q{display:flex;align-items:center;gap:10px;margin:8px 0 14px;font-size:17px;font-weight:500}
+.sys-q svg{width:22px;height:22px;flex:none;color:#1a73e8}
+.sys-btns{display:flex;justify-content:flex-end;gap:6px}
+.sys-btns button{min-height:48px;padding:0 16px;border:0;border-radius:999px;background:transparent;color:#1a73e8;font-weight:600;font-size:15px;cursor:pointer}
+.sys-btns button:hover{background:#eef3fd}
+
+/* ---------- prototype state switcher (not part of the design) ---------- */
+.demo{position:fixed;z-index:60;top:calc(6px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right));width:max-content;max-width:min(260px,calc(100vw - 16px));background:rgba(14,18,23,.88);border:1px solid rgba(255,255,255,.16);border-radius:14px;font:13px/1.35 system-ui,sans-serif;color:#e8edf2;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.demo summary{cursor:pointer;list-style:none;padding:7px 12px;font-weight:700;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;user-select:none}
+.demo summary::-webkit-details-marker{display:none}
+.demo summary::after{content:" +"}
+.demo[open] summary::after{content:" -"}
+.demo .db{padding:0 10px 10px;display:grid;gap:7px}
+.demo label{font-size:12px;color:#a9b4bf}
+.demo select{width:100%;min-height:36px;border-radius:9px;border:1px solid rgba(255,255,255,.25);background:#1e252d;color:#fff;font:13px system-ui,sans-serif;padding:4px 6px}
+.demo button{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;border-radius:10px;padding:8px 10px;text-align:left;cursor:pointer;font-size:13px}
+.demo .chk{display:flex;align-items:center;gap:8px;color:#e8edf2;font-size:12.5px}
+.demo .about{display:none;margin:0;color:#c6d0da;font-size:12.5px;line-height:1.45}
+.demo .about b{color:#fff}
+.demo .dstatus{font-size:12px;color:#a9b4bf;min-height:16px}
+
+/* ---------- desktop: the poster on a wall ---------- */
+@media (min-width:640px){
+  body{background:#d6cdb9;background-image:repeating-linear-gradient(0deg,rgba(120,100,70,.10) 0 2px,transparent 2px 46px),repeating-linear-gradient(90deg,rgba(120,100,70,.07) 0 2px,transparent 2px 92px);padding:56px 16px 48px}
+  .sheet{background:var(--paper);background-image:radial-gradient(circle at 18% 10%,rgba(255,255,255,.6),transparent 45%);padding:44px 34px 22px;box-shadow:0 2px 0 rgba(0,0,0,.04),0 18px 40px rgba(60,45,20,.28)}
+  .tape{display:block;position:absolute;top:-12px;width:92px;height:26px;background:rgba(236,220,168,.86);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  .tape-l{left:-18px;transform:rotate(-24deg)}
+  .tape-r{right:-18px;transform:rotate(22deg)}
+  .demo{width:280px}
+  .demo .about{display:block}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .skel,.spin,.sys-card,body[data-state=starting] .once{animation:none}
+  body:not([data-state=loading]):not([data-state=failed]) .illo .pin{animation:none;opacity:1}
+  body:not([data-state=loading]):not([data-state=failed]) .illo .spark{animation:none;opacity:1}
+  body:not([data-state=loading]):not([data-state=failed]) .illo .sight{animation:none}
+  .fill,.go,.track .dot{transition:none}
+}
+</style>
+</head>
+<body data-state="loading">
+<div class="proto-label" aria-hidden="true">Prototype V1 - Poster</div>
+
+<main class="sheet" id="sheet">
+  <span class="tape tape-l" aria-hidden="true"></span><span class="tape tape-r" aria-hidden="true"></span>
+
+  <header class="mast">
+    <p class="kicker">A walking tour</p>
+    <h1 id="title">Harbour Lights</h1>
+    <p class="starts" id="starts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2A6.5 6.5 0 0 1 18.5 9.8C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.4"/></svg>AR tour starts here</p>
+    <svg class="route" viewBox="0 0 300 24" aria-hidden="true">
+      <path class="rp" d="M10 12 C30 2 46 22 66 12 S102 2 122 12 S158 22 178 12 S214 2 234 12 S270 22 290 12"/>
+      <circle class="first" cx="10" cy="12" r="5"/><circle cx="66" cy="12" r="4.2"/><circle cx="122" cy="12" r="4.2"/><circle cx="178" cy="12" r="4.2"/><circle cx="234" cy="12" r="4.2"/><circle cx="290" cy="12" r="4.2"/>
+    </svg>
+    <p class="desc" id="desc">Walk the old quay - 6 stops</p>
+  </header>
+
+  <figure class="illo" aria-hidden="true">
+    <svg viewBox="0 0 340 228">
+      <!-- wall hints -->
+      <path class="faint" d="M16 40h44M72 40h30M246 30h38M296 30h28M18 112h26M300 104h24M24 186h40M40 150h22"/>
+      <!-- the poster on the wall -->
+      <g transform="rotate(-3 123 133)">
+        <rect x="75" y="67" width="106" height="142" fill="#2a2824" opacity=".08"/>
+        <rect x="70" y="62" width="106" height="142" rx="2" fill="#fbf7ec" stroke="#2a2824" stroke-width="2.2"/>
+        <rect x="106" y="54" width="34" height="13" fill="#e9d9a6" opacity=".9" transform="rotate(5 123 60)"/>
+        <path d="M84 81h78" stroke="#2a2824" stroke-width="6" stroke-linecap="round"/>
+        <path d="M97 94h52" stroke="#0f766e" stroke-width="3" stroke-linecap="round"/>
+        <rect x="95" y="104" width="56" height="56" fill="none" stroke="#2a2824" stroke-width="2"/>
+        <g fill="#2a2824">
+          <rect x="99" y="108" width="14" height="14"/><rect x="133" y="108" width="14" height="14"/><rect x="99" y="142" width="14" height="14"/>
+          <rect x="118" y="110" width="5" height="5"/><rect x="125" y="117" width="5" height="5"/><rect x="118" y="127" width="5" height="5"/><rect x="130" y="128" width="5" height="5"/><rect x="138" y="128" width="5" height="5"/><rect x="120" y="140" width="5" height="5"/><rect x="129" y="146" width="5" height="5"/><rect x="139" y="141" width="5" height="5"/><rect x="138" y="150" width="5" height="5"/><rect x="104" y="128" width="5" height="5"/>
+        </g>
+        <g fill="#fbf7ec"><rect x="102" y="111" width="8" height="8"/><rect x="136" y="111" width="8" height="8"/><rect x="102" y="145" width="8" height="8"/></g>
+        <g fill="#2a2824"><rect x="104" y="113" width="4" height="4"/><rect x="138" y="113" width="4" height="4"/><rect x="104" y="147" width="4" height="4"/></g>
+        <path d="M84 186 C96 176 106 194 120 184 S144 176 160 182" fill="none" stroke="#cf4428" stroke-width="2.4" stroke-dasharray="4 4" stroke-linecap="round"/>
+        <circle cx="84" cy="186" r="3.4" fill="#0f766e"/><circle cx="160" cy="182" r="3.4" fill="#fbf7ec" stroke="#cf4428" stroke-width="2"/>
+      </g>
+      <!-- the pin that appears above the poster -->
+      <path class="spark" d="M98 16l-7-5M148 16l7-5M94 33h-8M152 33h8"/>
+      <g class="pin">
+        <path d="M123 52c-9-12-15-19-15-28a15 15 0 0 1 30 0c0 9-6 16-15 28z" fill="#cf4428" stroke="#2a2824" stroke-width="2.2" stroke-linejoin="round"/>
+        <circle cx="123" cy="24" r="5.5" fill="#fbf7ec" stroke="#2a2824" stroke-width="1.8"/>
+      </g>
+      <!-- sight line from the phone to the code -->
+      <path class="sight" d="M214 104 Q186 112 156 130"/>
+      <!-- the hand and the phone -->
+      <g transform="rotate(-9 256 150)">
+        <g fill="#f0d6ba" stroke="#2a2824" stroke-width="2" stroke-linejoin="round">
+          <ellipse cx="294" cy="122" rx="10" ry="7"/><ellipse cx="295" cy="139" rx="10" ry="7"/><ellipse cx="294" cy="156" rx="10" ry="7"/><ellipse cx="292" cy="172" rx="9" ry="6.5"/>
+        </g>
+        <rect x="222" y="72" width="70" height="132" rx="12" fill="#fffdf6" stroke="#2a2824" stroke-width="2.2"/>
+        <path d="M249 80h16" class="ink"/>
+        <rect x="229" y="88" width="56" height="94" rx="5" fill="#e3eee8" stroke="#2a2824" stroke-width="1.3"/>
+        <rect x="245" y="120" width="24" height="32" fill="#fbf7ec" stroke="#2a2824" stroke-width="1.3"/>
+        <rect x="251" y="130" width="12" height="12" fill="none" stroke="#2a2824" stroke-width="1.2"/>
+        <path d="M241 120v-6h6M267 114h6v6M273 152v6h-6M247 158h-6v-6" fill="none" stroke="#0f766e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M257 111c-4-5-6.5-8-6.5-11.5a6.5 6.5 0 0 1 13 0c0 3.5-2.5 6.5-6.5 11.5z" fill="#cf4428" stroke="#2a2824" stroke-width="1.2"/>
+        <path d="M204 230 C206 210 210 194 216 180 C220 168 226 154 233 156 C239 158 239 170 237 182 C242 190 252 192 264 192 C278 192 288 188 296 190 C305 194 303 206 293 210 C299 218 297 226 289 230 Z" fill="#f0d6ba" stroke="#2a2824" stroke-width="2.2" stroke-linejoin="round"/>
+        <path d="M262 200c8 1 16 1 24-1" class="ink" stroke-width="1.6"/>
+      </g>
+    </svg>
+  </figure>
+
+  <section class="uses" aria-labelledby="usesH">
+    <h2 id="usesH">What the tour uses</h2>
+    <ul class="needs">
+      <li>
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
+        <b>Camera</b><small>shows the tour over what you see</small>
+      </li>
+      <li>
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2A6.5 6.5 0 0 1 18.5 9.8C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.4"/></svg></span>
+        <b>Location</b><small>places the tour where you are</small>
+      </li>
+      <li>
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18h10a4 4 0 0 0 .6-8 6 6 0 0 0-11.4 1.5A3.3 3.3 0 0 0 7 18z"/><path d="M4 4l16 16"/></svg></span>
+        <b>Nothing uploaded</b><small>no sign-up, no account</small>
+      </li>
+    </ul>
+  </section>
+
+  <section class="action" aria-label="Start">
+    <ol class="track" id="track" aria-label="Two taps to start" hidden>
+      <li data-k="loc"><span class="dot">1</span><span>Allow location</span></li>
+      <li data-k="ar"><span class="dot">2</span><span>Start the tour</span></li>
+    </ol>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+    <div class="progress" id="progress" hidden>
+      <div class="bar" id="bar" role="progressbar" aria-label="Tour download" aria-valuemin="0" aria-valuemax="3.4" aria-valuenow="1.2" aria-valuetext="1.2 of 3.4 MB"><span class="fill" id="fill"></span></div>
+      <p class="ptext" id="ptext">Loading the tour - 1.2 of 3.4 MB</p>
+    </div>
+    <button class="go" id="go" type="button">Start the tour</button>
+    <p class="linkbox" id="linkbox" hidden>https://r824-gps-plus-slam.csutil.workers.dev/tour/?qr=~AQMxQTRtVThlVjE2YWFJdnk2TXNkNzZSQzNKNmNiYmZ0Ums&amp;n=2</p>
+    <p class="hint" id="hint"></p>
+  </section>
+
+  <aside class="once" id="once" aria-labelledby="onceH">
+    <svg class="qr" viewBox="0 0 46 46" aria-hidden="true">
+      <path d="M3 12V3h9M34 3h9v9M43 34v9h-9M12 43H3v-9" fill="none" stroke="#0f766e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <g fill="#2a2824"><rect x="10" y="10" width="10" height="10"/><rect x="26" y="10" width="10" height="10"/><rect x="10" y="26" width="10" height="10"/><rect x="27" y="27" width="4" height="4"/><rect x="32" y="32" width="4" height="4"/><rect x="22" y="22" width="3" height="3"/></g>
+      <g fill="#f4eedf"><rect x="12.5" y="12.5" width="5" height="5"/><rect x="28.5" y="12.5" width="5" height="5"/><rect x="12.5" y="28.5" width="5" height="5"/></g>
+    </svg>
+    <div>
+      <h2 id="onceH">When the camera opens</h2>
+      <ol>
+        <li>Point your phone at the code on the poster.</li>
+        <li>Keep the code in view while you move slowly.</li>
+        <li>The tour appears when the code is recognised.</li>
+      </ol>
+    </div>
+  </aside>
+
+  <p class="make">Want to make a tour like this one? <a href="./">Make your own tour</a></p>
+</main>
+
+<div class="sys" id="sys" hidden>
+  <div class="sys-card" role="dialog" aria-modal="true" aria-labelledby="sysQ">
+    <p class="sys-tag">Simulated browser prompt</p>
+    <p class="sys-site">r824-gps-plus-slam.csutil.workers.dev wants to</p>
+    <p class="sys-q" id="sysQ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2A6.5 6.5 0 0 1 18.5 9.8C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.4"/></svg>Know your location</p>
+    <div class="sys-btns"><button id="sysBlock" type="button">Don't allow</button><button id="sysAllow" type="button">Allow</button></div>
+  </div>
+</div>
+
+<details class="demo" id="demo">
+  <summary>Prototype state</summary>
+  <div class="db">
+    <p class="about"><b>V1 - The poster's continuation.</b> The page picks up the printed poster's paper, ink and route red, so the visitor feels the poster came alive. Tap the red button to walk the flow; the browser's location question is simulated.</p>
+    <label for="pick">Show state</label>
+    <select id="pick">
+      <option value="loading">1 Loading the tour</option>
+      <option value="needloc">2 Ready, location not yet allowed</option>
+      <option value="denied">3 Location denied</option>
+      <option value="ready">4 Ready to start</option>
+      <option value="checking">5 Checking AR support</option>
+      <option value="unsupported">6 AR not supported</option>
+      <option value="failed">7 Tour could not be loaded</option>
+      <option value="starting">8 Starting AR (end of flow)</option>
+    </select>
+    <button id="play" type="button">Play from the start (live download)</button>
+    <label class="chk"><input type="checkbox" id="noAr"> This device has no AR</label>
+    <div class="dstatus" id="dstatus"></div>
+  </div>
+</details>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const body = document.body;
+  const go = $('#go');
+  const statusEl = $('#status');
+  const track = $('#track');
+  const sys = $('#sys');
+  const TOTAL_MB = 3.4;
+  const TOUR = { name: 'Harbour Lights', desc: 'Walk the old quay - 6 stops' };
+
+  const I = {
+    pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2A6.5 6.5 0 0 1 18.5 9.8C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.4"/></svg>',
+    play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M10 8.5v7l5.5-3.5z" fill="currentColor"/></svg>',
+    retry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>',
+    copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></svg>',
+    phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>',
+    spin: '<span class="spin" aria-hidden="true"></span>',
+  };
+
+  // Every state the visitor can meet, described once.
+  const V = {
+    loading: {
+      mast: 'pending', progress: true,
+      tone: 'plain', title: 'Getting the tour ready', text: 'One moment - the tour is downloading.',
+      btn: { label: 'Start the tour', icon: 'play', disabled: true },
+      hint: 'The button wakes up when the tour has loaded.',
+    },
+    needloc: {
+      track: { loc: 'on', ar: 'todo' },
+      tone: 'note', title: 'Two taps to start',
+      text: 'First, allow your location: your browser will ask, so choose <b>Allow</b>. Then one more tap starts the tour.',
+      btn: { label: 'Allow location', icon: 'pin' },
+    },
+    asking: {
+      track: { loc: 'on', ar: 'todo' },
+      tone: 'note', title: 'Your browser is asking',
+      text: 'Choose <b>Allow</b> so the tour can be placed along the quay.',
+      btn: { label: 'Waiting for your answer...', icon: 'spin', busy: true },
+    },
+    denied: {
+      track: { loc: 'bad', ar: 'todo' },
+      tone: 'warn', ticon: 'warn', title: 'Location is blocked',
+      text: 'The tour needs your location to place itself along the quay. To allow it:<ol><li>Tap the icon left of the web address.</li><li>Open <b>Permissions</b> (or <b>Site settings</b>).</li><li>Set <b>Location</b> to <b>Allow</b>, then come back here.</li></ol>',
+      btn: { label: 'Try again', icon: 'retry' },
+    },
+    rechecking: {
+      track: { loc: 'on', ar: 'todo' },
+      tone: 'note', title: 'Checking your location setting', text: 'One moment...',
+      btn: { label: 'Checking location...', icon: 'spin', busy: true },
+    },
+    ready: {
+      track: { loc: 'done', ar: 'on' },
+      tone: 'ok', ticon: 'check', title: 'Location allowed',
+      text: 'One more tap and the camera opens.',
+      btn: { label: 'Start the tour', icon: 'play' },
+    },
+    checking: {
+      track: { loc: 'done', ar: 'on' },
+      tone: 'ok', ticon: 'check', title: 'Location allowed',
+      text: 'Checking that this phone can run AR...',
+      btn: { label: 'Checking AR support...', icon: 'spin', busy: true },
+    },
+    starting: {
+      track: { loc: 'done', ar: 'done' },
+      tone: 'ok', ticon: 'check', title: 'Starting AR...',
+      text: 'The camera opens in a moment. Then point it at the code on the poster.',
+      btn: { label: 'Starting AR...', icon: 'spin', busy: true },
+    },
+    unsupported: {
+      once: false, link: true,
+      tone: 'warn', ticon: 'phone', title: 'This device can\'t show the tour',
+      text: 'The tour runs in AR, which needs <b>Chrome on an Android phone with AR</b>. iPhones and computers can\'t open it yet. Copy the link and open it on such a phone - or scan the poster with one.',
+      btn: { label: 'Copy link', icon: 'copy' },
+    },
+    failed: {
+      mast: 'failed', once: false,
+      tone: 'warn', ticon: 'warn', title: 'The tour could not be loaded',
+      text: 'The link may be broken, or you may be offline. Check your connection and try again.',
+      btn: { label: 'Try again', icon: 'retry' },
+    },
+  };
+
+  const DSTATUS = {
+    loading: 'Holding at 1.2 MB. Use "Play from the start" to watch it finish.',
+    needloc: 'Tap the red button: a simulated browser prompt appears.',
+    asking: 'Answer the simulated prompt: Allow or Don\'t allow.',
+    denied: 'Try again pretends the visitor fixed the setting.',
+    rechecking: 'Pretending the setting was changed...',
+    ready: 'Tap Start the tour to check AR support.',
+    checking: 'Held here. From the flow it moves on by itself.',
+    starting: 'End of the prototype: AR would take over here.',
+    unsupported: 'Copy link shows a fake "Copied" confirmation.',
+    failed: 'Try again replays the download.',
+  };
+
+  let state = 'loading';
+  let run = 0;
+  let timer = 0;
+  let progTimer = 0;
+  const later = (ms, fn) => { const my = run; timer = setTimeout(() => { if (my === run) fn(); }, ms); };
+
+  function setMast(mode) {
+    const h1 = $('#title');
+    const desc = $('#desc');
+    if (mode === 'pending') {
+      h1.innerHTML = '<span class="skel" style="width:82%"></span><span class="sr">Loading the tour</span>';
+      desc.innerHTML = '<span class="skel" style="width:64%"></span>';
+    } else if (mode === 'failed') {
+      h1.textContent = 'Tour unavailable';
+      desc.textContent = 'This poster\'s tour did not load';
+    } else {
+      h1.textContent = TOUR.name;
+      desc.textContent = TOUR.desc;
+    }
+  }
+
+  function setTrack(t) {
+    track.hidden = !t;
+    if (!t) return;
+    track.querySelectorAll('li').forEach((li, i) => {
+      const s = t[li.dataset.k];
+      li.className = s === 'todo' ? '' : s;
+      const dot = li.querySelector('.dot');
+      dot.innerHTML = s === 'done' ? I.check : s === 'bad' ? '!' : String(i + 1);
+      if (s === 'on') li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
+    });
+  }
+
+  function setButton(b) {
+    go.innerHTML = (b.icon ? I[b.icon] : '') + '<span>' + b.label + '</span>';
+    go.disabled = !!b.disabled;
+    go.classList.toggle('busy', !!b.busy);
+    go.classList.remove('done');
+    if (b.busy) go.setAttribute('aria-disabled', 'true'); else go.removeAttribute('aria-disabled');
+  }
+
+  function render() {
+    const v = V[state];
+    body.dataset.state = state;
+    setMast(v.mast);
+    setTrack(v.track || null);
+    statusEl.className = 'status tone-' + v.tone;
+    statusEl.innerHTML = '<p class="s-title">' + (v.ticon ? I[v.ticon] : '') + '<span>' + v.title + '</span></p><div class="s-text">' + v.text + '</div>';
+    $('#progress').hidden = !v.progress;
+    setButton(v.btn);
+    $('#linkbox').hidden = !v.link;
+    $('#hint').textContent = v.hint || '';
+    $('#once').hidden = v.once === false;
+    sys.hidden = state !== 'asking';
+    const pick = $('#pick');
+    if ([...pick.options].some((o) => o.value === state)) pick.value = state;
+    $('#dstatus').textContent = DSTATUS[state] || '';
+  }
+
+  function setState(s) {
+    run++;
+    clearTimeout(timer);
+    clearInterval(progTimer);
+    state = s;
+    render();
+  }
+
+  function showProgress(mb) {
+    const pct = Math.min(100, (mb / TOTAL_MB) * 100);
+    $('#fill').style.width = pct + '%';
+    const txt = mb.toFixed(1) + ' of ' + TOTAL_MB.toFixed(1) + ' MB';
+    $('#ptext').textContent = 'Loading the tour - ' + txt;
+    const bar = $('#bar');
+    bar.setAttribute('aria-valuenow', mb.toFixed(1));
+    bar.setAttribute('aria-valuetext', txt);
+  }
+
+  // Selecting "Loading" in the switcher holds at 1.2 MB; playing runs the download to the end.
+  function loading(play) {
+    setState('loading');
+    if (!play) { showProgress(1.2); return; }
+    const my = run;
+    let mb = 0;
+    showProgress(mb);
+    progTimer = setInterval(() => {
+      if (my !== run) { clearInterval(progTimer); return; }
+      mb = Math.min(TOTAL_MB, mb + 0.06 + Math.random() * 0.1);
+      showProgress(mb);
+      if (mb >= TOTAL_MB) {
+        clearInterval(progTimer);
+        later(350, () => setState('needloc'));
+      }
+    }, 110);
+  }
+
+  function openPrompt() {
+    setState('asking');
+    $('#sysAllow').focus();
+  }
+  function answer(allowed) {
+    setState(allowed ? 'ready' : 'denied');
+    go.focus();
+  }
+
+  function onGo() {
+    if (go.disabled || go.classList.contains('busy')) return;
+    switch (state) {
+      case 'needloc': openPrompt(); break;
+      case 'denied':
+        setState('rechecking');
+        later(900, () => setState('ready'));
+        break;
+      case 'ready':
+        setState('checking');
+        later(1400, () => setState($('#noAr').checked ? 'unsupported' : 'starting'));
+        break;
+      case 'unsupported': {
+        // Faked: no clipboard access in the prototype.
+        go.innerHTML = I.check + '<span>Link copied</span>';
+        go.classList.add('done');
+        statusEl.querySelector('.s-text').innerHTML = 'Link copied. Open it in <b>Chrome on an Android phone</b> with AR - or scan the poster with one.';
+        later(2600, () => { setButton(V.unsupported.btn); });
+        break;
+      }
+      case 'failed': loading(true); break;
+      default: break;
+    }
+  }
+
+  go.addEventListener('click', onGo);
+  $('#sysAllow').addEventListener('click', () => answer(true));
+  $('#sysBlock').addEventListener('click', () => answer(false));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && state === 'asking') { setState('needloc'); go.focus(); }
+    if (e.key === 'Tab' && state === 'asking') {
+      const a = $('#sysAllow'), b = $('#sysBlock');
+      if (document.activeElement !== a && document.activeElement !== b) { e.preventDefault(); b.focus(); }
+      else if (!e.shiftKey && document.activeElement === a) { e.preventDefault(); b.focus(); }
+      else if (e.shiftKey && document.activeElement === b) { e.preventDefault(); a.focus(); }
+    }
+  });
+  $('#pick').addEventListener('change', (e) => {
+    const s = e.target.value;
+    if (s === 'loading') loading(false); else setState(s);
+  });
+  $('#play').addEventListener('click', () => loading(true));
+  if (matchMedia('(min-width: 900px)').matches) $('#demo').open = true;
+
+  loading(true);
+})();
+</script>
+</body>
+</html>

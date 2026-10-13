@@ -47,7 +47,11 @@ camera, so `installTourViewerArFakes(page)` installs
   production ordering; `locationPermission` / `locationOutcome` /
   `locationRequests` (the visitor screen's gate: what the permission
   query answers, what a location-only tap comes back with, how many taps
-  were made); `downloads` + `saveOutcome` (the zips the setup offered
+  were made); `pdfViewer` + `pdfTabs` (the option `{ pdfViewer: true }`
+  makes `openPdfTab` return a recording tab - the PDF's inline path, M0b -
+  otherwise it returns null and the PDF is downloaded); `copied` (what
+  `copyText` was given: step 6's Drive
+  address); `downloads` + `saveOutcome` (the zips the setup offered
   for download - the fake `shareOrDownloadZip` captures the blob instead
   of saving, and reports `saveOutcome`, false meaning nothing left the
   page; the installer's `{ saveOutcome }` sets the first save's, since the
@@ -74,7 +78,7 @@ camera, so `installTourViewerArFakes(page)` installs
   rendered that id (`pickTargets` records the ids it was offered; the stub
   scene has no geometry, the real raycast is `object-pick.test.ts`'s);
   `timers` + `fireTimers()` are the scan
-  gate's escape clock (the `schedule` seam), so a spec fires the 45 s
+  gate's escape clock (the `schedule` seam), so a spec fires it
   without waiting. The stations (tour kit plan K4): `createWayfindingHud`
   keeps the page's targets getter as `hud` (`{ getTargets, disposed }`)
   and counts `hudStarts`; `createAudioElement` returns a fake element
@@ -82,7 +86,10 @@ camera, so `installTourViewerArFakes(page)` installs
   `audioElements`; `loadGlbModel` is NOT faked (the real GLTF loader
   parses the fixture's minimal `.glb`). The troubleshooting recording's depth (authoring
   recording plan 2026-09-28-0953, D4): `initARCalls` records `hasDepth`,
-  `depthCaptureCalls` / `stopDepthCalls` count the depth seams, and
+  `depthCaptureCalls` / `stopDepthCalls` count the depth seams (and, for
+  the mesh cursor of polish round M5, `meshSurfaces` /
+  `meshSurfaceDisposals` count the stand-in mesh surfaces and
+  `reticleSurfacePick` says whether the ring was given a pick), and
   `emitDepthSample()` feeds one sample through the initAR depth callback
   (`depthCallback`). The fake world group's `matrixWorld` and `worldToLocal`
   follow the store's alignment (the identity before one exists), as the real

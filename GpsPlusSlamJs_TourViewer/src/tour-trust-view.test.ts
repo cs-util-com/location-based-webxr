@@ -81,11 +81,10 @@ describe("describeTourTrust", () => {
     );
   });
 
-  it("says a tour without a manifest is not signed", async () => {
+  // r820 feedback R6: an unsigned tour has no line until signing exists.
+  it("says nothing about a tour without a manifest", async () => {
     const lines = await describeIt({ kind: "none" }, memory());
-    expect(lines).toEqual([
-      "Not signed: there is no way to check who made this tour or whether it was changed.",
-    ]);
+    expect(lines).toEqual([]);
   });
 
   it("neither learns nor judges a signature this browser could not check", async () => {

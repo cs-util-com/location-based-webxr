@@ -67,7 +67,7 @@
       .step-body {
         display: grid;
         gap: var(--space-2);
-        max-width: 26rem;
+        max-width: 48rem;
       }
       .step-body label {
         display: grid;
@@ -86,6 +86,36 @@
       .step-copy {
         margin-block-start: var(--space-1);
       }
+      /* Step 1's host tiles (polish round M2, A6/A7): a grid that uses the
+         width, the chosen one pressed in and in the accent - the atoms'
+         language for an engaged control, no border. */
+      .host-tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+        gap: var(--space-2);
+        margin: var(--space-3) 0 0;
+        max-width: 48rem;
+      }
+      .host-tile[aria-pressed="true"] {
+        box-shadow: var(--shadow-pressed);
+        color: var(--accent);
+      }
+      /* A button that reads as a link (polish round M2, A5): the device
+         open is the fallback, so it stops looking like a main action. */
+      .link-button {
+        appearance: none;
+        background: none;
+        border: 0;
+        padding: 0;
+        font: inherit;
+        color: inherit;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+      /* Step 6 says what it is for until the Finish fills it. */
+      #finish-block:not([hidden]) + .done-pending {
+        display: none;
+      }
       #stats {
         margin: var(--space-4) 0;
         padding: var(--space-3);
@@ -93,6 +123,11 @@
       }
       #storage-panel {
         margin: var(--space-4) 0;
+      }
+      /* Step 3's "Settings" (r820 feedback R7). */
+      #print-settings > summary {
+        cursor: pointer;
+        font-weight: 600;
       }
       #storage-panel summary {
         cursor: pointer;
@@ -155,7 +190,7 @@
       #recording-block {
         display: grid;
         gap: var(--space-2);
-        max-width: 26rem;
+        max-width: 48rem;
       }
       #setup-panel,
       #draft-offer,
@@ -223,10 +258,8 @@
         cursor: pointer;
       }
       /* The outcome and, after a delete, its Undo on one line: the Undo
-         adds no row over the camera. The AR chooser (Previous, "2 of 5",
-         Next) is one such line too. */
+         adds no row over the camera. */
       .object-list-note-line,
-      .object-chooser,
       .object-line {
         align-items: center;
         display: flex;
@@ -393,7 +426,7 @@
       #scene-panel {
         display: grid;
         gap: var(--space-2);
-        max-width: 26rem;
+        max-width: 48rem;
         margin: var(--space-2) 0;
       }
       #scene-panel h3,
@@ -426,93 +459,121 @@
            light and unchanged on dark. */
         color: var(--accent-ink);
       }
+      /* Hidden until the panel has planned a code to show. */
+      .link-launch:has(> #print-url-out:empty) {
+        display: none;
+      }
+      #print-url-out {
+        color: var(--accent-ink);
+      }
       #print-url-shown,
       #print-url-out {
         font-family: monospace;
         font-size: var(--size-hint);
         overflow-wrap: anywhere;
       }
-      /* On screen the code previews at a fixed size; on paper it takes the
-         exact physical side length (print CSS cm are exact at 100% scale).
-         The canvas carries the SYMBOL only (margin 0) — the quiet zone is
-         this white padding, so the printed symbol side equals the size the
-         author types when minting. */
-      #print-canvas {
+      /* The preview tiles (polish round M0b): one per poster, the code on
+         white - a literal white, not a token: a quiet zone is a SCANNING
+         requirement and must stay white on any ground. */
+      /* Redrawing: the info line keeps its text (and the page its height),
+         dimmed until the new line arrives (print-panel.ts). */
+      #print-info[aria-busy="true"] {
+        opacity: 0.55;
+      }
+      .print-tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+        gap: var(--space-2);
+      }
+      .print-tile {
+        margin: 0;
+        padding: var(--space-1);
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        text-align: center;
+      }
+      #print-tiles .print-tile canvas {
         display: block;
-        width: 12rem;
-        height: 12rem;
+        width: 100%;
+        height: auto;
         image-rendering: pixelated;
       }
-      /* A literal white, not a token: this is the QR's quiet zone, which
-         is a SCANNING requirement and must stay white on any ground the
-         design system ever grows. */
-      #print-quiet {
-        background: #fff;
-        padding: 1rem;
-        width: fit-content;
+      .print-tile figcaption {
+        font-size: 0.7rem;
+        color: #2a2824;
+      }
+      /* The tile as a small poster: the text the PDF prints around the
+         code, in the PDF's colours (qr-print-pdf.ts POSTER_STYLE). */
+      .print-tile-title {
+        font-weight: 700;
+        font-size: 0.75rem;
+        color: #1c232b;
+        overflow-wrap: anywhere;
+      }
+      .print-tile-explanation {
+        font-weight: 700;
+        font-size: 0.62rem;
+        color: #0f766e;
+      }
+      .print-tile-cta {
+        font-size: 0.62rem;
+        color: #5b6570;
+      }
+      .poster-text {
+        display: grid;
+        gap: var(--space-2);
+        margin: 0;
+        padding: 0;
+        border: 0;
+        min-width: 0;
+      }
+      .poster-text legend {
+        padding: 0;
+        margin-bottom: var(--space-1);
+        font-weight: 600;
+      }
+      /* The poster count: big -/+ either side of a short number. */
+      .print-count-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-2);
+      }
+      .stepper {
+        display: flex;
+        align-items: stretch;
+        gap: var(--space-1);
+      }
+      .stepper-button {
+        min-width: 3rem;
+        min-height: 3rem;
+        font-size: 1.5rem;
+        line-height: 1;
+        border: 2px solid currentcolor;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--ink);
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .stepper-value {
+        width: 4rem;
+        text-align: center;
+        font-size: 1.25rem;
+      }
+      /* The settings side by side where there is room: three short values. */
+      .print-settings-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+        gap: var(--space-2);
+        margin-top: var(--space-2);
+      }
+      .print-settings-grid .input,
+      .print-settings-grid .select {
+        width: 100%;
       }
 
-      @media print {
-        /* No page margin. A printed code needs its side length in
-           PRINTABLE width, and the default margin spends roughly 2 cm of
-           A4's 21 cm before the browser has drawn anything - part of the
-           "lots of air" an author sees around a code that claims to be
-           16 cm. It buys about a centimetre of symbol, not four: the rest
-           of the air is the mandatory quiet zone (8% of the side on each
-           edge, `#print-quiet`), and what remains after that is the
-           printer's own unprintable border. So this does NOT make a 20 cm
-           code possible on A4 - see the printed-size follow-up. The paper
-           SIZE is deliberately not set: forcing A4 would be wrong for
-           anyone on Letter, and it is the margin that costs width. The
-           dialog's own "fit to page" can still rescale, which is why the
-           info line asks for 100% scale. */
-        @page {
-          /* stylelint-disable-next-line csstree/validator -- `margin` IS a
-             valid @page descriptor (CSS Paged Media 3); the csstree
-             validator bundled here is old enough not to know it, the same
-             staleness that makes color-mix() unusable in this file. */
-          margin: 0;
-        }
-        /* `body *` hides body's CHILDREN, never body's own background - so
-           a browser printing with background graphics on would lay the
-           sheet's dark ground under the code. Ink, not a scan failure, but
-           a lot of it. */
-        .page {
-          background: #fff;
-        }
-        /* THE PRINTED CODE MUST NOT BE CLIPPED OR MOVED. #print-area is
-           positioned absolutely so the symbol lands at the paper's corner,
-           and that resolves against the nearest POSITIONED ancestor. The
-           shared .step atom is `position: relative; overflow: hidden`, so
-           adopting it silently made step 2 the containing block AND the
-           clip - the code printed offset down the sheet with its bottom cut
-           off. Nothing in CI renders a print layout, so this is held by a
-           markup assertion instead (page-contracts.test.ts) and by printing
-           one code and measuring the paper, on the field-test list. */
-        #print-panel {
-          position: static;
-          overflow: visible;
-        }
-        body * {
-          visibility: hidden;
-        }
-        #print-area,
-        #print-area * {
-          visibility: visible;
-        }
-        #print-area {
-          position: absolute;
-          left: 0;
-          top: 0;
-        }
-        #print-canvas {
-          width: var(--print-side, 16cm);
-          height: var(--print-side, 16cm);
-        }
-        #print-quiet {
-          padding: calc(var(--print-side, 16cm) * 0.08);
-        }
-      }
       #gallery {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
@@ -540,6 +601,1137 @@
         padding: var(--space-1) var(--space-2);
         overflow-wrap: anywhere;
       }
+
+      /* ===== The setup page in the L5 look (polish round M2b) =====
+         The owner chose the "spatial path" prototype (verdict P1, D-P1).
+         The paper palette is set on the design system's OWN tokens, so the
+         atoms (buttons, fields, steps) follow it - the way the sheet's
+         light block works - on the creator page and, since the owner's
+         V4 (polish round M4a, D-R12), the visitor's start page, and only
+         while no AR session runs: during a session #ar-root, the overlay over
+         the camera, is back on the sheet's tokens (the dark HUD, D-P1).
+         The route red is the page's own token, never --accent, so the
+         HUD's accent does not move. */
+      :root:has(body[data-mode="creator"]:not([data-ar-active="true"])),
+      :root:has(body[data-mode="visitor"]:not([data-ar-active="true"])) {
+        color-scheme: light;
+
+        --ink: #2a2824;
+        --ink-dim: #57534a;
+        --paper: #f4eedf;
+        --accent-ink: #8a4b00;
+        --surface: rgb(255 255 255 / 60%);
+        --surface-hi: rgb(255 255 255 / 85%);
+        --surface-lo: rgb(0 0 0 / 4%);
+        --surface-inverse: rgb(42 40 36 / 85%);
+        --veil: rgb(244 238 223 / 60%);
+        --edge-gradient: linear-gradient(
+          160deg,
+          rgb(0 0 0 / 16%),
+          rgb(0 0 0 / 4%) 55%
+        );
+        --raise: 0 0 0 transparent;
+        --raise-big: 0 0 0 transparent;
+        --halo-text: none;
+        --map-paper-3: #ddd2b6;
+        --map-card: #fbf8ef;
+        --map-ink-3: #8c8577;
+        --map-line: #c9bea3;
+        --map-route: #cf4428;
+        --map-route-soft: #f5d9cd;
+        --map-serif:
+          "Iowan Old Style", "Palatino Linotype", palatino, "Book Antiqua",
+          georgia, serif;
+      }
+      body[data-mode="creator"] {
+        max-width: none;
+        padding: 0;
+      }
+      body[data-mode="creator"] > header {
+        display: none;
+      }
+
+      /* The intro (P2, P3). */
+      .setup-intro {
+        display: grid;
+        gap: var(--space-3);
+        align-items: center;
+        max-width: 75rem;
+        margin: 0 auto;
+        padding: var(--space-4);
+      }
+      .setup-intro h1 {
+        font-family: var(--map-serif);
+        font-weight: 600;
+        font-size: 2.2rem;
+        line-height: 1.04;
+        margin: 0.2em 0 0.3em;
+        text-transform: none;
+        letter-spacing: normal;
+      }
+      .setup-intro h1 em {
+        color: var(--map-route);
+      }
+      .setup-kicker {
+        font-weight: 700;
+        font-size: 0.75rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-dim);
+        margin: 0;
+      }
+      /* The intro's spacing is set here, not inherited: the design system
+         zeroes paragraph and list margins, and the L5 prototype's gaps
+         between the lede, the reasons and the button vanished in the port
+         (r820 feedback R1; setup-flow.spec.js pins them). */
+      .setup-lede {
+        font-size: 1.06rem;
+        line-height: 1.5;
+        color: var(--ink-dim);
+        max-width: 33em;
+        margin: 0 0 var(--space-3);
+      }
+      /* Four reasons, two per row (the owner's L5 choice), each wrapping
+         under its own text. */
+      .setup-why {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 var(--space-4);
+        max-width: 36em;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-2) var(--space-4);
+        color: var(--ink-dim);
+      }
+      #setup-intro .setup-why li {
+        display: flex;
+        align-items: baseline;
+        gap: 7px;
+      }
+      #setup-intro .setup-why li::before {
+        content: "";
+        flex: none;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--map-route);
+        transform: translateY(-2px);
+      }
+      .setup-cta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-2) var(--space-3);
+        margin: 0;
+      }
+      .setup-intro-art {
+        margin: 0;
+      }
+      .setup-intro-art svg {
+        display: block;
+        width: 100%;
+        max-width: 300px;
+        height: auto;
+        max-height: 62svh;
+        margin: 0 auto;
+      }
+
+      @media (width >= 720px), (orientation: landscape) and (width >= 600px) {
+        .setup-intro {
+          grid-template-columns: 1.3fr 1fr;
+        }
+
+        .setup-intro h1 {
+          font-size: 3.4rem;
+        }
+      }
+
+      /* The stage: the map beside the card (wide) or above it (phone). */
+      body[data-mode="creator"] .setup-stage {
+        max-width: 90rem;
+        margin: 0 auto;
+      }
+      .setup-map {
+        padding: var(--space-3) var(--space-2) var(--space-2);
+        border-bottom: 1px solid var(--map-line);
+      }
+      .setup-map-title {
+        font: 600 0.75rem/1.2 var(--map-serif);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .setup-map-title i {
+        font-weight: 400;
+        letter-spacing: 0.02em;
+        text-transform: none;
+        color: var(--ink-dim);
+      }
+      .setup-map-frame {
+        position: relative;
+        overflow: hidden;
+        border: 1.5px solid var(--ink);
+        outline: 1px solid var(--ink);
+        outline-offset: 3px;
+        margin: var(--space-1);
+      }
+      .setup-map-frame svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        max-height: 42svh;
+      }
+
+      @media (orientation: landscape) and (width >= 640px), (width >= 1024px) {
+        body[data-mode="creator"] .setup-stage {
+          display: grid;
+          grid-template-columns: minmax(0, 1.42fr) minmax(300px, 1fr);
+          align-items: start;
+          gap: var(--space-3);
+        }
+        .setup-map {
+          position: sticky;
+          top: 0;
+          border-bottom: 0;
+        }
+        .setup-map-frame svg {
+          max-height: 85svh;
+        }
+      }
+      .setup-station {
+        cursor: pointer;
+      }
+      .setup-station circle {
+        fill: var(--map-card);
+        stroke: var(--ink);
+        stroke-width: 1.4;
+      }
+      .setup-station-num {
+        font:
+          700 9px system-ui,
+          sans-serif;
+        fill: var(--ink);
+        text-anchor: middle;
+        dominant-baseline: central;
+        pointer-events: none;
+      }
+      /* The label is part of the station's tap target: a finger on the
+         word must open the step as surely as one on the dot. */
+      .setup-station-label {
+        font: italic 600 8.4px var(--map-serif);
+        fill: var(--ink);
+        paint-order: stroke;
+        stroke: var(--paper);
+        stroke-width: 3px;
+        stroke-linejoin: round;
+      }
+      .setup-station[data-state="current"] .setup-station-label {
+        fill: var(--map-route);
+      }
+      .setup-station[data-state="done"] circle {
+        fill: var(--map-route);
+        stroke: var(--map-route);
+      }
+      .setup-station[data-state="done"] .setup-station-num {
+        fill: #fff;
+      }
+      .setup-station[data-state="current"] circle {
+        stroke: var(--map-route);
+        stroke-width: 2.4;
+      }
+      #map-route-reveal {
+        transition: stroke-dashoffset 1.4s cubic-bezier(0.45, 0.05, 0.25, 1);
+      }
+
+      /* The map's own labels and the poster at the start (from L5). */
+      .setup-map-frame .lbl-place {
+        font: italic 7px var(--map-serif);
+        fill: var(--ink-dim);
+        paint-order: stroke;
+        stroke: var(--paper);
+        stroke-width: 2.4px;
+        stroke-linejoin: round;
+      }
+      .setup-map-frame .lbl-caps {
+        font: 600 7.4px var(--map-serif);
+        letter-spacing: 0.18em;
+        fill: var(--ink);
+        paint-order: stroke;
+        stroke: var(--map-paper-3);
+        stroke-width: 2.4px;
+      }
+      .setup-map-frame .lbl-road {
+        font:
+          600 6.4px system-ui,
+          sans-serif;
+        letter-spacing: 0.32em;
+        fill: var(--map-ink-3);
+      }
+      #map-start .empty {
+        fill: var(--map-card);
+        stroke: var(--ink);
+        stroke-width: 1;
+        stroke-dasharray: 2 1.6;
+      }
+      #map-start .halo {
+        fill: none;
+        stroke: none;
+      }
+      #map-start .tack {
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+      #map-start[data-hung="true"] .tack {
+        opacity: 1;
+      }
+      #map-start .lbl-start {
+        font: italic 600 8px var(--map-serif);
+        fill: var(--ink);
+        paint-order: stroke;
+        stroke: var(--paper);
+        stroke-width: 3px;
+      }
+      #map-end-flag {
+        opacity: 0;
+        transition: opacity 0.4s;
+      }
+      #map-end-flag[data-on="true"] {
+        opacity: 1;
+      }
+
+      /* Fields in the card: L5's white field with an ink edge. */
+      body[data-mode="creator"] #setup-card .input:not(#ar-root *),
+      body[data-mode="creator"] #setup-card .select:not(#ar-root *) {
+        background: #fff;
+        border: 1.5px solid var(--ink);
+        border-radius: 8px;
+        box-shadow: none;
+        color: var(--ink);
+      }
+
+      /* The card: ONE step at a time. */
+      body[data-mode="creator"] .setup-card {
+        position: relative;
+        background: var(--map-card);
+        border: 1.5px solid var(--ink);
+        border-radius: 6px;
+        box-shadow: 4px 4px 0 var(--map-paper-3);
+        padding: var(--space-3);
+        margin: var(--space-3) var(--space-3) var(--space-4);
+      }
+      .setup-card-top {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        margin-bottom: var(--space-2);
+      }
+      .setup-badge {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--map-route);
+        color: #fff;
+        font-weight: 700;
+        flex: none;
+      }
+      .setup-of {
+        font-weight: 600;
+        font-size: 0.75rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ink-dim);
+      }
+      .setup-dots {
+        margin-left: auto;
+        display: flex;
+        gap: 2px;
+      }
+      .setup-dots button {
+        width: 22px;
+        height: 26px;
+        padding: 0;
+        border: 0;
+        background: none;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+      }
+      .setup-dots button::after {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        border: 1.5px solid var(--map-ink-3);
+      }
+      .setup-dots button[data-state="done"]::after {
+        background: var(--map-route);
+        border-color: var(--map-route);
+      }
+      .setup-dots button[aria-current="step"]::after {
+        border-color: var(--map-route);
+        box-shadow: 0 0 0 2.5px var(--map-route-soft);
+      }
+
+      /* Inside the card a step has no card chrome of its own, and a closed
+         one is not shown: the station row moves between them. During an
+         AR session step 5 stays open (wizard.ts), so the overlay root is
+         never hidden by this. */
+      body[data-mode="creator"] #setup-card .step {
+        background: none;
+        border: 0;
+        box-shadow: none;
+        padding: 0;
+        margin: 0;
+      }
+      body[data-mode="creator"] #setup-card .step:not([open]),
+      body[data-mode="creator"] #wizard > li:has(> .step:not([open])) {
+        display: none;
+      }
+      body[data-mode="creator"] #setup-card .step > summary {
+        list-style: none;
+        cursor: default;
+        text-transform: none;
+        letter-spacing: normal;
+        margin-bottom: var(--space-2);
+      }
+      body[data-mode="creator"]
+        #setup-card
+        .step
+        > summary::-webkit-details-marker {
+        display: none;
+      }
+      body[data-mode="creator"] #setup-card .step > summary > h2 {
+        font-family: var(--map-serif);
+        font-weight: 600;
+        font-size: 1.5rem;
+        line-height: 1.12;
+      }
+      body[data-mode="creator"] #setup-card .step-icon {
+        display: none;
+      }
+      .setup-nav {
+        display: flex;
+        gap: var(--space-2);
+        justify-content: space-between;
+        margin-top: var(--space-4);
+        padding-top: var(--space-3);
+        border-top: 1px dashed var(--map-line);
+      }
+      .setup-nav[hidden] {
+        display: none;
+      }
+
+      /* Buttons on the page (never inside #ar-root): L5's pills. */
+      body[data-mode="creator"] main .btn:not(#ar-root *) {
+        text-transform: none;
+        letter-spacing: normal;
+        border: 1.5px solid var(--ink);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--ink);
+        box-shadow: none;
+      }
+      body[data-mode="creator"] main .btn.setup-primary:not(#ar-root *),
+      body[data-mode="creator"]:not([data-ar-active="true"]) #enter-ar {
+        background: var(--map-route);
+        border-color: var(--map-route);
+        color: #fff;
+      }
+      body[data-mode="creator"] main .btn.setup-ink:not(#ar-root *) {
+        background: var(--ink);
+        color: var(--paper);
+      }
+      body[data-mode="creator"] main .btn.setup-ghost:not(#ar-root *) {
+        background: transparent;
+      }
+      /* As specific as the pill rule above (its :not(#ar-root *) counts an
+         id), or the chosen host looked like the others (found r821). */
+      body[data-mode="creator"]
+        main
+        .btn.host-tile[aria-pressed="true"]:not(#ar-root *) {
+        border-color: var(--map-route);
+        background: var(--map-route-soft);
+        color: var(--ink);
+      }
+
+      /* ===== The visitor's start page in the V4 look (polish round M4a) =====
+         The owner chose "minimal, one tap" (D-R12) with one photo of the
+         tour (D-R14): the name large at the top, the round button low in
+         the thumb zone, one line under it, the rest behind "What
+         happens?". Only while no session runs: in AR, #ar-root is the
+         overlay over the camera and keeps the sheet's HUD look. The
+         reference is public/prototypes/visitor-4-one-tap/. */
+      body[data-mode="visitor"] > header {
+        display: none;
+      }
+      body[data-ar-active="true"] #visitor-more,
+      body[data-ar-active="true"] #visitor-screen {
+        display: none;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"]) {
+        /* The fluid sizes live here: the lint's css-tree grammar knows
+           neither clamp() nor dvh, and custom properties are not
+           validated (the Landing page disables the rule per line). */
+        --visitor-dial: clamp(156px, 25dvh, 204px);
+        --visitor-height: 100dvh;
+        --visitor-kicker-gap: clamp(16px, 6dvh, 72px);
+        --visitor-cover-height: clamp(120px, 24dvh, 230px);
+        --visitor-title-size: clamp(44px, 16vw, 68px);
+        --visitor-title-size-small: clamp(36px, 11vw, 52px);
+        --visitor-subline-size: clamp(18px, 5vw, 21px);
+        --visitor-label-size: clamp(19px, 5.4vw, 23px);
+
+        display: flex;
+        flex-direction: column;
+        min-height: var(--visitor-height);
+        max-width: 440px;
+        padding: calc(40px + env(safe-area-inset-top))
+          calc(24px + env(safe-area-inset-right))
+          calc(14px + env(safe-area-inset-bottom))
+          calc(24px + env(safe-area-inset-left));
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"]) > main {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"]) #visitor-screen {
+        flex: 1;
+      }
+      .visitor-kicker {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0 0 var(--visitor-kicker-gap);
+        color: var(--accent-ink);
+        font-size: 12.5px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .visitor-kicker svg {
+        width: 30px;
+        height: 30px;
+        flex: none;
+      }
+      .visitor-cover {
+        margin: 0 0 22px;
+      }
+      #visitor-cover-image {
+        display: block;
+        width: 100%;
+        height: var(--visitor-cover-height);
+        object-fit: cover;
+        border-radius: 18px;
+      }
+      #visitor-title {
+        margin: 0;
+        font-family: var(--map-serif);
+        font-size: var(--visitor-title-size);
+        font-weight: 600;
+        line-height: 0.94;
+        letter-spacing: -0.025em;
+        /* stylelint-disable-next-line csstree/validator -- text-wrap is valid CSS; the bundled css-tree grammar predates it. */
+        text-wrap: balance;
+        overflow-wrap: anywhere;
+        text-transform: none;
+      }
+      /* With a photo above it the name steps down, so the button stays
+         in the thumb zone. */
+      #visitor-screen:has(#visitor-cover:not([hidden])) #visitor-title {
+        font-size: var(--visitor-title-size-small);
+        line-height: 1;
+      }
+      .visitor-rule {
+        display: block;
+        width: 44px;
+        height: 3px;
+        margin: 22px 0 14px;
+        border-radius: 2px;
+        background: var(--map-route);
+      }
+      .visitor-subline {
+        margin: 0;
+        color: var(--ink-dim);
+        font-size: var(--visitor-subline-size);
+        line-height: 1.35;
+      }
+
+      /* The action: the status sentence above (a reason, when there is
+         one), the round button, the hint as the one line under it. */
+      body[data-mode="visitor"]:not([data-ar-active="true"]) #ar-root {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: var(--space-3) 0 0;
+        text-align: center;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"]) #ar-status {
+        max-width: 340px;
+        margin: 0 0 18px;
+        font-size: 16px;
+        text-shadow: none;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"]) #ar-status:empty {
+        display: none;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"]) #enter-ar {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        order: 1;
+        width: calc(var(--visitor-dial) - 28px);
+        height: calc(var(--visitor-dial) - 28px);
+        margin: 14px;
+        /* Wide side padding: the label wraps to two short lines, as V4. */
+        padding: 16px 26px;
+        border: 0;
+        border-radius: 50%;
+        background: var(--map-route);
+        color: #fff;
+        font-size: var(--visitor-label-size);
+        font-weight: 700;
+        line-height: 1.12;
+        letter-spacing: normal;
+        text-transform: none;
+        opacity: 1;
+        box-shadow:
+          0 0 0 10px var(--paper),
+          0 0 0 13.5px var(--map-line),
+          0 10px 26px rgb(154 52 18 / 28%);
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"])
+        #enter-ar:focus-visible {
+        outline: 3px solid var(--ink);
+        outline-offset: 18px;
+      }
+      /* "1 of 2" / "2 of 2" while the first tap asks for the location
+         (visitorStep in ar-mode.ts). */
+      body[data-mode="visitor"]:not([data-ar-active="true"])
+        #enter-ar[data-step]::before {
+        content: attr(data-step);
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        opacity: 0.86;
+      }
+      /* Busy (checking, getting the location, starting): the ring turns. */
+      body[data-mode="visitor"]:not([data-ar-active="true"])
+        #enter-ar:disabled {
+        cursor: progress;
+        font-size: 16px;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"])
+        #enter-ar:disabled::after {
+        content: "";
+        position: absolute;
+        inset: -13.5px;
+        border: 3.5px solid transparent;
+        border-top-color: var(--map-route);
+        border-radius: 50%;
+        animation: visitor-ring 1.1s linear infinite;
+      }
+
+      @keyframes visitor-ring {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      /* A phone without AR: the button steps down and copies the link;
+         the reason above it leads. */
+      body[data-mode="visitor"]:not([data-ar-active="true"])
+        #enter-ar[data-ar-state="unsupported"] {
+        --visitor-dial: clamp(132px, 18dvh, 156px);
+
+        background: var(--ink);
+        font-size: 18px;
+        box-shadow: 0 10px 24px rgb(23 25 28 / 24%);
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"]) #ar-hint {
+        order: 2;
+        max-width: 330px;
+        margin: 20px 0 0;
+        color: var(--ink-dim);
+        font-size: 15px;
+        line-height: 1.4;
+        text-shadow: none;
+      }
+      #visitor-what {
+        width: 100%;
+        max-width: 360px;
+        margin: 8px auto 0;
+        text-align: center;
+      }
+      #visitor-more #visitor-what > summary {
+        display: inline-flex;
+        align-items: center;
+        min-height: 48px;
+        padding: 0 14px;
+        border-radius: 999px;
+        color: var(--accent-ink);
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        list-style: none;
+      }
+      #visitor-more #visitor-what > summary::after {
+        content: "";
+        width: 7px;
+        height: 7px;
+        margin: -3px 0 0 8px;
+        border-right: 2px solid currentcolor;
+        border-bottom: 2px solid currentcolor;
+        transform: rotate(45deg);
+      }
+      #visitor-more #visitor-what[open] > summary::after {
+        margin-top: 4px;
+        transform: rotate(-135deg);
+      }
+      .visitor-what-body {
+        display: grid;
+        gap: 14px;
+        margin: 4px 0 6px;
+        padding: 18px 18px 16px;
+        border: 1px solid var(--map-line);
+        border-radius: 18px;
+        background: var(--map-card);
+        font-size: 15px;
+        line-height: 1.45;
+        text-align: left;
+      }
+      .visitor-facts {
+        display: grid;
+        gap: 12px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .visitor-facts b,
+      .visitor-after b {
+        display: block;
+      }
+      .visitor-facts span,
+      .visitor-after span,
+      .visitor-needs {
+        color: var(--ink-dim);
+        font-size: 14px;
+      }
+      .visitor-after {
+        margin: 0;
+        padding-top: 14px;
+        border-top: 1px solid var(--map-line);
+      }
+      .visitor-needs {
+        margin: 0;
+        font-size: 13px;
+      }
+      .visitor-foot {
+        margin: 22px 0 0;
+        color: var(--ink-dim);
+        font-size: 13.5px;
+        text-align: center;
+      }
+      .visitor-foot a {
+        display: inline-block;
+        padding: 12px 4px;
+        color: var(--accent-ink);
+        font-weight: 600;
+        text-underline-offset: 3px;
+      }
+
+      /* A phone without AR loses "What happens?": it describes a session
+         this phone cannot start (V4's recovery states). */
+      body[data-mode="visitor"]:has(#enter-ar[data-ar-state="unsupported"])
+        #visitor-what {
+        display: none;
+      }
+      /* Held sideways: the name left, the action right, so the button is
+         on the first screen. Up to 600 px tall, so a small landscape
+         tablet gets it too (M4 review #9); the scan card keeps S1's 520. */
+      @media (orientation: landscape) and (height <= 600px) {
+        body[data-mode="visitor"]:not([data-ar-active="true"]) {
+          --visitor-title-size: 44px;
+          --visitor-kicker-gap: 16px;
+
+          max-width: 860px;
+          padding-top: calc(20px + env(safe-area-inset-top));
+        }
+        body[data-mode="visitor"]:not([data-ar-active="true"]) > main {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          grid-template-rows: auto 1fr;
+          column-gap: 32px;
+          align-items: start;
+        }
+        body[data-mode="visitor"]:not([data-ar-active="true"]) #visitor-screen {
+          grid-row: 1 / span 2;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        body[data-mode="visitor"]:not([data-ar-active="true"])
+          #enter-ar:disabled::after {
+          animation: none;
+        }
+      }
+
+      /* ===== The visitor's scan card in AR (polish round M4b) =====
+         The owner's S1 (D-P5): a card in the middle of the camera view
+         while the scan gate waits, its words on a darker panel (D-P5
+         amended), the escape at the bottom of the screen. It never takes a
+         tap meant for the scene: only the escape button catches pointers.
+         The reference is public/prototypes/scan-1-centre-card/. */
+      #scan-card {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+      }
+      #scan-card[hidden] {
+        display: none;
+      }
+      .scan-card-panel {
+        --scan-card-width: min(74vw, 286px);
+
+        width: var(--scan-card-width);
+        margin-top: -6vh;
+        padding: 12px 18px 16px;
+        border: 1px solid rgb(255 255 255 / 22%);
+        border-radius: 24px;
+        background: rgb(10 15 20 / 58%);
+        box-shadow: 0 12px 32px rgb(0 0 0 / 16%);
+        color: #fff;
+        text-align: center;
+      }
+      .scan-card-anim {
+        display: block;
+        width: 150px;
+        height: 112px;
+        margin: 0 auto 6px;
+        overflow: visible;
+      }
+      .scan-card-phone {
+        transform-box: fill-box;
+        transform-origin: 50% 50%;
+        animation: scan-card-phone 4.2s cubic-bezier(0.45, 0.05, 0.3, 1)
+          infinite;
+      }
+      .scan-card-brackets {
+        animation: scan-card-brackets 4.2s linear infinite;
+      }
+
+      @keyframes scan-card-phone {
+        0% {
+          transform: translate(58px, 26px) rotate(14deg);
+          opacity: 0;
+        }
+
+        14% {
+          opacity: 1;
+        }
+
+        42%,
+        80% {
+          transform: translate(0, 0) rotate(0deg);
+          opacity: 1;
+        }
+
+        94%,
+        100% {
+          transform: translate(58px, 26px) rotate(14deg);
+          opacity: 0;
+        }
+      }
+
+      @keyframes scan-card-brackets {
+        0%,
+        50% {
+          stroke: #fff;
+        }
+
+        54%,
+        80% {
+          stroke: #4ade80;
+        }
+
+        86%,
+        100% {
+          stroke: #fff;
+        }
+      }
+      #scan-card #scan-card-title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 650;
+        line-height: 1.3;
+        letter-spacing: normal;
+        text-transform: none;
+      }
+      #scan-card-line {
+        margin: 5px 0 0;
+        font-size: 13px;
+        line-height: 1.35;
+        opacity: 0.9;
+      }
+      #scan-card-line:empty {
+        display: none;
+      }
+      #scan-card #scan-escape {
+        position: absolute;
+        bottom: calc(26px + env(safe-area-inset-bottom));
+        left: 50%;
+        margin: 0;
+        padding: 10px 16px;
+        border: 1px solid rgb(255 255 255 / 45%);
+        border-radius: 999px;
+        background: rgb(0 0 0 / 40%);
+        color: #fff;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: normal;
+        text-transform: none;
+        white-space: nowrap;
+        transform: translateX(-50%);
+        pointer-events: auto;
+      }
+      #scan-card #scan-escape[hidden] {
+        display: none;
+      }
+      /* A phone held sideways: the animation beside the words. */
+      @media (orientation: landscape) and (height <= 520px) {
+        .scan-card-panel {
+          --scan-card-width: min(62vw, 420px);
+
+          display: grid;
+          grid-template-columns: 112px 1fr;
+          column-gap: 14px;
+          align-items: center;
+          margin-top: -4vh;
+          padding: 10px 18px 10px 10px;
+          text-align: left;
+        }
+        .scan-card-anim {
+          grid-row: 1 / 3;
+          width: 112px;
+          height: 84px;
+          margin: 0;
+        }
+        #scan-card #scan-escape {
+          bottom: calc(14px + env(safe-area-inset-bottom));
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .scan-card-phone,
+        .scan-card-brackets {
+          animation: none;
+        }
+      }
+
+      /* ===== The creator's HUD in AR, the owner's H1 (polish round M3) =====
+         D-P4: H1 with an action strip. In a creator's session the camera
+         view stays clear: the readout is a dark card at the top left, the
+         one way out (Done) a chip at the top right, and the place actions a
+         row of chips at the bottom - "Place a pin" first and largest, its
+         label folding to the icon after its first use (folding-label.ts).
+         A selected object's actions take the strip's place (object mode).
+         The reference is public/prototypes/hud-1-chips/. */
+      body[data-mode="creator"][data-ar-active="true"]:not([data-debug="true"])
+        #ar-status {
+        display: none;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-status {
+        order: 2;
+        margin: 0 128px 0 0;
+        /* The vertical spacing is a border of the card's own colour: the
+           two-line clamp clips at the padding box, so vertical padding
+           showed a cut third line. */
+        padding: 0 14px;
+        border-block: 10px solid rgb(20 22 26 / 66%);
+        border-radius: 16px;
+        background: rgb(20 22 26 / 66%);
+        background-clip: padding-box;
+        color: #fff;
+        font-size: 14px;
+        line-height: 1.35;
+        text-shadow: none;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-status:empty {
+        display: none;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #ar-root #enter-ar {
+        position: fixed;
+        top: calc(12px + env(safe-area-inset-top));
+        right: 12px;
+        z-index: 6;
+        min-height: 44px;
+        padding: 0 18px;
+        border: 1px solid rgb(255 255 255 / 30%);
+        border-radius: 999px;
+        background: rgb(20 22 26 / 78%);
+        color: #fff;
+        box-shadow: none;
+        font-weight: 600;
+        letter-spacing: normal;
+        text-transform: none;
+      }
+      /* The panel is the whole screen as a column: the size offer (the
+         owner's "short card above the status") and the status at the top,
+         a spacer, then the selected object's line, the chips and the
+         Finish's retry at the bottom. The top cards keep 128 px clear for
+         the AR button, sized for its longest label, "Close AR" (M3 review
+         #10). It lets taps through to the scene
+         (a tap there selects); only its cards catch them. */
+      body[data-mode="creator"][data-ar-active="true"] #setup-panel {
+        position: fixed;
+        inset: 0;
+        z-index: 5;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: none;
+        margin: 0;
+        padding: calc(12px + env(safe-area-inset-top)) 12px
+          calc(16px + env(safe-area-inset-bottom));
+        pointer-events: none;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-panel > * {
+        pointer-events: auto;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-panel::before {
+        content: "";
+        flex: 1;
+        order: 3;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #size-offer {
+        order: 1;
+        margin-right: 128px;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #object-list {
+        order: 4;
+        align-self: center;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-finish {
+        order: 6;
+        align-self: center;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-controls {
+        order: 5;
+        align-self: center;
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        max-width: 100%;
+        padding: 2px;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-controls[hidden] {
+        display: none;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-pin,
+      body[data-mode="creator"][data-ar-active="true"] #setup-photo {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-width: 52px;
+        min-height: 52px;
+        padding: 0 20px;
+        border: 0;
+        border-radius: 999px;
+        background: rgb(20 22 26 / 80%);
+        color: #fff;
+        box-shadow: none;
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: normal;
+        text-transform: none;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-pin {
+        min-width: 56px;
+        min-height: 56px;
+        padding: 0 22px;
+        background: var(--accent);
+        color: #1d1206;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-pin[hidden],
+      body[data-mode="creator"][data-ar-active="true"] #setup-photo[hidden] {
+        display: none;
+      }
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls
+        [data-folded="true"] {
+        padding: 0;
+      }
+      body[data-mode="creator"][data-ar-active="true"]
+        [data-folded="true"]
+        .chip-label {
+        display: none;
+      }
+      /* Typing a new pin's text: the field and its buttons take the row. */
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls:has(#pin-label:not([hidden]))
+        #setup-pin,
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls:has(#pin-label:not([hidden]))
+        #setup-photo {
+        display: none;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #pin-label {
+        flex: 1;
+        min-width: 0;
+        min-height: 48px;
+        border-radius: 999px;
+      }
+      /* The selected object's line, and the code's size offer: cards over
+         the camera, above the strip. */
+      body[data-mode="creator"][data-ar-active="true"]
+        #object-list:has([data-selected="true"]),
+      body[data-mode="creator"][data-ar-active="true"]
+        #size-offer:not([hidden]) {
+        width: 100%;
+        max-width: 520px;
+        padding: 10px 12px;
+        border-radius: 16px;
+        background: rgb(20 22 26 / 66%);
+        color: #fff;
+      }
+      /* The selected object's actions as H1's object bar: dark pills. */
+      body[data-mode="creator"][data-ar-active="true"] #object-list .btn {
+        min-height: 40px;
+        padding: 0 14px;
+        border: 1px solid rgb(255 255 255 / 25%);
+        border-radius: 999px;
+        background: rgb(255 255 255 / 12%);
+        color: #fff;
+        box-shadow: none;
+        font-weight: 600;
+        letter-spacing: normal;
+        text-transform: none;
+      }
+      /* Under the AR button, in the column the cards keep clear, and above
+         them: the marker is the promise that nothing records behind the
+         creator's back (M3 review #9). */
+      body[data-mode="creator"][data-ar-active="true"] #recording-marker {
+        position: fixed;
+        top: calc(64px + env(safe-area-inset-top));
+        right: 12px;
+        z-index: 7;
+        max-width: 116px;
+      }
+      .chip-icon {
+        width: 22px;
+        height: 22px;
+        flex: none;
+      }
     </style>
   </head>
   <body class="page">
@@ -552,79 +1744,947 @@
       <!-- Creator-only sections are authored HIDDEN and revealed for a
            creator by visitor-screen.ts: a visitor must never see the setup
            flash before the script runs (M2 review #5). -->
-      <p class="creator-only hint--dim" hidden>
-        Set up a tour that people open by scanning a printed code: host a zip,
-        print the code, hang it, then measure it in AR and place content. Four
-        steps, one at a time.
-      </p>
     </header>
     <main>
-      <!-- The visitor's one screen (DEC-N2): what the tour needs and the
-           Start button (#enter-ar, below in #ar-root). -->
-      <section id="visitor-screen" hidden data-testid="visitor-screen">
-        <h2>Start the tour</h2>
-        <p>
-          This tour runs in augmented reality on your phone. It needs the
-          camera, to show the tour over what you see, and your location, to
-          place it. Nothing is uploaded. Tap the button below; if the browser
-          asks, allow both.
+      <!-- The visitor's one screen (DEC-N2), in the owner's V4 look
+           (polish round M4a, D-R12): the tour's name, one line and one
+           photo here; the round Start button is #enter-ar, below in
+           #ar-root; what it needs is behind "What happens?" in
+           #visitor-more, after the stage. -->
+      <section
+        id="visitor-screen"
+        hidden
+        data-testid="visitor-screen"
+        aria-labelledby="visitor-title"
+      >
+        <p class="visitor-kicker">
+          <!-- A light and its beam: the page's small mark. -->
+          <svg viewBox="0 0 30 30" aria-hidden="true">
+            <path d="M15 15L29 8v14z" fill="currentcolor" opacity=".2" />
+            <path d="M15 15L29 11.5v7z" fill="currentcolor" opacity=".35" />
+            <circle cx="15" cy="15" r="4.2" fill="currentcolor" />
+            <circle
+              cx="15"
+              cy="15"
+              r="8.5"
+              fill="none"
+              stroke="currentcolor"
+              stroke-width="1.4"
+              opacity=".45"
+            />
+          </svg>
+          AR walking tour
         </p>
-        <p class="hint--dim">
-          Want to make a tour like this one?
-          <a
-            href="./"
-            target="_blank"
-            rel="noopener"
-            data-testid="make-your-own"
-            >Make your own tour</a
-          >
-        </p>
+        <!-- One photo of the tour (D-R14), written by visitor-start.ts. -->
+        <figure
+          id="visitor-cover"
+          class="visitor-cover"
+          data-testid="visitor-cover"
+          hidden
+        >
+          <img id="visitor-cover-image" alt="" />
+        </figure>
+        <!-- The page's heading: the header's h1 is hidden for a visitor. -->
+        <h1 id="visitor-title" data-testid="visitor-title">An AR tour</h1>
+        <span class="visitor-rule" aria-hidden="true"></span>
+        <p
+          id="visitor-subline"
+          class="visitor-subline"
+          data-testid="visitor-subline"
+          hidden
+        ></p>
       </section>
-      <ol id="wizard" class="creator-only" data-testid="wizard" hidden>
-        <li>
-          <details id="step-host" class="step" data-testid="step-host">
-            <summary>
-              <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <!-- The setup page in the L5 look (polish round M2b, the owner's
+           prototype verdict P1-P5): an intro, then the stage - the map of
+           six stations beside (wide) or above (phone) the step card. The
+           card shows ONE step; setup-stage.ts draws the stations and the
+           back/next, and every move goes through wizard.ts. -->
+      <section
+        id="setup-intro"
+        class="creator-only setup-intro"
+        data-testid="setup-intro"
+        hidden
+      >
+        <div>
+          <p class="setup-kicker">Make your own tour</p>
+          <h1>Put stories <em>where they happened.</em></h1>
+          <p class="setup-lede">
+            A tour can be as simple as a short walk with notes and photos - with
+            more to come. Visitors scan the code you printed and hung, and your
+            tour opens right in their phone's browser, with nothing to install.
+          </p>
+          <ul class="setup-why" aria-label="Why it works this way">
+            <li>Lives in your own storage</li>
+            <li>No app to install</li>
+            <li>Runs offline once opened</li>
+            <li>No sign-up, no account</li>
+          </ul>
+          <p class="setup-cta">
+            <button
+              type="button"
+              id="setup-begin"
+              class="btn setup-primary"
+              data-testid="setup-begin"
+            >
+              Follow the route
+            </button>
+            <span class="hint--dim">Six steps, then your walk.</span>
+          </p>
+        </div>
+        <figure class="setup-intro-art" aria-hidden="true">
+          <svg viewBox="0 0 240 280">
+            <defs>
+              <clipPath id="intro-scr">
+                <rect x="58" y="32" width="124" height="220" rx="13" />
+              </clipPath>
+              <mask
+                id="intro-dot-mask"
+                maskUnits="userSpaceOnUse"
+                x="0"
+                y="0"
+                width="240"
+                height="280"
+              >
                 <path
-                  d="M12 16V4m0 0-4 4m4-4 4 4M4 14v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"
+                  class="h-dots-mask"
+                  d="M121 250 L121 158"
+                  pathLength="100"
+                  stroke="#fff"
+                  stroke-width="8"
                   fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
                 />
-              </svg>
-              <h2>1 · Host your tour</h2>
-            </summary>
-            <ol class="substeps">
-              <li>
+              </mask>
+            </defs>
+            <!-- world outside the phone, sketched -->
+            <g
+              stroke="#8c8577"
+              stroke-width="1.1"
+              fill="none"
+              stroke-linecap="round"
+            >
+              <path d="M6 168 H54 M186 166 H234" />
+              <circle cx="26" cy="146" r="14" />
+              <path d="M26 160 V170" />
+              <circle cx="214" cy="140" r="17" />
+              <path d="M214 157 V168" />
+              <path
+                d="M0 230 Q 40 222 54 226 M186 228 Q 210 224 240 232"
+                stroke-dasharray="2 4"
+              />
+            </g>
+            <!-- phone -->
+            <rect
+              x="50"
+              y="18"
+              width="140"
+              height="248"
+              rx="22"
+              fill="#2a2824"
+            />
+            <g clip-path="url(#intro-scr)">
+              <rect x="58" y="32" width="124" height="220" fill="#e9e2cf" />
+              <rect x="58" y="152" width="124" height="100" fill="#d9cdae" />
+              <polygon
+                points="96,252 148,252 124,153 118,153"
+                fill="#f4eedf"
+                stroke="#8c8577"
+                stroke-width=".8"
+              />
+              <!-- mill building -->
+              <rect
+                x="70"
+                y="112"
+                width="34"
+                height="41"
+                fill="#ebe3cf"
+                stroke="#2a2824"
+                stroke-width="1"
+              />
+              <path
+                d="M66 113 L87 96 L108 113 Z"
+                fill="#ddd2b6"
+                stroke="#2a2824"
+                stroke-width="1"
+              />
+              <rect
+                x="83"
+                y="133"
+                width="8"
+                height="20"
+                fill="#ddd2b6"
+                stroke="#2a2824"
+                stroke-width=".8"
+              />
+              <circle
+                cx="69"
+                cy="140"
+                r="11"
+                fill="none"
+                stroke="#2a2824"
+                stroke-width="1"
+              />
+              <path
+                d="M69 129 V151 M58 140 H80 M61 132 L77 148 M77 132 L61 148"
+                stroke="#2a2824"
+                stroke-width=".6"
+              />
+              <!-- trees -->
+              <circle
+                cx="164"
+                cy="132"
+                r="15"
+                fill="#ddd2b6"
+                stroke="#57534a"
+              />
+              <path d="M164 147 V156" stroke="#57534a" />
+              <circle cx="143" cy="142" r="8" fill="#ddd2b6" stroke="#57534a" />
+              <path d="M143 150 V155" stroke="#57534a" />
+              <!-- dotted tour route drawing up the path -->
+              <path
+                class="h-dots"
+                d="M121 250 L121 158"
+                stroke="#cf4428"
+                stroke-width="3.2"
+                stroke-linecap="round"
+                fill="none"
+                mask="url(#intro-dot-mask)"
+              />
+              <!-- AR pin -->
+              <g class="h-pin">
+                <path
+                  d="M100 116 C 96 110 92 106 92 101 A 8 8 0 1 1 108 101 C 108 106 104 110 100 116 Z"
+                  fill="#cf4428"
+                />
+                <circle cx="100" cy="101" r="3" fill="#fff" />
+              </g>
+              <g class="h-label">
+                <rect
+                  x="94"
+                  y="64"
+                  width="80"
+                  height="22"
+                  rx="4"
+                  fill="#fff"
+                  stroke="#2a2824"
+                  stroke-width=".8"
+                />
+                <text
+                  x="100"
+                  y="74"
+                  font-family="Georgia, serif"
+                  font-size="8"
+                  font-weight="700"
+                  fill="#2a2824"
+                >
+                  The mill wheel
+                </text>
+                <text
+                  x="100"
+                  y="82.5"
+                  font-family="system-ui, sans-serif"
+                  font-size="6.4"
+                  fill="#57534a"
+                >
+                  Turning since 1820
+                </text>
+              </g>
+              <!-- AR photo -->
+              <g class="h-photo">
+                <rect
+                  x="132"
+                  y="176"
+                  width="40"
+                  height="38"
+                  fill="#fff"
+                  stroke="#2a2824"
+                  stroke-width=".8"
+                />
+                <rect x="135" y="179" width="34" height="25" fill="#c9bea3" />
+                <path
+                  d="M135 204 L146 192 L153 198 L160 189 L169 204 Z"
+                  fill="#8c8577"
+                />
+                <circle cx="162" cy="184" r="2.6" fill="#f4eedf" />
+                <text
+                  x="152"
+                  y="211"
+                  text-anchor="middle"
+                  font-family="Georgia, serif"
+                  font-size="5.4"
+                  font-style="italic"
+                  fill="#2a2824"
+                >
+                  here, 1910
+                </text>
+              </g>
+            </g>
+            <rect x="104" y="24" width="32" height="4" rx="2" fill="#4a4740" />
+          </svg>
+        </figure>
+      </section>
+      <div id="setup-stage" class="setup-stage" data-testid="setup-stage">
+        <div
+          id="setup-map"
+          class="creator-only setup-map"
+          data-testid="setup-map"
+          hidden
+        >
+          <div class="setup-map-head">
+            <span class="setup-map-title"
+              >Mill Park <i>an example route</i></span
+            >
+          </div>
+          <div class="setup-map-frame">
+            <svg
+              id="map-map"
+              viewBox="0 0 400 300"
+              preserveAspectRatio="xMidYMid meet"
+              role="img"
+              data-testid="setup-map-svg"
+              aria-label="Illustrated map of a park with a tour route and six stations"
+            >
+              <defs>
+                <pattern
+                  id="map-grid"
+                  width="25"
+                  height="25"
+                  patternUnits="userSpaceOnUse"
+                >
+                  <path
+                    d="M25 0 H0 V25"
+                    fill="none"
+                    stroke="#c9bea3"
+                    stroke-width=".45"
+                    opacity=".7"
+                  />
+                </pattern>
+                <pattern
+                  id="map-hatch"
+                  width="4"
+                  height="4"
+                  patternUnits="userSpaceOnUse"
+                  patternTransform="rotate(45)"
+                >
+                  <line
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="4"
+                    stroke="#57534a"
+                    stroke-width=".7"
+                    opacity=".55"
+                  />
+                </pattern>
+                <pattern
+                  id="map-paving"
+                  width="9"
+                  height="9"
+                  patternUnits="userSpaceOnUse"
+                >
+                  <rect
+                    x=".6"
+                    y=".6"
+                    width="7.8"
+                    height="7.8"
+                    fill="none"
+                    stroke="#c9bea3"
+                    stroke-width=".6"
+                  />
+                </pattern>
+                <g id="map-tree">
+                  <circle
+                    r="7"
+                    fill="#ddd2b6"
+                    stroke="#57534a"
+                    stroke-width=".75"
+                  />
+                  <path
+                    d="M-3.6 -1.5 A4.2 4.2 0 0 1 1.5 -4.2 M-1 3 A3 3 0 0 0 3.6 0.6"
+                    fill="none"
+                    stroke="#57534a"
+                    stroke-width=".55"
+                  />
+                  <circle r=".9" fill="#57534a" />
+                </g>
+                <mask
+                  id="map-route-mask"
+                  maskUnits="userSpaceOnUse"
+                  x="-50"
+                  y="-50"
+                  width="500"
+                  height="400"
+                >
+                  <path
+                    id="map-route-reveal"
+                    d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                    fill="none"
+                    stroke="#fff"
+                    stroke-width="10"
+                    stroke-linecap="round"
+                  />
+                </mask>
+              </defs>
+
+              <!-- paper, extended beyond the viewBox so letterboxing still looks like map -->
+              <rect
+                x="-400"
+                y="-300"
+                width="1200"
+                height="900"
+                fill="#f4eedf"
+              />
+              <rect
+                x="-400"
+                y="-300"
+                width="1200"
+                height="900"
+                fill="url(#map-grid)"
+              />
+
+              <!-- stream -->
+              <path
+                d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360"
+                fill="none"
+                stroke="#8c8577"
+                stroke-width="8.5"
+              />
+              <path
+                d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360"
+                fill="none"
+                stroke="#ebe3cf"
+                stroke-width="6.6"
+              />
+              <path
+                d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360"
+                fill="none"
+                stroke="#8c8577"
+                stroke-width=".5"
+                stroke-dasharray="5 7"
+              />
+              <text class="lbl-place" transform="translate(5 228) rotate(-82)">
+                Mill Stream
+              </text>
+
+              <!-- road -->
+              <path
+                id="map-lane"
+                d="M-60 286 C 120 274 280 292 460 268"
+                fill="none"
+                stroke="#57534a"
+                stroke-width="22"
+              />
+              <path
+                d="M-60 286 C 120 274 280 292 460 268"
+                fill="none"
+                stroke="#ebe3cf"
+                stroke-width="20"
+              />
+              <text class="lbl-road">
+                <textPath href="#map-lane" startOffset="47%">
+                  MILL LANE
+                </textPath>
+              </text>
+
+              <!-- footpaths (cased) -->
+              <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <g stroke="#8c8577" stroke-width="10">
+                  <path
+                    d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                  />
+                  <path d="M58 262 L58 284" />
+                  <path d="M226 212 C 232 240 240 258 246 284" />
+                  <path d="M286 46 C 292 26 298 10 302 -20" />
+                  <path d="M222 132 C 222 160 226 190 226 212" />
+                  <path d="M150 106 L162 106" />
+                </g>
+                <g stroke="#f4eedf" stroke-width="8.2">
+                  <path
+                    d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                  />
+                  <path d="M58 262 L58 284" />
+                  <path d="M226 212 C 232 240 240 258 246 284" />
+                  <path d="M286 46 C 292 26 298 10 302 -20" />
+                  <path d="M222 132 C 222 160 226 190 226 212" />
+                  <path d="M150 106 L162 106" />
+                </g>
+              </g>
+
+              <!-- old mill building -->
+              <rect x="22" y="26" width="128" height="94" fill="#ddd2b6" />
+              <rect
+                x="22"
+                y="26"
+                width="128"
+                height="94"
+                fill="url(#map-hatch)"
+                stroke="#2a2824"
+                stroke-width="1.3"
+              />
+              <rect
+                x="30"
+                y="34"
+                width="112"
+                height="78"
+                fill="none"
+                stroke="#2a2824"
+                stroke-width=".5"
+              />
+              <text class="lbl-caps" x="86" y="76" text-anchor="middle">
+                OLD MILL
+              </text>
+              <g transform="translate(16 74)">
+                <circle
+                  r="10"
+                  fill="#f4eedf"
+                  stroke="#2a2824"
+                  stroke-width="1.1"
+                />
+                <path
+                  d="M0 -10 V10 M-10 0 H10 M-7 -7 L7 7 M7 -7 L-7 7"
+                  stroke="#2a2824"
+                  stroke-width=".6"
+                />
+                <circle r="2" fill="#2a2824" />
+              </g>
+
+              <!-- courtyard -->
+              <rect x="172" y="40" width="100" height="92" fill="#ebe3cf" />
+              <rect
+                x="172"
+                y="40"
+                width="100"
+                height="92"
+                fill="url(#map-paving)"
+                stroke="#57534a"
+                stroke-width=".9"
+                stroke-dasharray="4 2"
+              />
+              <circle
+                cx="216"
+                cy="104"
+                r="9.5"
+                fill="#f4eedf"
+                stroke="#2a2824"
+                stroke-width="1"
+              />
+              <circle
+                cx="216"
+                cy="104"
+                r="4"
+                fill="none"
+                stroke="#2a2824"
+                stroke-width=".7"
+              />
+              <circle cx="216" cy="104" r="1.2" fill="#2a2824" />
+              <rect
+                x="248"
+                y="112"
+                width="12"
+                height="12"
+                fill="#ddd2b6"
+                stroke="#57534a"
+                stroke-width=".6"
+              />
+              <rect
+                x="184"
+                y="112"
+                width="12"
+                height="12"
+                fill="#ddd2b6"
+                stroke="#57534a"
+                stroke-width=".6"
+              />
+              <text class="lbl-place" x="216" y="127" text-anchor="middle">
+                Courtyard
+              </text>
+
+              <!-- pond -->
+              <ellipse
+                cx="316"
+                cy="140"
+                rx="21"
+                ry="12.5"
+                fill="#ebe3cf"
+                stroke="#57534a"
+                stroke-width=".9"
+              />
+              <path
+                d="M304 137 q4 -2 8 0 t8 0 M310 144 q4 -2 8 0 t8 0"
+                fill="none"
+                stroke="#8c8577"
+                stroke-width=".6"
+              />
+              <text class="lbl-place" x="312" y="178" text-anchor="middle">
+                Mill Park
+              </text>
+
+              <!-- trees -->
+              <g id="map-trees">
+                <use href="#map-tree" transform="translate(300 72) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(322 66) scale(0.85)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(344 82) scale(1.05)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(300 98) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(282 122) scale(0.9)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(296 168) scale(0.8)"
+                />
+                <use href="#map-tree" transform="translate(270 160) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(250 180) scale(0.85)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(270 190) scale(0.7)"
+                />
+                <use href="#map-tree" transform="translate(190 18) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(214 14) scale(0.85)"
+                />
+                <use href="#map-tree" transform="translate(240 22) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(262 12) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(318 18) scale(1.05)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(340 24) scale(0.8)"
+                />
+                <use href="#map-tree" transform="translate(362 16) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(386 34) scale(0.9)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(392 64) scale(0.8)"
+                />
+                <use href="#map-tree" transform="translate(390 122) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(394 152) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(386 190) scale(0.9)"
+                />
+                <use href="#map-tree" transform="translate(368 214) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(392 210) scale(0.7)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(300 242) scale(0.9)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(320 234) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(276 246) scale(0.75)"
+                />
+                <use href="#map-tree" transform="translate(190 242) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(166 250) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(140 240) scale(0.9)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(100 242) scale(0.85)"
+                />
+                <use href="#map-tree" transform="translate(36 146) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(60 160) scale(0.85)"
+                />
+                <use href="#map-tree" transform="translate(90 150) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(120 160) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(48 186) scale(0.9)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(80 182) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(184 156) scale(0.9)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(196 180) scale(0.75)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(158 140) scale(0.7)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(150 174) scale(0.85)"
+                />
+              </g>
+
+              <!-- benches -->
+              <g fill="#57534a">
+                <rect
+                  x="246"
+                  y="199"
+                  width="9"
+                  height="2.4"
+                  transform="rotate(-6 250 200)"
+                />
+                <rect x="374" y="96" width="2.4" height="9" />
+                <rect
+                  x="140"
+                  y="222"
+                  width="9"
+                  height="2.4"
+                  transform="rotate(8 144 223)"
+                />
+              </g>
+
+              <!-- viewpoint -->
+              <g transform="translate(38 246)">
+                <path
+                  d="M0 -6 L5.5 4 H-5.5 Z"
+                  fill="none"
+                  stroke="#2a2824"
+                  stroke-width=".9"
+                />
+                <text class="lbl-place" x="0" y="-9" text-anchor="middle">
+                  Viewpoint
+                </text>
+              </g>
+
+              <!-- compass -->
+              <g transform="translate(382 236)">
+                <circle r="9" fill="none" stroke="#8c8577" stroke-width=".6" />
+                <path d="M0 -12 L3 0 L0 -2 L-3 0 Z" fill="#2a2824" />
+                <path
+                  d="M0 12 L3 0 L0 2 L-3 0 Z"
+                  fill="none"
+                  stroke="#2a2824"
+                  stroke-width=".6"
+                />
+                <text
+                  x="0"
+                  y="-14.5"
+                  text-anchor="middle"
+                  font-family="Georgia,serif"
+                  font-size="6.5"
+                  font-weight="700"
+                  fill="#2a2824"
+                >
+                  N
+                </text>
+              </g>
+
+              <!-- the tour route: faint plan + dotted line revealed by the mask -->
+              <path
+                id="map-route-ghost"
+                d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                fill="none"
+                stroke="#2a2824"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-dasharray="0.1 7"
+                opacity=".22"
+              />
+              <path
+                id="map-route"
+                d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                fill="none"
+                stroke="#cf4428"
+                stroke-width="3.6"
+                stroke-linecap="round"
+                stroke-dasharray="0.1 7"
+                mask="url(#map-route-mask)"
+              />
+
+              <!-- start point: the poster -->
+              <g id="map-start" transform="translate(157 92)">
+                <circle class="halo" cx="0" cy="0" r="11" />
+                <rect
+                  class="empty"
+                  x="-7"
+                  y="-8.5"
+                  width="14"
+                  height="17"
+                  rx="1"
+                />
+
+                <g class="tack">
+                  <circle
+                    cx="0"
+                    cy="-8.5"
+                    r="2.4"
+                    fill="#cf4428"
+                    stroke="#fff"
+                    stroke-width=".7"
+                  />
+                </g>
+                <text
+                  class="lbl-start"
+                  x="0"
+                  y="-14"
+                  text-anchor="middle"
+                  id="map-start-label"
+                >
+                  Start: your poster
+                </text>
+              </g>
+
+              <!-- end flag -->
+              <g id="map-end-flag">
+                <path d="M0 0 V-18" stroke="#2a2824" stroke-width="1.1" />
+                <path d="M0 -18 L11 -14 L0 -10 Z" fill="#cf4428" />
+              </g>
+
+              <!-- station markers -->
+              <g id="map-stations"></g>
+            </svg>
+          </div>
+        </div>
+        <div id="setup-card" class="setup-card" data-testid="setup-card">
+          <div class="creator-only setup-card-top" hidden>
+            <span class="setup-badge" id="setup-badge" data-testid="setup-badge"
+              >1</span
+            >
+            <span class="setup-of" id="setup-of" data-testid="setup-of"
+              >Step 1 of 6</span
+            >
+            <nav
+              class="setup-dots"
+              id="setup-dots"
+              data-testid="setup-dots"
+              aria-label="Steps"
+            ></nav>
+          </div>
+          <ol id="wizard" class="creator-only" data-testid="wizard" hidden>
+            <li>
+              <!-- Step 1: where the tour lives (polish round M2, A6/A7). The
+               host tiles are the context every later step uses
+               (tour-host.ts); the starter zip shows only for a host that
+               needs a file before it gives a link. -->
+              <details id="step-host" class="step" data-testid="step-host">
+                <summary>
+                  <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M12 16V4m0 0-4 4m4-4 4 4M4 14v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  <h2>Where will your tour live?</h2>
+                </summary>
                 <p class="step-copy hint--dim">
-                  Get a tour zip: a recording from the Recorder app, or an empty
-                  one to start from.
+                  Your tour is one small zip file in your own storage. Visitors'
+                  phones load it from there and keep it, so it runs offline.
                 </p>
+                <div
+                  id="host-tiles"
+                  class="host-tiles"
+                  role="group"
+                  aria-label="Where your tour lives"
+                  data-testid="host-tiles"
+                ></div>
+                <ol
+                  id="host-steps"
+                  class="substeps"
+                  data-testid="host-steps"
+                  hidden
+                ></ol>
                 <div class="step-body">
                   <button
                     type="button"
                     id="starter-zip"
                     class="btn btn--prose"
                     data-testid="starter-zip"
+                    hidden
                   >
-                    Optional: download an empty starter zip
+                    Download the empty starter tour
+                  </button>
+                  <button
+                    type="button"
+                    id="host-continue"
+                    class="btn"
+                    data-testid="host-continue"
+                    hidden
+                  >
+                    Continue
                   </button>
                 </div>
-              </li>
-              <li>
+                <!-- "Open a file" (tour kit plan K0): a zip on this device,
+                 for a host that does not let browsers read its files.
+                 The picker is #file-input, outside the wizard, which
+                 the visitor's advice button uses too. A small link since
+                 polish round M2 (A5): the hosts above are the main way. -->
                 <p class="step-copy hint--dim">
-                  Upload it to Google Drive, Dropbox, GitHub or OneDrive - into
-                  a folder of its own (e.g. "My tour"), so you can find it again
-                  - and copy its share link. The printed code will point at this
-                  link, so keep the file where it is.
+                  Already have a tour zip on this device?
+                  <button
+                    type="button"
+                    id="open-file"
+                    class="link-button"
+                    data-testid="open-file-button"
+                  >
+                    Open it from this device
+                  </button>
                 </p>
-              </li>
-              <li>
+              </details>
+            </li>
+            <li>
+              <!-- Step 2: the link, given once (polish round M2, A13/A16). It is
+               checked by itself on paste; the print step carries it, also
+               while it is not reachable yet (an own server's link can come
+               before its file). -->
+              <details id="step-link" class="step" data-testid="step-link">
+                <summary>
+                  <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  <h2>Paste your tour's share link</h2>
+                </summary>
                 <p class="step-copy hint--dim">
-                  Paste the link here and test it. A link that opens here is a
-                  link the printed code can carry.
+                  Paste the share link to your tour zip. Keep the file where it
+                  is: your printed codes point to it.
                 </p>
                 <form id="open-form">
                   <input
@@ -642,57 +2702,68 @@
                     id="open"
                     data-testid="open-button"
                   >
-                    Test link
+                    Check link
                   </button>
                 </form>
-                <!-- "Open a file" (tour kit plan K0): a zip on this device,
-                     for a host that does not let browsers read its files.
-                     The picker is #file-input, outside the wizard, which
-                     the visitor's advice button uses too. -->
-                <p class="step-copy hint--dim">
-                  Or open a tour zip from this device. A file has no link, so
-                  its code can be printed only once the zip is hosted.
-                </p>
-                <div class="step-body">
-                  <button
-                    type="button"
-                    id="open-file"
-                    class="btn btn--prose"
-                    data-testid="open-file-button"
-                  >
-                    Open a file
-                  </button>
+                <p
+                  id="link-status"
+                  class="step-copy hint--dim"
+                  data-testid="link-status"
+                  role="status"
+                  aria-live="polite"
+                  hidden
+                ></p>
+                <!-- What the codes carry (r820 feedback R6): the pasted link
+                 wrapped into the launch link a scan opens. Written by
+                 print-panel.ts once the first poster's code is planned;
+                 hidden while empty. -->
+                <div id="link-launch" class="link-launch">
+                  <p class="step-copy hint--dim">
+                    Your posters' codes carry this link, with your link wrapped
+                    inside - it is what a phone opens when it scans a poster:
+                  </p>
+                  <a
+                    id="print-url-out"
+                    data-testid="print-url-out"
+                    target="_blank"
+                    rel="noopener"
+                  ></a>
                 </div>
-              </li>
-            </ol>
-          </details>
-        </li>
-        <li>
-          <!-- Print the code (flows plan M3, DEC-F2; step 2 of the setup).
+                <p class="step-copy hint--dim">
+                  A shortened link makes the printed code coarser and easier to
+                  scan from afar. Not every shortener works: some, bit.ly among
+                  them, open for you but stop the tour loading for visitors, so
+                  opening the short link yourself proves nothing. Paste the
+                  short link here and wait for the tour to be found before you
+                  print.
+                </p>
+              </details>
+            </li>
+            <li>
+              <!-- Print the code (flows plan M3, DEC-F2; step 2 of the setup).
                Opened and prefilled when a tour opens; usable before any
                upload. The QR renders at the TRUE physical size via print
                CSS cm units, so the paper matches the size the setup later
                measures with - the AR setup reads the size from HERE. -->
-          <details id="print-panel" class="step" data-testid="print-panel">
-            <summary>
-              <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M7 8V3h10v5M7 17H4v-6h16v6h-3M7 13h10v8H7z"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linejoin="round"
-                />
-              </svg>
-              <h2>2 · Print the code</h2>
-            </summary>
-            <p class="step-copy hint--dim">
-              The code carries the link from step 1 - you are not asked for it
-              again. Print it at 100% scale (no fit-to-page), and enter the
-              printed side length so the AR setup can measure it.
-            </p>
-            <div class="step-body">
-              <!-- The tour link. Once a tour is open the code carries THAT
+              <details id="print-panel" class="step" data-testid="print-panel">
+                <summary>
+                  <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M7 8V3h10v5M7 17H4v-6h16v6h-3M7 13h10v8H7z"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  <h2>Print your posters</h2>
+                </summary>
+                <p class="step-copy hint--dim">
+                  Print the PDF at 100 % (actual size) - each page has a 10 cm
+                  bar to check it.
+                </p>
+                <div class="step-body">
+                  <!-- The tour link. Once a tour is open the code carries THAT
                    link and the field is replaced by the link as text: being
                    asked a second time for something already given is what
                    made the flow read as broken (second testing session, F7).
@@ -700,210 +2771,264 @@
                    which is what keeps printing BEFORE hosting possible
                    (flows plan DEC-F2 rejected removing that). One link
                    either way: the two are never both live. -->
-              <label id="print-url-ask" data-testid="print-url-ask">
-                The link the code will carry
-                <input
-                  id="print-url"
-                  class="input"
-                  data-testid="print-url"
-                  type="text"
-                  autocomplete="off"
-                  placeholder="https://… link to the tour .zip"
-                />
-              </label>
-              <div
-                id="print-url-shown"
-                data-testid="print-url-shown"
-                hidden
-              ></div>
-              <label
-                >Printed side length (m)
-                <input
-                  id="author-size"
-                  class="input"
-                  data-testid="author-size"
-                  type="number"
-                  step="0.001"
-                  min="0.01"
-                  value="0.16"
-                />
-              </label>
-              <label
-                >Code number (1 for the first poster)
-                <input
-                  id="author-c"
-                  class="input"
-                  data-testid="author-c"
-                  type="number"
-                  step="1"
-                  min="1"
-                  value="1"
-                />
-              </label>
-              <button
-                type="button"
-                id="print-generate"
-                class="btn"
-                data-testid="print-generate"
-              >
-                Generate QR
-              </button>
-              <div id="print-info" data-testid="print-info"></div>
-              <div id="print-area" hidden>
-                <div id="print-quiet">
-                  <canvas id="print-canvas" data-testid="print-canvas"></canvas>
+                  <label id="print-url-ask" data-testid="print-url-ask">
+                    The link the code will carry
+                    <input
+                      id="print-url"
+                      class="input"
+                      data-testid="print-url"
+                      type="text"
+                      autocomplete="off"
+                      placeholder="https://… link to the tour .zip"
+                    />
+                  </label>
+                  <div
+                    id="print-url-shown"
+                    data-testid="print-url-shown"
+                    hidden
+                  ></div>
+                  <!-- The poster text (polish round D-P7, r820 feedback R8):
+                   printed with every code so a sheet can be hung as it
+                   comes out of the printer. Filled in; an emptied field is
+                   left off; remembered per tour (poster-text.ts). -->
+                  <fieldset class="poster-text" data-testid="poster-text">
+                    <legend>On the poster</legend>
+                    <label
+                      >Title
+                      <input
+                        id="poster-title"
+                        class="input"
+                        data-testid="poster-title"
+                        type="text"
+                        maxlength="80"
+                        autocomplete="off"
+                        placeholder="Your tour's name"
+                      />
+                    </label>
+                    <label
+                      >Explanation
+                      <input
+                        id="poster-explanation"
+                        class="input"
+                        data-testid="poster-explanation"
+                        type="text"
+                        maxlength="80"
+                        autocomplete="off"
+                      />
+                    </label>
+                    <label
+                      >Call to action
+                      <input
+                        id="poster-cta"
+                        class="input"
+                        data-testid="poster-cta"
+                        type="text"
+                        maxlength="80"
+                        autocomplete="off"
+                      />
+                    </label>
+                  </fieldset>
+                  <!-- How many posters: the one number a creator decides
+                   here, so it stays in view with big -/+ (r820 feedback
+                   R7). Each poster gets its own number, hence its own
+                   code. -->
+                  <div class="print-count-row">
+                    <span id="print-count-label">Posters to print</span>
+                    <div
+                      class="stepper"
+                      role="group"
+                      aria-labelledby="print-count-label"
+                    >
+                      <button
+                        type="button"
+                        id="print-count-down"
+                        class="stepper-button"
+                        data-testid="print-count-down"
+                        aria-label="One poster fewer"
+                      >
+                        −
+                      </button>
+                      <input
+                        id="print-count"
+                        class="input stepper-value"
+                        data-testid="print-count"
+                        type="number"
+                        inputmode="numeric"
+                        step="1"
+                        min="1"
+                        max="50"
+                        value="3"
+                        aria-labelledby="print-count-label"
+                      />
+                      <button
+                        type="button"
+                        id="print-count-up"
+                        class="stepper-button"
+                        data-testid="print-count-up"
+                        aria-label="One poster more"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                  <!-- The defaults nobody needs to touch (r820 feedback R7):
+                   18 cm, A4, numbering continued from the tour's codes.
+                   PDF only since polish round M0b (A10): the browser's
+                   print dialog owns a "fit to page" that rescales the
+                   code, and a rescaled code measures the world wrong. -->
+                  <details
+                    id="print-settings"
+                    class="print-settings"
+                    data-testid="print-settings"
+                  >
+                    <summary>Settings</summary>
+                    <div class="print-settings-grid">
+                      <label
+                        >Size (cm)
+                        <input
+                          id="author-size"
+                          class="input"
+                          data-testid="author-size"
+                          type="number"
+                          step="0.1"
+                          min="1"
+                          value="18"
+                        />
+                      </label>
+                      <label
+                        >Paper
+                        <select
+                          id="print-paper"
+                          class="select"
+                          data-testid="print-paper"
+                        >
+                          <option value="a4">A4</option>
+                          <option value="letter">Letter</option>
+                        </select>
+                      </label>
+                      <label
+                        >First code number
+                        <input
+                          id="author-c"
+                          class="input"
+                          data-testid="author-c"
+                          type="number"
+                          step="1"
+                          min="1"
+                          value="1"
+                        />
+                      </label>
+                    </div>
+                  </details>
+                  <button
+                    type="button"
+                    id="print-pdf"
+                    class="btn btn--prose"
+                    data-testid="print-pdf"
+                  >
+                    Download PDF to print
+                  </button>
+                  <!-- Under the PDF button, like the tiles below: a render
+                   rewrites this line, and a line above the button that
+                   changed length moved the button under the finger. -->
+                  <div id="print-info" data-testid="print-info"></div>
+                  <!-- One preview tile per poster (polish round M0b), drawn
+                   by print-panel.ts whenever an input changes. BELOW the PDF
+                   button on purpose: a count typed and then the button
+                   tapped redraws the tiles, and tiles above the button
+                   pushed it down under the finger. -->
+                  <div
+                    id="print-tiles"
+                    class="print-tiles"
+                    data-testid="print-tiles"
+                    hidden
+                  ></div>
+                  <a
+                    id="visitor-link"
+                    data-testid="visitor-link"
+                    href="#"
+                    target="_blank"
+                    rel="noopener"
+                    hidden
+                    >Try this tour as a visitor on this phone</a
+                  >
                 </div>
-              </div>
-              <button
-                type="button"
-                id="print-button"
-                class="btn"
-                data-testid="print-button"
-                hidden
-              >
-                Print at true size
-              </button>
-              <!-- The PDF path (second testing session, §4). The browser's
-                   print dialog owns the paper and a "fit to page" toggle
-                   that silently rescales, and a rescaled code is one whose
-                   printed side no longer matches what the AR setup
-                   measures with. A PDF declares its own page, and can
-                   carry several numbered codes at once. -->
-              <label>
-                Posters to print (each gets its own number)
-                <input
-                  id="print-count"
-                  class="input"
-                  data-testid="print-count"
-                  type="number"
-                  step="1"
-                  min="1"
-                  value="1"
-                />
-              </label>
-              <label>
-                Paper
-                <select
-                  id="print-paper"
-                  class="select"
-                  data-testid="print-paper"
-                >
-                  <option value="a4">A4</option>
-                  <option value="letter">Letter</option>
-                </select>
-              </label>
-              <button
-                type="button"
-                id="print-pdf"
-                class="btn btn--prose"
-                data-testid="print-pdf"
-              >
-                Download PDF to print
-              </button>
-              <div id="print-url-out" data-testid="print-url-out"></div>
-              <p class="step-copy hint--dim">
-                That is the address the code encodes: this page, carrying your
-                tour link inside it. A long tour link means more squares in the
-                code and smaller ones, which is harder for a phone to read. If
-                the code will hang somewhere people scan it from a distance, put
-                the tour link through a URL shortener, paste the short link in
-                step 1, and test it there - the trade is one extra redirect for
-                bigger, easier squares.
-              </p>
-              <p class="step-copy hint--dim">
-                Not every shortener works here. Some of them, bit.ly among them,
-                let the link open when you tap it yourself but stop the tour
-                loading for your visitors - so opening the short link in your
-                own browser proves nothing. Step 1 is the test that counts:
-                paste the short link there, wait for the tour to open, and only
-                then print.
-              </p>
-              <a
-                id="visitor-link"
-                data-testid="visitor-link"
-                href="#"
-                target="_blank"
-                rel="noopener"
-                hidden
-                >Try this tour as a visitor on this phone</a
-              >
-            </div>
-          </details>
-        </li>
-        <li>
-          <details id="step-hang" class="step" data-testid="step-hang">
-            <summary>
-              <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M3 21V9l9-6 9 6v12M8 21v-8h8v8"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linejoin="round"
-                />
-                <rect
-                  x="10"
-                  y="14.5"
-                  width="4"
-                  height="4"
-                  fill="currentColor"
-                />
-              </svg>
-              <h2>3 · Hang the code</h2>
-            </summary>
-            <p class="step-copy hint--dim">
-              Fix the printed code where the tour starts: flat on a wall or a
-              post, at about chest height, in a spot a phone can film squarely
-              from a metre away. It stays there; visitors scan it to open the
-              tour and again in AR to be placed exactly.
-            </p>
-            <div class="step-body">
-              <button
-                type="button"
-                class="btn btn--prose"
-                id="hang-done"
-                data-testid="hang-done"
-              >
-                It hangs - continue
-              </button>
-            </div>
-          </details>
-        </li>
-      </ol>
-      <div id="error" class="prose" role="alert" data-testid="error"></div>
-      <!-- Both modes (tour kit plan K0): the advice's button under a "host
+              </details>
+            </li>
+            <li>
+              <details id="step-hang" class="step" data-testid="step-hang">
+                <summary>
+                  <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M3 21V9l9-6 9 6v12M8 21v-8h8v8"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linejoin="round"
+                    />
+                    <rect
+                      x="10"
+                      y="14.5"
+                      width="4"
+                      height="4"
+                      fill="currentColor"
+                    />
+                  </svg>
+                  <h2>Hang it where the tour starts</h2>
+                </summary>
+                <p class="step-copy hint--dim">
+                  Fix the printed code where the tour starts: flat on a wall or
+                  a post, at about chest height, in a spot a phone can film
+                  squarely from a metre away. Visitors scan it to open the tour,
+                  and again in AR to be placed exactly.
+                </p>
+                <div class="step-body">
+                  <button
+                    type="button"
+                    class="btn btn--prose"
+                    id="hang-done"
+                    data-testid="hang-done"
+                  >
+                    It hangs - continue
+                  </button>
+                </div>
+              </details>
+            </li>
+          </ol>
+          <div id="error" class="prose" role="alert" data-testid="error"></div>
+          <!-- Both modes (tour kit plan K0): the advice's button under a "host
            blocks browsers" error, the line naming a file-opened tour, and
            the one file picker both "open a file" buttons click. -->
-      <div id="file-advice" hidden data-testid="file-advice">
-        <button
-          type="button"
-          id="open-file-advice"
-          class="btn"
-          data-testid="open-file-advice"
-        >
-          Open the downloaded file
-        </button>
-      </div>
-      <p
-        id="file-status"
-        class="prose hint--dim"
-        hidden
-        data-testid="file-status"
-      ></p>
-      <p
-        id="tour-trust"
-        class="prose hint--dim"
-        hidden
-        data-testid="tour-trust"
-      ></p>
-      <input
-        id="file-input"
-        type="file"
-        accept=".zip,application/zip,application/x-zip-compressed"
-        hidden
-        data-testid="file-input"
-      />
-      <!-- Step 4 wraps the AR section. Under WebXR DOM Overlay only the
+          <div id="file-advice" hidden data-testid="file-advice">
+            <button
+              type="button"
+              id="open-file-advice"
+              class="btn"
+              data-testid="open-file-advice"
+            >
+              Open the downloaded file
+            </button>
+          </div>
+          <p
+            id="file-status"
+            class="prose hint--dim"
+            hidden
+            data-testid="file-status"
+          ></p>
+          <p
+            id="tour-trust"
+            class="prose hint--dim"
+            hidden
+            data-testid="tour-trust"
+          ></p>
+          <input
+            id="file-input"
+            type="file"
+            accept=".zip,application/zip,application/x-zip-compressed"
+            hidden
+            data-testid="file-input"
+          />
+          <!-- Step 4 wraps the AR section. Under WebXR DOM Overlay only the
            subtree of the element passed to initAR composites over the camera
            feed, so everything a person needs DURING a session (the status
            line, the button, the setup panel) MUST stay inside #ar-root
@@ -917,239 +3042,338 @@
            collapse this step for as long as one is live. A VISITOR gets no
            summary either (it is .creator-only) and visitor-screen.ts opens
            the details, which is what makes the AR section their screen. -->
-      <details id="step-measure" class="step" data-testid="step-measure">
-        <summary class="creator-only" hidden>
-          <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <rect
-              x="7"
-              y="2"
-              width="10"
-              height="20"
-              rx="2"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-            />
-            <rect x="9.5" y="8" width="5" height="5" fill="currentColor" />
-            <path
-              d="M9.5 18h5"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-            />
-          </svg>
-          <h2>4 · Measure the code and place content</h2>
-        </summary>
-        <p class="step-copy hint--dim creator-only" hidden>
-          Stand at the hung code and start the AR setup - the code carries the
-          tour's link, so the tour opens on this device the moment the camera
-          reads it. Hold the phone on the code until it is measured, then place
-          text pins and photos where the tour should show them. Finish inside AR
-          when you are done - the rebuilt zip is then saved to this phone by
-          itself, with the steps to put it in place of the hosted one.
-        </p>
-        <!-- The troubleshooting recording (authoring recording plan
+          <details id="step-measure" class="step" data-testid="step-measure">
+            <summary class="creator-only" hidden>
+              <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect
+                  x="7"
+                  y="2"
+                  width="10"
+                  height="20"
+                  rx="2"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                />
+                <rect x="9.5" y="8" width="5" height="5" fill="currentColor" />
+                <path
+                  d="M9.5 18h5"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <h2>Create it on site, in AR</h2>
+            </summary>
+            <p class="step-copy hint--dim creator-only" hidden>
+              Now the tour itself: stand at the hung code, start creating, and
+              walk the route, placing text pins and photos where they belong.
+              When you are done, the tour file is saved to this phone, and the
+              last step shows how to put it in place.
+            </p>
+            <!-- The troubleshooting recording (authoring recording plan
              2026-09-28-0953, M1a). OPT-IN and page-side: the switch arms it
              before AR starts (it then runs for the rest of the page's
              life, and the switch locks on), and Save hands the recording
              over as its own zip - never inside the tour zip. A creator's,
              and a visitor's only with ?debug=1 (M1b): main.ts unhides it,
              so it is not .creator-only. -->
-        <!-- What the published copy carries (scan-pass plan S1, S-D10),
+            <!-- What the published copy carries (scan-pass plan S1, S-D10),
              chosen BEFORE AR (UI round 1, U2, review #6: the Finish's
              rebuild reads it, so it cannot follow the Finish), shown only
              for a tour that carries a walk; unticked, Finish leaves it
              out. -->
-        <label
-          class="switch"
-          id="keep-scan-row"
-          data-testid="keep-scan-row"
-          hidden
-        >
-          <input type="checkbox" id="keep-scan" data-testid="keep-scan" />
-          <span class="switch-track"></span>
-          Keep the walk recording in the tour file (for a co-author; visitors
-          never need it)
-        </label>
-        <div id="recording-block" data-testid="recording-block" hidden>
-          <!-- A recording a killed tab left unsaved (M1b,
+            <label
+              class="switch"
+              id="keep-scan-row"
+              data-testid="keep-scan-row"
+              hidden
+            >
+              <input type="checkbox" id="keep-scan" data-testid="keep-scan" />
+              <span class="switch-track"></span>
+              Keep the walk recording in the tour file (for a co-author;
+              visitors never need it)
+            </label>
+            <div id="recording-block" data-testid="recording-block" hidden>
+              <!-- A recording a killed tab left unsaved (M1b,
                recording-offer.ts). OFFERED, never applied, with the draft
                offer's three choices: "Not now" keeps it for the next open,
                and "Delete it" is the only way an unsaved recording is
                removed. -->
-          <div id="recording-offer" data-testid="recording-offer" hidden>
-            <p
-              id="recording-offer-text"
-              class="step-copy hint--dim"
-              data-testid="recording-offer-text"
-            ></p>
-            <button
-              type="button"
-              class="btn btn--prose"
-              id="recording-offer-save"
-              data-testid="recording-offer-save"
-            >
-              Save it
-            </button>
-            <button
-              type="button"
-              class="btn btn--prose"
-              id="recording-offer-dismiss"
-              data-testid="recording-offer-dismiss"
-            >
-              Not now
-            </button>
-            <button
-              type="button"
-              class="btn btn--prose"
-              id="recording-offer-discard"
-              data-testid="recording-offer-discard"
-            >
-              Delete it
-            </button>
-          </div>
-          <label class="switch">
-            <input
-              type="checkbox"
-              id="record-session"
-              data-testid="record-session"
-            />
-            <span class="switch-track"></span>
-            Record this session for troubleshooting
-          </label>
-          <!-- What leaves the phone with the zip (M1a review finding 5,
+              <div id="recording-offer" data-testid="recording-offer" hidden>
+                <p
+                  id="recording-offer-text"
+                  class="step-copy hint--dim"
+                  data-testid="recording-offer-text"
+                ></p>
+                <button
+                  type="button"
+                  class="btn btn--prose"
+                  id="recording-offer-save"
+                  data-testid="recording-offer-save"
+                >
+                  Save it
+                </button>
+                <button
+                  type="button"
+                  class="btn btn--prose"
+                  id="recording-offer-dismiss"
+                  data-testid="recording-offer-dismiss"
+                >
+                  Not now
+                </button>
+                <button
+                  type="button"
+                  class="btn btn--prose"
+                  id="recording-offer-discard"
+                  data-testid="recording-offer-discard"
+                >
+                  Delete it
+                </button>
+              </div>
+              <label class="switch">
+                <input
+                  type="checkbox"
+                  id="record-session"
+                  data-testid="record-session"
+                />
+                <span class="switch-track"></span>
+                Record this session for troubleshooting
+              </label>
+              <!-- What leaves the phone with the zip (M1a review finding 5,
                M1b review #6): the tour link (in the recorded QR texts), the
                GPS track, and the depth samples. Why the link is kept:
                authoring-recording.ts.md, "Privacy". -->
-          <p class="hint--dim" data-testid="recording-privacy">
-            The recording holds the tour link, your GPS track and the 3D shape
-            of the surroundings.
-          </p>
-          <!-- "Reload the page to record" once an unrecorded AR session has
+              <p class="hint--dim" data-testid="recording-privacy">
+                The recording holds the tour link, your GPS track and the 3D
+                shape of the surroundings.
+              </p>
+              <!-- "Reload the page to record" once an unrecorded AR session has
                run, or the low-storage warning after ticking the box
                (recording-panel.ts). -->
-          <p
-            id="recording-notice"
-            data-testid="recording-notice"
-            aria-live="polite"
-            hidden
-          ></p>
-          <button
-            type="button"
-            id="recording-save"
-            class="btn btn--prose"
-            data-testid="recording-save"
-            hidden
-          >
-            Save the recording
-          </button>
-          <div
-            id="recording-status"
-            data-testid="recording-status"
-            aria-live="polite"
-          ></div>
-        </div>
-        <section id="ar-root">
-          <p id="ar-hint" class="hint--dim" data-testid="ar-hint">
-            AR opens the camera. Keep the printed code in view until the page
-            says it is measured; walking a few metres with GPS reception lets
-            the phone align to the map.
-          </p>
-          <!-- The visible line changes per camera frame for a creator and
+              <p
+                id="recording-notice"
+                data-testid="recording-notice"
+                aria-live="polite"
+                hidden
+              ></p>
+              <button
+                type="button"
+                id="recording-save"
+                class="btn btn--prose"
+                data-testid="recording-save"
+                hidden
+              >
+                Save the recording
+              </button>
+              <div
+                id="recording-status"
+                data-testid="recording-status"
+                aria-live="polite"
+              ></div>
+            </div>
+            <section id="ar-root">
+              <!-- The creator's outline of the AR part (polish round M3,
+               A19): the details are said in AR, in the HUD's card, as they
+               become the next move. A visitor's line replaces it
+               (visitor-screen.ts). -->
+              <p id="ar-hint" class="hint--dim" data-testid="ar-hint">
+                In AR: point the camera at the hung code until it is measured,
+                walk the route placing pins and photos, then tap Done - the tour
+                is saved.
+              </p>
+              <!-- The visible line changes per camera frame for a creator and
                with ?debug=1, so it is NOT a live region; a visitor's
                sentence reaches screen readers through #ar-status-live,
                written only when it changes (UI round 1, U1, review F14). -->
-          <div id="ar-status" data-testid="ar-status"></div>
-          <p
-            id="ar-status-live"
-            class="visually-hidden"
-            data-testid="ar-status-live"
-            aria-live="polite"
-          ></p>
-          <!-- Up while the troubleshooting recording runs: over the camera,
+              <div id="ar-status" data-testid="ar-status"></div>
+              <p
+                id="ar-status-live"
+                class="visually-hidden"
+                data-testid="ar-status-live"
+                aria-live="polite"
+              ></p>
+              <!-- Up while the troubleshooting recording runs: over the camera,
                and on the page (recording-panel.ts). -->
-          <p id="recording-marker" data-testid="recording-marker" hidden></p>
-          <!-- The ?debug=1 QR readout (main.ts shows it; plan §66). Never for
+              <p
+                id="recording-marker"
+                data-testid="recording-marker"
+                hidden
+              ></p>
+              <!-- The ?debug=1 QR readout (main.ts shows it; plan §66). Never for
                visitors without the flag. -->
-          <pre id="ar-debug" data-testid="ar-debug" hidden></pre>
-          <button
-            type="button"
-            class="btn"
-            id="enter-ar"
-            data-testid="enter-ar"
-            disabled
-          >
-            Checking AR support…
-          </button>
-          <!-- The scan gate's escape (M5, DEC-N3): offered after 45 s without
-               a lock; inside #ar-root because it is tapped DURING the session. -->
-          <button
-            type="button"
-            id="scan-escape"
-            class="btn btn--prose"
-            data-testid="scan-escape"
-            hidden
-          >
-            Continue with GPS only (less accurate)
-          </button>
-          <!-- The visitor's stations (tour kit plan K4): the station line,
+              <pre id="ar-debug" data-testid="ar-debug" hidden></pre>
+              <button
+                type="button"
+                class="btn"
+                id="enter-ar"
+                data-testid="enter-ar"
+                disabled
+              >
+                Checking AR support…
+              </button>
+              <!-- The visitor's scan card (polish round M4b, the owner's S1,
+               D-P5 amended): centred over the camera while the scan gate
+               waits for the code, with the phone-over-code animation, a
+               darker panel behind the words, and the gate's escape at the
+               bottom of the screen after its clock (10 s, Q-Scan). It
+               closes by itself on the lock (ar-entry.ts renders it). The
+               escape stays inside #ar-root: it is tapped DURING the
+               session. -->
+              <div id="scan-card" data-testid="scan-card" hidden>
+                <div class="scan-card-panel" data-testid="scan-card-panel">
+                  <svg
+                    class="scan-card-anim"
+                    viewBox="0 0 160 120"
+                    aria-hidden="true"
+                  >
+                    <rect
+                      x="34"
+                      y="16"
+                      width="72"
+                      height="96"
+                      rx="4"
+                      fill="#000"
+                      opacity=".2"
+                    />
+                    <rect
+                      x="30"
+                      y="12"
+                      width="72"
+                      height="96"
+                      rx="4"
+                      fill="#fbf9f3"
+                    />
+                    <!-- A code: three finder squares and a few modules. -->
+                    <g fill="#1c232b">
+                      <path
+                        d="M42 22h14v14H42zM46 26v6h6v-6zM76 22h14v14H76zM80 26v6h6v-6zM42 56h14v14H42zM46 60v6h6v-6z"
+                        fill-rule="evenodd"
+                      />
+                      <path
+                        d="M60 22h4v4h-4zM66 28h4v4h-4zM60 34h4v4h-4zM62 42h4v4h-4zM70 40h4v4h-4zM78 44h4v4h-4zM86 42h4v4h-4zM60 50h4v4h-4zM68 54h4v4h-4zM62 62h4v4h-4zM76 58h4v4h-4zM84 62h4v4h-4zM72 66h4v4h-4zM86 52h4v4h-4z"
+                      />
+                    </g>
+                    <rect
+                      x="44"
+                      y="80"
+                      width="44"
+                      height="5"
+                      rx="2.5"
+                      fill="#c9c2b4"
+                    />
+                    <rect
+                      x="50"
+                      y="91"
+                      width="32"
+                      height="4"
+                      rx="2"
+                      fill="#ddd7cb"
+                    />
+                    <g class="scan-card-phone">
+                      <rect
+                        x="36"
+                        y="4"
+                        width="60"
+                        height="100"
+                        rx="11"
+                        fill="rgb(12 18 24 / 28%)"
+                        stroke="#fff"
+                        stroke-width="3"
+                      />
+                      <rect
+                        x="57"
+                        y="9"
+                        width="18"
+                        height="3.5"
+                        rx="1.75"
+                        fill="#fff"
+                        opacity=".85"
+                      />
+                      <path
+                        class="scan-card-brackets"
+                        d="M40 28v-8h8M84 20h8v8M92 64v8h-8M48 72h-8v-8"
+                        fill="none"
+                        stroke="#fff"
+                        stroke-width="3"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </g>
+                  </svg>
+                  <h2 id="scan-card-title">
+                    Scan the code again so the tour can start
+                  </h2>
+                  <p id="scan-card-line" data-testid="scan-card-line"></p>
+                </div>
+                <button
+                  type="button"
+                  id="scan-escape"
+                  class="btn btn--prose"
+                  data-testid="scan-escape"
+                  hidden
+                >
+                  Continue with GPS only (less accurate)
+                </button>
+              </div>
+              <!-- The visitor's stations (tour kit plan K4): the station line,
                the labelled skip (§8 D5) and the story panel. Inside
                #ar-root because the visitor stays in AR the whole tour
                (K-D9); station-guide.ts and scene-view.ts show them. -->
-          <p
-            id="station-line"
-            data-testid="station-line"
-            aria-live="polite"
-            hidden
-          ></p>
-          <!-- The test switch ?relocate=here (tour-relocation.ts): shown once
+              <p
+                id="station-line"
+                data-testid="station-line"
+                aria-live="polite"
+                hidden
+              ></p>
+              <!-- The test switch ?relocate=here (tour-relocation.ts): shown once
                the tour's stations were moved to the phone's first fix. -->
-          <p
-            id="relocate-note"
-            data-testid="relocate-note"
-            role="status"
-            hidden
-          >
-            Test mode: this tour was moved to where you are.
-          </p>
-          <button
-            type="button"
-            id="station-skip"
-            class="btn btn--prose"
-            data-testid="station-skip"
-            hidden
-          >
-            Can't get there?
-          </button>
-          <section
-            id="scene-panel"
-            data-testid="scene-panel"
-            aria-live="polite"
-            hidden
-          >
-            <h3 id="scene-title" data-testid="scene-title"></h3>
-            <p id="scene-speaker" data-testid="scene-speaker" hidden></p>
-            <img id="scene-image" data-testid="scene-image" alt="" hidden />
-            <p id="scene-text" data-testid="scene-text"></p>
-            <p id="scene-status" data-testid="scene-status"></p>
-            <div id="scene-choices" data-testid="scene-choices"></div>
-            <button
-              type="button"
-              id="scene-continue"
-              class="btn"
-              data-testid="scene-continue"
-            >
-              Continue
-            </button>
-          </section>
-          <button
-            type="button"
-            id="scene-play-next"
-            class="btn btn--prose"
-            data-testid="scene-play-next"
-            hidden
-          ></button>
-          <!-- The setup panel (guided-setup plan M3). Inside #ar-root on
+              <p
+                id="relocate-note"
+                data-testid="relocate-note"
+                role="status"
+                hidden
+              >
+                Test mode: this tour was moved to where you are.
+              </p>
+              <button
+                type="button"
+                id="station-skip"
+                class="btn btn--prose"
+                data-testid="station-skip"
+                hidden
+              >
+                Can't get there?
+              </button>
+              <section
+                id="scene-panel"
+                data-testid="scene-panel"
+                aria-live="polite"
+                hidden
+              >
+                <h3 id="scene-title" data-testid="scene-title"></h3>
+                <p id="scene-speaker" data-testid="scene-speaker" hidden></p>
+                <img id="scene-image" data-testid="scene-image" alt="" hidden />
+                <p id="scene-text" data-testid="scene-text"></p>
+                <p id="scene-status" data-testid="scene-status"></p>
+                <div id="scene-choices" data-testid="scene-choices"></div>
+                <button
+                  type="button"
+                  id="scene-continue"
+                  class="btn"
+                  data-testid="scene-continue"
+                >
+                  Continue
+                </button>
+              </section>
+              <button
+                type="button"
+                id="scene-play-next"
+                class="btn btn--prose"
+                data-testid="scene-play-next"
+                hidden
+              ></button>
+              <!-- The setup panel (guided-setup plan M3). Inside #ar-root on
                purpose: it must stay visible while the AR session composites
                the DOM overlay. Measure (save the code's position), then
                Finish (rebuild the zip and end the session).
@@ -1161,110 +3385,152 @@
                no explanation - M3 review #4). The CONTROLS are the part
                that is session-only: on a desktop they sat greyed out under
                an "AR not supported" button, which is what F11 reports. -->
-          <div id="setup-panel" hidden data-testid="setup-panel">
-            <!-- The print-size offer (QR size consensus plan S3a): the phone
+              <div id="setup-panel" hidden data-testid="setup-panel">
+                <!-- The print-size offer (QR size consensus plan S3a): the phone
                  measured the printed code; its own element because
                  #setup-status is rewritten on every store change. FIRST in the
                  panel, above the status (owner, 2026-09-27). -->
-            <div id="size-offer" data-testid="size-offer" hidden>
-              <p id="size-offer-text" data-testid="size-offer-text"></p>
-              <button
-                type="button"
-                id="size-offer-use"
-                class="btn btn--prose"
-                data-testid="size-offer-use"
-                hidden
-              ></button>
-              <button
-                type="button"
-                id="size-offer-keep"
-                class="btn btn--prose"
-                data-testid="size-offer-keep"
-                hidden
-              ></button>
-            </div>
-            <div id="setup-status" data-testid="setup-status"></div>
-            <div id="setup-controls" data-testid="setup-controls" hidden>
-              <!-- Placement (M4): a pin at the reticle with a typed label
+                <div id="size-offer" data-testid="size-offer" hidden>
+                  <p id="size-offer-text" data-testid="size-offer-text"></p>
+                  <button
+                    type="button"
+                    id="size-offer-use"
+                    class="btn btn--prose"
+                    data-testid="size-offer-use"
+                    hidden
+                  ></button>
+                  <button
+                    type="button"
+                    id="size-offer-keep"
+                    class="btn btn--prose"
+                    data-testid="size-offer-keep"
+                    hidden
+                  ></button>
+                </div>
+                <div id="setup-status" data-testid="setup-status"></div>
+                <div id="setup-controls" data-testid="setup-controls" hidden>
+                  <!-- Placement (M4): a pin at the reticle with a typed label
                    (the input is an overlay control: window.prompt is
                    unavailable in an XR session), a photo of the current
                    camera frame. -->
-              <button
-                type="button"
-                id="setup-pin"
-                class="btn btn--prose"
-                data-testid="setup-pin"
-                disabled
-              >
-                Place a pin here
-              </button>
-              <input
-                id="pin-label"
-                class="input"
-                data-testid="pin-label"
-                type="text"
-                autocomplete="off"
-                placeholder="The pin's text"
-                hidden
-              />
-              <button
-                type="button"
-                class="btn btn--prose"
-                id="pin-save"
-                data-testid="pin-save"
-                hidden
-              >
-                Save the pin
-              </button>
-              <button
-                type="button"
-                id="pin-cancel"
-                class="btn"
-                data-testid="pin-cancel"
-                hidden
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                id="setup-photo"
-                class="btn btn--prose"
-                data-testid="setup-photo"
-                disabled
-              >
-                Capture a photo here
-              </button>
-            </div>
-            <!-- OUTSIDE #setup-controls on purpose: the controls are the
+                  <button
+                    type="button"
+                    id="setup-pin"
+                    class="btn btn--prose"
+                    data-testid="setup-pin"
+                    disabled
+                  >
+                    <!-- A map pin with a plus (D-P4); the label folds to
+                     the icon after its first use (folding-label.ts). -->
+                    <svg
+                      class="chip-icon"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M12 21s-6.5-5.8-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 15.2 12 21 12 21z"
+                        fill="none"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                        stroke-linejoin="round"
+                      />
+                      <path
+                        d="M12 6.8v6M9 9.8h6"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                    <span class="chip-label">Place a pin</span>
+                  </button>
+                  <input
+                    id="pin-label"
+                    class="input"
+                    data-testid="pin-label"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="The pin's text"
+                    hidden
+                  />
+                  <button
+                    type="button"
+                    class="btn btn--prose"
+                    id="pin-save"
+                    data-testid="pin-save"
+                    hidden
+                  >
+                    Save the pin
+                  </button>
+                  <button
+                    type="button"
+                    id="pin-cancel"
+                    class="btn"
+                    data-testid="pin-cancel"
+                    hidden
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    id="setup-photo"
+                    class="btn btn--prose"
+                    data-testid="setup-photo"
+                    disabled
+                  >
+                    <svg
+                      class="chip-icon"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M3.5 8.5h3.2l1.9-2.6h6.8l1.9 2.6h3.2v10.6h-17z"
+                        fill="none"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                        stroke-linejoin="round"
+                      />
+                      <circle
+                        cx="12"
+                        cy="13.6"
+                        r="3.4"
+                        fill="none"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                      />
+                    </svg>
+                    <span class="chip-label">Take a photo</span>
+                  </button>
+                </div>
+                <!-- OUTSIDE #setup-controls on purpose: the controls are the
                  camera's (mint, pin, photo) and go with the session, but a
                  creator who measured and left AR must still be able to
                  finish. Its own visibility rule lives in creator-setup.ts. -->
-            <button
-              type="button"
-              id="setup-finish"
-              class="btn btn--prose"
-              data-testid="setup-finish"
-              disabled
-              hidden
-            >
-              Finish - rebuild the zip
-            </button>
-            <!-- The tour's objects with Edit text, Move to the reticle and
+                <button
+                  type="button"
+                  id="setup-finish"
+                  class="btn btn--prose"
+                  data-testid="setup-finish"
+                  disabled
+                  hidden
+                >
+                  Finish - rebuild the zip
+                </button>
+                <!-- The tour's objects with Edit text, Move to the reticle and
                  Delete (authoring plan 2026-09-28-0953 §3.4, M4). OUTSIDE
                  #setup-controls: listing, editing and deleting need no AR,
                  so it shows on the page too. LAST in the panel: in AR every
                  line over the camera pushes the controls above it down, and
                  Finish must stay on the first screen. Drawn by
                  object-list.ts; in AR it shows the tapped object first. -->
-            <section
-              id="object-list"
-              data-testid="object-list"
-              aria-label="Objects in this tour"
-              hidden
-            ></section>
-          </div>
-        </section>
-        <!-- Unsaved work found on this device (F13). OFFERED, never applied
+                <section
+                  id="object-list"
+                  data-testid="object-list"
+                  aria-label="Objects in this tour"
+                  hidden
+                ></section>
+              </div>
+            </section>
+            <!-- Unsaved work found on this device (F13). OFFERED, never applied
              silently: a draft can be days old and can be one the creator
              believes they discarded, and restoring it quietly would append
              content they did not ask for into a zip they are about to
@@ -1273,151 +3539,259 @@
              "declining" and "deleting" are different intentions and the
              milestone review was right that two buttons force them
              together. -->
-        <div id="draft-offer" data-testid="draft-offer" hidden>
-          <p
-            id="draft-offer-text"
-            class="step-copy hint--dim"
-            data-testid="draft-offer-text"
-          ></p>
-          <button
-            type="button"
-            class="btn btn--prose"
-            id="draft-restore"
-            data-testid="draft-restore"
+            <div id="draft-offer" data-testid="draft-offer" hidden>
+              <p
+                id="draft-offer-text"
+                class="step-copy hint--dim"
+                data-testid="draft-offer-text"
+              ></p>
+              <button
+                type="button"
+                class="btn btn--prose"
+                id="draft-restore"
+                data-testid="draft-restore"
+              >
+                Add it back
+              </button>
+              <button
+                type="button"
+                class="btn btn--prose"
+                id="draft-dismiss"
+                data-testid="draft-dismiss"
+              >
+                Not now
+              </button>
+              <button
+                type="button"
+                class="btn btn--prose"
+                id="draft-discard"
+                data-testid="draft-discard"
+              >
+                Delete it
+              </button>
+            </div>
+          </details>
+          <!-- Step 6: done (polish round M2, B9). The Finish's result used to
+           land inside step 5; it is its own completion step now, opened
+           by the Finish once the session has ended. The save is
+           deliberately OUTSIDE #ar-root: the Finish saves the zip by itself
+           once the session has ended (field test 2, F4), and the button
+           saves it again; over the camera it would promise a save inside
+           AR. Editing objects is step 5's, not this page's. -->
+          <details
+            id="step-done"
+            class="step creator-only"
+            data-testid="step-done"
+            hidden
           >
-            Add it back
-          </button>
-          <button
-            type="button"
-            class="btn btn--prose"
-            id="draft-dismiss"
-            data-testid="draft-dismiss"
-          >
-            Not now
-          </button>
-          <button
-            type="button"
-            class="btn btn--prose"
-            id="draft-discard"
-            data-testid="draft-discard"
-          >
-            Delete it
-          </button>
-        </div>
-        <!-- The end of step 4, on the page rather than in the overlay (F10;
-             steps 5 and 6 used to be separate setup steps, which they never
-             were - they describe what happens when this step finishes). The
-             save is deliberately OUTSIDE #ar-root: the Finish saves the zip
-             by itself once the session has ended (field test 2, F4), and the
-             button saves it again; over the camera it would promise a save
-             inside AR. -->
-        <div id="finish-block" data-testid="finish-block" hidden>
-          <div
-            id="finish-status"
-            data-testid="finish-status"
-            role="status"
-            aria-live="polite"
-          ></div>
-          <button
-            type="button"
-            id="finish-download"
-            class="btn btn--prose"
-            data-testid="finish-download"
-            disabled
-          >
-            Save the tour zip again
-          </button>
-          <!-- The summary after Finish (authoring plan 2026-09-28-0953 §3.3,
+            <summary>
+              <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M5 12.5l4.5 4.5L19 7.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <h2>Put the saved tour in place</h2>
+            </summary>
+            <div id="finish-block" data-testid="finish-block" hidden>
+              <div
+                id="finish-status"
+                data-testid="finish-status"
+                role="status"
+                aria-live="polite"
+              ></div>
+              <button
+                type="button"
+                id="finish-download"
+                class="btn btn--prose"
+                data-testid="finish-download"
+                disabled
+              >
+                Save the tour zip again
+              </button>
+              <!-- The summary after Finish (authoring plan 2026-09-28-0953 §3.3,
                M3b): each code's verdict, then a map of the visits, the
                codes with their facing lines, and the pins and photos -
                so the creator can judge whether to scan more before
                uploading. Written by summary-panel.ts. -->
-          <section id="summary" data-testid="summary" hidden>
-            <p class="step-copy">
-              Where your codes are, and whether to scan more before you upload:
-            </p>
-            <ul
-              id="summary-codes"
-              class="summary-codes"
-              data-testid="summary-codes"
-            ></ul>
-            <div id="summary-map" data-testid="summary-map"></div>
-            <p
-              id="summary-map-status"
-              class="hint--dim"
-              data-testid="summary-map-status"
-              aria-live="polite"
-            ></p>
-            <p class="step-copy hint--dim">
-              To scan more, go back into AR, then Finish again.
-            </p>
-            <button
-              type="button"
-              id="summary-start-ar"
-              class="btn btn--prose"
-              data-testid="summary-start-ar"
-            >
-              Start AR setup
-            </button>
-          </section>
-          <div id="replace-help" data-testid="replace-help" hidden>
-            <p
-              id="replace-help-generic"
-              data-testid="replace-help-generic"
-              class="step-copy hint--dim"
-            >
-              Last thing: upload this zip over the one from step 1, so the link
-              - and with it the printed code - stays the same. Dropbox: upload
-              the file with the same name into the same folder. GitHub: commit
-              it over the same path. OneDrive: upload with the same name and
-              choose "Replace".
-            </p>
-            <!-- A Drive tour's steps (Drive replace plan §2): written by
+              <section id="summary" data-testid="summary" hidden>
+                <p class="step-copy">
+                  Where your codes are, and whether to scan more before you
+                  upload:
+                </p>
+                <ul
+                  id="summary-codes"
+                  class="summary-codes"
+                  data-testid="summary-codes"
+                ></ul>
+                <div id="summary-map" data-testid="summary-map"></div>
+                <p
+                  id="summary-map-status"
+                  class="hint--dim"
+                  data-testid="summary-map-status"
+                  aria-live="polite"
+                ></p>
+                <p class="step-copy hint--dim">
+                  To scan more, go back into AR, then Finish again.
+                </p>
+                <button
+                  type="button"
+                  id="summary-start-ar"
+                  class="btn btn--prose"
+                  data-testid="summary-start-ar"
+                >
+                  Start creating
+                </button>
+              </section>
+              <div id="replace-help" data-testid="replace-help" hidden>
+                <p
+                  id="replace-help-generic"
+                  data-testid="replace-help-generic"
+                  class="step-copy hint--dim"
+                >
+                  Last thing: upload this zip over the one at your link (step
+                  2), so the link - and with it the printed code - stays the
+                  same. Dropbox: upload the file with the same name into the
+                  same folder. GitHub: commit it over the same path. OneDrive:
+                  upload with the same name and choose "Replace".
+                </p>
+                <!-- A Drive tour's steps (Drive replace plan §2): written by
                  creator-setup (driveReplaceSteps), one numbered line each,
                  with the zip's own name - the Drive app and "Manage
                  versions" cannot replace a file from a phone. -->
+                <p
+                  id="replace-help-drive"
+                  data-testid="replace-help-drive"
+                  class="step-copy hint--dim"
+                  hidden
+                ></p>
+                <!-- The file's Drive address, for the Drive website's upload
+                 (polish round M2, step 6); shown with the Drive steps. -->
+                <button
+                  type="button"
+                  id="replace-drive-copy"
+                  class="btn btn--prose"
+                  data-testid="replace-drive-copy"
+                  hidden
+                >
+                  Copy the file's Drive address
+                </button>
+              </div>
+            </div>
             <p
-              id="replace-help-drive"
-              data-testid="replace-help-drive"
-              class="step-copy hint--dim"
-              hidden
-            ></p>
+              class="step-copy hint--dim done-pending"
+              data-testid="done-pending"
+            >
+              This step opens by itself when you finish in step 5: your saved
+              tour file, and how to put it in place of the one at your link.
+            </p>
+          </details>
+          <div
+            id="setup-nav"
+            class="creator-only setup-nav"
+            data-testid="setup-nav"
+            hidden
+          >
+            <button
+              type="button"
+              id="setup-back"
+              class="btn setup-ghost"
+              data-testid="setup-back"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              id="setup-next"
+              class="btn setup-ink"
+              data-testid="setup-next"
+            >
+              Next
+            </button>
           </div>
-        </div>
-      </details>
-      <!-- Storage (flows plan M2, DEC-F1): a transport-demo control, below
+          <!-- Storage (flows plan M2, DEC-F1): a transport-demo control, below
            the steps rather than inside one (a collapsed step would hide it),
            collapsed with the one sentence that says what the cache is.
            Hidden entirely without a cache store (?nocache=1, no Cache
            API). -->
-      <details
-        id="storage-panel"
-        class="creator-only hint--dim"
-        data-testid="storage-panel"
-        hidden
-      >
-        <summary>Other settings</summary>
-        <p>
-          Opened tours are kept on this device (up to five, oldest dropped) so a
-          revisit opens instantly and works offline. A changed file on the host
-          is picked up automatically; clearing is only needed to free space.
-        </p>
-        <button
-          type="button"
-          class="btn"
-          id="clear-cache"
-          data-testid="clear-cache"
-        >
-          Clear cache
-        </button>
-      </details>
-      <div id="stats" class="plate" hidden data-testid="stats">
-        <div id="stats-headline" class="prose"></div>
-        <div id="stats-detail" class="prose"></div>
+          <details
+            id="storage-panel"
+            class="creator-only hint--dim"
+            data-testid="storage-panel"
+            hidden
+          >
+            <summary>Other settings</summary>
+            <p>
+              Opened tours are kept on this device (up to five, oldest dropped)
+              so a revisit opens instantly and works offline. A changed file on
+              the host is picked up automatically; clearing is only needed to
+              free space.
+            </p>
+            <button
+              type="button"
+              class="btn"
+              id="clear-cache"
+              data-testid="clear-cache"
+            >
+              Clear cache
+            </button>
+          </details>
+          <div id="stats" class="plate" hidden data-testid="stats">
+            <div id="stats-headline" class="prose"></div>
+            <div id="stats-detail" class="prose"></div>
+          </div>
+          <!-- The gallery is a creator's debugging aid since polish round M2,
+           shown only with ?debug=1 (main.ts); a visitor's tour appears in
+           AR, not as thumbnails (M2 review #2). -->
+          <ul id="gallery" data-testid="gallery" hidden></ul>
+        </div>
       </div>
-      <!-- The gallery is the creator's proof that the tour opened; a visitor's
-           tour appears in AR, not as thumbnails (M2 review #2). -->
-      <ul id="gallery" class="creator-only" data-testid="gallery" hidden></ul>
+      <section id="visitor-more" hidden data-testid="visitor-more">
+        <details id="visitor-what">
+          <summary>What happens?</summary>
+          <div class="visitor-what-body">
+            <ul class="visitor-facts">
+              <li>
+                <b>Camera</b>
+                <span>Shows the tour over what you see.</span>
+              </li>
+              <li>
+                <b>Location</b>
+                <span>Places the tour where you stand.</span>
+              </li>
+              <li>
+                <b>Stays on your phone</b>
+                <span>Nothing is uploaded. No sign-up, no account.</span>
+              </li>
+            </ul>
+            <p class="visitor-after">
+              <b>Once AR starts</b>
+              <span
+                >Point your phone at the code on the poster and keep it in view
+                while you move slowly. The tour appears when the code is
+                recognised.</span
+              >
+            </p>
+            <p class="visitor-needs">
+              Runs in Chrome on an Android phone with AR. Nothing to install.
+            </p>
+          </div>
+        </details>
+        <p class="visitor-foot">
+          Want to make a tour like this one?
+          <a
+            href="./"
+            target="_blank"
+            rel="noopener"
+            data-testid="make-your-own"
+            >Make your own tour</a
+          >
+        </p>
+      </section>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

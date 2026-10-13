@@ -3,3 +3,7 @@ dist
 coverage
 playwright-report
 test-results
+
+# Throwaway design prototypes (root CLAUDE.md "Throwaway UX prototypes"):
+# standalone drafts, not app code. Remove this line with the folder.
+public/prototypes/

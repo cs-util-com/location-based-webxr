@@ -1,0 +1,565 @@
+<!doctype html>
+<!-- Prototype V3 - Three steps, made visible (visitor start page). Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="light">
+<title>Visitor start V3</title>
+<style>
+:root{
+  --bg:#f2f5fa;--card:#fff;--ink:#14203a;--muted:#536079;--line:#dde3ee;
+  --accent:#1d4ed8;--accent-ink:#fff;--accent-soft:#e3ebfd;--accent-softer:#f1f5fe;
+  --bad:#b42318;--bad-soft:#fdeeec;--bad-line:#f2b8b2;
+  --radius:20px;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button,select{font:inherit}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* ---------- page column ---------- */
+.page{max-width:460px;margin:0 auto;padding:calc(48px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom))}
+
+/* ---------- compact tour header ---------- */
+.tour{display:grid;grid-template-columns:56px 1fr;gap:14px;align-items:center}
+.thumb{width:56px;height:56px;border-radius:16px;background:var(--accent-soft);display:grid;place-items:center;overflow:hidden}
+.thumb svg{width:56px;height:56px;display:block}
+.kicker{display:block;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+.tour h1{margin:2px 0 0;font-size:23px;line-height:1.15;letter-spacing:-.01em}
+.tour .desc{margin:2px 0 0;color:var(--muted);font-size:14.5px}
+.skel{display:block;border-radius:6px;background:linear-gradient(90deg,#e3e8f1 0%,#eef1f7 40%,#e3e8f1 80%);background-size:200% 100%;animation:shimmer 1.4s linear infinite}
+.skel.h{height:22px;width:62%;margin:5px 0 7px}
+.skel.d{height:14px;width:44%}
+@keyframes shimmer{from{background-position:100% 0}to{background-position:-100% 0}}
+
+/* ---------- step progress strip ---------- */
+.progress{margin:22px 0 12px}
+.progress[hidden]{display:none}
+.ptext{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:13.5px;color:var(--muted);margin-bottom:8px}
+.ptext b{color:var(--ink);font-size:14px}
+.segs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.segs i{height:6px;border-radius:3px;background:var(--line);transition:background .35s}
+.segs i.done{background:var(--accent)}
+.segs i.now{background:linear-gradient(90deg,var(--accent) 50%,var(--accent-soft) 50%)}
+.segs i.problem{background:var(--bad)}
+
+/* ---------- top cards: loading / failed ---------- */
+.topcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:10px;box-shadow:0 8px 24px rgba(20,32,58,.06)}
+.topcard[hidden]{display:none}
+.topcard .tc-head{display:flex;gap:12px;align-items:flex-start}
+.tc-ic{flex:none;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent)}
+.tc-ic svg{width:22px;height:22px}
+.topcard h2{margin:0;font-size:16.5px;line-height:1.3}
+.topcard p{margin:4px 0 0;color:var(--muted);font-size:14px}
+.bar{margin-top:14px;height:8px;border-radius:4px;background:var(--accent-soft);overflow:hidden}
+.bar i{display:block;height:100%;width:0;border-radius:4px;background:var(--accent);transition:width .15s linear}
+.topcard.failed{border-color:var(--bad-line)}
+.topcard.failed .tc-ic{background:var(--bad-soft);color:var(--bad)}
+.topcard.failed .btn{margin-top:14px}
+
+/* ---------- the three steps ---------- */
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.step{position:relative;display:grid;grid-template-columns:36px minmax(0,1fr);gap:12px;padding:14px 16px 14px 12px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);transition:border-color .3s,box-shadow .3s,opacity .3s}
+.steps.locked .step{opacity:.62}
+.num{width:36px;height:36px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-weight:700;font-size:15px;color:var(--muted);background:#fff;transition:background .3s,border-color .3s,color .3s}
+.num svg{width:18px;height:18px}
+.shead{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px}
+.shead h2{margin:0;font-size:16.5px;line-height:1.25;display:flex;align-items:center;gap:8px;min-width:0}
+.shead h2 svg{flex:none;width:20px;height:20px;color:var(--muted)}
+.chip{flex:none;font-size:12px;font-weight:700;line-height:1;padding:6px 9px;border-radius:999px;background:#eef1f6;color:var(--muted);white-space:nowrap}
+.sub{margin:0;color:var(--muted);font-size:13.5px}
+
+.step[data-status=now]{border-color:var(--accent);box-shadow:0 0 0 3px rgba(29,78,216,.13),0 12px 30px rgba(29,78,216,.10)}
+.step[data-status=now] .num{background:var(--accent);border-color:var(--accent);color:#fff}
+.step[data-status=now] .chip{background:var(--accent);color:#fff}
+.step[data-status=now] .shead h2 svg{color:var(--accent)}
+.step[data-status=done] .num{background:var(--accent-soft);border-color:var(--accent-soft);color:var(--accent)}
+.step[data-status=done] .chip{background:var(--accent-softer);color:var(--accent)}
+.step[data-status=done] .shead h2 svg{color:var(--accent)}
+.step[data-status=problem]{border-color:var(--bad);box-shadow:0 0 0 3px rgba(180,35,24,.12)}
+.step[data-status=problem] .num{background:var(--bad);border-color:var(--bad);color:#fff}
+.step[data-status=problem] .chip{background:var(--bad-soft);color:var(--bad)}
+.step[data-status=problem] .shead h2 svg{color:var(--bad)}
+.step[data-status=todo] .shead h2{color:#3a4760}
+
+.detail{grid-column:1/-1;display:grid;gap:12px;margin-top:4px;animation:enter .35s cubic-bezier(.2,.8,.2,1) both}
+@keyframes enter{from{opacity:0;transform:translateY(6px)}}
+.illus{position:relative;height:124px;border-radius:14px;background:#eaf0fb;overflow:hidden}
+.illus svg{display:block;width:100%;height:100%}
+.illus .badge{position:absolute;top:10px;right:10px;width:34px;height:34px;border-radius:50%;background:var(--bad);color:#fff;display:grid;place-items:center;box-shadow:0 0 0 4px #fff}
+.illus .badge svg{width:18px;height:18px}
+.text{margin:0;font-size:15px}
+.msg{margin:0;display:flex;gap:8px;align-items:flex-start;font-weight:700;font-size:15px}
+.msg svg{flex:none;width:20px;height:20px;margin-top:1px}
+.msg.bad{color:var(--bad)}
+.note{margin:0;display:flex;gap:8px;align-items:flex-start;color:var(--muted);font-size:13.5px}
+.note svg{flex:none;width:17px;height:17px;margin-top:1px}
+.fix{margin:0;padding:12px 14px 12px 34px;background:var(--bad-soft);border-radius:12px;font-size:14.5px}
+.fix li+li{margin-top:4px}
+.fix b{font-weight:700}
+.linkbox{margin:0;padding:10px 12px;border-radius:12px;background:#eef1f6;border:1px solid var(--line);font:13px/1.4 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;color:#2e3a52}
+.linkbox span{overflow-wrap:anywhere;word-break:break-all;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-height:2.8em}
+.tips{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0;padding:0;list-style:none}
+.tips li{display:flex;gap:8px;align-items:center;background:var(--accent-softer);border-radius:12px;padding:10px;font-size:13.5px;font-weight:600;line-height:1.25}
+.tips svg{flex:none;width:20px;height:20px;color:var(--accent)}
+.busyline{display:flex;align-items:center;gap:10px;min-height:52px;padding:0 14px;border-radius:14px;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:16px}
+
+/* ---------- buttons ---------- */
+.btn{appearance:none;-webkit-appearance:none;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:52px;padding:12px 18px;border:0;border-radius:14px;background:var(--accent);color:var(--accent-ink);font-size:16.5px;font-weight:700;line-height:1.2;cursor:pointer;box-shadow:0 6px 16px rgba(29,78,216,.25);transition:background .2s,transform .1s,box-shadow .2s}
+.btn svg{flex:none;width:20px;height:20px}
+.btn:hover{background:#1a45c2}
+.btn:active{transform:scale(.98)}
+.btn:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.btn[aria-disabled=true]{cursor:progress;background:#3d66dd;box-shadow:none}
+.btn[aria-disabled=true]:active{transform:none}
+.btn.done{background:#163fae}
+.spin{flex:none;width:20px;height:20px;border-radius:50%;border:2.5px solid currentColor;border-right-color:transparent;opacity:.9;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- good to know ---------- */
+.facts{margin-top:20px;padding:14px 16px;border-radius:var(--radius);background:var(--card);border:1px solid var(--line)}
+.facts h2{margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.facts ul{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.facts li{display:grid;grid-template-columns:32px 1fr;gap:10px;align-items:center;font-size:14px}
+.facts li b{font-weight:700}
+.fic{width:32px;height:32px;border-radius:10px;background:var(--accent-softer);color:var(--accent);display:grid;place-items:center}
+.fic svg{width:18px;height:18px}
+.make{margin:18px 0 0;text-align:center;color:var(--muted);font-size:14px}
+.make a{display:inline-block;padding:12px 6px;min-height:48px;color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.make a:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:6px}
+
+/* ---------- illustration motion ---------- */
+.pulse{transform-box:fill-box;transform-origin:50% 50%;animation:pulse 2.4s ease-out infinite}
+@keyframes pulse{0%{transform:scale(.55);opacity:.9}100%{transform:scale(1.25);opacity:0}}
+.sway{transform-box:fill-box;transform-origin:50% 100%;animation:sway 5s ease-in-out infinite}
+@keyframes sway{0%,100%{transform:rotate(-7deg) translate(0,0)}50%{transform:rotate(-4deg) translate(-6px,1px)}}
+.float{animation:float 3.2s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+
+/* ---------- prototype chrome (not part of the design) ---------- */
+.proto-label{position:fixed;z-index:70;top:calc(8px + env(safe-area-inset-top));left:calc(8px + env(safe-area-inset-left));font:600 11px/1 system-ui,sans-serif;letter-spacing:.02em;padding:5px 9px;border-radius:999px;background:rgba(0,0,0,.66);color:#fff;pointer-events:none;white-space:nowrap}
+.proto{position:fixed;z-index:60;top:calc(6px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right));width:max-content;max-width:min(270px,calc(100vw - 16px));background:rgba(14,18,23,.92);color:#e8edf2;border:1px solid rgba(255,255,255,.16);border-radius:12px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.proto summary{cursor:pointer;list-style:none;padding:7px 11px;font-weight:700;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;user-select:none}
+.proto summary::-webkit-details-marker{display:none}
+.proto summary::after{content:" +"}
+.proto[open] summary::after{content:" -"}
+.proto .pb{padding:0 10px 10px;display:grid;gap:8px}
+.proto label{font-size:12px;color:#a9b4bf}
+.proto select{width:100%;min-height:40px;border-radius:9px;border:1px solid rgba(255,255,255,.25);background:#1f262e;color:#fff;padding:6px 8px;font-size:14px}
+.proto button{border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);color:#fff;border-radius:9px;padding:9px 10px;text-align:left;cursor:pointer;font-size:13px}
+.proto .about{display:none;margin:0;line-height:1.45;color:#c6d0da;font-size:13px}
+.proto .about b{color:#fff}
+
+@media (min-width:960px){
+  body{background:radial-gradient(1100px 700px at 50% 0%,#e6ecf8,var(--bg))}
+  .page{padding-top:72px;padding-bottom:56px}
+  .proto{left:24px;right:auto;top:56px;width:290px;max-width:none}
+  .proto .about{display:block}
+  .proto-label{top:16px;left:24px;font-size:12px}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  .spin{animation:none;border-right-color:currentColor;border-style:dotted}
+  .pulse{opacity:.35;transform:none}
+  .skel{animation:none}
+}
+</style>
+</head>
+<body>
+<div class="proto-label">Prototype V3 - Steps</div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="qr" viewBox="-2 -2 25 25"><rect x="-2" y="-2" width="25" height="25" fill="#fff"/><path id="qrPath" fill="#14203a" fill-rule="evenodd"/></symbol>
+  </defs>
+</svg>
+
+<main class="page">
+  <header class="tour" id="tourHead">
+    <div class="thumb" aria-hidden="true">
+      <svg viewBox="0 0 56 56">
+        <path d="M0 42c8-3 14 2 22 0s14-4 22-1 9 2 12 1v14H0z" fill="#c3d3f6"/>
+        <path d="M32 13l-6 9h12z" fill="#ffd36b" opacity=".9"/>
+        <path d="M38 14l12-5v10z" fill="#ffd36b" opacity=".55"/>
+        <path d="M22 14l-12-5v10z" fill="#ffd36b" opacity=".55"/>
+        <rect x="25" y="9" width="10" height="7" rx="2" fill="#14203a"/>
+        <path d="M24.5 16h11l3 27h-17z" fill="#1d4ed8"/>
+        <path d="M23.6 24h12.8l.8 6H22.8zM22.2 36h15.6l.6 4H21.6z" fill="#fff"/>
+        <rect x="19" y="42" width="22" height="4" rx="1" fill="#14203a"/>
+      </svg>
+    </div>
+    <div id="headText"></div>
+  </header>
+
+  <div class="progress" id="progress">
+    <div class="ptext"><b id="pStep"></b><span id="pLabel"></span></div>
+    <div class="segs" aria-hidden="true"><i></i><i></i><i></i></div>
+  </div>
+
+  <section class="topcard" id="loadCard" hidden aria-labelledby="loadTitle">
+    <div class="tc-head">
+      <span class="tc-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span>
+      <div>
+        <h2 id="loadTitle">Loading the tour - <span id="loadNum">1.2</span> of 3.4 MB</h2>
+        <p>The steps below unlock once it is here. Keep this page open.</p>
+      </div>
+    </div>
+    <div class="bar" role="progressbar" aria-label="Tour download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="35" id="loadBar"><i id="loadFill"></i></div>
+  </section>
+
+  <section class="topcard failed" id="failCard" hidden aria-labelledby="failTitle">
+    <div class="tc-head">
+      <span class="tc-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M8.5 8.6A5 5 0 0 0 7 18h10.5M19.4 16.9A4 4 0 0 0 17 9.1a5.5 5.5 0 0 0-6.6-3.5"/></svg></span>
+      <div>
+        <h2 id="failTitle">This tour could not be loaded</h2>
+        <p>The link may be broken or out of date, or your phone may be offline. Check your connection and try again.</p>
+      </div>
+    </div>
+    <button class="btn" type="button" data-act="retry-load"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>Try again</button>
+  </section>
+
+  <ol class="steps" id="steps" aria-label="Three steps to start the tour"></ol>
+
+  <section class="facts" aria-labelledby="factsTitle">
+    <h2 id="factsTitle">Good to know</h2>
+    <ul>
+      <li><span class="fic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span><span><b>Camera</b> - to show the tour over what you see.</span></li>
+      <li><span class="fic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.5-6.2-6.5-11.2A6.5 6.5 0 0 1 18.5 9.8C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.4"/></svg></span><span><b>Location</b> - to place the tour where it belongs.</span></li>
+      <li><span class="fic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 8.4-7 10-4-1.6-7-5.4-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span><span><b>Nothing is uploaded.</b> No sign-up, no account.</span></li>
+    </ul>
+  </section>
+
+  <p class="make">Want to make a tour like this one? <a href="./">Make your own tour</a></p>
+</main>
+
+<p class="sr-only" id="live" aria-live="polite" role="status"></p>
+
+<details class="proto" id="proto">
+  <summary>Prototype state</summary>
+  <div class="pb">
+    <p class="about"><b>V3 - Three steps, made visible.</b> The visitor sees the whole path up front and ticks it off: location first (its own tap, so the browser prompt cannot swallow the AR tap), then AR, then the poster. Tap the current step's button to walk the flow.</p>
+    <label for="stateSel">State shown</label>
+    <select id="stateSel">
+      <option value="loading">1. Loading the tour</option>
+      <option value="ready-location">2. Ready - location not yet allowed</option>
+      <option value="location-denied">3. Location denied</option>
+      <option value="ready-ar">4. Ready to start AR</option>
+      <option value="checking-ar">5. Checking AR support</option>
+      <option value="ar-unsupported">6. AR not supported here</option>
+      <option value="load-failed">7. Tour could not be loaded</option>
+      <option value="starting-ar">8. Starting AR (step 3 now)</option>
+    </select>
+    <button type="button" id="playBtn">Play the flow from the start</button>
+  </div>
+</details>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (s, r = document) => r.querySelector(s);
+  const TOTAL_MB = 3.4;
+  const FROZEN_MB = 1.2;
+  const LINK = 'https://r824-gps-plus-slam.csutil.workers.dev/tour/?qr=~AQMxQTRtVThlVjE2YWFJdnk2TXNkNzZSQzNKNmNiYmZ0Ums&n=2';
+
+  // A QR-looking pattern (not a real code): finder squares, timing rows, random modules.
+  (function drawQr(n, seed) {
+    let s = seed >>> 0;
+    const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+    const fin = (x, y) => (x < 8 && y < 8) || (x >= n - 8 && y < 8) || (x < 8 && y >= n - 8);
+    let d = '';
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      if (fin(x, y)) continue;
+      const on = (x === 6 || y === 6) ? (x + y) % 2 === 0 : rnd() < 0.47;
+      if (on) d += 'M' + x + ' ' + y + 'h1v1h-1z';
+    }
+    for (const [fx, fy] of [[0, 0], [n - 7, 0], [0, n - 7]]) {
+      d += 'M' + fx + ' ' + fy + 'h7v7h-7zM' + (fx + 1) + ' ' + (fy + 1) + 'v5h5v-5zM' + (fx + 2) + ' ' + (fy + 2) + 'h3v3h-3z';
+    }
+    $('#qrPath').setAttribute('d', d);
+  })(21, 20261012);
+
+  // ---------- icons ----------
+  const ic = (p, w = 2) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + w + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
+  const I = {
+    pin: ic('<path d="M12 21s-6.5-6.2-6.5-11.2A6.5 6.5 0 0 1 18.5 9.8C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.4"/>'),
+    ar: ic('<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M12 7.5l4 2.2v4.6l-4 2.2-4-2.2V9.7z"/><path d="M8 9.7l4 2.3 4-2.3M12 12v4.5"/>'),
+    poster: ic('<rect x="5" y="3" width="14" height="18" rx="1.5"/><rect x="8" y="7" width="3" height="3"/><rect x="13" y="7" width="3" height="3"/><rect x="8" y="12" width="3" height="3"/><path d="M13 13h3v2M8 18h8"/>'),
+    check: ic('<path d="M5 12.5l4.2 4.2L19 7"/>', 3),
+    alert: ic('<path d="M12 7v6M12 17h.01"/>', 3),
+    alertCircle: ic('<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/>'),
+    info: ic('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/>'),
+    retry: ic('<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>', 2.2),
+    copy: ic('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/>', 2.2),
+    eye: ic('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
+    slow: ic('<path d="M4 17h3l3-8 4 10 3-6h3"/>'),
+    phone: ic('<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>'),
+  };
+
+  // ---------- illustrations ----------
+  const ILL_MAP =
+    '<svg viewBox="0 0 280 124" preserveAspectRatio="xMidYMid slice" aria-hidden="true">' +
+    '<rect width="280" height="124" fill="#eaf0fb"/>' +
+    '<path d="M0 88C60 76 110 100 170 90S250 78 280 84V124H0z" fill="#c9d8f5"/>' +
+    '<path d="M0 104c30-4 50 4 80 0s50-4 80 0" stroke="#b4c8ef" stroke-width="2" fill="none"/>' +
+    '<path d="M0 84C60 72 110 96 170 86S250 74 280 80" stroke="#fff" stroke-width="6" fill="none"/>' +
+    '<path d="M36 0l26 80M152 0l-8 84M0 36h280M214 0l24 76" stroke="#fff" stroke-width="9" fill="none" stroke-linecap="round"/>' +
+    '<rect x="70" y="46" width="60" height="26" rx="4" fill="#dce5f7"/><rect x="164" y="44" width="40" height="24" rx="4" fill="#dce5f7"/><rect x="78" y="6" width="60" height="20" rx="4" fill="#dce5f7"/><rect x="230" y="44" width="50" height="22" rx="4" fill="#dce5f7"/>' +
+    '<path d="M56 74C88 66 112 70 140 62S196 46 236 52" stroke="#1d4ed8" stroke-width="3.5" stroke-dasharray="1 8" stroke-linecap="round" fill="none" opacity=".75"/>' +
+    '<circle cx="56" cy="74" r="5" fill="#fff" stroke="#1d4ed8" stroke-width="2.5"/><circle cx="236" cy="52" r="5" fill="#fff" stroke="#1d4ed8" stroke-width="2.5"/><circle cx="196" cy="54" r="5" fill="#fff" stroke="#1d4ed8" stroke-width="2.5"/>' +
+    '<circle class="pulse" cx="140" cy="62" r="30" fill="#1d4ed8" fill-opacity=".16" stroke="#1d4ed8" stroke-opacity=".4"/>' +
+    '<circle cx="140" cy="62" r="18" fill="#1d4ed8" fill-opacity=".1"/>' +
+    '<g transform="translate(140 64)"><path d="M0 0C-4-8-14-14-14-27a14 14 0 0 1 28 0C14-14 4-8 0 0z" fill="#1d4ed8" stroke="#fff" stroke-width="3"/><circle cy="-27" r="5.5" fill="#fff"/></g>' +
+    '</svg>';
+
+  const ILL_AR =
+    '<svg viewBox="0 0 280 124" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' +
+    '<rect width="280" height="124" fill="#eaf0fb"/>' +
+    '<path d="M0 124V84h22V62h26v24h18V50h24v74zM190 124V70h20V48h26v30h16V60h28v64z" fill="#d6e1f6"/>' +
+    '<path d="M0 104h280" stroke="#c9d8f5" stroke-width="2"/>' +
+    '<g class="float">' +
+    '<rect x="104" y="8" width="72" height="118" rx="13" fill="#14203a"/>' +
+    '<rect x="109" y="15" width="62" height="106" rx="8" fill="#bccff2"/>' +
+    '<path d="M109 80h62v33a8 8 0 0 1-8 8h-46a8 8 0 0 1-8-8z" fill="#9db5e2"/>' +
+    '<path d="M109 80l20-14 14 8 12-10 16 12v4z" fill="#aac0e8"/>' +
+    '<rect x="118" y="34" width="44" height="22" rx="6" fill="#fff"/>' +
+    '<rect x="124" y="40" width="26" height="3.5" rx="1.75" fill="#1d4ed8"/><rect x="124" y="47" width="18" height="3" rx="1.5" fill="#a9b6cc"/>' +
+    '<path d="M140 56v26" stroke="#fff" stroke-width="2.5"/><circle cx="140" cy="84" r="4" fill="#1d4ed8" stroke="#fff" stroke-width="2"/>' +
+    '<path d="M115 30v-8h8M157 22h8v8M165 106v8h-8M123 114h-8v-8" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round"/>' +
+    '<rect x="131" y="10" width="18" height="3" rx="1.5" fill="#33405c"/>' +
+    '</g>' +
+    '<g fill="#1d4ed8"><path d="M210 22l3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/><path d="M68 30l2 4.5 4.5 2-4.5 2L68 43l-2-4.5-4.5-2 4.5-2z" opacity=".6"/></g>' +
+    '</svg>';
+
+  const ILL_POSTER =
+    '<svg viewBox="0 0 280 124" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' +
+    '<rect width="280" height="124" fill="#eaf0fb"/>' +
+    '<rect x="44" y="12" width="88" height="106" rx="3" fill="#000" opacity=".08" transform="translate(3 3)"/>' +
+    '<rect x="44" y="12" width="88" height="106" rx="3" fill="#fff"/>' +
+    '<rect x="58" y="20" width="60" height="5" rx="2.5" fill="#14203a"/><rect x="66" y="29" width="44" height="4" rx="2" fill="#1d4ed8"/>' +
+    '<use href="#qr" x="60" y="40" width="56" height="56"/>' +
+    '<rect x="62" y="104" width="52" height="4" rx="2" fill="#c3cbd9"/>' +
+    '<path d="M172 46L118 38v60l54 6z" fill="#1d4ed8" opacity=".1"/>' +
+    '<g class="sway"><g transform="translate(168 18)">' +
+    '<rect width="64" height="104" rx="12" fill="#14203a"/>' +
+    '<rect x="5" y="7" width="54" height="90" rx="7" fill="#dfe6f3"/>' +
+    '<use href="#qr" x="15" y="30" width="34" height="34"/>' +
+    '<path d="M11 26v-6h6M47 20h6v6M53 68v6h-6M17 74h-6v-6" stroke="#1d4ed8" stroke-width="2.5" fill="none" stroke-linecap="round"/>' +
+    '</g></g>' +
+    '<path d="M196 118c10 3 22 3 32 0" stroke="#1d4ed8" stroke-width="2.5" stroke-dasharray="2 5" stroke-linecap="round" fill="none"/>' +
+    '<path d="M225 114l4 4-5 3" stroke="#1d4ed8" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '</svg>';
+
+  const badge = () => '<span class="badge" aria-hidden="true">' + I.alert + '</span>';
+
+  // ---------- the three steps ----------
+  const STEPS = [
+    { icon: I.pin, title: 'Allow location', sub: 'To place the tour' },
+    { icon: I.ar, title: 'Start AR', sub: 'The camera opens' },
+    { icon: I.poster, title: 'Point at the poster', sub: 'The tour appears when the code is recognised' },
+  ];
+  const CHIP = { todo: 'To do', next: 'Next', now: 'Now', done: 'Done', problem: 'Needs you' };
+
+  const btn = (act, icon, label) => '<button class="btn" type="button" data-act="' + act + '">' + icon + '<span>' + label + '</span></button>';
+  const busy = (label) => '<button class="btn" type="button" aria-disabled="true" aria-busy="true"><span class="spin" aria-hidden="true"></span><span>' + label + '</span></button>';
+  const note = (icon, html) => '<p class="note">' + icon + '<span>' + html + '</span></p>';
+
+  const D = {
+    location: (asking) =>
+      '<div class="illus">' + ILL_MAP + '</div>' +
+      '<p class="text">The tour is fixed to real places along the quay, so it needs to know roughly where you are. This is its own tap, so the browser\'s question cannot get in the way of starting AR.</p>' +
+      (asking ? busy('Waiting for your answer...') : btn('allow-location', I.pin, 'Allow location')) +
+      note(I.info, asking ? 'Tap <b>Allow</b> in the browser\'s question.' : 'Your browser will ask - tap <b>Allow</b>. Nothing is uploaded.'),
+    denied: () =>
+      '<div class="illus">' + ILL_MAP + badge() + '</div>' +
+      '<p class="msg bad">' + I.alertCircle + '<span>Location is blocked for this page</span></p>' +
+      '<p class="text">Without it the tour cannot be placed. You can allow it in the browser\'s site settings:</p>' +
+      '<ol class="fix"><li>Tap the icon to the left of the web address (a lock or two sliders).</li><li>Open <b>Permissions</b> (or <b>Site settings</b>).</li><li>Set <b>Location</b> to <b>Allow</b>, then come back here.</li></ol>' +
+      btn('allow-location', I.retry, 'Try again') +
+      note(I.info, 'Also check that location is switched on in your phone\'s settings.'),
+    ar: (checking) =>
+      '<div class="illus">' + ILL_AR + '</div>' +
+      '<p class="text">The camera opens and the tour is shown over what you see. The camera picture stays on your phone.</p>' +
+      (checking ? busy('Checking AR support...') : btn('start-ar', I.ar, 'Start AR')) +
+      note(I.info, checking ? 'This takes a moment.' : 'If the browser asks for the camera, tap <b>Allow</b>.'),
+    unsupported: () =>
+      '<div class="illus">' + ILL_AR + badge() + '</div>' +
+      '<p class="msg bad">' + I.alertCircle + '<span>This device cannot run the AR tour</span></p>' +
+      '<p class="text">This tour needs <b>Chrome on an Android phone</b> that supports AR. iPhones, iPads and computers cannot show it. Open the same link on such a phone:</p>' +
+      '<p class="linkbox" title="' + LINK.replace(/&/g, '&amp;') + '"><span>' + LINK.replace(/&/g, '&amp;') + '</span></p>' +
+      btn('copy-link', I.copy, 'Copy link') +
+      note(I.phone, 'Or scan the poster again with that phone.'),
+    poster: () =>
+      '<div class="illus">' + ILL_POSTER + '</div>' +
+      '<div class="busyline" role="presentation"><span class="spin" aria-hidden="true"></span><span>Starting AR...</span></div>' +
+      '<p class="text">When the camera view appears, point your phone at the code on the poster and keep it in view while you move slowly. The tour appears when the code is recognised.</p>' +
+      '<ul class="tips"><li>' + I.eye + 'Keep the code in view</li><li>' + I.slow + 'Move slowly</li></ul>',
+  };
+
+  // Each state: step statuses, which step shows its detail, the detail, the top card and what is announced.
+  const VIEWS = {
+    'loading':         { st: ['next', 'todo', 'todo'], locked: true, top: 'load', head: 'skeleton', live: 'Loading the tour.' },
+    'load-failed':     { st: ['todo', 'todo', 'todo'], locked: true, top: 'fail', head: 'failed', live: 'The tour could not be loaded. Check your connection and tap Try again.' },
+    'ready-location':  { st: ['now', 'todo', 'todo'], cur: 0, detail: () => D.location(false), live: 'The tour is ready. Step 1 of 3: allow location.' },
+    'asking-location': { st: ['now', 'todo', 'todo'], cur: 0, detail: () => D.location(true), live: 'Waiting for your answer to the location question.' },
+    'location-denied': { st: ['problem', 'todo', 'todo'], cur: 0, detail: D.denied, live: 'Location is blocked. Allow it in the browser\'s site settings, then tap Try again.' },
+    'ready-ar':        { st: ['done', 'now', 'todo'], cur: 1, detail: () => D.ar(false), subs: ['Location allowed'], live: 'Location allowed. Step 2 of 3: start AR.' },
+    'checking-ar':     { st: ['done', 'now', 'todo'], cur: 1, detail: () => D.ar(true), subs: ['Location allowed'], live: 'Checking AR support.' },
+    'ar-unsupported':  { st: ['done', 'problem', 'todo'], cur: 1, detail: D.unsupported, subs: ['Location allowed'], live: 'This device cannot run the AR tour. Copy the link to open it on an Android phone with Chrome.' },
+    'starting-ar':     { st: ['done', 'done', 'now'], cur: 2, detail: D.poster, subs: ['Location allowed', 'AR is starting'], live: 'Starting AR. Step 3 of 3: point your phone at the code on the poster.' },
+  };
+  const SELECT_OF = { 'asking-location': 'ready-location' };
+
+  const stepsEl = $('#steps');
+  const live = $('#live');
+  const sel = $('#stateSel');
+  let state = '';
+  let run = 0;
+  let loadTimer = 0;
+  let copyTimer = 0;
+
+  function renderHead(kind) {
+    const h = $('#headText');
+    if (kind === 'skeleton') {
+      h.innerHTML = '<span class="kicker">AR walking tour</span><h1 class="sr-only">Loading the tour</h1><span class="skel h" aria-hidden="true"></span><span class="skel d" aria-hidden="true"></span>';
+    } else if (kind === 'failed') {
+      h.innerHTML = '<span class="kicker">AR walking tour</span><h1>Tour not available</h1><p class="desc">No tour details yet.</p>';
+    } else {
+      h.innerHTML = '<span class="kicker">AR walking tour</span><h1>Harbour Lights</h1><p class="desc">Walk the old quay - 6 stops</p>';
+    }
+  }
+
+  function renderProgress(v) {
+    const p = $('#progress');
+    p.hidden = v.top === 'fail';
+    const segs = p.querySelectorAll('.segs i');
+    v.st.forEach((s, i) => { segs[i].className = s === 'next' ? '' : s === 'todo' ? '' : s; });
+    if (v.top === 'fail') return;
+    if (v.top === 'load') {
+      $('#pStep').textContent = 'Getting the tour ready';
+      $('#pLabel').textContent = '3 steps';
+      return;
+    }
+    const i = v.cur;
+    $('#pStep').textContent = 'Step ' + (i + 1) + ' of 3';
+    $('#pLabel').textContent = STEPS[i].title;
+  }
+
+  function renderSteps(v) {
+    stepsEl.classList.toggle('locked', !!v.locked);
+    stepsEl.innerHTML = STEPS.map((s, i) => {
+      const st = v.st[i];
+      const sub = (v.subs && v.subs[i]) || s.sub;
+      const num = st === 'done' ? I.check : st === 'problem' ? I.alert : String(i + 1);
+      const isCur = v.cur === i;
+      return '<li class="step" data-status="' + (st === 'next' ? 'todo' : st) + '"' + (isCur ? ' aria-current="step"' : '') + '>' +
+        '<span class="num" aria-hidden="true">' + num + '</span>' +
+        '<div><div class="shead"><h2>' + s.icon + '<span><span class="sr-only">Step ' + (i + 1) + ': </span>' + s.title + '</span></h2>' +
+        '<span class="chip">' + CHIP[st] + '</span></div>' +
+        '<p class="sub">' + sub + '</p></div>' +
+        (isCur ? '<div class="detail">' + v.detail() + '</div>' : '') +
+        '</li>';
+    }).join('');
+  }
+
+  function setLoad(mb) {
+    const pct = Math.round((mb / TOTAL_MB) * 100);
+    $('#loadNum').textContent = mb.toFixed(1);
+    $('#loadFill').style.width = pct + '%';
+    $('#loadBar').setAttribute('aria-valuenow', String(pct));
+    $('#loadBar').setAttribute('aria-valuetext', mb.toFixed(1) + ' of ' + TOTAL_MB + ' MB');
+  }
+
+  // opts.focus: move keyboard focus to the new step's action (only for flow moves, never for the switcher).
+  function setState(next, opts = {}) {
+    const v = VIEWS[next];
+    if (!v) return;
+    state = next;
+    clearInterval(loadTimer);
+    clearTimeout(copyTimer);
+    renderHead(v.head);
+    renderProgress(v);
+    $('#loadCard').hidden = v.top !== 'load';
+    $('#failCard').hidden = v.top !== 'fail';
+    renderSteps(v);
+    sel.value = SELECT_OF[next] || next;
+    live.textContent = v.live;
+    if (opts.focus) {
+      const target = v.top === 'fail' ? $('#failCard .btn') : $('.step .detail .btn:not([aria-disabled])', stepsEl);
+      if (target) target.focus({ preventScroll: false });
+    }
+    if (next === 'loading') {
+      if (opts.animate) startLoading(); else setLoad(FROZEN_MB);
+    }
+  }
+
+  function startLoading() {
+    const my = run;
+    let mb = 0;
+    setLoad(mb);
+    loadTimer = setInterval(() => {
+      if (my !== run) { clearInterval(loadTimer); return; }
+      mb = Math.min(TOTAL_MB, mb + 0.06 + Math.random() * 0.08);
+      setLoad(mb);
+      if (mb >= TOTAL_MB) {
+        clearInterval(loadTimer);
+        setTimeout(() => { if (my === run) setState('ready-location', { focus: true }); }, 350);
+      }
+    }, 130);
+  }
+
+  const later = (ms, fn) => { const my = run; setTimeout(() => { if (my === run) fn(); }, ms); };
+
+  function act(name, el) {
+    if (name === 'allow-location') {
+      run++;
+      setState('asking-location');
+      later(1300, () => setState('ready-ar', { focus: true }));
+    } else if (name === 'start-ar') {
+      run++;
+      setState('checking-ar');
+      later(1500, () => setState('starting-ar', { focus: true }));
+    } else if (name === 'retry-load') {
+      run++;
+      setState('loading', { animate: true });
+    } else if (name === 'copy-link') {
+      // Faked: no clipboard access in the prototype.
+      el.classList.add('done');
+      el.innerHTML = I.check + '<span>Copied</span>';
+      live.textContent = 'Link copied.';
+      clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => {
+        el.classList.remove('done');
+        el.innerHTML = I.copy + '<span>Copy link</span>';
+      }, 2400);
+    }
+  }
+
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b || b.getAttribute('aria-disabled') === 'true') return;
+    act(b.dataset.act, b);
+  });
+
+  const narrow = () => !matchMedia('(min-width: 960px)').matches;
+  sel.addEventListener('change', () => {
+    run++;
+    setState(sel.value);
+    if (narrow()) $('#proto').open = false;
+  });
+  $('#playBtn').addEventListener('click', () => {
+    run++;
+    setState('loading', { animate: true });
+    if (narrow()) $('#proto').open = false;
+  });
+  if (!narrow()) $('#proto').open = true;
+
+  run++;
+  setState('loading', { animate: true });
+})();
+</script>
+</body>
+</html>

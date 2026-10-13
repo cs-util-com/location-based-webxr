@@ -35,7 +35,9 @@ import {
   createMovedCodeChecks,
   RESTORE_SPREAD_FACTOR,
 } from "./moved-code-check.js";
+import { CODE_MOVE_RULE } from "./code-displacement.js";
 import {
+  CODE_TURN_RULE,
   MOVED_CODE_FIT_WINDOW_S,
   MOVED_CODE_RULE_VERSION,
 } from "./moved-code-rule.js";
@@ -150,10 +152,10 @@ function circle(
   return out;
 }
 
-function harness() {
+function harness(options: Parameters<typeof createMovedCodeChecks>[0] = {}) {
   const store = createTourViewerStore();
   store.dispatch(setZeroPos(ZERO));
-  const checks = createMovedCodeChecks();
+  const checks = createMovedCodeChecks(options);
   const view = () => {
     const s = store.getState();
     return {
@@ -264,6 +266,22 @@ describe("createMovedCodeChecks", { timeout: 60_000 }, () => {
     h.pin(codeSeen([0, 0], 90), 0);
     const verdicts = h.feed(circle(0, 120, [20, 10], 10));
     expect(verdicts).toEqual([expect.objectContaining({ decidedBy: "turn" })]);
+  });
+
+  // Why (PR #583 review): the readout's threshold must be the one deciding
+  // the verdict. It used the module's default rule while the verdict used
+  // the injected one, so a replay sweeping the rule read a number that
+  // decided nothing.
+  it("reports the turn threshold of the rules it judges with", () => {
+    const h = harness({
+      rules: {
+        move: CODE_MOVE_RULE,
+        turn: { ...CODE_TURN_RULE, sigmaFactor: 0, settledYawDeg: 70 },
+      },
+    });
+    h.pin(codeSeen([0, 0], 0), 0);
+    h.feed(circle(0, 120, [20, 10], 10));
+    expect(h.checks.snapshot()[0]!.turnThresholdDeg).toBe(70);
   });
 
   // Why (owner, 2026-10-02): an early save's heading is not trustworthy, so

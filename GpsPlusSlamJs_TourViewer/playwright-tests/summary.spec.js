@@ -5,6 +5,7 @@ import {
   enterArAndMeasure,
   installTourViewerArFakes,
   openFixtureTour,
+  tapFinish,
 } from "./ar-fakes.js";
 import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
 
@@ -57,8 +58,7 @@ async function placePin(page, label) {
 }
 
 async function finish(page) {
-  const finishButton = page.getByTestId("setup-finish");
-  await finishButton.click();
+  await tapFinish(page);
   await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });
@@ -134,7 +134,7 @@ test("after Finish the page shows each code with its facing line and verdict, an
   ).toHaveCount(1);
   expect(leafletRequests(urls).length).toBeGreaterThan(0);
 
-  // Back to authoring is Start AR setup again.
+  // Back to authoring is Start creating again.
   const before = await page.evaluate(
     () => /** @type {any} */ (window).__tourViewerTest.initARCalls.length,
   );
@@ -158,6 +158,9 @@ test("Enlarge fills the screen with the map, and closing it shrinks it back", as
   await watchRequests(page);
   await openFixtureTour(page);
   await enterArAndMeasure(page);
+  // Something to write: Done on a visit that changed nothing just leaves
+  // (polish round M3 review #4), and the summary comes with a finish.
+  await placePin(page, "Gate");
   await finish(page);
   await expect(page.getByTestId("summary-map-status")).toHaveAttribute(
     "data-state",
@@ -194,6 +197,9 @@ test("a map that cannot load says so, and the verdict stays", async ({
   await page.route("**/src/summary-map-view.ts*", (route) => route.abort());
   await openFixtureTour(page);
   await enterArAndMeasure(page);
+  // Something to write: Done on a visit that changed nothing just leaves
+  // (polish round M3 review #4), and the summary comes with a finish.
+  await placePin(page, "Gate");
   await finish(page);
   await expect(page.getByTestId("summary-map-status")).toHaveText(
     /The map could not load/,

@@ -55,6 +55,9 @@ export interface CreatorPlacement {
 }
 
 export function wireCreatorPlacement(deps: {
+  /** An object is selected (object mode): the place buttons step aside
+   *  (polish round M3). Absent: never. */
+  objectSelected?: () => boolean;
   ctx: TourViewerSession;
   arStore: Pick<TourViewerStore, "getState" | "dispatch">;
   arController: Pick<ArController, "getState">;
@@ -98,7 +101,12 @@ export function wireCreatorPlacement(deps: {
     const allowed = placementAllowed();
     dom.pinButton.disabled = !allowed;
     dom.photoButton.disabled = !allowed || ctx.latestFrame === null;
-    if (!allowed) hideLabelInput();
+    // Object mode (polish round M3, B5): placing while an object is
+    // selected makes no sense - the object's own actions take the place.
+    const objectMode = deps.objectSelected?.() ?? false;
+    dom.pinButton.hidden = objectMode;
+    dom.photoButton.hidden = objectMode;
+    if (!allowed || objectMode) hideLabelInput();
   }
 
   function hideLabelInput(): void {

@@ -21,6 +21,12 @@ to the more human-readable form). Results doc:
     asset URLs under the app's conventional home (include trailing `/`).
   - `options.allowPathForm` — also generate `HTTPS://<HOST>/S/<BASE32>`;
     OFF by default until the `/S/*` Cloudflare rewrite exists.
+  - `options.allowDriveShortForm` — also generate `?qr=D/<id>` for a Google
+    Drive file link in any spelling (`/file/d/<id>...`, `open?id=`,
+    `uc?id=`). Measured 2026-10-12 at EC Q: version 6 against 7
+    (`?usp=sharing`) and 8 (`?usp=drivesdk`) for the full link - 4.39 mm
+    against 4.00 / 3.67 mm modules on an 18 cm poster. OFF until `main`
+    decodes it (`qr-launch-dispatch.ts`).
   - Returns `{ strategy, url, estimate: {bits, version, modules},
 candidates }` — `candidates` holds every form that fit ≤ v25 so
     callers/tools can show the comparison.

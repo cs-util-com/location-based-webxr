@@ -82,7 +82,8 @@ function beforeRunning(
     case "unsupported":
       return {
         state: "unsupported",
-        text: "This phone or browser can't show the tour in AR. Open this page in Chrome on an Android phone that supports AR.",
+        // The button under it copies the link (polish round M4a, V4).
+        text: "This phone or browser can't show the tour in AR. Copy the link and open it in Chrome on an Android phone that supports AR.",
       };
     case "error":
       return { state: "error", text: startFailureText(arError) };

@@ -433,7 +433,14 @@ export function createMovedCodeChecks(
           verdict: check.last?.verdict ?? "undecided",
           turnThresholdDeg:
             check.settled && estimate !== null
-              ? turnThresholdDeg(estimate, medianOf(check.accuracies))
+              ? // The rule the verdict is judged with, not the default
+                // (PR #583 review: a replay sweeping it read a number
+                // that decided nothing).
+                turnThresholdDeg(
+                  estimate,
+                  medianOf(check.accuracies),
+                  options.rules?.turn,
+                )
               : null,
           liftsAtSpreadM:
             check.vetoSpreadM === null

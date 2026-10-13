@@ -39,6 +39,16 @@ a verdict (the veto). No compass reading is taken (owner, 2026-10-02).
   probation check: `pin({ ..., vetoSpreadM })` starts a check already
   vetoed at that spread, which can only lift the veto (the M0a review #1;
   `viewer-placement.ts` pins one on an ignored code's lock).
+  - **A probation fit is pinned less precisely than the veto's** (PR #583
+    review): the veto's check was pinned on the fused stable pose, the
+    probation check on the lock's raw single-frame detection pose (no fused
+    pose exists for an ignored code - `isIgnored` is read before it is
+    computed). The lift's TRIGGER compares like with like (the spread is
+    the pinned odometry's own RMS, and a pin is a rigid map); its VERDICT
+    (`magnitudeM`, `yawDeg`) carries that pose's larger error, so the
+    numbers in a `codeRestored` log are not on the same basis as the
+    `codeIgnored` ones. Deferring the probation pin until a fused pose
+    exists is filed (polish-round plan, M0a follow-ups).
 - `clear()` - end every check (a tour switch).
 - `snapshot()` - the live checks (`MovedCodeCheckView`), for the `?debug=1`
   readout, the station guide and tests.

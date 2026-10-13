@@ -9,11 +9,14 @@
  */
 
 import {
+  driveFileAddress,
   driveReplaceSteps,
   FINISH_LABELS,
   finishSaveStatus,
 } from "./qr-author-mode.js";
+import { copyWithFeedback } from "gps-plus-slam-app-framework/utils/copy-with-feedback";
 import { isDriveUrl } from "./open-errors.js";
+import { hostReplaceText, type TourHost } from "./tour-host.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
 
@@ -24,7 +27,17 @@ export interface CreatorHandoffDom {
   replaceHelp: HTMLElement;
   replaceHelpGeneric: HTMLElement;
   replaceHelpDrive: HTMLElement;
+  /** Step 6's "copy the file's Drive address", shown with the Drive steps. */
+  replaceDriveCopy: HTMLButtonElement;
 }
+
+/** The Drive address button's labels (polish round M2, step 6). */
+export const DRIVE_COPY_LABELS = {
+  idle: "Copy the file's Drive address",
+  busy: "Copying…",
+  done: "Copied - paste it into a new browser tab",
+  failed: (address: string) => `Could not copy - the address is ${address}`,
+} as const;
 
 export interface CreatorHandoff {
   /**
@@ -47,12 +60,20 @@ export interface CreatorHandoff {
 
 export function wireCreatorHandoff(deps: {
   ctx: TourViewerSession;
-  seams: Pick<TourViewerSeams, "downloadZip">;
+  seams: Pick<TourViewerSeams, "downloadZip"> &
+    Partial<Pick<TourViewerSeams, "copyText">>;
   dom: CreatorHandoffDom;
   /** Re-render the panel (a delivered file changes the save guard). */
   render: () => void;
+  /** The host chosen in step 1 (`tour-host.ts`), read at each save; null
+   *  or absent: none chosen, and the paragraph about every host stays. */
+  host?: () => TourHost | null;
 }): CreatorHandoff {
   const { ctx, seams, dom } = deps;
+  /** The open tour's Drive address while the Drive steps show. */
+  let driveAddress: string | null = null;
+  /** The page's paragraph about every host, put back when a tour closes. */
+  const everyHostText = dom.replaceHelpGeneric.textContent;
   /** The Finish's result sentences, shown after the save's status. */
   let notes = "";
   function drive(): boolean {
@@ -70,7 +91,21 @@ export function wireCreatorHandoff(deps: {
     const onDrive = drive();
     dom.replaceHelpGeneric.hidden = onDrive;
     dom.replaceHelpDrive.hidden = !onDrive;
-    if (!onDrive) return;
+    // The file's Drive address, for the Drive website's upload (the
+    // owner's way to replace a Drive tour); none when it cannot be read.
+    driveAddress = onDrive
+      ? driveFileAddress(ctx.session?.archive.url ?? "")
+      : null;
+    dom.replaceDriveCopy.hidden = driveAddress === null;
+    dom.replaceDriveCopy.textContent = DRIVE_COPY_LABELS.idle;
+    if (!onDrive) {
+      // The chosen host's own words (polish round M2, step 6), else the
+      // paragraph about every host.
+      const host = deps.host?.() ?? null;
+      dom.replaceHelpGeneric.textContent =
+        (host === null ? null : hostReplaceText(host)) ?? everyHostText;
+      return;
+    }
     const hosted = ctx.session?.hostedFileName() ?? null;
     const { steps } = driveReplaceSteps(hosted ?? filename, hosted !== null);
     dom.replaceHelpDrive.textContent = steps
@@ -131,6 +166,18 @@ export function wireCreatorHandoff(deps: {
   dom.downloadButton.addEventListener("click", () => {
     save();
   });
+  // Async-UI rule: busy before the await, the outcome after; a failed copy
+  // shows the address so it can still be copied by hand.
+  dom.replaceDriveCopy.addEventListener("click", () => {
+    const address = driveAddress;
+    if (address === null) return;
+    // The framework's one copy sequence (F7, DEC-H3).
+    void copyWithFeedback(dom.replaceDriveCopy, address, seams.copyText, {
+      busy: DRIVE_COPY_LABELS.busy,
+      done: DRIVE_COPY_LABELS.done,
+      failed: DRIVE_COPY_LABELS.failed(address),
+    });
+  });
 
   return {
     save,
@@ -153,6 +200,9 @@ export function wireCreatorHandoff(deps: {
       // The Drive steps belonged to the closing tour's host (plan §5 #13).
       dom.replaceHelpDrive.hidden = true;
       dom.replaceHelpGeneric.hidden = false;
+      dom.replaceHelpGeneric.textContent = everyHostText;
+      driveAddress = null;
+      dom.replaceDriveCopy.hidden = true;
     },
   };
 }

@@ -536,3 +536,60 @@ describe('startHitTestReticle — onSelect (tap) handling', () => {
     expect(removed[0]?.[1]).toBe(added[0]?.[1]);
   });
 });
+
+describe('startHitTestReticle — a surface pick (Tour Viewer polish round M5c)', () => {
+  // Why: with a mesh of the surroundings the ring follows the mesh, not the
+  // hit-test (planes and feature points); the handle and the tap report
+  // the mesh point, so placing and moving use it unchanged; without a mesh
+  // hit the hit-test still drives the ring.
+  it('places the ring at the picked point when there is one, else at the hit-test pose', async () => {
+    const source = { cancel: vi.fn() };
+    const session = makeSession(vi.fn(() => Promise.resolve(source)));
+    const group = new Group();
+    let picked: { position: Vector3; normal: Vector3 } | null = {
+      position: new Vector3(2, 0.5, -3),
+      normal: new Vector3(0, 1, 0),
+    };
+    const handle = startHitTestReticle({
+      arWorldGroup: group,
+      surfacePick: () => picked,
+    });
+    const hitAt = new Matrix4().makeTranslation(7, 0, 7).toArray();
+    tick(session, makeHitFrame(hitAt));
+    await flush();
+    tick(session, makeHitFrame(hitAt));
+    group.updateMatrixWorld(true);
+    expect(handle.isVisible()).toBe(true);
+    expect(
+      handle.getWorldPosition(new Vector3()).distanceTo(new Vector3(2, 0.5, -3))
+    ).toBeLessThan(1e-9);
+    picked = null;
+    tick(session, makeHitFrame(hitAt));
+    group.updateMatrixWorld(true);
+    const expected = new Vector3(7, 0, 7).applyMatrix4(WEBXR_TO_NUE);
+    expect(
+      handle.getWorldPosition(new Vector3()).distanceTo(expected)
+    ).toBeLessThan(1e-9);
+  });
+
+  it('falls back to the hit-test when the pick throws, instead of breaking the frame', async () => {
+    const source = { cancel: vi.fn() };
+    const session = makeSession(vi.fn(() => Promise.resolve(source)));
+    const group = new Group();
+    const handle = startHitTestReticle({
+      arWorldGroup: group,
+      surfacePick: () => {
+        throw new Error('no mesh yet');
+      },
+    });
+    const hitAt = new Matrix4().makeTranslation(7, 0, 7).toArray();
+    tick(session, makeHitFrame(hitAt));
+    await flush();
+    expect(() => tick(session, makeHitFrame(hitAt))).not.toThrow();
+    group.updateMatrixWorld(true);
+    const expected = new Vector3(7, 0, 7).applyMatrix4(WEBXR_TO_NUE);
+    expect(
+      handle.getWorldPosition(new Vector3()).distanceTo(expected)
+    ).toBeLessThan(1e-9);
+  });
+});

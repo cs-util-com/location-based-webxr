@@ -11,14 +11,43 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   with an `<h2>` inside its summary (valid markup; how a screen reader
   exposes it through the disclosure is a field-test item) and an inline
   SVG icon; the reached step and the last opened link are remembered per
-  device (M6). **FOUR steps since the flow rework** (second testing
-  session, F10 - it was six):
-  1. **Host** (`#step-host`): three numbered sub-steps - get a zip (the
-     optional starter-zip button), upload it, then paste and **test** the
-     link (`#open-form`, whose button reads "Test link", F6) - or open a
-     tour zip from the device (`#open-file`, "Open a file", tour kit plan
-     K0; a file has no link, so its code is printed once the zip is
-     hosted). The picker itself (`#file-input`) and the line naming a
+  device (M6). **SIX steps since polish round M2** (the flow rework of
+  F10 had made it four; step 6 restores a completion step of its own). The
+  steps use up to `48rem` of the width (A14; they were capped at 26rem,
+  half a landscape phone).
+
+  **The L5 look since polish round M2b** (the owner's prototype verdict,
+  D-P1): on the creator page an intro (`#setup-intro`: the opening, the
+  "why" list - four reasons two per row ("No sign-up, no account" in place
+  of the privacy line since 2026-10-12: the Drive relay passes tours through
+  the site worker, so "no servers of ours" was not true), as in the
+  L5 prototype, with the gaps set in the page's own CSS because the design
+  system zeroes paragraph and list margins (r820 feedback R1;
+  `setup-flow.spec.js` pins rows and gaps at three viewports) - and
+  "Follow the route"), then the stage
+  (`#setup-stage`): the illustrated map (`#setup-map`, an example route
+  with six stations drawn by `setup-stage.ts`; ids prefixed `map-`)
+  beside the step card (`#setup-card`) on a wide or landscape screen, above
+  it on a phone. The card shows ONE step - the open `<details>`; closed
+  steps are hidden by CSS - under its station row (`#setup-badge`,
+  `#setup-of`, `#setup-dots`) and over `#setup-nav` (Back/Next; none on
+  step 6, no Next on step 5). The paper palette is set on the design
+  system's own tokens on `:root`, only for the creator page and only while
+  no AR session runs (`body[data-ar-active]`), so `#ar-root` over the
+  camera keeps the sheet's tokens; L5's own tokens are `--map-*`. The
+  header (`<h1>Tour Viewer</h1>`) shows for a visitor only. The steps:
+  1. **Where the tour lives** (`#step-host`): the host tiles
+     (`#host-tiles`, a radiogroup filled by `host-picker.ts`), the chosen
+     host's steps (`#host-steps`), the starter zip (`#starter-zip`, only
+     for a host that needs a file before it gives a link), Continue
+     (`#host-continue`), and a small link to open a tour zip from the
+     device (`#open-file`, "Open it from this device", tour kit plan K0;
+     a file has no link, so its code is printed once the zip is hosted).
+  2. **The link** (`#step-link`): `#open-form` with the button "Check
+     link" - the check also runs by itself on paste and when the field is
+     left - and `#link-status`, the line saying what the check found
+     (`link-check.ts`). The shortener advice and its bit.ly warning live
+     here, where the check that counts runs. The picker itself (`#file-input`) and the line naming a
      file-opened tour (`#file-status`) and the open tour's signature lines
      (`#tour-trust`, tour kit plan K1: who signed it or that nobody did,
      trust warnings, linked tours; `white-space: pre-line`) sit under
@@ -26,27 +55,59 @@ screen. Everything marked `.creator-only` is hidden for a visitor
      wizard, so a visitor reaches them too - with `#file-advice`, the
      "Open the downloaded file" button shown under a "host blocks
      browsers" error.
-  2. **Print** (`#print-panel`): the printed code, on the page and as a
-     PDF of N numbered posters (`#print-count`, `#print-paper`,
-     `#print-pdf`) - the print dialog's "fit to page" silently rescales,
-     and a rescaled code measures the world wrong. The link is SHOWN
+  3. **Print** (`#print-panel`): by PDF only since polish round M0b - a
+     PDF of N numbered posters (`#print-count` between the big - and +
+     `#print-count-down` / `#print-count-up`, three by default), each
+     carrying the poster text of `#poster-title`, `#poster-explanation`
+     and `#poster-cta` (polish round D-P7, r820 feedback R8), previewed as
+     one small poster per code (`#print-tiles`). The defaults nobody needs
+     to touch sit in the closed `#print-settings` (r820 feedback R7): the
+     side length in centimetres (`#author-size`, 18 by default; a size
+     refusal at AR start opens the block), `#print-paper` and the first
+     code number (`#author-c`). The launch link the codes carry
+     (`#print-url-out`) is shown in step 2 since the r820 feedback (R6). The print dialog's "fit to page" silently rescales, and a
+     rescaled code measures the world wrong, so the page has no print
+     stylesheet and no print button. The link is SHOWN
      (`#print-url-shown`), not asked for, whenever a tour is open, and the
      code renders without a button press; `#print-url-ask` returns only
      when nothing is open, which is what keeps printing before hosting
      possible (F7 + flows plan DEC-F2).
-  3. **Hang** (`#step-hang`): the "It hangs - continue" button.
-  4. **Measure and place** (`#step-measure`): a `<details>` like its
-     siblings since F4, wrapping `#ar-root`. It also carries what used to
-     be steps 5 and 6 - `#finish-block` (the rebuilt zip's status and
-     download) and `#replace-help` inside it - because those describe the
-     END of this step rather than steps of their own (F10). And
-     `#draft-offer` - unsaved work this
+  4. **Hang** (`#step-hang`): the "It hangs - continue" button.
+  5. **Create the tour** (`#step-measure`): a `<details>` like its
+     siblings since F4, wrapping `#ar-root`; its button reads "Start
+     creating". And `#draft-offer` - unsaved work this
      device still holds for this tour, offered with three answers rather
      than applied (F13). The paste form F12 added here (`#tour-missing`) is gone: the
      printed code carries the tour's link, so reading it in AR opens the
      tour (scan-to-open plan §2).
-- The visitor screen (`#visitor-screen`): the consent copy above the AR
-  section; the Start button is `#enter-ar`.
+  6. **Done** (`#step-done`): `#finish-block` (the rebuilt zip's status,
+     the save, the summary and `#replace-help`), opened by the Finish
+     (polish round M2, B9). Until then `.done-pending` says what the step
+     is for; page CSS hides it once the block shows.
+
+- The visitor's start page in the owner's V4 look (polish round M4a,
+  D-R12/D-R14; reference `public/prototypes/visitor-4-one-tap/`):
+  `#visitor-screen` (kicker, `#visitor-cover` one photo, `#visitor-title`,
+  `#visitor-subline` - written by `visitor-start.ts`), then `#ar-root`
+  restyled as the action (the status sentence above, the round
+  `#enter-ar` with its ring and `data-step` marker, `#ar-hint` as the
+  one line under it, by flex `order`), then `#visitor-more` after the
+  stage ("What happens?" `#visitor-what` and `make-your-own`). All of it
+  is scoped to `body[data-mode="visitor"]:not([data-ar-active="true"])`:
+  in a session `#ar-root` is the overlay and keeps the sheet's HUD look.
+  The paper palette is the creator page's (`:root:has(...)`), extended to
+  the visitor. Fluid sizes are custom properties on the visitor body
+  (the lint's css-tree grammar knows neither `clamp()` nor `dvh`); a
+  phone held sideways gets two columns. `playwright-tests/visitor-start.spec.js`
+  pins the layout at 412x915, 360x640 and 915x412.
+- The visitor's scan card in AR (polish round M4b, the owner's S1, D-P5
+  amended; reference `public/prototypes/scan-1-centre-card/`):
+  `#scan-card` inside `#ar-root` (fixed, centred, `pointer-events:
+none`), its `.scan-card-panel` darker than the prototype's, with the
+  phone-over-code animation, `#scan-card-title` and `#scan-card-line`
+  (the visitor's sentence); `#scan-escape` lives in it, at the bottom of
+  the screen, the only part that takes taps. Sideways: animation beside
+  the words. `ar-mode.spec.js` pins its centring and the skip's place.
 - Below the steps, creator-only: the Storage section (`#storage-panel`,
   summary "Other settings" - something you normally do not open, F9).
 - Shared: `#error`, `#ar-root` (the DOM-overlay root: hint, status line,
@@ -68,24 +129,32 @@ Behaviour lives in the wiring modules composed by `src/main.ts` (see
 
 ## Public API
 
-The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
+The `data-testid` contract the e2e suite drives: `wizard`, `step-host`
+(owns `host-tiles`, `host-steps`, `host-continue`), `setup-intro` (owns
+`setup-begin`), `setup-stage`, `setup-map` (owns `setup-map-svg` and the
+drawn `map-station-<step>`), `setup-card` (owns `setup-badge`, `setup-of`,
+`setup-dots` with `station-<step>`, `setup-nav`, `setup-back`,
+`setup-next`), `step-link` (owns
+`link-status` and `print-url-out`, the launch link in `#link-launch`),
 `starter-zip`, `link-input`, `open-button`, `open-file-button`,
 `file-input`, `file-status`, `tour-trust`, `file-advice`, `open-file-advice`,
 `storage-panel`,
 `clear-cache`, `print-panel` (owns `print-url-ask`, `print-url`,
-`print-url-shown`, `author-size`, `author-c`, `print-generate`,
-`print-info`, `print-canvas`, `print-button`, `print-url-out`,
-`print-count`, `print-paper`, `print-pdf`, `visitor-link` - opens in a
+`print-url-shown`, `poster-text` (`poster-title`, `poster-explanation`,
+`poster-cta`), `print-count-down`, `print-count`, `print-count-up`,
+`print-settings` (`author-size`, `print-paper`, `author-c`), `print-pdf`,
+`print-info`,
+`print-tiles` (its tiles `print-tile`, the first canvas `print-canvas`), `visitor-link` - opens in a
 new tab, polish round A17), `make-your-own` (on the visitor screen: the
 setup page in a new tab, polish round A8), `step-hang`, `hang-done`, `step-measure` (owns
 `draft-offer`,
-`draft-offer-text`, `draft-restore`, `draft-dismiss`, `draft-discard`,
-`finish-block`,
+`draft-offer-text`, `draft-restore`, `draft-dismiss`, `draft-discard`),
+`step-done` (owns `done-pending`, `finish-block`,
 `finish-status`, `finish-download`, `summary` (the summary after Finish,
 authoring plan 2026-09-28-0953 M3b: owns `summary-codes`, `summary-map`,
 `summary-map-status`, `summary-start-ar`; written by `summary-panel.ts`,
 its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
-`replace-help-generic`, `replace-help-drive`)), `visitor-screen`,
+`replace-help-generic`, `replace-help-drive`, `replace-drive-copy`)), `visitor-screen`,
 `stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
 `setup-panel`, `setup-status`, `size-offer`, `size-offer-text`,
 `size-offer-use`, `size-offer-keep`, `setup-controls`,
@@ -95,9 +164,8 @@ its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
 `object-edit-save`, `object-edit-cancel`, `object-busy`, and the list
 `setup-status` carries `data-clamped` (two lines in AR, whole on a tap;
 whole on the page), `object-list-heading`, `object-list-hint`, `object-list-note` and,
-beside it after a delete, `object-undo`; in AR the chooser
-`object-chooser` with `object-previous`, `object-position`,
-`object-next`),
+beside it after a delete, `object-undo`; in AR the selected row's
+`object-close` - the chooser is gone since polish round M3),
 `setup-pin`, `pin-label`, `pin-save`, `pin-cancel`, `setup-photo`,
 `setup-finish`, `scan-escape`, `station-line`, `station-skip`, `scene-panel`
 (owns `scene-title`, `scene-speaker`, `scene-image`, `scene-text`,
@@ -121,8 +189,8 @@ The troubleshooting recording (authoring recording plan 2026-09-28-0953,
 M1a): `#recording-block` sits in step 4 BEFORE `#ar-root` - its switch
 arms the recording before AR starts and Save is a page action, so neither
 belongs over the camera. It is NOT `.creator-only` since M1b: `main.ts` shows
-it for a creator, and for a visitor only with `?debug=1` (the viewer
-recording, contextTag `tour-viewing`). `#recording-marker` is
+it only with `?debug=1`, for a creator (since polish round M3, Q-Data) and
+a visitor (the viewer recording, contextTag `tour-viewing`). `#recording-marker` is
 inside `#ar-root`, so the marker is composited over the camera for the
 whole recorded session and shows on the page too; `ar-layout.spec.js`
 measures the overlay with it visible.

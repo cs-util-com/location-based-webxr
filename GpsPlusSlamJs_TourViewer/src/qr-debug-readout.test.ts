@@ -274,7 +274,7 @@ describe("debugReadoutLines - the moved-code checks (D20, M5c)", () => {
       recordingOn: true,
     });
     expect(lines).toContain(
-      'recording: exit AR, then "Save the recording" below',
+      'recording: leave AR, then "Save the recording" below',
     );
   });
 });

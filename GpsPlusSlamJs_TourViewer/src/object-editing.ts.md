@@ -18,9 +18,13 @@ Wired by `creator-setup.ts`, drawn by `object-list.ts`.
 - `wireObjectEditing(deps): ObjectEditing` - binds the list's handlers.
   - `render()` - redraw the list (cheap when nothing changed).
   - `select(id | null)` - a tap in AR (the id `object-pick.ts` returned).
-  - the list's `step(1 | -1)` handler - the AR chooser: the next or
-    previous object in list order, wrapping (Next from none is the first,
-    Previous the last); same note rule as a tap.
+  - the list's `deselect()` handler - the row's Close: clears the selection, same
+    note rule as a tap (polish round M3; the Previous / Next chooser is
+    gone).
+  - `selected()` - the selected id or null; `deps.selectionChanged` is
+    told after a tap or Close changed the selection, so the place buttons
+    follow object mode. A delete and `reset` do not tell it (`reset` runs
+    inside a visit's teardown, M3 review #14); the next render catches up.
   - `objects()` - `authoringObjects` over the live state.
   - `reset()` - a visit ended or a tour closed: selection and note go.
 - `ObjectEditingDeps` - the creator setup's state and callbacks: the
@@ -112,6 +116,7 @@ editing.render(); // from the panel's render
   and of a local pin with its record, its expiry at `OUTCOME_HOLD_MS`,
   Delete's "Deleting…" and Move's "Moving…" with their refused (and
   throwing) writes, an outcome held through a selecting tap, and the
-  chooser stepping (and wrapping) through every object to move one.
+  Close letting the selection go with the place buttons back
+  (`authoring-settle.test.ts`).
 - `playwright-tests/object-editing.spec.js` - the page's Undo button and
   its withdrawal when the hold timer fires.

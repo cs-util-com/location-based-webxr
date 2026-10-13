@@ -20,7 +20,13 @@ since the flows plan M6.
     `buildArEnableConfig` and each sample is dispatched as-is as
     `recording/recordDepthSample` (the Recorder's way); once the runtime runs,
     `seams.startDepthCapture(RECORDING_DEPTH)` starts the sampler, and the
-    session end stops it.
+    session end stops it. A creator's entry with `?mesh=1` (`deps.meshCursor`,
+    polish round M5) that is not recorded asks for depth at `MESH_DEPTH` the
+    same way (a recorded one keeps `RECORDING_DEPTH`: the recording's byte
+    estimate assumes it), starts `seams.startMeshSurface` under the world
+    group, hands the reticle its `pick`, puts its frame time and triangles in
+    the `?debug=1` block, and frees it at the session end. The readout's
+    "recording" stays a recorded entry's only.
   - `mode` (`"creator" | "visitor"`, guided-setup plan DEC-N1) replaces the
     flows plan's `authorMode`; creator mode runs the author pipeline. The
     pipeline starts before the session is requested, so a start that fails
@@ -53,8 +59,39 @@ since the flows plan M6.
     `?debug=1` reads `visitorStatus`'s one plain sentence; the creator and
     `?debug=1` keep the technical `arStatusLine`. `data-state` carries `visitorStatus`'s state for a visitor (none for a creator, whose session it would mislead), `data-gate` the scan gate as one word for both (`passed-code` proves the code passed it); `arStatusLive` (the screen reader's live region) is written only when its text changes: the visitor's sentence, and a creator's line outside a session (a failed start with its cause), never per camera frame (UI round 1, U1, review F14; U1 milestone review #8, #9).
   - Subscribes the button renderer to the controller and binds the click:
-    during a running session the click ENDS it ("Exit AR", UI round 1, U2),
-    through the same teardown as the back gesture.
+    - during a running session the click ENDS it ("Exit AR", UI round 1,
+      U2), through the same teardown as the back gesture;
+    - except a creator's "Done" (polish round M3, Q-Done): it asks
+      `hooks.finishFromAr()` first (which starts a finish only when there
+      is something to write - M3 review #4), and when a finish started,
+      the finish ends the session itself once the zip is written; while a
+      code is being measured it stays and says "tap Done again" (PR #598
+      review: the finish waits for the measurement); with no
+      finish to run, while one runs ("Saving…", still tappable - M3 review
+      #1), or after a failed one ("Close AR"), it just leaves. The draft
+      keeps every change either way;
+    - on a VISITOR's phone without AR the click copies `location.href`
+      through `seams.copyText` ("Copying…" disabled, then "Link copied"; a
+      failure restores "Copy link" and puts the address-bar advice in
+      `errorBox`) - the owner's V4, polish round M4a. The copy is the
+      framework's `copyWithFeedback` (follow-up F7, DEC-H3), which runs it
+      inside a promise chain (a missing clipboard throws synchronously); it owns the
+      button's label until it settles (a render meanwhile does not hand it
+      back), and a working copy clears an earlier failure's advice (M4
+      milestone review #1).
+  - `renderArStatus` also renders the visitor's scan card (`dom.scanCard`,
+    `dom.scanCardLine`, optional; the owner's S1, polish round M4b): shown
+    while `scanCardShown` holds, carrying the visitor's sentence, with the
+    status line hidden meanwhile (kept under `?debug=1`, whose technical
+    line the card does not carry); the live region is unchanged.
+  - The render also writes `data-ar-state` (the controller status, for
+    the page CSS: V4 steps the round button down on `unsupported`) and
+    `data-step` (`visitorStep`: "1 of 2" / "2 of 2", removed otherwise)
+    on the button - with an `aria-label` "<label>, step 1 of 2" while it
+    shows, since generated content would be read run into the label; the
+    marker counts the two taps of one start and is dropped once that
+    start runs (M4 review #6, #11) - and hides the hint for a visitor's `unsupported` state
+    (it would describe a session that cannot start).
 
 ## Moved-code veto inputs (D20, M5c)
 

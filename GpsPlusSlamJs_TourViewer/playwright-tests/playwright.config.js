@@ -36,6 +36,19 @@ export default defineConfig({
     // scripts/e2e/browser-launch.mjs.md.
     launchOptions: { args: browserLaunchArgs(process.env) },
     baseURL: "http://127.0.0.1:5187",
+    // A creator who already chose where the tour lives (polish round M2):
+    // the page then opens at step 2, the link, which is where almost every
+    // spec starts. The first-visit flow (step 1's host tiles) clears this
+    // in its own tests.
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: "http://127.0.0.1:5187",
+          localStorage: [{ name: "tour-viewer.wizard.host", value: "drive" }],
+        },
+      ],
+    },
     trace: captureArtifacts ? "on" : "on-first-retry",
     screenshot: captureArtifacts ? "on" : "only-on-failure",
     video: captureArtifacts ? "on" : "retain-on-failure",

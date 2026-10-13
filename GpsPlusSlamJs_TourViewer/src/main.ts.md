@@ -15,8 +15,14 @@ listed in `index.html.md`. The concerns and their modules:
 
 - `print-panel.ts` - the print section (`wirePrintPanel`).
 - `mode.ts` - the mode from the launch URL (`viewerModeFromSearch`).
-- `wizard.ts` - the creator's guided setup: the steps, the starter zip,
+- `wizard.ts` - the creator's guided setup: the six steps, the starter zip,
   the "open as a visitor" link (`wireWizard`).
+- `setup-stage.ts` - the L5 station row and map (`wireSetupStage`, creator
+  only, wired after the visitor screen so its hidden states are final).
+- `host-picker.ts` - step 1's host tiles (`wireHostPicker`, creator only;
+  Continue opens the link step and focuses the field).
+- `link-check.ts` - the PDF's re-check of an unverified link, bound here
+  to `openRemoteArchive` with the Drive proxy.
 - `visitor-screen.ts` - the visitor's consent screen and the location
   gate (`wireVisitorScreen`).
 - `creator-setup.ts` - the creator's AR setup panel: measuring, finish
@@ -73,7 +79,7 @@ listed in `index.html.md`. The concerns and their modules:
   after Finish over `#summary`, handed to the creator setup as `summary`.
   Its map is `() => import("./summary-map-view.js")`: the ONLY way the
   page reaches Leaflet, so a visitor never downloads it
-  (`summary-map-lazy.test.ts`). Its "Start AR setup" clicks `#enter-ar`,
+  (`summary-map-lazy.test.ts`). Its "Start creating" clicks `#enter-ar`,
   inside the creator's own tap.
 
 ## Invariants & assumptions
@@ -84,7 +90,11 @@ listed in `index.html.md`. The concerns and their modules:
   would blank the page for a visitor who had just scanned a code. Without
   a store there is no step persistence and nothing else changes. The last
   opened link is prefilled into `#link` for a creator when the input is
-  empty.
+  empty, and `#link-status` labels it as the last tour's link (polish
+  round M2, A3).
+- **The gallery shows only with `?debug=1`, for a creator** (polish round
+  M2): it is a transport demo, still filled (the e2e counts its images),
+  never shown to a visitor.
 
 - **Wiring order is dependency order:** print → wizard → visitor screen →
   author → viewer → AR entry → archive open. Each module hands its
@@ -93,7 +103,10 @@ listed in `index.html.md`. The concerns and their modules:
   `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
   `presentTourForPrint`, and `presentLocalTour` - a FILE-opened tour, tour
   kit plan K0: the print step keeps asking for a link and a creator's
-  wizard opens step 2, or stays in step 4, without remembering a link),
+  wizard opens step 3, or stays in step 5, without remembering a link;
+  and `presentUnverifiedLink` - step 2's link printed unverified;
+  and, for a visitor only, `presentTourInfo` - `visitor-start.ts`'s
+  page, with `URL.createObjectURL` and `pictureProblem` for the cover),
   and callers read the hooks at call time - which
   is what keeps the modules free of import cycles (`check:cycles` is in
   the gate). A hook read before its owner is wired is the no-op from

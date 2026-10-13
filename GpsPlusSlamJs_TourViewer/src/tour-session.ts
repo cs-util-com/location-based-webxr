@@ -55,6 +55,8 @@ import {
   tourMediaTypeOfEntry,
 } from "gps-plus-slam-app-framework/ar/tour-media";
 
+import { driveFileId } from "gps-plus-slam-app-framework/utils/drive-file-id";
+
 import { fileNameFromContentDisposition } from "./content-disposition.js";
 import { tourFileKey, tourSeriesFileKey } from "./tour-file-key.js";
 import {
@@ -270,10 +272,6 @@ function zipNameOf(url: string): string | null {
 
 /** Resolves relative links (the same-origin Drive proxy route) for parsing. */
 const LABEL_BASE = "https://label.invalid";
-const DRIVE_HOSTS: ReadonlySet<string> = new Set([
-  "drive.google.com",
-  "drive.usercontent.google.com",
-]);
 
 /**
  * What the creator's panel calls a tour, so they can see a scan opened the
@@ -298,18 +296,6 @@ export function tourLabel(url: string): string {
   const tail = last === undefined ? "" : cut(last, 12);
   if (host === "") return tail === "" ? "the tour" : tail;
   return tail === "" ? host : `${host}/${tail}`;
-}
-
-function driveFileId(url: URL): string | null {
-  let id: string | null = null;
-  if (DRIVE_HOSTS.has(url.hostname)) {
-    id =
-      /^\/file\/d\/([^/]+)/.exec(url.pathname)?.[1] ??
-      url.searchParams.get("id");
-  } else if (url.pathname.endsWith("/drive-proxy")) {
-    id = url.searchParams.get("id");
-  }
-  return id === null || id === "" ? null : id;
 }
 
 function cut(text: string, max: number): string {

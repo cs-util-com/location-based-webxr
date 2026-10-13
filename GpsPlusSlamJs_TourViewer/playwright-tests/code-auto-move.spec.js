@@ -6,6 +6,7 @@ import {
   finishAndDownload,
   installTourViewerArFakes,
   openFixtureTour,
+  tapFinish,
 } from "./ar-fakes.js";
 import { E2E_QR_TEXT } from "./qr-fixture.mjs";
 
@@ -134,9 +135,13 @@ async function walkUnderShiftedGps(page) {
     await shiftedFixes(page, i, 10);
     await lookAtTheCode(page);
   }
-  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
-  await page.getByTestId("enter-ar").click();
-  await expect(page.getByTestId("enter-ar")).not.toHaveText("Exit AR", {
+  // The visit ends without a Finish (the back gesture): the creator's
+  // own button is Done since polish round M3, which would finish here.
+  await expect(page.getByTestId("enter-ar")).toHaveText("Done");
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.endXrSession();
+  });
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start creating", {
     timeout: 10000,
   });
 }
@@ -156,7 +161,7 @@ test("a code seen 36 m from its saved spot after a reliable walk is moved at the
   await walkUnderShiftedGps(page);
   // The result line stands between the Finish and the save (the save's own
   // line replaces it).
-  await page.getByTestId("setup-finish").click();
+  await tapFinish(page);
   await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });

@@ -30,6 +30,7 @@ function seamsWith(overrides: Partial<TourViewerSeams>): TourViewerSeams {
 function dom(): VisitorScreenDom {
   return {
     screen: { hidden: false },
+    more: { hidden: false },
     measureStep: { open: false },
     creatorOnly: [{ hidden: false }, { hidden: false }],
     arHint: { textContent: "creator hint" },
@@ -56,6 +57,39 @@ describe("locationTapNeeded", () => {
 });
 
 describe("wireVisitorScreen", () => {
+  it("says what the first tap does once the browser will ask (polish round M4a, V4)", async () => {
+    // Why: V4's line under the "1 of 2" button tells the visitor the
+    // browser's question is coming and what to answer; a visitor whose
+    // location is already allowed keeps the line about the code.
+    const d = dom();
+    const renderArEntry = vi.fn();
+    wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("prompt"),
+      }),
+      dom: d,
+      renderArEntry,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    expect(d.arHint.textContent).toBe(
+      "Your browser will ask for your location - tap Allow. Then Start the tour.",
+    );
+    // A blocked site: the browser will NOT ask, so the line stays.
+    const blocked = dom();
+    const render = vi.fn();
+    wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("denied"),
+      }),
+      dom: blocked,
+      renderArEntry: render,
+    });
+    await vi.waitFor(() => expect(render).toHaveBeenCalled());
+    expect(blocked.arHint.textContent).toContain("the tour's code");
+  });
+
   it("hides the visitor screen for a creator and leaves the gate cleared", () => {
     const d = dom();
     const screen = wireVisitorScreen({
@@ -68,6 +102,7 @@ describe("wireVisitorScreen", () => {
       renderArEntry: vi.fn(),
     });
     expect(d.screen.hidden).toBe(true);
+    expect(d.more.hidden).toBe(true);
     expect(d.creatorOnly.every((e) => !e.hidden)).toBe(true);
     // A creator opens step 4 by walking the setup; forcing it open here
     // would break the one-step-at-a-time rule on their very first load.
@@ -88,12 +123,17 @@ describe("wireVisitorScreen", () => {
       renderArEntry,
     });
     expect(d.screen.hidden).toBe(false);
+    // "What happens?" and the way to make a tour (polish round M4a, V4).
+    expect(d.more.hidden).toBe(false);
     expect(d.creatorOnly.every((e) => e.hidden)).toBe(true);
     // Step 4 is a <details> whose summary is creator-only, so nothing on a
     // visitor page could ever open it - and its content is their Start
     // button (M3, F4).
     expect(d.measureStep.open).toBe(true);
     expect(d.arHint.textContent).toContain("the tour's code (on the poster)");
+    // V4's one line under the button: the rest is behind "What happens?".
+    // (This visitor's permission is still unknown: the generic line.)
+    expect(d.arHint.textContent.length).toBeLessThanOrEqual(80);
     // Pessimistic before the query answers.
     expect(screen.locationGate.pending()).toBe(true);
     await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
@@ -122,6 +162,9 @@ describe("wireVisitorScreen", () => {
     await expect(screen.locationGate.request()).resolves.toBe("denied");
     expect(screen.locationGate.pending()).toBe(true);
     expect(d.errorBox.textContent).toMatch(/allow location/i);
+    // The browser will not ask again after a denial: the line under the
+    // button must not say it will (M4 review #3).
+    expect(d.arHint.textContent).not.toMatch(/browser will ask/i);
 
     await expect(screen.locationGate.request()).resolves.toBe("granted");
     expect(screen.locationGate.pending()).toBe(false);

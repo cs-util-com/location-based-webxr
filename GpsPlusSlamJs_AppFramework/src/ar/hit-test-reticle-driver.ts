@@ -31,6 +31,7 @@ import { Vector3, type Object3D } from 'three';
 import {
   createReticleMesh,
   updateReticle,
+  updateReticleAtSurface,
 } from '../visualization/hit-test-reticle.js';
 import { registerXrFrameUpdate } from './xr-frame-loop.js';
 
@@ -81,6 +82,21 @@ export interface HitTestReticleArgs {
     worldPosition: Vector3 | null,
     targetRay: SelectTargetRay | null
   ) => void;
+  /**
+   * Optional: a surface point under the screen centre from the app's own
+   * model of the surroundings (e.g. a raycast against the occluder mesh),
+   * in WORLD coordinates with the surface's normal - or null. Asked every
+   * frame; a point places the reticle there instead of at the hit-test pose
+   * (Tour Viewer polish round M5c), and the handle and `onSelect` report it.
+   * Null, or a throw, falls back to the hit-test.
+   */
+  surfacePick?: () => SurfacePoint | null;
+}
+
+/** A surface point and its normal, in world coordinates. */
+export interface SurfacePoint {
+  readonly position: Vector3;
+  readonly normal: Vector3;
 }
 
 /**
@@ -134,6 +150,19 @@ function cancelSource(source: XRHitTestSource | null | undefined): void {
     source?.cancel();
   } catch {
     // Already cancelled or its session is gone.
+  }
+}
+
+/** The app's surface point, or null - a throwing pick falls back to the
+ *  hit-test rather than breaking the frame. */
+function pickSurface(
+  surfacePick: (() => SurfacePoint | null) | undefined
+): SurfacePoint | null {
+  if (surfacePick === undefined) return null;
+  try {
+    return surfacePick();
+  } catch {
+    return null;
   }
 }
 
@@ -232,6 +261,12 @@ export function startHitTestReticle(
               hitTestSourceRequested = false;
             }
           });
+      }
+
+      const surface = pickSurface(args.surfacePick);
+      if (surface !== null) {
+        updateReticleAtSurface(reticle, surface.position, surface.normal);
+        return;
       }
 
       if (!hitTestSource) {

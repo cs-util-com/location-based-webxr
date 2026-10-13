@@ -112,7 +112,7 @@ export function debugReadoutLines(input: {
     lines.push(`ignored (moved): ${codeLabel(text)}`);
   }
   if (input.recordingOn === true) {
-    lines.push('recording: exit AR, then "Save the recording" below');
+    lines.push('recording: leave AR, then "Save the recording" below');
   }
   return lines;
 }

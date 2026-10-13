@@ -20,10 +20,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
-import {
-  homePrintWarning,
-  MAX_HOME_PRINTABLE_SIDE_M,
-} from "gps-plus-slam-app-framework/utils/qr-payload/qr-print-plan";
+import { maxPrintablePdfSideM } from "gps-plus-slam-app-framework/utils/qr-payload/qr-print-pdf";
 import { MISSING_SIZE_MESSAGE } from "./qr-author-mode.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -43,16 +40,19 @@ describe("the printed size's default", () => {
     // creator-setup.ts assigns AUTHOR_DEFAULT_SIZE_M into this field at
     // wiring time, so a differing attribute is never seen by anyone and
     // silently misleads the next reader of the markup.
-    expect(authoredDefaultSize()).toBe(AUTHOR_DEFAULT_SIZE_M);
+    // The field is in centimetres since polish round M0b (A15).
+    expect(authoredDefaultSize() / 100).toBe(AUTHOR_DEFAULT_SIZE_M);
   });
 
-  it("fits a home printer's page, so the default never warns on load", () => {
-    // A default that trips the page-fit warning would tell every creator
-    // their code "will not scan" before they have touched anything - and
-    // it would be telling the truth, which is worse.
-    expect(homePrintWarning(AUTHOR_DEFAULT_SIZE_M)).toBeNull();
+  it("fits the print PDF on A4 and Letter, so the default never refuses", () => {
+    // The Tour Viewer prints by PDF only since polish round M0b, so the PDF
+    // is the page the default has to fit; a default it refused would greet
+    // every creator with an error before they touched anything.
     expect(AUTHOR_DEFAULT_SIZE_M).toBeLessThanOrEqual(
-      MAX_HOME_PRINTABLE_SIDE_M,
+      maxPrintablePdfSideM("a4"),
+    );
+    expect(AUTHOR_DEFAULT_SIZE_M).toBeLessThanOrEqual(
+      maxPrintablePdfSideM("letter"),
     );
   });
 
@@ -64,7 +64,7 @@ describe("the printed size's default", () => {
     // a number rather than as a template that failed to interpolate.
     const example = /\(e\.g\. ([\d.]+)\)/.exec(MISSING_SIZE_MESSAGE)?.[1];
     expect(example, "the empty-field message names no example").toBe(
-      String(AUTHOR_DEFAULT_SIZE_M),
+      String(Math.round(AUTHOR_DEFAULT_SIZE_M * 1000) / 10),
     );
   });
 });

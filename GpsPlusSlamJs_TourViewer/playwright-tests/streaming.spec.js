@@ -44,7 +44,9 @@ async function openArchive(page, url) {
 async function expectGalleryStreamedIn(page) {
   const images = page.getByTestId("gallery").locator("img");
   await expect(images).toHaveCount(8, { timeout: 15000 });
-  await expect(page.getByTestId("stats")).toBeVisible();
+  // Filled, though shown only with ?debug=1 since polish round M2: the
+  // transfer numbers are a transport demo, not a creator's step.
+  await expect(page.getByTestId("stats")).not.toHaveText("");
 }
 
 /** Cache API state is per browser context, but start each test clean anyway. */

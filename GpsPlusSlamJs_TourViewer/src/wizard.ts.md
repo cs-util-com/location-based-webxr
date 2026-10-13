@@ -4,14 +4,21 @@
 
 The creator's guided setup (guided-setup plan §2.7): the steps as
 collapsible sections with one open at a time, advanced by the flow's events
-(tour opened → print; code hung → measure), plus the starter zip download
-(step 1) and the "open as a visitor" launch link (step 2, the tester's way
-into the visitor path).
+(tour opened → print; code hung → measure; Finish → done), plus the starter
+zip download (step 1) and the "open as a visitor" launch link (the tester's
+way into the visitor path).
 
-**FOUR steps since the flow rework** (second testing session, F10): the
-download and the replace instructions were steps 5 and 6, and they are not
-setup steps - they describe the end of step 4, which happens on the phone,
-so they live inside it now and `creator-setup.ts` reveals them.
+**SIX steps since polish round M2**
+(`GpsPlusSlamJs_Docs/docs/2026-10-11-0049-tour-viewer-polish-round-plan.md`):
+1 where the tour lives (`host`, the tiles of `host-picker.ts`), 2 the link
+(`link`, checked by itself, `link-check.ts`), 3 print, 4 hang, 5 create
+(`measure`, "Create the tour" on the page) and 6 done (`done`, the saved
+file and the replace steps, opened by the Finish - the owner's B9). The flow
+rework (second testing session, F10) had folded the download and the replace
+instructions into the AR step; step 6 gives them a page of their own again.
+
+A creator's first step depends on the stored host (`tour-host.ts`): none
+chosen opens `host`, a stored choice opens `link`.
 
 ## Public API
 
@@ -36,7 +43,8 @@ so they live inside it now and `creator-setup.ts` reveals them.
     `measureSection` (the same element as `steps.measure`, reached through
     a second field because scrolling and disclosing are different
     capabilities and each unit test fakes its own).
-- `WIZARD_STEPS` (`host`, `print`, `hang`, `measure`), `type WizardStep`.
+- `WIZARD_STEPS` (`host`, `link`, `print`, `hang`, `measure`, `done`),
+  `type WizardStep`.
 - `remapLegacyStep(raw)` - maps the retired `finish` / `replace` step names
   onto `measure`. Applied to the RAW stored string, BEFORE
   `parseWizardStep`, which rejects anything outside `WIZARD_STEPS`: a remap
@@ -86,8 +94,8 @@ so they live inside it now and `creator-setup.ts` reveals them.
 - The reached step is remembered per hosted url in the injected `stepStore`
   (`localStorage`; key `tour-viewer.wizard.<url>`) and the last opened url
   under a module-private key; `presentTour` lands on the remembered step (a
-  remembered step 5 or 6 resumes at step 4: the rebuilt zip does not
-  survive a reload), `rememberedTourUrl()` is what `main.ts` prefills the
+  remembered `done`, or a retired `finish` / `replace`, resumes at
+  `measure`: the rebuilt zip does not survive a reload), `rememberedTourUrl()` is what `main.ts` prefills the
   link input with (M6). Every store access is guarded: blocked site data or
   a sandboxed context falls back to step 2 (a private window has a working
   session-scoped store). Only a creator writes. The memory is write-only
@@ -135,3 +143,7 @@ never writing and never registering a toggle listener, and the store probe
 surviving a throwing getter. The e2e "the setup remembers the step" covers
 the reload with the prefilled link, and "step 4 asks for the tour link"
 covers the preference through the composed page.
+The "six steps (polish round M2)" block covers the first step by stored host
+(`host` without, `link` with) and a remembered
+`done` resuming at `measure`; `playwright-tests/setup-flow.spec.js` covers
+the first visit end to end.

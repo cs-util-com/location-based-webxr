@@ -1,0 +1,2069 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#14161a" />
+    <title>HUD Drag Surface</title>
+    <style>
+      :root {
+        --bg: #14161a;
+        --ink: #fff;
+        --ink2: rgba(255, 255, 255, 0.74);
+        --ink3: rgba(255, 255, 255, 0.52);
+        --surface: rgba(20, 22, 27, 0.58);
+        --surface-strong: rgba(20, 22, 27, 0.84);
+        --line: rgba(255, 255, 255, 0.14);
+        --accent: #f2971f;
+        --accent-ink: #1d1206;
+        --cursor: #3b9cff;
+        --ok: #4cc38a;
+        --danger: #ff6a5f;
+        --font:
+          Corbel, "Noto Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+        --hud-top: 14px;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        background: radial-gradient(circle at 70% 20%, #1e232b, var(--bg) 60%);
+        color: var(--ink);
+        font-family: var(--font);
+        overflow: hidden;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button,
+      input {
+        font: inherit;
+      }
+      [hidden] {
+        display: none !important;
+      }
+
+      /* ---------- page shell: phone frame on desktop, full screen on a phone ---------- */
+      .protolabel {
+        position: fixed;
+        top: 6px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        white-space: nowrap;
+        font: 600 11px/1 var(--font);
+        letter-spacing: 0.02em;
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        padding: 4px 4px 4px 10px;
+        border-radius: 999px;
+      }
+      .protolabel button {
+        border: 0;
+        background: rgba(255, 255, 255, 0.16);
+        color: #fff;
+        border-radius: 999px;
+        font-size: 11px;
+        padding: 4px 8px;
+        cursor: pointer;
+      }
+      .stage {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 44px;
+        padding: 36px 24px 16px;
+      }
+      .about {
+        width: 320px;
+        flex: none;
+        color: var(--ink2);
+        font-size: 15px;
+        line-height: 1.45;
+      }
+      .about h1 {
+        color: var(--ink);
+        font-size: 24px;
+        line-height: 1.15;
+        margin-bottom: 10px;
+      }
+      .about .tag {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 8px;
+      }
+      .about ol {
+        padding-left: 20px;
+        margin-top: 12px;
+        display: grid;
+        gap: 6px;
+      }
+      .about b {
+        color: var(--ink);
+      }
+      .about .note {
+        margin-top: 14px;
+        font-size: 13px;
+        color: var(--ink3);
+      }
+      .phonewrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        flex: none;
+      }
+      .phone {
+        position: relative;
+        height: min(844px, calc(100dvh - 100px));
+        aspect-ratio: 390 / 844;
+        border-radius: 46px;
+        border: 11px solid #050607;
+        background: #000;
+        overflow: hidden;
+        box-shadow:
+          0 0 0 1px #2a2e35,
+          0 30px 80px rgba(0, 0, 0, 0.55);
+      }
+      .phone.landscape {
+        height: auto;
+        width: min(844px, calc(100vw - 440px));
+        aspect-ratio: 844 / 390;
+      }
+      .orient {
+        display: flex;
+        gap: 4px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 999px;
+        padding: 3px;
+      }
+      .orient button {
+        border: 0;
+        background: none;
+        color: var(--ink2);
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .orient button[aria-pressed="true"] {
+        background: rgba(255, 255, 255, 0.9);
+        color: #111;
+      }
+      @media (max-width: 1080px) {
+        .about {
+          display: none;
+        }
+        .phone.landscape {
+          width: min(844px, calc(100vw - 48px));
+        }
+      }
+      @media (max-width: 700px), (max-height: 500px) {
+        :root {
+          --hud-top: calc(30px + env(safe-area-inset-top));
+        }
+        .stage {
+          padding: 0;
+        }
+        .about,
+        .orient {
+          display: none;
+        }
+        .phone,
+        .phone.landscape {
+          width: 100vw;
+          height: 100dvh;
+          aspect-ratio: auto;
+          border: 0;
+          border-radius: 0;
+          box-shadow: none;
+        }
+      }
+
+      /* ---------- the "camera feed" ---------- */
+      .screen {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        container-type: size;
+      }
+      #feed {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        cursor: grab;
+      }
+      #feed:active {
+        cursor: grabbing;
+      }
+      #feed text {
+        font-family: var(--font);
+      }
+      #feed .obj {
+        cursor: pointer;
+      }
+      .halo {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: halo 1.6s ease-in-out infinite;
+      }
+      @keyframes halo {
+        0%,
+        100% {
+          opacity: 0.95;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.45;
+          transform: scale(1.18);
+        }
+      }
+      .vignette {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(
+          ellipse at 50% 45%,
+          transparent 55%,
+          rgba(0, 0, 0, 0.32)
+        );
+      }
+      .flash {
+        position: absolute;
+        inset: 0;
+        background: #fff;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .flash.go {
+        animation: flash 0.38s ease-out;
+      }
+      @keyframes flash {
+        0% {
+          opacity: 0.9;
+        }
+        100% {
+          opacity: 0;
+        }
+      }
+      .codemark {
+        transform-box: fill-box;
+      }
+      .scanline {
+        animation: scan 1.1s ease-in-out infinite alternate;
+      }
+      @keyframes scan {
+        from {
+          transform: translateY(0);
+        }
+        to {
+          transform: translateY(var(--scan-h));
+        }
+      }
+
+      /* ---------- HUD shared pieces ---------- */
+      .hud {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      .hud svg.i {
+        width: 20px;
+        height: 20px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex: none;
+      }
+      .top {
+        position: absolute;
+        top: var(--hud-top);
+        left: 12px;
+        right: 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .hint {
+        pointer-events: auto;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        max-width: min(290px, 70%);
+        background: var(--surface);
+        -webkit-backdrop-filter: blur(14px);
+        backdrop-filter: blur(14px);
+        border-radius: 16px;
+        padding: 9px 12px 9px 9px;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+        transition:
+          opacity 0.4s ease,
+          transform 0.4s ease;
+      }
+      .hint.gone {
+        opacity: 0;
+        transform: translateY(-10px);
+        pointer-events: none;
+      }
+      .hint.nudge {
+        animation: nudge 0.5s ease;
+        box-shadow:
+          0 0 0 2px var(--accent),
+          0 4px 18px rgba(0, 0, 0, 0.28);
+      }
+      @keyframes nudge {
+        0%,
+        100% {
+          transform: translateX(0);
+        }
+        25% {
+          transform: translateX(-6px);
+        }
+        75% {
+          transform: translateX(6px);
+        }
+      }
+      .hint .hi {
+        width: 40px;
+        height: 40px;
+        flex: none;
+      }
+      .hint .ht {
+        font-weight: 700;
+        font-size: 14px;
+        line-height: 1.2;
+      }
+      .hint .hs {
+        font-size: 12.5px;
+        line-height: 1.3;
+        color: var(--ink2);
+        margin-top: 2px;
+      }
+      .hint .bar {
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.18);
+        margin-top: 6px;
+        overflow: hidden;
+      }
+      .hint .bar i {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: var(--ok);
+        border-radius: 2px;
+      }
+      .anim-phone {
+        animation: hover 2.2s ease-in-out infinite;
+      }
+      @keyframes hover {
+        0%,
+        100% {
+          transform: translate(-5px, 2px) rotate(-6deg);
+        }
+        50% {
+          transform: translate(5px, -2px) rotate(5deg);
+        }
+      }
+      .anim-step1 {
+        animation: step 1.2s infinite;
+      }
+      .anim-step2 {
+        animation: step 1.2s 0.6s infinite;
+      }
+      @keyframes step {
+        0%,
+        100% {
+          opacity: 0.25;
+        }
+        40% {
+          opacity: 1;
+        }
+      }
+      .spin {
+        animation: spin 1s linear infinite;
+        transform-origin: 20px 20px;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .toast {
+        position: absolute;
+        left: 50%;
+        bottom: calc(92px + env(safe-area-inset-bottom));
+        transform: translate(-50%, 10px);
+        background: var(--surface-strong);
+        -webkit-backdrop-filter: blur(12px);
+        backdrop-filter: blur(12px);
+        color: #fff;
+        border-radius: 14px;
+        padding: 10px 10px 10px 14px;
+        font-size: 14px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        white-space: nowrap;
+        max-width: calc(100% - 24px);
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          opacity 0.25s,
+          transform 0.25s;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+        pointer-events: auto;
+      }
+      .toast button {
+        border: 0;
+        background: none;
+        color: var(--accent);
+        font-weight: 700;
+        padding: 4px 6px;
+        cursor: pointer;
+      }
+
+      /* saved confirmation */
+      .saved {
+        position: absolute;
+        inset: 0;
+        pointer-events: auto;
+        display: grid;
+        place-items: center;
+        padding: 18px;
+        background: rgba(10, 12, 15, 0.55);
+        -webkit-backdrop-filter: blur(5px);
+        backdrop-filter: blur(5px);
+        animation: fade 0.3s ease;
+      }
+      @keyframes fade {
+        from {
+          opacity: 0;
+        }
+      }
+      .savedcard {
+        width: 100%;
+        max-width: 340px;
+        max-height: 100%;
+        overflow: auto;
+        text-align: center;
+        background: #1c1f25;
+        border-radius: 26px;
+        padding: 26px 22px 20px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        animation: pop 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+      }
+      @keyframes pop {
+        from {
+          transform: scale(0.9);
+          opacity: 0;
+        }
+      }
+      .savedcard .big {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto 10px;
+      }
+      .savedcard .big circle {
+        stroke-dasharray: 190;
+        stroke-dashoffset: 190;
+        animation: draw 0.6s 0.1s ease-out forwards;
+      }
+      .savedcard .big path {
+        stroke-dasharray: 50;
+        stroke-dashoffset: 50;
+        animation: draw 0.4s 0.55s ease-out forwards;
+      }
+      @keyframes draw {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+      .savedcard h2 {
+        font-size: 21px;
+        margin-bottom: 12px;
+      }
+      .file {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-align: left;
+        background: rgba(255, 255, 255, 0.07);
+        border-radius: 14px;
+        padding: 10px 12px;
+        margin-bottom: 12px;
+      }
+      .file .fi {
+        width: 34px;
+        height: 40px;
+        flex: none;
+      }
+      .file b {
+        display: block;
+        font-size: 15px;
+      }
+      .file span {
+        font-size: 12.5px;
+        color: var(--ink2);
+      }
+      .savedcard p {
+        font-size: 13.5px;
+        color: var(--ink2);
+        line-height: 1.4;
+        margin-bottom: 16px;
+      }
+      .savedcard .acts {
+        display: grid;
+        gap: 8px;
+      }
+      .btn {
+        height: 48px;
+        border: 0;
+        border-radius: 14px;
+        font-weight: 700;
+        font-size: 15px;
+        cursor: pointer;
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: var(--accent-ink);
+      }
+      .btn.quiet {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+      }
+      @container (max-height: 460px) {
+        .savedcard {
+          max-width: 520px;
+          display: grid;
+          grid-template-columns: 70px 1fr;
+          gap: 0 16px;
+          text-align: left;
+          padding: 18px;
+          align-items: start;
+        }
+        .savedcard .big {
+          grid-row: span 4;
+          margin: 4px 0 0;
+        }
+        .savedcard h2 {
+          margin-bottom: 8px;
+        }
+        .savedcard .acts {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      .spinner {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 2.5px solid currentColor;
+        border-right-color: transparent;
+        animation: spin2 0.8s linear infinite;
+      }
+      @keyframes spin2 {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* ---------- H3: drag along the surface + radial menu ---------- */
+      .finish {
+        pointer-events: auto;
+        height: 42px;
+        border: 0;
+        border-radius: 21px;
+        padding: 0 15px 0 12px;
+        display: inline-flex;
+        gap: 7px;
+        align-items: center;
+        font-weight: 700;
+        font-size: 14px;
+        cursor: pointer;
+        flex: none;
+        color: #fff;
+        background: var(--surface-strong);
+        -webkit-backdrop-filter: blur(12px);
+        backdrop-filter: blur(12px);
+        box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45), 0 3px 14px rgba(0, 0, 0, 0.32);
+      }
+      .dock {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: calc(18px + env(safe-area-inset-bottom));
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: end;
+        gap: 22px;
+        padding: 0 24px;
+        pointer-events: none;
+        animation: rise 0.22s ease-out;
+        max-width: 420px;
+        margin: 0 auto;
+      }
+      .dk {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 7px;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #fff;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+      }
+      .dk:first-child {
+        justify-self: end;
+      }
+      .rb {
+        pointer-events: auto;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        border: 0;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        background: var(--accent);
+        color: var(--accent-ink);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+        transition: transform 0.12s ease;
+      }
+      .rb svg.i {
+        width: 28px;
+        height: 28px;
+      }
+      .shutter {
+        pointer-events: auto;
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        border: 4px solid #fff;
+        background: rgba(255, 255, 255, 0.18);
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+        transition: transform 0.12s ease;
+      }
+      .shutter i {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: #fff;
+        display: grid;
+        place-items: center;
+        color: #222;
+      }
+      .shutter i svg.i {
+        width: 26px;
+        height: 26px;
+      }
+      .rb:active,
+      .shutter:active {
+        transform: scale(0.93);
+      }
+      .rb[aria-disabled="true"],
+      .shutter[aria-disabled="true"] {
+        opacity: 0.5;
+      }
+      .dock2 {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: calc(22px + env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        padding: 0 12px;
+        pointer-events: none;
+        animation: rise 0.22s ease-out;
+      }
+      .dock2 .row {
+        display: flex;
+        gap: 10px;
+      }
+      .say {
+        pointer-events: none;
+        font-size: 13.5px;
+        font-weight: 600;
+        color: #fff;
+        background: rgba(20, 22, 27, 0.6);
+        padding: 7px 13px;
+        border-radius: 999px;
+        text-align: center;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .say i {
+        font-style: normal;
+        color: #8cc4ff;
+      }
+      .say svg {
+        width: 18px;
+        height: 18px;
+        flex: none;
+      }
+      .pill {
+        pointer-events: auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 52px;
+        min-width: 120px;
+        padding: 0 24px;
+        border-radius: 26px;
+        border: 0;
+        cursor: pointer;
+        background: var(--surface-strong);
+        color: #fff;
+        font-weight: 700;
+        font-size: 16px;
+        -webkit-backdrop-filter: blur(12px);
+        backdrop-filter: blur(12px);
+        box-shadow: 0 3px 14px rgba(0, 0, 0, 0.32);
+      }
+      .pill.primary {
+        background: var(--accent);
+        color: var(--accent-ink);
+      }
+      .pill:disabled {
+        opacity: 0.45;
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+      }
+      /* the radial menu around the selected object */
+      .radarc {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+      .rad {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 56px;
+        height: 56px;
+        margin: -28px 0 0 -28px;
+        border-radius: 50%;
+        border: 0;
+        cursor: pointer;
+        pointer-events: auto;
+        background: var(--surface-strong);
+        -webkit-backdrop-filter: blur(12px);
+        backdrop-filter: blur(12px);
+        color: #fff;
+        display: grid;
+        place-items: center;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 5px 18px rgba(0, 0, 0, 0.4);
+      }
+      .rad .in {
+        display: grid;
+        place-items: center;
+        animation: radin 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+      }
+      @keyframes radin {
+        from {
+          transform: scale(0.3);
+          opacity: 0;
+        }
+      }
+      .rad svg.i {
+        width: 24px;
+        height: 24px;
+      }
+      .rad .lbl {
+        position: absolute;
+        top: 60px;
+        left: 50%;
+        transform: translateX(-50%);
+        white-space: nowrap;
+        font-size: 11.5px;
+        font-weight: 700;
+        background: rgba(20, 22, 27, 0.78);
+        padding: 3px 8px;
+        border-radius: 999px;
+      }
+      .rad.del {
+        color: var(--danger);
+      }
+      .rad.go {
+        background: #2b7fe0;
+        color: #fff;
+      }
+      .radial.hide .rad {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.12s;
+      }
+      .textbar {
+        position: absolute;
+        left: 10px;
+        right: 10px;
+        bottom: calc(14px + env(safe-area-inset-bottom));
+        pointer-events: auto;
+        background: var(--surface-strong);
+        -webkit-backdrop-filter: blur(16px);
+        backdrop-filter: blur(16px);
+        border-radius: 20px;
+        padding: 10px 10px 10px 12px;
+        box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4);
+        animation: rise 0.2s ease-out;
+        max-width: 520px;
+        margin: 0 auto;
+      }
+      .textbar label {
+        display: block;
+        font-size: 12.5px;
+        color: var(--ink2);
+        margin: 0 0 7px 2px;
+      }
+      .textbar .tr {
+        display: flex;
+        gap: 8px;
+      }
+      .textbar input {
+        flex: 1;
+        min-width: 0;
+        height: 48px;
+        border-radius: 14px;
+        border: 0;
+        padding: 0 12px;
+        font-size: 16px;
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+        outline: none;
+      }
+      .textbar input:focus {
+        box-shadow: inset 0 0 0 2px var(--cursor);
+      }
+      .textbar input::placeholder {
+        color: var(--ink3);
+      }
+      .textbar .pill {
+        height: 48px;
+        min-width: 0;
+        padding: 0 18px;
+        box-shadow: none;
+      }
+      .textbar .x {
+        width: 48px;
+        padding: 0;
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .toast {
+        bottom: calc(150px + env(safe-area-inset-bottom));
+      }
+      @container (max-height: 460px) {
+        .dock {
+          bottom: calc(10px + env(safe-area-inset-bottom));
+          max-width: none;
+          grid-template-columns: auto;
+          justify-content: end;
+          right: 18px;
+          left: auto;
+          top: 0;
+          align-content: center;
+          gap: 18px;
+          padding: 0;
+        }
+        .dk:first-child {
+          justify-self: center;
+        }
+        .dk.spacer {
+          display: none;
+        }
+        .dock2 {
+          bottom: calc(12px + env(safe-area-inset-bottom));
+        }
+        .toast {
+          bottom: calc(124px + env(safe-area-inset-bottom));
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.001s !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.001s !important;
+        }
+        .savedcard .big circle,
+        .savedcard .big path {
+          stroke-dashoffset: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="protolabel">
+      Prototype H3 - Drag along the surface
+      <button type="button" id="restart" title="Start the session again">
+        Restart
+      </button>
+    </div>
+
+    <div class="stage">
+      <aside class="about">
+        <div class="tag">AR authoring HUD</div>
+        <h1>H3 - Drag along the surface</h1>
+        <p>
+          Direct handling. Tap a pin or the photo to select it, then drag it
+          with your finger: it slides along the ground and the detected surface
+          lights up under it. A small radial menu around the object holds Move
+          to cursor, Edit and Delete.
+        </p>
+        <ol>
+          <li>Wait a moment: the printed code gets <b>measured</b>.</li>
+          <li>
+            <b>Drag the empty view</b> to aim the blue ring. That stands in for
+            moving your phone.
+          </li>
+          <li><b>Place a pin</b> (round button) or <b>take a photo</b> (shutter).</li>
+          <li>
+            <b>Tap the "Welcome!" pin</b>, then <b>drag it</b>. Or use the
+            radial buttons around it. <b>Done</b> leaves it.
+          </li>
+          <li><b>Finish tour</b> saves everything to your tour file.</li>
+        </ol>
+        <p class="note">Throwaway prototype. Nothing is saved; the camera is a drawing.</p>
+      </aside></aside>
+      <div class="phonewrap">
+        <div class="phone" id="phone">
+          <div class="screen" id="screen">
+            <svg
+              id="feed"
+              viewBox="0 0 1000 1000"
+              preserveAspectRatio="xMidYMid slice"
+              aria-label="Camera view of a courtyard"
+            >
+              <defs>
+                <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#8db8e2" />
+                  <stop offset=".75" stop-color="#cfdcea" />
+                  <stop offset="1" stop-color="#eadfcc" />
+                </linearGradient>
+                <linearGradient id="wallL" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#8f7d68" />
+                  <stop offset="1" stop-color="#ad9a82" />
+                </linearGradient>
+                <linearGradient id="wallR" x1="1" y1="0" x2="0" y2="0">
+                  <stop offset="0" stop-color="#e2c9a4" />
+                  <stop offset="1" stop-color="#d2b994" />
+                </linearGradient>
+                <radialGradient id="meshglow">
+                  <stop offset="0" stop-color="#5fd0ff" stop-opacity=".9" />
+                  <stop offset="1" stop-color="#5fd0ff" stop-opacity="0" />
+                </radialGradient>
+              </defs>
+              <g id="world">
+                <g id="scene"></g>
+                <g id="mesh"></g>
+                <g id="codemark"></g>
+                <g id="objs"></g>
+                <g id="cursor" pointer-events="none"></g>
+                <g id="ghost" pointer-events="none"></g>
+              </g>
+            </svg>
+            <div class="vignette"></div>
+            <div class="flash" id="flash"></div>
+
+            <div class="hud" id="hud">
+              <svg class="radarc" id="radArc" aria-hidden="true"></svg>
+              <div class="top">
+                <div class="hint gone" id="hint" role="status" aria-live="polite"></div>
+                <button class="finish" id="finishBtn" type="button"></button>
+              </div>
+
+              <div class="dock" id="placeRow">
+                <div class="dk">
+                  <button class="rb" id="pinBtn" type="button" aria-label="Place a pin">
+                    <svg class="i" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.8-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 15.2 12 21 12 21z" /><circle cx="12" cy="9.8" r="2.3" /></svg>
+                  </button>
+                  Place a pin
+                </div>
+                <div class="dk">
+                  <button class="shutter" id="photoBtn" type="button" aria-label="Take a photo">
+                    <i><svg class="i" viewBox="0 0 24 24"><path d="M3.5 8.5h3.2l1.9-2.6h6.8l1.9 2.6h3.2v10.6h-17z" /><circle cx="12" cy="13.6" r="3.4" /></svg></i>
+                  </button>
+                  Take a photo
+                </div>
+                <div class="dk spacer" aria-hidden="true"></div>
+              </div>
+
+              <div class="radial" id="radial" hidden>
+                <button class="rad go" id="moveBtn" type="button" aria-label="Move to cursor">
+                  <span class="in"><svg class="i" viewBox="0 0 24 24"><ellipse cx="15" cy="16.5" rx="5.5" ry="3" /><circle cx="15" cy="16.5" r=".6" /><path d="M4 4l7.5 8.5M4 4h4.5M4 4v4.5" /></svg></span>
+                  <span class="lbl">Move to cursor</span>
+                </button>
+                <button class="rad" id="editBtn" type="button" aria-label="Edit">
+                  <span class="in"><svg class="i" viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5l-4-4L4 16z" /><path d="M12.5 7.5l4 4" /></svg></span>
+                  <span class="lbl" id="editLbl">Edit</span>
+                </button>
+                <button class="rad del" id="delBtn" type="button" aria-label="Delete">
+                  <span class="in"><svg class="i" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.8 7l1 12.5h8.4l1-12.5" /></svg></span>
+                  <span class="lbl">Delete</span>
+                </button>
+              </div>
+
+              <div class="dock2" id="objRow" hidden>
+                <div class="say" id="dragTip"></div>
+                <button class="pill primary" id="doneBtn" type="button">
+                  <svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>Done
+                </button>
+              </div>
+
+              <div class="dock2" id="moveRow" hidden>
+                <div class="say">Aim the <i>blue ring</i> where it should go</div>
+                <div class="row">
+                  <button class="pill primary" id="putBtn" type="button">
+                    <svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>Put it here
+                  </button>
+                  <button class="pill" id="cancelMoveBtn" type="button">Cancel</button>
+                </div>
+              </div>
+
+              <form class="textbar" id="textBar" hidden autocomplete="off">
+                <label for="textIn" id="textLbl">New pin - aim the blue ring, then type its text</label>
+                <div class="tr">
+                  <input id="textIn" maxlength="40" enterkeyhint="done" placeholder="What should this pin say?" />
+                  <button class="pill primary" id="textOk" type="submit">Place</button>
+                  <button class="pill x" id="textCancel" type="button" aria-label="Cancel">
+                    <svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                  </button>
+                </div>
+              </form>
+
+              <div class="toast" id="toast" role="status" aria-live="polite">
+                <span id="toastMsg"></span
+                ><button type="button" id="toastAct" hidden>Undo</button>
+              </div>
+
+              <div class="saved" id="saved" hidden>
+                <div
+                  class="savedcard"
+                  role="dialog"
+                  aria-labelledby="savedTitle"
+                >
+                  <svg
+                    class="big"
+                    viewBox="0 0 64 64"
+                    fill="none"
+                    stroke="#4cc38a"
+                    stroke-width="4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <circle cx="32" cy="32" r="29" />
+                    <path d="M19 33l9 9 17-19" />
+                  </svg>
+                  <h2 id="savedTitle">Saved to your tour file</h2>
+                  <div class="file">
+                    <svg class="fi" viewBox="0 0 34 40">
+                      <path d="M3 2h19l9 9v27H3z" fill="#f2971f" />
+                      <path d="M22 2v9h9" fill="#ffd08c" />
+                      <text
+                        x="17"
+                        y="31"
+                        text-anchor="middle"
+                        font-size="8"
+                        font-weight="700"
+                        fill="#1d1206"
+                        font-family="sans-serif"
+                      >
+                        ZIP
+                      </text>
+                    </svg>
+                    <div>
+                      <b>courtyard-tour.zip</b
+                      ><span id="savedCounts"
+                        >3 pins, 1 photo - on this phone</span
+                      >
+                    </div>
+                  </div>
+                  <p>
+                    Next: put this file where the old one is (replace it). The
+                    link and your printed code stay the same.
+                  </p>
+                  <div class="acts">
+                    <button class="btn primary" type="button" id="toSetupBtn">
+                      Back to tour setup
+                    </button>
+                    <button class="btn quiet" type="button" id="keepBtn">
+                      Keep editing
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="orient" role="group" aria-label="Phone orientation">
+          <button type="button" data-o="portrait" aria-pressed="true">
+            Portrait
+          </button>
+          <button type="button" data-o="landscape" aria-pressed="false">
+            Landscape
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      "use strict";
+      /* ==========================================================
+   Shared fake-AR engine (same in H1/H2/H3): a perspective
+   courtyard drawn in SVG, a pan that stands in for moving the
+   phone, the blue ring cursor on the floor under the screen
+   centre, and the tour objects (pins + photos).
+   ========================================================== */
+      const F = 560,
+        CAM_H = 1.5,
+        HZ = 330,
+        CX = 500,
+        CY = 500;
+      const ACCENT = "#f2971f",
+        CURSOR = "#3b9cff",
+        OK = "#4cc38a";
+      const FONT =
+        'Corbel, "Noto Sans", "Segoe UI", system-ui, -apple-system, sans-serif';
+      const RM = matchMedia("(prefers-reduced-motion: reduce)");
+      const $ = (s) => document.querySelector(s);
+      const svg = $("#feed"),
+        world = $("#world"),
+        screenEl = $("#screen");
+      const objsG = $("#objs"),
+        cursorG = $("#cursor"),
+        ghostG = $("#ghost"),
+        codeG = $("#codemark"),
+        meshG = $("#mesh");
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      const f1 = (n) => n.toFixed(1);
+      const P = (X, Y, Z) => [CX + (F * X) / Z, HZ + (F * (CAM_H - Y)) / Z];
+      const pts = (a) => a.map((p) => f1(p[0]) + "," + f1(p[1])).join(" ");
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+        );
+      const mctx = document.createElement("canvas").getContext("2d");
+      function textW(t, fs) {
+        mctx.font = "600 " + fs + "px " + FONT;
+        return mctx.measureText(t).width;
+      }
+      function unproject(sx, sy) {
+        const y = Math.max(sy, HZ + 30);
+        const Z = clamp((F * CAM_H) / (y - HZ), 1.9, 17);
+        return { X: clamp(((sx - CX) * Z) / F, -7.2, 7.2), Z };
+      }
+
+      /* ---------- the static courtyard ---------- */
+      function wallX(X, z0, z1, y0, y1, a) {
+        return `<polygon points="${pts([P(X, y0, z0), P(X, y0, z1), P(X, y1, z1), P(X, y1, z0)])}" ${a}/>`;
+      }
+      function faceZ(Z, x0, x1, y0, y1, a) {
+        const p = P(x0, y1, Z),
+          q = P(x1, y0, Z);
+        return `<rect x="${f1(p[0])}" y="${f1(p[1])}" width="${f1(q[0] - p[0])}" height="${f1(q[1] - p[1])}" ${a}/>`;
+      }
+      function floorQ(x0, x1, z0, z1, a) {
+        return `<polygon points="${pts([P(x0, 0, z0), P(x1, 0, z0), P(x1, 0, z1), P(x0, 0, z1)])}" ${a}/>`;
+      }
+      function archX(X, z, w, hBase, a) {
+        const r = w / 2,
+          zc = z + r,
+          p = [P(X, 0, z), P(X, hBase, z)];
+        for (let i = 1; i < 12; i++) {
+          const t = (Math.PI * i) / 12;
+          p.push(P(X, hBase + r * Math.sin(t), zc - r * Math.cos(t)));
+        }
+        p.push(P(X, hBase, z + w), P(X, 0, z + w));
+        return `<polygon points="${pts(p)}" ${a}/>`;
+      }
+      function qrPath() {
+        // a fixed 21x21 pattern with the three finder squares, seeded so it never changes
+        let seed = 7,
+          d = "";
+        const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+        const finder = (x, y) =>
+          (x < 7 && y < 7) || (x > 13 && y < 7) || (x < 7 && y > 13);
+        for (let y = 0; y < 21; y++)
+          for (let x = 0; x < 21; x++) {
+            let on;
+            if (finder(x, y)) {
+              const fx = x > 13 ? x - 14 : x,
+                fy = y > 13 ? y - 14 : y;
+              on =
+                fx === 0 ||
+                fx === 6 ||
+                fy === 0 ||
+                fy === 6 ||
+                (fx > 1 && fx < 5 && fy > 1 && fy < 5);
+            } else if (
+              x === 7 ||
+              y === 7 ||
+              (x === 13 && y < 8) ||
+              (y === 13 && x < 8)
+            )
+              on = false;
+            else on = rnd() > 0.52;
+            if (on) d += `M${x} ${y}h1v1h-1z`;
+          }
+        return d;
+      }
+      const QC = -0.7; // centre X of the info stand
+      const QR = { X0: QC - 0.28, X1: QC + 0.28, Y0: 1.17, Y1: 1.73, Z: 3.2 };
+      function buildScene() {
+        let s = `<rect x="-1400" y="-1400" width="3800" height="${1400 + HZ + 2}" fill="url(#sky)"/>`;
+        s += `<g fill="#fff" opacity=".6"><ellipse cx="300" cy="30" rx="95" ry="15"/><ellipse cx="352" cy="18" rx="58" ry="17"/><ellipse cx="770" cy="60" rx="115" ry="13"/><ellipse cx="-120" cy="70" rx="130" ry="16"/><ellipse cx="1170" cy="20" rx="100" ry="17"/></g>`;
+        s += `<rect x="-1400" y="${HZ}" width="3800" height="1600" fill="#b8a58b"/>`;
+        for (let z = 1; z < 20; z++)
+          for (let x = -8; x < 8; x++) {
+            const light = (((x + z) % 2) + 2) % 2 === 0;
+            s += floorQ(
+              x,
+              x + 1,
+              z,
+              z + 1,
+              `fill="${light ? "#c3b197" : "#b6a388"}" stroke="#a08e75" stroke-width=".7"`,
+            );
+          }
+        s += floorQ(-8, -5.2, 1, 20, 'fill="rgba(45,32,20,.2)"');
+        // left facade (in shade)
+        s += wallX(-8, 1, 20, 0, 10, 'fill="url(#wallL)"');
+        for (const z of [2, 5, 8, 11, 14, 17]) {
+          s += wallX(-8, z, z + 1.4, 3.5, 5.4, 'fill="#4e5966"');
+          s += wallX(-8, z, z + 1.4, 6.7, 8.4, 'fill="#4e5966"');
+        }
+        s += archX(-8, 9.6, 1.8, 1.9, 'fill="#3f3328"');
+        s += wallX(-8, 1, 20, 9.6, 10, 'fill="#7b6a57"');
+        // right facade (sunlit, arcade)
+        s += wallX(8, 1, 20, 0, 10, 'fill="url(#wallR)"');
+        for (const z of [1.6, 4.4, 7.2, 10, 12.8, 15.6])
+          s += archX(8, z, 2, 2.1, 'fill="#4a3d31"');
+        for (const z of [2.1, 4.9, 7.7, 10.5, 13.3, 16.1])
+          s += wallX(8, z, z + 1, 4.8, 6.6, 'fill="#5c6774"');
+        s += wallX(8, 1, 20, 9.6, 10, 'fill="#b49a76"');
+        // back facade
+        s += faceZ(20, -8, 8, 0, 10.4, 'fill="#d6c3a5"');
+        for (const x of [-7, -4.4, 2.9, 5.5])
+          for (const y of [3.8, 6.9])
+            s += faceZ(20, x, x + 1.5, y, y + 1.9, 'fill="#56616e"');
+        s += faceZ(20, -1.3, 1.3, 0, 2.8, 'fill="#3d3127"');
+        {
+          const c = P(0, 2.8, 20),
+            r = (F * 1.3) / 20;
+          s += `<path d="M${f1(c[0] - r)} ${f1(c[1])}a${f1(r)} ${f1(r)} 0 0 1 ${f1(2 * r)} 0z" fill="#3d3127"/>`;
+        }
+        s += faceZ(20, -8, 8, 10, 10.4, 'fill="#a89276"');
+        // lamp post
+        {
+          const a = P(-4.6, 0, 14.5),
+            b = P(-4.6, 3.7, 14.5);
+          s += `<line x1="${f1(a[0])}" y1="${f1(a[1])}" x2="${f1(b[0])}" y2="${f1(b[1])}" stroke="#2c2c2e" stroke-width="2.4"/><circle cx="${f1(b[0])}" cy="${f1(b[1])}" r="5" fill="#f5e7b8" stroke="#2c2c2e" stroke-width="1.5"/>`;
+        }
+        // tree in a planter
+        {
+          const sh = P(5.6, 0, 13.5);
+          s += `<ellipse cx="${f1(sh[0] - 6)}" cy="${f1(sh[1])}" rx="${f1((F * 1.7) / 13.5)}" ry="${f1((((F * 1.7) / 13.5) * CAM_H) / 13.5)}" fill="rgba(40,30,20,.25)"/>`;
+        }
+        s += faceZ(13.5, 4.9, 6.3, 0, 0.6, 'fill="#8a735c"');
+        s += faceZ(13.5, 5.5, 5.7, 0.6, 2.6, 'fill="#5b4330"');
+        {
+          const c = P(5.6, 3.4, 13.5),
+            r = F / 13.5;
+          s += `<g fill="#5f8a4a"><circle cx="${f1(c[0])}" cy="${f1(c[1])}" r="${f1(r * 1.25)}"/><circle cx="${f1(c[0] - r * 0.9)}" cy="${f1(c[1] + r * 0.4)}" r="${f1(r * 0.85)}"/><circle cx="${f1(c[0] + r * 0.9)}" cy="${f1(c[1] + r * 0.3)}" r="${f1(r * 0.9)}"/></g><circle cx="${f1(c[0] + r * 0.3)}" cy="${f1(c[1] - r * 0.5)}" r="${f1(r * 0.55)}" fill="#7aa35e"/>`;
+        }
+        // bench
+        s += faceZ(9, -7.2, -5.4, 0.42, 0.5, 'fill="#6b4e35"');
+        s += faceZ(9.1, -7.2, -5.4, 0.6, 0.95, 'fill="#7a5a3e"');
+        for (const x of [-7.05, -5.6])
+          s += faceZ(9, x, x + 0.1, 0, 0.42, 'fill="#3a3a3c"');
+        // the info stand with the printed code (chest height, facing the camera)
+        {
+          const a = P(QC - 0.03, 1.1, QR.Z),
+            b = P(QC + 0.03, 0, QR.Z);
+          s += `<rect x="${f1(a[0])}" y="${f1(a[1])}" width="${f1(b[0] - a[0])}" height="${f1(b[1] - a[1])}" fill="#3a3d42"/>`;
+        }
+        {
+          const f = P(QC, 0, QR.Z);
+          s += `<ellipse cx="${f1(f[0])}" cy="${f1(f[1])}" rx="${f1((F * 0.32) / QR.Z)}" ry="${f1((((F * 0.32) / QR.Z) * CAM_H) / QR.Z)}" fill="rgba(30,22,14,.3)"/>`;
+        }
+        s += faceZ(
+          QR.Z,
+          QC - 0.38,
+          QC + 0.38,
+          1.0,
+          1.83,
+          'fill="#fbfaf7" stroke="#2d3036" stroke-width="3"',
+        );
+        {
+          const a = P(QR.X0, QR.Y1, QR.Z),
+            k = (P(QR.X1, 0, QR.Z)[0] - a[0]) / 21;
+          s += `<path transform="translate(${f1(a[0])} ${f1(a[1])}) scale(${k.toFixed(3)})" d="${qrPath()}" fill="#111"/>`;
+        }
+        {
+          const t = P(QC, 1.06, QR.Z);
+          s += `<text x="${f1(t[0])}" y="${f1(t[1])}" font-size="${f1((F * 0.07) / QR.Z)}" text-anchor="middle" font-weight="700" fill="#222" letter-spacing=".5">SCAN FOR THE TOUR</text>`;
+        }
+        return s;
+      }
+      $("#scene").innerHTML = buildScene();
+
+      /* ---------- photo art (what the placed photos show) ---------- */
+      const ART = [
+        '<rect width="120" height="90" fill="#cdb48e"/><rect y="60" width="120" height="30" fill="#a88b62"/><rect x="16" y="12" width="88" height="50" fill="#b99b70"/><path d="M48 62V42a12 12 0 0 1 24 0v20z" fill="#5c4831"/><rect x="25" y="21" width="12" height="13" fill="#6c573e"/><rect x="83" y="21" width="12" height="13" fill="#6c573e"/><circle cx="33" cy="63" r="3.2" fill="#4a3a28"/><rect x="30.3" y="66" width="5.4" height="13" rx="2" fill="#4a3a28"/><circle cx="90" cy="65" r="2.8" fill="#4a3a28"/><rect x="87.6" y="67.6" width="4.8" height="11" rx="2" fill="#4a3a28"/><rect width="120" height="90" fill="none" stroke="#6e573d" stroke-width="8" opacity=".35"/>',
+        '<rect width="120" height="90" fill="#9cc6ea"/><rect y="56" width="120" height="34" fill="#c3b197"/><rect x="0" y="20" width="120" height="38" fill="#e0c9a4"/><path d="M14 58V40a9 9 0 0 1 18 0v18zM52 58V40a9 9 0 0 1 18 0v18zM90 58V40a9 9 0 0 1 18 0v18z" fill="#4a3d31"/><circle cx="96" cy="14" r="7" fill="#fff3c4"/>',
+        '<rect width="120" height="90" fill="#b6d4ec"/><rect y="52" width="120" height="38" fill="#b9a68c"/><circle cx="60" cy="34" r="22" fill="#5f8a4a"/><circle cx="44" cy="42" r="14" fill="#6f9a56"/><rect x="57" y="48" width="6" height="16" fill="#5b4330"/><rect x="34" y="62" width="52" height="8" fill="#8a735c"/>',
+      ];
+
+      /* ---------- state ---------- */
+      const state = {
+        mode: "place",
+        sel: null,
+        pan: { x: 0, y: 0 },
+        phase: "scan",
+        phaseAt: 0,
+        gps: 0,
+        objs: [
+          { id: "p1", kind: "pin", X: 0.8, Z: 4.3, text: "Welcome!" },
+          { id: "p2", kind: "pin", X: 0.1, Z: 13, text: "Old well, 1872" },
+          {
+            id: "f1",
+            kind: "photo",
+            X: 3.5,
+            Z: 11.5,
+            caption: "The courtyard in 1925",
+            art: 0,
+          },
+        ],
+        nextId: 1,
+        lastDeleted: null,
+        artNext: 1,
+        dragObj: null,
+      };
+      const view = { ex: 0, ey: 0 };
+      let cur = { X: 0, Z: 7 };
+      const measured = () => !["scan", "measuring"].includes(state.phase);
+      const selObj = () => state.objs.find((o) => o.id === state.sel) || null;
+
+      /* ---------- object drawing ---------- */
+      function pinSVG(o, opt = {}) {
+        const s = F / o.Z,
+          [bx, by] = P(o.X, 0, o.Z),
+          [hx, hy] = P(o.X, 1.6, o.Z);
+        const text = o.text || " ";
+        const fs = clamp(0.17 * s, 8, 24),
+          pad = fs * 0.8,
+          w = Math.max(textW(text, fs) + pad * 2, fs * 3),
+          h = fs * 1.9;
+        const ct = hy - 0.16 * s - h,
+          cl = hx - w / 2,
+          sw = Math.max(1.3, 0.028 * s);
+        const brx = 0.24 * s,
+          bry = (brx * CAM_H) / o.Z;
+        const op = opt.ghost ? 0.7 : opt.dim ? 0.32 : 1;
+        let g = `<g class="${opt.ghost ? "ghost" : "obj"}" ${opt.ghost ? "" : `data-id="${o.id}"`} opacity="${op}">`;
+        if (!opt.ghost)
+          g += `<rect x="${f1(cl - 8)}" y="${f1(ct - 8)}" width="${f1(w + 16)}" height="${f1(by - ct + bry + 16)}" fill="transparent"/>`;
+        g += `<ellipse cx="${f1(bx)}" cy="${f1(by)}" rx="${f1(brx)}" ry="${f1(bry)}" fill="rgba(20,14,8,.3)"/>`;
+        if (opt.selected)
+          g += `<ellipse class="halo" cx="${f1(bx)}" cy="${f1(by)}" rx="${f1(brx * 1.7)}" ry="${f1(bry * 1.7)}" fill="none" stroke="${ACCENT}" stroke-width="${f1(Math.max(2.2, 0.045 * s))}"/>`;
+        g += `<ellipse cx="${f1(bx)}" cy="${f1(by)}" rx="${f1(brx * 0.55)}" ry="${f1(bry * 0.55)}" fill="none" stroke="#fff" stroke-width="${f1(sw * 0.8)}"/>`;
+        g += `<line x1="${f1(hx)}" y1="${f1(hy)}" x2="${f1(bx)}" y2="${f1(by)}" stroke="rgba(0,0,0,.35)" stroke-width="${f1(sw + 1.6)}"/><line x1="${f1(hx)}" y1="${f1(hy)}" x2="${f1(bx)}" y2="${f1(by)}" stroke="#fff" stroke-width="${f1(sw)}"/>`;
+        g += `<circle cx="${f1(hx)}" cy="${f1(hy)}" r="${f1(0.075 * s)}" fill="${ACCENT}" stroke="#fff" stroke-width="${f1(sw * 0.6)}"/>`;
+        if (opt.selected)
+          g += `<rect x="${f1(cl - 5)}" y="${f1(ct - 5)}" width="${f1(w + 10)}" height="${f1(h + 10)}" rx="${f1(h * 0.38 + 5)}" fill="none" stroke="${ACCENT}" stroke-opacity=".45" stroke-width="7"/>`;
+        g += `<path d="M${f1(hx - fs * 0.45)} ${f1(ct + h - 1)}L${f1(hx)} ${f1(ct + h + fs * 0.5)}L${f1(hx + fs * 0.45)} ${f1(ct + h - 1)}z" fill="#fff"/>`;
+        const stroke = opt.selected
+          ? `stroke="${ACCENT}" stroke-width="2.5"`
+          : opt.ghost
+            ? `stroke="${CURSOR}" stroke-width="2.2" stroke-dasharray="6 4"`
+            : "";
+        g += `<rect x="${f1(cl)}" y="${f1(ct)}" width="${f1(w)}" height="${f1(h)}" rx="${f1(h * 0.38)}" fill="#fff" ${stroke}/>`;
+        g += `<text x="${f1(hx)}" y="${f1(ct + h * 0.66)}" font-size="${f1(fs)}" text-anchor="middle" font-weight="600" fill="${o.text ? "#1d1f24" : "#999"}">${esc(o.text || "Your text")}</text>`;
+        return g + "</g>";
+      }
+      function photoSVG(o, opt = {}) {
+        const s = F / o.Z,
+          half = 0.62,
+          [x0, y0] = P(o.X - half, 2.32, o.Z),
+          [x1, y1] = P(o.X + half, 1.38, o.Z);
+        const w = x1 - x0,
+          h = y1 - y0,
+          b = Math.max(2, 0.05 * s),
+          [bx, by] = P(o.X, 0, o.Z);
+        const op = opt.ghost ? 0.7 : opt.dim ? 0.32 : 1;
+        let g = `<g class="${opt.ghost ? "ghost" : "obj"}" ${opt.ghost ? "" : `data-id="${o.id}"`} opacity="${op}">`;
+        g += `<ellipse cx="${f1(bx)}" cy="${f1(by)}" rx="${f1(0.6 * s)}" ry="${f1((0.6 * s * CAM_H) / o.Z)}" fill="rgba(20,14,8,.22)"/>`;
+        if (opt.selected)
+          g += `<ellipse class="halo" cx="${f1(bx)}" cy="${f1(by)}" rx="${f1(0.75 * s)}" ry="${f1((0.75 * s * CAM_H) / o.Z)}" fill="none" stroke="${ACCENT}" stroke-width="${f1(Math.max(2.2, 0.045 * s))}"/>`;
+        g += `<line x1="${f1(bx)}" y1="${f1(y1 + b)}" x2="${f1(bx)}" y2="${f1(by)}" stroke="#fff" stroke-opacity=".6" stroke-width="${f1(Math.max(1, 0.02 * s))}" stroke-dasharray="3 4"/>`;
+        if (opt.selected)
+          g += `<rect x="${f1(x0 - b - 5)}" y="${f1(y0 - b - 5)}" width="${f1(w + 2 * b + 10)}" height="${f1(h + 2 * b + 10)}" rx="6" fill="none" stroke="${ACCENT}" stroke-width="3"/>`;
+        const stroke = opt.ghost
+          ? `stroke="${CURSOR}" stroke-width="2.4" stroke-dasharray="6 4"`
+          : 'stroke="rgba(0,0,0,.25)" stroke-width="1"';
+        g += `<rect x="${f1(x0 - b)}" y="${f1(y0 - b)}" width="${f1(w + 2 * b)}" height="${f1(h + 2 * b)}" rx="2" fill="#fbfaf6" ${stroke}/>`;
+        g += `<svg x="${f1(x0)}" y="${f1(y0)}" width="${f1(w)}" height="${f1(h)}" viewBox="0 0 120 90" preserveAspectRatio="xMidYMid slice">${ART[o.art % ART.length]}</svg>`;
+        if (o.caption) {
+          const fs = clamp(0.12 * s, 7, 18),
+            tw = textW(o.caption, fs) + fs * 1.2;
+          g += `<rect x="${f1(bx - tw / 2)}" y="${f1(y1 + b + 4)}" width="${f1(tw)}" height="${f1(fs * 1.6)}" rx="${f1(fs * 0.5)}" fill="rgba(20,22,27,.82)"/><text x="${f1(bx)}" y="${f1(y1 + b + 4 + fs * 1.12)}" font-size="${f1(fs)}" text-anchor="middle" font-weight="600" fill="#fff">${esc(o.caption)}</text>`;
+        }
+        return g + "</g>";
+      }
+      const objSVG = (o, opt) => (o.kind === "pin" ? pinSVG : photoSVG)(o, opt);
+      /* screen-space anchors of an object, in world (viewBox) units */
+      function anchors(o) {
+        const s = F / o.Z;
+        if (o.kind === "pin") {
+          const fs = clamp(0.17 * s, 8, 24),
+            [hx, hy] = P(o.X, 1.6, o.Z);
+          return {
+            top: [hx, hy - 0.16 * s - fs * 1.9],
+            mid: [hx, (hy + P(o.X, 0, o.Z)[1]) / 2],
+            foot: P(o.X, 0, o.Z),
+          };
+        }
+        const [, y0] = P(o.X, 2.32, o.Z),
+          [, y1] = P(o.X, 1.38, o.Z),
+          x = P(o.X, 0, o.Z)[0];
+        return {
+          top: [x, y0 - 0.05 * s],
+          mid: [x, (y0 + y1) / 2],
+          foot: P(o.X, 0, o.Z),
+        };
+      }
+      function renderObjs() {
+        const list = [...state.objs].sort((a, b) => b.Z - a.Z);
+        objsG.innerHTML = list
+          .map((o) =>
+            objSVG(o, {
+              selected: o.id === state.sel && state.mode !== "saved",
+              dim: o.id === state.sel && state.mode === "move",
+            }),
+          )
+          .join("");
+      }
+      function toScreen(wx, wy) {
+        const m = svg.getScreenCTM(),
+          r = screenEl.getBoundingClientRect();
+        return [
+          (wx - view.ex) * m.a + m.e - r.left,
+          (wy - view.ey) * m.d + m.f - r.top,
+        ];
+      }
+      function clientToWorld(cx, cy) {
+        const pt = svg.createSVGPoint();
+        pt.x = cx;
+        pt.y = cy;
+        const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+        return [p.x + view.ex, p.y + view.ey];
+      }
+
+      /* ---------- cursor, ghost, code mark (per frame) ---------- */
+      function drawCursor(t) {
+        const s = F / cur.Z,
+          [cx, cy] = P(cur.X, 0, cur.Z),
+          rx = 0.45 * s,
+          ry = (rx * CAM_H) / cur.Z;
+        const pulse = RM.matches ? 0 : (t * 0.7) % 1;
+        const op =
+          state.mode === "object" ? 0.5 : state.mode === "saved" ? 0 : 1;
+        cursorG.setAttribute("opacity", op);
+        cursorG.innerHTML =
+          `<ellipse cx="${f1(cx)}" cy="${f1(cy)}" rx="${f1(rx * (1 + pulse * 0.8))}" ry="${f1(ry * (1 + pulse * 0.8))}" fill="none" stroke="${CURSOR}" stroke-opacity="${(0.7 * (1 - pulse)).toFixed(2)}" stroke-width="2"/>` +
+          `<ellipse cx="${f1(cx)}" cy="${f1(cy)}" rx="${f1(rx)}" ry="${f1(ry)}" fill="rgba(59,156,255,.2)" stroke="#fff" stroke-width="${f1(Math.max(4, 0.08 * s))}"/>` +
+          `<ellipse cx="${f1(cx)}" cy="${f1(cy)}" rx="${f1(rx)}" ry="${f1(ry)}" fill="none" stroke="${CURSOR}" stroke-width="${f1(Math.max(2.4, 0.05 * s))}"/>` +
+          `<ellipse cx="${f1(cx)}" cy="${f1(cy)}" rx="${f1(rx * 0.14)}" ry="${f1(ry * 0.14)}" fill="#fff"/>`;
+      }
+      function drawGhost() {
+        const m = state.mode;
+        if (m === "newPin") {
+          ghostG.innerHTML = pinSVG(
+            { X: cur.X, Z: cur.Z, text: $("#textIn").value.trim() },
+            { ghost: true },
+          );
+        } else if (m === "move" && selObj()) {
+          const o = selObj(),
+            a = P(o.X, 0, o.Z),
+            b = P(cur.X, 0, cur.Z);
+          ghostG.innerHTML =
+            `<line x1="${f1(a[0])}" y1="${f1(a[1])}" x2="${f1(b[0])}" y2="${f1(b[1])}" stroke="${CURSOR}" stroke-width="3" stroke-dasharray="7 6"/>` +
+            objSVG({ ...o, X: cur.X, Z: cur.Z }, { ghost: true });
+        } else if (ghostG.firstChild) ghostG.innerHTML = "";
+      }
+      function drawCodeMark(t) {
+        const ph = state.phase;
+        if (!["scan", "measuring", "measured"].includes(ph)) {
+          if (codeG.firstChild) codeG.innerHTML = "";
+          return;
+        }
+        const a = P(QR.X0 - 0.17, QR.Y1 + 0.17, QR.Z),
+          b = P(QR.X1 + 0.17, QR.Y0 - 0.24, QR.Z),
+          L = (b[0] - a[0]) * 0.28;
+        const col =
+          ph === "measured" ? OK : ph === "measuring" ? CURSOR : "#fff";
+        const breathe = ph === "scan" && !RM.matches ? Math.sin(t * 4) * 3 : 0;
+        const x0 = a[0] - breathe,
+          y0 = a[1] - breathe,
+          x1 = b[0] + breathe,
+          y1 = b[1] + breathe;
+        const corners = `M${f1(x0)} ${f1(y0 + L)}V${f1(y0)}H${f1(x0 + L)}M${f1(x1 - L)} ${f1(y0)}H${f1(x1)}V${f1(y0 + L)}M${f1(x1)} ${f1(y1 - L)}V${f1(y1)}H${f1(x1 - L)}M${f1(x0 + L)} ${f1(y1)}H${f1(x0)}V${f1(y1 - L)}`;
+        let g =
+          `<g fill="none" stroke-linecap="round"><path d="${corners}" stroke="rgba(0,0,0,.45)" stroke-width="8"/><path d="${corners}" stroke="${col}" stroke-width="4.5"/></g>`;
+        if (ph === "measuring") {
+          const k = clamp((performance.now() - state.phaseAt) / 1800, 0, 1);
+          const yy =
+            y0 + (y1 - y0) * (RM.matches ? 0.5 : Math.sin(t * 5) * 0.5 + 0.5);
+          g += `<line x1="${f1(x0 + 4)}" y1="${f1(yy)}" x2="${f1(x1 - 4)}" y2="${f1(yy)}" stroke="${CURSOR}" stroke-width="3" opacity=".8"/>`;
+          g += `<rect x="${f1(x0)}" y="${f1(y1 + 8)}" width="${f1((x1 - x0) * k)}" height="4" rx="2" fill="${CURSOR}"/>`;
+        }
+        if (ph === "measured") {
+          const c = [(x0 + x1) / 2, (y0 + y1) / 2],
+            r = (x1 - x0) * 0.22;
+          g += `<circle cx="${f1(c[0])}" cy="${f1(c[1])}" r="${f1(r)}" fill="${OK}"/><path d="M${f1(c[0] - r * 0.45)} ${f1(c[1])}l${f1(r * 0.32)} ${f1(r * 0.32)} ${f1(r * 0.6)} ${f1(-r * 0.62)}" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+        }
+        codeG.innerHTML = g;
+      }
+
+      /* ---------- hints: code first, then GPS, each only while relevant ---------- */
+      const ICONS = {
+        scan: '<svg class="hi" viewBox="0 0 40 40"><rect x="12" y="12" width="16" height="16" rx="2" fill="#fff"/><path d="M14 14h4v4h-4zM22 14h4v4h-4zM14 22h4v4h-4zM22 22h2v2h-2zM24 24h2v2h-2z" fill="#111"/><g class="anim-phone" style="transform-origin:20px 20px"><rect x="7" y="4" width="26" height="32" rx="5" fill="none" stroke="#8cc4ff" stroke-width="2.4"/></g></svg>',
+        spin: '<svg class="hi" viewBox="0 0 40 40"><circle cx="20" cy="20" r="14" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="4"/><circle class="spin" cx="20" cy="20" r="14" fill="none" stroke="#3b9cff" stroke-width="4" stroke-dasharray="30 60" stroke-linecap="round"/></svg>',
+        ok: '<svg class="hi" viewBox="0 0 40 40"><circle cx="20" cy="20" r="15" fill="#4cc38a"/><path d="M13 20.5l5 5 9-10" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        walk: '<svg class="hi" viewBox="0 0 40 40" fill="#fff"><g class="anim-step1"><ellipse cx="15" cy="25" rx="3.6" ry="6"/><circle cx="15" cy="34" r="2.4"/></g><g class="anim-step2"><ellipse cx="25" cy="13" rx="3.6" ry="6"/><circle cx="25" cy="22" r="2.4"/></g></svg>',
+      };
+      const HINTS = {
+        scan: [
+          "scan",
+          "Point your phone at the printed code",
+          "Stand at it. This makes everything land in the right spot.",
+        ],
+        measuring: ["spin", "Measuring the code", "Hold still for a moment"],
+        measured: [
+          "ok",
+          "Code measured",
+          "Now place pins and photos around you",
+        ],
+        gps: ["walk", "Walk a few steps", "GPS lines up while you move", true],
+        gpsok: [
+          "ok",
+          "GPS lined up",
+          "Visitors will see your tour from far away too",
+        ],
+        first: [
+          "scan",
+          "Stand at the code first",
+          "Point your phone at it. You can place right away; the code makes it exact.",
+        ],
+      };
+      const hintEl = $("#hint");
+      let hintKey = null,
+        nudgeUntil = 0;
+      function renderHint() {
+        const now = performance.now();
+        let key =
+          ["done"].includes(state.phase) || state.mode === "saved"
+            ? null
+            : state.phase;
+        if (now < nudgeUntil && !measured()) key = "first";
+        if (key !== hintKey) {
+          hintKey = key;
+          if (!key) {
+            hintEl.classList.add("gone");
+          } else {
+            const [ic, t, sub, bar] = HINTS[key];
+            hintEl.innerHTML =
+              ICONS[ic] +
+              `<div><div class="ht">${t}</div><div class="hs">${sub}</div>${bar ? '<div class="bar"><i id="gpsBar"></i></div>' : ""}</div>`;
+            hintEl.classList.remove("gone");
+            hintEl.classList.toggle("nudge", key === "first");
+          }
+        }
+        const bar = document.getElementById("gpsBar");
+        if (bar) bar.style.width = Math.round(state.gps * 100) + "%";
+      }
+      function standFirst() {
+        nudgeUntil = performance.now() + 2600;
+        hintKey = null;
+      }
+      function tickPhase(dt) {
+        const age = performance.now() - state.phaseAt,
+          go = (p) => {
+            state.phase = p;
+            state.phaseAt = performance.now();
+            hud.update();
+          };
+        if (state.phase === "scan" && age > 2600) go("measuring");
+        else if (state.phase === "measuring" && age > 1800) go("measured");
+        else if (state.phase === "measured" && age > 1600) go("gps");
+        else if (state.phase === "gps") {
+          state.gps = Math.min(1, state.gps + dt * 0.045);
+          if (state.gps >= 1) go("gpsok");
+        } else if (state.phase === "gpsok" && age > 1800) go("done");
+      }
+
+      /* ---------- toast ---------- */
+      const toastEl = $("#toast");
+      let toastTimer = 0,
+        toastAction = null;
+      function toast(msg, action) {
+        $("#toastMsg").textContent = msg;
+        const b = $("#toastAct");
+        b.hidden = !action;
+        toastAction = action || null;
+        toastEl.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(
+          () => toastEl.classList.remove("show"),
+          action ? 4500 : 2200,
+        );
+      }
+      $("#toastAct").addEventListener("click", () => {
+        if (toastAction) toastAction();
+        toastEl.classList.remove("show");
+      });
+
+      /* ---------- actions (the authoring model) ---------- */
+      function setMode(m) {
+        state.mode = m;
+        renderObjs();
+        hud.update();
+      }
+      function select(id) {
+        if (!["place", "object"].includes(state.mode)) return;
+        state.sel = id;
+        setMode("object");
+      }
+      function done() {
+        state.sel = null;
+        setMode("place");
+      }
+      function startNewPin() {
+        $("#textIn").value = "";
+        setMode("newPin");
+        focusText();
+      }
+      function takePhoto() {
+        const fl = $("#flash");
+        fl.classList.remove("go");
+        void fl.offsetWidth;
+        fl.classList.add("go");
+        setTimeout(() => {
+          state.objs.push({
+            id: "n" + state.nextId++,
+            kind: "photo",
+            X: cur.X,
+            Z: cur.Z,
+            caption: "",
+            art: state.artNext++,
+          });
+          renderObjs();
+          toast("Photo placed. Tap it to add a caption.");
+        }, 220);
+      }
+      function startMove() {
+        setMode("move");
+      }
+      function confirmMove() {
+        const o = selObj();
+        if (o) {
+          o.X = cur.X;
+          o.Z = cur.Z;
+        }
+        setMode("object");
+        toast("Moved");
+      }
+      function startEdit() {
+        const o = selObj();
+        if (!o) return;
+        $("#textIn").value = o.kind === "pin" ? o.text : o.caption;
+        setMode("edit");
+        focusText();
+      }
+      function submitText() {
+        const v = $("#textIn").value.trim();
+        if (state.mode === "newPin") {
+          if (!v) return;
+          state.objs.push({
+            id: "n" + state.nextId++,
+            kind: "pin",
+            X: cur.X,
+            Z: cur.Z,
+            text: v,
+          });
+          $("#textIn").blur();
+          setMode("place");
+          toast("Pin placed");
+        } else if (state.mode === "edit") {
+          const o = selObj();
+          if (!o) return;
+          if (o.kind === "pin") {
+            if (!v) return;
+            o.text = v;
+          } else o.caption = v;
+          $("#textIn").blur();
+          setMode("object");
+          toast(o.kind === "pin" ? "Text changed" : "Caption changed");
+        }
+      }
+      function cancelText() {
+        $("#textIn").blur();
+        setMode(state.mode === "edit" ? "object" : "place");
+      }
+      function deleteSel() {
+        const o = selObj();
+        if (!o) return;
+        state.objs = state.objs.filter((x) => x !== o);
+        state.lastDeleted = o;
+        state.sel = null;
+        setMode("place");
+        toast(o.kind === "pin" ? "Pin deleted" : "Photo deleted", () => {
+          state.objs.push(state.lastDeleted);
+          renderObjs();
+          toast("Restored");
+        });
+      }
+      function counts() {
+        const p = state.objs.filter((o) => o.kind === "pin").length,
+          f = state.objs.length - p;
+        return `${p} pin${p === 1 ? "" : "s"}, ${f} photo${f === 1 ? "" : "s"}`;
+      }
+      function finish() {
+        if (state.mode === "saving" || state.mode === "saved") return;
+        $("#textIn").blur();
+        state.sel = null;
+        setMode("saving");
+        setTimeout(() => {
+          $("#savedCounts").textContent = counts() + " - saved on this phone";
+          setMode("saved");
+        }, 950);
+      }
+      function focusText() {
+        setTimeout(() => {
+          const i = $("#textIn");
+          i.focus();
+        }, 60);
+      }
+
+      /* ---------- pointer: tap selects, drag pans (= moving the phone) ---------- */
+      let drag = null;
+      svg.addEventListener("pointerdown", (e) => {
+        if (["saving", "saved"].includes(state.mode)) return;
+        const g = e.target.closest("[data-id]");
+        drag = {
+          id: g ? g.dataset.id : null,
+          x0: e.clientX,
+          y0: e.clientY,
+          lx: e.clientX,
+          ly: e.clientY,
+          moved: false,
+          kind: null,
+        };
+        try {
+          svg.setPointerCapture(e.pointerId);
+        } catch (_) {
+          /* ignore */
+        }
+      });
+      svg.addEventListener("pointermove", (e) => {
+        if (!drag) return;
+        const dx = e.clientX - drag.lx,
+          dy = e.clientY - drag.ly;
+        drag.lx = e.clientX;
+        drag.ly = e.clientY;
+        if (
+          !drag.moved &&
+          Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 7
+        ) {
+          drag.moved = true;
+          drag.kind =
+            hud.canDragObject && hud.canDragObject(drag.id) ? "object" : "pan";
+          if (drag.kind === "object" && hud.dragStart) hud.dragStart(drag, e);
+        }
+        if (drag.kind === "pan") {
+          const k = 1 / svg.getScreenCTM().a;
+          state.pan.x = clamp(state.pan.x - dx * k, -330, 330);
+          state.pan.y = clamp(state.pan.y - dy * k, -90, 200);
+          if (state.phase === "gps")
+            state.gps = Math.min(1, state.gps + Math.hypot(dx, dy) * 0.0016);
+        } else if (drag.kind === "object" && hud.dragMove)
+          hud.dragMove(drag, e);
+      });
+      function endDrag() {
+        if (!drag) return;
+        if (!drag.moved && drag.id)
+          hud.tapObject ? hud.tapObject(drag.id) : select(drag.id);
+        if (drag.kind === "object" && hud.dragEnd) hud.dragEnd(drag);
+        drag = null;
+      }
+      svg.addEventListener("pointerup", endDrag);
+      svg.addEventListener("pointercancel", endDrag);
+      document.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape") return;
+        if (["newPin", "edit"].includes(state.mode)) cancelText();
+        else if (state.mode === "move") setMode("object");
+        else if (state.mode === "object") done();
+      });
+
+      /* ---------- frame loop ---------- */
+      let lastT = performance.now();
+      function frame(now) {
+        const t = now / 1000,
+          dt = Math.min(0.1, (now - lastT) / 1000);
+        lastT = now;
+        const sway =
+          RM.matches || (drag && drag.kind === "object")
+            ? [0, 0]
+            : [
+                5 * Math.sin(t * 0.6) + 2 * Math.sin(t * 1.7),
+                3.5 * Math.sin(t * 0.45) + 1.5 * Math.sin(t * 1.3),
+              ];
+        view.ex = state.pan.x + sway[0];
+        view.ey = state.pan.y + sway[1];
+        world.setAttribute(
+          "transform",
+          `translate(${f1(-view.ex)} ${f1(-view.ey)})`,
+        );
+        cur = unproject(CX + view.ex, CY + view.ey);
+        tickPhase(dt);
+        drawCursor(t);
+        drawGhost();
+        drawCodeMark(t);
+        renderHint();
+        hud.frame(t);
+        requestAnimationFrame(frame);
+      }
+
+      /* a landscape phone sees a wider, less zoomed slice of the same scene */
+      function fitView() {
+        const r = screenEl.getBoundingClientRect();
+        if (!r.width || !r.height) return;
+        const a = r.width / r.height,
+          vh = a > 1 ? 720 : 1000,
+          vw = a > 1 ? vh * a : 1000;
+        svg.setAttribute(
+          "viewBox",
+          `${f1(CX - vw / 2)} ${f1(CY - vh / 2)} ${f1(vw)} ${f1(vh)}`,
+        );
+      }
+      new ResizeObserver(fitView).observe(screenEl);
+      fitView();
+
+      /* ---------- page shell ---------- */
+      $("#restart").addEventListener("click", () => location.reload());
+      document.querySelectorAll(".orient button").forEach((b) =>
+        b.addEventListener("click", () => {
+          document
+            .querySelectorAll(".orient button")
+            .forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+          $("#phone").classList.toggle(
+            "landscape",
+            b.dataset.o === "landscape",
+          );
+        }),
+      );
+
+      /* ==========================================================
+   H3 HUD: tap to select, drag along the surface, radial menu
+   ========================================================== */
+      const ICON_FLAG = '<svg class="i" viewBox="0 0 24 24"><path d="M6 21V4M6 4h11l-2.5 4L17 12H6"/></svg>';
+      const ICON_HAND = '<svg viewBox="0 0 24 24" fill="none" stroke="#8cc4ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5a1.5 1.5 0 0 1 3 0V11m0-.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.5a6 6 0 0 1-4.8-2.4L4.5 15.5a1.5 1.5 0 0 1 2.3-1.9L9 15.5"/></svg>';
+      const els = {
+        placeRow: $("#placeRow"), radial: $("#radial"), objRow: $("#objRow"), moveRow: $("#moveRow"),
+        textBar: $("#textBar"), saved: $("#saved"), finish: $("#finishBtn"), pin: $("#pinBtn"),
+        photo: $("#photoBtn"), arc: $("#radArc"), tip: $("#dragTip")
+      };
+      const rads = [$("#moveBtn"), $("#editBtn"), $("#delBtn")];
+      const RAD_ANGLES = [-150, -90, -30];
+      let dragging = false, taught = false, meshK = 0;
+
+      /* world-space box of the part of an object you see (pin card or photo frame) */
+      function objBox(o) {
+        const s = F / o.Z;
+        if (o.kind === "pin") {
+          const fs = clamp(0.17 * s, 8, 24), [hx, hy] = P(o.X, 1.6, o.Z), h = fs * 1.9;
+          const w = Math.max(textW(o.text || " ", fs) + fs * 1.6, fs * 3), ct = hy - 0.16 * s - h;
+          return { cx: hx, cy: ct + h / 2, hw: w / 2, hh: h / 2 };
+        }
+        const [x0, y0] = P(o.X - 0.62, 2.32, o.Z), [x1, y1] = P(o.X + 0.62, 1.38, o.Z), b = 0.05 * s;
+        return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hw: (x1 - x0) / 2 + b, hh: (y1 - y0) / 2 + b };
+      }
+
+      /* the detected surface: a mesh that lights up around the object while it is dragged */
+      function drawMesh() {
+        const o = selObj();
+        const target = state.mode === "object" && o ? (dragging ? 1 : 0.3) : 0;
+        meshK += (target - meshK) * (RM.matches ? 1 : 0.18);
+        if (meshK < 0.02 || !o) { if (meshG.firstChild) meshG.innerHTML = ""; return; }
+        const R = dragging ? 2.6 : 1.3, step = 0.5, gx = Math.round(o.X / step) * step, gz = Math.round(o.Z / step) * step;
+        let g = "";
+        const [bx, by] = P(o.X, 0, o.Z), grx = F * R / o.Z;
+        g += `<ellipse cx="${f1(bx)}" cy="${f1(by)}" rx="${f1(grx)}" ry="${f1(grx * CAM_H / o.Z)}" fill="url(#meshglow)" opacity="${(0.55 * meshK).toFixed(2)}"/>`;
+        for (let x = gx - 3; x < gx + 3; x += step) {
+          for (let z = Math.max(1.9, gz - 3); z < gz + 3; z += step) {
+            const d = Math.hypot(x + step / 2 - o.X, z + step / 2 - o.Z), a = meshK * (1 - d / R);
+            if (a <= 0.03) continue;
+            g += floorQ(x, x + step, z, z + step, `fill="rgba(95,208,255,${(a * 0.16).toFixed(3)})" stroke="#7fdcff" stroke-opacity="${a.toFixed(2)}" stroke-width="1.4"`);
+          }
+        }
+        meshG.innerHTML = g;
+      }
+
+      const hud = {
+        update() {
+          const m = state.mode, o = selObj();
+          els.placeRow.hidden = m !== "place";
+          els.radial.hidden = m !== "object";
+          els.objRow.hidden = m !== "object";
+          els.moveRow.hidden = m !== "move";
+          els.textBar.hidden = !["newPin", "edit"].includes(m);
+          els.saved.hidden = m !== "saved";
+          els.finish.hidden = m === "saved";
+          els.finish.innerHTML = m === "saving" ? '<span class="spinner"></span>Saving...' : ICON_FLAG + "Finish tour";
+          els.finish.disabled = m === "saving";
+          els.pin.setAttribute("aria-disabled", "false");
+          els.photo.setAttribute("aria-disabled", "false");
+          els.radial.classList.toggle("hide", dragging);
+          if (m === "object" && o) {
+            $("#editLbl").textContent = o.kind === "pin" ? "Edit text" : "Caption";
+            els.tip.innerHTML = dragging
+              ? ICON_HAND + "Sliding along the ground"
+              : taught
+                ? ICON_HAND + "Drag to move it again"
+                : ICON_HAND + "Drag it with your finger to slide it along the ground";
+          }
+          if (["newPin", "edit"].includes(m)) {
+            const isPin = m === "newPin" || (o && o.kind === "pin");
+            $("#textLbl").textContent = m === "newPin" ? "New pin - aim the blue ring, then type its text" : isPin ? "Change the pin text" : "Photo caption (optional)";
+            $("#textIn").placeholder = isPin ? "What should this pin say?" : "e.g. The courtyard in 1925";
+            $("#textOk").textContent = m === "newPin" ? "Place" : "Save";
+            syncOk();
+          }
+          if (m !== "object") els.arc.innerHTML = "";
+        },
+        frame() {
+          drawMesh();
+          const o = selObj();
+          if (state.mode !== "object" || !o) return;
+          if (dragging) { els.arc.innerHTML = ""; return; }
+          const r = screenEl.getBoundingClientRect(), k = svg.getScreenCTM().a, b = objBox(o);
+          const [cx, cy] = toScreen(b.cx, b.cy);
+          const rx = b.hw * k + 46, ry = b.hh * k + 50;
+          const topLimit = els.finish.getBoundingClientRect().bottom - r.top + 34;
+          const bottomLimit = els.objRow.getBoundingClientRect().top - r.top - 40;
+          // the arc sits above the object; it flips below when there is no room above
+          const below = cy - ry < topLimit && cy + ry < bottomLimit;
+          const sign = below ? -1 : 1;
+          let pos = RAD_ANGLES.map((deg) => {
+            const a = (sign * deg * Math.PI) / 180;
+            return [clamp(cx + rx * Math.cos(a), 34, r.width - 34), clamp(cy + ry * Math.sin(a), topLimit, Math.max(topLimit, bottomLimit))];
+          });
+          // squeezed (short landscape screen, object at an edge): fall back to a tidy row
+          const tight = pos.some((p, i) => i && Math.hypot(p[0] - pos[i - 1][0], p[1] - pos[i - 1][1]) < 96);
+          if (tight) {
+            const y = clamp(cy + b.hh * k + 54, topLimit, Math.max(topLimit, bottomLimit)), x0 = clamp(cx, 34 + 104, r.width - 34 - 104);
+            pos = [-1, 0, 1].map((k) => [x0 + k * 104, y]);
+          }
+          pos.forEach((p, i) => { rads[i].style.transform = `translate(${f1(p[0])}px, ${f1(p[1])}px)`; });
+          // a faint arc that ties the buttons to the object
+          if (tight) { els.arc.innerHTML = ""; return; }
+          const a0 = (sign * -165 * Math.PI) / 180, a1 = (sign * -15 * Math.PI) / 180;
+          const p0 = [cx + rx * Math.cos(a0), cy + ry * Math.sin(a0)], p1 = [cx + rx * Math.cos(a1), cy + ry * Math.sin(a1)];
+          els.arc.innerHTML = `<path d="M${f1(p0[0])} ${f1(p0[1])}A${f1(rx)} ${f1(ry)} 0 0 ${below ? 0 : 1} ${f1(p1[0])} ${f1(p1[1])}" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="2" stroke-dasharray="2 6" stroke-linecap="round"/>`;
+        },
+        /* any placed object can be grabbed; grabbing selects it */
+        canDragObject(id) {
+          return !!id && ["place", "object"].includes(state.mode);
+        },
+        dragStart(d) {
+          if (state.sel !== d.id) select(d.id);
+          const o = selObj();
+          if (!o) return;
+          d.base0 = P(o.X, 0, o.Z);
+          d.f0 = clientToWorld(d.x0, d.y0);
+          dragging = true;
+          hud.update();
+        },
+        dragMove(d, e) {
+          const o = selObj();
+          if (!o || !d.base0) return;
+          const f = clientToWorld(e.clientX, e.clientY);
+          const u = unproject(d.base0[0] + f[0] - d.f0[0], d.base0[1] + f[1] - d.f0[1]);
+          o.X = u.X;
+          o.Z = u.Z;
+          renderObjs();
+        },
+        dragEnd() {
+          dragging = false;
+          taught = true;
+          hud.update();
+        }
+      };
+      function syncOk() {
+        const o = selObj(), needs = state.mode === "newPin" || (o && o.kind === "pin");
+        $("#textOk").disabled = needs && !$("#textIn").value.trim();
+      }
+      els.pin.addEventListener("click", startNewPin);
+      els.photo.addEventListener("click", takePhoto);
+      $("#moveBtn").addEventListener("click", startMove);
+      $("#editBtn").addEventListener("click", startEdit);
+      $("#delBtn").addEventListener("click", deleteSel);
+      $("#doneBtn").addEventListener("click", done);
+      $("#putBtn").addEventListener("click", confirmMove);
+      $("#cancelMoveBtn").addEventListener("click", () => setMode("object"));
+      $("#textIn").addEventListener("input", syncOk);
+      els.textBar.addEventListener("submit", (e) => { e.preventDefault(); submitText(); });
+      $("#textCancel").addEventListener("click", cancelText);
+      els.finish.addEventListener("click", finish);
+      $("#keepBtn").addEventListener("click", () => setMode("place"));
+      $("#toSetupBtn").addEventListener("click", () => { setMode("place"); toast("In the app this opens the tour setup page"); });
+
+      state.phaseAt = performance.now();
+      renderObjs();
+      hud.update();
+      requestAnimationFrame(frame);
+
+    </script>
+  </body>
+</html>

@@ -76,52 +76,16 @@ describe('every copy of the QR quiet zone equals the one exported fraction', () 
     expect(fraction).toBeLessThan(0.25);
   });
 
-  it('finds at least one app drawing it, so the discovery cannot pass vacuously', () => {
-    // Without this, a rename that stopped matching `#print-quiet` would turn
-    // every assertion below into zero assertions, and the suite would go
-    // green by looking at nothing.
-    expect(markup.length).toBeGreaterThan(0);
-  });
-
-  it.each(markup)("%s's #print-quiet padding uses it", (rel) => {
-    // `#print-quiet` is styled TWICE - a screen rule with a fixed padding,
-    // and the @media print rule that scales it by the printed side. Only the
-    // second is the quiet zone, so every block is scanned and the one
-    // carrying a calc() is the one under test.
-    const bodies = [...read(rel).matchAll(/#print-quiet\s*\{([^}]*)\}/g)].map(
-      (block) => block[1]
-    );
-    const scaled = bodies
-      .map((body) => /padding:\s*calc\(.*?\*\s*([0-9.]+)\s*\)\s*;/.exec(body))
-      .filter((m) => m !== null);
-    expect(
-      scaled.length,
-      `${rel} must scale #print-quiet's padding by the printed side, exactly once`
-    ).toBe(1);
-    expect(Number(scaled[0][1])).toBe(fraction);
-  });
-
-  it.each(markup)('%s adds no OTHER padding around the printed code', (rel) => {
-    // The guard pins one declaration; the artefact is the sum of every
-    // declaration. A second scaled padding on an enclosing element would
-    // change the physical size while leaving this file green - the same
-    // class of divergence it exists to prevent (M1/M3 review #7).
-    const scaledPaddings = [
-      ...read(rel).matchAll(
-        /([#.][\w-]+)\s*\{[^}]*padding:\s*calc\([^;]*var\(--print-side[^;]*;/g
-      ),
-    ].map((m) => m[1]);
-    expect(scaledPaddings).toEqual(['#print-quiet']);
-  });
-
-  it.each(markup)('%s states the same number in prose', (rel) => {
-    // The comment above the print block explains WHY a 20 cm code does not
-    // fit on A4, and quotes the fraction as a percentage. A comment that
-    // contradicts the constant is exactly how the version-25 arithmetic
-    // error started, so the prose is pinned too.
-    const m = /quiet zone \(([0-9.]+)% of the side on each/.exec(read(rel));
-    expect(m, `${rel} must state the quiet zone as a percentage`).not.toBeNull();
-    expect(Number(m[1]) / 100).toBe(fraction);
+  it('finds no app page printing a code from its own stylesheet (PDF only)', () => {
+    // Since the Tour Viewer's polish round M0b no page prints a code from
+    // the browser's print dialog: its "fit to page" rescales, and a
+    // rescaled code measures the world wrong (A10). The PDF writer is the
+    // one printing path, and it imports the fraction (below). This keeps
+    // the discovery in place, so a page that brings a print stylesheet back
+    // fails here and has to be held to the fraction again - the copies this
+    // file used to check per page (the scaled padding, no other padding,
+    // the percentage in prose) went with the Tour Viewer's stylesheet.
+    expect(markup).toEqual([]);
   });
 
   it('the PDF writer imports it rather than restating it', () => {

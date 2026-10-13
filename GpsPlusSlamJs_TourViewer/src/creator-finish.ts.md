@@ -31,6 +31,11 @@ M4 makes it write every code of the book, not only the one in hand.
   - The Finish settles a visit still running FIRST
     (`settle.settleVisit("finish")`), and forgets that settle again when
     no zip was written (`settle.unsettle`).
+- `CreatorFinish.start()` - start a Finish now if `canStart()`; whether
+  one started. The panel's Finish button and the creator's Done in AR
+  (polish round M3, Q-Done, through `creator-setup.ts`'s `finishNow`)
+  share it. When a finish ends, `deps.renderArEntry` re-renders the AR
+  button (it reads "Saving…" / "Close AR" from the finish).
 - `CreatorFinish.readiness()` / `canStart()` - whether a Finish could run
   (the readout's hint), and whether a tap starts one now: ready, no
   measurement in flight, none running. The ONE rule the button's state and
@@ -42,6 +47,11 @@ M4 makes it write every code of the book, not only the one in hand.
   rebuilt file waits.
 
 ## Invariants & assumptions
+
+- **The tour's title** (polish round M4a): the name typed in step 3 for
+  the posters (`deps.tourTitle`, trimmed) becomes the manifest's `title`
+  when it says something; otherwise the tour keeps the title it had. The
+  visitor's start page (V4) leads with it.
 
 - **Finish** (`finishReadiness`): needs something to write (`hasWork`,
   code book plan M4d: a code the book would write, a changed or deleted
@@ -76,7 +86,8 @@ M4 makes it write every code of the book, not only the one in hand.
   `ctx.tourManifest` **advances to what was just written** and
   `ctx.placedObjects` is cleared, the AR session is ended through the
   controller (the framework's session-end path runs the app teardown) and
-  step 4's finish block is revealed - AFTER the `disable()`, so it cannot
+  the wizard opens step 6, "done" (polish round M2, B9: a completion step
+  of its own), and its finish block is revealed - AFTER the `disable()`, so it cannot
   appear over a session that is still compositing; on failure the reason
   stays in the panel and the button re-enables.
   - **Why the chaining and the advance go together** (PR #435 review):

@@ -1,0 +1,1144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Tour Route Setup</title>
+<style>
+:root {
+  --paper: #f4eedf;
+  --paper-2: #ebe3cf;
+  --paper-3: #ddd2b6;
+  --card: #fbf8ef;
+  --ink: #2a2824;
+  --ink-2: #57534a;
+  --ink-3: #8c8577;
+  --line: #c9bea3;
+  --route: #cf4428;
+  --route-soft: #f5d9cd;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); -webkit-text-size-adjust: 100%; }
+body { overflow-x: hidden; }
+button { font: inherit; color: inherit; }
+.proto-label {
+  position: fixed; top: 6px; left: 6px; z-index: 100;
+  font: 600 11px/1 var(--sans); letter-spacing: .02em;
+  background: var(--ink); color: var(--paper);
+  padding: 5px 9px; border-radius: 999px; opacity: .92; pointer-events: none;
+}
+
+/* ---------- Hero ---------- */
+.hero {
+  display: grid; gap: 14px; align-items: center;
+  max-width: 1200px; margin: 0 auto; padding: 48px 18px 26px;
+}
+.kicker { font: 700 12px/1.2 var(--sans); letter-spacing: .16em; text-transform: uppercase; color: var(--ink-2); margin: 0; }
+.hero h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(32px, 8.4vw, 58px); line-height: 1.04; margin: .22em 0 .32em; letter-spacing: -.01em; }
+.hero h1 em { color: var(--route); font-style: italic; }
+.lede { font-size: 17px; line-height: 1.5; color: var(--ink-2); max-width: 33em; margin: 0 0 14px; }
+.why { list-style: none; padding: 0; margin: 0 0 20px; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--ink-2); }
+.why li::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--route); margin-right: 7px; vertical-align: 2px; }
+.hero-cta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.hero-cta .cta-note { font-size: 13px; color: var(--ink-3); }
+.hero-art svg { display: block; width: 100%; max-width: 300px; height: auto; margin: 0 auto; max-height: 62svh; }
+@media (min-width: 720px), (orientation: landscape) and (min-width: 600px) {
+  .hero { grid-template-columns: 1.3fr 1fr; min-height: 100svh; padding-top: 36px; }
+  .hero-art svg { max-height: 80svh; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .hero h1 { font-size: 34px; }
+  .lede { font-size: 15px; margin-bottom: 10px; }
+  .why { margin-bottom: 12px; font-size: 13px; }
+}
+
+/* hero phone animation */
+.h-pin { animation: hPin 7s ease-out infinite; }
+.h-label { animation: hLabel 7s ease-out infinite; }
+.h-photo { animation: hPhoto 7s ease-out infinite; }
+.h-dots { stroke-dasharray: 0.1 7; }
+.h-dots-mask { stroke-dasharray: 100 100; animation: hDots 7s linear infinite; }
+@keyframes hDots { 0% { stroke-dashoffset: 100; } 22%, 88% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 0; } }
+@keyframes hPin { 0%, 20% { opacity: 0; transform: translateY(-26px); } 28% { opacity: 1; transform: translateY(0); } 31% { transform: translateY(-4px); } 34%, 88% { opacity: 1; transform: translateY(0); } 96%, 100% { opacity: 0; transform: translateY(0); } }
+@keyframes hLabel { 0%, 33% { opacity: 0; transform: translateY(4px); } 40%, 88% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes hPhoto { 0%, 45% { opacity: 0; transform: scale(.6) rotate(-14deg); } 54%, 88% { opacity: 1; transform: scale(1) rotate(-6deg); } 96%, 100% { opacity: 0; transform: scale(1) rotate(-6deg); } }
+.h-pin, .h-label, .h-photo { transform-box: fill-box; transform-origin: 50% 100%; }
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font: 600 15px/1.1 var(--sans); min-height: 44px; padding: 11px 18px;
+  border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; color: var(--ink);
+  cursor: pointer; transition: transform .12s, background .2s;
+}
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--route); border-color: var(--route); color: #fff; }
+.btn.ink { background: var(--ink); color: var(--paper); }
+.btn.ghost { background: transparent; }
+.btn.wide { width: 100%; }
+.btn:disabled { opacity: .65; cursor: default; }
+.btn:focus-visible, .tile:focus-visible, .linkish:focus-visible, .dots button:focus-visible { outline: 3px solid var(--route); outline-offset: 2px; }
+.linkish { background: none; border: 0; padding: 6px 2px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font-size: 14px; }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Stage: map + docked card ---------- */
+.stage { position: relative; }
+.map-pane {
+  position: sticky; top: 0; z-index: 5; background: var(--paper);
+  padding: 28px 10px 8px; border-bottom: 1px solid var(--line);
+  display: flex; flex-direction: column;
+}
+.map-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 6px; }
+.map-title { font: 600 12px/1.2 var(--serif); letter-spacing: .14em; text-transform: uppercase; }
+.map-title i { font-weight: 400; letter-spacing: .02em; text-transform: none; color: var(--ink-2); margin-left: 4px; }
+.map-head .scale { width: 74px; height: 14px; flex: none; }
+.map-frame {
+  position: relative; overflow: hidden; background: var(--paper);
+  border: 1.5px solid var(--ink); outline: 1px solid var(--ink); outline-offset: 3px; margin: 4px;
+}
+.map-frame svg { display: block; width: 100%; height: auto; max-height: 42svh; overflow: visible; }
+.card-pane { padding: 16px 14px 28px; }
+
+@media (orientation: landscape) and (min-width: 640px), (min-width: 1024px) {
+  .stage { display: grid; grid-template-columns: minmax(0, 1.42fr) minmax(300px, 1fr); height: 100svh; max-width: 1440px; margin: 0 auto; }
+  .map-pane { position: relative; height: 100svh; border-bottom: 0; padding: 28px 8px 10px 12px; }
+  .map-frame { flex: 1; min-height: 0; }
+  .map-frame svg { position: absolute; inset: 0; width: 100%; height: 100%; max-height: none; }
+  .card-pane { height: 100svh; overflow-y: auto; padding: 30px 14px 16px 12px; overscroll-behavior: contain; }
+}
+
+/* map styling */
+.lbl-place { font: italic 7px var(--serif); fill: var(--ink-2); paint-order: stroke; stroke: var(--paper); stroke-width: 2.4px; stroke-linejoin: round; }
+.lbl-caps { font: 600 7.4px var(--serif); letter-spacing: .18em; fill: var(--ink); paint-order: stroke; stroke: var(--paper-3); stroke-width: 2.4px; }
+.lbl-road { font: 600 6.4px var(--sans); letter-spacing: .32em; fill: var(--ink-3); }
+.st { cursor: pointer; outline: none; }
+.st .dot { fill: var(--card); stroke: var(--ink); stroke-width: 1.4; transition: fill .3s, stroke .3s; }
+.st .num { font: 700 9px var(--sans); fill: var(--ink); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.st .lbl { font: italic 600 8.4px var(--serif); fill: var(--ink); paint-order: stroke; stroke: var(--paper); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.st .ring { fill: none; stroke: var(--route); stroke-width: 1.4; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.st.done .dot { fill: var(--route); stroke: var(--route); }
+.st.done .num { fill: #fff; }
+.st.current .dot { stroke: var(--route); stroke-width: 2.4; }
+.st.current .ring { animation: ring 1.8s ease-out infinite; }
+.st.current .lbl { fill: var(--route); }
+.st:hover .dot, .st:focus-visible .dot { stroke-width: 3; }
+@keyframes ring { 0% { opacity: .85; transform: scale(1); } 100% { opacity: 0; transform: scale(2.3); } }
+
+#routeReveal { transition: stroke-dashoffset 1.4s cubic-bezier(.45, .05, .25, 1); }
+
+/* start (poster) */
+#start .empty { fill: var(--card); stroke: var(--ink); stroke-width: 1; stroke-dasharray: 2 1.6; }
+#start .qrmini { opacity: 0; transition: opacity .5s; }
+#start.printed .qrmini { opacity: 1; }
+#start.printed .empty { stroke-dasharray: none; }
+#start .tack { opacity: 0; transform: translateY(-8px); transition: opacity .3s, transform .45s cubic-bezier(.3, 1.6, .5, 1); transform-box: fill-box; }
+#start.hung .tack { opacity: 1; transform: none; }
+#start .halo { fill: none; stroke: var(--route); stroke-width: 1.4; opacity: 0; transform-box: fill-box; transform-origin: center; }
+#start.focus .halo { animation: ring 1.8s ease-out infinite; }
+#start .lbl-start { font: italic 600 8px var(--serif); fill: var(--ink); paint-order: stroke; stroke: var(--paper); stroke-width: 3px; }
+#start.focus .lbl-start { fill: var(--route); }
+
+.place-inner { opacity: 0; transform: scale(.2); transform-box: fill-box; transform-origin: 50% 100%; transition: opacity .3s, transform .5s cubic-bezier(.3, 1.6, .5, 1); }
+.place.on .place-inner { opacity: 1; transform: none; }
+#walker { opacity: 0; transition: opacity .3s; }
+#walker.on { opacity: 1; }
+#endFlag { opacity: 0; transition: opacity .4s; }
+#endFlag.on { opacity: 1; }
+
+/* ---------- Card ---------- */
+.card {
+  position: relative; background: var(--card); border: 1.5px solid var(--ink); border-radius: 6px;
+  box-shadow: 4px 4px 0 var(--paper-3); padding: 16px 16px 14px;
+  --notch-x: 40px; --notch-y: 60px;
+}
+.card::before {
+  content: ""; position: absolute; width: 14px; height: 14px; background: var(--card);
+  border-left: 1.5px solid var(--ink); border-top: 1.5px solid var(--ink);
+  top: -8.6px; left: var(--notch-x); transform: rotate(45deg); transition: left .4s, top .4s;
+}
+@media (orientation: landscape) and (min-width: 640px), (min-width: 1024px) {
+  .card::before { top: var(--notch-y); left: -8.6px; transform: rotate(-45deg); }
+}
+.card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.badge { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--route); color: #fff; font: 700 14px var(--sans); flex: none; }
+.of { font: 600 12px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); }
+.dots { margin-left: auto; display: flex; gap: 2px; }
+.dots button { width: 22px; height: 26px; padding: 0; border: 0; background: none; cursor: pointer; display: grid; place-items: center; }
+.dots button::after { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--ink-3); background: transparent; }
+.dots button.done::after { background: var(--route); border-color: var(--route); }
+.dots button[aria-current="step"]::after { border-color: var(--route); box-shadow: 0 0 0 2.5px var(--route-soft); }
+.panel h2 { font: 600 clamp(23px, 6vw, 28px)/1.12 var(--serif); margin: 2px 0 6px; outline: none; }
+.panel .sub { margin: 0 0 14px; color: var(--ink-2); line-height: 1.45; font-size: 15.5px; }
+.panel h3 { font: 600 17px var(--serif); margin: 0 0 6px; }
+.fine { font-size: 13px; color: var(--ink-3); line-height: 1.4; margin: 8px 0 0; }
+.row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.card-foot { display: flex; gap: 10px; justify-content: space-between; margin-top: 18px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.card-foot .btn { min-width: 0; }
+.card-foot #nextBtn { flex: 1; max-width: 70%; }
+.pane-note { font-size: 12px; color: var(--ink-3); text-align: center; margin: 14px 0 0; }
+
+/* station 1 */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.tile {
+  display: flex; align-items: center; gap: 9px; text-align: left;
+  min-height: 52px; padding: 9px 10px; border: 1.5px solid var(--line); border-radius: 8px; background: #fff;
+  cursor: pointer; font: 600 14px/1.15 var(--sans); transition: border-color .2s, background .2s;
+}
+.tile svg { width: 24px; height: 24px; flex: none; stroke: var(--ink); fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.tile[aria-pressed="true"] { border-color: var(--route); background: var(--route-soft); }
+.tile[aria-pressed="true"] svg { stroke: var(--route); }
+.instr { margin-top: 14px; padding: 14px; border: 1.5px dashed var(--ink-3); border-radius: 8px; background: #fff; animation: rise .35s ease-out; }
+.instr ol { margin: 0 0 12px; padding-left: 20px; line-height: 1.45; font-size: 15px; }
+.instr li { margin-bottom: 5px; }
+.instr pre { font: 12px/1.45 var(--mono); background: var(--paper-2); padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 0 0 12px; white-space: pre; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* station 2 */
+.field { display: block; margin-bottom: 10px; }
+.field span { display: block; font: 600 13px var(--sans); color: var(--ink-2); margin-bottom: 5px; }
+.field input { width: 100%; font: 15px var(--mono); padding: 12px; border: 1.5px solid var(--ink); border-radius: 8px; background: #fff; color: var(--ink); min-height: 46px; }
+.field input:focus { outline: 3px solid var(--route-soft); border-color: var(--route); }
+.result { margin-top: 12px; }
+.result:empty { display: none; }
+.res { display: flex; gap: 10px; align-items: flex-start; padding: 11px 12px; border-radius: 8px; line-height: 1.4; font-size: 15px; animation: rise .3s ease-out; }
+.res svg { width: 20px; height: 20px; flex: none; margin-top: 1px; }
+.res.ok { background: #fff; border: 1.5px solid var(--route); }
+.res.later { background: #fff; border: 1.5px dashed var(--ink-3); }
+.res.bad { background: var(--paper-2); }
+.l2q { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.l2q .pill { font: 12px var(--mono); background: var(--paper-2); padding: 6px 10px; border-radius: 999px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; animation: shrink 1.4s ease-in-out forwards; }
+.l2q .arrow { flex: none; width: 26px; height: 2px; background: repeating-linear-gradient(90deg, var(--route) 0 3px, transparent 3px 6px); }
+.l2q .qr { width: 58px; height: 58px; flex: none; color: var(--ink); animation: qrIn .8s .6s ease-out both; }
+@keyframes shrink { from { max-width: 100%; } to { max-width: 52%; } }
+@keyframes qrIn { from { opacity: 0; transform: scale(.4) rotate(-20deg); } to { opacity: 1; transform: none; } }
+
+/* station 3 */
+.controls { display: grid; gap: 12px; margin-bottom: 12px; }
+.ctl-l { display: block; font: 600 13px var(--sans); color: var(--ink-2); margin-bottom: 6px; }
+.stepper { display: inline-flex; align-items: center; border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; }
+.stepper button { width: 44px; height: 42px; border: 0; background: none; font: 600 20px var(--sans); cursor: pointer; }
+.stepper output { min-width: 34px; text-align: center; font: 700 17px var(--sans); }
+.size { display: flex; align-items: center; gap: 12px; }
+.size input { flex: 1; accent-color: var(--route); min-height: 32px; }
+.size output { font: 700 16px var(--sans); min-width: 52px; text-align: right; }
+.qr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 8px; margin-bottom: 14px; max-height: 236px; overflow-y: auto; padding: 2px; }
+.qr-tile { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 5px 5px 4px; text-align: center; animation: rise .25s ease-out; }
+.qr-tile .qr { width: 100%; height: auto; display: block; color: var(--ink); }
+.qr-tile span { display: block; font: 600 10px var(--sans); color: var(--ink-2); margin-top: 3px; }
+.hint { margin: 10px 0 0; padding: 10px 12px; border-left: 3px solid var(--route); background: var(--paper-2); font-size: 14px; line-height: 1.45; border-radius: 0 6px 6px 0; }
+
+/* station 4 */
+.wall svg { display: block; width: 100%; height: auto; max-height: 190px; margin: 0 0 10px; }
+.checks { list-style: none; padding: 0; margin: 0 0 14px; display: grid; gap: 6px; font-size: 15px; }
+.checks li { display: flex; gap: 8px; align-items: baseline; }
+.checks li::before { content: ""; flex: none; width: 9px; height: 9px; border: 1.5px solid var(--route); border-radius: 50%; transform: translateY(1px); }
+.wall .poster { transform-box: fill-box; transform-origin: 50% 0; }
+.wall.hung .poster { animation: swing 1s ease-out; }
+@keyframes swing { 0% { transform: rotate(9deg) translateY(-6px); } 45% { transform: rotate(-4deg); } 75% { transform: rotate(1.5deg); } 100% { transform: none; } }
+
+/* station 5 */
+.scan-demo svg { display: block; width: 100%; max-width: 330px; height: auto; margin: 0 auto 6px; }
+.sd-phone { animation: sdPhone 5s ease-in-out infinite; }
+.sd-scan { animation: sdScan 5s linear infinite; }
+.sd-ok { animation: sdOk 5s ease-out infinite; }
+.sd-pin { animation: sdPin 5s ease-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+@keyframes sdPhone { 0% { transform: translate(140px, 12px) rotate(10deg); } 28%, 78% { transform: none; } 100% { transform: translate(140px, 12px) rotate(10deg); } }
+@keyframes sdScan { 0%, 30% { transform: translateY(0); opacity: 0; } 32% { opacity: 1; } 50% { transform: translateY(58px); opacity: 1; } 52%, 100% { opacity: 0; transform: translateY(58px); } }
+@keyframes sdOk { 0%, 50% { opacity: 0; } 55%, 76% { opacity: 1; } 82%, 100% { opacity: 0; } }
+@keyframes sdPin { 0%, 56% { opacity: 0; transform: translateY(-14px); } 64% { opacity: 1; transform: none; } 82% { opacity: 1; } 88%, 100% { opacity: 0; } }
+.steps { margin: 4px 0 14px; padding-left: 20px; line-height: 1.45; font-size: 15px; }
+.steps li { margin-bottom: 5px; }
+.on-desktop { display: none; gap: 12px; align-items: center; margin-top: 14px; padding: 10px; border: 1px dashed var(--line); border-radius: 8px; }
+.on-desktop .qr { width: 64px; height: 64px; flex: none; color: var(--ink); }
+.on-desktop p { margin: 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.4; }
+@media (hover: hover) and (pointer: fine) { .on-desktop { display: flex; } }
+.count { font-weight: 700; color: var(--route); }
+
+/* station 6 */
+.replace details { border: 1px solid var(--line); border-radius: 8px; background: #fff; margin-bottom: 6px; }
+.replace details[open] { border-color: var(--ink-3); }
+.replace summary { cursor: pointer; padding: 10px 12px; font: 600 14.5px var(--sans); list-style-position: inside; }
+.replace p { margin: 0; padding: 0 12px 12px; font-size: 14.5px; line-height: 1.45; color: var(--ink-2); }
+.replace .mine { font: 600 10.5px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--route); margin-left: 6px; }
+.keep { margin: 14px 0 14px; padding: 12px; background: var(--route-soft); border-radius: 8px; font-size: 15px; line-height: 1.45; }
+
+/* toast */
+.toast {
+  position: fixed; left: 50%; bottom: 18px; z-index: 90; transform: translate(-50%, 30px); opacity: 0;
+  background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 999px; font-size: 14px;
+  max-width: calc(100vw - 32px); text-align: center; transition: opacity .25s, transform .3s; pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .h-pin, .h-label, .h-photo, .sd-phone, .sd-ok, .sd-pin { opacity: 1 !important; }
+  .h-photo { transform: rotate(-6deg) !important; }
+  .h-dots-mask { stroke-dashoffset: 0 !important; }
+  .sd-scan { opacity: 0 !important; }
+  .sd-phone { transform: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="proto-label">Prototype L5 - Spatial path</div>
+
+<!-- ============ HERO ============ -->
+<header class="hero">
+  <div class="hero-text">
+    <p class="kicker">Make your own tour</p>
+    <h1>Put stories <em>where they happened.</em></h1>
+    <p class="lede">A tour is a short walk with notes and photos floating in the real world. Visitors scan a printed code and it opens in their phone's browser, right where they stand.</p>
+    <ul class="why" aria-label="Why it works this way">
+      <li>Lives in your own storage</li>
+      <li>No server of ours</li>
+      <li>Runs offline once opened</li>
+      <li>No app to install</li>
+    </ul>
+    <div class="hero-cta">
+      <button class="btn primary" id="beginBtn">Follow the route</button>
+      <span class="cta-note">Six stations. About 15 minutes, then your walk.</span>
+    </div>
+  </div>
+  <figure class="hero-art" aria-hidden="true" style="margin:0">
+    <svg viewBox="0 0 240 280">
+      <defs>
+        <clipPath id="hScr"><rect x="58" y="32" width="124" height="220" rx="13"/></clipPath>
+        <mask id="hDotMask" maskUnits="userSpaceOnUse" x="0" y="0" width="240" height="280">
+          <path class="h-dots-mask" d="M121 250 L121 158" pathLength="100" stroke="#fff" stroke-width="8" fill="none"/>
+        </mask>
+      </defs>
+      <!-- world outside the phone, sketched -->
+      <g stroke="#8c8577" stroke-width="1.1" fill="none" stroke-linecap="round">
+        <path d="M6 168 H54 M186 166 H234"/>
+        <circle cx="26" cy="146" r="14"/><path d="M26 160 V170"/>
+        <circle cx="214" cy="140" r="17"/><path d="M214 157 V168"/>
+        <path d="M0 230 Q 40 222 54 226 M186 228 Q 210 224 240 232" stroke-dasharray="2 4"/>
+      </g>
+      <!-- phone -->
+      <rect x="50" y="18" width="140" height="248" rx="22" fill="#2a2824"/>
+      <g clip-path="url(#hScr)">
+        <rect x="58" y="32" width="124" height="220" fill="#e9e2cf"/>
+        <rect x="58" y="152" width="124" height="100" fill="#d9cdae"/>
+        <polygon points="96,252 148,252 124,153 118,153" fill="#f4eedf" stroke="#8c8577" stroke-width=".8"/>
+        <!-- mill building -->
+        <rect x="70" y="112" width="34" height="41" fill="#ebe3cf" stroke="#2a2824" stroke-width="1"/>
+        <path d="M66 113 L87 96 L108 113 Z" fill="#ddd2b6" stroke="#2a2824" stroke-width="1"/>
+        <rect x="83" y="133" width="8" height="20" fill="#ddd2b6" stroke="#2a2824" stroke-width=".8"/>
+        <circle cx="69" cy="140" r="11" fill="none" stroke="#2a2824" stroke-width="1"/>
+        <path d="M69 129 V151 M58 140 H80 M61 132 L77 148 M77 132 L61 148" stroke="#2a2824" stroke-width=".6"/>
+        <!-- trees -->
+        <circle cx="164" cy="132" r="15" fill="#ddd2b6" stroke="#57534a"/><path d="M164 147 V156" stroke="#57534a"/>
+        <circle cx="143" cy="142" r="8" fill="#ddd2b6" stroke="#57534a"/><path d="M143 150 V155" stroke="#57534a"/>
+        <!-- dotted tour route drawing up the path -->
+        <path class="h-dots" d="M121 250 L121 158" stroke="#cf4428" stroke-width="3.2" stroke-linecap="round" fill="none" mask="url(#hDotMask)"/>
+        <!-- AR pin -->
+        <g class="h-pin">
+          <path d="M100 116 C 96 110 92 106 92 101 A 8 8 0 1 1 108 101 C 108 106 104 110 100 116 Z" fill="#cf4428"/>
+          <circle cx="100" cy="101" r="3" fill="#fff"/>
+        </g>
+        <g class="h-label">
+          <rect x="94" y="64" width="80" height="22" rx="4" fill="#fff" stroke="#2a2824" stroke-width=".8"/>
+          <text x="100" y="74" font-family="Georgia, serif" font-size="8" font-weight="700" fill="#2a2824">The mill wheel</text>
+          <text x="100" y="82.5" font-family="system-ui, sans-serif" font-size="6.4" fill="#57534a">Turning since 1820</text>
+        </g>
+        <!-- AR photo -->
+        <g class="h-photo">
+          <rect x="132" y="176" width="40" height="38" fill="#fff" stroke="#2a2824" stroke-width=".8"/>
+          <rect x="135" y="179" width="34" height="25" fill="#c9bea3"/>
+          <path d="M135 204 L146 192 L153 198 L160 189 L169 204 Z" fill="#8c8577"/>
+          <circle cx="162" cy="184" r="2.6" fill="#f4eedf"/>
+          <text x="152" y="211" text-anchor="middle" font-family="Georgia, serif" font-size="5.4" font-style="italic" fill="#2a2824">here, 1910</text>
+        </g>
+      </g>
+      <rect x="104" y="24" width="32" height="4" rx="2" fill="#4a4740"/>
+    </svg>
+  </figure>
+</header>
+
+<!-- ============ STAGE ============ -->
+<main class="stage" id="stage">
+  <div class="map-pane" id="mapPane">
+    <div class="map-head">
+      <span class="map-title">Mill Park<i>your tour route</i></span>
+      <svg class="scale" viewBox="0 0 74 14" aria-label="Scale: 25 metres">
+        <rect x="1" y="3" width="18" height="3.4" fill="#2a2824"/>
+        <rect x="19" y="3" width="18" height="3.4" fill="none" stroke="#2a2824" stroke-width=".9"/>
+        <text x="1" y="13" font-family="system-ui,sans-serif" font-size="6" fill="#57534a">0</text>
+        <text x="37" y="13" text-anchor="middle" font-family="system-ui,sans-serif" font-size="6" fill="#57534a">25 m</text>
+        <path d="M60 12 L64 2 L68 12 L64 9.5 Z" fill="#2a2824"/>
+      </svg>
+    </div>
+    <div class="map-frame">
+      <svg id="map" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Illustrated map of a park with a tour route and six stations">
+        <defs>
+          <pattern id="grid" width="25" height="25" patternUnits="userSpaceOnUse">
+            <path d="M25 0 H0 V25" fill="none" stroke="#c9bea3" stroke-width=".45" opacity=".7"/>
+          </pattern>
+          <pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="4" stroke="#57534a" stroke-width=".7" opacity=".55"/>
+          </pattern>
+          <pattern id="paving" width="9" height="9" patternUnits="userSpaceOnUse">
+            <rect x=".6" y=".6" width="7.8" height="7.8" fill="none" stroke="#c9bea3" stroke-width=".6"/>
+          </pattern>
+          <g id="tree">
+            <circle r="7" fill="#ddd2b6" stroke="#57534a" stroke-width=".75"/>
+            <path d="M-3.6 -1.5 A4.2 4.2 0 0 1 1.5 -4.2 M-1 3 A3 3 0 0 0 3.6 0.6" fill="none" stroke="#57534a" stroke-width=".55"/>
+            <circle r=".9" fill="#57534a"/>
+          </g>
+          <mask id="routeMask" maskUnits="userSpaceOnUse" x="-50" y="-50" width="500" height="400">
+            <path id="routeReveal" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+          </mask>
+        </defs>
+
+        <!-- paper, extended beyond the viewBox so letterboxing still looks like map -->
+        <rect x="-400" y="-300" width="1200" height="900" fill="#f4eedf"/>
+        <rect x="-400" y="-300" width="1200" height="900" fill="url(#grid)"/>
+
+        <!-- stream -->
+        <path d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360" fill="none" stroke="#8c8577" stroke-width="8.5"/>
+        <path d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360" fill="none" stroke="#ebe3cf" stroke-width="6.6"/>
+        <path d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360" fill="none" stroke="#8c8577" stroke-width=".5" stroke-dasharray="5 7"/>
+        <text class="lbl-place" transform="translate(5 228) rotate(-82)">Mill Stream</text>
+
+        <!-- road -->
+        <path id="lane" d="M-60 286 C 120 274 280 292 460 268" fill="none" stroke="#57534a" stroke-width="22"/>
+        <path d="M-60 286 C 120 274 280 292 460 268" fill="none" stroke="#ebe3cf" stroke-width="20"/>
+        <text class="lbl-road"><textPath href="#lane" startOffset="47%">MILL LANE</textPath></text>
+
+        <!-- footpaths (cased) -->
+        <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <g stroke="#8c8577" stroke-width="10">
+            <path id="pathMain"/>
+            <path d="M58 262 L58 284"/>
+            <path d="M226 212 C 232 240 240 258 246 284"/>
+            <path d="M286 46 C 292 26 298 10 302 -20"/>
+            <path d="M222 132 C 222 160 226 190 226 212"/>
+            <path d="M150 106 L162 106"/>
+          </g>
+          <g stroke="#f4eedf" stroke-width="8.2">
+            <path id="pathMainIn"/>
+            <path d="M58 262 L58 284"/>
+            <path d="M226 212 C 232 240 240 258 246 284"/>
+            <path d="M286 46 C 292 26 298 10 302 -20"/>
+            <path d="M222 132 C 222 160 226 190 226 212"/>
+            <path d="M150 106 L162 106"/>
+          </g>
+        </g>
+
+        <!-- old mill building -->
+        <rect x="22" y="26" width="128" height="94" fill="#ddd2b6"/>
+        <rect x="22" y="26" width="128" height="94" fill="url(#hatch)" stroke="#2a2824" stroke-width="1.3"/>
+        <rect x="30" y="34" width="112" height="78" fill="none" stroke="#2a2824" stroke-width=".5"/>
+        <text class="lbl-caps" x="86" y="76" text-anchor="middle">OLD MILL</text>
+        <g transform="translate(16 74)">
+          <circle r="10" fill="#f4eedf" stroke="#2a2824" stroke-width="1.1"/>
+          <path d="M0 -10 V10 M-10 0 H10 M-7 -7 L7 7 M7 -7 L-7 7" stroke="#2a2824" stroke-width=".6"/>
+          <circle r="2" fill="#2a2824"/>
+        </g>
+
+        <!-- courtyard -->
+        <rect x="172" y="40" width="100" height="92" fill="#ebe3cf"/>
+        <rect x="172" y="40" width="100" height="92" fill="url(#paving)" stroke="#57534a" stroke-width=".9" stroke-dasharray="4 2"/>
+        <circle cx="216" cy="104" r="9.5" fill="#f4eedf" stroke="#2a2824" stroke-width="1"/>
+        <circle cx="216" cy="104" r="4" fill="none" stroke="#2a2824" stroke-width=".7"/>
+        <circle cx="216" cy="104" r="1.2" fill="#2a2824"/>
+        <rect x="248" y="112" width="12" height="12" fill="#ddd2b6" stroke="#57534a" stroke-width=".6"/>
+        <rect x="184" y="112" width="12" height="12" fill="#ddd2b6" stroke="#57534a" stroke-width=".6"/>
+        <text class="lbl-place" x="216" y="127" text-anchor="middle">Courtyard</text>
+
+        <!-- pond -->
+        <ellipse cx="316" cy="140" rx="21" ry="12.5" fill="#ebe3cf" stroke="#57534a" stroke-width=".9"/>
+        <path d="M304 137 q4 -2 8 0 t8 0 M310 144 q4 -2 8 0 t8 0" fill="none" stroke="#8c8577" stroke-width=".6"/>
+        <text class="lbl-place" x="312" y="178" text-anchor="middle">Mill Park</text>
+
+        <!-- trees -->
+        <g id="trees"></g>
+
+        <!-- benches -->
+        <g fill="#57534a">
+          <rect x="246" y="199" width="9" height="2.4" transform="rotate(-6 250 200)"/>
+          <rect x="374" y="96" width="2.4" height="9"/>
+          <rect x="140" y="222" width="9" height="2.4" transform="rotate(8 144 223)"/>
+        </g>
+
+        <!-- viewpoint -->
+        <g transform="translate(38 246)">
+          <path d="M0 -6 L5.5 4 H-5.5 Z" fill="none" stroke="#2a2824" stroke-width=".9"/>
+          <text class="lbl-place" x="0" y="-9" text-anchor="middle">Viewpoint</text>
+        </g>
+
+        <!-- compass -->
+        <g transform="translate(382 236)">
+          <circle r="9" fill="none" stroke="#8c8577" stroke-width=".6"/>
+          <path d="M0 -12 L3 0 L0 -2 L-3 0 Z" fill="#2a2824"/>
+          <path d="M0 12 L3 0 L0 2 L-3 0 Z" fill="none" stroke="#2a2824" stroke-width=".6"/>
+          <text x="0" y="-14.5" text-anchor="middle" font-family="Georgia,serif" font-size="6.5" font-weight="700" fill="#2a2824">N</text>
+        </g>
+
+        <!-- the tour route: faint plan + dotted line revealed by the mask -->
+        <path id="routeGhost" fill="none" stroke="#2a2824" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="0.1 7" opacity=".22"/>
+        <path id="route" fill="none" stroke="#cf4428" stroke-width="3.6" stroke-linecap="round" stroke-dasharray="0.1 7" mask="url(#routeMask)"/>
+
+        <!-- content created in AR -->
+        <g id="places"></g>
+
+        <!-- start point: the poster -->
+        <g id="start" transform="translate(157 92)">
+          <circle class="halo" cx="0" cy="0" r="11"/>
+          <rect class="empty" x="-7" y="-8.5" width="14" height="17" rx="1"/>
+          <g class="qrmini" id="startQr"></g>
+          <g class="tack"><circle cx="0" cy="-8.5" r="2.4" fill="#cf4428" stroke="#fff" stroke-width=".7"/></g>
+          <text class="lbl-start" x="0" y="-14" text-anchor="middle" id="startLabel">Start: your poster</text>
+        </g>
+
+        <!-- end flag -->
+        <g id="endFlag">
+          <path d="M0 0 V-18" stroke="#2a2824" stroke-width="1.1"/>
+          <path d="M0 -18 L11 -14 L0 -10 Z" fill="#cf4428"/>
+        </g>
+
+        <!-- station markers -->
+        <g id="stations"></g>
+
+        <!-- walker -->
+        <g id="walker">
+          <circle r="5.4" fill="#2a2824" stroke="#fff" stroke-width="1.4"/>
+          <rect x="-1.6" y="-2.6" width="3.2" height="5.2" rx=".7" fill="#fff"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <div class="card-pane" id="cardPane">
+    <div class="card" id="card">
+      <div class="card-top">
+        <span class="badge" id="badge">1</span>
+        <span class="of" id="ofLabel">Station 1 of 6</span>
+        <nav class="dots" id="dots" aria-label="Stations"></nav>
+      </div>
+
+      <!-- Station 1 -->
+      <section class="panel" data-st="1">
+        <h2 tabindex="-1">Where will your tour live?</h2>
+        <p class="sub">Your tour is one small file. Keep it in storage you already have: it stays yours, and nothing of ours sits in between.</p>
+        <div class="tiles" role="group" aria-label="Storage options">
+          <button class="tile" data-p="drive" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M8 3h8l6 11-4 7H6l-4-7z"/><path d="M8 3l6 11H2M16 3l-8 18M14 14h8"/></svg>Google Drive</button>
+          <button class="tile" data-p="dropbox" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M3 8l9-4 9 4-9 4z"/><path d="M3 8v8l9 4 9-4V8M12 12v8"/></svg>Dropbox</button>
+          <button class="tile" data-p="onedrive" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M7 18h11a4 4 0 0 0 .5-8 6 6 0 0 0-11.3-1.6A4.8 4.8 0 0 0 7 18z"/></svg>OneDrive</button>
+          <button class="tile" data-p="github" aria-pressed="false"><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 7.2v9.6M18 10.2c0 4-6 3-11 6.8"/></svg>GitHub</button>
+          <button class="tile" data-p="server" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/></svg>Your own server</button>
+        </div>
+        <div class="instr" id="instr" hidden>
+          <h3 id="instrTitle"></h3>
+          <ol id="instrSteps"></ol>
+          <pre id="instrCode" hidden></pre>
+          <button class="btn" id="zipBtn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Download empty starter zip</button>
+          <p class="fine">An empty tour, about 3 KB. You fill it later, on site.</p>
+        </div>
+      </section>
+
+      <!-- Station 2 -->
+      <section class="panel" data-st="2" hidden>
+        <h2 tabindex="-1">Paste the share link</h2>
+        <p class="sub">This is the address your printed code will point to.</p>
+        <label class="field"><span>Share link to your tour file</span>
+          <input id="linkIn" type="url" inputmode="url" placeholder="https://" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="row">
+          <button class="btn primary" id="checkBtn">Check link</button>
+          <button class="linkish" id="exampleBtn">Use an example link</button>
+          <button class="linkish" id="laterBtn">Try one not uploaded yet</button>
+        </div>
+        <div class="result" id="linkResult" role="status" aria-live="polite"></div>
+      </section>
+
+      <!-- Station 3 -->
+      <section class="panel" data-st="3" hidden>
+        <h2 tabindex="-1">Print your posters</h2>
+        <p class="sub">One code per poster. Hang one wherever a walk can begin.</p>
+        <div class="controls">
+          <div>
+            <span class="ctl-l" id="countLbl">Posters to print</span>
+            <div class="stepper" role="group" aria-labelledby="countLbl">
+              <button id="minusBtn" aria-label="Fewer posters">&minus;</button>
+              <output id="countOut">3</output>
+              <button id="plusBtn" aria-label="More posters">+</button>
+            </div>
+          </div>
+          <div>
+            <label class="ctl-l" for="sizeIn">Printed code size</label>
+            <div class="size"><input type="range" id="sizeIn" min="8" max="30" step="1" value="16"><output id="sizeOut">16 cm</output></div>
+            <p class="fine" id="sizeNote"></p>
+          </div>
+        </div>
+        <div class="qr-grid" id="qrGrid" aria-label="Poster preview"></div>
+        <button class="btn primary wide" id="pdfBtn">Download PDF</button>
+        <p class="hint"><b>Print at 100 %</b> ("actual size"), not "fit to page". The phone uses the code's real size to place your content exactly.</p>
+      </section>
+
+      <!-- Station 4 -->
+      <section class="panel" data-st="4" hidden>
+        <h2 tabindex="-1">Hang it where the tour starts</h2>
+        <p class="sub">The poster is the tour's anchor. Visitors begin here, so put it where the walk begins. On the map, that is the start.</p>
+        <figure class="wall" id="wallFig" style="margin:0" aria-hidden="true">
+          <svg viewBox="0 0 280 160">
+            <defs>
+              <pattern id="brick" width="24" height="12" patternUnits="userSpaceOnUse">
+                <path d="M0 12 H24 M0 6 H24 M6 0 V6 M18 6 V12" stroke="#c9bea3" stroke-width=".8" fill="none"/>
+              </pattern>
+            </defs>
+            <rect width="280" height="136" fill="#ebe3cf"/>
+            <rect width="280" height="136" fill="url(#brick)"/>
+            <rect y="136" width="280" height="24" fill="#ddd2b6"/>
+            <path d="M0 136 H280" stroke="#2a2824" stroke-width="1.2"/>
+            <g class="poster">
+              <rect x="116" y="38" width="46" height="58" fill="#fff" stroke="#2a2824" stroke-width="1"/>
+              <g id="wallQr"></g>
+              <text x="139" y="90" text-anchor="middle" font-family="system-ui,sans-serif" font-size="5" fill="#2a2824">Scan to start</text>
+              <circle cx="120" cy="41" r="1.8" fill="#cf4428"/><circle cx="158" cy="41" r="1.8" fill="#cf4428"/>
+            </g>
+            <!-- height marker -->
+            <g stroke="#cf4428" stroke-width="1" fill="#cf4428">
+              <path d="M98 136 V68" fill="none"/>
+              <path d="M98 66 l-3 5 h6 z" stroke="none"/>
+              <path d="M94 67 H112" fill="none" stroke-dasharray="2 2"/>
+            </g>
+            <text x="92" y="104" text-anchor="end" font-family="Georgia,serif" font-style="italic" font-size="9" fill="#cf4428">about</text>
+            <text x="92" y="115" text-anchor="end" font-family="Georgia,serif" font-style="italic" font-size="9" fill="#cf4428">1.3 m</text>
+            <!-- person for scale -->
+            <g fill="none" stroke="#57534a" stroke-width="1.6" stroke-linecap="round">
+              <circle cx="214" cy="56" r="8"/>
+              <path d="M214 64 V102 M214 102 L206 136 M214 102 L222 136 M214 74 L202 94 M214 74 L224 84 L216 78"/>
+            </g>
+          </svg>
+        </figure>
+        <ul class="checks">
+          <li>Flat surface: not curved, not behind glass</li>
+          <li>Chest height, about 1.3 m</li>
+          <li>Good light, out of the rain</li>
+          <li>Somewhere people naturally stop</li>
+        </ul>
+        <button class="btn primary wide" id="hungBtn">It's on the wall</button>
+      </section>
+
+      <!-- Station 5 -->
+      <section class="panel" data-st="5" hidden>
+        <h2 tabindex="-1">Create it on site, in AR</h2>
+        <p class="sub">Take your phone to the poster. The tour is made by walking it.</p>
+        <div class="scan-demo" aria-hidden="true">
+          <svg viewBox="0 0 260 124">
+            <rect x="0" y="0" width="260" height="124" fill="#ebe3cf" rx="8"/>
+            <rect x="34" y="14" width="66" height="84" fill="#fff" stroke="#2a2824"/>
+            <g id="demoQr"></g>
+            <text x="67" y="91" text-anchor="middle" font-family="system-ui,sans-serif" font-size="6" fill="#2a2824">Scan to start</text>
+            <g class="sd-pin">
+              <path d="M146 64 C 142 58 138 54 138 49 A 8 8 0 1 1 154 49 C 154 54 150 58 146 64 Z" fill="#cf4428"/>
+              <circle cx="146" cy="49" r="3" fill="#fff"/>
+            </g>
+            <path d="M120 106 Q 160 96 200 104 T 250 100" fill="none" stroke="#cf4428" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="0.1 6"/>
+            <g class="sd-phone">
+              <rect x="44" y="8" width="46" height="92" rx="6" fill="none" stroke="#2a2824" stroke-width="8"/>
+              <rect x="44" y="12" width="46" height="84" rx="4" fill="#f4eedf" fill-opacity=".22"/>
+              <rect class="sd-scan" x="44" y="22" width="46" height="2" fill="#cf4428"/>
+              <g class="sd-ok">
+                <rect x="47" y="76" width="40" height="13" rx="6.5" fill="#cf4428"/>
+                <text x="67" y="85" text-anchor="middle" font-family="system-ui,sans-serif" font-size="6.4" font-weight="700" fill="#fff">Found</text>
+              </g>
+            </g>
+          </svg>
+        </div>
+        <ol class="steps">
+          <li><b>Scan the poster</b> so the phone knows exactly where it is.</li>
+          <li><b>Walk the route</b> you have in mind.</li>
+          <li><b>Tap to place</b> text pins and photos where they belong.</li>
+        </ol>
+        <button class="btn primary wide" id="createBtn">Start creating</button>
+        <div class="result" id="createStatus" role="status" aria-live="polite"></div>
+        <div class="on-desktop">
+          <span id="phoneQr"></span>
+          <p>On a computer? This step needs a phone camera. Scan this to carry on, on your phone.</p>
+        </div>
+      </section>
+
+      <!-- Station 6 -->
+      <section class="panel" data-st="6" hidden>
+        <h2 tabindex="-1">Done. Your tour is saved.</h2>
+        <p class="sub">The updated tour zip is on your phone. Put it back where the starter was:</p>
+        <div class="replace" id="replaceBox"></div>
+        <p class="keep"><b>The link and the printed code stay the same.</b> Come back any time to add more. Nothing to reprint.</p>
+        <div class="row">
+          <button class="btn primary" id="previewBtn">Walk it as a visitor</button>
+          <button class="btn" id="againBtn">Start over</button>
+        </div>
+      </section>
+
+      <div class="card-foot">
+        <button class="btn ghost" id="backBtn">Back</button>
+        <button class="btn ink" id="nextBtn">Next</button>
+      </div>
+    </div>
+    <p class="pane-note">Prototype: nothing here is uploaded, saved or sent.</p>
+  </div>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var wideMQ = window.matchMedia('(orientation: landscape) and (min-width: 640px), (min-width: 1024px)');
+  var $ = function (s) { return document.querySelector(s); };
+  var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
+  var NS = 'http://www.w3.org/2000/svg';
+
+  /* ---------- fake QR (deterministic pattern, not a real code) ---------- */
+  function rng(seed) {
+    var s = (seed >>> 0) || 123456789;
+    return function () { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+  }
+  function hash(str) { var h = 2166136261; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  function qrPath(seed, n) {
+    n = n || 21;
+    var r = rng(Math.imul(seed + 1, 2654435761));
+    var d = '';
+    function finder(x, y) { return (x < 8 && y < 8) || (x > n - 9 && y < 8) || (x < 8 && y > n - 9); }
+    for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) {
+      if (!finder(x, y) && r() < 0.47) d += 'M' + x + ' ' + y + 'h1v1h-1z';
+    }
+    [[0, 0], [n - 7, 0], [0, n - 7]].forEach(function (f) {
+      var fx = f[0], fy = f[1];
+      d += 'M' + fx + ' ' + fy + 'h7v7h-7z' + 'M' + (fx + 1) + ' ' + (fy + 1) + 'v5h5v-5z' + 'M' + (fx + 2) + ' ' + (fy + 2) + 'h3v3h-3z';
+    });
+    return d;
+  }
+  function qrSvg(seed, cls) {
+    return '<svg class="' + (cls || 'qr') + '" viewBox="-2 -2 25 25" aria-hidden="true"><rect x="-2" y="-2" width="25" height="25" fill="#fff"/><path d="' + qrPath(seed) + '" fill="currentColor" fill-rule="evenodd"/></svg>';
+  }
+  function qrNested(seed, x, y, size) {
+    return '<svg x="' + x + '" y="' + y + '" width="' + size + '" height="' + size + '" viewBox="-2 -2 25 25"><rect x="-2" y="-2" width="25" height="25" fill="#fff"/><path d="' + qrPath(seed) + '" fill="#2a2824" fill-rule="evenodd"/></svg>';
+  }
+
+  /* ---------- toast ---------- */
+  var toastEl = $('#toast'), toastT;
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 2800);
+  }
+
+  /* ---------- map geometry ---------- */
+  var ROUTE = 'M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262';
+  ['#route', '#routeGhost', '#routeReveal', '#pathMain', '#pathMainIn'].forEach(function (s) { $(s).setAttribute('d', ROUTE); });
+  var route = $('#route'), reveal = $('#routeReveal');
+  var L = route.getTotalLength();
+  reveal.style.strokeDasharray = L + ' ' + L;
+  reveal.style.transition = 'none';
+  reveal.style.strokeDashoffset = L;
+  function pointAt(f) { return route.getPointAtLength(Math.max(0, Math.min(1, f)) * L); }
+  function drawTo(f, instant) {
+    if (instant || reduced) {
+      reveal.style.transition = 'none';
+      reveal.style.strokeDashoffset = L * (1 - f);
+      void reveal.getBoundingClientRect();
+      reveal.style.transition = '';
+    } else {
+      reveal.style.transition = '';
+      reveal.style.strokeDashoffset = L * (1 - f);
+    }
+  }
+
+  // trees, placed by hand off the paths
+  var TREES = [
+    [300, 72, 1], [322, 66, .85], [344, 82, 1.05], [300, 98, .8], [282, 122, .9], [296, 168, .8], [270, 160, 1], [250, 180, .85], [270, 190, .7],
+    [190, 18, 1], [214, 14, .85], [240, 22, 1], [262, 12, .8], [318, 18, 1.05], [340, 24, .8], [362, 16, 1], [386, 34, .9], [392, 64, .8],
+    [390, 122, 1], [394, 152, .8], [386, 190, .9], [368, 214, 1], [392, 210, .7],
+    [300, 242, .9], [320, 234, .8], [276, 246, .75], [190, 242, 1], [166, 250, .8], [140, 240, .9], [100, 242, .85],
+    [36, 146, 1], [60, 160, .85], [90, 150, 1], [120, 160, .8], [48, 186, .9], [80, 182, .8], [184, 156, .9], [196, 180, .75], [158, 140, .7], [150, 174, .85]
+  ];
+  var treesG = $('#trees');
+  TREES.forEach(function (t) {
+    var u = document.createElementNS(NS, 'use');
+    u.setAttribute('href', '#tree');
+    u.setAttribute('transform', 'translate(' + t[0] + ' ' + t[1] + ') scale(' + t[2] + ')');
+    treesG.appendChild(u);
+  });
+
+  // stations
+  var STATIONS = [
+    { name: 'Storage', full: 'Choose storage', f: 0.085, dx: 0, dy: 21, a: 'middle' },
+    { name: 'Link', full: 'Paste the link', f: 0.24, dx: 0, dy: -14, a: 'middle' },
+    { name: 'Print', full: 'Print posters', f: 0.40, dx: -14, dy: 3, a: 'end' },
+    { name: 'Hang', full: 'Hang the poster', f: 0.565, dx: -14, dy: 3, a: 'end' },
+    { name: 'Create', full: 'Create in AR', f: 0.745, dx: 0, dy: 21, a: 'middle' },
+    { name: 'Done', full: 'Done', f: 1, dx: 13, dy: 3, a: 'start' }
+  ];
+  var stG = $('#stations');
+  var markers = STATIONS.map(function (s, i) {
+    var p = pointAt(s.f);
+    var g = document.createElementNS(NS, 'g');
+    g.setAttribute('class', 'st');
+    g.setAttribute('transform', 'translate(' + p.x.toFixed(1) + ' ' + p.y.toFixed(1) + ')');
+    g.setAttribute('role', 'button');
+    g.setAttribute('tabindex', '0');
+    g.setAttribute('aria-label', 'Station ' + (i + 1) + ': ' + s.full);
+    g.innerHTML = '<circle class="ring" r="9"/><circle class="dot" r="9"/><text class="num">' + (i + 1) + '</text>' +
+      '<text class="lbl" x="' + s.dx + '" y="' + s.dy + '" text-anchor="' + s.a + '">' + s.name + '</text>';
+    g.addEventListener('click', function () { goTo(i + 1, { scroll: true }); });
+    g.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goTo(i + 1, { scroll: true }); } });
+    stG.appendChild(g);
+    return g;
+  });
+
+  // end flag at the route's end
+  var endP = pointAt(1);
+  $('#endFlag').setAttribute('transform', 'translate(' + (endP.x + 6) + ' ' + (endP.y - 6) + ')');
+
+  // content placed in AR (pins + photos), offset sideways from the route
+  var PLACES = [
+    { f: 0.15, t: 'pin', side: -1 }, { f: 0.31, t: 'photo', side: 1 }, { f: 0.48, t: 'pin', side: 1 },
+    { f: 0.66, t: 'photo', side: -1 }, { f: 0.84, t: 'pin', side: 1 }, { f: 0.93, t: 'photo', side: 1 }
+  ];
+  var placesG = $('#places');
+  var placeEls = PLACES.map(function (pl) {
+    var a = pointAt(pl.f - 0.004), b = pointAt(pl.f + 0.004), p = pointAt(pl.f);
+    var dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+    var nx = -dy / len * pl.side, ny = dx / len * pl.side;
+    var x = p.x + nx * 13, y = p.y + ny * 13;
+    var g = document.createElementNS(NS, 'g');
+    g.setAttribute('class', 'place');
+    g.setAttribute('transform', 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ')');
+    var inner = pl.t === 'pin'
+      ? '<path d="M0 0 C -3 -4 -5.5 -7 -5.5 -10.5 A5.5 5.5 0 1 1 5.5 -10.5 C 5.5 -7 3 -4 0 0 Z" fill="#cf4428" stroke="#fff" stroke-width=".6"/><circle cy="-10.5" r="2" fill="#fff"/>'
+      : '<g transform="rotate(' + (pl.side * 6) + ')"><rect x="-7.5" y="-15" width="15" height="14" fill="#fff" stroke="#2a2824" stroke-width=".7"/><rect x="-6" y="-13.5" width="12" height="8.5" fill="#c9bea3"/><path d="M-6 -5 L-2 -10 L1 -7.5 L3 -10 L6 -5 Z" fill="#8c8577"/></g>';
+    g.innerHTML = '<g class="place-inner">' + inner + '</g>';
+    g.dataset.l = String(pl.f * L);
+    placesG.appendChild(g);
+    return g;
+  });
+  function showPlaces(on) { placeEls.forEach(function (g) { g.classList.toggle('on', on); }); }
+
+  // start poster QR + other code illustrations
+  $('#startQr').innerHTML = qrNested(7, -5.5, -6.5, 11);
+  $('#wallQr').innerHTML = qrNested(7, 123, 45, 32);
+  $('#demoQr').innerHTML = qrNested(7, 41, 20, 52);
+  $('#phoneQr').innerHTML = qrSvg(99);
+
+  var walker = $('#walker');
+  function walk(duration, onStep, done) {
+    if (reduced) { onStep(L); if (done) done(); return; }
+    walker.classList.add('on');
+    var t0 = performance.now();
+    function frame(t) {
+      var k = Math.min(1, (t - t0) / duration);
+      var e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      var l = e * L, p = route.getPointAtLength(l);
+      walker.setAttribute('transform', 'translate(' + p.x.toFixed(1) + ' ' + p.y.toFixed(1) + ')');
+      onStep(l);
+      if (k < 1) requestAnimationFrame(frame);
+      else { setTimeout(function () { walker.classList.remove('on'); }, 500); if (done) done(); }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- providers ---------- */
+  var P = {
+    drive: {
+      name: 'Google Drive',
+      steps: ['Download the empty starter zip below.', 'Upload it to any folder in your Google Drive.', 'Open Share on the file and set General access to "Anyone with the link".', 'Copy the link. That is your tour\'s address.'],
+      example: 'https://drive.google.com/file/d/1Qx7mStarterTour/view?usp=sharing',
+      replace: 'Open the tour file\'s page in Google Drive, upload the new zip and choose "Replace existing file".'
+    },
+    dropbox: {
+      name: 'Dropbox',
+      steps: ['Download the empty starter zip below.', 'Upload it to your Dropbox.', 'Choose Share, then "Copy link" with "Anyone with the link can view".', 'Copy the link. That is your tour\'s address.'],
+      example: 'https://www.dropbox.com/scl/fi/k2x9starter/tour.zip?dl=0',
+      replace: 'On your phone, share the saved zip into the Dropbox app and save it over the old file: same name, same folder.'
+    },
+    onedrive: {
+      name: 'OneDrive',
+      steps: ['Download the empty starter zip below.', 'Upload it to your OneDrive.', 'Choose Share and set "Anyone with the link can view".', 'Copy the link. That is your tour\'s address.'],
+      example: 'https://1drv.ms/u/s!Ak7starterTour',
+      replace: 'On your phone, share the saved zip into the OneDrive app and replace the old file: same name, same folder.'
+    },
+    github: {
+      name: 'GitHub',
+      steps: ['Download the empty starter zip below.', 'In a public repository, use "Add file", then "Upload files", and commit the zip.', 'Open the file on GitHub and copy its address from the browser bar.'],
+      example: 'https://github.com/your-name/mill-tour/blob/main/tour.zip',
+      replace: 'Upload the saved zip to the same path in your repository, replacing the old one, and commit.'
+    },
+    server: {
+      name: 'Your own server',
+      steps: ['Download the empty starter zip below.', 'Put it anywhere on your site that is served over https.', 'Allow cross-origin reads for the file, so the tour page may load it.', 'Allow range requests, so big tours load in pieces.', 'Copy the file\'s full address.'],
+      code: 'Access-Control-Allow-Origin: *\nAccess-Control-Expose-Headers: Content-Range, Accept-Ranges\nAccept-Ranges: bytes',
+      example: 'https://tours.example-museum.net/mill/tour.zip',
+      replace: 'Upload the saved zip over the old file, at the same address.'
+    }
+  };
+  var provider = null;
+
+  /* ---------- state ---------- */
+  var cur = 1, created = false, done = {};
+  var panels = $$('.panel');
+  var dotsNav = $('#dots');
+  var dotBtns = STATIONS.map(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', 'Station ' + (i + 1) + ': ' + s.full);
+    b.addEventListener('click', function () { goTo(i + 1, { scroll: true }); });
+    dotsNav.appendChild(b);
+    return b;
+  });
+  var startG = $('#start'), stage = $('#stage'), card = $('#card'), cardPane = $('#cardPane');
+
+  function markDone(n) { done[n] = true; refresh(); }
+
+  function refresh() {
+    markers.forEach(function (g, i) {
+      g.classList.toggle('done', !!done[i + 1]);
+      g.classList.toggle('current', i + 1 === cur);
+    });
+    dotBtns.forEach(function (b, i) {
+      b.classList.toggle('done', !!done[i + 1]);
+      if (i + 1 === cur) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
+    });
+    startG.classList.toggle('printed', !!done[3]);
+    startG.classList.toggle('hung', !!done[4]);
+    startG.classList.toggle('focus', cur === 4);
+    $('#startLabel').textContent = done[4] ? 'Start' : 'Start: your poster';
+    $('#endFlag').classList.toggle('on', cur === 6 || !!done[6]);
+    showPlaces(created);
+    var lbl = markers[0].querySelector('.lbl');
+    lbl.textContent = provider ? P[provider].name.replace('Your own server', 'Server').replace('Google ', '') : 'Storage';
+  }
+
+  function goTo(n, opts) {
+    opts = opts || {};
+    cur = Math.max(1, Math.min(6, n));
+    panels.forEach(function (p) { p.hidden = +p.dataset.st !== cur; });
+    $('#badge').textContent = cur;
+    $('#ofLabel').textContent = 'Station ' + cur + ' of 6';
+    $('#backBtn').disabled = cur === 1;
+    var next = $('#nextBtn');
+    next.hidden = cur === 6;
+    if (cur < 6) next.textContent = 'Next: ' + STATIONS[cur].full;
+    refresh();
+    drawTo(created ? 1 : STATIONS[cur - 1].f);
+    if (cur === 6) { renderReplace(); markDone(6); }
+    if (wideMQ.matches) cardPane.scrollTop = 0;
+    if (opts.scroll) {
+      var top = stage.getBoundingClientRect().top + window.scrollY;
+      if (Math.abs(window.scrollY - top) > 4) window.scrollTo({ top: top, behavior: reduced ? 'auto' : 'smooth' });
+    }
+    if (opts.focus !== false) {
+      var h = panels[cur - 1].querySelector('h2');
+      if (h && opts.scroll) { try { h.focus({ preventScroll: true }); } catch (e) { /* older browsers */ } }
+    }
+    requestAnimationFrame(positionNotch);
+    setTimeout(positionNotch, 700);
+  }
+
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function positionNotch() {
+    var m = markers[cur - 1]; if (!m) return;
+    var r = m.querySelector('.dot').getBoundingClientRect(), c = card.getBoundingClientRect();
+    if (wideMQ.matches) {
+      var maxY = Math.max(18, Math.min(c.height, window.innerHeight - c.top) - 32);
+      card.style.setProperty('--notch-y', clamp(r.top + r.height / 2 - c.top - 7, 18, maxY) + 'px');
+    } else {
+      card.style.setProperty('--notch-x', clamp(r.left + r.width / 2 - c.left - 7, 18, c.width - 32) + 'px');
+    }
+  }
+  window.addEventListener('resize', positionNotch);
+  cardPane.addEventListener('scroll', positionNotch, { passive: true });
+  window.addEventListener('scroll', function () { if (wideMQ.matches) positionNotch(); }, { passive: true });
+
+  $('#backBtn').addEventListener('click', function () { goTo(cur - 1, { scroll: true }); });
+  $('#nextBtn').addEventListener('click', function () { markDone(cur); goTo(cur + 1, { scroll: true }); });
+  $('#beginBtn').addEventListener('click', function () { goTo(1, { scroll: true }); });
+
+  // the route draws itself the first time the map scrolls into view
+  var firstDraw = false;
+  function firstReveal() { if (firstDraw) return; firstDraw = true; setTimeout(function () { drawTo(created ? 1 : STATIONS[cur - 1].f); }, 250); }
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { firstReveal(); io.disconnect(); } }); }, { threshold: 0.35 });
+    io.observe($('#map'));
+  } else { firstReveal(); }
+
+  /* ---------- station 1 ---------- */
+  $$('.tile').forEach(function (t) {
+    t.addEventListener('click', function () {
+      provider = t.dataset.p;
+      $$('.tile').forEach(function (o) { o.setAttribute('aria-pressed', String(o === t)); });
+      var p = P[provider];
+      $('#instrTitle').textContent = p.name;
+      $('#instrSteps').innerHTML = p.steps.map(function (s) { return '<li>' + s + '</li>'; }).join('');
+      var code = $('#instrCode');
+      code.hidden = !p.code; code.textContent = p.code || '';
+      var box = $('#instr'); box.hidden = false;
+      box.style.animation = 'none'; void box.offsetWidth; box.style.animation = '';
+      $('#linkIn').placeholder = p.example.replace(/[^/]+$/, '...');
+      markDone(1);
+    });
+  });
+  $('#zipBtn').addEventListener('click', function () { toast('starter-tour.zip downloaded (prototype, no real file)'); });
+
+  /* ---------- station 2 ---------- */
+  var linkIn = $('#linkIn'), linkRes = $('#linkResult'), checkBtn = $('#checkBtn');
+  var ICON_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="#cf4428" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M7 12.5l3.2 3.2L17 9"/></svg>';
+  var ICON_WAIT = '<svg viewBox="0 0 24 24" fill="none" stroke="#57534a" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10" stroke-dasharray="3 3"/><path d="M12 7v5l3 2"/></svg>';
+  function judge(v) {
+    if (!/^https?:\/\/[^\s/]+\.[^\s]+/i.test(v)) return 'bad';
+    if (/example\.(org|com)|later|not-?yet/i.test(v)) return 'later';
+    if (/drive\.google\.com|dropbox\.com|1drv\.ms|onedrive\.live\.com|sharepoint\.com|github\.com|githubusercontent\.com|\.zip([?#]|$)/i.test(v)) return 'found';
+    return 'later';
+  }
+  function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function checkLink() {
+    var v = linkIn.value.trim();
+    if (!v) { linkRes.innerHTML = '<div class="res bad">Paste the link first. It starts with https://</div>'; linkIn.focus(); return; }
+    checkBtn.disabled = true; checkBtn.innerHTML = '<span class="spin"></span>Checking...';
+    linkRes.innerHTML = '';
+    setTimeout(function () {
+      checkBtn.disabled = false; checkBtn.textContent = 'Check again';
+      var j = judge(v);
+      if (j === 'bad') {
+        linkRes.innerHTML = '<div class="res bad">That does not look like a link yet. It should start with https://</div>';
+        return;
+      }
+      if (j === 'found') {
+        var extra = provider === 'server' ? '<br>Cross-origin reads and range requests: both fine.' : '';
+        linkRes.innerHTML = '<div class="res ok">' + ICON_OK + '<div><b>Found it.</b> starter-tour.zip, 3 KB, an empty tour ready to fill.' + extra + '</div></div>' +
+          '<div class="l2q"><span class="pill">' + esc(v.replace(/^https?:\/\//, '')) + '</span><span class="arrow"></span>' + qrSvg(hash(v)) + '</div>' +
+          '<p class="fine">This link becomes the code on your posters.</p>';
+      } else {
+        var srv = provider === 'server' ? ' If it stays unreachable after uploading, check cross-origin reads and range requests.' : '';
+        linkRes.innerHTML = '<div class="res later">' + ICON_WAIT + '<div><b>Not reachable yet.</b> That is fine if you upload later: the code points to this link either way.' + srv + '</div></div>';
+      }
+      markDone(2);
+    }, reduced ? 200 : 1100);
+  }
+  checkBtn.addEventListener('click', checkLink);
+  linkIn.addEventListener('keydown', function (e) { if (e.key === 'Enter') checkLink(); });
+  $('#exampleBtn').addEventListener('click', function () { linkIn.value = P[provider || 'drive'].example; checkLink(); });
+  $('#laterBtn').addEventListener('click', function () { linkIn.value = 'https://example.org/my-tour/tour.zip'; checkLink(); });
+
+  /* ---------- station 3 ---------- */
+  var count = 3, size = 16;
+  var grid = $('#qrGrid');
+  function renderPosters() {
+    $('#countOut').textContent = count;
+    $('#sizeOut').textContent = size + ' cm';
+    var paper = size <= 18 ? 'A4' : size <= 26 ? 'A3' : 'A2';
+    var dist = (size / 10).toFixed(1).replace(/\.0$/, '');
+    $('#sizeNote').textContent = 'Prints on ' + paper + '. Scans from about ' + dist + ' m away.';
+    while (grid.children.length < count) {
+      var i = grid.children.length;
+      var d = document.createElement('div');
+      d.className = 'qr-tile';
+      d.innerHTML = qrSvg(i * 31 + 5) + '<span>Poster ' + (i + 1) + '</span>';
+      grid.appendChild(d);
+    }
+    while (grid.children.length > count) grid.removeChild(grid.lastChild);
+    $('#minusBtn').disabled = count <= 1;
+    $('#plusBtn').disabled = count >= 24;
+    $('#pdfBtn').textContent = 'Download PDF (' + count + ' poster' + (count > 1 ? 's' : '') + ')';
+  }
+  $('#minusBtn').addEventListener('click', function () { count = Math.max(1, count - 1); renderPosters(); });
+  $('#plusBtn').addEventListener('click', function () { count = Math.min(24, count + 1); renderPosters(); });
+  $('#sizeIn').addEventListener('input', function (e) { size = +e.target.value; renderPosters(); });
+  $('#pdfBtn').addEventListener('click', function () {
+    var b = $('#pdfBtn');
+    b.disabled = true; b.innerHTML = '<span class="spin"></span>Making PDF...';
+    setTimeout(function () {
+      b.disabled = false; b.textContent = 'Saved tour-posters.pdf';
+      toast(count + ' poster' + (count > 1 ? 's' : '') + ', ' + size + ' cm codes (prototype, no real file)');
+      markDone(3);
+      setTimeout(renderPosters, 2600);
+    }, reduced ? 200 : 1300);
+  });
+  renderPosters();
+
+  /* ---------- station 4 ---------- */
+  $('#hungBtn').addEventListener('click', function () {
+    var fig = $('#wallFig');
+    fig.classList.remove('hung'); void fig.offsetWidth; fig.classList.add('hung');
+    $('#hungBtn').textContent = 'On the wall. The start is set.';
+    markDone(4);
+  });
+
+  /* ---------- station 5 ---------- */
+  var createBtn = $('#createBtn'), createStatus = $('#createStatus'), busy = false;
+  function placedText(pins, photos) {
+    return '<div class="res ok">' + ICON_OK + '<div><span class="count">' + pins + '</span> pin' + (pins === 1 ? '' : 's') + ' and <span class="count">' + photos + '</span> photo' + (photos === 1 ? '' : 's') + ' placed along the route.</div></div>';
+  }
+  createBtn.addEventListener('click', function () {
+    if (busy) return;
+    if (created) { markDone(5); goTo(6, { scroll: true }); return; }
+    busy = true;
+    createBtn.disabled = true; createBtn.innerHTML = '<span class="spin"></span>Opening the camera...';
+    setTimeout(function () {
+      createBtn.innerHTML = '<span class="spin"></span>Scanning the poster...';
+      setTimeout(function () {
+        createBtn.innerHTML = 'Found the poster. Walking...';
+        showPlaces(false);
+        drawTo(STATIONS[4].f, true);
+        var pins = 0, photos = 0;
+        walk(5200, function (l) {
+          drawTo(Math.max(STATIONS[4].f, l / L), true);
+          placeEls.forEach(function (g, i) {
+            if (!g.classList.contains('on') && l >= +g.dataset.l) {
+              g.classList.add('on');
+              if (PLACES[i].t === 'pin') pins++; else photos++;
+              createStatus.innerHTML = placedText(pins, photos);
+            }
+          });
+        }, function () {
+          created = true; busy = false;
+          createStatus.innerHTML = placedText(3, 3);
+          createBtn.disabled = false; createBtn.textContent = 'Finish and save';
+          refresh();
+        });
+      }, reduced ? 100 : 900);
+    }, reduced ? 100 : 900);
+  });
+
+  /* ---------- station 6 ---------- */
+  function renderReplace() {
+    var keys = Object.keys(P);
+    var order = provider ? [provider].concat(keys.filter(function (k) { return k !== provider; })) : keys;
+    $('#replaceBox').innerHTML = order.map(function (k, i) {
+      return '<details' + (i === 0 ? ' open' : '') + '><summary>' + P[k].name + (k === provider ? '<span class="mine">your choice</span>' : '') + '</summary><p>' + P[k].replace + '</p></details>';
+    }).join('');
+  }
+  $('#previewBtn').addEventListener('click', function () {
+    if (busy) return;
+    if (!created) { toast('Nothing placed yet. Station 5 first.'); return; }
+    busy = true;
+    toast('A visitor sees each pin and photo as they reach it.');
+    placeEls.forEach(function (g) { g.classList.remove('on'); });
+    walk(5200, function (l) {
+      placeEls.forEach(function (g) { if (l >= +g.dataset.l) g.classList.add('on'); });
+    }, function () { busy = false; });
+  });
+  $('#againBtn').addEventListener('click', function () {
+    done = {}; created = false; provider = null; count = 3; size = 16;
+    $('#sizeIn').value = 16; renderPosters();
+    $$('.tile').forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
+    $('#instr').hidden = true; linkIn.value = ''; linkRes.innerHTML = ''; checkBtn.textContent = 'Check link';
+    createStatus.innerHTML = ''; createBtn.textContent = 'Start creating';
+    $('#pdfBtn').disabled = false; $('#hungBtn').textContent = "It's on the wall";
+    goTo(1, { scroll: true });
+  });
+
+  goTo(1, { focus: false });
+  drawTo(0, true);
+  wideMQ.addEventListener ? wideMQ.addEventListener('change', positionNotch) : wideMQ.addListener(positionNotch);
+})();
+</script>
+</body>
+</html>

@@ -172,50 +172,41 @@ describe("objectListModel in AR", () => {
     expect(model.hint).toBe("");
   });
 
-  it("offers a chooser that reaches every object without aiming - its place, or the count before a selection (M4 review #4)", () => {
-    // Why: a far, small or occluded object may be impossible to tap, and
-    // Move is AR-only and acts on the selection - so without a way to step
-    // through the objects some could never be moved. The page lists them
-    // all and needs no chooser.
+  it("has no Previous / Next: an object is selected by a tap on it (polish round M3, Q-HUD)", () => {
+    // Why: the owner found cycling through the objects with left/right
+    // and then acting made little sense (B2) and chose tap-to-select only
+    // (Q-HUD). The model carries no chooser any more, in AR or on the page.
     const entries = [entry(pin("a")), entry(pin("b")), entry(photo("p"))];
-    expect(
-      objectListModel(state({ inAr: true, selectedId: "b", entries })).chooser,
-    ).toEqual({ position: "2 of 3", inRow: true });
-    expect(objectListModel(state({ inAr: true, entries })).chooser).toEqual({
-      position: "3 objects",
-      inRow: false,
-    });
-    expect(
-      objectListModel(state({ inAr: true, entries: [entry(pin("a"))] }))
-        .chooser,
-    ).toEqual({ position: "1 object", inRow: false });
-    expect(objectListModel(state({ inAr: true })).chooser).toBeNull();
-    expect(objectListModel(state({ entries })).chooser).toBeNull();
+    for (const model of [
+      objectListModel(state({ inAr: true, selectedId: "b", entries })),
+      objectListModel(state({ inAr: true, entries })),
+      objectListModel(state({ entries })),
+    ]) {
+      expect(model).not.toHaveProperty("chooser");
+    }
   });
 
-  it("puts the selected object's controls on ONE line in AR: the chooser joins the row, the row is compact, and no Done (360x640, ar-layout.spec.js)", () => {
-    // Why: with the chooser on a line of its own, the selected row's
-    // buttons on two more lines, and the code's re-measure offered, Edit,
-    // Move, Delete and Done fell below the first screen of a 360x640 phone
-    // (the layout e2e, 2026-10-01). In AR the selected state is now one
-    // line of buttons - Previous, Edit, Move, Delete, Next, short labels -
-    // under one line of text: the title, its place and its distance.
-    // Deselecting is a tap on empty scene (Done is gone).
+  it("puts the selected object's controls on ONE line in AR, with Close to let it go (360x640, ar-layout.spec.js)", () => {
+    // Why: the selected state is one line of buttons under one line of
+    // text so every control fits the first screen of a 360x640 phone (the
+    // layout e2e, 2026-10-01). With Previous and Next gone, Close is
+    // on that line (H1's object bar): object mode is left by a tap on it
+    // or on empty scene.
     const codes = [pin("code", 47.5001).geo];
     const entries = [entry(pin("a")), entry(pin("b")), entry(photo("p"))];
     const model = objectListModel(
       state({ inAr: true, selectedId: "b", entries, codes }),
     );
-    expect(model.chooser?.inRow).toBe(true);
     expect(model.rows).toHaveLength(1);
     expect(model.rows[0]).toMatchObject({
       compact: true,
+      canDeselect: true,
       // Kind and standing are the page's; in AR only how far it is.
       detail: "11 m from the code",
     });
-    // The page keeps full rows and no chooser.
+    // The page keeps full rows, and nothing to let go of.
     const page = objectListModel(state({ selectedId: "b", entries, codes }));
-    expect(page.rows.every((r) => !r.compact)).toBe(true);
+    expect(page.rows.every((r) => !r.compact && !r.canDeselect)).toBe(true);
     expect(page.rows[1]?.detail).toBe("Pin · in the zip · 11 m from the code");
   });
 

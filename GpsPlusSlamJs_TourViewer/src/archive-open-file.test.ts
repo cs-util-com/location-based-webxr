@@ -97,6 +97,7 @@ function wire() {
     statsHeadline: el(),
     statsDetail: el(),
     errorBox: el(),
+    linkStatus: el(),
     gallery: el(),
     storagePanel: el(),
     clearCacheButton: el(),
@@ -153,7 +154,7 @@ describe("open a file", () => {
 
     finish(fakeSession("local-file:abc"));
     await vi.waitFor(() => expect(dom.openFileButton.disabled).toBe(false));
-    expect(dom.openFileButton.textContent).toBe("Open a file");
+    expect(dom.openFileButton.textContent).toBe("Open it from this device");
     expect(dom.fileStatus.hidden).toBe(false);
     expect(dom.fileStatus.textContent).toContain("tour (1).zip");
     expect(ctx.tourLabel).toBe("tour (1).zip");
@@ -189,7 +190,7 @@ describe("open a file", () => {
       expect(dom.errorBox.textContent).toContain("not a readable tour zip"),
     );
     expect(dom.openFileButton.disabled).toBe(false);
-    expect(dom.openFileButton.textContent).toBe("Open a file");
+    expect(dom.openFileButton.textContent).toBe("Open it from this device");
     expect(dom.openFileAdviceButton.textContent).toBe(
       "Open the downloaded file",
     );
@@ -213,7 +214,11 @@ describe("the advice after a failed link", () => {
     const env = wire();
     env.dom.linkInput.value = "https://blocked.example/tour.zip";
     env.dom.form.fire("submit");
-    await vi.waitFor(() => expect(env.dom.errorBox.textContent).not.toBe(""));
+    // The check has settled once the status line says more than
+    // "Checking"; a tolerated failure speaks there alone (PR #584).
+    await vi.waitFor(() =>
+      expect(env.dom.linkStatus.textContent).not.toMatch(/^Checking/),
+    );
     return env;
   }
 
@@ -225,7 +230,7 @@ describe("the advice after a failed link", () => {
 
   it("offline: says so, and offers no download", async () => {
     const { dom } = await failWith("offline");
-    expect(dom.errorBox.textContent).toContain("offline");
+    expect(dom.linkStatus.textContent).toContain("offline");
     expect(dom.fileAdvice.hidden).toBe(true);
   });
 
@@ -244,16 +249,20 @@ describe("the advice after a failed link", () => {
 });
 
 describe("the signature line (tour kit plan K1, K-D2)", () => {
-  // Why this matters: an unsigned tour must SAY it is unsigned - the
-  // visitor cannot tell otherwise - in both modes, under the file line.
-  it("says a tour without a manifest is not signed", async () => {
+  // Why this matters (r820 feedback R6, D-R3): the creator's step 2 said
+  // "Not signed" under every starter zip - which is never signed - and
+  // signing does not exist yet (tour kit K2). An unsigned tour without a
+  // warning has no line, in both modes; the open still settles.
+  it("shows no line for a tour without a manifest", async () => {
     mocks.openTourFile.mockResolvedValueOnce(fakeSession("local-file:abc"));
-    const { dom } = wire();
+    const { dom, hooks } = wire();
     pick(dom, new File(["zip"], "tour.zip"));
     await vi.waitFor(() => {
-      expect(dom.tourTrust.hidden).toBe(false);
+      expect(hooks.presentLocalTour).toHaveBeenCalled();
     });
-    expect(dom.tourTrust.textContent).toMatch(/^Not signed: there is no way/);
+    await Promise.resolve();
+    expect(dom.tourTrust.hidden).toBe(true);
+    expect(dom.tourTrust.textContent).toBe("");
   });
 });
 
@@ -296,5 +305,124 @@ describe("a late integrity failure (tour kit plan K1, §8 D3)", () => {
     await Promise.resolve();
     expect(ctx.session).not.toBeNull();
     expect(dom.errorBox.textContent).toBe("");
+  });
+});
+
+describe("step 2's link check (polish round M2, A13/A16)", () => {
+  // Why these tests matter: the link is given once and checked by itself.
+  // A link whose file is not there yet still goes on to printing, marked
+  // unverified; a link that can never work for a visitor must not, or the
+  // printed code fails for every one of them.
+  function withUnverifiedHook() {
+    const env = wire();
+    const presentUnverifiedLink = vi.fn();
+    env.hooks.presentUnverifiedLink = presentUnverifiedLink;
+    return { ...env, presentUnverifiedLink };
+  }
+
+  it("a missing file: says 'not verified yet' and hands the link to printing", async () => {
+    mocks.openTourSession.mockRejectedValueOnce(
+      new OpenRemoteArchiveError("x", "missing"),
+    );
+    const { dom, presentUnverifiedLink } = withUnverifiedHook();
+    dom.linkInput.value = "https://own.example/tour.zip";
+    dom.form.fire("submit");
+    expect(dom.linkStatus.hidden).toBe(false);
+    expect(dom.linkStatus.textContent).toBe("Checking the link…");
+    await vi.waitFor(() =>
+      expect(presentUnverifiedLink).toHaveBeenCalledWith(
+        "https://own.example/tour.zip",
+      ),
+    );
+    expect(dom.linkStatus.textContent).toMatch(/not verified yet/i);
+    // PRs #584/#585: the open's own error ("that file does not exist")
+    // contradicted the status line's "that is fine"; the line speaks alone.
+    expect(dom.errorBox.textContent).toBe("");
+  });
+
+  // PR #584 review: a cloud host gives its link once the file is there, so
+  // a missing file is a wrong link - no hand-off, and the line says so.
+  it("a missing file on a cloud host: check the link, no hand-off", async () => {
+    mocks.openTourSession.mockRejectedValueOnce(
+      new OpenRemoteArchiveError("x", "missing"),
+    );
+    const { dom, presentUnverifiedLink } = withUnverifiedHook();
+    dom.linkInput.value = "https://drive.google.com/file/d/abc/view";
+    dom.form.fire("submit");
+    await vi.waitFor(() =>
+      expect(dom.linkStatus.textContent).toMatch(/check that you copied/i),
+    );
+    expect(presentUnverifiedLink).not.toHaveBeenCalled();
+  });
+
+  // PR #585 review: a paste checks by itself, and tapping "Check link"
+  // right after it (the field's change fires on that blur too) opened the
+  // archive a second time while the first open was still running.
+  it("does not start a second check of the link being checked", async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    mocks.openTourSession.mockImplementation(
+      (url: string) =>
+        new Promise((resolve) => {
+          finish = () => {
+            resolve(fakeSession(url));
+          };
+        }),
+    );
+    const { dom } = wire();
+    dom.linkInput.value = "https://h.example/tour.zip";
+    dom.linkInput.fire("change");
+    await vi.waitFor(() =>
+      expect(mocks.openTourSession).toHaveBeenCalledTimes(1),
+    );
+    dom.form.fire("submit");
+    // Long enough for a second open to reach the session layer.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(mocks.openTourSession).toHaveBeenCalledTimes(1);
+    finish(undefined);
+    await vi.waitFor(() =>
+      expect(dom.linkStatus.textContent).toBe("Tour found - the link works."),
+    );
+    // Once it settled, the button is the explicit retry again.
+    mocks.openTourSession.mockImplementation((url: string) =>
+      Promise.resolve(fakeSession(url)),
+    );
+    dom.form.fire("submit");
+    await vi.waitFor(() =>
+      expect(mocks.openTourSession).toHaveBeenCalledTimes(2),
+    );
+  });
+
+  it("a host that blocks browsers: no hand-off", async () => {
+    mocks.openTourSession.mockRejectedValueOnce(
+      new OpenRemoteArchiveError("x", "cors"),
+    );
+    const { dom, presentUnverifiedLink } = withUnverifiedHook();
+    dom.linkInput.value = "https://blocked.example/tour.zip";
+    dom.form.fire("submit");
+    await vi.waitFor(() =>
+      expect(dom.linkStatus.textContent).toMatch(/visitors/),
+    );
+    expect(presentUnverifiedLink).not.toHaveBeenCalled();
+  });
+
+  it("checks by itself on paste and when the field is left, once per link", async () => {
+    mocks.openTourSession.mockImplementation((url: string) =>
+      Promise.resolve(fakeSession(url)),
+    );
+    const { dom } = wire();
+    dom.linkInput.value = "https://h.example/tour.zip";
+    dom.linkInput.fire("paste");
+    await vi.waitFor(() =>
+      expect(dom.linkStatus.textContent).toBe("Tour found - the link works."),
+    );
+    // The paste's own `change` when the field is left: the same link.
+    dom.linkInput.fire("change");
+    expect(mocks.openTourSession).toHaveBeenCalledTimes(1);
+    // A new link is checked again.
+    dom.linkInput.value = "https://h.example/other.zip";
+    dom.linkInput.fire("change");
+    await vi.waitFor(() =>
+      expect(mocks.openTourSession).toHaveBeenCalledTimes(2),
+    );
   });
 });

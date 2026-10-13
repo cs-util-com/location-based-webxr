@@ -16,8 +16,10 @@ stack to get wrong. Decision record:
 
 ## Public API
 
-- `AUTHOR_DEFAULT_SIZE_M: number` — 0.16 m, the size that still fits an
-  A4/Letter page once the quiet zone is added.
+- `AUTHOR_DEFAULT_SIZE_M: number` — 0.18 m, the largest whole centimetre
+  the print PDF places on A4 and Letter (its margin is for ink; the quiet
+  zone may reach into it). Was 0.16 m while the browser dialog could print
+  the code too; `qr-print-pdf.test.ts` holds it under both ceilings.
 - `MIN_ALIGNMENT_SAMPLES: number` — GPS fixes required before a mint is
   allowed.
 - `MintAlignmentInfo` — `{ hasMatrix, sampleCount, gpsAccuracyM? }`.

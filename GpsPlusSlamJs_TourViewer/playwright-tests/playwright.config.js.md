@@ -16,6 +16,12 @@ readiness.
 
 ## Invariants & assumptions
 
+- **Every spec starts as a creator who chose a host** (`storageState` seeds
+  `tour-viewer.wizard.host` = `drive`; polish round M2): the page then
+  opens at step 2, the link, where almost every spec starts. The first-visit
+  flow clears it with `test.use({ storageState: { cookies: [], origins: [] } })`
+  (`setup-flow.spec.js`).
+
 - Chromium is launched with `browserLaunchArgs(process.env)` from `scripts/e2e/browser-launch.mjs`: `--in-process-gpu` when run-stage lowered the browser stage (Windows), so the WebGL work inherits the lowered priority; nothing otherwise.
 - Shares the workspace `playwright-global-setup.mjs` dev-server freshness
   guard: a dev server older than the last framework build is refused (a

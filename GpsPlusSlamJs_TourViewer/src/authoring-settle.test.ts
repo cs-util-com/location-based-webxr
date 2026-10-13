@@ -14,7 +14,7 @@
  * that had the symptom. Only the device (QR controller, reticle, camera)
  * is stood in.
  */
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   buildObjectPoints,
   projectViewPoint,
@@ -38,6 +38,8 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 import { Group, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 
+import { writeSideM } from "./printed-side.js";
+import { SELECTION_MARK_NAME } from "./selection-mark.js";
 import { wireCreatorSetup, type CreatorSetupDom } from "./creator-setup.js";
 import type { ObjectListHandlers, ObjectListModel } from "./object-list.js";
 import type { TourViewerSeams } from "./seams.js";
@@ -58,6 +60,7 @@ import type { SummaryModel } from "./summary-model.js";
 import type { SummaryPanel } from "./summary-panel.js";
 import { parseVisitLogEntry } from "./visit-log.js";
 import { readCodeSpots } from "./level-spots.js";
+import { readPrintedText } from "./level-printed.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import { OUTCOME_HOLD_MS } from "./object-editing.js";
@@ -87,6 +90,34 @@ vi.mock("gps-plus-slam-app-framework/ar/qr/qr-tracking-controller", () => ({
   },
 }));
 
+// The code's id is a hash (async): the window in which a measurement is in
+// flight. A test that needs that window holds it with `idHold`; otherwise
+// this is the real function, unchanged.
+const idHold = vi.hoisted(() => ({
+  gate: null as Promise<void> | null,
+  /** Calls let through before the gate holds. */
+  pass: 0,
+  held: 0,
+}));
+vi.mock(
+  "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id",
+  async (importOriginal) => {
+    const actual = await importOriginal<{ qrCodeId: typeof qrCodeId }>();
+    return {
+      ...actual,
+      qrCodeId: (text: string) => {
+        if (idHold.gate === null) return actual.qrCodeId(text);
+        if (idHold.pass > 0) {
+          idHold.pass -= 1;
+          return actual.qrCodeId(text);
+        }
+        idHold.held += 1;
+        return idHold.gate.then(() => actual.qrCodeId(text));
+      },
+    };
+  },
+);
+
 /**
  * Per-test timeout. A test here walks one or two whole AR visits through the
  * real fused-pose source (eight detections each, plus the mint): 0.4-1.2 s
@@ -94,6 +125,15 @@ vi.mock("gps-plus-slam-app-framework/ar/qr/qr-tracking-controller", () => ({
  * The default 5 s would make them fail on load alone, never on behaviour.
  */
 const SLOW_MS = 30_000;
+
+// The library's geo maths (minting a pin's pose, `worldNueToGps`) is
+// licensed, and building a store activates it. Fixtures mint pins BEFORE
+// their test builds a harness (`withHostedTour([hostedPin(...)])`), so
+// without this a test passed only after an earlier one had built a store
+// and failed alone (follow-up F8).
+beforeAll(() => {
+  createTourViewerStore();
+});
 
 const SIZE_M = 0.16;
 const ZERO = { lat: 47.5, lon: 8.7 };
@@ -178,6 +218,7 @@ const DOM_KEYS = [
   "replaceHelp",
   "replaceHelpGeneric",
   "replaceHelpDrive",
+  "replaceDriveCopy",
   "sizeInput",
   "printPanel",
   "status",
@@ -329,7 +370,6 @@ function authoring(
     (typeof DOM_KEYS)[number],
     ReturnType<typeof el>
   >;
-  dom.sizeInput.value = String(SIZE_M);
   const ctx = createTourViewerSession();
   const real = createTourViewerStore();
   const gps: {
@@ -461,7 +501,15 @@ function authoring(
     openDraftStore: () => Promise.resolve(options.store),
     ...(options.summary === undefined ? {} : { summary: options.summary }),
   });
+  // AFTER the wiring, which writes the page's default into the field (as
+  // fused-pose-wiring.test.ts does): the creator typed this size.
+  writeSideM(dom.sizeInput, SIZE_M);
   expect(setup.startAuthorPipeline()).toBe(true);
+  // The synthetic detections are corners of a SIZE_M code: the pipeline
+  // must solve them at that size, or every pose below carries a scale
+  // error while the suite stays green (PR #595 review: the field was
+  // written in metres, before the wiring overwrote it with 18 cm).
+  expect(ctx.activeSizeM).toBe(SIZE_M);
 
   /** Walk the code until its fused pose is stable. */
   function seeTheCode(origin?: Matrix4, text = TEXT, startMs = 0): void {
@@ -1496,6 +1544,76 @@ describe(
       expect(logs[1]!.payload.objects).toHaveLength(2);
     });
 
+    it("in AR the Done is the one way out: the panel's Finish steps aside, and Done finishes only when a finish can start (polish round M3, Q-Done)", async () => {
+      // Why: Exit AR and Finish did the same thing in two buttons (B6). In
+      // a session the AR button's Done runs the finish (`finishNow`); the
+      // panel's Finish is hidden then, and comes back as the retry after
+      // a failed finish or on the page.
+      const a = authoring();
+      const tour = await openFinishableTour(a, { holdArchive: true });
+      a.setup.renderAuthorReadout();
+      expect(a.dom.finishButton.hidden).toBe(true);
+      // Nothing measured, nothing placed: no finish can start yet.
+      expect(a.setup.finishNow()).toBe(false);
+      expect(a.ctx.finishing).toBe(false);
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      expect(a.setup.finishNow()).toBe(true);
+      expect(a.ctx.finishing).toBe(true);
+      tour.releaseArchive();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+    });
+
+    it("a Done while a code is being measured keeps the session and says why, and finishes once it is measured (PR #598 review)", async () => {
+      // Why: a finish waits for an in-flight measurement, so Done's
+      // finishNow was false and the session ended with changes unsaved and
+      // nothing said in AR. Now Done stays, the status says so, and the
+      // next Done saves.
+      const a = authoring();
+      await openFinishableTour(a);
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      // A second code: its first id call (seeing it) passes, the
+      // measurement's is held - the measurement is in flight.
+      const SECOND_TEXT = "https://gps.csutil.com/tour/?qr=second";
+      let release: () => void = () => undefined;
+      idHold.pass = 1;
+      idHold.gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      try {
+        const measured = () =>
+          a.dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured")
+            .length;
+        const before = measured();
+        a.seeTheCode(new Matrix4().makeTranslation(1, 0, 0), SECOND_TEXT);
+        await vi.waitFor(() => {
+          expect(idHold.held).toBeGreaterThan(0);
+        });
+        expect(a.setup.finishNow()).toBe(true);
+        expect(a.ctx.finishing).toBe(false);
+        expect(a.dom.status.textContent).toMatch(
+          /code is being measured.*tap Done again/i,
+        );
+        idHold.gate = null;
+        release();
+        await vi.waitFor(() => {
+          expect(measured()).toBeGreaterThan(before);
+        });
+        await flush();
+        expect(a.setup.finishNow()).toBe(true);
+        expect(a.ctx.finishing).toBe(true);
+        await finished(a.ctx);
+        expect(a.ctx.finishError).toBeNull();
+      } finally {
+        idHold.gate = null;
+        idHold.held = 0;
+        idHold.pass = 0;
+        release();
+      }
+    });
+
     it("keeps a photo that lands while a live Finish rebuilds the zip - settled, and left for the next Finish", async () => {
       // Review #6: the Finish emptied the whole placed list when its rebuild
       // landed, which wiped a photo pushed DURING the rebuild - it was in
@@ -1797,6 +1915,22 @@ describe(
       ).toHaveLength(1);
       expect(a.codes.inHand()!.json).toBe(firstJson);
     });
+
+    it("writes the code's printed text on its level, and the visit's re-mint keeps it (F2)", async () => {
+      // Why: the level is filed under a hash of the text, so a re-print
+      // could only guess the spelling it was printed from; the text on the
+      // level is what it reads instead. The settle re-mints the level at
+      // the visit's end - the text must survive that.
+      const a = authoring();
+      await a.mint();
+      const measured = a.codes.inHand()!.json;
+      expect(readPrintedText(measured)).toBe(TEXT);
+      a.setAlignment(yawAlignment(3, [1, 400, 1]));
+      a.endVisit();
+      // The settle re-minted it (r834 review #3: else the carry is untested).
+      expect(a.codes.inHand()!.json).not.toBe(measured);
+      expect(readPrintedText(a.codes.inHand()!.json)).toBe(TEXT);
+    });
   },
 );
 
@@ -2011,7 +2145,7 @@ describe(
       expect(files.has(deletedKey("h1"))).toBe(true);
       expect(a.dom.objectList.lastModel?.rows).toEqual([]);
       expect(a.dom.objectList.lastModel?.note).toMatch(
-        /Deleted "Gate" - it leaves the zip on the next Finish/,
+        /Deleted "Gate" - it leaves the zip when you save the tour/,
       );
       const log = logged(a, "tourAuthoring/objectDeleted").at(-1)!.payload;
       expect(log["hosted"]).toBe(true);
@@ -2186,45 +2320,43 @@ describe(
       expect(a.dom.objectList.lastModel!.rows).toEqual([]);
     });
 
-    it("steps the selection through every object with the chooser, wrapping, and moves the one it reached (M4 review #4)", async () => {
-      // Why: a tap cannot reach an object that is too far, too small or
-      // behind another, and Move acts on the selection in AR only - the
-      // chooser is how such an object is still selected and moved.
+    it("lets the selection go with Close, back to placing (polish round M3, Q-HUD)", async () => {
+      // Why: object mode is left by Close (H1's object bar, renamed from Done) as well as by a
+      // tap on empty scene; the place buttons come back with it.
       const a = await withHostedTour([
         hostedPin("h1", "Gate"),
         hostedPin("h2", "Mill"),
-        hostedPin("h3", "Oak"),
       ]);
       await a.mint();
       const list = a.dom.objectList;
-      const selected = () => list.lastModel!.rows.map((r) => r.id);
-      list.listHandlers!.step(1);
-      expect(selected()).toEqual(["h1"]);
-      expect(list.lastModel!.chooser).toEqual({
-        position: "1 of 3",
-        inRow: true,
-      });
-      list.listHandlers!.step(1);
-      expect(selected()).toEqual(["h2"]);
-      list.listHandlers!.step(-1);
-      list.listHandlers!.step(-1);
-      expect(selected(), "wraps from the first to the last").toEqual(["h3"]);
-      list.listHandlers!.step(1);
-      expect(selected(), "and from the last to the first").toEqual(["h1"]);
-      // Nothing selected (a tap on empty scene): Previous starts at the last.
-      a.pick.fn = () => null;
+      a.pick.fn = () => "h2";
       a.setup.selectInView(null);
-      list.listHandlers!.step(-1);
-      expect(selected()).toEqual(["h3"]);
+      expect(list.lastModel!.rows.map((r) => r.id)).toEqual(["h2"]);
+      expect(a.dom.pinButton.hidden).toBe(true);
+      list.listHandlers!.deselect();
+      expect(list.lastModel!.rows).toEqual([]);
+      expect(a.dom.pinButton.hidden).toBe(false);
+    });
 
-      a.setReticle([4, 0, 2]);
-      list.listHandlers!.move("h3");
+    it("marks the selected object in the scene, and takes the mark away with the selection (polish round M3, B2)", async () => {
+      // Why: the owner wants to SEE what a tap selected (B2); the list row
+      // alone is off to the side of the camera view.
+      const a = await withHostedTour([
+        hostedPin("h1", "Gate"),
+        hostedPin("h2", "Mill"),
+      ]);
       await flush();
-      expect(list.lastModel?.note).toMatch(/^Moved "Oak"/);
-      expect(
-        a.ctx.placedObjects.find((p) => p.object.id === "h3")?.placement?.local
-          .position,
-      ).toEqual([4, 0, 2]);
+      const ringOn = (id: string) =>
+        (a.ctx.placedPreviews.get(id)?.root.children ?? []).some(
+          (c) => c.name === SELECTION_MARK_NAME,
+        );
+      expect(a.ctx.placedPreviews.has("h2")).toBe(true);
+      a.pick.fn = () => "h2";
+      a.setup.selectInView(null);
+      expect(ringOn("h2")).toBe(true);
+      expect(ringOn("h1")).toBe(false);
+      a.dom.objectList.listHandlers!.deselect();
+      expect(ringOn("h2")).toBe(false);
     });
 
     it("cancels the XR select of a tap on the panel, so Delete does not also select what is behind it", () => {
@@ -2450,12 +2582,20 @@ describe(
       northM: number;
       walkM: number;
       accuracyM?: number;
+      /** The stored level as a build before F2 wrote it: no printed text. */
+      storedWithoutText?: boolean;
     }) {
       const a = authoring();
       await a.mint();
       await a.placePin("near", [2, 0, -1]);
       await a.placePin("far", [60, 0, 0]);
       a.endVisit();
+      if (opts.storedWithoutText === true) {
+        const level = a.codes.inHand()!;
+        const data = JSON.parse(level.json) as { qr: Record<string, unknown> };
+        delete data.qr["printed"];
+        a.codes.saveLevel({ id: level.id, json: JSON.stringify(data) });
+      }
       const stored = a.codes.inHand()!;
       const pins = () =>
         new Map(
@@ -2675,6 +2815,25 @@ describe(
       await finished(a.ctx);
       expect(a.dom.finishStatus.textContent).toMatch(/Code 1: /);
       expect(a.dom.finishStatus.textContent).toMatch(/Code 2: /);
+    });
+
+    // Why (r834 milestone review #1): a code measured before F2 is kept as
+    // the stored reference when it is measured again, so the fresh level
+    // that carried the text was dropped and the re-mint carried nothing -
+    // F2 then never reached the tours it was written for. The re-mint
+    // writes the measurement's own text when the level has none.
+    it("writes the printed text on a code measured before F2 when a re-measure re-mints it", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+        storedWithoutText: true,
+      });
+      expect(readPrintedText(stored.json)).toBeNull();
+      a.endVisit();
+      expect(codePosition(a)?.decision).toEqual({ kind: "replace" });
+      expect(a.codes.inHand()?.json).not.toBe(stored.json);
+      expect(readPrintedText(a.codes.inHand()!.json)).toBe(TEXT);
     });
 
     it("replaces a stored position of unknown quality after a reliable walk, and takes the pin next to the code along", async () => {

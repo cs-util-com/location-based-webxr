@@ -23,6 +23,7 @@ import {
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
+import { withPrintedText } from "./level-printed.js";
 import type { CreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import type { CreatorCodes } from "./creator-codes.js";
 import { hostedLevelJson, type CreatorDraft } from "./creator-draft.js";
@@ -49,6 +50,7 @@ import {
   type CodeMeasurement,
 } from "./visit-settle.js";
 import type { Wizard } from "./wizard.js";
+import { readSideM, writeSideM } from "./printed-side.js";
 
 /** Why a measurement found no stable pose: the gate closed since the
  *  render, so it is tried again. */
@@ -63,6 +65,9 @@ type MeasureOutcome =
  *  while a measurement is in flight) and the size offer. */
 export interface CreatorMeasuringDom {
   sizeInput: HTMLInputElement;
+  /** The closed "Settings" block the size field lives in (r820 feedback
+   *  R7): opened with step 3 when the size is what stops a session. */
+  printSettings?: { open: boolean };
   finishButton: HTMLButtonElement;
   sizeOffer: HTMLElement;
   sizeOfferText: HTMLElement;
@@ -215,7 +220,7 @@ export function wireCreatorMeasuring(deps: {
     // min attribute never fires outside a form, and the resulting RangeError
     // used to unwind into the generic error box - the surface the creator is
     // not looking at (PR #360 review).
-    const parsedSize = Number(dom.sizeInput.value);
+    const parsedSize = readSideM(dom.sizeInput);
     if (!Number.isFinite(parsedSize) || parsedSize <= 0) {
       ctx.authorErrorText = MISSING_SIZE_MESSAGE;
       // REVEAL, not open (M3 milestone review #2): the message lands in
@@ -224,6 +229,7 @@ export function wireCreatorMeasuring(deps: {
       // that does nothing. Both steps stay open: the reason in one, the
       // field that fixes it in the other.
       deps.wizard.revealStep("print");
+      if (dom.printSettings !== undefined) dom.printSettings.open = true;
       deps.render();
       return false;
     }
@@ -303,7 +309,7 @@ export function wireCreatorMeasuring(deps: {
     // For ITS code (M4c-3); the field too, the size new codes are solved
     // at - a code the tour stores at its own size keeps that.
     adoptedSizes.set(offer.text, sizeM);
-    dom.sizeInput.value = String(sizeM);
+    writeSideM(dom.sizeInput, sizeM);
     ctx.mintGeneration += 1;
     // That code's measurement no longer counts; another code in hand keeps
     // its own.
@@ -493,6 +499,9 @@ export function wireCreatorMeasuring(deps: {
     // superseded by the newest.
     const mintedText = ctx.lastDetectedText;
     const mintGeneration = ++ctx.mintGeneration;
+    // The text this code carries, on its level: a re-print reads the
+    // spelling and number it was printed with from it (follow-up F2).
+    const levelJson = withPrintedText(result.json, mintedText);
     // The raw inputs, captured at the tap: the level's id lands later.
     const measured = {
       text: mintedText,
@@ -500,7 +509,7 @@ export function wireCreatorMeasuring(deps: {
       sizeM: sizeOf(mintedText),
       alignmentMatrix: selectAlignmentMatrix(state),
       alignment: deps.alignmentInfo(),
-      levelJson: result.json,
+      levelJson,
       arVisitIndex: ctx.arSessionGeneration,
       atMs: Date.now(),
     };
@@ -542,7 +551,7 @@ export function wireCreatorMeasuring(deps: {
         hostedJson,
       });
       adoptMeasurement(role, prior.measurement, {
-        level: { id, json: result.json },
+        level: { id, json: levelJson },
         // What the settle re-mints the code from at the visit's end, and
         // a sighting of it in this visit (plan §3.2, M2c).
         measurement: {

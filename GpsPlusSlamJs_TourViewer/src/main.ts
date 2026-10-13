@@ -25,7 +25,10 @@ import {
   packFilesAsZip,
 } from "gps-plus-slam-app-framework/storage";
 
-import { openDraftNamespace } from "gps-plus-slam-app-framework/storage";
+import {
+  openDraftNamespace,
+  openRemoteArchive,
+} from "gps-plus-slam-app-framework/storage";
 import { sanitizedPageUrl } from "gps-plus-slam-app-framework/storage/session-metadata-record";
 import { getBuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 
@@ -35,8 +38,12 @@ import { createAuthoringRecording } from "./authoring-recording.js";
 import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
 import { createObjectListView } from "./object-list.js";
 import type { ScanOpen } from "./scan-open.js";
-import { viewerModeFromSearch } from "./mode.js";
+import { meshCursorFromSearch, viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
+import { wireHostPicker } from "./host-picker.js";
+import { wireSetupStage } from "./setup-stage.js";
+import { readTourHost } from "./tour-host.js";
+import { checkLink } from "./link-check.js";
 import { wirePrintPanel } from "./print-panel.js";
 import {
   AUTHORING_CONTEXT_TAG,
@@ -57,8 +64,12 @@ import { createViewingLog } from "./viewing-log.js";
 import { wireVisitorStations } from "./visitor-stations.js";
 import { relocationRequested } from "./tour-relocation.js";
 import { wireVisitorScreen } from "./visitor-screen.js";
+import { wireVisitorStart } from "./visitor-start.js";
+import { wireFoldingLabel } from "./folding-label.js";
+import { pictureProblem } from "./image-cap.js";
 import { driveProxyBaseUrl } from "./drive-proxy-url.js";
 import { stepStoreOrUndefined, wireWizard } from "./wizard.js";
+import { readPrintedText } from "./level-printed.js";
 
 /** Keep at most this many archives cached (LRU) — see BoundedLocalCacheStore. */
 const MAX_CACHED_ARCHIVES = 5;
@@ -102,9 +113,10 @@ const debug = debugUiEnabledFromSearch(location.search);
 // The troubleshooting recording (authoring recording plan 2026-09-28-0953,
 // M1a; a visitor's with `?debug=1` since M1b): the store is built with its
 // backend and gate, and both stay silent until someone opts in and enters
-// AR. Its controls show for a creator, and for a visitor only with
-// `?debug=1` - without it nothing about a visitor's page changes.
-const recordingControls = mode === "creator" || debug;
+// AR. Its controls show only with `?debug=1`, for a creator too since
+// polish round M3 (Q-Data, A20: it was the developer's) - without it
+// nothing about either page changes.
+const recordingControls = debug;
 const recordingTag =
   mode === "creator" ? AUTHORING_CONTEXT_TAG : VIEWING_CONTEXT_TAG;
 const recording = createAuthoringRecording({
@@ -124,7 +136,16 @@ const arStore = createTourViewerStore(recording);
 const arController = createEnableGpsArController(seams.controllerDeps);
 const ctx = createTourViewerSession();
 ctx.debug = debug;
+// The gallery is a creator's debugging aid (polish round M2): shown only
+// with ?debug=1, and never to a visitor, whose tour appears in AR. Hidden,
+// it is still filled (each photo decoded): the e2e suite reads it as its
+// "tour is open" signal, so skipping the fill waits for a readiness
+// attribute to replace that (filed with the PR #598 review).
+element("gallery").hidden = !(mode === "creator" && debug);
 element<HTMLPreElement>("ar-debug").hidden = !ctx.debug;
+// The page's CSS keeps a creator's technical AR line for ?debug=1 only
+// (polish round M3: the HUD's readout is the setup status card).
+document.body.dataset["debug"] = String(ctx.debug);
 element("recording-block").hidden = !recordingControls;
 const hooks = createUnwiredHooks();
 
@@ -148,13 +169,15 @@ const print = wirePrintPanel({
     urlShown: element("print-url-shown"),
     sizeInput,
     codeInput: element("author-c"),
-    generateButton: element("print-generate"),
     info: element("print-info"),
-    area: element("print-area"),
-    canvas: element("print-canvas"),
-    printButton: element("print-button"),
+    tiles: element("print-tiles"),
     urlOut: element("print-url-out"),
     countInput: element("print-count"),
+    countDown: element("print-count-down"),
+    countUp: element("print-count-up"),
+    posterTitle: element("poster-title"),
+    posterExplanation: element("poster-explanation"),
+    posterCallToAction: element("poster-cta"),
     paperSelect: element("print-paper"),
     pdfButton: element("print-pdf"),
   },
@@ -164,19 +187,45 @@ const print = wirePrintPanel({
   // Through the seam like every other download, so the e2e fake captures
   // the bytes instead of the browser writing a file.
   downloadPdf: (blob, filename) => seams.downloadPdf(blob, filename),
+  openPdfTab: () => seams.openPdfTab(),
+  // The poster title defaults to the tour's name (polish round D-P7).
+  tourTitle: () => ctx.tourManifest?.title ?? null,
+  posterStore: stepStoreOrUndefined(),
+  // The re-check before the PDF of a link step 2 could not confirm
+  // (polish round M2): the same transport an open uses, probed and let go.
+  checkLink: (url) =>
+    checkLink(url, (link, options) =>
+      openRemoteArchive(link, {
+        ...options,
+        corsProxyBaseUrl: DRIVE_PROXY_BASE_URL,
+      }),
+    ),
   // The open tour's measured codes, so the panel can say when printing
   // this one would strand them. Read at print time rather than captured:
   // the levels arrive asynchronously after an open, and a tour can be
   // swapped without the panel being rewired.
   // With the codes measured on this page that the tour does not host yet
   // (code book plan M4d): printing over them strands them too.
-  measuredCodeIds: () => [
+  measuredCodeIds: () => measuredCodeIds(),
+  // The texts those codes were printed with, from their levels (follow-up
+  // F2): this page's newest level first, else the hosted one.
+  measuredCodeTexts: () =>
+    measuredCodeIds().flatMap((id) => {
+      const json =
+        setup.codes.savedText(id) ?? ctx.currentLevelTexts?.get(id) ?? null;
+      const text = json === null ? null : readPrintedText(json);
+      return text === null ? [] : [{ id, text }];
+    }),
+});
+
+function measuredCodeIds(): string[] {
+  return [
     ...new Set([
       ...(ctx.currentLevels?.keys() ?? []),
       ...setup.measuredCodeIds(),
     ]),
-  ],
-});
+  ];
+}
 
 const stepStore = stepStoreOrUndefined();
 const wizard = wireWizard({
@@ -185,9 +234,11 @@ const wizard = wireWizard({
   dom: {
     steps: {
       host: element<HTMLDetailsElement>("step-host"),
+      link: element<HTMLDetailsElement>("step-link"),
       print: printPanel,
       hang: element<HTMLDetailsElement>("step-hang"),
       measure: measureStep,
+      done: element<HTMLDetailsElement>("step-done"),
     },
     hangDone: element<HTMLButtonElement>("hang-done"),
     starterButton: element<HTMLButtonElement>("starter-zip"),
@@ -217,11 +268,37 @@ const wizard = wireWizard({
 });
 // The link a creator last opened, prefilled so a reload is one tap from
 // the remembered step (M6 review #2); never over a link already typed.
+// Labelled as the last tour (polish round M2, A3), so a prefilled field
+// does not read as a link this visit gave.
 {
   const linkInput = element<HTMLInputElement>("link");
   const last = wizard.rememberedTourUrl();
-  if (mode === "creator" && last !== null && linkInput.value === "")
+  if (mode === "creator" && last !== null && linkInput.value === "") {
     linkInput.value = last;
+    const status = element("link-status");
+    status.textContent = `Your last tour's link - tap "Check link" to continue with it, or paste another.`;
+    status.hidden = false;
+  }
+}
+// Step 1's host tiles (polish round M2, A6/A7): the choice is stored with
+// the wizard's other state, and Continue moves on to the link.
+if (mode === "creator") {
+  wireHostPicker<
+    HTMLButtonElement | HTMLLIElement | HTMLSpanElement | HTMLAnchorElement
+  >({
+    dom: {
+      tiles: element("host-tiles"),
+      steps: element("host-steps"),
+      starter: element("starter-zip"),
+      continueButton: element("host-continue"),
+    },
+    store: stepStore,
+    createElement: (tag) => document.createElement(tag),
+    onContinue: () => {
+      wizard.openStep("link");
+      element<HTMLInputElement>("link").focus();
+    },
+  });
 }
 hooks.presentTourForPrint = (url, origin) => {
   print.presentTour(url);
@@ -236,6 +313,19 @@ hooks.presentTourForPrint = (url, origin) => {
 // A tour opened from a file (tour kit plan K0) has no link: the print step
 // keeps asking for one, and only a creator's wizard moves on - the same
 // steps a link would reach, without remembering a link to prefill.
+// A link step 2 could not confirm but that may still work (polish round
+// M2, A16): printed as given, marked unverified, so it is entered once.
+hooks.presentUnverifiedLink = (url) => {
+  print.presentTour(url, { verified: false });
+  wizard.presentTour(url);
+};
+
+// The open tour's codes arrived: the first poster continues their
+// numbering (polish round M0b).
+hooks.presentTourCodes = () => {
+  print.presentCodes();
+};
+
 hooks.presentLocalTour = (origin) => {
   print.presentNoTour();
   if (mode !== "creator") return;
@@ -247,6 +337,7 @@ const visitor = wireVisitorScreen({
   seams,
   dom: {
     screen: element("visitor-screen"),
+    more: element("visitor-more"),
     measureStep,
     creatorOnly: Array.from(
       document.querySelectorAll<HTMLElement>(".creator-only"),
@@ -259,13 +350,92 @@ const visitor = wireVisitorScreen({
   },
 });
 
+// The visitor's start page leads with the tour's name, a line and one of
+// its photos (polish round M4a, the owner's V4); a creator never sees it.
+if (mode === "visitor") {
+  const visitorStart = wireVisitorStart({
+    dom: {
+      title: element("visitor-title"),
+      subline: element("visitor-subline"),
+      cover: element("visitor-cover"),
+      coverImage: element<HTMLImageElement>("visitor-cover-image"),
+    },
+    createObjectUrl: (blob) => URL.createObjectURL(blob),
+    revokeObjectUrl: (url) => {
+      URL.revokeObjectURL(url);
+    },
+    checkPicture: pictureProblem,
+  });
+  hooks.presentTourInfo = (manifest, loadImage) => {
+    if (manifest === null) visitorStart.clear();
+    else visitorStart.present(manifest, loadImage);
+  };
+}
+
+// The setup page's station row and map (polish round M2b, the L5 look):
+// wired after the visitor screen, which reveals the creator-only parts,
+// so the row's own hidden states are the last word.
+if (mode === "creator") {
+  const stepNodes = {
+    host: element<HTMLDetailsElement>("step-host"),
+    link: element<HTMLDetailsElement>("step-link"),
+    print: printPanel,
+    hang: element<HTMLDetailsElement>("step-hang"),
+    measure: measureStep,
+    done: element<HTMLDetailsElement>("step-done"),
+  };
+  const summaryOf = (step: HTMLDetailsElement): HTMLElement | undefined =>
+    step.querySelector<HTMLElement>(":scope > summary") ?? undefined;
+  const svgById = <T extends SVGElement>(id: string): T | undefined =>
+    (document.getElementById(id) as T | null) ?? undefined;
+  const route = svgById<SVGGeometryElement>("map-route");
+  const reveal = svgById<SVGPathElement>("map-route-reveal");
+  const stations = svgById<SVGGElement>("map-stations");
+  const start = svgById<SVGGElement>("map-start");
+  const endFlag = svgById<SVGGElement>("map-end-flag");
+  wireSetupStage<HTMLButtonElement>({
+    dom: {
+      steps: stepNodes,
+      summaries: Object.fromEntries(
+        Object.entries(stepNodes).map(([step, node]) => [
+          step,
+          summaryOf(node),
+        ]),
+      ),
+      badge: element("setup-badge"),
+      of: element("setup-of"),
+      dots: element("setup-dots"),
+      nav: element("setup-nav"),
+      back: element("setup-back"),
+      next: element("setup-next"),
+      begin: element("setup-begin"),
+      stage: element("setup-stage"),
+    },
+    openStep: (step) => {
+      wizard.openStep(step);
+    },
+    createElement: (tag) => document.createElement(tag),
+    ...(route === undefined || reveal === undefined || stations === undefined
+      ? {}
+      : {
+          map: {
+            route,
+            reveal,
+            stations,
+            ...(start === undefined ? {} : { start }),
+            ...(endFlag === undefined ? {} : { endFlag }),
+          },
+        }),
+  });
+}
+
 // Step 4's scan-to-open lives in archive-open, which is wired below the
 // setup panel that feeds it; bound once both exist.
 let scanOpen: ScanOpen | null = null;
 // The summary after Finish (authoring plan 2026-09-28-0953 M3b). Its map is
 // a DYNAMIC import - the only way the page reaches Leaflet - so a visitor's
 // page never downloads it (summary-map-lazy.test.ts). Its way back into AR
-// is the page's own Start AR setup, tapped for the creator.
+// is the page's own Start creating, tapped for the creator.
 const summary = createSummaryPanel({
   dom: {
     root: element("summary"),
@@ -280,9 +450,41 @@ const summary = createSummaryPanel({
     element("enter-ar").click();
   },
 });
+// The H1 strip's chips fold to their icons after their first use (polish
+// round M3, D-P4). Wired BEFORE the setup binds the chips' own clicks: a
+// long press that unfolds a label must not also place a pin.
+if (mode === "creator") {
+  for (const [id, label] of [
+    ["setup-pin", "Place a pin"],
+    ["setup-photo", "Take a photo"],
+  ] as const) {
+    wireFoldingLabel({
+      button: element(id),
+      key: id,
+      label,
+      // The page's one guarded localStorage (`stepStoreOrUndefined`).
+      store: stepStore ?? null,
+      schedule: (fn, ms) => {
+        const timer = setTimeout(fn, ms);
+        return () => {
+          clearTimeout(timer);
+        };
+      },
+    });
+  }
+}
+
 const setup = wireCreatorSetup({
   ctx,
   mode,
+  renderArEntry: () => {
+    hooks.renderArEntry();
+  },
+  // Step 6 names the host chosen in step 1 (polish round M2).
+  host: () => readTourHost(stepStore),
+  // The tour's name, typed in step 3 for the posters, becomes its title
+  // at the Finish (polish round M4a: the visitor's start page shows it).
+  tourTitle: () => element<HTMLInputElement>("poster-title").value,
   codeTour: {
     onDetection: (text) => {
       scanOpen?.onDetection(text);
@@ -303,6 +505,7 @@ const setup = wireCreatorSetup({
     finishBlock: element("finish-block"),
     replaceHelp: element("replace-help"),
     sizeInput,
+    printSettings: element<HTMLDetailsElement>("print-settings"),
     printPanel,
     status: element("setup-status"),
     finishButton: element("setup-finish"),
@@ -312,6 +515,7 @@ const setup = wireCreatorSetup({
     downloadButton: element("finish-download"),
     replaceHelpGeneric: element("replace-help-generic"),
     replaceHelpDrive: element("replace-help-drive"),
+    replaceDriveCopy: element("replace-drive-copy"),
     pinButton: element("setup-pin"),
     pinLabel: element("pin-label"),
     pinSave: element("pin-save"),
@@ -361,14 +565,16 @@ window.addEventListener("beforeunload", (event) => {
 hooks.beginAuthorVisit = setup.beginAuthorVisit;
 hooks.endAuthorVisit = setup.endAuthorVisit;
 hooks.selectInView = setup.selectInView;
+hooks.finishFromAr = () => setup.finishNow();
 hooks.presentNoTour = () => {
   print.presentNoTour();
 };
 hooks.presentDraftForTour = setup.presentDraftForTour;
 
-// The recording's controls: a creator's, and a `?debug=1` visitor's (M1b);
-// wired before the AR entry that asks them at each entry. One save at a
-// time across the block: "Save the recording" and the offer share a guard.
+// The recording's controls: a `?debug=1` creator's or visitor's (M1b;
+// polish round M3, Q-Data); wired before the AR entry that asks them at
+// each entry. One save at a time across the block: "Save the recording"
+// and the offer share a guard.
 const recordingSaveGuard = createSaveGuard();
 const recordingPanel = recordingControls
   ? wireRecordingPanel({
@@ -411,12 +617,18 @@ if (recordingPanel !== null) {
     recordingPanel.render();
   });
   wireRecordingHousekeeping();
+} else if (mode === "creator") {
+  // The switch is ?debug=1's since polish round M3 (Q-Data), but a creator
+  // may hold recordings from before: they are still cleaned up, and one a
+  // killed tab left unsaved is still offered (M3 review #8).
+  wireRecordingHousekeeping();
 }
 
 /**
  * A recording a killed tab left unsaved is offered, and old saved ones are
  * cleaned up (M1b, `recording-housekeeping.ts`), wherever the recording's
- * controls show. Best effort: without OPFS there is nothing to offer.
+ * controls show - and for every creator (M3 review #8). Best effort:
+ * without OPFS there is nothing to offer.
  */
 function wireRecordingHousekeeping(): void {
   void wireHousekeeping({
@@ -449,6 +661,8 @@ function wireRecordingHousekeeping(): void {
         timeStyle: "short",
       }),
     reveal: () => {
+      // Without ?debug=1 the block is hidden; an offer needs it shown.
+      element("recording-block").hidden = false;
       wizard.revealStep("measure");
     },
     saveGuard: recordingSaveGuard,
@@ -543,6 +757,9 @@ const arEntry = wireArEntry({
   ctx,
   mode,
   arStore,
+  // The creator's ring on a mesh of the surroundings (polish round M5,
+  // Q-Mesh): behind ?mesh=1 until the owner likes it on the phone.
+  meshCursor: mode === "creator" && meshCursorFromSearch(location.search),
   arController,
   gpsHandler,
   seams,
@@ -557,6 +774,8 @@ const arEntry = wireArEntry({
     escapeButton,
     arDebug: element("ar-debug"),
     arStatusLive: element("ar-status-live"),
+    scanCard: element("scan-card"),
+    scanCardLine: element("scan-card-line"),
   },
   hooks,
   ...(recordingPanel === null ? {} : { recording: recordingPanel }),
@@ -581,6 +800,7 @@ const archive = wireArchiveOpen({
     statsHeadline: element("stats-headline"),
     statsDetail: element("stats-detail"),
     errorBox,
+    linkStatus: element("link-status"),
     gallery: element("gallery"),
     storagePanel: element("storage-panel"),
     clearCacheButton: element("clear-cache"),

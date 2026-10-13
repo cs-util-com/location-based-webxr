@@ -90,21 +90,17 @@ function linksLine(input: TrustCopyInput): string | null {
 }
 
 /** The lines the page shows under the tour, in order: the signature, the
- *  warnings, the links. A VISITOR gets no line for an unsigned tour, listed
- *  or not, unless a warning applies (UI round 1, U1; owner decision
- *  2026-10-06, superseding K1 §4.2's plain note for visitors): every
- *  finished tour is unsigned until signing on export exists, and the note
- *  read as an alarm on every one. */
-export function trustLines(
-  input: TrustCopyInput,
-  audience: "creator" | "visitor" = "creator",
-): string[] {
+ *  warnings, the links. An unsigned tour, listed or not, gets no line
+ *  unless a warning applies - for visitors since UI round 1 (U1; owner
+ *  decision 2026-10-06, superseding K1 §4.2's plain note) and for the
+ *  creator since the r820 feedback (R6, D-R3): every tour is unsigned
+ *  until signing on export exists (tour kit K2), a starter zip always, and
+ *  the note read as an alarm on every one. */
+export function trustLines(input: TrustCopyInput): string[] {
   const unsigned =
     input.signature.kind === "none" || input.signature.kind === "listed";
   const lines = [
-    ...(audience === "visitor" && unsigned
-      ? []
-      : [signatureLine(input.signature, input.fingerprintOf)]),
+    ...(unsigned ? [] : [signatureLine(input.signature, input.fingerprintOf)]),
     ...input.warnings.map((w) => warningLine(w, input.fingerprintOf)),
   ];
   const links = linksLine(input);

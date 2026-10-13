@@ -186,3 +186,39 @@ describe('buildQrLaunchUrl — extraQuery', () => {
     ).toBe(true);
   });
 });
+
+describe('buildQrLaunchUrl — the Drive short form (Tour Viewer r820 feedback R5)', () => {
+  const ID = '1A4mU8eV16aaIvy6Msd76RC3_cbbftRkX';
+  const SHARED = `https://drive.google.com/file/d/${ID}/view?usp=drivesdk`;
+
+  // Why: the form is opt-in until `main` - the page every printed code
+  // opens - can read it (the dispatch's own test).
+  it('never offers it unless asked', async () => {
+    const plan = await buildQrLaunchUrl('https://gps.csutil.com', SHARED);
+    expect(plan.candidates.map((c) => c.strategy)).not.toContain('drive');
+  });
+
+  it('when asked, prints D/<id> for any spelling of a Drive file link, and it wins', async () => {
+    const off = await buildQrLaunchUrl('https://gps.csutil.com', SHARED);
+    const on = await buildQrLaunchUrl('https://gps.csutil.com', SHARED, {
+      allowDriveShortForm: true,
+    });
+    expect(on.strategy).toBe('drive');
+    expect(on.url).toBe(`https://gps.csutil.com/?qr=D/${ID}`);
+    expect(on.estimate.version).toBeLessThan(off.estimate.version);
+    const numbered = await buildQrLaunchUrl('https://gps.csutil.com', SHARED, {
+      allowDriveShortForm: true,
+      extraQuery: { n: '2' },
+    });
+    expect(numbered.url).toBe(`https://gps.csutil.com/?qr=D/${ID}&n=2`);
+  });
+
+  it('offers nothing for a link that is not a Drive file', async () => {
+    const plan = await buildQrLaunchUrl(
+      'https://gps.csutil.com',
+      'https://example.com/tours/city.zip',
+      { allowDriveShortForm: true }
+    );
+    expect(plan.candidates.map((c) => c.strategy)).not.toContain('drive');
+  });
+});

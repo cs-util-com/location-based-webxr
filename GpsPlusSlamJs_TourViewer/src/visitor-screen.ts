@@ -85,6 +85,9 @@ type TextNode = Pick<HTMLElement, "textContent">;
 export interface VisitorScreenDom {
   /** The visitor's heading + consent copy; hidden for a creator. */
   screen: HidableNode;
+  /** "What happens?" and the way to make a tour, under the button
+   *  (polish round M4a, the owner's V4); hidden for a creator. */
+  more: HidableNode;
   /** Step 4, a `<details>` since the flow rework. A visitor gets no
    *  summary (it is `.creator-only`), so nothing would ever open it - and
    *  its content is the AR section, which IS the visitor's screen. */
@@ -100,8 +103,14 @@ export interface VisitorScreen {
   locationGate: LocationGate;
 }
 
+/** The one line under the visitor's button (V4): the full instructions
+ *  are behind "What happens?" on the page. */
 const VISITOR_HINT =
-  "Once AR starts, point your phone at the tour's code (on the poster) and keep it in view while you move slowly. The tour appears when the code is recognised.";
+  "Once AR starts, point your phone at the tour's code (on the poster).";
+
+/** The line under the "1 of 2" button once the browser will ask. */
+const ALLOW_HINT =
+  "Your browser will ask for your location - tap Allow. Then Start the tour.";
 
 export function wireVisitorScreen(deps: {
   mode: ViewerMode;
@@ -113,6 +122,7 @@ export function wireVisitorScreen(deps: {
   const { mode, seams, dom, renderArEntry } = deps;
   const visitor = mode === "visitor";
   dom.screen.hidden = !visitor;
+  dom.more.hidden = !visitor;
   for (const element of dom.creatorOnly) element.hidden = visitor;
   if (visitor) {
     dom.arHint.textContent = VISITOR_HINT;
@@ -128,6 +138,9 @@ export function wireVisitorScreen(deps: {
   if (visitor) {
     void seams.queryGeolocationPermission().then((permission) => {
       pending = locationTapNeeded(permission);
+      // Only "prompt" means the browser WILL ask; a blocked site gets the
+      // settings copy on its tap instead.
+      if (permission === "prompt") dom.arHint.textContent = ALLOW_HINT;
       renderArEntry();
     });
   }
@@ -150,7 +163,9 @@ export function wireVisitorScreen(deps: {
         pending = gateAfterRequest(outcome);
         const notice = locationRequestNotice(outcome);
         dom.errorBox.textContent = notice.error;
-        if (notice.hint !== null) dom.arHint.textContent = notice.hint;
+        // A denial gets the plain line back: the browser will not ask
+        // again, so "your browser will ask" would be wrong (M4 review #3).
+        dom.arHint.textContent = notice.hint ?? VISITOR_HINT;
         renderArEntry();
         return outcome;
       },

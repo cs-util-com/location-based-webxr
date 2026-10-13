@@ -51,9 +51,9 @@ with an angular tolerance around it.
   camera - three's `Sprite.raycast` requires it.
 - The camera's and the objects' world matrices must be current; in an
   immersive session the render loop keeps them so.
-- **The selection's fallback is the AR chooser** (`object-list.ts`,
-  Previous / Next): whatever the tolerance, a far, occluded or crowded
-  object can always be reached without aiming.
+- **There is no fallback any more** (polish round M3, Q-HUD): the AR
+  chooser (Previous / Next) that reached a far, occluded or crowded object
+  without aiming is gone; such an object is reached by walking closer.
 
 ## Why 3 degrees - the sweep
 
@@ -79,7 +79,7 @@ tap picked something, in %, at tolerances 0-6°.
   are larger than it on screen), and empty taps stay empty: at 3° they
   pick something on 1-5 %, at 4° on 3-13 %, at 6° on 15-45 %. The 29-31 %
   "wrong" with 8 objects at 2-5 m is there at 0° too - labels overlapping
-  on screen, which no tolerance changes (the chooser does).
+  on screen, which no tolerance changes (walking closer does).
 
 The finger's error in degrees: a portrait phone shows about 0.4-0.55° per
 millimetre, and a fingertip lands with roughly 1.5-2.5 mm of spread, so

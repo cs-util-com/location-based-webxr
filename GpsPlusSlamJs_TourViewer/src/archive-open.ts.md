@@ -11,7 +11,22 @@ DOM glue, its own module since the flows plan M6.
 ## Public API
 
 - `wireArchiveOpen({ ctx, dom, cacheStore, corsProxyBaseUrl, hooks, mode }): ArchiveOpen`
-  - `ArchiveOpenDom { form; linkInput; openButton; openFileButton; fileInput; fileAdvice; openFileAdviceButton; fileStatus; statsPanel; statsHeadline; statsDetail; errorBox; gallery; storagePanel; clearCacheButton }`
+  - `ArchiveOpenDom { form; linkInput; openButton; openFileButton; fileInput; fileAdvice; openFileAdviceButton; fileStatus; statsPanel; statsHeadline; statsDetail; errorBox; linkStatus; gallery; storagePanel; clearCacheButton }`
+    - **Step 2's link check (polish round M2, A13/A16).** A submit, a paste
+      (deferred a turn, since the value lands after the event) or a
+      `change` with a new link runs the open and writes its outcome to
+      `linkStatus` (`link-check.ts`): "Checking the link…", then found or
+      failed. A failure whose cause `printsUnverified` for the host the link points
+      to (`hostOfLink`, M0c review: not the tile kept from step 1;
+      `offline`, or `missing` on an own server) calls `hooks.presentUnverifiedLink(url)`, so the print
+      step carries the link marked unverified and the creator gives it
+      once - and clears the error box, whose "that file does not exist"
+      contradicted the line's "that is fine for now" (PRs #584/#585). A
+      cancelled open hides the line; a superseded one leaves it to the
+      newer check. The same link is not checked twice by paste and
+      `change`, nor by "Check link" while its check still runs (PR #585:
+      the field's `change` fires on the button's blur); once settled, the
+      button re-checks.
     - **The advice (tour kit plan K0).** A failed open whose cause
       `offersFileOpen` (a host that blocks browsers, `cors`) shows
       `fileAdvice` - its button opens the same picker - under the error
@@ -44,7 +59,10 @@ DOM glue, its own module since the flows plan M6.
     `hooks.tryPlaceTour()` and `hooks.presentTourForPrint(url, origin)` -
     the origin says which form submitted, so an open started in step 4
     does not answer by collapsing step 4 - load the
-    levels (with a `.catch`). It resolves an `OpenOutcome` (`opened`,
+    levels (with a `.catch`). Once the manifest settles,
+    `hooks.presentTourInfo(manifest, loadImage)` gets it with a loader
+    that reads an archive path from the open zip, and `null` when the
+    session is torn down (the visitor's start page, polish round M4a). It resolves an `OpenOutcome` (`opened`,
     `superseded`, or `failed` with the reject cause) and keeps a real
     in-flight flag; a successful open sets `ctx.tourLabel`.
   - `ArchiveOpen.scanOpen` - step 4's scan-to-open (`scan-open.ts`)
@@ -109,10 +127,11 @@ DOM glue, its own module since the flows plan M6.
   decodes it (`image-cap.ts` `pictureProblem`, tour kit K4 review R2): one
   over the tour pixel cap, or one whose size cannot be read, shows as
   "failed to load".
-- **The stats panel is the creator's** (and `?debug=1`'s): a visitor's
-  transfer numbers could stall below 100 % once the whole-file download
-  stops, and read as stuck (UI round 1, U1, review F11; supersedes M2
-  review #2's one stats line for visitors). The trust line is hidden when
+- **The stats panel shows only with `?debug=1`** (polish round M2: a
+  transport demo, not a creator's step; the gallery likewise, hidden by
+  `main.ts`). A visitor's transfer numbers could also stall below 100 %
+  once the whole-file download stops, and read as stuck (UI round 1, U1,
+  review F11). The trust line is hidden when
   it has no line for the audience (`trustLines`).
 - The gallery streams SEQUENTIALLY; a newer open supersedes an in-flight
   fill per entry; object URLs are revoked on teardown.
@@ -172,7 +191,9 @@ the device, and a non-zip refused with the button restored).
 `archive-open-file.test.ts` (K0) drives the file button and picker over
 stand-ins: the in-progress state on both outcomes, the file named, the
 local hook instead of the print prefill, the content key reaching the
-draft, and a closed picker doing nothing. `archive-open.test.ts` drives the real submit handler through
+draft, and a closed picker doing nothing; its "step 2's link check" block
+covers the unverified hand-off on `missing`, none on `cors`, and the
+auto-check on paste and change, once per link. `archive-open.test.ts` drives the real submit handler through
 a failed open: the tour switch clears the fused-pose hint state. The logic
 beneath: `tour-session.test.ts`,
 `stats-view.test.ts`, `open-errors.test.ts`, `tour-flow.test.ts`

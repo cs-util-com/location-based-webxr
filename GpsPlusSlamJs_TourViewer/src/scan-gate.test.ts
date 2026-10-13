@@ -10,6 +10,7 @@ import {
   SCAN_GATE_ESCAPE_MS,
   scanGateAtSessionStart,
   type ScanGate,
+  scanCardShown,
 } from "./scan-gate";
 
 /**
@@ -157,7 +158,9 @@ describe("gateAllowsPlacement / gateSegment", () => {
     expect(
       gateSegment({ kind: "not-required", reason: "levels-unavailable" }),
     ).toMatch(/could not be read/);
-    expect(SCAN_GATE_ESCAPE_MS).toBe(45_000);
+    // The owner's S1 offers the skip after 10 s (polish round M4b,
+    // Q-Scan); 45 s held a visitor at a code that would not lock.
+    expect(SCAN_GATE_ESCAPE_MS).toBe(10_000);
   });
 });
 
@@ -227,5 +230,36 @@ describe("the scan gate and a code the moved-code check ignores (D20, M5c)", () 
     const gate: ScanGate = { kind: "passed", via: "ignored" };
     expect(gateAllowsPlacement(gate)).toBe(true);
     expect(gateSegment(gate)).toBe("Code ignored - placing the tour by GPS.");
+  });
+});
+
+describe("scanCardShown (polish round M4b, the owner's S1)", () => {
+  // Why: the centred card asks a VISITOR for the code while the gate
+  // waits, and must close by itself once the gate passes - a card left
+  // over the scene would hide the tour it was waiting for.
+  const scanning = { kind: "scanning", escapeOffered: false } as const;
+
+  it("shows for a visitor's running session while the gate scans", () => {
+    expect(scanCardShown("visitor", "running", scanning)).toBe(true);
+    expect(
+      scanCardShown("visitor", "running", {
+        kind: "scanning",
+        escapeOffered: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("never shows for a creator, outside a session, or once the gate passed", () => {
+    expect(scanCardShown("creator", "running", scanning)).toBe(false);
+    for (const status of ["ready", "starting", "stopping", "error"] as const) {
+      expect(scanCardShown("visitor", status, scanning), status).toBe(false);
+    }
+    for (const via of ["code", "skipped", "ignored"] as const) {
+      expect(
+        scanCardShown("visitor", "running", { kind: "passed", via }),
+        via,
+      ).toBe(false);
+    }
+    expect(scanCardShown("visitor", "running", { kind: "idle" })).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
-import { viewerModeFromSearch } from "./mode";
+import { viewerModeFromSearch, meshCursorFromSearch } from "./mode";
 
 /**
  * Why these tests matter: the mode decides which page a person sees. A
@@ -43,4 +43,16 @@ describe("viewerModeFromSearch", () => {
       );
     },
   );
+});
+
+describe("meshCursorFromSearch (polish round M5, Q-Mesh)", () => {
+  // Why: the mesh cursor stays behind ?mesh=1 until the owner likes it on
+  // the phone; any other value, or none, keeps today's hit-test ring.
+  it("is on only for mesh=1", () => {
+    expect(meshCursorFromSearch("?mesh=1")).toBe(true);
+    expect(meshCursorFromSearch("?debug=1&mesh=1")).toBe(true);
+    for (const search of ["", "?mesh=0", "?mesh", "?mesh=true", "?debug=1"]) {
+      expect(meshCursorFromSearch(search), search).toBe(false);
+    }
+  });
 });

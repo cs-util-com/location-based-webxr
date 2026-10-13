@@ -55,7 +55,7 @@ describe('createOccluderSink', () => {
       }),
       {
         createMesh: d.createMesh as never,
-        createWorker: d.createWorker as never,
+        createWorker: d.createWorker,
       }
     );
     expect(d.createMesh).toHaveBeenCalledWith(PARENT, { mode: 'corner-fit' });
@@ -71,7 +71,7 @@ describe('createOccluderSink', () => {
       makeOccupancy({ occluderRadiusM: 0 }),
       {
         createMesh: d.createMesh as never,
-        createWorker: d.createWorker as never,
+        createWorker: d.createWorker,
       }
     );
     sink.refresh(grid as never, { cameraPos: [1, 2, 3] } as never);
@@ -85,7 +85,7 @@ describe('createOccluderSink', () => {
     const occupancy = makeOccupancy({ occluderRadiusM: 25, minConfidence: 4 });
     const { sink } = createOccluderSink(PARENT as never, occupancy, {
       createMesh: d.createMesh as never,
-      createWorker: d.createWorker as never,
+      createWorker: d.createWorker,
     });
 
     sink.refresh(grid as never, { cameraPos: [1, 2, 3] } as never);
@@ -108,7 +108,7 @@ describe('createOccluderSink', () => {
     const grid = makeGrid();
     const { sink } = createOccluderSink(PARENT as never, makeOccupancy({}), {
       createMesh: d.createMesh as never,
-      createWorker: d.createWorker as never,
+      createWorker: d.createWorker,
     });
     sink.refresh(grid as never, undefined);
     const onMesh = d.driver.request.mock.calls[0]![4] as (
@@ -128,7 +128,7 @@ describe('createOccluderSink', () => {
     const grid = makeGrid();
     const handle = createOccluderSink(PARENT as never, makeOccupancy({}), {
       createMesh: d.createMesh as never,
-      createWorker: d.createWorker as never,
+      createWorker: d.createWorker,
     });
     // Capture a pre-dispose onMesh callback (an in-flight worker response).
     handle.sink.refresh(grid as never, undefined);

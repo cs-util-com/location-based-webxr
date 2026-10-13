@@ -10,6 +10,7 @@
 
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
+import { readSideM, writeSideM } from "./printed-side.js";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import {
@@ -388,7 +389,7 @@ export function wireCreatorDraft(deps: {
     // The size comes from the FIELD, not from `ctx.activeSizeM`: that is
     // only assigned at AR entry, so before the first session it still holds
     // the previous tour's value.
-    const sizeM = Number(dom.sizeInput.value);
+    const sizeM = readSideM(dom.sizeInput);
     const meta = {
       tourUrl,
       sizeM:
@@ -458,7 +459,7 @@ export function wireCreatorDraft(deps: {
     // default on every load - so without this a re-entry would solve
     // against 16 cm for a poster printed at 20.
     if (Number.isFinite(waiting.sizeM) && waiting.sizeM > 0) {
-      dom.sizeInput.value = String(waiting.sizeM);
+      writeSideM(dom.sizeInput, waiting.sizeM);
       ctx.activeSizeM = waiting.sizeM;
     }
     // Render them, or the readout says "5 objects placed" over an empty

@@ -17,12 +17,22 @@ identical here — they diverge in M3/M4.
   mapping of `EnableGpsArState` to the entry button. Ready: "Start AR
   setup" (creator), "Start the tour" (visitor), "Allow location" (visitor
   while the location gate is pending, DEC-N2), "Getting your location…"
-  disabled (visitor while the request runs); running: "Exit AR" for both (a creator's "your work stays on this phone" was dropped: no promise without a draft backup, U2 milestone review #3), enabled - the way
+  disabled (visitor while the request runs); running: "Exit AR" for a visitor; for a creator the session's ONE button (polish round M3, Q-Done, B6): "Done" (it finishes when a finish can start, else leaves - `ar-entry.ts`), "Saving…" disabled while the finish runs, "Close AR" after a failed finish (the optional fourth argument `finish: { running, failed }`) - enabled, the way
   out of AR, `ar-entry.ts` disables the session on that tap (UI round 1,
   U2, review F2; it used to sit disabled as "Tour running" / "Setting up in
   AR"); error: "Try again" (the cause is the status line's, in
   plain words, `visitor-status.ts`; it used to be "Retry - " plus the raw
-  browser error, UI round 1, U1, review F5).
+  browser error, UI round 1, U1, review F5); unsupported: "Copy link",
+  enabled, for a VISITOR (the owner's V4, polish round M4a: `ar-entry.ts`
+  copies the page's link for a phone that has AR), "AR not supported on
+  this device" disabled for a creator.
+- `COPY_LINK_LABELS` - that button's idle / busy / done labels and the
+  failure sentence (async-UI rule).
+- `visitorStep(mode, state, location, hadLocationStep): string | null` -
+  pure: the step marker V4's round button carries ("1 of 2" while a
+  visitor's tap only asks for the location, "2 of 2" for the start once
+  that was asked in this visit). Null for a creator, outside `ready`, and
+  for a visitor whose location was already allowed (one tap, no steps).
 - `buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig` -
   `hooks.requestHitTest` asks for the WebXR `hit-test` feature (the
   creator's reticle; without it the reticle never shows) - hooks:

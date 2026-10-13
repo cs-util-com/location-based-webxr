@@ -15,6 +15,9 @@
  * too. Covered by `seams.test.ts`.
  */
 
+import type { SurfacePoint } from "gps-plus-slam-app-framework/ar/hit-test-reticle-driver";
+import type { DepthSampleStore } from "gps-plus-slam-app-framework/state/replay-occupancy-subscriber";
+import { createMeshSurface, type MeshSurface } from "./mesh-surface.js";
 import {
   getArWorldGroup,
   getCamera,
@@ -80,6 +83,14 @@ import type {
 } from "./visitor-screen.js";
 
 /** The device functions a Playwright e2e fake may override. */
+/** A browser tab opened for a PDF before it is built (`openPdfTab`). */
+export interface PdfTab {
+  /** Show the built PDF in the tab. */
+  show(blob: Blob): void;
+  /** The build failed: the empty tab goes away. */
+  close(): void;
+}
+
 export interface TourViewerSeams {
   /**
    * Injected into `createEnableGpsArController` — empty in production (the
@@ -164,6 +175,16 @@ export interface TourViewerSeams {
    *  picker offers a PDF filter rather than a zip one, and so the e2e
    *  captures the bytes instead of writing a file. */
   downloadPdf(blob: Blob, filename: string): Promise<boolean>;
+  /** A browser tab for the PDF where the browser shows PDFs itself
+   *  (`navigator.pdfViewerEnabled`), opened NOW - inside the tap, as a
+   *  pop-up blocker requires - and filled once the PDF is built (polish
+   *  round M0b). Null where the browser cannot show a PDF (most phones) or
+   *  blocked the tab: the PDF is then downloaded. */
+  openPdfTab(): PdfTab | null;
+  /** Put text on the clipboard (step 6's Drive address, polish round M2);
+   *  rejects where the browser refuses. A seam so the e2e reads what was
+   *  copied without clipboard permissions. */
+  copyText(text: string): Promise<void>;
   /** The screen-centre hit-test reticle under the world group (its world
    *  position is GPS-world NUE once the group carries the alignment) -
    *  the pin's position (guided-setup plan M4). Needs the session feature
@@ -173,7 +194,15 @@ export interface TourViewerSeams {
   startHitTestReticle(
     arWorldGroup: Object3D,
     onSelect?: (tap: SelectTargetRay | null) => void,
+    /** A surface point from the app's mesh, preferred over the hit-test
+     *  each frame (polish round M5, `?mesh=1`). */
+    surfacePick?: () => SurfacePoint | null,
   ): HitTestReticleHandle;
+  /** The surroundings as a mesh for the creator's cursor (polish round M5,
+   *  `?mesh=1`): fed from the store's depth samples, meshed in a worker
+   *  under `parent` (`mesh-surface.ts`). A seam because the e2e scene has
+   *  no depth to mesh. */
+  startMeshSurface(parent: Object3D, store: DepthSampleStore): MeshSurface;
   /** The id of the object under the tap - through the tap's target ray,
    *  or the screen centre when `tap` is null - by a camera-ray raycast
    *  against each object's rendered root with an angular tolerance
@@ -191,7 +220,7 @@ export interface TourViewerSeams {
    *  has none). */
   createLabel(text: string): { object: Object3D; dispose(): void };
   /** A one-shot clock (the scan gate's escape, DEC-N3): returns the
-   *  cancel. A seam so the e2e fires it instead of waiting 45 s. */
+   *  cancel. A seam so the e2e fires it instead of waiting for it. */
   schedule(fn: () => void, ms: number): () => void;
   /**
    * The wayfinding HUD over the session camera (tour kit plan K4: the
@@ -261,20 +290,48 @@ export const realSeams: TourViewerSeams = {
   downloadZip: (blob, filename) => downloadBlob(blob, filename, ZIP_FILE_TYPE),
   canShareZip: () => prefersFileShare(ZIP_FILE_TYPE),
   downloadPdf: (blob, filename) => downloadBlob(blob, filename, PDF_FILE_TYPE),
-  startHitTestReticle: (arWorldGroup, onSelect) =>
-    startHitTestReticle(
-      onSelect === undefined
-        ? { arWorldGroup }
+  openPdfTab: () => {
+    if (navigator.pdfViewerEnabled !== true) return null;
+    const tab = window.open("", "_blank");
+    if (tab === null) return null;
+    return {
+      show: (blob) => {
+        // The URL outlives this call on purpose: the tab is still reading
+        // it. One per PDF built, released with the page.
+        tab.location.href = URL.createObjectURL(blob);
+      },
+      close: () => {
+        tab.close();
+      },
+    };
+  },
+  copyText: (text) => navigator.clipboard.writeText(text),
+  startHitTestReticle: (arWorldGroup, onSelect, surfacePick) =>
+    startHitTestReticle({
+      arWorldGroup,
+      ...(surfacePick === undefined ? {} : { surfacePick }),
+      ...(onSelect === undefined
+        ? {}
         : {
-            arWorldGroup,
             // The driver's second argument is where the tap pointed
             // (M4 review #4); its first, the reticle's surface point, is
             // not what a selection is about.
-            onSelect: (_surface, tap) => {
+            onSelect: (_surface: unknown, tap: SelectTargetRay | null) => {
               onSelect(tap);
             },
-          },
-    ),
+          }),
+    }),
+  startMeshSurface: (parent, store) =>
+    createMeshSurface({
+      parent,
+      store,
+      getCamera: () => getCamera(),
+      createWorker: () =>
+        new Worker(
+          new URL("./workers/occlusion-mesher.worker.ts", import.meta.url),
+          { type: "module" },
+        ),
+    }),
   pickObjectInView: (targets, tap) => {
     const camera = getCamera();
     if (!camera) return null;

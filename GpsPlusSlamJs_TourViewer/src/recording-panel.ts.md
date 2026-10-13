@@ -86,10 +86,10 @@ estimateStorage, now, saveGuard }): RecordingPanel`
   recording holds the tour link, the GPS track and the 3D shape of the
   surroundings (the depth samples; M1b review #6). Why the link is kept:
   `authoring-recording.ts.md`.
-- **A creator's, and a `?debug=1` visitor's (M1b).** `main.ts` wires it and
-  unhides the block in creator mode, and for a visitor only with `?debug=1`
-  (the viewer recording, tagged `tour-viewing`); a visitor without it gets no
-  block at all. The same privacy line stands beside the switch in both modes
+- **Only with `?debug=1`, for a creator and a visitor (M1b; the creator's
+  since polish round M3, Q-Data).** `main.ts` wires it and unhides the block
+  only with the flag (a visitor's is the viewer recording, tagged
+  `tour-viewing`); without it neither page gets the block at all. The same privacy line stands beside the switch in both modes
   (the reasoning for the visitor is in `authoring-recording.ts.md`).
 - Reaches no globals: every element, the clock, the storage estimate and the
   hand-off are injected. `render` runs after every store dispatch, so it

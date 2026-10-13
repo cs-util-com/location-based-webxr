@@ -4,7 +4,9 @@
  * documents (its header, "Decode-side dispatch contract"): payloads starting
  * `http…` are raw URLs; `~…` is the compressed dictionary form; a payload
  * containing `/` is the GitHub template `user/repo/path`; anything else is a
- * bare file name under the configured default asset prefix.
+ * bare file name under the configured default asset prefix. `D/<id>` is the
+ * Drive short form (Tour Viewer r820 feedback R5): a Google Drive file by
+ * its id alone, checked before the template (which needs three parts).
  *
  * The encoder picks whichever form yields the sparsest printable QR, so a
  * viewer that decodes only some forms silently breaks a subset of printed
@@ -18,6 +20,9 @@ import { decodeDictionaryPayload } from './codec-dictionary.js';
 
 /** Bare-name payloads mirror the encoder's `NAME_PATTERN`. */
 const NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+/** `D/<file id>`: a Drive id is letters, digits, `-` and `_`. */
+const DRIVE_SHORT_FORM = /^D\/([\w-]+)$/;
 
 /**
  * Resolve a `?qr=` payload (already URL-decoded by the query parser) to the
@@ -33,6 +38,8 @@ export async function resolveQrPayload(
   if (trimmed.startsWith('~')) {
     return decodeDictionaryPayload(trimmed.slice(1));
   }
+  const drive = DRIVE_SHORT_FORM.exec(trimmed);
+  if (drive !== null) return `https://drive.google.com/file/d/${drive[1]}`;
   if (trimmed.includes('/')) {
     return decodeGithubTemplate(trimmed);
   }

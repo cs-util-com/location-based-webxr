@@ -87,9 +87,23 @@ export interface CreatorFinish {
    *  none running. The ONE rule the button and the click share (M2
    *  review #2): M4 changes readiness, and two copies could disagree. */
   canStart(): boolean;
+  /** Start a Finish now if `canStart()`; whether one started (the
+   *  creator's Done in AR, polish round M3). */
+  start(): boolean;
   /** Show the keep-the-walk switch only for a tour with something
    *  visitors never read, on the page, with no rebuilt file waiting. */
   renderKeepScan(): void;
+}
+
+/** The title a finished tour carries: the name typed in step 3 when it
+ *  says something, else the title the tour had (polish round M4a: the
+ *  visitor's start page leads with it). */
+function finishTitle(
+  current: string | undefined,
+  typed: string | null,
+): string | undefined {
+  const name = typed?.trim() ?? "";
+  return name === "" ? current : name;
 }
 
 export function wireCreatorFinish(deps: {
@@ -112,7 +126,12 @@ export function wireCreatorFinish(deps: {
   previews: Pick<CreatorPreviews, "keepFinishedPhoto" | "sync">;
   draft: Pick<CreatorDraft, "saveMeta">;
   sessionLive: () => boolean;
+  /** The tour's name as typed in step 3; a non-empty one becomes the
+   *  manifest's `title` (polish round M4a). */
+  tourTitle?: () => string | null;
   render: () => void;
+  /** Re-render the AR button when a finish ends (polish round M3). */
+  renderArEntry?: () => void;
 }): CreatorFinish {
   const { ctx, arStore, dom } = deps;
   /** The open tour's entries a visitor never reads, kept for the tour and
@@ -219,9 +238,12 @@ export function wireCreatorFinish(deps: {
     );
   }
 
-  dom.finishButton.addEventListener("click", () => {
+  /** Start a Finish if one can start now - the panel's button and the
+   *  creator's Done in AR (polish round M3, Q-Done) share this; false when
+   *  none could start. */
+  function start(): boolean {
     const current = ctx.session;
-    if (current === null || !canStart()) return;
+    if (current === null || !canStart()) return false;
     // The visit still running is settled BEFORE anything is read for the
     // zip (plan §3.2): its objects and its code are written as settled, not
     // as tapped. A visit already over was settled at its end.
@@ -243,6 +265,9 @@ export function wireCreatorFinish(deps: {
     // saves the new one under the same name (F4 milestone review #5).
     dom.downloadButton.disabled = true;
     ctx.finishError = null;
+    // The AR button reads the finish ("Saving…"): a finish started from the
+    // panel's retry left it saying "Close AR" (M3 review #3).
+    deps.renderArEntry?.();
     ctx.placementNote = null;
     ctx.finishProgress = FINISH_LABELS.reading(current.archive.size);
     deps.render();
@@ -277,8 +302,10 @@ export function wireCreatorFinish(deps: {
         const captureSpots = photos.spots;
         if (ctx.session !== current) return; // re-opened meanwhile
         const deleted = [...ctx.deletedObjectIds];
+        const title = finishTitle(manifest.title, deps.tourTitle?.() ?? null);
         const written: TourManifest = {
           ...manifest,
+          ...(title === undefined ? {} : { title }),
           ...(captureSpots === undefined ? {} : { captureSpots }),
           // Never an id twice, and not for tidiness: the serializer REJECTS
           // duplicates, so one restored object that is already in the
@@ -479,12 +506,12 @@ export function wireCreatorFinish(deps: {
           // it now would put the closed tour's button on the next page.
           if (ctx.session !== current) return;
         }
-        // The download used to be step 5. It is the END of step 4 (F10):
-        // the creator finished in AR, the session is closing, and the save
-        // happens in the step they are already in. The reveal happens
-        // AFTER the disable above, so the block cannot appear over a
-        // session that is still compositing.
-        deps.wizard.openStep("measure");
+        // The completion step of its own (polish round M2, B9): the
+        // saved status and the host's replace steps, where the creator
+        // lands once the session has ended. The reveal happens AFTER the
+        // disable above, so the block cannot appear over a session that is
+        // still compositing.
+        deps.wizard.openStep("done");
         dom.finishBlock.hidden = false;
         // The summary of every visit (M3b), on the page with the save.
         deps.settle.showSummary();
@@ -520,9 +547,17 @@ export function wireCreatorFinish(deps: {
         ctx.finishing = false;
         ctx.finishProgress = "";
         deps.render();
+        // The AR button reads the finish (Saving…, Close AR after a
+        // failure), and nothing else re-renders it when a finish ends.
+        deps.renderArEntry?.();
       }
     })();
+    return true;
+  }
+
+  dom.finishButton.addEventListener("click", () => {
+    start();
   });
 
-  return { renderKeepScan, readiness, canStart };
+  return { renderKeepScan, readiness, canStart, start };
 }

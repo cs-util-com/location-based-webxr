@@ -338,6 +338,14 @@ const entryFiles = [
   // by the Tour Viewer's print panel, and shaped so the recorder can print
   // the same sheet without a second implementation.
   'src/utils/qr-payload/qr-print-pdf.ts',
+  // The one Drive file-id parser (DEC-H3), deep-imported by the Tour Viewer.
+  'src/utils/drive-file-id.ts',
+  // The one copy-to-clipboard-with-feedback sequence (DEC-H3, Tour Viewer
+  // follow-up F7), deep-imported by the Tour Viewer.
+  'src/utils/copy-with-feedback.ts',
+  // Its text encoding: the Tour Viewer previews the poster text as the PDF
+  // prints it (M0c review).
+  'src/utils/qr-payload/pdf-text.ts',
   'src/utils/qr-payload/qr-code-id.ts',
   'src/utils/qr-payload/qr-code-origin.ts',
   // QR anchor minting + level schema + tracking controller — deep-importable
@@ -413,6 +421,8 @@ const entryFiles = [
   // Main-thread driver for the occluder Web Worker offload — deep-imported by
   // the recorder's worker client, so it must be a dist entry.
   'src/visualization/occluder-mesh-driver.ts',
+  'src/visualization/occluder-mesh-worker-client.ts',
+  'src/visualization/occluder-sink.ts',
   'src/visualization/hit-test-reticle.ts',
   'src/visualization/leaflet-map-overlay.ts',
   'src/visualization/lerp-utils.ts',

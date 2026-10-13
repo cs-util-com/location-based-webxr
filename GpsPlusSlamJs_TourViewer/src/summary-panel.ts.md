@@ -18,7 +18,7 @@ Finish and hands it here.
     (`#summary-codes`), `map` (`#summary-map`), `mapStatus`
     (`#summary-map-status`), `startAr` (`#summary-start-ar`).
   - `loadMap`: the dynamic import of `summary-map-view.ts` (`main.ts`).
-  - `startAr`: the page's own Start AR setup (`main.ts` clicks `#enter-ar`).
+  - `startAr`: the page's own Start creating (`main.ts` clicks `#enter-ar`).
   - `SummaryPanel`: `show(model)` replaces any earlier summary; `hide()`
     drops it and its map (a new AR visit, a closed tour).
 - `SUMMARY_MAP_TEXT`: the map's words per state (`loading`, `failed`,
@@ -41,7 +41,7 @@ Finish and hands it here.
   `hide` bumps a generation; a load that lands after either is dropped.
   The previous map is destroyed before a new one is drawn into the same
   container.
-- "Back to authoring" is "Start AR setup" again (plan §3.3): the button
+- "Back to authoring" is "Start creating" again (plan §3.3): the button
   hands its tap to the page's own AR entry inside the same user gesture,
   so a session request still has its user activation.
 - Text is set with `textContent` only; labels and numbers are never
@@ -70,8 +70,8 @@ summary.show(buildSummaryModel(input));
   without a DOM): rows with both labelled verdicts and the numbers before
   the map, loading then ready, `failed` on a rejected import and `error`
   (never "offline") on a refused draw, no load with nothing
-  to frame, late loads dropped and old maps destroyed, Start AR setup.
+  to frame, late loads dropped and old maps destroyed, Start creating.
 - `playwright-tests/summary.spec.js`: the real page - a Finish shows the
   code, its facing line, its two verdicts (one expected value each) and
   the pin; Enlarge fills the screen and closing shrinks it back; a refused
-  import says so while the verdict stays; Start AR setup re-enters AR.
+  import says so while the verdict stays; Start creating re-enters AR.

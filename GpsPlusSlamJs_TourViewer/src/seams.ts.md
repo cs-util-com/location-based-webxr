@@ -19,7 +19,7 @@ enableArWorldGroupAlignment; startCameraFrameCapture;
 stopCameraFrameCapture; startDepthCapture; stopDepthCapture; createQrFrontEnd; solveQrPose; estimateQrPrintSize;
 getIntrinsics; createQrDebugView; getScene; getArPose;
 queryGeolocationPermission;
-requestLocationOnce; shareOrDownloadZip; downloadZip; canShareZip; downloadPdf;
+requestLocationOnce; shareOrDownloadZip; downloadZip; canShareZip; downloadPdf; openPdfTab; copyText;
 startHitTestReticle; pickObjectInView; encodeFrameJpeg;
 createLabel; schedule; createWayfindingHud; loadGlbModel;
 createAudioElement }`
@@ -36,7 +36,14 @@ createAudioElement }`
     real loader.
   - `createAudioElement()` (K4) - `new Audio()`: the page's ONE element
     for the stories (`scene-audio.ts`). The e2e fake records what plays.
-  - `startHitTestReticle(arWorldGroup, onSelect?)` - `onSelect` hears
+  - `startMeshSurface(parent, store)` - the creator's mesh of the
+    surroundings behind `?mesh=1` (polish round M5, `mesh-surface.ts`), with
+    the app's mesh worker (`./workers/occlusion-mesher.worker.ts`, a
+    `new Worker(new URL(...))` here because it resolves against this app's
+    source). A seam because the e2e scene has no depth to mesh.
+  - `startHitTestReticle(arWorldGroup, onSelect?, surfacePick?)` -
+    `surfacePick` (polish round M5) is passed to the framework driver, which
+    prefers its point over the hit-test each frame. `onSelect` hears
     every XR `select` the DOM overlay did not cancel (a tap in AR,
     authoring plan 2026-09-28-0953 M4), through the framework driver's own
     `onSelect` option, with where the tap pointed: the driver's second
@@ -63,6 +70,14 @@ createAudioElement }`
     screen's location gate (guided-setup plan DEC-N2): the Permissions API
     state, and one `getCurrentPosition` on its own tap resolving
     "granted" | "denied" (error code 1) | "unavailable" (any other failure).
+    `openPdfTab()` opens a tab for the print PDF where
+    `navigator.pdfViewerEnabled` is true - inside the tap, as a pop-up
+    blocker requires - and returns `{ show(blob), close() }`, or null (no
+    PDF viewer, or the tab was blocked): the PDF is then downloaded
+    (polish round M0b).
+    `copyText(text)` is `navigator.clipboard.writeText` (step 6's Drive
+    address, polish round M2); it rejects where the browser refuses, and
+    the e2e fake records the text instead.
     `downloadPdf` is the same picker-or-anchor path with a PDF filter
     instead of a zip one (the printable sheet of numbered codes); it is its
     own seam so the picker offers the right file type and so the e2e

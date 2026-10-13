@@ -171,14 +171,16 @@ function demoAppStages(extraCycleRoots = []) {
 
 /**
  * @param {string} dirName
+ * @param {string[]} [extraCycleRoots] - see `demoAppStages`: a module worker's
+ *   own dpdm root.
  * @returns {ProjectConfig}
  */
-function demoAppProject(dirName) {
+function demoAppProject(dirName, extraCycleRoots = []) {
   return {
     name: dirName,
     dir: dirName,
     chainNames: ["test:core", "check:all"],
-    stages: demoAppStages(),
+    stages: demoAppStages(extraCycleRoots),
   };
 }
 
@@ -522,7 +524,11 @@ export const PROJECTS = [
     ],
   },
   demoAppProject("GpsPlusSlamJs_AnchorStarter"),
-  demoAppProject("GpsPlusSlamJs_TourViewer"),
+  // The mesh cursor's worker (polish round M5) is spawned from a URL, which
+  // dpdm cannot follow: its own root keeps it inside the cycle gate.
+  demoAppProject("GpsPlusSlamJs_TourViewer", [
+    "./src/workers/occlusion-mesher.worker.ts",
+  ]),
   {
     name: "GpsPlusSlamJs_MinimalExample",
     dir: "GpsPlusSlamJs_MinimalExample",

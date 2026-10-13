@@ -12,6 +12,9 @@ creator in the guided setup. Replaces the flows plan's `?author=1` flag
 - `type ViewerMode = "creator" | "visitor"`.
 - `viewerModeFromSearch(search: string): ViewerMode` - presence of the `qr`
   parameter, whatever its value.
+- `meshCursorFromSearch(search: string): boolean` - `mesh=1` exactly: the
+  creator's ring on a mesh of the surroundings (polish round M5, Q-Mesh),
+  behind the flag until the owner likes it on the phone.
 
 ## Invariants & assumptions
 

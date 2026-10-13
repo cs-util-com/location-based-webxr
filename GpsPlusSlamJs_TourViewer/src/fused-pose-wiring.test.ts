@@ -37,6 +37,7 @@ import { createViewerPlacement } from "./viewer-placement.js";
 import { endQrPipeline } from "./tour-viewer-session.js";
 import { wireCreatorSetup, type CreatorSetupDom } from "./creator-setup.js";
 import type { CodeTourStatus, ScanOpen } from "./scan-open.js";
+import { readSideM, writeSideM } from "./printed-side.js";
 
 // The pipelines build their controller from this module; capture the config
 // they hand it and give back a controller that does nothing.
@@ -283,6 +284,7 @@ describe("the creator measures and mints with the fused pose", () => {
     "replaceHelp",
     "replaceHelpGeneric",
     "replaceHelpDrive",
+    "replaceDriveCopy",
     "sizeInput",
     "printPanel",
     "status",
@@ -357,7 +359,6 @@ describe("the creator measures and mints with the fused pose", () => {
       (typeof DOM_KEYS)[number],
       ReturnType<typeof el>
     >;
-    dom.sizeInput.value = String(FUSED_SIZE_M);
     const ctx = createTourViewerSession();
     const real = createTourViewerStore();
     const arStore = options.aligned === true ? alignedOver(real) : real;
@@ -378,6 +379,11 @@ describe("the creator measures and mints with the fused pose", () => {
       openDraftStore: () => Promise.resolve(undefined),
       ...(options.codeTour === undefined ? {} : { codeTour: options.codeTour }),
     });
+    // AFTER the wiring, which writes the page's default into the field: the
+    // creator typed this size. Written before, it was overwritten, and the
+    // tests passed only while the default happened to equal it (M0b moved
+    // the default to 18 cm).
+    writeSideM(dom.sizeInput, FUSED_SIZE_M);
     expect(setup.startAuthorPipeline()).toBe(true);
     const config = captured.configs.at(-1)!;
     return {
@@ -420,7 +426,7 @@ describe("the creator measures and mints with the fused pose", () => {
       const controllers = captured.configs.length;
       c.dom.sizeOfferUse.click();
       expect(sizeCheck.answers).toEqual([[TEXT, "adopted"]]);
-      expect(c.dom.sizeInput.value).toBe("0.155");
+      expect(readSideM(c.dom.sizeInput)).toBeCloseTo(0.155, 9);
       expect(c.ctx.activeSizeM).toBe(0.155);
       expect(c.codes.inHand()).toBeNull();
       expect(c.ctx.mintGeneration).toBe(generation + 1);
@@ -441,7 +447,7 @@ describe("the creator measures and mints with the fused pose", () => {
       c.dom.sizeOfferKeep.click();
       expect(sizeCheck.answers).toEqual([[TEXT, "kept"]]);
       expect(c.dom.sizeOffer.hidden).toBe(true);
-      expect(c.dom.sizeInput.value).toBe(String(FUSED_SIZE_M));
+      expect(readSideM(c.dom.sizeInput)).toBeCloseTo(FUSED_SIZE_M, 9);
     });
   });
 
@@ -636,7 +642,7 @@ describe("the creator measures and mints with the fused pose", () => {
   // (ratio - 1) x the camera distance. It keeps the size it was measured at.
   it("keeps the size a code was measured at when another code's size is adopted", async () => {
     const c = creator({ aligned: true });
-    const fieldM = Number(c.dom.sizeInput.value);
+    const fieldM = readSideM(c.dom.sizeInput);
     for (let i = 0; i < 7; i++) c.detect(i);
     await vi.waitFor(() => {
       expect(c.codes.inHand()).not.toBeNull();
@@ -651,7 +657,7 @@ describe("the creator measures and mints with the fused pose", () => {
     c.detectText(second, 7);
     c.dom.sizeOfferUse.click();
     sizeCheck.offer = null;
-    expect(Number(c.dom.sizeInput.value)).toBe(0.3);
+    expect(readSideM(c.dom.sizeInput)).toBeCloseTo(0.3, 9);
     // The restarted pipeline fetches each code's level before solving it.
     const config = captured.configs.at(-1)!;
     expect((await config.fetchLevel(TEXT)).qr.physicalSizeM).toBe(fieldM);
@@ -670,7 +676,7 @@ describe("the creator measures and mints with the fused pose", () => {
     // The controller fetches a code's level before it solves the code.
     const level = await captured.configs.at(-1)!.fetchLevel(TEXT);
     expect(level.qr.physicalSizeM).toBe(0.3);
-    expect(Number(c.dom.sizeInput.value)).not.toBe(0.3);
+    expect(readSideM(c.dom.sizeInput)).not.toBeCloseTo(0.3, 9);
     for (let i = 0; i < 7; i++) c.detect(i);
     await vi.waitFor(() => {
       expect(c.codes.inHand()).not.toBeNull();

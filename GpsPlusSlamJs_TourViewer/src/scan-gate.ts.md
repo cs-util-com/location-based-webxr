@@ -14,10 +14,14 @@ clock, the escape button).
   `no-lockable-level` | `levels-unavailable`) | `scanning`
   (`escapeOffered`) | `passed` (`code` | `skipped` | `ignored`). `no-detector` is
   DEC-N13: a browser without `BarcodeDetector` can never pass, so the gate
-  is waived with its own copy instead of holding the visitor 45 s for the
-  same outcome.
-- `SCAN_GATE_ESCAPE_MS = 45_000` - after this long in `scanning` the escape
-  is offered (DEC-N3).
+  is waived with its own copy instead of holding the visitor until the
+  escape clock for the same outcome.
+- `SCAN_GATE_ESCAPE_MS = 10_000` - after this long in `scanning` the escape
+  is offered (DEC-N3; 45 s until the owner's S1 scan card offered the skip
+  after 10 s, polish round M4b, Q-Scan).
+- `scanCardShown(mode, arStatus, gate): boolean` - the visitor's scan card
+  (S1) shows for a visitor's `running` session whose gate is `scanning`,
+  and closes by itself on any pass (`ar-entry.ts` renders it).
 - `isLockableLevel(level)` - a printed size AND a geo pose: a size-less
   level never solves, a geo-less one never votes, and neither can lock.
 - `scanGateAtSessionStart({ mode, hasDetector, levels, ignoredLevelIds? })` - creator and
@@ -35,7 +39,7 @@ clock, the escape button).
 - `passed` via `ignored`: the viewer judged the code moved, or a scanning
   gate saw such a code lock. Placement runs (by GPS) and the segment says
   "Code ignored - placing the tour by GPS." instead of asking the visitor
-  to keep pointing at a code the viewer will not use until the 45 s escape.
+  to keep pointing at a code the viewer will not use until the escape.
 - At session start and when the levels arrive, a tour whose EVERY lockable
   level id is in `ignoredLevelIds` passes `ignored` at once; with another
   lockable code left, the gate scans for that one.
@@ -50,7 +54,7 @@ clock, the escape button).
   whenever the lock came before the first GPS fix or while the pose
   converged, and said the code had worked (§2.2 B3). A lock that cannot
   vote now keeps the gate scanning: the fused pose's hint says what it
-  waits for, and the 45 s escape still offers GPS-only placement.
+  waits for, and the escape still offers GPS-only placement.
 - The escape has its own clock in the driver, independent of camera frames
   (plan review #11).
 

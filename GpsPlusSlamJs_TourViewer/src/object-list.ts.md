@@ -27,25 +27,25 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
     and in AR, and keeps the list shown though the delete emptied it.
 - `ObjectRowModel` - `title` (a pin's text, a photo's caption or "Photo"),
   `detail` ("Pin · in the zip · 4 m from the code"), `selected`, `busy`,
-  `canEditText` (pins only), `canMove` (pins only, in AR only), `enabled`.
+  `canEditText` (pins only), `canMove` (pins only, in AR only),
+  `canDeselect` (the selected row in AR: Close), `enabled`.
 - `SELECT_HINT` - the AR hint while nothing is selected.
 - `createObjectListView(container, doc): ObjectListView` - the DOM view over
   `#object-list`: `bind(handlers)` once, `render(model)` any time.
-- `ObjectListModel.chooser` - in AR with any object, `{ position }`:
-  "2 of 5" for the selection's place, "5 objects" ("1 object") before one;
-  null on the page and with no objects. The view draws it as one line,
-  `‹ Previous` / position / `Next ›` (`object-previous`,
-  `object-position`, `object-next`).
 - `ObjectListHandlers` - `editText(id, text)`, `move(id)`, `remove(id)`,
-  `undo()`, `step(1 | -1)` (the chooser).
+  `undo()`, `deselect()` (the row's Close).
 - `ObjectRowModel.compact` - in AR: the row is drawn as ONE line of text
-  (title, the chooser's position, the distance - `detail` holds only the
-  distance in AR) over ONE line of buttons with short labels: `‹`, Edit,
-  Move, Delete, `›` (accessible names "Previous object", "Edit text",
-  "Move to the reticle", "Delete", "Next object"). `chooser.inRow` says the
-  chooser's buttons and position are in the selected row rather than on
-  their own line; the view moves the SAME elements, so no test id is ever
-  doubled.
+  (title and distance - `detail` holds only the distance in AR) over ONE
+  line of buttons with short labels: Edit, Move, Delete, Close (accessible
+  names "Edit text", "Move to the reticle", "Delete", "Close this object's
+  actions"; test ids
+  `object-edit`, `object-move`, `object-delete`, `object-close` - "Close",
+  not "Done": the AR button's Done leaves AR, polish round M3).
+- **No Previous / Next** (polish round M3, the owner's Q-HUD, B2): an
+  object is selected by a tap on it, and left by Close or a tap on empty
+  scene. Until 2026-10-13 a chooser stepped through every object (M4
+  review #4) so that a far, occluded or overlapping one could still be
+  reached; without it such an object is reached by walking closer.
 
 ## Invariants & assumptions
 
@@ -60,24 +60,12 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
   where moving happens instead of offering a button that can only fail.
   **The page list still has no Move** (2026-10-01): it needs the reticle,
   which exists only in a session.
-- **The selected state is ONE line of buttons in AR** (2026-10-01). With
-  the chooser on a line of its own and the row's Edit / Move / Delete /
-  Done on two more, the layout e2e found those four below the first screen
-  of a 360x640 phone with the code's re-measure offered. The chooser now
-  joins the selected row, the labels are short, the row's text is one
-  line, and Done is gone: a tap on empty scene clears the selection.
-  Before a selection the chooser keeps its own line (with the hint).
-  The compact row's buttons use tighter padding (`.object-row-compact`,
-  the tap minimum kept): with the sheet's padding the five measured wider
-  than a 360 px screen and "›" wrapped below the first screen.
-- **In AR every object can be reached without aiming** (M4 review #4): a
-  tap selects through the tapped point with a tolerance
-  (`object-pick.ts`), but a far, small or occluded object may still be
-  impossible to tap - and Move acts on the selection - so the chooser
-  steps through every object in list order, wrapping; with nothing
-  selected, Next starts at the first and Previous at the last. One line,
-  so the first-screen rule holds (`ar-layout.spec.js` covers the selected
-  state with the re-measure button shown).
+- **The selected state is ONE line of buttons in AR** (2026-10-01): the
+  labels are short and the row's text is one line, so every control fits
+  the first screen of a 360x640 phone with the code's re-measure offered
+  (`ar-layout.spec.js` covers the selected state). The compact row's
+  buttons use tighter padding (`.object-row-compact`, the tap minimum
+  kept). Since polish round M3 the line is Edit / Move / Delete / Close.
 - **Edit text is for pins only**: a photo's optional caption is shown
   nowhere in the viewer, so editing it would change nothing a visitor sees.
 - **The view redraws only when the model changed** (JSON key), and the
@@ -113,7 +101,7 @@ view.render(
 
 ## Tests
 
-- `object-list.test.ts` - the chooser's position and count, the page list and the AR selection, the words per row, the
+- `object-list.test.ts` - no chooser (tap-to-select only), Close on the selected AR row, the page list and the AR selection, the words per row, the
   nearest code, hidden when empty, busy and locked rows, and a property
   that the page lists every object once and AR at most the selected one.
 - The DOM view: `playwright-tests/object-editing.spec.js` (edit, delete,

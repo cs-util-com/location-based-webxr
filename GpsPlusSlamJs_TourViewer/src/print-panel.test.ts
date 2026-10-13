@@ -1,16 +1,13 @@
 /**
- * Why these tests matter (second testing session, F1). The printed size did
- * not follow the input: the owner set 30 cm, pressed Print, and got the
- * previous size, because `--print-side` is written only inside
- * `generatePrintCode` - so Print alone reuses whatever the last *generate*
- * left behind. Nothing errors; the paper is simply the wrong size, and a
- * code printed at the wrong size is one whose pose solve assumes a length
- * the poster does not have.
+ * The print panel's pure rules: which spelling of the tour link step 3
+ * shows, the PDF's inputs, the poster range and its numbering. The DOM
+ * wiring is covered by the Playwright specs (this package's unit tests are
+ * pure by convention: no jsdom).
  *
- * The decision is tested here as a pure function rather than through the
- * DOM: this package's unit tests are pure by convention (there is no jsdom
- * environment configured) and DOM wiring is covered by the Playwright
- * specs, which is where the click and `beforeprint` paths are asserted.
+ * Since polish round M0b the code is printed by PDF only: the browser's own
+ * print (and the `--print-side` stylesheet the first tests here guarded,
+ * second testing session F1) is gone, because its dialog owns a "fit to
+ * page" that rescales the code (A10).
  */
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
@@ -19,46 +16,10 @@ import {
   highestPrintedCode,
   orphanScanCovers,
   printCountFromInput,
-  printedCodeCaption,
-  printedSideToApply,
   printPdfFilename,
   printUrlDisplay,
 } from "./print-panel.js";
-
-describe("printedSideToApply", () => {
-  it("gives the size that is in the box, so a changed size prints changed", () => {
-    // The reported bug, reduced to its decision: at print time the answer
-    // must come from the input's CURRENT value, never from what generate
-    // happened to leave behind.
-    expect(printedSideToApply("0.3", true)).toBe("30cm");
-    expect(printedSideToApply("0.25", true)).toBe("25cm");
-    expect(printedSideToApply("0.2", true)).toBe("20cm");
-  });
-
-  it("gives nothing when there is no code to print", () => {
-    // Why this matters: with no generated code the print stylesheet shows
-    // nothing, and writing a size for a code that does not exist is a claim
-    // the next generate would have to clean up.
-    expect(printedSideToApply("0.3", false)).toBeNull();
-  });
-
-  it("gives nothing for a size a printer could not use", () => {
-    // `printedSideCss` throws on these. At print time that must not escape
-    // into a click handler: the previous value stays and the author still
-    // gets their dialog. Empty is the case that matters most - the input
-    // ships with a default, but a creator can clear it.
-    for (const bad of ["", "0", "-1", "abc", "NaN", "Infinity"]) {
-      expect(printedSideToApply(bad, true), bad).toBeNull();
-    }
-  });
-
-  it("rounds the way the print stylesheet does, not the way a person would", () => {
-    // Pinned because the pose solve reads this number: printedSideCss
-    // rounds to 0.1 mm, so an off-step hand-typed size prints at a
-    // predictable length rather than a rounded-to-the-millimetre one.
-    expect(printedSideToApply("0.1634", true)).toBe("16.34cm");
-  });
-});
+import { nextCodeIndex } from "./print-link.js";
 
 describe("printUrlDisplay (second testing session, F7)", () => {
   it("asks for the link only while no tour is open", () => {
@@ -90,6 +51,21 @@ describe("printUrlDisplay (second testing session, F7)", () => {
       shownVisible: false,
       shownText: "",
     });
+  });
+
+  it("marks a link step 2 could not confirm as not verified yet (polish round M2)", () => {
+    // Why: an own server's link can come before its file, and the owner
+    // asked for the link to be given once - so it reaches this step
+    // unconfirmed, and that must stay visible until the check before the
+    // PDF settles it.
+    expect(printUrlDisplay("https://h/t.zip", { verified: false })).toEqual({
+      askVisible: false,
+      shownVisible: true,
+      shownText: "https://h/t.zip - not verified yet",
+    });
+    expect(
+      printUrlDisplay("https://h/t.zip", { verified: true }).shownText,
+    ).toBe("https://h/t.zip");
   });
 
   it("never shows both spellings at once, and never neither (property)", () => {
@@ -162,33 +138,6 @@ describe("the printable PDF's inputs (second testing session, M4)", () => {
     // two files called tour-codes-3x are two files nobody can tell apart.
     expect(printPdfFilename(4, 3, 0.16)).toBe("tour-codes-4-to-6-16cm.pdf");
     expect(printPdfFilename(2, 1, 0.125)).toBe("tour-code-2-12-5cm.pdf");
-  });
-
-  it("captions each code with its number, its size and the scale rule", () => {
-    // The caption is read while hanging posters, so it has to say WHICH
-    // poster this is; the size and the scale rule are there because a
-    // reprint from the wrong dialog settings is the failure that put the
-    // whole PDF path in this round.
-    // Its own NUMBER, not "2 of 3": the PDF starts where the code-number
-    // field says, so "of 3" would be a claim about a series the next
-    // download continues.
-    expect(printedCodeCaption(2, 0.16)).toBe("Code 2 - 16cm - print at 100%");
-  });
-
-  it("keeps captions to characters a PDF string can carry (property)", () => {
-    // qr-print-pdf strips anything outside printable ASCII; a caption that
-    // arrives already clean cannot lose its number to that filter.
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 1, max: 50 }),
-        fc.integer({ min: 1, max: 50 }),
-        (index, _count) => {
-          const caption = printedCodeCaption(index, 0.16);
-          expect(caption).toMatch(/^[\x20-\x7e]+$/);
-          expect(caption).toContain(`Code ${String(index)} `);
-        },
-      ),
-    );
   });
 });
 
@@ -264,5 +213,43 @@ describe("the poster range a print covers", () => {
         },
       ),
     );
+  });
+});
+
+describe("nextCodeIndex (polish round M0b)", () => {
+  // Why: more posters for a tour must continue its numbering. Two posters
+  // with the same printed text are ONE code to the level lookup, and an
+  // author who hung both would get one of the two positions at random. A
+  // tour files codes under a hash of their text, so the number is found by
+  // computing each number's id.
+  const idOf = (index: number) => Promise.resolve(`id-${String(index)}`);
+
+  it("continues after the highest number the tour holds, gaps included", async () => {
+    expect(
+      await nextCodeIndex(new Set(["id-1", "id-4", "id-2"]), idOf, 50),
+    ).toBe(5);
+  });
+
+  it("starts at 1 for a tour with no codes, or none of this link's", async () => {
+    expect(await nextCodeIndex(new Set(), idOf, 50)).toBe(1);
+    expect(await nextCodeIndex(new Set(["other-link"]), idOf, 50)).toBe(1);
+  });
+
+  // PR #586 review: each number is a launch-URL build and a hash on the
+  // main thread, run on every creator open of a tour with codes. Once every
+  // id is found no higher number can match, so the common case stops.
+  it("stops once every code the tour holds is found", async () => {
+    const asked: number[] = [];
+    const counting = (index: number) => {
+      asked.push(index);
+      return idOf(index);
+    };
+    expect(await nextCodeIndex(new Set(["id-1"]), counting, 50)).toBe(2);
+    expect(asked).toEqual([1]);
+  });
+
+  it("looks no further than the limit", async () => {
+    expect(await nextCodeIndex(new Set(["id-60"]), idOf, 50)).toBe(1);
+    expect(await nextCodeIndex(new Set(["id-50"]), idOf, 50)).toBe(51);
   });
 });

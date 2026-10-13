@@ -10,7 +10,7 @@
  * verdicts above it still stand: they need no map (CLAUDE.md, "UI feedback
  * for async actions").
  *
- * "Back to authoring" is "Start AR setup" again (plan §3.3): the button
+ * "Back to authoring" is "Start creating" again (plan §3.3): the button
  * here hands its tap to the page's own AR entry, inside the same user
  * gesture, rather than adding a second way into AR.
  *
@@ -36,7 +36,7 @@ export interface SummaryPanelDom {
   map: HTMLElement;
   /** The map's loading and failure line. */
   mapStatus: HTMLElement;
-  /** "Start AR setup" again. */
+  /** "Start creating" again. */
   startAr: HTMLButtonElement;
 }
 
@@ -107,7 +107,7 @@ export function createSummaryPanel(deps: {
   doc: Document;
   /** The map module, imported dynamically. */
   loadMap: () => Promise<SummaryMapModule>;
-  /** Start AR setup, as the page's own button does. */
+  /** Start creating, as the page's own button does. */
   startAr: () => void;
 }): SummaryPanel {
   const { dom, doc } = deps;

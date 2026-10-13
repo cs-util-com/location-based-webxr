@@ -17,3 +17,9 @@ export function viewerModeFromSearch(search: string): ViewerMode {
   // not a reason to show a creator the setup.
   return new URLSearchParams(search).has("qr") ? "visitor" : "creator";
 }
+
+/** The creator's cursor on a mesh of the surroundings (polish round M5,
+ *  B3), behind `?mesh=1` until the owner likes it on the phone (Q-Mesh). */
+export function meshCursorFromSearch(search: string): boolean {
+  return new URLSearchParams(search).get("mesh") === "1";
+}

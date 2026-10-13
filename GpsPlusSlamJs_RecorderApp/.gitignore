@@ -30,6 +30,9 @@ coverage
 *.lcov
 playwright-report/
 test-results/
+# The CI-mode Playwright reporters (playwright.config.js) write these here
+/test-results.json
+/junit.xml
 
 # nyc test coverage
 .nyc_output

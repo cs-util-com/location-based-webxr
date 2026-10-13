@@ -1,0 +1,4663 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light" />
+    <title>Make Your Tour</title>
+    <style>
+      :root {
+        --cream: #fff6e9;
+        --paper: #ffffff;
+        --ink: #2a2250;
+        --ink2: #5b5480;
+        --coral: #ff6b57;
+        --sun: #ffc93c;
+        --mint: #2fd39a;
+        --leaf: #8ee4b8;
+        --sky: #5bb8ff;
+        --skylight: #ddf1ff;
+        --grape: #7c5cff;
+        --lilac: #c9bcff;
+        --pink: #ff8fc7;
+        --peach: #ffe3c2;
+        --bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --font:
+          ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", "Nunito",
+          "Varela Round", "Segoe UI", system-ui, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--cream);
+        color: var(--ink);
+        font-family: var(--font);
+        font-size: 17px;
+        line-height: 1.5;
+        overflow-x: clip;
+      }
+      h1,
+      h2,
+      h3 {
+        line-height: 1.12;
+        margin: 0;
+        letter-spacing: -0.01em;
+      }
+      p {
+        margin: 0;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+        color: inherit;
+      }
+      :focus-visible {
+        outline: 3px dashed var(--grape);
+        outline-offset: 3px;
+        border-radius: 10px;
+      }
+      .wrap {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      .narrow {
+        max-width: 780px;
+      }
+
+      /* prototype label */
+      .proto-label {
+        position: fixed;
+        top: 8px;
+        left: 8px;
+        z-index: 100;
+        background: var(--ink);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 3px 10px;
+        border-radius: 999px;
+        letter-spacing: 0.02em;
+        pointer-events: none;
+        opacity: 0.92;
+      }
+
+      /* buttons */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5em;
+        border: 3px solid var(--ink);
+        border-radius: 999px;
+        padding: 0.72em 1.3em;
+        background: var(--sun);
+        color: var(--ink);
+        font-weight: 800;
+        box-shadow: 0 5px 0 var(--ink);
+        cursor: pointer;
+        transition:
+          transform 0.14s var(--bounce),
+          box-shadow 0.14s,
+          background 0.2s;
+        text-decoration: none;
+        min-height: 48px;
+      }
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 7px 0 var(--ink);
+      }
+      .btn:active {
+        transform: translateY(4px);
+        box-shadow: 0 1px 0 var(--ink);
+      }
+      .btn:disabled {
+        cursor: progress;
+        transform: none;
+        box-shadow: 0 3px 0 var(--ink);
+        opacity: 0.85;
+      }
+      .btn-coral {
+        background: var(--coral);
+        color: #fff;
+      }
+      .btn-mint {
+        background: var(--mint);
+      }
+      .btn-white {
+        background: #fff;
+      }
+      .btn-grape {
+        background: var(--grape);
+        color: #fff;
+      }
+      .btn.ok {
+        background: var(--leaf);
+      }
+      .btn-big {
+        font-size: 1.15rem;
+        padding: 0.85em 1.6em;
+      }
+      .linklike {
+        background: none;
+        border: 0;
+        padding: 6px 2px;
+        font-weight: 700;
+        color: var(--grape);
+        text-decoration: underline;
+        text-decoration-thickness: 2px;
+        text-underline-offset: 4px;
+        cursor: pointer;
+      }
+      .spin {
+        width: 1em;
+        height: 1em;
+        border: 3px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        flex: none;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .tick {
+        width: 1.1em;
+        height: 1.1em;
+        flex: none;
+      }
+
+      .card {
+        background: var(--paper);
+        border: 3px solid var(--ink);
+        border-radius: 24px;
+        box-shadow: 0 6px 0 var(--ink);
+      }
+
+      /* ---------- mascot ---------- */
+      .pinny .eyes {
+        animation: blink 4.6s infinite;
+        transform-box: fill-box;
+        transform-origin: center;
+      }
+      @keyframes blink {
+        0%,
+        93%,
+        100% {
+          transform: scaleY(1);
+        }
+        95% {
+          transform: scaleY(0.1);
+        }
+      }
+      .pinny .leg {
+        transform-box: fill-box;
+        transform-origin: 50% 0;
+      }
+      .pinny .arm {
+        transform-box: fill-box;
+      }
+      .p-idle .bob {
+        animation: breathe 3s ease-in-out infinite;
+      }
+      @keyframes breathe {
+        50% {
+          transform: translateY(-1.6px);
+        }
+      }
+      .p-walk .leg-l,
+      .walking .leg-l {
+        animation: legA 0.45s ease-in-out infinite alternate;
+      }
+      .p-walk .leg-r,
+      .walking .leg-r {
+        animation: legA 0.45s ease-in-out infinite alternate-reverse;
+      }
+      .p-walk .bob,
+      .walking .bob {
+        animation: bob 0.225s ease-in-out infinite alternate;
+      }
+      @keyframes legA {
+        from {
+          transform: rotate(18deg);
+        }
+        to {
+          transform: rotate(-18deg);
+        }
+      }
+      @keyframes bob {
+        to {
+          transform: translateY(-2.5px);
+        }
+      }
+      .p-wave .arm-r {
+        animation: wave 1.3s ease-in-out infinite;
+        transform-origin: 0% 100%;
+      }
+      @keyframes wave {
+        0%,
+        100% {
+          transform: rotate(0);
+        }
+        50% {
+          transform: rotate(-22deg);
+        }
+      }
+      .p-point .arm-r {
+        animation: pt 1.8s ease-in-out infinite;
+        transform-origin: 0% 100%;
+      }
+      @keyframes pt {
+        0%,
+        100% {
+          transform: rotate(0);
+        }
+        50% {
+          transform: rotate(-9deg);
+        }
+      }
+      .p-cheer .bob {
+        animation: hop 1.1s var(--bounce) infinite;
+      }
+      @keyframes hop {
+        0%,
+        55%,
+        100% {
+          transform: translateY(0);
+        }
+        28% {
+          transform: translateY(-9px);
+        }
+      }
+
+      /* ---------- hero ---------- */
+      .hero {
+        position: relative;
+        padding: 52px 0 28px;
+        overflow: hidden;
+      }
+      .hero::before {
+        content: "";
+        position: absolute;
+        width: 520px;
+        height: 520px;
+        right: -180px;
+        top: -200px;
+        background: var(--peach);
+        border-radius: 50%;
+        z-index: -1;
+      }
+      .hero::after {
+        content: "";
+        position: absolute;
+        width: 260px;
+        height: 260px;
+        left: -120px;
+        bottom: -60px;
+        background: var(--skylight);
+        border-radius: 50%;
+        z-index: -1;
+      }
+      .hero-grid {
+        display: grid;
+        gap: 22px;
+        align-items: center;
+      }
+      .kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #fff;
+        border: 2.5px solid var(--ink);
+        border-radius: 999px;
+        padding: 4px 14px 4px 6px;
+        font-weight: 800;
+        font-size: 0.9rem;
+        box-shadow: 0 3px 0 var(--ink);
+      }
+      .kicker b {
+        background: var(--pink);
+        border-radius: 999px;
+        padding: 1px 9px;
+        color: var(--ink);
+      }
+      .hero h1 {
+        font-size: clamp(2.2rem, 4.2vw + 1.1rem, 4rem);
+        margin: 16px 0 14px;
+        font-weight: 900;
+      }
+      .hero h1 .mine {
+        position: relative;
+        color: var(--coral);
+        white-space: nowrap;
+      }
+      .hero h1 .mine svg {
+        position: absolute;
+        left: 0;
+        bottom: -0.18em;
+        width: 100%;
+        height: 0.32em;
+        overflow: visible;
+      }
+      .hero h1 .mine path {
+        stroke-dasharray: 240;
+        stroke-dashoffset: 240;
+        animation: draw 1.1s 0.5s ease-out forwards;
+      }
+      @keyframes draw {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+      .hero .sub {
+        font-size: 1.12rem;
+        color: var(--ink2);
+        max-width: 34em;
+      }
+      .hero-ctas {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 22px;
+      }
+      .scene {
+        width: 100%;
+        height: auto;
+        display: block;
+        border: 3px solid var(--ink);
+        border-radius: 28px;
+        background: var(--skylight);
+        box-shadow: 0 8px 0 var(--ink);
+      }
+      .scene .sun-rays {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: spin 30s linear infinite;
+      }
+      .scene .cloud {
+        animation: drift 14s ease-in-out infinite alternate;
+      }
+      .scene .cloud2 {
+        animation: drift 18s ease-in-out infinite alternate-reverse;
+      }
+      @keyframes drift {
+        to {
+          transform: translateX(26px);
+        }
+      }
+      .scanline {
+        animation: scan 8s ease-in-out infinite;
+      }
+      @keyframes scan {
+        0% {
+          transform: translateY(0);
+          opacity: 1;
+        }
+        11% {
+          transform: translateY(44px);
+        }
+        22% {
+          transform: translateY(0);
+        }
+        28% {
+          transform: translateY(44px);
+          opacity: 1;
+        }
+        31%,
+        100% {
+          opacity: 0;
+          transform: translateY(44px);
+        }
+      }
+      .beam {
+        animation: beam 8s ease-in-out infinite;
+      }
+      @keyframes beam {
+        0%,
+        28% {
+          opacity: 0.28;
+        }
+        32%,
+        100% {
+          opacity: 0;
+        }
+      }
+      .found-badge {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: badge 8s var(--bounce) infinite;
+      }
+      @keyframes badge {
+        0%,
+        29% {
+          transform: scale(0);
+        }
+        34% {
+          transform: scale(1.2);
+        }
+        38%,
+        86% {
+          transform: scale(1);
+        }
+        92%,
+        100% {
+          transform: scale(0);
+        }
+      }
+      .hero-hop {
+        animation: herohop 8s ease-out infinite;
+      }
+      @keyframes herohop {
+        0%,
+        29%,
+        40%,
+        100% {
+          transform: translateY(0);
+        }
+        33% {
+          transform: translateY(-12px);
+        }
+        36% {
+          transform: translateY(0);
+        }
+      }
+      .hp {
+        transform-box: fill-box;
+        transform-origin: 50% 100%;
+        animation: hpop 8s var(--bounce) infinite both;
+      }
+      @keyframes hpop {
+        0%,
+        31% {
+          transform: scale(0);
+          opacity: 0;
+        }
+        37% {
+          transform: scale(1.18);
+          opacity: 1;
+        }
+        41%,
+        86% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        92%,
+        100% {
+          transform: scale(0);
+          opacity: 0;
+        }
+      }
+
+      /* why chips */
+      .why {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px;
+        margin-top: 30px;
+      }
+      .why li {
+        list-style: none;
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        background: #fff;
+        border: 2.5px solid var(--ink);
+        border-radius: 20px;
+        padding: 12px 14px;
+        transition: transform 0.2s var(--bounce);
+      }
+      .why li:hover {
+        transform: translateY(-3px) rotate(-1deg);
+      }
+      .why ul {
+        margin: 0;
+        padding: 0;
+        display: contents;
+      }
+      .why .dot {
+        flex: none;
+        width: 40px;
+        height: 40px;
+        border-radius: 14px;
+        border: 2.5px solid var(--ink);
+        display: grid;
+        place-items: center;
+      }
+      .why .dot svg {
+        width: 24px;
+        height: 24px;
+      }
+      .why b {
+        display: block;
+        font-size: 1rem;
+      }
+      .why span {
+        font-size: 0.92rem;
+        color: var(--ink2);
+        line-height: 1.35;
+        display: block;
+      }
+      .why-note {
+        font-size: 0.88rem;
+        color: var(--ink2);
+        margin-top: 26px;
+        font-weight: 700;
+      }
+
+      /* ---------- journey ---------- */
+      .journey {
+        padding: 46px 0 40px;
+        background: #fff0d6;
+        border-top: 3px solid var(--ink);
+        border-bottom: 3px solid var(--ink);
+        margin-top: 34px;
+      }
+      .sec-title {
+        font-size: clamp(1.7rem, 2.6vw + 1rem, 2.6rem);
+        font-weight: 900;
+      }
+      .sec-sub {
+        color: var(--ink2);
+        margin-top: 6px;
+        font-size: 1.05rem;
+      }
+      .jlist {
+        list-style: none;
+        margin: 26px 0 0;
+        padding: 0;
+        display: grid;
+        gap: 14px;
+        position: relative;
+      }
+      .jcard {
+        display: grid;
+        grid-template-columns: 128px 1fr;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 14px 10px 10px;
+        position: relative;
+        transition: transform 0.22s var(--bounce);
+      }
+      .jcard:hover {
+        transform: translateY(-4px) rotate(-0.6deg);
+      }
+      .jcard svg {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 16px;
+        background: var(--skylight);
+      }
+      .jcard h3 {
+        font-size: 1.12rem;
+        font-weight: 900;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .jcard p {
+        font-size: 0.95rem;
+        color: var(--ink2);
+        line-height: 1.35;
+        margin-top: 3px;
+      }
+      .jnum {
+        flex: none;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--coral);
+        color: #fff;
+        border: 2.5px solid var(--ink);
+        display: grid;
+        place-items: center;
+        font-size: 0.85rem;
+        font-weight: 900;
+      }
+      .jcard:nth-child(2) .jnum {
+        background: var(--sky);
+      }
+      .jcard:nth-child(3) .jnum {
+        background: var(--sun);
+        color: var(--ink);
+      }
+      .jcard:nth-child(4) .jnum {
+        background: var(--mint);
+        color: var(--ink);
+      }
+      .jcard:nth-child(5) .jnum {
+        background: var(--grape);
+      }
+      .jcard:nth-child(6) .jnum {
+        background: var(--pink);
+        color: var(--ink);
+      }
+      .boxhop {
+        animation: boxhop 2.6s ease-in-out infinite;
+      }
+      @keyframes boxhop {
+        0%,
+        20% {
+          transform: translateY(0);
+          opacity: 1;
+        }
+        60% {
+          transform: translateY(-22px);
+          opacity: 0;
+        }
+        61% {
+          transform: translateY(6px);
+          opacity: 0;
+        }
+        80%,
+        100% {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+      .ripple {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: ripple 1.8s ease-out infinite;
+      }
+      @keyframes ripple {
+        0% {
+          transform: scale(0.3);
+          opacity: 0.9;
+        }
+        100% {
+          transform: scale(1.6);
+          opacity: 0;
+        }
+      }
+      .paper {
+        animation: paper 3s ease-in-out infinite;
+      }
+      @keyframes paper {
+        0%,
+        15% {
+          transform: translateY(0);
+        }
+        70%,
+        100% {
+          transform: translateY(24px);
+        }
+      }
+      .swing {
+        transform-box: fill-box;
+        transform-origin: 50% 0;
+        animation: swing 2.4s ease-in-out infinite;
+      }
+      @keyframes swing {
+        0%,
+        100% {
+          transform: rotate(-3deg);
+        }
+        50% {
+          transform: rotate(3deg);
+        }
+      }
+      .jp {
+        transform-box: fill-box;
+        transform-origin: 50% 100%;
+        animation: jpop 3.6s var(--bounce) infinite both;
+      }
+      @keyframes jpop {
+        0%,
+        10% {
+          transform: scale(0);
+        }
+        22% {
+          transform: scale(1.2);
+        }
+        28%,
+        85% {
+          transform: scale(1);
+        }
+        95%,
+        100% {
+          transform: scale(0);
+        }
+      }
+      .twinkle {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: twinkle 1.6s ease-in-out infinite;
+      }
+      @keyframes twinkle {
+        0%,
+        100% {
+          transform: scale(0.4) rotate(0);
+          opacity: 0.4;
+        }
+        50% {
+          transform: scale(1) rotate(45deg);
+          opacity: 1;
+        }
+      }
+
+      /* ---------- flow ---------- */
+      .flow {
+        padding: 46px 0 30px;
+      }
+      .rail {
+        position: sticky;
+        top: 30px;
+        z-index: 20;
+        margin: 22px auto 6px;
+        background: rgba(255, 246, 233, 0.94);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        border: 3px solid var(--ink);
+        border-radius: 22px;
+        padding: 8px 14px 6px;
+        box-shadow: 0 4px 0 var(--ink);
+      }
+      .rail-track {
+        position: relative;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        padding-top: 34px;
+      }
+      .rail-line {
+        position: absolute;
+        left: 14px;
+        right: 14px;
+        bottom: 23px;
+        height: 5px;
+        background: repeating-linear-gradient(
+          90deg,
+          var(--ink) 0 8px,
+          transparent 8px 14px
+        );
+        opacity: 0.35;
+        border-radius: 3px;
+      }
+      .rail-fill {
+        position: absolute;
+        left: 14px;
+        bottom: 23px;
+        height: 5px;
+        background: var(--mint);
+        border-radius: 3px;
+        width: 0;
+        transition: width 0.5s var(--bounce);
+      }
+      .rail-dot {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1px;
+        background: none;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+        min-width: 40px;
+      }
+      .rail-dot i {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: #fff;
+        border: 3px solid var(--ink);
+        display: grid;
+        place-items: center;
+        font-style: normal;
+        font-weight: 900;
+        font-size: 0.8rem;
+        transition:
+          transform 0.25s var(--bounce),
+          background 0.25s;
+      }
+      .rail-dot small {
+        font-size: 0.68rem;
+        font-weight: 800;
+        color: var(--ink2);
+      }
+      .rail-dot.is-current i {
+        background: var(--sun);
+        transform: scale(1.18);
+      }
+      .rail-dot.is-done i {
+        background: var(--mint);
+      }
+      .rail-pinny {
+        position: absolute;
+        top: -2px;
+        left: 0;
+        width: 30px;
+        height: 40px;
+        margin-left: -15px;
+        transition: left 0.7s var(--bounce);
+        pointer-events: none;
+      }
+      .rail-pinny svg {
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+
+      .step {
+        padding: 34px 0 10px;
+        scroll-margin-top: 120px;
+      }
+      .step-card {
+        padding: 22px 18px 22px;
+        position: relative;
+      }
+      .step-head {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 14px;
+        align-items: start;
+        margin-bottom: 16px;
+      }
+      .num {
+        width: 48px;
+        height: 48px;
+        border-radius: 16px;
+        border: 3px solid var(--ink);
+        display: grid;
+        place-items: center;
+        font-weight: 900;
+        font-size: 1.4rem;
+        background: var(--sun);
+        box-shadow: 0 4px 0 var(--ink);
+        transform: rotate(-6deg);
+        transition: background 0.3s;
+      }
+      .step.is-done .num {
+        background: var(--mint);
+      }
+      .step.is-done .num::after {
+        content: "";
+        position: absolute;
+      }
+      .eyebrow {
+        font-size: 0.78rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--coral);
+      }
+      .step h3 {
+        font-size: clamp(1.4rem, 1.6vw + 1rem, 1.95rem);
+        font-weight: 900;
+        margin-top: 2px;
+      }
+      .lead {
+        color: var(--ink2);
+        margin-top: 5px;
+      }
+      .head-pinny {
+        width: 58px;
+        height: 92px;
+        overflow: visible;
+        margin-top: -30px;
+      }
+      .done-flag {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        font-weight: 900;
+        font-size: 0.82rem;
+        background: var(--leaf);
+        border: 2.5px solid var(--ink);
+        border-radius: 999px;
+        padding: 2px 10px 2px 6px;
+        margin-top: 8px;
+        width: max-content;
+        animation: popin 0.45s var(--bounce);
+      }
+      .step.is-done .done-flag {
+        display: inline-flex;
+      }
+      @keyframes popin {
+        from {
+          transform: scale(0.3);
+          opacity: 0;
+        }
+        to {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+      .next-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-top: 18px;
+      }
+
+      /* step 1 tiles */
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+        gap: 12px;
+      }
+      .tile {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        padding: 16px 8px 14px;
+        background: #fff;
+        border: 3px solid var(--ink);
+        border-radius: 22px;
+        box-shadow: 0 5px 0 var(--ink);
+        cursor: pointer;
+        font-weight: 900;
+        font-size: 1rem;
+        transition:
+          transform 0.22s var(--bounce),
+          box-shadow 0.22s,
+          background 0.25s;
+        min-height: 118px;
+        text-align: center;
+        line-height: 1.15;
+      }
+      .tile:hover {
+        transform: translateY(-4px) rotate(-2deg);
+      }
+      .tile:nth-child(even):hover {
+        transform: translateY(-4px) rotate(2deg);
+      }
+      .tile:active {
+        transform: translateY(3px);
+        box-shadow: 0 2px 0 var(--ink);
+      }
+      .tile .ic {
+        width: 58px;
+        height: 58px;
+        border-radius: 19px;
+        border: 3px solid var(--ink);
+        background: var(--tc);
+        display: grid;
+        place-items: center;
+        transition: transform 0.3s var(--bounce);
+      }
+      .tile .ic svg {
+        width: 34px;
+        height: 34px;
+      }
+      .tile[aria-pressed="true"] {
+        background: var(--tc);
+        transform: translateY(2px);
+        box-shadow: 0 3px 0 var(--ink);
+      }
+      .tile[aria-pressed="true"] .ic {
+        background: #fff;
+        transform: rotate(-8deg) scale(1.06);
+      }
+      .tile[aria-pressed="true"]::after {
+        content: "";
+        position: absolute;
+        top: -10px;
+        right: -10px;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: var(--mint)
+          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 12.5l4 4 8-9' fill='none' stroke='%232A2250' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+          center/20px no-repeat;
+        border: 3px solid var(--ink);
+        animation: popin 0.4s var(--bounce);
+      }
+      .tile.t-github[aria-pressed="true"] {
+        color: #fff;
+      }
+      .tile small {
+        font-weight: 700;
+        font-size: 0.74rem;
+        color: var(--ink2);
+      }
+      .tile.t-github[aria-pressed="true"] small {
+        color: #e6e2ff;
+      }
+      .host-panel {
+        margin-top: 18px;
+        border: 3px dashed var(--ink);
+        border-radius: 22px;
+        padding: 18px 16px;
+        background: var(--hp, #fff);
+        animation: panel 0.45s var(--bounce);
+      }
+      @keyframes panel {
+        from {
+          transform: translateY(-10px) scale(0.97);
+          opacity: 0;
+        }
+        to {
+          transform: none;
+          opacity: 1;
+        }
+      }
+      .host-panel h4 {
+        margin: 0 0 10px;
+        font-size: 1.2rem;
+        font-weight: 900;
+      }
+      .howto {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 9px;
+        counter-reset: h;
+      }
+      .howto li {
+        counter-increment: h;
+        display: grid;
+        grid-template-columns: 32px 1fr;
+        gap: 10px;
+        align-items: start;
+      }
+      .howto li::before {
+        content: counter(h);
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: #fff;
+        border: 2.5px solid var(--ink);
+        display: grid;
+        place-items: center;
+        font-weight: 900;
+        font-size: 0.85rem;
+      }
+      .howto code,
+      .snippet {
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 0.85em;
+      }
+      .howto code {
+        background: rgba(255, 255, 255, 0.75);
+        border-radius: 6px;
+        padding: 1px 5px;
+        word-break: break-all;
+      }
+      .snippet {
+        display: block;
+        background: var(--ink);
+        color: #ffe9a8;
+        border-radius: 14px;
+        padding: 12px 14px;
+        margin-top: 10px;
+        white-space: pre-wrap;
+        word-break: break-all;
+        line-height: 1.55;
+      }
+      .host-note {
+        font-size: 0.9rem;
+        color: var(--ink2);
+        margin-top: 12px;
+      }
+
+      /* step 2 */
+      .link-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .link-row input {
+        flex: 1 1 240px;
+        min-width: 0;
+        min-height: 52px;
+        border: 3px solid var(--ink);
+        border-radius: 18px;
+        padding: 10px 14px;
+        background: #fff;
+        font-size: 1rem;
+        box-shadow: inset 0 3px 0 rgba(42, 34, 80, 0.08);
+      }
+      .link-row input:focus {
+        outline: none;
+        border-color: var(--grape);
+        box-shadow: 0 0 0 4px var(--lilac);
+      }
+      .check-out {
+        margin-top: 14px;
+        min-height: 8px;
+      }
+      .verdict {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 12px;
+        align-items: center;
+        border: 3px solid var(--ink);
+        border-radius: 20px;
+        padding: 12px 14px;
+        animation: popin 0.4s var(--bounce);
+      }
+      .verdict svg.vp {
+        width: 44px;
+        height: 64px;
+        overflow: visible;
+      }
+      .verdict b {
+        display: block;
+        font-size: 1.05rem;
+      }
+      .verdict span {
+        font-size: 0.93rem;
+        color: var(--ink2);
+        display: block;
+        line-height: 1.38;
+      }
+      .v-checking {
+        background: #fff;
+      }
+      .v-found {
+        background: var(--leaf);
+      }
+      .v-later {
+        background: #ffe9a8;
+      }
+      .v-bad {
+        background: #ffd3cc;
+      }
+      .dots::after {
+        content: "";
+        animation: dots 1.2s steps(4) infinite;
+      }
+      @keyframes dots {
+        0% {
+          content: "";
+        }
+        25% {
+          content: ".";
+        }
+        50% {
+          content: "..";
+        }
+        75% {
+          content: "...";
+        }
+      }
+      .morph {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        max-width: min(60vw, 320px);
+        background: #fff;
+        border: 2.5px solid var(--ink);
+        border-radius: 999px;
+        padding: 5px 12px;
+        font-weight: 700;
+        font-size: 0.85rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        animation: popin 0.4s var(--bounce);
+      }
+      .chip span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .morph .arrow {
+        width: 56px;
+        height: 20px;
+        flex: none;
+      }
+      .morph .arrow path {
+        stroke-dasharray: 6 6;
+        animation: march 0.6s linear infinite;
+      }
+      @keyframes march {
+        to {
+          stroke-dashoffset: -12;
+        }
+      }
+      .morph .mq {
+        width: 64px;
+        height: 64px;
+        border: 3px solid var(--ink);
+        border-radius: 10px;
+        overflow: hidden;
+        animation: popin 0.5s 0.25s var(--bounce) both;
+        flex: none;
+      }
+      .morph p {
+        flex-basis: 100%;
+        font-size: 0.9rem;
+        color: var(--ink2);
+        font-weight: 700;
+      }
+
+      /* step 3 */
+      .controls {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+      }
+      .ctrl {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        background: var(--cream);
+        border: 2.5px solid var(--ink);
+        border-radius: 18px;
+        padding: 10px 12px;
+      }
+      .ctrl label {
+        font-weight: 800;
+        font-size: 0.95rem;
+      }
+      .stepper {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .stepper button {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: 3px solid var(--ink);
+        background: #fff;
+        font-weight: 900;
+        font-size: 1.3rem;
+        line-height: 1;
+        cursor: pointer;
+        box-shadow: 0 3px 0 var(--ink);
+        transition: transform 0.12s var(--bounce);
+      }
+      .stepper button:active {
+        transform: translateY(3px);
+        box-shadow: 0 0 0 var(--ink);
+      }
+      .stepper button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .stepper output {
+        min-width: 62px;
+        text-align: center;
+        font-weight: 900;
+        font-size: 1.15rem;
+      }
+      .paper-note {
+        font-size: 0.88rem;
+        color: var(--ink2);
+        margin-top: 8px;
+        font-weight: 700;
+      }
+      .qgrid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+        padding: 14px;
+        background: repeating-linear-gradient(
+          45deg,
+          #fff8ee 0 10px,
+          #fff2e0 10px 20px
+        );
+        border: 2.5px solid var(--ink);
+        border-radius: 20px;
+        justify-content: center;
+      }
+      .qtile {
+        width: var(--tw, 74px);
+        background: #fff;
+        border: 2.5px solid var(--ink);
+        border-radius: 12px;
+        padding: 6px 6px 3px;
+        box-shadow: 0 3px 0 var(--ink);
+        text-align: center;
+        transition: width 0.3s var(--bounce);
+      }
+      .qtile.new {
+        animation: popin 0.4s var(--bounce) both;
+      }
+      .qtile svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .qtile small {
+        font-size: 0.66rem;
+        font-weight: 800;
+        color: var(--ink2);
+        display: block;
+        white-space: nowrap;
+      }
+      .print-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: center;
+        margin-top: 18px;
+      }
+      .hint {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        background: #ffe9a8;
+        border: 2.5px solid var(--ink);
+        border-radius: 16px;
+        padding: 8px 12px;
+        font-size: 0.92rem;
+        font-weight: 700;
+        flex: 1 1 240px;
+      }
+      .hint svg {
+        flex: none;
+        width: 34px;
+        height: 34px;
+      }
+
+      /* step 4 */
+      .hang-grid {
+        display: grid;
+        gap: 16px;
+        align-items: center;
+      }
+      .hang-svg {
+        width: 100%;
+        max-width: 340px;
+        height: auto;
+        display: block;
+        margin: 0 auto;
+        border: 3px solid var(--ink);
+        border-radius: 22px;
+        background: #fff0d6;
+      }
+      .checks {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 10px;
+      }
+      .checks button {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        text-align: left;
+        background: #fff;
+        border: 2.5px solid var(--ink);
+        border-radius: 16px;
+        padding: 10px 12px;
+        cursor: pointer;
+        font-weight: 700;
+        transition:
+          transform 0.2s var(--bounce),
+          background 0.2s;
+        min-height: 52px;
+      }
+      .checks button:hover {
+        transform: translateX(3px);
+      }
+      .checks .box {
+        flex: none;
+        width: 28px;
+        height: 28px;
+        border-radius: 9px;
+        border: 3px solid var(--ink);
+        background: #fff;
+        display: grid;
+        place-items: center;
+        transition: background 0.2s;
+      }
+      .checks .box svg {
+        width: 18px;
+        height: 18px;
+        opacity: 0;
+        transform: scale(0.3);
+        transition:
+          transform 0.3s var(--bounce),
+          opacity 0.2s;
+      }
+      .checks button[aria-pressed="true"] {
+        background: #e3faef;
+      }
+      .checks button[aria-pressed="true"] .box {
+        background: var(--mint);
+      }
+      .checks button[aria-pressed="true"] .box svg {
+        opacity: 1;
+        transform: scale(1);
+      }
+      .checks span small {
+        display: block;
+        font-weight: 600;
+        color: var(--ink2);
+        font-size: 0.84rem;
+      }
+      .cheer-line {
+        font-weight: 900;
+        margin-top: 12px;
+        color: #14845e;
+        min-height: 1.5em;
+      }
+
+      /* step 5 */
+      .story {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 12px;
+      }
+      .frame {
+        background: var(--skylight);
+        border: 2.5px solid var(--ink);
+        border-radius: 18px;
+        overflow: hidden;
+      }
+      .frame svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .frame p {
+        background: #fff;
+        border-top: 2.5px solid var(--ink);
+        padding: 8px 10px;
+        font-weight: 800;
+        font-size: 0.9rem;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .frame p i {
+        font-style: normal;
+        width: 22px;
+        height: 22px;
+        flex: none;
+        border-radius: 50%;
+        background: var(--grape);
+        color: #fff;
+        display: grid;
+        place-items: center;
+        font-size: 0.72rem;
+        border: 2px solid var(--ink);
+      }
+      .scanmini {
+        animation: scanmini 2.4s ease-in-out infinite;
+      }
+      @keyframes scanmini {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(26px);
+        }
+      }
+      .walkacross {
+        animation: walkacross 4s linear infinite;
+      }
+      @keyframes walkacross {
+        from {
+          transform: translateX(-30px);
+        }
+        to {
+          transform: translateX(60px);
+        }
+      }
+      .ar-result {
+        font-weight: 800;
+        margin-top: 12px;
+        min-height: 1.5em;
+      }
+
+      /* step 6 */
+      .done-grid {
+        display: grid;
+        gap: 16px;
+      }
+      .filecard {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        background: var(--cream);
+        border: 2.5px solid var(--ink);
+        border-radius: 20px;
+        padding: 12px 14px;
+      }
+      .filecard svg {
+        width: 56px;
+        height: 62px;
+        flex: none;
+      }
+      .filecard b {
+        display: block;
+        font-size: 1.1rem;
+      }
+      .filecard span {
+        color: var(--ink2);
+        font-size: 0.92rem;
+      }
+      .replace {
+        background: #fff;
+        border: 2.5px solid var(--ink);
+        border-radius: 20px;
+        padding: 14px;
+      }
+      .replace label {
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .replace select {
+        border: 2.5px solid var(--ink);
+        border-radius: 12px;
+        padding: 6px 10px;
+        background: var(--cream);
+        font-weight: 800;
+        min-height: 42px;
+      }
+      .replace p {
+        margin-top: 10px;
+      }
+      .swap-svg {
+        width: 100%;
+        max-width: 360px;
+        height: auto;
+        display: block;
+        margin: 0 auto;
+      }
+      .oldbox {
+        animation: oldbox 4.4s ease-in-out infinite;
+      }
+      .newbox {
+        animation: newbox 4.4s ease-in-out infinite;
+      }
+      @keyframes oldbox {
+        0%,
+        20% {
+          transform: translateX(0);
+          opacity: 1;
+        }
+        45%,
+        100% {
+          transform: translateX(-40px) translateY(18px) rotate(-12deg);
+          opacity: 0;
+        }
+      }
+      @keyframes newbox {
+        0%,
+        35% {
+          transform: translateX(50px);
+          opacity: 0;
+        }
+        60%,
+        100% {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      .keep {
+        font-weight: 900;
+        font-size: 1.08rem;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        background: var(--leaf);
+        border: 2.5px solid var(--ink);
+        border-radius: 18px;
+        padding: 10px 14px;
+      }
+      .keep svg {
+        flex: none;
+        width: 30px;
+        height: 30px;
+      }
+
+      footer {
+        padding: 30px 0 50px;
+        text-align: center;
+        color: var(--ink2);
+        font-size: 0.9rem;
+        font-weight: 700;
+      }
+
+      /* ---------- fake AR ---------- */
+      .ar {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        display: none;
+        overflow: hidden;
+        background: #9fd9ff;
+        color: #fff;
+      }
+      .ar.open {
+        display: block;
+        animation: aropen 0.35s ease-out;
+      }
+      @keyframes aropen {
+        from {
+          opacity: 0;
+          transform: scale(1.04);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .ar-bg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .ar-top {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 34px 14px 10px;
+        background: linear-gradient(rgba(20, 16, 50, 0.55), transparent);
+        font-weight: 800;
+        z-index: 3;
+      }
+      .ar-close {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 2.5px solid #fff;
+        background: rgba(42, 34, 80, 0.55);
+        color: #fff;
+        font-size: 1.3rem;
+        cursor: pointer;
+        font-weight: 900;
+      }
+      .ar-target {
+        position: absolute;
+        left: 50%;
+        top: 44%;
+        width: min(36vmin, 200px);
+        aspect-ratio: 1;
+        transform: translate(-50%, -50%);
+        z-index: 2;
+        transition:
+          opacity 0.5s,
+          transform 0.5s;
+      }
+      .ar-target .poster {
+        position: absolute;
+        inset: 14%;
+        background: #fff;
+        border-radius: 6px;
+        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
+        padding: 6%;
+      }
+      .ar-target .poster svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .ar-target .corner {
+        position: absolute;
+        width: 26%;
+        height: 26%;
+        border: 5px solid #fff;
+        border-radius: 6px;
+      }
+      .ar-target .c1 {
+        top: 0;
+        left: 0;
+        border-right: 0;
+        border-bottom: 0;
+      }
+      .ar-target .c2 {
+        top: 0;
+        right: 0;
+        border-left: 0;
+        border-bottom: 0;
+      }
+      .ar-target .c3 {
+        bottom: 0;
+        left: 0;
+        border-right: 0;
+        border-top: 0;
+      }
+      .ar-target .c4 {
+        bottom: 0;
+        right: 0;
+        border-left: 0;
+        border-top: 0;
+      }
+      .ar-target .sweep {
+        position: absolute;
+        left: 10%;
+        right: 10%;
+        top: 12%;
+        height: 4px;
+        background: var(--coral);
+        border-radius: 3px;
+        box-shadow: 0 0 14px var(--coral);
+        animation: sweep 1.4s ease-in-out infinite alternate;
+      }
+      @keyframes sweep {
+        to {
+          top: 86%;
+        }
+      }
+      .ar-target.locked .corner {
+        border-color: var(--mint);
+        animation: lock 0.5s var(--bounce);
+      }
+      .ar-target.locked .sweep {
+        display: none;
+      }
+      .ar-target.locked {
+        transform: translate(-50%, -50%) scale(0.82);
+      }
+      @keyframes lock {
+        from {
+          transform: scale(1.3);
+        }
+        to {
+          transform: scale(1);
+        }
+      }
+      .ar-layer {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+      }
+      .ar-pin {
+        position: absolute;
+        transform: translate(-50%, -100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        animation: arpin 0.55s var(--bounce) both;
+      }
+      @keyframes arpin {
+        from {
+          transform: translate(-50%, -60%) scale(0);
+        }
+        to {
+          transform: translate(-50%, -100%) scale(1);
+        }
+      }
+      .ar-pin .bubble {
+        background: #fff;
+        color: var(--ink);
+        border: 2.5px solid var(--ink);
+        border-radius: 14px;
+        padding: 4px 10px;
+        font-weight: 900;
+        font-size: 0.85rem;
+        white-space: nowrap;
+        box-shadow: 0 3px 0 var(--ink);
+      }
+      .ar-pin svg {
+        width: 30px;
+        height: 40px;
+        margin-top: 2px;
+      }
+      .ar-photo {
+        background: #fff;
+        padding: 5px 5px 14px;
+        border: 2.5px solid var(--ink);
+        border-radius: 4px;
+        box-shadow: 0 4px 0 var(--ink);
+        transform: rotate(-4deg);
+      }
+      .ar-photo svg {
+        width: 64px;
+        height: 48px;
+        margin: 0;
+        display: block;
+      }
+      .ar-bottom {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 3;
+        padding: 12px 14px calc(18px + env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        background: linear-gradient(transparent, rgba(20, 16, 50, 0.5));
+      }
+      .ar-status {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #fff;
+        color: var(--ink);
+        border: 3px solid var(--ink);
+        border-radius: 999px;
+        padding: 5px 16px 5px 6px;
+        font-weight: 800;
+        box-shadow: 0 4px 0 var(--ink);
+        max-width: 100%;
+      }
+      .ar-status svg {
+        width: 30px;
+        height: 44px;
+        flex: none;
+        overflow: visible;
+      }
+      .ar-tools {
+        display: none;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .ar-tools.show {
+        display: flex;
+        animation: popin 0.4s var(--bounce);
+      }
+
+      /* confetti */
+      .confetti {
+        position: fixed;
+        top: -20px;
+        width: 10px;
+        height: 14px;
+        z-index: 80;
+        pointer-events: none;
+        border-radius: 3px;
+        animation: fall var(--d, 2.2s) cubic-bezier(0.2, 0.6, 0.4, 1) forwards;
+      }
+      @keyframes fall {
+        to {
+          transform: translate(var(--x, 0), 105vh) rotate(var(--r, 540deg));
+        }
+      }
+
+      /* ---------- layout breakpoints ---------- */
+      @media (min-width: 620px) {
+        .jlist {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .jcard {
+          grid-template-columns: 1fr;
+          padding: 12px;
+          align-items: start;
+        }
+        .hang-grid {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+        }
+        .done-grid {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        }
+        .done-grid .keep {
+          grid-column: 1 / -1;
+        }
+      }
+      @media (min-width: 760px) {
+        .hero {
+          padding: 64px 0 34px;
+        }
+        .hero-grid {
+          grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+          gap: 34px;
+        }
+        .step-card {
+          padding: 28px 28px 26px;
+        }
+      }
+      @media (min-width: 860px) {
+        .jlist {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      @media (max-width: 619px) {
+        .jlist::before {
+          content: "";
+          position: absolute;
+          left: 73px;
+          top: 20px;
+          bottom: 20px;
+          border-left: 4px dashed rgba(42, 34, 80, 0.3);
+          z-index: 0;
+        }
+        .jcard {
+          z-index: 1;
+        }
+      }
+      @media (max-width: 420px) {
+        .rail {
+          padding: 6px 8px 4px;
+        }
+        .rail-dot {
+          min-width: 34px;
+        }
+        .rail-dot small {
+          font-size: 0.6rem;
+        }
+        .head-pinny {
+          width: 44px;
+          height: 70px;
+          margin-top: -20px;
+        }
+        .step-head {
+          gap: 10px;
+        }
+      }
+      /* landscape phones: keep the hero within one screen and the rail slim */
+      @media (orientation: landscape) and (max-height: 500px) {
+        .hero {
+          padding: 40px 0 18px;
+        }
+        .hero-grid {
+          grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+          gap: 22px;
+        }
+        .hero h1 {
+          font-size: clamp(1.8rem, 3.4vw + 0.6rem, 2.6rem);
+          margin: 10px 0 8px;
+        }
+        .hero .sub {
+          font-size: 1rem;
+        }
+        .hero-ctas {
+          margin-top: 14px;
+        }
+        .scene {
+          max-height: 300px;
+        }
+        .rail {
+          top: 28px;
+          padding: 4px 12px 2px;
+        }
+        .rail-track {
+          padding-top: 28px;
+        }
+        .rail-pinny {
+          height: 32px;
+          width: 24px;
+          margin-left: -12px;
+        }
+        .rail-dot small {
+          display: none;
+        }
+        .rail-line,
+        .rail-fill {
+          bottom: 14px;
+        }
+        .step {
+          scroll-margin-top: 90px;
+        }
+        .jlist {
+          grid-template-columns: repeat(3, 1fr);
+        }
+        .jcard {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+        .hero h1 .mine path {
+          stroke-dashoffset: 0;
+        }
+        .scanline {
+          opacity: 0.8;
+        }
+        .beam {
+          opacity: 0.2;
+        }
+      }
+      /* ---- refinements after the first screenshot pass ---- */
+      .hero h1 { margin-bottom: 24px; }
+      .morph { display: grid; grid-template-columns: minmax(0, max-content) auto auto; justify-content: start; }
+      .morph p { grid-column: 1 / -1; }
+      .chip { min-width: 0; max-width: none; }
+      .rail-dot.is-current i { box-shadow: 0 0 0 4px var(--sun); }
+      @media (max-width: 440px) {
+        .tile.t-server { grid-column: 1 / -1; }
+      }
+      @media (max-width: 520px) {
+        .frame { display: grid; grid-template-columns: 132px 1fr; }
+        .frame svg { height: 100%; object-fit: cover; }
+        .frame p { border-top: 0; border-left: 2.5px solid var(--ink); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation: none !important; transition: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="proto-label">Prototype L2 - Playful illustrated</div>
+
+    <!-- ================= HERO ================= -->
+    <header class="hero">
+      <div class="wrap">
+        <div class="hero-grid">
+          <div>
+            <span class="kicker"><b>Hi!</b> Liked that tour?</span>
+            <h1>
+              You just walked a tour.
+              <span class="mine"
+                >Make your own.<svg
+                  viewBox="0 0 200 20"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M3 14 Q 40 3 80 12 T 150 10 T 197 8"
+                    fill="none"
+                    stroke="#FFC93C"
+                    stroke-width="7"
+                    stroke-linecap="round"
+                  /></svg
+              ></span>
+            </h1>
+            <p class="sub">
+              Hang a little code where your tour starts, then walk around and
+              drop pins and photos right into the world. People scan the code
+              and follow along. All you need is a phone, a printer and a nice
+              spot.
+            </p>
+            <div class="hero-ctas">
+              <a class="btn btn-coral btn-big" href="#flow"
+                >Let's make one
+                <svg class="tick" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M5 12h13M13 6l6 6-6 6"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  /></svg
+              ></a>
+              <a class="btn btn-white" href="#journey">How it works</a>
+            </div>
+          </div>
+
+          <svg
+            class="scene"
+            viewBox="0 0 420 300"
+            role="img"
+            aria-label="A friendly phone character scans a QR poster in a park, and pins pop up around it"
+          >
+            <!-- sun -->
+            <g transform="translate(352 58)">
+              <g
+                class="sun-rays"
+                stroke="#FFC93C"
+                stroke-width="5"
+                stroke-linecap="round"
+              >
+                <path
+                  d="M0 -42v10M0 32v10M-42 0h10M32 0h10M-30 -30l7 7M23 23l7 7M-30 30l7 -7M23 -23l7 -7"
+                />
+              </g>
+              <circle r="24" fill="#FFC93C" stroke="#2A2250" stroke-width="3" />
+              <path
+                d="M-8 4 Q0 11 8 4"
+                fill="none"
+                stroke="#2A2250"
+                stroke-width="2.5"
+                stroke-linecap="round"
+              />
+              <circle cx="-7" cy="-4" r="2.4" fill="#2A2250" />
+              <circle cx="7" cy="-4" r="2.4" fill="#2A2250" />
+            </g>
+            <g class="cloud">
+              <path
+                d="M40 70 h56 a13 13 0 0 0 0-26 a18 18 0 0 0-33-6 a14 14 0 0 0-23 32 z"
+                fill="#fff"
+                stroke="#2A2250"
+                stroke-width="3"
+              />
+            </g>
+            <g class="cloud2">
+              <path
+                d="M190 46 h40 a10 10 0 0 0 0-20 a14 14 0 0 0-25-4 a11 11 0 0 0-15 24 z"
+                fill="#fff"
+                stroke="#2A2250"
+                stroke-width="3"
+              />
+            </g>
+            <!-- hills -->
+            <path
+              d="M0 200 Q 90 150 200 192 T 420 178 V300 H0Z"
+              fill="#8EE4B8"
+              stroke="#2A2250"
+              stroke-width="3"
+            />
+            <path
+              d="M0 238 Q 120 212 240 240 T 420 228 V300 H0Z"
+              fill="#2FD39A"
+              stroke="#2A2250"
+              stroke-width="3"
+            />
+            <path
+              d="M150 300 C 170 270 210 262 260 252 S 330 238 360 232"
+              fill="none"
+              stroke="#FFE3C2"
+              stroke-width="18"
+              stroke-linecap="round"
+            />
+            <!-- trees -->
+            <g transform="translate(52 214)">
+              <rect
+                x="-4"
+                y="-6"
+                width="8"
+                height="26"
+                rx="3"
+                fill="#B7774A"
+                stroke="#2A2250"
+                stroke-width="2.5"
+              />
+              <circle
+                cy="-22"
+                r="22"
+                fill="#2FD39A"
+                stroke="#2A2250"
+                stroke-width="3"
+              />
+              <circle cx="-7" cy="-27" r="5" fill="#8EE4B8" />
+            </g>
+            <g transform="translate(396 196)">
+              <rect
+                x="-4"
+                y="-6"
+                width="8"
+                height="26"
+                rx="3"
+                fill="#B7774A"
+                stroke="#2A2250"
+                stroke-width="2.5"
+              />
+              <circle
+                cy="-20"
+                r="18"
+                fill="#7C5CFF"
+                stroke="#2A2250"
+                stroke-width="3"
+              />
+              <circle cx="-6" cy="-24" r="4" fill="#C9BCFF" />
+            </g>
+            <!-- poster on a post -->
+            <rect
+              x="289"
+              y="160"
+              width="7"
+              height="82"
+              rx="3"
+              fill="#B7774A"
+              stroke="#2A2250"
+              stroke-width="2.5"
+            />
+            <rect
+              x="262"
+              y="108"
+              width="62"
+              height="62"
+              rx="8"
+              fill="#fff"
+              stroke="#2A2250"
+              stroke-width="3"
+            />
+            <g
+              transform="translate(270 116) scale(2.19)"
+              data-qr="hero-poster"
+            ></g>
+            <rect
+              class="scanline"
+              x="266"
+              y="117"
+              width="54"
+              height="3.5"
+              rx="1.7"
+              fill="#FF6B57"
+            />
+            <g transform="translate(322 110)">
+              <g class="found-badge">
+                <circle
+                  r="13"
+                  fill="#2FD39A"
+                  stroke="#2A2250"
+                  stroke-width="3"
+                />
+                <path
+                  d="M-6 0l4 4 8-8"
+                  fill="none"
+                  stroke="#2A2250"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </g>
+            </g>
+            <!-- scan beam -->
+            <polygon
+              class="beam"
+              points="206,182 262,110 262,170"
+              fill="#FF6B57"
+            />
+            <!-- pins that pop -->
+            <g transform="translate(96 236)">
+              <g class="hp" style="animation-delay: 0s">
+                <path
+                  d="M0 0 C-9 -12 -13 -17 -13 -24 a13 13 0 1 1 26 0 c0 7 -4 12 -13 24z"
+                  fill="#FF6B57"
+                  stroke="#2A2250"
+                  stroke-width="3"
+                />
+                <circle cy="-24" r="5" fill="#fff" />
+              </g>
+            </g>
+            <g transform="translate(130 176)">
+              <g class="hp" style="animation-delay: 0.35s">
+                <rect
+                  x="-22"
+                  y="-44"
+                  width="44"
+                  height="22"
+                  rx="10"
+                  fill="#fff"
+                  stroke="#2A2250"
+                  stroke-width="2.5"
+                />
+                <text
+                  x="0"
+                  y="-29"
+                  text-anchor="middle"
+                  font-size="10"
+                  font-weight="800"
+                  fill="#2A2250"
+                  font-family="system-ui,sans-serif"
+                >
+                  Old oak
+                </text>
+                <path
+                  d="M0 0 C-7 -9 -10 -13 -10 -18 a10 10 0 1 1 20 0 c0 5 -3 9 -10 18z"
+                  fill="#FFC93C"
+                  stroke="#2A2250"
+                  stroke-width="2.5"
+                />
+              </g>
+            </g>
+            <g transform="translate(370 236)">
+              <g class="hp" style="animation-delay: 0.7s">
+                <path
+                  d="M0 0 C-9 -12 -13 -17 -13 -24 a13 13 0 1 1 26 0 c0 7 -4 12 -13 24z"
+                  fill="#5BB8FF"
+                  stroke="#2A2250"
+                  stroke-width="3"
+                />
+                <circle cy="-24" r="5" fill="#fff" />
+              </g>
+            </g>
+            <g transform="translate(236 222)">
+              <g class="hp" style="animation-delay: 1.05s">
+                <rect
+                  x="-18"
+                  y="-50"
+                  width="36"
+                  height="32"
+                  rx="3"
+                  fill="#fff"
+                  stroke="#2A2250"
+                  stroke-width="2.5"
+                  transform="rotate(-6 0 -34)"
+                />
+                <g transform="rotate(-6 0 -34)">
+                  <rect x="-14" y="-46" width="28" height="18" fill="#DDF1FF" />
+                  <path d="M-14 -28 l9 -9 6 5 6 -7 7 11z" fill="#2FD39A" />
+                  <circle cx="7" cy="-41" r="3" fill="#FFC93C" />
+                </g>
+                <path d="M0 -18 V0" stroke="#2A2250" stroke-width="2.5" />
+              </g>
+            </g>
+            <g transform="translate(160 262)">
+              <g class="hp" style="animation-delay: 1.4s">
+                <path
+                  d="M0 0 C-7 -9 -10 -13 -10 -18 a10 10 0 1 1 20 0 c0 5 -3 9 -10 18z"
+                  fill="#FF8FC7"
+                  stroke="#2A2250"
+                  stroke-width="2.5"
+                />
+                <circle cy="-18" r="4" fill="#fff" />
+              </g>
+            </g>
+            <!-- mascot -->
+            <g transform="translate(196 268) scale(1.05)">
+              <g class="hero-hop"><g data-pinny="point"></g></g>
+            </g>
+          </svg>
+        </div>
+
+        <div class="why" aria-label="Good to know">
+          <ul>
+            <li>
+              <span class="dot" style="background: #ffc93c"
+                ><svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M7 18h10a4 4 0 0 0 .6-8A6 6 0 0 0 6 9a4.5 4.5 0 0 0 1 9z"
+                    fill="#fff"
+                    stroke="#2A2250"
+                    stroke-width="2"
+                  />
+                  <path
+                    d="M12 15.5s-3-1.8-3-3.6a1.6 1.6 0 0 1 3-.8 1.6 1.6 0 0 1 3 .8c0 1.8-3 3.6-3 3.6z"
+                    fill="#FF6B57"
+                  /></svg
+              ></span>
+              <div>
+                <b>Your own storage</b
+                ><span
+                  >The tour lives in your Drive, Dropbox or server. No server of
+                  ours in between.</span
+                >
+              </div>
+            </li>
+            <li>
+              <span class="dot" style="background: #5bb8ff"
+                ><svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect
+                    x="7"
+                    y="3"
+                    width="10"
+                    height="18"
+                    rx="2.5"
+                    fill="#fff"
+                    stroke="#2A2250"
+                    stroke-width="2"
+                  />
+                  <path
+                    d="M4 4l16 16"
+                    stroke="#FF6B57"
+                    stroke-width="2.6"
+                    stroke-linecap="round"
+                  /></svg
+              ></span>
+              <div>
+                <b>No app to install</b
+                ><span
+                  >Visitors scan with their camera. It opens in the
+                  browser.</span
+                >
+              </div>
+            </li>
+            <li>
+              <span class="dot" style="background: #2fd39a"
+                ><svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M3 9a13 13 0 0 1 18 0M6.5 12.5a8 8 0 0 1 11 0M10 16a3 3 0 0 1 4 0"
+                    fill="none"
+                    stroke="#2A2250"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                  />
+                  <path
+                    d="M4 4l16 16"
+                    stroke="#FF6B57"
+                    stroke-width="2.6"
+                    stroke-linecap="round"
+                  /></svg
+              ></span>
+              <div>
+                <b>Works offline</b
+                ><span
+                  >Once loaded, the tour runs in the browser. Weak signal on
+                  site is fine.</span
+                >
+              </div>
+            </li>
+            <li>
+              <span class="dot" style="background: #ff8fc7"
+                ><svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle
+                    cx="12"
+                    cy="9"
+                    r="4"
+                    fill="#fff"
+                    stroke="#2A2250"
+                    stroke-width="2"
+                  />
+                  <path
+                    d="M4.5 20a7.5 7.5 0 0 1 15 0"
+                    fill="#fff"
+                    stroke="#2A2250"
+                    stroke-width="2"
+                  />
+                  <path
+                    d="M15 15l5 5M20 15l-5 5"
+                    stroke="#FF6B57"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                  /></svg
+              ></span>
+              <div>
+                <b>No account</b
+                ><span>Free, no sign-up. Just a link and a printed code.</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </header>
+
+    <!-- ================= JOURNEY ================= -->
+    <section class="journey" id="journey" aria-labelledby="jt">
+      <div class="wrap">
+        <h2 class="sec-title" id="jt">Six little steps</h2>
+        <p class="sec-sub">
+          Pinny here will walk you through it. Most of it happens outside, with
+          your phone.
+        </p>
+        <ol class="jlist">
+          <li class="jcard card">
+            <svg viewBox="0 0 160 100" aria-hidden="true">
+              <path
+                d="M96 64 h44 a12 12 0 0 0 0-24 a16 16 0 0 0-30-6 A12 12 0 0 0 96 64 z"
+                fill="#fff"
+                stroke="#2A2250"
+                stroke-width="3"
+              />
+              <g class="boxhop">
+                <rect
+                  x="107"
+                  y="70"
+                  width="24"
+                  height="19"
+                  rx="3"
+                  fill="#FFC93C"
+                  stroke="#2A2250"
+                  stroke-width="2.5"
+                />
+                <path
+                  d="M119 70v19"
+                  stroke="#2A2250"
+                  stroke-width="2"
+                  stroke-dasharray="2.5 2.5"
+                />
+              </g>
+              <g transform="translate(42 96) scale(.92)" data-pinny="wave"></g>
+            </svg>
+            <div>
+              <h3><span class="jnum">1</span>Pick a home</h3>
+              <p>
+                Choose where the tour file lives: your Drive, Dropbox, OneDrive,
+                GitHub or own server.
+              </p>
+            </div>
+          </li>
+          <li class="jcard card">
+            <svg viewBox="0 0 160 100" aria-hidden="true">
+              <rect
+                x="74"
+                y="36"
+                width="80"
+                height="28"
+                rx="14"
+                fill="#fff"
+                stroke="#2A2250"
+                stroke-width="3"
+              />
+              <g
+                fill="none"
+                stroke="#5BB8FF"
+                stroke-width="3"
+                stroke-linecap="round"
+              >
+                <rect
+                  x="81"
+                  y="45"
+                  width="10"
+                  height="7"
+                  rx="3.5"
+                  transform="rotate(-35 86 48.5)"
+                />
+                <rect
+                  x="87"
+                  y="49"
+                  width="10"
+                  height="7"
+                  rx="3.5"
+                  transform="rotate(-35 92 52.5)"
+                />
+              </g>
+              <text
+                x="101"
+                y="55"
+                font-size="10.5"
+                font-weight="800"
+                fill="#2A2250"
+                font-family="system-ui,sans-serif"
+              >
+                https://...
+              </text>
+              <circle
+                class="ripple"
+                cx="142"
+                cy="50"
+                r="9"
+                fill="none"
+                stroke="#FF6B57"
+                stroke-width="3"
+              />
+              <g transform="translate(42 96) scale(.92)" data-pinny="point"></g>
+            </svg>
+            <div>
+              <h3><span class="jnum">2</span>Paste the link</h3>
+              <p>
+                Copy the share link and paste it here. We check it can be
+                reached.
+              </p>
+            </div>
+          </li>
+          <li class="jcard card">
+            <svg viewBox="0 0 160 100" aria-hidden="true">
+              <g class="paper">
+                <rect
+                  x="100"
+                  y="46"
+                  width="36"
+                  height="32"
+                  fill="#fff"
+                  stroke="#2A2250"
+                  stroke-width="2.5"
+                />
+                <g
+                  transform="translate(108 52) scale(.95)"
+                  data-qr="j-print"
+                ></g>
+              </g>
+              <rect
+                x="94"
+                y="34"
+                width="48"
+                height="12"
+                rx="4"
+                fill="#fff"
+                stroke="#2A2250"
+                stroke-width="2.5"
+              />
+              <rect
+                x="84"
+                y="44"
+                width="68"
+                height="30"
+                rx="8"
+                fill="#5BB8FF"
+                stroke="#2A2250"
+                stroke-width="3"
+              />
+              <rect x="96" y="66" width="44" height="5" rx="2" fill="#2A2250" />
+              <circle cx="142" cy="53" r="3" fill="#2FD39A" />
+              <g transform="translate(42 96) scale(.92)" data-pinny="idle"></g>
+            </svg>
+            <div>
+              <h3><span class="jnum">3</span>Print the code</h3>
+              <p>
+                One click makes a PDF. One code per poster, printed at actual
+                size.
+              </p>
+            </div>
+          </li>
+          <li class="jcard card">
+            <svg viewBox="0 0 160 100" aria-hidden="true">
+              <rect x="76" y="0" width="84" height="100" fill="#FFE3C2" />
+              <path
+                d="M76 0v100"
+                stroke="#2A2250"
+                stroke-width="2"
+                opacity=".25"
+              />
+              <g class="swing">
+                <rect
+                  x="97"
+                  y="22"
+                  width="44"
+                  height="50"
+                  rx="4"
+                  fill="#fff"
+                  stroke="#2A2250"
+                  stroke-width="3"
+                />
+                <g
+                  transform="translate(104 30) scale(1.43)"
+                  data-qr="j-hang"
+                ></g>
+                <rect
+                  x="92"
+                  y="17"
+                  width="16"
+                  height="7"
+                  rx="2"
+                  fill="#FFC93C"
+                  opacity=".95"
+                  transform="rotate(-20 100 20)"
+                />
+                <rect
+                  x="130"
+                  y="17"
+                  width="16"
+                  height="7"
+                  rx="2"
+                  fill="#FFC93C"
+                  opacity=".95"
+                  transform="rotate(20 138 20)"
+                />
+              </g>
+              <g transform="translate(42 96) scale(.92)" data-pinny="point"></g>
+            </svg>
+            <div>
+              <h3><span class="jnum">4</span>Hang it up</h3>
+              <p>
+                Flat on a wall, at chest height, right where the tour begins.
+              </p>
+            </div>
+          </li>
+          <li class="jcard card">
+            <svg viewBox="0 0 160 100" aria-hidden="true">
+              <path d="M0 80 Q80 66 160 78 V100 H0z" fill="#8EE4B8" />
+              <g transform="translate(98 72)">
+                <g class="jp" style="animation-delay: 0s">
+                  <path
+                    d="M0 0 C-7 -9 -10 -13 -10 -18 a10 10 0 1 1 20 0 c0 5 -3 9 -10 18z"
+                    fill="#FF6B57"
+                    stroke="#2A2250"
+                    stroke-width="2.5"
+                  />
+                  <circle cy="-18" r="4" fill="#fff" />
+                </g>
+              </g>
+              <g transform="translate(126 50)">
+                <g class="jp" style="animation-delay: 0.4s">
+                  <rect
+                    x="-14"
+                    y="-26"
+                    width="28"
+                    height="22"
+                    rx="2"
+                    fill="#fff"
+                    stroke="#2A2250"
+                    stroke-width="2.5"
+                  />
+                  <rect x="-10" y="-22" width="20" height="12" fill="#5BB8FF" />
+                  <path d="M-10 -10l6-6 4 3 4-5 6 8z" fill="#2FD39A" />
+                  <path d="M0 -4v4" stroke="#2A2250" stroke-width="2.5" />
+                </g>
+              </g>
+              <g transform="translate(148 80)">
+                <g class="jp" style="animation-delay: 0.8s">
+                  <path
+                    d="M0 0 C-7 -9 -10 -13 -10 -18 a10 10 0 1 1 20 0 c0 5 -3 9 -10 18z"
+                    fill="#FFC93C"
+                    stroke="#2A2250"
+                    stroke-width="2.5"
+                  />
+                  <circle cy="-18" r="4" fill="#fff" />
+                </g>
+              </g>
+              <g transform="translate(42 96) scale(.92)" data-pinny="walk"></g>
+            </svg>
+            <div>
+              <h3><span class="jnum">5</span>Create in AR</h3>
+              <p>
+                Scan your code, walk around, place text pins and photos in 3D.
+              </p>
+            </div>
+          </li>
+          <li class="jcard card">
+            <svg viewBox="0 0 160 100" aria-hidden="true">
+              <rect
+                x="98"
+                y="52"
+                width="36"
+                height="30"
+                rx="4"
+                fill="#FFC93C"
+                stroke="#2A2250"
+                stroke-width="3"
+              />
+              <path
+                d="M116 52v30"
+                stroke="#2A2250"
+                stroke-width="2"
+                stroke-dasharray="3 3"
+              />
+              <g transform="translate(136 50)">
+                <circle
+                  r="11"
+                  fill="#2FD39A"
+                  stroke="#2A2250"
+                  stroke-width="2.5"
+                />
+                <path
+                  d="M-5 0l3.5 3.5 6.5-7"
+                  fill="none"
+                  stroke="#2A2250"
+                  stroke-width="2.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </g>
+              <path
+                class="twinkle"
+                d="M96 30l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"
+                fill="#FF8FC7"
+              />
+              <path
+                class="twinkle"
+                style="animation-delay: 0.6s"
+                d="M146 18l1.6 4 4 1.6-4 1.6-1.6 4-1.6-4-4-1.6 4-1.6z"
+                fill="#7C5CFF"
+              />
+              <g transform="translate(42 96) scale(.92)" data-pinny="cheer"></g>
+            </svg>
+            <div>
+              <h3><span class="jnum">6</span>Swap the file</h3>
+              <p>
+                Your tour is saved on the phone. Replace the hosted file, and
+                the code keeps working.
+              </p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ================= FLOW ================= -->
+    <main class="flow" id="flow">
+      <div class="wrap narrow">
+        <h2 class="sec-title">Let's build yours</h2>
+        <p class="sec-sub">
+          Go step by step. You can stop after printing and do the walking part
+          later.
+        </p>
+
+        <nav class="rail" aria-label="Your progress">
+          <div class="rail-track" id="railTrack">
+            <div class="rail-line"></div>
+            <div class="rail-fill" id="railFill"></div>
+            <div class="rail-pinny" id="railPinny" aria-hidden="true">
+              <svg viewBox="-26 -88 52 94"><g data-pinny="idle"></g></svg>
+            </div>
+            <button class="rail-dot" data-go="1" aria-label="Step 1: home">
+              <i>1</i><small>Home</small>
+            </button>
+            <button class="rail-dot" data-go="2" aria-label="Step 2: link">
+              <i>2</i><small>Link</small>
+            </button>
+            <button class="rail-dot" data-go="3" aria-label="Step 3: print">
+              <i>3</i><small>Print</small>
+            </button>
+            <button class="rail-dot" data-go="4" aria-label="Step 4: hang">
+              <i>4</i><small>Hang</small>
+            </button>
+            <button class="rail-dot" data-go="5" aria-label="Step 5: create">
+              <i>5</i><small>Create</small>
+            </button>
+            <button class="rail-dot" data-go="6" aria-label="Step 6: done">
+              <i>6</i><small>Done</small>
+            </button>
+          </div>
+        </nav>
+
+        <!-- STEP 1 -->
+        <section class="step" id="s1" data-step="1" aria-labelledby="s1t">
+          <div class="step-card card">
+            <div class="step-head">
+              <div class="num">1</div>
+              <div>
+                <p class="eyebrow">Step 1</p>
+                <h3 id="s1t">Where will your tour live?</h3>
+                <p class="lead">
+                  Pick the storage you already use. The tour is one small file,
+                  and it stays yours.
+                </p>
+                <span class="done-flag"
+                  ><svg class="tick" viewBox="0 0 24 24">
+                    <path
+                      d="M6 12.5l4 4 8-9"
+                      fill="none"
+                      stroke="#2A2250"
+                      stroke-width="3.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    /></svg
+                  >Picked</span
+                >
+              </div>
+              <svg
+                class="head-pinny"
+                viewBox="-30 -92 60 98"
+                aria-hidden="true"
+              >
+                <g data-pinny="wave"></g>
+              </svg>
+            </div>
+
+            <div class="tiles" role="group" aria-label="Storage options">
+              <button
+                class="tile t-drive"
+                data-host="drive"
+                aria-pressed="false"
+                style="--tc: #ffc93c"
+              >
+                <span class="ic"
+                  ><svg viewBox="0 0 40 40" aria-hidden="true">
+                    <path
+                      d="M14 7h12l11 19-6 9H9l-6-9z"
+                      fill="#fff"
+                      stroke="#2A2250"
+                      stroke-width="2.5"
+                      stroke-linejoin="round"
+                    />
+                    <path
+                      d="M14 7L3 26M26 7l11 19M9 35h22"
+                      stroke-width="4.5"
+                      stroke-linecap="round"
+                      fill="none"
+                    />
+                    <path
+                      d="M14.5 8L4 26"
+                      stroke="#2FD39A"
+                      stroke-width="4"
+                      stroke-linecap="round"
+                    />
+                    <path
+                      d="M25.5 8L36 26"
+                      stroke="#FFC93C"
+                      stroke-width="4"
+                      stroke-linecap="round"
+                    />
+                    <path
+                      d="M10 34h20"
+                      stroke="#5BB8FF"
+                      stroke-width="4"
+                      stroke-linecap="round"
+                    /></svg
+                ></span>
+                Google Drive<small>needs the starter file</small>
+              </button>
+              <button
+                class="tile t-dropbox"
+                data-host="dropbox"
+                aria-pressed="false"
+                style="--tc: #5bb8ff"
+              >
+                <span class="ic"
+                  ><svg viewBox="0 0 40 40" aria-hidden="true">
+                    <path
+                      d="M12 6l8 5-8 5-8-5zM28 6l8 5-8 5-8-5zM12 16l8 5-8 5-8-5zM28 16l8 5-8 5-8-5z"
+                      fill="#fff"
+                      stroke="#2A2250"
+                      stroke-width="2.3"
+                      stroke-linejoin="round"
+                    />
+                    <path
+                      d="M12 28l8 5 8-5"
+                      fill="none"
+                      stroke="#2A2250"
+                      stroke-width="2.3"
+                      stroke-linejoin="round"
+                      stroke-linecap="round"
+                    /></svg
+                ></span>
+                Dropbox<small>needs the starter file</small>
+              </button>
+              <button
+                class="tile t-onedrive"
+                data-host="onedrive"
+                aria-pressed="false"
+                style="--tc: #c9bcff"
+              >
+                <span class="ic"
+                  ><svg viewBox="0 0 40 40" aria-hidden="true">
+                    <path
+                      d="M10 30h22a7 7 0 0 0 1-14 10 10 0 0 0-19-3 8 8 0 0 0-4 17z"
+                      fill="#fff"
+                      stroke="#2A2250"
+                      stroke-width="2.5"
+                      stroke-linejoin="round"
+                    />
+                    <path
+                      d="M14 24h14"
+                      stroke="#7C5CFF"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                    /></svg
+                ></span>
+                OneDrive<small>needs the starter file</small>
+              </button>
+              <button
+                class="tile t-github"
+                data-host="github"
+                aria-pressed="false"
+                style="--tc: #2a2250"
+              >
+                <span class="ic" style="background: #fff"
+                  ><svg viewBox="0 0 40 40" aria-hidden="true">
+                    <circle
+                      cx="13"
+                      cy="10"
+                      r="4"
+                      fill="#FF8FC7"
+                      stroke="#2A2250"
+                      stroke-width="2.5"
+                    />
+                    <circle
+                      cx="13"
+                      cy="30"
+                      r="4"
+                      fill="#FF8FC7"
+                      stroke="#2A2250"
+                      stroke-width="2.5"
+                    />
+                    <circle
+                      cx="27"
+                      cy="16"
+                      r="4"
+                      fill="#FFC93C"
+                      stroke="#2A2250"
+                      stroke-width="2.5"
+                    />
+                    <path
+                      d="M13 14v12M27 20c0 5-6 5-12 8"
+                      fill="none"
+                      stroke="#2A2250"
+                      stroke-width="2.5"
+                      stroke-linecap="round"
+                    /></svg
+                ></span>
+                GitHub<small>needs the starter file</small>
+              </button>
+              <button
+                class="tile t-server"
+                data-host="server"
+                aria-pressed="false"
+                style="--tc: #ff6b57"
+              >
+                <span class="ic"
+                  ><svg viewBox="0 0 40 40" aria-hidden="true">
+                    <rect
+                      x="7"
+                      y="7"
+                      width="26"
+                      height="11"
+                      rx="3"
+                      fill="#fff"
+                      stroke="#2A2250"
+                      stroke-width="2.5"
+                    />
+                    <rect
+                      x="7"
+                      y="22"
+                      width="26"
+                      height="11"
+                      rx="3"
+                      fill="#fff"
+                      stroke="#2A2250"
+                      stroke-width="2.5"
+                    />
+                    <circle cx="12" cy="12.5" r="1.8" fill="#2FD39A" />
+                    <circle cx="12" cy="27.5" r="1.8" fill="#2FD39A" />
+                    <path
+                      d="M18 12.5h10M18 27.5h10"
+                      stroke="#2A2250"
+                      stroke-width="2.3"
+                      stroke-linecap="round"
+                    /></svg
+                ></span>
+                Your own server<small>pick an address</small>
+              </button>
+            </div>
+            <div class="host-panel" id="hostPanel" hidden></div>
+          </div>
+        </section>
+
+        <!-- STEP 2 -->
+        <section class="step" id="s2" data-step="2" aria-labelledby="s2t">
+          <div class="step-card card">
+            <div class="step-head">
+              <div class="num">2</div>
+              <div>
+                <p class="eyebrow">Step 2</p>
+                <h3 id="s2t">Paste your share link</h3>
+                <p class="lead">
+                  Pinny will knock on the door and check the tour file is there.
+                </p>
+                <span class="done-flag"
+                  ><svg class="tick" viewBox="0 0 24 24">
+                    <path
+                      d="M6 12.5l4 4 8-9"
+                      fill="none"
+                      stroke="#2A2250"
+                      stroke-width="3.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    /></svg
+                  >Link saved</span
+                >
+              </div>
+              <svg
+                class="head-pinny"
+                viewBox="-30 -92 60 98"
+                aria-hidden="true"
+              >
+                <g data-pinny="point"></g>
+              </svg>
+            </div>
+            <div class="link-row">
+              <label
+                for="linkIn"
+                class="sr"
+                style="position: absolute; left: -9999px"
+                >Share link</label
+              >
+              <input
+                id="linkIn"
+                type="url"
+                inputmode="url"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="https://..."
+              />
+              <button class="btn btn-coral" id="checkBtn">Check link</button>
+            </div>
+            <button class="linklike" id="exampleBtn">
+              Fill in an example link
+            </button>
+            <div class="check-out" id="checkOut" aria-live="polite"></div>
+            <div class="morph" id="morph" hidden></div>
+          </div>
+        </section>
+
+        <!-- STEP 3 -->
+        <section class="step" id="s3" data-step="3" aria-labelledby="s3t">
+          <div class="step-card card">
+            <div class="step-head">
+              <div class="num">3</div>
+              <div>
+                <p class="eyebrow">Step 3</p>
+                <h3 id="s3t">Print your codes</h3>
+                <p class="lead">
+                  One code per poster. Visitors scan it to open the tour, then
+                  scan it again in AR so everything lands in the right spot.
+                </p>
+                <span class="done-flag"
+                  ><svg class="tick" viewBox="0 0 24 24">
+                    <path
+                      d="M6 12.5l4 4 8-9"
+                      fill="none"
+                      stroke="#2A2250"
+                      stroke-width="3.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    /></svg
+                  >PDF ready</span
+                >
+              </div>
+              <svg
+                class="head-pinny"
+                viewBox="-30 -92 60 98"
+                aria-hidden="true"
+              >
+                <g data-pinny="idle"></g>
+              </svg>
+            </div>
+            <div class="controls">
+              <div class="ctrl">
+                <label id="cntL">Posters to print</label>
+                <div class="stepper" role="group" aria-labelledby="cntL">
+                  <button id="cntMinus" aria-label="Fewer posters">-</button
+                  ><output id="cntOut" aria-live="polite">4</output
+                  ><button id="cntPlus" aria-label="More posters">+</button>
+                </div>
+              </div>
+              <div class="ctrl">
+                <label id="cmL">Printed size</label>
+                <div class="stepper" role="group" aria-labelledby="cmL">
+                  <button id="cmMinus" aria-label="Smaller">-</button
+                  ><output id="cmOut" aria-live="polite">16 cm</output
+                  ><button id="cmPlus" aria-label="Bigger">+</button>
+                </div>
+              </div>
+            </div>
+            <p class="paper-note" id="paperNote"></p>
+            <div class="qgrid" id="qgrid" aria-label="Poster preview"></div>
+            <div class="print-row">
+              <button class="btn btn-grape btn-big" id="pdfBtn">
+                <svg class="tick" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M12 4v11M7 10l5 5 5-5M5 20h14"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span>Download PDF</span>
+              </button>
+              <div class="hint">
+                <svg viewBox="0 0 40 40" aria-hidden="true">
+                  <rect
+                    x="4"
+                    y="12"
+                    width="32"
+                    height="16"
+                    rx="3"
+                    fill="#fff"
+                    stroke="#2A2250"
+                    stroke-width="2.5"
+                  />
+                  <path
+                    d="M9 12v6M14 12v4M19 12v6M24 12v4M29 12v6"
+                    stroke="#2A2250"
+                    stroke-width="2"
+                  />
+                </svg>
+                <span id="hintTxt"
+                  >Print at 100 % (actual size), not "fit to page". Then each
+                  code is really 16 cm wide.</span
+                >
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- STEP 4 -->
+        <section class="step" id="s4" data-step="4" aria-labelledby="s4t">
+          <div class="step-card card">
+            <div class="step-head">
+              <div class="num">4</div>
+              <div>
+                <p class="eyebrow">Step 4</p>
+                <h3 id="s4t">Hang the poster</h3>
+                <p class="lead">
+                  Put it where your tour starts. Your phone uses it as the
+                  starting point, so a good spot matters.
+                </p>
+                <span class="done-flag"
+                  ><svg class="tick" viewBox="0 0 24 24">
+                    <path
+                      d="M6 12.5l4 4 8-9"
+                      fill="none"
+                      stroke="#2A2250"
+                      stroke-width="3.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    /></svg
+                  >It's up</span
+                >
+              </div>
+              <svg
+                class="head-pinny"
+                viewBox="-30 -92 60 98"
+                aria-hidden="true"
+              >
+                <g data-pinny="point"></g>
+              </svg>
+            </div>
+            <div class="hang-grid">
+              <svg class="hang-svg" viewBox="0 0 300 220" aria-hidden="true">
+                <rect x="0" y="0" width="300" height="180" fill="#FFE3C2" />
+                <g stroke="#2A2250" stroke-width="2" opacity=".14">
+                  <path
+                    d="M0 40h300M0 80h300M0 120h300M0 160h300M60 0v40M160 0v40M260 0v40M110 40v40M210 40v40M60 80v40M160 80v40M260 80v40M110 120v40M210 120v40"
+                  />
+                </g>
+                <rect
+                  x="0"
+                  y="180"
+                  width="300"
+                  height="40"
+                  fill="#8EE4B8"
+                  stroke="#2A2250"
+                  stroke-width="3"
+                />
+                <g class="swing">
+                  <rect
+                    x="146"
+                    y="56"
+                    width="62"
+                    height="70"
+                    rx="5"
+                    fill="#fff"
+                    stroke="#2A2250"
+                    stroke-width="3"
+                  />
+                  <g
+                    transform="translate(155 66) scale(2.1)"
+                    data-qr="hang-big"
+                  ></g>
+                  <rect
+                    x="140"
+                    y="50"
+                    width="20"
+                    height="8"
+                    rx="2"
+                    fill="#FFC93C"
+                    transform="rotate(-25 150 54)"
+                  />
+                  <rect
+                    x="194"
+                    y="50"
+                    width="20"
+                    height="8"
+                    rx="2"
+                    fill="#FFC93C"
+                    transform="rotate(25 204 54)"
+                  />
+                </g>
+                <g
+                  stroke="#FF6B57"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  fill="none"
+                >
+                  <path d="M240 180V92" />
+                  <path d="M233 99l7-7 7 7M233 173l7 7 7-7" />
+                </g>
+                <rect
+                  x="248"
+                  y="124"
+                  width="48"
+                  height="22"
+                  rx="11"
+                  fill="#fff"
+                  stroke="#2A2250"
+                  stroke-width="2.5"
+                />
+                <text
+                  x="272"
+                  y="139"
+                  text-anchor="middle"
+                  font-size="11"
+                  font-weight="800"
+                  fill="#2A2250"
+                  font-family="system-ui,sans-serif"
+                >
+                  chest
+                </text>
+                <path
+                  d="M216 92h30"
+                  stroke="#FF6B57"
+                  stroke-width="2"
+                  stroke-dasharray="4 4"
+                />
+                <g
+                  transform="translate(80 200) scale(1.25)"
+                  data-pinny="point"
+                ></g>
+              </svg>
+              <div>
+                <ul class="checks" id="checks">
+                  <li>
+                    <button aria-pressed="false">
+                      <span class="box"
+                        ><svg viewBox="0 0 24 24">
+                          <path
+                            d="M6 12.5l4 4 8-9"
+                            fill="none"
+                            stroke="#2A2250"
+                            stroke-width="3.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          /></svg></span
+                      ><span
+                        >Flat and smooth<small
+                          >On a wall or board, not curled or wavy.</small
+                        ></span
+                      >
+                    </button>
+                  </li>
+                  <li>
+                    <button aria-pressed="false">
+                      <span class="box"
+                        ><svg viewBox="0 0 24 24">
+                          <path
+                            d="M6 12.5l4 4 8-9"
+                            fill="none"
+                            stroke="#2A2250"
+                            stroke-width="3.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          /></svg></span
+                      ><span
+                        >Chest height<small
+                          >Easy to point a phone at, for everyone.</small
+                        ></span
+                      >
+                    </button>
+                  </li>
+                  <li>
+                    <button aria-pressed="false">
+                      <span class="box"
+                        ><svg viewBox="0 0 24 24">
+                          <path
+                            d="M6 12.5l4 4 8-9"
+                            fill="none"
+                            stroke="#2A2250"
+                            stroke-width="3.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          /></svg></span
+                      ><span
+                        >Where the tour starts<small
+                          >Visitors begin right here.</small
+                        ></span
+                      >
+                    </button>
+                  </li>
+                  <li>
+                    <button aria-pressed="false">
+                      <span class="box"
+                        ><svg viewBox="0 0 24 24">
+                          <path
+                            d="M6 12.5l4 4 8-9"
+                            fill="none"
+                            stroke="#2A2250"
+                            stroke-width="3.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          /></svg></span
+                      ><span
+                        >It stays put<small
+                          >Moving it later would shift your pins.</small
+                        ></span
+                      >
+                    </button>
+                  </li>
+                </ul>
+                <p class="cheer-line" id="cheerLine" aria-live="polite"></p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- STEP 5 -->
+        <section class="step" id="s5" data-step="5" aria-labelledby="s5t">
+          <div class="step-card card">
+            <div class="step-head">
+              <div class="num">5</div>
+              <div>
+                <p class="eyebrow">Step 5</p>
+                <h3 id="s5t">Create the tour in AR</h3>
+                <p class="lead">
+                  The fun part. Stand at your poster with your phone and go.
+                </p>
+                <span class="done-flag"
+                  ><svg class="tick" viewBox="0 0 24 24">
+                    <path
+                      d="M6 12.5l4 4 8-9"
+                      fill="none"
+                      stroke="#2A2250"
+                      stroke-width="3.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    /></svg
+                  >Created</span
+                >
+              </div>
+              <svg
+                class="head-pinny"
+                viewBox="-30 -92 60 98"
+                aria-hidden="true"
+              >
+                <g data-pinny="walk"></g>
+              </svg>
+            </div>
+            <div class="story">
+              <div class="frame">
+                <svg viewBox="0 0 180 110" aria-hidden="true">
+                  <rect x="0" y="80" width="180" height="30" fill="#8EE4B8" />
+                  <rect
+                    x="106"
+                    y="22"
+                    width="44"
+                    height="44"
+                    rx="4"
+                    fill="#fff"
+                    stroke="#2A2250"
+                    stroke-width="2.5"
+                  />
+                  <g
+                    transform="translate(111 27) scale(1.62)"
+                    data-qr="st-1"
+                  ></g>
+                  <rect
+                    class="scanmini"
+                    x="108"
+                    y="26"
+                    width="40"
+                    height="3"
+                    rx="1.5"
+                    fill="#FF6B57"
+                  />
+                  <polygon
+                    points="76,52 106,24 106,64"
+                    fill="#FF6B57"
+                    opacity=".2"
+                  />
+                  <g transform="translate(60 104)" data-pinny="idle"></g>
+                </svg>
+                <p><i>1</i>Stand at the code and scan it</p>
+              </div>
+              <div class="frame">
+                <svg viewBox="0 0 180 110" aria-hidden="true">
+                  <rect x="0" y="80" width="180" height="30" fill="#8EE4B8" />
+                  <path
+                    d="M0 98 Q90 84 180 96"
+                    fill="none"
+                    stroke="#FFE3C2"
+                    stroke-width="10"
+                    stroke-linecap="round"
+                  />
+                  <g transform="translate(30 30)">
+                    <circle
+                      r="16"
+                      fill="#2FD39A"
+                      stroke="#2A2250"
+                      stroke-width="2.5"
+                    />
+                    <rect
+                      x="-3"
+                      y="14"
+                      width="6"
+                      height="36"
+                      fill="#B7774A"
+                      stroke="#2A2250"
+                      stroke-width="2"
+                    />
+                  </g>
+                  <g transform="translate(150 40)">
+                    <circle
+                      r="12"
+                      fill="#7C5CFF"
+                      stroke="#2A2250"
+                      stroke-width="2.5"
+                    />
+                    <rect
+                      x="-3"
+                      y="10"
+                      width="6"
+                      height="30"
+                      fill="#B7774A"
+                      stroke="#2A2250"
+                      stroke-width="2"
+                    />
+                  </g>
+                  <g class="walkacross">
+                    <g transform="translate(70 104)" data-pinny="walk"></g>
+                  </g>
+                </svg>
+                <p><i>2</i>Walk your route</p>
+              </div>
+              <div class="frame">
+                <svg viewBox="0 0 180 110" aria-hidden="true">
+                  <rect x="0" y="80" width="180" height="30" fill="#8EE4B8" />
+                  <g transform="translate(112 74)">
+                    <g class="jp">
+                      <rect
+                        x="-26"
+                        y="-50"
+                        width="52"
+                        height="20"
+                        rx="9"
+                        fill="#fff"
+                        stroke="#2A2250"
+                        stroke-width="2.3"
+                      />
+                      <text
+                        x="0"
+                        y="-36"
+                        text-anchor="middle"
+                        font-size="10"
+                        font-weight="800"
+                        fill="#2A2250"
+                        font-family="system-ui,sans-serif"
+                      >
+                        Best bench
+                      </text>
+                      <path
+                        d="M0 0 C-7 -9 -10 -13 -10 -18 a10 10 0 1 1 20 0 c0 5 -3 9 -10 18z"
+                        fill="#FF6B57"
+                        stroke="#2A2250"
+                        stroke-width="2.3"
+                      />
+                    </g>
+                  </g>
+                  <g transform="translate(156 84)">
+                    <g class="jp" style="animation-delay: 0.6s">
+                      <rect
+                        x="-15"
+                        y="-34"
+                        width="30"
+                        height="24"
+                        rx="2"
+                        fill="#fff"
+                        stroke="#2A2250"
+                        stroke-width="2.3"
+                      />
+                      <rect
+                        x="-11"
+                        y="-30"
+                        width="22"
+                        height="13"
+                        fill="#5BB8FF"
+                      />
+                      <path d="M-11 -17l6-6 4 3 4-5 7 8z" fill="#2FD39A" />
+                      <path d="M0 -10v10" stroke="#2A2250" stroke-width="2.3" />
+                    </g>
+                  </g>
+                  <g transform="translate(50 104)" data-pinny="cheer"></g>
+                </svg>
+                <p><i>3</i>Drop text pins and photos</p>
+              </div>
+            </div>
+            <div class="next-row">
+              <button class="btn btn-mint btn-big" id="startBtn">
+                <svg class="tick" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.8"
+                    stroke-linecap="round"
+                  />
+                  <circle cx="12" cy="12" r="3" fill="currentColor" />
+                </svg>
+                <span>Start creating</span>
+              </button>
+            </div>
+            <p class="ar-result" id="arResult" aria-live="polite"></p>
+          </div>
+        </section>
+
+        <!-- STEP 6 -->
+        <section class="step" id="s6" data-step="6" aria-labelledby="s6t">
+          <div class="step-card card">
+            <div class="step-head">
+              <div class="num">6</div>
+              <div>
+                <p class="eyebrow">Step 6</p>
+                <h3 id="s6t">Done! Put the tour online</h3>
+                <p class="lead">
+                  When you finish, the updated tour is saved on your phone. Swap
+                  it in for the hosted file.
+                </p>
+                <span class="done-flag"
+                  ><svg class="tick" viewBox="0 0 24 24">
+                    <path
+                      d="M6 12.5l4 4 8-9"
+                      fill="none"
+                      stroke="#2A2250"
+                      stroke-width="3.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    /></svg
+                  >Tour saved</span
+                >
+              </div>
+              <svg
+                class="head-pinny"
+                viewBox="-30 -92 60 98"
+                aria-hidden="true"
+              >
+                <g data-pinny="cheer"></g>
+              </svg>
+            </div>
+            <div class="done-grid">
+              <div style="display: grid; gap: 14px; align-content: start">
+                <div class="filecard">
+                  <svg viewBox="0 0 56 62" aria-hidden="true">
+                    <path
+                      d="M6 4h30l14 14v38a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"
+                      fill="#FFC93C"
+                      stroke="#2A2250"
+                      stroke-width="3"
+                      stroke-linejoin="round"
+                    />
+                    <path
+                      d="M36 4v14h14"
+                      fill="#fff"
+                      stroke="#2A2250"
+                      stroke-width="3"
+                      stroke-linejoin="round"
+                    />
+                    <path
+                      d="M22 10v4M22 18v4M22 26v4M22 34v4"
+                      stroke="#2A2250"
+                      stroke-width="3"
+                    />
+                    <rect
+                      x="17"
+                      y="40"
+                      width="10"
+                      height="10"
+                      rx="2"
+                      fill="#fff"
+                      stroke="#2A2250"
+                      stroke-width="2.5"
+                    />
+                  </svg>
+                  <div>
+                    <b>my-tour.zip</b
+                    ><span id="fileMeta">Waiting for your pins and photos</span>
+                  </div>
+                </div>
+                <div class="replace">
+                  <label for="hostSel"
+                    >My tour lives on
+                    <select id="hostSel">
+                      <option value="drive">Google Drive</option>
+                      <option value="dropbox">Dropbox</option>
+                      <option value="onedrive">OneDrive</option>
+                      <option value="github">GitHub</option>
+                      <option value="server">My own server</option>
+                    </select></label
+                  >
+                  <p id="replaceTxt"></p>
+                </div>
+              </div>
+              <svg class="swap-svg" viewBox="0 0 240 150" aria-hidden="true">
+                <rect
+                  x="0"
+                  y="0"
+                  width="240"
+                  height="150"
+                  rx="20"
+                  fill="#DDF1FF"
+                />
+                <g transform="translate(18 34)">
+                  <rect
+                    x="0"
+                    y="0"
+                    width="70"
+                    height="70"
+                    rx="8"
+                    fill="#fff"
+                    stroke="#2A2250"
+                    stroke-width="3"
+                  />
+                  <g
+                    transform="translate(8 8) scale(2.57)"
+                    data-qr="swap-qr"
+                  ></g>
+                </g>
+                <text
+                  x="53"
+                  y="128"
+                  text-anchor="middle"
+                  font-size="11"
+                  font-weight="800"
+                  fill="#2A2250"
+                  font-family="system-ui,sans-serif"
+                >
+                  same code
+                </text>
+                <path
+                  d="M98 69h28"
+                  stroke="#2A2250"
+                  stroke-width="3"
+                  stroke-dasharray="5 5"
+                  stroke-linecap="round"
+                />
+                <g transform="translate(140 40)">
+                  <g class="oldbox">
+                    <rect
+                      x="0"
+                      y="0"
+                      width="56"
+                      height="58"
+                      rx="6"
+                      fill="#E3E0F0"
+                      stroke="#2A2250"
+                      stroke-width="3"
+                    />
+                    <text
+                      x="28"
+                      y="34"
+                      text-anchor="middle"
+                      font-size="11"
+                      font-weight="800"
+                      fill="#5B5480"
+                      font-family="system-ui,sans-serif"
+                    >
+                      old
+                    </text>
+                  </g>
+                  <g class="newbox">
+                    <rect
+                      x="0"
+                      y="0"
+                      width="56"
+                      height="58"
+                      rx="6"
+                      fill="#FFC93C"
+                      stroke="#2A2250"
+                      stroke-width="3"
+                    />
+                    <path
+                      d="M28 0v58"
+                      stroke="#2A2250"
+                      stroke-width="2"
+                      stroke-dasharray="3 3"
+                    />
+                    <circle
+                      cx="52"
+                      cy="2"
+                      r="10"
+                      fill="#2FD39A"
+                      stroke="#2A2250"
+                      stroke-width="2.5"
+                    />
+                    <path
+                      d="M47 2l3 3 6-6"
+                      fill="none"
+                      stroke="#2A2250"
+                      stroke-width="2.5"
+                      stroke-linecap="round"
+                    />
+                  </g>
+                </g>
+                <text
+                  x="168"
+                  y="128"
+                  text-anchor="middle"
+                  font-size="11"
+                  font-weight="800"
+                  fill="#2A2250"
+                  font-family="system-ui,sans-serif"
+                >
+                  new tour file
+                </text>
+              </svg>
+              <p class="keep">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M10 14a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1 1M14 10a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1-1"
+                    fill="none"
+                    stroke="#2A2250"
+                    stroke-width="2.6"
+                    stroke-linecap="round"
+                  /></svg
+                >The link and your printed code stay the same. Change the tour
+                as often as you like.
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      Free, no account, no app. Made with the Tour Viewer.
+      <a href="#flow" class="linklike">Make another tour</a>
+    </footer>
+
+    <!-- ================= FAKE AR ================= -->
+    <div
+      class="ar"
+      id="ar"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Creating your tour in AR"
+      hidden
+    >
+      <svg
+        class="ar-bg"
+        viewBox="0 0 400 700"
+        preserveAspectRatio="xMidYMid slice"
+        aria-hidden="true"
+      >
+        <defs>
+          <linearGradient id="arSky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#7EC8FF" />
+            <stop offset="1" stop-color="#CDEBFF" />
+          </linearGradient>
+        </defs>
+        <rect width="400" height="700" fill="url(#arSky)" />
+        <path d="M0 400 Q100 360 200 390 T400 380 V700 H0z" fill="#7DD9A8" />
+        <path d="M0 470 Q140 440 260 470 T400 460 V700 H0z" fill="#4CC98E" />
+        <path
+          d="M130 700 C150 600 190 540 230 470"
+          fill="none"
+          stroke="#FFE3C2"
+          stroke-width="60"
+          stroke-linecap="round"
+          opacity=".9"
+        />
+        <g opacity=".95">
+          <circle cx="40" cy="330" r="56" fill="#3FB880" />
+          <rect x="34" y="370" width="12" height="60" fill="#9C6640" />
+          <circle cx="360" cy="320" r="44" fill="#6A50E0" opacity=".8" />
+          <rect x="354" y="350" width="12" height="60" fill="#9C6640" />
+        </g>
+        <rect x="200" y="350" width="10" height="160" fill="#9C6640" />
+      </svg>
+      <div class="ar-top">
+        <span>Creating: my tour</span
+        ><button
+          class="ar-close"
+          id="arClose"
+          aria-label="Close without saving"
+        >
+          &times;
+        </button>
+      </div>
+      <div class="ar-target" id="arTarget">
+        <div class="poster" id="arPoster"></div>
+        <span class="corner c1"></span><span class="corner c2"></span
+        ><span class="corner c3"></span><span class="corner c4"></span
+        ><span class="sweep"></span>
+      </div>
+      <div class="ar-layer" id="arLayer"></div>
+      <div class="ar-bottom">
+        <div class="ar-status">
+          <svg viewBox="-26 -88 52 94" aria-hidden="true">
+            <g data-pinny="idle" id="arPinny"></g></svg
+          ><span id="arStatus" aria-live="polite"
+            >Point your phone at the code</span
+          >
+        </div>
+        <div class="ar-tools" id="arTools">
+          <button class="btn btn-white" id="addPin">+ Text pin</button>
+          <button class="btn btn-white" id="addPhoto">+ Photo</button>
+          <button class="btn btn-mint" id="arFinish" disabled>
+            Finish and save
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        "use strict";
+        var reduce =
+          window.matchMedia &&
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        var INK = "#2A2250";
+
+        /* ---------- mascot: "Pinny", a friendly phone ---------- */
+        function pinny(pose) {
+          var armL =
+            pose === "cheer"
+              ? "M-19 -48 Q-30 -60 -31 -73"
+              : "M-19 -46 Q-29 -40 -30 -29";
+          var armR =
+            pose === "wave" || pose === "cheer"
+              ? "M19 -48 Q30 -60 31 -73"
+              : pose === "point"
+                ? "M19 -50 Q32 -54 39 -65"
+                : "M19 -46 Q29 -40 30 -29";
+          var s = 'stroke="' + INK + '"';
+          return (
+            '<g class="pinny p-' +
+            pose +
+            '">' +
+            '<ellipse cx="0" cy="0" rx="17" ry="3.5" fill="rgba(42,34,80,.16)"/>' +
+            '<g class="bob">' +
+            '<path class="leg leg-l" d="M-8 -18 L-9 -3 l-5 0" fill="none" ' +
+            s +
+            ' stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '<path class="leg leg-r" d="M8 -18 L9 -3 l5 0" fill="none" ' +
+            s +
+            ' stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '<path class="arm arm-l" d="' +
+            armL +
+            '" fill="none" ' +
+            s +
+            ' stroke-width="4.5" stroke-linecap="round"/>' +
+            '<path class="arm arm-r" d="' +
+            armR +
+            '" fill="none" ' +
+            s +
+            ' stroke-width="4.5" stroke-linecap="round"/>' +
+            '<rect x="-20" y="-81" width="40" height="64" rx="11" fill="#7C5CFF" ' +
+            s +
+            ' stroke-width="3"/>' +
+            '<rect x="-14.5" y="-74" width="29" height="48" rx="6" fill="#FFF6E9"/>' +
+            '<circle cx="0" cy="-77.5" r="1.5" fill="' +
+            INK +
+            '"/>' +
+            '<g class="eyes" fill="' +
+            INK +
+            '"><circle cx="-6" cy="-56" r="3.2"/><circle cx="6" cy="-56" r="3.2"/></g>' +
+            '<circle cx="-6.8" cy="-57.2" r="1" fill="#fff"/><circle cx="5.2" cy="-57.2" r="1" fill="#fff"/>' +
+            '<circle cx="-10.5" cy="-48" r="2.8" fill="#FF8FC7" opacity=".8"/><circle cx="10.5" cy="-48" r="2.8" fill="#FF8FC7" opacity=".8"/>' +
+            (pose === "cheer"
+              ? '<path d="M-6 -47 Q0 -38 6 -47 Z" fill="' + INK + '"/>'
+              : '<path d="M-5 -46 Q0 -41 5 -46" fill="none" ' +
+                s +
+                ' stroke-width="2.6" stroke-linecap="round"/>') +
+            "</g></g>"
+          );
+        }
+        document.querySelectorAll("[data-pinny]").forEach(function (g) {
+          g.innerHTML = pinny(g.getAttribute("data-pinny"));
+        });
+
+        /* ---------- deterministic fake QR (21x21 modules, finder patterns) ---------- */
+        function hashStr(str) {
+          var h = 2166136261;
+          for (var i = 0; i < str.length; i++) {
+            h ^= str.charCodeAt(i);
+            h = Math.imul(h, 16777619);
+          }
+          return h >>> 0;
+        }
+        function rng(seed) {
+          var a = seed;
+          return function () {
+            a = (a + 0x6d2b79f5) | 0;
+            var t = Math.imul(a ^ (a >>> 15), 1 | a);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+          };
+        }
+        function qrPath(seed) {
+          var n = 21,
+            r = rng(hashStr(String(seed))),
+            d = "";
+          for (var y = 0; y < n; y++)
+            for (var x = 0; x < n; x++) {
+              var inF =
+                (x < 7 && y < 7) || (x >= 14 && y < 7) || (x < 7 && y >= 14);
+              var inSep =
+                (x < 8 && y < 8) || (x >= 13 && y < 8) || (x < 8 && y >= 13);
+              var dark;
+              if (inF) {
+                var fx = x >= 14 ? x - 14 : x,
+                  fy = y >= 14 ? y - 14 : y;
+                dark =
+                  fx === 0 ||
+                  fx === 6 ||
+                  fy === 0 ||
+                  fy === 6 ||
+                  (fx >= 2 && fx <= 4 && fy >= 2 && fy <= 4);
+              } else if (inSep) dark = false;
+              else if (x === 6 || y === 6) dark = (x + y) % 2 === 0;
+              else dark = r() < 0.47;
+              if (dark) d += "M" + x + " " + y + "h1v1h-1z";
+            }
+          return d;
+        }
+        function qrSvg(seed) {
+          return (
+            '<svg viewBox="-2 -2 25 25" shape-rendering="crispEdges" aria-hidden="true"><rect x="-2" y="-2" width="25" height="25" fill="#fff"/><path d="' +
+            qrPath(seed) +
+            '" fill="' +
+            INK +
+            '"/></svg>'
+          );
+        }
+        document.querySelectorAll("[data-qr]").forEach(function (g) {
+          g.innerHTML =
+            '<path d="' +
+            qrPath(g.getAttribute("data-qr")) +
+            '" fill="' +
+            INK +
+            '" shape-rendering="crispEdges"/>';
+        });
+
+        /* ---------- state + helpers ---------- */
+        var state = {
+          host: null,
+          link: "",
+          count: 4,
+          cm: 16,
+          pins: 0,
+          photos: 0,
+          done: {},
+        };
+        var $ = function (id) {
+          return document.getElementById(id);
+        };
+        var CHECK =
+          '<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12.5l4 4 8-9" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        function esc(s) {
+          return String(s).replace(/[&<>"']/g, function (c) {
+            return {
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            }[c];
+          });
+        }
+        function goTo(n) {
+          var el = $("s" + n);
+          if (el)
+            el.scrollIntoView({
+              behavior: reduce ? "auto" : "smooth",
+              block: "start",
+            });
+        }
+        function markDone(n) {
+          state.done[n] = true;
+          $("s" + n).classList.add("is-done");
+          var dot = document.querySelector('.rail-dot[data-go="' + n + '"]');
+          if (dot) dot.classList.add("is-done");
+          updateFill();
+        }
+
+        /* ---------- hosts ---------- */
+        var HOSTS = {
+          drive: {
+            name: "Google Drive",
+            tint: "#FFF0C2",
+            file: true,
+            steps: [
+              "Download the empty starter tour below.",
+              "Upload it to your Google Drive, any folder is fine.",
+              "Tap <b>Share</b> and set General access to <b>Anyone with the link</b>.",
+              "Tap <b>Copy link</b> and paste it in step 2.",
+            ],
+            example:
+              "https://drive.google.com/file/d/1aB3cD4eF5gH6iJ7k/view?usp=sharing",
+            replace:
+              "Open the tour file's page in Google Drive, upload the new <b>my-tour.zip</b> and choose <b>Replace</b>. Drive keeps the same file and the same link.",
+          },
+          dropbox: {
+            name: "Dropbox",
+            tint: "#DDF1FF",
+            file: true,
+            steps: [
+              "Download the empty starter tour below.",
+              "Upload it to your Dropbox.",
+              "Tap <b>Share</b>, make sure anyone with the link can view.",
+              "Tap <b>Copy link</b> and paste it in step 2.",
+            ],
+            example: "https://www.dropbox.com/scl/fi/x7k2p9q/my-tour.zip?dl=0",
+            replace:
+              "On your phone, open the share sheet for <b>my-tour.zip</b> and send it to the Dropbox app. Save it over the old file with the same name.",
+          },
+          onedrive: {
+            name: "OneDrive",
+            tint: "#ECE6FF",
+            file: true,
+            steps: [
+              "Download the empty starter tour below.",
+              "Upload it to your OneDrive.",
+              "Tap <b>Share</b> and choose <b>Anyone with the link can view</b>.",
+              "Tap <b>Copy link</b> and paste it in step 2.",
+            ],
+            example: "https://1drv.ms/u/s!Ak3fT9xYz2QwErTy",
+            replace:
+              "On your phone, open the share sheet for <b>my-tour.zip</b> and send it to the OneDrive app. Choose to replace the old file.",
+          },
+          github: {
+            name: "GitHub",
+            tint: "#E9E6F7",
+            file: true,
+            steps: [
+              "Download the empty starter tour below.",
+              "In a public repository, choose <b>Add file</b> and <b>Upload files</b>.",
+              "Open the uploaded file and copy the link behind the <b>Raw</b> button.",
+              "Paste it in step 2.",
+            ],
+            example:
+              "https://raw.githubusercontent.com/me/tours/main/my-tour.zip",
+            replace:
+              "Upload the downloaded <b>my-tour.zip</b> to the same place in your repository, with the same file name, and commit.",
+          },
+          server: {
+            name: "your own server",
+            tint: "#FFE1DC",
+            file: false,
+            steps: [
+              "Choose the address where the tour will live, for example <code>https://example.org/tours/park.zip</code>.",
+              "Your server must allow <b>cross-origin reads</b> and <b>range requests</b> for that file, so the browser can load it from here.",
+              "No file needed yet. You can upload the tour after you create it.",
+            ],
+            snippet:
+              "Access-Control-Allow-Origin: *\nAccess-Control-Allow-Headers: Range\nAccess-Control-Expose-Headers: Content-Length, Content-Range\nAccept-Ranges: bytes",
+            example: "https://example.org/tours/park.zip",
+            replace:
+              "Upload the downloaded <b>my-tour.zip</b> to the same address, replacing the old file.",
+          },
+        };
+
+        /* ---------- step 1 ---------- */
+        var tiles = document.querySelectorAll(".tile");
+        tiles.forEach(function (t) {
+          t.addEventListener("click", function () {
+            var key = t.getAttribute("data-host");
+            tiles.forEach(function (o) {
+              o.setAttribute("aria-pressed", String(o === t));
+            });
+            state.host = key;
+            renderHost(key);
+            $("hostSel").value = key;
+            renderReplace();
+            markDone(1);
+          });
+        });
+        function renderHost(key) {
+          var h = HOSTS[key],
+            p = $("hostPanel");
+          p.hidden = false;
+          p.style.setProperty("--hp", h.tint);
+          p.style.animation = "none";
+          void p.offsetWidth;
+          p.style.animation = "";
+          var html =
+            "<h4>" +
+            (key === "server" ? "Your own server, nice!" : h.name + " it is!") +
+            '</h4><ol class="howto">' +
+            h.steps
+              .map(function (s) {
+                return "<li><span>" + s + "</span></li>";
+              })
+              .join("") +
+            "</ol>";
+          if (h.snippet)
+            html += '<code class="snippet">' + esc(h.snippet) + "</code>";
+          html += '<div class="next-row">';
+          if (h.file)
+            html +=
+              '<button class="btn" id="zipBtn"><svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Download empty starter zip</span></button>';
+          html +=
+            '<button class="btn btn-white" id="toS2">Next: paste the link</button></div>';
+          if (!h.file)
+            html +=
+              '<p class="host-note">Not sure about these settings? Whoever runs your server can switch them on in a minute.</p>';
+          p.innerHTML = html;
+          var zb = $("zipBtn");
+          if (zb)
+            zb.addEventListener("click", function () {
+              zb.disabled = true;
+              zb.innerHTML =
+                '<span class="spin"></span><span>Downloading...</span>';
+              setTimeout(function () {
+                zb.disabled = false;
+                zb.classList.add("ok");
+                zb.innerHTML = CHECK + "<span>Saved: starter-tour.zip</span>";
+              }, 900);
+            });
+          $("toS2").addEventListener("click", function () {
+            goTo(2);
+            setTimeout(function () {
+              $("linkIn").focus({ preventScroll: true });
+            }, 500);
+          });
+        }
+
+        /* ---------- step 2 ---------- */
+        var KNOWN = [
+          /drive\.google\.com/i,
+          /dropbox\.com/i,
+          /1drv\.ms|onedrive\.live\.com|sharepoint\.com/i,
+          /github\.com|githubusercontent\.com/i,
+        ];
+        function verdict(cls, pose, title, text) {
+          return (
+            '<div class="verdict ' +
+            cls +
+            '"><svg class="vp" viewBox="-26 -88 52 94" aria-hidden="true">' +
+            pinny(pose) +
+            "</svg><div><b>" +
+            title +
+            "</b><span>" +
+            text +
+            "</span></div></div>"
+          );
+        }
+        $("exampleBtn").addEventListener("click", function () {
+          $("linkIn").value = HOSTS[state.host || "drive"].example;
+          $("linkIn").focus();
+        });
+        $("linkIn").addEventListener("keydown", function (e) {
+          if (e.key === "Enter") $("checkBtn").click();
+        });
+        $("checkBtn").addEventListener("click", function () {
+          var v = $("linkIn").value.trim(),
+            out = $("checkOut"),
+            btn = $("checkBtn");
+          if (!v) {
+            out.innerHTML = verdict(
+              "v-bad",
+              "point",
+              "Paste your link first",
+              "It's the share link you copied in step 1.",
+            );
+            return;
+          }
+          if (!/^https?:\/\/[^\s\/.]+\.[^\s]+$/i.test(v)) {
+            out.innerHTML = verdict(
+              "v-bad",
+              "idle",
+              "That doesn't look like a link yet",
+              "It should start with https:// - try copying it again.",
+            );
+            return;
+          }
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spin"></span><span>Checking...</span>';
+          out.innerHTML = verdict(
+            "v-checking",
+            "walk",
+            '<span class="dots">Checking</span>',
+            "Knocking on the door of " +
+              esc(v.replace(/^https?:\/\//, "").split("/")[0]),
+          );
+          setTimeout(function () {
+            var found = KNOWN.some(function (r) {
+              return r.test(v);
+            });
+            out.innerHTML = found
+              ? verdict(
+                  "v-found",
+                  "cheer",
+                  "Found it!",
+                  "There's a tour file at this link. You're all set.",
+                )
+              : verdict(
+                  "v-later",
+                  "wave",
+                  "Not reachable yet - fine if you upload later",
+                  "Your code points at the link, not the file, so you can print now and put the tour there after you create it.",
+                );
+            btn.disabled = false;
+            btn.textContent = "Check again";
+            state.link = v;
+            var m = $("morph");
+            m.hidden = false;
+            m.innerHTML =
+              '<span class="chip"><svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1 1M14 10a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1-1" fill="none" stroke="#5BB8FF" stroke-width="2.8" stroke-linecap="round"/></svg><span>' +
+              esc(v) +
+              "</span></span>" +
+              '<svg class="arrow" viewBox="0 0 56 20" aria-hidden="true"><path d="M2 10h44" stroke="' +
+              INK +
+              '" stroke-width="3" stroke-linecap="round" fill="none"/><path d="M42 3l8 7-8 7" fill="none" stroke="' +
+              INK +
+              '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+              '<span class="mq">' +
+              qrSvg(v) +
+              "</span><p>Your link becomes your code. Keep the link, keep the code.</p>";
+            renderTiles(0);
+            markDone(2);
+          }, 1500);
+        });
+
+        /* ---------- step 3 ---------- */
+        function paperNote() {
+          var cm = state.cm;
+          return cm <= 18
+            ? "Fits on A4 or Letter paper, one poster per page. Bigger codes scan from further away."
+            : "That's big! Pick A3 paper for " + cm + " cm codes.";
+        }
+        function renderTiles(prev) {
+          var g = $("qgrid"),
+            seed = state.link || "starter";
+          var tw = Math.min(118, Math.round(30 + state.cm * 3.2));
+          g.style.setProperty("--tw", tw + "px");
+          var html = "";
+          for (var i = 0; i < state.count; i++) {
+            html +=
+              '<div class="qtile' +
+              (i >= prev ? " new" : "") +
+              '" style="animation-delay:' +
+              (i - prev) * 45 +
+              'ms">' +
+              qrSvg(seed + "#" + (i + 1)) +
+              "<small>Poster " +
+              (i + 1) +
+              "</small></div>";
+          }
+          g.innerHTML = html;
+          $("cntOut").textContent = state.count;
+          $("cmOut").textContent = state.cm + " cm";
+          $("paperNote").textContent = paperNote();
+          $("hintTxt").textContent =
+            'Print at 100 % (actual size), not "fit to page". Then each code is really ' +
+            state.cm +
+            " cm wide.";
+          $("cntMinus").disabled = state.count <= 1;
+          $("cntPlus").disabled = state.count >= 20;
+          $("cmMinus").disabled = state.cm <= 8;
+          $("cmPlus").disabled = state.cm >= 26;
+          resetPdf();
+        }
+        function bump(key, d, min, max) {
+          var prev = state.count;
+          state[key] = Math.max(min, Math.min(max, state[key] + d));
+          renderTiles(key === "count" ? prev : state.count);
+        }
+        $("cntMinus").addEventListener("click", function () {
+          bump("count", -1, 1, 20);
+        });
+        $("cntPlus").addEventListener("click", function () {
+          bump("count", 1, 1, 20);
+        });
+        $("cmMinus").addEventListener("click", function () {
+          bump("cm", -1, 8, 26);
+        });
+        $("cmPlus").addEventListener("click", function () {
+          bump("cm", 1, 8, 26);
+        });
+        var pdfIdle = $("pdfBtn").innerHTML;
+        function resetPdf() {
+          var b = $("pdfBtn");
+          if (b.classList.contains("ok")) {
+            b.classList.remove("ok");
+            b.innerHTML = pdfIdle;
+          }
+        }
+        $("pdfBtn").addEventListener("click", function () {
+          var b = $("pdfBtn");
+          b.disabled = true;
+          b.innerHTML =
+            '<span class="spin"></span><span>Making your PDF...</span>';
+          setTimeout(function () {
+            b.disabled = false;
+            b.classList.add("ok");
+            b.innerHTML = CHECK + "<span>PDF downloaded</span>";
+            markDone(3);
+          }, 1300);
+        });
+        renderTiles(0);
+
+        /* ---------- step 4 ---------- */
+        var checks = document.querySelectorAll("#checks button");
+        checks.forEach(function (c) {
+          c.addEventListener("click", function () {
+            c.setAttribute(
+              "aria-pressed",
+              String(c.getAttribute("aria-pressed") !== "true"),
+            );
+            var n = document.querySelectorAll(
+              '#checks button[aria-pressed="true"]',
+            ).length;
+            $("cheerLine").textContent =
+              n === checks.length
+                ? "Perfect spot! Pinny approves."
+                : n
+                  ? n + " of " + checks.length + " - nearly there."
+                  : "";
+            if (n === checks.length) markDone(4);
+          });
+        });
+
+        /* ---------- step 5: fake AR session ---------- */
+        var ar = $("ar"),
+          arTimer = null,
+          lastFocus = null;
+        var LABELS = [
+          "Start here",
+          "The old oak",
+          "Best bench",
+          "Hidden fountain",
+          "Look up!",
+          "Cafe corner",
+          "Secret path",
+        ];
+        var SPOTS = [
+          [24, 34],
+          [76, 30],
+          [18, 62],
+          [82, 60],
+          [50, 22],
+          [32, 76],
+          [70, 78],
+          [60, 46],
+        ];
+        $("arPoster").innerHTML = qrSvg("ar-poster");
+        function arStatus(t, pose) {
+          $("arStatus").textContent = t;
+          if (pose) $("arPinny").innerHTML = pinny(pose);
+        }
+        $("startBtn").addEventListener("click", function () {
+          var b = $("startBtn");
+          b.disabled = true;
+          b.innerHTML =
+            '<span class="spin"></span><span>Opening camera...</span>';
+          setTimeout(function () {
+            b.disabled = false;
+            b.innerHTML = "<span>Start creating</span>";
+            openAR();
+          }, 700);
+        });
+        function openAR() {
+          lastFocus = document.activeElement;
+          state.pins = 0;
+          state.photos = 0;
+          $("arLayer").innerHTML = "";
+          $("arTarget").classList.remove("locked");
+          $("arTarget").style.opacity = "";
+          $("arTools").classList.remove("show");
+          $("arFinish").disabled = true;
+          $("arFinish").textContent = "Finish and save";
+          arStatus("Point your phone at the code", "walk");
+          ar.hidden = false;
+          ar.classList.add("open");
+          document.body.style.overflow = "hidden";
+          $("arClose").focus();
+          arTimer = setTimeout(function () {
+            $("arTarget").classList.add("locked");
+            arStatus(
+              "Got it! You're anchored. Walk around and add things.",
+              "cheer",
+            );
+            $("arTools").classList.add("show");
+            setTimeout(function () {
+              $("arTarget").style.opacity = ".45";
+            }, 900);
+            $("addPin").focus();
+          }, 1900);
+        }
+        function closeAR() {
+          clearTimeout(arTimer);
+          ar.classList.remove("open");
+          ar.hidden = true;
+          document.body.style.overflow = "";
+          if (lastFocus && lastFocus.focus)
+            lastFocus.focus({ preventScroll: true });
+        }
+        function countText() {
+          var p = state.pins,
+            f = state.photos;
+          return (
+            p +
+            (p === 1 ? " pin" : " pins") +
+            " and " +
+            f +
+            (f === 1 ? " photo" : " photos")
+          );
+        }
+        function place(kind) {
+          var i = state.pins + state.photos,
+            spot = SPOTS[i % SPOTS.length];
+          var el = document.createElement("div");
+          el.className = "ar-pin";
+          el.style.left = spot[0] + "%";
+          el.style.top = spot[1] + "%";
+          if (kind === "pin") {
+            el.innerHTML =
+              '<span class="bubble">' +
+              LABELS[state.pins % LABELS.length] +
+              '</span><svg viewBox="-13 -40 26 41" aria-hidden="true"><path d="M0 0 C-9 -12 -13 -17 -13 -26 a13 13 0 1 1 26 0 c0 9 -4 14 -13 26z" fill="' +
+              ["#FF6B57", "#FFC93C", "#5BB8FF", "#FF8FC7"][state.pins % 4] +
+              '" stroke="' +
+              INK +
+              '" stroke-width="3"/><circle cy="-26" r="5" fill="#fff"/></svg>';
+            state.pins++;
+          } else {
+            el.innerHTML =
+              '<div class="ar-photo"><svg viewBox="0 0 64 48" aria-hidden="true"><rect width="64" height="48" fill="#DDF1FF"/><circle cx="48" cy="12" r="6" fill="#FFC93C"/><path d="M0 48 L18 24 L30 36 L42 20 L64 48z" fill="#2FD39A"/></svg></div>';
+            state.photos++;
+          }
+          $("arLayer").appendChild(el);
+          $("arFinish").disabled = false;
+          arStatus(
+            "Nice! " + countText() + " placed. Keep walking or finish.",
+            "cheer",
+          );
+        }
+        $("addPin").addEventListener("click", function () {
+          place("pin");
+        });
+        $("addPhoto").addEventListener("click", function () {
+          place("photo");
+        });
+        $("arClose").addEventListener("click", closeAR);
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape" && ar.classList.contains("open")) closeAR();
+        });
+        $("arFinish").addEventListener("click", function () {
+          var b = $("arFinish");
+          b.disabled = true;
+          b.innerHTML =
+            '<span class="spin"></span><span>Saving your tour...</span>';
+          arStatus("Saving my-tour.zip on this phone...", "walk");
+          setTimeout(function () {
+            closeAR();
+            $("arResult").textContent =
+              "You placed " + countText() + ". Saved on this phone.";
+            $("fileMeta").textContent = "Saved on this phone - " + countText();
+            markDone(5);
+            markDone(6);
+            confetti();
+            setTimeout(function () {
+              goTo(6);
+            }, 250);
+          }, 1100);
+        });
+
+        /* ---------- step 6 ---------- */
+        function renderReplace() {
+          $("replaceTxt").innerHTML = HOSTS[$("hostSel").value].replace;
+        }
+        $("hostSel").addEventListener("change", renderReplace);
+        renderReplace();
+
+        /* ---------- confetti ---------- */
+        function confetti() {
+          if (reduce) return;
+          var colors = [
+            "#FF6B57",
+            "#FFC93C",
+            "#2FD39A",
+            "#5BB8FF",
+            "#7C5CFF",
+            "#FF8FC7",
+          ];
+          for (var i = 0; i < 46; i++) {
+            var c = document.createElement("span");
+            c.className = "confetti";
+            c.style.left = Math.random() * 100 + "vw";
+            c.style.background = colors[i % colors.length];
+            c.style.setProperty("--x", (Math.random() - 0.5) * 160 + "px");
+            c.style.setProperty("--r", 360 + Math.random() * 540 + "deg");
+            c.style.setProperty("--d", 1.6 + Math.random() * 1.4 + "s");
+            c.style.animationDelay = Math.random() * 0.3 + "s";
+            document.body.appendChild(c);
+            setTimeout(
+              (function (el) {
+                return function () {
+                  el.remove();
+                };
+              })(c),
+              3400,
+            );
+          }
+        }
+
+        /* ---------- progress rail: Pinny walks to the current step ---------- */
+        var dots = Array.prototype.slice.call(
+          document.querySelectorAll(".rail-dot"),
+        );
+        var rp = $("railPinny"),
+          current = 1,
+          walkT = null;
+        function dotCenter(n) {
+          var d = dots[n - 1];
+          return d.offsetLeft + d.offsetWidth / 2;
+        }
+        function placePinny(n, animate) {
+          rp.style.left = dotCenter(n) + "px";
+          if (animate && !reduce) {
+            rp.classList.add("walking");
+            clearTimeout(walkT);
+            walkT = setTimeout(function () {
+              rp.classList.remove("walking");
+            }, 750);
+          }
+          dots.forEach(function (d, i) {
+            d.classList.toggle("is-current", i === n - 1);
+          });
+        }
+        function updateFill() {
+          var maxDone = 0;
+          for (var k = 1; k <= 6; k++) if (state.done[k]) maxDone = k;
+          var first = dotCenter(1),
+            w = maxDone ? dotCenter(maxDone) - first : 0;
+          $("railFill").style.left = first + "px";
+          $("railFill").style.width = Math.max(0, w) + "px";
+        }
+        dots.forEach(function (d) {
+          d.addEventListener("click", function () {
+            goTo(+d.getAttribute("data-go"));
+          });
+        });
+        if ("IntersectionObserver" in window) {
+          var io = new IntersectionObserver(
+            function (entries) {
+              entries.forEach(function (en) {
+                if (en.isIntersecting) {
+                  var n = +en.target.getAttribute("data-step");
+                  if (n !== current) {
+                    current = n;
+                    placePinny(n, true);
+                  }
+                }
+              });
+            },
+            { rootMargin: "-35% 0px -60% 0px" },
+          );
+          document.querySelectorAll(".step").forEach(function (s) {
+            io.observe(s);
+          });
+        }
+        window.addEventListener("resize", function () {
+          placePinny(current, false);
+          updateFill();
+        });
+        placePinny(1, false);
+        updateFill();
+      })();
+    </script>
+  </body>
+</html>

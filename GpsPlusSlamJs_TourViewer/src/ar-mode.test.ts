@@ -13,6 +13,7 @@ import type { Object3D } from "three";
 import {
   CAMERA_FRAME_INTERVAL_MS,
   arButtonView,
+  visitorStep,
   buildArEnableConfig,
   endTourArRuntime,
   startTourArRuntime,
@@ -294,20 +295,47 @@ function fakeDepsFor(): { deps: TourArRuntimeDeps } {
 describe("arButtonView", () => {
   it.each([
     ["checking", "visitor", "Checking AR support…", true],
-    ["unsupported", "visitor", "AR not supported on this device", true],
+    // A visitor's phone without AR copies the link for one that has it
+    // (polish round M4a, the owner's V4); a creator's says what it is.
+    ["unsupported", "visitor", "Copy link", false],
+    ["unsupported", "creator", "AR not supported on this device", true],
     ["ready", "visitor", "Start the tour", false],
-    ["ready", "creator", "Start AR setup", false],
+    ["ready", "creator", "Start creating", false],
     ["starting", "visitor", "Starting…", true],
     // The way out of AR (UI round 1, U2, review F2): it used to sit there
     // disabled as "Tour running" / "Setting up in AR".
     ["running", "visitor", "Exit AR", false],
-    ["running", "creator", "Exit AR", false],
+    // A creator's one way out is Done (polish round M3, Q-Done): it
+    // finishes when a finish can run, else just leaves.
+    ["running", "creator", "Done", false],
     ["stopping", "visitor", "Stopping…", true],
   ] as const)("%s (%s) → %j / disabled=%s", (status, mode, label, disabled) => {
     expect(arButtonView({ status }, mode)).toEqual({
       label,
       disabled,
     });
+  });
+
+  it("a creator's Done says it is saving, and after a failed finish offers to leave (polish round M3)", () => {
+    // Why: Done runs the finish; while it rebuilds the zip the button
+    // must say so and not take a second tap, and a finish that failed
+    // (offline) must not trap the creator in AR - the button then only
+    // leaves, and the panel's Finish is the retry.
+    const running = { status: "running" } as const;
+    const idle = { pending: false, busy: false };
+    // Tappable while saving (M3 review #1): the read of a hosted zip can
+    // take minutes on mobile data, and a disabled button left only the
+    // back gesture; a tap leaves AR and the finish carries on.
+    expect(
+      arButtonView(running, "creator", idle, { running: true, failed: false }),
+    ).toEqual({ label: "Saving…", disabled: false });
+    expect(
+      arButtonView(running, "creator", idle, { running: false, failed: true }),
+    ).toEqual({ label: "Close AR", disabled: false });
+    // A visitor's button never reads the finish.
+    expect(
+      arButtonView(running, "visitor", idle, { running: true, failed: true }),
+    ).toEqual({ label: "Exit AR", disabled: false });
   });
 
   it("a ready visitor button asks for the location first while the gate is pending (DEC-N2)", () => {
@@ -325,7 +353,7 @@ describe("arButtonView", () => {
     ).toEqual({ label: "Getting your location…", disabled: true });
     // A creator never has a pending gate; the flag is ignored for them.
     expect(arButtonView({ status: "ready" }, "creator", pending).label).toBe(
-      "Start AR setup",
+      "Start creating",
     );
   });
 
@@ -339,5 +367,48 @@ describe("arButtonView", () => {
     );
     expect(view.disabled).toBe(false);
     expect(view.label).toBe("Try again");
+  });
+});
+
+describe("visitorStep (polish round M4a, the owner's V4)", () => {
+  // Why: a visitor's first tap only asks for the location (the browser's
+  // prompt would otherwise eat the tap that starts AR, DEC-N2); V4 makes
+  // that a visible "1 of 2" / "2 of 2" on the button, so the first tap
+  // reads as progress, not as a tap that did nothing.
+  const ready = { status: "ready" } as never;
+  const idle = { pending: false, busy: false };
+
+  it("counts the location tap as step 1 and the start as step 2", () => {
+    expect(
+      visitorStep("visitor", ready, { pending: true, busy: false }, false),
+    ).toBe("1 of 2");
+    expect(
+      visitorStep("visitor", ready, { pending: true, busy: true }, true),
+    ).toBe("1 of 2");
+    expect(visitorStep("visitor", ready, idle, true)).toBe("2 of 2");
+  });
+
+  it("shows no step when the location was never asked, for a creator, or outside ready", () => {
+    expect(visitorStep("visitor", ready, idle, false)).toBeNull();
+    expect(
+      visitorStep("creator", ready, { pending: true, busy: false }, true),
+    ).toBeNull();
+    for (const status of [
+      "checking",
+      "unsupported",
+      "starting",
+      "running",
+      "error",
+    ]) {
+      expect(
+        visitorStep(
+          "visitor",
+          { status } as never,
+          { pending: true, busy: false },
+          true,
+        ),
+        status,
+      ).toBeNull();
+    }
   });
 });

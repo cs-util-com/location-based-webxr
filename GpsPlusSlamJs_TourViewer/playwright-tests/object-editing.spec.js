@@ -130,10 +130,13 @@ test("a deleted photo leaves the zip with its jpg, and a deleted hosted pin leav
   const jpg = photo?.kind === "photo" ? photo.image : "";
   expect(first.names).toContain(jpg);
 
-  // On the page now (the Finish ended the session): delete both.
+  // On the page now (the Finish ended the session): delete both. The list
+  // is step 5's; the Finish lands on step 6 (polish round M2, B9), and
+  // editing means going back to step 5 (the owner's words).
+  await page.getByTestId("station-measure").click();
   await row(page, "Photo").getByTestId("object-delete").click();
   await expect(page.getByTestId("object-list-note")).toHaveText(
-    /Deleted the photo - it leaves the zip on the next Finish/,
+    /Deleted the photo - it leaves the zip when you save the tour/,
   );
   await row(page, "Fixture pin").getByTestId("object-delete").click();
   await expect(row(page, "Fixture pin")).toHaveCount(0);
@@ -152,7 +155,7 @@ test("a tap in AR selects the object under the ring, a tap on the panel does not
 
   // In AR the list waits for a selection.
   await expect(page.getByTestId("object-list-hint")).toHaveText(
-    /tap the screen to select it/,
+    /Tap a pin or photo to select it/,
   );
   await page.evaluate(
     ([key, id]) => {

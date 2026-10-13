@@ -50,9 +50,17 @@ import { readTracked, repoRoot, trackedFiles } from './tracked-tree.js';
  *   by `shoot.mjs`, where the `/fw/` route does not exist. Its sliders set
  *   no app state: the compass specimen only updates its own label, so a
  *   swipe that moves one changes a number on a sheet no phone user opens.
+ * - A design prototype in the Tour Viewer's inspiration gallery (root
+ *   CLAUDE.md "Throwaway UX prototypes": kept, linked from nothing) is a
+ *   standalone draft wired to nothing: its size slider changes a label in
+ *   the draft.
  */
 const EXEMPT = new Map([
   ['GpsPlusSlamJs_DesignSystem/index.html', 'undeployed specimen sheet over file://'],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/landing-5-map-path/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
 ]);
 
 const RANGE_IN_HTML = /<input\b[^>]*\btype\s*=\s*["']?range\b/is;

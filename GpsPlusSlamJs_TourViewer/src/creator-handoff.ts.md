@@ -14,11 +14,22 @@ the automatic save is in
 
 ## Public API
 
-- `wireCreatorHandoff({ ctx, seams, dom, render }): CreatorHandoff` - wires
+- `wireCreatorHandoff({ ctx, seams, dom, render, host? }): CreatorHandoff` - wires
   the button (`dom`: `downloadButton`, `finishStatus`, `replaceHelp`,
-  `replaceHelpGeneric`, `replaceHelpDrive`); `seams.downloadZip` is the save;
+  `replaceHelpGeneric`, `replaceHelpDrive`, `replaceDriveCopy`);
+  `seams.downloadZip` is the save; `seams.copyText` (optional) is the
+  Drive address button's copy, run through the framework's
+  `copyWithFeedback` (follow-up F7, DEC-H3) - shown with the Drive steps when
+  `driveFileAddress` reads the open link, labelled by `DRIVE_COPY_LABELS`
+  (busy, then "Copied" or, failed, the address to copy by hand; hidden again
+  on `reset`);
   `render` re-renders the creator panel when a delivered file changes the
-  save guard.
+  save guard. `host` (polish round M2, step 6) is the host chosen in step 1,
+  read at each save: a tour that is not on Drive gets that host's own
+  replace text (`tour-host.ts` `hostReplaceText`) in `replaceHelpGeneric`,
+  in place of the page's paragraph about every host, which `reset` puts
+  back. A Drive link keeps its own numbered steps whatever the host says
+  (the link is the fact, the stored host a preference).
 - `CreatorHandoff`:
   - `save(notes?)` - save the rebuilt zip to this phone. The Finish calls it
     once the zip is rebuilt, with its result sentences (the code's
@@ -84,6 +95,12 @@ handoff.save(notes);
   once by itself under the hosted name; a save that did not go through says
   so, keeps the leave question, and the button saves again; a later failed
   save keeps the replace steps; a save that throws reports it.
+- `creator-handoff.test.ts` "the Drive address button": shown with the Drive
+  steps, the copied address, both async outcomes, hidden off Drive and after
+  a close.
+- `creator-handoff.test.ts` "the replace steps follow the chosen host": the
+  host's own text after a save, the paragraph with no host, and its return
+  on a tour close.
 - `qr-author-mode.test.ts` "the finish saves the tour zip by itself" and the
   Drive steps: the copy.
 - `playwright-tests/ar-mode.spec.js`: the Finish's own save in a browser,

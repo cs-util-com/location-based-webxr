@@ -1,0 +1,3806 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title>Make a Tour</title>
+    <style>
+      :root {
+        --bg: #f3f4fa;
+        --surface: #ffffff;
+        --surface2: #f7f8fc;
+        --ink: #151a2d;
+        --muted: #5d6480;
+        --line: #e2e5f0;
+        --primary: #4a4de6;
+        --primary-2: #6f72f2;
+        --primary-ink: #ffffff;
+        --soft: #eceeff;
+        --accent: #10a88f;
+        --accent-soft: #dcf5ef;
+        --warn: #b86e00;
+        --warn-soft: #fff1d9;
+        --wall: #e9ebf4;
+        --skin: #f2c9a5;
+        --shadow: 0 10px 30px rgba(30, 34, 80, 0.1);
+        --radius: 20px;
+        --safe-b: env(safe-area-inset-bottom, 0px);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0d0f1d;
+          --surface: #171a2e;
+          --surface2: #1d2138;
+          --ink: #eef0fa;
+          --muted: #a3a9c6;
+          --line: #2b3050;
+          --primary: #7f83fa;
+          --primary-2: #a0a3ff;
+          --primary-ink: #0d0f1d;
+          --soft: #242a52;
+          --accent: #35d0b2;
+          --accent-soft: #143a35;
+          --warn: #f2b54a;
+          --warn-soft: #3a2d12;
+          --wall: #22263f;
+          --skin: #d9a982;
+          --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          16px/1.45 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        overflow: hidden;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      .proto-label {
+        position: fixed;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 50;
+        font-size: 11px;
+        letter-spacing: 0.02em;
+        padding: 2px 10px;
+        border-radius: 0 0 8px 8px;
+        background: #111;
+        color: #fff;
+        opacity: 0.78;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+
+      /* ---------- app shell ---------- */
+      .app {
+        height: 100vh;
+        height: 100dvh;
+        max-width: 1180px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        padding-top: 20px;
+        position: relative;
+      }
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 16px 6px;
+        flex: 0 0 auto;
+      }
+      .topbar[hidden] {
+        display: none;
+      }
+      .icon-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        border: 0;
+        background: var(--surface);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        box-shadow: 0 1px 0 var(--line);
+        flex: 0 0 auto;
+      }
+      .icon-btn:focus-visible,
+      .btn:focus-visible,
+      .host:focus-visible,
+      .dot:focus-visible {
+        outline: 3px solid var(--primary-2);
+        outline-offset: 2px;
+      }
+      .progress-wrap {
+        flex: 1;
+        min-width: 0;
+      }
+      .progress-meta {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12.5px;
+        color: var(--muted);
+        margin-bottom: 5px;
+        gap: 8px;
+      }
+      .progress-meta b {
+        color: var(--ink);
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .progress {
+        height: 6px;
+        border-radius: 6px;
+        background: var(--line);
+        overflow: hidden;
+      }
+      .progress > i {
+        display: block;
+        height: 100%;
+        width: 0;
+        border-radius: 6px;
+        background: linear-gradient(90deg, var(--primary), var(--accent));
+        transition: width 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
+      }
+
+      .screens {
+        flex: 1;
+        min-height: 0;
+        position: relative;
+        overflow: hidden;
+      }
+      .screen {
+        position: absolute;
+        inset: 0;
+        display: none;
+        flex-direction: column;
+      }
+      .screen.active {
+        display: flex;
+      }
+      .screen.in-fwd {
+        animation: inFwd 0.38s cubic-bezier(0.25, 0.8, 0.25, 1);
+      }
+      .screen.in-back {
+        animation: inBack 0.38s cubic-bezier(0.25, 0.8, 0.25, 1);
+      }
+      @keyframes inFwd {
+        from {
+          opacity: 0;
+          transform: translateX(36px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      @keyframes inBack {
+        from {
+          opacity: 0;
+          transform: translateX(-36px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+
+      .art {
+        flex: 0 0 auto;
+        height: min(24vh, 190px);
+        display: grid;
+        place-items: center;
+        padding: 4px 16px 0;
+      }
+      .art svg.ill {
+        width: 100%;
+        height: 100%;
+        max-width: 520px;
+        display: block;
+      }
+      .panel {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: 600px;
+        margin: 0 auto;
+      }
+      .body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 6px 16px 16px;
+        overscroll-behavior: contain;
+      }
+      .foot {
+        padding: 10px 16px calc(12px + var(--safe-b));
+        flex: 0 0 auto;
+        background: linear-gradient(to top, var(--bg) 70%, transparent);
+      }
+      .foot .sub-link {
+        display: block;
+        text-align: center;
+        margin-top: 8px;
+        font-size: 14px;
+        color: var(--muted);
+        background: none;
+        border: 0;
+        cursor: pointer;
+        width: 100%;
+        padding: 6px;
+      }
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        letter-spacing: -0.01em;
+      }
+      h1 {
+        font-size: clamp(24px, 6.4vw, 32px);
+        line-height: 1.15;
+      }
+      h2.step-title {
+        font-size: clamp(22px, 5.6vw, 28px);
+        line-height: 1.18;
+        margin: 6px 0 6px;
+      }
+      .lead {
+        color: var(--muted);
+        margin: 0 0 16px;
+      }
+      .kicker {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--primary);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        width: 100%;
+        min-height: 54px;
+        border-radius: 16px;
+        border: 0;
+        cursor: pointer;
+        font-weight: 650;
+        font-size: 17px;
+        padding: 0 18px;
+        transition:
+          transform 0.12s,
+          opacity 0.2s,
+          background 0.2s;
+      }
+      .btn:active {
+        transform: scale(0.98);
+      }
+      .btn.primary {
+        background: var(--primary);
+        color: var(--primary-ink);
+        box-shadow: 0 8px 20px -8px var(--primary);
+      }
+      .btn.primary:disabled {
+        opacity: 0.42;
+        box-shadow: none;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .btn.secondary {
+        background: var(--soft);
+        color: var(--primary);
+      }
+      .btn.small {
+        min-height: 42px;
+        font-size: 15px;
+        border-radius: 12px;
+        width: auto;
+        padding: 0 14px;
+      }
+      .btn.done {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      /* ---------- wide layouts: landscape phone, tablet landscape, desktop ---------- */
+      @media (min-width: 700px) and (min-aspect-ratio: 5/4),
+        (min-width: 1000px) {
+        .screen {
+          flex-direction: row;
+        }
+        .art {
+          flex: 0 0 46%;
+          height: auto;
+          padding: 12px 8px 16px 24px;
+        }
+        .art svg.ill {
+          max-width: none;
+          max-height: 100%;
+        }
+        .panel {
+          max-width: none;
+          margin: 0;
+          padding-right: 8px;
+        }
+        .body {
+          padding: 8px 24px 16px;
+        }
+        .foot {
+          padding: 10px 24px calc(14px + var(--safe-b));
+        }
+        .foot .btn {
+          max-width: 420px;
+          margin-left: auto;
+        }
+        .foot .sub-link {
+          text-align: right;
+        }
+      }
+      @media (min-width: 1000px) {
+        .art {
+          padding: 24px 16px 32px 40px;
+        }
+        .body {
+          padding: 24px 40px 16px;
+        }
+        .foot {
+          padding: 14px 40px 28px;
+        }
+        .art-card {
+          border-radius: 28px;
+        }
+      }
+      .art-card {
+        width: 100%;
+        height: 100%;
+        display: grid;
+        place-items: center;
+        border-radius: 24px;
+      }
+      @media (min-width: 700px) and (min-aspect-ratio: 5/4),
+        (min-width: 1000px) {
+        .art-card {
+          background: var(--surface);
+          box-shadow: var(--shadow);
+          padding: 12px;
+          height: auto;
+          max-height: 100%;
+          aspect-ratio: 320 / 250;
+        }
+      }
+
+      /* ---------- welcome ---------- */
+      .screen.welcome {
+        display: none;
+      }
+      .screen.welcome.active {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        grid-template-areas: "head" "car" "foot";
+      }
+      .w-head {
+        grid-area: head;
+        padding: 8px 16px 4px;
+        text-align: center;
+      }
+      .w-head .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 650;
+        color: var(--primary);
+        background: var(--soft);
+        padding: 5px 12px 5px 6px;
+        border-radius: 99px;
+        margin-bottom: 10px;
+      }
+      .w-head .badge svg {
+        width: 22px;
+        height: 22px;
+      }
+      .w-head p {
+        color: var(--muted);
+        margin: 6px auto 0;
+        max-width: 420px;
+      }
+      .car-wrap {
+        grid-area: car;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        padding: 10px 0 0;
+      }
+      .carousel {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scroll-snap-type: x mandatory;
+        scrollbar-width: none;
+        scroll-behavior: smooth;
+        overscroll-behavior-x: contain;
+      }
+      .carousel::-webkit-scrollbar {
+        display: none;
+      }
+      .card {
+        flex: 0 0 100%;
+        scroll-snap-align: center;
+        padding: 0 16px;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+      }
+      .card-in {
+        flex: 1;
+        min-height: 0;
+        background: var(--surface);
+        border-radius: 24px;
+        box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
+        padding: 14px 18px 18px;
+        max-width: 560px;
+        height: 100%;
+        max-height: 470px;
+        margin: 0 auto;
+      }
+      .card-in svg {
+        flex: 1;
+        min-height: 0;
+        width: 100%;
+      }
+      .card-in h3 {
+        font-size: 19px;
+        margin-top: 8px;
+      }
+      .card-in p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+      .dots {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px 0 2px;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 8px;
+        border: 0;
+        padding: 0;
+        background: var(--line);
+        cursor: pointer;
+        transition:
+          width 0.25s,
+          background 0.25s;
+      }
+      .dot[aria-current="true"] {
+        width: 24px;
+        background: var(--primary);
+      }
+      .welcome .foot {
+        grid-area: foot;
+        width: 100%;
+        max-width: 600px;
+        margin: 0 auto;
+      }
+      .skip {
+        position: absolute;
+        right: 12px;
+        top: 4px;
+        z-index: 3;
+        background: none;
+        border: 0;
+        color: var(--muted);
+        font-size: 14px;
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+      @media (min-width: 700px) and (min-aspect-ratio: 5/4),
+        (min-width: 1000px) {
+        .screen.welcome.active {
+          grid-template-columns: 54% 1fr;
+          grid-template-rows: 1fr auto;
+          grid-template-areas: "car head" "car foot";
+        }
+        .w-head {
+          text-align: left;
+          align-self: center;
+          padding: 16px 32px;
+        }
+        .w-head p {
+          margin-left: 0;
+        }
+        .car-wrap {
+          padding: 10px 0 12px 8px;
+        }
+        .welcome .foot {
+          padding: 10px 32px calc(14px + var(--safe-b));
+          max-width: none;
+        }
+        .welcome .foot .btn {
+          max-width: none;
+        }
+        .welcome .foot .sub-link {
+          text-align: center;
+        }
+      }
+      @media (max-height: 460px) {
+        .w-head .badge {
+          display: none;
+        }
+        .w-head p {
+          display: none;
+        }
+        .card-in {
+          padding: 10px 14px 12px;
+        }
+        .card-in h3 {
+          font-size: 17px;
+          margin-top: 4px;
+        }
+        .card-in p {
+          font-size: 14px;
+        }
+        .dots {
+          padding: 8px 0 0;
+        }
+        .btn {
+          min-height: 48px;
+        }
+        h2.step-title {
+          font-size: 22px;
+        }
+      }
+      /* landscape phone: the welcome text column has room for the subtitle */
+      @media (max-height: 460px) and (min-width: 700px) and (min-aspect-ratio: 5/4) {
+        .w-head p {
+          display: block;
+          font-size: 15px;
+        }
+      }
+
+      /* ---------- step 1: hosts ---------- */
+      .hosts {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .host-item {
+        background: var(--surface);
+        border-radius: 18px;
+        box-shadow: 0 1px 0 var(--line);
+        overflow: hidden;
+        border: 2px solid transparent;
+        transition: border-color 0.2s;
+      }
+      .host-item.sel {
+        border-color: var(--primary);
+      }
+      .host {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        width: 100%;
+        padding: 12px 14px;
+        background: none;
+        border: 0;
+        text-align: left;
+        cursor: pointer;
+      }
+      .host .ico {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        background: var(--surface2);
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+      }
+      .host .ico svg {
+        width: 26px;
+        height: 26px;
+      }
+      .host .t {
+        flex: 1;
+        min-width: 0;
+      }
+      .host .t b {
+        display: block;
+        font-weight: 650;
+      }
+      .host .t span {
+        font-size: 13.5px;
+        color: var(--muted);
+      }
+      .radio {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        border: 2px solid var(--line);
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+        transition: 0.2s;
+      }
+      .host-item.sel .radio {
+        border-color: var(--primary);
+        background: var(--primary);
+      }
+      .host-item.sel .radio::after {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--primary-ink);
+      }
+      .howto {
+        display: grid;
+        grid-template-rows: 0fr;
+        transition: grid-template-rows 0.35s ease;
+      }
+      .host-item.sel .howto {
+        grid-template-rows: 1fr;
+      }
+      .howto > div {
+        overflow: hidden;
+      }
+      .howto ol {
+        margin: 0;
+        padding: 0 14px 14px 14px;
+        list-style: none;
+        counter-reset: s;
+      }
+      .howto li {
+        counter-increment: s;
+        position: relative;
+        padding: 8px 0 8px 38px;
+        font-size: 15px;
+        border-top: 1px dashed var(--line);
+      }
+      .howto li::before {
+        content: counter(s);
+        position: absolute;
+        left: 2px;
+        top: 8px;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: var(--soft);
+        color: var(--primary);
+        font-weight: 700;
+        font-size: 13px;
+        display: grid;
+        place-items: center;
+      }
+      .howto .btn {
+        margin-top: 8px;
+      }
+      code.snip {
+        display: block;
+        margin-top: 6px;
+        font:
+          12.5px/1.5 ui-monospace,
+          SFMono-Regular,
+          Consolas,
+          monospace;
+        background: var(--surface2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px 10px;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+
+      /* ---------- step 2: link ---------- */
+      .field {
+        display: flex;
+        gap: 8px;
+        background: var(--surface);
+        border-radius: 16px;
+        padding: 6px;
+        border: 2px solid var(--line);
+        transition: border-color 0.2s;
+      }
+      .field:focus-within {
+        border-color: var(--primary);
+      }
+      .field input {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        background: transparent;
+        color: var(--ink);
+        font: inherit;
+        font-size: 16px;
+        padding: 10px 8px;
+        outline: none;
+      }
+      .status {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin-top: 12px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        font-size: 15px;
+        min-height: 52px;
+        background: var(--surface2);
+        color: var(--muted);
+        transition:
+          background 0.25s,
+          color 0.25s;
+      }
+      .status .s-ico {
+        width: 24px;
+        height: 24px;
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+      }
+      .status.found {
+        background: var(--accent-soft);
+        color: var(--ink);
+      }
+      .status.found .s-ico {
+        color: var(--accent);
+      }
+      .status.notyet {
+        background: var(--warn-soft);
+        color: var(--ink);
+      }
+      .status.notyet .s-ico {
+        color: var(--warn);
+      }
+      .status b {
+        display: block;
+      }
+      .spin {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 3px solid var(--line);
+        border-top-color: var(--primary);
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+      .chip {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        border-radius: 99px;
+        padding: 7px 12px;
+        font-size: 14px;
+        cursor: pointer;
+        color: var(--ink);
+      }
+      details.help {
+        margin-top: 14px;
+        background: var(--surface);
+        border-radius: 14px;
+        padding: 10px 14px;
+        box-shadow: 0 1px 0 var(--line);
+      }
+      details.help summary {
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 15px;
+      }
+      details.help p {
+        margin: 8px 0 2px;
+        color: var(--muted);
+        font-size: 14.5px;
+      }
+
+      /* ---------- step 3: print ---------- */
+      .ctl {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        background: var(--surface);
+        border-radius: 16px;
+        padding: 10px 12px 10px 16px;
+        box-shadow: 0 1px 0 var(--line);
+        margin-bottom: 10px;
+      }
+      .ctl .l b {
+        display: block;
+        font-weight: 650;
+      }
+      .ctl .l span {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .stepper {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: var(--surface2);
+        border-radius: 12px;
+        padding: 3px;
+      }
+      .stepper button {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        border: 0;
+        background: var(--surface);
+        cursor: pointer;
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--primary);
+        box-shadow: 0 1px 0 var(--line);
+      }
+      .stepper button:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+      .stepper output {
+        min-width: 58px;
+        text-align: center;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(66px, 1fr));
+        gap: 10px;
+        margin: 14px 0 12px;
+      }
+      .tile {
+        background: #fff;
+        border-radius: 8px;
+        padding: 7px 7px 5px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+        text-align: center;
+        animation: pop 0.3s cubic-bezier(0.3, 1.5, 0.5, 1) both;
+      }
+      .tile svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .tile span {
+        display: block;
+        font-size: 10.5px;
+        color: #555;
+        margin-top: 3px;
+      }
+      @keyframes pop {
+        from {
+          transform: scale(0.6);
+          opacity: 0;
+        }
+        to {
+          transform: none;
+          opacity: 1;
+        }
+      }
+      .sheet-meta {
+        font-size: 13.5px;
+        color: var(--muted);
+        margin: -4px 0 10px;
+      }
+      .hint {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        background: var(--soft);
+        border-radius: 14px;
+        padding: 10px 14px;
+        font-size: 14.5px;
+        margin-top: 12px;
+      }
+      .hint svg {
+        flex: 0 0 auto;
+        margin-top: 2px;
+      }
+
+      /* ---------- step 4/5 lists ---------- */
+      .tips {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .tips li {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        background: var(--surface);
+        border-radius: 16px;
+        padding: 12px 14px;
+        box-shadow: 0 1px 0 var(--line);
+      }
+      .tips .ti {
+        width: 36px;
+        height: 36px;
+        border-radius: 11px;
+        background: var(--soft);
+        color: var(--primary);
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        font-weight: 700;
+      }
+      .tips b {
+        display: block;
+      }
+      .tips span {
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .note {
+        font-size: 14px;
+        color: var(--muted);
+        margin: 14px 2px 0;
+      }
+
+      /* ---------- done ---------- */
+      .file-card {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        background: var(--surface);
+        border-radius: 18px;
+        padding: 14px;
+        box-shadow: 0 1px 0 var(--line);
+        margin-bottom: 14px;
+      }
+      .file-card .fi {
+        width: 46px;
+        height: 46px;
+        border-radius: 12px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+      }
+      .file-card b {
+        display: block;
+      }
+      .file-card span {
+        font-size: 13.5px;
+        color: var(--muted);
+      }
+      .replace {
+        background: var(--surface);
+        border-radius: 18px;
+        padding: 14px 16px 6px;
+        box-shadow: 0 1px 0 var(--line);
+      }
+      .replace h3 {
+        font-size: 16px;
+        margin-bottom: 4px;
+      }
+      .replace ol {
+        margin: 6px 0 8px;
+        padding-left: 20px;
+      }
+      .replace li {
+        margin: 5px 0;
+        font-size: 15px;
+      }
+      .same {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-top: 12px;
+        font-size: 14.5px;
+        color: var(--ink);
+        background: var(--accent-soft);
+        border-radius: 14px;
+        padding: 10px 14px;
+      }
+
+      /* ---------- overlay + toast ---------- */
+      .overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        background: rgba(8, 10, 25, 0.82);
+        color: #fff;
+        display: none;
+        place-items: center;
+        text-align: center;
+        padding: 24px;
+      }
+      .overlay.show {
+        display: grid;
+      }
+      .overlay .spin {
+        width: 44px;
+        height: 44px;
+        border-width: 4px;
+        border-color: rgba(255, 255, 255, 0.25);
+        border-top-color: #fff;
+        margin: 0 auto 14px;
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: calc(92px + var(--safe-b));
+        transform: translate(-50%, 20px);
+        z-index: 45;
+        background: var(--ink);
+        color: var(--bg);
+        padding: 11px 16px;
+        border-radius: 14px;
+        font-size: 14.5px;
+        opacity: 0;
+        pointer-events: none;
+        transition: 0.25s;
+        max-width: calc(100% - 32px);
+        box-shadow: var(--shadow);
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+
+      /* ---------- SVG paint classes ---------- */
+      .f-p {
+        fill: var(--primary);
+      }
+      .f-p2 {
+        fill: var(--primary-2);
+      }
+      .f-a {
+        fill: var(--accent);
+      }
+      .f-s {
+        fill: var(--surface);
+      }
+      .f-s2 {
+        fill: var(--surface2);
+      }
+      .f-i {
+        fill: var(--ink);
+      }
+      .f-m {
+        fill: var(--muted);
+      }
+      .f-l {
+        fill: var(--line);
+      }
+      .f-soft {
+        fill: var(--soft);
+      }
+      .f-wall {
+        fill: var(--wall);
+      }
+      .f-w {
+        fill: #fff;
+      }
+      .f-as {
+        fill: var(--accent-soft);
+      }
+      .f-skin {
+        fill: var(--skin);
+      }
+      .f-warn {
+        fill: var(--warn);
+      }
+      .s-p {
+        stroke: var(--primary);
+      }
+      .s-a {
+        stroke: var(--accent);
+      }
+      .s-i {
+        stroke: var(--ink);
+      }
+      .s-m {
+        stroke: var(--muted);
+      }
+      .s-l {
+        stroke: var(--line);
+      }
+      .s-s {
+        stroke: var(--surface);
+      }
+      .nofill {
+        fill: none;
+      }
+      svg text {
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      .ani {
+        transform-box: fill-box;
+        transform-origin: center;
+      }
+
+      /* Base styles are the informative still frame; keyframes only animate around it. */
+      /* card 1: what a tour is */
+      .c1-phone {
+        transform: translate(150px, 74px);
+        animation: c1phone 6s ease-in-out infinite;
+      }
+      @keyframes c1phone {
+        0% {
+          transform: translate(214px, 96px);
+        }
+        22%,
+        82% {
+          transform: translate(150px, 74px);
+        }
+        96%,
+        100% {
+          transform: translate(214px, 96px);
+        }
+      }
+      .c1-beam {
+        opacity: 0;
+        animation: c1beam 6s linear infinite;
+      }
+      @keyframes c1beam {
+        0%,
+        24% {
+          opacity: 0;
+        }
+        30%,
+        40% {
+          opacity: 0.55;
+        }
+        46%,
+        100% {
+          opacity: 0;
+        }
+      }
+      .c1-pin {
+        animation: c1pin 6s cubic-bezier(0.3, 1.6, 0.5, 1) infinite;
+      }
+      .c1-pin.b {
+        animation-name: c1pinb;
+      }
+      @keyframes c1pin {
+        0%,
+        42% {
+          transform: scale(0);
+          opacity: 0;
+        }
+        52%,
+        86% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        94%,
+        100% {
+          transform: scale(0);
+          opacity: 0;
+        }
+      }
+      @keyframes c1pinb {
+        0%,
+        50% {
+          transform: scale(0);
+          opacity: 0;
+        }
+        60%,
+        86% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        94%,
+        100% {
+          transform: scale(0);
+          opacity: 0;
+        }
+      }
+      /* card 2: yours */
+      .c2-file {
+        animation: c2file 6s ease-in-out infinite;
+      }
+      @keyframes c2file {
+        0%,
+        8% {
+          transform: translateY(-62px);
+          opacity: 0;
+        }
+        14% {
+          opacity: 1;
+        }
+        40%,
+        100% {
+          transform: none;
+          opacity: 1;
+        }
+      }
+      .c2-wifi {
+        opacity: 0.15;
+        animation: c2wifi 6s linear infinite;
+      }
+      @keyframes c2wifi {
+        0%,
+        44% {
+          opacity: 1;
+        }
+        56%,
+        100% {
+          opacity: 0.15;
+        }
+      }
+      .c2-ok {
+        animation: c2ok 6s cubic-bezier(0.3, 1.6, 0.5, 1) infinite;
+      }
+      @keyframes c2ok {
+        0%,
+        56% {
+          transform: scale(0);
+        }
+        66%,
+        94% {
+          transform: scale(1);
+        }
+        100% {
+          transform: scale(0);
+        }
+      }
+      /* card 3: how */
+      .c3-st {
+        animation: c3st 6s ease-in-out infinite;
+      }
+      .c3-st.n2 {
+        animation-delay: 0.8s;
+      }
+      .c3-st.n3 {
+        animation-delay: 1.6s;
+      }
+      @keyframes c3st {
+        0% {
+          transform: scale(0.7);
+          opacity: 0.25;
+        }
+        12%,
+        80% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        100% {
+          transform: scale(0.7);
+          opacity: 0.25;
+        }
+      }
+      .c3-arrow {
+        stroke-dasharray: 4 4;
+        animation: dash 1s linear infinite;
+      }
+      @keyframes dash {
+        to {
+          stroke-dashoffset: -16;
+        }
+      }
+      /* art: host upload */
+      .a1-zip {
+        animation: a1zip 4s ease-in-out infinite;
+      }
+      @keyframes a1zip {
+        0% {
+          transform: translateY(60px);
+          opacity: 0;
+        }
+        20% {
+          opacity: 1;
+        }
+        60%,
+        100% {
+          transform: none;
+          opacity: 1;
+        }
+      }
+      .a1-host {
+        animation: a1host 4s ease-in-out infinite;
+      }
+      .a1-host.h2 {
+        animation-delay: 0.25s;
+      }
+      .a1-host.h3 {
+        animation-delay: 0.5s;
+      }
+      .a1-host.h4 {
+        animation-delay: 0.75s;
+      }
+      .a1-host.h5 {
+        animation-delay: 1s;
+      }
+      @keyframes a1host {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-5px);
+        }
+      }
+      /* art: link to QR */
+      .a2-link {
+        animation: a2link 4s ease-in-out infinite;
+      }
+      @keyframes a2link {
+        0%,
+        100% {
+          transform: translateX(0);
+        }
+        40%,
+        60% {
+          transform: translateX(10px);
+        }
+      }
+      .a2-qr {
+        animation: a2qr 4s ease-in-out infinite;
+      }
+      @keyframes a2qr {
+        0%,
+        30% {
+          transform: scale(0.92);
+        }
+        50%,
+        100% {
+          transform: scale(1);
+        }
+      }
+      .a2-badge {
+        transform: scale(0);
+        transition: transform 0.4s cubic-bezier(0.3, 1.6, 0.5, 1);
+      }
+      .a2-badge.on {
+        transform: scale(1);
+      }
+      /* art: printer */
+      .a3-paper {
+        animation: a3paper 3.6s ease-in-out infinite;
+      }
+      @keyframes a3paper {
+        0% {
+          transform: translateY(-58px);
+        }
+        55%,
+        90% {
+          transform: none;
+        }
+        100% {
+          transform: none;
+          opacity: 0;
+        }
+      }
+      .a3-led {
+        animation: blink 1.2s steps(2) infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.2;
+        }
+      }
+      /* art: hang */
+      .a4-poster {
+        animation: a4poster 5s cubic-bezier(0.3, 1.4, 0.5, 1) infinite;
+      }
+      @keyframes a4poster {
+        0%,
+        6% {
+          transform: translateY(-14px) rotate(-6deg);
+          opacity: 0;
+        }
+        18%,
+        100% {
+          transform: none;
+          opacity: 1;
+        }
+      }
+      .a4-dim {
+        animation: a4dim 5s ease-in-out infinite;
+      }
+      @keyframes a4dim {
+        0%,
+        20% {
+          opacity: 0;
+        }
+        32%,
+        100% {
+          opacity: 1;
+        }
+      }
+      /* art: AR */
+      .a5-scan {
+        animation: a5scan 2.4s ease-in-out infinite;
+      }
+      @keyframes a5scan {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(34px);
+        }
+      }
+      .a5-pin {
+        animation: a5pin 6s cubic-bezier(0.3, 1.6, 0.5, 1) infinite;
+      }
+      .a5-pin.p2 {
+        animation-delay: 0.6s;
+      }
+      .a5-pin.p3 {
+        animation-delay: 1.2s;
+      }
+      @keyframes a5pin {
+        0%,
+        20% {
+          transform: scale(0) translateY(10px);
+          opacity: 0;
+        }
+        32%,
+        88% {
+          transform: none;
+          opacity: 1;
+        }
+        100% {
+          transform: scale(0);
+          opacity: 0;
+        }
+      }
+      .a5-tap {
+        animation: a5tap 6s ease-in-out infinite;
+      }
+      @keyframes a5tap {
+        0%,
+        14% {
+          opacity: 0;
+          transform: scale(1.6);
+        }
+        20% {
+          opacity: 0.8;
+          transform: scale(1);
+        }
+        30%,
+        100% {
+          opacity: 0;
+          transform: scale(1);
+        }
+      }
+      /* art: done */
+      .a6-check {
+        stroke-dasharray: 90;
+        stroke-dashoffset: 0;
+        animation: a6check 1s 0.2s ease-out both;
+      }
+      @keyframes a6check {
+        from {
+          stroke-dashoffset: 90;
+        }
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+      .a6-ring {
+        animation: a6ring 1s ease-out both;
+      }
+      @keyframes a6ring {
+        from {
+          transform: scale(0.4);
+          opacity: 0;
+        }
+        to {
+          transform: none;
+          opacity: 1;
+        }
+      }
+      .a6-conf {
+        animation: a6conf 1.6s 0.3s ease-out both;
+      }
+      @keyframes a6conf {
+        from {
+          transform: translate(0, 0) scale(0.2);
+          opacity: 0;
+        }
+        30% {
+          opacity: 1;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+          scroll-behavior: auto !important;
+        }
+        .spin {
+          border-top-color: var(--primary);
+          border-right-color: var(--primary);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="proto-label">Prototype L4 - Native-app wizard</div>
+
+    <div class="app">
+      <!-- top bar: back + progress (hidden on welcome) -->
+      <div class="topbar" id="topbar" hidden>
+        <button class="icon-btn" id="backBtn" aria-label="Back">
+          <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+            <path
+              d="M12.5 4 6.5 10l6 6"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+        <div class="progress-wrap">
+          <div class="progress-meta">
+            <b id="stepName">Choose a host</b
+            ><span id="stepCount">Step 1 of 6</span>
+          </div>
+          <div
+            class="progress"
+            role="progressbar"
+            aria-valuemin="1"
+            aria-valuemax="6"
+            aria-valuenow="1"
+            id="progress"
+          >
+            <i id="progressFill"></i>
+          </div>
+        </div>
+      </div>
+
+      <div class="screens">
+        <!-- ============ WELCOME ============ -->
+        <section
+          class="screen welcome active"
+          data-step="0"
+          aria-label="Welcome"
+        >
+          <button class="skip" id="skipIntro">Skip intro</button>
+          <div class="w-head">
+            <span class="badge">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect width="24" height="24" rx="7" class="f-p" />
+                <path
+                  d="M12 5.5c-2.6 0-4.6 2-4.6 4.5 0 3.3 4.6 8.5 4.6 8.5s4.6-5.2 4.6-8.5c0-2.5-2-4.5-4.6-4.5z"
+                  class="f-w"
+                />
+                <circle cx="12" cy="10" r="1.8" class="f-p" />
+              </svg>
+              Tour Viewer
+            </span>
+            <h1>Make your own AR tour</h1>
+            <p>
+              You just walked one. Building your own takes a few short steps,
+              right here in the browser.
+            </p>
+          </div>
+
+          <div class="car-wrap">
+            <div class="carousel" id="carousel" aria-roledescription="carousel">
+              <!-- card 1 -->
+              <div
+                class="card"
+                aria-roledescription="slide"
+                aria-label="1 of 3"
+              >
+                <div class="card-in">
+                  <svg
+                    viewBox="0 0 240 160"
+                    aria-hidden="true"
+                    preserveAspectRatio="xMidYMid meet"
+                  >
+                    <rect
+                      x="6"
+                      y="6"
+                      width="228"
+                      height="148"
+                      rx="16"
+                      class="f-soft"
+                    />
+                    <rect
+                      x="22"
+                      y="22"
+                      width="196"
+                      height="96"
+                      rx="6"
+                      class="f-wall"
+                    />
+                    <rect
+                      x="6"
+                      y="118"
+                      width="228"
+                      height="36"
+                      class="f-l"
+                      opacity=".6"
+                    />
+                    <rect
+                      x="100"
+                      y="42"
+                      width="40"
+                      height="50"
+                      rx="3"
+                      class="f-w s-l"
+                      stroke-width="1"
+                    />
+                    <svg
+                      class="qrph"
+                      data-seed="card-1"
+                      x="106"
+                      y="48"
+                      width="28"
+                      height="28"
+                    ></svg>
+                    <rect
+                      x="108"
+                      y="81"
+                      width="24"
+                      height="3"
+                      rx="1.5"
+                      class="f-l"
+                    />
+                    <path
+                      class="c1-beam f-p"
+                      d="M120 66 L162 82 L162 104 Z"
+                      opacity=".5"
+                    />
+                    <g class="c1-pin ani">
+                      <rect
+                        x="30"
+                        y="30"
+                        width="54"
+                        height="20"
+                        rx="6"
+                        class="f-p"
+                      />
+                      <path d="M52 50 l5 7 5-7z" class="f-p" />
+                      <text
+                        x="57"
+                        y="44"
+                        font-size="9"
+                        font-weight="700"
+                        text-anchor="middle"
+                        class="f-w"
+                        style="fill: var(--primary-ink)"
+                      >
+                        Old gate
+                      </text>
+                    </g>
+                    <g class="c1-pin b ani">
+                      <rect
+                        x="168"
+                        y="26"
+                        width="38"
+                        height="30"
+                        rx="3"
+                        class="f-w s-p"
+                        stroke-width="2"
+                      />
+                      <path d="M172 52 l9-11 7 7 5-5 9 9z" class="f-a" />
+                      <circle cx="198" cy="34" r="3" class="f-p2" />
+                      <path d="M184 56 l3 6 3-6z" class="f-p" />
+                    </g>
+                    <g class="c1-phone">
+                      <rect width="30" height="54" rx="6" class="f-i" />
+                      <rect
+                        x="3"
+                        y="5"
+                        width="24"
+                        height="44"
+                        rx="3"
+                        class="f-p2"
+                        opacity=".85"
+                      />
+                      <rect
+                        x="9"
+                        y="17"
+                        width="12"
+                        height="12"
+                        rx="1"
+                        class="f-w"
+                      />
+                    </g>
+                  </svg>
+                  <h3>What a tour is</h3>
+                  <p>
+                    Text pins and photos that sit at real spots. Visitors scan a
+                    code and see them through their phone camera.
+                  </p>
+                </div>
+              </div>
+              <!-- card 2 -->
+              <div
+                class="card"
+                aria-roledescription="slide"
+                aria-label="2 of 3"
+              >
+                <div class="card-in">
+                  <svg
+                    viewBox="0 0 240 160"
+                    aria-hidden="true"
+                    preserveAspectRatio="xMidYMid meet"
+                  >
+                    <rect
+                      x="6"
+                      y="6"
+                      width="228"
+                      height="148"
+                      rx="16"
+                      class="f-soft"
+                    />
+                    <g>
+                      <circle cx="98" cy="46" r="18" class="f-s" />
+                      <circle cx="122" cy="36" r="24" class="f-s" />
+                      <circle cx="148" cy="48" r="16" class="f-s" />
+                      <rect
+                        x="80"
+                        y="46"
+                        width="84"
+                        height="20"
+                        rx="10"
+                        class="f-s"
+                      />
+                      <circle cx="122" cy="38" r="6" class="f-p" />
+                      <path d="M110 58 a12 10 0 0 1 24 0z" class="f-p" />
+                      <text x="178" y="40" font-size="9" class="f-m">
+                        your cloud
+                      </text>
+                    </g>
+                    <path
+                      d="M122 70 V96"
+                      class="s-p nofill"
+                      stroke-width="2"
+                      stroke-dasharray="3 4"
+                    />
+                    <rect
+                      x="102"
+                      y="92"
+                      width="40"
+                      height="58"
+                      rx="8"
+                      class="f-i"
+                    />
+                    <rect
+                      x="106"
+                      y="98"
+                      width="32"
+                      height="46"
+                      rx="4"
+                      class="f-s2"
+                    />
+                    <g class="c2-file ani">
+                      <rect
+                        x="112"
+                        y="106"
+                        width="20"
+                        height="26"
+                        rx="3"
+                        class="f-p"
+                      />
+                      <path
+                        d="M122 106 v4 m0 3 v3 m0 3 v3"
+                        class="s-s"
+                        stroke-width="2"
+                      />
+                      <rect
+                        x="119"
+                        y="122"
+                        width="6"
+                        height="5"
+                        rx="1"
+                        class="f-s"
+                      />
+                    </g>
+                    <g class="c2-wifi" transform="translate(160 104)">
+                      <path
+                        d="M0 14 a14 14 0 0 1 20 0"
+                        class="s-m nofill"
+                        stroke-width="3"
+                        stroke-linecap="round"
+                      />
+                      <path
+                        d="M4 18 a8 8 0 0 1 12 0"
+                        class="s-m nofill"
+                        stroke-width="3"
+                        stroke-linecap="round"
+                      />
+                      <circle cx="10" cy="22" r="2" class="f-m" />
+                    </g>
+                    <g class="c2-ok ani">
+                      <circle cx="170" cy="132" r="11" class="f-a" />
+                      <path
+                        d="M165 132 l4 4 7-8"
+                        class="s-s nofill"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </g>
+                    <text x="186" y="136" font-size="9" class="f-m">
+                      offline
+                    </text>
+                  </svg>
+                  <h3>It stays yours</h3>
+                  <p>
+                    Your tour is one file in your own cloud storage. No account
+                    here, no app to install, and once loaded it runs without
+                    good internet.
+                  </p>
+                </div>
+              </div>
+              <!-- card 3 -->
+              <div
+                class="card"
+                aria-roledescription="slide"
+                aria-label="3 of 3"
+              >
+                <div class="card-in">
+                  <svg
+                    viewBox="0 0 240 160"
+                    aria-hidden="true"
+                    preserveAspectRatio="xMidYMid meet"
+                  >
+                    <rect
+                      x="6"
+                      y="6"
+                      width="228"
+                      height="148"
+                      rx="16"
+                      class="f-soft"
+                    />
+                    <g class="c3-st ani">
+                      <rect
+                        x="18"
+                        y="52"
+                        width="52"
+                        height="52"
+                        rx="14"
+                        class="f-s"
+                      />
+                      <g transform="rotate(-45 44 78)">
+                        <rect
+                          x="29"
+                          y="72"
+                          width="18"
+                          height="12"
+                          rx="6"
+                          class="nofill s-p"
+                          stroke-width="3.5"
+                        />
+                        <rect
+                          x="41"
+                          y="72"
+                          width="18"
+                          height="12"
+                          rx="6"
+                          class="nofill s-p"
+                          stroke-width="3.5"
+                        />
+                      </g>
+                      <text
+                        x="44"
+                        y="120"
+                        font-size="10"
+                        text-anchor="middle"
+                        class="f-i"
+                        font-weight="600"
+                      >
+                        Link
+                      </text>
+                    </g>
+                    <path
+                      class="c3-arrow s-m nofill"
+                      d="M74 78 H92"
+                      stroke-width="2"
+                    />
+                    <g class="c3-st n2 ani">
+                      <rect
+                        x="94"
+                        y="52"
+                        width="52"
+                        height="52"
+                        rx="14"
+                        class="f-s"
+                      />
+                      <svg
+                        class="qrph"
+                        data-seed="card-3"
+                        x="102"
+                        y="60"
+                        width="36"
+                        height="36"
+                      ></svg>
+                      <text
+                        x="120"
+                        y="120"
+                        font-size="10"
+                        text-anchor="middle"
+                        class="f-i"
+                        font-weight="600"
+                      >
+                        Code
+                      </text>
+                    </g>
+                    <path
+                      class="c3-arrow s-m nofill"
+                      d="M150 78 H168"
+                      stroke-width="2"
+                    />
+                    <g class="c3-st n3 ani">
+                      <rect
+                        x="170"
+                        y="52"
+                        width="52"
+                        height="52"
+                        rx="14"
+                        class="f-s"
+                      />
+                      <path d="M180 92 l10-14 8 8 6-6 10 12z" class="f-a" />
+                      <rect
+                        x="186"
+                        y="60"
+                        width="20"
+                        height="14"
+                        rx="4"
+                        class="f-p"
+                      />
+                      <path d="M193 74 l3 5 3-5z" class="f-p" />
+                      <text
+                        x="196"
+                        y="120"
+                        font-size="10"
+                        text-anchor="middle"
+                        class="f-i"
+                        font-weight="600"
+                      >
+                        AR
+                      </text>
+                    </g>
+                  </svg>
+                  <h3>How it works</h3>
+                  <p>
+                    Paste a link, print a code, hang it up. Then walk around and
+                    place things in AR. Visitors just scan.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="dots" id="dots" role="tablist" aria-label="Intro cards">
+              <button
+                class="dot"
+                aria-label="Card 1"
+                aria-current="true"
+              ></button>
+              <button class="dot" aria-label="Card 2"></button>
+              <button class="dot" aria-label="Card 3"></button>
+            </div>
+          </div>
+
+          <div class="foot">
+            <button class="btn primary" id="introNext">Next</button>
+          </div>
+        </section>
+
+        <!-- ============ STEP 1: HOST ============ -->
+        <section class="screen" data-step="1" aria-labelledby="h1t">
+          <div class="art">
+            <div class="art-card">
+              <svg
+                class="ill"
+                viewBox="0 0 320 220"
+                aria-hidden="true"
+                preserveAspectRatio="xMidYMid meet"
+              >
+                <ellipse
+                  cx="160"
+                  cy="196"
+                  rx="120"
+                  ry="10"
+                  class="f-l"
+                  opacity=".6"
+                />
+                <circle cx="132" cy="80" r="30" class="f-soft" />
+                <circle cx="170" cy="64" r="40" class="f-soft" />
+                <circle cx="210" cy="84" r="26" class="f-soft" />
+                <rect
+                  x="104"
+                  y="80"
+                  width="132"
+                  height="34"
+                  rx="17"
+                  class="f-soft"
+                />
+                <g class="a1-zip ani">
+                  <rect
+                    x="152"
+                    y="118"
+                    width="36"
+                    height="46"
+                    rx="5"
+                    class="f-p"
+                  />
+                  <path
+                    d="M170 118 v6 m0 4 v4 m0 4 v4"
+                    class="s-s"
+                    stroke-width="2.5"
+                  />
+                  <rect
+                    x="165"
+                    y="142"
+                    width="10"
+                    height="8"
+                    rx="2"
+                    class="f-s"
+                  />
+                  <path
+                    d="M170 108 v-14 m-7 7 l7-7 7 7"
+                    class="s-p nofill"
+                    stroke-width="3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </g>
+                <g class="a1-host ani">
+                  <circle cx="58" cy="54" r="15" class="f-s" />
+                  <path d="M52 60 l6-11 6 11z" class="f-a" />
+                </g>
+                <g class="a1-host h2 ani">
+                  <circle cx="270" cy="50" r="15" class="f-s" />
+                  <rect
+                    x="263"
+                    y="44"
+                    width="14"
+                    height="12"
+                    rx="2"
+                    class="f-p"
+                  />
+                </g>
+                <g class="a1-host h3 ani">
+                  <circle cx="40" cy="128" r="15" class="f-s" />
+                  <path
+                    d="M33 132 a5 5 0 0 1 3-8 a6 6 0 0 1 11 1 a4 4 0 0 1 0 7z"
+                    class="f-p2"
+                  />
+                </g>
+                <g class="a1-host h4 ani">
+                  <circle cx="282" cy="124" r="15" class="f-s" />
+                  <path
+                    d="M276 120 l-4 4 4 4 M288 120 l4 4-4 4"
+                    class="s-i nofill"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </g>
+                <g class="a1-host h5 ani">
+                  <circle cx="160" cy="18" r="13" class="f-s" />
+                  <rect
+                    x="153"
+                    y="12"
+                    width="14"
+                    height="5"
+                    rx="1.5"
+                    class="f-m"
+                  />
+                  <rect
+                    x="153"
+                    y="19"
+                    width="14"
+                    height="5"
+                    rx="1.5"
+                    class="f-m"
+                  />
+                </g>
+              </svg>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="body">
+              <div class="kicker">Step 1</div>
+              <h2 class="step-title" id="h1t" tabindex="-1">
+                Where will your tour live?
+              </h2>
+              <p class="lead">
+                Pick storage you already use. The tour is one small file there.
+              </p>
+              <ul class="hosts" id="hosts"></ul>
+            </div>
+            <div class="foot">
+              <button class="btn primary" id="c1" disabled>
+                Choose a host to continue
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ STEP 2: LINK ============ -->
+        <section class="screen" data-step="2" aria-labelledby="h2t">
+          <div class="art">
+            <div class="art-card">
+              <svg
+                class="ill"
+                viewBox="0 0 320 220"
+                aria-hidden="true"
+                preserveAspectRatio="xMidYMid meet"
+              >
+                <ellipse
+                  cx="160"
+                  cy="196"
+                  rx="120"
+                  ry="10"
+                  class="f-l"
+                  opacity=".6"
+                />
+                <g class="a2-link">
+                  <rect
+                    x="34"
+                    y="74"
+                    width="92"
+                    height="72"
+                    rx="20"
+                    class="f-soft"
+                  />
+                  <g transform="rotate(-45 80 110)">
+                    <rect
+                      x="56"
+                      y="100"
+                      width="32"
+                      height="20"
+                      rx="10"
+                      class="nofill s-p"
+                      stroke-width="6"
+                    />
+                    <rect
+                      x="72"
+                      y="100"
+                      width="32"
+                      height="20"
+                      rx="10"
+                      class="nofill s-p"
+                      stroke-width="6"
+                    />
+                  </g>
+                </g>
+                <path
+                  class="c3-arrow s-m nofill"
+                  d="M140 110 H170"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M166 103 l8 7-8 7"
+                  class="s-m nofill"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <g class="a2-qr ani">
+                  <rect
+                    x="184"
+                    y="52"
+                    width="110"
+                    height="116"
+                    rx="10"
+                    class="f-w s-l"
+                    stroke-width="2"
+                  />
+                  <svg
+                    class="qrph"
+                    id="linkQr"
+                    data-seed="no-link"
+                    x="194"
+                    y="60"
+                    width="90"
+                    height="90"
+                  ></svg>
+                  <rect
+                    x="208"
+                    y="154"
+                    width="62"
+                    height="5"
+                    rx="2.5"
+                    class="f-l"
+                  />
+                </g>
+                <g class="a2-badge ani" id="linkBadge">
+                  <circle cx="292" cy="56" r="16" class="f-a" />
+                  <path
+                    d="M285 56 l5 5 9-10"
+                    class="s-s nofill"
+                    stroke-width="3.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </g>
+              </svg>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="body">
+              <div class="kicker">Step 2</div>
+              <h2 class="step-title" id="h2t" tabindex="-1">
+                Paste your share link
+              </h2>
+              <p class="lead" id="linkLead">
+                The link you copied after uploading the starter file.
+              </p>
+              <label class="field">
+                <input
+                  id="linkInput"
+                  type="url"
+                  inputmode="url"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="https://..."
+                  aria-label="Share link"
+                />
+                <button class="btn secondary small" id="pasteBtn" type="button">
+                  Paste
+                </button>
+              </label>
+              <div class="status" id="status" aria-live="polite">
+                <span class="s-ico"
+                  ><svg width="20" height="20" viewBox="0 0 20 20">
+                    <circle
+                      cx="10"
+                      cy="10"
+                      r="8"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    />
+                    <path
+                      d="M10 6v5m0 3v.5"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    /></svg
+                ></span>
+                <span
+                  >We check the link in the background. You can continue either
+                  way.</span
+                >
+              </div>
+              <div class="chips">
+                <button class="chip" id="exampleBtn" type="button">
+                  Use an example link</button
+                ><button class="chip" id="laterBtn" type="button">
+                  I will upload later
+                </button>
+              </div>
+              <details class="help">
+                <summary>Where do I find the link?</summary>
+                <p id="linkHelp"></p>
+              </details>
+            </div>
+            <div class="foot">
+              <button class="btn primary" id="c2" disabled>
+                Paste a link to continue
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ STEP 3: PRINT ============ -->
+        <section class="screen" data-step="3" aria-labelledby="h3t">
+          <div class="art">
+            <div class="art-card">
+              <svg
+                class="ill"
+                viewBox="0 0 320 220"
+                aria-hidden="true"
+                preserveAspectRatio="xMidYMid meet"
+              >
+                <ellipse
+                  cx="160"
+                  cy="200"
+                  rx="120"
+                  ry="9"
+                  class="f-l"
+                  opacity=".6"
+                />
+                <rect
+                  x="96"
+                  y="30"
+                  width="128"
+                  height="34"
+                  rx="6"
+                  class="f-s2 s-l"
+                  stroke-width="2"
+                />
+                <g class="a3-paper">
+                  <rect
+                    x="110"
+                    y="70"
+                    width="100"
+                    height="112"
+                    rx="3"
+                    class="f-w s-l"
+                    stroke-width="1.5"
+                  />
+                  <svg
+                    class="qrph"
+                    data-seed="print-art"
+                    x="125"
+                    y="80"
+                    width="70"
+                    height="70"
+                  ></svg>
+                  <rect
+                    x="130"
+                    y="158"
+                    width="60"
+                    height="5"
+                    rx="2.5"
+                    class="f-l"
+                  />
+                  <rect
+                    x="140"
+                    y="167"
+                    width="40"
+                    height="4"
+                    rx="2"
+                    class="f-l"
+                  />
+                </g>
+                <rect
+                  x="70"
+                  y="56"
+                  width="180"
+                  height="56"
+                  rx="14"
+                  class="f-p"
+                />
+                <rect
+                  x="96"
+                  y="96"
+                  width="128"
+                  height="8"
+                  rx="4"
+                  class="f-i"
+                  opacity=".55"
+                />
+                <circle cx="226" cy="74" r="4" class="f-a a3-led" />
+                <rect
+                  x="88"
+                  y="70"
+                  width="40"
+                  height="6"
+                  rx="3"
+                  class="f-s"
+                  opacity=".5"
+                />
+              </svg>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="body">
+              <div class="kicker">Step 3</div>
+              <h2 class="step-title" id="h3t" tabindex="-1">
+                Print your codes
+              </h2>
+              <p class="lead">
+                Each poster gets its own code. All of them open your tour.
+              </p>
+              <div class="ctl">
+                <div class="l">
+                  <b>Posters to print</b><span>One code per poster</span>
+                </div>
+                <div class="stepper">
+                  <button id="pMinus" aria-label="Fewer posters">-</button
+                  ><output id="pOut" aria-live="polite">10</output
+                  ><button id="pPlus" aria-label="More posters">+</button>
+                </div>
+              </div>
+              <div class="ctl">
+                <div class="l">
+                  <b>Printed size</b><span>Width of each code</span>
+                </div>
+                <div class="stepper">
+                  <button id="sMinus" aria-label="Smaller">-</button
+                  ><output id="sOut" aria-live="polite">16 cm</output
+                  ><button id="sPlus" aria-label="Bigger">+</button>
+                </div>
+              </div>
+              <div
+                class="tiles"
+                id="tiles"
+                aria-label="Preview of the posters"
+              ></div>
+              <p class="sheet-meta" id="sheetMeta"></p>
+              <button class="btn secondary" id="pdfBtn">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 20 20"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M10 3v10m-4-4 4 4 4-4M4 16h12"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span>Download PDF</span>
+              </button>
+              <div class="hint">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 20 20"
+                  aria-hidden="true"
+                >
+                  <circle
+                    cx="10"
+                    cy="10"
+                    r="8"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  />
+                  <path
+                    d="M10 9v5m0-8v.5"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <span id="printHint"
+                  >Print at <b>100 %</b> ("actual size", not "fit to page") so
+                  each code comes out exactly 16 cm wide.</span
+                >
+              </div>
+            </div>
+            <div class="foot">
+              <button class="btn primary" id="c3">Continue</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ STEP 4: HANG ============ -->
+        <section class="screen" data-step="4" aria-labelledby="h4t">
+          <div class="art">
+            <div class="art-card">
+              <svg
+                class="ill"
+                viewBox="0 0 320 220"
+                aria-hidden="true"
+                preserveAspectRatio="xMidYMid meet"
+              >
+                <rect
+                  x="20"
+                  y="10"
+                  width="280"
+                  height="176"
+                  rx="8"
+                  class="f-wall"
+                />
+                <rect
+                  x="10"
+                  y="186"
+                  width="300"
+                  height="24"
+                  rx="4"
+                  class="f-l"
+                />
+                <g class="a4-poster ani">
+                  <rect
+                    x="152"
+                    y="62"
+                    width="50"
+                    height="62"
+                    rx="3"
+                    class="f-w s-l"
+                    stroke-width="1.5"
+                  />
+                  <svg
+                    class="qrph"
+                    data-seed="hang-art"
+                    x="159"
+                    y="68"
+                    width="36"
+                    height="36"
+                  ></svg>
+                  <rect
+                    x="162"
+                    y="110"
+                    width="30"
+                    height="4"
+                    rx="2"
+                    class="f-l"
+                  />
+                  <circle cx="177" cy="62" r="3" class="f-p" />
+                </g>
+                <!-- person -->
+                <g>
+                  <circle cx="96" cy="64" r="14" class="f-skin" />
+                  <path d="M74 186 V112 a22 24 0 0 1 44 0 V186 z" class="f-p" />
+                  <rect
+                    x="80"
+                    y="140"
+                    width="14"
+                    height="46"
+                    class="f-i"
+                    opacity=".25"
+                  />
+                  <path
+                    d="M116 108 q20 -6 30 -16"
+                    class="s-p nofill"
+                    stroke-width="9"
+                    stroke-linecap="round"
+                  />
+                </g>
+                <!-- dimension: chest height -->
+                <g class="a4-dim">
+                  <path
+                    d="M238 93 H260 M249 93 V186 M238 186 H260"
+                    class="s-m nofill"
+                    stroke-width="2"
+                  />
+                  <path
+                    d="M244 100 l5-7 5 7 M244 179 l5 7 5-7"
+                    class="s-m nofill"
+                    stroke-width="2"
+                  />
+                  <path
+                    d="M204 93 H236"
+                    class="s-a nofill"
+                    stroke-width="2"
+                    stroke-dasharray="3 3"
+                  />
+                  <text
+                    x="266"
+                    y="140"
+                    font-size="12"
+                    font-weight="700"
+                    class="f-i"
+                  >
+                    about
+                  </text>
+                  <text
+                    x="266"
+                    y="155"
+                    font-size="12"
+                    font-weight="700"
+                    class="f-i"
+                  >
+                    1.3 m
+                  </text>
+                </g>
+              </svg>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="body">
+              <div class="kicker">Step 4</div>
+              <h2 class="step-title" id="h4t" tabindex="-1">
+                Hang a code where the tour starts
+              </h2>
+              <p class="lead">
+                Visitors start here, and so do you when you create.
+              </p>
+              <ul class="tips">
+                <li>
+                  <span class="ti"
+                    ><svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 20 20"
+                      aria-hidden="true"
+                    >
+                      <rect
+                        x="4"
+                        y="3"
+                        width="12"
+                        height="14"
+                        rx="1.5"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      /></svg
+                  ></span>
+                  <div>
+                    <b>Flat on a wall or board</b
+                    ><span>Not wrapped around a pole or bent.</span>
+                  </div>
+                </li>
+                <li>
+                  <span class="ti"
+                    ><svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 20 20"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M10 2v16M6 6l4-4 4 4M6 14l4 4 4-4"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      /></svg
+                  ></span>
+                  <div>
+                    <b>Chest height</b
+                    ><span>About 1.3 m from the ground, easy to scan.</span>
+                  </div>
+                </li>
+                <li>
+                  <span class="ti"
+                    ><svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 20 20"
+                      aria-hidden="true"
+                    >
+                      <circle cx="10" cy="10" r="4" fill="currentColor" />
+                      <path
+                        d="M10 1v3M10 16v3M1 10h3M16 10h3"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      /></svg
+                  ></span>
+                  <div>
+                    <b>Good light, kept dry</b
+                    ><span
+                      >A clear sleeve helps outdoors. Leave room to step
+                      back.</span
+                    >
+                  </div>
+                </li>
+              </ul>
+            </div>
+            <div class="foot">
+              <button class="btn primary" id="c4">It is up - continue</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ STEP 5: CREATE ============ -->
+        <section class="screen" data-step="5" aria-labelledby="h5t">
+          <div class="art">
+            <div class="art-card">
+              <svg
+                class="ill"
+                viewBox="0 0 320 220"
+                aria-hidden="true"
+                preserveAspectRatio="xMidYMid meet"
+              >
+                <rect
+                  x="98"
+                  y="6"
+                  width="124"
+                  height="208"
+                  rx="18"
+                  class="f-i"
+                />
+                <rect
+                  x="104"
+                  y="16"
+                  width="112"
+                  height="188"
+                  rx="12"
+                  class="f-p2"
+                  opacity=".35"
+                />
+                <!-- floor grid in camera view -->
+                <g class="s-s nofill" stroke-width="1" opacity=".55">
+                  <path d="M104 150 H216 M104 168 H216 M104 190 H216" />
+                  <path
+                    d="M160 130 L120 204 M160 130 L200 204 M160 130 L160 204 M160 130 L140 204 M160 130 L180 204"
+                  />
+                </g>
+                <rect
+                  x="140"
+                  y="104"
+                  width="40"
+                  height="40"
+                  rx="3"
+                  class="f-w"
+                />
+                <svg
+                  class="qrph"
+                  data-seed="ar-art"
+                  x="144"
+                  y="108"
+                  width="32"
+                  height="32"
+                ></svg>
+                <rect
+                  class="a5-scan"
+                  x="138"
+                  y="104"
+                  width="44"
+                  height="3"
+                  rx="1.5"
+                  fill="#35d0b2"
+                />
+                <g class="a5-pin ani">
+                  <rect
+                    x="110"
+                    y="34"
+                    width="56"
+                    height="20"
+                    rx="6"
+                    class="f-w"
+                  />
+                  <text
+                    x="138"
+                    y="48"
+                    font-size="9"
+                    font-weight="700"
+                    text-anchor="middle"
+                    fill="#151a2d"
+                  >
+                    Welcome!
+                  </text>
+                  <path d="M134 54 l4 6 4-6z" class="f-w" />
+                </g>
+                <g class="a5-pin p2 ani">
+                  <rect
+                    x="172"
+                    y="44"
+                    width="38"
+                    height="30"
+                    rx="3"
+                    class="f-w"
+                  />
+                  <path d="M175 70 l9-12 7 7 5-5 11 10z" class="f-a" />
+                  <path d="M188 74 l3 5 3-5z" class="f-w" />
+                </g>
+                <g class="a5-pin p3 ani">
+                  <rect
+                    x="122"
+                    y="76"
+                    width="44"
+                    height="18"
+                    rx="6"
+                    class="f-p"
+                  />
+                  <text
+                    x="144"
+                    y="88"
+                    font-size="8.5"
+                    font-weight="700"
+                    text-anchor="middle"
+                    fill="#fff"
+                  >
+                    Look up
+                  </text>
+                </g>
+                <circle
+                  class="a5-tap ani"
+                  cx="191"
+                  cy="59"
+                  r="16"
+                  fill="none"
+                  stroke="#fff"
+                  stroke-width="3"
+                />
+                <!-- side labels -->
+                <g font-size="11" font-weight="600" class="f-m">
+                  <text x="20" y="124">1 scan</text>
+                  <text x="20" y="64">2 walk</text>
+                  <text x="234" y="60">3 place</text>
+                </g>
+              </svg>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="body">
+              <div class="kicker">Step 5</div>
+              <h2 class="step-title" id="h5t" tabindex="-1">
+                Build the tour in AR
+              </h2>
+              <p class="lead">Take your phone to the code you just hung up.</p>
+              <ul class="tips">
+                <li>
+                  <span class="ti">1</span>
+                  <div>
+                    <b>Stand at the code and scan it</b
+                    ><span
+                      >This ties your tour to the spot, so content lands in the
+                      right place.</span
+                    >
+                  </div>
+                </li>
+                <li>
+                  <span class="ti">2</span>
+                  <div>
+                    <b>Walk the route</b
+                    ><span>Your phone keeps track of where you are.</span>
+                  </div>
+                </li>
+                <li>
+                  <span class="ti">3</span>
+                  <div>
+                    <b>Tap to place text pins and photos</b
+                    ><span>Put them right where they belong.</span>
+                  </div>
+                </li>
+              </ul>
+              <p class="note">
+                Not at the spot yet? Open this page again when you are standing
+                at the code.
+              </p>
+            </div>
+            <div class="foot">
+              <button class="btn primary" id="c5">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                  />
+                  <circle cx="12" cy="12" r="3" fill="currentColor" />
+                </svg>
+                Start creating
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ STEP 6: DONE ============ -->
+        <section class="screen" data-step="6" aria-labelledby="h6t">
+          <div class="art">
+            <div class="art-card">
+              <svg
+                class="ill"
+                viewBox="0 0 320 220"
+                aria-hidden="true"
+                preserveAspectRatio="xMidYMid meet"
+                id="doneArt"
+              >
+                <circle class="a6-ring ani f-as" cx="160" cy="104" r="70" />
+                <circle class="a6-ring ani f-a" cx="160" cy="104" r="48" />
+                <path
+                  class="a6-check s-s nofill"
+                  d="M138 104 l15 15 30-32"
+                  stroke-width="10"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <g>
+                  <circle class="a6-conf ani f-p" cx="72" cy="50" r="6" />
+                  <rect
+                    class="a6-conf ani f-warn"
+                    x="250"
+                    y="40"
+                    width="10"
+                    height="10"
+                    rx="2"
+                  />
+                  <circle class="a6-conf ani f-p2" cx="262" cy="150" r="5" />
+                  <rect
+                    class="a6-conf ani f-a"
+                    x="56"
+                    y="140"
+                    width="9"
+                    height="9"
+                    rx="2"
+                  />
+                  <circle class="a6-conf ani f-warn" cx="110" cy="24" r="4" />
+                  <circle class="a6-conf ani f-p" cx="226" cy="190" r="4" />
+                  <rect
+                    class="a6-conf ani f-p2"
+                    x="88"
+                    y="186"
+                    width="8"
+                    height="8"
+                    rx="2"
+                  />
+                </g>
+              </svg>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="body">
+              <div class="kicker">All set</div>
+              <h2 class="step-title" id="h6t" tabindex="-1">
+                Your tour is ready
+              </h2>
+              <div class="file-card">
+                <span class="fi"
+                  ><svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    />
+                    <path
+                      d="M12 6v2m0 2v2m0 2v2"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    /></svg
+                ></span>
+                <div>
+                  <b>my-tour.zip</b
+                  ><span>Saved on this phone - 3 text pins, 2 photos</span>
+                </div>
+              </div>
+              <div class="replace">
+                <h3 id="replaceTitle">Last step: replace the file</h3>
+                <ol id="replaceSteps"></ol>
+              </div>
+              <div class="same">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  style="flex: 0 0 auto; color: var(--accent)"
+                >
+                  <path
+                    d="M10 14a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1 1M14 10a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1-1"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <span
+                  >Your link and the printed codes stay the same. Visitors get
+                  the new tour next time they scan.</span
+                >
+              </div>
+            </div>
+            <div class="foot">
+              <button class="btn primary" id="c6">Download my-tour.zip</button>
+              <button class="sub-link" id="restart">Start over</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="overlay" id="overlay" role="status" aria-live="polite">
+      <div>
+        <div class="spin"></div>
+        <b>Starting AR...</b>
+        <p style="opacity: 0.75; margin: 6px 0 0; font-size: 14px">
+          Prototype: the AR session is skipped here.
+        </p>
+      </div>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script>
+      (function () {
+        "use strict";
+        /* ---------- in-memory wizard state ---------- */
+        var state = {
+          step: 0,
+          host: null,
+          link: "",
+          check: "idle",
+          posters: 10,
+          size: 16,
+          pdf: "idle",
+          downloaded: {},
+        };
+
+        var STEP_NAMES = [
+          "",
+          "Choose a host",
+          "Paste the link",
+          "Print the codes",
+          "Hang a code",
+          "Create in AR",
+          "Done",
+        ];
+
+        var DL =
+          '<b>Download the empty starter tour.</b><br><button class="btn secondary small dl" type="button"><svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Download empty starter zip</span></button>';
+
+        var HOSTS = [
+          {
+            id: "drive",
+            name: "Google Drive",
+            sub: "Free with a Google account",
+            icon: '<svg viewBox="0 0 26 26"><path d="M9 3h8l7 12h-8z" fill="#f4b400"/><path d="M9 3 2 15l4 7 7-12z" fill="#0f9d58"/><path d="M6 22h14l4-7H10z" fill="#4285f4"/></svg>',
+            steps: [
+              DL,
+              "Upload it to any folder in your Drive.",
+              "Tap <b>Share</b>, set access to <b>Anyone with the link</b>, then <b>Copy link</b>.",
+            ],
+            example:
+              "https://drive.google.com/file/d/1Xa9kTq2Lm7wPzR4/view?usp=sharing",
+            domain: "drive.google.com",
+            help: 'In Drive, open the file menu (three dots), choose Share, switch General access to "Anyone with the link", then Copy link.',
+            replace: [
+              "Open the tour file's page in Google Drive.",
+              "Upload <b>my-tour.zip</b> there.",
+              "When Drive asks, choose <b>Replace existing file</b>.",
+            ],
+            action: "Open the file in Drive",
+          },
+          {
+            id: "dropbox",
+            name: "Dropbox",
+            sub: "Good if you already use Dropbox",
+            icon: '<svg viewBox="0 0 26 26"><path d="M7 4 2 7.5 7 11l6-3.5zM19 4l-6 3.5 6 3.5 5-3.5zM2 14.5 7 18l6-3.5L7 11zM19 11l-6 3.5 6 3.5 5-3.5zM7 19.3l6 3.5 6-3.5-6-3.5z" fill="#0061fe"/></svg>',
+            steps: [
+              DL,
+              "Upload it to your Dropbox.",
+              "Tap <b>Share</b>, then <b>Copy link</b> (anyone with the link can view).",
+            ],
+            example:
+              "https://www.dropbox.com/scl/fi/k2x9ab/tour-starter.zip?dl=0",
+            domain: "dropbox.com",
+            help: "In Dropbox, tap the three dots next to the file, choose Share, then Copy link.",
+            replace: [
+              "Tap the button below.",
+              "Share <b>my-tour.zip</b> to the Dropbox app.",
+              "Save it in the same folder with the same name, replacing the old file.",
+            ],
+            action: "Share to Dropbox",
+          },
+          {
+            id: "onedrive",
+            name: "OneDrive",
+            sub: "Comes with a Microsoft account",
+            icon: '<svg viewBox="0 0 26 26"><path d="M6 20a4.5 4.5 0 0 1-.6-9 6.5 6.5 0 0 1 12.2-1.6A5.3 5.3 0 0 1 21 20z" fill="#0a64d8"/><path d="M10.5 12a5.5 5.5 0 0 1 10 1.2 3.4 3.4 0 0 1 .5 6.8H9z" fill="#28a8ea"/></svg>',
+            steps: [
+              DL,
+              "Upload it to your OneDrive.",
+              "Tap <b>Share</b>, choose <b>Anyone with the link can view</b>, then <b>Copy</b>.",
+            ],
+            example: "https://1drv.ms/u/s!Akq3fZ9tour-starter",
+            domain: "1drv.ms",
+            help: 'In OneDrive, select the file, tap Share, set "Anyone with the link can view", then Copy.',
+            replace: [
+              "Tap the button below.",
+              "Share <b>my-tour.zip</b> to the OneDrive app.",
+              "Save it over the old tour file (same folder, same name).",
+            ],
+            action: "Share to OneDrive",
+          },
+          {
+            id: "github",
+            name: "GitHub",
+            sub: "A public repository",
+            icon: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="11" class="f-i"/><path d="M10 9l-3.5 4 3.5 4M16 9l3.5 4-3.5 4" fill="none" class="s-s" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+            steps: [
+              DL,
+              "Add it to a public repository (drag it onto the repository page and commit).",
+              "Open the file, tap <b>Raw</b>, and copy that link.",
+            ],
+            example:
+              "https://raw.githubusercontent.com/yourname/my-tour/main/tour-starter.zip",
+            domain: "githubusercontent.com",
+            help: "Open the zip in your repository and press the Raw button. The address of that page is the link you need.",
+            replace: [
+              "Download <b>my-tour.zip</b> with the button below.",
+              "Upload it to the same repository with the same file name.",
+              "Commit. The Raw link does not change.",
+            ],
+            action: "Download my-tour.zip",
+          },
+          {
+            id: "server",
+            name: "Your own server",
+            inName: "your server",
+            sub: "Any web server you control",
+            icon: '<svg viewBox="0 0 26 26"><rect x="4" y="4" width="18" height="7" rx="2" class="f-m"/><rect x="4" y="15" width="18" height="7" rx="2" class="f-m"/><circle cx="8" cy="7.5" r="1.3" class="f-a"/><circle cx="8" cy="18.5" r="1.3" class="f-a"/></svg>',
+            steps: [
+              DL,
+              'Put it on your web server. The server must allow <b>cross-origin reads</b> and <b>range requests</b> for this file:<code class="snip">Access-Control-Allow-Origin: *\nAccept-Ranges: bytes</code>',
+              "Copy the file's full https:// address.",
+            ],
+            example: "https://tours.example.org/my-tour/tour-starter.zip",
+            domain: "",
+            help: "It is the full address of the zip file, the one you would type into a browser to download it.",
+            replace: [
+              "Download <b>my-tour.zip</b> with the button below.",
+              "Upload it over the old file on your server (same path, same name).",
+            ],
+            action: "Download my-tour.zip",
+          },
+        ];
+        function hostById(id) {
+          for (var i = 0; i < HOSTS.length; i++)
+            if (HOSTS[i].id === id) return HOSTS[i];
+          return null;
+        }
+
+        /* ---------- fake QR (deterministic pattern, not a real code) ---------- */
+        var QN = 25;
+        function hash(s) {
+          var h = 2166136261 >>> 0;
+          for (var i = 0; i < s.length; i++) {
+            h ^= s.charCodeAt(i);
+            h = Math.imul(h, 16777619);
+          }
+          return h >>> 0;
+        }
+        function rng(seed) {
+          return function () {
+            seed = (seed + 0x6d2b79f5) | 0;
+            var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+          };
+        }
+        function qrInner(seed) {
+          var r = rng(hash(String(seed))),
+            d = "",
+            n = QN;
+          function finder(x, y) {
+            return (
+              (x < 8 && y < 8) || (x >= n - 8 && y < 8) || (x < 8 && y >= n - 8)
+            );
+          }
+          for (var y = 0; y < n; y++)
+            for (var x = 0; x < n; x++) {
+              if (finder(x, y)) continue;
+              if (r() < 0.48) d += "M" + x + " " + y + "h1v1h-1z";
+            }
+          [
+            [0, 0],
+            [n - 7, 0],
+            [0, n - 7],
+          ].forEach(function (p) {
+            var a = p[0],
+              b = p[1];
+            d +=
+              "M" +
+              a +
+              " " +
+              b +
+              "h7v7h-7z M" +
+              (a + 1) +
+              " " +
+              (b + 1) +
+              "h5v5h-5z M" +
+              (a + 2) +
+              " " +
+              (b + 2) +
+              "h3v3h-3z";
+          });
+          return (
+            '<rect x="-2" y="-2" width="' +
+            (n + 4) +
+            '" height="' +
+            (n + 4) +
+            '" fill="#fff"/><path fill="#111" fill-rule="evenodd" d="' +
+            d +
+            '"/>'
+          );
+        }
+        function fillQr(el, seed) {
+          el.setAttribute("viewBox", "-2 -2 " + (QN + 4) + " " + (QN + 4));
+          el.innerHTML = qrInner(seed);
+        }
+        function qrSvg(seed) {
+          return (
+            '<svg viewBox="-2 -2 ' +
+            (QN + 4) +
+            " " +
+            (QN + 4) +
+            '" aria-hidden="true">' +
+            qrInner(seed) +
+            "</svg>"
+          );
+        }
+        Array.prototype.forEach.call(
+          document.querySelectorAll("svg.qrph"),
+          function (el) {
+            fillQr(el, el.getAttribute("data-seed"));
+          },
+        );
+
+        /* ---------- toast ---------- */
+        var toastEl = document.getElementById("toast"),
+          toastT;
+        function toast(msg) {
+          toastEl.textContent = msg;
+          toastEl.classList.add("show");
+          clearTimeout(toastT);
+          toastT = setTimeout(function () {
+            toastEl.classList.remove("show");
+          }, 2600);
+        }
+
+        /* ---------- navigation ---------- */
+        var screens = document.querySelectorAll(".screen");
+        var topbar = document.getElementById("topbar");
+        function go(i, fromPop) {
+          if (i < 0 || i > 6) return;
+          var dir = i >= state.step ? "in-fwd" : "in-back";
+          state.step = i;
+          Array.prototype.forEach.call(screens, function (s) {
+            var on = +s.getAttribute("data-step") === i;
+            s.classList.remove("in-fwd", "in-back");
+            s.classList.toggle("active", on);
+            if (on) {
+              void s.offsetWidth;
+              s.classList.add(dir);
+            }
+          });
+          topbar.hidden = i === 0;
+          if (i > 0) {
+            document.getElementById("stepName").textContent = STEP_NAMES[i];
+            document.getElementById("stepCount").textContent =
+              "Step " + i + " of 6";
+            document.getElementById("progressFill").style.width =
+              (i / 6) * 100 + "%";
+            document
+              .getElementById("progress")
+              .setAttribute("aria-valuenow", i);
+          }
+          if (i === 2) enterLink();
+          if (i === 3) renderPrint();
+          if (i === 6) renderDone();
+          if (!fromPop) {
+            try {
+              history.pushState({ s: i }, "");
+            } catch (e) {}
+          }
+          var h = document.querySelector(".screen.active .step-title");
+          if (h)
+            setTimeout(function () {
+              try {
+                h.focus({ preventScroll: true });
+              } catch (e) {}
+            }, 50);
+        }
+        try {
+          history.replaceState({ s: 0 }, "");
+        } catch (e) {}
+        window.addEventListener("popstate", function (e) {
+          var s = e.state && typeof e.state.s === "number" ? e.state.s : 0;
+          go(s, true);
+        });
+        document
+          .getElementById("backBtn")
+          .addEventListener("click", function () {
+            go(state.step - 1);
+          });
+
+        /* ---------- welcome carousel ---------- */
+        var car = document.getElementById("carousel");
+        var dots = document.querySelectorAll("#dots .dot");
+        var introNext = document.getElementById("introNext");
+        function cardIndex() {
+          return Math.max(
+            0,
+            Math.min(
+              2,
+              Math.round(car.scrollLeft / Math.max(1, car.clientWidth)),
+            ),
+          );
+        }
+        function syncDots() {
+          var k = cardIndex();
+          Array.prototype.forEach.call(dots, function (d, j) {
+            d.setAttribute("aria-current", j === k ? "true" : "false");
+          });
+          introNext.textContent = k === 2 ? "Get started" : "Next";
+        }
+        car.addEventListener(
+          "scroll",
+          function () {
+            window.requestAnimationFrame(syncDots);
+          },
+          { passive: true },
+        );
+        Array.prototype.forEach.call(dots, function (d, j) {
+          d.addEventListener("click", function () {
+            car.scrollTo({ left: j * car.clientWidth });
+          });
+        });
+        introNext.addEventListener("click", function () {
+          var k = cardIndex();
+          if (k < 2) car.scrollTo({ left: (k + 1) * car.clientWidth });
+          else go(1);
+        });
+        document
+          .getElementById("skipIntro")
+          .addEventListener("click", function () {
+            go(1);
+          });
+        window.addEventListener("resize", function () {
+          car.scrollLeft = cardIndex() * car.clientWidth;
+        });
+
+        /* ---------- step 1: hosts ---------- */
+        var hostsEl = document.getElementById("hosts");
+        var c1 = document.getElementById("c1");
+        hostsEl.innerHTML = HOSTS.map(function (h) {
+          return (
+            '<li class="host-item" data-id="' +
+            h.id +
+            '">' +
+            '<button class="host" type="button" aria-expanded="false"><span class="ico">' +
+            h.icon +
+            "</span>" +
+            '<span class="t"><b>' +
+            h.name +
+            "</b><span>" +
+            h.sub +
+            '</span></span><span class="radio" aria-hidden="true"></span></button>' +
+            '<div class="howto"><div><ol>' +
+            h.steps
+              .map(function (s) {
+                return "<li>" + s + "</li>";
+              })
+              .join("") +
+            "</ol></div></div></li>"
+          );
+        }).join("");
+        function selectHost(id) {
+          state.host = id;
+          Array.prototype.forEach.call(hostsEl.children, function (li) {
+            var on = li.getAttribute("data-id") === id;
+            li.classList.toggle("sel", on);
+            li.querySelector(".host").setAttribute(
+              "aria-expanded",
+              on ? "true" : "false",
+            );
+          });
+          var h = hostById(id);
+          c1.disabled = false;
+          c1.textContent = "Continue with " + (h.inName || h.name);
+          var li = hostsEl.querySelector('[data-id="' + id + '"]');
+          setTimeout(function () {
+            if (li.scrollIntoView)
+              li.scrollIntoView({
+                block: "nearest",
+                behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+                  ? "auto"
+                  : "smooth",
+              });
+          }, 360);
+        }
+        hostsEl.addEventListener("click", function (e) {
+          var dl = e.target.closest(".dl");
+          if (dl) {
+            var b = dl;
+            if (b.disabled) return;
+            b.disabled = true;
+            b.querySelector("span").textContent = "Preparing...";
+            setTimeout(function () {
+              b.disabled = false;
+              b.classList.remove("secondary");
+              b.classList.add("done");
+              b.querySelector("span").textContent =
+                "Downloaded tour-starter.zip";
+              toast("tour-starter.zip saved to Downloads (prototype)");
+            }, 700);
+            return;
+          }
+          var row = e.target.closest(".host");
+          if (row) selectHost(row.parentNode.getAttribute("data-id"));
+        });
+        c1.addEventListener("click", function () {
+          if (state.host) go(2);
+        });
+
+        /* ---------- step 2: link + fake background check ---------- */
+        var input = document.getElementById("linkInput"),
+          statusEl = document.getElementById("status"),
+          c2 = document.getElementById("c2");
+        var linkQr = document.getElementById("linkQr"),
+          linkBadge = document.getElementById("linkBadge");
+        var checkT,
+          debounceT,
+          checkSeq = 0;
+        var ICON_OK =
+          '<svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10" fill="currentColor"/><path d="M6.5 11.5l3 3 6-7" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        var ICON_WAIT =
+          '<svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="9" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M11 6v5l3 2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
+        var ICON_INFO =
+          '<svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 6v5m0 3v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+        function setStatus(kind, html) {
+          statusEl.className =
+            "status" +
+            (kind === "found" ? " found" : kind === "notyet" ? " notyet" : "");
+          var ico =
+            kind === "checking"
+              ? '<span class="spin"></span>'
+              : kind === "found"
+                ? ICON_OK
+                : kind === "notyet"
+                  ? ICON_WAIT
+                  : ICON_INFO;
+          statusEl.innerHTML =
+            '<span class="s-ico">' + ico + "</span><span>" + html + "</span>";
+        }
+        function looksLikeUrl(v) {
+          return /^https?:\/\/[^\s\/]+\.[^\s]+/i.test(v);
+        }
+        function updateC2() {
+          var has = state.link.trim().length > 0;
+          c2.disabled = !has;
+          c2.textContent = has ? "Continue" : "Paste a link to continue";
+        }
+        function runCheck() {
+          var v = state.link.trim();
+          var seq = ++checkSeq;
+          clearTimeout(checkT);
+          fillQr(linkQr, v || "no-link");
+          linkBadge.classList.remove("on");
+          if (!v) {
+            state.check = "idle";
+            setStatus(
+              "idle",
+              "We check the link in the background. You can continue either way.",
+            );
+            return;
+          }
+          if (!looksLikeUrl(v)) {
+            state.check = "invalid";
+            setStatus(
+              "idle",
+              "That does not look like a link yet. It usually starts with <b>https://</b>",
+            );
+            return;
+          }
+          state.check = "checking";
+          setStatus("checking", "Checking the link...");
+          checkT = setTimeout(function () {
+            if (seq !== checkSeq) return;
+            var h = hostById(state.host);
+            var ok =
+              /\.zip(\?|$)/i.test(v) ||
+              (h && h.domain && v.toLowerCase().indexOf(h.domain) >= 0);
+            if (/later/i.test(v)) ok = false;
+            if (ok) {
+              state.check = "found";
+              setStatus(
+                "found",
+                "<b>Found your tour file</b>tour-starter.zip - empty and ready.",
+              );
+              linkBadge.classList.add("on");
+            } else {
+              state.check = "notyet";
+              setStatus(
+                "notyet",
+                "<b>Not reachable yet</b>That is fine if you upload later. Your codes will still work once the file is there.",
+              );
+            }
+          }, 1300);
+        }
+        input.addEventListener("input", function () {
+          state.link = input.value;
+          updateC2();
+          clearTimeout(debounceT);
+          debounceT = setTimeout(runCheck, 450);
+        });
+        document
+          .getElementById("pasteBtn")
+          .addEventListener("click", function () {
+            var done = function (t) {
+              if (t) {
+                input.value = t;
+                state.link = t;
+                updateC2();
+                runCheck();
+              } else {
+                input.focus();
+                toast("Long-press the field to paste");
+              }
+            };
+            try {
+              if (navigator.clipboard && navigator.clipboard.readText) {
+                navigator.clipboard.readText().then(
+                  function (t) {
+                    done((t || "").trim());
+                  },
+                  function () {
+                    done("");
+                  },
+                );
+                return;
+              }
+            } catch (e) {}
+            done("");
+          });
+        document
+          .getElementById("exampleBtn")
+          .addEventListener("click", function () {
+            var h = hostById(state.host) || HOSTS[0];
+            input.value = h.example;
+            state.link = h.example;
+            updateC2();
+            runCheck();
+          });
+        document
+          .getElementById("laterBtn")
+          .addEventListener("click", function () {
+            var h = hostById(state.host) || HOSTS[0];
+            var v = h.example
+              .replace("tour-starter", "upload-later")
+              .replace(/\.zip/, "");
+            if (v === h.example) v = h.example + "-later";
+            input.value = v;
+            state.link = v;
+            updateC2();
+            runCheck();
+          });
+        function enterLink() {
+          var h = hostById(state.host) || HOSTS[0];
+          document.getElementById("linkLead").textContent =
+            "The link you copied from " + (h.inName || h.name) + ".";
+          document.getElementById("linkHelp").textContent = h.help;
+          input.placeholder = h.example.replace(
+            /^(https:\/\/[^\/]+\/).*/,
+            "$1...",
+          );
+          if (input.value !== state.link) input.value = state.link;
+          updateC2();
+        }
+        c2.addEventListener("click", function () {
+          if (state.link.trim()) go(3);
+        });
+
+        /* ---------- step 3: print ---------- */
+        var tilesEl = document.getElementById("tiles");
+        var MIN_P = 1,
+          MAX_P = 40,
+          MIN_S = 8,
+          MAX_S = 30;
+        function pagesInfo() {
+          // A4 with 1.5 cm margins: 18 x 26.7 cm usable; each poster needs its code plus ~1.5 cm label band
+          var s = state.size,
+            n = state.posters;
+          if (s > 18)
+            return "Each code is too wide for A4 at this size - print on A3.";
+          var per = Math.max(
+            1,
+            Math.floor(18 / s) * Math.floor(26.7 / (s + 1.5)),
+          );
+          var pages = Math.ceil(n / per);
+          return (
+            n +
+            " poster" +
+            (n === 1 ? "" : "s") +
+            " at " +
+            s +
+            " cm - " +
+            pages +
+            " A4 page" +
+            (pages === 1 ? "" : "s") +
+            (per > 1 ? " (" + per + " per page, cut apart)" : "") +
+            "."
+          );
+        }
+        function renderPrint(changedFrom) {
+          document.getElementById("pOut").textContent = state.posters;
+          document.getElementById("sOut").textContent = state.size + " cm";
+          document.getElementById("pMinus").disabled = state.posters <= MIN_P;
+          document.getElementById("pPlus").disabled = state.posters >= MAX_P;
+          document.getElementById("sMinus").disabled = state.size <= MIN_S;
+          document.getElementById("sPlus").disabled = state.size >= MAX_S;
+          var have = tilesEl.children.length,
+            base = state.link || "no-link";
+          if (
+            changedFrom == null ||
+            have > state.posters ||
+            tilesEl.getAttribute("data-link") !== base
+          ) {
+            tilesEl.innerHTML = "";
+            have = 0;
+          }
+          tilesEl.setAttribute("data-link", base);
+          var html = "";
+          for (var i = have; i < state.posters; i++)
+            html +=
+              '<div class="tile" style="animation-delay:' +
+              Math.min(i - have, 12) * 30 +
+              'ms">' +
+              qrSvg(base + "#" + (i + 1)) +
+              "<span>Poster " +
+              (i + 1) +
+              "</span></div>";
+          tilesEl.insertAdjacentHTML("beforeend", html);
+          document.getElementById("sheetMeta").textContent = pagesInfo();
+          document.getElementById("printHint").innerHTML =
+            'Print at <b>100 %</b> ("actual size", not "fit to page") so each code comes out exactly ' +
+            state.size +
+            " cm wide.";
+          var pdf = document.getElementById("pdfBtn");
+          if (state.pdf === "done" && changedFrom != null) {
+            state.pdf = "idle";
+          }
+          pdf.className =
+            "btn " + (state.pdf === "done" ? "done" : "secondary");
+          pdf.querySelector("span").textContent =
+            state.pdf === "done"
+              ? "PDF downloaded - download again"
+              : "Download PDF";
+        }
+        function bump(key, d, lo, hi) {
+          return function () {
+            var v = Math.max(lo, Math.min(hi, state[key] + d));
+            if (v !== state[key]) {
+              state[key] = v;
+              renderPrint(key);
+            }
+          };
+        }
+        document
+          .getElementById("pMinus")
+          .addEventListener("click", bump("posters", -1, MIN_P, MAX_P));
+        document
+          .getElementById("pPlus")
+          .addEventListener("click", bump("posters", 1, MIN_P, MAX_P));
+        document
+          .getElementById("sMinus")
+          .addEventListener("click", bump("size", -1, MIN_S, MAX_S));
+        document
+          .getElementById("sPlus")
+          .addEventListener("click", bump("size", 1, MIN_S, MAX_S));
+        document
+          .getElementById("pdfBtn")
+          .addEventListener("click", function () {
+            var b = this;
+            if (state.pdf === "busy") return;
+            state.pdf = "busy";
+            b.disabled = true;
+            b.querySelector("span").textContent = "Making your PDF...";
+            setTimeout(function () {
+              state.pdf = "done";
+              b.disabled = false;
+              renderPrint();
+              toast(
+                "tour-codes.pdf saved - " +
+                  state.posters +
+                  " poster" +
+                  (state.posters === 1 ? "" : "s") +
+                  ", " +
+                  state.size +
+                  " cm (prototype)",
+              );
+            }, 1100);
+          });
+        document.getElementById("c3").addEventListener("click", function () {
+          go(4);
+        });
+
+        /* ---------- step 4/5 ---------- */
+        document.getElementById("c4").addEventListener("click", function () {
+          go(5);
+        });
+        var overlay = document.getElementById("overlay");
+        document.getElementById("c5").addEventListener("click", function () {
+          overlay.classList.add("show");
+          setTimeout(function () {
+            overlay.classList.remove("show");
+            go(6);
+          }, 1600);
+        });
+
+        /* ---------- step 6: done ---------- */
+        function renderDone() {
+          var h = hostById(state.host) || HOSTS[0];
+          document.getElementById("replaceTitle").textContent =
+            "Last step: replace the file on " + (h.inName || h.name);
+          document.getElementById("replaceSteps").innerHTML = h.replace
+            .map(function (s) {
+              return "<li>" + s + "</li>";
+            })
+            .join("");
+          document.getElementById("c6").textContent = h.action;
+          // replay the celebration
+          Array.prototype.forEach.call(
+            document.querySelectorAll("#doneArt .ani, #doneArt .a6-check"),
+            function (el) {
+              el.style.animation = "none";
+              void el.getBoundingClientRect();
+              el.style.animation = "";
+            },
+          );
+        }
+        document.getElementById("c6").addEventListener("click", function () {
+          var h = hostById(state.host) || HOSTS[0];
+          var msg =
+            h.id === "drive"
+              ? "Opening the file page in Google Drive (prototype)"
+              : h.id === "dropbox"
+                ? "Share sheet: pick Dropbox (prototype)"
+                : h.id === "onedrive"
+                  ? "Share sheet: pick OneDrive (prototype)"
+                  : "my-tour.zip saved to Downloads (prototype)";
+          toast(msg);
+        });
+        document
+          .getElementById("restart")
+          .addEventListener("click", function () {
+            state.host = null;
+            state.link = "";
+            state.check = "idle";
+            state.posters = 10;
+            state.size = 16;
+            state.pdf = "idle";
+            input.value = "";
+            c1.disabled = true;
+            c1.textContent = "Choose a host to continue";
+            Array.prototype.forEach.call(hostsEl.children, function (li) {
+              li.classList.remove("sel");
+              li.querySelector(".host").setAttribute("aria-expanded", "false");
+            });
+            runCheck();
+            car.scrollLeft = 0;
+            syncDots();
+            go(0);
+          });
+      })();
+    </script>
+  </body>
+</html>

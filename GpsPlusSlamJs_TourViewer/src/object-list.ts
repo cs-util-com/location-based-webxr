@@ -63,9 +63,8 @@ interface ObjectRowModel {
    *  distance to the code. In AR only the distance. */
   readonly detail: string;
   /**
-   * In AR: drawn compact - the title, the chooser's position and the
-   * detail on one line of text, and ONE line of buttons with short labels
-   * (the chooser's Previous / Next at its ends). The full row put Edit,
+   * In AR: drawn compact - the title and the detail on one line of text,
+   * and ONE line of buttons with short labels. The full row put Edit,
    * Move, Delete and Done below the first screen of a 360x640 phone with
    * the code's re-measure offered (ar-layout.spec.js, 2026-10-01).
    */
@@ -78,6 +77,9 @@ interface ObjectRowModel {
   /** Move to the reticle: pins only, and only in AR (a photo's pose is
    *  where it was taken). */
   readonly canMove: boolean;
+  /** Close: let the selection go, back to placing - the selected row in AR
+   *  only (H1's object bar, polish round M3). */
+  readonly canDeselect: boolean;
   /** Every action is off while the row is busy or the list is locked. */
   readonly enabled: boolean;
 }
@@ -94,23 +96,12 @@ export interface ObjectListModel {
   readonly note: string;
   /** Offer Undo beside the note: the delete it reports can be undone. */
   readonly undo: boolean;
-  /**
-   * In AR, Previous / Next through every object with the selection's place
-   * ("2 of 5") or, before one, the count ("5 objects"): how an object too
-   * far, too small or hidden behind another to tap is still selected - and
-   * moved, which needs the selection (M4 review #4). Null on the page,
-   * which lists everything, and with no objects. `inRow`: an object is
-   * selected, and the chooser is drawn INTO its row (no line of its own).
-   */
-  readonly chooser: {
-    readonly position: string;
-    readonly inRow: boolean;
-  } | null;
 }
 
-/** Said in AR while nothing is selected. */
-export const SELECT_HINT =
-  "Aim the ring at a pin or photo and tap the screen to select it.";
+/** Said in AR while nothing is selected - a tap picks along its own ray
+ *  (`object-pick.ts`); "aim the ring" read as the new selection ring (M3
+ *  review #12). */
+export const SELECT_HINT = "Tap a pin or photo to select it.";
 /** Said on the page when there are pins. */
 const MOVE_HINT =
   "To move a pin, start the AR setup, select the pin and tap Move to the reticle.";
@@ -157,6 +148,7 @@ function rowOf(entry: ObjectListEntry, state: ObjectListState): ObjectRowModel {
     busy,
     canEditText: object.kind === "pin",
     canMove: object.kind === "pin" && state.inAr,
+    canDeselect: state.inAr && object.id === state.selectedId,
     enabled: busy === null && !state.locked,
   };
 }
@@ -175,23 +167,9 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
       rows,
       note: state.note,
       undo: state.undo,
-      chooser: null,
     };
   }
   const selected = rows.filter((row) => row.selected);
-  const index = rows.findIndex((row) => row.selected);
-  const chooser =
-    count === 0
-      ? null
-      : {
-          position:
-            index >= 0
-              ? `${String(index + 1)} of ${String(count)}`
-              : count === 1
-                ? "1 object"
-                : `${String(count)} objects`,
-          inRow: index >= 0,
-        };
   return {
     hidden: count === 0 && state.note === "",
     heading: "",
@@ -199,7 +177,6 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
     rows: selected,
     note: state.note,
     undo: state.undo,
-    chooser,
   };
 }
 
@@ -210,8 +187,9 @@ export interface ObjectListHandlers {
   remove(id: string): void;
   /** Undo the last delete (the note's "Undo"). */
   undo(): void;
-  /** Select the next (+1) or previous (-1) object (the AR chooser). */
-  step(delta: 1 | -1): void;
+  /** Close: let the selection go (polish round M3, Q-HUD - an object is
+   *  selected by a tap on it; the Previous / Next chooser is gone). */
+  deselect(): void;
 }
 
 /** The list as the creator setup drives it. */
@@ -248,9 +226,8 @@ export function createObjectListView(
     return b;
   }
 
-  /** A row's text: the title and the detail - in AR on ONE line with the
-   *  chooser's position between them. */
-  function rowText(row: ObjectRowModel, chooserInRow: boolean): HTMLElement[] {
+  /** A row's text: the title and the detail - in AR on ONE line. */
+  function rowText(row: ObjectRowModel): HTMLElement[] {
     const title = doc.createElement("span");
     title.className = "object-title";
     title.dataset["testid"] = "object-title";
@@ -262,20 +239,16 @@ export function createObjectListView(
     if (!row.compact) return [title, detail];
     const line = doc.createElement("div");
     line.className = "object-line";
-    line.append(title, ...(chooserInRow ? [position] : []), detail);
+    line.append(title, detail);
     return [line];
   }
 
   /**
    * A row's buttons. In AR (compact) short labels - the accessible name
    * keeps the full one, which contains the visible word (WCAG 2.5.3 "label
-   * in name") - with the chooser's Previous and Next at the ends of the
-   * line when the chooser is drawn into the row.
+   * in name"), and Close last for the selected row in AR.
    */
-  function rowButtons(
-    row: ObjectRowModel,
-    chooserInRow: boolean,
-  ): HTMLButtonElement[] {
+  function rowButtons(row: ObjectRowModel): HTMLButtonElement[] {
     const labelled = (
       short: string,
       full: string,
@@ -308,7 +281,17 @@ export function createObjectListView(
         handlers?.remove(row.id);
       }),
     );
-    return chooserInRow ? [previous, ...out, next] : out;
+    if (row.canDeselect) {
+      out.push(
+        // "Close", not "Done": the AR button's Done is the way out of AR
+        // (polish round M3, Q-Done), and two Dones on one screen read as
+        // the same thing.
+        labelled("Close", "Close this object's actions", "object-close", () => {
+          handlers?.deselect();
+        }),
+      );
+    }
+    return out;
   }
 
   function rowElement(row: ObjectRowModel): HTMLLIElement {
@@ -317,8 +300,7 @@ export function createObjectListView(
     li.dataset["testid"] = "object-row";
     li.dataset["objectId"] = row.id;
     if (row.selected) li.dataset["selected"] = "true";
-    const chooserInRow = row.compact && current?.chooser?.inRow === true;
-    li.append(...rowText(row, chooserInRow));
+    li.append(...rowText(row));
     const actions = doc.createElement("div");
     actions.className = "object-actions";
     if (editing?.id === row.id && row.enabled) {
@@ -346,7 +328,7 @@ export function createObjectListView(
       li.append(actions);
       return li;
     }
-    actions.append(...rowButtons(row, chooserInRow));
+    actions.append(...rowButtons(row));
     if (row.busy !== null) {
       const busy = doc.createElement("span");
       busy.className = "object-busy";
@@ -366,26 +348,6 @@ export function createObjectListView(
   const hint = doc.createElement("p");
   hint.className = "hint--dim";
   hint.dataset["testid"] = "object-list-hint";
-  // The AR chooser (M4 review #4): one compact line, so every control
-  // still fits the first screen of a small phone (ar-layout.spec.js).
-  const chooser = doc.createElement("div");
-  chooser.className = "object-chooser";
-  chooser.dataset["testid"] = "object-chooser";
-  // ONE pair of chooser buttons and one position, moved between the
-  // chooser's own line and the selected row on each redraw - never two
-  // elements with the same test id.
-  const previous = button("‹ Previous", "object-previous", () => {
-    handlers?.step(-1);
-  });
-  previous.setAttribute("aria-label", "Previous object");
-  const position = doc.createElement("span");
-  position.className = "object-position";
-  position.dataset["testid"] = "object-position";
-  const next = button("Next ›", "object-next", () => {
-    handlers?.step(1);
-  });
-  next.setAttribute("aria-label", "Next object");
-  chooser.append(previous, position, next);
   const body = doc.createElement("div");
   const note = doc.createElement("p");
   note.className = "object-list-note";
@@ -399,19 +361,7 @@ export function createObjectListView(
   const noteLine = doc.createElement("div");
   noteLine.className = "object-list-note-line";
   noteLine.append(note, undo);
-  container.replaceChildren(heading, hint, chooser, body, noteLine);
-
-  /** The chooser's buttons and position go back on its own line before
-   *  the rows are drawn; a compact selected row takes them over
-   *  (`rowButtons`, `rowText`), with "‹" and "›" for labels there. */
-  function placeChooser(model: ObjectListModel): void {
-    const inRow = model.chooser?.inRow === true;
-    position.textContent = model.chooser?.position ?? "";
-    previous.textContent = inRow ? "‹" : "‹ Previous";
-    next.textContent = inRow ? "›" : "Next ›";
-    chooser.append(previous, position, next);
-    chooser.hidden = model.chooser === null || inRow;
-  }
+  container.replaceChildren(heading, hint, body, noteLine);
 
   function redraw(): void {
     const model = current;
@@ -430,7 +380,6 @@ export function createObjectListView(
     hint.hidden = model.hint === "";
     note.textContent = model.note;
     undo.hidden = !model.undo;
-    placeChooser(model);
     body.replaceChildren();
     const list = doc.createElement("ul");
     list.className = "object-rows";

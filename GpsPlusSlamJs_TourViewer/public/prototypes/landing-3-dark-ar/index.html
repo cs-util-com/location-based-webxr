@@ -1,0 +1,3781 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <title>Make an AR Tour</title>
+    <style>
+      :root {
+        --bg: #060a11;
+        --bg2: #09101b;
+        --panel: #0c1522;
+        --panel2: #0f1a2a;
+        --line: #1a283b;
+        --line2: #284260;
+        --text: #e4ecf5;
+        --muted: #8798ae;
+        --faint: #5b6b80;
+        --acc: #5fe3ee;
+        --acc-soft: rgba(95, 227, 238, 0.14);
+        --acc-glow: rgba(95, 227, 238, 0.35);
+        --warm: #ffb956;
+        --ok: #6ee7a8;
+        --warn: #ffd27a;
+        --bad: #ff8f8f;
+        --mono:
+          ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+          "Liberation Mono", monospace;
+        --sans:
+          system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+          sans-serif;
+        --r: 14px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html {
+        overflow-x: clip;
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.55 var(--sans);
+        -webkit-font-smoothing: antialiased;
+        overflow-x: clip;
+        background-image:
+          radial-gradient(
+            900px 500px at 75% -5%,
+            rgba(95, 227, 238, 0.1),
+            transparent 60%
+          ),
+          radial-gradient(
+            700px 500px at -10% 40%,
+            rgba(255, 185, 86, 0.05),
+            transparent 60%
+          ),
+          linear-gradient(rgba(95, 227, 238, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(95, 227, 238, 0.035) 1px, transparent 1px);
+        background-size:
+          auto,
+          auto,
+          40px 40px,
+          40px 40px;
+      }
+      .mono {
+        font-family: var(--mono);
+        letter-spacing: 0.02em;
+      }
+      h1,
+      h2,
+      h3 {
+        line-height: 1.15;
+        margin: 0;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+      }
+      p {
+        margin: 0;
+      }
+      a {
+        color: var(--acc);
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+      }
+      :focus-visible {
+        outline: 2px solid var(--acc);
+        outline-offset: 3px;
+        border-radius: 6px;
+      }
+
+      /* prototype label */
+      .proto-label {
+        position: fixed;
+        top: 8px;
+        left: 8px;
+        z-index: 200;
+        font: 600 11px/1 var(--mono);
+        color: var(--acc);
+        background: rgba(6, 10, 17, 0.85);
+        border: 1px solid var(--line2);
+        padding: 6px 9px;
+        border-radius: 999px;
+        letter-spacing: 0.04em;
+        pointer-events: none;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+      }
+
+      /* buttons */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 46px;
+        padding: 0 20px;
+        border-radius: 12px;
+        border: 1px solid var(--line2);
+        background: transparent;
+        font-weight: 600;
+        transition:
+          background 0.2s,
+          border-color 0.2s,
+          box-shadow 0.2s,
+          opacity 0.2s,
+          transform 0.1s;
+        text-decoration: none;
+        color: var(--text);
+      }
+      .btn:active {
+        transform: translateY(1px);
+      }
+      .btn.primary {
+        background: var(--acc);
+        color: #04161a;
+        border-color: var(--acc);
+        box-shadow:
+          0 0 0 0 var(--acc-glow),
+          0 6px 24px -8px var(--acc-glow);
+      }
+      .btn.primary:hover {
+        box-shadow:
+          0 0 0 4px rgba(95, 227, 238, 0.15),
+          0 8px 30px -8px var(--acc-glow);
+      }
+      .btn.ghost:hover,
+      .btn.outline:hover {
+        border-color: var(--acc);
+        background: var(--acc-soft);
+      }
+      .btn.outline {
+        border-color: var(--acc);
+        color: var(--acc);
+      }
+      .btn[disabled] {
+        opacity: 0.45;
+        cursor: not-allowed;
+        box-shadow: none;
+      }
+      .btn.busy {
+        pointer-events: none;
+      }
+      .textbtn {
+        background: none;
+        border: 0;
+        padding: 6px 0;
+        color: var(--acc);
+        font-size: 14px;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .spin {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        animation: spin 0.8s linear infinite;
+        display: inline-block;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* ---------- HERO ---------- */
+      .hero {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 64px 16px 32px;
+        display: grid;
+        gap: 32px;
+        align-items: center;
+      }
+      .kicker {
+        font: 600 12px/1 var(--mono);
+        color: var(--acc);
+        letter-spacing: 0.14em;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .kicker::before {
+        content: "";
+        width: 22px;
+        height: 1px;
+        background: var(--acc);
+        box-shadow: 0 0 8px var(--acc);
+      }
+      .hero h1 {
+        font-size: clamp(34px, 7vw, 58px);
+        margin: 16px 0 14px;
+      }
+      .hero h1 em {
+        font-style: normal;
+        color: var(--acc);
+        text-shadow: 0 0 24px rgba(95, 227, 238, 0.35);
+      }
+      .hero .lede {
+        color: #b8c6d6;
+        font-size: clamp(16px, 2.2vw, 18px);
+        max-width: 34em;
+      }
+      .hero .ctas {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 24px;
+      }
+      .hero .came {
+        margin-top: 18px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .hero .came b {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .stage {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+      .phone {
+        position: relative;
+        height: min(68svh, 560px);
+        aspect-ratio: 1/2;
+        border-radius: 36px;
+        padding: 7px;
+        background: linear-gradient(160deg, #1c2b40, #0b1320 60%);
+        box-shadow:
+          0 0 0 1px rgba(95, 227, 238, 0.25),
+          0 0 40px -6px rgba(95, 227, 238, 0.25),
+          0 30px 80px -20px #000;
+      }
+      .phone::after {
+        content: "";
+        position: absolute;
+        top: 13px;
+        left: 50%;
+        width: 64px;
+        height: 6px;
+        border-radius: 6px;
+        background: #04080e;
+        transform: translateX(-50%);
+        z-index: 5;
+      }
+      .screen {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        border-radius: 30px;
+        overflow: hidden;
+        background: #0b1527;
+      }
+      .screen svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .hud {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        font: 600 9.5px/1 var(--mono);
+        letter-spacing: 0.06em;
+        color: var(--acc);
+      }
+      .hud .top {
+        position: absolute;
+        top: 26px;
+        left: 14px;
+        right: 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .hud .live {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .hud .live i {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--acc);
+        box-shadow: 0 0 8px var(--acc);
+        animation: blink 1.6s ease-in-out infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.25;
+        }
+      }
+      .hud .vf span {
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        border: 1.5px solid rgba(95, 227, 238, 0.55);
+      }
+      .hud .vf span:nth-child(1) {
+        top: 46px;
+        left: 12px;
+        border-right: 0;
+        border-bottom: 0;
+      }
+      .hud .vf span:nth-child(2) {
+        top: 46px;
+        right: 12px;
+        border-left: 0;
+        border-bottom: 0;
+      }
+      .hud .vf span:nth-child(3) {
+        bottom: 56px;
+        left: 12px;
+        border-right: 0;
+        border-top: 0;
+      }
+      .hud .vf span:nth-child(4) {
+        bottom: 56px;
+        right: 12px;
+        border-left: 0;
+        border-top: 0;
+      }
+      .hud .status {
+        position: absolute;
+        bottom: 18px;
+        left: 50%;
+        transform: translateX(-50%);
+        white-space: nowrap;
+        background: rgba(6, 12, 22, 0.82);
+        border: 1px solid rgba(95, 227, 238, 0.35);
+        padding: 7px 12px;
+        border-radius: 999px;
+        color: var(--text);
+        font-size: 10px;
+        letter-spacing: 0.03em;
+        transition: border-color 0.3s;
+      }
+      .hud .status.ok {
+        border-color: var(--acc);
+        box-shadow: 0 0 16px -4px var(--acc-glow);
+      }
+      .fig {
+        font: 500 11px/1.4 var(--mono);
+        color: var(--faint);
+        letter-spacing: 0.06em;
+        text-align: center;
+      }
+
+      /* hero svg animation states */
+      #world {
+        animation: drift 14s ease-in-out infinite alternate;
+        transform-origin: 150px 300px;
+      }
+      @keyframes drift {
+        0% {
+          transform: translate(4px, -3px) rotate(0.5deg) scale(1.03);
+        }
+        100% {
+          transform: translate(-6px, 4px) rotate(-0.6deg) scale(1.05);
+        }
+      }
+      .ar-reticle {
+        opacity: 0;
+        transform: scale(2.4);
+        transform-origin: 207px 271px;
+        transition:
+          transform 1s cubic-bezier(0.2, 0.8, 0.2, 1),
+          opacity 0.4s,
+          stroke 0.3s;
+        stroke: rgba(255, 255, 255, 0.75);
+      }
+      .s-scan .ar-reticle {
+        opacity: 1;
+      }
+      .s-lock .ar-reticle {
+        transform: scale(1);
+        stroke: var(--acc);
+      }
+      .ar-plane {
+        opacity: 0;
+        transition: opacity 1.4s;
+      }
+      .s-anchor .ar-plane {
+        opacity: 0.55;
+      }
+      .ar-anchor {
+        opacity: 0;
+        transition: opacity 0.5s;
+      }
+      .s-anchor .ar-anchor {
+        opacity: 1;
+      }
+      .ar-pulse {
+        transform-origin: 207px 294px;
+        animation: pulse 1.8s ease-out infinite;
+      }
+      @keyframes pulse {
+        0% {
+          transform: scale(0.6);
+          opacity: 0.9;
+        }
+        100% {
+          transform: scale(3);
+          opacity: 0;
+        }
+      }
+      .ar-item {
+        opacity: 0;
+        transform: translateY(10px);
+        transition:
+          opacity 0.8s ease,
+          transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      .s-p1 .i1,
+      .s-p2 .i2,
+      .s-p3 .i3 {
+        opacity: 1;
+        transform: none;
+      }
+      .ar-conn {
+        opacity: 0;
+        stroke-dasharray: 2 4;
+        animation: dash 1s linear infinite;
+        transition: opacity 0.6s;
+      }
+      .s-p1 .c1,
+      .s-p2 .c2,
+      .s-p3 .c3 {
+        opacity: 0.7;
+      }
+      @keyframes dash {
+        to {
+          stroke-dashoffset: -12;
+        }
+      }
+      .sweep {
+        opacity: 0;
+      }
+      .s-scan:not(.s-lock) .sweep {
+        opacity: 1;
+        animation: sweep 1.4s ease-in-out infinite alternate;
+      }
+      @keyframes sweep {
+        from {
+          transform: translateY(120px);
+        }
+        to {
+          transform: translateY(470px);
+        }
+      }
+      .fadeout .ar-item,
+      .fadeout .ar-conn,
+      .fadeout .ar-anchor,
+      .fadeout .ar-reticle,
+      .fadeout .ar-plane {
+        opacity: 0 !important;
+      }
+
+      /* ---------- WHY ---------- */
+      section {
+        scroll-margin-top: 16px;
+      }
+      .wrap {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      .why {
+        padding: 24px 0 8px;
+      }
+      .why-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1px;
+        background: var(--line);
+        border: 1px solid var(--line);
+        border-radius: var(--r);
+        overflow: hidden;
+      }
+      .why-item {
+        background: var(--bg2);
+        padding: 18px 18px 20px;
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+      }
+      .why-item svg {
+        flex: none;
+        width: 26px;
+        height: 26px;
+        color: var(--acc);
+      }
+      .why-item b {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 2px;
+      }
+      .why-item span {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      /* ---------- OVERVIEW ---------- */
+      .overview {
+        padding: 56px 0 24px;
+      }
+      .sec-head {
+        display: flex;
+        align-items: baseline;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+      }
+      .sec-head .tag {
+        font: 600 12px/1 var(--mono);
+        color: var(--acc);
+        letter-spacing: 0.12em;
+      }
+      .sec-head h2 {
+        font-size: clamp(24px, 4vw, 32px);
+      }
+      .steps-ov {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        counter-reset: s;
+      }
+      @media (min-width: 860px) {
+        .steps-ov {
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+        }
+      }
+      .steps-ov button {
+        width: 100%;
+        height: 100%;
+        text-align: left;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px 14px 16px;
+        position: relative;
+        transition:
+          border-color 0.2s,
+          background 0.2s;
+      }
+      .steps-ov button:hover {
+        border-color: var(--line2);
+        background: var(--panel2);
+      }
+      .steps-ov .n {
+        font: 600 12px/1 var(--mono);
+        color: var(--acc);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .steps-ov .n::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: linear-gradient(90deg, var(--line2), transparent);
+      }
+      .steps-ov b {
+        display: block;
+        margin: 10px 0 4px;
+        font-weight: 600;
+        font-size: 15px;
+      }
+      .steps-ov span {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      /* ---------- FLOW ---------- */
+      .flow {
+        padding: 40px 0 80px;
+      }
+      .console {
+        border: 1px solid var(--line2);
+        border-radius: 18px;
+        background: linear-gradient(
+          180deg,
+          rgba(12, 21, 34, 0.92),
+          rgba(9, 16, 27, 0.92)
+        );
+        position: relative;
+        box-shadow:
+          0 0 0 1px rgba(95, 227, 238, 0.06),
+          0 40px 80px -40px rgba(0, 0, 0, 0.8);
+      }
+      .console::before,
+      .console::after {
+        content: "";
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        border: 2px solid var(--acc);
+        opacity: 0.8;
+      }
+      .console::before {
+        top: -1px;
+        left: -1px;
+        border-right: 0;
+        border-bottom: 0;
+        border-top-left-radius: 18px;
+      }
+      .console::after {
+        bottom: -1px;
+        right: -1px;
+        border-left: 0;
+        border-top: 0;
+        border-bottom-right-radius: 18px;
+      }
+      .hud-head {
+        position: sticky;
+        top: 36px;
+        z-index: 20;
+        padding: 14px 18px 12px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(9, 16, 27, 0.92);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border-radius: 18px 18px 0 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px 16px;
+        align-items: center;
+      }
+      .counter {
+        font: 600 13px/1 var(--mono);
+        color: var(--muted);
+        letter-spacing: 0.1em;
+        white-space: nowrap;
+      }
+      .counter b {
+        color: var(--acc);
+        font-size: 22px;
+        letter-spacing: 0.04em;
+        display: inline-block;
+        text-shadow: 0 0 12px var(--acc-glow);
+        min-width: 2ch;
+      }
+      .counter b.flip {
+        animation: flip 0.35s ease;
+      }
+      @keyframes flip {
+        0% {
+          transform: translateY(-6px);
+          opacity: 0;
+        }
+        100% {
+          transform: none;
+          opacity: 1;
+        }
+      }
+      .segs {
+        display: flex;
+        gap: 5px;
+      }
+      .segs button {
+        flex: 1;
+        height: 22px;
+        background: none;
+        border: 0;
+        padding: 8px 0;
+        position: relative;
+      }
+      .segs button::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 9px;
+        height: 3px;
+        border-radius: 3px;
+        background: var(--line2);
+        transition:
+          background 0.3s,
+          box-shadow 0.3s;
+      }
+      .segs button.done::before {
+        background: rgba(95, 227, 238, 0.5);
+      }
+      .segs button.cur::before {
+        background: var(--acc);
+        box-shadow: 0 0 10px var(--acc);
+      }
+      .segs button[disabled] {
+        cursor: default;
+      }
+      .step-name {
+        grid-column: 1/-1;
+        font: 500 12px/1.2 var(--mono);
+        color: var(--faint);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .panels {
+        padding: 24px 18px 8px;
+        min-height: 360px;
+        position: relative;
+      }
+      .panel {
+        display: none;
+      }
+      .panel.show {
+        display: block;
+      }
+      .panel.enter-fwd {
+        animation: inFwd 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      .panel.enter-back {
+        animation: inBack 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      @keyframes inFwd {
+        from {
+          opacity: 0;
+          transform: translateX(24px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      @keyframes inBack {
+        from {
+          opacity: 0;
+          transform: translateX(-24px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .panel h2 {
+        font-size: clamp(22px, 4vw, 30px);
+        margin-bottom: 8px;
+      }
+      .panel .lede {
+        color: #b3c2d3;
+        max-width: 40em;
+        margin-bottom: 20px;
+      }
+      .small {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .nav {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 18px 18px;
+        border-top: 1px solid var(--line);
+      }
+      .nav .hint {
+        flex: 1;
+        font-size: 13px;
+        color: var(--muted);
+        text-align: right;
+      }
+      .two {
+        display: grid;
+        gap: 24px;
+      }
+      @media (min-width: 760px) {
+        .two {
+          grid-template-columns: 1fr 1fr;
+          align-items: start;
+        }
+      }
+
+      /* step 1 tiles */
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      @media (min-width: 600px) {
+        .tiles {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+      @media (min-width: 900px) {
+        .tiles {
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+      }
+      .tile {
+        position: relative;
+        text-align: left;
+        background: var(--panel2);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px;
+        min-height: 108px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        transition:
+          border-color 0.2s,
+          background 0.2s,
+          box-shadow 0.2s;
+      }
+      .tile svg {
+        width: 28px;
+        height: 28px;
+        color: var(--muted);
+        transition: color 0.2s;
+      }
+      .tile b {
+        font-weight: 600;
+        font-size: 15px;
+      }
+      .tile span {
+        font-size: 12.5px;
+        color: var(--muted);
+        line-height: 1.35;
+      }
+      .tile:hover {
+        border-color: var(--line2);
+      }
+      .tile[aria-checked="true"] {
+        border-color: var(--acc);
+        background: linear-gradient(
+          180deg,
+          rgba(95, 227, 238, 0.1),
+          rgba(95, 227, 238, 0.03)
+        );
+        box-shadow:
+          0 0 0 1px var(--acc),
+          0 0 24px -8px var(--acc-glow);
+      }
+      .tile[aria-checked="true"] svg {
+        color: var(--acc);
+      }
+      .tile[aria-checked="true"]::after {
+        content: "";
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--acc);
+        box-shadow: 0 0 8px var(--acc);
+      }
+      .howto {
+        margin-top: 18px;
+        border: 1px solid var(--line2);
+        border-left: 2px solid var(--acc);
+        border-radius: 12px;
+        padding: 18px;
+        background: rgba(95, 227, 238, 0.03);
+        animation: inFwd 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      .howto h3 {
+        font: 600 12px/1 var(--mono);
+        color: var(--acc);
+        letter-spacing: 0.12em;
+        margin-bottom: 14px;
+      }
+      .howto ol {
+        margin: 0 0 16px;
+        padding: 0;
+        list-style: none;
+        counter-reset: h;
+      }
+      .howto li {
+        counter-increment: h;
+        position: relative;
+        padding: 0 0 10px 36px;
+      }
+      .howto li::before {
+        content: counter(h, decimal-leading-zero);
+        position: absolute;
+        left: 0;
+        top: 1px;
+        font: 600 12px/1.6 var(--mono);
+        color: var(--acc);
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        padding: 0 5px;
+      }
+      .howto code,
+      .code {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        background: #071019;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 1px 6px;
+        color: #cfe9ee;
+        overflow-wrap: anywhere;
+      }
+      pre.code {
+        display: block;
+        padding: 10px 12px;
+        margin: 0 0 16px;
+        white-space: pre-wrap;
+        line-height: 1.6;
+      }
+      .dl-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+      }
+
+      /* step 2 */
+      .field {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .field input {
+        flex: 1 1 240px;
+        min-width: 0;
+        min-height: 48px;
+        border-radius: 12px;
+        border: 1px solid var(--line2);
+        background: #071019;
+        color: var(--text);
+        padding: 0 14px;
+        font: 14px var(--mono);
+      }
+      .field input:focus {
+        outline: none;
+        border-color: var(--acc);
+        box-shadow: 0 0 0 3px rgba(95, 227, 238, 0.15);
+      }
+      .check {
+        margin-top: 16px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #060d16;
+        padding: 14px 16px;
+        font-size: 13px;
+      }
+      .log div {
+        color: var(--muted);
+        opacity: 0;
+        animation: fadeIn 0.3s forwards;
+        overflow-wrap: anywhere;
+      }
+      .log div b {
+        color: var(--acc);
+        font-weight: 500;
+      }
+      .log div .okc {
+        color: var(--ok);
+      }
+      @keyframes fadeIn {
+        to {
+          opacity: 1;
+        }
+      }
+      .result {
+        margin-top: 10px;
+        font-family: var(--sans);
+        font-size: 15px;
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .result .dot {
+        flex: none;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-top: 7px;
+      }
+      .result.ok .dot {
+        background: var(--ok);
+        box-shadow: 0 0 10px var(--ok);
+      }
+      .result.later .dot {
+        background: var(--warn);
+        box-shadow: 0 0 10px var(--warn);
+      }
+      .result.err .dot {
+        background: var(--bad);
+      }
+      .result small {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .morph {
+        margin-top: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+        padding: 20px 12px;
+        border: 1px dashed var(--line2);
+        border-radius: 14px;
+      }
+      .chip {
+        max-width: 100%;
+        padding: 8px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--line2);
+        background: #071019;
+        font-size: 12.5px;
+        color: #cfe9ee;
+        overflow-wrap: anywhere;
+        text-align: center;
+      }
+      .chip span {
+        display: inline-block;
+        transition:
+          transform 0.7s cubic-bezier(0.5, 0, 0.75, 0),
+          opacity 0.7s;
+      }
+      .chip.fly span {
+        transform: translate(var(--dx), var(--dy)) scale(0.3);
+        opacity: 0;
+      }
+      .morph-qr {
+        width: min(190px, 56vw);
+        aspect-ratio: 1;
+        background: #fff;
+        border-radius: 10px;
+        padding: 0;
+        box-shadow:
+          0 0 0 1px var(--acc),
+          0 0 36px -6px var(--acc-glow);
+      }
+      .morph-qr rect.m {
+        transform-box: fill-box;
+        transform-origin: center;
+        opacity: 0;
+        transform: scale(0);
+      }
+      .morph-qr.go rect.m {
+        animation: pop 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.4) forwards;
+        animation-delay: var(--d);
+      }
+      @keyframes pop {
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      .qr-caption {
+        font: 600 11px/1 var(--mono);
+        color: var(--acc);
+        letter-spacing: 0.14em;
+      }
+
+      /* step 3 */
+      .ctrl {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .ctrl label {
+        font-weight: 600;
+      }
+      .ctrl label small {
+        display: block;
+        font-weight: 400;
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      .stepper {
+        display: flex;
+        align-items: center;
+        border: 1px solid var(--line2);
+        border-radius: 10px;
+        overflow: hidden;
+        flex: none;
+      }
+      .stepper button {
+        width: 40px;
+        height: 42px;
+        background: none;
+        border: 0;
+        font-size: 20px;
+        color: var(--acc);
+      }
+      .stepper button:hover {
+        background: var(--acc-soft);
+      }
+      .stepper input {
+        width: 58px;
+        height: 42px;
+        border: 0;
+        border-left: 1px solid var(--line);
+        border-right: 1px solid var(--line);
+        background: #071019;
+        color: var(--text);
+        text-align: center;
+        font: 600 16px var(--mono);
+        -moz-appearance: textfield;
+        appearance: textfield;
+      }
+      .stepper input::-webkit-inner-spin-button,
+      .stepper input::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      .stepper .unit {
+        padding: 0 10px 0 0;
+        font: 13px var(--mono);
+        color: var(--muted);
+        background: #071019;
+        height: 42px;
+        display: flex;
+        align-items: center;
+      }
+      .paper-row {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        padding: 16px 0;
+      }
+      .paper {
+        position: relative;
+        flex: none;
+        width: 92px;
+        background: #e9eef3;
+        border-radius: 3px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 8px 24px -8px #000;
+        transition:
+          aspect-ratio 0.3s,
+          width 0.3s;
+      }
+      .paper .pq {
+        background: #0b1220;
+        transition: width 0.3s;
+        aspect-ratio: 1;
+        max-width: 100%;
+      }
+      .paper .pq.over {
+        outline: 2px solid var(--bad);
+      }
+      .paper-row p {
+        font-size: 14px;
+        color: #b3c2d3;
+      }
+      .paper-row p b {
+        color: var(--text);
+      }
+      .ptiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+        gap: 8px;
+        max-height: 330px;
+        overflow: auto;
+        padding: 2px 4px 2px 2px;
+      }
+      .ptile {
+        margin: 0;
+        background: var(--panel2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 6px 6px 4px;
+        animation: popTile 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+      }
+      .ptile svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 3px;
+      }
+      .ptile figcaption {
+        font: 600 10px/1.6 var(--mono);
+        color: var(--muted);
+        text-align: center;
+        margin-top: 3px;
+      }
+      @keyframes popTile {
+        from {
+          opacity: 0;
+          transform: scale(0.8);
+        }
+      }
+      .print-hint {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        border: 1px solid rgba(255, 210, 122, 0.35);
+        background: rgba(255, 210, 122, 0.06);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 13.5px;
+        color: #f3e2bd;
+        margin-top: 14px;
+      }
+      .print-hint b {
+        color: var(--warn);
+        font-family: var(--mono);
+      }
+      .dl-status {
+        font: 12.5px var(--mono);
+        color: var(--ok);
+        min-height: 1.4em;
+        margin-top: 8px;
+      }
+
+      /* step 4 / 5 illus */
+      .illus {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #08111c;
+        overflow: hidden;
+      }
+      .illus svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .checklist {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .checklist li {
+        display: flex;
+        gap: 12px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .checklist li:last-child {
+        border-bottom: 0;
+      }
+      .checklist .k {
+        flex: none;
+        font: 600 12px/1.9 var(--mono);
+        color: var(--acc);
+      }
+      .checklist b {
+        display: block;
+        font-weight: 600;
+      }
+      .checklist span {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .show .drop-in {
+        animation: dropIn 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both 0.2s;
+      }
+      @keyframes dropIn {
+        from {
+          transform: translateY(-30px);
+          opacity: 0;
+        }
+      }
+      .show .draw {
+        stroke-dasharray: 140;
+        stroke-dashoffset: 140;
+        animation: draw 1s ease forwards 0.9s;
+      }
+      @keyframes draw {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+      .show .late {
+        opacity: 0;
+        animation: fadeIn 0.5s forwards 1.6s;
+      }
+      .ar-demo .ph {
+        animation: phMove 9s ease-in-out infinite;
+      }
+      @keyframes phMove {
+        0%,
+        8% {
+          transform: translate(200px, 40px);
+        }
+        22%,
+        38% {
+          transform: translate(96px, 36px);
+        }
+        55%,
+        62% {
+          transform: translate(188px, 30px);
+        }
+        78%,
+        92% {
+          transform: translate(236px, 44px);
+        }
+        100% {
+          transform: translate(200px, 40px);
+        }
+      }
+      .ar-demo .rays {
+        opacity: 0;
+        animation: rays 9s ease-in-out infinite;
+      }
+      @keyframes rays {
+        0%,
+        22% {
+          opacity: 0;
+        }
+        26%,
+        36% {
+          opacity: 1;
+        }
+        40%,
+        100% {
+          opacity: 0;
+        }
+      }
+      .ar-demo .lock {
+        opacity: 0;
+        animation: lock 9s ease-in-out infinite;
+      }
+      @keyframes lock {
+        0%,
+        30% {
+          opacity: 0;
+        }
+        34%,
+        94% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0;
+        }
+      }
+      .ar-demo .pa {
+        opacity: 0;
+        animation: pa 9s ease-in-out infinite;
+      }
+      @keyframes pa {
+        0%,
+        58% {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        62%,
+        94% {
+          opacity: 1;
+          transform: none;
+        }
+        100% {
+          opacity: 0;
+        }
+      }
+      .ar-demo .pb {
+        opacity: 0;
+        animation: pb 9s ease-in-out infinite;
+      }
+      @keyframes pb {
+        0%,
+        82% {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        86%,
+        94% {
+          opacity: 1;
+          transform: none;
+        }
+        100% {
+          opacity: 0;
+        }
+      }
+      .ar-demo .tapA {
+        opacity: 0;
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: tapA 9s ease-out infinite;
+      }
+      @keyframes tapA {
+        0%,
+        56% {
+          opacity: 0;
+          transform: scale(0.3);
+        }
+        58% {
+          opacity: 1;
+        }
+        64%,
+        100% {
+          opacity: 0;
+          transform: scale(1.8);
+        }
+      }
+      .ar-demo .tapB {
+        opacity: 0;
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: tapB 9s ease-out infinite;
+      }
+      @keyframes tapB {
+        0%,
+        80% {
+          opacity: 0;
+          transform: scale(0.3);
+        }
+        82% {
+          opacity: 1;
+        }
+        88%,
+        100% {
+          opacity: 0;
+          transform: scale(1.8);
+        }
+      }
+      .create-steps {
+        margin: 0 0 20px;
+        padding: 0;
+        list-style: none;
+      }
+      .create-steps li {
+        display: flex;
+        gap: 12px;
+        padding: 8px 0;
+      }
+      .create-steps .k {
+        font: 600 12px/1.9 var(--mono);
+        color: var(--acc);
+        flex: none;
+      }
+      .big-cta {
+        min-height: 56px;
+        font-size: 17px;
+        padding: 0 28px;
+      }
+
+      /* modal (simulated AR) */
+      .modal {
+        position: fixed;
+        inset: 0;
+        z-index: 150;
+        background: rgba(3, 6, 11, 0.82);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+      .modal[hidden] {
+        display: none;
+      }
+      .modal-card {
+        width: min(440px, 100%);
+        max-height: calc(100svh - 32px);
+        overflow: auto;
+        background: var(--panel);
+        border: 1px solid var(--acc);
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 0 50px -10px var(--acc-glow);
+        animation: inFwd 0.35s ease;
+      }
+      .modal-card h3 {
+        font: 600 12px/1 var(--mono);
+        color: var(--acc);
+        letter-spacing: 0.12em;
+        margin-bottom: 12px;
+      }
+      .modal-card .log {
+        min-height: 120px;
+        font-size: 13px;
+        margin-bottom: 16px;
+      }
+      .modal-card .row {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+      }
+
+      /* step 6 */
+      .done-mark {
+        width: 84px;
+        height: 84px;
+        margin-bottom: 12px;
+      }
+      .done-mark circle {
+        stroke-dasharray: 240;
+        stroke-dashoffset: 240;
+      }
+      .done-mark path {
+        stroke-dasharray: 60;
+        stroke-dashoffset: 60;
+      }
+      .show .done-mark circle {
+        animation: dash2 0.8s ease forwards 0.1s;
+      }
+      .show .done-mark path {
+        animation: dash2 0.5s ease forwards 0.8s;
+      }
+      @keyframes dash2 {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+      .file-card {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        border: 1px solid var(--line2);
+        border-radius: 12px;
+        padding: 12px 14px;
+        background: #071019;
+        margin: 14px 0;
+      }
+      .file-card svg {
+        flex: none;
+        color: var(--acc);
+      }
+      .file-card b {
+        font-family: var(--mono);
+        font-weight: 600;
+      }
+      .file-card small {
+        display: block;
+        color: var(--muted);
+      }
+      .same {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-top: 14px;
+        font-size: 14px;
+        color: #b3c2d3;
+      }
+      .same svg {
+        flex: none;
+        color: var(--ok);
+      }
+
+      footer {
+        padding: 24px 16px 48px;
+        text-align: center;
+        color: var(--faint);
+        font: 12px var(--mono);
+        letter-spacing: 0.06em;
+      }
+
+      /* layout breakpoints */
+      @media (min-width: 720px) {
+        .hero {
+          grid-template-columns: 1.15fr 0.85fr;
+          padding-top: 72px;
+          min-height: min(100svh, 820px);
+        }
+      }
+      @media (max-height: 520px) and (orientation: landscape) {
+        .hero {
+          min-height: auto;
+          padding-top: 44px;
+          padding-bottom: 12px;
+          grid-template-columns: 1.2fr 0.8fr;
+          gap: 20px;
+        }
+        .hero h1 {
+          font-size: 34px;
+          margin: 10px 0 8px;
+        }
+        .hero .ctas {
+          margin-top: 14px;
+        }
+        .phone {
+          height: 82svh;
+        }
+        .hud-head {
+          position: static;
+        }
+        .panels {
+          min-height: 0;
+        }
+        .ptiles {
+          max-height: 220px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.001ms !important;
+          animation-iteration-count: 1 !important;
+          animation-delay: 0s !important;
+          transition-duration: 0.001ms !important;
+        }
+        html {
+          scroll-behavior: auto;
+        }
+        #world {
+          animation: none;
+        }
+        .ar-demo .ph {
+          animation: none;
+          transform: translate(188px, 30px);
+        }
+        .ar-demo .pa,
+        .ar-demo .pb,
+        .ar-demo .lock {
+          animation: none;
+          opacity: 1;
+        }
+        .ar-demo .rays,
+        .ar-demo .tapA,
+        .ar-demo .tapB {
+          animation: none;
+          opacity: 0;
+        }
+        .ar-pulse {
+          animation: none;
+          opacity: 0.5;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="proto-label">Prototype L3 - Dark AR-forward / tech</div>
+
+    <!-- ============ HERO ============ -->
+    <header class="hero">
+      <div>
+        <div class="kicker">AR TOURS &middot; FREE &middot; NO ACCOUNT</div>
+        <h1>Leave stories <em>where they happened.</em></h1>
+        <p class="lede">
+          A tour starts with a printed code on a wall. Scan it, and text and old
+          photos appear right in the place around you, pinned to that spot. You
+          can make one with your phone in an afternoon.
+        </p>
+        <div class="ctas">
+          <a class="btn primary" href="#flow">Make your own tour</a>
+          <a class="btn ghost" href="#overview">How it works</a>
+        </div>
+        <p class="came">
+          Just walked a tour? <b>This is exactly how it was made.</b>
+        </p>
+      </div>
+      <div
+        class="stage"
+        aria-label="Animation: a phone camera finds a poster on a wall, then text pins and a photo appear around it"
+      >
+        <div class="phone">
+          <div class="screen">
+            <svg
+              id="heroSvg"
+              viewBox="0 0 300 600"
+              preserveAspectRatio="xMidYMid slice"
+              aria-hidden="true"
+            >
+              <defs>
+                <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#0b1730" />
+                  <stop offset="1" stop-color="#253a5c" />
+                </linearGradient>
+                <linearGradient id="lw" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#0e1829" />
+                  <stop offset="1" stop-color="#18283f" />
+                </linearGradient>
+                <linearGradient id="rw" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#18283f" />
+                  <stop offset="1" stop-color="#0e1829" />
+                </linearGradient>
+                <linearGradient id="bw" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#1d2f4b" />
+                  <stop offset="1" stop-color="#16253b" />
+                </linearGradient>
+                <linearGradient id="gr" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#14213a" />
+                  <stop offset="1" stop-color="#090f1b" />
+                </linearGradient>
+                <linearGradient id="sepia" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#c9a877" />
+                  <stop offset="1" stop-color="#8a6a43" />
+                </linearGradient>
+                <radialGradient id="lamp" cx=".5" cy=".5" r=".5">
+                  <stop offset="0" stop-color="#ffcf86" stop-opacity=".55" />
+                  <stop offset="1" stop-color="#ffcf86" stop-opacity="0" />
+                </radialGradient>
+                <clipPath id="archClip">
+                  <path d="M122 360V292a28 28 0 0 1 56 0V360Z" />
+                </clipPath>
+                <clipPath id="groundClip">
+                  <polygon
+                    points="-20,501 70,360 230,360 320,501 320,640 -20,640"
+                  />
+                </clipPath>
+                <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+                  <feGaussianBlur stdDeviation="2.2" result="b" />
+                  <feMerge>
+                    <feMergeNode in="b" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+              <g id="world">
+                <rect
+                  x="-30"
+                  y="-30"
+                  width="360"
+                  height="680"
+                  fill="url(#sky)"
+                />
+                <g fill="#cfe3ff" opacity=".55">
+                  <circle cx="40" cy="22" r=".9" />
+                  <circle cx="120" cy="40" r=".7" />
+                  <circle cx="210" cy="18" r="1" />
+                  <circle cx="262" cy="48" r=".7" />
+                  <circle cx="168" cy="80" r=".6" />
+                  <circle cx="90" cy="96" r=".8" />
+                </g>
+                <!-- back wall -->
+                <rect x="70" y="170" width="160" height="190" fill="url(#bw)" />
+                <rect x="66" y="164" width="168" height="8" fill="#0b1424" />
+                <rect
+                  x="84"
+                  y="196"
+                  width="22"
+                  height="30"
+                  fill="#e3b46a"
+                  opacity=".45"
+                />
+                <rect
+                  x="84"
+                  y="196"
+                  width="22"
+                  height="30"
+                  fill="none"
+                  stroke="#0b1424"
+                  stroke-width="2"
+                />
+                <rect x="194" y="196" width="22" height="30" fill="#2a4166" />
+                <path d="M122 360V292a28 28 0 0 1 56 0V360Z" fill="#070d18" />
+                <g clip-path="url(#archClip)">
+                  <circle cx="150" cy="330" r="44" fill="url(#lamp)" />
+                  <circle cx="150" cy="306" r="2.4" fill="#ffd796" />
+                </g>
+                <path
+                  d="M118 360V292a32 32 0 0 1 64 0V360"
+                  fill="none"
+                  stroke="#0b1424"
+                  stroke-width="3"
+                />
+                <!-- poster -->
+                <rect
+                  x="188"
+                  y="248"
+                  width="38"
+                  height="46"
+                  rx="1"
+                  fill="#eef3f8"
+                />
+                <g id="heroQr" transform="translate(191 251)"></g>
+                <rect x="193" y="286" width="28" height="2.5" fill="#9aa8b8" />
+                <!-- left wall -->
+                <polygon
+                  points="-20,29 70,170 70,360 -20,501"
+                  fill="url(#lw)"
+                />
+                <polygon points="20,133 44,162 44,205 20,189" fill="#2a4166" />
+                <polygon points="12,205 50,225 50,280 12,287" fill="#0b1424" />
+                <polygon
+                  points="15,210 47,228 47,277 15,283"
+                  fill="url(#sepia)"
+                />
+                <polygon points="15,266 47,264 47,277 15,283" fill="#5a4630" />
+                <polygon points="24,251 36,252 36,265 24,266" fill="#3a2b1b" />
+                <polygon points="22,252 30,243 38,253" fill="#2f2418" />
+                <!-- right wall -->
+                <polygon
+                  points="230,170 320,29 320,501 230,360"
+                  fill="url(#rw)"
+                />
+                <polygon
+                  points="256,162 280,133 280,189 256,205"
+                  fill="#e3b46a"
+                  opacity=".35"
+                />
+                <polygon
+                  points="256,240 280,228 280,300 256,296"
+                  fill="#1e3150"
+                />
+                <!-- ground -->
+                <polygon
+                  points="-20,501 70,360 230,360 320,501 320,640 -20,640"
+                  fill="url(#gr)"
+                />
+                <g
+                  clip-path="url(#groundClip)"
+                  stroke="#203250"
+                  stroke-width=".8"
+                  opacity=".9"
+                >
+                  <line x1="-40" y1="395" x2="340" y2="395" />
+                  <line x1="-40" y1="440" x2="340" y2="440" />
+                  <line x1="-40" y1="510" x2="340" y2="510" />
+                </g>
+                <!-- AR plane grid (appears on anchor) -->
+                <g
+                  class="ar-plane"
+                  clip-path="url(#groundClip)"
+                  stroke="#5fe3ee"
+                  stroke-width=".6"
+                >
+                  <line x1="70" y1="360" x2="-250" y2="600" />
+                  <line x1="102" y1="360" x2="-90" y2="600" />
+                  <line x1="134" y1="360" x2="70" y2="600" />
+                  <line x1="166" y1="360" x2="230" y2="600" />
+                  <line x1="198" y1="360" x2="390" y2="600" />
+                  <line x1="230" y1="360" x2="550" y2="600" />
+                  <line x1="-40" y1="372" x2="340" y2="372" />
+                  <line x1="-40" y1="392" x2="340" y2="392" />
+                  <line x1="-40" y1="422" x2="340" y2="422" />
+                  <line x1="-40" y1="466" x2="340" y2="466" />
+                  <line x1="-40" y1="532" x2="340" y2="532" />
+                </g>
+                <!-- tree, right foreground -->
+                <rect x="262" y="440" width="8" height="200" fill="#0a1310" />
+                <circle cx="272" cy="430" r="42" fill="#0f241d" />
+                <circle cx="238" cy="458" r="28" fill="#10281f" />
+                <circle cx="298" cy="468" r="34" fill="#0d2019" />
+                <circle cx="262" cy="414" r="16" fill="#163a2d" opacity=".7" />
+
+                <!-- AR layer -->
+                <g id="ar" fill="none">
+                  <line
+                    class="ar-conn c1"
+                    x1="207"
+                    y1="294"
+                    x2="150"
+                    y2="262"
+                    stroke="#5fe3ee"
+                    stroke-width="1"
+                  />
+                  <line
+                    class="ar-conn c2"
+                    x1="207"
+                    y1="294"
+                    x2="31"
+                    y2="248"
+                    stroke="#5fe3ee"
+                    stroke-width="1"
+                  />
+                  <line
+                    class="ar-conn c3"
+                    x1="207"
+                    y1="294"
+                    x2="95"
+                    y2="452"
+                    stroke="#ffb956"
+                    stroke-width="1"
+                  />
+                  <g
+                    class="ar-reticle"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                  >
+                    <path
+                      d="M183 251v-8h8M223 243h8v8M231 291v8h-8M191 299h-8v-8"
+                    />
+                  </g>
+                  <g class="ar-anchor">
+                    <circle
+                      class="ar-pulse"
+                      cx="207"
+                      cy="294"
+                      r="4"
+                      stroke="#5fe3ee"
+                      stroke-width="1"
+                    />
+                    <line
+                      x1="207"
+                      y1="294"
+                      x2="221"
+                      y2="294"
+                      stroke="#ff8f8f"
+                      stroke-width="1.2"
+                    />
+                    <line
+                      x1="207"
+                      y1="294"
+                      x2="207"
+                      y2="280"
+                      stroke="#6ee7a8"
+                      stroke-width="1.2"
+                    />
+                    <line
+                      x1="207"
+                      y1="294"
+                      x2="199"
+                      y2="302"
+                      stroke="#5fe3ee"
+                      stroke-width="1.2"
+                    />
+                    <circle
+                      cx="207"
+                      cy="294"
+                      r="2.6"
+                      fill="#5fe3ee"
+                      filter="url(#glow)"
+                    />
+                  </g>
+                  <!-- pin 1: over the arch -->
+                  <g class="ar-item i1">
+                    <line
+                      x1="150"
+                      y1="240"
+                      x2="150"
+                      y2="262"
+                      stroke="#5fe3ee"
+                      stroke-width="1"
+                    />
+                    <circle
+                      cx="150"
+                      cy="262"
+                      r="2.4"
+                      fill="#5fe3ee"
+                      filter="url(#glow)"
+                    />
+                    <rect
+                      x="88"
+                      y="200"
+                      width="124"
+                      height="40"
+                      rx="6"
+                      fill="rgba(7,14,26,.9)"
+                      stroke="#5fe3ee"
+                      stroke-width="1"
+                    />
+                    <circle cx="101" cy="213" r="3.5" fill="#ffb956" />
+                    <text
+                      x="110"
+                      y="216.5"
+                      font-family="ui-monospace,Menlo,Consolas,monospace"
+                      font-size="9"
+                      fill="#5fe3ee"
+                      letter-spacing=".5"
+                    >
+                      1734
+                    </text>
+                    <text
+                      x="98"
+                      y="232"
+                      font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif"
+                      font-size="11.5"
+                      font-weight="600"
+                      fill="#e8eef6"
+                    >
+                      The old bakery
+                    </text>
+                  </g>
+                  <!-- photo: on the left wall -->
+                  <g class="ar-item i2">
+                    <polygon
+                      points="12,205 50,225 50,280 12,287"
+                      stroke="#5fe3ee"
+                      stroke-width="1.4"
+                      filter="url(#glow)"
+                    />
+                    <line
+                      x1="31"
+                      y1="284"
+                      x2="31"
+                      y2="298"
+                      stroke="#5fe3ee"
+                      stroke-width="1"
+                    />
+                    <rect
+                      x="20"
+                      y="298"
+                      width="86"
+                      height="24"
+                      rx="5"
+                      fill="rgba(7,14,26,.9)"
+                      stroke="#5fe3ee"
+                      stroke-width="1"
+                    />
+                    <text
+                      x="28"
+                      y="313.5"
+                      font-family="ui-monospace,Menlo,Consolas,monospace"
+                      font-size="8.5"
+                      fill="#5fe3ee"
+                    >
+                      PHOTO
+                    </text>
+                    <text
+                      x="60"
+                      y="313.5"
+                      font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif"
+                      font-size="10"
+                      font-weight="600"
+                      fill="#e8eef6"
+                    >
+                      1920
+                    </text>
+                  </g>
+                  <!-- pin 3: on the ground -->
+                  <g class="ar-item i3">
+                    <ellipse
+                      cx="95"
+                      cy="452"
+                      rx="22"
+                      ry="6"
+                      stroke="#ffb956"
+                      stroke-width="1.4"
+                      filter="url(#glow)"
+                    />
+                    <ellipse
+                      cx="95"
+                      cy="452"
+                      rx="9"
+                      ry="2.5"
+                      stroke="#ffb956"
+                      stroke-width="1"
+                    />
+                    <line
+                      x1="95"
+                      y1="452"
+                      x2="95"
+                      y2="420"
+                      stroke="#ffb956"
+                      stroke-width="1"
+                    />
+                    <rect
+                      x="32"
+                      y="384"
+                      width="128"
+                      height="36"
+                      rx="6"
+                      fill="rgba(7,14,26,.9)"
+                      stroke="#ffb956"
+                      stroke-width="1"
+                    />
+                    <text
+                      x="42"
+                      y="398"
+                      font-family="ui-monospace,Menlo,Consolas,monospace"
+                      font-size="8"
+                      fill="#ffb956"
+                      letter-spacing=".6"
+                    >
+                      STAND HERE
+                    </text>
+                    <text
+                      x="42"
+                      y="412"
+                      font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif"
+                      font-size="10.5"
+                      font-weight="600"
+                      fill="#e8eef6"
+                    >
+                      The 1890 flood line
+                    </text>
+                  </g>
+                </g>
+              </g>
+              <line
+                class="sweep"
+                x1="0"
+                y1="0"
+                x2="300"
+                y2="0"
+                stroke="#5fe3ee"
+                stroke-width="1.5"
+                opacity=".9"
+                filter="url(#glow)"
+              />
+            </svg>
+            <div class="hud">
+              <div class="top">
+                <span class="live"><i></i>AR &middot; CAMERA</span
+                ><span id="hudCount">0/3</span>
+              </div>
+              <div class="vf">
+                <span></span><span></span><span></span><span></span>
+              </div>
+              <div class="status" id="hudStatus">
+                Point the camera at the code
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="fig">
+          FIG.1 &nbsp;A TOUR = STORIES PINNED TO A PRINTED CODE
+        </div>
+      </div>
+    </header>
+
+    <!-- ============ WHY ============ -->
+    <section class="why wrap" aria-label="Why it works this way">
+      <div class="why-grid">
+        <div class="why-item">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 9.6 4.2 4.2 0 0 0 7 18z"
+            />
+          </svg>
+          <div>
+            <b>Your storage</b
+            ><span
+              >The tour is one file in your own Drive, Dropbox, OneDrive, GitHub
+              or server.</span
+            >
+          </div>
+        </div>
+        <div class="why-item">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+          >
+            <circle cx="12" cy="12" r="8" />
+            <path d="M6.5 6.5l11 11" />
+          </svg>
+          <div>
+            <b>No server of ours</b
+            ><span>No sign-up, nothing for us to lose or switch off.</span>
+          </div>
+        </div>
+        <div class="why-item">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+          >
+            <path
+              d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0"
+            />
+            <circle cx="12" cy="19" r="1" fill="currentColor" />
+          </svg>
+          <div>
+            <b>Works with weak signal</b
+            ><span>Once loaded, the tour runs offline in the browser.</span>
+          </div>
+        </div>
+        <div class="why-item">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
+            <path d="M10.5 18.5h3" />
+          </svg>
+          <div>
+            <b>No app</b
+            ><span
+              >Visitors scan with their normal camera. Nothing to install.</span
+            >
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ OVERVIEW ============ -->
+    <section class="overview wrap" id="overview">
+      <div class="sec-head">
+        <span class="tag">// 6 STEPS</span>
+        <h2>From an idea to a tour on the wall</h2>
+      </div>
+      <ol class="steps-ov">
+        <li>
+          <button data-go="1">
+            <span class="n">01</span><b>Choose storage</b
+            ><span>Drive, Dropbox, OneDrive, GitHub or your server.</span>
+          </button>
+        </li>
+        <li>
+          <button data-go="2">
+            <span class="n">02</span><b>Paste the link</b
+            ><span>We turn it into the code visitors scan.</span>
+          </button>
+        </li>
+        <li>
+          <button data-go="3">
+            <span class="n">03</span><b>Print</b
+            ><span>One PDF, one code per poster.</span>
+          </button>
+        </li>
+        <li>
+          <button data-go="4">
+            <span class="n">04</span><b>Hang it</b
+            ><span>Flat, chest height, where the tour starts.</span>
+          </button>
+        </li>
+        <li>
+          <button data-go="5">
+            <span class="n">05</span><b>Create in AR</b
+            ><span>Walk around, place text pins and photos.</span>
+          </button>
+        </li>
+        <li>
+          <button data-go="6">
+            <span class="n">06</span><b>Save</b
+            ><span>Replace the file. The code stays the same.</span>
+          </button>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============ FLOW ============ -->
+    <section class="flow wrap" id="flow">
+      <div class="console">
+        <div class="hud-head">
+          <div class="counter" aria-live="polite">
+            STEP <b id="stepNum">01</b> / 06
+          </div>
+          <div class="segs" id="segs"></div>
+          <div class="step-name" id="stepName">Where will your tour live?</div>
+        </div>
+
+        <div class="panels">
+          <!-- 1 -->
+          <article class="panel show" data-step="1">
+            <h2>Where will your tour live?</h2>
+            <p class="lede">
+              Your tour is one small file. Keep it somewhere you already use -
+              we only need a link to it.
+            </p>
+            <div class="tiles" role="radiogroup" aria-label="Storage">
+              <button
+                class="tile"
+                role="radio"
+                aria-checked="false"
+                data-host="drive"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linejoin="round"
+                >
+                  <path d="M8.5 3h7l6 10.5-3.5 6h-12L2.5 13.5z" />
+                  <path d="M8.5 3l6 10.5H2.5M15.5 3l-6 10.5 3 6" />
+                </svg>
+                <b>Google Drive</b><span>Most people already have it</span>
+              </button>
+              <button
+                class="tile"
+                role="radio"
+                aria-checked="false"
+                data-host="dropbox"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    d="M7 3l5 3.2-5 3.2-5-3.2zM17 3l5 3.2-5 3.2-5-3.2zM2 12.6l5-3.2 5 3.2-5 3.2zM12 12.6l5-3.2 5 3.2-5 3.2zM7 17l5 3.2 5-3.2"
+                  />
+                </svg>
+                <b>Dropbox</b><span>Share links just work</span>
+              </button>
+              <button
+                class="tile"
+                role="radio"
+                aria-checked="false"
+                data-host="onedrive"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    d="M6.5 18.5h12a3.5 3.5 0 0 0 .4-7A5.5 5.5 0 0 0 8.3 9.4 4.6 4.6 0 0 0 6.5 18.5z"
+                  />
+                </svg>
+                <b>OneDrive</b><span>Good if you use Microsoft 365</span>
+              </button>
+              <button
+                class="tile"
+                role="radio"
+                aria-checked="false"
+                data-host="github"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 4.5l-3 15" />
+                </svg>
+                <b>GitHub</b><span>A public repository</span>
+              </button>
+              <button
+                class="tile"
+                role="radio"
+                aria-checked="false"
+                data-host="server"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                >
+                  <rect x="3" y="4" width="18" height="7" rx="1.5" />
+                  <rect x="3" y="13" width="18" height="7" rx="1.5" />
+                  <path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6" />
+                </svg>
+                <b>Your own server</b><span>Any web host you control</span>
+              </button>
+            </div>
+            <div class="howto" id="howto" hidden>
+              <h3 id="howtoTitle">SETUP</h3>
+              <ol id="howtoSteps"></ol>
+              <div id="howtoExtra"></div>
+              <div class="dl-row">
+                <button class="btn outline" id="starterBtn" type="button">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+                  </svg>
+                  <span>Download empty starter zip</span>
+                </button>
+                <span class="small" id="starterNote"></span>
+              </div>
+            </div>
+          </article>
+
+          <!-- 2 -->
+          <article class="panel" data-step="2">
+            <h2>Paste the share link</h2>
+            <p class="lede">
+              Copy the link from <b data-hostname>your storage</b> and paste it
+              here. We check it, then turn it into the code your visitors will
+              scan.
+            </p>
+            <div class="field">
+              <input
+                id="linkInput"
+                type="url"
+                inputmode="url"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="https://..."
+                aria-label="Share link"
+              />
+              <button class="btn primary" id="checkBtn" type="button">
+                Check link
+              </button>
+            </div>
+            <button class="textbtn" id="exampleBtn" type="button">
+              Use an example link
+            </button>
+            <div class="check" id="checkBox" hidden>
+              <div class="log mono" id="checkLog"></div>
+              <div class="result" id="checkResult" hidden></div>
+            </div>
+            <div class="morph" id="morph" hidden>
+              <div class="chip mono" id="chip"></div>
+              <svg
+                class="morph-qr"
+                id="morphQr"
+                viewBox="0 0 29 29"
+                aria-label="QR code for your tour"
+              ></svg>
+              <div class="qr-caption">THIS CODE = YOUR TOUR</div>
+            </div>
+          </article>
+
+          <!-- 3 -->
+          <article class="panel" data-step="3">
+            <h2>Print your codes</h2>
+            <p class="lede">
+              One code per poster. You get a single PDF, ready for any printer.
+            </p>
+            <div class="two">
+              <div>
+                <div class="ctrl">
+                  <label for="posterCount"
+                    >Posters to print<small>One code on each</small></label
+                  >
+                  <div class="stepper">
+                    <button
+                      type="button"
+                      data-inc="posters"
+                      data-d="-1"
+                      aria-label="Fewer posters"
+                    >
+                      &minus;</button
+                    ><input
+                      id="posterCount"
+                      type="number"
+                      min="1"
+                      max="40"
+                      value="10"
+                      inputmode="numeric"
+                    /><button
+                      type="button"
+                      data-inc="posters"
+                      data-d="1"
+                      aria-label="More posters"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div class="ctrl">
+                  <label for="sizeCm"
+                    >Printed size<small>Width of the code</small></label
+                  >
+                  <div class="stepper">
+                    <button
+                      type="button"
+                      data-inc="size"
+                      data-d="-1"
+                      aria-label="Smaller"
+                    >
+                      &minus;</button
+                    ><input
+                      id="sizeCm"
+                      type="number"
+                      min="6"
+                      max="60"
+                      value="16"
+                      inputmode="numeric"
+                    /><span class="unit">cm</span
+                    ><button
+                      type="button"
+                      data-inc="size"
+                      data-d="1"
+                      aria-label="Larger"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div class="paper-row">
+                  <div class="paper" id="paper">
+                    <div class="pq" id="paperQ"></div>
+                  </div>
+                  <p id="paperText"></p>
+                </div>
+                <button
+                  class="btn primary"
+                  id="pdfBtn"
+                  type="button"
+                  style="width: 100%"
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+                  </svg>
+                  <span>Download PDF</span>
+                </button>
+                <div class="dl-status" id="pdfStatus" aria-live="polite"></div>
+                <div class="print-hint">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#ffd27a"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                  >
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 8v5M12 16h.01" />
+                  </svg>
+                  <span
+                    >Print at <b>100 %</b> (actual size), not "fit to page", so
+                    the code really comes out
+                    <b id="hintSize">16 cm</b> wide.</span
+                  >
+                </div>
+              </div>
+              <div>
+                <div
+                  class="small mono"
+                  style="margin-bottom: 8px; letter-spacing: 0.08em"
+                  id="tilesLabel"
+                >
+                  10 POSTERS
+                </div>
+                <div class="ptiles" id="ptiles"></div>
+              </div>
+            </div>
+          </article>
+
+          <!-- 4 -->
+          <article class="panel" data-step="4">
+            <h2>Hang the code where the tour starts</h2>
+            <p class="lede">
+              The code is the tour's anchor. Everything you place later is
+              measured from it, so where and how it hangs matters.
+            </p>
+            <div class="two">
+              <div class="illus">
+                <svg viewBox="0 0 320 240" aria-hidden="true">
+                  <rect width="320" height="240" fill="#0b1626" />
+                  <g stroke="#14243a" stroke-width="1">
+                    <path
+                      d="M0 40h320M0 80h320M0 120h320M0 160h320M0 200h320"
+                    />
+                    <path
+                      d="M40 0v40M120 0v40M200 0v40M280 0v40M80 40v40M160 40v40M240 40v40M40 80v40M120 80v40M200 80v40M280 80v40M80 120v40M160 120v40M240 120v40M40 160v40M120 160v40M200 160v40M280 160v40M80 200v20M160 200v20M240 200v20"
+                    />
+                  </g>
+                  <rect y="220" width="320" height="20" fill="#08101b" />
+                  <line x1="0" y1="220" x2="320" y2="220" stroke="#284260" />
+                  <!-- person -->
+                  <g fill="#1f3350">
+                    <circle cx="104" cy="70" r="12" />
+                    <path
+                      d="M86 92q18-9 36 0l4 64h-10l-2 64h-9l-1-60h-2l-1 60h-9l-2-64h-10z"
+                    />
+                  </g>
+                  <!-- poster -->
+                  <g class="drop-in">
+                    <rect
+                      x="188"
+                      y="92"
+                      width="34"
+                      height="40"
+                      rx="1.5"
+                      fill="#eef3f8"
+                    />
+                    <g id="hangQr" transform="translate(191 95)"></g>
+                    <rect
+                      x="192"
+                      y="125"
+                      width="26"
+                      height="2.5"
+                      fill="#9aa8b8"
+                    />
+                  </g>
+                  <!-- dimension -->
+                  <g stroke="#5fe3ee" stroke-width="1" fill="none">
+                    <path class="draw" d="M248 220V112" />
+                    <path
+                      class="late"
+                      d="M243 220h10M243 112h10M222 112h18"
+                      stroke-dasharray="2 3"
+                    />
+                  </g>
+                  <g class="late">
+                    <rect
+                      x="256"
+                      y="152"
+                      width="58"
+                      height="22"
+                      rx="4"
+                      fill="#071019"
+                      stroke="#284260"
+                    />
+                    <text
+                      x="285"
+                      y="167"
+                      text-anchor="middle"
+                      font-family="ui-monospace,Menlo,Consolas,monospace"
+                      font-size="10"
+                      fill="#5fe3ee"
+                    >
+                      1.2-1.5 m
+                    </text>
+                    <path d="M182 84h46" stroke="#6ee7a8" stroke-width="1.2" />
+                    <circle cx="205" cy="84" r="2.5" fill="#6ee7a8" />
+                    <text
+                      x="205"
+                      y="76"
+                      text-anchor="middle"
+                      font-family="ui-monospace,Menlo,Consolas,monospace"
+                      font-size="8"
+                      fill="#6ee7a8"
+                    >
+                      FLAT
+                    </text>
+                  </g>
+                </svg>
+              </div>
+              <ul class="checklist">
+                <li>
+                  <span class="k">01</span>
+                  <div>
+                    <b>At the start of the tour</b
+                    ><span
+                      >Visitors scan it first, so put it where your first story
+                      is.</span
+                    >
+                  </div>
+                </li>
+                <li>
+                  <span class="k">02</span>
+                  <div>
+                    <b>Flat, at chest height</b
+                    ><span
+                      >About 1.2 to 1.5 m. No curled corners, no wrinkles.</span
+                    >
+                  </div>
+                </li>
+                <li>
+                  <span class="k">03</span>
+                  <div>
+                    <b>Good light, no glare</b
+                    ><span
+                      >Avoid shiny plastic sleeves and glass that
+                      reflects.</span
+                    >
+                  </div>
+                </li>
+                <li>
+                  <span class="k">04</span>
+                  <div>
+                    <b>Fixed firmly</b
+                    ><span
+                      >If the poster moves, the whole tour moves with it.</span
+                    >
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </article>
+
+          <!-- 5 -->
+          <article class="panel" data-step="5">
+            <h2>Create the tour in AR</h2>
+            <p class="lede">
+              Now the fun part. Go to the poster with your phone and build the
+              tour right there, in the real place.
+            </p>
+            <div class="two">
+              <div class="illus ar-demo">
+                <svg viewBox="0 0 320 220" aria-hidden="true">
+                  <rect width="320" height="220" fill="#0b1626" />
+                  <path d="M0 170L320 170" stroke="#284260" />
+                  <g stroke="#5fe3ee" stroke-width=".5" opacity=".25">
+                    <path
+                      d="M0 185h320M0 202h320M60 170L20 220M130 170l-20 50M200 170l20 50M270 170l40 50"
+                    />
+                  </g>
+                  <rect
+                    x="40"
+                    y="70"
+                    width="34"
+                    height="42"
+                    rx="1.5"
+                    fill="#eef3f8"
+                  />
+                  <g id="demoQr" transform="translate(43 73)"></g>
+                  <g
+                    class="lock"
+                    fill="none"
+                    stroke="#5fe3ee"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                  >
+                    <path d="M35 72v-7h7M72 65h7v7M79 110v7h-7M42 117h-7v-7" />
+                  </g>
+                  <!-- placed items -->
+                  <g class="pa">
+                    <line
+                      x1="150"
+                      y1="104"
+                      x2="150"
+                      y2="150"
+                      stroke="#5fe3ee"
+                    />
+                    <circle cx="150" cy="150" r="2.5" fill="#5fe3ee" />
+                    <rect
+                      x="104"
+                      y="80"
+                      width="92"
+                      height="26"
+                      rx="5"
+                      fill="#071019"
+                      stroke="#5fe3ee"
+                    />
+                    <circle cx="116" cy="93" r="3" fill="#ffb956" />
+                    <text
+                      x="124"
+                      y="97"
+                      font-family="system-ui,sans-serif"
+                      font-size="10"
+                      font-weight="600"
+                      fill="#e8eef6"
+                    >
+                      The old bakery
+                    </text>
+                  </g>
+                  <g class="pb">
+                    <rect
+                      x="238"
+                      y="56"
+                      width="58"
+                      height="44"
+                      rx="2"
+                      fill="#c9a877"
+                      stroke="#5fe3ee"
+                    />
+                    <path d="M242 92l14-16 10 10 8-6 18 12z" fill="#8a6a43" />
+                    <line
+                      x1="267"
+                      y1="100"
+                      x2="267"
+                      y2="140"
+                      stroke="#5fe3ee"
+                    />
+                    <circle cx="267" cy="140" r="2.5" fill="#5fe3ee" />
+                  </g>
+                  <circle
+                    class="tapA"
+                    cx="150"
+                    cy="150"
+                    r="10"
+                    fill="none"
+                    stroke="#5fe3ee"
+                    stroke-width="1.5"
+                  />
+                  <circle
+                    class="tapB"
+                    cx="267"
+                    cy="140"
+                    r="10"
+                    fill="none"
+                    stroke="#5fe3ee"
+                    stroke-width="1.5"
+                  />
+                  <!-- phone -->
+                  <g class="ph">
+                    <g
+                      class="rays"
+                      stroke="#5fe3ee"
+                      stroke-width=".8"
+                      opacity=".8"
+                    >
+                      <path d="M0 40L-48 18M0 40L-48 62M0 40L-52 40" />
+                    </g>
+                    <rect
+                      x="-1"
+                      y="0"
+                      width="44"
+                      height="82"
+                      rx="8"
+                      fill="#0f1a2a"
+                      stroke="#5fe3ee"
+                      stroke-width="1.4"
+                    />
+                    <rect
+                      x="4"
+                      y="8"
+                      width="34"
+                      height="64"
+                      rx="3"
+                      fill="#13253d"
+                    />
+                    <circle
+                      cx="21"
+                      cy="40"
+                      r="5"
+                      fill="none"
+                      stroke="#5fe3ee"
+                      stroke-width="1"
+                    />
+                  </g>
+                </svg>
+              </div>
+              <div>
+                <ol class="create-steps">
+                  <li>
+                    <span class="k">01</span
+                    ><span>Stand in front of the poster.</span>
+                  </li>
+                  <li>
+                    <span class="k">02</span
+                    ><span>Tap <b>Start creating</b> and scan the code.</span>
+                  </li>
+                  <li>
+                    <span class="k">03</span
+                    ><span
+                      >Walk around. Tap to place a text pin or a photo where it
+                      belongs.</span
+                    >
+                  </li>
+                  <li>
+                    <span class="k">04</span
+                    ><span
+                      >Tap <b>Done</b>. The tour is saved on your phone.</span
+                    >
+                  </li>
+                </ol>
+                <button
+                  class="btn primary big-cta"
+                  id="createBtn"
+                  type="button"
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"
+                    />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  <span>Start creating</span>
+                </button>
+                <p class="small" style="margin-top: 10px">
+                  The camera picture never leaves your phone.
+                </p>
+              </div>
+            </div>
+          </article>
+
+          <!-- 6 -->
+          <article class="panel" data-step="6">
+            <svg
+              class="done-mark"
+              viewBox="0 0 84 84"
+              fill="none"
+              aria-hidden="true"
+            >
+              <circle
+                cx="42"
+                cy="42"
+                r="37"
+                stroke="#6ee7a8"
+                stroke-width="2.5"
+              />
+              <path
+                d="M27 43l10 10 20-22"
+                stroke="#6ee7a8"
+                stroke-width="3"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <h2>Your tour is ready</h2>
+            <p class="lede">
+              One last thing: put the new tour file where the old one was, so
+              visitors get it.
+            </p>
+            <div class="file-card">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linejoin="round"
+              >
+                <path d="M6 2.5h8l4.5 4.5v14.5H6z" />
+                <path d="M14 2.5V7h4.5M11 10h2M11 12.5h2M11 15h2" />
+              </svg>
+              <div>
+                <b>tour.zip</b
+                ><small id="fileInfo">Saved on this phone, in Downloads</small>
+              </div>
+            </div>
+            <div class="howto" style="animation: none">
+              <h3 id="replaceTitle">REPLACE THE FILE</h3>
+              <ol id="replaceSteps"></ol>
+            </div>
+            <div class="same">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+              <span
+                >The link and the printed code stay the same. No need to print
+                again.</span
+              >
+            </div>
+            <div class="dl-row" style="margin-top: 20px">
+              <button class="btn outline" type="button" data-goto="5">
+                Add more to the tour
+              </button>
+              <button class="btn ghost" type="button" id="restartBtn">
+                Start a new tour
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <div class="nav">
+          <button class="btn ghost" id="backBtn" type="button">Back</button>
+          <span class="hint" id="navHint"></span>
+          <button class="btn primary" id="nextBtn" type="button">Next</button>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      FREE &middot; NO ACCOUNT &middot; NO APP &middot; YOUR FILES STAY YOURS
+    </footer>
+
+    <!-- simulated AR session -->
+    <div
+      class="modal"
+      id="arModal"
+      hidden
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="arTitle"
+    >
+      <div class="modal-card">
+        <h3 id="arTitle">AR SESSION &middot; SIMULATED</h3>
+        <div class="log mono" id="arLog"></div>
+        <div class="row">
+          <button class="btn ghost" type="button" id="arCancel">Cancel</button>
+          <button class="btn primary" type="button" id="arDone" disabled>
+            Done - save tour
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        "use strict";
+        var reduce =
+          window.matchMedia &&
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        var $ = function (s, r) {
+          return (r || document).querySelector(s);
+        };
+        var $$ = function (s, r) {
+          return Array.prototype.slice.call(
+            (r || document).querySelectorAll(s),
+          );
+        };
+        var wait = function (ms) {
+          return new Promise(function (res) {
+            setTimeout(res, reduce ? Math.min(ms, 60) : ms);
+          });
+        };
+        var pad = function (n) {
+          return String(n).padStart(2, "0");
+        };
+
+        /* ---------- fake QR generator (looks right, not scannable) ---------- */
+        function hash(s) {
+          var h = 2166136261;
+          for (var i = 0; i < s.length; i++) {
+            h ^= s.charCodeAt(i);
+            h = Math.imul(h, 16777619);
+          }
+          return h >>> 0;
+        }
+        function rng(seed) {
+          return function () {
+            seed |= 0;
+            seed = (seed + 0x6d2b79f5) | 0;
+            var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+          };
+        }
+        function qrMatrix(text, n) {
+          n = n || 25;
+          var r = rng(hash(text)),
+            m = [],
+            i,
+            j;
+          for (i = 0; i < n; i++) {
+            m.push([]);
+            for (j = 0; j < n; j++) m[i].push(r() > 0.52 ? 1 : 0);
+          }
+          function finder(oy, ox) {
+            for (var y = -1; y <= 7; y++)
+              for (var x = -1; x <= 7; x++) {
+                var yy = oy + y,
+                  xx = ox + x;
+                if (yy < 0 || xx < 0 || yy >= n || xx >= n) continue;
+                var on =
+                  y >= 0 &&
+                  y <= 6 &&
+                  x >= 0 &&
+                  x <= 6 &&
+                  (y === 0 ||
+                    y === 6 ||
+                    x === 0 ||
+                    x === 6 ||
+                    (y >= 2 && y <= 4 && x >= 2 && x <= 4));
+                m[yy][xx] = on ? 1 : 0;
+              }
+          }
+          finder(0, 0);
+          finder(0, n - 7);
+          finder(n - 7, 0);
+          for (i = 8; i < n - 8; i++) {
+            m[6][i] = i % 2 === 0 ? 1 : 0;
+            m[i][6] = i % 2 === 0 ? 1 : 0;
+          }
+          var a = n - 9;
+          for (var y = -2; y <= 2; y++)
+            for (var x = -2; x <= 2; x++) {
+              m[a + y][a + x] =
+                Math.max(Math.abs(x), Math.abs(y)) !== 1 ? 1 : 0;
+            }
+          return m;
+        }
+        function qrPath(text, n, off) {
+          var m = qrMatrix(text, n),
+            d = "";
+          off = off || 0;
+          for (var y = 0; y < m.length; y++)
+            for (var x = 0; x < m.length; x++)
+              if (m[y][x]) d += "M" + (x + off) + " " + (y + off) + "h1v1h-1z";
+          return d;
+        }
+        function qrSvg(text) {
+          return (
+            '<svg viewBox="0 0 29 29" aria-hidden="true"><rect width="29" height="29" fill="#fff"/><path fill="#0a0f18" d="' +
+            qrPath(text, 25, 2) +
+            '"/></svg>'
+          );
+        }
+        function placeSmallQr(id, text, size) {
+          var g = document.getElementById(id);
+          if (!g) return;
+          var s = size / 25;
+          g.innerHTML =
+            '<path fill="#0a0f18" transform="scale(' +
+            s +
+            ')" d="' +
+            qrPath(text, 25, 0) +
+            '"/>';
+        }
+        placeSmallQr("heroQr", "old-bakery-tour", 32);
+        placeSmallQr("hangQr", "hang", 28);
+        placeSmallQr("demoQr", "demo", 28);
+
+        /* ---------- hero animation ---------- */
+        var hero = document.getElementById("heroSvg");
+        var hudStatus = document.getElementById("hudStatus");
+        var hudCount = document.getElementById("hudCount");
+        var stages = [
+          ["s-scan", 500, "Looking for the code...", "0/3", false],
+          ["s-lock", 2100, "Code found", "0/3", true],
+          ["s-anchor", 2900, "Anchored to the poster", "0/3", true],
+          ["s-p1", 3500, "1 story nearby", "1/3", true],
+          ["s-p2", 4300, "2 stories nearby", "2/3", true],
+          ["s-p3", 5100, "3 stories around you", "3/3", true],
+        ];
+        var ALL = stages.map(function (s) {
+          return s[0];
+        });
+        function setHud(text, count, ok) {
+          hudStatus.textContent = text;
+          hudCount.textContent = count;
+          hudStatus.classList.toggle("ok", ok);
+        }
+        function runHero() {
+          hero.classList.remove("fadeout");
+          ALL.forEach(function (c) {
+            hero.classList.remove(c);
+          });
+          setHud("Point the camera at the code", "0/3", false);
+          stages.forEach(function (s) {
+            setTimeout(function () {
+              hero.classList.add(s[0]);
+              setHud(s[2], s[3], s[4]);
+            }, s[1]);
+          });
+          setTimeout(function () {
+            hero.classList.add("fadeout");
+            setHud("Point the camera at the code", "0/3", false);
+          }, 10500);
+          setTimeout(runHero, 11800);
+        }
+        if (reduce) {
+          ALL.forEach(function (c) {
+            hero.classList.add(c);
+          });
+          setHud("3 stories around you", "3/3", true);
+        } else runHero();
+
+        /* ---------- host data ---------- */
+        var HOSTS = {
+          drive: {
+            name: "Google Drive",
+            steps: [
+              "Download the empty starter tour below.",
+              "Upload <code>tour.zip</code> to your Google Drive.",
+              'Open <b>Share</b> and set General access to <b>"Anyone with the link"</b>.',
+              "Tap <b>Copy link</b> and come back here.",
+            ],
+            example:
+              "https://drive.google.com/file/d/1aB3xYzOldBakeryTour/view?usp=sharing",
+            replace: [
+              "Open the file's page in Google Drive (the one your link points to).",
+              "Upload the new <code>tour.zip</code>.",
+              'When Drive asks, choose <b>"Replace existing file"</b>.',
+            ],
+          },
+          dropbox: {
+            name: "Dropbox",
+            steps: [
+              "Download the empty starter tour below.",
+              "Upload <code>tour.zip</code> to Dropbox.",
+              "Tap <b>Share</b>, then <b>Copy link</b> (anyone with the link can view).",
+              "Come back and paste it here.",
+            ],
+            example:
+              "https://www.dropbox.com/scl/fi/k2x9q7/tour.zip?rlkey=f3a1&dl=0",
+            replace: [
+              "On your phone, open the share sheet for the saved <code>tour.zip</code>.",
+              "Send it to the <b>Dropbox</b> app, into the same folder.",
+              "Choose to <b>replace</b> the old file.",
+            ],
+          },
+          onedrive: {
+            name: "OneDrive",
+            steps: [
+              "Download the empty starter tour below.",
+              "Upload <code>tour.zip</code> to OneDrive.",
+              'Tap <b>Share</b>, choose <b>"Anyone with the link can view"</b>, then <b>Copy</b>.',
+              "Come back and paste it here.",
+            ],
+            example: "https://1drv.ms/u/s!AqT7OldBakeryTour",
+            replace: [
+              "On your phone, open the share sheet for the saved <code>tour.zip</code>.",
+              "Send it to the <b>OneDrive</b> app, into the same folder.",
+              "Choose to <b>replace</b> the old file.",
+            ],
+          },
+          github: {
+            name: "GitHub",
+            steps: [
+              "Download the empty starter tour below.",
+              "In a <b>public</b> repository: <b>Add file</b> &gt; <b>Upload files</b>, drop in <code>tour.zip</code>, commit.",
+              "Open the file and copy the address of its <b>Raw</b> button.",
+              "Come back and paste it here.",
+            ],
+            example: "https://github.com/you/old-bakery-tour/raw/main/tour.zip",
+            replace: [
+              "Download the new <code>tour.zip</code> from your phone.",
+              "Upload it to the same folder in the repository, with the same name.",
+              "Commit. The old file is replaced.",
+            ],
+          },
+          server: {
+            name: "your server",
+            steps: [
+              "Download the empty starter tour below (or upload it later).",
+              "Put <code>tour.zip</code> at a public address on your server.",
+              "Your server must allow <b>cross-origin reads</b> and <b>range requests</b>:",
+              "Paste the file's full address here.",
+            ],
+            extra:
+              '<pre class="code">Access-Control-Allow-Origin: *\nAccept-Ranges: bytes</pre>',
+            example: "https://tours.example.org/old-bakery/tour.zip",
+            replace: [
+              "Download the new <code>tour.zip</code> from your phone.",
+              "Upload it over the old file, at the same address.",
+              "Keep the cross-origin and range headers in place.",
+            ],
+          },
+        };
+
+        var state = {
+          step: 1,
+          max: 1,
+          host: null,
+          link: "",
+          checked: false,
+          posters: 10,
+          size: 16,
+        };
+        var NAMES = [
+          "Where will your tour live?",
+          "Paste the share link",
+          "Print your codes",
+          "Hang the code",
+          "Create in AR",
+          "Done",
+        ];
+
+        /* ---------- stepper ---------- */
+        var segs = document.getElementById("segs");
+        NAMES.forEach(function (n, i) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.setAttribute("aria-label", "Step " + (i + 1) + ": " + n);
+          b.addEventListener("click", function () {
+            if (i + 1 <= state.max) goTo(i + 1);
+          });
+          segs.appendChild(b);
+        });
+        var stepNum = document.getElementById("stepNum");
+        var stepName = document.getElementById("stepName");
+        var nextBtn = document.getElementById("nextBtn");
+        var backBtn = document.getElementById("backBtn");
+        var navHint = document.getElementById("navHint");
+        var flowEl = document.getElementById("flow");
+
+        function canLeave(n) {
+          if (n === 1) return !!state.host;
+          if (n === 2) return state.checked;
+          return true;
+        }
+        function updateNav() {
+          var s = state.step;
+          backBtn.style.visibility = s === 1 ? "hidden" : "visible";
+          nextBtn.hidden = s === 6;
+          nextBtn.disabled = !canLeave(s);
+          nextBtn.textContent = s === 5 ? "I have finished creating" : "Next";
+          var hint = "";
+          if (s === 1 && !state.host) hint = "Pick a place to continue";
+          if (s === 2 && !state.checked) hint = "Check your link to continue";
+          navHint.textContent = hint;
+          $$("button", segs).forEach(function (b, i) {
+            b.classList.toggle("cur", i + 1 === s);
+            b.classList.toggle(
+              "done",
+              i + 1 < s || (i + 1 <= state.max && i + 1 !== s),
+            );
+            b.disabled = i + 1 > state.max;
+          });
+        }
+        function goTo(n, opts) {
+          n = Math.max(1, Math.min(6, n));
+          var dir = n >= state.step ? "enter-fwd" : "enter-back";
+          $$(".panel").forEach(function (p) {
+            p.classList.remove("show", "enter-fwd", "enter-back");
+          });
+          var p = $('.panel[data-step="' + n + '"]');
+          void p.offsetWidth;
+          p.classList.add("show", dir);
+          state.step = n;
+          state.max = Math.max(state.max, n);
+          stepNum.textContent = pad(n);
+          stepNum.classList.remove("flip");
+          void stepNum.offsetWidth;
+          stepNum.classList.add("flip");
+          stepName.textContent = NAMES[n - 1];
+          if (n === 3) renderPrint();
+          if (n === 6) renderDone();
+          updateNav();
+          if (!(opts && opts.noScroll)) {
+            var top = flowEl.getBoundingClientRect().top;
+            if (top < -10 || top > window.innerHeight * 0.6)
+              flowEl.scrollIntoView({
+                behavior: reduce ? "auto" : "smooth",
+                block: "start",
+              });
+          }
+        }
+        nextBtn.addEventListener("click", function () {
+          if (canLeave(state.step)) goTo(state.step + 1);
+        });
+        backBtn.addEventListener("click", function () {
+          goTo(state.step - 1);
+        });
+        $$("[data-go]").forEach(function (b) {
+          b.addEventListener("click", function () {
+            var want = +b.getAttribute("data-go");
+            goTo(Math.min(want, state.max), { noScroll: true });
+            flowEl.scrollIntoView({
+              behavior: reduce ? "auto" : "smooth",
+              block: "start",
+            });
+            if (want > state.max)
+              navHint.textContent = "Start here - the steps unlock as you go";
+          });
+        });
+        $$("[data-goto]").forEach(function (b) {
+          b.addEventListener("click", function () {
+            goTo(+b.getAttribute("data-goto"));
+          });
+        });
+
+        /* ---------- step 1: hosts ---------- */
+        var howto = document.getElementById("howto");
+        var starterBtn = document.getElementById("starterBtn");
+        var starterNote = document.getElementById("starterNote");
+        $$(".tile").forEach(function (t) {
+          t.addEventListener("click", function () {
+            var key = t.getAttribute("data-host");
+            if (state.host !== key) {
+              state.checked = false;
+              resetCheck();
+            }
+            state.host = key;
+            $$(".tile").forEach(function (o) {
+              o.setAttribute("aria-checked", o === t ? "true" : "false");
+            });
+            var h = HOSTS[key];
+            $("#howtoTitle").textContent = "SETUP · " + h.name.toUpperCase();
+            $("#howtoSteps").innerHTML = h.steps
+              .map(function (s) {
+                return "<li>" + s + "</li>";
+              })
+              .join("");
+            $("#howtoExtra").innerHTML = h.extra || "";
+            starterNote.textContent = "";
+            howto.hidden = false;
+            howto.style.animation = "none";
+            void howto.offsetWidth;
+            howto.style.animation = "";
+            $$("[data-hostname]").forEach(function (e) {
+              e.textContent = h.name;
+            });
+            updateNav();
+          });
+        });
+        starterBtn.addEventListener("click", async function () {
+          var label = starterBtn.querySelector("span");
+          starterBtn.classList.add("busy");
+          starterBtn.disabled = true;
+          label.innerHTML = '<i class="spin"></i> Downloading...';
+          starterNote.textContent = "";
+          await wait(1100);
+          starterBtn.classList.remove("busy");
+          starterBtn.disabled = false;
+          label.textContent = "Download again";
+          starterNote.innerHTML =
+            '<span style="color:var(--ok)">Saved tour.zip (4 KB)</span> - now upload it.';
+        });
+
+        /* ---------- step 2: link check ---------- */
+        var linkInput = document.getElementById("linkInput");
+        var checkBtn = document.getElementById("checkBtn");
+        var checkBox = document.getElementById("checkBox");
+        var checkLog = document.getElementById("checkLog");
+        var checkResult = document.getElementById("checkResult");
+        var morph = document.getElementById("morph");
+        var checkRun = 0;
+        function resetCheck() {
+          checkRun++;
+          checkBox.hidden = true;
+          morph.hidden = true;
+          checkLog.innerHTML = "";
+          checkResult.hidden = true;
+          checkBtn.disabled = false;
+          checkBtn.textContent = "Check link";
+        }
+        document
+          .getElementById("exampleBtn")
+          .addEventListener("click", function () {
+            linkInput.value = (HOSTS[state.host] || HOSTS.drive).example;
+            linkInput.focus();
+          });
+        linkInput.addEventListener("input", function () {
+          if (state.checked) {
+            state.checked = false;
+            resetCheck();
+            updateNav();
+          }
+        });
+        linkInput.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") checkBtn.click();
+        });
+        function logLine(html) {
+          var d = document.createElement("div");
+          d.innerHTML = html;
+          checkLog.appendChild(d);
+        }
+        var KNOWN =
+          /(drive\.google\.com|docs\.google\.com|dropbox\.com|1drv\.ms|onedrive\.live\.com|sharepoint\.com|github\.com|githubusercontent\.com)/i;
+        checkBtn.addEventListener("click", async function () {
+          var val = linkInput.value.trim();
+          var run = ++checkRun;
+          checkBox.hidden = false;
+          checkLog.innerHTML = "";
+          checkResult.hidden = true;
+          morph.hidden = true;
+          var url = null;
+          try {
+            url = new URL(val);
+          } catch (e) {
+            url = null;
+          }
+          if (
+            !url ||
+            !/^https?:$/.test(url.protocol) ||
+            url.hostname.indexOf(".") < 0
+          ) {
+            checkResult.className = "result err";
+            checkResult.hidden = false;
+            checkResult.innerHTML =
+              '<span class="dot"></span><div>That does not look like a link yet.<small>It should start with https:// - copy it from the Share button of your storage.</small></div>';
+            return;
+          }
+          checkBtn.disabled = true;
+          checkBtn.innerHTML = '<i class="spin"></i> Checking...';
+          logLine("&gt; host &nbsp;&nbsp;<b>" + url.hostname + "</b>");
+          await wait(500);
+          if (run !== checkRun) return;
+          logLine("&gt; request ... ");
+          await wait(650);
+          if (run !== checkRun) return;
+          var ok = KNOWN.test(url.hostname);
+          logLine(
+            "&gt; range bytes=0-1023 ... " +
+              (ok ? '<span class="okc">206</span>' : "no answer"),
+          );
+          await wait(450);
+          if (run !== checkRun) return;
+          checkBtn.disabled = false;
+          checkBtn.textContent = "Check again";
+          checkResult.hidden = false;
+          if (ok) {
+            checkResult.className = "result ok";
+            checkResult.innerHTML =
+              '<span class="dot"></span><div><b>Found it.</b> tour.zip, an empty starter tour (4 KB).<small>Visitors will be able to open it.</small></div>';
+          } else {
+            checkResult.className = "result later";
+            checkResult.innerHTML =
+              '<span class="dot"></span><div><b>Not reachable yet.</b> That is fine if you upload the file later.<small>The code already points to this address and works as soon as the file is there.</small></div>';
+          }
+          state.link = val;
+          state.checked = true;
+          updateNav();
+          showMorph(val);
+        });
+        function showMorph(link) {
+          var chip = document.getElementById("chip");
+          var short = link.replace(/^https?:\/\//, "");
+          if (short.length > 44) short = short.slice(0, 41) + "...";
+          chip.className = "chip mono";
+          chip.innerHTML = short
+            .split("")
+            .map(function (c, i) {
+              var dx = Math.round((Math.random() * 2 - 1) * 60),
+                dy = Math.round(60 + Math.random() * 90);
+              return (
+                '<span style="--dx:' +
+                dx +
+                "px;--dy:" +
+                dy +
+                "px;transition-delay:" +
+                i * 14 +
+                'ms">' +
+                (c === " "
+                  ? "&nbsp;"
+                  : c.replace(/&/g, "&amp;").replace(/</g, "&lt;")) +
+                "</span>"
+              );
+            })
+            .join("");
+          var svg = document.getElementById("morphQr");
+          var m = qrMatrix(link, 25),
+            out = '<rect width="29" height="29" fill="#fff"/>';
+          for (var y = 0; y < 25; y++)
+            for (var x = 0; x < 25; x++)
+              if (m[y][x]) {
+                var dist = Math.hypot(x - 12, y - 12);
+                out +=
+                  '<rect class="m" x="' +
+                  (x + 2) +
+                  '" y="' +
+                  (y + 2) +
+                  '" width="1.02" height="1.02" fill="#0a0f18" style="--d:' +
+                  (700 + dist * 55 + Math.random() * 120).toFixed(0) +
+                  'ms"/>';
+              }
+          svg.innerHTML = out;
+          svg.classList.remove("go");
+          morph.hidden = false;
+          void svg.offsetWidth;
+          setTimeout(
+            function () {
+              chip.classList.add("fly");
+            },
+            reduce ? 0 : 350,
+          );
+          svg.classList.add("go");
+          if (reduce)
+            setTimeout(function () {
+              chip.classList.remove("fly");
+              chip.textContent = short;
+            }, 50);
+          else
+            setTimeout(function () {
+              chip.classList.remove("fly");
+              chip.textContent = short;
+              chip.style.opacity = ".7";
+            }, 2600);
+        }
+
+        /* ---------- step 3: print ---------- */
+        var countIn = document.getElementById("posterCount");
+        var sizeIn = document.getElementById("sizeCm");
+        function clampInt(v, lo, hi, dflt) {
+          v = parseInt(v, 10);
+          if (isNaN(v)) return dflt;
+          return Math.max(lo, Math.min(hi, v));
+        }
+        function renderPrint() {
+          state.posters = clampInt(countIn.value, 1, 40, 10);
+          state.size = clampInt(sizeIn.value, 6, 60, 16);
+          countIn.value = state.posters;
+          sizeIn.value = state.size;
+          var base = state.link || "https://example.org/tour.zip";
+          var html = "";
+          for (var i = 1; i <= state.posters; i++)
+            html +=
+              '<figure class="ptile" style="animation-delay:' +
+              Math.min(i * 25, 600) +
+              'ms">' +
+              qrSvg(base + "#" + i) +
+              "<figcaption>" +
+              pad(i) +
+              "</figcaption></figure>";
+          document.getElementById("ptiles").innerHTML = html;
+          document.getElementById("tilesLabel").textContent =
+            state.posters +
+            (state.posters === 1 ? " POSTER" : " POSTERS") +
+            " · " +
+            state.size +
+            " × " +
+            state.size +
+            " CM";
+          document.getElementById("hintSize").textContent = state.size + " cm";
+          var paper = document.getElementById("paper"),
+            pq = document.getElementById("paperQ"),
+            txt = document.getElementById("paperText");
+          var s = state.size,
+            pw,
+            ph,
+            label,
+            over = false;
+          if (s <= 18) {
+            pw = 21;
+            ph = 29.7;
+            label = "Fits on <b>A4</b>, one code per page.";
+          } else if (s <= 27) {
+            pw = 29.7;
+            ph = 42;
+            label = "Needs <b>A3</b> paper, one code per page.";
+          } else {
+            pw = 29.7;
+            ph = 42;
+            over = true;
+            label = "Bigger than A3. A print shop can do this size.";
+          }
+          paper.style.aspectRatio = pw + " / " + ph;
+          paper.style.width = (pw === 21 ? 92 : 110) + "px";
+          pq.style.width = Math.min(100, (s / pw) * 100) + "%";
+          pq.classList.toggle("over", over);
+          txt.innerHTML =
+            label +
+            '<br><span class="small">' +
+            state.posters +
+            (state.posters === 1 ? " page" : " pages") +
+            " in one PDF.</span>";
+        }
+        $$("[data-inc]").forEach(function (b) {
+          b.addEventListener("click", function () {
+            var inp =
+              b.getAttribute("data-inc") === "posters" ? countIn : sizeIn;
+            inp.value =
+              (parseInt(inp.value, 10) || 0) + +b.getAttribute("data-d");
+            renderPrint();
+          });
+        });
+        countIn.addEventListener("change", renderPrint);
+        sizeIn.addEventListener("change", renderPrint);
+        var pdfBtn = document.getElementById("pdfBtn"),
+          pdfStatus = document.getElementById("pdfStatus");
+        pdfBtn.addEventListener("click", async function () {
+          var label = pdfBtn.querySelector("span");
+          pdfBtn.disabled = true;
+          pdfBtn.classList.add("busy");
+          label.innerHTML = '<i class="spin"></i> Making your PDF...';
+          pdfStatus.textContent = "";
+          await wait(1400);
+          pdfBtn.disabled = false;
+          pdfBtn.classList.remove("busy");
+          label.textContent = "Download PDF again";
+          pdfStatus.textContent =
+            "Saved tour-codes.pdf · " +
+            state.posters +
+            (state.posters === 1 ? " page" : " pages");
+        });
+
+        /* ---------- step 5: simulated AR ---------- */
+        var modal = document.getElementById("arModal"),
+          arLog = document.getElementById("arLog");
+        var arDone = document.getElementById("arDone"),
+          arCancel = document.getElementById("arCancel");
+        var createBtn = document.getElementById("createBtn");
+        var arRun = 0;
+        function arLine(html) {
+          var d = document.createElement("div");
+          d.innerHTML = html;
+          arLog.appendChild(d);
+        }
+        createBtn.addEventListener("click", async function () {
+          var label = createBtn.querySelector("span");
+          var run = ++arRun;
+          createBtn.disabled = true;
+          label.innerHTML = '<i class="spin"></i> Opening camera...';
+          await wait(900);
+          if (run !== arRun) return;
+          createBtn.disabled = false;
+          label.textContent = "Start creating";
+          arLog.innerHTML = "";
+          arDone.disabled = true;
+          modal.hidden = false;
+          arCancel.focus();
+          var lines = [
+            ["&gt; camera &nbsp;<b>ready</b>", 400],
+            ["&gt; looking for the code ...", 900],
+            ['&gt; code found &middot; <span class="okc">anchored</span>', 900],
+            ['&gt; placed text pin &nbsp;"The old bakery"', 800],
+            ['&gt; placed photo &nbsp;&nbsp;&nbsp;"1920"', 800],
+            ['&gt; placed text pin &nbsp;"The 1890 flood line"', 800],
+            [
+              '<span style="color:var(--text)">In the real app you walk around and tap to place these. Tap Done when you are finished.</span>',
+              600,
+            ],
+          ];
+          for (var i = 0; i < lines.length; i++) {
+            await wait(lines[i][1]);
+            if (run !== arRun || modal.hidden) return;
+            arLine(lines[i][0]);
+          }
+          arDone.disabled = false;
+          arDone.focus();
+        });
+        function closeModal() {
+          arRun++;
+          modal.hidden = true;
+        }
+        arCancel.addEventListener("click", function () {
+          closeModal();
+          createBtn.focus();
+        });
+        modal.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") closeModal();
+        });
+        arDone.addEventListener("click", async function () {
+          arDone.disabled = true;
+          arDone.innerHTML = '<i class="spin"></i> Saving tour...';
+          await wait(900);
+          arDone.textContent = "Done - save tour";
+          closeModal();
+          goTo(6);
+        });
+
+        /* ---------- step 6 ---------- */
+        function renderDone() {
+          var h = HOSTS[state.host];
+          $("#replaceTitle").textContent =
+            "REPLACE THE FILE · " + (h ? h.name.toUpperCase() : "YOUR STORAGE");
+          var steps = h
+            ? h.replace
+            : [
+                "Upload the new tour.zip to the same place as before, replacing the old file.",
+              ];
+          $("#replaceSteps").innerHTML = steps
+            .map(function (s) {
+              return "<li>" + s + "</li>";
+            })
+            .join("");
+          $("#fileInfo").textContent =
+            "Saved on this phone, in Downloads · 3 stories";
+        }
+        document
+          .getElementById("restartBtn")
+          .addEventListener("click", function () {
+            state = {
+              step: 6,
+              max: 1,
+              host: null,
+              link: "",
+              checked: false,
+              posters: 10,
+              size: 16,
+            };
+            $$(".tile").forEach(function (o) {
+              o.setAttribute("aria-checked", "false");
+            });
+            howto.hidden = true;
+            linkInput.value = "";
+            resetCheck();
+            countIn.value = 10;
+            sizeIn.value = 16;
+            pdfStatus.textContent = "";
+            $$("[data-hostname]").forEach(function (e) {
+              e.textContent = "your storage";
+            });
+            goTo(1);
+          });
+
+        updateNav();
+      })();
+    </script>
+  </body>
+</html>

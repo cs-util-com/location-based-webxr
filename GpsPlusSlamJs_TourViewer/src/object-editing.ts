@@ -100,6 +100,9 @@ export function upsertPlaced(
 }
 
 export interface ObjectEditingDeps {
+  /** Told after the selection changed (a tap, Done, a delete, a reset):
+   *  the place buttons follow object mode (polish round M3). */
+  readonly selectionChanged?: () => void;
   readonly ctx: TourViewerSession;
   readonly arStore: TourViewerStore;
   readonly view: ObjectListView;
@@ -148,13 +151,17 @@ export interface ObjectEditing {
   render(): void;
   /** Select an object (a tap in AR), or clear the selection with null. */
   select(id: string | null): void;
+  /** The selected object's id, or null: object mode while it is not
+   *  (polish round M3 - the place buttons step aside). */
+  selected(): string | null;
   /** The tour's objects now (see {@link authoringObjects}). */
   objects(): AuthoringObject[];
   /** A tour closed or a visit ended: the selection and outcome go. */
   reset(): void;
 }
 
-const SAVED_SUFFIX = "it goes into the zip on the next Finish.";
+/** True on the page (Finish) and in AR (Done) alike (M3 review #12). */
+const SAVED_SUFFIX = "it goes into the zip when you save the tour.";
 const NOT_BACKED_UP =
   "this device could not save a backup copy - finish before closing the page.";
 
@@ -483,7 +490,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
         // did not record is still a delete in memory, and the next Finish.
         say(
           ok
-            ? `Deleted ${name} - ${found.hosted ? "it leaves the zip on the next Finish." : "it will not be in the zip."}`
+            ? `Deleted ${name} - ${found.hosted ? "it leaves the zip when you save the tour." : "it will not be in the zip."}`
             : `Deleted ${name}, but ${NOT_BACKED_UP}`,
           {
             manifest,
@@ -545,7 +552,8 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     });
   }
 
-  /** Select `id` (a tap in AR, or the chooser), or clear with null. */
+  /** Select `id` (a tap in AR), or clear with null (Done, a tap on
+   *  empty scene). */
   function selectObject(id: string | null): void {
     selectedId = id;
     // A tap in AR is also how the creator carries on, so it must not take
@@ -553,6 +561,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     // once the hold is over it clears it.
     if (!held) note = "";
     render();
+    deps.selectionChanged?.();
   }
 
   view.bind({
@@ -564,24 +573,15 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
       undoable = null;
       pending?.run();
     },
-    step: (delta) => {
-      const ids = objects().map((o) => o.object.id);
-      if (ids.length === 0) return;
-      const at = selectedId === null ? -1 : ids.indexOf(selectedId);
-      // Nothing selected: Next starts at the first, Previous at the last.
-      const target =
-        at < 0
-          ? delta > 0
-            ? 0
-            : ids.length - 1
-          : (at + delta + ids.length) % ids.length;
-      selectObject(ids[target] ?? null);
+    deselect: () => {
+      selectObject(null);
     },
   });
 
   return {
     render,
     select: selectObject,
+    selected: () => selectedId,
     objects,
     reset: () => {
       selectedId = null;
@@ -590,6 +590,10 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
       stopHold();
       busy.clear();
       render();
+      // Not `selectionChanged`: a reset runs inside a visit's teardown,
+      // and a full readout render there could start a measurement after
+      // the visit's own had been cleared (M3 review #14). The next render
+      // brings the place buttons and the ring along.
     },
   };
 }

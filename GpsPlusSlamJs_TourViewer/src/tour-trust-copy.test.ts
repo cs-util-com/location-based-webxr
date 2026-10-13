@@ -40,13 +40,14 @@ describe("trustLines", () => {
     expect(line).not.toMatch(/has not been changed/);
   });
 
-  it("an unsigned tour says so plainly, with or without a list of its files", () => {
-    expect(lines({ signature: { kind: "none" } })[0]).toMatch(
-      /^Not signed: there is no way to check/,
-    );
-    expect(lines({ signature: { kind: "listed" } })[0]).toMatch(
-      /^Not signed: its files match/,
-    );
+  // Why (r820 feedback R6, D-R3): every tour is unsigned until signing on
+  // export exists (tour kit K2) - a starter zip always is - so the line
+  // read as an alarm on every normal tour, for visitors (owner, 2026-10-06)
+  // and on the creator's step 2 alike. Nobody reads it now; a signature or
+  // a warning still speaks.
+  it("says nothing about an unsigned tour, with or without a list of its files", () => {
+    expect(lines({ signature: { kind: "none" } })).toEqual([]);
+    expect(lines({ signature: { kind: "listed" } })).toEqual([]);
   });
 
   it("words each trust warning with both keys", () => {
@@ -82,14 +83,15 @@ describe("trustLines", () => {
   });
 
   it.each([
-    ["not signed", { kind: "listed" } as const],
+    ["not signed", { kind: "listed" } as const, 0],
     [
       "signed but not checked here",
       { kind: "unsupported", author: A } as const,
+      1,
     ],
   ])(
     "shows no links for a tour that is %s (K1 milestone review R12)",
-    (_label, signature) => {
+    (_label, signature, expectedLines) => {
       // Why: links are the AUTHOR's claim about their other tours. Without
       // a checked signature nobody vouches for the list, and a line naming
       // keys would lend any key the look of a known author.
@@ -97,41 +99,22 @@ describe("trustLines", () => {
         signature,
         links: [{ seriesId: "K7fQ2mX9pL4sT8vB1nR6wA", author: A }],
       });
-      expect(out).toHaveLength(1);
+      // An unsigned tour has no line at all since the r820 feedback; a
+      // signature that was not checked keeps its one line (exact counts:
+      // M0c review, finding 6a).
+      expect(out).toHaveLength(expectedLines);
       expect(out.join("\n")).not.toMatch(/Links to/);
     },
   );
 
   it("adds no links line without links", () => {
-    expect(lines({})).toHaveLength(1);
+    expect(lines({ signature: { kind: "signed", author: A } })).toHaveLength(1);
   });
 });
 
-describe("trustLines for a visitor (UI round 1, U1; owner decision 2026-10-06)", () => {
-  // Why: every tour a creator finishes is unsigned until signing on export
-  // exists, so every visitor read "Not signed: there is no way to check
-  // who made this tour..." - an alarm on every normal tour. A visitor now
-  // reads a trust line only when there is something to say: a signature,
-  // or a warning. The creator keeps the plain "not signed" note.
-  const visitor = (input: Partial<TrustCopyInput>) =>
-    trustLines(
-      {
-        signature: { kind: "none" },
-        warnings: [],
-        links: [],
-        fingerprintOf,
-        ...input,
-      },
-      "visitor",
-    );
-
-  it("says nothing about an unsigned tour, listed or not, without a warning", () => {
-    expect(visitor({ signature: { kind: "none" } })).toEqual([]);
-    expect(visitor({ signature: { kind: "listed" } })).toEqual([]);
-  });
-
+describe("trustLines without a signature (UI round 1, U1; r820 feedback R6)", () => {
   it("still warns when a link used to open a signed tour", () => {
-    const out = visitor({
+    const out = lines({
       signature: { kind: "none" },
       warnings: [{ kind: "source-lost-signature", source: "link", was: A }],
     });
@@ -139,15 +122,5 @@ describe("trustLines for a visitor (UI round 1, U1; owner decision 2026-10-06)",
     expect(out[0]).toMatch(
       /^Warning: this link used to open a tour signed by key aaaa 1111 aaaa/,
     );
-  });
-
-  it("names a signature as before", () => {
-    expect(visitor({ signature: { kind: "signed", author: A } })[0]).toMatch(
-      /^Signed by key aaaa 1111 aaaa/,
-    );
-  });
-
-  it("the creator keeps the plain note", () => {
-    expect(lines({ signature: { kind: "none" } })[0]).toMatch(/^Not signed/);
   });
 });

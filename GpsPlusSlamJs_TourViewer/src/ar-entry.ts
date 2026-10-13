@@ -9,6 +9,7 @@
  * granted, the tap requests the position and the NEXT tap starts AR.
  */
 
+import { copyWithFeedback } from "gps-plus-slam-app-framework/utils/copy-with-feedback";
 import type { EnableGpsArState } from "gps-plus-slam-app-framework/ar";
 import {
   GPS_POINT_SOURCE_DEVICE,
@@ -28,17 +29,28 @@ import {
 
 import {
   arButtonView,
+  COPY_LINK_LABELS,
+  visitorStep,
   buildArEnableConfig,
   type ArEnableHooks,
   endTourArRuntime,
   startTourArRuntime,
 } from "./ar-mode.js";
+import type { DepthSamplerConfig } from "gps-plus-slam-app-framework/ar/depth-sampler";
+import { createLogger } from "gps-plus-slam-app-framework/utils/logger";
+import type { Object3D } from "three";
 import { RECORDING_DEPTH } from "./authoring-recording.js";
+import {
+  MESH_DEPTH,
+  meshSurfaceLine,
+  type MeshSurface,
+} from "./mesh-surface.js";
 import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { debugReadoutLines, visitorFusedHint } from "./qr-debug-readout.js";
 import type { TourViewerSeams } from "./seams.js";
 import { arStatusLine, type ArStatusInput } from "./tour-flow.js";
+import { scanCardShown } from "./scan-gate.js";
 import { visitorStatus } from "./visitor-status.js";
 import type { LocationGate } from "./visitor-screen.js";
 import type { RecordingPanel } from "./recording-panel.js";
@@ -49,6 +61,8 @@ import {
   type TourViewerSession,
   type TourViewerStore,
 } from "./tour-viewer-session.js";
+
+const log = createLogger("ArEntry");
 
 export interface ArEntryDom {
   /** The initAR container = the WebXR DOM-overlay root. */
@@ -67,6 +81,10 @@ export interface ArEntryDom {
    *  review F14): written only when the sentence changes, never per camera
    *  frame like the visible line. */
   arStatusLive?: HTMLElement;
+  /** The visitor's scan card (polish round M4b) and its sentence line.
+   *  Absent: no card (the node tests that do not need one). */
+  scanCard?: Pick<HTMLElement, "hidden">;
+  scanCardLine?: Pick<HTMLElement, "textContent">;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -89,6 +107,9 @@ export function wireArEntry(deps: {
   /** The creator's troubleshooting recording (authoring recording plan
    *  2026-09-28-0953, M1a): asked at each entry whether it records. */
   recording?: Pick<RecordingPanel, "beginOnArEntry">;
+  /** `?mesh=1`: a creator's ring follows a mesh of the surroundings
+   *  (polish round M5, Q-Mesh). */
+  meshCursor?: boolean;
 }): ArEntry {
   const {
     ctx,
@@ -102,8 +123,18 @@ export function wireArEntry(deps: {
     hooks,
   } = deps;
   const authorMode = mode === "creator";
+  /** Whether this visit's first tap asked for the location: the button
+   *  then reads as step 2 of 2 (polish round M4a, the owner's V4). */
+  let hadLocationStep = false;
+  /** A Copy link tap is running: it owns the button's label until then. */
+  let copying = false;
   /** Whether THIS session's depth sampler was started (a recorded entry). */
   let depthRunning = false;
+  /** Whether that sampler serves a recorded entry (the readout's line);
+   *  the mesh cursor runs it too (polish round M5). */
+  let depthRecorded = false;
+  /** The creator's mesh of the surroundings, with `?mesh=1` (M5). */
+  let meshSurface: MeshSurface | null = null;
   /** The device fixes' extent, for the ?debug=1 GPS line (polish round C4). */
   const gpsExtent = createGpsExtentTracker();
   /** That line's inputs, recomputed only when the GPS list changed: the
@@ -132,13 +163,63 @@ export function wireArEntry(deps: {
     };
   }
 
-  /** Once the runtime runs: start the sampler a recorded entry asked for. */
-  function startRecordedDepth(
-    depthHooks: Pick<ArEnableHooks, "onDepthSample">,
-  ): void {
-    if (depthHooks.onDepthSample === undefined) return;
-    seams.startDepthCapture(RECORDING_DEPTH);
+  /** The depth this entry asks for: a recorded entry's at the recording's
+   *  density (its byte estimate assumes it), else a creator's with
+   *  `?mesh=1` at the mesh's (polish round M5), else none - depth stays
+   *  off otherwise (QD-5). Either feeds the store's latest depth sample. */
+  function entryDepth(): {
+    hooks: Pick<ArEnableHooks, "onDepthSample">;
+    config: Partial<DepthSamplerConfig> | null;
+    recorded: boolean;
+  } {
+    const recorded = recordedEntryHooks();
+    if (recorded.onDepthSample !== undefined) {
+      return { hooks: recorded, config: RECORDING_DEPTH, recorded: true };
+    }
+    if (authorMode && deps.meshCursor === true) {
+      return {
+        hooks: {
+          onDepthSample: (sample: DepthSample) => {
+            arStore.dispatch(recordDepthSample(sample));
+          },
+        },
+        config: MESH_DEPTH,
+        recorded: false,
+      };
+    }
+    return { hooks: {}, config: null, recorded: false };
+  }
+
+  /** Once the runtime runs: start the sampler the entry asked for. */
+  function startEntryDepth(depth: ReturnType<typeof entryDepth>): void {
+    if (depth.config === null) return;
+    seams.startDepthCapture(depth.config);
     depthRunning = true;
+    depthRecorded = depth.recorded;
+  }
+
+  /** The creator's mesh, or null when it cannot be built (no worker
+   *  support, a failing mesher): the ring then runs on the hit-test alone,
+   *  as without the flag (M5 review #11). */
+  function startMeshSurfaceSafely(worldGroup: Object3D): MeshSurface | null {
+    try {
+      return seams.startMeshSurface(worldGroup, arStore);
+    } catch (err) {
+      log.warn("Mesh cursor unavailable; the ring follows the hit-test", err);
+      return null;
+    }
+  }
+
+  /** The scan card shows the visitor's sentence while the gate waits;
+   *  the status line steps aside meanwhile (kept with ?debug=1, whose
+   *  technical line the card does not carry). */
+  function renderScanCard(input: ArStatusInput, sentence: string): void {
+    const shown = scanCardShown(mode, input.arStatus, ctx.scanGate);
+    if (dom.scanCard !== undefined) dom.scanCard.hidden = !shown;
+    if (dom.scanCardLine !== undefined) {
+      dom.scanCardLine.textContent = shown ? sentence : "";
+    }
+    dom.arStatus.hidden = shown && !ctx.debug;
   }
 
   function renderArStatus(): void {
@@ -202,6 +283,7 @@ export function wireArEntry(deps: {
     const visitor = mode === "visitor";
     const line = visitor && !ctx.debug ? plain.text : arStatusLine(input);
     dom.arStatus.textContent = line;
+    renderScanCard(input, plain.text);
     // The visitor's state machine only (a creator's would mislead), and
     // the gate for both (U1 milestone review #8, #9).
     if (visitor) dom.arStatus.dataset.state = plain.state;
@@ -247,6 +329,8 @@ export function wireArEntry(deps: {
       accuracyM:
         accuracies.length === 0 ? null : accuracies[accuracies.length >> 1]!,
       extentM: gpsExtent.update(positions),
+      // Fixes WITH an accuracy are all the fixes there are: the store keeps
+      // no fix without one (ar-entry.test.ts pins it; PR #583 review).
       fixes: accuracies.length,
     };
     return gpsQuality;
@@ -265,18 +349,51 @@ export function wireArEntry(deps: {
       movedCodeChecks: ctx.movedCodeChecks?.snapshot() ?? [],
       ignoredCodes: [...ctx.ignoredCodes.values()].map((c) => c.text),
       gps: sessionGpsQuality(),
-      // A recorded entry is the one that runs the depth sampler.
-      recordingOn: depthRunning,
-    }).join("\n");
+      // A recorded entry's sampler (the mesh cursor's is not a recording).
+      recordingOn: depthRecorded,
+    })
+      // With ?mesh=1, the frame time the owner judges the mesh by (Q-Mesh).
+      .concat(
+        meshSurface === null ? [] : [meshSurfaceLine(meshSurface.stats())],
+      )
+      .join("\n");
+  }
+
+  /** The entry button: its label (left alone while a copy runs - the copy
+   *  owns it until it settles), the state for the page's CSS (V4 restyles
+   *  a phone without AR), and the step marker of V4's round button, which
+   *  the accessible name carries too: generated content would be read run
+   *  into the label (M4 review #11). */
+  function renderButton(
+    state: EnableGpsArState,
+    location: { pending: boolean; busy: boolean },
+  ): void {
+    const button = dom.enterArButton;
+    const view = arButtonView(state, mode, location, {
+      running: ctx.finishing,
+      failed: ctx.finishError !== null,
+    });
+    if (!copying) {
+      button.disabled = view.disabled;
+      button.textContent = view.label;
+    }
+    button.dataset["arState"] = state.status;
+    const step = visitorStep(mode, state, location, hadLocationStep);
+    if (step === null) {
+      delete button.dataset["step"];
+      button.removeAttribute("aria-label");
+    } else {
+      button.dataset["step"] = step;
+      button.setAttribute("aria-label", `${view.label}, step ${step}`);
+    }
   }
 
   function renderArState(state: EnableGpsArState): void {
-    const view = arButtonView(state, mode, {
+    const location = {
       pending: locationGate.pending(),
       busy: locationGate.busy(),
-    });
-    dom.enterArButton.disabled = view.disabled;
-    dom.enterArButton.textContent = view.label;
+    };
+    renderButton(state, location);
     // The printed size is CAPTURED at AR entry (the solves use it) — editing
     // it mid-session would stamp a size the pose was never solved with
     // (milestone review #3).
@@ -301,7 +418,10 @@ export function wireArEntry(deps: {
     // over the camera feed for the whole session. The hint explains the
     // button before a press; during a session it would be a start-screen
     // instruction pinned over live video (milestone review, 2026-09-05).
-    dom.arHint.hidden = sessionActive;
+    // A visitor's phone without AR gets no "once AR starts" hint: the
+    // status line says what to do instead (polish round M4a, V4).
+    dom.arHint.hidden =
+      sessionActive || (!authorMode && state.status === "unsupported");
     renderArStatus();
   }
 
@@ -372,7 +492,10 @@ export function wireArEntry(deps: {
     if (depthRunning) {
       seams.stopDepthCapture();
       depthRunning = false;
+      depthRecorded = false;
     }
+    meshSurface?.dispose();
+    meshSurface = null;
     arStore.dispatch(clearAllQrMarkers());
     endTourArRuntime(arStore, {
       stopCameraFrameCapture: () => {
@@ -383,13 +506,47 @@ export function wireArEntry(deps: {
     hooks.renderAuthorReadout();
   }
 
+  /** The visitor's Copy link tap (async-UI rule: busy, then the outcome;
+   *  a failure on the error line, with the address bar as the way out). */
+  function copyLink(): void {
+    copying = true;
+    // The framework's one copy sequence (F7, DEC-H3): the write inside the
+    // chain, so a page without a clipboard fails instead of sticking at
+    // "Copying…" (M4 review #1).
+    void copyWithFeedback(
+      dom.enterArButton,
+      location.href,
+      (text) => seams.copyText(text),
+      {
+        busy: COPY_LINK_LABELS.busy,
+        done: COPY_LINK_LABELS.done,
+        // The advice goes on the error line; the button offers the copy again.
+        failed: COPY_LINK_LABELS.idle,
+        onDone: () => {
+          // An earlier failed copy's advice is out of date now.
+          if (dom.errorBox.textContent === COPY_LINK_LABELS.failed) {
+            dom.errorBox.textContent = "";
+          }
+        },
+        onFailed: () => {
+          dom.errorBox.textContent = COPY_LINK_LABELS.failed;
+        },
+      },
+    ).finally(() => {
+      copying = false;
+    });
+  }
+
   async function enterAr(): Promise<void> {
     // The visitor's location-only tap (DEC-N2): request, re-label, and let
     // the next tap start the session inside its own user activation.
     if (locationGate.pending()) {
+      hadLocationStep = true;
       await locationGate.request();
       return;
     }
+    // The start the two steps led to: a later start is one tap again.
+    hadLocationStep = false;
     ctx.cameraFrameCount = 0;
     // A refused AUTHOR pipeline (bad size, no detector) keeps AR unstarted —
     // the message is already in the author panel, where the author is
@@ -397,7 +554,7 @@ export function wireArEntry(deps: {
     // session is plain AR.
     if (authorMode && !hooks.startAuthorPipeline()) return;
     if (!authorMode) hooks.startViewerPipeline();
-    const depth = recordedEntryHooks();
+    const depth = entryDepth();
     const result = await arController.enable(
       buildArEnableConfig({
         container: dom.arRoot,
@@ -421,7 +578,7 @@ export function wireArEntry(deps: {
         onOrientation: (orientation) => {
           updateDeviceOrientation(orientation);
         },
-        ...depth,
+        ...depth.hooks,
       }),
     );
     // Failure states surface via the subscribed button view (Retry — <reason>).
@@ -446,7 +603,7 @@ export function wireArEntry(deps: {
       await arController.disable();
       return;
     }
-    startRecordedDepth(depth);
+    startEntryDepth(depth);
     // The world group exists only AFTER initAR built the scene graph —
     // creating the glue check earlier made it dead code in production
     // (PR #360 review). The snapshot for the alignment gate belongs to the
@@ -466,9 +623,18 @@ export function wireArEntry(deps: {
       // selects the object under it (authoring plan 2026-09-28-0953 M4;
       // taps on the panel are cancelled there, `beforexrselect`).
       if (authorMode) {
-        ctx.reticle = seams.startHitTestReticle(worldGroup, (tap) => {
-          hooks.selectInView(tap);
-        });
+        // With ?mesh=1 the ring follows a mesh of the surroundings where
+        // there is one, the hit-test elsewhere (polish round M5).
+        meshSurface =
+          deps.meshCursor === true ? startMeshSurfaceSafely(worldGroup) : null;
+        const surface = meshSurface;
+        ctx.reticle = seams.startHitTestReticle(
+          worldGroup,
+          (tap) => {
+            hooks.selectInView(tap);
+          },
+          surface === null ? undefined : () => surface.pick(),
+        );
       }
     }
     if (authorMode) hooks.beginAuthorVisit();
@@ -504,9 +670,24 @@ export function wireArEntry(deps: {
     // During a session the button is the way out (UI round 1, U2): the
     // session end runs the same teardown as the back gesture.
     if (arController.getState().status === "running") {
+      // A creator's Done finishes when it can (polish round M3, Q-Done);
+      // the finish ends the session itself once the zip is written.
+      if (
+        authorMode &&
+        !ctx.finishing &&
+        ctx.finishError === null &&
+        hooks.finishFromAr()
+      ) {
+        renderArState(arController.getState());
+        return;
+      }
       arController.disable().catch((err: unknown) => {
         dom.errorBox.textContent = describeOpenError(err);
       });
+      return;
+    }
+    if (!authorMode && arController.getState().status === "unsupported") {
+      copyLink();
       return;
     }
     // Inside the tap, before any await: the stories' one audio element

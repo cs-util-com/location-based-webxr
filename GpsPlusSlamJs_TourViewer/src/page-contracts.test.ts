@@ -38,18 +38,16 @@ describe("the AR overlay root is not clipped", () => {
     expect(html).toMatch(/#step-measure\s*\{[^}]*overflow:\s*visible/);
   });
 
-  it("stops the step card from clipping or moving the printed code", () => {
-    // The nastiest thing the design-system adoption nearly shipped. The
-    // print stylesheet positions #print-area absolutely so the symbol lands
-    // at the paper's corner, and that resolves against the nearest
-    // POSITIONED ancestor. The shared `.step` atom is
-    // `position: relative; overflow: hidden`, so dressing step 2 in it
-    // silently made step 2 both the containing block AND the clip: the code
-    // printed offset down the sheet with its bottom cut off. Nothing in CI
-    // renders a print layout, so the rule is asserted as markup.
-    expect(html).toMatch(
-      /#print-panel\s*\{[^}]*position:\s*static[^}]*overflow:\s*visible/,
-    );
+  it("prints the codes by PDF only: no print stylesheet, no print button", () => {
+    // Polish round M0b (A10): the browser's print dialog owns a "fit to
+    // page" that rescales, and a rescaled code measures the world wrong.
+    // The page printed a code itself until then - with its own hazards, the
+    // worst being the shared `.step` atom turning step 3 into the print
+    // layout's containing block and clip. The PDF declares its own page, so
+    // the page must not offer the other route again.
+    expect(html).not.toMatch(/@media\s+print/);
+    expect(html).not.toContain('id="print-button"');
+    expect(html).not.toContain("window.print");
   });
 
   it("keeps the summary out of the page while a session runs", () => {

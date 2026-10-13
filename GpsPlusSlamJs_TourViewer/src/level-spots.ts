@@ -52,8 +52,9 @@ const asSpot = (
   mintQuality: QrMintQuality | undefined,
 ): StoredSpot => (mintQuality === undefined ? { geo } : { geo, mintQuality });
 
-/** The level's JSON object, or null when it is not one. */
-function objectOf(
+/** The level's JSON object, or null when it is not one (also read by
+ *  `level-printed.ts`: one reader of a level file's fields). */
+export function objectOf(
   json: string,
 ): ({ qr: Record<string, unknown> } & Record<string, unknown>) | null {
   try {

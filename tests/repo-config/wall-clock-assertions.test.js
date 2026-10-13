@@ -76,6 +76,10 @@ const ALLOWLIST = new Map([
 
   // --- Measured and reported, not asserted on the clock ---
   [
+    'GpsPlusSlamJs_TourViewer/src/finish-rebuild-cost.sweep.test.ts',
+    'Opt-in (TOUR_REBUILD_COST=1) measurement of the Finish rebuild, written to a file; its one numeric assertion is on byte sizes, never on the duration.',
+  ],
+  [
     'GpsPlusSlamJs_Osm/src/score/affordance-index.test.ts',
     'Measures and prints; every assertion is on counts, never on the duration.',
   ],

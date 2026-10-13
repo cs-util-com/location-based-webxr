@@ -28,6 +28,14 @@ async function tourFile(request) {
   };
 }
 
+/** Step 1 holds the device open (polish round M2, A5); the suite's
+ *  creator has a stored host, so the page starts at step 2.
+ *  @param {import("@playwright/test").Page} page */
+async function openHostStep(page) {
+  await page.getByTestId("station-host").click();
+  await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
+}
+
 test("opens a tour zip from the device through the file chooser", async ({
   page,
   request,
@@ -35,6 +43,7 @@ test("opens a tour zip from the device through the file chooser", async ({
   const file = await tourFile(request);
   await page.goto("/?nocache=1");
   const chooser = page.waitForEvent("filechooser");
+  await openHostStep(page);
   await page.getByTestId("open-file-button").click();
   await (await chooser).setFiles(file);
 
@@ -45,7 +54,9 @@ test("opens a tour zip from the device through the file chooser", async ({
   // A file has no link: the print step asks for one instead of showing a
   // made-up address.
   await expect(page.getByTestId("print-url-shown")).toBeHidden();
-  await expect(page.getByTestId("open-file-button")).toHaveText("Open a file");
+  await expect(page.getByTestId("open-file-button")).toHaveText(
+    "Open it from this device",
+  );
   await expect(page.getByTestId("open-file-button")).toBeEnabled();
 });
 
@@ -54,6 +65,7 @@ test("a file that is not a zip reports a plain error and restores the button", a
 }) => {
   await page.goto("/?nocache=1");
   const chooser = page.waitForEvent("filechooser");
+  await openHostStep(page);
   await page.getByTestId("open-file-button").click();
   await (
     await chooser
@@ -65,7 +77,9 @@ test("a file that is not a zip reports a plain error and restores the button", a
   await expect(page.getByTestId("error")).toContainText("not a readable tour", {
     timeout: 15000,
   });
-  await expect(page.getByTestId("open-file-button")).toHaveText("Open a file");
+  await expect(page.getByTestId("open-file-button")).toHaveText(
+    "Open it from this device",
+  );
   await expect(page.getByTestId("open-file-button")).toBeEnabled();
 });
 
@@ -101,9 +115,13 @@ test("an offline phone is told it is offline, not to download the file", async (
   await context.setOffline(true);
   await page.getByTestId("link-input").fill(RANGES_URL);
   await page.getByTestId("open-button").click();
-  await expect(page.getByTestId("error")).toContainText("offline", {
+  // Step 2's status line says it (since r821 it speaks alone: the error
+  // box's "connect to the internet" contradicted its "you can print the
+  // code now" - PRs #584/#585 reviews).
+  await expect(page.getByTestId("link-status")).toContainText("offline", {
     timeout: 15000,
   });
+  await expect(page.getByTestId("error")).toHaveText("");
   await expect(page.getByTestId("open-file-advice")).toBeHidden();
   await context.setOffline(false);
 });

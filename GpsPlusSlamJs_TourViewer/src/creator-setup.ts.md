@@ -57,7 +57,9 @@ were here. What stays is the Finish's side:
 
 ## Public API
 
-- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore?, codeTour?, summary? }): CreatorSetup`
+- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore?, codeTour?, summary?, host? }): CreatorSetup`
+  - `host()` - the host chosen in step 1, handed to the hand-off for step
+    6's replace steps (polish round M2).
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
     and the e2e can supply one without OPFS.
@@ -80,10 +82,18 @@ were here. What stays is the Finish's side:
     so nothing reset after it reads the closing tour's codes), `presentDraftForTour` (a tour
     opened AND its manifest settled - "spent" is a question about that
     manifest, so it cannot be asked earlier), `beginAuthorVisit`,
-    `endAuthorVisit`, and `selectInView` (M4: a tap in AR - an XR select
+    `endAuthorVisit`, `finishNow` (polish round M3, Q-Done: the creator's
+    Done in AR starts a Finish through `CreatorFinish.start`, or, while a
+    code is being measured, keeps the session and adds "tap Done again"
+    to the status - PR #598 review; in a session
+    the panel's Finish is hidden, and comes back as the retry after a
+    failed finish), and `selectInView` (M4: a tap in AR - an XR select
     the overlay did not cancel - selects the object the `pickObjectInView`
     seam names among the rendered previews for the tap's target ray, or
-    the screen centre when it is null; or clears the selection on a miss),
+    the screen centre when it is null; or clears the selection on a miss;
+    polish round M3: the selected object wears a ring in the scene,
+    `selection-mark.ts`, re-applied on every readout render, and the place
+    buttons step aside while it is selected),
     and `measuredCodeIds()` (code book plan M4d: every code the book holds,
     for the print panel's reprint warning).
   - `CreatorSetup.renderAuthorReadout()` - the measuring readout

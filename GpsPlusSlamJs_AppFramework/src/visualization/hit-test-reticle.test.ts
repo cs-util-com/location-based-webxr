@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { Matrix4, Object3D, Vector3 } from 'three';
 
-import { createReticleMesh, updateReticle } from './hit-test-reticle.js';
+import {
+  createReticleMesh,
+  updateReticle,
+  updateReticleAtSurface,
+} from './hit-test-reticle.js';
 import { WEBXR_TO_NUE } from '../ar/webxr-nue-basis.js';
 
 /**
@@ -128,5 +132,55 @@ describe('updateReticle', () => {
     // matrixWorld must reflect the SECOND pose (NUE Up = +Y), not the stale first.
     const world = new Vector3().setFromMatrixPosition(reticle.matrixWorld);
     expect(world.y).toBeCloseTo(9, 6);
+  });
+});
+
+describe('updateReticleAtSurface (Tour Viewer polish round M5c: the cursor on a mesh)', () => {
+  // Why: the mesh cursor puts the ring on a point of the occluder mesh -
+  // given in WORLD coordinates with the surface's normal - while the ring
+  // hangs under the alignment-carrying world group. The ring must land on
+  // the point and lie flat to the surface (its up axis along the normal),
+  // whatever the group's own transform.
+  const up = (o: Object3D) =>
+    new Vector3(0, 1, 0).transformDirection(o.matrixWorld).normalize();
+
+  it('puts the ring at the world point, flat to the surface, under an identity group', () => {
+    const parent = new Object3D();
+    const ring = createReticleMesh();
+    parent.add(ring);
+    const normal = new Vector3(0, 0, 1);
+    updateReticleAtSurface(ring, new Vector3(1, 2, 3), normal);
+    parent.updateMatrixWorld(true);
+    expect(ring.visible).toBe(true);
+    expect(
+      ring.getWorldPosition(new Vector3()).distanceTo(new Vector3(1, 2, 3))
+    ).toBeLessThan(1e-9);
+    expect(up(ring).distanceTo(normal)).toBeLessThan(1e-9);
+  });
+
+  it('honours a moved and turned group (the GPS alignment)', () => {
+    const parent = new Object3D();
+    parent.position.set(10, -2, 5);
+    parent.rotation.set(0.3, 1.1, -0.2);
+    parent.updateMatrixWorld(true);
+    const ring = createReticleMesh();
+    parent.add(ring);
+    const point = new Vector3(4, 1, -6);
+    const normal = new Vector3(1, 1, 0).normalize();
+    updateReticleAtSurface(ring, point, normal);
+    parent.updateMatrixWorld(true);
+    expect(ring.getWorldPosition(new Vector3()).distanceTo(point)).toBeLessThan(
+      1e-9
+    );
+    expect(up(ring).distanceTo(normal)).toBeLessThan(1e-9);
+  });
+
+  it('hides nothing and keeps the hit-test path working afterwards', () => {
+    const parent = new Object3D();
+    const ring = createReticleMesh();
+    parent.add(ring);
+    updateReticleAtSurface(ring, new Vector3(0, 0, 0), new Vector3(0, 1, 0));
+    updateReticle(ring, null);
+    expect(ring.visible).toBe(false);
   });
 });

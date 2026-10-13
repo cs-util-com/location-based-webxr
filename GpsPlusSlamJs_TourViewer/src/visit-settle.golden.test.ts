@@ -288,6 +288,24 @@ function scenario(seed: number): Scenario {
 
 const STEP = 1e-7;
 
+/**
+ * Every `qr.printed` the outputs' level files carried (follow-up F2, r834
+ * review #1: a re-mint writes the measurement's text). Taken out of the
+ * frozen comparison - the field came after the oracle, as `levels` did -
+ * and checked on its own below, so the frozen file is not regenerated.
+ */
+const printedTexts: unknown[] = [];
+
+/** A parsed level file with its `qr.printed` noted and removed. */
+function withoutPrintedText(parsed: unknown): unknown {
+  const qr = (parsed as { qr?: Record<string, unknown> } | null)?.qr;
+  if (qr !== undefined && "printed" in qr) {
+    printedTexts.push(qr["printed"]);
+    delete qr["printed"];
+  }
+  return parsed;
+}
+
 /** Numbers to absolute steps of 1e-7; level files (JSON in strings)
  *  parsed and treated the same way; Maps as objects. */
 function rounded(value: unknown): unknown {
@@ -296,7 +314,7 @@ function rounded(value: unknown): unknown {
   }
   if (typeof value === "string" && value.startsWith("{")) {
     try {
-      return { json: rounded(JSON.parse(value) as unknown) };
+      return { json: rounded(withoutPrintedText(JSON.parse(value))) };
     } catch {
       return value;
     }
@@ -440,6 +458,13 @@ describe("the one-code settle oracle (frozen before M4)", () => {
     for (let seed = 0; seed < SCENARIOS; seed += 1) {
       expect(now[seed], `seed ${String(seed)}`).toEqual(frozen[seed]);
     }
+  });
+
+  // Why (follow-up F2): the one field the oracle does not freeze is still
+  // checked - each re-minted level carries the measured code's own text.
+  it("writes the measured code's text on every re-minted level, and nothing else changed", () => {
+    expect(printedTexts.length).toBeGreaterThan(0);
+    expect(new Set(printedTexts)).toEqual(new Set([TEXT]));
   });
 
   it("covers every path M4 rewrites (an oracle that skips one would pass a broken generalisation)", () => {

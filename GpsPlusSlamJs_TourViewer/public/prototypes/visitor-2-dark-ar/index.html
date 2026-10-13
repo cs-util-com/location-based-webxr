@@ -1,0 +1,740 @@
+<!doctype html>
+<!-- Prototype V2 - Dark, AR-forward (visitor start page). Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#060912">
+<title>Visitor start V2</title>
+<style>
+:root{
+  --bg:#060912;--bg2:#0a1020;--ink:#eef3fb;--muted:#a7b5c9;--faint:#74849b;
+  --line:rgba(255,255,255,.1);--panel:rgba(255,255,255,.045);
+  --amber:#ffb84d;--amber-2:#ff9b2b;--amber-ink:#1d1203;
+  --cyan:#67e8f9;--cyan-soft:rgba(103,232,249,.14);
+  --ok:#6ee7a8;--warn:#ffd37a;--bad:#ff9a9a;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{overflow-x:clip;-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font:16px/1.5 var(--sans);overflow-x:clip;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;
+  background-image:radial-gradient(700px 420px at 50% 0%,rgba(103,232,249,.07),transparent 70%),radial-gradient(600px 500px at 50% 75%,rgba(255,155,43,.06),transparent 70%)}
+button,select{font:inherit;color:inherit}
+a{color:var(--cyan)}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+.sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+
+/* ---------- page column ---------- */
+.page{max-width:480px;margin:0 auto;padding-bottom:calc(36px + env(safe-area-inset-bottom))}
+
+/* ---------- hero: the experience, seen "through the phone" ---------- */
+.hero{position:relative;aspect-ratio:5/4;max-height:52vh;min-height:230px;overflow:hidden;background:#0b0f24;isolation:isolate}
+.scene{position:absolute;inset:0;width:100%;height:100%;display:block;transition:filter .6s ease,transform 1.2s cubic-bezier(.3,.7,.2,1)}
+.scene text{font-family:var(--sans)}
+.hero::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:3;
+  background:linear-gradient(to bottom,rgba(6,9,18,.35),transparent 18%,transparent 62%,var(--bg) 100%),radial-gradient(ellipse at 50% 40%,transparent 55%,rgba(0,0,0,.45) 100%)}
+#world{transform-box:view-box;transform-origin:200px 170px;animation:drift 18s ease-in-out infinite}
+@keyframes drift{0%,100%{transform:translate(0,0) rotate(0)}25%{transform:translate(-5px,3px) rotate(-.5deg)}50%{transform:translate(4px,-2px) rotate(.35deg)}75%{transform:translate(-2px,-4px) rotate(-.2deg)}}
+.star{animation:twinkle 3.6s ease-in-out infinite}
+@keyframes twinkle{0%,100%{opacity:.25}50%{opacity:.95}}
+.lit{animation:flick 7s steps(1) infinite}
+@keyframes flick{0%,88%{opacity:.9}90%{opacity:.25}94%,100%{opacity:.9}}
+.glow{animation:breathe 4.5s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:.8}50%{opacity:1}}
+.shim{animation:shim 2.4s ease-in-out infinite}
+@keyframes shim{0%,100%{opacity:.15;transform:translateX(0)}50%{opacity:.6;transform:translateX(1.5px)}}
+.beam{transform-box:view-box;transform-origin:376px 125px;animation:beam 6s linear infinite}
+@keyframes beam{0%{transform:scaleX(1);opacity:.45}22%{opacity:.75}25%{transform:scaleX(.04);opacity:1}28%{opacity:.75}50%{transform:scaleX(-1);opacity:.45}75%{transform:scaleX(-.04);opacity:.08}100%{transform:scaleX(1);opacity:.45}}
+.flash{animation:flash 6s linear infinite}
+@keyframes flash{0%,20%{opacity:.35}25%{opacity:1}30%,100%{opacity:.35}}
+
+/* AR content placed in the world */
+.ar-el{opacity:0;transform:translateY(8px) scale(.82);transform-box:fill-box;transform-origin:50% 100%;transition:opacity .4s ease,transform .6s cubic-bezier(.2,.9,.25,1.35),filter .4s}
+.hero.ar-live .ar-el{opacity:1;transform:none;transition-delay:var(--d,0s)}
+.hero.ar-ghost .ar-el{opacity:.2;transform:none;filter:grayscale(1)}
+.ring{transform-box:fill-box;transform-origin:50% 50%;animation:ring 2.2s ease-out infinite}
+@keyframes ring{0%{transform:scale(.4);opacity:.95}100%{transform:scale(1.9);opacity:0}}
+.path{stroke-dasharray:2 7;animation:flow 1.4s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-18}}
+
+/* hero looks per state */
+.hero[data-look=loading] .scene{filter:brightness(.62) saturate(.7)}
+.hero[data-look=error] .scene{filter:grayscale(.9) brightness(.42)}
+.hero[data-look=ghost] .scene{filter:brightness(.7) saturate(.75)}
+.hero[data-look=starting] .scene{transform:scale(1.1)}
+
+/* camera chrome over the scene */
+.chrome{position:absolute;inset:0;z-index:4;pointer-events:none}
+.br{position:absolute;width:26px;height:26px;border:2.5px solid rgba(255,255,255,.75);transition:all .8s cubic-bezier(.3,.7,.2,1),border-color .4s}
+.br.tl{top:14px;left:14px;border-right:0;border-bottom:0;border-top-left-radius:8px}
+.br.tr{top:14px;right:14px;border-left:0;border-bottom:0;border-top-right-radius:8px}
+.br.bl{bottom:20%;left:14px;border-right:0;border-top:0;border-bottom-left-radius:8px}
+.br.brr{bottom:20%;right:14px;border-left:0;border-top:0;border-bottom-right-radius:8px}
+.hero[data-look=starting] .br{border-color:var(--cyan)}
+.hero[data-look=starting] .br.tl{top:30px;left:30px}
+.hero[data-look=starting] .br.tr{top:30px;right:30px}
+.hero[data-look=starting] .br.bl{left:30px;bottom:27%}
+.hero[data-look=starting] .br.brr{right:30px;bottom:27%}
+.tag{position:absolute;bottom:calc(20% + 10px);right:24px;display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#e9f9fc;background:rgba(6,10,22,.55);border:1px solid rgba(103,232,249,.35);padding:5px 10px 5px 9px;border-radius:999px;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);white-space:nowrap}
+.tag b{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan);animation:blink 1.6s ease-in-out infinite}
+@keyframes blink{50%{opacity:.25}}
+.scanline{position:absolute;left:0;right:0;top:0;height:38%;z-index:4;pointer-events:none;opacity:0;background:linear-gradient(to bottom,transparent,rgba(103,232,249,.13) 85%,rgba(103,232,249,.55) 99%,transparent);transform:translateY(-100%)}
+.hero[data-look=loading] .scanline{opacity:1;animation:sweep 2.6s cubic-bezier(.45,.05,.55,.95) infinite}
+@keyframes sweep{0%{transform:translateY(-100%)}100%{transform:translateY(230%)}}
+.hbadge{position:absolute;z-index:5;left:0;right:0;margin:0 auto;width:max-content;top:40%;transform:translateY(-50%) scale(.94);display:flex;align-items:center;gap:9px;max-width:calc(100% - 48px);padding:10px 16px 10px 12px;border-radius:999px;background:rgba(6,10,22,.74);border:1px solid rgba(255,255,255,.18);font-size:14px;font-weight:650;line-height:1.25;opacity:0;transition:opacity .35s,transform .35s;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.hbadge.show{opacity:1;transform:translateY(-50%) scale(1)}
+.hero[data-look=starting] .hbadge{top:68%}
+.tag{transition:opacity .3s}
+.hero[data-look=starting] .tag{opacity:0}
+.hbadge svg{flex:none;width:22px;height:22px}
+.hbadge.warn{border-color:rgba(255,211,122,.5);color:#ffe6b0}
+.hbadge.bad{border-color:rgba(255,154,154,.5);color:#ffd2d2}
+.hbadge.cyan{border-color:rgba(103,232,249,.5);color:#dffaff}
+
+/* ---------- info column ---------- */
+.info{position:relative;z-index:6;margin-top:-34px;padding:0 20px}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;margin:0;font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--cyan)}
+.eyebrow svg{width:16px;height:16px}
+h1{margin:6px 0 2px;font-size:clamp(38px,11.5vw,50px);line-height:1.02;font-weight:800;letter-spacing:-.025em;color:#fff7ea;text-shadow:0 0 28px rgba(255,184,77,.38),0 2px 0 rgba(0,0,0,.4);overflow-wrap:anywhere}
+.desc{margin:4px 0 0;font-size:18px;color:#d5deeb}
+.skel{display:none;margin:12px 0 4px;gap:10px;flex-direction:column}
+.skel i{display:block;height:34px;width:72%;border-radius:10px;background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.14),rgba(255,255,255,.06));background-size:200% 100%;animation:skel 1.4s linear infinite}
+.skel i+i{height:16px;width:52%;border-radius:6px}
+@keyframes skel{to{background-position:-200% 0}}
+body[data-state=loading] .skel{display:flex}
+body[data-state=loading] h1,body[data-state=loading] .desc,body[data-state=error] .desc,body[data-state=error] .eyebrow{display:none}
+body[data-state=error] h1{font-size:clamp(30px,8.6vw,38px);color:#ffe1e1;text-shadow:0 0 24px rgba(255,120,120,.25)}
+
+/* state panel */
+.panel{margin:22px 0 14px;padding:16px 16px 15px;border-radius:20px;background:var(--panel);border:1px solid var(--line);min-height:84px}
+.panel h2{margin:0 0 4px;font-size:17px;line-height:1.3;font-weight:700;color:#fff}
+.panel p{margin:0;color:var(--muted);font-size:15px;line-height:1.5}
+.panel p+p{margin-top:8px}
+.panel ol.how{margin:10px 0 0;padding:0;list-style:none;counter-reset:h;display:grid;gap:8px}
+.panel ol.how li{counter-increment:h;display:grid;grid-template-columns:26px 1fr;gap:10px;align-items:start;font-size:14.5px;color:#d9e2ee;line-height:1.4}
+.panel ol.how li::before{content:counter(h);width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800;background:rgba(255,211,122,.14);color:var(--warn)}
+.panel .url{margin-top:10px;padding:9px 12px;border-radius:12px;background:rgba(0,0,0,.35);border:1px dashed rgba(255,255,255,.16);font:13px/1.35 ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:#c9d6e6;overflow-wrap:anywhere}
+.panel.warn{border-color:rgba(255,211,122,.35);background:rgba(255,211,122,.06)}
+.panel.bad{border-color:rgba(255,154,154,.35);background:rgba(255,154,154,.06)}
+.panel.cyan{border-color:rgba(103,232,249,.3);background:rgba(103,232,249,.05)}
+
+/* the two-tap track */
+.track{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:0;list-style:none;font-size:13px;font-weight:700;color:var(--faint)}
+.track li{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.track li span{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;border:2px solid currentColor;font-size:12px}
+.track .bar{flex:1;height:2px;min-width:16px;background:rgba(255,255,255,.14);border-radius:2px}
+.track li.now{color:var(--amber)}
+.track li.now span{background:rgba(255,184,77,.15);box-shadow:0 0 12px rgba(255,184,77,.45)}
+.track li.done{color:var(--ok)}
+.track li.done span{background:var(--ok);border-color:var(--ok);color:#06231a}
+.track li.bad{color:var(--bad)}
+.track li.bad span{background:rgba(255,154,154,.16)}
+
+/* actions */
+.actions{position:relative}
+.cta{appearance:none;width:100%;min-height:60px;border:0;border-radius:18px;display:flex;align-items:center;justify-content:center;gap:10px;padding:14px 20px;cursor:pointer;font-size:18px;font-weight:800;letter-spacing:.01em;color:var(--amber-ink);
+  background:linear-gradient(180deg,#ffd27f,var(--amber) 45%,var(--amber-2));box-shadow:0 0 0 1px rgba(255,214,150,.6) inset,0 10px 28px rgba(255,155,43,.35),0 0 48px rgba(255,155,43,.28);transition:transform .12s,box-shadow .3s,background .3s,color .3s}
+.cta:active{transform:scale(.985)}
+.cta svg{width:22px;height:22px;flex:none}
+.cta.pulse{animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 1px rgba(255,214,150,.6) inset,0 10px 28px rgba(255,155,43,.35),0 0 40px rgba(255,155,43,.22)}50%{box-shadow:0 0 0 1px rgba(255,214,150,.7) inset,0 10px 32px rgba(255,155,43,.5),0 0 76px rgba(255,155,43,.45)}}
+.cta.busy,.cta:disabled{cursor:progress;color:#ffe2b3;background:rgba(255,184,77,.13);box-shadow:0 0 0 1px rgba(255,184,77,.35) inset}
+.cta.alt{color:#dffaff;background:rgba(103,232,249,.1);box-shadow:0 0 0 1.5px rgba(103,232,249,.55) inset,0 0 30px rgba(103,232,249,.15)}
+.cta.okd{color:#06231a;background:var(--ok);box-shadow:0 0 0 1px rgba(255,255,255,.3) inset,0 0 30px rgba(110,231,168,.3)}
+.spin{display:inline-block;vertical-align:middle;width:20px;height:20px;border-radius:50%;border:2.5px solid currentColor;border-right-color:transparent;animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loadbar{position:relative;min-height:60px;border-radius:18px;overflow:hidden;background:rgba(255,255,255,.05);box-shadow:0 0 0 1px rgba(255,184,77,.3) inset;display:flex;align-items:center;justify-content:center;padding:0 16px}
+.loadbar .fill{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,rgba(255,155,43,.22),rgba(255,184,77,.42));box-shadow:6px 0 18px rgba(255,184,77,.35);transition:width .2s linear}
+.loadbar .lbl{position:relative;font-size:16px;font-weight:700;color:#ffe2b3;text-align:center;font-variant-numeric:tabular-nums}
+.note{margin:10px 2px 0;min-height:22px;font-size:14px;color:var(--muted);text-align:center}
+.note.ok{color:var(--ok);font-weight:650}
+
+/* what AR needs */
+.sect{margin-top:30px}
+.sect h3{margin:0 0 12px;font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+.needs{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.needs li{position:relative;padding:14px 13px 13px;border-radius:18px;background:var(--panel);border:1px solid var(--line);min-width:0}
+.needs .ic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--cyan-soft);color:var(--cyan);margin-bottom:10px;box-shadow:0 0 18px rgba(103,232,249,.12)}
+.needs .ic svg{width:22px;height:22px}
+.needs b{display:block;font-size:15.5px;color:#fff}
+.needs small{display:block;margin-top:2px;font-size:13.5px;line-height:1.35;color:var(--muted)}
+.pill{position:absolute;top:12px;right:10px;font-size:11px;font-weight:800;letter-spacing:.04em;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.08);color:var(--muted);max-width:calc(100% - 66px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill:empty{display:none}
+.pill.ok{background:rgba(110,231,168,.16);color:var(--ok)}
+.pill.bad{background:rgba(255,154,154,.16);color:var(--bad)}
+.pill.now{background:rgba(255,184,77,.16);color:var(--amber)}
+.privacy{display:flex;gap:10px;align-items:center;margin:12px 0 0;padding:12px 14px;border-radius:16px;border:1px solid var(--line);font-size:14.5px;color:#d5deeb}
+.privacy svg{flex:none;width:22px;height:22px;color:var(--ok)}
+
+/* once AR starts */
+.once{display:grid;grid-template-columns:84px 1fr;gap:14px;align-items:center;padding:14px;border-radius:20px;background:linear-gradient(135deg,rgba(103,232,249,.08),rgba(103,232,249,.02));border:1px solid rgba(103,232,249,.2)}
+.once svg{width:84px;height:84px;display:block}
+.once p{margin:0;font-size:15px;line-height:1.45;color:#d9e2ee}
+.once p b{color:#fff}
+.o-phone{transform-box:fill-box;transform-origin:50% 50%;animation:oPhone 4s cubic-bezier(.45,.05,.3,1) infinite}
+@keyframes oPhone{0%{transform:translate(18px,10px) rotate(12deg);opacity:0}15%{opacity:1}45%,80%{transform:none;opacity:1}95%,100%{transform:translate(18px,10px) rotate(12deg);opacity:0}}
+.o-brk{animation:oBrk 4s linear infinite}
+@keyframes oBrk{0%,52%{stroke:#fff}56%,82%{stroke:#67e8f9}88%,100%{stroke:#fff}}
+.o-pin{transform-box:fill-box;transform-origin:50% 100%;animation:oPin 4s ease infinite}
+@keyframes oPin{0%,54%{transform:scale(0)}60%{transform:scale(1.15)}64%,82%{transform:scale(1)}88%,100%{transform:scale(0)}}
+
+.make{margin:34px 0 0;text-align:center;font-size:14.5px;color:var(--muted)}
+.make a{display:inline-block;padding:12px 6px;font-weight:700;text-underline-offset:3px}
+
+/* ---------- simulated browser prompt (stand-in for the browser's own UI) ---------- */
+.sys{position:fixed;inset:0;z-index:95;display:flex;align-items:flex-start;justify-content:center;padding:calc(10px + env(safe-area-inset-top)) 12px 0;background:rgba(0,0,0,.45);animation:fade .2s ease}
+@keyframes fade{from{opacity:0}}
+.sys .box{width:100%;max-width:400px;background:#fff;color:#1f1f1f;border-radius:22px;padding:18px 18px 12px;box-shadow:0 20px 50px rgba(0,0,0,.5);font-family:Roboto,var(--sans);animation:drop .3s cubic-bezier(.2,.8,.2,1)}
+@keyframes drop{from{transform:translateY(-14px);opacity:0}}
+.sys .sim{display:inline-block;margin-bottom:10px;font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#7a4b00;background:#ffe7b8;padding:3px 8px;border-radius:6px}
+.sys h2{margin:0 0 4px;font-size:16px;font-weight:500;line-height:1.35}
+.sys .host{margin:0 0 12px;font-size:13px;color:#5f6368;overflow-wrap:anywhere}
+.sys button{display:block;width:100%;min-height:48px;margin:0 0 6px;border:0;border-radius:999px;background:#e8f0fe;color:#0b57d0;font-size:15px;font-weight:600;cursor:pointer}
+.sys button.plain{background:transparent}
+
+/* ---------- prototype controls (not part of the design) ---------- */
+.proto-label{position:fixed;z-index:90;left:calc(8px + env(safe-area-inset-left));top:calc(8px + env(safe-area-inset-top));font:700 11px/1 var(--sans);letter-spacing:.03em;padding:7px 10px;border-radius:999px;background:rgba(0,0,0,.72);border:1px dashed rgba(255,255,255,.35);color:#fff;pointer-events:none;white-space:nowrap}
+.proto{position:fixed;z-index:90;left:calc(8px + env(safe-area-inset-left));top:calc(38px + env(safe-area-inset-top));width:max-content;max-width:min(250px,calc(100vw - 16px));background:rgba(20,22,28,.94);border:1px dashed rgba(255,255,255,.4);border-radius:14px;color:#e8edf2;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.proto summary{cursor:pointer;list-style:none;padding:8px 12px;font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;user-select:none}
+.proto summary::-webkit-details-marker{display:none}
+.proto summary::after{content:" +"}
+.proto[open] summary::after{content:" -"}
+.proto .pb{display:grid;gap:8px;padding:0 10px 10px}
+.proto label{display:grid;gap:3px;font-size:11.5px;color:#a9b4bf}
+.proto select{width:100%;min-height:36px;border-radius:9px;border:1px solid rgba(255,255,255,.25);background:#2a2e36;color:#fff;padding:4px 6px;font-size:13px}
+.proto button{min-height:34px;border-radius:9px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;font-size:13px}
+.proto p{margin:0;font-size:11.5px;line-height:1.4;color:#a9b4bf}
+
+/* ---------- wider screens: centred column, the hero becomes a framed window ---------- */
+@media (min-width:540px){
+  .page{padding-top:28px}
+  .hero{border-radius:28px;box-shadow:0 0 0 1px rgba(255,255,255,.08),0 30px 80px rgba(0,0,0,.55),0 0 90px rgba(103,232,249,.08)}
+  .info{padding:0 26px;margin-top:22px}
+}
+@media (min-width:960px){
+  .proto-label{top:16px;left:16px}
+  .proto{top:46px;left:16px}
+}
+
+@media (prefers-reduced-motion:reduce){
+  #world,.star,.lit,.glow,.shim,.beam,.flash,.ring,.path,.tag b,.cta.pulse,.skel i,.o-phone,.o-brk,.o-pin,.hero[data-look=loading] .scanline{animation:none}
+  .beam{opacity:.35}
+  .ring{opacity:.6}
+  .o-pin{transform:none}
+  .hero[data-look=loading] .scanline{opacity:0}
+  .ar-el,.scene,.br,.hbadge,.loadbar .fill{transition:opacity .2s}
+  .hero[data-look=starting] .scene{transform:none}
+  .spin{animation-duration:2.4s}
+  .sys,.sys .box{animation:none}
+}
+</style>
+</head>
+<body data-state="loading">
+<div class="proto-label">Prototype V2 - Dark AR</div>
+
+<main class="page">
+  <div class="hero" id="hero" data-look="loading">
+    <svg class="scene" viewBox="0 0 400 320" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Preview of the tour: an old quay at dusk, with the tour's labels and an old photo floating over it in AR">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#050816"/><stop offset=".42" stop-color="#161b44"/><stop offset=".72" stop-color="#3f2c58"/><stop offset=".9" stop-color="#a1566a"/><stop offset="1" stop-color="#f08f57"/>
+        </linearGradient>
+        <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#5a3a55"/><stop offset=".12" stop-color="#22234a"/><stop offset="1" stop-color="#060918"/>
+        </linearGradient>
+        <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#3a3044"/><stop offset=".4" stop-color="#211c2b"/><stop offset="1" stop-color="#0d0b13"/>
+        </linearGradient>
+        <linearGradient id="facade" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#120f1c"/><stop offset="1" stop-color="#2b2236"/>
+        </linearGradient>
+        <radialGradient id="lampG"><stop offset="0" stop-color="#ffd58a" stop-opacity=".95"/><stop offset=".25" stop-color="#ffb04d" stop-opacity=".45"/><stop offset="1" stop-color="#ff9b2b" stop-opacity="0"/></radialGradient>
+        <radialGradient id="horizonG" cx=".62" cy=".54" r=".5"><stop offset="0" stop-color="#ff9f5c" stop-opacity=".5"/><stop offset="1" stop-color="#ff9f5c" stop-opacity="0"/></radialGradient>
+        <linearGradient id="beamG" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff2c9" stop-opacity=".85"/><stop offset="1" stop-color="#fff2c9" stop-opacity="0"/></linearGradient>
+        <linearGradient id="sepia" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ecdcb8"/><stop offset=".62" stop-color="#cfb68c"/><stop offset="1" stop-color="#8f7655"/></linearGradient>
+        <linearGradient id="cardG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0c1630" stop-opacity=".9"/><stop offset="1" stop-color="#081022" stop-opacity=".82"/></linearGradient>
+        <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
+      </defs>
+      <g id="world">
+        <rect x="-40" y="-40" width="480" height="214" fill="url(#sky)"/>
+        <rect x="150" y="90" width="260" height="140" fill="url(#horizonG)"/>
+        <g id="stars"></g>
+        <!-- a crescent moon -->
+        <g transform="translate(222 38)"><circle r="9" fill="#fff4d8"/><circle cx="4" cy="-3" r="8.4" fill="#10153a"/><circle r="22" fill="#fff4d8" opacity=".06"/></g>
+        <!-- water and the far shore -->
+        <path d="M250 172H440V360H316Z" fill="url(#water)"/>
+        <g id="shore"></g>
+        <g id="reflect"></g>
+        <!-- lighthouse on the breakwater -->
+        <path d="M350 171h50v3h-50z" fill="#0b0a16"/>
+        <path d="M372 171l1.6-42h4.8l1.6 42z" fill="#d9d2c8"/>
+        <path d="M372.5 158h7l.3 6h-7.6zM373.3 142h5.4l.3 6h-6z" fill="#b8324a"/>
+        <rect x="372.6" y="121" width="6.8" height="8" rx="1" fill="#1a1626"/>
+        <circle cx="376" cy="125" r="2.6" fill="#fff6d6"/>
+        <circle class="flash" cx="376" cy="125" r="11" fill="url(#lampG)"/>
+        <path class="beam" d="M376 125L470 111V139Z" fill="url(#beamG)"/>
+        <!-- the quay floor and its edge -->
+        <path d="M-40 270L0 250L250 172L316 320L-40 340Z" fill="url(#ground)"/>
+        <path d="M250 172L316 320H342L251.5 172Z" fill="#110e1a"/>
+        <path d="M250 172L316 320" stroke="#6c5a72" stroke-width="1.6" opacity=".8"/>
+        <g id="cobbles" stroke="#fff" stroke-width=".6" opacity=".06" fill="none"></g>
+        <!-- the warehouse row -->
+        <path d="M-40 47L0 60L200 149.6V187.6L0 250L-40 262Z" fill="url(#facade)"/>
+        <path d="M-40 39L0 52L200 147.9V149.6L0 60L-40 47Z" fill="#0a0812"/>
+        <g id="windows"></g>
+        <g id="lamps"></g>
+        <g id="bollards" fill="#0a0910"></g>
+
+        <!-- AR content: appears as if the tour were already running -->
+        <g id="ar">
+          <path class="ar-el path" style="--d:1.5s" d="M226 314L248 185" stroke="#67e8f9" stroke-width="2.6" stroke-linecap="round" fill="none" opacity=".9"/>
+          <g class="ar-el" style="--d:.1s">
+            <ellipse cx="231" cy="221" rx="14" ry="4.4" fill="none" stroke="#67e8f9" stroke-width="1.6"/>
+            <ellipse class="ring" cx="231" cy="221" rx="14" ry="4.4" fill="none" stroke="#67e8f9" stroke-width="1.2"/>
+            <line x1="231" y1="219" x2="231" y2="142" stroke="#67e8f9" stroke-width="1.4" stroke-dasharray="3 3" opacity=".8"/>
+          </g>
+          <g class="ar-el" style="--d:.35s">
+            <rect x="104" y="100" width="212" height="44" rx="12" fill="url(#cardG)" stroke="#67e8f9" stroke-width="1.2"/>
+            <rect x="104" y="100" width="212" height="44" rx="12" fill="none" stroke="#67e8f9" stroke-width="4" opacity=".18" filter="url(#soft)"/>
+            <circle cx="122" cy="122" r="9" fill="#67e8f9"/>
+            <path d="M122 116.5c-2.6 0-4.4 2-4.4 4.3 0 3.1 4.4 7.2 4.4 7.2s4.4-4.1 4.4-7.2c0-2.3-1.8-4.3-4.4-4.3z" fill="#06202a"/>
+            <circle cx="122" cy="120.8" r="1.5" fill="#67e8f9"/>
+            <text x="137" y="119" font-size="12.6" font-weight="700" fill="#ffffff">Welcome to Harbour Lights</text>
+            <text x="137" y="134" font-size="9.6" font-weight="600" fill="#9bf0fb">Stop 1 of 6 - you are here</text>
+          </g>
+          <g class="ar-el" style="--d:.8s">
+            <line x1="327" y1="96" x2="330" y2="166" stroke="#67e8f9" stroke-width="1.2" stroke-dasharray="2 3" opacity=".8"/>
+            <circle cx="330" cy="167" r="2.4" fill="#67e8f9"/>
+            <g transform="rotate(-5 327 62)">
+              <rect x="289" y="26" width="76" height="72" rx="4" fill="#fbf7ee"/>
+              <rect x="294" y="31" width="66" height="47" fill="url(#sepia)"/>
+              <path d="M294 64q16-4 33 0t33 0v14h-66z" fill="#6f5a40" opacity=".55"/>
+              <path d="M306 63h28l-4 7h-22z" fill="#3e3124"/>
+              <path d="M318 63V41M318 43l13 17h-13" stroke="#3e3124" stroke-width="1.6" fill="none"/>
+              <path d="M344 63V45M340 45h14M352 45v8" stroke="#3e3124" stroke-width="1.8" fill="none"/>
+              <text x="327" y="91" text-anchor="middle" font-size="8.6" font-weight="700" fill="#2a2f38">The quay, 1932</text>
+            </g>
+          </g>
+          <g class="ar-el" style="--d:1.15s">
+            <line x1="248" y1="176" x2="248" y2="187" stroke="#67e8f9" stroke-width="1.2"/>
+            <rect x="214" y="160" width="68" height="17" rx="8.5" fill="#67e8f9"/>
+            <text x="248" y="171.8" text-anchor="middle" font-size="8.6" font-weight="800" fill="#05202a">Stop 2 - 40 m &#8250;</text>
+          </g>
+        </g>
+      </g>
+    </svg>
+    <div class="scanline" aria-hidden="true"></div>
+    <div class="chrome" aria-hidden="true">
+      <i class="br tl"></i><i class="br tr"></i><i class="br bl"></i><i class="br brr"></i>
+      <span class="tag"><b></b>Preview</span>
+    </div>
+    <div class="hbadge" id="hbadge" aria-hidden="true"><span id="hbadgeIc"></span><span id="hbadgeText"></span></div>
+  </div>
+
+  <section class="info">
+    <p class="eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M12 16.5s-3.5-3.3-3.5-6a3.5 3.5 0 0 1 7 0c0 2.7-3.5 6-3.5 6z"/></svg>AR walking tour</p>
+    <h1 id="name">Harbour Lights</h1>
+    <div class="skel" aria-hidden="true"><i></i><i></i></div>
+    <p class="desc" id="desc">Walk the old quay - 6 stops</p>
+
+    <div class="panel" id="panel" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <div class="actions">
+      <div class="loadbar" id="loadbar" role="progressbar" aria-label="Loading the tour" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="fill" id="loadFill"></span><span class="lbl" id="loadText">Loading the tour</span></div>
+      <button class="cta" id="cta" type="button"><span id="ctaIc"></span><span id="ctaLbl">Start the tour</span></button>
+      <p class="note" id="note" role="status" aria-live="polite"></p>
+    </div>
+
+    <section class="sect" aria-labelledby="needsH">
+      <h3 id="needsH">What AR needs</h3>
+      <ul class="needs">
+        <li>
+          <span class="pill" id="pillCam"></span>
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
+          <b>Camera</b><small>To show the tour over what you see.</small>
+        </li>
+        <li>
+          <span class="pill" id="pillLoc"></span>
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2A6.5 6.5 0 0 1 18.5 9.8C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.4"/></svg></span>
+          <b>Location</b><small>To place the tour around you.</small>
+        </li>
+      </ul>
+      <p class="privacy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.6-3 8.4-7 10-4-1.6-7-5.4-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg><span>Nothing is uploaded. No sign-up, no account.</span></p>
+    </section>
+
+    <section class="sect" aria-labelledby="onceH">
+      <h3 id="onceH">Once AR starts</h3>
+      <div class="once">
+        <svg viewBox="0 0 84 84" aria-hidden="true">
+          <rect x="18" y="14" width="48" height="60" rx="3" fill="#fbf7ee"/>
+          <g id="miniQr" fill="#121620"></g>
+          <rect x="27" y="62" width="30" height="3.5" rx="1.75" fill="#cfc8ba"/>
+          <g class="o-pin"><path d="M42 4c-3 0-5 2.2-5 4.9 0 3.5 5 8.1 5 8.1s5-4.6 5-8.1C47 6.2 45 4 42 4z" fill="#67e8f9"/><circle cx="42" cy="8.8" r="1.7" fill="#06202a"/></g>
+          <g class="o-phone">
+            <rect x="21" y="10" width="42" height="66" rx="8" fill="rgba(10,16,30,.25)" stroke="#fff" stroke-width="2.4"/>
+            <path class="o-brk" d="M27 26v-5h5M52 21h5v5M57 52v5h-5M32 57h-5v-5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </g>
+        </svg>
+        <p>Point your phone at <b>the poster's code</b> and keep it in view while you move slowly. The tour appears when the code is recognised.</p>
+      </div>
+    </section>
+
+    <p class="make">Want to make a tour like this one? <a href="./">Make your own tour</a></p>
+  </section>
+</main>
+
+<div class="sys" id="sys" hidden>
+  <div class="box" role="dialog" aria-modal="true" aria-labelledby="sysT" aria-describedby="sysH">
+    <span class="sim">Browser prompt (simulated)</span>
+    <h2 id="sysT">Allow this site to know your location?</h2>
+    <p class="host" id="sysH">r824-gps-plus-slam.csutil.workers.dev</p>
+    <button type="button" id="sysAllow">While visiting the site</button>
+    <button type="button" id="sysOnce">This time</button>
+    <button type="button" class="plain" id="sysDeny">Don't allow</button>
+  </div>
+</div>
+
+<details class="proto" id="proto">
+  <summary>Prototype state</summary>
+  <div class="pb">
+    <p>Prototype control - not part of the design.</p>
+    <label>State<select id="stateSel"></select></label>
+    <label>Device (for the AR check)<select id="devSel"><option value="ar">Android phone with AR</option><option value="noar">No AR (iPhone, desktop)</option></select></label>
+    <button type="button" id="restart">Restart the flow</button>
+  </div>
+</details>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const NS = 'http://www.w3.org/2000/svg';
+  const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const TOUR_URL = 'https://r824-gps-plus-slam.csutil.workers.dev/tour/?qr=~AQMxQTRtVThlVjE2YWFJdnk2TXNkNzZSQzNKNmNiYmZ0Ums&n=2';
+  const TOTAL_MB = 3.4;
+
+  // ---------- scene: generated details (perspective toward VP = (250,172)) ----------
+  let seed = 20261012;
+  const rnd = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+  const el = (tag, attrs, parent) => {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  };
+  const f = (n) => Math.round(n * 10) / 10;
+  // A point on the warehouse wall (lateral -250 at depth z) or on the quay floor.
+  const wallX = (z) => 250 - 250 / z;
+  const wallY = (Y, z) => 172 + (Y - 172) / z;
+  const floorY = (z) => 172 + 78 / z;
+
+  const stars = $('#stars');
+  for (let i = 0; i < 22; i++) {
+    const x = 120 + rnd() * 290, y = 4 + rnd() * 92;
+    const c = el('circle', { cx: f(x), cy: f(y), r: f(.45 + rnd() * .8), fill: '#fff' }, stars);
+    c.setAttribute('class', 'star');
+    c.style.animationDelay = (-rnd() * 3.6).toFixed(2) + 's';
+  }
+
+  // Far shore: low warehouses with a few lit windows, and a harbour crane.
+  const shore = $('#shore');
+  let sx = 251, d = 'M251 172';
+  while (sx < 400) {
+    const w = 6 + rnd() * 14, h = 3 + rnd() * 10;
+    d += 'V' + f(172 - h) + 'H' + f(sx + w);
+    for (let k = 0; k < 3; k++) {
+      if (rnd() < .55 && h > 4) el('rect', { x: f(sx + 1 + rnd() * (w - 3)), y: f(172 - 1.5 - rnd() * (h - 3)), width: 1.3, height: 1.1, fill: '#ffc46b', opacity: f(.5 + rnd() * .5) }, shore);
+    }
+    sx += w;
+  }
+  d += 'V172Z';
+  el('path', { d, fill: '#0c0b1b' }, shore).parentNode.insertBefore(shore.lastChild, shore.firstChild);
+  el('path', { d: 'M296 172V140M296 140h-22M296 140l8 6M274 140v9M291 172l5-8 5 8', stroke: '#0c0b1b', 'stroke-width': 1.8, fill: 'none' }, shore);
+
+  // Reflections of the shore lights and the lighthouse on the water.
+  const reflect = $('#reflect');
+  for (let i = 0; i < 26; i++) {
+    const x = 256 + rnd() * 140, y = 175 + Math.pow(rnd(), 1.6) * 60, len = 2 + rnd() * 8;
+    const ln = el('line', { x1: f(x), y1: f(y), x2: f(x + len), y2: f(y), stroke: '#ffbf6a', 'stroke-width': .9, 'stroke-linecap': 'round' }, reflect);
+    ln.setAttribute('class', 'shim');
+    ln.style.animationDelay = (-rnd() * 2.4).toFixed(2) + 's';
+  }
+  for (let y = 176; y < 236; y += 5) {
+    const ln = el('line', { x1: f(373 - (y - 170) * .05), y1: y, x2: f(379 + (y - 170) * .05), y2: y, stroke: '#fff1c9', 'stroke-width': 1.3, 'stroke-linecap': 'round' }, reflect);
+    ln.setAttribute('class', 'shim');
+    ln.style.animationDelay = (-(y % 7) * .3).toFixed(2) + 's';
+  }
+
+  // Cobble lines on the quay floor.
+  const cob = $('#cobbles');
+  for (const lat of [-20, -50, -95, -160, -260, 15]) el('line', { x1: 250, y1: 172, x2: f(250 + lat / .5), y2: 328 }, cob);
+  for (const z of [.6, .72, .88, 1.1, 1.4, 1.85, 2.5, 3.6]) el('line', { x1: f(Math.max(-40, wallX(z))), y1: f(floorY(z)), x2: f(250 + 35 / z), y2: f(floorY(z)) }, cob);
+
+  // Warehouse windows and gates, receding toward the vanishing point.
+  const win = $('#windows');
+  const quad = (z1, z2, Y1, Y2) => [[wallX(z1), wallY(Y1, z1)], [wallX(z2), wallY(Y1, z2)], [wallX(z2), wallY(Y2, z2)], [wallX(z1), wallY(Y2, z1)]].map((p) => f(p[0]) + ',' + f(p[1])).join(' ');
+  for (let k = 0; k < 9; k++) {
+    const z = 1.02 + k * .44;
+    for (const [Y1, Y2] of [[78, 108], [124, 154]]) {
+      const lit = rnd() < .45;
+      const p = el('polygon', { points: quad(z + .08, z + .3, Y1, Y2), fill: lit ? '#ffc46b' : '#0d0a15', opacity: lit ? .9 : 1 }, win);
+      if (lit && rnd() < .35) { p.setAttribute('class', 'lit'); p.style.animationDelay = (-rnd() * 7).toFixed(2) + 's'; }
+    }
+    if (k % 2 === 0) el('polygon', { points: quad(z + .06, z + .34, 178, 246), fill: k === 4 ? '#5a3a24' : '#08070d' }, win);
+  }
+
+  // Lamps: sconces on the warehouse wall and posts along the quay edge.
+  const lamps = $('#lamps');
+  const lamp = (x, y, s, post, baseY) => {
+    if (post) el('line', { x1: f(x), y1: f(y), x2: f(x), y2: f(baseY), stroke: '#08070d', 'stroke-width': f(.6 + 2.2 * s) }, lamps);
+    el('ellipse', { cx: f(x), cy: f(post ? baseY : y + 30 * s), rx: f(46 * s), ry: f(9 * s), fill: 'url(#lampG)', opacity: .45 }, lamps);
+    const g = el('circle', { cx: f(x), cy: f(y), r: f(8 + 30 * s), fill: 'url(#lampG)' }, lamps);
+    g.setAttribute('class', 'glow');
+    g.style.animationDelay = (-rnd() * 4.5).toFixed(2) + 's';
+    el('circle', { cx: f(x), cy: f(y), r: f(.8 + 3 * s), fill: '#fff1cc' }, lamps);
+  };
+  for (const z of [1.25, 2.1, 3.4]) lamp(wallX(z), wallY(146, z), 1 / z, false);
+  for (const z of [1.05, 2.4, 4.4]) { const x = 250 + 24 / z; lamp(x, floorY(z) - 96 / z, 1 / z, true, floorY(z)); }
+  const bol = $('#bollards');
+  for (const z of [.82, 1.6, 3]) {
+    const x = 250 + 29 / z, y = floorY(z), w = 6 / z, h = 8 / z;
+    el('rect', { x: f(x - w / 2), y: f(y - h), width: f(w), height: f(h), rx: f(w / 3) }, bol);
+  }
+
+  // Mini QR-looking pattern on the "once AR starts" poster (decorative, not a real code).
+  (() => {
+    const g = $('#miniQr');
+    const n = 13, s = 2.4, ox = 26.4, oy = 22;
+    let p = '';
+    const fin = (x, y) => (x < 4 && y < 4) || (x > 8 && y < 4) || (x < 4 && y > 8);
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (!fin(x, y) && rnd() < .5) p += 'M' + f(ox + x * s) + ' ' + f(oy + y * s) + 'h' + s + 'v' + s + 'h-' + s + 'z';
+    for (const [fx, fy] of [[0, 0], [9, 0], [0, 9]]) {
+      const X = ox + fx * s, Y = oy + fy * s;
+      p += 'M' + f(X) + ' ' + f(Y) + 'h9.6v9.6h-9.6zM' + f(X + 2.4) + ' ' + f(Y + 2.4) + 'v4.8h4.8v-4.8z';
+    }
+    el('path', { d: p, 'fill-rule': 'evenodd' }, g);
+  })();
+
+  // ---------- icons ----------
+  const I = {
+    pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2A6.5 6.5 0 0 1 18.5 9.8C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.4"/></svg>',
+    pinOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2A6.5 6.5 0 0 1 18.5 9.8C18.5 14.8 12 21 12 21z"/><path d="M4 4l16 16"/></svg>',
+    ar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M12 7l4.5 2.5v5L12 17l-4.5-2.5v-5z"/><path d="M12 12l4.5-2.5M12 12v5M12 12L7.5 9.5"/></svg>',
+    retry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg>',
+    copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
+    phoneX: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 10l4 4M14 10l-4 4"/></svg>',
+    cloudX: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.4 1.5A3.8 3.8 0 0 1 17.5 18z"/><path d="M10 11.5l4 4M14 11.5l-4 4"/></svg>',
+    spin: '<span class="spin" aria-hidden="true"></span>',
+  };
+  const track = (one, two) => '<ol class="track" aria-label="Two taps to start"><li class="' + one + '"><span>' + (one === 'done' ? '&#10003;' : '1') + '</span>Location</li><li class="bar" aria-hidden="true"></li><li class="' + two + '"><span>' + (two === 'done' ? '&#10003;' : '2') + '</span>Start AR</li></ol>';
+
+  // ---------- the states ----------
+  // look: hero treatment; ar: 'live' | 'ghost' | 'off'; badge: [tone, icon, text] or null.
+  const S = {
+    loading: {
+      label: '1 - Loading the tour', look: 'loading', ar: 'off', badge: ['cyan', 'spin', 'Loading the tour'],
+      panel: '<h2>Getting the tour ready</h2><p>Downloading its places and photos. On mobile data this can take a moment.</p>',
+      locPill: '', camPill: '',
+    },
+    needLoc: {
+      label: '2 - Ready, location not allowed yet', look: 'live', ar: 'live', badge: null,
+      panel: track('now', '') + '<h2>Two taps to start</h2><p>First, allow your location so the tour can be placed where you stand. Your browser will ask - choose Allow. Then tap Start.</p>',
+      cta: ['pin', 'Allow location', 'pulse'], locPill: ['now', 'Step 1'], camPill: ['', 'Step 2'],
+    },
+    denied: {
+      label: '3 - Location denied', look: 'ghost', ar: 'ghost', badge: ['warn', 'pinOff', 'Needs your location to place the tour'], tone: 'warn',
+      panel: track('bad', '') + '<h2>Location is blocked</h2><p>The tour needs your location to place itself around you. To allow it:</p><ol class="how"><li>Tap the icon next to the web address at the top.</li><li>Open Permissions (or Site settings) and set Location to Allow.</li><li>Come back here and tap Try again.</li></ol>',
+      cta: ['retry', 'Try again', ''], locPill: ['bad', 'Blocked'], camPill: ['', 'Step 2'],
+    },
+    ready: {
+      label: '4 - Ready to start', look: 'live', ar: 'live', badge: null,
+      panel: track('done', 'now') + '<h2>Ready when you are</h2><p>Location allowed. When you tap Start, your browser asks for the camera - allow that too.</p>',
+      cta: ['ar', 'Start the tour', 'pulse'], locPill: ['ok', 'Allowed'], camPill: ['now', 'Next'],
+    },
+    checking: {
+      label: '5 - Checking AR support', look: 'live', ar: 'live', badge: null,
+      panel: track('done', 'now') + '<h2>Checking AR support...</h2><p>One moment - making sure this device can run AR.</p>',
+      cta: ['spin', 'Checking AR support...', 'busy'], disabled: true, locPill: ['ok', 'Allowed'], camPill: ['now', 'Next'],
+    },
+    starting: {
+      label: '5b - Starting AR (end of the flow)', look: 'starting', ar: 'live', badge: ['cyan', 'spin', 'Starting AR...'], tone: 'cyan',
+      panel: track('done', 'done') + '<h2>Starting AR...</h2><p>Allow the camera if your browser asks. Then point your phone at the poster\'s code.</p>',
+      cta: ['spin', 'Starting AR...', 'busy'], disabled: true, locPill: ['ok', 'Allowed'], camPill: ['now', 'Asking now'],
+    },
+    noAr: {
+      label: '6 - AR not supported here', look: 'ghost', ar: 'ghost', badge: ['warn', 'phoneX', 'No AR on this device'], tone: 'warn',
+      panel: '<h2>This tour needs an AR phone</h2><p>It runs in Chrome on an Android phone that supports AR. iPhones and computers can\'t run it in the browser.</p><p>Copy the link and open it on such a phone - or simply scan the poster again with it.</p><div class="url">' + TOUR_URL.replace(/&/g, '&amp;') + '</div>',
+      cta: ['copy', 'Copy link', 'alt'], locPill: '', camPill: '',
+    },
+    error: {
+      label: '7 - Tour could not be loaded', look: 'error', ar: 'off', badge: ['bad', 'cloudX', 'Tour not available'], tone: 'bad',
+      panel: '<p>The link may be broken, or you may be offline. Check your connection, then try again.</p>',
+      cta: ['retry', 'Try again', ''], locPill: '', camPill: '',
+    },
+  };
+
+  const body = document.body, hero = $('#hero'), panel = $('#panel'), cta = $('#cta'), note = $('#note');
+  const sel = $('#stateSel'), devSel = $('#devSel');
+  for (const k in S) { const o = document.createElement('option'); o.value = k; o.textContent = S[k].label; sel.appendChild(o); }
+
+  let state = 'loading';
+  let run = 0;
+  const timers = [];
+  const later = (ms, fn) => { const my = run; timers.push(setTimeout(() => { if (my === run) fn(); }, ms)); };
+  const clearTimers = () => { while (timers.length) clearTimeout(timers.pop()); };
+
+  function setPill(id, v) {
+    const p = $(id);
+    p.className = 'pill' + (v && v[0] ? ' ' + v[0] : '');
+    p.textContent = v ? v[1] : '';
+  }
+
+  function setCta(icon, label, cls, disabled) {
+    $('#ctaIc').innerHTML = I[icon] || '';
+    $('#ctaLbl').textContent = label;
+    cta.className = 'cta' + (cls ? ' ' + cls : '');
+    cta.disabled = !!disabled;
+    cta.setAttribute('aria-busy', cls === 'busy' ? 'true' : 'false');
+  }
+
+  function render(next, opts) {
+    opts = opts || {};
+    run++;
+    clearTimers();
+    closePrompt(true);
+    state = next;
+    const c = S[next];
+    body.dataset.state = next;
+    sel.value = next;
+
+    // heading: the name comes from the tour's manifest, so it is unknown until the file has loaded
+    const name = $('#name');
+    name.textContent = next === 'error' ? 'Couldn\'t load the tour' : 'Harbour Lights';
+
+    // hero
+    hero.dataset.look = c.look;
+    hero.classList.toggle('ar-live', c.ar === 'live');
+    hero.classList.toggle('ar-ghost', c.ar === 'ghost');
+    const hb = $('#hbadge');
+    if (c.badge) {
+      hb.className = 'hbadge show ' + c.badge[0];
+      $('#hbadgeIc').innerHTML = I[c.badge[1]];
+      $('#hbadgeText').textContent = c.badge[2];
+    } else {
+      hb.className = 'hbadge';
+    }
+
+    // panel + action
+    panel.className = 'panel' + (c.tone ? ' ' + c.tone : '');
+    panel.innerHTML = c.panel;
+    note.textContent = '';
+    note.className = 'note';
+    const loading = next === 'loading';
+    $('#loadbar').hidden = !loading;
+    cta.hidden = loading;
+    if (!loading) setCta(c.cta[0], c.cta[1], REDUCE && c.cta[2] === 'pulse' ? '' : c.cta[2], c.disabled);
+    setPill('#pillLoc', c.locPill);
+    setPill('#pillCam', c.camPill);
+
+    if (loading) startLoading();
+    if (next === 'checking' && opts.auto) later(1500, () => render(devSel.value === 'noar' ? 'noAr' : 'starting', { focus: true }));
+    if (opts.focus && !cta.hidden) cta.focus({ preventScroll: true });
+  }
+
+  // ---------- fake download ----------
+  function startLoading() {
+    let mb = 0.15;
+    const fill = $('#loadFill'), txt = $('#loadText'), bar = $('#loadbar');
+    const show = () => {
+      const pct = Math.round(mb / TOTAL_MB * 100);
+      fill.style.width = pct + '%';
+      const t = 'Loading the tour - ' + mb.toFixed(1) + ' of ' + TOTAL_MB.toFixed(1) + ' MB';
+      txt.textContent = t;
+      bar.setAttribute('aria-valuenow', String(pct));
+      bar.setAttribute('aria-valuetext', mb.toFixed(1) + ' of ' + TOTAL_MB.toFixed(1) + ' MB');
+    };
+    const step = () => {
+      mb = Math.min(TOTAL_MB, mb + 0.035 + Math.random() * 0.07);
+      show();
+      if (mb >= TOTAL_MB) later(500, () => render('needLoc'));
+      else later(130, step);
+    };
+    show();
+    later(400, step);
+  }
+
+  // ---------- fake browser location prompt ----------
+  const sys = $('#sys');
+  let lastFocus = null;
+  function openPrompt() {
+    lastFocus = document.activeElement;
+    setCta('spin', 'Waiting for your answer...', 'busy', true);
+    sys.hidden = false;
+    $('#sysAllow').focus();
+  }
+  function closePrompt(silent) {
+    if (sys.hidden) return;
+    sys.hidden = true;
+    if (!silent && lastFocus) lastFocus.focus({ preventScroll: true });
+  }
+  function answer(allowed) {
+    closePrompt(true);
+    render(allowed ? 'ready' : 'denied', { focus: true });
+  }
+  $('#sysAllow').addEventListener('click', () => answer(true));
+  $('#sysOnce').addEventListener('click', () => answer(true));
+  $('#sysDeny').addEventListener('click', () => answer(false));
+  sys.addEventListener('click', (e) => { if (e.target === sys) { closePrompt(); render('needLoc', { focus: true }); } });
+  document.addEventListener('keydown', (e) => {
+    if (sys.hidden) return;
+    if (e.key === 'Escape') { closePrompt(); render('needLoc', { focus: true }); }
+    if (e.key === 'Tab') {
+      const b = [...sys.querySelectorAll('button')];
+      const i = b.indexOf(document.activeElement);
+      e.preventDefault();
+      b[(i + (e.shiftKey ? b.length - 1 : 1)) % b.length].focus();
+    }
+  });
+
+  // ---------- the main button walks the flow ----------
+  cta.addEventListener('click', () => {
+    if (cta.disabled) return;
+    switch (state) {
+      case 'needLoc': openPrompt(); break;
+      case 'denied':
+        // In the real app this re-checks the permission; the prototype assumes it was allowed in the site settings.
+        setCta('spin', 'Checking location...', 'busy', true);
+        later(900, () => render('ready', { focus: true }));
+        break;
+      case 'ready': render('checking', { auto: true, focus: true }); break;
+      case 'error': render('loading'); break;
+      case 'noAr': {
+        // Faked: no clipboard call in the prototype.
+        setCta('check', 'Link copied', 'okd', false);
+        note.className = 'note ok';
+        note.textContent = 'Copied - open it on an Android phone in Chrome.';
+        later(2600, () => { setCta('copy', 'Copy link', 'alt', false); note.textContent = ''; note.className = 'note'; });
+        break;
+      }
+    }
+  });
+
+  // ---------- prototype controls ----------
+  sel.addEventListener('change', () => {
+    if (sel.value === 'noAr') devSel.value = 'noar';
+    render(sel.value);
+  });
+  $('#restart').addEventListener('click', () => { devSel.value = 'ar'; render('loading'); });
+  if (matchMedia('(min-width: 960px)').matches) $('#proto').open = true;
+
+  // A state can also be opened directly, e.g. index.html#noAr (handy for linking one state).
+  const fromHash = location.hash.slice(1);
+  render(Object.prototype.hasOwnProperty.call(S, fromHash) ? fromHash : 'loading');
+})();
+</script>
+</body>
+</html>

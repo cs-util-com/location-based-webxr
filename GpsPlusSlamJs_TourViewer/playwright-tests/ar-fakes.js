@@ -15,7 +15,9 @@ import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
 
 /**
  * @param {import('@playwright/test').Page} page
- * @param {{ shareRoute?: boolean, printSizeM?: number, saveOutcome?: boolean }} [options]
+ * @param {{ shareRoute?: boolean, printSizeM?: number, saveOutcome?: boolean, pdfViewer?: boolean }} [options]
+ *   `pdfViewer`: the browser shows PDFs itself, so the print PDF opens in a
+ *   tab (recorded in `pdfTabs`) instead of being downloaded (M0b).
  *   `printSizeM`: what the print-size estimate reports (QR size consensus
  *   plan S3a) - one new independent window per call, so the creator's offer
  *   appears after three detections; absent = the estimate refuses.
@@ -30,8 +32,9 @@ export async function installTourViewerArFakes(page, options = {}) {
   // The first save's outcome: the Finish saves by itself (field test 2,
   // F4), so a spec that needs it to fail says so before the page loads.
   const saveOutcome = options.saveOutcome ?? true;
+  const pdfViewer = options.pdfViewer === true;
   await page.addInitScript(
-    ({ shareRoute, printSizeM, saveOutcome }) => {
+    ({ shareRoute, printSizeM, saveOutcome, pdfViewer }) => {
       const test = {
         /** @type {{ hasCameraFrame: boolean, isolationOptions: unknown }[]} */
         initARCalls: [],
@@ -113,6 +116,12 @@ export async function installTourViewerArFakes(page, options = {}) {
          *  saved (field test 2, F4); the starter zip and the recording
          *  still share where they can, and label their buttons so. */
         shareRoute,
+        /** What step 6's Drive address button copied (polish round M2). */
+        copied: /** @type {string[]} */ ([]),
+        /** Whether the browser shows PDFs itself (polish round M0b); the
+         *  tabs the PDF was shown in, or closed when its build failed. */
+        pdfViewer,
+        pdfTabs: /** @type {{ shown?: Blob, closed?: boolean }[]} */ ([]),
         /** Hold downloadPdf open so a test can observe the busy state. */
         holdPdfSave: false,
         releasePdfSave: () => undefined,
@@ -121,6 +130,11 @@ export async function installTourViewerArFakes(page, options = {}) {
         reticleVisible: true,
         reticlePosition: [3, 400.5, -2],
         reticleDisposals: 0,
+        /** Whether the ring was given a mesh pick (polish round M5). */
+        reticleSurfacePick: false,
+        /** The mesh surfaces started, and how many were disposed. */
+        meshSurfaces: 0,
+        meshSurfaceDisposals: 0,
         /** A tap in AR (authoring plan 2026-09-28-0953 M4): the XR select
          *  listener the app handed the reticle, what the fake camera ray
          *  "hits" (an object id, or null), and the ids it was offered. */
@@ -403,8 +417,24 @@ export async function installTourViewerArFakes(page, options = {}) {
             test.releasePdfSave = () => resolve(test.saveOutcome);
           });
         },
-        startHitTestReticle: (_group, onSelect) => {
+        openPdfTab: () =>
+          test.pdfViewer
+            ? {
+                show: (blob) => {
+                  test.pdfTabs.push({ shown: blob });
+                },
+                close: () => {
+                  test.pdfTabs.push({ closed: true });
+                },
+              }
+            : null,
+        copyText: (text) => {
+          test.copied.push(text);
+          return Promise.resolve();
+        },
+        startHitTestReticle: (_group, onSelect, surfacePick) => {
           test.xrSelect = onSelect ?? null;
+          test.reticleSurfacePick = typeof surfacePick === "function";
           return {
             isVisible: () => test.reticleVisible,
             getWorldPosition: (out) => {
@@ -478,6 +508,17 @@ export async function installTourViewerArFakes(page, options = {}) {
         stopCameraFrameCapture: () => {
           test.stopCaptureCalls += 1;
         },
+        // The e2e scene has no depth to mesh: a stand-in that counts.
+        startMeshSurface: () => {
+          test.meshSurfaces += 1;
+          return {
+            pick: () => null,
+            stats: () => ({ frame: null, triangles: 0 }),
+            dispose: () => {
+              test.meshSurfaceDisposals += 1;
+            },
+          };
+        },
         startDepthCapture: (config) => {
           test.depthCaptureCalls.push(config);
         },
@@ -486,7 +527,7 @@ export async function installTourViewerArFakes(page, options = {}) {
         },
       };
     },
-    { shareRoute, printSizeM, saveOutcome },
+    { shareRoute, printSizeM, saveOutcome, pdfViewer },
   );
 }
 
@@ -505,7 +546,8 @@ export async function openFixtureTour(page) {
   });
   const step = page.getByTestId("step-measure");
   if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
-    await step.locator("summary").click();
+    // The card shows one step; step 5's station dot opens it (M2b).
+    await page.getByTestId("station-measure").click();
   }
 }
 
@@ -665,6 +707,34 @@ export async function downloadedZip(page, index) {
 }
 
 /**
+ * The creator's Finish: in a session the AR button's Done (polish round
+ * M3, Q-Done - the panel's Finish is hidden there), on the page the
+ * panel's Finish. Which one is the page's own state, not the test's.
+ */
+export async function tapFinish(page) {
+  const inSession = await page.evaluate(
+    () => document.body.dataset["arActive"] === "true",
+  );
+  if (!inSession) {
+    await page.getByTestId("setup-finish").click();
+    return;
+  }
+  // After a failed finish the AR button only leaves ("Close AR") and the
+  // panel's Finish is back in AR as the retry; otherwise the panel's
+  // Finish must be hidden in AR - asserted, so a Finish that wrongly showed
+  // there could not quietly carry every Done-path test (M3 review #11).
+  if (
+    (await page.getByTestId("enter-ar").textContent())?.trim() === "Close AR"
+  ) {
+    await page.getByTestId("setup-finish").click();
+    return;
+  }
+  await expect(page.getByTestId("setup-finish")).toBeHidden();
+  await expect(page.getByTestId("enter-ar")).toHaveText("Done");
+  await page.getByTestId("enter-ar").click();
+}
+
+/**
  * Finish, then download: the zip lands in the fake's downloads as the
  * `index`-th. The Finish button is disabled while the zip is rebuilt, so
  * waiting for it to leave that state is waiting for THIS rebuild - a second
@@ -674,7 +744,7 @@ export async function downloadedZip(page, index) {
  */
 export async function finishAndDownload(page, index) {
   const finish = page.getByTestId("setup-finish");
-  await finish.click();
+  await tapFinish(page);
   await expect
     .poll(async () => (await finish.isHidden()) || (await finish.isEnabled()), {
       timeout: 30000,

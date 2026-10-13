@@ -16,9 +16,10 @@ downloading the whole file first.
   remembered on the device: after a reload (the AR session, the print
   dialog) the link is prefilled and Open returns to that step.
 - **A `?qr=` launch is the visitor's screen.** Scanning the printed code
-  opens the tour behind a consent tap ("Start the tour"; a browser that
-  has not decided on the location asks for it first), enters AR, and places
-  nothing until the phone has recognised the hung code. After 45 s
+  opens a start page with the tour's name and one round button ("Start
+  the tour"; a browser that has not decided on the location asks for it
+  first, so the button counts "1 of 2" and "2 of 2"), enters AR, and
+  places nothing until the phone has recognised the hung code. After 10 s
   without a lock the page offers "Continue with GPS only (less accurate)".
 
 The mode is the launch parameter's presence and nothing else; there is no
@@ -60,10 +61,24 @@ clear-cache control.
 
 ## The visitor's screen
 
-The tour's archive streams in while the consent screen shows (a visitor
-gets no thumbnails; the tour appears in AR). Inside AR the status line
-asks for the printed code; once it locks and its votes have corrected
-the placement, the tour's
+The start page (the owner's chosen prototype V4, `public/prototypes/visitor-4-one-tap/`)
+leads with the tour's name - the manifest's `title`, which the creator's
+poster title becomes at the Finish - a line counting its places, one of
+its photos when it has one, and the round button low on the screen, with
+one line under it saying what the next tap does. What the tour needs
+(camera, location, nothing uploaded, no account) is behind "What
+happens?", and "Make your own tour" opens the setup in a new tab. A phone
+that cannot run AR gets a "Copy link" button instead, to open the tour on
+one that can. The page is paper-coloured on every device; held sideways,
+the name and the button sit side by side.
+
+The tour's archive streams in while the start page shows (a visitor
+gets no thumbnails; the tour appears in AR). Inside AR a card in the
+middle of the camera view asks for the printed code (the owner's S1,
+`public/prototypes/scan-1-centre-card/`), with the visitor's status
+sentence on it and the GPS-only skip at the bottom after 10 s; it closes
+by itself once the code is read. Once it locks and its votes have
+corrected the placement, the tour's
 `tour.json` content appears (pins as labels, photos as planes at their
 capture spots), and a tour that carries a recording also places its
 photos at the spots they were taken. A tour whose zip carries no measured

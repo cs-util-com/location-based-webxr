@@ -40,6 +40,9 @@ M4 replaces its one code in hand with the code book.
   `qrCodeId` of the exact printed text, guarded by `ctx.mintGeneration` so
   a stale hash cannot install an older level. Until it lands the finish
   button stays off.
+  - **The level carries the printed text** (`qr.printed`, follow-up F2,
+    `level-printed.ts`): the identity is a hash of it, so a re-print reads
+    the spelling and number from the level instead of guessing.
   - **A stored pose stays the reference** (D10b, M2c review #5): the level
     in hand before the tap is captured, and once the id lands
     `measurementRole` (`visit-settle.ts`) decides - with the stored

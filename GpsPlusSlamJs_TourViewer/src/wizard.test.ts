@@ -49,9 +49,11 @@ function fakeDom() {
   const dom: WizardDom = {
     steps: {
       host: step("host"),
+      link: step("link"),
       print: step("print"),
       hang: step("hang"),
       measure: step("measure"),
+      done: step("done"),
     },
     measureSection: {
       scrollIntoView: (options) => {
@@ -71,6 +73,59 @@ function fakeDom() {
   };
   return { dom, click, scrolls };
 }
+
+describe("the six steps (polish round M2)", () => {
+  // Why: the owner asked for the host first, the link in its own step and a
+  // completion page that is not step 4 (A7, A13, B9).
+  it("are where the tour lives, its link, print, hang, create and done", () => {
+    expect(WIZARD_STEPS).toEqual([
+      "host",
+      "link",
+      "print",
+      "hang",
+      "measure",
+      "done",
+    ]);
+  });
+
+  it("start a creator who already chose a host at the link step", () => {
+    const { dom } = fakeDom();
+    wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: savedDownload,
+      stepStore: {
+        getItem: (key) =>
+          key === "tour-viewer.wizard.host" ? "dropbox" : null,
+        setItem: () => undefined,
+      },
+    });
+    expect(dom.steps.link?.open).toBe(true);
+    expect(dom.steps.host?.open).toBe(false);
+  });
+
+  // Why: the rebuilt zip lives only in the page that made it, so a reload
+  // that remembered "done" has nothing to show there; creating again is the
+  // honest place to resume (as the retired finish/replace steps were).
+  it("resume a remembered done step at create after a reload", () => {
+    const { dom } = fakeDom();
+    const wizard = wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: savedDownload,
+      stepStore: {
+        getItem: (key) =>
+          key === wizardStepKey("https://example.test/t.zip") ? "done" : null,
+        setItem: () => undefined,
+      },
+    });
+    wizard.presentTour("https://example.test/t.zip");
+    expect(dom.steps.measure?.open).toBe(true);
+    expect(dom.steps.done?.open).toBe(false);
+  });
+});
 
 describe("wireWizard", () => {
   it("opens the host step for a creator, nothing for a visitor, and hides the launch link until a tour opens", () => {

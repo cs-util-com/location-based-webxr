@@ -10,7 +10,9 @@ start a session.
 ## Public API
 
 - `wireVisitorScreen({ mode, seams, dom, renderArEntry }): { locationGate }`
-  - `dom`: `screen` (hidden for a creator), `measureStep` (step 4, opened
+  - `dom`: `screen` (hidden for a creator), `more` ("What happens?"
+    and the way to make a tour, under the button - hidden for a creator;
+    polish round M4a), `measureStep` (step 4, opened
     for a visitor - it is a `<details>` since the flow rework and its
     summary is creator-only, so nothing else could ever open it, and its
     content is the visitor's Start button), `creatorOnly` (hidden for a
@@ -51,6 +53,15 @@ start a session.
   `errorBox` (visible pre-AR; it is outside the DOM overlay). One request
   runs at a time (`busy`).
 - In creator mode the gate is never pending and nothing is hidden.
+- The visitor's hint is ONE line under V4's round button (polish round
+  M4a): "Once AR starts, point your phone at the tour's code (on the
+  poster)." - the full instructions are behind "What happens?". Once the
+  permission query answers `"prompt"` (the browser WILL ask) it becomes
+  "Your browser will ask for your location - tap Allow. Then Start the
+  tour."; a `"denied"` site keeps the first line, because its tap shows
+  the settings copy instead of a prompt, and a request DENIED at the tap
+  puts the first line back (the browser will not ask again - M4 review
+  #3).
 
 ## Examples
 

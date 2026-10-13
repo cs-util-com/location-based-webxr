@@ -147,6 +147,7 @@ export {
 // --- hit-test-reticle-driver ---
 export {
   type HitTestReticleHandle,
+  type SurfacePoint,
   type HitTestReticleArgs,
   type SelectTargetRay,
   startHitTestReticle,

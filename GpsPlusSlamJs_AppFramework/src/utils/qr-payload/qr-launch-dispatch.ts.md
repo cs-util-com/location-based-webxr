@@ -6,7 +6,7 @@ The decode side of the `?qr=` launch contract whose encoder is
 `qr-launch-url.ts`: turns a scanned QR's payload into the archive URL it
 names. The encoder picks whichever of its forms yields the sparsest printable
 QR, so a consumer decoding only some forms silently breaks a subset of printed
-codes — this implements all four.
+codes — this implements all four, and the Drive short form `D/<id>`.
 
 It lived in the tour viewer until 2026-08-28 while the encoder lived here,
 which is how the two halves of one contract end up drifting. The recorder is
@@ -16,13 +16,19 @@ copied (plan §3 M-A).
 ## Public API
 
 - `resolveQrPayload(payload: string, defaultAssetPrefix: string): Promise<string | null>`
-  — `http…` → raw URL; `~…` → dictionary decode; contains `/` → GitHub
+  — `http…` → raw URL; `~…` → dictionary decode; `D/<id>` → the Drive
+  file `https://drive.google.com/file/d/<id>` (Tour Viewer r820 feedback
+  R5, checked before the template, which needs three parts); contains `/` → GitHub
   template `user/repo/path` → `raw.githubusercontent.com/...`; else bare name
   under the prefix. Null for empty/undecodable payloads; never throws.
 
 ## Invariants & assumptions
 
 - The payload arrives already URL-decoded (from `URLSearchParams.get`).
+- **A reader ships before its writer.** Every printed code opens
+  gps.csutil.com, i.e. `main`, so a form is decoded on `main` before any
+  code may carry it. The Drive short form's reader shipped on r821 with
+  its writer off (`allowDriveShortForm`).
 - The GitHub template is lossy by design on the encoder side
   (`/refs/heads/main/` and `/main/` collapse to one payload); decode emits
   the `refs/heads/main` form — both serve identical bytes.
@@ -45,6 +51,7 @@ await resolveQrPayload('user/repo/city.zip', PREFIX);
 
 ## Tests
 
-`qr-launch-dispatch.test.ts` — the four forms, null cases, and a round-trip
+`qr-launch-dispatch.test.ts` — the four forms, the Drive short form (and a
+round-trip of every candidate for three Drive spellings to the same file), null cases, and a round-trip
 suite that runs the REAL encoder and requires every candidate it emits to
 resolve back to the input URL.

@@ -11,6 +11,10 @@
  *   (the host and branch are the app's convention, not payload).
  * - `name` — with `defaultAssetPrefix` configured, only the file name
  *   varies, so only the file name is encoded.
+ * - `drive` (opt-in) — `?qr=D/<id>` for a Google Drive file link in any of
+ *   its spellings: only the file id varies (Tour Viewer r820 feedback R5;
+ *   one QR version smaller than the full link, measured 2026-10-12). Opt-in
+ *   until the page printed codes open (`main`) can read it.
  * - `path-base32` (opt-in) — `HTTPS://<HOST>/S/<base32(deflate(dict))>`:
  *   the all-caps form rides QR alphanumeric mode (5.5 bits/char). Opt-in
  *   because the `/S/` route needs a Cloudflare rewrite that is not
@@ -38,10 +42,11 @@ import {
 } from './codec-dictionary';
 import { encodeBase32Up } from './base32up';
 import { compressBytes } from './compression';
+import { driveFileId } from '../drive-file-id';
 
 /** Not exported on purpose (knip): surfaces via `QrLaunchPlan.strategy`. */
 type QrLaunchStrategy =
-  'name' | 'template' | 'raw' | 'dictionary' | 'path-base32';
+  'name' | 'template' | 'drive' | 'raw' | 'dictionary' | 'path-base32';
 
 /** Not exported on purpose (knip): reachable via `QrLaunchPlan.candidates`. */
 interface QrLaunchCandidate {
@@ -70,6 +75,11 @@ export interface QrLaunchOptions {
    * until the static deployment routes `/S/*` to the app.
    */
   allowPathForm?: boolean;
+  /**
+   * Also generate `?qr=D/<id>` for a Google Drive file link. Leave off until
+   * every page a printed code opens decodes it (`resolveQrPayload`).
+   */
+  allowDriveShortForm?: boolean;
   /**
    * Extra query parameters printed into the launch URL alongside `?qr=`
    * (e.g. a per-code token, e.g. `{ n: '2' }` of the QR-pose plan).
@@ -105,6 +115,12 @@ export async function buildQrLaunchUrl(
   const urls: [QrLaunchStrategy, string | null][] = [
     ['name', nameUrl(query, dataUrl, options.defaultAssetPrefix)],
     ['template', templateUrl(query, dataUrl)],
+    [
+      'drive',
+      options.allowDriveShortForm === true
+        ? driveShortUrl(query, dataUrl)
+        : null,
+    ],
     ['raw', rawUrl(query, dataUrl)],
     [
       'dictionary',
@@ -229,6 +245,12 @@ function templateUrl(query: string, dataUrl: string): string | null {
   }
   const payload = `${match[1]}/${match[2]}/${match[3]}`;
   return QUERY_UNSAFE.test(payload) ? null : query + payload;
+}
+
+/** `D/<id>` for a Drive file link in any spelling (`driveFileId`). */
+function driveShortUrl(query: string, dataUrl: string): string | null {
+  const id = driveFileId(dataUrl);
+  return id === null ? null : `${query}D/${id}`;
 }
 
 /** Bare remainder under the configured asset prefix. */

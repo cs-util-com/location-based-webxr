@@ -73,3 +73,41 @@ describe('resolveQrPayload — round-trips the real encoder', () => {
     }
   });
 });
+
+describe('resolveQrPayload — the Drive short form (Tour Viewer r820 feedback R5)', () => {
+  // Why: `?qr=D/<id>` prints a Drive tour one QR version smaller than the
+  // full link (v6 against v7-8 at EC Q, measured 2026-10-12). Printed codes
+  // open gps.csutil.com, i.e. `main`, so the READER ships before any code
+  // carries the form - a code the live page cannot read is a dead poster.
+  const ID = '1A4mU8eV16aaIvy6Msd76RC3_cbbftRkX';
+
+  it("resolves D/<id> to the Drive file's address", async () => {
+    await expect(resolveQrPayload(`D/${ID}`, PREFIX)).resolves.toBe(
+      `https://drive.google.com/file/d/${ID}`
+    );
+  });
+
+  it('leaves other two-part payloads undecodable, as before', async () => {
+    await expect(resolveQrPayload('x/y', PREFIX)).resolves.toBeNull();
+    await expect(resolveQrPayload('D/a b', PREFIX)).resolves.toBeNull();
+    await expect(resolveQrPayload('D/', PREFIX)).resolves.toBeNull();
+  });
+
+  it('round-trips every form the encoder emits for a Drive link, to the same file', async () => {
+    for (const dataUrl of [
+      `https://drive.google.com/file/d/${ID}/view?usp=sharing`,
+      `https://drive.google.com/file/d/${ID}/view?usp=drivesdk`,
+      `https://drive.google.com/file/d/${ID}`,
+    ]) {
+      const plan = await buildQrLaunchUrl('https://gps.csutil.com', dataUrl, {
+        allowDriveShortForm: true,
+      });
+      expect(plan.candidates.map((c) => c.strategy)).toContain('drive');
+      for (const candidate of plan.candidates) {
+        const payload = new URL(candidate.url).searchParams.get('qr');
+        const resolved = await resolveQrPayload(payload ?? '', PREFIX);
+        expect(resolved, candidate.strategy).toContain(`/file/d/${ID}`);
+      }
+    }
+  });
+});

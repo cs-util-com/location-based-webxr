@@ -35,6 +35,7 @@ import {
 } from "gps-plus-slam-app-framework/state";
 
 import {
+  changedSinceFinish,
   finishButtonText,
   hideFinishForResult,
   leaveNeedsConfirm,
@@ -43,6 +44,7 @@ import {
 } from "./finish-guard.js";
 
 import { wireCreatorHandoff } from "./creator-handoff.js";
+import type { TourHost } from "./tour-host.js";
 import { wireCreatorCodes, type CreatorCodes } from "./creator-codes.js";
 import { wireCreatorDraft } from "./creator-draft.js";
 import { wireCreatorPreviews } from "./creator-previews.js";
@@ -66,6 +68,7 @@ import {
 import type { SummaryPanel } from "./summary-panel.js";
 import { createVisitLog } from "./visit-log.js";
 import { wireObjectEditing } from "./object-editing.js";
+import { createSelectionMark } from "./selection-mark.js";
 import type { ObjectListView } from "./object-list.js";
 import type { ViewerMode } from "./mode.js";
 import {
@@ -87,6 +90,11 @@ import {
   type TourViewerStore,
 } from "./tour-viewer-session.js";
 import type { Wizard } from "./wizard.js";
+import { writeSideM } from "./printed-side.js";
+
+/** What a Done says while a code is being measured (PR #598 review). */
+const DONE_WAITS_FOR_MEASURING =
+  "A code is being measured - tap Done again in a moment to save.";
 
 /**
  * Whether an AR session is live, from the controller's status.
@@ -119,8 +127,12 @@ export interface CreatorSetupDom {
   /** ...and a Drive tour's own numbered steps with the zip's name, written
    *  here (Drive replace plan §2 decision 1). */
   replaceHelpDrive: HTMLElement;
+  /** Step 6's Drive address button (`creator-handoff.ts`). */
+  replaceDriveCopy: HTMLButtonElement;
   /** The printed side length - lives in the print step (DEC-F2). */
   sizeInput: HTMLInputElement;
+  /** The print step's "Settings" block holding that field (r820 R7). */
+  printSettings?: { open: boolean };
   /** The print step, opened when the size error points at it. */
   printPanel: HTMLDetailsElement;
   status: HTMLElement;
@@ -187,6 +199,10 @@ export interface CreatorSetup {
    *  object under the tap (its target ray; the screen centre when null),
    *  or clear the selection on a miss. */
   selectInView: (tap: SelectTargetRay | null) => void;
+  /** The creator's Done in AR: start a Finish if one can start now
+   *  (polish round M3, Q-Done). True when the session stays: a finish
+   *  started, or one waits a moment for a code being measured. */
+  finishNow: () => boolean;
 }
 
 export function wireCreatorSetup(deps: {
@@ -206,6 +222,15 @@ export function wireCreatorSetup(deps: {
   /** The summary after Finish (authoring plan 2026-09-28-0953 M3b,
    *  `summary-panel.ts`); none in the node tests that do not need it. */
   summary?: Pick<SummaryPanel, "show" | "hide">;
+  /** The host chosen in step 1, for step 6's replace steps (polish round
+   *  M2); absent in the node tests that do not need it. */
+  host?: () => TourHost | null;
+  /** The tour's name as typed in step 3 (the poster title): written as the
+   *  manifest's `title` at the Finish, for the visitor's start page
+   *  (polish round M4a). Absent in the node tests that do not need it. */
+  tourTitle?: () => string | null;
+  /** Re-render the AR button: it reads the finish (polish round M3). */
+  renderArEntry?: () => void;
 }): CreatorSetup {
   const { ctx, mode, arStore, arController, seams, wizard, dom } = deps;
   const codeTour: Pick<ScanOpen, "onDetection" | "status" | "relation"> =
@@ -277,7 +302,7 @@ export function wireCreatorSetup(deps: {
   dom.panel.addEventListener("beforexrselect", (event) => {
     event.preventDefault();
   });
-  dom.sizeInput.value = String(AUTHOR_DEFAULT_SIZE_M);
+  writeSideM(dom.sizeInput, AUTHOR_DEFAULT_SIZE_M);
 
   // The print-size check (QR size consensus plan S3a): measures the printed
   // code by parallax while the creator walks; reset per AR session and per
@@ -298,6 +323,10 @@ export function wireCreatorSetup(deps: {
    *  §3.4, M4): edit, move and delete over the same in-memory state the
    *  placement fills, and the selection a tap in AR makes. */
   const editing = wireObjectEditing({
+    // Object mode moves the place buttons aside (polish round M3).
+    selectionChanged: () => {
+      renderAuthorReadout();
+    },
     ctx,
     arStore,
     view: dom.objectList,
@@ -409,6 +438,20 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout();
   });
 
+  /** The ring on the selected object (`selection-mark.ts`). */
+  const selectionMark = createSelectionMark();
+
+  /** The selected object wears a ring in the scene (polish round M3, B2);
+   *  idempotent, and it follows a preview redrawn by a move. */
+  function renderSelectionMark(): void {
+    const selected = editing.selected();
+    selectionMark.show(
+      selected === null
+        ? null
+        : (ctx.placedPreviews.get(selected)?.root ?? null),
+    );
+  }
+
   function renderAuthorReadout(): void {
     measuring.renderSizeOffer();
     if (!creator) return;
@@ -421,6 +464,7 @@ export function wireCreatorSetup(deps: {
     // earlier objects' frame).
     settle.judgeOnNewFix();
     editing.render();
+    renderSelectionMark();
     // F11: the AR controls belong to the AR session. On the setup page they
     // were a row of greyed-out buttons under "AR not supported", which is
     // what the owner reported. The STATUS line stays either way - it is
@@ -433,11 +477,12 @@ export function wireCreatorSetup(deps: {
     // for the greyed-out AR buttons to go, not for the finish to become
     // session-only (M3 milestone review #4). A failed finish keeps it too,
     // or its own "try again" would have nothing to try.
-    dom.finishButton.hidden = !(
-      sessionLive() ||
-      ctx.finishError !== null ||
-      finish.readiness() === "ready"
-    );
+    // In a session the AR button's Done is the one way out (polish round
+    // M3, Q-Done): the panel's Finish steps aside, and comes back as the
+    // retry after a failed finish.
+    dom.finishButton.hidden = sessionLive()
+      ? ctx.finishError === null
+      : !(ctx.finishError !== null || finish.readiness() === "ready");
     // The save cannot be forgotten (UI round 1, U2): after AR with changes
     // not finished, Finish says so; while a rebuilt file waits for its
     // save on a phone, Finish steps aside for it.
@@ -518,6 +563,7 @@ export function wireCreatorSetup(deps: {
             ? "other-codes"
             : "none",
       keptStored: levelInHandIsStored(),
+      inAr: sessionLive(),
     });
     const count = placement.countLine();
     // What is happening to the tour the code names (plan §9 #9), and which
@@ -542,6 +588,7 @@ export function wireCreatorSetup(deps: {
 
   /** Placing a pin or a photo in AR (`creator-placement.ts`). */
   const placement = wireCreatorPlacement({
+    objectSelected: () => editing.selected() !== null,
     ctx,
     arStore,
     arController,
@@ -628,6 +675,7 @@ export function wireCreatorSetup(deps: {
     render: () => {
       renderAuthorReadout();
     },
+    ...(deps.host === undefined ? {} : { host: deps.host }),
   });
 
   /** Finish: the rebuilt zip and what it changes (`creator-finish.ts`). */
@@ -644,12 +692,30 @@ export function wireCreatorSetup(deps: {
     previews,
     draft,
     sessionLive,
+    ...(deps.tourTitle === undefined ? {} : { tourTitle: deps.tourTitle }),
     render: () => {
       renderAuthorReadout();
     },
+    ...(deps.renderArEntry === undefined
+      ? {}
+      : { renderArEntry: deps.renderArEntry }),
   });
 
   return {
+    // Only with something to write (M3 review #4): a visit that only
+    // looked at the code leaves instead of saving the same tour again.
+    finishNow: () => {
+      if (!changedSinceFinish(guardInput())) return false;
+      // A finish waits for a measurement in flight (a moment). Leaving
+      // would end the visit with its changes unsaved and nothing said in
+      // AR, so Done stays and says so (PR #598 review).
+      if (measuring.inFlight()) {
+        renderAuthorReadout();
+        dom.status.textContent += ` · ${DONE_WAITS_FOR_MEASURING}`;
+        return true;
+      }
+      return finish.start();
+    },
     codes,
     renderAuthorReadout,
     measuredCodeIds: () => codes.ids(),

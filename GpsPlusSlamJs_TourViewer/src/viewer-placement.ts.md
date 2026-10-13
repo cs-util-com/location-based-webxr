@@ -29,7 +29,7 @@ recording. Its own module since the flows plan M6.
   - `ViewerPlacement.startScanGate()` (called when the session reaches
     running, and again when a tour opens into a running session) derives
     the scan gate (`scan-gate.ts`) and arms the escape clock
-    (`seams.schedule`, 45 s) while it scans; idle when no session runs.
+    (`seams.schedule`, `SCAN_GATE_ESCAPE_MS`, 10 s) while it scans; idle when no session runs.
     `resetScanGate()` (a tour closed) returns it to idle with the clock
     cancelled - a gate waived for one tour never carries into the next.
     `reconsiderScanGate(levels | "unavailable")` (the levels arrived, or
@@ -305,7 +305,7 @@ exit's stop included; nothing without a running recording).
 `viewer-votes.test.ts` (authoring plan M2b) - with the real store: the
 scan gate stays scanning on a lock that cast no vote (no GPS zero yet, a
 converging pose) and passes on the first one that did, and a code that
-locks but never votes still gets the 45 s escape (M2b review #8); the
+locks but never votes still gets the escape (M2b review #8); the
 keep-alive casts exactly one ring per device fix from the kept pose,
 answers no synthetic point, stops at AR exit, and starts fresh per entry;
 a code re-scanned 20 minutes later votes from where it reads now and the

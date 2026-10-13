@@ -85,3 +85,12 @@ regression.
 
 - `GpsPlusSlamJs_MinimalExample/src/main.ts` — tap-to-place reticle.
 - `GpsPlusSlamJs_AnchorStarter/src/main.ts` — cache-miss placement reticle.
+
+## updateReticleAtSurface (Tour Viewer polish round M5c)
+
+`updateReticleAtSurface(reticle, worldPosition, worldNormal)` puts the reticle on a surface
+point given in WORLD coordinates (a raycast against the occluder mesh), lying flat to the
+surface: the point is brought into the parent's frame through the parent's current
+`matrixWorld`, and the reticle's up axis (the ring's normal, local +Y) is turned onto the
+normal in that frame. Makes the reticle visible. Tested in `hit-test-reticle.test.ts`
+(identity and a moved, turned parent).

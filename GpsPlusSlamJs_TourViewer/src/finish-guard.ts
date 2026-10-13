@@ -44,7 +44,7 @@ export function leaveQuestion(input: FinishGuardInput): string {
   return input.draftPersists ? LEAVE_WITH_BACKUP : LEAVE_WITHOUT_BACKUP;
 }
 
-function changedSinceFinish(input: FinishGuardInput): boolean {
+export function changedSinceFinish(input: FinishGuardInput): boolean {
   return input.placedCount > 0 || input.deletedCount > 0 || input.codeCount > 0;
 }
 

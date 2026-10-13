@@ -85,7 +85,12 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
 - `reprintOrphanWarning(linkCodeIds, measuredCodeIds)` - the warning shown
   before printing when NO code number the current link can produce reaches
   any measurement the open tour already holds, or `null` when nothing would
-  be lost.
+  be lost. Worded since the r820 feedback (R4) as a note in three parts -
+  the codes came from another link, the old measurement will not be found
+  for the new posters (measure them in step 5), the original link prints
+  matching codes - with no code "above" (there has been none since M0b).
+  A different SPELLING of the same Drive file no longer reaches it: the
+  panel prints in the spelling of record (`print-link.ts`).
   - **The question is about the LINK, not the poster.** One tour can carry
     several codes and each has its own identity, so asking only about the
     code in front of the creator told anyone re-printing poster 1 of a tour
@@ -117,6 +122,13 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   Drive steps (F4 milestone review #2: the page cannot know the name the
   phone gave it). `saveFailed` says the save, not the Finish, failed
   (review #9).
+- `driveFileAddress(url, base?)` - the Drive website's address of the file
+  behind any Drive form a link takes (`/file/d/<id>/` on drive.google.com,
+  `?id=` on the open, download and proxy forms, the API's path), or null:
+  another host, no id, or an id outside Drive's alphabet (letters, digits, `_` and `-`).
+  The id comes from the framework's `utils/drive-file-id.ts`, the one
+  Drive-link parser. Step 6's
+  copy button (polish round M2) hands it to the Drive website.
 - `driveReplaceSteps(name, nameKnown)` - the numbered Drive steps shown
   after the save: an optional rename/check-the-name step, then a check that
   the saved file is not "name (1).zip" (if it is: delete every copy, tap

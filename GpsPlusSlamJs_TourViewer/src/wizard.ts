@@ -1,19 +1,20 @@
 /**
  * The creator's guided setup (guided-setup plan §2.7): the steps as
  * collapsible sections, one open at a time, advanced by the events of the
- * flow - a tour opened (→ print), the code hung (→ measure). Also owns the
- * two step-1/step-2 controls that have no other home: the starter zip
- * download for a creator without a recording, and the "open as a visitor"
- * link that is the tester's way into the visitor path (DEC-N1, plan review
- * #13).
+ * flow - a tour opened (→ print), the code hung (→ measure), the Finish
+ * (→ done). Also owns the controls that have no other home: the starter
+ * zip download for a creator without a recording, and the "open as a
+ * visitor" link that is the tester's way into the visitor path (DEC-N1,
+ * plan review #13).
  *
- * FOUR steps since the flow rework (second testing session, F10): the
- * download and the replace instructions were steps 5 and 6, and they are
- * not setup steps - they describe what happens at the end of step 4, on
- * the phone, so they moved into step 4 itself. Step 4 also became a real
- * disclosure (F4), which brings the one rule this module now has to
- * enforce: it holds the DOM-overlay root, so it must not be collapsed
- * while an AR session is live (see `openStep`).
+ * SIX steps since polish round M2: where the tour lives (host), its link,
+ * print, hang, create (measure) and done. The flow rework (second testing
+ * session, F10) had folded the download and the replace instructions into
+ * the AR step; the owner asked for a completion step of its own (B9), so
+ * they are step 6 now, opened by the Finish. The AR step is a real
+ * disclosure (F4), which brings the one rule this module has to enforce:
+ * it holds the DOM-overlay root, so it must not be collapsed while an AR
+ * session is live (see `openStep`).
  *
  * The reached step is remembered per hosted url, and the last opened url
  * itself (M6, plan §2.7): after a reload (the AR session, the print
@@ -28,18 +29,25 @@
  * real page.
  */
 
+import { readTourHost } from "./tour-host.js";
 import type { ViewerMode } from "./mode.js";
 
 /**
- * The steps, in order. Four since the flow rework (F10): the download and
- * the replace instructions used to be steps 5 and 6, and they are not setup
- * steps - they describe the END of step 4, which happens on the phone.
+ * The steps, in order: six since polish round M2 (host, link, print, hang,
+ * measure - "Create the tour" on the page - and done).
  *
  * `measure` IS collapsible now (F4), but it wraps `#ar-root`, the
  * DOM-overlay root, so collapsing it mid-session would `display: none` the
  * overlay. `openStep` refuses to while a session is live; see there.
  */
-export const WIZARD_STEPS = ["host", "print", "hang", "measure"] as const;
+export const WIZARD_STEPS = [
+  "host",
+  "link",
+  "print",
+  "hang",
+  "measure",
+  "done",
+] as const;
 export type WizardStep = (typeof WIZARD_STEPS)[number];
 
 /**
@@ -189,7 +197,7 @@ export function launchHrefFromPrintedUrl(
 
 /** The starter button's labels through its async cycle (async-UI rule). */
 export const STARTER_LABELS = {
-  idle: "Optional: download an empty starter zip",
+  idle: "Download the empty starter tour",
   busy: "Preparing…",
   done: "Starter zip downloaded",
   cancelled: "Not saved - tap to try again",
@@ -200,7 +208,7 @@ export const STARTER_LABELS = {
    *  be the wrong word for what happened. There is no separate BUSY label:
    *  the button is packing the zip at that point, which is the same work
    *  on both routes. */
-  idleShare: "Optional: share an empty starter zip",
+  idleShare: "Share the empty starter tour",
   doneShare: "Starter zip shared",
   /** Not "you cancelled": a cancelled share sheet and a failed one are the
    *  same error in the Web Share API. */
@@ -264,9 +272,14 @@ export function wireWizard(deps: {
     try {
       // The remap runs on the raw string: see LEGACY_STEP_REMAP for why it
       // cannot sit on the other side of the parse.
-      return parseWizardStep(
+      const step = parseWizardStep(
         remapLegacyStep(stepStore.getItem(wizardStepKey(url))),
       );
+      // The completion step (polish round M2, B9) shows the zip of the
+      // Finish that just ran; after a reload it has nothing to show, so a
+      // creator resumes where that zip is made - as the retired
+      // finish/replace steps do.
+      return step === "done" ? "measure" : step;
     } catch {
       return null;
     }
@@ -314,7 +327,11 @@ export function wireWizard(deps: {
     }
   }
 
-  if (mode === "creator") openStep("host");
+  // A creator who already chose where the tour lives starts at the link
+  // (polish round M2); a first visit starts at the host tiles.
+  if (mode === "creator") {
+    openStep(readTourHost(stepStore) === null ? "host" : "link");
+  }
   dom.visitorLink.hidden = true;
   // The idle label lives in the constant, not only in the markup: it used
   // to be applied ONLY by the revert timer, so renaming it left the old

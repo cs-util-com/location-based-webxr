@@ -22,7 +22,10 @@ troubleshooting recording's record of each placement. Split out of
   - `allowed()` - the gate below, re-checked at every tap; the object
     list asks it too.
   - `renderButtons()` - the pin and photo buttons enabled by the gate (the
-    photo also needs a frame); the label input hidden when closed.
+    photo also needs a frame); the label input hidden when closed. In
+    object mode (`deps.objectSelected()`, polish round M3, B5) both are
+    hidden and an open label input closes: the selected object's own
+    actions take their place.
   - `countLine()` - " · N objects placed" for the readout: only objects
     the zip does not carry (an edit of a hosted object is not a placement),
     or "" with none.

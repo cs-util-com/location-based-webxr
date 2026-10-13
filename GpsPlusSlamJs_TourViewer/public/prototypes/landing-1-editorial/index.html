@@ -1,0 +1,2979 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Make a Tour</title>
+    <meta
+      name="description"
+      content="Prototype L1 - Editorial: the creator's entry and setup page for the Tour Viewer."
+    />
+    <style>
+      :root {
+        --paper: #f7f2ea;
+        --paper-2: #efe7da;
+        --paper-3: #e6dccc;
+        --card: #fffdf8;
+        --ink: #2a2521;
+        --ink-2: #5c534b;
+        --muted: #8a7f73;
+        --line: #ddd2c2;
+        --stone: #c9bba8;
+        --accent: #b8532e;
+        --accent-deep: #964224;
+        --accent-soft: #f1dccf;
+        --serif:
+          "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+          Georgia, "Times New Roman", serif;
+        --sans:
+          system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+          sans-serif;
+        --mono:
+          ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font: 17px/1.65 var(--sans);
+        overflow-x: hidden;
+      }
+      a {
+        color: var(--accent-deep);
+      }
+      button,
+      input {
+        font: inherit;
+        color: inherit;
+      }
+      :focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 3px;
+        border-radius: 6px;
+      }
+
+      /* identification label + reading progress */
+      .proto-label {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        z-index: 50;
+        font: 600 11px/1 var(--sans);
+        letter-spacing: 0.04em;
+        background: rgba(42, 37, 33, 0.86);
+        color: #fffdf8;
+        padding: 7px 10px;
+        border-radius: 999px;
+        pointer-events: none;
+      }
+      .progress {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        z-index: 49;
+        background: var(--accent);
+        transform-origin: 0 50%;
+        transform: scaleX(0);
+      }
+
+      .wrap {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      @media (min-width: 600px) {
+        .wrap {
+          padding: 0 32px;
+        }
+      }
+
+      /* typography */
+      .kicker {
+        font: 600 12px/1.2 var(--sans);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--accent-deep);
+        margin: 0 0 18px;
+      }
+      h1,
+      h2,
+      h3 {
+        font-family: var(--serif);
+        font-weight: 500;
+        color: var(--ink);
+      }
+      h1 {
+        font-size: clamp(2.5rem, 8vw, 4.8rem);
+        line-height: 1.03;
+        letter-spacing: -0.015em;
+        margin: 0 0 22px;
+      }
+      h2 {
+        font-size: clamp(1.9rem, 5vw, 3rem);
+        line-height: 1.1;
+        letter-spacing: -0.01em;
+        margin: 0 0 18px;
+      }
+      h3 {
+        font-size: 1.25rem;
+        line-height: 1.25;
+        margin: 0 0 6px;
+      }
+      .lede {
+        font-family: var(--serif);
+        font-size: clamp(1.2rem, 2.6vw, 1.5rem);
+        line-height: 1.45;
+        color: var(--ink-2);
+        margin: 0 0 26px;
+        max-width: 30em;
+      }
+      p {
+        margin: 0 0 16px;
+        max-width: 34em;
+      }
+      .small {
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      /* hero */
+      .hero {
+        padding: 72px 0 56px;
+      }
+      .hero-grid {
+        display: grid;
+        gap: 36px;
+        align-items: center;
+      }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 18px;
+        font-size: 14px;
+        color: var(--muted);
+        margin: 0 0 30px;
+        padding: 0;
+        list-style: none;
+      }
+      .meta li::before {
+        content: "";
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        margin-right: 8px;
+        vertical-align: middle;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 50px;
+        padding: 0 24px;
+        border-radius: 999px;
+        border: 0;
+        cursor: pointer;
+        background: var(--ink);
+        color: #fffdf8;
+        font-weight: 600;
+        text-decoration: none;
+        transition:
+          background 0.2s,
+          transform 0.2s;
+      }
+      .btn:hover {
+        background: #3d3630;
+      }
+      .btn:active {
+        transform: translateY(1px);
+      }
+      .btn.accent {
+        background: var(--accent);
+      }
+      .btn.accent:hover {
+        background: var(--accent-deep);
+      }
+      .btn.ghost {
+        background: transparent;
+        color: var(--ink);
+        box-shadow: inset 0 0 0 1.5px var(--line);
+      }
+      .btn.ghost:hover {
+        box-shadow: inset 0 0 0 1.5px var(--ink-2);
+      }
+      .btn[disabled] {
+        opacity: 0.7;
+        cursor: progress;
+      }
+      .btn.done {
+        background: #4c5a43;
+      }
+      .btn svg {
+        width: 18px;
+        height: 18px;
+        flex: none;
+      }
+
+      /* why */
+      .why {
+        padding: 40px 0 72px;
+      }
+      .why-head {
+        font-family: var(--serif);
+        font-style: italic;
+        color: var(--ink-2);
+        font-size: 1.15rem;
+        margin: 0 0 24px;
+      }
+      .why-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 24px 32px;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      }
+      .why-list li {
+        border-top: 1px solid var(--line);
+        padding-top: 14px;
+      }
+      .why-list strong {
+        display: block;
+        font-family: var(--serif);
+        font-weight: 500;
+        font-size: 1.15rem;
+        margin-bottom: 4px;
+      }
+      .why-list span {
+        font-size: 15px;
+        color: var(--ink-2);
+      }
+
+      /* overview */
+      .overview {
+        padding: 72px 0;
+        background: var(--paper-2);
+      }
+      .toc {
+        list-style: none;
+        margin: 30px 0 0;
+        padding: 0;
+        display: grid;
+        gap: 0 40px;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        counter-reset: toc;
+      }
+      .toc li {
+        counter-increment: toc;
+        border-bottom: 1px solid var(--line);
+      }
+      .toc a {
+        display: grid;
+        grid-template-columns: 48px 1fr auto;
+        align-items: baseline;
+        gap: 8px;
+        padding: 16px 0;
+        color: var(--ink);
+        text-decoration: none;
+      }
+      .toc a::before {
+        content: counter(toc, decimal-leading-zero);
+        font-family: var(--serif);
+        color: var(--accent);
+        font-size: 1.3rem;
+      }
+      .toc a:hover .t {
+        text-decoration: underline;
+        text-decoration-color: var(--accent);
+        text-underline-offset: 4px;
+      }
+      .toc .t {
+        font-family: var(--serif);
+        font-size: 1.2rem;
+      }
+      .toc .d {
+        font-size: 13px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      /* steps */
+      .step {
+        padding: clamp(64px, 12vh, 132px) 0;
+        border-top: 1px solid var(--line);
+        scroll-margin-top: 10px;
+      }
+      .step-grid {
+        display: grid;
+        gap: 28px;
+        align-items: center;
+      }
+      .num {
+        display: flex;
+        align-items: baseline;
+        gap: 14px;
+        margin: 0 0 14px;
+      }
+      .num b {
+        font-family: var(--serif);
+        font-weight: 400;
+        font-size: 3.4rem;
+        line-height: 1;
+        color: var(--accent);
+      }
+      .num span {
+        font: 600 12px/1.2 var(--sans);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .art {
+        margin: 0;
+      }
+      .art svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        max-height: 72vh;
+      }
+      .art figcaption {
+        font-size: 13px;
+        color: var(--muted);
+        font-style: italic;
+        margin-top: 10px;
+        text-align: center;
+      }
+      .work {
+        margin-top: 40px;
+      }
+
+      @media (min-width: 760px) {
+        .hero-grid {
+          grid-template-columns: 1.05fr 1fr;
+          gap: 48px;
+        }
+        .step-grid {
+          grid-template-columns: 1fr 1fr;
+          gap: 56px;
+        }
+        .step-grid.flip .art {
+          order: -1;
+        }
+      }
+      /* landscape phones: keep pictures inside the short viewport */
+      @media (max-height: 480px) and (orientation: landscape) {
+        .hero {
+          padding: 56px 0 32px;
+        }
+        .art svg {
+          max-height: 78vh;
+        }
+        h1 {
+          font-size: 2.4rem;
+        }
+      }
+
+      /* step 1: host tiles */
+      .tiles {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      }
+      .tile {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+        text-align: left;
+        padding: 16px;
+        min-height: 118px;
+        border-radius: 14px;
+        cursor: pointer;
+        background: var(--card);
+        border: 1.5px solid var(--line);
+        transition:
+          border-color 0.2s,
+          box-shadow 0.2s,
+          transform 0.2s;
+      }
+      .tile:hover {
+        border-color: var(--stone);
+        transform: translateY(-2px);
+      }
+      .tile[aria-expanded="true"] {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-soft);
+      }
+      .tile svg {
+        width: 34px;
+        height: 34px;
+      }
+      .tile .n {
+        font-weight: 600;
+        line-height: 1.2;
+      }
+      .tile .s {
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.3;
+      }
+      .host-panel {
+        margin-top: 18px;
+        padding: 24px;
+        border-radius: 16px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        animation: panelIn 0.35s ease-out;
+      }
+      .host-panel[hidden] {
+        display: none;
+      }
+      .host-panel h3 {
+        margin-bottom: 14px;
+      }
+      .host-steps {
+        margin: 0 0 20px;
+        padding: 0;
+        list-style: none;
+        counter-reset: hs;
+      }
+      .host-steps li {
+        counter-increment: hs;
+        position: relative;
+        padding: 0 0 12px 40px;
+        max-width: 40em;
+      }
+      .host-steps li::before {
+        content: counter(hs);
+        position: absolute;
+        left: 0;
+        top: 1px;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: var(--accent-soft);
+        color: var(--accent-deep);
+        font: 600 13px/26px var(--sans);
+        text-align: center;
+      }
+      .host-steps code {
+        font-family: var(--mono);
+        font-size: 0.88em;
+        background: var(--paper-2);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      .panel-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      .hint {
+        font-size: 14px;
+        color: var(--muted);
+        margin: 14px 0 0;
+      }
+      @keyframes panelIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+
+      /* step 2: link field */
+      .field-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .field {
+        flex: 1 1 260px;
+        min-width: 0;
+        min-height: 54px;
+        padding: 0 18px;
+        border-radius: 14px;
+        border: 1.5px solid var(--line);
+        background: var(--card);
+        font-family: var(--mono);
+        font-size: 15px;
+      }
+      .field:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-soft);
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .chip {
+        border: 0;
+        background: none;
+        padding: 4px 0;
+        font-size: 14px;
+        color: var(--accent-deep);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        cursor: pointer;
+        margin-right: 14px;
+      }
+      .status {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        margin-top: 18px;
+        min-height: 30px;
+        font-size: 16px;
+      }
+      .status .dot {
+        flex: none;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-top: 7px;
+        background: var(--stone);
+      }
+      .status.checking .dot {
+        background: var(--accent);
+        animation: pulse 1s ease-in-out infinite;
+      }
+      .status.ok .dot {
+        background: #5f7a52;
+      }
+      .status.later .dot {
+        background: #c99a3c;
+      }
+      .status strong {
+        font-weight: 600;
+      }
+      .status .sub {
+        display: block;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      @keyframes pulse {
+        50% {
+          transform: scale(0.55);
+          opacity: 0.5;
+        }
+      }
+
+      /* step 3: print */
+      .print-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px 32px;
+        align-items: flex-end;
+        margin-bottom: 24px;
+      }
+      .ctl label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      .stepper {
+        display: inline-flex;
+        align-items: center;
+        border: 1.5px solid var(--line);
+        border-radius: 999px;
+        background: var(--card);
+      }
+      .stepper button {
+        width: 46px;
+        height: 46px;
+        border: 0;
+        background: none;
+        font-size: 22px;
+        cursor: pointer;
+        border-radius: 50%;
+      }
+      .stepper button:hover {
+        background: var(--paper-2);
+      }
+      .stepper input {
+        width: 56px;
+        border: 0;
+        background: none;
+        text-align: center;
+        font-size: 20px;
+        font-family: var(--serif);
+        -moz-appearance: textfield;
+        appearance: textfield;
+      }
+      .stepper input::-webkit-outer-spin-button,
+      .stepper input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      .stepper input:focus {
+        outline: none;
+      }
+      .stepper .unit {
+        padding-right: 8px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .qr-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+        margin-bottom: 22px;
+      }
+      .qr-tile {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 8px 6px;
+        text-align: center;
+        animation: panelIn 0.3s ease-out both;
+      }
+      .qr-tile svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .qr-tile span {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .print-summary {
+        font-size: 15px;
+        color: var(--ink-2);
+        margin: 0 0 18px;
+      }
+      .note {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        margin-top: 20px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: var(--accent-soft);
+        color: var(--accent-deep);
+        font-size: 15px;
+        max-width: 40em;
+      }
+      .note svg {
+        flex: none;
+        width: 22px;
+        height: 22px;
+        margin-top: 1px;
+      }
+
+      /* step 4 / 5 / 6 */
+      .tips {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 8px;
+      }
+      .tips li {
+        padding: 10px 0 10px 30px;
+        border-bottom: 1px solid var(--line);
+        position: relative;
+        max-width: 34em;
+      }
+      .tips li::before {
+        content: "";
+        position: absolute;
+        left: 4px;
+        top: 19px;
+        width: 12px;
+        height: 2px;
+        background: var(--accent);
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 22px;
+        transform: translate(-50%, 20px);
+        opacity: 0;
+        z-index: 60;
+        background: var(--ink);
+        color: #fffdf8;
+        padding: 12px 18px;
+        border-radius: 12px;
+        font-size: 15px;
+        max-width: calc(100% - 32px);
+        transition:
+          opacity 0.25s,
+          transform 0.25s;
+        pointer-events: none;
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+      .replace-box {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 22px 24px;
+        margin-top: 8px;
+        max-width: 40em;
+      }
+      .replace-box h3 {
+        font-size: 1.1rem;
+      }
+      .replace-box p {
+        margin: 0;
+      }
+      details {
+        margin-top: 14px;
+        max-width: 40em;
+      }
+      summary {
+        cursor: pointer;
+        color: var(--accent-deep);
+        font-size: 15px;
+      }
+      details ul {
+        padding-left: 20px;
+        margin: 10px 0 0;
+        font-size: 15px;
+        color: var(--ink-2);
+      }
+      details li {
+        margin-bottom: 8px;
+      }
+      .same {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 26px;
+        margin: 22px 0 0;
+        padding: 0;
+        list-style: none;
+        font-family: var(--serif);
+        font-size: 1.15rem;
+      }
+      .same li::before {
+        content: "\2713";
+        color: var(--accent);
+        margin-right: 8px;
+        font-family: var(--sans);
+      }
+
+      footer {
+        padding: 72px 0 96px;
+        background: var(--paper-2);
+        text-align: left;
+      }
+      footer .closing {
+        font-family: var(--serif);
+        font-size: clamp(1.5rem, 4vw, 2.2rem);
+        line-height: 1.25;
+        max-width: 22em;
+        margin: 0 0 18px;
+      }
+
+      /* ---------- SVG illustration motion ----------
+     Every animated element sits paused (showing its first frame) until its
+     figure scrolls into view and gets .in. Base styles are the FINAL state, so
+     with reduced motion (animations off) every picture is simply complete. */
+      .art * {
+        animation-play-state: paused !important;
+      }
+      .art.in * {
+        animation-play-state: running !important;
+      }
+      .fb {
+        transform-box: fill-box;
+        transform-origin: center;
+      }
+      .fb-bottom {
+        transform-box: fill-box;
+        transform-origin: 50% 100%;
+      }
+
+      @keyframes bob {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-6px);
+        }
+      }
+      @keyframes sway {
+        0%,
+        100% {
+          transform: translate(0, 0) rotate(-6deg);
+        }
+        50% {
+          transform: translate(-14px, -4px) rotate(-3deg);
+        }
+      }
+      @keyframes scan {
+        0% {
+          transform: translateY(0);
+        }
+        100% {
+          transform: translateY(40px);
+        }
+      }
+      @keyframes pinIn {
+        0% {
+          transform: translateY(-26px) scale(0.4);
+          opacity: 0;
+        }
+        60% {
+          transform: translateY(2px) scale(1.05);
+          opacity: 1;
+        }
+        100% {
+          transform: none;
+          opacity: 1;
+        }
+      }
+      @keyframes popIn {
+        0% {
+          transform: scale(0);
+          opacity: 0;
+        }
+        70% {
+          transform: scale(1.08);
+          opacity: 1;
+        }
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      @keyframes drop {
+        0% {
+          transform: translateY(-120px);
+          opacity: 0;
+        }
+        18% {
+          opacity: 1;
+        }
+        42%,
+        78% {
+          transform: translateY(0);
+          opacity: 1;
+        }
+        100% {
+          transform: translateY(6px);
+          opacity: 0;
+        }
+      }
+      @keyframes blink {
+        0%,
+        100% {
+          opacity: 0.25;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      @keyframes qpop {
+        from {
+          opacity: 0;
+          transform: scale(0);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      @keyframes paperOut {
+        from {
+          transform: translateY(-112px);
+        }
+        to {
+          transform: translateY(0);
+        }
+      }
+      @keyframes draw {
+        from {
+          stroke-dashoffset: 260;
+        }
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+      @keyframes hang {
+        0% {
+          transform: translateY(-34px) rotate(-4deg);
+          opacity: 0;
+        }
+        60% {
+          opacity: 1;
+        }
+        100% {
+          transform: none;
+          opacity: 1;
+        }
+      }
+      @keyframes walk {
+        to {
+          stroke-dashoffset: -40;
+        }
+      }
+      @keyframes ring {
+        0% {
+          transform: scale(0.6);
+          opacity: 1;
+        }
+        100% {
+          transform: scale(1.6);
+          opacity: 0;
+        }
+      }
+      @keyframes fly {
+        0% {
+          transform: translate(0, 0) scale(0.9);
+          opacity: 0;
+        }
+        12% {
+          opacity: 1;
+        }
+        50% {
+          transform: translate(102px, -58px) scale(1);
+        }
+        78%,
+        100% {
+          transform: translate(204px, 0) scale(1);
+          opacity: 1;
+        }
+      }
+      @keyframes oldOut {
+        0%,
+        55% {
+          transform: none;
+          opacity: 1;
+        }
+        75%,
+        100% {
+          transform: translateY(26px);
+          opacity: 0;
+        }
+      }
+
+      .a-bob {
+        animation: bob 4.5s ease-in-out infinite;
+      }
+      .a-bob-2 {
+        animation: bob 5.2s ease-in-out -1.6s infinite;
+      }
+      .a-bob-3 {
+        animation: bob 4.8s ease-in-out -3s infinite;
+      }
+      .a-sway {
+        animation: sway 5s ease-in-out infinite;
+      }
+      .a-scan {
+        animation: scan 1.8s ease-in-out infinite alternate;
+      }
+      .a-pin {
+        animation: pinIn 0.9s cubic-bezier(0.3, 1.4, 0.5, 1) both;
+      }
+      .a-pop {
+        animation: popIn 0.6s cubic-bezier(0.3, 1.4, 0.5, 1) both;
+      }
+      .a-fade {
+        animation: fadeIn 0.8s ease-out both;
+      }
+      .a-drop {
+        animation: drop 5s ease-in-out infinite;
+      }
+      .a-blink {
+        animation: blink 1.4s ease-in-out infinite;
+      }
+      .a-paper {
+        animation: paperOut 2.4s cubic-bezier(0.2, 0.7, 0.3, 1) 0.3s both;
+      }
+      .a-draw {
+        stroke-dasharray: 260;
+        animation: draw 1.8s ease-out 0.9s both;
+      }
+      .a-hang {
+        animation: hang 1.1s cubic-bezier(0.3, 1.3, 0.5, 1) 0.2s both;
+      }
+      .a-walk {
+        animation: walk 1.6s linear infinite;
+      }
+      .a-ring {
+        animation: ring 2s ease-out infinite;
+      }
+      .a-fly {
+        animation: fly 5s ease-in-out infinite;
+      }
+      .a-old {
+        animation: oldOut 5s ease-in-out infinite;
+      }
+      .qm {
+        animation: qpop 0.35s ease-out both;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="proto-label">Prototype L1 - Editorial</div>
+    <div class="progress" id="progress" aria-hidden="true"></div>
+
+    <!-- ============ HERO ============ -->
+    <header class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <p class="kicker">Tour Viewer - for creators</p>
+          <h1>Leave a story where it happened.</h1>
+          <p class="lede">
+            Make a tour people open by scanning a poster. They hold up their
+            phone, and your notes and photos appear right where you placed them.
+          </p>
+          <ul class="meta">
+            <li>Free</li>
+            <li>No account</li>
+            <li>About an hour, start to finish</li>
+          </ul>
+          <a class="btn accent" href="#step-1"
+            >Begin
+            <svg
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M10 4v12M5 11l5 5 5-5" />
+            </svg>
+          </a>
+        </div>
+        <figure class="art" aria-hidden="true">
+          <svg viewBox="0 0 400 300" role="img">
+            <rect width="400" height="300" rx="20" fill="#efe7da" />
+            <g stroke="#e4d9c8" stroke-width="1.5">
+              <line x1="0" y1="64" x2="400" y2="64" />
+              <line x1="0" y1="128" x2="400" y2="128" />
+              <line x1="0" y1="192" x2="400" y2="192" />
+            </g>
+            <path
+              d="M0 256h400v24a20 20 0 0 1-20 20H20A20 20 0 0 1 0 280z"
+              fill="#e2d6c4"
+            />
+            <!-- poster -->
+            <g transform="translate(140 52)">
+              <rect
+                x="3"
+                y="4"
+                width="112"
+                height="152"
+                rx="3"
+                fill="#000"
+                opacity=".06"
+              />
+              <rect
+                width="112"
+                height="152"
+                rx="3"
+                fill="#fffdf8"
+                stroke="#d6c9b6"
+              />
+              <rect
+                x="-6"
+                y="-6"
+                width="24"
+                height="10"
+                rx="1"
+                fill="#f1dccf"
+                transform="rotate(-18 6 -1)"
+              />
+              <rect
+                x="94"
+                y="-6"
+                width="24"
+                height="10"
+                rx="1"
+                fill="#f1dccf"
+                transform="rotate(18 106 -1)"
+              />
+              <rect x="16" y="16" width="62" height="7" rx="2" fill="#2a2521" />
+              <rect x="16" y="28" width="40" height="4" rx="2" fill="#8a7f73" />
+              <svg data-qr="1" x="19" y="42" width="74" height="74" />
+              <rect
+                x="16"
+                y="128"
+                width="80"
+                height="4"
+                rx="2"
+                fill="#c9bba8"
+              />
+              <rect
+                x="16"
+                y="137"
+                width="54"
+                height="4"
+                rx="2"
+                fill="#c9bba8"
+              />
+            </g>
+            <!-- pins appearing in the world -->
+            <g transform="translate(78 108)">
+              <g class="a-pin fb-bottom" style="animation-delay: 0.6s">
+                <path
+                  d="M0-24C-10-24-15-16-15-9-15 2 0 14 0 14S15 2 15-9C15-16 10-24 0-24Z"
+                  fill="#b8532e"
+                />
+                <circle cy="-10" r="5" fill="#fffdf8" />
+              </g>
+            </g>
+            <g transform="translate(300 64)">
+              <g class="a-pin fb-bottom" style="animation-delay: 1.2s">
+                <path
+                  d="M0-24C-10-24-15-16-15-9-15 2 0 14 0 14S15 2 15-9C15-16 10-24 0-24Z"
+                  fill="#b8532e"
+                />
+                <circle cy="-10" r="5" fill="#fffdf8" />
+              </g>
+            </g>
+            <g transform="translate(46 168)">
+              <g class="a-pop fb" style="animation-delay: 1.8s">
+                <rect
+                  x="-20"
+                  y="-16"
+                  width="46"
+                  height="36"
+                  rx="3"
+                  fill="#fffdf8"
+                  stroke="#d6c9b6"
+                />
+                <rect x="-15" y="-11" width="36" height="22" fill="#e2d6c4" />
+                <path d="M-15 11l11-12 8 8 6-5 11 9z" fill="#c9bba8" />
+                <circle cx="13" cy="-5" r="3" fill="#b8532e" />
+              </g>
+            </g>
+            <!-- phone held up to the poster -->
+            <g transform="translate(262 126)">
+              <g class="a-sway fb">
+                <rect width="80" height="144" rx="14" fill="#2a2521" />
+                <rect
+                  x="6"
+                  y="12"
+                  width="68"
+                  height="120"
+                  rx="7"
+                  fill="#f7f2ea"
+                />
+                <svg data-qr="1" x="20" y="46" width="40" height="40" />
+                <path
+                  d="M14 34v-8h8M66 34v-8h-8M14 98v8h8M66 98v8h-8"
+                  fill="none"
+                  stroke="#b8532e"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                />
+                <rect
+                  class="a-scan"
+                  x="16"
+                  y="44"
+                  width="48"
+                  height="2.5"
+                  rx="1"
+                  fill="#b8532e"
+                  opacity=".8"
+                />
+              </g>
+            </g>
+          </svg>
+        </figure>
+      </div>
+    </header>
+
+    <!-- ============ THE LIGHT WHY ============ -->
+    <section class="why" aria-label="Why it works this way">
+      <div class="wrap">
+        <p class="why-head">A few quiet things worth knowing.</p>
+        <ul class="why-list">
+          <li>
+            <strong>It stays yours</strong
+            ><span
+              >Your tour is one file in your own storage - Google Drive,
+              Dropbox, OneDrive, GitHub or your own server.</span
+            >
+          </li>
+          <li>
+            <strong>Nothing of ours in between</strong
+            ><span
+              >There is no server of ours holding your tour. The page just reads
+              your file.</span
+            >
+          </li>
+          <li>
+            <strong>Fine with poor signal</strong
+            ><span
+              >Once a tour is opened it runs in the browser, even offline. No
+              good internet needed on site.</span
+            >
+          </li>
+          <li>
+            <strong>No app to install</strong
+            ><span
+              >Not for you, not for your visitors. A phone camera and a browser
+              are enough.</span
+            >
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ OVERVIEW ============ -->
+    <section class="overview" aria-labelledby="overview-h">
+      <div class="wrap">
+        <p class="kicker">The whole way</p>
+        <h2 id="overview-h">Six steps, start to finish</h2>
+        <p>
+          You can do the first three at your desk. The last three happen
+          outside, where your tour begins.
+        </p>
+        <ol class="toc">
+          <li>
+            <a href="#step-1"
+              ><span class="t">Choose where it lives</span
+              ><span class="d">5 min</span></a
+            >
+          </li>
+          <li>
+            <a href="#step-2"
+              ><span class="t">Paste the link</span
+              ><span class="d">1 min</span></a
+            >
+          </li>
+          <li>
+            <a href="#step-3"
+              ><span class="t">Print the posters</span
+              ><span class="d">5 min</span></a
+            >
+          </li>
+          <li>
+            <a href="#step-4"
+              ><span class="t">Hang one up</span
+              ><span class="d">10 min</span></a
+            >
+          </li>
+          <li>
+            <a href="#step-5"
+              ><span class="t">Create in AR</span
+              ><span class="d">as long as you like</span></a
+            >
+          </li>
+          <li>
+            <a href="#step-6"
+              ><span class="t">Put the tour back</span
+              ><span class="d">2 min</span></a
+            >
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <main>
+      <!-- ============ STEP 1 ============ -->
+      <section class="step" id="step-1" aria-labelledby="s1-h">
+        <div class="wrap">
+          <div class="step-grid">
+            <div>
+              <div class="num"><b>01</b><span>Step one</span></div>
+              <h2 id="s1-h">Where will your tour live?</h2>
+              <p>
+                Your tour is a single file. Pick a place you already use to keep
+                files - it only needs to give out a link that anyone can open.
+              </p>
+              <p class="small">
+                Not sure? Google Drive is the most common choice.
+              </p>
+            </div>
+            <figure class="art" aria-hidden="true">
+              <svg viewBox="0 0 400 300">
+                <rect width="400" height="300" rx="20" fill="#efe7da" />
+                <!-- links from hosts to the cloud -->
+                <g
+                  stroke="#d6c9b6"
+                  stroke-width="1.5"
+                  stroke-dasharray="3 5"
+                  fill="none"
+                >
+                  <path d="M64 92Q120 140 160 168" />
+                  <path d="M128 58Q160 110 186 142" />
+                  <path d="M200 48V128" />
+                  <path d="M272 58Q240 110 214 142" />
+                  <path d="M336 92Q280 140 240 168" />
+                </g>
+                <!-- host glyphs -->
+                <g transform="translate(64 88)">
+                  <g class="a-bob">
+                    <circle r="22" fill="#fffdf8" stroke="#ddd2c2" />
+                    <path
+                      d="M-9 6l9-16 9 16z"
+                      fill="none"
+                      stroke="#5c534b"
+                      stroke-width="2.4"
+                      stroke-linejoin="round"
+                    />
+                  </g>
+                </g>
+                <g transform="translate(128 54)">
+                  <g class="a-bob-2">
+                    <circle r="22" fill="#fffdf8" stroke="#ddd2c2" />
+                    <path
+                      d="M0-9l9 5-9 5-9-5zM-9 1l9 5 9-5"
+                      fill="none"
+                      stroke="#5c534b"
+                      stroke-width="2.2"
+                      stroke-linejoin="round"
+                    />
+                  </g>
+                </g>
+                <g transform="translate(200 44)">
+                  <g class="a-bob-3">
+                    <circle r="22" fill="#fffdf8" stroke="#ddd2c2" />
+                    <path
+                      d="M-10 6a5 5 0 0 1 1-10 7 7 0 0 1 13-2 5 5 0 0 1 6 6 3 3 0 0 1-1 6z"
+                      fill="none"
+                      stroke="#5c534b"
+                      stroke-width="2.2"
+                      stroke-linejoin="round"
+                    />
+                  </g>
+                </g>
+                <g transform="translate(272 54)">
+                  <g class="a-bob">
+                    <circle r="22" fill="#fffdf8" stroke="#ddd2c2" />
+                    <path
+                      d="M-4-8q-4 0-4 4v2q0 2-3 2 3 0 3 2v2q0 4 4 4M4-8q4 0 4 4v2q0 2 3 2-3 0-3 2v2q0 4-4 4"
+                      fill="none"
+                      stroke="#5c534b"
+                      stroke-width="2.2"
+                      stroke-linecap="round"
+                    />
+                  </g>
+                </g>
+                <g transform="translate(336 88)">
+                  <g class="a-bob-2">
+                    <circle r="22" fill="#fffdf8" stroke="#ddd2c2" />
+                    <rect
+                      x="-9"
+                      y="-9"
+                      width="18"
+                      height="7"
+                      rx="1.5"
+                      fill="none"
+                      stroke="#5c534b"
+                      stroke-width="2"
+                    />
+                    <rect
+                      x="-9"
+                      y="2"
+                      width="18"
+                      height="7"
+                      rx="1.5"
+                      fill="none"
+                      stroke="#5c534b"
+                      stroke-width="2"
+                    />
+                    <circle cx="5" cy="-5.5" r="1.3" fill="#b8532e" />
+                    <circle cx="5" cy="5.5" r="1.3" fill="#b8532e" />
+                  </g>
+                </g>
+                <!-- the cloud -->
+                <ellipse
+                  cx="200"
+                  cy="252"
+                  rx="92"
+                  ry="9"
+                  fill="#000"
+                  opacity=".06"
+                />
+                <g fill="#fffdf8">
+                  <circle cx="160" cy="196" r="40" />
+                  <circle cx="205" cy="172" r="52" />
+                  <circle cx="250" cy="198" r="38" />
+                  <rect x="128" y="196" width="150" height="46" rx="23" />
+                </g>
+                <!-- starter zip dropping in -->
+                <g transform="translate(200 196)">
+                  <g class="a-drop">
+                    <rect
+                      x="-17"
+                      y="-22"
+                      width="34"
+                      height="44"
+                      rx="4"
+                      fill="#b8532e"
+                    />
+                    <path d="M-17-10h34" stroke="#964224" stroke-width="1" />
+                    <g fill="#f1dccf">
+                      <rect x="-3" y="-22" width="3" height="3" />
+                      <rect x="0" y="-19" width="3" height="3" />
+                      <rect x="-3" y="-16" width="3" height="3" />
+                      <rect x="0" y="-13" width="3" height="3" />
+                    </g>
+                    <text
+                      x="0"
+                      y="12"
+                      text-anchor="middle"
+                      font-family="system-ui, sans-serif"
+                      font-size="9"
+                      font-weight="700"
+                      fill="#fffdf8"
+                    >
+                      ZIP
+                    </text>
+                  </g>
+                </g>
+              </svg>
+              <figcaption>
+                One small starter file, in a place you already trust.
+              </figcaption>
+            </figure>
+          </div>
+
+          <div class="work">
+            <div
+              class="tiles"
+              role="group"
+              aria-label="Choose where your tour lives"
+            >
+              <button
+                class="tile"
+                type="button"
+                data-host="drive"
+                aria-expanded="false"
+                aria-controls="host-panel"
+              >
+                <svg viewBox="0 0 34 34" aria-hidden="true">
+                  <circle cx="17" cy="17" r="16" fill="#efe7da" />
+                  <path
+                    d="M9 22l8-14 8 14z"
+                    fill="none"
+                    stroke="#5c534b"
+                    stroke-width="2.2"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span class="n">Google Drive</span
+                ><span class="s">The most common choice</span>
+              </button>
+              <button
+                class="tile"
+                type="button"
+                data-host="dropbox"
+                aria-expanded="false"
+                aria-controls="host-panel"
+              >
+                <svg viewBox="0 0 34 34" aria-hidden="true">
+                  <circle cx="17" cy="17" r="16" fill="#efe7da" />
+                  <path
+                    d="M17 9l8 5-8 5-8-5zM9 19l8 5 8-5"
+                    fill="none"
+                    stroke="#5c534b"
+                    stroke-width="2.2"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span class="n">Dropbox</span
+                ><span class="s">Simple share links</span>
+              </button>
+              <button
+                class="tile"
+                type="button"
+                data-host="onedrive"
+                aria-expanded="false"
+                aria-controls="host-panel"
+              >
+                <svg viewBox="0 0 34 34" aria-hidden="true">
+                  <circle cx="17" cy="17" r="16" fill="#efe7da" />
+                  <path
+                    d="M8 22a5 5 0 0 1 1-10 7 7 0 0 1 13-2 5 5 0 0 1 5 6 3 3 0 0 1-1 6z"
+                    fill="none"
+                    stroke="#5c534b"
+                    stroke-width="2.2"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span class="n">OneDrive</span
+                ><span class="s">Handy with Windows</span>
+              </button>
+              <button
+                class="tile"
+                type="button"
+                data-host="github"
+                aria-expanded="false"
+                aria-controls="host-panel"
+              >
+                <svg viewBox="0 0 34 34" aria-hidden="true">
+                  <circle cx="17" cy="17" r="16" fill="#efe7da" />
+                  <path
+                    d="M13 9q-4 0-4 4v2q0 2-3 2 3 0 3 2v2q0 4 4 4M21 9q4 0 4 4v2q0 2 3 2-3 0-3 2v2q0 4-4 4"
+                    fill="none"
+                    stroke="#5c534b"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <span class="n">GitHub</span
+                ><span class="s">If you already use it</span>
+              </button>
+              <button
+                class="tile"
+                type="button"
+                data-host="server"
+                aria-expanded="false"
+                aria-controls="host-panel"
+              >
+                <svg viewBox="0 0 34 34" aria-hidden="true">
+                  <circle cx="17" cy="17" r="16" fill="#efe7da" />
+                  <rect
+                    x="9"
+                    y="9"
+                    width="16"
+                    height="7"
+                    rx="1.5"
+                    fill="none"
+                    stroke="#5c534b"
+                    stroke-width="2"
+                  />
+                  <rect
+                    x="9"
+                    y="18"
+                    width="16"
+                    height="7"
+                    rx="1.5"
+                    fill="none"
+                    stroke="#5c534b"
+                    stroke-width="2"
+                  />
+                  <circle cx="21" cy="12.5" r="1.3" fill="#b8532e" />
+                  <circle cx="21" cy="21.5" r="1.3" fill="#b8532e" />
+                </svg>
+                <span class="n">Your own server</span
+                ><span class="s">Full control</span>
+              </button>
+            </div>
+
+            <div class="host-panel" id="host-panel" hidden aria-live="polite">
+              <h3 id="host-title">Google Drive</h3>
+              <ol class="host-steps" id="host-steps"></ol>
+              <div class="panel-actions">
+                <button class="btn" type="button" id="starter-btn">
+                  <svg
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M10 3v10M5 9l5 5 5-5M4 17h12" />
+                  </svg>
+                  <span>Download empty starter zip</span>
+                </button>
+                <a class="btn ghost" href="#step-2">I have my link</a>
+              </div>
+              <p class="hint" id="host-hint">
+                The starter is a tiny, empty tour. You will fill it in AR later.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STEP 2 ============ -->
+      <section class="step" id="step-2" aria-labelledby="s2-h">
+        <div class="wrap">
+          <div class="step-grid flip">
+            <div>
+              <div class="num"><b>02</b><span>Step two</span></div>
+              <h2 id="s2-h">Paste the link</h2>
+              <p>
+                Paste the share link you just copied. This link is your tour's
+                address - the printed code points to it, and it never has to
+                change.
+              </p>
+              <p class="small">
+                We take a quick look in the background. If the file is not there
+                yet, that is fine - you can upload it later.
+              </p>
+            </div>
+            <figure class="art" aria-hidden="true">
+              <svg viewBox="0 0 400 300">
+                <rect width="400" height="300" rx="20" fill="#efe7da" />
+                <g transform="translate(22 120)">
+                  <rect
+                    width="168"
+                    height="46"
+                    rx="23"
+                    fill="#fffdf8"
+                    stroke="#ddd2c2"
+                  />
+                  <g
+                    fill="none"
+                    stroke="#b8532e"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                  >
+                    <rect
+                      x="14"
+                      y="17"
+                      width="14"
+                      height="10"
+                      rx="5"
+                      transform="rotate(-35 21 22)"
+                    />
+                    <rect
+                      x="22"
+                      y="19"
+                      width="14"
+                      height="10"
+                      rx="5"
+                      transform="rotate(-35 29 24)"
+                    />
+                  </g>
+                  <text
+                    x="46"
+                    y="28"
+                    font-family="ui-monospace, Menlo, Consolas, monospace"
+                    font-size="12"
+                    fill="#5c534b"
+                  >
+                    drive.../tour.zip
+                  </text>
+                </g>
+                <g fill="#b8532e">
+                  <circle class="a-blink" cx="200" cy="143" r="3.5" />
+                  <circle
+                    class="a-blink"
+                    cx="213"
+                    cy="143"
+                    r="3.5"
+                    style="animation-delay: 0.25s"
+                  />
+                  <circle
+                    class="a-blink"
+                    cx="226"
+                    cy="143"
+                    r="3.5"
+                    style="animation-delay: 0.5s"
+                  />
+                </g>
+                <rect
+                  x="242"
+                  y="66"
+                  width="140"
+                  height="140"
+                  rx="8"
+                  fill="#fffdf8"
+                  stroke="#ddd2c2"
+                />
+                <svg
+                  data-qr="7"
+                  data-qr-anim
+                  x="252"
+                  y="76"
+                  width="120"
+                  height="120"
+                />
+                <text
+                  x="312"
+                  y="234"
+                  text-anchor="middle"
+                  font-family="Iowan Old Style, Palatino, Georgia, serif"
+                  font-style="italic"
+                  font-size="14"
+                  fill="#8a7f73"
+                >
+                  your link, as a code
+                </text>
+              </svg>
+              <figcaption>The link becomes the code on your poster.</figcaption>
+            </figure>
+          </div>
+
+          <div class="work">
+            <form id="link-form" novalidate onsubmit="return false;">
+              <label
+                class="small"
+                for="link"
+                style="display: block; margin-bottom: 8px"
+                >Your share link</label
+              >
+              <div class="field-row">
+                <input
+                  class="field"
+                  id="link"
+                  type="url"
+                  inputmode="url"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="https://drive.google.com/file/d/..."
+                  aria-describedby="status"
+                />
+                <button class="btn" type="submit" id="check-btn">
+                  Check link
+                </button>
+              </div>
+              <div class="chips">
+                <button
+                  class="chip"
+                  type="button"
+                  data-example="https://drive.google.com/file/d/1aB2cD3eF4gH5iJ6/view?usp=sharing"
+                >
+                  Try a link that works
+                </button>
+                <button
+                  class="chip"
+                  type="button"
+                  data-example="https://example.org/tours/old-town.zip"
+                >
+                  Try one not uploaded yet
+                </button>
+              </div>
+            </form>
+            <div class="status" id="status" role="status" aria-live="polite">
+              <span class="dot" aria-hidden="true"></span>
+              <span
+                >Waiting for a link.<span class="sub"
+                  >Paste it and we check it right away.</span
+                ></span
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STEP 3 ============ -->
+      <section class="step" id="step-3" aria-labelledby="s3-h">
+        <div class="wrap">
+          <div class="step-grid">
+            <div>
+              <div class="num"><b>03</b><span>Step three</span></div>
+              <h2 id="s3-h">Print your posters</h2>
+              <p>
+                One code per poster. Most tours need just one, where the tour
+                begins. Print a few more if people may start from different
+                places, or as spares.
+              </p>
+              <p class="small">
+                Bigger codes scan from further away. 16 cm suits a poster at
+                arm's length.
+              </p>
+            </div>
+            <figure class="art" aria-hidden="true">
+              <svg viewBox="0 0 400 300">
+                <defs>
+                  <clipPath id="paperClip">
+                    <rect x="0" y="184" width="400" height="116" />
+                  </clipPath>
+                </defs>
+                <rect width="400" height="300" rx="20" fill="#efe7da" />
+                <g clip-path="url(#paperClip)">
+                  <g class="a-paper">
+                    <rect
+                      x="132"
+                      y="184"
+                      width="136"
+                      height="116"
+                      fill="#fffdf8"
+                      stroke="#ddd2c2"
+                    />
+                    <svg data-qr="3" x="166" y="196" width="68" height="68" />
+                    <g stroke="#b8532e" stroke-width="1.5">
+                      <line x1="166" y1="274" x2="234" y2="274" />
+                      <line x1="166" y1="269" x2="166" y2="279" />
+                      <line x1="234" y1="269" x2="234" y2="279" />
+                    </g>
+                    <text
+                      id="art-size"
+                      x="200"
+                      y="292"
+                      text-anchor="middle"
+                      font-family="system-ui, sans-serif"
+                      font-size="11"
+                      font-weight="600"
+                      fill="#964224"
+                    >
+                      16 cm
+                    </text>
+                  </g>
+                </g>
+                <rect
+                  x="118"
+                  y="88"
+                  width="164"
+                  height="34"
+                  rx="8"
+                  fill="#4a423b"
+                />
+                <rect
+                  x="86"
+                  y="114"
+                  width="228"
+                  height="78"
+                  rx="16"
+                  fill="#3a332d"
+                />
+                <rect
+                  x="122"
+                  y="176"
+                  width="156"
+                  height="7"
+                  rx="3"
+                  fill="#1f1b18"
+                />
+                <circle
+                  class="a-blink"
+                  cx="288"
+                  cy="142"
+                  r="4.5"
+                  fill="#b8532e"
+                />
+                <rect
+                  x="112"
+                  y="138"
+                  width="60"
+                  height="5"
+                  rx="2.5"
+                  fill="#5c534b"
+                />
+              </svg>
+              <figcaption>
+                Print at actual size, so the code really is the size you chose.
+              </figcaption>
+            </figure>
+          </div>
+
+          <div class="work">
+            <div class="print-controls">
+              <div class="ctl">
+                <label for="count">Posters to print</label>
+                <div class="stepper">
+                  <button
+                    type="button"
+                    data-step="count"
+                    data-d="-1"
+                    aria-label="Fewer posters"
+                  >
+                    &minus;
+                  </button>
+                  <input
+                    id="count"
+                    type="number"
+                    min="1"
+                    max="40"
+                    value="3"
+                    inputmode="numeric"
+                  />
+                  <button
+                    type="button"
+                    data-step="count"
+                    data-d="1"
+                    aria-label="More posters"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <div class="ctl">
+                <label for="size">Code size</label>
+                <div class="stepper">
+                  <button
+                    type="button"
+                    data-step="size"
+                    data-d="-1"
+                    aria-label="Smaller code"
+                  >
+                    &minus;
+                  </button>
+                  <input
+                    id="size"
+                    type="number"
+                    min="8"
+                    max="30"
+                    value="16"
+                    inputmode="numeric"
+                  />
+                  <span class="unit">cm</span>
+                  <button
+                    type="button"
+                    data-step="size"
+                    data-d="1"
+                    aria-label="Bigger code"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div
+              class="qr-grid"
+              id="qr-grid"
+              aria-label="Preview of your poster codes"
+            ></div>
+            <p class="print-summary" id="print-summary"></p>
+            <button class="btn accent" type="button" id="pdf-btn">
+              <svg
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M10 3v10M5 9l5 5 5-5M4 17h12" />
+              </svg>
+              <span>Download PDF</span>
+            </button>
+            <div class="note">
+              <svg
+                viewBox="0 0 22 22"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="9" />
+                <path d="M11 10v6M11 6.5v.5" />
+              </svg>
+              <span
+                >In the print dialog choose <strong>100 %</strong> or
+                <strong>Actual size</strong>, not "Fit to page". Then check with
+                a ruler: the code should measure
+                <strong id="ruler-size">16 cm</strong>.</span
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STEP 4 ============ -->
+      <section class="step" id="step-4" aria-labelledby="s4-h">
+        <div class="wrap">
+          <div class="step-grid flip">
+            <div>
+              <div class="num"><b>04</b><span>Step four</span></div>
+              <h2 id="s4-h">Hang it where the tour begins</h2>
+              <p>
+                The poster is more than a door into the tour. It is also the
+                fixed point everything is placed around, so where and how you
+                hang it matters a little.
+              </p>
+              <ul class="tips">
+                <li>Flat against a wall or a board, not angled or curled.</li>
+                <li>At chest height, where a phone naturally points.</li>
+                <li>
+                  Somewhere it can stay - if it moves, the tour moves with it.
+                </li>
+                <li>Good light, no glare from glass or a glossy sleeve.</li>
+              </ul>
+            </div>
+            <figure class="art" aria-hidden="true">
+              <svg viewBox="0 0 400 300">
+                <rect width="400" height="300" rx="20" fill="#efe7da" />
+                <path
+                  d="M0 250h400v30a20 20 0 0 1-20 20H20A20 20 0 0 1 0 280z"
+                  fill="#e2d6c4"
+                />
+                <!-- person -->
+                <g fill="#c9bba8">
+                  <circle cx="104" cy="92" r="17" />
+                  <rect x="82" y="114" width="44" height="88" rx="20" />
+                  <rect x="88" y="190" width="14" height="60" rx="7" />
+                  <rect x="106" y="190" width="14" height="60" rx="7" />
+                  <rect
+                    x="112"
+                    y="130"
+                    width="46"
+                    height="12"
+                    rx="6"
+                    transform="rotate(-8 112 136)"
+                  />
+                </g>
+                <rect
+                  x="154"
+                  y="118"
+                  width="13"
+                  height="24"
+                  rx="3"
+                  fill="#2a2521"
+                />
+                <!-- chest-height guide -->
+                <line
+                  class="a-draw"
+                  x1="60"
+                  y1="152"
+                  x2="300"
+                  y2="152"
+                  stroke="#b8532e"
+                  stroke-width="1.5"
+                  stroke-dasharray="4 5"
+                  opacity=".7"
+                />
+                <!-- poster -->
+                <g transform="translate(206 106)">
+                  <g class="a-hang fb">
+                    <rect
+                      x="2"
+                      y="3"
+                      width="76"
+                      height="98"
+                      rx="3"
+                      fill="#000"
+                      opacity=".07"
+                    />
+                    <rect
+                      width="76"
+                      height="98"
+                      rx="3"
+                      fill="#fffdf8"
+                      stroke="#d6c9b6"
+                    />
+                    <rect
+                      x="-5"
+                      y="-5"
+                      width="18"
+                      height="8"
+                      rx="1"
+                      fill="#f1dccf"
+                      transform="rotate(-18 4 -1)"
+                    />
+                    <rect
+                      x="63"
+                      y="-5"
+                      width="18"
+                      height="8"
+                      rx="1"
+                      fill="#f1dccf"
+                      transform="rotate(18 72 -1)"
+                    />
+                    <svg data-qr="3" x="12" y="18" width="52" height="52" />
+                    <rect
+                      x="12"
+                      y="78"
+                      width="52"
+                      height="4"
+                      rx="2"
+                      fill="#c9bba8"
+                    />
+                    <rect
+                      x="12"
+                      y="86"
+                      width="34"
+                      height="4"
+                      rx="2"
+                      fill="#c9bba8"
+                    />
+                  </g>
+                </g>
+                <!-- height marker -->
+                <g
+                  stroke="#5c534b"
+                  stroke-width="1.5"
+                  fill="none"
+                  stroke-linecap="round"
+                >
+                  <line x1="330" y1="156" x2="330" y2="246" />
+                  <path d="M325 162l5-6 5 6M325 240l5 6 5-6" />
+                </g>
+                <text
+                  x="340"
+                  y="198"
+                  font-family="system-ui, sans-serif"
+                  font-size="12"
+                  fill="#5c534b"
+                >
+                  about
+                </text>
+                <text
+                  x="340"
+                  y="214"
+                  font-family="Iowan Old Style, Palatino, Georgia, serif"
+                  font-size="17"
+                  fill="#2a2521"
+                >
+                  1.3 m
+                </text>
+              </svg>
+              <figcaption>
+                Flat, at chest height, where the tour starts.
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STEP 5 ============ -->
+      <section class="step" id="step-5" aria-labelledby="s5-h">
+        <div class="wrap">
+          <div class="step-grid">
+            <div>
+              <div class="num"><b>05</b><span>Step five</span></div>
+              <h2 id="s5-h">Create the tour in AR</h2>
+              <p>
+                This is the good part. Stand at the poster with your phone, tap
+                <em>Start creating</em> and scan the code. From then on, the
+                camera knows where you are.
+              </p>
+              <p>
+                Walk the route. Where something happened, tap to leave a text
+                pin. Where a picture was taken, place the photo. Everything
+                stays exactly where you put it - for you, and later for every
+                visitor.
+              </p>
+              <p class="small">
+                Tip: walk the route once without placing anything, so you know
+                your stops.
+              </p>
+              <button class="btn accent" type="button" id="create-btn">
+                <svg
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M3 7V4h3M17 7V4h-3M3 13v3h3M17 13v3h-3" />
+                  <circle cx="10" cy="10" r="2.5" />
+                </svg>
+                <span>Start creating</span>
+              </button>
+            </div>
+            <figure class="art" aria-hidden="true">
+              <svg viewBox="0 0 400 300">
+                <rect width="400" height="300" rx="20" fill="#f3ece1" />
+                <path d="M0 40L104 112V170L0 262z" fill="#ded2c0" />
+                <path d="M400 40L296 112V170L400 262z" fill="#d6c9b6" />
+                <g fill="#cfc2ae">
+                  <rect
+                    x="22"
+                    y="96"
+                    width="22"
+                    height="32"
+                    transform="skewY(34)"
+                    transform-origin="22 96"
+                  />
+                  <rect
+                    x="58"
+                    y="120"
+                    width="18"
+                    height="26"
+                    transform="skewY(34)"
+                    transform-origin="58 120"
+                  />
+                </g>
+                <path
+                  d="M104 170H296L400 262V280a20 20 0 0 1-20 20H20A20 20 0 0 1 0 280V262z"
+                  fill="#e6dccc"
+                />
+                <!-- walked path -->
+                <path
+                  class="a-walk"
+                  d="M150 300C160 262 196 236 212 214S238 182 236 170"
+                  fill="none"
+                  stroke="#b8532e"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  stroke-dasharray="2 8"
+                  opacity=".75"
+                />
+                <!-- start poster -->
+                <g transform="translate(60 208)">
+                  <rect
+                    width="30"
+                    height="38"
+                    rx="2"
+                    fill="#fffdf8"
+                    stroke="#d6c9b6"
+                    transform="skewY(-12)"
+                  />
+                  <svg data-qr="3" x="5" y="4" width="20" height="20" />
+                </g>
+                <!-- placed content -->
+                <g transform="translate(140 182)">
+                  <g class="a-pop fb" style="animation-delay: 0.6s">
+                    <rect
+                      x="-46"
+                      y="-34"
+                      width="92"
+                      height="30"
+                      rx="6"
+                      fill="#fffdf8"
+                      stroke="#ddd2c2"
+                    />
+                    <text
+                      x="0"
+                      y="-15"
+                      text-anchor="middle"
+                      font-family="Iowan Old Style, Palatino, Georgia, serif"
+                      font-size="12"
+                      fill="#2a2521"
+                    >
+                      Old mill, 1890
+                    </text>
+                    <path d="M-6-4l6 7 6-7" fill="#fffdf8" stroke="#ddd2c2" />
+                    <circle cy="12" r="4" fill="#b8532e" />
+                  </g>
+                </g>
+                <g transform="translate(210 220)">
+                  <g class="a-pin fb-bottom" style="animation-delay: 1.3s">
+                    <path
+                      d="M0-28C-12-28-18-19-18-10-18 3 0 16 0 16S18 3 18-10C18-19 12-28 0-28Z"
+                      fill="#b8532e"
+                    />
+                    <circle cy="-11" r="6" fill="#fffdf8" />
+                  </g>
+                </g>
+                <g transform="translate(292 186)">
+                  <g class="a-pop fb" style="animation-delay: 2s">
+                    <rect
+                      x="-28"
+                      y="-40"
+                      width="56"
+                      height="46"
+                      rx="3"
+                      fill="#fffdf8"
+                      stroke="#d6c9b6"
+                    />
+                    <rect
+                      x="-23"
+                      y="-35"
+                      width="46"
+                      height="30"
+                      fill="#e2d6c4"
+                    />
+                    <path d="M-23-5l14-15 10 10 8-6 14 11z" fill="#c9bba8" />
+                    <circle cx="14" cy="-28" r="3.5" fill="#b8532e" />
+                    <line
+                      x1="0"
+                      y1="6"
+                      x2="0"
+                      y2="22"
+                      stroke="#c9bba8"
+                      stroke-width="2"
+                    />
+                  </g>
+                </g>
+                <g transform="translate(244 162)">
+                  <g class="a-pin fb-bottom" style="animation-delay: 2.7s">
+                    <path
+                      d="M0-18C-8-18-12-12-12-6-12 2 0 10 0 10S12 2 12-6C12-12 8-18 0-18Z"
+                      fill="#b8532e"
+                      opacity=".85"
+                    />
+                    <circle cy="-7" r="4" fill="#fffdf8" />
+                  </g>
+                </g>
+                <!-- placement reticle: where the next pin goes -->
+                <g transform="translate(176 262)">
+                  <ellipse
+                    rx="22"
+                    ry="7"
+                    fill="none"
+                    stroke="#b8532e"
+                    stroke-width="2"
+                  />
+                  <ellipse
+                    class="a-ring fb"
+                    rx="22"
+                    ry="7"
+                    fill="none"
+                    stroke="#b8532e"
+                    stroke-width="1.5"
+                  />
+                </g>
+              </svg>
+              <figcaption>
+                Walk, tap, place. Text pins and photos stay where you left them.
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STEP 6 ============ -->
+      <section class="step" id="step-6" aria-labelledby="s6-h">
+        <div class="wrap">
+          <div class="step-grid flip">
+            <div>
+              <div class="num"><b>06</b><span>Step six</span></div>
+              <h2 id="s6-h">Done - put the tour back</h2>
+              <p>
+                When you finish, your phone saves the updated tour as a zip
+                file. Replace the file you uploaded in step one with it. That is
+                all.
+              </p>
+              <ul class="same">
+                <li>Same link</li>
+                <li>Same printed code</li>
+                <li>Your finished tour</li>
+              </ul>
+            </div>
+            <figure class="art" aria-hidden="true">
+              <svg viewBox="0 0 400 300">
+                <rect width="400" height="300" rx="20" fill="#efe7da" />
+                <!-- phone -->
+                <g transform="translate(40 70)">
+                  <rect width="90" height="160" rx="15" fill="#2a2521" />
+                  <rect
+                    x="6"
+                    y="12"
+                    width="78"
+                    height="136"
+                    rx="8"
+                    fill="#f7f2ea"
+                  />
+                  <circle cx="45" cy="112" r="11" fill="#5f7a52" />
+                  <path
+                    d="M40 112l4 4 7-8"
+                    fill="none"
+                    stroke="#fffdf8"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <rect
+                    x="22"
+                    y="128"
+                    width="46"
+                    height="4"
+                    rx="2"
+                    fill="#c9bba8"
+                  />
+                </g>
+                <!-- cloud -->
+                <ellipse
+                  cx="300"
+                  cy="228"
+                  rx="78"
+                  ry="8"
+                  fill="#000"
+                  opacity=".06"
+                />
+                <g fill="#fffdf8">
+                  <circle cx="266" cy="178" r="34" />
+                  <circle cx="304" cy="156" r="44" />
+                  <circle cx="342" cy="180" r="32" />
+                  <rect x="238" y="178" width="128" height="42" rx="21" />
+                </g>
+                <!-- old file leaving -->
+                <g transform="translate(289 180)">
+                  <g class="a-old">
+                    <rect
+                      x="-15"
+                      y="-19"
+                      width="30"
+                      height="38"
+                      rx="4"
+                      fill="#c9bba8"
+                    />
+                    <text
+                      x="0"
+                      y="10"
+                      text-anchor="middle"
+                      font-family="system-ui, sans-serif"
+                      font-size="8"
+                      font-weight="700"
+                      fill="#fffdf8"
+                    >
+                      OLD
+                    </text>
+                  </g>
+                </g>
+                <!-- new file flying from phone to cloud -->
+                <g transform="translate(85 180)">
+                  <g class="a-fly">
+                    <rect
+                      x="-15"
+                      y="-19"
+                      width="30"
+                      height="38"
+                      rx="4"
+                      fill="#b8532e"
+                    />
+                    <g fill="#f1dccf">
+                      <rect x="-3" y="-19" width="3" height="3" />
+                      <rect x="0" y="-16" width="3" height="3" />
+                      <rect x="-3" y="-13" width="3" height="3" />
+                    </g>
+                    <text
+                      x="0"
+                      y="10"
+                      text-anchor="middle"
+                      font-family="system-ui, sans-serif"
+                      font-size="8"
+                      font-weight="700"
+                      fill="#fffdf8"
+                    >
+                      ZIP
+                    </text>
+                  </g>
+                </g>
+                <!-- same link + same code -->
+                <g transform="translate(250 252)">
+                  <g
+                    fill="none"
+                    stroke="#b8532e"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  >
+                    <rect
+                      x="0"
+                      y="4"
+                      width="12"
+                      height="8"
+                      rx="4"
+                      transform="rotate(-35 6 8)"
+                    />
+                    <rect
+                      x="7"
+                      y="6"
+                      width="12"
+                      height="8"
+                      rx="4"
+                      transform="rotate(-35 13 10)"
+                    />
+                  </g>
+                  <text
+                    x="26"
+                    y="15"
+                    font-family="Iowan Old Style, Palatino, Georgia, serif"
+                    font-style="italic"
+                    font-size="14"
+                    fill="#5c534b"
+                  >
+                    same link, same code
+                  </text>
+                </g>
+              </svg>
+              <figcaption>
+                The new file takes the old one's place. Nothing to reprint.
+              </figcaption>
+            </figure>
+          </div>
+
+          <div class="work">
+            <div class="replace-box">
+              <h3 id="replace-title">How to replace it on Google Drive</h3>
+              <p id="replace-text"></p>
+            </div>
+            <details>
+              <summary>Using a different place?</summary>
+              <ul id="replace-all"></ul>
+            </details>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <p class="closing">
+          Your visitors only need a phone camera. They scan the poster, the tour
+          opens in the browser, and your story is waiting where it happened.
+        </p>
+        <a class="btn" href="#step-1">Back to step one</a>
+        <p class="small" style="margin-top: 28px">
+          Design prototype - buttons and checks are simulated.
+        </p>
+      </div>
+    </footer>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script>
+      (function () {
+        "use strict";
+
+        var reduceMotion =
+          window.matchMedia &&
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+        /* ---------- fake QR codes: seeded, with the three finder squares ---------- */
+        function rng(seed) {
+          var a = (seed * 2654435761) >>> 0;
+          return function () {
+            a = (a + 0x6d2b79f5) >>> 0;
+            var t = a;
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+          };
+        }
+        var N = 21;
+        function finder(x, y, ox, oy) {
+          var dx = x - ox,
+            dy = y - oy;
+          if (dx < -1 || dy < -1 || dx > 7 || dy > 7) return null; // outside finder + separator
+          if (dx < 0 || dy < 0 || dx > 6 || dy > 6) return false; // separator
+          var d = Math.max(Math.abs(dx - 3), Math.abs(dy - 3));
+          return d !== 2;
+        }
+        function modules(seed) {
+          var r = rng(seed),
+            out = [];
+          for (var y = 0; y < N; y++) {
+            for (var x = 0; x < N; x++) {
+              var f = finder(x, y, 0, 0);
+              if (f === null) f = finder(x, y, N - 7, 0);
+              if (f === null) f = finder(x, y, 0, N - 7);
+              var dark;
+              if (f !== null) dark = f;
+              else if (x === 6 || y === 6) dark = (x + y) % 2 === 0;
+              else dark = r() < 0.47;
+              if (dark) out.push([x, y]);
+            }
+          }
+          return out;
+        }
+        function qrMarkup(seed, animate) {
+          var m = modules(seed);
+          var s = '<rect x="-2" y="-2" width="25" height="25" fill="#fffdf8"/>';
+          if (animate) {
+            for (var i = 0; i < m.length; i++) {
+              var delay = (m[i][0] * 0.05 + m[i][1] * 0.02).toFixed(2);
+              s +=
+                '<rect class="qm fb" x="' +
+                m[i][0] +
+                '" y="' +
+                m[i][1] +
+                '" width="1.02" height="1.02" fill="#2a2521" style="animation-delay:' +
+                delay +
+                's"/>';
+            }
+          } else {
+            var d = "";
+            for (var j = 0; j < m.length; j++)
+              d += "M" + m[j][0] + " " + m[j][1] + "h1.02v1.02h-1.02z";
+            s += '<path d="' + d + '" fill="#2a2521"/>';
+          }
+          return s;
+        }
+        function fillQr(svg) {
+          svg.setAttribute("viewBox", "-2 -2 25 25");
+          svg.setAttribute("shape-rendering", "crispEdges");
+          svg.innerHTML = qrMarkup(
+            Number(svg.getAttribute("data-qr")) || 1,
+            svg.hasAttribute("data-qr-anim"),
+          );
+        }
+        Array.prototype.forEach.call(
+          document.querySelectorAll("svg[data-qr]"),
+          fillQr,
+        );
+
+        /* ---------- illustrations play when scrolled into view ---------- */
+        var arts = document.querySelectorAll(".art");
+        if ("IntersectionObserver" in window) {
+          var io = new IntersectionObserver(
+            function (entries) {
+              entries.forEach(function (e) {
+                // Loops pause again off-screen; one-shot entrances keep their end frame.
+                e.target.classList.toggle("in", e.isIntersecting);
+              });
+            },
+            { threshold: 0.3 },
+          );
+          Array.prototype.forEach.call(arts, function (a) {
+            io.observe(a);
+          });
+        } else {
+          Array.prototype.forEach.call(arts, function (a) {
+            a.classList.add("in");
+          });
+        }
+
+        /* ---------- reading progress ---------- */
+        var bar = document.getElementById("progress");
+        var ticking = false;
+        function updateProgress() {
+          var h = document.documentElement.scrollHeight - window.innerHeight;
+          bar.style.transform =
+            "scaleX(" + (h > 0 ? Math.min(1, window.scrollY / h) : 0) + ")";
+          ticking = false;
+        }
+        window.addEventListener(
+          "scroll",
+          function () {
+            if (!ticking) {
+              ticking = true;
+              requestAnimationFrame(updateProgress);
+            }
+          },
+          { passive: true },
+        );
+        updateProgress();
+
+        /* ---------- toast ---------- */
+        var toastEl = document.getElementById("toast"),
+          toastTimer;
+        function toast(msg) {
+          toastEl.textContent = msg;
+          toastEl.classList.add("show");
+          clearTimeout(toastTimer);
+          toastTimer = setTimeout(function () {
+            toastEl.classList.remove("show");
+          }, 3200);
+        }
+
+        function setBusy(btn, label) {
+          btn.disabled = true;
+          btn.classList.remove("done");
+          btn.querySelector("span").textContent = label;
+        }
+        function setDone(btn, label) {
+          btn.disabled = false;
+          btn.classList.add("done");
+          btn.querySelector("span").textContent = label;
+        }
+
+        /* ---------- step 1: hosts ---------- */
+        var HOSTS = {
+          drive: {
+            name: "Google Drive",
+            steps: [
+              "Download the empty starter zip below.",
+              "Open <code>drive.google.com</code>, tap <strong>New</strong>, then <strong>File upload</strong>, and pick the zip.",
+              "Open the file's menu, choose <strong>Share</strong>, and set General access to <strong>Anyone with the link</strong>.",
+              "Tap <strong>Copy link</strong>, then come back here.",
+            ],
+            replace:
+              "Open the tour file's page in Drive, upload the new zip from your phone and choose <strong>Replace existing file</strong>. Drive keeps the same link.",
+          },
+          dropbox: {
+            name: "Dropbox",
+            steps: [
+              "Download the empty starter zip below.",
+              "Upload it in the Dropbox app or on <code>dropbox.com</code>.",
+              "Tap <strong>Share</strong>, make sure anyone with the link can view, and tap <strong>Copy link</strong>.",
+              "Come back here with the link.",
+            ],
+            replace:
+              "From your phone's share sheet, send the new zip to the Dropbox app and save it over the old file - same name, same folder.",
+          },
+          onedrive: {
+            name: "OneDrive",
+            steps: [
+              "Download the empty starter zip below.",
+              "Upload it in the OneDrive app or on <code>onedrive.live.com</code>.",
+              "Tap <strong>Share</strong>, choose <strong>Anyone with the link can view</strong>, and copy the link.",
+              "Come back here with the link.",
+            ],
+            replace:
+              "From your phone's share sheet, send the new zip to the OneDrive app and keep the same name, so it replaces the old file.",
+          },
+          github: {
+            name: "GitHub",
+            steps: [
+              "Download the empty starter zip below.",
+              "In a public repository, choose <strong>Add file</strong>, then <strong>Upload files</strong>, add the zip and commit.",
+              "Open the file on GitHub and copy the address from the browser bar.",
+              "Come back here with the link.",
+            ],
+            replace:
+              "Upload the downloaded zip with the same name to the same folder and commit. GitHub replaces the old file.",
+          },
+          server: {
+            name: "Your own server",
+            steps: [
+              "Download the empty starter zip below.",
+              "Put it anywhere publicly readable on your server.",
+              "Make sure the server allows <strong>cross-origin reads</strong> (an <code>Access-Control-Allow-Origin</code> header) and <strong>range requests</strong> (<code>Accept-Ranges: bytes</code>). Visitors' browsers read the file directly from you.",
+              "Copy the file's full <code>https://</code> address and come back here.",
+            ],
+            replace:
+              "Upload the new zip over the old one, at the same address.",
+          },
+        };
+        var currentHost = "drive";
+        var tiles = document.querySelectorAll(".tile");
+        var panel = document.getElementById("host-panel");
+
+        function renderReplace() {
+          var h = HOSTS[currentHost];
+          document.getElementById("replace-title").textContent =
+            "How to replace it on " + h.name;
+          document.getElementById("replace-text").innerHTML = h.replace;
+          var all = "";
+          Object.keys(HOSTS).forEach(function (k) {
+            if (k !== currentHost)
+              all +=
+                "<li><strong>" +
+                HOSTS[k].name +
+                ":</strong> " +
+                HOSTS[k].replace +
+                "</li>";
+          });
+          document.getElementById("replace-all").innerHTML = all;
+        }
+
+        Array.prototype.forEach.call(tiles, function (tile) {
+          tile.addEventListener("click", function () {
+            var key = tile.getAttribute("data-host");
+            var open = tile.getAttribute("aria-expanded") === "true";
+            Array.prototype.forEach.call(tiles, function (t) {
+              t.setAttribute("aria-expanded", "false");
+            });
+            if (open) {
+              panel.hidden = true;
+              return;
+            }
+            tile.setAttribute("aria-expanded", "true");
+            currentHost = key;
+            var h = HOSTS[key];
+            document.getElementById("host-title").textContent = h.name;
+            document.getElementById("host-steps").innerHTML = h.steps
+              .map(function (s) {
+                return "<li>" + s + "</li>";
+              })
+              .join("");
+            document.getElementById("link").placeholder =
+              key === "drive"
+                ? "https://drive.google.com/file/d/..."
+                : key === "dropbox"
+                  ? "https://www.dropbox.com/scl/fi/..."
+                  : key === "onedrive"
+                    ? "https://1drv.ms/u/..."
+                    : key === "github"
+                      ? "https://github.com/you/tours/blob/main/tour.zip"
+                      : "https://example.org/tours/my-tour.zip";
+            panel.hidden = false;
+            // re-trigger the entrance animation
+            panel.style.animation = "none";
+            void panel.offsetWidth;
+            panel.style.animation = "";
+            renderReplace();
+          });
+        });
+
+        var starterBtn = document.getElementById("starter-btn");
+        starterBtn.addEventListener("click", function () {
+          setBusy(starterBtn, "Preparing...");
+          setTimeout(function () {
+            setDone(starterBtn, "Saved tour-starter.zip");
+            toast("tour-starter.zip saved to your Downloads (simulated)");
+          }, 700);
+        });
+
+        /* ---------- step 2: link check (simulated) ---------- */
+        var linkEl = document.getElementById("link");
+        var statusEl = document.getElementById("status");
+        var checkTimer, debounce;
+        var KNOWN =
+          /(^|\.)(drive\.google\.com|docs\.google\.com|dropbox\.com|dropboxusercontent\.com|1drv\.ms|onedrive\.live\.com|sharepoint\.com|github\.com|githubusercontent\.com)$/i;
+
+        function setStatus(cls, title, sub) {
+          statusEl.className = "status " + cls;
+          statusEl.innerHTML =
+            '<span class="dot" aria-hidden="true"></span><span><strong>' +
+            title +
+            "</strong>" +
+            (sub ? '<span class="sub">' + sub + "</span>" : "") +
+            "</span>";
+        }
+        function check() {
+          clearTimeout(checkTimer);
+          var v = linkEl.value.trim();
+          if (!v) {
+            statusEl.className = "status";
+            statusEl.innerHTML =
+              '<span class="dot" aria-hidden="true"></span><span>Waiting for a link.<span class="sub">Paste it and we check it right away.</span></span>';
+            return;
+          }
+          var url;
+          try {
+            url = new URL(v);
+          } catch (e) {
+            url = null;
+          }
+          if (!url || !/^https?:$/.test(url.protocol)) {
+            setStatus(
+              "later",
+              "That does not look like a link yet.",
+              "It should start with https:// - copy it again from your storage.",
+            );
+            return;
+          }
+          setStatus(
+            "checking",
+            "Checking...",
+            "Looking for your tour at " + url.hostname,
+          );
+          checkTimer = setTimeout(function () {
+            if (KNOWN.test(url.hostname)) {
+              setStatus(
+                "ok",
+                "Found your tour.",
+                "An empty starter tour, ready to fill. This link goes into your printed code.",
+              );
+            } else {
+              setStatus(
+                "later",
+                "Not reachable yet - fine if you upload later.",
+                "The code will still work once the file is there. You can print now.",
+              );
+            }
+          }, 1400);
+        }
+        document
+          .getElementById("link-form")
+          .addEventListener("submit", function (e) {
+            e.preventDefault();
+            check();
+          });
+        linkEl.addEventListener("input", function () {
+          clearTimeout(debounce);
+          debounce = setTimeout(check, 600);
+        });
+        Array.prototype.forEach.call(
+          document.querySelectorAll("[data-example]"),
+          function (b) {
+            b.addEventListener("click", function () {
+              linkEl.value = b.getAttribute("data-example");
+              check();
+            });
+          },
+        );
+
+        /* ---------- step 3: posters ---------- */
+        var countEl = document.getElementById("count");
+        var sizeEl = document.getElementById("size");
+        var grid = document.getElementById("qr-grid");
+        var pdfBtn = document.getElementById("pdf-btn");
+
+        function clampInput(el) {
+          var min = Number(el.min),
+            max = Number(el.max);
+          var v = Math.round(Number(el.value));
+          if (!isFinite(v)) v = min;
+          v = Math.min(max, Math.max(min, v));
+          el.value = v;
+          return v;
+        }
+        function renderPrint() {
+          var n = clampInput(countEl);
+          var size = clampInput(sizeEl);
+          var html = "";
+          for (var i = 0; i < n; i++) {
+            html +=
+              '<div class="qr-tile" style="animation-delay:' +
+              (reduceMotion ? 0 : Math.min(i, 20) * 0.03) +
+              's">' +
+              '<svg viewBox="-2 -2 25 25" shape-rendering="crispEdges" aria-hidden="true">' +
+              qrMarkup(101 + i, false) +
+              "</svg>" +
+              "<span>Poster " +
+              (i + 1) +
+              "</span></div>";
+          }
+          grid.innerHTML = html;
+          var paper = size <= 19 ? "A4 or Letter" : "A3";
+          document.getElementById("print-summary").textContent =
+            n +
+            (n === 1 ? " poster" : " posters") +
+            ", one per page, with a " +
+            size +
+            " cm code - fits on " +
+            paper +
+            " paper.";
+          document.getElementById("art-size").textContent = size + " cm";
+          document.getElementById("ruler-size").textContent = size + " cm";
+          pdfBtn.classList.remove("done");
+          pdfBtn.querySelector("span").textContent = "Download PDF";
+        }
+        Array.prototype.forEach.call(
+          document.querySelectorAll("[data-step]"),
+          function (b) {
+            b.addEventListener("click", function () {
+              var el = document.getElementById(b.getAttribute("data-step"));
+              el.value = Number(el.value) + Number(b.getAttribute("data-d"));
+              renderPrint();
+            });
+          },
+        );
+        countEl.addEventListener("change", renderPrint);
+        sizeEl.addEventListener("change", renderPrint);
+        renderPrint();
+
+        pdfBtn.addEventListener("click", function () {
+          var n = Number(countEl.value);
+          setBusy(
+            pdfBtn,
+            "Preparing " + n + (n === 1 ? " page..." : " pages..."),
+          );
+          setTimeout(function () {
+            setDone(pdfBtn, "Saved tour-posters.pdf");
+            toast("tour-posters.pdf saved (simulated). Print at 100 %.");
+          }, 1100);
+        });
+
+        /* ---------- step 5: start creating (simulated) ---------- */
+        var createBtn = document.getElementById("create-btn");
+        createBtn.addEventListener("click", function () {
+          setBusy(createBtn, "Opening camera...");
+          setTimeout(function () {
+            createBtn.disabled = false;
+            createBtn.querySelector("span").textContent = "Start creating";
+            toast(
+              "In the real page, AR starts here: point the camera at your poster.",
+            );
+          }, 1200);
+        });
+
+        renderReplace();
+      })();
+    </script>
+  </body>
+</html>

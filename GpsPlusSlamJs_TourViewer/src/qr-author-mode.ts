@@ -49,6 +49,7 @@ import {
   nameSurvivesDownload,
 } from "./content-disposition.js";
 import type { TourRelation } from "./code-tour.js";
+import { driveFileId } from "gps-plus-slam-app-framework/utils/drive-file-id";
 import type { CodeTourStatus } from "./scan-open.js";
 
 /**
@@ -354,21 +355,28 @@ export function setupHint(state: {
    *  hosted or draft level, or an earlier visit's): it is kept, never
    *  replaced by a new measurement (D10b). */
   keptStored?: boolean;
+  /** In an AR session: the way out is Done, not the panel's Finish
+   *  (polish round M3, Q-Done). */
+  inAr?: boolean;
 }): string {
   if (!state.measured) return "";
+  const next =
+    state.inAr === true
+      ? "Place pins and photos; Done saves the tour."
+      : "Place content, or tap Finish to rebuild the zip.";
   // With no tour open, `codeTourLine` says what is happening to the tour
   // the code names (scan-to-open plan §9 #9).
   if (!state.tourOpen) return "Position saved.";
   if (state.keptStored === true) {
-    return "Saved position kept. Place content, or tap Finish to rebuild the zip.";
+    return `Saved position kept. ${next}`;
   }
   const saved =
     state.inTour === "this-code"
       ? "Position saved - it replaces this code's saved position in the tour. "
       : state.inTour === "other-codes"
-        ? "Position saved - Finish adds it to the tour as one more code. "
+        ? "Position saved - saving adds it to the tour as one more code. "
         : "Position saved. ";
-  return `${saved}Place content, or tap Finish to rebuild the zip.`;
+  return `${saved}${next}`;
 }
 
 /**
@@ -400,9 +408,10 @@ export function finishBlockedHint(
 ): string {
   switch (readiness) {
     case "manifest-pending":
-      return "Finish unlocks once the tour's content list has loaded.";
+      // Said in AR (Done) and on the page (Finish) - M3 review #5, #12.
+      return "Saving unlocks once the tour's content list has loaded.";
     case "manifest-broken":
-      return "The hosted zip's tour.json is broken; repair it before finishing, or the placement it holds would be lost.";
+      return "The hosted zip's tour.json is broken; repair it before saving, or the placement it holds would be lost.";
     default:
       return "";
   }
@@ -428,7 +437,7 @@ export function archiveSizeNote(bytes: number): string {
  * not the default sends a creator looking for a number the page would have
  * supplied anyway (second testing session, F2).
  */
-export const MISSING_SIZE_MESSAGE = `Enter the printed code's side length in metres (e.g. ${String(AUTHOR_DEFAULT_SIZE_M)}) in step 2 before starting.`;
+export const MISSING_SIZE_MESSAGE = `Enter the printed code's side length in centimetres (e.g. ${String(Math.round(AUTHOR_DEFAULT_SIZE_M * 1000) / 10)}) in step 3 before starting.`;
 
 /** The finish step's labels through its async cycle (async-UI rule). */
 export const FINISH_LABELS = {
@@ -521,6 +530,22 @@ export function driveReplaceSteps(
   };
 }
 
+/**
+ * The Drive website's address of the file behind a Drive link, or null
+ * (polish round M2, step 6: the button that copies it, so the creator can
+ * open the file on the Drive website and upload over it). Every form a
+ * Drive link takes carries the file id - the share page's path, `?id=`
+ * on the open, download and proxy forms, the API's path - so the address
+ * is rebuilt from it. A relative proxy path resolves against the page.
+ */
+export function driveFileAddress(url: string, base?: string): string | null {
+  const id = driveFileId(
+    url,
+    base ?? (typeof location === "undefined" ? undefined : location.href),
+  );
+  return id === null ? null : `https://drive.google.com/file/d/${id}/view`;
+}
+
 /** The name Chrome gives a download whose name is already taken. */
 function repeatDownloadName(filename: string): string {
   return `${filename.replace(/\.zip$/i, "")} (1).zip`;
@@ -591,11 +616,12 @@ export function reprintOrphanWarning(
   // warn about.
   if (measuredCodeIds.some((id) => linkCodeIds.includes(id))) return null;
   return (
-    "Warning: this tour already holds a measurement, and it belongs to a " +
-    "DIFFERENT printed code than the one above - the link must have changed " +
-    "since it was measured. Printing and hanging this code means walking " +
-    "step 4 again; the old measurement will not be found. To keep it, put " +
-    "the original link back in step 1."
+    "Note: this tour's measured codes do not match this link (or this " +
+    "spelling of it). " +
+    "Posters printed from this one are new codes: the old measurement " +
+    "will not be found for them, so hang them and measure them in step 5. " +
+    "To print codes that match the posters already hanging, use the " +
+    "original link they were printed from."
   );
 }
 

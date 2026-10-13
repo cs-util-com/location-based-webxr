@@ -322,22 +322,14 @@ vi.mock(
 vi.mock('./ui/hud-tracking-quality-subscriber', () => ({
   subscribeHudToTrackingQuality: vi.fn(() => vi.fn()),
 }));
-// Persistent occluder (Step 2 windowed-occluder wiring test): OcclusionMesh +
-// the worker client are mocked so enabling occupancy.persistentOcclusion
-// exercises main.ts's occluder sink without THREE/WebGL.
-const { mockOcclusionMeshCtor, mockDriverRequest } = vi.hoisted(() => ({
-  mockOcclusionMeshCtor: vi.fn(function () {
-    return {
-      applyMeshData: vi.fn(),
-      clear: vi.fn(),
-      dispose: vi.fn(),
-      setDebugStyle: vi.fn(),
-    };
-  }),
+// Persistent occluder (Step 2 windowed-occluder wiring test): the worker
+// client is mocked, so enabling occupancy.persistentOcclusion exercises
+// main.ts's occluder sink through the driver request below. The occluder
+// mesh itself is the framework's real one since the sink moved there
+// (Tour Viewer polish round M5a): a mock of the visualization barrel no
+// longer reaches it, and a real mesh needs no WebGL to be built.
+const { mockDriverRequest } = vi.hoisted(() => ({
   mockDriverRequest: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework/visualization', () => ({
-  OcclusionMesh: mockOcclusionMeshCtor,
 }));
 vi.mock('./visualization/occluder-mesh-worker-client', () => ({
   createOccluderMeshWorker: vi.fn(() => ({

@@ -10,10 +10,10 @@ worded by `tour-trust-copy.ts`, every key named by its fingerprint
 
 ## Public API
 
-- `describeTourTrust({ integrity, sources, storage, nowMs, audience? }):
-Promise<string[]>` - judges, records the sight, and returns the lines;
-  `audience` (`"creator"` by default) is `trustLines`' (a visitor gets no
-  line for an unsigned tour without a warning, UI round 1, U1).
+- `describeTourTrust({ integrity, sources, storage, nowMs }):
+Promise<string[]>` - judges, records the sight, and returns the lines
+  (`trustLines`: no line for an unsigned tour without a warning, for any
+  reader since the r820 feedback).
 - (module-private) `signatureStateOf(integrity)` - the tier-1 result as
   the copy's `SignatureState`.
 

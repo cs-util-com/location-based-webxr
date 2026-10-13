@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tour Viewer prototypes</title>
+    <style>
+      :root {
+        --bg: #f6f4ef;
+        --ink: #1f2328;
+        --dim: #5b6168;
+        --card: #ffffff;
+        --line: #e2ddd2;
+        --accent: #2f6fdb;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #15171a;
+          --ink: #eceef0;
+          --dim: #a3a9b0;
+          --card: #1e2125;
+          --line: #2c3036;
+          --accent: #7aa7ff;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          16px/1.5 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        padding: 16px;
+      }
+      main {
+        max-width: 64rem;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.6rem;
+        margin: 0.5rem 0 0.25rem;
+      }
+      h2 {
+        font-size: 1.1rem;
+        margin: 2rem 0 0.5rem;
+      }
+      p {
+        color: var(--dim);
+        margin: 0.25rem 0 1rem;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+        gap: 12px;
+      }
+      a {
+        display: block;
+        height: 100%;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px 16px;
+        color: inherit;
+        text-decoration: none;
+      }
+      a:hover,
+      a:focus-visible {
+        border-color: var(--accent);
+      }
+      strong {
+        display: block;
+        color: var(--accent);
+      }
+      span {
+        color: var(--dim);
+        font-size: 0.92rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Tour Viewer design prototypes</h1>
+      <p>
+        Design drafts made to choose a direction (polish round M1), kept as an
+        inspiration gallery. They are not connected to the app; buttons only
+        switch states. The Tour Viewer took L5 (the setup page), H1 (the
+        authoring HUD, with an action strip) and S1 (the scan overlay); the
+        others are here for anyone who would rather build one of them.
+      </p>
+
+      <h2>The entry and setup page (for a new creator)</h2>
+      <ul>
+        <li>
+          <a href="landing-1-editorial/"
+            ><strong>L1 - Editorial</strong
+            ><span
+              >A calm magazine-like scroll story with large illustrations.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-2-playful/"
+            ><strong>L2 - Playful illustrated</strong
+            ><span
+              >Bright, friendly, a little mascot walks through the steps.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-3-dark-ar/"
+            ><strong>L3 - Dark, AR-forward</strong
+            ><span
+              >A dark page whose hero shows AR content appearing over a
+              scene.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-4-app-wizard/"
+            ><strong>L4 - App-like wizard</strong
+            ><span
+              >One step per screen, a progress bar, like a native app.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-5-map-path/"
+            ><strong>L5 - Spatial path</strong
+            ><span
+              >The steps are stations along a tour route on an illustrated
+              map.</span
+            ></a
+          >
+        </li>
+      </ul>
+
+      <h2>Creating the tour in AR (the authoring HUD)</h2>
+      <ul>
+        <li>
+          <a href="hud-1-chips/"
+            ><strong>H1 - Floating chips</strong
+            ><span
+              >Minimal chips at the edge; a chip row next to a selected
+              object.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="hud-2-bottom-sheet/"
+            ><strong>H2 - Bottom sheet</strong
+            ><span
+              >Large thumb-friendly buttons in a sheet that changes with the
+              mode.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="hud-3-drag-surface/"
+            ><strong>H3 - Drag along the surface</strong
+            ><span
+              >Tap to select, then drag the object along the surface.</span
+            ></a
+          >
+        </li>
+      </ul>
+
+      <h2>Starting a tour as a visitor (the scan overlay)</h2>
+      <ul>
+        <li>
+          <a href="scan-1-centre-card/"
+            ><strong>S1 - Centre card</strong
+            ><span
+              >A small translucent card with a phone moving over the code.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="scan-2-viewfinder/"
+            ><strong>S2 - Viewfinder</strong
+            ><span
+              >Corner brackets frame the view and snap onto the poster.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="scan-3-coach-mark/"
+            ><strong>S3 - Coach mark</strong
+            ><span
+              >Almost nothing on screen: a pulsing target and a short
+              hint.</span
+            ></a
+          >
+        </li>
+      </ul>
+      <h2>The visitor's start page (after scanning a poster)</h2>
+      <p>
+        Made 2026-10-12, awaiting a verdict. A small "Prototype state" control
+        in a corner switches between the page's states: loading the tour,
+        location not yet allowed, location denied, ready, checking AR, AR not
+        supported, and a tour that could not be loaded.
+      </p>
+      <ul>
+        <li>
+          <a href="visitor-1-poster/"
+            ><strong>V1 - The poster's continuation</strong
+            ><span
+              >The paper look of the printed poster, come alive: the tour's
+              name, "AR tour starts here", one big Start.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="visitor-2-dark-ar/"
+            ><strong>V2 - Dark, AR-forward</strong
+            ><span
+              >A night scene with the tour's pins already appearing over it,
+              like a game or a camera app.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="visitor-3-steps/"
+            ><strong>V3 - Three steps</strong
+            ><span
+              >Allow location, start AR, point at the poster - each step
+              ticked off as you go.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="visitor-4-one-tap/"
+            ><strong>V4 - Minimal, one tap</strong
+            ><span
+              >The tour's name, one big button in the thumb zone, the
+              details folded away.</span
+            ></a
+          >
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

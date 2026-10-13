@@ -169,6 +169,9 @@ function normalizeGoogleDrive(
   url: URL,
   opts: NormalizeShareUrlOptions
 ): string | null {
+  // Not the shared `utils/drive-file-id.ts` on purpose: that one REJECTS an
+  // id outside Drive's alphabet; this rewrite takes ANY id and keeps it
+  // opaque by encoding it (the "keeps a hostile id opaque" test).
   const id =
     /^\/file\/d\/([^/]+)/.exec(url.pathname)?.[1] ?? url.searchParams.get('id');
   if (id === null || id === undefined || id === '') return null;

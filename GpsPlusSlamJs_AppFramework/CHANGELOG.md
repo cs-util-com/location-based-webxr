@@ -10,6 +10,7 @@
   slab's aerial fade (alpha x exp(-distance / 60 km)) applies, for a page
   that draws the same clouds with another drawer; `cloudSlabMarch` takes
   `aerial` too. The default (1, or null) is unchanged.
+
 - **The clouds' noise evaluated live, per octave**, opt-in:
   `SkyAtmosphere.configure({ cloudNoise: 'tile' | 'hex' | 'live' })` and
   `setCloudNoiseAnchor({ originKm, rotationRad })` / `cloudNoiseAnchor`
@@ -18,21 +19,25 @@
   `cloudHex` keeps its meaning. Each octave fades to its mean by the
   footprint (from half a cell to four) while the field keeps its spread,
   so the drawn cover holds to a 16 km footprint.
+
 - **The live noise's fine gain**: `configure({ cloudNoiseFineGain })` and
   the `cloudNoiseFineGain` getter, the amplitude ratio from octave 2 on
   (0.5 by default); more detail at the cloud edges above it, the spread
   and the cover kept.
+
 - **Uniforms** `atmCloudLive`, `atmCloudLattice`, `atmCloudLiveBasis`,
   `atmCloudLiveAmp` and `atmCloudLiveMarchOctaves` in `cloudUniforms`;
   `CloudShadow.sync` follows them; the coverage chunk carries a third
   table (`atmCoverThresholdsLive`) and its fourth argument is now the
   noise mode (0 tile, 1 hex, 2 live).
+
 - **The cloud disc's centre**, opt-in: `setCloudSlabDiscCentre(slab,
 { x, z } | null)`, `SkyAtmosphere.setCloudDiscCentre` and
   `CloudShadow.setDiscCentre` centre the disc on a world point instead of
   the camera (the default, unchanged), so a page can put the volume where
   the view looks. `CloudDiscCentre` and `writeCloudDiscCentre` are
   exported.
+
 - **The cloud slab's reach**, opt-in: `setCloudSlabReach(slab, reach |
 null)` and `SkyAtmosphere.setCloudReach(reach | null)` move the slab's
   far fade and march cap out (and scale its mesh to match), so a camera
@@ -41,21 +46,25 @@ null)` and `SkyAtmosphere.setCloudReach(reach | null)` move the slab's
   never calls it draws exactly what it drew. `cloudSlabInterval`,
   `cloudSlabFarWeight` and `cloudSlabMarch` take the reach too;
   `CLOUD_SLAB_REACH` and `assertCloudSlabReach` are exported.
+
 - **`SkyAtmosphere.setObserverAltitudeKm(km)`** and the `observerAltitudeKm`
   getter: the sky follows the observer's height (0 to 100 km) after
   construction, synchronously like `setSun` (globe F2 plan, F2b).
+
 - **`SkyAtmosphere`'s staged rebuild**: the constructor option
   `rebuild: 'staged'`, `stepRebuild()` (returns a `RebuildStage`) and
   `rebuildPending`, for a page that renders every frame. A setter records
   the change and each `stepRebuild()` does one stage (the tables, an
   asynchronous read, the bake into one reused target), so no frame carries
   a whole rebuild. The default `'immediate'` path is unchanged.
+
 - **The cloud slab ends at the scene's depth**, opt-in:
   `setCloudSlabSceneDepth(slab, depth | null)` and
   `SkyAtmosphere.setCloudSceneDepth(depth | null)`; with a depth the march
   stops at the scene and the slab's depth test is off, so a ridge in front
   of a cloud deck no longer hides the cloud in front of it. Without one the
   slab is unchanged. `cloudSlabInterval` gains an optional `sceneM`.
+
 - **The cloud slab and the cloud shadow can take their clouds from a map
   and fade by distance**, opt-in: `setCloudSlabCoverage(slab, coverage |
 null)` (the caller defines `float atmCloudCoverageAt(vec2 xz)`; the local
@@ -68,38 +77,12 @@ null)` (the caller defines `float atmCloudCoverageAt(vec2 xz)`; the local
   `CLOUD_COVERAGE_GLSL`, `withCloudCoverage`), and `cloudSlabMarch`'s
   optional `thresholdAt`. Without them the slab and the shadow are
   unchanged.
+
 - **`AtmosphereDevice` gains two OPTIONAL members**,
   `beginSkyViewRead()` (with the `SkyViewRead` type) and
   `bakeEnvironmentReused(scene)`; an existing implementation keeps
   compiling, and the staged rebuild falls back to the synchronous read and
   a new target per bake without them.
-
-- **`state/alignment-maturity`** (deep import, new; owner decisions D33,
-  D34), and the GPS anchor's `startup: 'mature-alignment'`: the floor
-  `MATURE_GPS_EXTENT_M` and the pure pick "the first mature alignment at or
-  after a moment" (`openMatureAlignmentPick`, `advanceMatureAlignmentPick`,
-  `isMatureAlignment`, `checkMatureGpsExtentM`), shared by the QR mint
-  tracker, the Tour Viewer's authoring settle and `createGpsAnchor({
-startup: 'mature-alignment', getGpsExtentM, matureGpsExtentM? })`, whose
-  object is fixed through that alignment and untouched while it waits
-  (`settleNow()` when the session ends first). `'median'` stays the
-  default. `createGpsExtentTracker` now skips a fix without coordinates
-  instead of throwing.
-- **The tour kit's format and checks** (K0, K1): the v2 tour content schema
-  (`ar/tour-stations`), `tour.json` format version 2 with migration
-  (`ar/tour-manifest`), the media allowlist and `.glb` inertness check
-  (`ar/tour-media`), the signed `manifest.json` and its Ed25519 signature
-  (`ar/tour-signed-manifest`, `ar/tour-signature`), `utils/did-key`,
-  `utils/base58btc`, `utils/sha256-hex`, the capped zip helpers
-  (`storage/archive-limits`, `storage/capped-zip-entries`,
-  `storage/capped-response-body`, `storage/byte-counting-stream`), an
-  `acceptLocalCopy` hook on `openRemoteArchive`, and
-  `loadActionsFromEntries`.
-- **Image sizes from the header** (tour kit K4 review R2): `imageInfo` and
-  `imageInfoOfBlob` read the width and height of JPEG, PNG, WebP, GIF and
-  AVIF images without decoding them; `TOUR_MAX_IMAGE_PIXELS` (4096 x 4096)
-  and `checkImageWithinCap` refuse a tour image over the cap before it is
-  decoded.
 
 ### Changed
 
@@ -109,6 +92,21 @@ startup: 'mature-alignment', getGpsExtentM, matureGpsExtentM? })`, whose
   cost 7 % of the volume pass for 0.09 % of the variance).
   `cloudCoverThresholds` and `cloudThresholdForCover` take a
   `CloudNoiseMode` as well as the old boolean.
+
+## [1.27.0] - 2026-10-13
+
+### Changed
+
+- **The print PDF packs a grid of codes** (Tour Viewer polish round): a
+  10 cm check bar, a request not to scale the page, and optional poster
+  text per code - a title, an explanation and a call to action, scaled to
+  the code and fitted to its width (`utils/qr-payload/qr-print-pdf`, with
+  the text metrics of `utils/qr-payload/pdf-text`). An empty caption draws
+  nothing.
+- **A failed `initAR` leaves nothing behind**, so AR can be retried, and
+  neither it nor the AR controller's rollback tells the app that a session
+  ended.
+- **A packed depth grid is at most 64 x 64**, the largest any app records.
 
 - **Recorded depth samples are written packed, and every action file is
   compact JSON** (scan pass S2). `writeAction` writes a
@@ -139,6 +137,56 @@ startup: 'mature-alignment', getGpsExtentM, matureGpsExtentM? })`, whose
 - **`checkGlbInert` measures every image inside a model** against the tour
   image cap, and `decodeFrameTexture` takes a `maxPixels` option (tour kit K4
   review R2).
+
+### Added
+
+- **`utils/drive-file-id`** (deep import): the one Google Drive file-id
+  parser (`driveFileId`), used by the launch URL's short form and the Tour
+  Viewer. The launch dispatcher reads the short form `?qr=D/<id>`; its
+  writer stays off (`allowDriveShortForm`).
+- **`visualization/occluder-sink` and
+  `visualization/occluder-mesh-worker-client`** (deep imports, moved here
+  from the RecorderApp): the persistent occluder's mesh, off-thread mesher
+  and teardown in one handle (`createOccluderSink(parent, options, {
+createWorker })`, `createOccluderMeshWorker(createWorker)` - the app
+  supplies its own worker). `occlude: false` keeps the mesh as a hidden
+  pick target; `handle.mesh()` exposes it for a raycast.
+- **The hit-test reticle can follow a surface:** `startHitTestReticle`
+  takes `surfacePick` (a point and normal, falling back to the hit-test
+  when it returns null or throws), and `updateReticleAtSurface` lays the
+  ring flat on a world point and normal. `SurfacePoint` is exported from
+  `ar`.
+- **`utils/copy-with-feedback`** (deep import): copy to the clipboard
+  from a button with a busy state and the real outcome, the write run
+  inside the promise chain so a missing clipboard fails instead of
+  sticking.
+
+- **`state/alignment-maturity`** (deep import, new; owner decisions D33,
+  D34), and the GPS anchor's `startup: 'mature-alignment'`: the floor
+  `MATURE_GPS_EXTENT_M` and the pure pick "the first mature alignment at or
+  after a moment" (`openMatureAlignmentPick`, `advanceMatureAlignmentPick`,
+  `isMatureAlignment`, `checkMatureGpsExtentM`), shared by the QR mint
+  tracker, the Tour Viewer's authoring settle and `createGpsAnchor({
+startup: 'mature-alignment', getGpsExtentM, matureGpsExtentM? })`, whose
+  object is fixed through that alignment and untouched while it waits
+  (`settleNow()` when the session ends first). `'median'` stays the
+  default. `createGpsExtentTracker` now skips a fix without coordinates
+  instead of throwing.
+- **The tour kit's format and checks** (K0, K1): the v2 tour content schema
+  (`ar/tour-stations`), `tour.json` format version 2 with migration
+  (`ar/tour-manifest`), the media allowlist and `.glb` inertness check
+  (`ar/tour-media`), the signed `manifest.json` and its Ed25519 signature
+  (`ar/tour-signed-manifest`, `ar/tour-signature`), `utils/did-key`,
+  `utils/base58btc`, `utils/sha256-hex`, the capped zip helpers
+  (`storage/archive-limits`, `storage/capped-zip-entries`,
+  `storage/capped-response-body`, `storage/byte-counting-stream`), an
+  `acceptLocalCopy` hook on `openRemoteArchive`, and
+  `loadActionsFromEntries`.
+- **Image sizes from the header** (tour kit K4 review R2): `imageInfo` and
+  `imageInfoOfBlob` read the width and height of JPEG, PNG, WebP, GIF and
+  AVIF images without decoding them; `TOUR_MAX_IMAGE_PIXELS` (4096 x 4096)
+  and `checkImageWithinCap` refuse a tour image over the cap before it is
+  decoded.
 
 ## [1.26.1] — 2026-10-04
 
