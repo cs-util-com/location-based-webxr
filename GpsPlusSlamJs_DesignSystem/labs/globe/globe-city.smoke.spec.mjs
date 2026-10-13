@@ -335,9 +335,11 @@ test("a land=1 link's dive starts far out and never skims the ground", async ({
     };
     requestAnimationFrame(sample);
   });
-  // 8 s: SwiftShader draws about a frame a second here, and a 4 s dive
-  // left six samples.
-  const errors = await bootGlobe(page, `${BASE}&land=1&diveMs=8000`, {
+  // 16 s: SwiftShader draws about a frame a second here; a 4 s dive left
+  // six samples, and 8 s left 10 to 12, so the bound below (more than 10,
+  // enough of the path to judge) failed at random (2026-10-11, 2026-10-13).
+  // The bound stays; the dive gets the frames.
+  const errors = await bootGlobe(page, `${BASE}&land=1&diveMs=16000`, {
     plain: false,
     phase: "landed",
     routeCity: false,
