@@ -553,6 +553,67 @@ async function descend(page, { from, to, extra }) {
   return { local, worst, line };
 }
 
+// WHY (R4d review, finding 4; filed in 2026-10-12-0500-globe-r4d-shell-open-
+// findings-followup.md): the law's step count is continuous but the march
+// took it rounded, so where it turned over (6 to 7 between 200 and 30 km)
+// every jittered node moved at once. Straight down the path is short and
+// hides it; looking ahead it is long. Across the turnover, in 0.1 % steps
+// of altitude, the change between two frames must look like its
+// neighbours'. Measured 2026-10-13 at 118 km (6 to 7): x1.01 at 1 % steps
+// and x1.07 at 0.1 %, so no pop shows (the segments are integrated
+// analytically, so where the nodes sit barely matters); kept as a guard,
+// and the finding closed without a change.
+test("no pop where the march's step count turns over, looking ahead", async ({
+  page,
+}) => {
+  test.setTimeout(900_000);
+  const pose = (km) =>
+    `${BASE}&view=${PLACES.ocean},${km.toFixed(3)},0,-15&cloudShellVolume=1`;
+  const errors = await bootGlobe(page, pose(200), { phase: "user" });
+  const stepsAt = async (km) => {
+    await applyHash(page, pose(km));
+    await page.evaluate(() => window.__globeLab.timeFrames(1));
+    return page.evaluate(
+      () => window.__globeLab.state().cloudShellVolume.law.steps,
+    );
+  };
+  // The altitude where the rounded count turns over (bisected).
+  let hi = 200;
+  let lo = 30;
+  const turn = Math.round(await stepsAt(hi)) + 0.5;
+  for (let i = 0; i < 12; i++) {
+    const mid = Math.sqrt(hi * lo);
+    if ((await stepsAt(mid)) < turn) hi = mid;
+    else lo = mid;
+  }
+  const crossKm = Math.sqrt(hi * lo);
+  const frames = [];
+  for (let k = 5; k >= -5; k--) {
+    const km = crossKm * 1.001 ** (k + 0.5);
+    await applyHash(page, pose(km));
+    await page.evaluate(() => window.__globeLab.timeFrames(1));
+    const x = await page.evaluate(
+      ({ nx, ny }) => window.__globeLab.cloudShellAlphaGrid(nx, ny),
+      { nx: NX, ny: NY },
+    );
+    frames.push({ km, alpha: mixOf(x) });
+  }
+  const changes = [];
+  for (let i = 1; i < frames.length; i++) {
+    changes.push(meanAbs(frames[i].alpha, frames[i - 1].alpha));
+  }
+  // The middle change crosses the turnover (frames 5 and 6 straddle it).
+  const across = changes[5];
+  const others = changes.filter((_, i) => i !== 5).sort((a, b) => a - b);
+  const median = others[Math.floor(others.length / 2)];
+  const ratio = across / Math.max(median, 1e-4);
+  console.log(
+    `step count turns over at ${crossKm.toFixed(1)} km (${turn - 0.5} to ${turn + 0.5}); the change across it ${across.toFixed(4)} against the neighbours' median ${median.toFixed(4)}: x${ratio.toFixed(2)} (${[1.5, 2, 3].map((k) => `x${k} ${ratio <= k ? "ok" : "NO"}`).join(" ")}); all ${changes.map((c) => c.toFixed(4)).join(" ")}`,
+  );
+  expect(errors).toEqual([]);
+  expect(ratio).toBeLessThanOrEqual(2);
+});
+
 test("the descent changes the clouds smoothly, no jump between layers", async ({
   page,
 }) => {
