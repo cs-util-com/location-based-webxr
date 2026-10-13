@@ -530,6 +530,13 @@ export interface CloudSlabMarchResult {
  * aerial weights on the contribution; and the early exit. The tests'
  * stand-in for `CLOUD_SLAB_FRAGMENT_GLSL`.
  */
+/** The march's aerial share: 1 when absent, else checked (0..1). */
+function slabAerialOf(aerial: number | undefined): number {
+  const value = aerial ?? 1;
+  assertCloudSlabAerial(value);
+  return value;
+}
+
 export function cloudSlabMarch(
   input: CloudSlabMarchInput
 ): CloudSlabMarchResult {
@@ -543,8 +550,7 @@ export function cloudSlabMarch(
   // Validated and normalised here: every position below assumes a unit
   // direction (the interval normalises on its own; the march must too).
   const { reach } = input;
-  const aerial = input.aerial ?? 1;
-  assertCloudSlabAerial(aerial);
+  const aerial = slabAerialOf(input.aerial);
   const interval = cloudSlabInterval(
     camera[1],
     input.dir,
