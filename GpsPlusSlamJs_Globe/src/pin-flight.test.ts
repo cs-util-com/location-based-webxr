@@ -70,18 +70,29 @@ interface Sample {
   readonly phase: string;
 }
 
+/** The phases a pin never leaves. */
+const FINAL_PHASES: ReadonlySet<string> = new Set([
+  "landed",
+  "failed",
+  "cancelled",
+]);
+
 /**
  * Runs the pin from `pin` at 60 Hz until `untilMs`, calling `events(t,
  * pin)` before each frame (it may return a new pin); the camera's samples.
+ * `stopWhenFinal` ends the run at a final phase (a sweep that only judges
+ * the flight need not simulate the minutes after its landing).
  */
 function run(
   start: PinFlight,
   untilMs: number,
   events: (t: number, pin: PinFlight) => PinFlight = (_t, p) => p,
+  { stopWhenFinal = false }: { readonly stopWhenFinal?: boolean } = {},
 ): { pin: PinFlight; samples: Sample[] } {
   let pin = start;
   const samples: Sample[] = [];
   for (let t = DT; t <= untilMs; t += DT) {
+    if (stopWhenFinal && FINAL_PHASES.has(pin.phase)) break;
     pin = events(t, pin);
     const out = pinFrame(pin, t);
     pin = out.pin;
@@ -766,16 +777,25 @@ describe("the pin's pace never slows while it approaches (round-2 plan DEC-FR2-9
             { target: bernPose, landingM: 2 * KM, progress: 0 },
           );
           let waited = 0;
-          run(pin, 150_000, (t, p) => {
-            if (
-              p.phase === "approaching" &&
-              p.gateClockMs !== null &&
-              p.gateClockMs - p.clockMs < 50
-            ) {
-              waited += DT;
-            }
-            return pinProgress(p, t, profile(t / (dataS * 1000)));
-          });
+          // Waiting is only counted while approaching, so the run ends at a
+          // final phase: the sweep kept whole, the minutes after the landing
+          // not simulated (4.8 s on a loaded machine before, near the 30 s
+          // limit under a browser suite).
+          run(
+            pin,
+            150_000,
+            (t, p) => {
+              if (
+                p.phase === "approaching" &&
+                p.gateClockMs !== null &&
+                p.gateClockMs - p.clockMs < 50
+              ) {
+                waited += DT;
+              }
+              return pinProgress(p, t, profile(t / (dataS * 1000)));
+            },
+            { stopWhenFinal: true },
+          );
           if (waited > 200) {
             failures.push(
               `${startKm} km, ${name}, ${dataS} s: waited ${(waited / 1000).toFixed(1)} s`,
