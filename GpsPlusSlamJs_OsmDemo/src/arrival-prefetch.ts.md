@@ -17,8 +17,10 @@
     - `signal`: aborts it, like `abort()`.
   - `ArrivalPrefetch`:
     - `progress()` - 0 until the cache has been listed, then
-      `arrivalProgress(counts)`; 1 once settled or declined; frozen by an
-      abort. It can read 1 a few microtasks before `done` turns true (the
+      `arrivalProgress` over the DEM tiles and the landing's Overpass tiles
+      (`landingTiles`, DEC-AW-1): 1 once those settled, while the outer
+      ring's tiles may still load (`done` waits for them); 1 once settled or
+      declined; frozen by an abort. It can read 1 a few microtasks before `done` turns true (the
       last job settles, then the run finishes): treat 1 as "the wait is
       over" and `done` or `finished` as "the report is ready".
     - `done` - true once settled, declined or aborted.

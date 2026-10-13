@@ -19,9 +19,12 @@
 
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { latLngToCell } from "h3-js";
 import {
   MemoryBlobStore,
   PROGRESSIVE_RADII,
+  SCORE_CHUNK_RES,
+  fetchTilesForScoreWorkingSet,
   parseRuleTable,
   type LatLng,
   type OsmDataSource,
@@ -181,6 +184,33 @@ describe("arrivalPlanFor", () => {
         `?lat=${(target.lat + 0).toFixed(5)}&lng=${(target.lng + 0).toFixed(5)}`,
       ),
     );
+  });
+
+  // WHY (the owner, 2026-10-13, DEC-AW-1; the arrival findings
+  // 2026-10-13-1341): the flight waited for every Overpass tile, and on a
+  // day the public servers refuse, the outer ring held the landing for
+  // minutes. The landing needs the innermost ring only: the plan names
+  // those tiles, which come first in plan order (fetched first).
+  it("names the landing's tiles: the innermost ring's, first in plan order", () => {
+    for (const place of [
+      { lat: 50.9413, lng: 6.9583 },
+      { lat: 50.9, lng: 6.9511 },
+      { lat: 47.0502, lng: 8.3093 },
+    ]) {
+      const plan = arrivalPlanFor(place);
+      expect(plan.landingTiles.length).toBeGreaterThanOrEqual(1);
+      expect(plan.overpassTiles.slice(0, plan.landingTiles.length)).toEqual(
+        plan.landingTiles,
+      );
+      const chunk = latLngToCell(
+        plan.position.lat,
+        plan.position.lng,
+        SCORE_CHUNK_RES,
+      );
+      expect(new Set(plan.landingTiles)).toEqual(
+        new Set(fetchTilesForScoreWorkingSet(chunk, PROGRESSIVE_RADII[0])),
+      );
+    }
   });
 
   it("plans one to three Overpass tiles and a few DEM tiles per source", () => {

@@ -320,6 +320,70 @@ describe("one Overpass tile at a time, nearest first", () => {
   });
 });
 
+describe("the landing waits only for its own tiles", () => {
+  // WHY (the owner, 2026-10-13, DEC-AW-1; the arrival findings
+  // 2026-10-13-1341): the globe's flight paces on progress(). Measured on a
+  // cold arrival at Lucerne, the public Overpass servers refused for 209 s;
+  // the outer ring's tile held the landing all that time. Progress reaches 1
+  // once the DEM tiles and the landing's tiles settled; the outer tiles keep
+  // loading (done stays false until they settle too).
+  const OUTER = { lat: 50.9, lng: 6.9511 };
+  const plan = arrivalPlanFor(OUTER);
+
+  it("reaches 1 while an outer tile is still loading", async () => {
+    expect(plan.landingTiles.length).toBeLessThan(plan.overpassTiles.length);
+    const store = new MemoryBlobStore();
+    for (const url of plan.demUrls) await store.put(url, "AAAA");
+    const landingBoxes = plan.landingTiles.map((tile) => {
+      const [lat, lng] = cellToLatLng(tile);
+      return { lat, lng };
+    });
+    const isLanding = (init: RequestInit | undefined): boolean => {
+      const query =
+        new URLSearchParams(
+          typeof init?.body === "string" ? init.body : "",
+        ).get("data") ?? "";
+      const m = /\[bbox:([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\]/.exec(query);
+      if (m === null) return false;
+      const [s, w, n, e] = m.slice(1).map(Number) as [
+        number,
+        number,
+        number,
+        number,
+      ];
+      return landingBoxes.some(
+        ({ lat, lng }) => lat > s && lat < n && lng > w && lng < e,
+      );
+    };
+    const fetchImpl = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+      isLanding(init)
+        ? Promise.resolve(
+            new Response(JSON.stringify({ version: 0.6, elements: [] }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          )
+        : new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError")),
+            );
+          }),
+    ) as unknown as typeof fetch;
+
+    const prefetch = startArrivalPrefetch(OUTER, { store, fetchImpl });
+    for (let i = 0; i < 400 && prefetch.progress() < 1; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(prefetch.progress()).toBe(1);
+    expect(prefetch.done).toBe(false);
+    expect(prefetch.stats().counts.overpass.fetched).toBe(
+      plan.landingTiles.length,
+    );
+    prefetch.abort();
+    expect((await prefetch.finished).outcome).toBe("aborted");
+  });
+});
+
 describe("a store that cannot keep what it is given", () => {
   // Why: warming is worth ~21 MB of donated bandwidth a tile only if the
   // bytes stay. An OPFS store that is there but cannot write (quota, a

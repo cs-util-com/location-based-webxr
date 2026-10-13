@@ -102,7 +102,10 @@ export interface ArrivalPrefetchReport {
 export interface ArrivalPrefetch {
   /**
    * 0 to 1 from the real signals (`arrival-progress.ts`): 0 until the cache
-   * has been looked at, 1 when every job settled. Frozen by an abort.
+   * has been looked at, 1 when the DEM tiles and the landing's Overpass
+   * tiles (`landingTiles`) settled, while the outer ring's tiles may still
+   * load (DEC-AW-1: on a day the public servers refuse, the outer tile held
+   * the landing for minutes). Frozen by an abort. `done` waits for all.
    */
   progress(): number;
   /** True once it settled, declined or was aborted. */
@@ -168,6 +171,8 @@ export function startArrivalPrefetch(
   const startedAt = now();
   const controller = new AbortController();
   const counts = { overpass: tally(0), dem: tally(0) };
+  /** The landing's Overpass tiles only (`landingTiles`): the pace. */
+  const landing = tally(0);
   let looked = false;
   let inFlight = 0;
   let bytesStored = 0;
@@ -187,7 +192,9 @@ export function startArrivalPrefetch(
   const progress = (): number => {
     if (outcome === "aborted") return frozen;
     if (outcome !== undefined) return 1;
-    return looked ? arrivalProgress(snapshot()) : 0;
+    return looked
+      ? arrivalProgress({ overpass: { ...landing }, dem: { ...counts.dem } })
+      : 0;
   };
   const finish = (result: ArrivalPrefetchOutcome): void => {
     if (outcome !== undefined) return;
@@ -282,11 +289,22 @@ export function startArrivalPrefetch(
     const coldUrls = plan.demUrls.filter((url) => !keys.has(url));
     counts.overpass.total = plan.overpassTiles.length;
     counts.overpass.warm = plan.overpassTiles.length - coldTiles.length;
+    const landingSet = new Set(plan.landingTiles);
+    landing.total = plan.landingTiles.length;
+    landing.warm = plan.landingTiles.filter(
+      (tile) => !coldTiles.includes(tile),
+    ).length;
     counts.dem.total = plan.demUrls.length;
     counts.dem.warm = plan.demUrls.length - coldUrls.length;
     looked = true;
 
     const signal = controller.signal;
+    /** A job's end counted in `job` alone (no in-flight change). */
+    const settleOnly = (job: Tally, ok: boolean): void => {
+      if (outcome !== undefined) return;
+      if (ok) job.fetched += 1;
+      else job.failed += 1;
+    };
     const settle = (job: Tally, ok: boolean): void => {
       inFlight -= 1;
       if (outcome !== undefined) return;
@@ -303,8 +321,11 @@ export function startArrivalPrefetch(
           if (result.timings !== undefined) {
             overpassTimings.push({ ...result.timings, tile });
           }
-          settle(counts.overpass, !failedKeys.has(source.cacheKey(tile)));
+          const ok = !failedKeys.has(source.cacheKey(tile));
+          if (landingSet.has(tile)) settleOnly(landing, ok);
+          settle(counts.overpass, ok);
         } catch {
+          if (landingSet.has(tile)) settleOnly(landing, false);
           settle(counts.overpass, false);
         }
       }

@@ -47,6 +47,13 @@ export interface ArrivalPlan {
   readonly position: LatLng;
   /** The res-7 Overpass tiles of every ring, each once. */
   readonly overpassTiles: readonly string[];
+  /**
+   * The tiles the landing needs: the innermost ring's (`PROGRESSIVE_RADII`
+   * [0]), the first entries of `overpassTiles`, so fetched first. The
+   * globe's flight paces on these alone; the outer ring keeps loading after
+   * the landing (DEC-AW-1, the arrival findings 2026-10-13-1341).
+   */
+  readonly landingTiles: readonly string[];
   /** Every DEM tile URL of the arrival window, both sources, each once. */
   readonly demUrls: readonly string[];
 }
@@ -141,6 +148,11 @@ export function arrivalPlanFor(target: LatLng): ArrivalPlan {
   const position = { lat: asHandedOver(lat), lng: asHandedOver(lng) };
   const chunk = latLngToCell(position.lat, position.lng, SCORE_CHUNK_RES);
   const overpassTiles = new Set<string>();
+  const landingTiles = fetchTilesForScoreWorkingSet(
+    chunk,
+    PROGRESSIVE_RADII[0] ?? 0,
+  );
+  for (const tile of landingTiles) overpassTiles.add(tile);
   for (const radius of PROGRESSIVE_RADII) {
     for (const tile of fetchTilesForScoreWorkingSet(chunk, radius)) {
       overpassTiles.add(tile);
@@ -149,6 +161,7 @@ export function arrivalPlanFor(target: LatLng): ArrivalPlan {
   return {
     position,
     overpassTiles: [...overpassTiles],
+    landingTiles: [...new Set(landingTiles)],
     demUrls: demUrlsFor(position),
   };
 }

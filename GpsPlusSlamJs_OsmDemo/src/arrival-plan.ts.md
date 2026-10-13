@@ -5,7 +5,8 @@
   DEC-GL5-8): exactly what OsmDemo fetches at arrival with its default
   settings. Pure; no network.
 - Public API:
-  - `arrivalPlanFor(target)` -> `{ position, overpassTiles, demUrls }`:
+  - `arrivalPlanFor(target)` -> `{ position, overpassTiles, landingTiles,
+demUrls }`:
     - `position`: the target at five decimals, as OsmDemo's URL carries it
       and its `parseStartPosition` reads it back (a target
       a hair across a cell edge would otherwise plan the neighbouring tile);
@@ -14,6 +15,12 @@
       `PROGRESSIVE_RADII`, deduplicated (1-3 tiles, about 21 MB each when
       cold). Not the six background neighbours: OsmDemo's own prefetch
       queue pulls those after arrival;
+    - `landingTiles`: the innermost ring's tiles
+      (`PROGRESSIVE_RADII[0]`), the first entries of `overpassTiles` and so
+      fetched first; the globe's flight paces on these alone, the outer
+      ring keeps loading after the landing (DEC-AW-1: on a cold arrival at
+      Lucerne the public servers refused for 209 s and the outer tile held
+      the landing; `GpsPlusSlamJs_Docs/docs/2026-10-13-1341-arrival-13-of-14-tiles-findings.md`);
     - `demUrls`: every z13 tile URL the fresh terrain field requests for
       the arrival window (`TERRAIN_EXTENT_M` through `terrainWindowFor` and
       `latticeWindow`), for both arms of the DEM race
