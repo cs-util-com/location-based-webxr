@@ -24,11 +24,14 @@ import { describe, expect, it } from "vitest";
 
 import { cloudVolumeShare } from "./globe-cloud-volume.js";
 import {
+  CLOUD_HIGH_LAYER,
   CLOUD_SHELL_VOLUME,
   GLOBE_CLOUD_SHELL_GLSL,
   type CloudShellStation,
   cloudShellFieldLiftKm,
+  cloudLayerOver,
   cloudShellFieldWeights,
+  cloudShellLayerLiftsKm,
   cloudShellLocalLiftKm,
   cloudShellNoiseCascade,
   cloudShellPixelWeight,
@@ -708,5 +711,106 @@ describe("cloudShellLocalLiftKm", () => {
       RangeError,
     );
     expect(() => cloudShellLocalLiftKm([0, 0], [1, -1])).toThrow(RangeError);
+  });
+});
+
+describe("cloudShellLayerLiftsKm", () => {
+  // WHY (round-5 plan §11, DEC-R5-5, the owner's B): with two real layers
+  // each field draws its own column at its own height. A field must keep
+  // its height in both pairs it belongs to, or the clouds jump up or down
+  // where one pair hands to the next; the slab's own field stays at 0 (C4).
+  const cascadeOf = (km: number) =>
+    cloudShellNoiseCascade(km, {
+      topKm: 1_050,
+      bottomKm: 40,
+      fields: 3,
+      topScale: 4,
+    });
+  const options = { stepKm: 5, fields: 3, topScale: 4 };
+
+  it("puts each field a whole number of steps up, the slab's own at 0", () => {
+    expect(cloudShellLayerLiftsKm(cascadeOf(1_050), options)[0]).toBeCloseTo(
+      15,
+      9,
+    );
+    expect(cloudShellLayerLiftsKm(cascadeOf(40), options)[0]).toBe(0);
+    for (let km = 1_050; km >= 40; km /= 1.05) {
+      for (const lift of cloudShellLayerLiftsKm(cascadeOf(km), options)) {
+        expect(Math.abs(lift / 5 - Math.round(lift / 5))).toBeLessThan(1e-9);
+      }
+    }
+  });
+
+  it("keeps a field's height as the pair it is in changes", () => {
+    // Every lift each field was given on the way down, by its scale.
+    const seen = new Map<number, number[]>();
+    for (let km = 1_050; km >= 40; km /= 1.02) {
+      const cascade = cascadeOf(km);
+      const lifts = cloudShellLayerLiftsKm(cascade, options);
+      cascade.fields.forEach(({ scale }, k) => {
+        const key = Math.round(scale * 1e6);
+        seen.set(key, [...(seen.get(key) ?? []), lifts[k] ?? Number.NaN]);
+      });
+    }
+    expect(seen.size).toBe(4);
+    const spreads = [...seen.values()].map(
+      (ls) => Math.max(...ls) - Math.min(...ls),
+    );
+    expect(Math.max(...spreads)).toBeLessThan(1e-9);
+  });
+
+  it("is 0 everywhere at a step of 0 and refuses a step below 0", () => {
+    expect(
+      cloudShellLayerLiftsKm(cascadeOf(300), { ...options, stepKm: 0 }),
+    ).toEqual([0, 0]);
+    expect(() =>
+      cloudShellLayerLiftsKm(cascadeOf(300), { ...options, stepKm: -1 }),
+    ).toThrow(RangeError);
+  });
+});
+
+describe("CLOUD_HIGH_LAYER", () => {
+  // WHY (round-5 plan §11, DEC-R5-6, the owner's A): a thin, wispy, coarse
+  // layer well above the clouds, so clouds sit over clouds at every height.
+  it("sits well above the deck, coarse, wispy and thinner than the map", () => {
+    expect(CLOUD_HIGH_LAYER.altitudeKm).toBe(9);
+    expect(CLOUD_HIGH_LAYER.cellScale).toBe(6);
+    expect(CLOUD_HIGH_LAYER.noiseShare).toBeLessThan(0.5);
+    expect(CLOUD_HIGH_LAYER.cover).toBeLessThan(1);
+    // Its own patch of the lattice, not any cascade field's.
+    expect(CLOUD_HIGH_LAYER.offsetCells).not.toEqual([0, 0]);
+  });
+});
+
+describe("cloudLayerOver", () => {
+  // WHY: the high layer is a separate drawing, put in front of the clouds
+  // from above and behind them from below. Premultiplied "over": an opaque
+  // front hides the back, a clear front shows it, the alpha never passes 1,
+  // and the order matters (the reason the composite picks it by height).
+  it("lays a premultiplied front over a back", () => {
+    const red = [0.8, 0, 0, 0.8] as const;
+    const blue = [0, 0, 0.5, 0.5] as const;
+    expect(cloudLayerOver([1, 1, 1, 1], blue)).toEqual([1, 1, 1, 1]);
+    expect(cloudLayerOver([0, 0, 0, 0], blue)).toEqual([0, 0, 0.5, 0.5]);
+    const a = cloudLayerOver(red, blue);
+    const b = cloudLayerOver(blue, red);
+    expect(a[3]).toBeCloseTo(0.9, 12);
+    expect(b[3]).toBeCloseTo(0.9, 12);
+    expect(a[0]).toBeGreaterThan(b[0]);
+    expect(a[2]).toBeLessThan(b[2]);
+  });
+
+  it("never passes an alpha of 1", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (fa, ba) => {
+          const out = cloudLayerOver([fa, fa, fa, fa], [ba, ba, ba, ba]);
+          expect(out[3]).toBeLessThanOrEqual(1 + 1e-12);
+          expect(out[3]).toBeGreaterThanOrEqual(Math.max(fa, ba) - 1e-12);
+        },
+      ),
+    );
   });
 });

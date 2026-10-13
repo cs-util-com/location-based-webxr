@@ -675,6 +675,12 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   (round-5 plan §10, the owner's step 1: clouds at several heights);
   `cloudShellLiftSteps` (4; 1-4) the march steps' factor while it is on,
   up to the loop's 12 (fewer drew toothed cloud edges);
+  `cloudShellLayers` (0; 1 B, round-5 plan §11: the two blended fields as
+  two layers) and `cloudShellLayerKm` (5; 0-30, the height per cascade
+  step); `cloudHigh` (0; 1 A: a persistent high layer), `cloudHighKm` (9;
+  3-20), `cloudHighCell` (6; 1-16), `cloudHighCover` (0.35; 0-1.5) and
+  `cloudHighShare` (0.3; 0.05-1, lower is wispier); the alpha grid adds
+  `high` and `layered`;
   `cloudFlatOutFromKm` (900) and `cloudFlatOutToKm` (700) the texture's own
   fade with the shell (C5: the volume already strong when the texture
   goes; clamped above the slab's ceiling and falling);

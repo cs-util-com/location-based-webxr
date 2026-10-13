@@ -112,6 +112,24 @@ radiusM }` from its state, the centre null on the camera, where its flat
   lift is on the steps are `steps` x the law's (4 by default), up to the
   loop's 12: at 1 the cloud edges were found km apart and the jitter drew
   them toothed (screenshots at 150 km, factors 1 / 2 / 4).
+- B, two layers (round-5 plan §11, DEC-R5-5; off by default): the node
+  carries two columns (`vec2`), and `update`'s `layers` `{ on, stepKm,
+fields }` makes each blended field draw its own column, the field alone
+  at its full spread, on its own base (`cloudShellLayerLiftsKm`); the march
+  integrates each column's segment (`shellSegment`, the coarser first) at
+  its field's weight (cos, sin). Off, the one summed column as before.
+- A, the high layer (§11, DEC-R5-6; off by default): `update`'s
+  `highLayer` `{ on, altitudeKm, cellScale, cover, noiseShare }`; `render`
+  marches it a second time into its own target with the deck, the field
+  (its own basis from the carried anchor), the look and the steps swapped
+  (`marchHighLayer`, every swapped uniform put back), drawn also from
+  below (`uBothSides`: a rising ray counts, and a ray that meets the ground
+  first ends there; it was drawn through the Earth below the horizon,
+  0.19 alpha there, measured). The composite lays it over the clouds at
+  full strength wherever the shell draws, in front from above its middle
+  and behind from below (premultiplied over, `cloudLayerOver`).
+  `alphaGrid(nx, ny, "high")` reads its target; `state().high` and
+  `state().layered` report them.
 - No aerial fade above the slab's ceiling (round-5 C3: it made the clouds
   see-through from high up, 0.68 straight down at 100 km); below it the
   fade's strength is the slab's share, as the slab's own

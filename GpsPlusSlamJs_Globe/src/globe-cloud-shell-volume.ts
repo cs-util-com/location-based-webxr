@@ -543,6 +543,88 @@ export function cloudShellLocalLiftKm(
 }
 
 /**
+ * The two layers' heights over the deck, km, when each of the cascade's two
+ * fields draws its own column (round-5 plan §11, DEC-R5-5, the owner's B):
+ * a field `stepKm` per cascade step above the slab's own (the field of
+ * scale `topScale` at `stepKm` x `fields`, the slab's at 0), so a field
+ * keeps its height in both pairs it belongs to. The second is the first's
+ * where the cascade has one field.
+ *
+ * @throws RangeError for a step below 0, fields not a positive integer, or
+ *   what `cloudShellFieldLiftKm` refuses.
+ */
+export function cloudShellLayerLiftsKm(
+  cascade: CloudShellNoiseCascade,
+  options: {
+    readonly stepKm: number;
+    readonly fields: number;
+    readonly topScale: number;
+  },
+): [number, number] {
+  const { stepKm, fields, topScale } = options;
+  if (!(stepKm >= 0 && Number.isFinite(stepKm))) {
+    throw new RangeError(`the step must be at least 0, got ${stepKm}`);
+  }
+  if (!(Number.isInteger(fields) && fields > 0)) {
+    throw new RangeError(`fields must be a positive integer, got ${fields}`);
+  }
+  const lift = (scale: number) =>
+    cloudShellFieldLiftKm(scale, { liftKm: stepKm * fields, topScale });
+  const first = cascade.fields[0];
+  if (first === undefined) throw new RangeError("the cascade has no field");
+  const second = cascade.fields[1] ?? first;
+  return [lift(first.scale), lift(second.scale)];
+}
+
+/**
+ * The persistent high layer (round-5 plan §11, DEC-R5-6, the owner's A): a
+ * thin coarse deck well above the clouds, present at every altitude the
+ * shell draws, so clouds sit over clouds. `altitudeKm` its middle over the
+ * ground; `cellScale` its one field's cells over the slab's; `offsetCells`
+ * its own patch of the lattice; `noiseShare` below 1 for flat, translucent
+ * (wispy) columns; `cover` its share of the map's cover; `thicknessScale`
+ * its deck's (the slab's 400 m column times this).
+ */
+export const CLOUD_HIGH_LAYER = {
+  altitudeKm: 9,
+  cellScale: 6,
+  offsetCells: [311, 211] as const,
+  noiseShare: 0.3,
+  cover: 0.35,
+  thicknessScale: 1,
+} as const;
+
+/**
+ * Premultiplied "over": `front` laid on `back`, each `[r, g, b, a]` with
+ * the colour premultiplied by the alpha. GLSL twin: the lab's composite,
+ * which puts the high layer in front of the clouds from above and behind
+ * them from below.
+ *
+ * @throws RangeError for an alpha outside 0..1 or a value that is not
+ *   finite.
+ */
+export function cloudLayerOver(
+  front: readonly [number, number, number, number],
+  back: readonly [number, number, number, number],
+): [number, number, number, number] {
+  for (const c of [...front, ...back]) {
+    if (!Number.isFinite(c)) {
+      throw new RangeError(`colours must be finite, got ${c}`);
+    }
+  }
+  if (!(front[3] >= 0 && front[3] <= 1 && back[3] >= 0 && back[3] <= 1)) {
+    throw new RangeError(`alphas must be in 0..1, got ${front[3]}, ${back[3]}`);
+  }
+  const keep = 1 - front[3];
+  return [
+    front[0] + keep * back[0],
+    front[1] + keep * back[1],
+    front[2] + keep * back[2],
+    front[3] + keep * back[3],
+  ];
+}
+
+/**
  * What the chart and the map read need of the world frame: the frame
  * (`worldFromEcefAt` at the target: x east, y up, z south, metres, the
  * origin on the ground), the ellipsoid's radii (m), the model sphere's

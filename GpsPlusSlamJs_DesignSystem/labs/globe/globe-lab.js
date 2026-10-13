@@ -39,6 +39,7 @@ import {
   cloudDriftDegPerS,
 } from "/globe/globe-cloud-drift.js";
 import {
+  CLOUD_HIGH_LAYER,
   CLOUD_SHELL_VOLUME,
   cloudShellNoiseCascade,
   cloudShellStationsFor,
@@ -654,6 +655,18 @@ const PARAMS = {
   // The march steps' factor while the lift is on, up to the loop's 12
   // (4: at 150 km a lift of 10 km drew toothed edges at 1, fewer at 2).
   cloudShellLiftSteps: { fallback: 4, min: 1, max: 4 },
+  // B (round-5 plan §11): 1 draws the two blended fields as two layers,
+  // each `cloudShellLayerKm` per cascade step above the slab's own.
+  cloudShellLayers: { fallback: 0, min: 0, max: 1 },
+  cloudShellLayerKm: { fallback: 5, min: 0, max: 30 },
+  // A (round-5 plan §11): 1 adds a persistent high layer at
+  // `cloudHighKm`, one coarse field (`cloudHighCell`), its cover
+  // `cloudHighCover` of the map's, wispy by `cloudHighShare`.
+  cloudHigh: { fallback: 0, min: 0, max: 1 },
+  cloudHighKm: { fallback: CLOUD_HIGH_LAYER.altitudeKm, min: 3, max: 20 },
+  cloudHighCell: { fallback: CLOUD_HIGH_LAYER.cellScale, min: 1, max: 16 },
+  cloudHighCover: { fallback: CLOUD_HIGH_LAYER.cover, min: 0, max: 1.5 },
+  cloudHighShare: { fallback: CLOUD_HIGH_LAYER.noiseShare, min: 0.05, max: 1 },
   // The shell's deck flat where the slab draws (round-5 C4; 0 the sphere's
   // everywhere, for the A/B and the smoke's control).
   cloudShellFlat: { fallback: 1, min: 0, max: 1 },
@@ -3489,6 +3502,18 @@ async function start() {
           topScale: params.cloudShellCell,
           steps: params.cloudShellLiftSteps,
         },
+        layers: {
+          on: params.cloudShellLayers === 1,
+          stepKm: params.cloudShellLayerKm,
+          fields: Math.round(params.cloudShellFields),
+        },
+        highLayer: {
+          on: params.cloudHigh === 1,
+          altitudeKm: params.cloudHighKm,
+          cellScale: params.cloudHighCell,
+          cover: params.cloudHighCover,
+          noiseShare: params.cloudHighShare,
+        },
       });
     }
     globe.sun.intensity = skyHandOver.exposure;
@@ -4522,6 +4547,9 @@ void main() {
         weight: s.share,
         slabWeight: s.slabWeight,
         shell: s.share > 0 ? shellVolume.alphaGrid(nx, ny) : null,
+        // The high layer's own drawing (round-5 plan §11, A), and B's flag.
+        high: s.high ? shellVolume.alphaGrid(nx, ny, "high") : null,
+        layered: s.layered,
         slab:
           s.slabWeight > 0 && cloudVolume.state().share > 0
             ? cloudVolume.alphaGrid(nx, ny)

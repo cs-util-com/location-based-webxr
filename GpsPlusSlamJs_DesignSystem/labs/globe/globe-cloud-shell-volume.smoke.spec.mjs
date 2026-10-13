@@ -450,10 +450,11 @@ test("the lift moves the coarse clouds up and keeps their strength", async ({
 });
 
 // The see-through measure of C3 at the lifts the owner may pick (round-5
-// plan §10): straight down over the ocean, 300 to 45 km in 8 % steps, the
-// weakest mean alpha against the top's at lifts 0 / 5 / 10 / 20 km. Opt-in
+// plan §10) and with B's two layers (§11): straight down over the ocean,
+// 300 to 45 km in 8 % steps, the weakest mean alpha against the top's at
+// lifts 0 / 5 / 10 / 20 km and with the layers 5 / 10 km a step. Opt-in
 // (R5_LIFT_SWEEP=1): a measurement for the owner, not a gate.
-test("the see-through measure at lifts 0, 5, 10 and 20 km", async ({
+test("the see-through measure at lifts 0, 5, 10 and 20 km and with the layers", async ({
   page,
 }) => {
   test.skip(process.env.R5_LIFT_SWEEP !== "1", "R5_LIFT_SWEEP=1 runs it");
@@ -464,11 +465,18 @@ test("the see-through measure at lifts 0, 5, 10 and 20 km", async ({
     { phase: "user" },
   );
   const lines = [];
-  for (const lift of [0, 5, 10, 20]) {
+  const settings = [
+    ...[0, 5, 10, 20].map((km) => [`lift ${km} km`, `&cloudShellLiftKm=${km}`]),
+    ...[5, 10].map((km) => [
+      `layers ${km} km a step`,
+      `&cloudShellLayers=1&cloudShellLayerKm=${km}`,
+    ]),
+  ];
+  for (const [label, extra] of settings) {
     const { local } = await descend(page, {
       from: 300,
       to: 45,
-      extra: `&cloudShellLiftKm=${lift}`,
+      extra,
       factor: 1.08,
     });
     const top = local[0].alpha;
@@ -476,11 +484,91 @@ test("the see-through measure at lifts 0, 5, 10 and 20 km", async ({
       Math.min(...local.map((x) => x.alpha)) / Math.max(top, 1e-4);
     const weakestAt = local.reduce((w, x) => (x.alpha < w.alpha ? x : w)).km;
     lines.push(
-      `lift ${lift} km: weakest x${weakest.toFixed(2)} at ${weakestAt.toFixed(0)} km (${[0.7, 0.85, 0.95].map((k) => `${k} ${weakest >= k ? "ok" : "NO"}`).join(" ")})`,
+      `${label}: weakest x${weakest.toFixed(2)} at ${weakestAt.toFixed(0)} km (${[0.7, 0.85, 0.95].map((k) => `${k} ${weakest >= k ? "ok" : "NO"}`).join(" ")})`,
     );
   }
   console.log(`see-through, 300 to 45 km straight down: ${lines.join("; ")}`);
   expect(errors).toEqual([]);
+});
+
+// WHY (round-5 plan §11, DEC-R5-5, the owner's B): with the layers on,
+// the two blended fields draw two columns at their own heights, so a coarse
+// cloud can sit over a fine one. At 150 km looking ahead (two fields
+// mixed) the drawing must change against the one summed column, and the
+// clouds must not turn see-through (each layer at its field's weight).
+test("the two layers draw over each other and keep the clouds' strength", async ({
+  page,
+}) => {
+  test.setTimeout(600_000);
+  const pose = (extra) =>
+    `${BASE}&view=${PLACES.ocean},150,0,-20&cloudShellVolume=1${extra}`;
+  const errors = await bootGlobe(page, pose(""), { phase: "user" });
+  const grid = async (extra) => {
+    await applyHash(page, pose(extra));
+    await page.evaluate(() => window.__globeLab.timeFrames(2));
+    const x = await page.evaluate(
+      ({ nx, ny }) => window.__globeLab.cloudShellAlphaGrid(nx, ny),
+      { nx: NX, ny: NY },
+    );
+    return { alpha: mixOf(x), layered: x.layered };
+  };
+  const one = await grid("");
+  const two = await grid("&cloudShellLayers=1");
+  const moved = meanAbs(two.alpha, one.alpha);
+  const strength = mean(two.alpha) / Math.max(mean(one.alpha), 1e-4);
+  console.log(
+    `layers at 150 km looking ahead: moved ${moved.toFixed(3)}, strength x${strength.toFixed(2)} (one column ${mean(one.alpha).toFixed(3)})`,
+  );
+  expect(errors).toEqual([]);
+  expect(one.layered).toBe(false);
+  expect(two.layered).toBe(true);
+  expect(moved).toBeGreaterThan(0.05);
+  expect(strength).toBeGreaterThan(0.85);
+});
+
+// WHY (round-5 plan §11, DEC-R5-6, the owner's A): the high layer is drawn
+// from above (at 150 km, in front of the clouds) and from below (at 2 km
+// looking just above the horizon, behind them, the deck seen from below),
+// at full strength near the ground where the shell itself hands to the
+// slab; and a ray that meets the ground first ends there (it was drawn
+// through the Earth below the horizon). The order flips at its height.
+test("the high layer draws from above and below, in front and behind", async ({
+  page,
+}) => {
+  test.setTimeout(900_000);
+  const errors = await bootGlobe(
+    page,
+    `${BASE}&view=${PLACES.ocean},150,0,-20&cloudShellVolume=1&cloudHigh=1`,
+    { phase: "user" },
+  );
+  const read = async () => {
+    await page.evaluate(() => window.__globeLab.timeFrames(2));
+    return page.evaluate(
+      ({ nx, ny }) => ({
+        grid: window.__globeLab.cloudShellAlphaGrid(nx, ny),
+        high: window.__globeLab.state().cloudShellVolume.high,
+      }),
+      { nx: NX, ny: NY },
+    );
+  };
+  const above = await read();
+  await applyHash(
+    page,
+    `${BASE}&view=${PLACES.ocean},2,0,8&cloudShellVolume=1&cloudHigh=1`,
+  );
+  const below = await read();
+  // The bottom quarter of the frame looks below the horizon (pitch 8, fovY 50).
+  const rows = Math.floor(NY / 4);
+  const underHorizon = below.grid.high.slice(0, rows * NX);
+  console.log(
+    `high layer: from 150 km mean alpha ${mean(above.grid.high).toFixed(3)} in front ${above.high.inFront}; from 2 km ${mean(below.grid.high).toFixed(3)} in front ${below.high.inFront}, below the horizon ${mean(underHorizon).toFixed(4)}`,
+  );
+  expect(errors).toEqual([]);
+  expect(mean(above.grid.high)).toBeGreaterThan(0.05);
+  expect(above.high.inFront).toBe(true);
+  expect(mean(below.grid.high)).toBeGreaterThan(0.05);
+  expect(below.high.inFront).toBe(false);
+  expect(mean(underHorizon)).toBeLessThan(0.01);
 });
 
 // WHY (round-5 plan 2026-10-12-0612 C4; the owner on r822: "at about 30 km

@@ -89,6 +89,22 @@ noiseShare, ceilingKm })`: the law's stations from a page's knobs (the
   both are near 0). Only the base moves, never the column's length (its
   opacity). GLSL twin: the lab's `shellNoise`. RangeError for an anomaly
   that is not finite or a lift below 0.
+- `cloudShellLayerLiftsKm(cascade, { stepKm, fields, topScale })` (round-5
+  plan §11, DEC-R5-5, the owner's B): the two layers' heights over the
+  deck when each of the cascade's two fields draws its own column: a field
+  `stepKm` per cascade step above the slab's own, so it keeps its height in
+  both pairs it belongs to (no jump between pairs); the second the
+  first's at the bottom. RangeError for a step below 0 or fields that are
+  not a positive integer.
+- `CLOUD_HIGH_LAYER` (§11, DEC-R5-6, the owner's A): the persistent high
+  layer's defaults: `altitudeKm` 9 (its middle over the ground),
+  `cellScale` 6, `offsetCells` [311, 211] (its own patch of the lattice),
+  `noiseShare` 0.3 (flat, translucent columns), `cover` 0.35 of the map's
+  (0.6 read as a veil over everything from 150 km), `thicknessScale` 1.
+- `cloudLayerOver(front, back)`: premultiplied "over" of two `[r, g, b,
+a]`; the lab's composite puts the high layer in front from above and
+  behind from below. RangeError for an alpha outside 0..1 or a value that
+  is not finite.
 - `cloudShellVolumeShares(altitudeKm, { topKm, bandKm?, ceilingKm, fadeKm })`:
   `{ shellIn, flat, shell, slab }`, who draws the clouds: the slab its
   share (`cloudVolumeShare`), the shell `shellIn x (1 - slab)` (`shellIn`
@@ -175,7 +191,10 @@ const { uv, chartKm } = cloudShellColumn([4000, 600, 4700], frame, 0);
   fixed scales falling and distinct offsets, refusals); the lift (the top
   field full, the slab's none, the log between, off by default; the local
   lift by the anomaly's shares, between the two and continuous,
-  refusals).
+  refusals); the layers' heights (whole steps, the slab's at 0, a field's
+  height kept as its pair changes, refusals); the high layer's defaults;
+  the premultiplied over (opaque front, clear front, order, alpha never
+  past 1).
 - `globe-cloud-shell-volume.property.test.ts`: the map at the ellipsoid's
   own latitude and longitude with the drift; the chart near the origin
   against `worldFromEcefAt`; the ground distance far out; the recentre
