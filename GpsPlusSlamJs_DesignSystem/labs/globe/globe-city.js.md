@@ -13,7 +13,9 @@ roadLiftM?, roadOffset? })` →
   - `load({ lat, lng }, { zoom, fresh? })`: loads and builds the city at a
     place, its heights at the relief's zoom (round-4 plan 2026-10-11-0122
     §5: one load is the warm-up and the build), and returns a handle in the
-    old arrival prefetch's shape: `progress()`, `done`, `finished`
+    old arrival prefetch's shape: `progress()` (the first delivery's jobs,
+    the library's `landingProgress`: the flight lands once the first ring
+    is in while the outer rings keep loading, DEC-AW-1), `done`, `finished`
     (resolves `{ outcome, counts, ... }` once every job was tried once),
     `stats()` (`{ counts, inFlight, bytesStored }`) and `abort()` (stops
     the worker's load). The same place while its load runs or ended

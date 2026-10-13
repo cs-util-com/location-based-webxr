@@ -16,7 +16,9 @@
  * load, or `{ kind: "abort", id }`, stops the one before. Replies, each
  * carrying its `id`:
  *
- * - `{ kind: "progress", counts, progress }` after each settled job;
+ * - `{ kind: "progress", counts, progress, landing }` after each settled
+ *   job (`landing` the library's `landingProgress`: the first delivery's
+ *   jobs only, what the flight paces on, DEC-AW-1);
  * - `{ kind: "city", ok: true, stage, buildings, trees, roads, counts,
  *   groundM }` after the first ring, after every ring and after a retry
  *   that brought something new (`buildCity` on the delivered features and
@@ -92,8 +94,8 @@ async function start(id, target, zoom, firstRings) {
     heightFetch: createCachingTileFetch({ store }),
     decodePng: browserPngDecoder(),
     firstRings,
-    onProgress: (counts, progress) =>
-      self.postMessage({ id, kind: "progress", counts, progress }),
+    onProgress: (counts, progress, landing) =>
+      self.postMessage({ id, kind: "progress", counts, progress, landing }),
     onData: (data) => {
       const startedAt = performance.now();
       const city = buildCity(data.features, data.ground, {

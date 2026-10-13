@@ -11,7 +11,9 @@
   - in: `{ kind: "load", id, target: { lat, lng }, zoom, firstRings? }`
     (`zoom` the relief's, `GLOBE_TERRAIN.maxZoom`, so the two cannot drift;
     `firstRings` default 1); `{ kind: "abort", id }`;
-  - out: `{ kind: "progress", counts, progress }` after each settled job
+  - out: `{ kind: "progress", counts, progress, landing }` after each
+    settled job (`landing`: the library's `landingProgress`, the first
+    delivery's jobs only, what the flight paces on, DEC-AW-1)
     (the library's `cityLoadProgress`, the counts as the pin's status line
     reads them);
   - out: `{ kind: "city", ok: true, stage, buildings, trees, roads, counts,

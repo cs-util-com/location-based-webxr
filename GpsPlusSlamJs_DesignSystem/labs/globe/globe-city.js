@@ -190,7 +190,10 @@ export function createGlobeCity({
     const load = current;
     if (reply.kind === "progress") {
       load.counts = reply.counts;
-      load.progress = reply.progress;
+      // The flight paces on the first delivery's jobs (DEC-AW-1): the outer
+      // rings keep loading after the landing.
+      load.progress = reply.landing ?? reply.progress;
+      load.fullProgress = reply.progress;
       return;
     }
     if (reply.kind === "settled" || reply.kind === "finished") {

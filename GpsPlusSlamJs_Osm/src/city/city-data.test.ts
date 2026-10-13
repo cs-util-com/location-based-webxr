@@ -232,18 +232,22 @@ function fakeSource(
     failing?: Readonly<Record<string, number>>;
     rateLimited?: boolean;
     hang?: boolean;
+    /** Only these tiles never answer (until an abort). */
+    hangTiles?: readonly string[];
   } = {},
 ): FakeSource {
   const asked: string[] = [];
   const failuresLeft = new Map(Object.entries(options.failing ?? {}));
   const ids = new Map<string, number>();
+  const hangs = (tile: string): boolean =>
+    options.hang === true || (options.hangTiles?.includes(tile) ?? false);
   return {
     attribution: "test",
     sourceId: "fixture:city-data",
     asked,
     fetchTile: (tile, opts) => {
       asked.push(tile);
-      if (options.hang) {
+      if (hangs(tile)) {
         return new Promise((_resolve, reject) => {
           opts?.signal?.addEventListener("abort", () => {
             const error = new Error("Aborted");
@@ -455,6 +459,51 @@ describe("loadCityData", () => {
       expect(progress[i]).toBeGreaterThanOrEqual(progress[i - 1] ?? 0);
     }
     expect(progress.slice(0, -1).every((p) => p < 1)).toBe(true);
+  });
+
+  // WHY (the owner, 2026-10-13, DEC-AW-1; GpsPlusSlamJs_Docs/docs/
+  // 2026-10-13-1341-arrival-13-of-14-tiles-findings.md): the globe's flight
+  // paced on every tile, and on a cold arrival at Lucerne the public
+  // Overpass servers refused for 209 s, so the outer ring held the landing.
+  // The landing needs the first delivery only: the heights and the first
+  // rings' tiles. landingProgress reaches 1 with those in while an outer
+  // tile still loads; progress (every job) does not.
+  it("its landing progress reaches 1 with the first rings in, while an outer tile still loads", async () => {
+    const plan = multiTilePlan();
+    const outer = plan.rings.slice(1).flatMap((r) => r.tiles);
+    expect(outer.length).toBeGreaterThan(0);
+    const landing: number[] = [];
+    const load = loadCityData(plan, {
+      source: fakeSource({ hangTiles: outer }),
+      heightFetch: fakeHeights().fetch,
+      decodePng: decodeFlat,
+      onData: () => undefined,
+      onProgress: (_counts, _progress, landingProgress) =>
+        landing.push(landingProgress),
+      sleep: () => Promise.resolve(),
+    });
+    for (let i = 0; i < 200 && load.landingProgress() < 1; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    expect(load.landingProgress()).toBe(1);
+    expect(load.progress()).toBeLessThan(1);
+    expect(load.done).toBe(false);
+    expect(landing.at(-1)).toBe(1);
+    for (let i = 1; i < landing.length; i++) {
+      expect(landing[i]).toBeGreaterThanOrEqual(landing[i - 1] ?? 0);
+    }
+    load.abort();
+  });
+
+  it("its landing progress is the progress when the first rings are every ring", async () => {
+    const plan = multiTilePlan();
+    const { load } = await run(plan, {
+      source: fakeSource(),
+      heightFetch: fakeHeights().fetch,
+      firstRings: plan.rings.length,
+    });
+    expect(load.landingProgress()).toBe(1);
+    expect(load.progress()).toBe(1);
   });
 
   it("asks again for a tile that failed, and delivers the city again with it", async () => {

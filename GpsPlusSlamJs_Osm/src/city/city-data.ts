@@ -316,6 +316,14 @@ export interface CityLoadReport {
 export interface CityLoad {
   /** 0 to 1 (`cityLoadProgress`): 1 once every job was tried once. */
   progress(): number;
+  /**
+   * 0 to 1 over what the first delivery needs: the heights and the first
+   * rings' tiles; 1 once those were tried, while the outer rings may still
+   * load. What a flight paces on (DEC-AW-1: on a cold arrival at Lucerne
+   * the public servers refused for 209 s and the outer ring held the
+   * landing). Equal to `progress` when the first rings are every ring.
+   */
+  landingProgress(): number;
   counts(): CityLoadCounts;
   /** True once it settled or was aborted. */
   readonly done: boolean;
@@ -339,8 +347,12 @@ export interface CityLoadOptions {
   readonly decodePng: PngDecoder;
   /** Each delivery; never called after an abort. */
   readonly onData: (data: CityData) => void;
-  /** After each settled job, with the counts and the progress. */
-  readonly onProgress?: (counts: CityLoadCounts, progress: number) => void;
+  /** After each settled job, with the counts and both progresses. */
+  readonly onProgress?: (
+    counts: CityLoadCounts,
+    progress: number,
+    landingProgress: number,
+  ) => void;
   readonly signal?: AbortSignal;
   /** Rings loaded before the first delivery, at least 1. Default 1. */
   readonly firstRings?: number;
@@ -567,10 +579,17 @@ export function loadCityData(
   const signal = controller.signal;
   let outcome: CityLoadReport["outcome"] | undefined;
   let frozen = 0;
+  let frozenLanding = 0;
   const changed = (): void => {
-    if (outcome === undefined) options.onProgress?.(snapshot(), progress());
+    if (outcome === undefined) {
+      options.onProgress?.(snapshot(), progress(), landingProgress());
+    }
   };
+  const firstTiles = plan.rings.slice(0, firstRings).flatMap((r) => r.tiles);
+  const restTiles = plan.rings.slice(firstRings).flatMap((r) => r.tiles);
+  const firstSet = new Set(firstTiles);
   const tileJobs = jobTally(plan.overpassTiles.length, changed);
+  const landingJobs = jobTally(firstTiles.length, () => undefined);
   const heightJobs = jobTally(plan.heightUrls.length, changed);
   const snapshot = (): CityLoadCounts => ({
     overpass: { ...tileJobs.counts },
@@ -578,6 +597,14 @@ export function loadCityData(
   });
   const progress = (): number =>
     outcome === "aborted" ? frozen : cityLoadProgress(snapshot());
+  const landingProgress = (): number => {
+    if (outcome === "aborted") return frozenLanding;
+    if (outcome !== undefined) return 1;
+    return cityLoadProgress({
+      overpass: { ...landingJobs.counts },
+      dem: { ...heightJobs.counts },
+    });
+  };
   const heights = cityHeights(
     plan,
     urlTemplate,
@@ -587,7 +614,11 @@ export function loadCityData(
   );
   const tiles = cityTiles(
     options.source,
-    (tile, state) => tileJobs.settle(tile, state),
+    (tile, state) => {
+      // The landing's tally first: `changed` (from the full one) reports both.
+      if (firstSet.has(tile)) landingJobs.settle(tile, state);
+      tileJobs.settle(tile, state);
+    },
     signal,
   );
 
@@ -629,6 +660,7 @@ export function loadCityData(
   const finish = (result: CityLoadReport["outcome"]): void => {
     if (outcome !== undefined) return;
     frozen = progress();
+    frozenLanding = landingProgress();
     outcome = result;
     const last = report(result);
     resolveFirstPass(last);
@@ -640,8 +672,6 @@ export function loadCityData(
     // Awaited below; until then a rejection (an abort) must not read as
     // unhandled.
     heightsReady.catch(() => undefined);
-    const firstTiles = plan.rings.slice(0, firstRings).flatMap((r) => r.tiles);
-    const restTiles = plan.rings.slice(firstRings).flatMap((r) => r.tiles);
     for (const tile of firstTiles) await tiles.load(tile);
     await heightsReady;
     if (restTiles.length > 0) deliver("first");
@@ -684,6 +714,7 @@ export function loadCityData(
 
   return {
     progress,
+    landingProgress,
     counts: snapshot,
     get done() {
       return outcome !== undefined;

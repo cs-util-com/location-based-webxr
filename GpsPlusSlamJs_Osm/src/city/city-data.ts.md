@@ -25,10 +25,11 @@ overpassTiles, heightUrls, window }`. Pure.
   - `createCityTileSource(store, { userAgent, fetchImpl? })` →
     `CachingSource(OverpassSource)`: the endpoint race behind the store.
     `userAgent` is each app's own.
-  - `loadCityData(plan, options)` → `{ progress(), counts(), done,
+  - `loadCityData(plan, options)` → `{ progress(), landingProgress(),
+counts(), done,
 finished, abort() }`. Options: `source`, `heightFetch` (e.g.
     `createCachingTileFetch({ store })`), `decodePng`, `onData`,
-    `onProgress?(counts, progress)`, `signal?`, `firstRings?` (default 1),
+    `onProgress?(counts, progress, landingProgress)`, `signal?`, `firstRings?` (default 1),
     `heightDeadlineMs?` (default 20 s per height tile; `Infinity` waits),
     `retryDelaysMs?` (default 10 / 30 / 60 s), `undulationMetres?`
     (default 0: the tiles' heights, the globe relief's convention),
@@ -54,6 +55,14 @@ missingTiles, missingHeights, elapsedMs }`, never rejects.
     each retry delay; the counts move a retried job from failed to fetched.
   - Progress (`city-progress.ts`) reaches 1 once every job was tried once
     (retries do not hold a flight); it never falls; an abort freezes it.
+  - `landingProgress` counts only what the first delivery needs, the
+    heights and the first rings' tiles, and reaches 1 once those were
+    tried while the outer rings may still load: what a flight paces on
+    (DEC-AW-1, the owner 2026-10-13: on a cold arrival at Lucerne the public
+    servers refused for 209 s and the outer ring held the landing;
+    `GpsPlusSlamJs_Docs/docs/2026-10-13-1341-arrival-13-of-14-tiles-findings.md`).
+    It equals `progress` when the first rings are every ring; an abort
+    freezes it too.
   - The counts: a tile served from the cache is `warm` (its
     `timings.servedBy`), a height answered with `x-tile-cache: hit` is warm.
 - Examples:
