@@ -17,7 +17,7 @@
  * @see measure-city-load.mjs.md
  */
 import { chromium } from "@playwright/test";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -276,6 +276,26 @@ async function measureApp(browser, app, name, place, out, problems) {
   await context.close();
 }
 
+/**
+ * Ends a child and everything it started. On Windows the dev server runs as
+ * pnpm, cmd and vite in a chain (`shell: true`), and `kill` ends only the
+ * first: vite lived on, its pipe kept this script alive, and the browser
+ * slot stayed taken for 40 minutes after the last load (2026-10-11).
+ */
+function stopTree(child) {
+  if (process.platform === "win32" && child.pid !== undefined) {
+    try {
+      execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        stdio: "ignore",
+      });
+      return;
+    } catch {
+      // Already gone: fall through to the plain kill.
+    }
+  }
+  child.kill();
+}
+
 /** OsmDemo's vite dev server on the demo port, resolved once listening. */
 function startDemo() {
   const child = spawn(
@@ -325,7 +345,7 @@ try {
 } finally {
   await browser.close();
   server.kill();
-  demo.kill();
+  stopTree(demo);
 }
 if (problems.length > 0) {
   out.push(`Problems:\n${problems.map((p) => `- ${p}`).join("\n")}`);
@@ -333,3 +353,5 @@ if (problems.length > 0) {
 }
 mkdirSync(join(here, "shots"), { recursive: true });
 writeFileSync(join(here, "shots", "city-load-measure.md"), out.join("\n"));
+// Nothing else may hold the process open (a child's pipe would).
+process.exit(0);

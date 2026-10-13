@@ -30,6 +30,10 @@
     Chromium draws on the CPU (SwiftShader), so its seconds are the
     network's and the parse's; a long task count compares within one load,
     never alone. Page errors are listed under "Problems".
+- Teardown: the demo server is ended with its whole process tree
+  (`stopTree`: on Windows pnpm, cmd and vite run as a chain and a plain
+  `kill` left vite alive, holding the browser slot for 40 minutes), and the
+  script exits once its report is written.
 - Tests: none of its own (an eyeball tool, like `measure-globe.mjs`). The
   fields it reads are the smokes' (`globe-city.smoke.spec.mjs`,
   `globe-arrival.smoke.spec.mjs`; OsmDemo's `fixtures.js` `waitForRefresh`).
