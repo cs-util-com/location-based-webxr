@@ -479,104 +479,6 @@ export function cloudShellPixelWeight(input: {
 }
 
 /**
- * The smoothing of the fields' shares of the anomaly
- * (`cloudShellLocalLiftKm`): where both are near 0 the lift goes to
- * halfway smoothly instead of jumping. `GLOBE_CLOUD_SHELL_GLSL` carries it
- * to the lab's shader as `SHELL_LIFT_EPS`.
- */
-const CLOUD_SHELL_LIFT_EPS = 1e-3;
-
-/**
- * One field's lift over the deck, km (round-5 plan §10, DEC-R5-4, the
- * owner's step 1): `liftKm` at the top field's cell scale `topScale`, 0 at
- * the slab's own (scale 1), between in the scale's log, so a coarser
- * field's clouds float higher. 0 when `topScale` is 1 (one field).
- *
- * @throws RangeError for a scale or top scale below 1 or a lift below 0
- *   (each finite).
- */
-export function cloudShellFieldLiftKm(
-  scale: number,
-  options: { readonly liftKm: number; readonly topScale: number },
-): number {
-  const { liftKm, topScale } = options;
-  for (const [name, v, min] of [
-    ["scale", scale, 1],
-    ["top scale", topScale, 1],
-    ["lift", liftKm, 0],
-  ] as const) {
-    if (!(v >= min && Number.isFinite(v))) {
-      throw new RangeError(`the ${name} must be at least ${min}, got ${v}`);
-    }
-  }
-  if (topScale === 1 || liftKm === 0) return 0;
-  const share = Math.log(scale) / Math.log(topScale);
-  return liftKm * Math.min(Math.max(share, 0), 1);
-}
-
-/**
- * The column's lift at one spot, km: each field's lift weighted by its
- * share of the noise's anomaly there, |w_k (f_k - mean)| over their sum
- * (smoothed by `CLOUD_SHELL_LIFT_EPS`), so a cloud the coarse field makes floats
- * higher than one the fine field makes. Only the column's base moves, never
- * its length (its opacity). GLSL twin: the lab's `shellNoise`.
- *
- * @throws RangeError for an anomaly that is not finite or a lift below 0.
- */
-export function cloudShellLocalLiftKm(
-  anomalies: readonly [number, number],
-  lifts: readonly [number, number],
-): number {
-  if (!anomalies.every(Number.isFinite)) {
-    throw new RangeError(
-      `the anomalies must be finite, got ${anomalies.join(", ")}`,
-    );
-  }
-  if (!lifts.every((l) => l >= 0 && Number.isFinite(l))) {
-    throw new RangeError(
-      `the lifts must be at least 0, got ${lifts.join(", ")}`,
-    );
-  }
-  const a = Math.abs(anomalies[0]) + CLOUD_SHELL_LIFT_EPS;
-  const b = Math.abs(anomalies[1]) + CLOUD_SHELL_LIFT_EPS;
-  return (a * lifts[0] + b * lifts[1]) / (a + b);
-}
-
-/**
- * The two layers' heights over the deck, km, when each of the cascade's two
- * fields draws its own column (round-5 plan §11, DEC-R5-5, the owner's B):
- * a field `stepKm` per cascade step above the slab's own (the field of
- * scale `topScale` at `stepKm` x `fields`, the slab's at 0), so a field
- * keeps its height in both pairs it belongs to. The second is the first's
- * where the cascade has one field.
- *
- * @throws RangeError for a step below 0, fields not a positive integer, or
- *   what `cloudShellFieldLiftKm` refuses.
- */
-export function cloudShellLayerLiftsKm(
-  cascade: CloudShellNoiseCascade,
-  options: {
-    readonly stepKm: number;
-    readonly fields: number;
-    readonly topScale: number;
-  },
-): [number, number] {
-  const { stepKm, fields, topScale } = options;
-  if (!(stepKm >= 0 && Number.isFinite(stepKm))) {
-    throw new RangeError(`the step must be at least 0, got ${stepKm}`);
-  }
-  if (!(Number.isInteger(fields) && fields > 0)) {
-    throw new RangeError(`fields must be a positive integer, got ${fields}`);
-  }
-  const lift = (scale: number) =>
-    cloudShellFieldLiftKm(scale, { liftKm: stepKm * fields, topScale });
-  const first = cascade.fields[0];
-  if (first === undefined) throw new RangeError("the cascade has no field");
-  const second = cascade.fields[1] ?? first;
-  return [lift(first.scale), lift(second.scale)];
-}
-
-/**
  * The persistent high layer (round-5 plan §11, DEC-R5-6, the owner's A): a
  * thin coarse deck well above the clouds, present at every altitude the
  * shell draws, so clouds sit over clouds. `altitudeKm` its middle over the
@@ -745,7 +647,6 @@ export function cloudShellColumn(
  * octave the march reads (690 m cells).
  */
 export const GLOBE_CLOUD_SHELL_GLSL = /* glsl */ `
-const float SHELL_LIFT_EPS = ${CLOUD_SHELL_LIFT_EPS.toFixed(6)};
 uniform mat4 uShellWorldFromEcef;
 uniform vec3 uShellRadii;
 uniform float uShellGroundKm;

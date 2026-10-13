@@ -28,11 +28,8 @@ import {
   CLOUD_SHELL_VOLUME,
   GLOBE_CLOUD_SHELL_GLSL,
   type CloudShellStation,
-  cloudShellFieldLiftKm,
   cloudLayerOver,
   cloudShellFieldWeights,
-  cloudShellLayerLiftsKm,
-  cloudShellLocalLiftKm,
   cloudShellNoiseCascade,
   cloudShellPixelWeight,
   cloudShellStationsFor,
@@ -329,8 +326,6 @@ describe("GLOBE_CLOUD_SHELL_GLSL", () => {
       "uniform float uShellLonOffset;",
       "vec2 globeShellMapUv( vec3 p )",
       "vec2 globeShellChartKm( vec3 p )",
-      // The lift's smoothing, the twin of cloudShellLocalLiftKm's.
-      "const float SHELL_LIFT_EPS = 0.001000;",
     ]) {
       expect(GLOBE_CLOUD_SHELL_GLSL).toContain(name);
     }
@@ -638,134 +633,6 @@ describe("cloudShellNoiseCascade", () => {
     expect(() => cloudShellNoiseCascade(Number.NaN, cascade)).toThrow(
       RangeError,
     );
-  });
-});
-
-describe("cloudShellFieldLiftKm", () => {
-  // WHY (round-5 plan §10, DEC-R5-4, the owner's step 1): a coarser field's
-  // clouds float higher, so the blend of the resolutions reads as clouds at
-  // several heights, not one plane. The slab's own field (scale 1) is never
-  // lifted: at the hand-over the shell must stay on the slab's deck (C4).
-  it("lifts the top field fully, the slab's own not at all, between by the scale's log", () => {
-    const o = { liftKm: 10, topScale: 4 };
-    expect(cloudShellFieldLiftKm(4, o)).toBe(10);
-    expect(cloudShellFieldLiftKm(1, o)).toBe(0);
-    expect(cloudShellFieldLiftKm(2, o)).toBeCloseTo(5, 12);
-    expect(cloudShellFieldLiftKm(Math.SQRT2, o)).toBeCloseTo(2.5, 12);
-    // Off by default: no lift at any scale.
-    expect(cloudShellFieldLiftKm(4, { liftKm: 0, topScale: 4 })).toBe(0);
-    // One field only (top scale 1): nothing to order, no lift.
-    expect(cloudShellFieldLiftKm(1, { liftKm: 10, topScale: 1 })).toBe(0);
-  });
-
-  it("refuses a scale or top scale below 1 and a lift below 0", () => {
-    for (const [scale, liftKm, topScale] of [
-      [0.5, 10, 4],
-      [2, -1, 4],
-      [2, Number.NaN, 4],
-      [2, 10, 0.5],
-      [Number.NaN, 10, 4],
-    ] as const) {
-      expect(() => cloudShellFieldLiftKm(scale, { liftKm, topScale })).toThrow(
-        RangeError,
-      );
-    }
-  });
-});
-
-describe("cloudShellLocalLiftKm", () => {
-  // WHY: the column at a spot is lifted by the lifts of the fields that make
-  // its cloud there, each by its share of the noise's anomaly. Where one
-  // field makes the cloud its height wins; at a station (the other field's
-  // weight 0, its anomaly 0) the deck is that field's; the column's length
-  // (its opacity) is never touched, only its base.
-  it("weights each field's lift by its share of the anomaly", () => {
-    expect(cloudShellLocalLiftKm([0.3, 0], [10, 5])).toBeCloseTo(10, 1);
-    expect(cloudShellLocalLiftKm([0, -0.3], [10, 5])).toBeCloseTo(5, 1);
-    expect(cloudShellLocalLiftKm([0.2, -0.2], [10, 5])).toBeCloseTo(7.5, 12);
-    expect(cloudShellLocalLiftKm([0.3, 0.1], [10, 0])).toBeCloseTo(7.5, 1);
-    // No anomaly at all: halfway (continuous: the shares are smoothed).
-    expect(cloudShellLocalLiftKm([0, 0], [10, 0])).toBeCloseTo(5, 12);
-  });
-
-  it("stays between the two lifts and is continuous", () => {
-    fc.assert(
-      fc.property(
-        fc.double({ min: -1, max: 1, noNaN: true }),
-        fc.double({ min: -1, max: 1, noNaN: true }),
-        fc.double({ min: 0, max: 50, noNaN: true }),
-        fc.double({ min: 0, max: 50, noNaN: true }),
-        (a, b, l0, l1) => {
-          const lift = cloudShellLocalLiftKm([a, b], [l0, l1]);
-          expect(lift).toBeGreaterThanOrEqual(Math.min(l0, l1) - 1e-9);
-          expect(lift).toBeLessThanOrEqual(Math.max(l0, l1) + 1e-9);
-          const near = cloudShellLocalLiftKm([a + 1e-7, b], [l0, l1]);
-          expect(Math.abs(near - lift)).toBeLessThan(1e-2);
-        },
-      ),
-    );
-  });
-
-  it("refuses a value that is not finite or a lift below 0", () => {
-    expect(() => cloudShellLocalLiftKm([Number.NaN, 0], [1, 0])).toThrow(
-      RangeError,
-    );
-    expect(() => cloudShellLocalLiftKm([0, 0], [1, -1])).toThrow(RangeError);
-  });
-});
-
-describe("cloudShellLayerLiftsKm", () => {
-  // WHY (round-5 plan §11, DEC-R5-5, the owner's B): with two real layers
-  // each field draws its own column at its own height. A field must keep
-  // its height in both pairs it belongs to, or the clouds jump up or down
-  // where one pair hands to the next; the slab's own field stays at 0 (C4).
-  const cascadeOf = (km: number) =>
-    cloudShellNoiseCascade(km, {
-      topKm: 1_050,
-      bottomKm: 40,
-      fields: 3,
-      topScale: 4,
-    });
-  const options = { stepKm: 5, fields: 3, topScale: 4 };
-
-  it("puts each field a whole number of steps up, the slab's own at 0", () => {
-    expect(cloudShellLayerLiftsKm(cascadeOf(1_050), options)[0]).toBeCloseTo(
-      15,
-      9,
-    );
-    expect(cloudShellLayerLiftsKm(cascadeOf(40), options)[0]).toBe(0);
-    for (let km = 1_050; km >= 40; km /= 1.05) {
-      for (const lift of cloudShellLayerLiftsKm(cascadeOf(km), options)) {
-        expect(Math.abs(lift / 5 - Math.round(lift / 5))).toBeLessThan(1e-9);
-      }
-    }
-  });
-
-  it("keeps a field's height as the pair it is in changes", () => {
-    // Every lift each field was given on the way down, by its scale.
-    const seen = new Map<number, number[]>();
-    for (let km = 1_050; km >= 40; km /= 1.02) {
-      const cascade = cascadeOf(km);
-      const lifts = cloudShellLayerLiftsKm(cascade, options);
-      cascade.fields.forEach(({ scale }, k) => {
-        const key = Math.round(scale * 1e6);
-        seen.set(key, [...(seen.get(key) ?? []), lifts[k] ?? Number.NaN]);
-      });
-    }
-    expect(seen.size).toBe(4);
-    const spreads = [...seen.values()].map(
-      (ls) => Math.max(...ls) - Math.min(...ls),
-    );
-    expect(Math.max(...spreads)).toBeLessThan(1e-9);
-  });
-
-  it("is 0 everywhere at a step of 0 and refuses a step below 0", () => {
-    expect(
-      cloudShellLayerLiftsKm(cascadeOf(300), { ...options, stepKm: 0 }),
-    ).toEqual([0, 0]);
-    expect(() =>
-      cloudShellLayerLiftsKm(cascadeOf(300), { ...options, stepKm: -1 }),
-    ).toThrow(RangeError);
   });
 });
 

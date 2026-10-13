@@ -78,24 +78,6 @@ noiseShare, ceilingKm })`: the law's stations from a page's knobs (the
   ring, beyond its disc, a clear patch) the shell fills it, so the mix's
   alpha is never below the shell's. GLSL twin: the lab's composite.
   RangeError for a share or alpha outside 0..1.
-- `cloudShellFieldLiftKm(scale, { liftKm, topScale })` (round-5 plan §10,
-  DEC-R5-4, the owner's step 1): one field's lift over the deck, km:
-  `liftKm` at the top scale, 0 at the slab's own (scale 1), between in the
-  scale's log; 0 for a top scale of 1. RangeError for a scale or top scale
-  below 1 or a lift below 0.
-- `cloudShellLocalLiftKm([a0, a1], [l0, l1])`: the column's lift at a
-  spot, each field's lift weighted by its share of the anomaly (|a_k| +
-  1e-3, over their sum, carried to the GLSL as `SHELL_LIFT_EPS`: halfway, smoothly, where
-  both are near 0). Only the base moves, never the column's length (its
-  opacity). GLSL twin: the lab's `shellNoise`. RangeError for an anomaly
-  that is not finite or a lift below 0.
-- `cloudShellLayerLiftsKm(cascade, { stepKm, fields, topScale })` (round-5
-  plan §11, DEC-R5-5, the owner's B): the two layers' heights over the
-  deck when each of the cascade's two fields draws its own column: a field
-  `stepKm` per cascade step above the slab's own, so it keeps its height in
-  both pairs it belongs to (no jump between pairs); the second the
-  first's at the bottom. RangeError for a step below 0 or fields that are
-  not a positive integer.
 - `CLOUD_HIGH_LAYER` (§11, DEC-R5-6, the owner's A): the persistent high
   layer's defaults: `altitudeKm` 9 (its middle over the ground),
   `cellScale` 6, `offsetCells` [311, 211] (its own patch of the lattice),
@@ -188,11 +170,8 @@ const { uv, chartKm } = cloudShellColumn([4000, 600, 4700], frame, 0);
   cascade (squares sum to 1 at every altitude, one morph speed from 1,000
   to 42 km within 1 %, continuous where one pair hands to the next, the
   slab's own field at and below the bottom, the top field above the top,
-  fixed scales falling and distinct offsets, refusals); the lift (the top
-  field full, the slab's none, the log between, off by default; the local
-  lift by the anomaly's shares, between the two and continuous,
-  refusals); the layers' heights (whole steps, the slab's at 0, a field's
-  height kept as its pair changes, refusals); the high layer's defaults;
+  fixed scales falling and distinct offsets, refusals); the high layer's
+  defaults;
   the premultiplied over (opaque front, clear front, order, alpha never
   past 1).
 - `globe-cloud-shell-volume.property.test.ts`: the map at the ellipsoid's

@@ -97,27 +97,6 @@ radiusM }` from its state, the centre null on the camera, where its flat
   lattice offsets added to the carried anchor) and their cos / sin
   weights, so the clouds morph at one speed from 1,050 km down to the
   slab's ceiling, where the field is the slab's own (its basis copied).
-- The lift (round-5 plan §10, DEC-R5-4, the owner's step 1; off by
-  default): `update`'s `lift` `{ km, topScale, steps }` gives each field a lift
-  over the deck (`cloudShellFieldLiftKm`: `km` at the top scale, 0 for the
-  slab's own field), and `shellNoise` lifts the ONE column at a spot by
-  each field's lift weighted by its share of the anomaly there (twin of
-  `cloudShellLocalLiftKm`), so coarse-made clouds float higher; the column's
-  length (its opacity) is kept, and the march's top sphere rises by the
-  larger lift (`uLiftMaxKm`). Each segment keeps only its part above the
-  column's lifted base, solved where the ray crosses it: the deck is
-  0.4-1.6 km and a lift several km, so a ray crosses a whole lifted column
-  between two nodes, and a node test alone skipped it (x0.16 of the
-  clouds at 10 km, measured; x0.93 with the crossing solved). While the
-  lift is on the steps are `steps` x the law's (4 by default), up to the
-  loop's 12: at 1 the cloud edges were found km apart and the jitter drew
-  them toothed (screenshots at 150 km, factors 1 / 2 / 4).
-- B, two layers (round-5 plan §11, DEC-R5-5; off by default): the node
-  carries two columns (`vec2`), and `update`'s `layers` `{ on, stepKm,
-fields }` makes each blended field draw its own column, the field alone
-  at its full spread, on its own base (`cloudShellLayerLiftsKm`); the march
-  integrates each column's segment (`shellSegment`, the coarser first) at
-  its field's weight (cos, sin). Off, the one summed column as before.
 - A, the high layer (§11, DEC-R5-6; off by default): `update`'s
   `highLayer` `{ on, altitudeKm, cellScale, cover, noiseShare }`; `render`
   marches it a second time into its own target with the deck, the field
@@ -128,8 +107,9 @@ fields }` makes each blended field draw its own column, the field alone
   0.19 alpha there, measured). The composite lays it over the clouds at
   full strength wherever the shell draws, in front from above its middle
   and behind from below (premultiplied over, `cloudLayerOver`).
-  `alphaGrid(nx, ny, "high")` reads its target; `state().high` and
-  `state().layered` report them.
+  `alphaGrid(nx, ny, "high")` reads its target; `state().high` reports
+  it. (B, two layers in the blend, and the lift of §10 were built and
+  removed on the owner's verdict, §12.)
 - No aerial fade above the slab's ceiling (round-5 C3: it made the clouds
   see-through from high up, 0.68 straight down at 100 km); below it the
   fade's strength is the slab's share, as the slab's own

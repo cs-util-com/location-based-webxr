@@ -670,17 +670,10 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   (findings 9 and 11: the knobs never make the law throw);
   `cloudShellFields` (3) the noise's morphs from 1,050 km down to the slab's
   set (round-5 plan 2026-10-12-0612 C2, `cloudShellNoiseCascade`);
-  `cloudShellLiftKm` (0, off; 0-50) the coarsest field's lift over the
-  deck, the finer fields less by their scale's log and the slab's none
-  (round-5 plan §10, the owner's step 1: clouds at several heights);
-  `cloudShellLiftSteps` (4; 1-4) the march steps' factor while it is on,
-  up to the loop's 12 (fewer drew toothed cloud edges);
-  `cloudShellLayers` (0; 1 B, round-5 plan §11: the two blended fields as
-  two layers) and `cloudShellLayerKm` (5; 0-30, the height per cascade
-  step); `cloudHigh` (0; 1 A: a persistent high layer), `cloudHighKm` (9;
-  3-20), `cloudHighCell` (6; 1-16), `cloudHighCover` (0.35; 0-1.5) and
-  `cloudHighShare` (0.3; 0.05-1, lower is wispier); the alpha grid adds
-  `high` and `layered`;
+  `cloudHigh` (0; 1 A, round-5 plan §11: a persistent high layer),
+  `cloudHighKm` (9; 3-20), `cloudHighCell` (6; 1-16), `cloudHighCover`
+  (0.35; 0-1.5) and `cloudHighShare` (0.3; 0.05-1, lower is wispier); the
+  alpha grid adds `high`;
   `cloudFlatOutFromKm` (900) and `cloudFlatOutToKm` (700) the texture's own
   fade with the shell (C5: the volume already strong when the texture
   goes; clamped above the slab's ceiling and falling);

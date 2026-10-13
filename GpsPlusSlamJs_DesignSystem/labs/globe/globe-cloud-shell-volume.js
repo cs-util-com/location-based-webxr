@@ -59,8 +59,6 @@ import {
   CLOUD_HIGH_LAYER,
   CLOUD_SHELL_VOLUME,
   GLOBE_CLOUD_SHELL_GLSL,
-  cloudShellFieldLiftKm,
-  cloudShellLayerLiftsKm,
   cloudShellFrame,
   cloudShellVolumeLaw,
 } from "/globe/globe-cloud-shell-volume.js";
@@ -115,12 +113,6 @@ uniform float uOctaves;
 // kept, one morph speed); the second unread at weight 0.
 uniform vec2 uCells;
 uniform vec2 uFieldWeights;
-// Each field's lift over the deck (km, round-5 plan §10, the owner's step
-// 1: a coarser field's clouds float higher) and the larger of the two.
-uniform vec2 uFieldLiftKm;
-uniform float uLiftMaxKm;
-// B (round-5 plan §11): 1 draws each of the two fields as its own layer.
-uniform float uLayered;
 // A's march (round-5 plan §11): 1 also draws a deck seen from below.
 uniform float uBothSides;
 // The slab's aerial fade's share (1 at its station, 0 high up).
@@ -230,14 +222,12 @@ float shellField( vec2 pKm, float footprintKm, float cell, vec4 basis[ATM_LIVE_O
 
 // The two stations' fields mixed by weights whose squares sum to 1, each
 // at its own fixed scale (a scale moving with the altitude slides the
-// ground-anchored clouds); one field at a station. Here each field's
-// anomaly on its own (field minus the mean, 0 at weight 0): the node sums
-// them by their weights, or with the layers on draws each as a layer.
-vec2 shellAnomalies( vec2 pKm, float footprintKm ) {
-  vec2 a = vec2( 0.0 );
-  if ( uFieldWeights.x > 0.0 ) a.x = shellField( pKm, footprintKm, uCells.x, uBasis ) - ATM_LIVE_FIELD_MEAN;
-  if ( uFieldWeights.y > 0.0 ) a.y = shellField( pKm, footprintKm, uCells.y, uBasisB ) - ATM_LIVE_FIELD_MEAN;
-  return a;
+// ground-anchored clouds); one field at a station.
+float shellNoise( vec2 pKm, float footprintKm ) {
+  float d = 0.0;
+  if ( uFieldWeights.x > 0.0 ) d += uFieldWeights.x * ( shellField( pKm, footprintKm, uCells.x, uBasis ) - ATM_LIVE_FIELD_MEAN );
+  if ( uFieldWeights.y > 0.0 ) d += uFieldWeights.y * ( shellField( pKm, footprintKm, uCells.y, uBasisB ) - ATM_LIVE_FIELD_MEAN );
+  return ATM_LIVE_FIELD_MEAN + d;
 }
 
 vec3 shellZenith( float mu ) {
@@ -263,11 +253,11 @@ float shellDiscMask( vec3 p ) {
   return 1.0 - smoothstep( 0.7 * uDiscRadiusKm, uDiscRadiusKm, d );
 }
 
-void shellNode( vec3 o, vec3 dir, float t, float stepKm, out vec2 raw, out vec2 height, out vec2 noise, out float threshold ) {
+void shellNode( vec3 o, vec3 dir, float t, float stepKm, out float raw, out float height, out float noise, out float threshold ) {
   vec3 p = o + dir * t;
   float r = length( p );
   vec2 chart = globeShellChartKm( p );
-  float h0 = ( r - uShellGroundKm - uDeckBaseKm ) * 1000.0;
+  height = ( r - uShellGroundKm - uDeckBaseKm ) * 1000.0;
   // Where the slab draws, its deck is flat in the frame (the tangent plane
   // at the frame's origin), d^2 / 2R above the sphere at d from the origin;
   // the shell takes the same deck there, so the two draw the same points
@@ -276,88 +266,15 @@ void shellNode( vec3 o, vec3 dir, float t, float stepKm, out vec2 raw, out vec2 
   // edge). Eased in over the slab's first tenth of share.
   if ( uFlatten > 0.0 ) {
     float dO = length( chart );
-    h0 -= uFlatten * shellDiscMask( p ) * dO * dO / ( 2.0 * uShellGroundKm ) * 1000.0;
+    height -= uFlatten * shellDiscMask( p ) * dO * dO / ( 2.0 * uShellGroundKm ) * 1000.0;
   }
   float vertical = abs( dot( dir, p / r ) );
   float horizontal = sqrt( max( 0.0, 1.0 - vertical * vertical ) );
   float footprint = max( t * uPixelAngle, stepKm * horizontal );
   float cover = shellMap( globeShellMapUv( p ), footprint, length( normalize( p ).xy ) ) * uCloudOpacity * uCoverGain * uShellIn;
   threshold = cover > 0.0 ? shellThreshold( cover ) : 2.0;
-  vec2 a = shellAnomalies( chart, footprint );
-  if ( uLayered > 0.5 ) {
-    // B (round-5 plan §11): each field alone, its full spread, on its own
-    // base (uFieldLiftKm: a field keeps its height in both its pairs).
-    noise = ATM_LIVE_FIELD_MEAN + a;
-    height = vec2( h0 ) - uFieldLiftKm * 1000.0;
-  } else {
-    // The sum (C2), its base lifted by each field's lift weighted by its
-    // share of the anomaly here (twin of cloudShellLocalLiftKm; 0 unless
-    // the lift is on); the column's length (the opacity) kept.
-    vec2 wa = uFieldWeights * a;
-    float sa = abs( wa.x ) + SHELL_LIFT_EPS;
-    float sb = abs( wa.y ) + SHELL_LIFT_EPS;
-    float liftKm = ( sa * uFieldLiftKm.x + sb * uFieldLiftKm.y ) / ( sa + sb );
-    noise = vec2( ATM_LIVE_FIELD_MEAN + wa.x + wa.y );
-    height = vec2( h0 - liftKm * 1000.0 );
-  }
+  noise = shellNoise( chart, footprint );
   raw = ( SHELL_T0 + SHELL_HEIGHT_SCALE * uNoiseShare * ( noise - threshold ) ) * uThickness;
-}
-
-// The light and fades every segment of this pixel shares (set in main).
-float gDeck;
-highp float gSunScale;
-float gLimb;
-float gAerialHere;
-vec3 gTop;
-vec3 gSunUnder;
-vec3 gSkyUnder;
-
-// One column's segment between two nodes (ta, tb), its optical depth times
-// presence. based: also above the column's own (lifted) base. The deck is
-// 0.4-1.6 km and a lift several km, so a ray crosses a whole lifted column
-// between two nodes (one above it, one below its base); solved where it
-// crosses that base, it counts in full (a node test alone skipped it:
-// x0.16 of the clouds at 10 km, measured, round-5 plan §10).
-void shellSegment( float ta, float tb, float ra, float ha, float rb, float hb, float na, float nb, float tha, float thb, float presence, bool based, inout vec3 colour, inout float alpha, inout float transmittance ) {
-  float da = ra - ha;
-  float db = rb - hb;
-  float fa = da >= 0.0 ? 0.0 : da / ( da - db );
-  float fb = db >= 0.0 ? 1.0 : da / ( da - db );
-  if ( based ) {
-    if ( ha < 0.0 ) fa = max( fa, hb > 0.0 ? ha / ( ha - hb ) : 2.0 );
-    if ( hb < 0.0 ) fb = min( fb, ha > 0.0 ? ha / ( ha - hb ) : -1.0 );
-  }
-  if ( !( tb > ta && ( da >= 0.0 || db >= 0.0 ) && fb > fa ) ) return;
-  float t0 = mix( ta, tb, fa );
-  float t1 = mix( ta, tb, fb );
-  float h0 = clamp( mix( ha, hb, fa ), 0.0, gDeck );
-  float h1 = clamp( mix( ha, hb, fb ), 0.0, gDeck );
-  float lenM = ( t1 - t0 ) * 1000.0;
-  // The scaled column: density p(h / k) and extinction sigma / k, so a
-  // vertical column's depth is k-invariant (sigma Q(h / k)).
-  float slope = abs( hb - ha ) / max( ( tb - ta ) * 1000.0, 1e-6 );
-  float tau;
-  if ( slope >= 1e-5 ) {
-    tau = SHELL_SIGMA * abs( shellCumulative( h1 / uThickness ) - shellCumulative( h0 / uThickness ) ) / slope;
-  } else {
-    float hm = 0.5 * ( h0 + h1 ) / uThickness;
-    tau = SHELL_SIGMA / uThickness * clamp( hm / SHELL_SOFT, 0.0, 1.0 ) * lenM;
-  }
-  tau *= presence;
-  float a = 1.0 - exp( -tau );
-  // The slab's aerial melt, by the law's share (twin of its w).
-  float w = gLimb * mix( 1.0, exp( -0.5 * ( t0 + t1 ) / SHELL_AERIAL_KM ), gAerialHere );
-  float c0 = clamp( mix( ra, rb, fa ), 0.0, gDeck );
-  float c1 = clamp( mix( ra, rb, fb ), 0.0, gDeck );
-  highp float sunA = gSunScale * ( shellCumulative( c0 / uThickness ) - shellCumulative( min( h0, c0 ) / uThickness ) );
-  highp float sunB = gSunScale * ( shellCumulative( c1 / uThickness ) - shellCumulative( min( h1, c1 ) / uThickness ) );
-  float noise = mix( na, nb, 0.5 * ( fa + fb ) );
-  float th = 0.5 * ( tha + thb );
-  float density = smoothstep( 0.0, 1.0, clamp( ( noise - th ) / ( 2.0 * SHELL_EDGE ) + 0.5, 0.0, 1.0 ) );
-  vec3 under = gSunUnder * ( 1.0 - SHELL_THICKNESS_DARK * density ) + gSkyUnder;
-  colour += transmittance * w * ( under * a + ( gTop - under ) * shellInStepLight( tau, sunA, sunB ) );
-  alpha += transmittance * a * w;
-  transmittance *= exp( -tau );
 }
 
 void main() {
@@ -366,7 +283,7 @@ void main() {
   float ro = length( o );
   float b = dot( o, dir );
   // Raised by the flattened deck's largest rise inside the disc (C4).
-  float topR = uShellGroundKm + uDeckTopKm + uFlatten * uFlatRiseKm + uLiftMaxKm;
+  float topR = uShellGroundKm + uDeckTopKm + uFlatten * uFlatRiseKm;
   float baseR = uShellGroundKm + uDeckBaseKm;
   float discTop = b * b - ( ro - topR ) * ( ro + topR );
   if ( discTop <= 0.0 ) discard;
@@ -426,38 +343,61 @@ void main() {
   vec3 zenith = shellZenith( mu );
   float cosToSun = dot( dir, uSun );
   float forward = pow( max( cosToSun, 0.0 ), SHELL_FORWARD_POWER );
-  gTop = ATM_RADIANCE_SCALE * sunT * max( mu, 0.0 ) * SHELL_TOP_ALBEDO / ATM_PI + zenith * SHELL_SKY_AMBIENT;
-  gSunUnder = ATM_RADIANCE_SCALE * sunT * ( SHELL_SUN_AMBIENT + SHELL_FORWARD * forward );
-  gSkyUnder = zenith * SHELL_SKY_AMBIENT;
-  gSunScale = SHELL_SIGMA * SHELL_SUN_DEPTH / max( mu, SHELL_SUN_MU_FLOOR );
-  gDeck = ( uDeckTopKm - uDeckBaseKm ) * 1000.0;
-  gLimb = limb;
-  gAerialHere = aerialHere;
+  vec3 top = ATM_RADIANCE_SCALE * sunT * max( mu, 0.0 ) * SHELL_TOP_ALBEDO / ATM_PI + zenith * SHELL_SKY_AMBIENT;
+  vec3 sunUnder = ATM_RADIANCE_SCALE * sunT * ( SHELL_SUN_AMBIENT + SHELL_FORWARD * forward );
+  vec3 skyUnder = zenith * SHELL_SKY_AMBIENT;
+  highp float sunScale = SHELL_SIGMA * SHELL_SUN_DEPTH / max( mu, SHELL_SUN_MU_FLOOR );
+  float deck = ( uDeckTopKm - uDeckBaseKm ) * 1000.0;
   float jitter = fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) );
   float steps = float( uSteps );
   vec3 colour = vec3( 0.0 );
   float alpha = 0.0;
   float transmittance = 1.0;
-  bool layered = uLayered > 0.5;
-  bool based = layered || uLiftMaxKm > 0.0;
   float ta = tIn;
-  vec2 ra; vec2 ha; vec2 na; float tha;
+  float ra; float ha; float na; float tha;
   shellNode( o, dir, ta, lengthKm / steps, ra, ha, na, tha );
   for ( int i = 0; i <= SHELL_MAX_STEPS; i++ ) {
     if ( i > uSteps ) break;
     float u = i == uSteps ? 1.0 : ( float( i ) + jitter ) / steps;
     float tb = tIn + u * lengthKm;
-    vec2 rb; vec2 hb; vec2 nb; float thb;
+    float rb; float hb; float nb; float thb;
     shellNode( o, dir, tb, tb - ta, rb, hb, nb, thb );
-    if ( layered ) {
-      // B: the coarser (higher) field first, as a ray from above meets it;
-      // each at its weight (cos, sin), so each fades with its field.
-      if ( uFieldWeights.x > 0.0 ) shellSegment( ta, tb, ra.x, ha.x, rb.x, hb.x, na.x, nb.x, tha, thb, uFieldWeights.x, true, colour, alpha, transmittance );
-      if ( uFieldWeights.y > 0.0 ) shellSegment( ta, tb, ra.y, ha.y, rb.y, hb.y, na.y, nb.y, tha, thb, uFieldWeights.y, true, colour, alpha, transmittance );
-    } else {
-      shellSegment( ta, tb, ra.x, ha.x, rb.x, hb.x, na.x, nb.x, tha, thb, 1.0, based, colour, alpha, transmittance );
+    float da = ra - ha;
+    float db = rb - hb;
+    if ( tb > ta && ( da >= 0.0 || db >= 0.0 ) ) {
+      float fa = da >= 0.0 ? 0.0 : da / ( da - db );
+      float fb = db >= 0.0 ? 1.0 : da / ( da - db );
+      float t0 = mix( ta, tb, fa );
+      float t1 = mix( ta, tb, fb );
+      float h0 = clamp( mix( ha, hb, fa ), 0.0, deck );
+      float h1 = clamp( mix( ha, hb, fb ), 0.0, deck );
+      float lenM = ( t1 - t0 ) * 1000.0;
+      // The scaled column: density p(h / k) and extinction sigma / k, so a
+      // vertical column's depth is k-invariant (sigma Q(h / k)).
+      float slope = abs( hb - ha ) / max( ( tb - ta ) * 1000.0, 1e-6 );
+      float tau;
+      if ( slope >= 1e-5 ) {
+        tau = SHELL_SIGMA * abs( shellCumulative( h1 / uThickness ) - shellCumulative( h0 / uThickness ) ) / slope;
+      } else {
+        float hm = 0.5 * ( h0 + h1 ) / uThickness;
+        tau = SHELL_SIGMA / uThickness * clamp( hm / SHELL_SOFT, 0.0, 1.0 ) * lenM;
+      }
+      float a = 1.0 - exp( -tau );
+      // The slab's aerial melt, by the law's share (twin of its w).
+      float w = limb * mix( 1.0, exp( -0.5 * ( t0 + t1 ) / SHELL_AERIAL_KM ), aerialHere );
+      float c0 = clamp( mix( ra, rb, fa ), 0.0, deck );
+      float c1 = clamp( mix( ra, rb, fb ), 0.0, deck );
+      highp float sunA = sunScale * ( shellCumulative( c0 / uThickness ) - shellCumulative( min( h0, c0 ) / uThickness ) );
+      highp float sunB = sunScale * ( shellCumulative( c1 / uThickness ) - shellCumulative( min( h1, c1 ) / uThickness ) );
+      float noise = mix( na, nb, 0.5 * ( fa + fb ) );
+      float th = 0.5 * ( tha + thb );
+      float density = smoothstep( 0.0, 1.0, clamp( ( noise - th ) / ( 2.0 * SHELL_EDGE ) + 0.5, 0.0, 1.0 ) );
+      vec3 under = sunUnder * ( 1.0 - SHELL_THICKNESS_DARK * density ) + skyUnder;
+      colour += transmittance * w * ( under * a + ( top - under ) * shellInStepLight( tau, sunA, sunB ) );
+      alpha += transmittance * a * w;
+      transmittance *= exp( -tau );
+      if ( transmittance < SHELL_EARLY_EXIT ) break;
     }
-    if ( transmittance < SHELL_EARLY_EXIT ) break;
     ta = tb; ra = rb; ha = hb; na = nb; tha = thb;
   }
   if ( alpha < 1e-4 ) discard;
@@ -577,9 +517,6 @@ export function createGlobeCloudShellVolume(
     uOctaves: { value: 5 },
     uCells: { value: new THREE.Vector2(1, 1) },
     uFieldWeights: { value: new THREE.Vector2(1, 0) },
-    uFieldLiftKm: { value: new THREE.Vector2(0, 0) },
-    uLiftMaxKm: { value: 0 },
-    uLayered: { value: 0 },
     uBothSides: { value: 0 },
     uAerial: { value: 0 },
     uNoiseShare: { value: 1 },
@@ -658,7 +595,6 @@ export function createGlobeCloudShellVolume(
   let framed = false;
   const highCells = new THREE.Vector2();
   const highWeights = new THREE.Vector2(1, 0);
-  const noLift = new THREE.Vector2(0, 0);
   /**
    * The high layer's march (round-5 plan §11, A) into the bound target: the
    * same shader with the deck, the field and the column's look swapped for
@@ -680,9 +616,6 @@ export function createGlobeCloudShellVolume(
     set("uCoverGain", high.cover);
     set("uCells", highCells.set(high.cellScale, high.cellScale));
     set("uFieldWeights", highWeights);
-    set("uFieldLiftKm", noLift);
-    set("uLiftMaxKm", 0);
-    set("uLayered", 0);
     set("uBothSides", 1);
     set("uFlatten", 0);
     set("uAerial", 0);
@@ -727,8 +660,6 @@ export function createGlobeCloudShellVolume(
       deckKm,
       cover = 1,
       cascade,
-      lift = { km: 0, topScale: 1, steps: 4 },
-      layers = { on: false, stepKm: 5, fields: 3 },
       highLayer = { on: false },
     }) {
       cameraKm = altitudeKm;
@@ -764,35 +695,6 @@ export function createGlobeCloudShellVolume(
       ];
       uniforms.uCells.value.set(fields[0].scale, fields[1].scale);
       uniforms.uFieldWeights.value.set(cascade.weights[0], cascade.weights[1]);
-      // Each field's lift: B's own heights (round-5 plan §11, each field
-      // a layer), else the lift knob's (§10); 0 unless one is on.
-      uniforms.uLayered.value = layers.on ? 1 : 0;
-      const lifts = layers.on
-        ? cloudShellLayerLiftsKm(cascade, {
-            stepKm: layers.stepKm,
-            fields: layers.fields,
-            topScale: Math.max(
-              lift.topScale,
-              ...cascade.fields.map((f) => f.scale),
-            ),
-          })
-        : fields.map(({ scale }) =>
-            cloudShellFieldLiftKm(scale, {
-              liftKm: lift.km,
-              topScale: Math.max(lift.topScale, scale),
-            }),
-          );
-      uniforms.uFieldLiftKm.value.set(lifts[0], lifts[1]);
-      uniforms.uLiftMaxKm.value = Math.max(lifts[0], lifts[1]);
-      // A lifted deck spans more height than the 0.4-1.6 km column: more
-      // steps while it is on (up to the loop's bound), or the cloud edges
-      // are found a few km apart and the jitter turns them into teeth.
-      if (uniforms.uLiftMaxKm.value > 0) {
-        uniforms.uSteps.value = Math.min(
-          CLOUD_SHELL_VOLUME.maxSteps,
-          Math.round(law.marchSteps * Math.max(1, lift.steps ?? 4)),
-        );
-      }
       uniforms.uCoverGain.value = cover;
       uniforms.uShellIn.value = shellIn;
       const frame = cloudShellFrame(ellipsoid, target, groundKm, frameMatrix);
@@ -1070,7 +972,6 @@ export function createGlobeCloudShellVolume(
         law: { ...law },
         deckKm: [uniforms.uDeckBaseKm.value, uniforms.uDeckTopKm.value],
         drawn,
-        layered: uniforms.uLayered.value === 1,
         high:
           high === null
             ? null

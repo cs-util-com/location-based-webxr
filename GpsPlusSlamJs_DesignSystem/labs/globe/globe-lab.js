@@ -649,16 +649,6 @@ const PARAMS = {
   // of the shell's fade-in down to the slab's set; one per 3x of altitude
   // or so by default, the rate of the 700-to-200 km morph the owner liked.
   cloudShellFields: { fallback: 3, min: 1, max: 8 },
-  // The coarsest field's lift over the deck, km (round-5 plan §10, the
-  // owner's step 1): finer fields less by their scale's log, the slab's none.
-  cloudShellLiftKm: { fallback: 0, min: 0, max: 50 },
-  // The march steps' factor while the lift is on, up to the loop's 12
-  // (4: at 150 km a lift of 10 km drew toothed edges at 1, fewer at 2).
-  cloudShellLiftSteps: { fallback: 4, min: 1, max: 4 },
-  // B (round-5 plan §11): 1 draws the two blended fields as two layers,
-  // each `cloudShellLayerKm` per cascade step above the slab's own.
-  cloudShellLayers: { fallback: 0, min: 0, max: 1 },
-  cloudShellLayerKm: { fallback: 5, min: 0, max: 30 },
   // A (round-5 plan §11): 1 adds a persistent high layer at
   // `cloudHighKm`, one coarse field (`cloudHighCell`), its cover
   // `cloudHighCover` of the map's, wispy by `cloudHighShare`.
@@ -3497,16 +3487,6 @@ async function start() {
           Number.isFinite(cameraAltM) ? Math.max(0, cameraAltM / 1000) : 0,
           params,
         ),
-        lift: {
-          km: params.cloudShellLiftKm,
-          topScale: params.cloudShellCell,
-          steps: params.cloudShellLiftSteps,
-        },
-        layers: {
-          on: params.cloudShellLayers === 1,
-          stepKm: params.cloudShellLayerKm,
-          fields: Math.round(params.cloudShellFields),
-        },
         highLayer: {
           on: params.cloudHigh === 1,
           altitudeKm: params.cloudHighKm,
@@ -4547,9 +4527,8 @@ void main() {
         weight: s.share,
         slabWeight: s.slabWeight,
         shell: s.share > 0 ? shellVolume.alphaGrid(nx, ny) : null,
-        // The high layer's own drawing (round-5 plan §11, A), and B's flag.
+        // The high layer's own drawing (round-5 plan §11, A).
         high: s.high ? shellVolume.alphaGrid(nx, ny, "high") : null,
-        layered: s.layered,
         slab:
           s.slabWeight > 0 && cloudVolume.state().share > 0
             ? cloudVolume.alphaGrid(nx, ny)
