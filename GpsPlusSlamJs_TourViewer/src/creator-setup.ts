@@ -59,10 +59,7 @@ import { newObjectId } from "./content-placement.js";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import type { SelectTargetRay } from "gps-plus-slam-app-framework/ar";
 
-import {
-  removeDraftDeletion,
-  writeDraftDeletion,
-} from "./draft-persistence.js";
+import { draftObjectWrites } from "./draft-actions.js";
 
 import type { SummaryPanel } from "./summary-panel.js";
 import { createVisitLog } from "./visit-log.js";
@@ -288,6 +285,8 @@ export function wireCreatorSetup(deps: {
       renderAuthorReadout();
     },
   });
+  /** The draft's object writes, as the object list calls them. */
+  const draftWrites = draftObjectWrites(draft);
   /** The placed objects' previews and the earlier visits' frame
    *  (`creator-previews.ts`). */
   const previews = wireCreatorPreviews({
@@ -348,14 +347,13 @@ export function wireCreatorSetup(deps: {
       gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
     }),
     codes: () => codes.storedPoses(),
-    // With its base, decided by the draft from the tour as opened (M6 E2p).
-    saveDraftObject: (object, blob) => draft.writeObject(object, blob),
-    saveDraftDeletion: (id) =>
-      draft.write(id, (store) => writeDraftDeletion(store, id)),
-    forgetDraftDeletion: (id) =>
-      draft.write(id, (store) => removeDraftDeletion(store, id)),
+    // With its base, decided by the draft from the tour as opened (M6 E2p);
+    // the writes the desktop editor's draft offers too (`draft-actions.ts`).
+    saveDraftObject: draftWrites.saveObject,
+    saveDraftDeletion: draftWrites.saveDeletion,
+    forgetDraftDeletion: draftWrites.forgetDeletion,
     schedule: (fn, ms) => seams.schedule(fn, ms),
-    forgetDraftObject: (id) => draft.forgetObject(id),
+    forgetDraftObject: draftWrites.forgetObject,
     syncPreviews: () => {
       previews.sync();
     },
