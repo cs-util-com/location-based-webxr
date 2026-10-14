@@ -1017,6 +1017,9 @@ describe('createEnableGpsArController — codes-only mode (location: none)', () 
     });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/location/);
+    // Refused BEFORE any permission is asked for (M1b-1 review #5).
+    expect(deps.requestGeolocationPermission).not.toHaveBeenCalled();
+    expect(deps.requestOrientationPermission).not.toHaveBeenCalled();
     expect(deps.initAR).not.toHaveBeenCalled();
   });
 });

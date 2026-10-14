@@ -7,7 +7,9 @@
 - **A codes-only mode for `enable()`** (`ar/enable-gps-ar`):
   `EnableGpsArConfig.location: 'none'` requests no location permission and
   starts no GPS watch, while AR and the other watches start as before - for
-  an app whose content its printed codes place (Tour Viewer QR-first M1b).
+  an app whose content is placed without the device position, for example
+  by scanning printed QR codes, so a visitor who declines location can still
+  use AR. `onGpsPosition` is then never called, even when set.
   The default (`'required'`) is unchanged; an unknown value fails
   `enable()`.
 
