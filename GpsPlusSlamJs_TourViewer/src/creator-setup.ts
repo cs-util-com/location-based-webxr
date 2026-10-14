@@ -712,7 +712,7 @@ export function wireCreatorSetup(deps: {
     },
     ...(deps.host === undefined ? {} : { host: deps.host }),
     // A yes to "did you upload it?" (F19) is noted in the draft.
-    onUploaded: () => draft.uploaded(),
+    onUploaded: (written) => draft.uploaded(written),
   });
 
   /** Finish: the rebuilt zip and what it changes (`creator-finish.ts`). */

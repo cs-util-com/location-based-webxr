@@ -630,6 +630,11 @@ function authoring(
   return {
     ctx,
     dom,
+    /** The page's seams, for a test that changes one (a save that does
+     *  not go through). */
+    seams: seams as {
+      downloadZip: (blob: Blob, name: string) => Promise<boolean>;
+    },
     setup,
     codes: setup.codes,
     dispatched,
@@ -3374,6 +3379,41 @@ describe(
           expect(a.dom.uploadAsk.hidden).toBe(true);
           await flush();
           const b = await load(store, []);
+          await vi.waitFor(() => {
+            expect(b.dom.draftOfferText.textContent).toMatch(
+              /1 thing you placed/,
+            );
+          });
+          expect(b.ctx.placementNote ?? "").not.toMatch(/replaced/);
+        });
+
+        // Why (F19 milestone review #2): the question about Finish A's file
+        // stayed on screen through a second Finish whose save did not go
+        // through, and a yes then noted that LATER, never-delivered file's
+        // versions as hosted - so a pin placed after Finish A read as
+        // "deleted elsewhere" at the next open of A's file, and was lost.
+        it("a question left from an earlier Finish never notes a later Finish that was not saved", async () => {
+          const { store } = memoryDraftStore();
+          const a = await placeAndFinish(store);
+          const first = a.ctx.rebuiltZip;
+          const hostedA = [...a.ctx.tourManifest!.objects];
+          a.beginVisit();
+          a.seeTheCode();
+          await flush();
+          await a.placePin("Bench", [3, 0, 1]);
+          a.endVisit();
+          await flush();
+          a.device.live = false;
+          a.seams.downloadZip = () => Promise.resolve(false);
+          a.dom.finishButton.click();
+          await vi.waitFor(() => {
+            expect(a.ctx.rebuiltZip).not.toBe(first);
+          });
+          await flush();
+          a.dom.uploadYes.click();
+          await flush();
+          // A's file is the one hosted: the bench is offered back.
+          const b = await load(store, hostedA);
           await vi.waitFor(() => {
             expect(b.dom.draftOfferText.textContent).toMatch(
               /1 thing you placed/,

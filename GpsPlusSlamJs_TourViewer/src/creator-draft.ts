@@ -80,13 +80,15 @@ export interface CreatorDraft {
    *  creator uploads the file. */
   finished(ids: readonly string[], written: TourManifest): void;
   /**
-   * The creator said the last Finish's file was uploaded (follow-up F19):
-   * every object a Finish of this load wrote gets its version in that file
-   * as SEEN hosted, so a delete made elsewhere afterwards is honoured
-   * rather than offered back. Whether every note landed; true with nothing
-   * to note.
+   * The creator said a Finish's file was uploaded (follow-up F19):
+   * `written` is the tour.json of THAT file, captured when the question
+   * was asked (F19 review #2) - never a later Finish's that was not
+   * saved. Every object a Finish of this load wrote gets its version in
+   * `written` as SEEN hosted, so a delete made elsewhere afterwards is
+   * honoured rather than offered back. Whether every note landed; true
+   * with nothing to note.
    */
-  uploaded(): Promise<boolean>;
+  uploaded(written: TourManifest): Promise<boolean>;
   /** One awaited write for object `id` (the object list's actions). */
   write(
     id: string,
@@ -280,10 +282,9 @@ export function wireCreatorDraft(deps: {
   let opened: TourManifest | null = null;
   /** The line saying the draft gave way to newer edits, for the open. */
   let supersededNote: string | null = null;
-  /** The objects this load's Finishes wrote, and the last file written
-   *  (F19): what a yes to "did you upload it?" is about. */
+  /** The objects this load's Finishes wrote (F19): what a yes to "did you
+   *  upload it?" can be about. */
   const finishedIds = new Set<string>();
-  let lastWritten: TourManifest | null = null;
 
   /** The opened tour's version of an object, recorded as seen with each
    *  draft write of it (M6 E2p); none for an object it does not carry.
@@ -892,7 +893,6 @@ export function wireCreatorDraft(deps: {
       opened = null;
       supersededNote = null;
       finishedIds.clear();
-      lastWritten = null;
       dom.draftOffer.hidden = true;
       offered = null;
       draftStore = undefined;
@@ -914,7 +914,6 @@ export function wireCreatorDraft(deps: {
     },
     finished: (ids, written) => {
       for (const id of ids) finishedIds.add(id);
-      lastWritten = written;
       const store = draftStore;
       const tourUrl = draftTourUrl;
       if (store === undefined || tourUrl === null) return;
@@ -929,12 +928,11 @@ export function wireCreatorDraft(deps: {
         );
       }
     },
-    uploaded: async () => {
-      const written = lastWritten;
-      if (written === null) return true;
-      // The LAST file: an earlier Finish's objects are in it too, in the
-      // version the creator just said is hosted (a later Finish carries
-      // them on). As a reader of that file sees them (third review #5).
+    uploaded: async (written) => {
+      // The file asked about: an earlier Finish's objects are in it too, in
+      // the version the creator just said is hosted (a later Finish carries
+      // them on); an object absent from it is not noted. As a reader of
+      // that file sees them (third review #5).
       const read = manifestAsRead(written);
       const notes = [...finishedIds].flatMap((id) => {
         const object = read.objects.find((o) => o.id === id);

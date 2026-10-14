@@ -37,12 +37,12 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     with its seen version (`creator-setup.ts`'s `saveDraftObject`).
   - `finished(ids, written)` - `creator-finish.ts` after a Finish wrote
     these objects: their versions in `written` are this device's own work.
-    The ids (all of this load's Finishes) and the last `written` are kept
-    for `uploaded`.
-  - `uploaded()` (follow-up F19, owner decision 2026-10-14) - the creator
-    answered yes to "did you upload it?" (`creator-handoff.ts`): every
-    object a Finish of this load wrote gets its version in the LAST written
-    file added as SEEN (`addDraftBaseKey`, in the id's queue), so a delete
+    The ids (all of this load's Finishes) are kept for `uploaded`.
+  - `uploaded(written)` (follow-up F19, owner decision 2026-10-14) - the
+    creator answered yes to "did you upload it?" (`creator-handoff.ts`),
+    and `written` is the tour.json of the file the question was asked
+    about, never a later Finish's (F19 review #2): every object a Finish of
+    this load wrote gets its version in `written` added as SEEN (`addDraftBaseKey`, in the id's queue), so a delete
     made elsewhere afterwards is honoured instead of offered back. Resolves
     whether every note landed (true with nothing to note); a note that did
     not land leaves no base, which is never superseded (the safe side).
