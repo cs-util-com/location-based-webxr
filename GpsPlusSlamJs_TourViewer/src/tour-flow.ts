@@ -100,6 +100,9 @@ export interface ArStatusInput {
     /** The code keep-alive's phase (authoring plan M2b): what the line
      *  says once the vote budget is spent. */
     hold?: KeepAlivePhase | null;
+    /** Device GPS fixes stored this session (votes not counted): with none
+     *  the hold line claims no countdown and no GPS (QR-first M1). */
+    deviceFixes?: number;
     /** A code the moved-code check ignores, vetoed or seen in this AR entry
      *  (authoring plan 2026-09-28-0953 §3.6, D20, M5c). */
     ignoredCode?: string | null;

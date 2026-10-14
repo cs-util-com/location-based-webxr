@@ -28,7 +28,7 @@ import { createSceneView, type SceneViewDom } from "./scene-view.js";
 import type { TourViewerSeams } from "./seams.js";
 import { wireStationGuide, type StationGuideDom } from "./station-guide.js";
 import { createStationPrefetch, decodeFigure } from "./station-prefetch.js";
-import { createStationRelocator } from "./tour-relocation.js";
+import { createStationRelocator, firstDeviceFix } from "./tour-relocation.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -78,15 +78,10 @@ export function wireVisitorStations(deps: {
     deps.relocate !== undefined,
     deps.relocate?.onRelocated,
   );
-  /** The phone's first raw GPS fix, for the test relocation. */
+  /** The phone's first DEVICE fix, for the test relocation (never a
+   *  code's vote: QR-first M1 review #3). */
   function firstFix(): { lat: number; lon: number; alt: number } | null {
-    const first = selectGpsPositions(arStore.getState())[0];
-    if (first === undefined) return null;
-    return {
-      lat: first.latitude,
-      lon: first.longitude,
-      alt: first.altitude ?? Number.NaN,
-    };
+    return firstDeviceFix(selectGpsPositions(arStore.getState()));
   }
   const objectUrls = {
     create: (blob: Blob) => URL.createObjectURL(blob),

@@ -437,8 +437,11 @@ describe(
 
     // Why (§7 #9): the placement trigger reads the tracking-quality phase,
     // which counts every stored point, votes included. This pins what it reads
-    // on votes alone, and that the viewer does not need it to: a code that
-    // placed the tour is the readiness the trigger exists to wait for.
+    // on votes alone, and that the trigger itself does not wait on it once a
+    // code placed the tour. Scope (M1 review #5): every voted lock AFTER the
+    // gate already starts the placement (onVotedLock), so this rule decides
+    // only a scan whose one voted lock opened the gate, and the trigger's
+    // own placementAttempted latch - which is what this test calls directly.
     it("pins readiness on votes alone, and places once a code placed the tour", () => {
       const v = viewer();
       v.ctx.session = {

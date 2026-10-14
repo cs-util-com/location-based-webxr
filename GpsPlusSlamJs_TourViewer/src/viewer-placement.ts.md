@@ -102,7 +102,12 @@ recording. Its own module since the flows plan M6.
     code placed the tour (the gate passed on a voted lock of a trusted code;
     QR-first M1, §7 #9: on votes alone the tracking-quality report reads
     `degraded`, its smoothed convergence score having seen too few
-    snapshots); until then sets `waiting-ready`. It also waits while `tour.json` is still loading
+    snapshots); until then sets `waiting-ready`. The code rule changes
+    little (corrected after the M1 review #5; the M1 commit overstated it):
+    every voted lock AFTER the gate already starts the placement itself
+    (`onVotedLock`), bypassing readiness, so the rule decides only a scan
+    whose single voted lock opened the gate, and this trigger's own latch
+    (`placementAttempted`). It also waits while `tour.json` is still loading
     (`tourManifestStatus === "pending"`; the manifest's settle calls it
     again), because the baked spots live there. A tour with neither a
     recording nor baked spots declines at once (the ring waits for a
@@ -198,7 +203,18 @@ recording. Its own module since the flows plan M6.
   the session has none. A code without geo sets nothing. With no device fix
   at all a wrongly placed code cannot be detected - the moved-code check
   needs device fixes; once they arrive it reads and retracts as before, and
-  the retraction keeps the code's zero.
+  the retraction keeps the code's zero. **Latency** (M1 review #2): with no
+  fix before the pin, a wrong code is read at the earliest after the rule's
+  60 s of device fixes (`CODE_MOVE_RULE.minSpanS`; measured 60-75 s for a
+  25 m move), and a code hung less than the 20 m floor
+  (`MOVED_CODE_FLOOR_M`) from its saved spot is never read (measured: 15 m,
+  no veto in 120 s) - it holds the tour off by its offset until its hold
+  hands over to GPS.
+- **Effectively unreachable lines, kept on purpose** (M1 review #6): the
+  placement decline "waiting for a GPS fix or a scanned code" (a code's
+  votes need the zero it sets itself, and `ready` needs GPS data) and the
+  fused hint "Code measured - placing the tour." (the same frame votes).
+  Both stay so no state is ever silent.
 - **The entry's vote sink is the one way a vote reaches the store**
   (`viewer-vote-sink.ts`; authoring plan M2b, batched in M2e): a lock's
   ring and each keep-alive tick (with its device fix) are ONE

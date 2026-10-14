@@ -693,6 +693,51 @@ describe(
       expect(selectZeroReference(v.arStore.getState())).toEqual(codeZero);
     });
 
+    // Why (QR-first M1 review #2): under M1 a code scanned before any fix
+    // has no device fix before its pin, so the check reads a wrong code only
+    // from the fixes that follow - at the earliest after the rule's 60 s of
+    // evidence (CODE_MOVE_RULE.minSpanS), and below the 20 m floor
+    // (MOVED_CODE_FLOOR_M) never: such a code holds the tour off by its
+    // offset until its hold hands over to GPS. Measured here: 15 m never,
+    // 25 m once 60 s of fixes are in.
+    it.each([
+      [15, false],
+      [25, true],
+    ] as const)(
+      "reads a code scanned before any fix and hung %i m from its saved spot: vetoed = %s",
+      (offsetM, vetoed) => {
+        const v = viewer();
+        captured.stablePose = raw(
+          [
+            SAVED.positionNue[0],
+            SAVED.positionNue[1],
+            SAVED.positionNue[2] + offsetM,
+          ],
+          new Quaternion(...SAVED.rotationNue),
+        );
+        for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+          v.lock(T0 + i * 100);
+        }
+        let vetoAt = -1;
+        for (let s = 1; s <= 120 && vetoAt < 0; s += 1) {
+          const a = (2 * Math.PI * s) / 30;
+          v.fixAt(
+            s,
+            SAVED.positionNue[0] + 10 * Math.cos(a),
+            SAVED.positionNue[2] + offsetM + 10 * Math.sin(a),
+          );
+          if (v.ctx.ignoredCodes.has(LEVEL_ID)) vetoAt = s;
+        }
+        const read =
+          vetoAt < 0
+            ? "never"
+            : vetoAt >= 60 && vetoAt < 75
+              ? "after 60-75 s"
+              : `at ${String(vetoAt)} s`;
+        expect(read).toBe(vetoed ? "after 60-75 s" : "never");
+      },
+    );
+
     it("never vetoes a code that hangs where it was saved", () => {
       captured.stablePose = null;
       const v = viewer();

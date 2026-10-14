@@ -179,7 +179,9 @@ export function visitorFusedHint(input: {
   }
   if (input.nowMs - last.atMs > HINT_STALE_MS) return null;
   // Stable yet no vote: the frame's votes come next - the code sets the
-  // session zero itself when no GPS fix has (QR-first M1; plan §67 #1).
+  // session zero itself when no GPS fix has (QR-first M1; plan §67 #1). In
+  // practice the same frame votes, so this line is effectively never seen;
+  // it stays so a stable pose never reads as "measuring".
   if (last.result.status === "stable") {
     return "Code measured - placing the tour.";
   }

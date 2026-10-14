@@ -51,7 +51,8 @@ spread s m)]`, with the turn threshold and the lift spread since polish
     votes come next; since QR-first M1 a stable code sets the session zero
     itself when no GPS fix has, so it no longer waits for one (plan §67 #1;
     the visitor once read "waiting for the first GPS fix" after a good
-    scan);
+    scan). Effectively unreachable since M1 - the same frame votes - and
+    kept so a stable pose never reads as "measuring" (M1 review #6);
   - else "Measuring the code: " + "keep it in view while you move
     slowly." for `views` (and an empty result; the intro's wording - a wall
     poster cannot be walked around, milestone review of b4c #3), or the

@@ -9,7 +9,8 @@
  *   runs for the rest of the page's life - the box locks on, because
  *   unticking it would promise a stop that does not exist.
  * - The box can arm only the page's FIRST AR entry. The store's zero
- *   reference is set by the first GPS fix of the first AR session and kept
+ *   reference is set by the first GPS fix (or, since QR-first M1, the first
+ *   stable code) of the first AR session and kept
  *   across sessions, so a recording started on a later entry would hold no
  *   `setZeroPos` and replay empty (M1a review finding 1). Once an AR session
  *   has run unrecorded, the box locks off and says to reload the page.

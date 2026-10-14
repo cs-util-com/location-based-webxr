@@ -2,10 +2,12 @@
  * Viewer mode (QR-pose plan M4) and the photo placement (geo-join plan,
  * flows plan M4); its own module since the flows plan M6. The default
  * passerby flow: the tour's photos are placed at their capture spots once
- * the tracking-quality phase reports ready (`tryPlaceTour`), scanned codes
- * relocalize the session via budgeted synthetic GPS votes and REFINE the
- * alignment under the placed planes, and the ring around a code is the
- * fallback for a tour without a recording.
+ * the tracking-quality phase reports ready or a code placed the tour
+ * (`tryPlaceTour`), scanned codes relocalize the session via budgeted
+ * synthetic GPS votes and REFINE the alignment under the placed planes, and
+ * the ring around a code is the fallback for a tour without a recording. A
+ * code scanned before any GPS fix sets the session zero itself (QR-first
+ * M1, `zeroFromCode`).
  *
  * A scanned code is also CHECKED after the scan (authoring plan
  * 2026-09-28-0953 §3.6, D20, M5c; `moved-code-check.ts`): on each new device
@@ -245,8 +247,10 @@ export function createViewerPlacement(deps: {
   }
 
   /** Whether a code's votes placed this tour: the gate passed on a voted
-   *  lock of a trusted code (M5). The placement trigger's readiness then
-   *  holds whatever the tracking-quality phase reads (§7 #9). */
+   *  lock of a trusted code (M5). The placement trigger then runs whatever
+   *  the tracking-quality phase reads (§7 #9) - which changes only a scan
+   *  whose one voted lock opened the gate, since every later voted lock
+   *  starts the placement itself (`onVotedLock`). */
   const codePlacedTour = (): boolean =>
     ctx.scanGate.kind === "passed" &&
     ctx.scanGate.via === "code" &&
@@ -737,9 +741,14 @@ export function createViewerPlacement(deps: {
   /**
    * The placement trigger: with a tour open and a viewer session running,
    * the capture join runs ONCE per session+tour as soon as the
-   * tracking-quality phase reports ready (DEC-F3). A later voted lock
-   * refines the alignment under the placed planes, or places the ring when
-   * the join declined. Author mode never places.
+   * tracking-quality phase reports ready (DEC-F3) - or a code placed the
+   * tour (`codePlacedTour`, QR-first M1: on votes alone that phase reads
+   * `degraded`). The rule matters little: every voted lock AFTER the gate
+   * starts the placement itself (`onVotedLock`), bypassing readiness; it
+   * decides only a scan whose one voted lock opened the gate, and this
+   * trigger's own latch (`placementAttempted`). A later voted lock refines
+   * the alignment under the placed planes, or places the ring when the join
+   * declined. Author mode never places.
    */
   function tryPlaceTour(): void {
     if (authorMode || ctx.placementUnsubscribe === null) return;
@@ -859,9 +868,10 @@ export function createViewerPlacement(deps: {
     if (current === null) return;
     if (zero === null) {
       // Unreachable in practice (`ready` needs GPS data, and a code's
-      // votes need the zero it sets itself, QR-first M1) but never silent and
-      // never final (M6 review #9): give the attempt back so the trigger
-      // retries on the next dispatch.
+      // votes need the zero it sets itself, QR-first M1), so this decline
+      // is effectively never shown; kept so it is never silent and never
+      // final (M6 review #9): give the attempt back so the trigger retries
+      // on the next dispatch.
       ctx.placementAttempted = false;
       ctx.placement = {
         kind: "declined",

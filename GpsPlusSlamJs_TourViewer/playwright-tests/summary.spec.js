@@ -236,8 +236,10 @@ test("a visitor's page never loads Leaflet", async ({ page }) => {
       },
       { timeout: 20000 },
     )
-    // Seen and measured; the lock itself waits for GPS, which no map needs.
-    .toMatch(/Code (recognised|measured)/);
+    // Seen, measured and voted: since QR-first M1 the code sets the session
+    // zero itself, so the lock relocalizes without waiting for GPS - and
+    // none of it needs the map.
+    .toMatch(/Relocaliz/);
   // The whole visit, AR and all, without one request for the map.
   expect(leafletRequests(urls)).toEqual([]);
   // ...while the page's modules did load (the check sees requests at all).

@@ -245,6 +245,9 @@ export function wireArEntry(deps: {
         reprojectionErrorPx: ctx.viewerReprojectionPx,
         // The code keep-alive's phase at render time (it counts down).
         hold: ctx.viewerKeepAlive?.phase(Date.now()) ?? null,
+        // Device fixes only (votes excluded): with none, no GPS hand-over
+        // is claimed (QR-first M1 review #4).
+        deviceFixes: sessionGpsQuality().fixes,
         // A code the moved-code check ignores (D20, M5c).
         ignoredCode: ctx.viewerIgnoredText,
         // Read from the last evaluation, never re-evaluated here: this runs

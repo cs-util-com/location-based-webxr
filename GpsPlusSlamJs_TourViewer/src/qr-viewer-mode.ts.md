@@ -69,6 +69,10 @@ hasVoted)` is forwarded from every controller lock (no detected-text
   `hold` (the keep-alive's phase) decides the spent-budget line: "the code
   holds the placement for N s more", "the code's hold is fading; GPS takes
   over gradually", or "the code's hold has ended - GPS places the tour now";
+  with `deviceFixes: 0` (no device fix stored, QR-first M1 review #4)
+  "Relocalized - the code places the tour (no GPS fix yet)." instead - the
+  keep-alive's phase runs on the clock alone, so without a fix the
+  countdown means nothing and no GPS takes over;
   without a phase for the locked code it only says the batches were cast.
   It used to say "placement holds" unconditionally while the votes faded
   out of the solve (authoring plan §2.2 B1).
