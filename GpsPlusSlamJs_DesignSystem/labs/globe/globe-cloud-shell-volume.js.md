@@ -113,17 +113,31 @@ radiusM }` from its state, the centre null on the camera, where its flat
 - The shadow on the ground (the cloud-shadows plan 2026-10-13-1951,
   M2/M3; `update`'s `shadow`, the strength from
   `cloudShellShadowStrengths`, and the high layer's `highLayer.shadow`):
-  `shellShadow` reads, where this pixel's ray meets the ground (the model
-  sphere), the cloud column the sun's ray from there crosses at the
-  deck's middle, once, with the pass's own field, chart, drift and cover,
-  so the shadow lies under the clouds it draws; its slant depth over the
-  sun's height (floored at 0.2), faded as the sun sets. Written into the
-  target as darkening (black at the shadow's alpha) under the clouds, and
-  kept by the march's early exits (a ray from below a deck never crosses
-  it, the high layer's case seen from the ground). Measured in the
-  targets (the screen's mean moved with the eased exposure and the
-  arriving imagery): the shell's ground rows 0.122 to 0.180 at 100 km, 0
-  without clouds; the high layer's 0 to 0.042 from 2 km (thin, wispy).
+  `shellShadow` reads, where this pixel's ray meets the ground, the cloud
+  column the sun's ray from there crosses at the deck's middle, once, with
+  the pass's own field, chart, drift and cover, so the shadow lies under
+  the clouds it draws; its slant depth over the sun's height (floored at
+  0.2), faded as the sun sets. The ground is the drawn relief where the
+  scene's depth is given (the ground-sky hand-over's `uSceneDepth`), the
+  model sphere otherwise: 1.3 km of relief seen at 20 degrees moved a
+  sphere-placed shadow 3.6 km off its cloud (M1).
+  - The shell's shadow is drawn by a second, shadow-only pass of the same
+    shader (`uShadowPass`: the march skipped, `shellShadow` written as
+    black at its alpha) into its own `shadowTarget`, at the march's
+    resolution, only while its strength is above 0. The composite lays it
+    over the ground before both cloud layers (M1). In the shell's alpha,
+    as before, the slab's per-pixel share took it away below the slab's
+    ceiling: 0.12 of the target's points shaded at 5 km, none of them on
+    the screen (measured 2026-10-14), the owner's "do the shadows vanish
+    when I zoom in?".
+  - The high layer's stays in its own target (its march), kept by the
+    march's early exits (a ray from below a deck never crosses it, its
+    case seen from the ground).
+  - Measured in the targets (the screen's mean moved with the eased
+    exposure and the arriving imagery): the shell's ground rows 0.122 to
+    0.180 at 100 km, 0 without clouds; the high layer's 0 to 0.042 from
+    2 km (thin, wispy). `alphaGrid(nx, ny, "shadow")` reads the shell's
+    shadow target (zeros while the shadow is off).
 - No aerial fade above the slab's ceiling (round-5 C3: it made the clouds
   see-through from high up, 0.68 straight down at 100 km); below it the
   fade's strength is the slab's share, as the slab's own

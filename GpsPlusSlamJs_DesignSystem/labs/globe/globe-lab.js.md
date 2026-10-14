@@ -688,9 +688,10 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   `cloudHighKm` (9; 3-20), `cloudHighCell` (6; 1-16), `cloudHighCover`
   (0.35; 0-1.5) and `cloudHighShare` (0.3; 0.05-1, lower is wispier);
   `cloudShellShadow` (0, off; 0-1: the shell's own cloud shadow and the
-  high layer's, the cloud-shadows plan 2026-10-13-1951, M2/M3; the map
-  shadow steps back where the shell draws, `cloudShellShadowStrengths`); the
-  alpha grid adds `high`;
+  high layer's, the cloud-shadows plan 2026-10-13-1951, M2/M3, and M1:
+  the shell's to the ground, in its own target under both cloud layers;
+  the map shadow steps back where the shell draws,
+  `cloudShellShadowStrengths`); the alpha grid adds `high` and `shadow`;
   `cloudFlatOutFromKm` (900) and `cloudFlatOutToKm` (700) the texture's own
   fade with the shell (C5: the volume already strong when the texture
   goes; clamped above the slab's ceiling and falling);

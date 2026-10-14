@@ -117,6 +117,8 @@ uniform vec2 uFieldWeights;
 uniform float uBothSides;
 // The shadow's strength on the ground (the cloud-shadows plan, M2); 0 none.
 uniform float uShadow;
+// The shadow alone into its own target (the cloud-shadows plan M1).
+uniform float uShadowPass;
 // The slab's aerial fade's share (1 at its station, 0 high up).
 uniform float uAerial;
 // The column's rise per unit of noise, times this (the law's noiseShare):
@@ -280,23 +282,31 @@ void shellNode( vec3 o, vec3 dir, float t, float stepKm, out float raw, out floa
 }
 
 // The shadow on the ground under this pixel (the cloud-shadows plan
-// 2026-10-13-1951, M2): where the view ray meets the ground (the model
-// sphere), the cloud column that the sun's ray from there crosses at the
-// deck's middle, read once with this pass's own field, chart, drift and
-// cover, so the shadow lies under the clouds this pass draws. Its slant
-// depth over the sun's height (floored at 0.2), faded out as the sun sets.
-float shellShadow( vec3 o, vec3 dir, float ro, float b ) {
+// 2026-10-13-1951, M2 and M1): where the view ray meets the ground, the
+// cloud column that the sun's ray from there crosses at the deck's middle,
+// read once with this pass's own field, chart, drift and cover, so the
+// shadow lies under the clouds this pass draws. Its slant depth over the
+// sun's height (floored at 0.2), faded out as the sun sets. The ground is
+// the drawn relief where its depth is in (tScene > 0, by the space pass's
+// weight), else the model sphere: near the ground the sphere's point lay
+// kilometres beyond the relief's (1.3 km of relief seen at 20 degrees: 3.6
+// km), so the shadow slid with the camera. Relief above the deck's middle
+// takes none.
+float shellShadow( vec3 o, vec3 dir, float ro, float b, float tScene ) {
   if ( uShadow <= 0.0 ) return 0.0;
+  float tGround = -1.0;
   float discGround = b * b - ( ro - uShellGroundKm ) * ( ro + uShellGroundKm );
-  if ( discGround <= 0.0 ) return 0.0;
-  float tGround = -b - sqrt( discGround );
+  if ( discGround > 0.0 ) tGround = -b - sqrt( discGround );
+  if ( tScene > 0.0 ) tGround = tGround > 0.0 ? mix( tGround, tScene, uSceneDepthWeight ) : tScene;
   if ( tGround <= 0.0 ) return 0.0;
   vec3 ground = o + dir * tGround;
   float sunUp = dot( normalize( ground ), uSun );
   if ( sunUp <= 0.02 ) return 0.0;
   float midKm = 0.5 * ( uDeckBaseKm + uDeckTopKm );
+  float rise = uShellGroundKm + midKm - length( ground );
+  if ( rise <= 0.0 ) return 0.0;
   float raw; float height; float noise; float threshold;
-  shellNode( ground, uSun, midKm / max( sunUp, 0.05 ), tGround * uPixelAngle, raw, height, noise, threshold );
+  shellNode( ground, uSun, rise / max( sunUp, 0.05 ), tGround * uPixelAngle, raw, height, noise, threshold );
   float column = clamp( raw, 0.0, ( uDeckTopKm - uDeckBaseKm ) * 1000.0 );
   float tau = SHELL_SIGMA * shellCumulative( column / uThickness ) / max( sunUp, 0.2 );
   return uShadow * ( 1.0 - exp( -tau ) ) * smoothstep( 0.02, 0.1, sunUp );
@@ -310,7 +320,18 @@ void main() {
   vec3 o = uCamera;
   float ro = length( o );
   float b = dot( o, dir );
-  float shadow = shellShadow( o, dir, ro, b );
+  // Where the drawn relief ends the ray (km; -1 where none is drawn).
+  float tScene = -1.0;
+  if ( uSceneDepthWeight > 0.0 ) {
+    vec2 depthUv = gl_FragCoord.xy / uTargetSize;
+    float sceneDepth = texture2D( uSceneDepth, depthUv ).r;
+    if ( sceneDepth < 1.0 ) {
+      vec4 viewPoint = uSceneInverseProjection * vec4( depthUv * 2.0 - 1.0, sceneDepth * 2.0 - 1.0, 1.0 );
+      tScene = length( uViewToModel * ( viewPoint.xyz / viewPoint.w ) );
+    }
+  }
+  float shadow = shellShadow( o, dir, ro, b, tScene );
+  if ( uShadowPass > 0.5 ) SHELL_SHADOW_ONLY
   // Raised by the flattened deck's largest rise inside the disc (C4).
   float topR = uShellGroundKm + uDeckTopKm + uFlatten * uFlatRiseKm;
   float baseR = uShellGroundKm + uDeckBaseKm;
@@ -339,15 +360,7 @@ void main() {
       if ( tGround > 0.0 ) tOut = min( tOut, tGround );
     }
   }
-  if ( uSceneDepthWeight > 0.0 ) {
-    vec2 depthUv = gl_FragCoord.xy / uTargetSize;
-    float sceneDepth = texture2D( uSceneDepth, depthUv ).r;
-    if ( sceneDepth < 1.0 ) {
-      vec4 viewPoint = uSceneInverseProjection * vec4( depthUv * 2.0 - 1.0, sceneDepth * 2.0 - 1.0, 1.0 );
-      float tScene = length( uViewToModel * ( viewPoint.xyz / viewPoint.w ) );
-      tOut = mix( tOut, min( tOut, tScene ), uSceneDepthWeight );
-    }
-  }
+  if ( tScene > 0.0 ) tOut = mix( tOut, min( tOut, tScene ), uSceneDepthWeight );
   if ( tOut <= tIn ) SHELL_SHADOW_ONLY
   // The limb: a ray grazing the deck crosses up to thousands of km of it in
   // a few steps, which drew a dashed white line along the horizon from
@@ -453,6 +466,9 @@ uniform sampler2D tShell;
 uniform sampler2D tSlab;
 uniform float uShellWeight;
 uniform float uSlabWeight;
+// The shell's ground shadow, drawn on its own (the cloud-shadows plan M1).
+uniform sampler2D tShadow;
+uniform float uShadowOn;
 // The high layer (round-5 plan §11, A): on, and in front (from above).
 uniform sampler2D tHigh;
 uniform float uHighOn;
@@ -470,6 +486,15 @@ void main() {
     vec4 slab = texture2D( tSlab, vUv );
     float r = shell.a > 1e-4 ? min( 1.0, slab.a / shell.a ) : 1.0;
     c = uShellWeight * ( 1.0 - uSlabWeight * r ) * shell + uSlabWeight * slab;
+  }
+  // The ground shadow under both clouds (the cloud-shadows plan M1): in the
+  // shell's own alpha the slab's per-pixel share took it with the shell's
+  // clouds, and below the slab's ceiling the ground lost its shadows (an
+  // 0.12 share of shadowed points in the target, none on the screen at
+  // 5 km, measured). Black, under the mix.
+  if ( uShadowOn > 0.5 ) {
+    c.a = min( c.a, 1.0 );
+    c.a += ( 1.0 - c.a ) * texture2D( tShadow, vUv ).a;
   }
   if ( uHighOn > 0.5 ) {
     // Premultiplied over (twin of cloudLayerOver), its order by height.
@@ -548,6 +573,7 @@ export function createGlobeCloudShellVolume(
     uFieldWeights: { value: new THREE.Vector2(1, 0) },
     uBothSides: { value: 0 },
     uShadow: { value: 0 },
+    uShadowPass: { value: 0 },
     uAerial: { value: 0 },
     uNoiseShare: { value: 1 },
     uClouds: surfaceUniforms.uClouds,
@@ -590,8 +616,15 @@ export function createGlobeCloudShellVolume(
     type: THREE.HalfFloatType,
     depthBuffer: false,
   });
+  /** The shell's ground shadow, alone (the cloud-shadows plan M1). */
+  const shadowTarget = new THREE.WebGLRenderTarget(1, 1, {
+    type: THREE.HalfFloatType,
+    depthBuffer: false,
+  });
   const compositeUniforms = {
     tShell: { value: target.texture },
+    tShadow: { value: shadowTarget.texture },
+    uShadowOn: { value: 0 },
     tSlab: { value: null },
     uShellWeight: { value: 0 },
     uSlabWeight: { value: 0 },
@@ -658,6 +691,8 @@ export function createGlobeCloudShellVolume(
   /** The high layer this frame (A): null when off. */
   let high = null;
   let cameraKm = 0;
+  /** The shell's own shadow this frame (its pass; 0: none). */
+  let shadowStrength = 0;
 
   return {
     /** On or off (`cloudShellVolume`); idempotent. */
@@ -729,7 +764,7 @@ export function createGlobeCloudShellVolume(
       uniforms.uFieldWeights.value.set(cascade.weights[0], cascade.weights[1]);
       uniforms.uCoverGain.value = cover;
       // The shell's own shadow (cloudShellShadowStrengths, M2).
-      uniforms.uShadow.value = shadow;
+      shadowStrength = shadow;
       uniforms.uShellIn.value = shellIn;
       const frame = cloudShellFrame(ellipsoid, target, groundKm, frameMatrix);
       uniforms.uShellGaussianM.value = frame.gaussianRadiusM;
@@ -837,6 +872,12 @@ export function createGlobeCloudShellVolume(
       const h = Math.max(1, Math.round(size.y * resolution));
       if (target.width !== w || target.height !== h) target.setSize(w, h);
       if (
+        shadowStrength > 0 &&
+        (shadowTarget.width !== w || shadowTarget.height !== h)
+      ) {
+        shadowTarget.setSize(w, h);
+      }
+      if (
         high !== null &&
         (highTarget.width !== w || highTarget.height !== h)
       ) {
@@ -918,7 +959,18 @@ export function createGlobeCloudShellVolume(
         renderer.setClearColor(0x000000, 0);
         renderer.setRenderTarget(target);
         renderer.clear(true, false, false);
+        uniforms.uShadow.value = 0;
         renderer.render(march.scene, quadCamera);
+        // The shadow alone, one column per pixel, into its own target.
+        if (shadowStrength > 0) {
+          renderer.setRenderTarget(shadowTarget);
+          renderer.clear(true, false, false);
+          uniforms.uShadow.value = shadowStrength;
+          uniforms.uShadowPass.value = 1;
+          renderer.render(march.scene, quadCamera);
+          uniforms.uShadowPass.value = 0;
+          uniforms.uShadow.value = 0;
+        }
         if (high !== null) {
           renderer.setRenderTarget(highTarget);
           renderer.clear(true, false, false);
@@ -931,6 +983,8 @@ export function createGlobeCloudShellVolume(
       // to the slab), in front of the clouds from above its middle and
       // behind them from below (premultiplied over, cloudLayerOver).
       compositeUniforms.uHighOn.value = high !== null && shellIn > 0 ? 1 : 0;
+      compositeUniforms.uShadowOn.value =
+        shadowStrength > 0 && shellIn > 0 ? 1 : 0;
       compositeUniforms.uHighInFront.value =
         high !== null && cameraKm > high.altitudeKm ? 1 : 0;
       // The shell's own fade-in; the composite weighs it per pixel by what
@@ -976,11 +1030,22 @@ export function createGlobeCloudShellVolume(
     },
     /**
      * The last shell target's alpha at an `nx` x `ny` grid of pixel
-     * centres, bottom row first (debug, slow). Null before a frame.
+     * centres, bottom row first (debug, slow). Null before a frame. `which`:
+     * "deck" the march, "high" the high layer, "shadow" the ground shadow
+     * (zeros while it is off).
      */
     alphaGrid(nx, ny, which = "deck") {
       if (drawn === 0) return null;
-      const from = which === "high" ? highTarget : target;
+      // Off, the shadow target is not drawn and holds an old frame.
+      if (which === "shadow" && shadowStrength <= 0) {
+        return new Array(nx * ny).fill(0);
+      }
+      const from =
+        which === "high"
+          ? highTarget
+          : which === "shadow"
+            ? shadowTarget
+            : target;
       const w = from.width;
       const h = from.height;
       const pixels = new Uint16Array(w * h * 4);
@@ -1017,6 +1082,7 @@ export function createGlobeCloudShellVolume(
     dispose() {
       target.dispose();
       highTarget.dispose();
+      shadowTarget.dispose();
       material.dispose();
       composite.dispose();
       march.geometry.dispose();

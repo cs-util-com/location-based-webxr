@@ -555,9 +555,11 @@ async function descend(page, { from, to, extra }) {
 
 // WHY (the owner, 2026-10-13; the cloud-shadows plan 2026-10-13-1951,
 // M2/M3): during the flight only the blurry map shadow fell on the ground,
-// not under the clouds drawn, and the high layer cast none. Each pass now
-// writes its clouds' shadow into its own target as darkening (black at the
-// shadow's alpha), so the shadow is measured there, on the ground rows, not
+// not under the clouds drawn, and the high layer cast none. The shell's
+// shadow is drawn into its own shadow target (M1: in the shell's alpha the
+// slab's per-pixel share took it away) and the high layer's into the high
+// target, as darkening (black at the shadow's alpha), so the shadow is
+// measured there, on the ground rows, not
 // on the screen: the screen's mean moved with the eased exposure, the haze
 // and the imagery still arriving (three readings of the same setting that
 // disagreed by up to 12 levels, 2026-10-13). The shell's: more alpha on the
@@ -582,12 +584,12 @@ test("the clouds cast their own shadow during the flight and under the high laye
   };
   const down = "&view=47.05,8.31,100,150,-80";
   const errors = await bootGlobe(page, view(down), { phase: "user" });
-  const off = await groundAlpha(down, "shell");
-  const on = await groundAlpha(`${down}&cloudShellShadow=0.6`, "shell");
-  const bareOff = await groundAlpha(`${down}&cloudOpacity=0`, "shell");
+  const off = await groundAlpha(down, "shadow");
+  const on = await groundAlpha(`${down}&cloudShellShadow=0.6`, "shadow");
+  const bareOff = await groundAlpha(`${down}&cloudOpacity=0`, "shadow");
   const bareOn = await groundAlpha(
     `${down}&cloudOpacity=0&cloudShellShadow=0.6`,
-    "shell",
+    "shadow",
   );
   const low = "&view=47.05,8.31,2,150,-30&cloudHigh=1";
   await page.goto("about:blank");
@@ -601,6 +603,149 @@ test("the clouds cast their own shadow during the flight and under the high laye
   expect(on - off).toBeGreaterThan(0.01);
   expect(bareOn - bareOff).toBeLessThan(0.001);
   expect(highOn - highOff).toBeGreaterThan(0.01);
+});
+
+// WHY (the owner, 2026-10-14, DEC-SH-1: shadows at every height; the
+// cloud-shadows plan M1): "when I zoom in, do these shadows disappear?" They
+// did. The shell's shadow lived in its alpha, and below the slab's ceiling
+// the slab's per-pixel share took the shell's alpha away with it: at 5 km
+// 0.12 of the shell's target was shaded and none of the screen. It is now
+// drawn into its own target, laid over the ground under both cloud layers.
+// A shadow does not depend on the camera, so one ground patch is looked at
+// straight down from 10 km to 2.5 km (below the deck at 3 km), its window
+// shrinking with the height to the same ground: its shadow must stay the
+// same, not fade (20 km read 0.255 against 0.265 at 10 in a probe; left
+// out for the run's length; 2.5 km read 0.180 against 0.230 at 10 in the
+// smoke). On the screen, from 2.5 km, below the deck (no cloud in view,
+// only the shadow), the ground must darken with the shadow on (0.294 of the
+// points). From 5 km the deck below covers about 0.73 of the view, so only
+// its gaps show the shadow (0.056). `still` holds the reading against the
+// ground sky's eased exposure. The patch was picked by its cover: 47.05,
+// 8.31 lies in a gap at this time and casts nothing at any height.
+test("the clouds' shadow stays on the ground all the way down", async ({
+  page,
+}) => {
+  // 27 minutes measured: each pose loads twice (see `go`).
+  test.setTimeout(3_600_000);
+  const PATCH = "47.08,8.31";
+  const view = (km, extra = "") =>
+    `${BASE.replace("time=2026-10-05T11:00:00Z", "time=2026-10-05T10:00:00Z")}&cloudShellVolume=1&cloudShadow=0&cloudVolumeCover=2&cityWarm=0&view=${PATCH},${km},330,-89${extra}`;
+  const settled = () =>
+    page.waitForFunction(
+      () => {
+        const st = window.__globeLab.state();
+        const idle =
+          st.pendingTiles === 0 &&
+          st.mapsLoaded + st.mapErrors >= st.mapsTotal &&
+          (st.relief ? st.relief.settled === true : true);
+        window.__idleReads = idle ? (window.__idleReads ?? 0) + 1 : 0;
+        return window.__idleReads >= 10;
+      },
+      null,
+      { timeout: 480_000, polling: 200 },
+    );
+  const go = async (hash) => {
+    // The relief is loaded with the shell off first: the relief parses about
+    // one tile a frame, and with the shell's march and its shadow pass over
+    // a dense sky a SwiftShader frame took 2.6 s, so 144 tiles at 10 km took
+    // 8 minutes (measured 2026-10-14); the shell then draws over the loaded
+    // ground.
+    for (const pose of [
+      hash.replace("cloudShellVolume=1", "cloudShellVolume=0"),
+      hash,
+    ]) {
+      // The count starts over for each pose: left at the last pose's, the
+      // wait returned before the new pose had asked for anything.
+      await page.evaluate(() => {
+        window.__idleReads = 0;
+      });
+      await applyHash(page, pose);
+      await settledAt(pose);
+    }
+    await page.evaluate(() => window.__globeLab.timeFrames(3));
+  };
+  const settledAt = async (hash) => {
+    await settled().catch(async (e) => {
+      // Name the pose and what it waits for: a bare timeout said neither.
+      const st = await page.evaluate(() => {
+        const s = window.__globeLab.state();
+        return {
+          pendingTiles: s.pendingTiles,
+          maps: [s.mapsLoaded, s.mapErrors, s.mapsTotal],
+          relief: s.relief && {
+            settled: s.relief.settled,
+            share: s.relief.share,
+            stats: s.relief.stats,
+          },
+        };
+      });
+      throw new Error(`${e.message} at ${hash}: ${JSON.stringify(st)}`);
+    });
+  };
+  /** The shadow target's mean over the central window `frac` of the view. */
+  const patchShadow = async (km, frac) => {
+    await go(view(km, "&cloudShellShadow=0.6"));
+    const grid = await page.evaluate(
+      ({ nx, ny }) => window.__globeLab.cloudShellAlphaGrid(nx, ny)?.shadow,
+      { nx: NX, ny: NY },
+    );
+    const inside = [];
+    for (let j = 0; j < NY; j++) {
+      for (let i = 0; i < NX; i++) {
+        const u = Math.abs((i + 0.5) / NX - 0.5);
+        const v = Math.abs((j + 0.5) / NY - 0.5);
+        if (u <= frac / 2 && v <= frac / 2)
+          inside.push(grid?.[j * NX + i] ?? 0);
+      }
+    }
+    return mean(inside);
+  };
+  const points = [];
+  for (let i = 0; i < 16; i++) {
+    for (let j = 0; j < 10; j++) {
+      points.push([0.05 + (i * 0.9) / 15, 0.05 + (j * 0.9) / 9]);
+    }
+  }
+  const screen = async (hash) => {
+    await go(hash);
+    const px = await page.evaluate(
+      (g) => window.__globeLab.readPixels(g),
+      points,
+    );
+    return px.map((p) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]);
+  };
+  const darkened = (a, b) =>
+    a.filter((v, i) => v - (b[i] ?? v) > 8).length / a.length;
+  const errors = await bootGlobe(page, view(60), { phase: "user" });
+  // The window over the same ground: 2.5 km's whole view.
+  const patch = [];
+  for (const km of [10, 5, 2.5]) {
+    patch.push({ km, shadow: await patchShadow(km, 2.5 / km) });
+  }
+  const shots = [];
+  for (const km of [5, 2.5]) {
+    const off = await screen(view(km));
+    const on = await screen(view(km, "&cloudShellShadow=0.6"));
+    const offAgain = await screen(view(km));
+    shots.push({
+      km,
+      share: darkened(off, on),
+      still: darkened(off, offAgain),
+    });
+  }
+  const top = patch[0].shadow;
+  console.log(
+    `one patch's shadow (the target's mean, straight down): ${patch.map((p) => `${p.km} km ${p.shadow.toFixed(3)}`).join(", ")}; on the screen, the share darkened: ${shots.map((r) => `${r.km} km ${r.share.toFixed(3)} (still ${r.still.toFixed(3)})`).join(", ")}`,
+  );
+  expect(errors).toEqual([]);
+  expect(top).toBeGreaterThan(0.1);
+  for (const p of patch) {
+    expect(p.shadow).toBeGreaterThan(0.6 * top);
+    expect(p.shadow).toBeLessThan(1.4 * top);
+  }
+  for (const r of shots) expect(r.still).toBeLessThan(0.01);
+  expect(shots[0].share).toBeGreaterThan(0.01);
+  expect(shots[1].share).toBeGreaterThan(0.15);
 });
 
 test("no pop where the march's step count turns over, looking ahead", async ({
@@ -717,13 +862,15 @@ test("the hand-overs swept, no jump at any of them", async ({ page }) => {
 // WHY: the cost, against the 50 ms frame rule (the owner's phone: no frame
 // over 50 ms). SwiftShader renders on the CPU, so only ratios within one
 // page load mean anything: the frame with the shell on against off at 700,
-// 200 and 50 km, and the shell's own pass at full and half resolution. The
+// 200 and 50 km, the shell's own pass at full and half resolution, and the
+// frame and the pass with the clouds' ground shadow on against off (its
+// shadow-only second pass, the cloud-shadows plan M1, DEC-SH-1). The
 // GPU timer (EXT_disjoint_timer_query_webgl2) is used where the device has
 // it (headless Chromium does not: stated in the log).
 test("its cost, as ratios within one page load", async ({ page }) => {
   test.setTimeout(3_600_000);
-  const pose = (km, on, res = 1) =>
-    `${BASE}&view=${PLACES.ocean},${km},0,-45&cloudShellVolume=${on}&cloudShellRes=${res}`;
+  const pose = (km, on, res = 1, shadow = 0) =>
+    `${BASE}&view=${PLACES.ocean},${km},0,-45&cloudShellVolume=${on}&cloudShellRes=${res}&cloudShellShadow=${shadow}`;
   const errors = await bootGlobe(page, pose(700, 1), { phase: "user" });
   const timer = await page.evaluate(
     () =>
@@ -750,13 +897,24 @@ test("its cost, as ratios within one page load", async ({ page }) => {
         await page.evaluate(() => window.__globeLab.timeCloudShell(6) / 6),
       );
     }
-    rows.push({ km, frames, pass });
+    const shadow = { frame: {}, pass: {} };
+    for (const sh of [0, 0.6, 0, 0.6]) {
+      await applyHash(page, pose(km, 1, 0.5, sh));
+      await page.evaluate(() => window.__globeLab.timeFrames(2));
+      (shadow.frame[sh] ??= []).push(
+        await page.evaluate(() => window.__globeLab.timeFrames(6) / 6),
+      );
+      (shadow.pass[sh] ??= []).push(
+        await page.evaluate(() => window.__globeLab.timeCloudShell(6) / 6),
+      );
+    }
+    rows.push({ km, frames, pass, shadow });
   }
   console.log(
     `cost (SwiftShader, relative; GPU timer ${timer ? "available" : "not available"}): ${rows
       .map(
         (x) =>
-          `${x.km} km: frame on/off x${(mean(x.frames.on) / mean(x.frames.off)).toFixed(2)} (${mean(x.frames.on).toFixed(0)}/${mean(x.frames.off).toFixed(0)} ms), the pass alone ${mean(x.pass[1]).toFixed(0)} ms at full, ${mean(x.pass[0.5]).toFixed(0)} at half (x${(mean(x.pass[0.5]) / mean(x.pass[1])).toFixed(2)}), the pass a share ${(mean(x.pass[1]) / mean(x.frames.on)).toFixed(2)} of the frame`,
+          `${x.km} km: frame on/off x${(mean(x.frames.on) / mean(x.frames.off)).toFixed(2)} (${mean(x.frames.on).toFixed(0)}/${mean(x.frames.off).toFixed(0)} ms), the pass alone ${mean(x.pass[1]).toFixed(0)} ms at full, ${mean(x.pass[0.5]).toFixed(0)} at half (x${(mean(x.pass[0.5]) / mean(x.pass[1])).toFixed(2)}), the pass a share ${(mean(x.pass[1]) / mean(x.frames.on)).toFixed(2)} of the frame; the ground shadow on/off (at half): the pass x${(mean(x.shadow.pass[0.6]) / mean(x.shadow.pass[0])).toFixed(2)}, the frame x${(mean(x.shadow.frame[0.6]) / mean(x.shadow.frame[0])).toFixed(2)}`,
       )
       .join("; ")}`,
   );

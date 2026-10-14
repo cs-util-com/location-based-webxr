@@ -479,28 +479,31 @@ export function cloudShellPixelWeight(input: {
 }
 
 /**
- * The shadows' strengths (the cloud-shadows plan 2026-10-13-1951, M2): the
- * shell's own shadow, from the clouds it draws, at `strength` times its
- * fade-in `shellIn` and handed over to the low clouds as the slab takes
- * `slab`; and the factor on the blurry map shadow, which steps back where
- * the shell draws (never both). `strength` 0: the shell draws none and the
- * map shadow stays as it was.
+ * The shadows' strengths (the cloud-shadows plan 2026-10-13-1951, M2 and
+ * M1): the shell's own shadow, from the clouds it draws, at `strength`
+ * times its fade-in `shellIn`, all the way to the ground (the owner,
+ * 2026-10-14: shadows at every height). At its bottom station the shell's
+ * field is the slab's own and its deck the slab's flat one inside the disc
+ * (C4), so near the ground its shadow lies under the low clouds too; the
+ * low clouds' own shadow (`cloudShadowFrom=1`) is not needed and stays
+ * off, so nothing is drawn twice. And the factor on the blurry map shadow,
+ * which steps back where the shell draws (never both). `strength` 0: none,
+ * the map shadow as it was.
  *
  * @throws RangeError for a strength or a share outside 0..1.
  */
 export function cloudShellShadowStrengths(input: {
   readonly strength: number;
   readonly shellIn: number;
-  readonly slab: number;
 }): { shell: number; mapFactor: number } {
   for (const [name, v] of Object.entries(input)) {
     if (!(v >= 0 && v <= 1)) {
       throw new RangeError(`the ${name} must be in 0..1, got ${v}`);
     }
   }
-  const { strength, shellIn, slab } = input;
+  const { strength, shellIn } = input;
   if (strength === 0) return { shell: 0, mapFactor: 1 };
-  return { shell: strength * shellIn * (1 - slab), mapFactor: 1 - shellIn };
+  return { shell: strength * shellIn, mapFactor: 1 - shellIn };
 }
 
 /**

@@ -3428,7 +3428,6 @@ async function start() {
     shellShadow = cloudShellShadowStrengths({
       strength: params.cloudShellShadow,
       shellIn: cloudShares?.shellIn ?? 0,
-      slab: cloudShares?.slab ?? 0,
     });
     cloudFlatShare = flat;
     if (cloudShellHidden) globe.cloudShell.mesh.visible = false;
@@ -4582,6 +4581,8 @@ void main() {
         shell: s.share > 0 ? shellVolume.alphaGrid(nx, ny) : null,
         // The high layer's own drawing (round-5 plan §11, A).
         high: s.high ? shellVolume.alphaGrid(nx, ny, "high") : null,
+        // The shell's ground shadow, drawn on its own (cloud-shadows M1).
+        shadow: s.share > 0 ? shellVolume.alphaGrid(nx, ny, "shadow") : null,
         slab:
           s.slabWeight > 0 && cloudVolume.state().share > 0
             ? cloudVolume.alphaGrid(nx, ny)
