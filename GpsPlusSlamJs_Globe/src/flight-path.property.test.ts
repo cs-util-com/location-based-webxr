@@ -72,6 +72,15 @@ const flight = fc.record({
   durationMs: fc.integer({ min: 500, max: 60_000 }),
 });
 
+/**
+ * A flight that comes DOWN to its landing, as every real one does (the pin
+ * flies from where the camera is, far above). The cruise property below
+ * judges a descent's pace; drawn from `flight`, it met a 0.5 s climb from
+ * 100 m to a 27 km landing about once in four runs and broke gates at
+ * random (round-3 plan filed it; the owner chose this fix, 2026-10-14).
+ */
+const descent = flight.filter((f) => f.startM > f.landingM);
+
 interface Flight {
   readonly from: { lat: number; lng: number };
   readonly to: { lat: number; lng: number };
@@ -258,7 +267,7 @@ describe("flight path properties", () => {
 
   it("never stalls or dips between faster stretches over the cruise at 60 Hz", () => {
     fc.assert(
-      fc.property(flight, (f) => {
+      fc.property(descent, (f) => {
         const { path } = plan(f);
         const cruise = path.cruise;
         const camera = (t: number) => {
