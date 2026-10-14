@@ -98,8 +98,11 @@ recording. Its own module since the flows plan M6.
     open and a viewer session live (`ctx.placementUnsubscribe !== null`),
     runs the capture join ONCE per session+tour
     (`ctx.placementAttempted`) as soon as
-    `isPlacementReady(selectTrackingQuality(state))`; until then sets
-    `waiting-ready`. It also waits while `tour.json` is still loading
+    `isPlacementReady(selectTrackingQuality(state))` - or as soon as a
+    code placed the tour (the gate passed on a voted lock of a trusted code;
+    QR-first M1, §7 #9: on votes alone the tracking-quality report reads
+    `degraded`, its smoothed convergence score having seen too few
+    snapshots); until then sets `waiting-ready`. It also waits while `tour.json` is still loading
     (`tourManifestStatus === "pending"`; the manifest's settle calls it
     again), because the baked spots live there. A tour with neither a
     recording nor baked spots declines at once (the ring waits for a
@@ -185,6 +188,17 @@ recording. Its own module since the flows plan M6.
 - Votes: `canAcceptVotes` tests the session ZERO, not merely the slice
   (PR #386 review) - votes before the zero would charge the budget while
   `recordGpsEvent` wrote nothing.
+- **A code alone sets the zero (QR-first plan 2026-10-14-0445 §3 M1).** The
+  stable-pose gate (`resolveStablePose`) sets the session zero at the code's
+  stored geo when a code's pose is stable and the session has none, so the
+  frame's votes land at once. The order is the controller's: the zero
+  BEFORE the votes are dispatched (the sink's soft trim and the store need
+  it) and before `onVotedPose` pins the moved-code check on it (§7 #9). A
+  later device fix joins that frame: the coordinator sets a zero only when
+  the session has none. A code without geo sets nothing. With no device fix
+  at all a wrongly placed code cannot be detected - the moved-code check
+  needs device fixes; once they arrive it reads and retracts as before, and
+  the retraction keeps the code's zero.
 - **The entry's vote sink is the one way a vote reaches the store**
   (`viewer-vote-sink.ts`; authoring plan M2b, batched in M2e): a lock's
   ring and each keep-alive tick (with its device fix) are ONE
@@ -303,8 +317,11 @@ recording as source-stamped GPS events, its state changes as
 exit's stop included; nothing without a running recording).
 
 `viewer-votes.test.ts` (authoring plan M2b) - with the real store: the
-scan gate stays scanning on a lock that cast no vote (no GPS zero yet, a
-converging pose) and passes on the first one that did, and a code that
+scan gate stays scanning on a lock that cast no vote (a converging pose)
+and passes on the first one that did - since QR-first M1 also before any
+device fix, the code setting the zero itself (its order before the votes
+and the moved-code pin, a later fix in the same frame through the page's
+composed handler, readiness on votes alone), and a code that
 locks but never votes still gets the escape (M2b review #8); the
 keep-alive casts exactly one ring per device fix from the kept pose,
 answers no synthetic point, stops at AR exit, and starts fresh per entry;

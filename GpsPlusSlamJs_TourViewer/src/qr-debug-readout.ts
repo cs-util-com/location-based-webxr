@@ -178,10 +178,10 @@ export function visitorFusedHint(input: {
     return null;
   }
   if (input.nowMs - last.atMs > HINT_STALE_MS) return null;
-  // Stable yet no vote: the votes wait for the session's GPS zero
-  // (`canAcceptVotes`), not for the code (plan §67 #1).
+  // Stable yet no vote: the frame's votes come next - the code sets the
+  // session zero itself when no GPS fix has (QR-first M1; plan §67 #1).
   if (last.result.status === "stable") {
-    return "Code measured - waiting for the first GPS fix.";
+    return "Code measured - placing the tour.";
   }
   const reason = last.result.notStableReason;
   // `views` also covers an empty (unknown) result.

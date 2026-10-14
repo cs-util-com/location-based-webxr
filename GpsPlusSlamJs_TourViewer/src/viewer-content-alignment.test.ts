@@ -50,6 +50,7 @@ import {
 } from "gps-plus-slam-app-framework/core";
 import {
   selectAlignmentMatrix,
+  selectZeroReference,
   setZeroPos,
 } from "gps-plus-slam-app-framework/state";
 
@@ -155,7 +156,11 @@ function tourAtTruth(): { level: QrLevel; pin: TourPin } {
  * biased by `biasM` at bearing 60°. Returns what the scan and the checks
  * need.
  */
-async function visitorSession(biasM: number) {
+async function visitorSession(
+  biasM: number,
+  /** `false`: no device fix and no zero before the scan (QR-first M1). */
+  withZero = true,
+) {
   const bias = [biasM * 0.5, biasM * Math.sqrt(3) * 0.5] as const; // N, E
   // First: the store's construction activates the licence-gated geodesy.
   const arStore = createTourViewerStore();
@@ -256,7 +261,7 @@ async function visitorSession(biasM: number) {
     } as never);
     await flush();
   };
-  arStore.dispatch(setZeroPos(ZERO));
+  if (withZero) arStore.dispatch(setZeroPos(ZERO));
   return {
     ctx,
     arStore,
@@ -345,6 +350,38 @@ describe("viewer content follows the live alignment (D10a, M2d)", () => {
     // the first lock alone). The 0.3 m field acceptance is the vote-strength
     // harness's to measure (`viewer-vote-strength.test.ts`).
     expect(distance(inView(after, pinScene), PIN_TRUE_NUE)).toBeLessThan(0.01);
+  }, 60_000);
+
+  // Why (QR-first plan 2026-10-14-0445 §3 M1, the owner's field test): a
+  // visitor who scans before the phone's first GPS fix used to read "waiting
+  // for the first GPS fix" while nothing was placed. The code alone must
+  // place the tour: through the real controller and store, with no device
+  // fix at all, the first frame that votes sets the session zero at the
+  // code's geo, passes the gate and places the pin where it belongs in the
+  // visitor's view - the code is the session's whole GPS.
+  it("is placed by a code alone, before any device fix, at its true spot in the visitor's view", async () => {
+    const s = await visitorSession(8, false);
+    s.clock.nowMs = T0 + 500;
+    expect(selectZeroReference(s.arStore.getState())).toBeNull();
+    let frames = 0;
+    while (s.syntheticVotes() === 0 && frames < 20) {
+      await s.frame();
+      frames += 1;
+    }
+    expect(s.syntheticVotes()).toBe(VIEWER_VOTE_COUNT);
+    const zero = selectZeroReference(s.arStore.getState())!;
+    const level = [...s.ctx.currentLevels!.values()][0]!;
+    expect(zero).toEqual({ lat: level.qr.geo!.lat, lon: level.qr.geo!.lon });
+    expect(s.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+    for (let i = 1; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) await s.frame();
+    await flush();
+    expect(s.label.parent?.parent).toBe(s.scene);
+    const placed = s.label.getWorldPosition(new Vector3());
+    const after = selectAlignmentMatrix(s.arStore.getState())!;
+    // Votes alone, exact by construction: the pin lands on its true spot.
+    expect(
+      distance(inView(after, [placed.x, placed.y, placed.z]), PIN_TRUE_NUE),
+    ).toBeLessThan(0.01);
   }, 60_000);
 
   // Why: the case above is exact by construction, so it cannot tell "the

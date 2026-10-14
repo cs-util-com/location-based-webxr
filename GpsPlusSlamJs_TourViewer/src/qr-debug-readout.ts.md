@@ -47,9 +47,11 @@ spread s m)]`, with the turn threshold and the lift spread since polish
     missed detection turns `tracking` into `scanning` until three hits in
     a row, and gating on `tracking` alone flickered the line back to
     "Scanning for the printed code…" (milestone review of b4c #1);
-  - a stable result: "Code measured - waiting for the first GPS fix." - a
-    stable pose that did not vote waits for the session's GPS zero
-    (`canAcceptVotes`), not for the code (plan §67 #1);
+  - a stable result: "Code measured - placing the tour." - the frame's
+    votes come next; since QR-first M1 a stable code sets the session zero
+    itself when no GPS fix has, so it no longer waits for one (plan §67 #1;
+    the visitor once read "waiting for the first GPS fix" after a good
+    scan);
   - else "Measuring the code: " + "keep it in view while you move
     slowly." for `views` (and an empty result; the intro's wording - a wall
     poster cannot be walked around, milestone review of b4c #3), or the

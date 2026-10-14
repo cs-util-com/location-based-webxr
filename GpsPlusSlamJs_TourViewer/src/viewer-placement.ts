@@ -28,6 +28,7 @@ import {
   selectQrFusedEntries,
   selectTrackingQuality,
   selectZeroReference,
+  setZeroPos,
   type RecordGpsEventPayload,
 } from "gps-plus-slam-app-framework/state";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
@@ -223,6 +224,33 @@ export function createViewerPlacement(deps: {
       vetoSpreadM: ignored.vetoSpreadM,
     });
   }
+
+  /**
+   * A code alone starts the tour (QR-first plan 2026-10-14-0445 §3 M1): when
+   * a code's pose is stable and the session has no zero yet, the zero is set
+   * at the code's stored geo, so its votes land at once. The zero is only the
+   * local tangent-plane origin and the votes are built around this point; a
+   * later device fix joins the same frame (the coordinator sets a zero only
+   * when the session has none). Called from the stable-pose gate, i.e. in the
+   * controller's order BEFORE the frame's votes are dispatched and before the
+   * moved-code check pins the code on the zero (§7 #9). A code without geo
+   * cannot vote and sets nothing. With no device fix at all a wrongly placed
+   * code cannot be detected: the moved-code check needs device fixes.
+   */
+  function zeroFromCode(text: string): void {
+    if (selectZeroReference(arStore.getState()) !== null) return;
+    const geo = ctx.levelByText.get(text)?.qr.geo;
+    if (geo === undefined) return;
+    arStore.dispatch(setZeroPos({ lat: geo.lat, lon: geo.lon }));
+  }
+
+  /** Whether a code's votes placed this tour: the gate passed on a voted
+   *  lock of a trusted code (M5). The placement trigger's readiness then
+   *  holds whatever the tracking-quality phase reads (§7 #9). */
+  const codePlacedTour = (): boolean =>
+    ctx.scanGate.kind === "passed" &&
+    ctx.scanGate.via === "code" &&
+    ctx.viewerVotedLocks > 0;
 
   const ignoredLevelIds = (): ReadonlySet<string> =>
     new Set(ctx.ignoredCodes.keys());
@@ -423,7 +451,13 @@ export function createViewerPlacement(deps: {
         canAcceptVotes: () => arStore.getState().gpsData?.zero != null,
         // The same convergence gate minting uses (M4 review #3): the
         // controller skips the vote — budget untouched — while null.
-        resolveStablePose: (text) => fusedPose.resolve(text),
+        // A stable pose before any device fix sets the zero from the code
+        // (QR-first M1), before this frame's votes are built and dispatched.
+        resolveStablePose: (text) => {
+          const pose = fusedPose.resolve(text);
+          if (pose !== null) zeroFromCode(text);
+          return pose;
+        },
         recordDetection: (event) => {
           lastDetectedText = event.text;
           lastDetectedPose = event.qrPoseWorld;
@@ -720,7 +754,10 @@ export function createViewerPlacement(deps: {
     tryPlaceContent(current);
     if (ctx.placementAttempted || ctx.imagePlanes !== null) return;
     if (ctx.imagePlanesLoading) return;
-    if (!isPlacementReady(selectTrackingQuality(arStore.getState()))) {
+    if (
+      !isPlacementReady(selectTrackingQuality(arStore.getState())) &&
+      !codePlacedTour()
+    ) {
       // Only over idle/waiting: a pre-ready lock whose ring failed leaves a
       // decline reason that the next dispatch must not overwrite
       // (milestone review, residual hardening).
@@ -821,13 +858,14 @@ export function createViewerPlacement(deps: {
     const zero = selectZeroReference(arStore.getState());
     if (current === null) return;
     if (zero === null) {
-      // Unreachable in practice (`ready` needs GPS data, which sets the
-      // zero) but never silent and never final (M6 review #9): give the
-      // attempt back so the trigger retries on the next dispatch.
+      // Unreachable in practice (`ready` needs GPS data, and a code's
+      // votes need the zero it sets itself, QR-first M1) but never silent and
+      // never final (M6 review #9): give the attempt back so the trigger
+      // retries on the next dispatch.
       ctx.placementAttempted = false;
       ctx.placement = {
         kind: "declined",
-        reason: "waiting for the first GPS fix",
+        reason: "waiting for a GPS fix or a scanned code",
       };
       hooks.renderArStatus();
       return;
