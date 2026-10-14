@@ -32,7 +32,11 @@ clock, the escape button).
   gate when the arrived levels cannot lock, or could not be read at all
   (`levels-unavailable`, its own copy); every other state stands.
 - `gateAllowsPlacement(gate)` - passed or not required.
-- `gateSegment(gate)` - the status line's segment.
+- `gateSegment(gate, codesOnly = false)` - the status line's segment
+  (`?debug=1`). With `codesOnly` (QR-first M1b-1 review #6) no line names
+  GPS: a waived gate (any reason but creator) reads "No code can be read
+  here - nothing can place the tour without location.", and the scanning
+  line never mentions continuing with GPS.
 
 ## A code the moved-code check ignores (D20, M5c; §7j #4)
 

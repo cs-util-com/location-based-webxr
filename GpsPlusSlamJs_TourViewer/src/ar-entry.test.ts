@@ -62,6 +62,7 @@ function harness(
     mode?: "visitor" | "creator";
     locationPending?: () => boolean;
     codesOnly?: () => boolean;
+    recheck?: () => Promise<void>;
     copyText?: (text: string) => Promise<void>;
     meshCursor?: boolean;
   } = {},
@@ -151,6 +152,7 @@ function harness(
       pending: options.locationPending ?? (() => false),
       busy: () => false,
       codesOnly: options.codesOnly ?? (() => false),
+      recheck: options.recheck ?? (() => Promise.resolve()),
       request: () => Promise.resolve(),
     } as never,
     dom: dom as unknown as ArEntryDom,
@@ -854,6 +856,25 @@ describe("a visitor without location starts on codes alone (QR-first M1b-1)", ()
     await h.enter();
     expect(h.enabledConfig()?.location).toBe("none");
     expect(h.ctx.codesOnly).toBe(true);
+  });
+
+  // Why (M1b-1 review #3): a codes-only start reads the permission again
+  // first; when that re-offers the location, this tap is not a start.
+  it("reads the permission again before a codes-only start, and does not start when that re-offers the location", async () => {
+    let pending = false;
+    const recheck = vi.fn(() => {
+      pending = true;
+      return Promise.resolve();
+    });
+    const h = harness({
+      codesOnly: () => !pending,
+      locationPending: () => pending,
+      recheck,
+      enableOk: true,
+    });
+    await h.enter();
+    expect(recheck).toHaveBeenCalledTimes(1);
+    expect(h.arController.enable).not.toHaveBeenCalled();
   });
 
   it("starts with location as before when the visitor allowed it", async () => {

@@ -56,8 +56,14 @@ export interface LocationGate {
    *  tolerates a slow fix) start with GPS, a denial on codes alone. */
   request(): Promise<LocationRequestOutcome>;
   /** Whether the next start runs without location (QR-first M1b-1): the
-   *  visitor declined it, now or before. */
+   *  visitor declined it, now or before - and the tour's codes can place it
+   *  (unknown counts as yes). */
   codesOnly(): boolean;
+  /** Before a codes-only start, read the permission again (M1b-1 review
+   *  #3): "granted" starts with GPS; "prompt" (a dismissed prompt reads as
+   *  a denial in Chrome) offers the location once more - once per page, so
+   *  a second dismissal starts on codes and never loops. */
+  recheck(): Promise<void>;
 }
 
 /** Whether a request outcome starts the tour on codes alone: a denial. */
@@ -124,6 +130,11 @@ export interface VisitorScreen {
 const VISITOR_HINT =
   "Once AR starts, point your phone at the tour's code (on the poster).";
 
+/** A denial on a tour none of whose codes can place it (M1b-1 review #2):
+ *  only location can, so the settings copy stays. */
+const DENIED_NO_CODES_ERROR =
+  "Location is needed to place this tour. Allow location for this site in your browser settings, then tap again.";
+
 /** The line under the "1 of 2" button once the browser will ask. */
 const ALLOW_HINT =
   "Your browser will ask for your location - tap Allow. Then Start the tour.";
@@ -134,8 +145,17 @@ export function wireVisitorScreen(deps: {
   dom: VisitorScreenDom;
   /** Re-renders the AR button once the permission state is known. */
   renderArEntry: () => void;
+  /** Whether the open tour has a code that can place it: `false` keeps
+   *  a denial on the old "allow location" copy (M1b-1 review #2), `null`
+   *  (unknown, or no tour yet) and `true` allow the codes-only start.
+   *  Absent: unknown. */
+  codesUsable?: () => boolean | null;
 }): VisitorScreen {
   const { mode, seams, dom, renderArEntry } = deps;
+  const codesUsable = deps.codesUsable ?? (() => null);
+  /** Whether the location was offered again after a codes-only start
+   *  (`recheck`): once per page. */
+  let reoffered = false;
   const visitor = mode === "visitor";
   dom.screen.hidden = !visitor;
   dom.more.hidden = !visitor;
@@ -168,9 +188,31 @@ export function wireVisitorScreen(deps: {
 
   return {
     locationGate: {
-      pending: () => pending,
+      // A codes-only start on a tour whose codes cannot place it turns the
+      // tap back into a location request (its denial shows the old copy).
+      pending: () => pending || (codesOnly && codesUsable() === false),
       busy: () => busy,
-      codesOnly: () => codesOnly,
+      codesOnly: () => codesOnly && codesUsable() !== false,
+      recheck: async () => {
+        if (!codesOnly) return;
+        let permission: LocationPermission;
+        try {
+          permission = await seams.queryGeolocationPermission();
+        } catch {
+          return;
+        }
+        if (permission === "granted") {
+          codesOnly = false;
+        } else if (permission === "prompt" && !reoffered) {
+          reoffered = true;
+          codesOnly = false;
+          pending = true;
+          dom.arHint.textContent = ALLOW_HINT;
+        } else {
+          return;
+        }
+        renderArEntry();
+      },
       request: async () => {
         if (busy) return "unavailable"; // one request at a time; the button is disabled anyway
         busy = true;
@@ -181,6 +223,16 @@ export function wireVisitorScreen(deps: {
           outcome = await seams.requestLocationOnce();
         } finally {
           busy = false;
+        }
+        // A tour whose codes cannot place it: a denial keeps the gate and
+        // the old copy - only location can place this tour (review #2).
+        if (outcome === "denied" && codesUsable() === false) {
+          pending = true;
+          codesOnly = false;
+          dom.errorBox.textContent = DENIED_NO_CODES_ERROR;
+          dom.arHint.textContent = VISITOR_HINT;
+          renderArEntry();
+          return outcome;
         }
         pending = false;
         codesOnly = codesOnlyAfterRequest(outcome);

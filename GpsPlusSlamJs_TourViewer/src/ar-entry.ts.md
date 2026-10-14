@@ -152,7 +152,9 @@ entry; C7).
   watch either (the coordinator starts it at the first fix) - and marks the
   session (`ctx.codesOnly`, set before the viewer pipeline and its gate
   start). The status input carries it (`codesOnly`), and the debug hold
-  line reads the device-fix count (`deviceFixes`).
+  line reads the device-fix count (`deviceFixes`). Before such a start the
+  gate's `recheck()` runs (M1b-1 review #3); when it leaves the gate
+  pending (a dismissed prompt offered again) the tap is not a start.
 
 ## Examples
 

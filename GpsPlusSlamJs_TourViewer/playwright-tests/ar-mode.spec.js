@@ -201,6 +201,11 @@ test("a visitor who refuses the location starts the tour on codes alone: no loca
   const codesLine =
     "Scan one of the tour's printed codes to start - without location, the codes place the tour.";
   await expect(page.getByTestId("ar-hint")).toHaveText(codesLine);
+  // The visitor tapped "Block": the browser now reports the site denied, so
+  // the re-check before a codes-only start (review #3) does not ask again.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.locationPermission = "denied";
+  });
   await button.click();
   await expect(button).toHaveText("Exit AR");
   const fakes = await page.evaluate(() => {
@@ -211,24 +216,80 @@ test("a visitor who refuses the location starts the tour on codes alone: no loca
     };
   });
   expect(fakes).toEqual({ permissionRequests: 0, gpsWatch: false });
-  await expect(page.getByTestId("ar-status")).toContainText(codesLine);
+  await expect(page.getByTestId("ar-status")).toContainText(
+    "Without location, the tour's printed codes place it - any of them will do.",
+  );
   // No GPS to continue with: the escape's clock never offers it.
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.fireTimers();
   });
   await expect(page.getByTestId("scan-escape")).toBeHidden();
-  // ...and the code places the tour on its own.
+  // ...and the code places the tour on its own: the visitor's state reaches
+  // "placed", not only the gate (M1b-1 review #4).
   await lockTheCode(page);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        await forceTrackingReady(page);
+        return page.getByTestId("ar-status").getAttribute("data-state");
+      },
+      { timeout: 20000 },
+    )
+    .toBe("placed");
 });
 
-test("a granted-but-no-fix visitor may start with location as before (M2 review #1)", async ({
+test("a visitor who dismissed the location prompt is offered it once more before a codes-only start (M1b-1 review #3)", async ({
   page,
 }) => {
+  // Why this matters: Chrome reports a DISMISSED prompt as a denial while
+  // the permission still reads "prompt", so one stray tap used to mean no
+  // GPS for the whole page load. The start re-reads the permission and
+  // offers the location again - once: a second dismissal starts on codes.
+  await page.addInitScript(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    if (t) {
+      t.locationPermission = "prompt";
+      t.locationOutcome = "denied";
+    }
+  });
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  const button = page.getByTestId("enter-ar");
+  await expect(button).toHaveText("Allow location", { timeout: 10000 });
+  await button.click();
+  await expect(button).toHaveText("Start the tour");
+  await button.click();
+  await expect(button).toHaveText("Allow location");
+  await expect(page.getByTestId("ar-hint")).toContainText(/browser will ask/i);
+  await button.click();
+  await expect(button).toHaveText("Start the tour");
+  await button.click();
+  await expect(button).toHaveText("Exit AR");
+  const fakes = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    return {
+      locationRequests: t.locationRequests,
+      gpsWatch: t.gpsCallback !== null,
+    };
+  });
+  expect(fakes).toEqual({ locationRequests: 2, gpsWatch: false });
+});
+
+test("a visitor who allowed location but gets no fix starts AR with location (M2 review #1, M1b-1 review #1)", async ({
+  page,
+}) => {
+  // Why this matters: indoors the permission is fine and the fix is not.
+  // The framework's requester fetches a fix and answered granted: null, so
+  // enable() failed on every tap ("AR could not start") - worse off than a
+  // visitor who declined. The permission, not a fix, must start AR.
   await page.addInitScript(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;
     if (t) {
       t.locationPermission = "prompt";
       t.locationOutcome = "unavailable";
+      t.controllerLocationResult = { supported: true, granted: null };
     }
   });
   await openAsVisitor(page, RANGES_ARCHIVE);

@@ -468,7 +468,9 @@ describe("visitorStatus - codes only, no location (QR-first M1b-1)", () => {
   it("asks for a code and offers no GPS while scanning", () => {
     expect(visitorStatus(input({ codesOnly: true }))).toEqual({
       state: "scan",
-      text: "Scan one of the tour's printed codes to start - without location, the codes place the tour.",
+      // Under the scan card's title ("Scan the code again so the tour can
+      // start"): what location's absence means, not a second "scan".
+      text: "Without location, the tour's printed codes place it - any of them will do.",
     });
     // Even if an escape were offered, it is not named.
     expect(
@@ -506,5 +508,30 @@ describe("visitorStatus - codes only, no location (QR-first M1b-1)", () => {
       }),
     );
     expect(status.state).toBe("placed");
+  });
+});
+
+// Why (M1b-1 review #2): codes only on a tour whose codes cannot place it
+// (none lockable, or the code file unreadable) hung on a coaching line
+// forever - the gate waives the scan, and nothing else can place the tour.
+describe("visitorStatus - codes only, and no code can place the tour (M1b-1 review #2)", () => {
+  it.each([
+    [
+      "no-lockable-level" as const,
+      "This tour has no printed codes, and without location nothing can place it.",
+    ],
+    [
+      "levels-unavailable" as const,
+      "The tour's code file could not be read, and without location nothing can place it.",
+    ],
+  ])("%s", (reason, text) => {
+    const status = visitorStatus(
+      input({
+        codesOnly: true,
+        gate: { kind: "not-required", reason },
+        placement: { kind: "waiting-ready" },
+      }),
+    );
+    expect(status).toEqual({ state: "nothing", text });
   });
 });

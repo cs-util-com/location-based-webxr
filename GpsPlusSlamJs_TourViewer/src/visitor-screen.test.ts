@@ -277,3 +277,101 @@ describe("wireVisitorScreen", () => {
     );
   });
 });
+
+// Why (M1b-1 review #2): on a tour none of whose codes can place it, codes
+// alone cannot help, so a denial keeps the old copy - allow location in
+// the settings - instead of a codes-only start that would hang.
+describe("a denial on a tour without a usable code keeps the settings copy (M1b-1 review #2)", () => {
+  it("keeps the gate on a denial and shows the settings copy", async () => {
+    const d = dom();
+    const renderArEntry = vi.fn();
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("prompt"),
+        requestLocationOnce: () => Promise.resolve("denied"),
+      }),
+      dom: d,
+      renderArEntry,
+      codesUsable: () => false,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    await screen.locationGate.request();
+    expect(screen.locationGate.pending()).toBe(true);
+    expect(screen.locationGate.codesOnly()).toBe(false);
+    expect(d.errorBox.textContent).toMatch(/allow location/i);
+  });
+
+  it("turns a blocked site's start back into a location tap once the codes are known unusable", async () => {
+    let usable: boolean | null = null;
+    const renderArEntry = vi.fn();
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("denied"),
+      }),
+      dom: dom(),
+      renderArEntry,
+      codesUsable: () => usable,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    expect(screen.locationGate.pending()).toBe(false);
+    usable = false;
+    expect(screen.locationGate.pending()).toBe(true);
+    expect(screen.locationGate.codesOnly()).toBe(false);
+  });
+});
+
+// Why (M1b-1 review #3): Chrome reports a DISMISSED prompt as a denial while
+// the permission stays "prompt", and a grant made later in the settings was
+// never noticed - one dismissal meant no GPS for the whole page load. Before
+// a codes-only start the permission is read again: granted starts with GPS,
+// "prompt" offers the location once more (once: a visitor who dismisses it
+// again starts on codes, never loops).
+describe("the permission is read again before a codes-only start (M1b-1 review #3)", () => {
+  it("starts with GPS when the permission now reads granted", async () => {
+    let permission: LocationPermission = "prompt";
+    const renderArEntry = vi.fn();
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve(permission),
+        requestLocationOnce: () => Promise.resolve("denied"),
+      }),
+      dom: dom(),
+      renderArEntry,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    await screen.locationGate.request();
+    expect(screen.locationGate.codesOnly()).toBe(true);
+    permission = "granted";
+    await screen.locationGate.recheck();
+    expect(screen.locationGate.codesOnly()).toBe(false);
+    expect(screen.locationGate.pending()).toBe(false);
+  });
+
+  it("offers the location once more after a dismissed prompt, then starts on codes", async () => {
+    const d = dom();
+    const renderArEntry = vi.fn();
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("prompt"),
+        requestLocationOnce: () => Promise.resolve("denied"),
+      }),
+      dom: d,
+      renderArEntry,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    await screen.locationGate.request();
+    await screen.locationGate.recheck();
+    expect(screen.locationGate.pending()).toBe(true);
+    expect(screen.locationGate.codesOnly()).toBe(false);
+    expect(d.arHint.textContent).toMatch(/browser will ask/i);
+    // Dismissed again: codes alone, and no further offer.
+    await screen.locationGate.request();
+    await screen.locationGate.recheck();
+    expect(screen.locationGate.pending()).toBe(false);
+    expect(screen.locationGate.codesOnly()).toBe(true);
+  });
+});

@@ -9,6 +9,8 @@
  */
 
 import { createEnableGpsArController } from "gps-plus-slam-app-framework/ar";
+import { requestGeolocationPermission } from "gps-plus-slam-app-framework/sensors";
+import { locationPermissionWithoutFix } from "./location-permission.js";
 import {
   createEmptyTourManifest,
   serializeTourManifest,
@@ -69,6 +71,7 @@ import { createViewingLog } from "./viewing-log.js";
 import { wireVisitorStations } from "./visitor-stations.js";
 import { relocationRequested } from "./tour-relocation.js";
 import { wireVisitorScreen } from "./visitor-screen.js";
+import { isLockableLevel } from "./scan-gate.js";
 import { wireVisitorStart } from "./visitor-start.js";
 import { wireFoldingLabel } from "./folding-label.js";
 import { pictureProblem } from "./image-cap.js";
@@ -138,7 +141,18 @@ const recording = createAuthoringRecording({
   holdFolder: (name) => holdRecordingFolder(navigator.locks, name),
 });
 const arStore = createTourViewerStore(recording);
-const arController = createEnableGpsArController(seams.controllerDeps);
+// The location permission enable() asks for is settled without waiting for
+// a fix (QR-first M1b-1 review #1): indoors a visitor who allowed location
+// got none, and the framework's requester failed enable() on every tap.
+const arController = createEnableGpsArController({
+  ...seams.controllerDeps,
+  requestGeolocationPermission: locationPermissionWithoutFix({
+    query: () => seams.queryGeolocationPermission(),
+    request:
+      seams.controllerDeps.requestGeolocationPermission ??
+      requestGeolocationPermission,
+  }),
+});
 const ctx = createTourViewerSession();
 ctx.debug = debug;
 // The gallery is a creator's debugging aid (polish round M2): shown only
@@ -353,6 +367,12 @@ const visitor = wireVisitorScreen({
   renderArEntry: () => {
     hooks.renderArEntry();
   },
+  // A tour with no code that can place it keeps the denial copy (M1b-1
+  // review #2); null while the levels are not known yet.
+  codesUsable: () =>
+    ctx.currentLevels === null
+      ? null
+      : [...ctx.currentLevels.values()].some(isLockableLevel),
 });
 
 // The visitor's start page leads with the tour's name, a line and one of

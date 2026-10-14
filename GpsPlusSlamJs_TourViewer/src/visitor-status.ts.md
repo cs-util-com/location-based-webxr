@@ -59,11 +59,19 @@ visitor's `?debug=1`.
   without a probe it does not have (deviation, plan U1).
 
 - **Codes only, no location (`input.codesOnly`, QR-first M1b-1):** while
-  the gate scans the line is "Scan one of the tour's printed codes to start -
-  without location, the codes place the tour." (never "Continue with GPS
-  only": there is no GPS), and a browser that cannot read codes reads
-  `nothing`, "This browser can't read the tour's codes, and without
-  location nothing can place the tour." - never a "placed by GPS" line.
+  the gate scans the line is "Without location, the tour's printed codes
+  place it - any of them will do." (it sits under the scan card's fixed
+  title "Scan the code again so the tour can start", so it says what the
+  absence of location means rather than a second "scan"; never "Continue
+  with GPS only": there is no GPS). A gate waived for any reason but the
+  creator's reads `nothing` with the reason (M1b-1 review #2): no
+  detector - "This browser can't read the tour's codes, and without
+  location nothing can place the tour."; no lockable level - "This tour
+  has no printed codes, and without location nothing can place it.";
+  levels unavailable - "The tour's code file could not be read, and
+  without location nothing can place it." - never a "placed by GPS"
+  line, and never a coaching line that waits forever. The pre-AR hint
+  (`CODES_ONLY_HINT`, `visitor-screen.ts`) keeps its own wording.
 
 ## Examples
 

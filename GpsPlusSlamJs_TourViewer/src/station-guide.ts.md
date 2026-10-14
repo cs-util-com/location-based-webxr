@@ -156,7 +156,10 @@ activateM)` (each tick, each offered station with a distance: the
   device fix never decides). Under `?relocate=here` the stations stay held
   back (the relocation waits for a first device fix that never comes).
   Making position arrivals work on the code-placed position alone is not
-  built (it needs an accuracy for the bands).
+  built (it needs an accuracy for the bands). So, honestly: **a station
+  without a printed code cannot be reached without location** - the visitor
+  sees the distance shrink but no arrival ever fires, and its only button is
+  "Skip <title> - I can't get there" (M1b-1 review, deferred).
 
 ## Examples
 

@@ -549,6 +549,13 @@ export function wireArEntry(deps: {
       await locationGate.request();
       return;
     }
+    // A codes-only start reads the permission again first (M1b-1 review
+    // #3): a grant in the settings starts with GPS, a dismissed prompt is
+    // offered once more - then this tap is not a start.
+    if (!authorMode && locationGate.codesOnly()) {
+      await locationGate.recheck();
+      if (locationGate.pending()) return;
+    }
     // The start the two steps led to: a later start is one tap again.
     hadLocationStep = false;
     ctx.cameraFrameCount = 0;

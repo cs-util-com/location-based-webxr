@@ -107,6 +107,12 @@ export async function installTourViewerArFakes(page, options = {}) {
         /** How often the controller asked for the location permission
          *  (none in the codes-only mode, QR-first M1b-1). */
         geolocationPermissionRequests: 0,
+        /** What the controller's location request answers: a real phone
+         *  indoors answers `granted: null` (no fix), M1b-1 review #1. */
+        controllerLocationResult: /** @type {any} */ ({
+          supported: true,
+          granted: true,
+        }),
         /** What the next location-only tap comes back with. */
         locationOutcome: "granted",
         /** The zips the finish step offered for download (M3): the fake
@@ -290,7 +296,7 @@ export async function installTourViewerArFakes(page, options = {}) {
           isWebXRSupported: () => Promise.resolve(true),
           requestGeolocationPermission: () => {
             test.geolocationPermissionRequests += 1;
-            return Promise.resolve({ granted: true });
+            return Promise.resolve(test.controllerLocationResult);
           },
           requestOrientationPermission: () =>
             Promise.resolve({ granted: true }),

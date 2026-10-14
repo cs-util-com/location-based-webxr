@@ -22,7 +22,22 @@ start a session.
 - `LocationGate`: `pending()` (a tap should request the location rather
   than start AR), `busy()` (a request is in flight; the button says so),
   `request()` (the location-only tap; resolves the outcome) and
-  `codesOnly()` (the next start runs without location - QR-first M1b-1).
+  `codesOnly()` (the next start runs without location - QR-first M1b-1)
+  and `recheck()` (read the permission again before a codes-only start,
+  M1b-1 review #3: `"granted"` turns codes-only off, so the start uses
+  GPS; `"prompt"` - Chrome's reading after a DISMISSED prompt - offers
+  the location once more, pending again with the "browser will ask"
+  hint; once per page, so a second dismissal starts on codes and never
+  loops; `"denied"`/`"unknown"`/a throwing query change nothing).
+- Optional dep `codesUsable(): boolean | null` (M1b-1 review #2): whether
+  the open tour has a code that can place it (`main.ts`: any lockable
+  level; null while the levels are unknown). `false` means codes alone
+  cannot help: a denial keeps the gate pending with the settings copy
+  ("Location is needed to place this tour. Allow location for this site
+  in your browser settings, then tap again."), and a blocked site's
+  codes-only start turns back into a location tap (`pending()` true,
+  `codesOnly()` false) once the levels are known. Null and true allow
+  the codes-only start; absent reads as null.
 - **A denial starts the tour on codes alone (QR-first plan 2026-10-14-0445
   §7 #10, §8 Q-QF-1; M1b-1).** Every request outcome clears the gate; a
   `"denied"` one turns `codesOnly()` on (`codesOnlyAfterRequest`), and a
@@ -59,7 +74,8 @@ start a session.
 - Pessimistic until `seams.queryGeolocationPermission()` answers: a tap
   that arrives first requests the location (harmless), never starts AR.
 - No request outcome keeps the gate pending since M1b-1; a denial turns
-  the codes-only mode on instead. One request runs at a time (`busy`).
+  the codes-only mode on instead - except on a tour whose codes cannot
+  place it (`codesUsable() === false`), where the denial copy stays. One request runs at a time (`busy`).
 - In creator mode the gate is never pending and nothing is hidden.
 - The visitor's hint is ONE line under V4's round button (polish round
   M4a): "Once AR starts, point your phone at the tour's code (on the

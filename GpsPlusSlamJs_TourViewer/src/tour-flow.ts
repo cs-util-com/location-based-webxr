@@ -269,7 +269,9 @@ export function arStatusLine(input: ArStatusInput): string {
       (qr === NO_PRINTED_CODES || qr === "Scanning for the printed code…"))
       ? ""
       : qr,
-    gateIgnored && qr === IGNORED_CODE_LINE ? "" : gateSegment(input.gate),
+    gateIgnored && qr === IGNORED_CODE_LINE
+      ? ""
+      : gateSegment(input.gate, input.codesOnly === true),
     gateScanning ? "" : placementSegment(placement, input.readiness),
     contentSegment(input.content),
     input.planesError === null ? "" : `images failed: ${input.planesError}`,
