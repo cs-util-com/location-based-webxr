@@ -523,8 +523,9 @@ describe('baked capture spots (scan-pass plan S1, S-D11)', () => {
     // minorNeeded does not know would be written at minor 1, and a minor-1
     // reader parses minor-1 files strictly - so the tour would stop
     // opening there. When this fails: extend minorNeeded for the new
-    // field, add its round trip, then move this number.
-    expect(TOUR_MANIFEST_MINOR).toBe(1);
+    // field, add its round trip, then move this number. Minor 2 added
+    // `needsNoGps` (its describe block below).
+    expect(TOUR_MANIFEST_MINOR).toBe(2);
   });
 
   it('a version 1 document carries no baked spots (the field is version 2)', () => {
@@ -532,5 +533,95 @@ describe('baked capture spots (scan-pass plan S1, S-D11)', () => {
       parseTourManifest({ version: 1, objects: [], captureSpots: spots })
         .captureSpots
     ).toBeUndefined();
+  });
+});
+
+describe('a tour that needs no GPS (Tour Viewer QR-first, owner decision Q-QF-1)', () => {
+  // Why: a creator can mark a tour whose printed codes place it on their
+  // own, so its visitors are never asked for their location. The flag is
+  // optional and additive (minor 2): absent - and false - mean what every
+  // tour before it meant, location as before. A minor-1 reader opens the
+  // file and ignores the flag (it asks for location, as it always did); a
+  // minor-1 WRITER refuses to save the file, so the flag is never dropped.
+  it('reads and round-trips needsNoGps: true, written at minor 2', () => {
+    const manifest = parseTourManifest({
+      version: 2,
+      minor: 2,
+      objects: [pin],
+      needsNoGps: true,
+    });
+    expect(manifest.needsNoGps).toBe(true);
+    const written = JSON.parse(serializeTourManifest(manifest)) as {
+      version: number;
+      minor: number;
+      needsNoGps?: unknown;
+    };
+    expect(written).toMatchObject({ version: 2, minor: 2, needsNoGps: true });
+    expect(parseTourManifest(written)).toEqual(manifest);
+  });
+
+  it('reads false, and an absent flag, as no flag: such a tour is written as before', () => {
+    for (const needsNoGps of [false, undefined]) {
+      const manifest = parseTourManifest({
+        version: 2,
+        minor: 2,
+        objects: [pin],
+        ...(needsNoGps === undefined ? {} : { needsNoGps }),
+      });
+      expect(manifest).not.toHaveProperty('needsNoGps');
+      expect(JSON.parse(serializeTourManifest(manifest))).toEqual({
+        version: 1,
+        objects: manifest.objects,
+      });
+    }
+  });
+
+  it("refuses a flag that is not a boolean at this reader's minor, and ignores it at a newer one", () => {
+    expect(() =>
+      parseTourManifest({
+        version: 2,
+        minor: 2,
+        objects: [],
+        needsNoGps: 'yes',
+      })
+    ).toThrow(/"needsNoGps" must be true or false/);
+    expect(
+      parseTourManifest({
+        version: 2,
+        minor: TOUR_MANIFEST_MINOR + 1,
+        objects: [],
+        needsNoGps: 'yes',
+      })
+    ).not.toHaveProperty('needsNoGps');
+  });
+
+  it('keeps the flag beside baked spots, at the minor the flag needs', () => {
+    const manifest = parseTourManifest({
+      version: 2,
+      minor: 2,
+      objects: [],
+      needsNoGps: true,
+      captureSpots: {
+        fixes: 3,
+        gpsAccuracyMedianM: null,
+        captures: [
+          {
+            image: 'images/frame-0001.jpg',
+            geo: { lat: 48.1, lon: 11.5, alt: 520, rotation: [0, 0, 0, 1] },
+          },
+        ],
+      },
+    });
+    const written = JSON.parse(serializeTourManifest(manifest)) as {
+      minor: number;
+    };
+    expect(written.minor).toBe(2);
+    expect(parseTourManifest(written)).toEqual(manifest);
+  });
+
+  it('a version 1 document carries no flag (the field is version 2)', () => {
+    expect(
+      parseTourManifest({ version: 1, objects: [], needsNoGps: true })
+    ).not.toHaveProperty('needsNoGps');
   });
 });

@@ -141,11 +141,13 @@ describe('baked capture spots (properties, scan-pass plan S1)', () => {
       objects: manifest.map((m) => m.objects),
       minor: fc.integer({ min: 0, max: TOUR_MANIFEST_MINOR }),
       captureSpots: fc.option(spots, { nil: undefined }),
+      needsNoGps: fc.option(fc.boolean(), { nil: undefined }),
     })
-    .map(({ captureSpots, ...rest }) => ({
+    .map(({ captureSpots, needsNoGps, ...rest }) => ({
       version: 2,
       ...rest,
       ...(captureSpots === undefined ? {} : { captureSpots }),
+      ...(needsNoGps === undefined ? {} : { needsNoGps }),
     }));
 
   it('round-trips the spots and writes the minor the content needs', () => {
@@ -159,10 +161,17 @@ describe('baked capture spots (properties, scan-pass plan S1)', () => {
         const again = parseTourManifest(written);
         expect(again.captureSpots).toEqual(parsed.captureSpots);
         expect(again.objects).toEqual(parsed.objects);
+        // The no-GPS flag (minor 2) survives, and only a true one is kept.
+        expect(parsed.needsNoGps).toBe(
+          m.needsNoGps === true ? true : undefined
+        );
+        expect(again.needsNoGps).toBe(parsed.needsNoGps);
         expect(written).toMatchObject(
-          parsed.captureSpots === undefined
-            ? { version: 1 }
-            : { version: 2, minor: 1 }
+          parsed.needsNoGps === true
+            ? { version: 2, minor: 2 }
+            : parsed.captureSpots === undefined
+              ? { version: 1 }
+              : { version: 2, minor: 1 }
         );
       }),
       { numRuns: 200 }

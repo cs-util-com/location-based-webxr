@@ -80,8 +80,9 @@ export type {
 export const TOUR_MANIFEST_VERSION = 2;
 
 /** The newest additive revision of version 2 this module knows. Minor 1
- *  added `captureSpots` (scan-pass plan S1). */
-export const TOUR_MANIFEST_MINOR = 1;
+ *  added `captureSpots` (scan-pass plan S1); minor 2 added `needsNoGps`
+ *  (Tour Viewer QR-first, owner decision Q-QF-1). */
+export const TOUR_MANIFEST_MINOR = 2;
 
 /** Format versions this reader still opens by migrating them. */
 const LEGACY_VERSION = 1;
@@ -156,6 +157,13 @@ export interface TourManifest {
   stations: TourStation[];
   /** Minor 1: the recorded photos' baked spots (see the type). */
   captureSpots?: TourCaptureSpots;
+  /**
+   * Minor 2: the tour's printed codes place it on their own, so a viewer
+   * never asks its visitors for their location and starts without it.
+   * Only `true` is kept: `false` and absent both mean "location as
+   * usual", so a tour without the flag is written exactly as before.
+   */
+  needsNoGps?: true;
 }
 
 const ORDERS: ReadonlySet<string> = new Set(['fixed', 'any', 'branch']);
@@ -383,6 +391,16 @@ function minorOf(value: unknown): number {
   return value as number;
 }
 
+/** `needsNoGps`: true, or nothing (false and absent read the same). A
+ *  non-boolean is a broken file at this reader's minor, and reads as
+ *  absent from a newer one. */
+function needsNoGpsOf(value: unknown, lenient: boolean): true | undefined {
+  if (value === undefined || value === false) return undefined;
+  if (value === true) return true;
+  if (lenient) return undefined;
+  return fail('"needsNoGps" must be true or false');
+}
+
 function orderOf(value: unknown, lenient: boolean): TourOrder {
   if (value === undefined) return 'fixed';
   if (typeof value !== 'string' || !ORDERS.has(value)) {
@@ -408,6 +426,7 @@ function parseV2Parts(
     lenient,
   });
   const title = nonEmptyLabel(data.title);
+  const needsNoGps = needsNoGpsOf(data.needsNoGps, lenient);
   const captureSpots = lenient
     ? captureSpotsOrNone(data.captureSpots)
     : parseCaptureSpots(data.captureSpots);
@@ -422,6 +441,7 @@ function parseV2Parts(
       lenient,
     }),
     ...(captureSpots === undefined ? {} : { captureSpots }),
+    ...(needsNoGps === undefined ? {} : { needsNoGps }),
   };
 }
 
@@ -448,6 +468,7 @@ export function parseTourManifest(data: unknown): TourManifest {
     ...(parts.captureSpots === undefined
       ? {}
       : { captureSpots: parts.captureSpots }),
+    ...(parts.needsNoGps === undefined ? {} : { needsNoGps: true }),
   };
 }
 
@@ -455,6 +476,7 @@ export function parseTourManifest(data: unknown): TourManifest {
  *  holds. Writing it, rather than the minor the file was read at, loses
  *  nothing: this module knows every field up to its own minor. */
 function minorNeeded(manifest: TourManifest): number {
+  if (manifest.needsNoGps === true) return 2;
   return manifest.captureSpots === undefined ? 0 : 1;
 }
 

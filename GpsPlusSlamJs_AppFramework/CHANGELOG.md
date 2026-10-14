@@ -4,6 +4,14 @@
 
 ### Added
 
+- **`needsNoGps` in `tour.json`** (`ar/tour-manifest`, format version 2,
+  minor 2): an optional `needsNoGps: true` marks a tour whose printed
+  codes place it on their own, so a viewer can skip the location
+  permission entirely. `TourManifest.needsNoGps?: true`; `false` and
+  absent read the same and are not written. `TOUR_MANIFEST_MINOR` is
+  now 2: a tour carrying the flag is written at minor 2, so an older
+  writer refuses to save it rather than drop it, while an older reader
+  opens it and ignores the flag. Tours without it are written as before.
 - **A codes-only mode for `enable()`** (`ar/enable-gps-ar`):
   `EnableGpsArConfig.location: 'none'` requests no location permission and
   starts no GPS watch, while AR and the other watches start as before - for
