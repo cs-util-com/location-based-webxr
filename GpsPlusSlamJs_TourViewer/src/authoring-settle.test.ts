@@ -222,6 +222,10 @@ const DOM_KEYS = [
   "replaceHelpGeneric",
   "replaceHelpDrive",
   "replaceDriveCopy",
+  "uploadAsk",
+  "uploadAskText",
+  "uploadYes",
+  "uploadNo",
   "sizeInput",
   "printPanel",
   "status",
@@ -3317,6 +3321,66 @@ describe(
           expect(c.dom.draftOfferText.textContent).not.toBe("");
         });
         expect(c.dom.draftOfferText.textContent).toMatch(/1 change/);
+      });
+
+      // Why (F19, owner decision 2026-10-14): place a pin, Finish with a
+      // download, upload that file, delete the pin on the desktop - the
+      // phone's draft never learned of the upload, so the next open offered
+      // the deleted pin back. Nothing tells a page an upload happened, so it
+      // asks once; a yes makes the written versions SEEN hosted.
+      describe("a download-only Finish, then a delete elsewhere (F19)", () => {
+        async function placeAndFinish(
+          store: DraftFileStore,
+        ): Promise<ReturnType<typeof authoring>> {
+          const a = await load(store, []);
+          expect(a.dom.uploadAsk.hidden).toBe(true);
+          a.setWalk(walk());
+          await a.mint();
+          await a.placePin("Gate", [2, 0, -1]);
+          a.endVisit();
+          await flush();
+          a.device.live = false;
+          a.dom.finishButton.click();
+          await finished(a.ctx);
+          // Asked once the Finish's own save delivered the file.
+          await vi.waitFor(() => {
+            expect(a.dom.uploadAsk.hidden).toBe(false);
+          });
+          return a;
+        }
+
+        it("after a yes, a pin deleted on the desktop stays deleted", async () => {
+          const { store } = memoryDraftStore();
+          const a = await placeAndFinish(store);
+          a.dom.uploadYes.click();
+          await vi.waitFor(() => {
+            expect(a.dom.uploadYes.hidden).toBe(true);
+          });
+          await flush();
+          // The desktop's file, uploaded: the tour without the pin.
+          const b = await load(store, []);
+          await vi.waitFor(() => {
+            expect(b.ctx.placementNote ?? "").toMatch(
+              /replaced by a newer one/,
+            );
+          });
+          expect(b.dom.draftOfferText.textContent).not.toMatch(/you placed/);
+        });
+
+        it("with no yes, the pin is offered back as before", async () => {
+          const { store } = memoryDraftStore();
+          const a = await placeAndFinish(store);
+          a.dom.uploadNo.click();
+          expect(a.dom.uploadAsk.hidden).toBe(true);
+          await flush();
+          const b = await load(store, []);
+          await vi.waitFor(() => {
+            expect(b.dom.draftOfferText.textContent).toMatch(
+              /1 thing you placed/,
+            );
+          });
+          expect(b.ctx.placementNote ?? "").not.toMatch(/replaced/);
+        });
       });
 
       it("says a desktop edit won once, and forgets the replaced record (review #4)", async () => {

@@ -126,6 +126,11 @@ export interface CreatorSetupDom {
   replaceHelpDrive: HTMLElement;
   /** Step 6's Drive address button (`creator-handoff.ts`). */
   replaceDriveCopy: HTMLButtonElement;
+  /** The question after a download-only Finish (F19, `creator-handoff.ts`). */
+  uploadAsk: HTMLElement;
+  uploadAskText: HTMLElement;
+  uploadYes: HTMLButtonElement;
+  uploadNo: HTMLButtonElement;
   /** The printed side length - lives in the print step (DEC-F2). */
   sizeInput: HTMLInputElement;
   /** The print step's "Settings" block holding that field (r820 R7). */
@@ -706,6 +711,8 @@ export function wireCreatorSetup(deps: {
       renderAuthorReadout();
     },
     ...(deps.host === undefined ? {} : { host: deps.host }),
+    // A yes to "did you upload it?" (F19) is noted in the draft.
+    onUploaded: () => draft.uploaded(),
   });
 
   /** Finish: the rebuilt zip and what it changes (`creator-finish.ts`). */

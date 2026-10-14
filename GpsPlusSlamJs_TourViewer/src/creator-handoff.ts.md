@@ -41,7 +41,12 @@ the automatic save is in
     live;
   - `reset()` - a tour closed: the button disabled with its label, the line
     and the notes cleared, the replace steps hidden and the generic text
-    back.
+    back, the upload question hidden and forgotten.
+- `onUploaded?` (follow-up F19) - the creator answered yes to the question
+  after a delivered save; `creator-setup.ts` passes `draft.uploaded()`
+  (`creator-draft.ts`), which resolves whether it was noted. Without it the
+  question is never asked. `dom.uploadAsk`, `uploadAskText`, `uploadYes`,
+  `uploadNo` are its box, line and answers; `UPLOAD_ASK_LABELS` its words.
 
 ## Invariants & assumptions
 
@@ -81,6 +86,16 @@ the automatic save is in
   nothing on the next tour's panel (PR #440 review); `reset` restores the
   button's label for the same reason (PR #441 review).
 
+- **Asked once per Finish (F19, owner decision 2026-10-14).** After the
+  save that DELIVERED a Finish's file - never before, never for a save that
+  did not go through, never again for another save of the same file (keyed
+  by the rebuilt blob) - the steps end with "Did you upload it?". Yes:
+  "Noting it…" with both answers off, then "Noted…" or, when the draft
+  could not note it, a line saying a note deleted on a computer may be
+  offered back and can be declined; the answers go, the line stays. Not
+  yet: the question goes, the draft stays as it is (as does no answer). The
+  next Finish's file asks again; a tour close hides it.
+
 ## Examples
 
 ```ts
@@ -101,7 +116,13 @@ handoff.save(notes);
 - `creator-handoff.test.ts` "the replace steps follow the chosen host": the
   host's own text after a save, the paragraph with no host, and its return
   on a tour close.
+- `creator-handoff.test.ts` "the question after a download-only Finish":
+  hidden until a delivered save, asked once, the yes's progress and both
+  outcomes, Not yet, the same file saved again, the next Finish, a close.
+  The composed walk (a yes, then a desktop delete honoured; no yes, the pin
+  offered back) is in `authoring-settle.test.ts` (F19).
 - `qr-author-mode.test.ts` "the finish saves the tour zip by itself" and the
   Drive steps: the copy.
 - `playwright-tests/ar-mode.spec.js`: the Finish's own save in a browser,
-  the button's save again, the Drive tour's name and steps.
+  the button's save again, the Drive tour's name and steps, and the
+  upload question answered yes (F19).

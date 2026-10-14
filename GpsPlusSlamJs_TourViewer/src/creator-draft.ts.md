@@ -37,12 +37,25 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     with its seen version (`creator-setup.ts`'s `saveDraftObject`).
   - `finished(ids, written)` - `creator-finish.ts` after a Finish wrote
     these objects: their versions in `written` are this device's own work.
+    The ids (all of this load's Finishes) and the last `written` are kept
+    for `uploaded`.
+  - `uploaded()` (follow-up F19, owner decision 2026-10-14) - the creator
+    answered yes to "did you upload it?" (`creator-handoff.ts`): every
+    object a Finish of this load wrote gets its version in the LAST written
+    file added as SEEN (`addDraftBaseKey`, in the id's queue), so a delete
+    made elsewhere afterwards is honoured instead of offered back. Resolves
+    whether every note landed (true with nothing to note); a note that did
+    not land leaves no base, which is never superseded (the safe side).
   - **Not covered (E2p review #3, #7).** A desktop delete is honoured only
-    once a version of the record was SEEN hosted: the usual walk (place,
-    upload, delete on the desktop, with no phone open in between) still
-    offers the pin back - nothing tells the phone an upload happened
-    (`rebuiltZip.delivered` is not proof of one), and a written version
-    alone cannot tell "deleted" from "not uploaded" (follow-up F19). And a
+    once a version of the record was SEEN hosted. Nothing tells the phone an
+    upload happened (`rebuiltZip.delivered` is not proof of one), so since
+    F19 the phone asks once after a delivered Finish; without a yes the usual
+    walk (place, upload, delete on the desktop, with no phone open in
+    between) still offers the pin back, as before - the offer is a question
+    the creator can decline. A yes given for a file that was NOT uploaded
+    makes the phone's own new objects read as "deleted elsewhere" at the
+    next open of the old file, and they are not offered back: the question's
+    words say to answer yes only once the file is replaced. And a
     record superseded by a desktop edit is dropped whole: a code move the
     phone made to it since is not merged. And (third review #3, #4) a
     Finish that completes before the draft namespace opens records no

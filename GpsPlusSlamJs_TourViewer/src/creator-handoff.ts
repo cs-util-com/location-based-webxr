@@ -3,7 +3,8 @@
  * `creator-setup.ts`): the Finish saves the rebuilt zip by itself and the
  * one button left saves it again (the 2026-10-08 field test, F4; owner
  * decisions D-F4a, D-F4b), the result line, and the "replace the hosted
- * file" steps a save earns.
+ * file" steps a save earns - and, once per Finish, the question whether the
+ * creator put that file in place (follow-up F19).
  *
  * @see creator-handoff.ts.md
  */
@@ -29,6 +30,12 @@ export interface CreatorHandoffDom {
   replaceHelpDrive: HTMLElement;
   /** Step 6's "copy the file's Drive address", shown with the Drive steps. */
   replaceDriveCopy: HTMLButtonElement;
+  /** The question after a save delivered (F19): its box, its line, and
+   *  its two answers. */
+  uploadAsk: HTMLElement;
+  uploadAskText: HTMLElement;
+  uploadYes: HTMLButtonElement;
+  uploadNo: HTMLButtonElement;
 }
 
 /** The Drive address button's labels (polish round M2, step 6). */
@@ -37,6 +44,24 @@ export const DRIVE_COPY_LABELS = {
   busy: "Copying…",
   done: "Copied - paste it into a new browser tab",
   failed: (address: string) => `Could not copy - the address is ${address}`,
+} as const;
+
+/**
+ * The question after a download-only Finish (follow-up F19, owner decision
+ * 2026-10-14): nothing tells a page that the creator uploaded the file it
+ * saved, so it asks once. A yes makes the written versions SEEN hosted, so
+ * a note deleted later on a computer is not offered back from this phone.
+ */
+export const UPLOAD_ASK_LABELS = {
+  question:
+    "Did you upload it? Tap Yes once the file at your link is replaced with this one.",
+  yes: "Yes, it is replaced",
+  no: "Not yet",
+  noting: "Noting it…",
+  noted:
+    "Noted. A note you delete later on a computer stays deleted on this phone.",
+  failed:
+    "This phone could not note it. If a note deleted on a computer is offered back here, you can decline it.",
 } as const;
 
 export interface CreatorHandoff {
@@ -68,8 +93,31 @@ export function wireCreatorHandoff(deps: {
   /** The host chosen in step 1 (`tour-host.ts`), read at each save; null
    *  or absent: none chosen, and the paragraph about every host stays. */
   host?: () => TourHost | null;
+  /** The creator said yes, the file is uploaded (F19): the draft notes
+   *  it; whether that landed. Absent: the question is never asked. */
+  onUploaded?: () => Promise<boolean>;
 }): CreatorHandoff {
   const { ctx, seams, dom } = deps;
+  /** The rebuilt file the question was asked about: asked once per
+   *  Finish, never again for a save of the same file. */
+  let askedFor: Blob | null = null;
+  function hideAsk(): void {
+    dom.uploadAsk.hidden = true;
+  }
+  /** The question, fresh, for the file a save just delivered. */
+  function ask(): void {
+    dom.uploadAskText.textContent = UPLOAD_ASK_LABELS.question;
+    for (const [button, label] of [
+      [dom.uploadYes, UPLOAD_ASK_LABELS.yes],
+      [dom.uploadNo, UPLOAD_ASK_LABELS.no],
+    ] as const) {
+      button.textContent = label;
+      button.hidden = false;
+      button.disabled = false;
+    }
+    dom.uploadAsk.hidden = false;
+  }
+  hideAsk();
   /** The open tour's Drive address while the Drive steps show. */
   let driveAddress: string | null = null;
   /** The page's paragraph about every host, put back when a tour closes. */
@@ -148,6 +196,12 @@ export function wireCreatorHandoff(deps: {
           if (delivered) {
             presentReplaceSteps(rebuilt.filename);
             dom.replaceHelp.hidden = false;
+            // Asked once per Finish's file, after the save that delivered
+            // it (F19): a later save of the same file asks nothing.
+            if (deps.onUploaded !== undefined && askedFor !== rebuilt.blob) {
+              askedFor = rebuilt.blob;
+              ask();
+            }
           }
         },
         (err: unknown) => {
@@ -166,6 +220,30 @@ export function wireCreatorHandoff(deps: {
   dom.downloadButton.addEventListener("click", () => {
     save();
   });
+  // Async-UI rule: "Noting it…" with both answers off while the draft
+  // writes, then what it came to; the answers go, the line stays.
+  dom.uploadYes.addEventListener("click", () => {
+    const noted = deps.onUploaded;
+    if (noted === undefined || dom.uploadYes.disabled || dom.uploadYes.hidden) {
+      return;
+    }
+    const openGeneration = ctx.openGeneration;
+    dom.uploadYes.disabled = true;
+    dom.uploadNo.disabled = true;
+    dom.uploadAskText.textContent = UPLOAD_ASK_LABELS.noting;
+    void noted()
+      .catch(() => false)
+      .then((ok) => {
+        if (openGeneration !== ctx.openGeneration) return;
+        dom.uploadAskText.textContent = ok
+          ? UPLOAD_ASK_LABELS.noted
+          : UPLOAD_ASK_LABELS.failed;
+        dom.uploadYes.hidden = true;
+        dom.uploadNo.hidden = true;
+      });
+  });
+  // "Not yet", or no answer at all, leaves the draft as it is.
+  dom.uploadNo.addEventListener("click", hideAsk);
   // Async-UI rule: busy before the await, the outcome after; a failed copy
   // shows the address so it can still be copied by hand.
   dom.replaceDriveCopy.addEventListener("click", () => {
@@ -189,6 +267,8 @@ export function wireCreatorHandoff(deps: {
     },
     reset: () => {
       notes = "";
+      askedFor = null;
+      hideAsk();
       dom.downloadButton.disabled = true;
       // The LABEL too: the save's continuation is generation-guarded and
       // returns without restoring it for a tour that closed underneath an
