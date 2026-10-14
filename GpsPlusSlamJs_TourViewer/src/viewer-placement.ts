@@ -99,6 +99,10 @@ const CAPTURE_PLANE_DECODE_DIVISOR = 2;
  * late): 8 is the smallest threshold with no swing after showing (0.04
  * deg); 6 and 7 still show 6- and 7-lock scans turned by 13.8 / 33.8 deg.
  * At or below the vote budget (10), so a spent budget is reached after it.
+ * A first fix with a compass reading DURING the scan still turns an 8-lock
+ * showing by up to 2.5 deg (9 locks: 0.19 deg; the r857 review's sweep).
+ * Coupled to the core's default window (9), which the published library
+ * does not export: a core change of it must re-run `m1b-wait` (sidecar).
  */
 export const CODE_ZERO_WAIT_LOCKS = Math.min(8, MAX_VOTED_LOCKS_PER_CODE);
 
@@ -289,15 +293,23 @@ export function createViewerPlacement(deps: {
   }
 
   /** The wait ended (enough locks, or its timeout): place what it held
-   *  back - the trigger's placement, and the ring a voted lock would have
-   *  placed (`placeOnVotedLock`) with the last locked code. */
+   *  back - the trigger's placement (a join that falls back to the ring
+   *  around the last locked code, `tryPlaceTour`), the ring a voted lock
+   *  would have placed (`placeOnVotedLock`), and the station on that code
+   *  (r857 review #1: a glance that ends by the timeout gets no further
+   *  lock to report it; a lock's own report after this finds it found). */
   function endCodeZeroWait(): void {
     if (ctx.codeZeroWaitUntilMs === null) return;
     ctx.codeZeroWaitUntilMs = null;
     ctx.cancelCodeZeroWait?.();
     ctx.cancelCodeZeroWait = null;
     tryPlaceTour();
-    if (ctx.viewerLockedText !== null) placeOnVotedLock(ctx.viewerLockedText);
+    const text = ctx.viewerLockedText;
+    if (text !== null) {
+      placeOnVotedLock(text);
+      const levelId = ctx.levelIdByText.get(text);
+      if (levelId !== undefined) hooks.stationCodeLocked(levelId);
+    }
     hooks.renderArStatus();
   }
 
@@ -862,7 +874,12 @@ export function createViewerPlacement(deps: {
       hooks.renderArStatus();
       return;
     }
-    void placeTourImagePlanes(null).catch((err: unknown) => {
+    // A code placed the tour: the join runs WITH its code, so a join that
+    // declines falls back to the ring in the same run (r857 review #3).
+    // Without it the run's loading latch dropped the ring of the lock that
+    // ended the compass wait, and a glance gets no later lock to retry.
+    const lockedText = codePlacedTour() ? ctx.viewerLockedText : null;
+    void placeTourImagePlanes(lockedText).catch((err: unknown) => {
       ctx.viewerPlanesError = describeOpenError(err, current.archive.url);
       hooks.renderArStatus();
     });

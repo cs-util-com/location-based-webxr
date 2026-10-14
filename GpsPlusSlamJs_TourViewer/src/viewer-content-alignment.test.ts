@@ -40,6 +40,7 @@ import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-l
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type { TourPin } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-stations";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import {
   calcGpsCoords,
@@ -59,6 +60,7 @@ import {
   VIEWER_VOTE_COUNT,
 } from "./qr-viewer-mode.js";
 import type { TourViewerSeams } from "./seams.js";
+import { wireStationGuide } from "./station-guide.js";
 import type { TourSession } from "./tour-session.js";
 import {
   createTourViewerSession,
@@ -70,6 +72,7 @@ import {
   CODE_ZERO_WAIT_MS,
   createViewerPlacement,
 } from "./viewer-placement.js";
+import { stationPlacementAllowed } from "./visitor-stations.js";
 
 /** The code's converged (fused) pose: a stand-in, its own tests are
  *  `fused-pose-wiring.test.ts`. */
@@ -81,6 +84,14 @@ vi.mock("gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source", () => ({
     last: () => null,
   }),
 }));
+/** A decoded photo, so a ring can be placed without a browser decoder. */
+vi.mock(
+  "gps-plus-slam-app-framework/visualization/frame-texture-decoder",
+  async () => {
+    const { Texture } = await import("three");
+    return { decodeFrameTexture: () => Promise.resolve(new Texture()) };
+  },
+);
 
 const ZERO = { lat: 47.5, lon: 8.7 };
 const T0 = 1_790_000_000_000;
@@ -164,6 +175,9 @@ async function visitorSession(
   biasM: number,
   /** `false`: no device fix and no zero before the scan (QR-first M1). */
   withZero = true,
+  /** Fields of the open tour's session over the default one (a tour
+   *  without a recording whose photos cannot be read). */
+  sessionOverrides: Record<string, unknown> = {},
 ) {
   const bias = [biasM * 0.5, biasM * Math.sqrt(3) * 0.5] as const; // N, E
   // First: the store's construction activates the licence-gated geodesy.
@@ -220,11 +234,13 @@ async function visitorSession(
     hasRecording: false,
     archive: { url: "https://example.test/tour.zip" },
     loadContentEntry: () => Promise.reject(new Error("no photos here")),
+    ...sessionOverrides,
   } as unknown as TourSession;
   ctx.tourManifest = { version: 1, objects: [pin] } as never;
   ctx.tourManifestStatus = "settled";
   ctx.currentLevels = new Map([[await qrCodeId(TEXT), level]]);
   ctx.placementUnsubscribe = () => undefined; // a viewer session is live
+  const hooks = createUnwiredHooks();
   const placement = createViewerPlacement({
     ctx,
     mode: "visitor",
@@ -236,7 +252,7 @@ async function visitorSession(
       hidden: true,
       addEventListener: () => undefined,
     } as unknown as HTMLButtonElement,
-    hooks: createUnwiredHooks(),
+    hooks,
     now: () => clock.nowMs,
   });
   fused.pose = CODE_ODOM;
@@ -299,6 +315,7 @@ async function visitorSession(
     atRender,
     clock,
     fireTimers,
+    hooks,
   };
 }
 
@@ -478,8 +495,8 @@ describe("viewer content follows the live alignment (D10a, M2d)", () => {
 });
 
 // Why (owner decision 2026-10-14 after the M1 review, "wait about a second
-// before showing"): after a code set the session zero, a scan of five voted
-// locks or fewer leaves the compass memory's yaw window under-full when the
+// before showing"): after a code set the session zero, a scan of fewer than
+// eight voted locks leaves the compass memory's yaw window under-full when the
 // first compass reading arrives, so the content turned by about the
 // compass's error (34 deg at a 30 deg bias) for 1-10 s (m1-compare). The
 // first placement therefore waits for eight voted locks, or a timeout so a
@@ -525,6 +542,122 @@ describe("after a code-set zero the first placement waits for the compass (QR-fi
     expect(s.label.parent?.parent).toBe(s.scene);
     // The wait ended with the locks: its timer is cancelled.
     expect(s.fireTimers(CODE_ZERO_WAIT_MS)).toBe(0);
+  }, 60_000);
+
+  // Why (r857 milestone review #1): the wait held back the content and the
+  // photos but not the stations - a station on the scanned code was found
+  // and offered at lock 1 (its figure at its pose, the breadcrumbs), then
+  // turned with the compass swing the wait exists to hide. The real station
+  // guide over the real placement: nothing is found while the wait holds,
+  // and the station IS found when it ends - also by its timeout, where no
+  // further lock comes to report the code again.
+  describe("holds the stations back too", () => {
+    function withStationOnCode(s: Awaited<ReturnType<typeof visitorSession>>) {
+      const levelId = [...s.ctx.currentLevels!.keys()][0]!;
+      const stations: readonly TourStation[] = [
+        {
+          id: "tower",
+          title: "TOWER",
+          anchor: { code: levelId },
+          activateRadiusM: 30,
+          foundRadiusM: 5,
+          hint: "arrow",
+          steps: [
+            {
+              id: "s",
+              block: { kind: "text", text: "Hi" },
+              advance: { mode: "tap" },
+            },
+          ],
+        },
+      ];
+      const found: { id: string; locks: number }[] = [];
+      const guide = wireStationGuide({
+        dom: {
+          line: { textContent: "", hidden: true },
+          skip: { textContent: "", hidden: true },
+        },
+        tour: () => ({
+          stations,
+          order: "fixed",
+          levels: s.ctx.currentLevels,
+        }),
+        // The page's own gate (`visitor-stations.ts`).
+        placementAllowed: () => stationPlacementAllowed(s.ctx, "visitor"),
+        zero: () => selectZeroReference(s.arStore.getState()),
+        visitor: () => ({ nue: null, accuracyM: null, fixNue: null }),
+        isIgnoredCode: () => false,
+        startHud: () => null,
+        now: () => s.clock.nowMs,
+        onFound: (station) => {
+          found.push({ id: station.id, locks: s.ctx.viewerVotedLocks });
+        },
+      });
+      s.hooks.stationCodeLocked = (id) => {
+        guide.codeLocked(id);
+      };
+      return found;
+    }
+
+    it("finds no station on the scanned code during a 3-lock glance, and finds it when the wait times out", async () => {
+      const s = await visitorSession(8, false);
+      const found = withStationOnCode(s);
+      s.clock.nowMs = T0 + 500;
+      expect(await firstVotedLock(s)).toBe(1);
+      await s.frame();
+      await s.frame();
+      expect(s.syntheticVotes()).toBe(3 * VIEWER_VOTE_COUNT);
+      expect(found).toEqual([]);
+      s.clock.nowMs = T0 + 500 + CODE_ZERO_WAIT_MS;
+      expect(s.fireTimers(CODE_ZERO_WAIT_MS)).toBe(1);
+      expect(found).toEqual([{ id: "tower", locks: 3 }]);
+    }, 60_000);
+
+    it("finds it on the eighth voted lock of a full scan, not before", async () => {
+      const s = await visitorSession(8, false);
+      const found = withStationOnCode(s);
+      s.clock.nowMs = T0 + 500;
+      expect(await firstVotedLock(s)).toBe(1);
+      while (
+        s.syntheticVotes() <
+        (CODE_ZERO_WAIT_LOCKS - 1) * VIEWER_VOTE_COUNT
+      ) {
+        await s.frame();
+      }
+      expect(found).toEqual([]);
+      await s.frame();
+      expect(found).toEqual([{ id: "tower", locks: CODE_ZERO_WAIT_LOCKS }]);
+    }, 60_000);
+  });
+
+  // Why (r857 milestone review #3): the wait's end ran the trigger's
+  // placement first - a join WITHOUT the code - whose loading latch then
+  // blocked the ring the code's lock would have placed. A tour whose
+  // recording cannot place its photos got no ring until a rescan. The end
+  // starts the join WITH the locked code, so a declining join falls back to
+  // the ring in the same run.
+  it("places the ring after the wait when the recording declines the join", async () => {
+    const s = await visitorSession(8, false, {
+      hasRecording: true,
+      loadSessionMeta: () => Promise.resolve(null),
+      loadRecordingActions: () => Promise.resolve(null),
+      entries: [{ filename: "photo.jpg", isImage: true, size: 3 }],
+      loadEntry: () => Promise.resolve(new Blob(["jpg"])),
+    });
+    s.clock.nowMs = T0 + 500;
+    expect(await firstVotedLock(s)).toBe(1);
+    await s.frame();
+    await s.frame();
+    await flush();
+    expect(s.ctx.imagePlanes).toBeNull();
+    s.clock.nowMs = T0 + 500 + CODE_ZERO_WAIT_MS;
+    expect(s.fireTimers(CODE_ZERO_WAIT_MS)).toBe(1);
+    await flush();
+    expect(s.ctx.joinDeclined).toBe(true);
+    expect(s.ctx.placement).toMatchObject({
+      kind: "placed",
+      placedKind: "ring",
+    });
   }, 60_000);
 
   it("does not wait without location (codes only: no compass reading ever reaches the solve)", async () => {

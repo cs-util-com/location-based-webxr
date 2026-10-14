@@ -112,7 +112,16 @@ recording. Its own module since the flows plan M6.
     code has `CODE_ZERO_WAIT_LOCKS` (8) voted locks or
     `CODE_ZERO_WAIT_MS` (12 s) passed since the zero; the lock or the
     timeout (`seams.schedule`) that ends the wait places what it held back,
-    the ring included. Meanwhile the placement stays as it was, so the line
+    the ring included, and reports the last locked code's station to the
+    guide again (`hooks.stationCodeLocked`; the stations wait too, r857
+    milestone review #1, `visitor-stations.ts`). Whenever a code placed the
+    tour, the trigger's join runs WITH the locked code
+    (`placeTourImagePlanes(ctx.viewerLockedText)`), so a declining join
+    falls back to the ring in the same run (r857 review #3: the join
+    without the code set the loading latch and dropped the ring of the lock
+    that ended the wait, and a glance gets no later lock). A tour switch
+    ends the wait with the tour (`archive-open.ts` teardown, r857 review
+    #9). Meanwhile the placement stays as it was, so the line
     reads "Code found - placing the tour...". Not in author mode, not
     without location (`ctx.codesOnly`: no compass reading reaches the
     solve), and not when a device fix set the zero. Why the numbers
@@ -124,7 +133,19 @@ recording. Its own module since the flows plan M6.
     7 do not. The timeout covers a glance only while the first fix comes
     within about 3 s of the scan (at most 1.9 deg seen at 12 s); a first
     fix 8 s late still shows a 1-3 lock glance turned by up to 30 deg - a
-    limit of a fixed timeout, which cannot know when the first fix comes. The code rule changes
+    limit of a fixed timeout, which cannot know when the first fix comes.
+    A first fix WITH a compass reading that arrives DURING the scan (0.25
+    or 0.5 s after it starts; the r857 review's sweep gap) still turns the
+    content by up to 2.5 deg after an 8-lock showing at a 30 deg compass
+    bias (1.0 deg at 10 deg; 1.9 deg when it comes 1 s in); 9 locks leave
+    0.19 deg. **A named coupling, not a tripwire:** 8 rests on the core's
+    default `coldStartObservabilityWindow` (9;
+    `GpsPlusSlamJs/src/state/models/alignment-config.ts`), which the
+    published library does not export (only an override can be set,
+    `setAlignmentOverrides`), so no unit test here can pin
+    `CODE_ZERO_WAIT_LOCKS >= window - 1`. A core change of that default
+    (a window of 10 or more) reverses the 8 and must re-run the harness's
+    `m1b-wait` group. The code rule changes
     little (corrected after the M1 review #5; the M1 commit overstated it):
     every voted lock AFTER the gate already starts the placement itself
     (`onVotedLock`), bypassing readiness, so the rule decides only a scan
@@ -381,6 +402,15 @@ clear at entry start, the merge before the first vote and once only, a
 keep-alive tick bringing the first vote, a ringless fix changing nothing,
 `endTour`, the soft keys as M0c measured them, one batch per lock, the
 tick's fix-first batch, a malformed fix dropped alone.
+
+`viewer-content-alignment.test.ts` (D10a, M2d; QR-first) - through the
+real controller and store: the content follows the live alignment, a code
+alone places the tour, and the compass wait - nothing shown during a
+3-lock glance until the timeout, a full scan shown on its eighth voted
+lock, no wait without location or after a device-set zero; the stations
+wait too and are found when the wait ends by either path (r857 review
+#1); a recording that declines the join still gets the ring after the
+wait (r857 review #3).
 
 `fused-pose-wiring.test.ts` - the votes' stable pose is the fused one (at
 the true rotation where single-frame poses scatter past the old average's
