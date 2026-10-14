@@ -100,7 +100,7 @@ const NO_BACKUP: Readonly<Record<NoBackupReason, string>> = {
   storage:
     "This page keeps no backup copy of your edits in this browser - save before you close it.",
   "other-tab":
-    "Another tab has this tour open, so this page keeps no backup copy of your edits - save before you close it.",
+    "Another tab has this tour open, so this page keeps no backup copy of your edits - save before you close it. To have one, close the other tab, then open the tour again here.",
 };
 
 function element<T extends HTMLElement>(id: string): T {
@@ -736,7 +736,9 @@ async function openFile(
     manifest: outcome.manifest,
     levels: outcome.levels,
     fileName: outcome.fileName,
-    draft,
+    // Bound to this tour: once another opens, this session's late writes
+    // are dropped (E2c review #6).
+    draft: draft.writes(),
   });
   model = editor.model();
   // The walk-recording switch only for a tour that carries one (S-D10:

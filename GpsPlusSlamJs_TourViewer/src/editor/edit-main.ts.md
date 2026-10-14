@@ -107,12 +107,15 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`session.restore`, live edits winning; "N earlier changes are back - not
   saved yet"), Not now (offered again next time), Delete it
   (`draft.discard`; a failure is said). Records an edit elsewhere replaced
-  are said once. Every edit goes to the draft through the session; a build
+  are said once. Every edit goes to the draft through the session, whose
+  writes are bound to its tour (`draft.writes()`: a closed tour's late
+  write is dropped); a build
   adds its versions (`draft.built`), and an in-place write that landed
   clears what it wrote and moves the draft to the written bytes' key
   (`tourFileKeyOfFile`, worked out before the write, `draft.landed`). A tab
   that keeps no backup (no storage, a failed write, another tab holding the
-  tour) says so once, after the tour shows. `body[data-draft]` is
+  tour) says so once, after the tour shows; for another tab it says how to
+  get a backup (close that tab, open the tour again here). `body[data-draft]` is
   `writing` / `saved` / `off`: the e2e waits for `saved` before it closes a
   page (`page.close()` skips `beforeunload`).
 - **Leaving** with unsaved work asks first (`beforeunload`), and so does

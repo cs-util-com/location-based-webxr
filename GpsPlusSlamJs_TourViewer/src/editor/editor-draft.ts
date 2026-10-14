@@ -118,6 +118,10 @@ export interface EditorDraftOpened {
 }
 
 export interface EditorDraft extends DraftObjectWrites {
+  /** The writes for the tour open NOW (E2c review #6): once another tour
+   *  opens they are dropped, so an old editor's late write never lands in
+   *  the new tour's namespace. The session is given these. */
+  writes(): DraftObjectWrites;
   /** A tour opened: hold its draft, read it, clear what the file carries,
    *  and say what to offer. Awaited before the tour shows. */
   open(fileKey: string, manifest: TourManifest): Promise<EditorDraftOpened>;
@@ -151,6 +155,8 @@ interface Space {
   rejected: readonly string[];
   /** Every id with files here: what a key move empties. */
   readonly ids: Set<string>;
+  /** Its writes not yet settled: the hold goes only after them. */
+  readonly work: Set<Promise<unknown>>;
 }
 
 export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
@@ -180,8 +186,11 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   let writing = 0;
   let waiters: (() => void)[] = [];
 
-  function say(reason: NoBackupReason): void {
-    if (told) return;
+  /** Said once per opened tour, and only about the space the page writes
+   *  now: a late failure of a closed tour's write does not use up the new
+   *  tour's line (E2c review #6). */
+  function say(s: Space, reason: NoBackupReason): void {
+    if (s !== space || told) return;
     told = true;
     deps.noBackup(reason);
   }
@@ -211,6 +220,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       refused: null,
       rejected: [],
       ids: new Set(),
+      work: new Set(),
     };
     made.store = (async () => {
       const lock = await deps.holdLock(key).catch(() => null);
@@ -256,13 +266,29 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
    * the change is newer than the rejection and the next read sees it (the
    * phone's `creator-draft.ts` rule, M4 review #1).
    */
+  /** `work` counted for `idle` and for `s`'s hold. */
+  function inSpace<T>(s: Space, work: Promise<T>): Promise<T> {
+    s.work.add(work);
+    const done = (): void => {
+      s.work.delete(work);
+    };
+    work.then(done, done);
+    return track(work);
+  }
+
+  /** Every write of `s` settled, those queued meanwhile too. */
+  async function drained(s: Space): Promise<void> {
+    while (s.work.size > 0) await Promise.allSettled([...s.work]);
+  }
+
   function inQueue(
     s: Space,
     id: string,
     task: (store: DraftFileStore) => Promise<boolean>,
   ): Promise<boolean> {
     s.ids.add(id);
-    return track(
+    return inSpace(
+      s,
       chain.run(objectChain(s, id), async () => {
         const store = await s.store;
         if (store === undefined) return false;
@@ -284,7 +310,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     task: (store: DraftFileStore) => Promise<boolean>,
   ): Promise<boolean> {
     return inQueue(s, id, task).then((ok) => {
-      if (!ok) say(s.refused ?? "storage");
+      if (!ok) say(s, s.refused ?? "storage");
       return ok;
     });
   }
@@ -305,48 +331,61 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     );
   }
 
-  /** `id`'s change written into `s` with its base (a key move). */
+  /**
+   * `id`'s change written into `s` with its base (a key move); whether it
+   * landed. NOT a claim: an id "Delete it" rejected since the move is
+   * skipped, never brought back (E2c review #5).
+   */
   function carry(
     s: Space,
     id: string,
     change: TourObject | null,
     base: DraftBase | undefined,
-  ): void {
-    void writeIn(s, id, async (store) => {
-      const wrote =
-        change === null
-          ? await writeDraftDeletion(store, id)
-          : await writeDraftEdit(store, change, undefined, undefined);
-      // After the record: a record without its base is never superseded.
-      if (base !== undefined) await writeDraftBase(store, id, base);
-      return wrote;
-    });
+  ): Promise<boolean> {
+    s.ids.add(id);
+    return inSpace(
+      s,
+      chain.run(objectChain(s, id), async () => {
+        if (s.rejected.includes(id)) return true;
+        const store = await s.store;
+        if (store === undefined) return false;
+        const wrote =
+          change === null
+            ? await writeDraftDeletion(store, id)
+            : await writeDraftEdit(store, change, undefined, undefined);
+        // After the record: a record without its base is never superseded.
+        if (base !== undefined) await writeDraftBase(store, id, base);
+        return wrote;
+      }),
+    )
+      .catch(() => false)
+      .then((ok) => {
+        if (!ok) say(s, s.refused ?? "storage");
+        return ok;
+      });
   }
 
   /** The old namespace emptied behind its own queued writes, its meta
-   *  last, then its hold released - one tracked piece of work, so `idle`
-   *  never resolves between the removals and the meta's. */
-  function empty(old: Space): void {
-    void track(
-      (async () => {
-        await Promise.all(
-          [...old.ids].map((id) =>
-            chain.run(objectChain(old, id), async () => {
-              const store = await old.store;
-              if (store !== undefined) await removeDraftObject(store, id);
-            }),
-          ),
-        );
-        await chain.run(metaChain(old), async () => {
-          const store = await old.store;
-          if (store !== undefined) await store.remove(META_KEY);
-        });
-      })(),
-    )
-      .catch(() => undefined)
-      .finally(() => {
-        old.lock?.release();
-      });
+   *  last. Run only once everything it held landed in the new one. */
+  async function empty(old: Space): Promise<void> {
+    await Promise.all(
+      [...old.ids].map((id) =>
+        inSpace(
+          old,
+          chain.run(objectChain(old, id), async () => {
+            const store = await old.store;
+            if (store !== undefined) await removeDraftObject(store, id);
+          }),
+        ),
+      ),
+    );
+    await inSpace(
+      old,
+      chain.run(metaChain(old), async () => {
+        const store = await old.store;
+        if (store !== undefined) await store.remove(META_KEY);
+      }),
+    );
   }
 
   function seenKey(id: string): string | undefined {
@@ -364,12 +403,14 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     touched.clear();
     bases.clear();
     if (s === null) return;
-    // Released at once, not after the queued writes: the hold says which
-    // tab writes from now on, and this one writes nothing new.
-    letGo = s.store.then(async () => {
-      s.lock?.release();
-      await s.lock?.released;
-    });
+    // After its queued writes (E2c review #6): until they land, another
+    // tab taking the draft would read it half written.
+    letGo = s.store
+      .then(() => drained(s))
+      .then(async () => {
+        s.lock?.release();
+        await s.lock?.released;
+      });
   }
 
   const none: EditorDraftOpened = {
@@ -378,7 +419,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     backedUp: false,
   };
 
-  return {
+  const api: EditorDraft = {
     async open(fileKey, manifest) {
       close();
       const mine = generation;
@@ -391,10 +432,12 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       const store = await s.store;
       if (mine !== generation) return none;
       if (store === undefined) {
-        say(s.refused ?? "storage");
+        say(s, s.refused ?? "storage");
         return none;
       }
-      const stored = await readDraft(store);
+      // A photo note's bytes are in the opened file, never in the draft
+      // (E2c review #1): its record is kept without them.
+      const stored = await readDraft(store, { photoBytesRequired: false });
       if (mine !== generation) return none;
       if (stored === undefined) {
         void writeMeta(s);
@@ -441,6 +484,21 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         superseded:
           replaced === 0 ? null : supersededLine(replaced, SUPERSEDED_WHERE),
         backedUp: true,
+      };
+    },
+
+    writes() {
+      const mine = generation;
+      const live = (): boolean => mine === generation;
+      return {
+        saveObject: (object, blob) =>
+          live() ? api.saveObject(object, blob) : Promise.resolve(true),
+        saveDeletion: (id) =>
+          live() ? api.saveDeletion(id) : Promise.resolve(true),
+        forgetDeletion: (id) =>
+          live() ? api.forgetDeletion(id) : Promise.resolve(true),
+        forgetObject: (id) =>
+          live() ? api.forgetObject(id) : Promise.resolve(),
       };
     },
 
@@ -530,22 +588,36 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // write from here on goes to the new namespace.
       const next = makeSpace(fileKey);
       space = next;
-      void writeMeta(next);
+      const carried = [writeMeta(next)];
       for (const [id, change] of pending) {
-        carry(next, id, change, bases.get(id));
+        carried.push(carry(next, id, change, bases.get(id)));
       }
       // An offer not yet answered (or put off with "Not now") moves too.
       if (offer !== null) {
         for (const object of offer.objects) {
           if (!touched.has(object.id)) {
-            carry(next, object.id, object, bases.get(object.id));
+            carried.push(carry(next, object.id, object, bases.get(object.id)));
           }
         }
         for (const id of offer.deleted) {
-          if (!touched.has(id)) carry(next, id, null, undefined);
+          if (!touched.has(id)) carried.push(carry(next, id, null, undefined));
         }
       }
-      empty(s);
+      // The old namespace goes only once the new one holds everything
+      // (E2c review #2): a tab closed right after "Saved to" - nothing
+      // asks, no change is pending - must not find both half written.
+      // When anything did not land the old one stays (its key is the
+      // overwritten file's, so it is reached only by a copy of that file).
+      void track(
+        Promise.all(carried)
+          .then(async (oks) => {
+            if (oks.every(Boolean)) await empty(s);
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            s.lock?.release();
+          }),
+      );
     },
 
     backsUp() {
@@ -589,4 +661,5 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       ).then(() => undefined);
     },
   };
+  return api;
 }

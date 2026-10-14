@@ -389,6 +389,13 @@ export interface StoredDraft {
  */
 export async function readDraft(
   store: DraftFileStore,
+  options: {
+    /** Drop a photo record whose bytes are missing (the phone's rule,
+     *  default). The desktop editor reads with it off (M6 E2c review #1):
+     *  its photo notes' bytes are in the file it opened, never in the
+     *  draft. */
+    readonly photoBytesRequired?: boolean;
+  } = {},
 ): Promise<StoredDraft | undefined> {
   const metaText = await store.getText(META_KEY);
   if (metaText === undefined) return undefined;
@@ -470,7 +477,9 @@ export async function readDraft(
     const blob = await store.getBlob(photoKey(object.id));
     // A photo record whose bytes are gone would name a content entry the
     // rebuilt zip does not contain, which is the failure mode PR #435 was
-    // about. Drop the record with them.
+    // about. Drop the record with them - unless the caller's photos live
+    // in the file it opened (the editor's).
+    if (blob === undefined && options.photoBytesRequired === false) continue;
     if (blob === undefined) {
       objects.pop();
       continue;

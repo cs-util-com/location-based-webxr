@@ -1693,3 +1693,77 @@ test("an undo of a delete of an edited note keeps the edit for the next open", a
     next.locator("#rail .row", { hasText: "Edited, deleted, undone" }),
   ).toHaveCount(1);
 });
+
+test("a moved photo note survives a closed tab", async ({ page, context }) => {
+  // Why (E2c milestone review #1, confirmed data loss): a photo note's
+  // edit carries no bytes - they are in the opened file - and the read
+  // dropped a photo record without its bytes, so the move was lost.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const buffer = await editorTour();
+  await page.goto("/edit.html");
+  await openThroughChooser(page, buffer, "editor-fixture.zip");
+  await page.locator("#rail .row", { hasText: "Fountain" }).click();
+  await page.locator("#card button", { hasText: "Move" }).click();
+  const marker = await box(page.locator(".mk-wrap.sel"));
+  await page.mouse.move(marker.x + marker.width / 2, marker.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(marker.x + marker.width / 2 + 60, marker.y + 70, {
+    steps: 8,
+  });
+  await page.mouse.up();
+  await page.locator("#card button", { hasText: "Done" }).click();
+  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await backedUp(page);
+  await page.close();
+  const next = await newEditorPage(context);
+  await openThroughChooser(next, buffer, "editor-fixture.zip");
+  const offer = next.locator(".toast.draft-offer");
+  await expect(offer).toContainText("1 change");
+  await offer.locator("button", { hasText: "Restore" }).click();
+  await expect(next.locator("#save-status")).toHaveText("1 change not saved");
+});
+
+test("an edit after a download, with the downloaded copy put in place, is offered by that copy", async ({
+  page,
+  context,
+}) => {
+  // Why (E2c milestone review #4): each build adds its versions to the
+  // draft's `written` list. Without it the copy's own version of the note
+  // is one this browser never SAW in a file, so the later edit reads as
+  // "replaced by a newer one" and is dropped. A recording tour whose walk
+  // is kept has the same key in the copy as in the original.
+  await noSavePicker(page);
+  await page.goto("/edit.html");
+  await openThroughChooser(
+    page,
+    await wrappedTour({ pin: true }),
+    "wrapped.zip",
+  );
+  await page.locator("#keep-walk-input").check();
+  await page.locator("#rail .row", { hasText: "Wrapped pin" }).click();
+  await page.locator("#card textarea").fill("In the download");
+  await page.locator("#card textarea").blur();
+  const download = page.waitForEvent("download");
+  await page.locator("#save-btn").click();
+  const copy = readFileSync(await (await download).path());
+  await page.locator("#rail .row", { hasText: "In the download" }).click();
+  await page.locator("#card textarea").fill("After the download");
+  await page.locator("#card textarea").blur();
+  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await backedUp(page);
+  await page.close();
+  const next = await newEditorPage(context);
+  await openThroughChooser(next, copy, "wrapped.zip");
+  await expect(
+    next.locator("#rail .row", { hasText: "In the download" }),
+  ).toHaveCount(1);
+  const offer = next.locator(".toast.draft-offer");
+  await expect(offer).toContainText("1 change");
+  await expect(
+    next.locator(".toast", { hasText: "replaced by a newer one" }),
+  ).toHaveCount(0);
+  await offer.locator("button", { hasText: "Restore" }).click();
+  await expect(
+    next.locator("#rail .row", { hasText: "After the download" }),
+  ).toHaveCount(1);
+});

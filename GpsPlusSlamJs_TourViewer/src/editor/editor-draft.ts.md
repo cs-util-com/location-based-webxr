@@ -20,8 +20,11 @@ editor's own namespace, one tab at a time. Design:
     opened tour (`"storage"`: no storage or a write that did not land;
     `"other-tab"`: another tab holds the draft); `onWriting(true|false)` -
     writes started / all settled (the page's `data-draft` mark).
-- `EditorDraft` - the four `DraftObjectWrites` (`draft-actions.ts`) the
-  editor session calls, plus:
+- `EditorDraft` - the four `DraftObjectWrites` (`draft-actions.ts`), plus:
+  - `writes()` - those four bound to the tour open NOW, which the page gives
+    the editor session: once another tour opens they are dropped (resolve
+    without writing), so a late write of the old editor never lands in the
+    new tour's namespace with the new tour's `seen` (milestone review #6).
   - `open(fileKey, manifest)` - closes the last tour's hold, holds
     `editor:<fileKey>`, reads it, clears what the file carries, and
     resolves `{ offer, superseded, backedUp }`: `offer` (`objects`,
@@ -60,6 +63,10 @@ editor's own namespace, one tab at a time. Design:
   newer edit made elsewhere since (named, not covered).
 - **The editor places nothing new**, so a record of an id the file no
   longer carries counts as given way (said with the replaced ones).
+- **A photo note's record has no bytes** (milestone review #1): they are
+  in the file the editor opened, and the rebuild keeps that entry, so the
+  draft is read with `readDraft(store, { photoBytesRequired: false })` - the
+  phone's rule dropped a moved photo note's record.
 - **Its own namespace** (review #3): `editor:<fileKey>`, never the phone's
   (`draftKeyForTour` of a link or a bare file key); the two drafts meet
   only through their bases.
@@ -67,13 +74,22 @@ editor's own namespace, one tab at a time. Design:
   #5), to the key of the bytes written (`tourFileKeyOfFile`, computed by
   the page before the write). The switch is synchronous: later writes go to
   the new namespace; pending changes and an unanswered (or "Not now")
-  offer are written there with their bases; the old namespace is emptied
-  behind its own queued writes, its meta last, then its hold released.
+  offer are written there with their bases. The old namespace is emptied
+  (behind its own queued writes, its meta last) ONLY once every carried
+  record and the new meta landed (milestone review #2) - a tab closed right
+  after "Saved to" finds both, or the old one alone; when anything did not
+  land the old one stays. A carried record never claims an id: one "Delete
+  it" rejected since the move is skipped (review #5).
   A tour built on a walk recording keeps its key through a save; a tour of
   notes alone changes it with every save; a lean download (the walk left
   out) has another key, which a download never follows.
 - **One writer** (review #6): only the tab holding the draft key's Web Lock
-  writes; any other tab writes nothing and says it keeps no backup.
+  writes; any other tab writes nothing and says it keeps no backup, and how
+  to get one (close the other tab, open the tour again here: the lock is
+  asked once, `ifAvailable`, at the open). The hold goes when the tour
+  closes, after that tour's queued writes landed (milestone review #6).
+- **The no-backup line is about the tour open now**: a closed tour's late
+  failure does not use it up.
 - **Writes per (namespace, id)** through one keyed chain, the meta's under
   its own key; a write to an id the meta rejects claims it first (files
   removed, meta rewritten without it), the phone's `creator-draft.ts` rule.
@@ -82,9 +98,12 @@ editor's own namespace, one tab at a time. Design:
   would be hidden).
 - **Never throws to the page**; a write that did not land is `false` and
   the page hears it once (`noBackup`); the leave guard stays on.
-- **Not covered, named:** a crash in the middle of a key move leaves the
-  old namespace partly filled (opened only by a file with the old key); an
-  empty directory stays behind each moved namespace; storage in a private
+- **Not covered, named:** a carried record that did not land leaves the
+  old namespace in place - its key is the overwritten file's, so only a
+  copy of that file reaches it - and the page says it keeps no backup; an
+  empty directory stays behind each moved namespace; a hold whose queued
+  write never settles keeps the next open of the same tour in this tab
+  waiting; storage in a private
   window may go with the window; a restored delete has no Undo.
 
 ## Examples
@@ -112,6 +131,9 @@ namespace emptied); a key move carrying a during-save edit and an
 unanswered offer; "Delete it" sparing a live edit and a later edit of a
 rejected id; the pruned rejection list; the undo of a delete of an edited
 note; a second tab; no storage and a failed write said once; the same tour
-reopened in the same tab. A scoped mutation pass (12 mutants of the rules
-above) killed all 12. The page's walks are in
+reopened in the same tab; a moved photo note and the undo of a delete of
+one (no bytes); the old namespace kept until the carried records landed,
+and kept when they did not; "Delete it" right after a key move; a closed
+tour's late write dropped; the hold kept until the queued writes landed. A
+scoped mutation pass (12 mutants of the rules above) killed all 12. The page's walks are in
 `playwright-tests/editor.spec.js` (the E2c block).

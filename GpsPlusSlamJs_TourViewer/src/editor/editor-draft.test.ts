@@ -36,22 +36,53 @@ import {
 } from "./editor-draft.js";
 import type { EditorLock } from "./save-target.js";
 
-/** One browser's draft directories: namespace -> files. */
+/** One browser's draft directories: namespace -> files. `failIn` makes
+ *  one namespace's writes refuse; `holdPuts` holds every write until
+ *  `releasePuts`; `holdOpenOf` holds a namespace's open until
+ *  `releaseOpens` - the order a key move's writes land in. */
 function browser(): {
   spaces: Map<string, Map<string, Blob | string>>;
   open: (key: string) => Promise<DraftFileStore | undefined>;
   failWrites: boolean;
+  failIn: Set<string>;
+  holdPuts: boolean;
+  releasePuts: (ok?: boolean) => void;
+  holdOpenOf: Set<string>;
+  releaseOpens: () => void;
 } {
   const spaces = new Map<string, Map<string, Blob | string>>();
+  const heldPuts: ((ok: boolean) => void)[] = [];
+  const heldOpens: (() => void)[] = [];
   const state = {
     spaces,
     failWrites: false,
+    failIn: new Set<string>(),
+    holdPuts: false,
+    releasePuts: (ok = true) => {
+      state.holdPuts = false;
+      for (const land of heldPuts.splice(0)) land(ok);
+    },
+    holdOpenOf: new Set<string>(),
+    releaseOpens: () => {
+      state.holdOpenOf.clear();
+      for (const land of heldOpens.splice(0)) land();
+    },
     open: (key: string): Promise<DraftFileStore | undefined> => {
       const files = spaces.get(key) ?? new Map<string, Blob | string>();
       spaces.set(key, files);
       const store: DraftFileStore = {
         put: (k, data) => {
-          if (state.failWrites) return Promise.resolve(false);
+          if (state.failWrites || state.failIn.has(key)) {
+            return Promise.resolve(false);
+          }
+          if (state.holdPuts) {
+            return new Promise((resolve) => {
+              heldPuts.push((ok) => {
+                if (ok) files.set(k, data as Blob | string);
+                resolve(ok);
+              });
+            });
+          }
           files.set(k, data as Blob | string);
           return Promise.resolve(true);
         },
@@ -83,6 +114,13 @@ function browser(): {
           return Promise.resolve();
         },
       };
+      if (state.holdOpenOf.has(key)) {
+        return new Promise((resolve) => {
+          heldOpens.push(() => {
+            resolve(store);
+          });
+        });
+      }
       return Promise.resolve(store);
     },
   };
@@ -133,6 +171,18 @@ function pin(id: string, label = id): TourObject {
     label,
     createdAtIso: "2026-10-14T00:00:00.000Z",
     geo: { lat: 48.5, lon: 9.0, alt: 340, headingDeg: 0 },
+  };
+}
+
+function photo(id: string, lat = 48.5): TourObject {
+  return {
+    id,
+    kind: "photo",
+    image: `content/${id}.jpg`,
+    imageWidth: 4,
+    imageHeight: 3,
+    createdAtIso: "2026-10-14T00:00:00.000Z",
+    geo: { lat, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] },
   };
 }
 
@@ -418,8 +468,10 @@ describe("createEditorDraft", () => {
     expect(b.spaces.get(editorDraftKey(K1))?.has(objectKey("a")) ?? false).toBe(
       false,
     );
-    // Once the first lets go, the next open holds it.
+    // Once the first lets go - after its queued writes (review #6), so
+    // a moment after the close - the next open holds it.
     first.close();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const third = draftIn(b, hold);
     expect((await third.open(K1, tour(pin("a")))).backedUp).toBe(true);
   });
@@ -452,5 +504,160 @@ describe("createEditorDraft", () => {
     await draft.open(K1, tour(pin("a")));
     expect((await draft.open(K1, tour(pin("a")))).backedUp).toBe(true);
     expect(draft.said).toEqual([]);
+  });
+
+  // Why (E2c milestone review #1, confirmed data loss): a photo note's
+  // edit carries no bytes - they are in the file the editor opened, and
+  // the rebuild keeps that entry - but the phone's read drops a photo
+  // record without its bytes, so a moved photo note was neither offered
+  // nor counted as replaced, and the open then removed it.
+  it("keeps a moved photo note, and the undo of a delete of one, without its bytes", async () => {
+    const b = browser();
+    const opened = tour(photo("p"), photo("q"));
+    const first = draftIn(b);
+    await first.open(K1, opened);
+    void first.saveObject(photo("p", 48.6));
+    void first.saveObject(photo("q", 48.7));
+    void first.saveDeletion("q");
+    await recordUndoDelete(first, {
+      object: photo("q"),
+      placed: { object: photo("q", 48.7) },
+      hosted: true,
+    });
+    await first.idle();
+    first.close();
+    const { offer, superseded } = await draftIn(b).open(K1, opened);
+    expect(superseded).toBeNull();
+    expect(offer?.objects.map((o) => o.id)).toEqual(["p", "q"]);
+  });
+
+  // Why (review #2): a key move's records were written on the NEW
+  // namespace's queue, which waits for its lock and store, while the OLD
+  // one was emptied on its own queue - so the old records usually went
+  // first, and a tab closed right after "Saved to" (nothing asks: no
+  // change is pending) lost an offered or mid-save record. The old
+  // namespace now goes only after every carried record and the new meta
+  // landed.
+  it("empties the old namespace only once the carried records have landed", async () => {
+    const b = browser();
+    const original = tour(pin("a"), pin("c"));
+    const earlier = draftIn(b);
+    await earlier.open(K1, original);
+    void earlier.saveObject(pin("c", "offered"));
+    await earlier.idle();
+    earlier.close();
+    const draft = draftIn(b);
+    await draft.open(K1, original);
+    void draft.saveObject(pin("a", "saved"));
+    const written = tour(pin("a", "saved"), pin("c"));
+    draft.built(written);
+    b.holdOpenOf.add(editorDraftKey(K2));
+    draft.landed(written, K2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The new namespace has not opened yet: the old still holds the record.
+    expect(b.spaces.get(editorDraftKey(K1))?.has(objectKey("c"))).toBe(true);
+    b.releaseOpens();
+    await draft.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(objectKey("c"))).toBe(false);
+    expect(b.spaces.get(editorDraftKey(K2))?.has(objectKey("c"))).toBe(true);
+  });
+
+  it("keeps the old namespace when the carried records do not land", async () => {
+    const b = browser();
+    const original = tour(pin("a"), pin("c"));
+    const earlier = draftIn(b);
+    await earlier.open(K1, original);
+    void earlier.saveObject(pin("c", "offered"));
+    await earlier.idle();
+    earlier.close();
+    const draft = draftIn(b);
+    await draft.open(K1, original);
+    const written = tour(pin("a"), pin("c"));
+    b.failIn.add(editorDraftKey(K2));
+    draft.landed(written, K2);
+    await draft.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(objectKey("c"))).toBe(true);
+    expect(b.spaces.get(editorDraftKey(K1))?.has(META_KEY)).toBe(true);
+    expect(draft.said).toEqual(["storage"]);
+  });
+
+  // Why (review #5): a carried record queued behind the move would CLAIM
+  // an id "Delete it" had just rejected, and bring the deleted record back.
+  it("Delete it right after a key move does not bring the offer back", async () => {
+    const b = browser();
+    const original = tour(pin("a"), pin("c"));
+    const earlier = draftIn(b);
+    await earlier.open(K1, original);
+    void earlier.saveObject(pin("c", "offered"));
+    await earlier.idle();
+    earlier.close();
+    const draft = draftIn(b);
+    await draft.open(K1, original);
+    const written = tour(pin("a"), pin("c"));
+    draft.landed(written, K2);
+    expect(await draft.discard()).toBe(true);
+    await draft.idle();
+    draft.close();
+    expect((await draftIn(b).open(K2, written)).offer).toBeNull();
+  });
+
+  // Why (review #6): the draft switched to the new tour while the old
+  // editor was still live, so a late write of the old tour landed in the
+  // new tour's namespace with the new tour's seen version.
+  it("drops a write of a tour that is no longer open", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    const old = draft.writes();
+    await draft.open(K2, tour(pin("a")));
+    expect(await old.saveObject(pin("a", "from the old tour"))).toBe(true);
+    await draft.idle();
+    expect(b.spaces.get(editorDraftKey(K2))?.has(objectKey("a"))).toBe(false);
+    expect(b.spaces.get(editorDraftKey(K1))?.has(objectKey("a"))).toBe(false);
+    // The current tour's writes go through.
+    expect(await draft.writes().saveObject(pin("a", "new"))).toBe(true);
+    expect(b.spaces.get(editorDraftKey(K2))?.has(objectKey("a"))).toBe(true);
+  });
+
+  // Why (review #6): the hold was released before the closed tour's
+  // queued writes landed, so another tab could take the draft while they
+  // were still being written.
+  it("lets the hold go only after the closed tour's queued writes landed", async () => {
+    const b = browser();
+    const hold = locks();
+    const first = draftIn(b, hold);
+    await first.open(K1, tour(pin("a")));
+    b.holdPuts = true;
+    void first.saveObject(pin("a", "slow"));
+    first.close();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect((await draftIn(b, hold).open(K1, tour(pin("a")))).backedUp).toBe(
+      false,
+    );
+    b.releasePuts();
+    await first.idle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect((await draftIn(b, hold).open(K1, tour(pin("a")))).backedUp).toBe(
+      true,
+    );
+  });
+
+  // Why (review #6): a closed tour's write that failed late used up the
+  // once-per-tour line, so the NEXT tour's real storage failure was never
+  // said.
+  it("a closed tour's late failure does not use up the next tour's no-backup line", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    b.holdPuts = true;
+    void draft.saveObject(pin("a", "late"));
+    const opening = draft.open(K2, tour(pin("a")));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    b.releasePuts(false);
+    await opening;
+    expect(draft.said).toEqual([]);
+    b.failIn.add(editorDraftKey(K2));
+    expect(await draft.saveObject(pin("a", "refused"))).toBe(false);
+    expect(draft.said).toEqual(["storage"]);
   });
 });

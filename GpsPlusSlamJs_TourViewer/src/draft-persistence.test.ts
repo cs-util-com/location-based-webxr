@@ -806,6 +806,22 @@ describe("parseDraftBase (M6 E2p)", () => {
   });
 });
 
+describe("readDraft for the desktop editor (M6 E2c review #1)", () => {
+  // Why: the editor's photo notes carry no bytes in the draft - they are
+  // in the file it opened - and the phone's rule (a photo record without
+  // its bytes is dropped) silently lost a moved photo note. The editor
+  // reads with the rule off; the phone's read is unchanged.
+  it("keeps a photo record without bytes when asked, and drops it otherwise", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftObject(store, photo("p"));
+    expect((await readDraft(store))?.draft.objects).toEqual([]);
+    const kept = await readDraft(store, { photoBytesRequired: false });
+    expect(kept?.draft.objects.map((o) => o.id)).toEqual(["p"]);
+    expect(kept?.photos.has("p")).toBe(false);
+  });
+});
+
 describe("writeDraftBase (M6 E2c)", () => {
   // Why: the desktop editor's draft moves its records to a new namespace
   // when an in-place save changes the tour's key; a record moved without
