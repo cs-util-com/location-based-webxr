@@ -21,13 +21,21 @@ start a session.
     button re-labels ("Allow location" / "Start the tour").
 - `LocationGate`: `pending()` (a tap should request the location rather
   than start AR), `busy()` (a request is in flight; the button says so),
-  and `request()` (the location-only tap; resolves the outcome).
-- `gateAfterRequest(outcome)` - pending stays only on `"denied"`: a
-  granted permission without a fix ("unavailable": indoors, a timeout)
-  clears the gate, because the session's own watch tolerates a slow fix
-  and locking the visitor out would be the worse failure (M2 review #1).
-- `locationRequestNotice(outcome): { error, hint }` - an `error` (the
-  alert box) only for a denial (browser settings); otherwise a `hint` that
+  `request()` (the location-only tap; resolves the outcome) and
+  `codesOnly()` (the next start runs without location - QR-first M1b-1).
+- **A denial starts the tour on codes alone (QR-first plan 2026-10-14-0445
+  §7 #10, §8 Q-QF-1; M1b-1).** Every request outcome clears the gate; a
+  `"denied"` one turns `codesOnly()` on (`codesOnlyAfterRequest`), and a
+  site whose permission already reads `"denied"` gets it at once, with no
+  location tap. The entry then starts AR with `location: "none"` (no
+  permission, no GPS watch), a scanned code places the tour (M1), and the
+  line above the button says what that needs: `CODES_ONLY_HINT`, "Scan one
+  of the tour's printed codes to start - without location, the codes place
+  the tour." A granted permission without a fix ("unavailable": indoors, a
+  timeout) keeps GPS on: the session's own watch tolerates a slow fix (M2
+  review #1).
+- `locationRequestNotice(outcome): { error, hint }` - no outcome is an
+  `error` since M1b-1 (a denial is a mode, not a dead end); the `hint`
   replaces the text above the button and says what the next tap does and
   what to do once AR starts: "Location allowed - now tap Start the tour,
   then point your phone at the tour's code (on the poster)." or "No GPS fix yet - that is
@@ -36,8 +44,9 @@ start a session.
   alert). The visitor hint names "the tour's code (on the poster)", not
   "the printed code you scanned" (a link-opener scanned none, review F15).
 - `type LocationRequestOutcome = "granted" | "denied" | "unavailable"`.
-- `locationTapNeeded(permission): boolean` - pure: true for anything but
-  `"granted"`.
+- `locationTapNeeded(permission): boolean` - pure: true while the browser
+  may still ask (`"prompt"`, and `"unknown"` - no permissions API); a grant
+  and, since M1b-1, a denial need no location tap.
 - `type LocationPermission = "granted" | "prompt" | "denied" | "unknown"`.
 
 ## Invariants & assumptions
@@ -49,19 +58,16 @@ start a session.
   a prompt.
 - Pessimistic until `seams.queryGeolocationPermission()` answers: a tap
   that arrives first requests the location (harmless), never starts AR.
-- Only a DENIED request keeps the gate pending; the reason goes to
-  `errorBox` (visible pre-AR; it is outside the DOM overlay). One request
-  runs at a time (`busy`).
+- No request outcome keeps the gate pending since M1b-1; a denial turns
+  the codes-only mode on instead. One request runs at a time (`busy`).
 - In creator mode the gate is never pending and nothing is hidden.
 - The visitor's hint is ONE line under V4's round button (polish round
   M4a): "Once AR starts, point your phone at the tour's code (on the
   poster)." - the full instructions are behind "What happens?". Once the
   permission query answers `"prompt"` (the browser WILL ask) it becomes
   "Your browser will ask for your location - tap Allow. Then Start the
-  tour."; a `"denied"` site keeps the first line, because its tap shows
-  the settings copy instead of a prompt, and a request DENIED at the tap
-  puts the first line back (the browser will not ask again - M4 review
-  #3).
+  tour."; a `"denied"` site, and a request DENIED at the tap, get the
+  codes-only line instead (the browser will not ask again - M4 review #3).
 
 ## Examples
 

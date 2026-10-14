@@ -453,6 +453,9 @@ export interface TourViewerSession {
   joinDeclined: boolean;
 
   // --- the scan gate and the placed content (viewer-placement.ts, M5) ------
+  /** This AR entry runs without location (QR-first M1b-1): the visitor
+   *  declined it, so no GPS fix will come; the gate offers no GPS escape. */
+  codesOnly: boolean;
   scanGate: ScanGate;
   /** Cancels the escape clock while the gate scans. */
   cancelEscapeClock: (() => void) | null;
@@ -565,6 +568,7 @@ export function createTourViewerSession(): TourViewerSession {
     placementUnsubscribe: null,
     placementAttempted: false,
     joinDeclined: false,
+    codesOnly: false,
     scanGate: { kind: "idle" },
     cancelEscapeClock: null,
     contentRendered: null,

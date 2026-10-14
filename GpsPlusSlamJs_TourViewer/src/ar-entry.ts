@@ -229,6 +229,7 @@ export function wireArEntry(deps: {
       arStatus: arController.getState().status,
       arError: arController.getState().error ?? null,
       cameraFrames: ctx.cameraFrameCount,
+      codesOnly: ctx.codesOnly,
       tour:
         ctx.session === null
           ? { kind: "none" }
@@ -556,12 +557,17 @@ export function wireArEntry(deps: {
     // looking. The viewer pipeline is best-effort: without a detector the
     // session is plain AR.
     if (authorMode && !hooks.startAuthorPipeline()) return;
+    // A visitor who declined location starts on codes alone (QR-first
+    // M1b-1): no location permission, no GPS watch; the scan gate then
+    // offers no GPS escape. Set before the pipeline and its gate start.
+    ctx.codesOnly = !authorMode && locationGate.codesOnly();
     if (!authorMode) hooks.startViewerPipeline();
     const depth = entryDepth();
     const result = await arController.enable(
       buildArEnableConfig({
         container: dom.arRoot,
         requestHitTest: mode === "creator",
+        ...(ctx.codesOnly ? { location: "none" as const } : {}),
         trackingStore: arStore,
         onFrame: (frame) => {
           ctx.cameraFrameCount += 1;

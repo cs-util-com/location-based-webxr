@@ -29,7 +29,10 @@ recording. Its own module since the flows plan M6.
   - `ViewerPlacement.startScanGate()` (called when the session reaches
     running, and again when a tour opens into a running session) derives
     the scan gate (`scan-gate.ts`) and arms the escape clock
-    (`seams.schedule`, `SCAN_GATE_ESCAPE_MS`, 10 s) while it scans; idle when no session runs.
+    (`seams.schedule`, `SCAN_GATE_ESCAPE_MS`, 10 s) while it scans - but
+    not in the codes-only mode (`ctx.codesOnly`, QR-first M1b-1): without
+    location there is no GPS to continue with, so the "Continue with GPS
+    only" button never shows; idle when no session runs.
     `resetScanGate()` (a tour closed) returns it to idle with the clock
     cancelled - a gate waived for one tour never carries into the next.
     `reconsiderScanGate(levels | "unavailable")` (the levels arrived, or

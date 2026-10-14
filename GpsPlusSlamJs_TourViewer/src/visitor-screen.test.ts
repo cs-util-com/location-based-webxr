@@ -3,7 +3,8 @@ import fc from "fast-check";
 
 import { realSeams, type TourViewerSeams } from "./seams";
 import {
-  gateAfterRequest,
+  CODES_ONLY_HINT,
+  codesOnlyAfterRequest,
   locationRequestNotice,
   locationTapNeeded,
   wireVisitorScreen,
@@ -39,7 +40,9 @@ function dom(): VisitorScreenDom {
 }
 
 describe("locationTapNeeded", () => {
-  it("needs the tap for everything but a known grant (property)", () => {
+  it("needs the tap while the browser may still ask: prompt and unknown (property)", () => {
+    // A denied site never asks again: since QR-first M1b-1 its tap starts
+    // the tour on codes alone instead of asking for nothing.
     fc.assert(
       fc.property(
         fc.constantFrom<LocationPermission>(
@@ -49,7 +52,9 @@ describe("locationTapNeeded", () => {
           "unknown",
         ),
         (permission) => {
-          expect(locationTapNeeded(permission)).toBe(permission !== "granted");
+          expect(locationTapNeeded(permission)).toBe(
+            permission === "prompt" || permission === "unknown",
+          );
         },
       ),
     );
@@ -87,7 +92,57 @@ describe("wireVisitorScreen", () => {
       renderArEntry: render,
     });
     await vi.waitFor(() => expect(render).toHaveBeenCalled());
-    expect(blocked.arHint.textContent).toContain("the tour's code");
+    // ...and says what a tour without location needs (QR-first M1b-1).
+    expect(blocked.arHint.textContent).toBe(CODES_ONLY_HINT);
+  });
+
+  // Why (QR-first plan 2026-10-14-0445 §7 #10, §8 Q-QF-1; M1b-1): a visitor
+  // who declines location used to end at "allow location in your browser
+  // settings" with no way into the tour, though the tour's printed codes
+  // can place it (M1). A denial - asked now, or a site blocked before - lets
+  // the next tap start the tour on codes alone, and the line says what that
+  // needs; it is no error, so the red alert stays empty.
+  it("starts on codes alone after a denial: the gate clears, codes-only is on, and the line says to scan a code", async () => {
+    const d = dom();
+    const renderArEntry = vi.fn();
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("prompt"),
+        requestLocationOnce: () => Promise.resolve("denied"),
+      }),
+      dom: d,
+      renderArEntry,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    expect(screen.locationGate.codesOnly()).toBe(false);
+    await expect(screen.locationGate.request()).resolves.toBe("denied");
+    expect(screen.locationGate.pending()).toBe(false);
+    expect(screen.locationGate.codesOnly()).toBe(true);
+    expect(d.errorBox.textContent).toBe("");
+    expect(d.arHint.textContent).toBe(CODES_ONLY_HINT);
+    expect(CODES_ONLY_HINT).toBe(
+      "Scan one of the tour's printed codes to start - without location, the codes place the tour.",
+    );
+  });
+
+  it("starts on codes alone on a site whose location is already blocked, without a location tap", async () => {
+    const d = dom();
+    const renderArEntry = vi.fn();
+    const requestLocationOnce = vi.fn();
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("denied"),
+        requestLocationOnce,
+      }),
+      dom: d,
+      renderArEntry,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    expect(screen.locationGate.pending()).toBe(false);
+    expect(screen.locationGate.codesOnly()).toBe(true);
+    expect(requestLocationOnce).not.toHaveBeenCalled();
   });
 
   it("hides the visitor screen for a creator and leaves the gate cleared", () => {
@@ -140,12 +195,11 @@ describe("wireVisitorScreen", () => {
     expect(screen.locationGate.pending()).toBe(false);
   });
 
-  it("keeps the gate pending on 'prompt', keeps it on a DENIAL with the settings copy, clears it on a grant", async () => {
+  it("keeps the gate pending on 'prompt' and clears it on a grant, codes-only off", async () => {
     const d = dom();
     const renderArEntry = vi.fn();
     const requestLocationOnce = vi
       .fn<() => Promise<LocationRequestOutcome>>()
-      .mockResolvedValueOnce("denied")
       .mockResolvedValueOnce("granted");
     const screen = wireVisitorScreen({
       mode: "visitor",
@@ -159,15 +213,9 @@ describe("wireVisitorScreen", () => {
     await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
     expect(screen.locationGate.pending()).toBe(true);
 
-    await expect(screen.locationGate.request()).resolves.toBe("denied");
-    expect(screen.locationGate.pending()).toBe(true);
-    expect(d.errorBox.textContent).toMatch(/allow location/i);
-    // The browser will not ask again after a denial: the line under the
-    // button must not say it will (M4 review #3).
-    expect(d.arHint.textContent).not.toMatch(/browser will ask/i);
-
     await expect(screen.locationGate.request()).resolves.toBe("granted");
     expect(screen.locationGate.pending()).toBe(false);
+    expect(screen.locationGate.codesOnly()).toBe(false);
     expect(d.errorBox.textContent).toBe("");
     // The silent second tap (UI round 1, U1, review F11): the hint now
     // says what the button just turned into.
@@ -203,13 +251,15 @@ describe("wireVisitorScreen", () => {
     await expect(request).resolves.toBe("unavailable");
     expect(screen.locationGate.busy()).toBe(false);
     expect(screen.locationGate.pending()).toBe(false);
+    // The permission is fine: GPS stays on, the codes are no substitute.
+    expect(screen.locationGate.codesOnly()).toBe(false);
     // A benign note, not an error: the hint, never the red alert box
     // (UI round 1, U1, review F11).
     expect(d.errorBox.textContent).toBe("");
     expect(d.arHint.textContent).toMatch(/no gps fix yet/i);
   });
 
-  it("the pure rules: only a denial keeps the gate; every outcome but a grant has a message (property)", () => {
+  it("the pure rules: only a denial turns codes-only on; no outcome is an error any more; each says what next (property)", () => {
     fc.assert(
       fc.property(
         fc.constantFrom<LocationRequestOutcome>(
@@ -218,11 +268,10 @@ describe("wireVisitorScreen", () => {
           "unavailable",
         ),
         (outcome) => {
-          expect(gateAfterRequest(outcome)).toBe(outcome === "denied");
+          expect(codesOnlyAfterRequest(outcome)).toBe(outcome === "denied");
           const notice = locationRequestNotice(outcome);
-          // Only a denial is an error; every other outcome says what next.
-          expect(notice.error === "").toBe(outcome !== "denied");
-          expect(notice.hint === null).toBe(outcome === "denied");
+          expect(notice.error).toBe("");
+          expect(notice.hint.length).toBeGreaterThan(0);
         },
       ),
     );

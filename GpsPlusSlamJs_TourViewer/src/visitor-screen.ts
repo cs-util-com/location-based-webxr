@@ -11,6 +11,13 @@
  * granted, the button's tap only requests the position; the next tap
  * starts AR, and `enable()`'s own request then resolves without a prompt.
  * A returning visitor with the permission granted gets one tap.
+ *
+ * A DENIAL starts the tour on codes alone (QR-first plan 2026-10-14-0445
+ * §7 #10, M1b-1): the gate clears, `codesOnly()` turns on - the entry then
+ * starts AR without location (`enable({ location: "none" })`), and a
+ * scanned code places the tour (M1) - and the line says what that needs. A
+ * site already blocked gets the same at once, with no location tap. A
+ * granted permission without a fix keeps GPS on.
  */
 
 import type { ViewerMode } from "./mode.js";
@@ -21,12 +28,19 @@ import type { TourViewerSeams } from "./seams.js";
 export type LocationPermission = "granted" | "prompt" | "denied" | "unknown";
 
 /** Whether the visitor's first tap must request the location on its own
- *  (true) before a tap may start AR. Anything but a known grant needs the
- *  tap: "unknown" is a browser without the permissions API, where the
- *  two-step form is the safe default. */
+ *  (true) before a tap may start AR: while the browser may still ask -
+ *  "prompt", and "unknown" (a browser without the permissions API, where
+ *  the two-step form is the safe default). A grant needs no tap; a denial
+ *  needs none either, because the browser will not ask again and the tour
+ *  starts on codes alone (QR-first M1b-1). */
 export function locationTapNeeded(permission: LocationPermission): boolean {
-  return permission !== "granted";
+  return permission === "prompt" || permission === "unknown";
 }
+
+/** The line for a visitor without location (QR-first M1b-1): what a tour
+ *  on codes alone needs. Also the in-AR scan line in that mode. */
+export const CODES_ONLY_HINT =
+  "Scan one of the tour's printed codes to start - without location, the codes place the tour.";
 
 /** What one position request came back with. */
 export type LocationRequestOutcome = "granted" | "denied" | "unavailable";
@@ -37,14 +51,19 @@ export interface LocationGate {
   pending(): boolean;
   /** True while a request is in flight (the button shows it, async-UI rule). */
   busy(): boolean;
-  /** The location-only tap. The gate clears on "granted" AND on
-   *  "unavailable" (the permission is settled; the session's watch tolerates
-   *  a slow fix); only a denial keeps it pending, with the reason shown. */
+  /** The location-only tap. The gate clears on every outcome: "granted"
+   *  and "unavailable" (the permission is settled; the session's watch
+   *  tolerates a slow fix) start with GPS, a denial on codes alone. */
   request(): Promise<LocationRequestOutcome>;
+  /** Whether the next start runs without location (QR-first M1b-1): the
+   *  visitor declined it, now or before. */
+  codesOnly(): boolean;
 }
 
-/** The gate after one request outcome: still pending only on a denial. */
-export function gateAfterRequest(outcome: LocationRequestOutcome): boolean {
+/** Whether a request outcome starts the tour on codes alone: a denial. */
+export function codesOnlyAfterRequest(
+  outcome: LocationRequestOutcome,
+): boolean {
   return outcome === "denied";
 }
 
@@ -54,15 +73,12 @@ export function gateAfterRequest(outcome: LocationRequestOutcome): boolean {
  *  used to be silent, and the benign no-fix note showed as a red alert). */
 export function locationRequestNotice(outcome: LocationRequestOutcome): {
   error: string;
-  hint: string | null;
+  hint: string;
 } {
   switch (outcome) {
     case "denied":
-      return {
-        error:
-          "Location is needed to place the tour. Allow location for this site in your browser settings, then tap again.",
-        hint: null,
-      };
+      // No error since QR-first M1b-1: the tour starts on codes alone.
+      return { error: "", hint: CODES_ONLY_HINT };
     case "unavailable":
       return {
         error: "",
@@ -135,12 +151,17 @@ export function wireVisitorScreen(deps: {
   // the location, which is the harmless direction to be wrong in.
   let pending = visitor;
   let busy = false;
+  let codesOnly = false;
   if (visitor) {
     void seams.queryGeolocationPermission().then((permission) => {
       pending = locationTapNeeded(permission);
-      // Only "prompt" means the browser WILL ask; a blocked site gets the
-      // settings copy on its tap instead.
+      // Only "prompt" means the browser WILL ask; a blocked site starts on
+      // codes alone (QR-first M1b-1).
       if (permission === "prompt") dom.arHint.textContent = ALLOW_HINT;
+      if (permission === "denied") {
+        codesOnly = true;
+        dom.arHint.textContent = CODES_ONLY_HINT;
+      }
       renderArEntry();
     });
   }
@@ -149,6 +170,7 @@ export function wireVisitorScreen(deps: {
     locationGate: {
       pending: () => pending,
       busy: () => busy,
+      codesOnly: () => codesOnly,
       request: async () => {
         if (busy) return "unavailable"; // one request at a time; the button is disabled anyway
         busy = true;
@@ -160,12 +182,12 @@ export function wireVisitorScreen(deps: {
         } finally {
           busy = false;
         }
-        pending = gateAfterRequest(outcome);
+        pending = false;
+        codesOnly = codesOnlyAfterRequest(outcome);
         const notice = locationRequestNotice(outcome);
         dom.errorBox.textContent = notice.error;
-        // A denial gets the plain line back: the browser will not ask
-        // again, so "your browser will ask" would be wrong (M4 review #3).
-        dom.arHint.textContent = notice.hint ?? VISITOR_HINT;
+        // Never "your browser will ask" after an answer (M4 review #3).
+        dom.arHint.textContent = notice.hint;
         renderArEntry();
         return outcome;
       },

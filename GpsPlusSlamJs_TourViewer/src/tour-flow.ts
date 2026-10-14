@@ -87,6 +87,9 @@ export interface ArStatusInput {
    *  visitor's line maps it to a plain cause, UI round 1). */
   arError?: string | null;
   cameraFrames: number;
+  /** The session runs without location (QR-first M1b-1): the codes place
+   *  the tour, no GPS fix will come. Absent: false. */
+  codesOnly?: boolean;
   tour: TourFlowTour;
   qr: {
     status: QrTrackingStatus | null;

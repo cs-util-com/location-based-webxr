@@ -143,6 +143,21 @@ activateM)` (each tick, each offered station with a distance: the
   between ticks (a skip, a story's end) has its distance at once. A code
   lock before any tick measures first.
 
+- **With no device fix ever (QR-first M1b-1, codes only; M1 review's list
+  of device-GPS readers):** the visitor's position (`visitor-position.ts`)
+  is the camera through the code-placed alignment - null before a scan,
+  odometry from the code after it - with `accuracyM` and `fixNue` null. So:
+  arrivals by position never fire (`station-run` needs a usable accuracy);
+  a station with a printed code is found by locking that code; the line
+  says "waiting for your position..." before a scan and the distance from
+  the code-placed position after it - never "GPS too weak", which needs an
+  accuracy; a station's code lock finds it at once (`codeAgrees`: no
+  independent fix to judge by, as for the moved-code check, which with no
+  device fix never decides). Under `?relocate=here` the stations stay held
+  back (the relocation waits for a first device fix that never comes).
+  Making position arrivals work on the code-placed position alone is not
+  built (it needs an accuracy for the bands).
+
 ## Examples
 
 ```ts

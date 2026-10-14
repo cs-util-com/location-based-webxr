@@ -458,3 +458,53 @@ describe("visitorStatus - what must never reach a visitor", () => {
     });
   });
 });
+
+// Why (QR-first plan 2026-10-14-0445 §7 #10, M1b-1): a visitor who declined
+// location runs the tour on codes alone. Every line must say what that
+// needs and never claim GPS: no "Continue with GPS only" (there is none),
+// no "placed by GPS", and a browser that cannot read codes has nothing at
+// all to place the tour with.
+describe("visitorStatus - codes only, no location (QR-first M1b-1)", () => {
+  it("asks for a code and offers no GPS while scanning", () => {
+    expect(visitorStatus(input({ codesOnly: true }))).toEqual({
+      state: "scan",
+      text: "Scan one of the tour's printed codes to start - without location, the codes place the tour.",
+    });
+    // Even if an escape were offered, it is not named.
+    expect(
+      visitorStatus(
+        input({
+          codesOnly: true,
+          gate: { kind: "scanning", escapeOffered: true },
+        }),
+      ).text,
+    ).not.toMatch(/GPS only/);
+  });
+
+  it("says nothing can place the tour when the browser cannot read codes", () => {
+    const status = visitorStatus(
+      input({
+        codesOnly: true,
+        gate: { kind: "not-required", reason: "no-detector" },
+        placement: { kind: "placed", count: 3 } as never,
+      }),
+    );
+    expect(status.state).toBe("nothing");
+    expect(status.text).toBe(
+      "This browser can't read the tour's codes, and without location nothing can place the tour.",
+    );
+    expect(status.text).not.toMatch(/placed by GPS/i);
+  });
+
+  it("reads 'placed' after a code places the tour, never 'by GPS'", () => {
+    const status = visitorStatus(
+      input({
+        codesOnly: true,
+        gate: { kind: "passed", via: "code" },
+        qr: qr({ lockedText: "c", votedLocks: 10 }),
+        content: { kind: "placed", count: 2, skipped: 0 } as never,
+      }),
+    );
+    expect(status.state).toBe("placed");
+  });
+});

@@ -726,6 +726,28 @@ describe(
   },
 );
 
+// Why (QR-first M1b-1): without location there is no GPS to continue
+// with, so the scan gate offers no "Continue with GPS only" escape - its
+// clock is never started and the button stays hidden; the gate passes
+// on the code.
+describe(
+  "codes-only mode hides the GPS escape (QR-first M1b-1)",
+  { timeout: 30_000 },
+  () => {
+    it("starts no escape clock and keeps the button hidden; a code still passes the gate", () => {
+      const v = viewer();
+      v.ctx.codesOnly = true;
+      v.scheduled.length = 0;
+      v.placement.startScanGate();
+      expect(v.ctx.scanGate.kind).toBe("scanning");
+      expect(v.scheduled).toHaveLength(0);
+      expect(v.escapeButton.hidden).toBe(true);
+      v.lock(T0);
+      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+    });
+  },
+);
+
 /** Every action a caller dispatches into the viewer's store from now on
  *  (the listener middleware's own dispatches are not callers'). */
 function dispatchLog(v: ReturnType<typeof viewer>) {

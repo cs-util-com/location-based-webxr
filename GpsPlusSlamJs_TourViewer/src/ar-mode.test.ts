@@ -50,6 +50,16 @@ function fakeHooks(): ArEnableHooks {
 }
 
 describe("buildArEnableConfig", () => {
+  // Why (QR-first M1b-1): a visitor who declined location starts AR with
+  // the framework's codes-only mode; the builder is where it must reach
+  // enable(), and a default entry must keep the framework's default.
+  it("forwards the codes-only location mode, and leaves the default alone", () => {
+    expect(
+      buildArEnableConfig({ ...fakeHooks(), location: "none" }).location,
+    ).toBe("none");
+    expect(buildArEnableConfig(fakeHooks()).location).toBeUndefined();
+  });
+
   // Why (follow-up F11): an origin reset is told to whoever holds raw
   // WebXR geometry (the mesh cursor's grid). The solver's half - the
   // restart dispatch - is the 2026-10-02 follow-up's, so nothing here

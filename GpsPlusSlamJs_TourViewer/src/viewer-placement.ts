@@ -284,7 +284,9 @@ export function createViewerPlacement(deps: {
       levels: ctx.currentLevels,
       ignoredLevelIds: ignoredLevelIds(),
     });
-    if (ctx.scanGate.kind === "scanning") {
+    // Without location there is no GPS to continue with (QR-first M1b-1):
+    // no escape clock, so the button never shows.
+    if (ctx.scanGate.kind === "scanning" && !ctx.codesOnly) {
       // Its own clock (plan review #11): a device without frames must still
       // get the escape.
       ctx.cancelEscapeClock = seams.schedule(() => {

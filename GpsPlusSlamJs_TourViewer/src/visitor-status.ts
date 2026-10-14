@@ -11,6 +11,7 @@
  */
 
 import type { ArStatusInput } from "./tour-flow.js";
+import { CODES_ONLY_HINT } from "./visitor-screen.js";
 
 type VisitorStatusState =
   | "before-ar"
@@ -192,6 +193,10 @@ function codeSentence(input: ArStatusInput): VisitorStatus | null {
     return { state: "measuring-code", text: qr.fusedHint };
   }
   if (gate.kind === "scanning") {
+    // Without location the codes are the only way in (QR-first M1b-1).
+    if (input.codesOnly === true) {
+      return { state: "scan", text: CODES_ONLY_HINT };
+    }
     return {
       state: "scan",
       text: escape
@@ -259,6 +264,18 @@ function runningSentence(input: ArStatusInput): VisitorStatus {
     return {
       state: "no-tour",
       text: "No tour is open here, so there is nothing to show. Open the tour's link again.",
+    };
+  }
+  // Without location AND without a code reader nothing can place the
+  // tour (QR-first M1b-1): never a "placed by GPS" line.
+  if (
+    input.codesOnly === true &&
+    input.gate.kind === "not-required" &&
+    input.gate.reason === "no-detector"
+  ) {
+    return {
+      state: "nothing",
+      text: "This browser can't read the tour's codes, and without location nothing can place the tour.",
     };
   }
   if (isPlaced(input)) {
