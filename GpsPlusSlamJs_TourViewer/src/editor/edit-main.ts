@@ -5,7 +5,8 @@
  * rail, the card beside the selected marker), and edits it: a pin's text,
  * Move and Delete with Undo, and a Save that downloads the tour to put in
  * place of the old file - or, where the browser allows it (Chromium's file
- * picker, M6 E2b-1), writes the opened file in place. Linked from nothing
+ * picker, M6 E2b-1), writes the opened file in place - by itself too, a
+ * few seconds after a change (M6 E2b-2, `autosave.ts`). Linked from nothing
  * yet.
  *
  * @see edit-main.ts.md
@@ -41,6 +42,11 @@ import {
   type NoBackupReason,
 } from "./editor-draft.js";
 import { createEditorRail } from "./editor-rail.js";
+import {
+  createAutosave,
+  type AutosaveDeps,
+  type AutosaveOutcome,
+} from "./autosave.js";
 import {
   createEditorSession,
   type EditorSave,
@@ -102,6 +108,25 @@ const NO_BACKUP: Readonly<Record<NoBackupReason, string>> = {
   "other-tab":
     "Another tab has this tour open, so this page keeps no backup copy of your edits - save before you close it. To have one, close the other tab, then open the tour again here.",
 };
+
+/**
+ * The autosave's timings: the module's defaults, except in the dev server
+ * an e2e may set `window.__tourEditorAutosave` (an init script) to move
+ * autosave out of the way of a walk that times its own saves. Inert in a
+ * production build: `import.meta.env.DEV` is statically false there, so
+ * the read is stripped (`seams.ts`'s guarantee).
+ */
+function autosaveTimings(): Pick<AutosaveDeps, "delayMs" | "maxWaitMs"> {
+  if (import.meta.env.DEV && !import.meta.env.VITEST) {
+    const set = (
+      window as {
+        __tourEditorAutosave?: Pick<AutosaveDeps, "delayMs" | "maxWaitMs">;
+      }
+    ).__tourEditorAutosave;
+    if (set !== undefined) return set;
+  }
+  return {};
+}
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -173,6 +198,36 @@ const moved = new Set<string>();
 let message: { id: string; text: string; refused?: true } | null = null;
 /** The open delete's Undo toast, until it times out or a Save starts. */
 let undoOffer: { toast: HTMLElement; timer: number } | null = null;
+/** The save that runs was started by autosave (M6 E2b-2). */
+let autoRunning = false;
+/** Save (or Ctrl+S) was asked for while an autosave ran: it runs next. */
+let saveQueued = false;
+/** The last in-place refusal's toast: a new one takes its place. */
+let refusalToast: HTMLElement | null = null;
+
+/** Edits being made that a save must not cut into (M6 E2b-2, the E2b plan
+ *  review #3, #7): a delete's undo (a save that writes the delete ends it),
+ *  typing not yet committed, a marker being moved. */
+function editing(): boolean {
+  return undoOffer !== null || card.dirty() || moving !== null;
+}
+
+/** The page saves by itself, a few seconds after a committed change, while
+ *  the open tour is written in place (M6 E2b-2). Quiet: the status line
+ *  shows "Saving…" and then where it saved - no toast; a failure shows
+ *  the in-place refusal and pauses it (`autosave.ts`). `body[data-autosave]`
+ *  is its state, the e2e's readiness mark. */
+const autosave = createAutosave({
+  ...autosaveTimings(),
+  held: () => saving || editing(),
+  pending: () => (editor?.changeCount() ?? 0) > 0,
+  save: () => saveTour("auto"),
+  onState: (state) => {
+    document.body.dataset["autosave"] = state;
+    renderSaveState();
+  },
+});
+document.body.dataset["autosave"] = autosave.state();
 
 /** The open tour's edits, backed up in this browser (M6 E2c): the page
  *  says once when they are not, and marks when every write landed
@@ -362,7 +417,12 @@ function renderSaveState(): void {
     return;
   }
   saveStatus.dataset["state"] = "pending";
-  saveStatus.textContent = `${String(count)} ${count === 1 ? "change" : "changes"} not saved`;
+  const changes = `${String(count)} ${count === 1 ? "change" : "changes"} not saved`;
+  // A pause is said where the creator looks for the save's state (M6 E2b-2).
+  saveStatus.textContent =
+    autosave.state() === "paused"
+      ? `${changes} - not saved by itself until you Save`
+      : changes;
 }
 
 /** After an edit: the rail, the markers, the card and the status follow. */
@@ -385,6 +445,8 @@ function endUndo(): void {
   clearTimeout(undoOffer.timer);
   undoOffer.toast.remove();
   undoOffer = null;
+  // An autosave held for the undo window may start now.
+  autosave.poke();
 }
 
 function startMove(id: string): void {
@@ -405,6 +467,7 @@ function finishMove(): void {
       if (editor.move(done.id, done.drop.lat, done.drop.lng)) {
         moved.add(done.id);
         message = { id: done.id, text: "Moved - not saved yet." };
+        autosave.changed();
       }
     } catch (err) {
       message = {
@@ -414,6 +477,7 @@ function finishMove(): void {
     }
   }
   refresh();
+  autosave.poke();
 }
 
 function cancelMove(): void {
@@ -423,6 +487,7 @@ function cancelMove(): void {
   moving = null;
   // Redrawn from the model: the marker goes back to where it was.
   refresh();
+  autosave.poke();
 }
 
 const map = createEditorMap(element("map"), {
@@ -505,6 +570,9 @@ const card = createEditorCard(
       map.update(model);
       card.note(message?.text ?? "");
       renderSaveState();
+      // Committed (or given back unchanged): the typing hold is over.
+      if (outcome.kind === "edited") autosave.changed();
+      autosave.poke();
     },
     onMove: startMove,
     onMoveDone: finishMove,
@@ -512,23 +580,30 @@ const card = createEditorCard(
     onDelete: (id) => {
       if (editor === null) return;
       const item = model?.items.find((i) => i.id === id);
-      const undo = editor.remove(id);
+      // The earlier undo ends BEFORE the delete: an autosave it releases
+      // checks the file first and then finds this delete's undo, so it
+      // waits (the saves it would snapshot hold no delete with a live undo).
       endUndo();
+      const undo = editor.remove(id);
       select(null);
       refresh();
       const t = toast(`Deleted ${item?.title ?? "the note"}`, {
         label: "Undo",
         run: () => {
+          // Undone while the window still holds autosave off.
+          const back = undo();
           endUndo();
           // Refused once a save wrote the delete: said, never a dead tap.
-          if (!undo()) toast(UNDO_TOO_LATE);
+          if (!back) toast(UNDO_TOO_LATE);
           refresh();
+          if (back) autosave.changed();
         },
       });
       undoOffer = {
         toast: t,
         timer: window.setTimeout(endUndo, UNDO_MS),
       };
+      autosave.changed();
     },
   },
 );
@@ -594,6 +669,8 @@ function leaveFile(): void {
   was?.release();
   letGo = was?.released ?? Promise.resolve();
   target = null;
+  autosave.stop();
+  refusalToast = null;
   keepsWalk = false;
   for (const t of fileToasts.splice(0)) t.remove();
   void photoSession?.close().catch(() => undefined);
@@ -602,6 +679,7 @@ function leaveFile(): void {
 
 function resetEditing(): void {
   built = false;
+  saveQueued = false;
   endUndo();
   moving = null;
   moved.clear();
@@ -656,6 +734,9 @@ async function attachTarget(
       const made = await createSaveTarget(handle, file);
       if (editor !== mine) return;
       target = made;
+      // Written in place from now on, so it saves by itself too (edits made
+      // before the target came are saved once the delay has passed).
+      autosave.enable(true);
       renderSaveState();
     } catch (err) {
       if (editor !== mine) return;
@@ -790,6 +871,8 @@ function offerDraft(mine: EditorSession, offer: EditorDraftOffer): void {
           draft.restored();
           refresh();
           toast(restoredLine(applied.changed + applied.deleted));
+          // Restored work is pending work: saved by itself like any edit.
+          if (applied.changed + applied.deleted > 0) autosave.changed();
         },
       },
       {
@@ -868,17 +951,19 @@ function refuseInPlace(
     // The draft keeps the edits - but a later open finds them only when
     // the change on disk kept the tour's key and the edited notes (E2c
     // plan review #9): said as it is.
-    fileToasts.push(
-      toast(
-        draft.backsUp()
-          ? `Not saved to ${name}. ${why} This page can no longer read the file it opened, so these edits cannot be saved here - but this browser keeps a copy of them. Open the file again and they are offered back, if the change on disk left the notes you edited in it and the file is still the same tour (one built on a walk recording, or a listed tour, stays the same; a tour of notes alone does not).`
-          : `Not saved to ${name}. ${why} This page can no longer read the file it opened, so these edits cannot be saved here. Open the file again to go on editing it.`,
-        undefined,
-        null,
-      ),
+    refusalToast?.remove();
+    refusalToast = toast(
+      draft.backsUp()
+        ? `Not saved to ${name}. ${why} This page can no longer read the file it opened, so these edits cannot be saved here - but this browser keeps a copy of them. Open the file again and they are offered back, if the change on disk left the notes you edited in it and the file is still the same tour (one built on a walk recording, or a listed tour, stays the same; a tour of notes alone does not).`
+        : `Not saved to ${name}. ${why} This page can no longer read the file it opened, so these edits cannot be saved here. Open the file again to go on editing it.`,
+      undefined,
+      null,
     );
+    fileToasts.push(refusalToast);
     return;
   }
+  // One refusal on screen: an autosave's and then Save's say the same.
+  refusalToast?.remove();
   const t = toast(
     `Not saved to ${name}. ${why} Your changes are kept.`,
     {
@@ -893,11 +978,14 @@ function refuseInPlace(
         // (PR #614 review).
         letGo = was?.released ?? letGo;
         target = null;
+        // Downloads from now on: nothing to write in place by itself.
+        autosave.enable(false);
         void runSave();
       },
     },
     null,
   );
+  refusalToast = t;
   fileToasts.push(t);
 }
 
@@ -986,42 +1074,109 @@ async function deliver(
 
 /** A save whose tour was closed meanwhile ends quietly; the open tour's
  *  page shows its own state. */
-function abandon(): void {
+function abandon(): AutosaveOutcome {
   saving = false;
   renderSaveState();
+  return "held";
 }
 
+/**
+ * The explicit Save (the button, Ctrl+S, "Download instead"). Asked for
+ * while an autosave runs, it waits for it and runs next; what it comes to
+ * tells the autosave (a landed save ends a pause, a failed one pauses it).
+ */
 async function runSave(): Promise<void> {
-  if (editor === null || saving) return;
-  card.commit();
-  if (moving !== null) finishMove();
-  if (editor.changeCount() === 0 && undelivered === null) {
-    saveStatus.dataset["state"] = "clean";
-    saveStatus.textContent = "Nothing to save";
+  if (editor === null) return;
+  if (saving) {
+    if (autoRunning) {
+      // Committed now, saved right after the autosave that runs.
+      card.commit();
+      if (moving !== null) finishMove();
+      saveQueued = true;
+    }
     return;
   }
-  // A save belongs to the tour it started on: one opened meanwhile must not
-  // receive it (E2a review #5).
   const mine = editor;
-  // The saved file will not carry a deleted object any more: its Undo ends.
-  endUndo();
+  const outcome = await saveTour("explicit");
+  if (editor !== mine || outcome === "held") return;
+  if (outcome === "saved") autosave.saved();
+  else autosave.failed();
+}
+
+/**
+ * Build and deliver one save. `auto` is the autosave's: it commits
+ * nothing (it never runs while a field is typed in or a marker moved), ends
+ * no undo (it never runs during one), and says only in the status line
+ * that it saved; it gives itself back as `held` when an edit began while
+ * it checked the file, before the session took its snapshot.
+ */
+async function saveTour(mode: "explicit" | "auto"): Promise<AutosaveOutcome> {
+  if (editor === null || saving) return "held";
+  // A save belongs to the tour it started on: one opened meanwhile must not
+  // receive it (E2a review #5). Claimed FIRST: the commit and the undo's
+  // end below poke the autosave, which must find this save running.
+  const mine = editor;
   saving = true;
+  autoRunning = mode === "auto";
+  try {
+    if (mode === "explicit") {
+      card.commit();
+      if (moving !== null) finishMove();
+    }
+    if (mine.changeCount() === 0 && undelivered === null) {
+      saving = false;
+      renderSaveState();
+      if (mode === "explicit") {
+        saveStatus.dataset["state"] = "clean";
+        saveStatus.textContent = "Nothing to save";
+      }
+      return "saved";
+    }
+    // The saved file will not carry a deleted object any more: its Undo
+    // ends. (An autosave never runs while one is live.)
+    if (mode === "explicit") endUndo();
+    return await buildAndDeliver(mine, mode);
+  } finally {
+    // Every path above has said its own state; this only lets go - and
+    // never a save of a tour opened meanwhile.
+    if (editor === mine) {
+      saving = false;
+      autoRunning = false;
+    }
+    if (saveQueued && editor === mine && !saving) {
+      saveQueued = false;
+      void runSave();
+    }
+    // A save that fell due while this one ran starts now.
+    autosave.poke();
+  }
+}
+
+async function buildAndDeliver(
+  mine: EditorSession,
+  mode: "explicit" | "auto",
+): Promise<AutosaveOutcome> {
   renderSaveState();
   // Checked BEFORE the build too: the build reads the opened file, which
   // something else's write makes unreadable (E2b plan review #4).
   const into = target;
   if (into !== null) {
     const state = await into.check().catch(() => "same" as const);
-    if (editor !== mine) {
-      abandon();
-      return;
-    }
+    if (editor !== mine) return abandon();
     if (state !== "same") {
       saving = false;
       renderSaveState();
       refuseInPlace(mine, into.name, new InPlaceRefusal(state).message, built);
-      return;
+      return "failed";
     }
+  }
+  // An edit began while the file was checked: the session would snapshot
+  // it, and a delete's undo would be lost - the autosave waits (E2b plan
+  // review #3).
+  if (mode === "auto" && editing()) {
+    saving = false;
+    renderSaveState();
+    return "held";
   }
   try {
     const save =
@@ -1032,10 +1187,7 @@ async function runSave(): Promise<void> {
           await mine.save({
             keepScan: keepsWalk || keepWalkInput.checked,
           });
-    if (editor !== mine) {
-      abandon();
-      return;
-    }
+    if (editor !== mine) return abandon();
     if (save !== undelivered) {
       // A build's versions are this browser's own work, delivered or not
       // (E2c plan review #1).
@@ -1048,10 +1200,7 @@ async function runSave(): Promise<void> {
     // The target this save was checked against, even if "Edit here
     // anyway" attached one while it was built (E2b-1 review #1).
     const { arrived, inPlace } = await deliver(mine, save, into);
-    if (editor !== mine) {
-      abandon();
-      return;
-    }
+    if (editor !== mine) return abandon();
     undelivered = arrived ? null : save;
     if (arrived) {
       // A move made during the save is still pending: its line stays.
@@ -1061,6 +1210,11 @@ async function runSave(): Promise<void> {
       saveStatus.dataset["saved"] = inPlace
         ? `Saved to ${into?.name ?? save.filename}`
         : `Saved as ${save.filename}`;
+    }
+    // Quiet: an autosave says it saved in the status line only (it is
+    // always in place, which keeps the walk, so the result has nothing
+    // more to say).
+    if (arrived && mode === "explicit") {
       // The Finish's own result sentences (E2a review #2).
       toast(
         [
@@ -1079,11 +1233,11 @@ async function runSave(): Promise<void> {
         inPlace ? UNDO_MS : null,
       );
     }
+    saving = false;
+    refresh();
+    return arrived ? "saved" : "failed";
   } catch (err) {
-    if (editor !== mine) {
-      abandon();
-      return;
-    }
+    if (editor !== mine) return abandon();
     saving = false;
     renderSaveState();
     saveStatus.dataset["state"] = "error";
@@ -1094,10 +1248,8 @@ async function runSave(): Promise<void> {
         ? "Not saved: the opened file changed on disk and can no longer be read - open it again"
         : `Not saved: ${err instanceof Error ? err.message : String(err)}`;
     saveButton.disabled = false;
-    return;
+    return "failed";
   }
-  saving = false;
-  refresh();
 }
 
 saveButton.addEventListener("click", () => {

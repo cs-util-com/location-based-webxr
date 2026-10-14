@@ -892,6 +892,20 @@ async function offerOpfsFile(page, buffer, name, options = {}) {
 }
 
 /**
+ * Autosave (M6 E2b-2) moved out of the way: a walk that times its own saves
+ * of an in-place file - an edit left committed while something else
+ * happens to the file, a delete kept past its save - would race it.
+ * The page reads `window.__tourEditorAutosave` in the dev server only.
+ * @param {import("@playwright/test").Page} page
+ */
+async function autosaveOutOfTheWay(page) {
+  await page.addInitScript(() => {
+    // @ts-expect-error - the editor's dev-only autosave timings.
+    window.__tourEditorAutosave = { delayMs: 3_600_000, maxWaitMs: 3_600_000 };
+  });
+}
+
+/**
  * A file of the page's origin-private file system, as a zip's texts.
  * @param {import("@playwright/test").Page} page
  * @param {string} name
@@ -966,8 +980,11 @@ test("refuses to write over a file that changed meanwhile, and offers the downlo
   await page.locator("#save-btn").click();
   const refusal = page.locator(".toast", { hasText: "changed on disk" });
   await expect(refusal).toBeVisible();
-  // Refused before the build: the change is still pending.
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  // Refused before the build: the change is still pending, and the
+  // refusal pauses autosave (E2b-2) so it never retries into theirs.
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - not saved by itself until you Save",
+  );
   const download = page.waitForEvent("download");
   await refusal.locator("button", { hasText: "Download instead" }).click();
   expect((await download).suggestedFilename()).toBe("wrapped.zip");
@@ -1443,6 +1460,7 @@ test("a tour of notes alone saved in place and reopened keeps the edit made afte
   // Why (E2c plan review #5): such a tour's key changes with every save;
   // the draft follows the key of the bytes written, so the later edit is
   // found by the next open of the saved file.
+  await autosaveOutOfTheWay(page);
   await page.goto("/edit.html");
   await offerOpfsFile(page, await editorTour(), "editor-fixture.zip");
   await page.locator("#choose-btn").click();
@@ -1480,6 +1498,7 @@ test("the changed-on-disk refusal points to the browser's copy, and the file ope
   // file before the first save, so the page cannot rebuild - the draft
   // still holds the edits, and a tour built on a walk recording keeps its
   // key through that write, so opening it again offers them.
+  await autosaveOutOfTheWay(page);
   await page.goto("/edit.html");
   await offerOpfsFile(page, await wrappedTour({ pin: true }), "wrapped.zip");
   await page.locator("#choose-btn").click();
@@ -1765,5 +1784,265 @@ test("an edit after a download, with the downloaded copy put in place, is offere
   await offer.locator("button", { hasText: "Restore" }).click();
   await expect(
     next.locator("#rail .row", { hasText: "After the download" }),
+  ).toHaveCount(1);
+});
+
+// ---------------------------------------------------------------------------
+// The editor saves by itself (M6 E2b-2): a few seconds after a committed
+// change, while the tour is written in place. These run on Playwright's
+// clock (`install` keeps it running; `runFor` moves it on), against the
+// module's own delays; `body[data-autosave]` is the scheduler's state.
+// ---------------------------------------------------------------------------
+
+/**
+ * The origin-private tour file, offered by a picker whose handle counts its
+ * writes (`window.__writes`), fails them while `window.__failWrites` is
+ * set, and holds each one while `window.__holdWrites` is set until
+ * `window.__release()`.
+ * @param {import("@playwright/test").Page} page
+ * @param {Buffer} buffer
+ * @param {string} name
+ */
+async function offerCountedOpfsFile(page, buffer, name) {
+  await offerOpfsFile(page, buffer, name);
+  await page.evaluate(() => {
+    // @ts-expect-error - the e2e's own picker, around the real handle.
+    const real = window.showOpenFilePicker;
+    // @ts-expect-error - read by the test.
+    window.__writes = 0;
+    // @ts-expect-error - the e2e's own picker.
+    window.showOpenFilePicker = async () => {
+      const [handle] = await real();
+      return [
+        {
+          kind: "file",
+          name: handle.name,
+          getFile: () => handle.getFile(),
+          requestPermission: () => Promise.resolve("granted"),
+          createWritable: async () => {
+            // @ts-expect-error - set above.
+            window.__writes += 1;
+            // @ts-expect-error - set by the test.
+            if (window.__failWrites) {
+              return {
+                write: () => Promise.reject(new Error("the disk is full")),
+                close: () => Promise.resolve(),
+                abort: () => Promise.resolve(),
+              };
+            }
+            // @ts-expect-error - set by the test.
+            if (window.__holdWrites) {
+              await new Promise((resolve) => {
+                // @ts-expect-error - called by the test.
+                window.__release = resolve;
+              });
+            }
+            return handle.createWritable();
+          },
+        },
+      ];
+    };
+  });
+}
+
+/**
+ * Edit the pin whose row shows `from`.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} from
+ * @param {string} text
+ */
+async function editPin(page, from, text) {
+  await page.locator("#rail .row", { hasText: from }).click();
+  const field = page.locator("#card textarea");
+  await field.fill(text);
+  await field.blur();
+  await expect(page.locator("#card")).toContainText("Changed - not saved yet.");
+}
+
+/** @param {import("@playwright/test").Page} page */
+function writes(page) {
+  // @ts-expect-error - counted by the picker above.
+  return page.evaluate(() => window.__writes);
+}
+
+test("saves by itself a few seconds after a change, quietly, and the next open finds no leftover draft", async ({
+  page,
+  context,
+}) => {
+  // Why (M6 E2b-2, owner Q-E2-4): a creator should not lose work for
+  // forgetting Save. The autosave says so in the status line only - a
+  // toast per save would be noise - and an autosave that lands is an
+  // in-place write, so the draft clears what it carried (E2c's `landed`).
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await offerOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await editTownHall(page, "Saved by itself");
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-autosave",
+    "waiting",
+  );
+  await page.clock.runFor(3_500);
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to editor-fixture.zip",
+  );
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  const texts = await readOpfsTour(page, "editor-fixture.zip");
+  expect(texts["tour.json"]).toContain("Saved by itself");
+  await expect(page.locator(".toast", { hasText: "Saved to" })).toHaveCount(0);
+  await backedUp(page);
+  await page.close();
+  const next = await context.newPage();
+  await answerTiles(next);
+  await next.goto("/edit.html");
+  await offerExistingOpfsFile(next, "editor-fixture.zip");
+  await next.locator("#choose-btn").click();
+  await expect(
+    next.locator("#rail .row", { hasText: "Saved by itself" }),
+  ).toHaveCount(1);
+  await backedUp(next);
+  await expect(next.locator(".toast.draft-offer")).toHaveCount(0);
+});
+
+test("a delete is not written while its Undo can still be used", async ({
+  page,
+}) => {
+  // Why (E2b plan review #3): a save that writes the delete ends the Undo;
+  // an autosave must wait for the window to close.
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await offerOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await page.locator("#rail .row", { hasText: "Fountain" }).click();
+  await page.locator("#card button", { hasText: "Delete" }).click();
+  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  // Past the delay, inside the 8 s window: due, and held.
+  await page.clock.runFor(4_000);
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "held");
+  expect(
+    (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"],
+  ).toContain("photo-ok");
+  await expect(
+    page.locator(".toast button", { hasText: "Undo" }),
+  ).toBeVisible();
+  // The window closes: the delete is saved by itself.
+  await page.clock.runFor(5_000);
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to editor-fixture.zip",
+  );
+  expect(
+    (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"],
+  ).not.toContain("photo-ok");
+});
+
+test("a write that fails pauses autosave until Save, with no write loop", async ({
+  page,
+}) => {
+  // Why (E2b plan review #3): a disk that refuses must not be written
+  // again on every change; the creator is told, and Save starts it again.
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__failWrites = true;
+  });
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await editTownHall(page, "First try");
+  await page.clock.runFor(3_500);
+  const refusal = page.locator(".toast", { hasText: "the disk is full" });
+  await expect(refusal).toBeVisible();
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "paused");
+  expect(await writes(page)).toBe(1);
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__failWrites = false;
+  });
+  await editPin(page, "First try", "Second try");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - not saved by itself until you Save",
+  );
+  await page.clock.runFor(60_000);
+  expect(await writes(page)).toBe(1);
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to editor-fixture.zip",
+  );
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  expect(await writes(page)).toBe(2);
+  await editPin(page, "Second try", "Third, by itself again");
+  await page.clock.runFor(3_500);
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to editor-fixture.zip",
+  );
+  expect(await writes(page)).toBe(3);
+  expect(
+    (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"],
+  ).toContain("Third, by itself again");
+});
+
+test("an edit made while an autosave writes is kept for the next one, and by the draft", async ({
+  page,
+  context,
+}) => {
+  // Why (M6 E2b-2 with E2c's draft): the write that lands clears what it
+  // carried, never the edit made while it ran - in this tour of notes
+  // alone the draft even moves to the written file's key, and must take
+  // that edit along. The status shows the save in progress meanwhile.
+  await page.addInitScript(() => {
+    // @ts-expect-error - the editor's dev-only autosave timings: the second
+    // autosave must not come before the tab is closed.
+    window.__tourEditorAutosave = { delayMs: 600_000, maxWaitMs: 600_000 };
+  });
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__holdWrites = true;
+  });
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await editTownHall(page, "In the first autosave");
+  await page.clock.runFor(600_500);
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "saving");
+  await expect(page.locator("#save-status")).toHaveText("Saving…");
+  await page.waitForFunction(
+    // @ts-expect-error - set by the held write.
+    () => typeof window.__release === "function",
+  );
+  await editPin(page, "In the first autosave", "Made during the write");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__holdWrites = false;
+    // @ts-expect-error - set by the held write.
+    window.__release();
+  });
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-autosave",
+    "waiting",
+  );
+  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  expect(
+    (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"],
+  ).toContain("In the first autosave");
+  await backedUp(page);
+  await page.close();
+  const next = await context.newPage();
+  await answerTiles(next);
+  await next.goto("/edit.html");
+  await offerExistingOpfsFile(next, "editor-fixture.zip");
+  await next.locator("#choose-btn").click();
+  await expect(
+    next.locator("#rail .row", { hasText: "In the first autosave" }),
+  ).toHaveCount(1);
+  const offer = next.locator(".toast.draft-offer");
+  await expect(offer).toContainText("1 change");
+  await offer.locator("button", { hasText: "Restore" }).click();
+  await expect(
+    next.locator("#rail .row", { hasText: "Made during the write" }),
   ).toHaveCount(1);
 });

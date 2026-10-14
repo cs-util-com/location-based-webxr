@@ -6,7 +6,8 @@ The composition root of the desktop editor (`edit.html`, M6 E1): opens a
 tour (chosen, dropped, or the sample), builds its model and wires the map,
 the rail and the card in the chosen variant 1 layout, and edits it (E2a);
 where the browser allows it, it saves the opened file in place (E2b-1,
-`save-target.ts`); and it keeps every edit since the opened file in this
+`save-target.ts`) - by itself too, a few seconds after a change (E2b-2,
+`autosave.ts`); and it keeps every edit since the opened file in this
 browser, offered back by the next open (E2c, `editor-draft.ts`).
 
 ## Behaviour
@@ -101,6 +102,39 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   save picker - the one undelivered case the page can see, since an
   `<a download>` always reports started - keeps the built file, and
   Save offers it again ("Not saved yet - tap Save again").
+- **Autosave (M6 E2b-2, owner Q-E2-4).** While the tour is written in place
+  (a target attached: `autosave.enable(true)`; off after "Download instead"
+  and for every download-only tour), the page saves by itself
+  `AUTOSAVE_DELAY_MS` (3 s) after the last committed change, at the latest
+  `AUTOSAVE_MAX_WAIT_MS` (30 s) after the first unsaved one.
+  - **Held** while a delete's Undo is live, the card's field holds typing not
+    yet committed, a marker is being moved, or a save runs (`editing()`,
+    `saving`); the hold's end pokes it (`endUndo`, the field's commit, a
+    move's end, a save's end). An autosave commits nothing and ends no undo;
+    an edit begun while it checked the file (an await before the session's
+    snapshot) gives it back as `held`, so a delete made in that moment
+    keeps its Undo. A delete ends the earlier undo BEFORE it is made, for
+    the same reason.
+  - **Quiet:** the status line says "Saving…" and then "Saved to <name>",
+    with no toast; a refusal or a failed write shows the in-place refusal
+    toast (one at a time: a new one replaces the last) and PAUSES autosave -
+    the status adds "not saved by itself until you Save" - until an
+    explicit Save or a download lands (no write loop).
+  - **Save during an autosave** (Ctrl+S; the button is disabled while any
+    save runs) commits the card and runs right after it. A restored draft's
+    work is saved by itself like any edit.
+  - `body[data-autosave]` is the scheduler's state (`off`, `idle`,
+    `waiting`, `held`, `saving`, `paused`), the e2e's readiness mark. In
+    the dev server only, `window.__tourEditorAutosave` (an init script) sets
+    the delays, so a walk that times its own in-place saves can move
+    autosave out of its way; a production build strips the read
+    (`import.meta.env.DEV`).
+  - Each autosave is an in-place write like Save's: `draft.built` and
+    `draft.landed` run as for Save (an edit made while it ran stays in the
+    draft, carried along when a tour of notes alone moves its key), and each
+    opens a session over the written copy (a listed tour is hashed again in
+    the background, E2b-1 review #9) - the delay and the max wait bound how
+    often.
 - **The draft (M6 E2c).** Read inside the open, before the tour shows
   (`draft.open` over the session's file key). What an earlier visit left is
   offered in a toast that stays until answered (`.draft-offer`): Restore
