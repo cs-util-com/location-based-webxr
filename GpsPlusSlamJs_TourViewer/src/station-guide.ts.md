@@ -155,11 +155,16 @@ activateM)` (each tick, each offered station with a distance: the
   independent fix to judge by, as for the moved-code check, which with no
   device fix never decides). Under `?relocate=here` the stations stay held
   back (the relocation waits for a first device fix that never comes).
-  Making position arrivals work on the code-placed position alone is not
-  built (it needs an accuracy for the bands). So, honestly: **a station
-  without a printed code cannot be reached without location** - the visitor
-  sees the distance shrink but no arrival ever fires, and its only button is
-  "Skip <title> - I can't get there" (M1b-1 review, deferred).
+  Position arrivals do not fire on the code-placed position (no fix
+  measures its accuracy). Instead (owner decision after the M1b-1 review,
+  "both"): **a station without a printed code offers "I'm here - play the
+  story"** in place of the skip while the code-placed position is inside
+  its found band (`hereOffered`, dep `codesOnly()`); the tap finds it
+  (`run.arrive`), nothing finds it on its own. The band is the found
+  radius at the station pose floor (`STATION_POSE_FLOOR_M`, 5 m) - the
+  code-placed position is assumed no worse than the stored spots
+  themselves (up to 3.6 m at p90) - or the creator's wider found radius.
+  Outside it the skip reads as before ("Can't get there?").
 
 ## Examples
 

@@ -373,6 +373,8 @@ const visitor = wireVisitorScreen({
     ctx.currentLevels === null
       ? null
       : [...ctx.currentLevels.values()].some(isLockableLevel),
+  // A tour marked "needs no GPS" never asks its visitor (Q-QF-1).
+  needsNoGps: () => ctx.tourManifest?.needsNoGps === true,
 });
 
 // The visitor's start page leads with the tour's name, a line and one of
@@ -394,6 +396,7 @@ if (mode === "visitor") {
   hooks.presentTourInfo = (manifest, loadImage) => {
     if (manifest === null) visitorStart.clear();
     else visitorStart.present(manifest, loadImage);
+    visitor.tourChanged();
   };
 }
 

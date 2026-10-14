@@ -123,6 +123,9 @@ export interface VisitorScreenDom {
 
 export interface VisitorScreen {
   locationGate: LocationGate;
+  /** The open tour changed (its `tour.json` settled, or it closed): the
+   *  line above the button follows its `needsNoGps` flag. */
+  tourChanged(): void;
 }
 
 /** The one line under the visitor's button (V4): the full instructions
@@ -150,9 +153,20 @@ export function wireVisitorScreen(deps: {
    *  (unknown, or no tour yet) and `true` allow the codes-only start.
    *  Absent: unknown. */
   codesUsable?: () => boolean | null;
+  /** Whether the open tour needs no GPS (`tour.json` `needsNoGps`, owner
+   *  decision Q-QF-1): its visitor is never asked for the location and
+   *  starts on codes alone. Read live. Absent: no tour needs none. */
+  needsNoGps?: () => boolean;
 }): VisitorScreen {
   const { mode, seams, dom, renderArEntry } = deps;
   const codesUsable = deps.codesUsable ?? (() => null);
+  const needsNoGps = deps.needsNoGps ?? (() => false);
+  /** The line the permission query chose; a tour that needs no GPS shows
+   *  the plain visitor line instead (`showHint`). */
+  let permissionHint = VISITOR_HINT;
+  const showHint = (): void => {
+    dom.arHint.textContent = needsNoGps() ? VISITOR_HINT : permissionHint;
+  };
   /** Whether the location was offered again after a codes-only start
    *  (`recheck`): once per page. */
   let reoffered = false;
@@ -177,11 +191,12 @@ export function wireVisitorScreen(deps: {
       pending = locationTapNeeded(permission);
       // Only "prompt" means the browser WILL ask; a blocked site starts on
       // codes alone (QR-first M1b-1).
-      if (permission === "prompt") dom.arHint.textContent = ALLOW_HINT;
+      if (permission === "prompt") permissionHint = ALLOW_HINT;
       if (permission === "denied") {
         codesOnly = true;
-        dom.arHint.textContent = CODES_ONLY_HINT;
+        permissionHint = CODES_ONLY_HINT;
       }
+      showHint();
       renderArEntry();
     });
   }
@@ -190,11 +205,12 @@ export function wireVisitorScreen(deps: {
     locationGate: {
       // A codes-only start on a tour whose codes cannot place it turns the
       // tap back into a location request (its denial shows the old copy).
-      pending: () => pending || (codesOnly && codesUsable() === false),
+      pending: () =>
+        !needsNoGps() && (pending || (codesOnly && codesUsable() === false)),
       busy: () => busy,
-      codesOnly: () => codesOnly && codesUsable() !== false,
+      codesOnly: () => needsNoGps() || (codesOnly && codesUsable() !== false),
       recheck: async () => {
-        if (!codesOnly) return;
+        if (!codesOnly || needsNoGps()) return;
         let permission: LocationPermission;
         try {
           permission = await seams.queryGeolocationPermission();
@@ -243,6 +259,11 @@ export function wireVisitorScreen(deps: {
         renderArEntry();
         return outcome;
       },
+    },
+    tourChanged: () => {
+      if (!visitor) return;
+      showHint();
+      renderArEntry();
     },
   };
 }

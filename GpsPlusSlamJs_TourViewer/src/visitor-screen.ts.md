@@ -29,6 +29,16 @@ start a session.
   the location once more, pending again with the "browser will ask"
   hint; once per page, so a second dismissal starts on codes and never
   loops; `"denied"`/`"unknown"`/a throwing query change nothing).
+- Optional dep `needsNoGps(): boolean` (owner decision Q-QF-1, the
+  per-tour half; `main.ts`: the open tour's `tour.json` `needsNoGps`):
+  read live; while true the gate is never pending, `codesOnly()` is true,
+  `recheck()` does nothing, and the line above the button is the plain
+  visitor line ("Once AR starts, point your phone at the tour's code (on
+  the poster).") - the visitor is never asked for the location.
+  `VisitorScreen.tourChanged()` re-renders that line and the button when
+  the tour's file settles or the tour closes (`main.ts`, from
+  `presentTourInfo`). A tap before the tour's file settled still asks, as
+  for any tour.
 - Optional dep `codesUsable(): boolean | null` (M1b-1 review #2): whether
   the open tour has a code that can place it (`main.ts`: any lockable
   level; null while the levels are unknown). `false` means codes alone

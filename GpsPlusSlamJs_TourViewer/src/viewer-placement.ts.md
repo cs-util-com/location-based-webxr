@@ -105,7 +105,26 @@ recording. Its own module since the flows plan M6.
     code placed the tour (the gate passed on a voted lock of a trusted code;
     QR-first M1, §7 #9: on votes alone the tracking-quality report reads
     `degraded`, its smoothed convergence score having seen too few
-    snapshots); until then sets `waiting-ready`. The code rule changes
+    snapshots); until then sets `waiting-ready`. **After a code-set zero
+    it also waits for the compass** (owner decision after the M1 review,
+    "wait about a second before showing"): nothing is placed - neither the
+    content nor the photos, by the trigger or a voted lock - until the
+    code has `CODE_ZERO_WAIT_LOCKS` (8) voted locks or
+    `CODE_ZERO_WAIT_MS` (12 s) passed since the zero; the lock or the
+    timeout (`seams.schedule`) that ends the wait places what it held back,
+    the ring included. Meanwhile the placement stays as it was, so the line
+    reads "Code found - placing the tour...". Not in author mode, not
+    without location (`ctx.codesOnly`: no compass reading reaches the
+    solve), and not when a device fix set the zero. Why the numbers
+    (harness `m1b-wait` in `qr-vote-compass-batching.test.ts`, results
+    in the M1 results doc): a scan of fewer than 8 voted locks leaves the
+    compass memory's 9-solve yaw window under-full at the first compass
+    reading, and the content turned by about the compass's error (34 deg at
+    a 30 deg bias) for 1-10 s; 8 locks leave 0.04 deg after showing, 6 and
+    7 do not. The timeout covers a glance only while the first fix comes
+    within about 3 s of the scan (at most 1.9 deg seen at 12 s); a first
+    fix 8 s late still shows a 1-3 lock glance turned by up to 30 deg - a
+    limit of a fixed timeout, which cannot know when the first fix comes. The code rule changes
     little (corrected after the M1 review #5; the M1 commit overstated it):
     every voted lock AFTER the gate already starts the placement itself
     (`onVotedLock`), bypassing readiness, so the rule decides only a scan

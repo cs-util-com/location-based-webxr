@@ -459,6 +459,12 @@ export interface TourViewerSession {
   scanGate: ScanGate;
   /** Cancels the escape clock while the gate scans. */
   cancelEscapeClock: (() => void) | null;
+  /** While a code-set zero's compass wait holds the first placement back
+   *  (viewer-placement `CODE_ZERO_WAIT_LOCKS`): when it times out (page
+   *  clock, ms); null otherwise. Session state. */
+  codeZeroWaitUntilMs: number | null;
+  /** Cancels the compass wait's timeout. */
+  cancelCodeZeroWait: (() => void) | null;
   /** The tour's `tour.json` objects, rendered after the gate. */
   contentRendered: RenderedTourObjects | null;
   /** Whether this session already attempted the content placement. */
@@ -571,6 +577,8 @@ export function createTourViewerSession(): TourViewerSession {
     codesOnly: false,
     scanGate: { kind: "idle" },
     cancelEscapeClock: null,
+    codeZeroWaitUntilMs: null,
+    cancelCodeZeroWait: null,
     contentRendered: null,
     contentAttempted: false,
   };

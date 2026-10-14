@@ -25,7 +25,8 @@ listed in `index.html.md`. The concerns and their modules:
   to `openRemoteArchive` with the Drive proxy.
 - `visitor-screen.ts` - the visitor's consent screen and the location
   gate (`wireVisitorScreen`), with `codesUsable` read from the open tour's
-  levels (any lockable level; M1b-1 review #2).
+  levels (any lockable level; M1b-1 review #2) and `needsNoGps` from its
+  `tour.json` (Q-QF-1; `tourChanged()` from `presentTourInfo`).
 - `location-permission.ts` - wraps the AR controller's location request
   (`locationPermissionWithoutFix`) so a granted permission with no fix yet
   starts AR (M1b-1 review #1).

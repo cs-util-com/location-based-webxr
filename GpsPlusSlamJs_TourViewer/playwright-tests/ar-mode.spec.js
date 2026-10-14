@@ -69,6 +69,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 const RANGES_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
+/** The same tour, its `tour.json` marked as needing no GPS (Q-QF-1). */
+const NO_GPS_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/no-gps-tour.zip";
 
 /** The visitor's way in (DEC-N1): a `?qr=` launch, which opens the tour on
  *  boot and shows the visitor screen instead of the setup. */
@@ -239,6 +241,42 @@ test("a visitor who refuses the location starts the tour on codes alone: no loca
       { timeout: 20000 },
     )
     .toBe("placed");
+});
+
+test("a visitor of a tour that needs no GPS is never asked for the location and starts on codes alone (Q-QF-1)", async ({
+  page,
+}) => {
+  // Why this matters (owner decision Q-QF-1, the per-tour half): a creator
+  // marks a tour whose printed codes place it on their own (`tour.json`
+  // `needsNoGps`). Its visitor must see no "Allow location" step, no
+  // "your browser will ask" line, no permission request and no GPS watch -
+  // even with the permission still at "prompt" - and a code places it.
+  await page.addInitScript(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    if (t) t.locationPermission = "prompt";
+  });
+  await openAsVisitor(page, NO_GPS_ARCHIVE);
+  const button = page.getByTestId("enter-ar");
+  await expect(button).toHaveText("Start the tour", { timeout: 10000 });
+  await expect(page.getByTestId("ar-hint")).toHaveText(
+    "Once AR starts, point your phone at the tour's code (on the poster).",
+  );
+  await button.click();
+  await expect(button).toHaveText("Exit AR");
+  const fakes = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    return {
+      locationRequests: t.locationRequests,
+      permissionRequests: t.geolocationPermissionRequests,
+      gpsWatch: t.gpsCallback !== null,
+    };
+  });
+  expect(fakes).toEqual({
+    locationRequests: 0,
+    permissionRequests: 0,
+    gpsWatch: false,
+  });
+  await lockTheCode(page);
 });
 
 test("a visitor who dismissed the location prompt is offered it once more before a codes-only start (M1b-1 review #3)", async ({

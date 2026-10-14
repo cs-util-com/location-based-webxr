@@ -65,7 +65,11 @@ import {
   createTourViewerStore,
   createUnwiredHooks,
 } from "./tour-viewer-session.js";
-import { createViewerPlacement } from "./viewer-placement.js";
+import {
+  CODE_ZERO_WAIT_LOCKS,
+  CODE_ZERO_WAIT_MS,
+  createViewerPlacement,
+} from "./viewer-placement.js";
 
 /** The code's converged (fused) pose: a stand-in, its own tests are
  *  `fused-pose-wiring.test.ts`. */
@@ -173,8 +177,16 @@ async function visitorSession(
     ).length;
   /** The synthetic votes in the store when the pin's label was made. */
   const atRender: { votes: number | null } = { votes: null };
+  /** The page timers (`seams.schedule`), fired by hand. */
+  const timers: { fn: () => void; ms: number; cancelled: boolean }[] = [];
   const seams = {
-    schedule: () => () => undefined,
+    schedule: (fn: () => void, ms: number) => {
+      const timer = { fn, ms, cancelled: false };
+      timers.push(timer);
+      return () => {
+        timer.cancelled = true;
+      };
+    },
     createQrFrontEnd: () => ({
       kind: "barcode-detector",
       detect: () =>
@@ -231,8 +243,10 @@ async function visitorSession(
   placement.startViewerPipeline();
   placement.startScanGate();
 
-  /** A device fix at odometry `p` (WebXR), reported biased. */
-  const fix = (p: NumTriple, t: number): void => {
+  /** A device fix at odometry `p` (WebXR), reported biased; with
+   *  `compassDeg`, carrying a compass reading of that heading (the phone
+   *  faces north, so the reading's error is `compassDeg`). */
+  const fix = (p: NumTriple, t: number, compassDeg?: number): void => {
     const nue = webxrToNUE(p);
     const geo = calcGpsCoords(ZERO, [nue[0] + bias[0], 0, nue[2] + bias[1]]);
     // Through the page's device-fix path (main.ts: the coordinator's
@@ -248,7 +262,19 @@ async function visitorSession(
         latLongAccuracy: 3,
         timestamp: t,
       },
+      ...(compassDeg === undefined
+        ? {}
+        : { rawAbsoluteOrientation: uprightPhoneFacing(compassDeg, t) }),
     });
+  };
+  /** Fires the pending timers scheduled for `ms`. */
+  const fireTimers = (ms: number): number => {
+    const due = timers.filter((x) => x.ms === ms && !x.cancelled);
+    for (const timer of due) {
+      timer.cancelled = true;
+      timer.fn();
+    }
+    return due.length;
   };
   /** One camera frame through the real controller. */
   let frameNo = 0;
@@ -272,7 +298,38 @@ async function visitorSession(
     syntheticVotes,
     atRender,
     clock,
+    fireTimers,
   };
+}
+
+/** A compass reading from an upright phone facing heading `deg`: device
+ *  X east, Y up, Z south, turned clockwise by the heading about the
+ *  vertical (the core's own batch tests build it the same way). */
+function uprightPhoneFacing(deg: number, t: number) {
+  const h = (deg * Math.PI) / 180;
+  return {
+    quaternion: [
+      Math.cos(-h / 2) * Math.SQRT1_2,
+      Math.sin(-h / 2) * Math.SQRT1_2,
+      Math.sin(-h / 2) * Math.SQRT1_2,
+      Math.cos(-h / 2) * Math.SQRT1_2,
+    ] as [number, number, number, number],
+    referenceFrame: "device" as const,
+    screenAngleDeg: 0,
+    sampleTimestamp: t,
+  };
+}
+
+/** Frames until the first one that votes; returns the voted locks so far. */
+async function firstVotedLock(
+  s: Awaited<ReturnType<typeof visitorSession>>,
+): Promise<number> {
+  let frames = 0;
+  while (s.syntheticVotes() === 0 && frames < 20) {
+    await s.frame();
+    frames += 1;
+  }
+  return s.syntheticVotes() / VIEWER_VOTE_COUNT;
 }
 
 /** The walk from the zero north, then east, towards the code: 1 Hz fixes. */
@@ -418,4 +475,72 @@ describe("viewer content follows the live alignment (D10a, M2d)", () => {
     expect(residual).toBeGreaterThan(0.005);
     expect(residual).toBeLessThan(0.1);
   }, 120_000);
+});
+
+// Why (owner decision 2026-10-14 after the M1 review, "wait about a second
+// before showing"): after a code set the session zero, a scan of five voted
+// locks or fewer leaves the compass memory's yaw window under-full when the
+// first compass reading arrives, so the content turned by about the
+// compass's error (34 deg at a 30 deg bias) for 1-10 s (m1-compare). The
+// first placement therefore waits for eight voted locks, or a timeout so a
+// glance still places. The numbers are the harness's (`m1b-wait`).
+describe("after a code-set zero the first placement waits for the compass (QR-first, the compass wait)", () => {
+  it("shows nothing after a 3-lock glance while fixes with a 30 deg biased compass arrive, and places at the timeout", async () => {
+    const s = await visitorSession(8, false);
+    s.clock.nowMs = T0 + 500;
+    expect(await firstVotedLock(s)).toBe(1);
+    await s.frame();
+    await s.frame();
+    expect(s.syntheticVotes()).toBe(3 * VIEWER_VOTE_COUNT);
+    expect(s.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+    // The visitor looks away; the first fixes arrive, their compass 30 deg
+    // off. Up to just before the timeout nothing is shown.
+    for (let i = 1; i <= 11; i += 1) {
+      s.clock.nowMs = T0 + 500 + i * 1000;
+      s.fix([6, 1.5, -20.5], s.clock.nowMs, 30);
+    }
+    await flush();
+    expect(s.label.parent).toBeNull();
+    s.clock.nowMs = T0 + 500 + CODE_ZERO_WAIT_MS;
+    expect(s.fireTimers(CODE_ZERO_WAIT_MS)).toBe(1);
+    await flush();
+    expect(s.label.parent?.parent).toBe(s.scene);
+  }, 60_000);
+
+  it("places a full scan on its eighth voted lock, not before, with no timer", async () => {
+    const s = await visitorSession(8, false);
+    s.clock.nowMs = T0 + 500;
+    expect(await firstVotedLock(s)).toBe(1);
+    while (
+      s.syntheticVotes() <
+      (CODE_ZERO_WAIT_LOCKS - 1) * VIEWER_VOTE_COUNT
+    ) {
+      await s.frame();
+    }
+    await flush();
+    expect(s.label.parent).toBeNull();
+    await s.frame();
+    await flush();
+    expect(s.syntheticVotes()).toBe(CODE_ZERO_WAIT_LOCKS * VIEWER_VOTE_COUNT);
+    expect(s.label.parent?.parent).toBe(s.scene);
+    // The wait ended with the locks: its timer is cancelled.
+    expect(s.fireTimers(CODE_ZERO_WAIT_MS)).toBe(0);
+  }, 60_000);
+
+  it("does not wait without location (codes only: no compass reading ever reaches the solve)", async () => {
+    const s = await visitorSession(8, false);
+    s.ctx.codesOnly = true;
+    s.clock.nowMs = T0 + 500;
+    expect(await firstVotedLock(s)).toBe(1);
+    await flush();
+    expect(s.label.parent?.parent).toBe(s.scene);
+  }, 60_000);
+
+  it("does not wait when a device fix set the zero (the scan follows a walk)", async () => {
+    const s = await visitorSession(8);
+    walk(s);
+    expect(await firstVotedLock(s)).toBe(1);
+    await flush();
+    expect(s.label.parent?.parent).toBe(s.scene);
+  }, 60_000);
 });

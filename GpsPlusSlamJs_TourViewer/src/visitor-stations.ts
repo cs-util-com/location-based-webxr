@@ -186,6 +186,9 @@ export function wireVisitorStations(deps: {
       deps.mode === "visitor" &&
       ctx.placementUnsubscribe !== null &&
       gateAllowsPlacement(ctx.scanGate),
+    // Without location a station without a code is reached by the
+    // visitor's own "I'm here" (owner decision after the M1b-1 review).
+    codesOnly: () => ctx.codesOnly,
     zero: () => selectZeroReference(arStore.getState()),
     visitor: () => {
       const state = arStore.getState();

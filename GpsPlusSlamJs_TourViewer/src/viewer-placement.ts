@@ -87,6 +87,32 @@ import type { ViewingLog } from "./viewing-log.js";
  *  (milestone review, finding 4). */
 const CAPTURE_PLANE_DECODE_DIVISOR = 2;
 
+/**
+ * The compass wait (owner decision 2026-10-14 after the M1 review, "wait
+ * about a second before showing"): after a code set the session zero, the
+ * first placement waits for this many voted locks of the code - about a
+ * second at the 8 Hz lock cadence. Why 8: the compass memory's yaw window
+ * holds 9 solves, and a scan of fewer voted locks leaves it under-full when
+ * the first compass reading arrives, so the compass gets full weight and
+ * the content turns by about its error. Harness `m1b-wait` (compass bias
+ * 10 / 30 deg, first fix with and without a compass reading, 0 / 3 / 8 s
+ * late): 8 is the smallest threshold with no swing after showing (0.04
+ * deg); 6 and 7 still show 6- and 7-lock scans turned by 13.8 / 33.8 deg.
+ * At or below the vote budget (10), so a spent budget is reached after it.
+ */
+export const CODE_ZERO_WAIT_LOCKS = Math.min(8, MAX_VOTED_LOCKS_PER_CODE);
+
+/**
+ * The compass wait's timeout (ms after the code set the zero): a glance of
+ * fewer locks still places. Harness `m1b-wait`: the swing ends about 8 s
+ * after the first device fix, so 12 s shows a 1-3 lock glance at most 0.12
+ * deg off when the first fix comes on time and at most 1.9 deg when it
+ * comes 3 s late; a first fix 8 s late still swings 30 deg at 1-3 locks
+ * (that needs 20 s). What would reverse 12: first fixes typically arriving
+ * more than about 3 s after the scan.
+ */
+export const CODE_ZERO_WAIT_MS = 12_000;
+
 type Scene = NonNullable<ReturnType<TourViewerSeams["getScene"]>>;
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -244,6 +270,35 @@ export function createViewerPlacement(deps: {
     const geo = ctx.levelByText.get(text)?.qr.geo;
     if (geo === undefined) return;
     arStore.dispatch(setZeroPos({ lat: geo.lat, lon: geo.lon }));
+    // The compass wait (`CODE_ZERO_WAIT_LOCKS`): not without location,
+    // where no compass reading ever reaches the solve.
+    if (authorMode || ctx.codesOnly) return;
+    ctx.cancelCodeZeroWait?.();
+    ctx.codeZeroWaitUntilMs = now() + CODE_ZERO_WAIT_MS;
+    ctx.cancelCodeZeroWait = seams.schedule(() => {
+      ctx.cancelCodeZeroWait = null;
+      endCodeZeroWait();
+    }, CODE_ZERO_WAIT_MS);
+  }
+
+  /** Whether the compass wait still holds the first placement back. */
+  function codeZeroWaiting(): boolean {
+    const until = ctx.codeZeroWaitUntilMs;
+    if (until === null) return false;
+    return ctx.viewerVotedLocks < CODE_ZERO_WAIT_LOCKS && now() < until;
+  }
+
+  /** The wait ended (enough locks, or its timeout): place what it held
+   *  back - the trigger's placement, and the ring a voted lock would have
+   *  placed (`placeOnVotedLock`) with the last locked code. */
+  function endCodeZeroWait(): void {
+    if (ctx.codeZeroWaitUntilMs === null) return;
+    ctx.codeZeroWaitUntilMs = null;
+    ctx.cancelCodeZeroWait?.();
+    ctx.cancelCodeZeroWait = null;
+    tryPlaceTour();
+    if (ctx.viewerLockedText !== null) placeOnVotedLock(ctx.viewerLockedText);
+    hooks.renderArStatus();
   }
 
   /** Whether a code's votes placed this tour: the gate passed on a voted
@@ -541,27 +596,37 @@ export function createViewerPlacement(deps: {
           // first voted lock arrives while the gate still scans; the ring
           // waits for the next budgeted vote instead of relying on that
           // ordering.
-          if (
-            gateAllowsPlacement(ctx.scanGate) &&
-            ctx.imagePlanes === null &&
-            !ctx.imagePlanesLoading
-          ) {
-            void placeTourImagePlanes(text).catch((err: unknown) => {
-              // The archive URL is known here — a Drive failure during
-              // plane loading deserves the Drive-specific message too
-              // (milestone review, finding 7).
-              ctx.viewerPlanesError = describeOpenError(
-                err,
-                ctx.session?.archive.url,
-              );
-              hooks.renderArStatus();
-            });
+          // The lock that ends the compass wait places what it held back.
+          if (ctx.codeZeroWaitUntilMs !== null && !codeZeroWaiting()) {
+            endCodeZeroWait();
           }
+          placeOnVotedLock(text);
           hooks.renderArStatus();
         },
       }),
     );
     return true;
+  }
+
+  /** A voted lock's placement: the ring (or the join) once the gate
+   *  allows it and the compass wait is over, unless planes are placed or
+   *  loading. */
+  function placeOnVotedLock(text: string): void {
+    if (
+      !gateAllowsPlacement(ctx.scanGate) ||
+      codeZeroWaiting() ||
+      ctx.imagePlanes !== null ||
+      ctx.imagePlanesLoading
+    ) {
+      return;
+    }
+    void placeTourImagePlanes(text).catch((err: unknown) => {
+      // The archive URL is known here — a Drive failure during plane
+      // loading deserves the Drive-specific message too (milestone review,
+      // finding 7).
+      ctx.viewerPlanesError = describeOpenError(err, ctx.session?.archive.url);
+      hooks.renderArStatus();
+    });
   }
 
   /**
@@ -762,6 +827,11 @@ export function createViewerPlacement(deps: {
     // Nothing is placed until the gate allows it (DEC-N3): the capture-spot
     // join below, the content here.
     if (!gateAllowsPlacement(ctx.scanGate)) return;
+    // After a code-set zero nothing is shown until the compass wait ends
+    // (`CODE_ZERO_WAIT_LOCKS`); its end calls this trigger again. The
+    // placement stays as it is, so the line reads "Code found - placing the
+    // tour..." meanwhile, not the tracking coaching.
+    if (codeZeroWaiting()) return;
     tryPlaceContent(current);
     if (ctx.placementAttempted || ctx.imagePlanes !== null) return;
     if (ctx.imagePlanesLoading) return;

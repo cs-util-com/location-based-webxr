@@ -23,6 +23,10 @@ focusedAtMs, focusDistanceM }`.
     trusts; `admit(stationId)` picks which of its stations it may find (the
     guide holds one back for the moved-code check, K4 review R1) (the
     caller filters the moved-code check's ignored codes, D20).
+  - `arrive(id, nowMs)` - the visitor's own "I'm here" (an offered
+    station still waiting): found with `via: "visitor"`. The caller decides
+    when to offer it (the guide: without location, for a station without a
+    printed code inside its found band).
   - `finish(id, nowMs)` - the scene ended (found stations only).
   - `skip(id, nowMs)` - any offered station not done.
   - `skipSuggested(id, nowMs)` - an offered, unfound station whose clock ran

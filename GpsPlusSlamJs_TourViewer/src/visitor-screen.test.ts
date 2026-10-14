@@ -375,3 +375,68 @@ describe("the permission is read again before a codes-only start (M1b-1 review #
     expect(screen.locationGate.codesOnly()).toBe(true);
   });
 });
+
+// Why (owner decision Q-QF-1, the per-tour half): a creator can mark a tour
+// "needs no GPS" (`tour.json` `needsNoGps`). Its visitor is never asked for
+// the location: the button starts the tour at once, on codes alone, and the
+// line above it says what to do once AR starts - never "your browser will
+// ask". The flag is read live, since the tour's file settles after the page
+// queried the permission.
+describe("a tour that needs no GPS (Q-QF-1)", () => {
+  it("never asks: no location tap, a codes-only start, and no re-offer", async () => {
+    const d = dom();
+    const renderArEntry = vi.fn();
+    const requestLocationOnce = vi.fn(() =>
+      Promise.resolve("granted" as const),
+    );
+    let flag = false;
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("prompt"),
+        requestLocationOnce,
+      }),
+      dom: d,
+      renderArEntry,
+      needsNoGps: () => flag,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    expect(screen.locationGate.pending()).toBe(true);
+    expect(d.arHint.textContent).toMatch(/browser will ask/i);
+    // The tour's file settles with the flag.
+    flag = true;
+    screen.tourChanged();
+    expect(screen.locationGate.pending()).toBe(false);
+    expect(screen.locationGate.codesOnly()).toBe(true);
+    expect(d.arHint.textContent).toBe(
+      "Once AR starts, point your phone at the tour's code (on the poster).",
+    );
+    await screen.locationGate.recheck();
+    expect(screen.locationGate.pending()).toBe(false);
+    expect(screen.locationGate.codesOnly()).toBe(true);
+    expect(requestLocationOnce).not.toHaveBeenCalled();
+  });
+
+  it("asks as before once a tour without the flag replaces it", async () => {
+    const d = dom();
+    const renderArEntry = vi.fn();
+    let flag = true;
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("prompt"),
+      }),
+      dom: d,
+      renderArEntry,
+      needsNoGps: () => flag,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    expect(screen.locationGate.pending()).toBe(false);
+    expect(d.arHint.textContent).not.toMatch(/browser will ask/i);
+    flag = false;
+    screen.tourChanged();
+    expect(screen.locationGate.pending()).toBe(true);
+    expect(screen.locationGate.codesOnly()).toBe(false);
+    expect(d.arHint.textContent).toMatch(/browser will ask/i);
+  });
+});

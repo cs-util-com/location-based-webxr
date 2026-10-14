@@ -68,6 +68,7 @@ function harness(tourValue: StationTour) {
   /** The moved-code check's evidence per level id (absent: no check). */
   const checks = new Map<string, { judged: boolean }>();
   let allowed = true;
+  let codesOnlyNow = false;
   let zeroNow: typeof zero | null = zero;
   const ignored = new Set<string>();
   const found: string[] = [];
@@ -99,6 +100,7 @@ function harness(tourValue: StationTour) {
     dom,
     tour: () => tour,
     placementAllowed: () => allowed,
+    codesOnly: () => codesOnlyNow,
     zero: () => {
       calls.zero += 1;
       return zeroNow;
@@ -168,6 +170,7 @@ function harness(tourValue: StationTour) {
     },
     advance: (ms: number) => (now += ms),
     allow: (v: boolean) => (allowed = v),
+    setCodesOnly: (v: boolean) => (codesOnlyNow = v),
     setZero: (z: typeof zero | null) => (zeroNow = z),
     setTour: (t: StationTour | null) => (tour = t),
   };
@@ -781,5 +784,79 @@ describe("wireStationGuide", () => {
     h.at(100, 0);
     h.at(100, 0);
     expect(h.found).toEqual(["gate"]);
+  });
+});
+
+// Why (owner decision 2026-10-14 after the M1b-1 review, "both"): without
+// location a station without a printed code was unreachable - no fix
+// carries an accuracy, so nothing finds it by position, and its only button
+// was "Skip X - I can't get there". When the phone's own estimate (the
+// code-placed position) is inside the station's found band, the guide
+// offers "I'm here - play the story" instead; the visitor confirms with the
+// tap, nothing is found on its own. The band is the found radius at the
+// station pose floor (5 m), or the creator's larger radius.
+describe("a station without a printed code, without location (codes only)", () => {
+  const HERE = "I'm here - play the story";
+
+  it("offers I'm here inside the found band, and the tap finds the station", () => {
+    const h = harness({
+      stations: [station("well", 30, 0)],
+      order: "fixed",
+      levels: null,
+    });
+    h.setCodesOnly(true);
+    h.at(0, 0, null);
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+    h.at(26, 0, null);
+    expect(h.dom.line.textContent).toBe("Next: WELL, 4 m");
+    expect(h.found).toEqual([]);
+    expect(h.dom.skip.textContent).toBe(HERE);
+    h.guide.skipTapped();
+    expect(h.found).toEqual(["well"]);
+  });
+
+  it("uses the creator's found radius where it is wider than the 5 m floor", () => {
+    const h = harness({
+      stations: [station("well", 30, 0, { foundRadiusM: 12 })],
+      order: "fixed",
+      levels: null,
+    });
+    h.setCodesOnly(true);
+    h.at(17, 0, null);
+    expect(h.dom.skip.textContent).not.toBe(HERE);
+    h.at(19, 0, null);
+    expect(h.dom.skip.textContent).toBe(HERE);
+  });
+
+  it("is not offered with location (GPS finds the station), nor for a station with a code", () => {
+    const withGps = harness({
+      stations: [station("well", 30, 0)],
+      order: "fixed",
+      levels: null,
+    });
+    withGps.at(26, 0, null);
+    expect(withGps.dom.skip.textContent).not.toBe(HERE);
+
+    const geo = calcGpsCoords(zero, [30, 0, 0]);
+    const levels = new Map<string, QrLevel>([
+      [
+        "lvl-a",
+        {
+          version: 1,
+          qr: {
+            physicalSizeM: 0.2,
+            geo: { lat: geo.lat, lon: geo.lon, alt: 400, headingDeg: 0 },
+          },
+        },
+      ],
+    ]);
+    const coded = harness({
+      stations: [{ ...station("gate", 0, 0), anchor: { code: "lvl-a" } }],
+      order: "fixed",
+      levels,
+    });
+    coded.setCodesOnly(true);
+    coded.at(28, 0, null);
+    expect(coded.dom.skip.textContent).not.toBe(HERE);
   });
 });

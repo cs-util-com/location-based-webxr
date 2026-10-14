@@ -415,3 +415,36 @@ describe("createStationRun: properties", () => {
     );
   });
 });
+
+// Why (owner decision 2026-10-14 after the M1b-1 review, "both"): without
+// location no fix carries an accuracy, so a station without a printed code
+// can never be found by position. The visitor's own "I'm here" finds it -
+// only an offered station that still waits, so a tap can neither reach
+// ahead of the order nor find a station twice.
+describe("createStationRun: the visitor's own arrival (codes only)", () => {
+  it("finds an offered, waiting station as the visitor's", () => {
+    const run = createStationRun({
+      stations: [station("a"), station("b")],
+      order: "fixed",
+      nowMs: 0,
+    });
+    expect(run.arrive("a", 5)).toEqual([
+      { kind: "found", id: "a", via: "visitor" },
+    ]);
+    expect(run.status("a")?.foundVia).toBe("visitor");
+  });
+
+  it("does nothing for a station not offered, already found, or done", () => {
+    const run = createStationRun({
+      stations: [station("a"), station("b")],
+      order: "fixed",
+      nowMs: 0,
+    });
+    expect(run.arrive("b", 1)).toEqual([]);
+    expect(run.arrive("missing", 1)).toEqual([]);
+    run.arrive("a", 2);
+    expect(run.arrive("a", 3)).toEqual([]);
+    run.finish("a", 4);
+    expect(run.arrive("a", 5)).toEqual([]);
+  });
+});

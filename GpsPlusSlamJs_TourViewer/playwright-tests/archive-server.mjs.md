@@ -20,7 +20,10 @@ already-queued requests, so call ordering cannot deadlock.
 blocks browsers, for the "download the file and open it here" spec (tour
 kit plan K0). `/ranges-ok/sample-tour.zip` serves the committed sample tour
 (`public/samples/marienplatz-tour.zip`, owner decision S-D9) for
-`sample-tour.spec.js`. `/ranges-ok/stations-tour.zip` is a `tour.json` version 2
+`sample-tour.spec.js`. `/ranges-ok/no-gps-tour.zip` is the standard zip with
+its `tour.json` marked `needsNoGps` (version 2, minor 2; owner decision
+Q-QF-1), for the ar-mode spec whose visitor is never asked for the location.
+`/ranges-ok/stations-tour.zip` is a `tour.json` version 2
 with three stations in fixed order (tour kit plan K4, `stations.spec.js`):
 "The gate" on the fixture's printed code (a knight with a voice and a scene
 choice; the level's geo is where the fakes' armed pose puts the code under
