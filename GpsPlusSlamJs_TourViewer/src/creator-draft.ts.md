@@ -152,6 +152,17 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   nothing for the id, never the rejected version. A sweep (discard, spent,
   an unfinished earlier sweep) removes an id's files only if it is STILL
   rejected when its turn comes, so a claim made meanwhile survives it.
+  The claim is made against the meta ON DISK too (`rejectedOnDisk`, then
+  each landed meta write's list), not only the pruned in-memory list: after
+  "Delete it" and a reload the pruned list no longer names an id whose files
+  are gone while the meta still rejects it, and an edit of it was hidden at
+  the next read and swept - deleted for good; a deletion came back at the
+  next Finish (found building M6 E2c, its milestone review #3).
+- **A meta written before the offer is answered keeps the stored draft's
+  codes** (M6 E2c review #3): `level` falls back to the draft's, and its
+  `levels` are re-stated beside the page's (a live code with the same id
+  wins), until Restore makes them the page's or "Delete it" rejects them;
+  "Not now" keeps them. A spent draft re-states nothing.
 - **Work done before the draft opened is written after the read, ALL of
   it** (M4 review #2): an edit or a deletion keeps its id, so the draft
   may hold an older change of the same id, and writing only ids the draft

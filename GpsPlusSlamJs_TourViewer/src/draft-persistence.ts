@@ -345,6 +345,13 @@ export interface StoredDraft {
    */
   rejectedIds: readonly string[];
   /**
+   * EVERY id the meta on disk rejects, files or not (M6 E2c review #3).
+   * `rejectedIds` is pruned, and the next meta write stores it - but until
+   * that write lands the meta still rejects the pruned ids, so a change of
+   * one must be claimed against THIS list, or the next read hides it.
+   */
+  rejectedOnDisk: readonly string[];
+  /**
    * The AR visits' logs (M3b), oldest first: what the summary after Finish
    * needs from visits of an earlier page load. Not part of `draft`: a visit
    * is never written into the zip - but it is offered with the draft and
@@ -507,6 +514,7 @@ export async function readDraft(
     },
     photos,
     rejectedIds: [...rejected].filter((id) => onDisk.has(id)),
+    rejectedOnDisk: [...rejected],
     visits,
     storedIds,
   };

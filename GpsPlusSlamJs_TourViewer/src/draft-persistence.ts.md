@@ -100,8 +100,12 @@ are the framework's.
     tour;
   - **the sweep** - those are deletes that did not finish, and with
     `clear` uncalled nothing else would ever reclaim them.
+- `StoredDraft.rejectedOnDisk` (M6 E2c review #3) - EVERY id the meta on
+  disk rejects, files or not. Until the next meta write lands, the pruned
+  ids are still rejected on disk, so a change of one must be claimed
+  against this list, or the next read hides it.
 - `readDraft(store) -> Promise<StoredDraft | undefined>` -
-  `{ draft, photos, rejectedIds, visits, storedIds }`, or
+  `{ draft, photos, rejectedIds, rejectedOnDisk, visits, storedIds }`, or
   `undefined` when there
   is no meta file. Objects the meta rejects are absent from `draft.objects`
   and `photos` whether or not their files are still on disk.
