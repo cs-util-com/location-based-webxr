@@ -45,7 +45,8 @@ editor's own namespace, one tab at a time. Design:
     synchronously.
   - `backsUp()`, `close()`, `idle()`.
 - `editorDraftKey(fileKey)` - `editor:<fileKey>`; `NoBackupReason`,
-  `EditorDraftDeps`, `EditorDraftOffer`, `EditorDraftOpened`.
+  `EditorDraftDeps`, `EditorDraftOffer` (`open`'s result type stays
+  module-private).
 
 ## Invariants & assumptions
 

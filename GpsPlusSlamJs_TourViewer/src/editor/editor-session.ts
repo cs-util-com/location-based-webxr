@@ -62,7 +62,7 @@ export interface EditorSave {
 export const NOT_IN_TOUR = "That note is no longer in this tour.";
 
 /** What a draft offers back (`editor-draft.ts`). */
-export interface EditorRestore {
+interface EditorRestore {
   readonly objects: readonly TourObject[];
   readonly deleted: readonly string[];
 }

@@ -108,7 +108,7 @@ export interface EditorDraftOffer {
   readonly text: string;
 }
 
-export interface EditorDraftOpened {
+interface EditorDraftOpened {
   /** Null when there is nothing to offer. */
   readonly offer: EditorDraftOffer | null;
   /** Said once, when records gave way to newer edits in the file. */
