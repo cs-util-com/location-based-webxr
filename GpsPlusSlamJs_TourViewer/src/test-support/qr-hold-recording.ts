@@ -23,9 +23,10 @@
  * - the moved-code veto's recovery (D20: the overrides cleared, the GPS
  *   history reset, the device fixes re-fed in batches, then
  *   `tourViewing/codeIgnored` naming how many) becomes one `veto` event
- *   right AFTER the fix that triggered it - the recorder numbers an action
+ *   right AFTER the GPS event that triggered it (the next recorded GPS
+ *   event of any kind; the notes name it) - the recorder numbers an action
  *   when its dispatch returns, so the retraction, dispatched from inside
- *   that fix's store notification, is recorded before it; its actions are
+ *   that event's store notification, is recorded before it; its actions are
  *   not replayed (the engine's sink does the same retraction).
  * - `gpsData/setAlignmentOverrides` with `null` outside a veto is an AR
  *   entry (`entry`): the sink's clear. A non-null one is the sink turning the
@@ -91,6 +92,7 @@ interface MutableLock {
   text: string;
   atMs: number;
   detectionPose: Pose;
+  level?: { geo: QrGeoPose; sizeM: number };
   voted?: { pose: Pose; geo: QrGeoPose; sizeM: number; stampMs: number };
 }
 
@@ -180,12 +182,26 @@ export function parseViewerRecording(
    *  its dispatch RETURNS, so the retraction the moved-code check dispatches
    *  from inside a fix's store notification is recorded BEFORE that fix
    *  (the post-order pitfall of lessons-learned, 2026-06-28). It belongs
-   *  right after the next fix; its log entries go with it. */
+   *  right after the next recorded GPS event of ANY kind (a device fix, or
+   *  a lock's votes: whatever the check reacted to); its log entries go
+   *  with it, and the notes name the trigger. */
   let pendingVeto: {
     text: string;
     snaps: { type: string; atMs: number; matrix: number[] }[];
     anchorsMs: number[];
   } | null = null;
+  const flushVeto = (trigger: string): void => {
+    if (pendingVeto === null) return;
+    notes.push(
+      `a veto placed after the GPS event that triggered it: ${trigger}`,
+    );
+    events.push({ kind: "veto", text: pendingVeto.text });
+    const at = events.length - 1;
+    for (const snap of pendingVeto.snaps)
+      phoneAlignments.push({ afterEvent: at, ...snap });
+    for (const ms of pendingVeto.anchorsMs) anchors.push({ at, ms });
+    pendingVeto = null;
+  };
   /** A device fix, its ring set aside, then a deferred veto after it. */
   const pushFix = (
     fix: MutableFix,
@@ -193,13 +209,7 @@ export function parseViewerRecording(
   ): void => {
     events.push(fix);
     if (ring !== null) recordedCast.set(events.length - 1, ring);
-    if (pendingVeto === null) return;
-    events.push({ kind: "veto", text: pendingVeto.text });
-    const at = events.length - 1;
-    for (const snap of pendingVeto.snaps)
-      phoneAlignments.push({ afterEvent: at, ...snap });
-    for (const ms of pendingVeto.anchorsMs) anchors.push({ at, ms });
-    pendingVeto = null;
+    flushVeto("a device fix");
   };
 
   actions.forEach((a, i) => {
@@ -251,6 +261,7 @@ export function parseViewerRecording(
             stampMs: first,
           };
           recordedCast.set(pendingLock.index, batch);
+          flushVeto("a lock's votes");
           return;
         }
         const device = batch.filter((e) => !isSyntheticEvent(e));
@@ -268,6 +279,7 @@ export function parseViewerRecording(
           `action ${String(i)}: a batch of ${String(device.length)} device fixes and ${String(synthetic.length)} votes, not a fix with its ring: replayed as is`,
         );
         events.push({ kind: "action", action: a });
+        flushVeto("a batch replayed as is");
         pendingLock = null;
         return;
       }
@@ -279,6 +291,7 @@ export function parseViewerRecording(
             `action ${String(i)}: a lone synthetic recordGpsEvent: replayed as is`,
           );
           events.push({ kind: "action", action: a });
+          flushVeto("a lone synthetic event");
         } else {
           const fix: MutableFix = {
             kind: "fix",
@@ -395,6 +408,25 @@ export function parseViewerRecording(
     for (const a of phoneAlignments) a.afterEvent += 1;
     for (const a of anchors) a.at += 1;
     notes.push("no AR entry before the first lock: one implied at the start");
+  }
+
+  // Every locked frame of a code carries its level (the controller resolves
+  // it once per text), taken from the code's first voted lock.
+  const levelOf = new Map<string, { geo: QrGeoPose; sizeM: number }>();
+  for (const e of events) {
+    if (
+      e.kind === "lock" &&
+      e.voted !== undefined &&
+      !levelOf.has(e.text) &&
+      Number.isFinite(e.voted.sizeM)
+    ) {
+      levelOf.set(e.text, { geo: e.voted.geo, sizeM: e.voted.sizeM });
+    }
+  }
+  for (const e of events) {
+    if (e.kind !== "lock") continue;
+    const level = levelOf.get(e.text);
+    if (level !== undefined) (e as MutableLock).level = level;
   }
 
   // Voted locks whose "armed" entry never came keep a NaN geo: say so.

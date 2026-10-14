@@ -36,6 +36,7 @@ import {
 
 import { createQrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import {
+  buildViewerControllerConfig,
   VIEWER_KEEP_ALIVE_FADE_MS,
   VIEWER_KEEP_ALIVE_HOLD_MS,
   VIEWER_SYNTHETIC_ACCURACY_M,
@@ -415,9 +416,14 @@ describe("the distance hold (lever L1, measured from the kept pose)", () => {
   });
 });
 
-/** A small visitor session: a zero, an entry, fixes, three voted locks,
- *  then `afterS` seconds of fixes while the phone wanders. */
-function syntheticSession(afterS: number): ReplayEvent[] {
+/** A small visitor session: a zero, an entry, fixes, ten locks (a full budget) with a
+ *  stable pose, then `afterS` seconds of fixes while the phone wanders -
+ *  and, optionally, a re-sighting of 12 locked frames `atS` seconds in, the
+ *  code then measured `shiftM` further north in odometry. */
+function syntheticSession(
+  afterS: number,
+  resight?: { readonly atS: number; readonly shiftM: number },
+): ReplayEvent[] {
   const events: ReplayEvent[] = [
     { kind: "zero", zero: ZERO },
     { kind: "entry" },
@@ -458,29 +464,36 @@ function syntheticSession(afterS: number): ReplayEvent[] {
       },
     };
   };
+  const lock = (atMs: number, pose: Pose): ReplayEvent => ({
+    kind: "lock",
+    text: "code-a",
+    atMs,
+    detectionPose: pose,
+    level: { geo: CODE_GEO, sizeM: 0.2 },
+    stablePose: pose,
+  });
   for (let s = 0; s < 10; s += 1) events.push(fixAt(s, s * 0.1, 0));
-  for (let i = 0; i < 3; i += 1) {
-    events.push({
-      kind: "lock",
-      text: "code-a",
-      atMs: EPOCH_MS + 10_000 + i * 125,
-      detectionPose: KEPT,
-      voted: {
-        pose: KEPT,
-        geo: CODE_GEO,
-        sizeM: 0.2,
-        stampMs: EPOCH_MS + 10_000 + i * 125,
-      },
-    });
+  for (let i = 0; i < 10; i += 1) {
+    events.push(lock(EPOCH_MS + 9_000 + i * 100, KEPT));
   }
   for (let s = 11; s < 11 + afterS; s += 1) {
     events.push(fixAt(s, 0.5 * Math.sin(s / 9), 0.5 * Math.cos(s / 7)));
+    if (resight !== undefined && s === 10 + resight.atS) {
+      const fresh = moved(KEPT, [resight.shiftM, 0, 0], 0);
+      for (let i = 0; i < 12; i += 1) {
+        events.push(lock(EPOCH_MS + s * 1000 + 300 + i * 125, fresh));
+      }
+    }
   }
   return events;
 }
 
-/** The production path by hand, in viewer-placement's order: the entry's
- *  sink, a lock's ring then its keep, every fix with the keep-alive's ring. */
+/** The production path by hand, in viewer-placement's wiring and the
+ *  tracking controller's order: the entry's sink and the viewer's own
+ *  controller configuration (its budget, its re-arm of a stale code, its
+ *  keep or relock); per locked frame detection, stable pose, votes, lock;
+ *  every fix with the keep-alive's ring. Written apart from the engine, so
+ *  the comparison checks the engine's wiring, not one copy against itself. */
 function productionPath(
   events: readonly ReplayEvent[],
   holdMs: number,
@@ -503,6 +516,20 @@ function productionPath(
     baselineM: VIEWER_VOTE_BASELINE_M,
     syntheticAccuracyM: VIEWER_SYNTHETIC_ACCURACY_M,
   });
+  let frame: Extract<ReplayEvent, { kind: "lock" }> | null = null;
+  const config = buildViewerControllerConfig({
+    frontEnd: { kind: "barcode-detector", detect: () => Promise.resolve(null) },
+    solvePose: () => null,
+    getIntrinsics: () => null,
+    getLevels: () => null,
+    dispatchVotes: (votes) => sink!.castLockVotes(votes),
+    canAcceptVotes: () => store.getState().gpsData?.zero != null,
+    resolveStablePose: () => frame?.stablePose ?? null,
+    recordDetection: () => undefined,
+    onError: () => undefined,
+    keepAlive,
+  });
+  let votedFrames = 0;
   for (const e of events) {
     if (e.kind === "zero") {
       recording.dispatch(setZeroPos(e.zero));
@@ -514,30 +541,34 @@ function productionPath(
         stampMs: e.payload.rawGpsPoint.timestamp,
       });
       sink!.recordFix(e.payload, ring);
-    } else if (e.kind === "lock" && e.voted !== undefined) {
-      sink!.castLockVotes(
-        buildQrGpsVotes({
-          qrPoseWorld: e.voted.pose,
-          sizeM: e.voted.sizeM,
-          qrGeo: e.voted.geo,
-          syntheticAccuracyM: VIEWER_SYNTHETIC_ACCURACY_M,
-          baselineM: VIEWER_VOTE_BASELINE_M,
-          count: VIEWER_VOTE_COUNT,
-          timestamp: e.voted.stampMs,
-        }),
-      );
-      keepAlive.keep(
-        {
-          text: e.text,
-          qrPoseWorld: e.voted.pose,
-          qrGeo: e.voted.geo,
-          sizeM: e.voted.sizeM,
-        },
-        e.atMs,
-      );
+    } else if (e.kind === "lock") {
+      frame = e;
+      const level = {
+        version: 1 as const,
+        qr: { geo: e.level!.geo, physicalSizeM: e.level!.sizeM },
+      };
+      config.onDetection?.({ text: e.text, timestamp: e.atMs } as never);
+      const pose = config.resolveStablePose?.(e.text) ?? null;
+      if (pose !== null) {
+        const before = dispatched.length;
+        config.dispatchVotes(
+          buildQrGpsVotes({
+            qrPoseWorld: pose,
+            sizeM: e.level!.sizeM,
+            qrGeo: e.level!.geo,
+            syntheticAccuracyM: VIEWER_SYNTHETIC_ACCURACY_M,
+            baselineM: VIEWER_VOTE_BASELINE_M,
+            count: VIEWER_VOTE_COUNT,
+            timestamp: e.atMs,
+          }),
+        );
+        if (dispatched.length > before) votedFrames += 1;
+      }
+      config.onLocked?.({} as never, level);
+      frame = null;
     }
   }
-  return { store, dispatched };
+  return { store, dispatched, votedFrames };
 }
 
 // Whole-store replays: seconds each, more on a loaded machine.
@@ -585,6 +616,41 @@ describe(
       expect(replay.castAt.has(lastFix)).toBe(false);
     });
 
+    it("re-arms a code whose kept pose went stale and votes from the fresh pose, as production does", () => {
+      // Why (M0 review #4): a re-sighting after the hold re-arms the code's
+      // budget in the viewer's config, so the re-scan votes afresh from the
+      // pose measured NOW; an engine that only replayed recorded votes would
+      // miss it, and every hold-length arm would then misstate re-scans.
+      const events = syntheticSession(40, { atS: 25, shiftM: 0.5 });
+      const knobs = { ...TODAY_KNOBS, holdMs: 10_000, fadeMs: 10_000 };
+      const production = productionPath(events, knobs.holdMs, knobs.fadeMs);
+      // 10 scan locks, then 10 of the 12 re-sighting frames (a fresh budget).
+      expect(production.votedFrames).toBe(20);
+      const replay = replayVotePath(events, knobs);
+      expect(JSON.parse(JSON.stringify(replay.dispatched))).toEqual(
+        JSON.parse(JSON.stringify(production.dispatched)),
+      );
+      expect(selectAlignmentMatrix(replay.store.getState())).toEqual(
+        selectAlignmentMatrix(production.store.getState()),
+      );
+    });
+
+    it("keeps a re-sighting inside the hold as a relock, as production does", () => {
+      // Why: inside the hold the kept pose is fresh, so the re-scan restarts
+      // the hold from it and casts nothing (no new budget).
+      const events = syntheticSession(30, { atS: 15, shiftM: 0.5 });
+      const production = productionPath(
+        events,
+        TODAY_KNOBS.holdMs,
+        TODAY_KNOBS.fadeMs,
+      );
+      expect(production.votedFrames).toBe(10);
+      const replay = replayVotePath(events, TODAY_KNOBS);
+      expect(JSON.parse(JSON.stringify(replay.dispatched))).toEqual(
+        JSON.parse(JSON.stringify(production.dispatched)),
+      );
+    });
+
     it("with GPS ignored, stores no device fix but still casts the keep-alive per fix", () => {
       // Why: the pre-registered indoor bar is "no worse than with GPS
       // ignored"; that arm must keep the code's own schedule.
@@ -593,8 +659,8 @@ describe(
       const on = replayVotePath(events, TODAY_KNOBS);
       const stored = (r: typeof on) =>
         r.store.getState().gpsData?.gpsEvents?.gpsPositions.length ?? 0;
-      // GPS off stores only votes: 3 locks of 16, then a ring per fix.
-      expect(stored(off)).toBe(3 * VIEWER_VOTE_COUNT + 20 * VIEWER_VOTE_COUNT);
+      // GPS off stores only votes: 10 locks of 16, then a ring per fix.
+      expect(stored(off)).toBe(10 * VIEWER_VOTE_COUNT + 20 * VIEWER_VOTE_COUNT);
       expect(stored(on) - stored(off)).toBe(
         events.filter((e) => e.kind === "fix").length,
       );
@@ -695,6 +761,27 @@ describe(
       expect(split.pull.m).toBeLessThan(0.02);
       expect(split.total.m).toBeCloseTo(split.drift.m, 1);
     });
+
+    it.each([2, 10])(
+      "moves the code by the yaw lever times the angle (lever %i m)",
+      (lever) => {
+        // Why (M0 review #1): a turn of the odometry frame displaces the code
+        // by its distance from the turn's pivot times the angle; the verdict
+        // depends on that lever, so it is a parameter and its effect is exact.
+        const p: ScenarioParams = {
+          ...base,
+          odometry: {
+            perM: 0,
+            bearingDeg: 90,
+            yawDegPerMin: 2,
+            yawLeverM: lever,
+          },
+        };
+        const { sc, at, split } = splitAtEnd(p, { ...TODAY_KNOBS, gps: "off" });
+        const angle = rad((2 * (at - sc.scanMs)) / 60_000);
+        expect(split.drift.m).toBeCloseTo(2 * lever * Math.sin(angle / 2), 3);
+      },
+    );
 
     it("measures yaw drift as a turn of the fresh pose", () => {
       // Why: the owner saw the markers "slightly rotated"; a yaw drift must

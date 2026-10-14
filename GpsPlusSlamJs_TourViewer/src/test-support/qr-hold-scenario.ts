@@ -12,7 +12,8 @@
  * - **odometry drift** ({@link OdometryDrift}): the measured odometry frame
  *   turns and slides against the true one as the session goes on - a yaw
  *   rate over time and a translation that grows with the path walked since
- *   the scan, the rotation pivoting at the odometry origin. Every device fix,
+ *   the scan, the rotation pivoting `yawLeverM` from the code (a real
+ *   session's odometry origin, where the phone started). Every device fix,
  *   and every later sighting of the code, is measured through the drifted
  *   frame; the code's votes come from the pose measured at the scan.
  *
@@ -156,8 +157,14 @@ interface OdometryDrift {
   readonly perM: number;
   /** Its direction in odometry NUE (deg clockwise from odometry north). */
   readonly bearingDeg: number;
-  /** Yaw drift (deg per minute since the scan), about the odometry origin. */
+  /** Yaw drift (deg per minute since the scan). */
   readonly yawDegPerMin: number;
+  /** Where the yaw drift turns the frame about: this far (m, horizontal)
+   *  from the code, toward the phone's starting spot. A real session's
+   *  odometry origin is where AR started, about where the phone stood to
+   *  scan (about 2 m); a turn of the frame moves the code by this lever
+   *  times the angle. Default 2 m. */
+  readonly yawLeverM?: number;
 }
 
 export interface ScenarioParams {
@@ -230,18 +237,33 @@ export function buildScenario(p: ScenarioParams): Scenario {
   const scanMs = scanStartMs + (LOCKS - 1) * LOCK_INTERVAL_MS;
   const sAfter = (ms: number): number => Math.max(0, (ms - scanMs) / 1000);
 
-  // The true path length since the scan, sampled finely.
-  const pathAt = (ms: number): number => {
-    const s = sAfter(ms);
-    let total = 0;
-    let prev = walkAt(p, 0);
-    for (let t = 0.25; t <= s + 1e-9; t += 0.25) {
-      const q = walkAt(p, t);
-      total += Math.hypot(q[0] - prev[0], q[1] - prev[1]);
-      prev = q;
-    }
-    return total;
-  };
+  // The true path length since the scan, on a 0.25 s grid (cumulative).
+  const STEP_S = 0.25;
+  const cumulative: number[] = [0];
+  for (let t = STEP_S; t <= p.afterS + 2 + 1e-9; t += STEP_S) {
+    const a = walkAt(p, t - STEP_S);
+    const b = walkAt(p, t);
+    cumulative.push(cumulative.at(-1)! + Math.hypot(b[0] - a[0], b[1] - a[1]));
+  }
+  const pathAt = (ms: number): number =>
+    cumulative[
+      Math.min(cumulative.length - 1, Math.floor(sAfter(ms) / STEP_S + 1e-9))
+    ]!;
+  // The yaw drift's pivot, true odometry NUE: yawLeverM from the code,
+  // toward the phone's starting spot.
+  const codeOdom = odomFromWorld(CODE_WORLD);
+  const start = walkAt(p, 0);
+  const startOdom = odomFromWorld([start[0], PHONE_UP, start[1]]);
+  const toStart = Math.hypot(
+    startOdom[0] - codeOdom[0],
+    startOdom[2] - codeOdom[2],
+  );
+  const lever = p.odometry.yawLeverM ?? 2;
+  const pivot: Vector3 = [
+    codeOdom[0] + (lever * (startOdom[0] - codeOdom[0])) / toStart,
+    0,
+    codeOdom[2] + (lever * (startOdom[2] - codeOdom[2])) / toStart,
+  ];
   /** The drifted odometry frame at `ms`: odomMeasured = D(odomTrue). */
   const drift = (ms: number) => {
     const yaw = rad((p.odometry.yawDegPerMin * sAfter(ms)) / 60);
@@ -250,8 +272,12 @@ export function buildScenario(p: ScenarioParams): Scenario {
     return {
       yaw,
       point: (o: readonly number[]): Vector3 => {
-        const r = rotY(yaw, o);
-        return [r[0] + shift * Math.cos(b), r[1], r[2] + shift * Math.sin(b)];
+        const r = rotY(yaw, [o[0]! - pivot[0], o[1]!, o[2]! - pivot[2]]);
+        return [
+          pivot[0] + r[0] + shift * Math.cos(b),
+          r[1],
+          pivot[2] + r[2] + shift * Math.sin(b),
+        ];
       },
     };
   };
@@ -328,10 +354,12 @@ export function buildScenario(p: ScenarioParams): Scenario {
       text: SCENARIO_CODE_TEXT,
       atMs: at,
       detectionPose: pose,
-      voted: { pose, geo: SCENARIO_CODE_GEO, sizeM: SIZE_M, stampMs: at },
+      level: { geo: SCENARIO_CODE_GEO, sizeM: SIZE_M },
+      stablePose: pose,
     });
   }
-  const endMs = scanMs + p.afterS * 1000;
+  // One fix past afterS, so an instant AT afterS is always taken.
+  const endMs = scanMs + (p.afterS + 1) * 1000;
   for (
     let ms = EPOCH_MS + Math.ceil((scanMs - EPOCH_MS) / 1000) * 1000;
     ms <= endMs;

@@ -37,9 +37,19 @@
  *   recorded ones (the check the opt-in suite runs first: a replay that
  *   disagrees with the phone is a broken instrument, not a finding).
  *
+ * A locked frame goes through the PRODUCTION controller configuration
+ * (`buildViewerControllerConfig`, in the tracking controller's order:
+ * detection, stable pose, votes, lock), so the per-code budget, the re-arm
+ * of a stale code and the keep-alive's keep or relock are the viewer's own.
+ * The stable pose a frame offers is the scenario's (`stablePose`), the one
+ * the phone voted from (`voted`), or - for a re-sighting the phone never
+ * voted in, which a knob may make re-arm - the production fused pose over the
+ * replayed detections. Before a code's first voted sighting, and within a
+ * sighting the phone voted in, a frame the phone did not vote on offers none
+ * (the phone's fused pose was not stable there).
+ *
  * What the engine keeps AS RECORDED, whatever the knobs (stated so no arm
- * is read as more than it is): which locked frames voted (the budget and its
- * re-arming ran on the phone), the moved-code veto's moment (or none, per
+ * is read as more than it is): the moved-code veto's moment (or none, per
  * `veto`), the device fixes and their odometry. A distance hold (L1)
  * replaces the keep-alive's time hold and its pose freshness rule, but not
  * the core's recency kernel (§7 #7 names it; a core change).
@@ -71,13 +81,20 @@ import {
   recordGpsEvent,
   resetGpsSessionData,
   setAlignmentOverrides,
+  selectQrFusedEntries,
   setZeroPos,
   type AlignmentOverrides,
   type RecordGpsEventPayload,
 } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
+import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import type { QrDetectionEvent } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import { createQrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 
 import {
+  buildViewerControllerConfig,
+  MAX_VOTED_LOCKS_PER_CODE,
   VIEWER_KEEP_ALIVE_FADE_MS,
   VIEWER_KEEP_ALIVE_HOLD_MS,
   VIEWER_SYNTHETIC_ACCURACY_M,
@@ -452,8 +469,13 @@ export type ReplayEvent =
       readonly atMs: number;
       /** The frame's single-frame pose (raw WebXR). */
       readonly detectionPose: Pose;
-      /** Present when this frame voted: the stable pose its votes were
-       *  built from, the level, and the votes' stamp. */
+      /** The code's level (geo and printed size); absent: geo-less. */
+      readonly level?: { readonly geo: QrGeoPose; readonly sizeM: number };
+      /** What the stable-pose gate offers on this frame, when the source
+       *  says so (synthetic sessions); absent: see the engine's header. */
+      readonly stablePose?: Pose | null;
+      /** Present when the phone voted on this frame: the stable pose its
+       *  votes were built from, the level, and the votes' stamp. */
       readonly voted?: {
         readonly pose: Pose;
         readonly geo: QrGeoPose;
@@ -663,24 +685,141 @@ export function replayVotePath(
   let phone: readonly [number, number] | null = null;
   let sink: ReturnType<typeof startEntryVoteSink> | null = null;
   let keepAlive: QrVoteKeepAlive | null = null;
+  let config: ReturnType<typeof buildViewerControllerConfig> | null = null;
+  let budget = createQrVoteBudget(MAX_VOTED_LOCKS_PER_CODE);
+  let fused: ReturnType<typeof createFusedQrPoseSource> | null = null;
   let kept: KeptState | null = null;
   const ignored = new Set<string>();
-  const votedSightings = new Map<string, number>();
-  /** The last lock's text and time: a gap over 2 s starts a new sighting. */
-  let lastLock: { text: string; atMs: number } | null = null;
-  let sightingVoted = false;
-  let zeroSet = false;
 
-  const newKeepAlive = (): QrVoteKeepAlive =>
-    knobs.distanceHold === undefined
-      ? createQrVoteKeepAlive({
-          holdMs: knobs.holdMs,
-          fadeMs: knobs.fadeMs,
-          votesPerFix: knobs.votesPerFix,
-          baselineM: knobs.baselineM,
-          syntheticAccuracyM: knobs.syntheticAccuracyM,
-        })
-      : createDistanceKeepAlive(knobs, knobs.distanceHold, () => phone);
+  // Sightings (a gap over 2 s, or another code, starts a new one), and
+  // whether the source says the phone voted in each.
+  const sightingOf = new Map<number, number>();
+  const sightingVotedOnPhone: boolean[] = [];
+  {
+    let last: { text: string; atMs: number } | null = null;
+    events.forEach((e, i) => {
+      if (e.kind !== "lock") return;
+      if (last === null || last.text !== e.text || e.atMs - last.atMs > 2000) {
+        sightingVotedOnPhone.push(false);
+      }
+      last = { text: e.text, atMs: e.atMs };
+      const s = sightingVotedOnPhone.length - 1;
+      sightingOf.set(i, s);
+      if (e.voted !== undefined) sightingVotedOnPhone[s] = true;
+    });
+  }
+  /** Per code: the sighting of its first votes in this replay. */
+  const firstVotedSighting = new Map<string, number>();
+  let currentLock: {
+    event: Extract<ReplayEvent, { kind: "lock" }>;
+    sighting: number;
+  } | null = null;
+
+  const newKeepAlive = (): QrVoteKeepAlive => {
+    const inner =
+      knobs.distanceHold === undefined
+        ? createQrVoteKeepAlive({
+            holdMs: knobs.holdMs,
+            fadeMs: knobs.fadeMs,
+            votesPerFix: knobs.votesPerFix,
+            baselineM: knobs.baselineM,
+            syntheticAccuracyM: knobs.syntheticAccuracyM,
+          })
+        : createDistanceKeepAlive(knobs, knobs.distanceHold, () => phone);
+    // Observed, not changed: the metrics read the pose it keeps.
+    return {
+      ...inner,
+      keep(code, atMs) {
+        inner.keep(code, atMs);
+        kept = {
+          text: code.text,
+          pose: code.qrPoseWorld,
+          geo: code.qrGeo,
+          keptAtMs: atMs,
+          phoneAtKeep: phone,
+        };
+      },
+      votesForFix(fix) {
+        const votes = inner.votesForFix(fix);
+        if (inner.phase(fix.atMs).kind === "none") kept = null;
+        return votes;
+      },
+      stop() {
+        inner.stop();
+        kept = null;
+      },
+    };
+  };
+
+  /** The stable pose the gate offers on the current frame. */
+  function stablePoseNow(text: string): Pose | null {
+    if (currentLock === null || currentLock.event.text !== text) return null;
+    const { event, sighting } = currentLock;
+    const first = firstVotedSighting.get(text);
+    const later = first !== undefined && sighting !== first;
+    if (knobs.witnessResightings === true && later) return null;
+    if (event.stablePose !== undefined) return event.stablePose;
+    if (event.voted !== undefined) return event.voted.pose;
+    if (later && sightingVotedOnPhone[sighting] !== true) {
+      return fused?.resolve(text) ?? null;
+    }
+    return null;
+  }
+
+  function startEntry(): void {
+    keepAlive?.stop();
+    kept = null;
+    keepAlive = newKeepAlive();
+    budget = createQrVoteBudget(MAX_VOTED_LOCKS_PER_CODE);
+    ignored.clear();
+    firstVotedSighting.clear();
+    sink = startEntryVoteSink(tracked);
+    const entrySink = sink;
+    fused = createFusedQrPoseSource({
+      entriesOf: (text) => selectQrFusedEntries(store.getState(), text),
+      optionsFor: (text) => {
+        const sizeM = sizeOf.get(text);
+        return sizeM === undefined ? {} : { sizeM };
+      },
+    });
+    config = buildViewerControllerConfig({
+      frontEnd: {
+        kind: "barcode-detector",
+        detect: () => Promise.resolve(null),
+      },
+      solvePose: () => null,
+      getIntrinsics: () => null,
+      getLevels: () => null,
+      dispatchVotes: (votes) => {
+        noteCast(votes);
+        entrySink.castLockVotes(votes);
+        if (
+          currentLock !== null &&
+          !firstVotedSighting.has(currentLock.event.text)
+        ) {
+          firstVotedSighting.set(currentLock.event.text, currentLock.sighting);
+        }
+      },
+      canAcceptVotes: () => store.getState().gpsData?.zero != null,
+      resolveStablePose: stablePoseNow,
+      recordDetection: () => undefined,
+      onError: () => undefined,
+      keepAlive,
+      voteBudget: budget,
+      isIgnored: (text) => ignored.has(text),
+      now: () => currentLock?.event.atMs ?? 0,
+    });
+  }
+
+  /** Each code's printed size, for the fused pose. */
+  const sizeOf = new Map<string, number>();
+  for (const e of events) {
+    if (e.kind !== "lock") continue;
+    const size = e.level?.sizeM ?? e.voted?.sizeM;
+    if (size !== undefined && Number.isFinite(size) && !sizeOf.has(e.text)) {
+      sizeOf.set(e.text, size);
+    }
+  }
 
   const ctx: ReplayContext = {
     store,
@@ -700,18 +839,12 @@ export function replayVotePath(
     switch (event.kind) {
       case "zero":
         tracked.dispatch(setZeroPos(event.zero));
-        zeroSet = true;
         if (knobs.accuracyExponent !== undefined) {
           tracked.dispatch(setAlignmentOverrides(null));
         }
         break;
       case "entry":
-        keepAlive?.stop();
-        kept = null;
-        keepAlive = newKeepAlive();
-        sink = startEntryVoteSink(tracked);
-        votedSightings.clear();
-        ignored.clear();
+        startEntry();
         break;
       case "fix": {
         const c = webxrToNUE(event.payload.odomPosition);
@@ -733,71 +866,54 @@ export function replayVotePath(
         break;
       }
       case "lock": {
-        const newSighting =
-          lastLock === null ||
-          lastLock.text !== event.text ||
-          event.atMs - lastLock.atMs > 2000;
-        if (newSighting) sightingVoted = false;
-        lastLock = { text: event.text, atMs: event.atMs };
-        if (ignored.has(event.text)) break;
-        const v = event.voted;
-        // A witness re-sighting casts nothing: only a code's FIRST voted
-        // sighting votes (every lock of it); later ones are measured only.
-        const firstVotedSighting =
-          sightingVoted || (votedSightings.get(event.text) ?? 0) === 0;
-        const allowed = knobs.witnessResightings !== true || firstVotedSighting;
-        if (v !== undefined && allowed && sink !== null && zeroSet) {
-          if (!sightingVoted) {
-            sightingVoted = true;
-            votedSightings.set(
-              event.text,
-              (votedSightings.get(event.text) ?? 0) + 1,
+        if (config === null) break;
+        currentLock = { event, sighting: sightingOf.get(index) ?? -1 };
+        // The tracking controller's order for one locked frame.
+        config.onDetection?.({
+          text: event.text,
+          timestamp: event.atMs,
+          qrPoseWorld: event.detectionPose,
+        } as QrDetectionEvent);
+        const geo = event.level?.geo ?? event.voted?.geo;
+        const sizeM = event.level?.sizeM ?? event.voted?.sizeM;
+        const level: QrLevel = {
+          version: 1,
+          qr:
+            geo === undefined || sizeM === undefined
+              ? {}
+              : { geo, physicalSizeM: sizeM },
+        };
+        if (level.qr.geo !== undefined && sizeM !== undefined) {
+          const pose = config.resolveStablePose?.(event.text) ?? null;
+          if (pose !== null) {
+            config.dispatchVotes(
+              buildQrGpsVotes({
+                qrPoseWorld: pose,
+                sizeM,
+                qrGeo: level.qr.geo,
+                syntheticAccuracyM: knobs.syntheticAccuracyM,
+                baselineM: knobs.baselineM,
+                count: knobs.votesPerLock,
+                timestamp: event.voted?.stampMs ?? event.atMs,
+              }),
             );
           }
-          const votes = buildQrGpsVotes({
-            qrPoseWorld: v.pose,
-            sizeM: v.sizeM,
-            qrGeo: v.geo,
-            syntheticAccuracyM: knobs.syntheticAccuracyM,
-            baselineM: knobs.baselineM,
-            count: knobs.votesPerLock,
-            timestamp: v.stampMs,
-          });
-          noteCast(votes);
-          sink.castLockVotes(votes);
-          keepAlive?.keep(
-            {
-              text: event.text,
-              qrPoseWorld: v.pose,
-              qrGeo: v.geo,
-              sizeM: v.sizeM,
-            },
-            event.atMs,
-          );
-          kept = {
-            text: event.text,
-            pose: v.pose,
-            geo: v.geo,
-            keptAtMs: event.atMs,
-            phoneAtKeep: phone,
-          };
-        } else {
-          keepAlive?.relock(event.text, event.atMs);
         }
+        config.onLocked?.({} as never, level);
+        currentLock = null;
         break;
       }
       case "veto":
         if (knobs.veto === "none") break;
+        // viewer-placement's vetoMovedCode: ignore, stop its hold, take
+        // every vote back, give every other code its budget back.
         ignored.add(event.text);
-        if (kept?.text === event.text) {
-          keepAlive?.stop();
-          kept = null;
-        }
+        if (kept?.text === event.text) keepAlive?.stop();
         sink?.retractVotes();
+        budget.reset();
         break;
       case "reset":
         keepAlive?.stop();
-        kept = null;
         tracked.dispatch(resetGpsSessionData());
         break;
       case "action":

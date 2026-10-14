@@ -58,6 +58,7 @@ import {
   type Walk,
 } from "./test-support/real-walks.js";
 import { throughAlignment } from "./visit-anchoring.js";
+import { VIEWER_SOFT_TRIM } from "./viewer-vote-sink.js";
 import {
   parseViewerRecording,
   type ParsedRecording,
@@ -482,7 +483,9 @@ function medianPose(frames: readonly Pose[]): Pose | null {
 // ---------------------------------------------------------------------------
 
 /** Seconds after the scan at which a perfect witness re-sighting is taken. */
-const INSTANTS_S = [30, 60, 120, 180, 240, 300, 420] as const;
+const INSTANTS_S = [
+  30, 60, 120, 180, 240, 300, 360, 420, 480, 600, 900,
+] as const;
 
 interface InstantRow {
   readonly s: number;
@@ -497,8 +500,15 @@ interface InstantRow {
 function runScenario(
   params: ScenarioParams,
   knobs: VotePathKnobs,
+  options: { readonly withoutCode?: boolean } = {},
 ): InstantRow[] {
-  const sc = buildScenario(params);
+  const built = buildScenario(params);
+  // "GPS only": the same session with the code never seen - the GPS answer
+  // the hand-over moves towards.
+  const sc =
+    options.withoutCode === true
+      ? { ...built, events: built.events.filter((e) => e.kind !== "lock") }
+      : built;
   const rows: InstantRow[] = [];
   const pending = INSTANTS_S.filter((s) => s <= params.afterS).map(
     (s) => s * 1000,
@@ -534,7 +544,7 @@ function runScenario(
 const KITCHEN: ScenarioParams = {
   seed: 7,
   preScanS: 15,
-  afterS: 420,
+  afterS: 600,
   walk: "kitchen",
   speedMps: 0.25,
   gps: {
@@ -563,40 +573,47 @@ describe.runIf(MODE === "kitchen")(
   "QR hold replay: the kitchen, synthetic",
   () => {
     // Parameters every row rests on (declared; the base is KITCHEN): a code
-    // scanned 15 s into the session (10 voted locks), then 7 minutes of a
-    // slow wander in a 5 m x 4 m room at 0.25 m/s; 1 Hz fixes; today's
-    // knobs unless the arm says otherwise; no compass readings (the
-    // synthetic sessions carry none: the compass is swept on the real
-    // recording only).
+    // scanned 15 s into the session (10 voted locks), then 10 minutes of a
+    // slow wander in a 5 m x 4 m room at about 0.25 m/s; 1 Hz fixes; the
+    // yaw drift pivoting 2 m from the code (where a real session's odometry
+    // starts); today's knobs unless the arm says otherwise (soft trim r0 1 m,
+    // p 1; 16 votes per lock and per fix; hold 120 s, fade 120 s); no
+    // compass readings (the synthetic sessions carry none: the compass is
+    // swept on the real recording only).
     const g = KITCHEN.gps as SyntheticGps;
     const still = { perM: 0, bearingDeg: 90, yawDegPerMin: 0 };
+    /** The 2026-10-10 visitor recording's one measured rate: 0.089 m over
+     *  19 m of path (0.47 %) and 0.21 deg in 104 s (0.12 deg/min). */
+    const measured = { perM: 0.0047, bearingDeg: 90, yawDegPerMin: 0.12 };
+    const soft = (r0: number, p: number): VotePathKnobs => ({
+      ...TODAY_KNOBS,
+      softTrim: {
+        ...VIEWER_SOFT_TRIM,
+        outlierFalloffRadiusMeters: r0,
+        outlierFalloffExponent: p,
+      },
+    });
     const arms: Arm[] = [
       ["base", KITCHEN, TODAY_KNOBS],
       ["base, GPS ignored", KITCHEN, { ...TODAY_KNOBS, gps: "off" }],
-      ["no odometry drift", { ...KITCHEN, odometry: still }, TODAY_KNOBS],
+      ["base, GPS only (no code)", KITCHEN, TODAY_KNOBS],
       [
-        "no GPS error",
-        { ...KITCHEN, gps: { ...g, biasM: 0, wanderM: 0, whiteM: 0 } },
+        "measured rates (0.47 % path, 0.12 deg/min, lever 2 m)",
+        { ...KITCHEN, odometry: measured },
         TODAY_KNOBS,
       ],
-      ...[0, 3, 15, 25].map((b): Arm => [
-        `GPS bias ${String(b)} m`,
-        { ...KITCHEN, gps: { ...g, biasM: b } },
-        TODAY_KNOBS,
-      ]),
-      ...[150, 240, 330].map((b): Arm => [
-        `GPS bias bearing ${String(b)} deg`,
-        { ...KITCHEN, gps: { ...g, biasBearingDeg: b } },
-        TODAY_KNOBS,
-      ]),
-      ...[0, 10].map((w): Arm => [
-        `GPS wander ${String(w)} m`,
-        { ...KITCHEN, gps: { ...g, wanderM: w } },
-        TODAY_KNOBS,
-      ]),
-      ...[5, 30].map((acc): Arm => [
-        `reported accuracy ${String(acc)} m`,
-        { ...KITCHEN, gps: { ...g, accuracyM: acc } },
+      [
+        "measured rates, GPS ignored",
+        { ...KITCHEN, odometry: measured },
+        { ...TODAY_KNOBS, gps: "off" },
+      ],
+      ["no odometry drift", { ...KITCHEN, odometry: still }, TODAY_KNOBS],
+      ...[5, 10].map((lever): Arm => [
+        `yaw lever ${String(lever)} m`,
+        {
+          ...KITCHEN,
+          odometry: { ...KITCHEN.odometry, yawLeverM: lever },
+        },
         TODAY_KNOBS,
       ]),
       ...[0, 0.005, 0.02].map((d): Arm => [
@@ -614,10 +631,28 @@ describe.runIf(MODE === "kitchen")(
         { ...KITCHEN, speedMps: v },
         TODAY_KNOBS,
       ]),
-      ...[11, 23].map((seed): Arm => [
-        `seed ${String(seed)}`,
-        { ...KITCHEN, seed },
+      // The GPS error cannot move the pull at p = 1 (each fix's pull beyond
+      // r0 is capped); these rows show that, they are not robustness.
+      ...[0, 25].map((b): Arm => [
+        `GPS bias ${String(b)} m`,
+        { ...KITCHEN, gps: { ...g, biasM: b } },
         TODAY_KNOBS,
+      ]),
+      [
+        "GPS bias bearing 240 deg",
+        { ...KITCHEN, gps: { ...g, biasBearingDeg: 240 } },
+        TODAY_KNOBS,
+      ],
+      // The solver's falloff: what the pull actually rests on.
+      ...[2, 3, 5].map((r0): Arm => [
+        `soft trim r0 ${String(r0)} m, p 1`,
+        KITCHEN,
+        soft(r0, 1),
+      ]),
+      ...[1.5, 2].map((p): Arm => [
+        `soft trim r0 1 m, p ${String(p)}`,
+        KITCHEN,
+        soft(1, p),
       ]),
       ["hard trim", KITCHEN, { ...TODAY_KNOBS, softTrim: null }],
       ...[60_000, 240_000, 1e9].map((h): Arm => [
@@ -626,33 +661,27 @@ describe.runIf(MODE === "kitchen")(
         { ...TODAY_KNOBS, holdMs: h },
       ]),
       [
-        "hold forever, GPS ignored",
+        "accuracy exponent 2, votes at 5 m",
         KITCHEN,
-        { ...TODAY_KNOBS, holdMs: 1e9, gps: "off" },
+        { ...TODAY_KNOBS, accuracyExponent: 2 },
       ],
-      ...[
-        [0.5, 1],
-        [1, 5],
-        [2, 5],
-      ].map(([exp, acc]): Arm => [
-        `accuracy exponent ${String(exp)}, votes at ${String(acc)} m`,
-        KITCHEN,
-        { ...TODAY_KNOBS, accuracyExponent: exp!, syntheticAccuracyM: acc! },
-      ]),
-      ...(["reach", "excursion", "path"] as const).map((measure): Arm => [
+      ...(["reach", "path"] as const).map((measure): Arm => [
         `distance hold ${measure} 10 m + fade 20 m`,
         KITCHEN,
         { ...TODAY_KNOBS, distanceHold: { measure, holdM: 10, fadeM: 20 } },
       ]),
+      ["base, 15 minutes", { ...KITCHEN, afterS: 900 }, TODAY_KNOBS],
     ];
     it.each(arms)(
       "%s",
       (label, params, knobs) => {
-        const rows = runScenario(params, knobs);
+        const rows = runScenario(params, knobs, {
+          withoutCode: label.includes("GPS only"),
+        });
         say(scenarioLines(label, rows));
         expect(rows.length).toBeGreaterThan(0);
       },
-      900_000,
+      3_600_000,
     );
   },
 );
@@ -835,7 +864,7 @@ describe.runIf(MODE === "corpus")(
         walks
           .filter((w) => w.place === place && (w.fixes?.length ?? 0) >= 300)
           .sort((a, b) => (b.fixes?.length ?? 0) - (a.fixes?.length ?? 0))
-          .slice(0, 2)
+          .slice(0, 1)
           .map((w) => ({
             label: `${place} ${w.key}`,
             errors: residualSeries(w),
@@ -848,7 +877,6 @@ describe.runIf(MODE === "corpus")(
         ];
         for (const [qn, pick] of [
           ["p50", q(0.5)],
-          ["p90", q(0.9)],
           ["p99", q(0.99)],
         ] as const) {
           const errors = wander.errors.map(
