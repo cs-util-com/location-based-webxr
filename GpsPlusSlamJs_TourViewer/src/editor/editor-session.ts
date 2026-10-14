@@ -61,6 +61,13 @@ export interface EditorSave {
  *  it away while its card was open, M6 E2c review #11). */
 export const NOT_IN_TOUR = "That note is no longer in this tour.";
 
+/** An edit, move or delete of an id the tour no longer carries, said in
+ *  words (`NOT_IN_TOUR`) by all three alike (PR #622 bot finding C). */
+export interface EditorRefusal {
+  readonly kind: "refused";
+  readonly reason: string;
+}
+
 /** What a draft offers back (`editor-draft.ts`). */
 interface EditorRestore {
   readonly objects: readonly TourObject[];
@@ -78,14 +85,16 @@ export interface EditorSession {
   editText(
     id: string,
     text: string,
-  ): { kind: "edited" | "unchanged" } | { kind: "refused"; reason: string };
-  /** Move a note on the map (its height and facing kept); false for an
-   *  id the tour no longer carries. */
-  move(id: string, lat: number, lon: number): boolean;
-  /** Delete; returns its undo, which refuses (false) once a save wrote
-   *  the delete - the saved file no longer carries the object or its
-   *  photo (E2a review #9) - and for an id the tour no longer carries. */
-  remove(id: string): () => boolean;
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** Move a note on the map (its height and facing kept); refused for an
+   *  id the tour no longer carries. Throws for a position the tour
+   *  cannot hold (`moveObjectTo`). */
+  move(id: string, lat: number, lon: number): { kind: "moved" } | EditorRefusal;
+  /** Delete, with its undo, which refuses (false) once a save wrote the
+   *  delete - the saved file no longer carries the object or its photo
+   *  (E2a review #9). Refused, deleting nothing, for an id the tour no
+   *  longer carries. */
+  remove(id: string): { kind: "deleted"; undo: () => boolean } | EditorRefusal;
   /** Put a draft's work back by the session's own rules (M6 E2c): an
    *  object the tour carries gets the draft's version, a deletion its
    *  tombstone; live work on an id wins, and an id the tour no longer
@@ -145,6 +154,8 @@ export function createEditorSession(input: {
     return authoringObjects(manifest.objects, placed, deleted);
   }
 
+  const notInTour: EditorRefusal = { kind: "refused", reason: NOT_IN_TOUR };
+
   /** Undefined for an id the tour no longer carries: a page holding an
    *  older card gets a refusal, never a throw (E2c plan review #11). */
   function find(id: string): AuthoringObject<EditorEntry> | undefined {
@@ -173,7 +184,7 @@ export function createEditorSession(input: {
     },
     editText(id, text) {
       const found = find(id);
-      if (found === undefined) return { kind: "refused", reason: NOT_IN_TOUR };
+      if (found === undefined) return notInTour;
       const edit = pinTextEdit(found.object, text);
       if (edit.kind === "edited") {
         placed = upsertPlaced(placed, { object: edit.after });
@@ -184,15 +195,15 @@ export function createEditorSession(input: {
     },
     move(id, lat, lon) {
       const found = find(id);
-      if (found === undefined) return false;
+      if (found === undefined) return notInTour;
       const after = moveObjectTo(found.object, lat, lon);
       placed = upsertPlaced(placed, { object: after });
       backUp(after);
-      return true;
+      return { kind: "moved" };
     },
     remove(id) {
       const found = find(id);
-      if (found === undefined) return () => false;
+      if (found === undefined) return notInTour;
       const gone = deleteObject({ placed, deleted }, found);
       placed = gone.placed;
       deleted = gone.deleted;
@@ -201,7 +212,7 @@ export function createEditorSession(input: {
         void recordDelete(input.draft, id, gone.record.hosted);
       }
       const at = snapshots;
-      return () => {
+      const undo = (): boolean => {
         if (snapshots > at) return false;
         const back = undoDelete({ placed, deleted }, gone.record);
         placed = back.placed;
@@ -212,6 +223,7 @@ export function createEditorSession(input: {
         }
         return true;
       };
+      return { kind: "deleted", undo };
     },
     restore(work) {
       const live = new Set([...placed.map((p) => p.object.id), ...deleted]);

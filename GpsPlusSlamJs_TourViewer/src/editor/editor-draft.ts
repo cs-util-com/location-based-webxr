@@ -159,6 +159,12 @@ interface Space {
   refused: NoBackupReason | null;
   /** The ids the meta rejects ("Delete it"); a write of one claims it. */
   rejected: readonly string[];
+  /** Every id the meta ON DISK rejects, until a meta write lands: the open
+   *  prunes `rejected` to the ids that still have files, and a write of an
+   *  id only the unpruned meta names is claimed too, or a pruning write
+   *  that did not land would hide it (PR #622 bot finding A; the phone's
+   *  `rejectedOnDisk`). */
+  rejectedOnDisk: ReadonlySet<string>;
   /** Every id with files here: what a key move empties. */
   readonly ids: Set<string>;
   /** Its writes not yet settled: the hold goes only after them. */
@@ -225,6 +231,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       lock: null,
       refused: null,
       rejected: [],
+      rejectedOnDisk: new Set(),
       ids: new Set(),
       work: new Set(),
     };
@@ -250,18 +257,25 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   }
 
   /** The meta `readDraft` reads: the editor has no code to measure, so a
-   *  default size and no level. Values captured now, written in order. */
+   *  default size and no level. Values captured now, written in order;
+   *  counted among `s`'s writes, so a close lets the hold go only after it
+   *  landed - "Delete it"'s commit point among them (PR #622 bot finding
+   *  B). */
   function writeMeta(s: Space): Promise<boolean> {
+    const rejected = s.rejected;
     const meta = {
       tourUrl: s.fileKey,
       sizeM: AUTHOR_DEFAULT_SIZE_M,
       level: null,
-      rejected: s.rejected,
+      rejected,
     };
-    return track(
+    return inSpace(
+      s,
       chain.run(metaChain(s), async () => {
         const store = await s.store;
-        return store !== undefined && (await writeDraftMeta(store, meta));
+        const ok = store !== undefined && (await writeDraftMeta(store, meta));
+        if (ok) s.rejectedOnDisk = new Set(rejected);
+        return ok;
       }),
     ).catch(() => false);
   }
@@ -299,7 +313,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         const store = await s.store;
         if (store === undefined) return false;
         let claimed = true;
-        if (s.rejected.includes(id)) {
+        if (s.rejected.includes(id) || s.rejectedOnDisk.has(id)) {
           await removeDraftObject(store, id);
           s.rejected = s.rejected.filter((r) => r !== id);
           claimed = await writeMeta(s);
@@ -453,11 +467,17 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       }
       for (const id of stored.storedIds) s.ids.add(id);
       // The pruned list, written back at once: a rejected id whose files
-      // are gone must not stay in the meta, or a later edit of it - not
-      // claimed, since the list no longer names it - would be hidden by
-      // the next read.
+      // are gone must not stay in the meta. Until that write lands, a
+      // later edit of such an id is claimed against the meta on disk
+      // (`rejectedOnDisk`), and a write that did not land is said.
       s.rejected = stored.rejectedIds;
-      void writeMeta(s);
+      s.rejectedOnDisk = new Set(stored.rejectedOnDisk);
+      // Tracked with its line, so `idle()` covers the saying too.
+      void track(
+        writeMeta(s).then((ok) => {
+          if (!ok) say(s, s.refused ?? "storage");
+        }),
+      );
       const hostedIds = new Set(manifest.objects.map((o) => o.id));
       const notHosted = draftObjectsNotYetHosted(stored.draft, manifest);
       // The editor places nothing new: a record of an id the file no
@@ -539,7 +559,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         return false;
       }
       for (const id of ids) {
-        void track(
+        // Counted among the namespace's writes, like the meta (finding B).
+        void inSpace(
+          s,
           chain.run(objectChain(s, id), async () => {
             // A change made since claimed the id: its files are the
             // change's now.

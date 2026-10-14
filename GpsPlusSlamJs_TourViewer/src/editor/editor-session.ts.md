@@ -22,13 +22,18 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
   - `editText(id, text)` - `pinTextEdit`'s outcome (`edited`, `unchanged`,
     `refused` with the phone's sentence; `refused` with `NOT_IN_TOUR` for an
     id the tour no longer carries).
-  - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept);
-    `false` for an id the tour no longer carries.
-  - `remove(id)` - `deleteObject`; returns the undo (`undoDelete`), which
+  - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept):
+    `{ kind: "moved" }`, or `EditorRefusal` (`refused` with `NOT_IN_TOUR`)
+    for an id the tour no longer carries (PR #622 bot finding C); throws
+    for a position the tour cannot hold.
+  - `remove(id)` - `deleteObject`; `{ kind: "deleted", undo }` with the
+    undo (`undoDelete`), which
     refuses (`false`) once a save that writes the delete has started (its snapshot
     taken after the delete), not for one already running when it was made
     (E2b plan review #2, the third E2p review #6). For an id the tour no
-    longer carries it changes nothing and its undo refuses. The undo of a
+    longer carries it changes nothing and returns the same `EditorRefusal`
+    as `editText` and `move`, so the page shows no "Deleted" toast and no
+    Undo that would answer "too late" (finding C). The undo of a
     delete of an edited note writes the record to the draft again.
   - `restore({ objects, deleted })` (M6 E2c) - a draft's work put back by
     the session's own rules: an object the tour carries takes the draft's

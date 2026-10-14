@@ -91,7 +91,10 @@ editor's own namespace, one tab at a time. Design:
   writes; any other tab writes nothing and says it keeps no backup, and how
   to get one (close the other tab, open the tour again here: the lock is
   asked once, `ifAvailable`, at the open). The hold goes when the tour
-  closes, after that tour's queued writes landed (milestone review #6).
+  closes, after that tour's queued writes landed (milestone review #6) -
+  the meta writes and "Delete it"'s removals among them, so a close right
+  after "Delete it" keeps the hold until the rejection landed (PR #622 bot
+  finding B).
 - **The no-backup line is about the tour open now**: a closed tour's late
   failure does not use it up.
 - **Writes per (namespace, id)** through one keyed chain, the meta's under
@@ -99,7 +102,11 @@ editor's own namespace, one tab at a time. Design:
   removed, meta rewritten without it), the phone's `creator-draft.ts` rule.
   At each open the meta is rewritten with the read's pruned rejection list,
   so an id whose files are gone is never left rejected (a later edit of it
-  would be hidden).
+  would be hidden). Until a meta write lands, the claim is also made
+  against the meta ON DISK (`rejectedOnDisk`, every id it rejects, as the
+  phone does): a pruning write that did not land - said, like any write
+  that did not land - no longer hides the next edit of such an id (PR #622
+  bot finding A).
 - **Never throws to the page**; a write that did not land is `false` and
   the page hears it once (`noBackup`); the leave guard stays on.
 - **Not covered, named:** a carried record that did not land leaves the
@@ -138,6 +145,9 @@ note; a second tab; no storage and a failed write said once; the same tour
 reopened in the same tab; a moved photo note and the undo of a delete of
 one (no bytes); the old namespace kept until the carried records landed,
 and kept when they did not; "Delete it" right after a key move; a closed
-tour's late write dropped; the hold kept until the queued writes landed. A
+tour's late write dropped; the hold kept until the queued writes landed;
+an edit claimed against the meta on disk when the pruning write was refused
+(PR #622 A); a close right after "Delete it" holding until its meta write
+landed (PR #622 B). A
 scoped mutation pass (12 mutants of the rules above) killed all 12. The page's walks are in
 `playwright-tests/editor.spec.js` (the E2c block).

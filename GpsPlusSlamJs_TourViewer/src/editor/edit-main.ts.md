@@ -49,7 +49,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   the saved file no longer carries the object. Codes, stations and the
   walk's recorded photos stay read-only.
   A refused undo (the delete already written) says so in a toast
-  rather than doing nothing.
+  rather than doing nothing. A delete or a move of a note the tour no longer carries
+  (a card outliving its object) is refused in the session's words
+  (`NOT_IN_TOUR`): the delete in a toast, with no "Deleted" toast and no
+  Undo; the move on the card (PR #622 bot finding C).
 - **In place (E2b-1).** "Choose…" and the drop box open the browser's
   file picker where it exists (else the file input), asking for write
   permission on that gesture. A granted file, held by this tab

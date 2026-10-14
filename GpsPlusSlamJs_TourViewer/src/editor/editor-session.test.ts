@@ -29,6 +29,14 @@ import { createTourViewerStore } from "../tour-viewer-session.js";
 import type { DraftObjectWrites } from "../draft-actions.js";
 import { createEditorSession, NOT_IN_TOUR } from "./editor-session.js";
 
+/** The undo of a delete that was made; a refusal fails the test. */
+function undoOf(
+  outcome: { kind: "deleted"; undo: () => boolean } | { kind: "refused" },
+): () => boolean {
+  if (outcome.kind !== "deleted") throw new Error("the delete was refused");
+  return outcome.undo;
+}
+
 beforeAll(() => {
   createTourViewerStore();
 });
@@ -127,7 +135,7 @@ describe("createEditorSession", () => {
       manifest,
       levels: new Map(),
     });
-    const undo = editor.remove("a");
+    const undo = undoOf(editor.remove("a"));
     expect(editor.model().items.map((i) => i.id)).toEqual(["b"]);
     undo();
     expect(editor.model().items.map((i) => i.id)).toEqual(["a", "b"]);
@@ -215,7 +223,7 @@ describe("createEditorSession, the review's cases (E0c + E2a review #9, #10, #12
       manifest,
       levels: new Map(),
     });
-    const undo = editor.remove("a");
+    const undo = undoOf(editor.remove("a"));
     await editor.save({ keepScan: false });
     expect(undo()).toBe(false);
     expect(editor.model().items.map((i) => i.id)).toEqual(["b"]);
@@ -234,11 +242,11 @@ describe("createEditorSession, the review's cases (E0c + E2a review #9, #10, #12
     });
     editor.editText("b", "First");
     const running = editor.save({ keepScan: false });
-    const undo = editor.remove("a");
+    const undo = undoOf(editor.remove("a"));
     await running;
     expect(undo()).toBe(true);
     expect(editor.model().items.map((i) => i.id)).toEqual(["a", "b"]);
-    const again = editor.remove("a");
+    const again = undoOf(editor.remove("a"));
     const writes = editor.save({ keepScan: false });
     await writes;
     expect(again()).toBe(false);
@@ -258,7 +266,7 @@ describe("createEditorSession, the review's cases (E0c + E2a review #9, #10, #12
       manifest,
       levels: new Map(),
     });
-    const undo = editor.remove("a");
+    const undo = undoOf(editor.remove("a"));
     const writing = editor.save({ keepScan: false });
     expect(undo()).toBe(false);
     const tour = await carried((await writing).blob);
@@ -345,7 +353,7 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     });
     editor.editText("a", "New");
     editor.move("b", 48.53, 9.06);
-    const undo = editor.remove("a");
+    const undo = undoOf(editor.remove("a"));
     expect(undo()).toBe(true);
     expect(draft.calls).toEqual([
       "save a New",
@@ -434,8 +442,16 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
       kind: "refused",
       reason: NOT_IN_TOUR,
     });
-    expect(editor.move("zzz", 48.5, 9.0)).toBe(false);
-    expect(editor.remove("zzz")()).toBe(false);
+    // Said in the same words as an edit (PR #622 bot finding C): the
+    // page must not toast "Deleted" with an Undo, or drop a move silently.
+    expect(editor.move("zzz", 48.5, 9.0)).toEqual({
+      kind: "refused",
+      reason: NOT_IN_TOUR,
+    });
+    expect(editor.remove("zzz")).toEqual({
+      kind: "refused",
+      reason: NOT_IN_TOUR,
+    });
     expect(editor.changeCount()).toBe(0);
     expect(draft.calls).toEqual([]);
     await session.close();

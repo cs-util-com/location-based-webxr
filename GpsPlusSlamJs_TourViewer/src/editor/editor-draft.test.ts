@@ -39,7 +39,8 @@ import type { EditorLock } from "./save-target.js";
 /** One browser's draft directories: namespace -> files. `failIn` makes
  *  one namespace's writes refuse; `holdPuts` holds every write until
  *  `releasePuts`; `holdOpenOf` holds a namespace's open until
- *  `releaseOpens` - the order a key move's writes land in. */
+ *  `releaseOpens` - the order a key move's writes land in; `failMetaPuts`
+ *  refuses that many of the next meta writes. */
 function browser(): {
   spaces: Map<string, Map<string, Blob | string>>;
   open: (key: string) => Promise<DraftFileStore | undefined>;
@@ -49,6 +50,7 @@ function browser(): {
   releasePuts: (ok?: boolean) => void;
   holdOpenOf: Set<string>;
   releaseOpens: () => void;
+  failMetaPuts: number;
 } {
   const spaces = new Map<string, Map<string, Blob | string>>();
   const heldPuts: ((ok: boolean) => void)[] = [];
@@ -62,6 +64,7 @@ function browser(): {
       state.holdPuts = false;
       for (const land of heldPuts.splice(0)) land(ok);
     },
+    failMetaPuts: 0,
     holdOpenOf: new Set<string>(),
     releaseOpens: () => {
       state.holdOpenOf.clear();
@@ -73,6 +76,10 @@ function browser(): {
       const store: DraftFileStore = {
         put: (k, data) => {
           if (state.failWrites || state.failIn.has(key)) {
+            return Promise.resolve(false);
+          }
+          if (k === META_KEY && state.failMetaPuts > 0) {
+            state.failMetaPuts -= 1;
             return Promise.resolve(false);
           }
           if (state.holdPuts) {
@@ -432,6 +439,73 @@ describe("createEditorDraft", () => {
     expect(
       (await draftIn(b).open(K1, original)).offer?.objects.map((o) => o.label),
     ).toEqual(["new"]);
+  });
+
+  // Why (PR #622 bot finding A): the open prunes the meta's rejected list
+  // to the ids that still have files, and claims an edit against that
+  // PRUNED list. When the pruning write did not land, the meta on disk
+  // still rejected the id, the edit was not claimed, and the next read hid
+  // it. The phone claims against the meta on disk too (`rejectedOnDisk`).
+  it("an edit of a rejected id is claimed against the meta on disk when the pruning write did not land", async () => {
+    const b = browser();
+    const original = tour(pin("a"));
+    const earlier = draftIn(b);
+    await earlier.open(K1, original);
+    void earlier.saveObject(pin("a", "old"));
+    await earlier.idle();
+    earlier.close();
+    const discarding = draftIn(b);
+    await discarding.open(K1, original);
+    await discarding.discard();
+    await discarding.idle();
+    discarding.close();
+    // The meta rejects "a", whose files are gone; this open's pruning
+    // write is refused.
+    b.failMetaPuts = 1;
+    const later = draftIn(b);
+    expect((await later.open(K1, original)).offer).toBeNull();
+    await later.idle();
+    expect(later.said, "the refused write is said").toEqual(["storage"]);
+    void later.saveObject(pin("a", "new"));
+    await later.idle();
+    later.close();
+    expect(
+      (await draftIn(b).open(K1, original)).offer?.objects.map((o) => o.label),
+    ).toEqual(["new"]);
+  });
+
+  // Why (PR #622 bot finding B): "Delete it"'s meta write - the commit
+  // point - was not counted among the namespace's writes, so a close right
+  // after it let the hold go while it was still being written, and another
+  // tab could read the draft before the rejection.
+  it("a close right after Delete it lets the hold go only after the meta write landed", async () => {
+    const b = browser();
+    const hold = locks();
+    const original = tour(pin("a"));
+    const earlier = draftIn(b, hold);
+    await earlier.open(K1, original);
+    void earlier.saveObject(pin("a", "old"));
+    await earlier.idle();
+    earlier.close();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const draft = draftIn(b, hold);
+    expect((await draft.open(K1, original)).offer).not.toBeNull();
+    await draft.idle();
+    b.holdPuts = true;
+    const discarded = draft.discard();
+    draft.close();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      (await draftIn(b, hold).open(K1, original)).backedUp,
+      "still held while the rejection is written",
+    ).toBe(false);
+    b.releasePuts();
+    expect(await discarded).toBe(true);
+    await draft.idle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const next = await draftIn(b, hold).open(K1, original);
+    expect(next.backedUp).toBe(true);
+    expect(next.offer).toBeNull();
   });
 
   it("an undo of a delete of an edited note writes the record again", async () => {

@@ -503,10 +503,14 @@ function finishMove(): void {
   moving = null;
   if (done.drop !== null) {
     try {
-      if (editor.move(done.id, done.drop.lat, done.drop.lng)) {
+      const outcome = editor.move(done.id, done.drop.lat, done.drop.lng);
+      if (outcome.kind === "moved") {
         moved.add(done.id);
         message = { id: done.id, text: "Moved - not saved yet." };
         autosave.changed();
+      } else {
+        // Said, never dropped (PR #622 bot finding C).
+        message = { id: done.id, text: outcome.reason, refused: true };
       }
     } catch (err) {
       message = {
@@ -623,7 +627,16 @@ const card = createEditorCard(
       // checks the file first and then finds this delete's undo, so it
       // waits (the saves it would snapshot hold no delete with a live undo).
       endUndo();
-      const undo = editor.remove(id);
+      const outcome = editor.remove(id);
+      if (outcome.kind === "refused") {
+        // Nothing was deleted: no "Deleted" toast, and no Undo that would
+        // answer "too late" (PR #622 bot finding C).
+        select(null);
+        refresh();
+        toast(outcome.reason);
+        return;
+      }
+      const { undo } = outcome;
       select(null);
       refresh();
       const t = toast(`Deleted ${item?.title ?? "the note"}`, {
