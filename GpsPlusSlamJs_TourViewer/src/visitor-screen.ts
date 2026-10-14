@@ -160,7 +160,10 @@ export function wireVisitorScreen(deps: {
 }): VisitorScreen {
   const { mode, seams, dom, renderArEntry } = deps;
   const codesUsable = deps.codesUsable ?? (() => null);
-  const needsNoGps = deps.needsNoGps ?? (() => false);
+  const flaggedNoGps = deps.needsNoGps ?? (() => false);
+  /** The flag holds only while the tour's codes may place it: a flagged
+   *  tour with no usable code asks as any other (M1b-1 review #2). */
+  const needsNoGps = (): boolean => flaggedNoGps() && codesUsable() !== false;
   /** The line the permission query chose; a tour that needs no GPS shows
    *  the plain visitor line instead (`showHint`). */
   let permissionHint = VISITOR_HINT;

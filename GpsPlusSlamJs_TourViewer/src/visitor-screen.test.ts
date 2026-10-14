@@ -417,6 +417,32 @@ describe("a tour that needs no GPS (Q-QF-1)", () => {
     expect(requestLocationOnce).not.toHaveBeenCalled();
   });
 
+  // Why: the flag is the creator's word that the codes place the tour, and
+  // `tour.json` is external data. A flagged tour with no code that can
+  // place it would start a visitor on codes alone with nothing able to
+  // place anything and no way to grant location; it asks as before (the
+  // M1b-1 review #2 rule for codes-only starts).
+  it("asks as before when the flagged tour has no code that can place it", async () => {
+    let usable: boolean | null = null;
+    const renderArEntry = vi.fn();
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("prompt"),
+      }),
+      dom: dom(),
+      renderArEntry,
+      needsNoGps: () => true,
+      codesUsable: () => usable,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    expect(screen.locationGate.pending()).toBe(false);
+    expect(screen.locationGate.codesOnly()).toBe(true);
+    usable = false;
+    expect(screen.locationGate.pending()).toBe(true);
+    expect(screen.locationGate.codesOnly()).toBe(false);
+  });
+
   it("asks as before once a tour without the flag replaces it", async () => {
     const d = dom();
     const renderArEntry = vi.fn();

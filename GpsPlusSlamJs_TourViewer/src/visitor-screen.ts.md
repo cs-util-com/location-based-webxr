@@ -38,7 +38,10 @@ start a session.
   `VisitorScreen.tourChanged()` re-renders that line and the button when
   the tour's file settles or the tour closes (`main.ts`, from
   `presentTourInfo`). A tap before the tour's file settled still asks, as
-  for any tour.
+  for any tour. The flag holds only while `codesUsable()` is not `false`:
+  a flagged tour with no code that can place it asks as any other (the
+  file is external data; without the location such a visitor could
+  place nothing).
 - Optional dep `codesUsable(): boolean | null` (M1b-1 review #2): whether
   the open tour has a code that can place it (`main.ts`: any lockable
   level; null while the levels are unknown). `false` means codes alone
