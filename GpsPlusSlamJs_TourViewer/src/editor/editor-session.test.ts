@@ -20,9 +20,14 @@ import {
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { openTourFile, type TourSession } from "../tour-session.js";
+import {
+  openTourFile,
+  tourFileKeyOfFile,
+  type TourSession,
+} from "../tour-session.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
-import { createEditorSession } from "./editor-session.js";
+import type { DraftObjectWrites } from "../draft-actions.js";
+import { createEditorSession, NOT_IN_TOUR } from "./editor-session.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -293,6 +298,146 @@ describe("createEditorSession, the review's cases (E0c + E2a review #9, #10, #12
     expect(editor.pendingIds()).toEqual(["a"]);
     await editor.save({ keepScan: false });
     expect(editor.pendingIds()).toEqual([]);
+    await session.close();
+  });
+});
+
+/** Draft writes that log their calls (the editor's draft is
+ *  `editor-draft.test.ts`'s; here only what the session asks of it). */
+function loggedDraft(): DraftObjectWrites & { calls: string[] } {
+  const calls: string[] = [];
+  return {
+    calls,
+    saveObject: (object) => {
+      calls.push(
+        `save ${object.id}${object.kind === "pin" ? ` ${object.label}` : ""}`,
+      );
+      return Promise.resolve(true);
+    },
+    saveDeletion: (id) => {
+      calls.push(`tombstone ${id}`);
+      return Promise.resolve(true);
+    },
+    forgetDeletion: (id) => {
+      calls.push(`untombstone ${id}`);
+      return Promise.resolve(true);
+    },
+    forgetObject: (id) => {
+      calls.push(`forget ${id}`);
+      return Promise.resolve();
+    },
+  };
+}
+
+describe("createEditorSession, the draft (M6 E2c)", () => {
+  // Why: the draft is only as good as the session's calls into it - an
+  // edit not backed up is lost with the tab, and an undo of a delete of
+  // an EDITED note must write its record again, or the edit is gone from
+  // the draft while it stays on screen (E2c plan review #11).
+  it("backs every edit, move, delete and undo up, the undo of an edited note's delete writing its record again", async () => {
+    const { session, manifest } = await opened([pin("a", "Old"), pin("b")]);
+    const draft = loggedDraft();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft,
+    });
+    editor.editText("a", "New");
+    editor.move("b", 48.53, 9.06);
+    const undo = editor.remove("a");
+    expect(undo()).toBe(true);
+    expect(draft.calls).toEqual([
+      "save a New",
+      "save b pin b",
+      "tombstone a",
+      "save a New",
+      "untombstone a",
+    ]);
+    // An unchanged text and a refused one write nothing.
+    editor.editText("a", "New");
+    editor.editText("a", " ");
+    expect(draft.calls).toHaveLength(5);
+    await session.close();
+  });
+
+  // Why (E2c plan review #7, #11): Restore puts the draft's work back by
+  // the session's own rules; live edits made while the offer stood are
+  // newer and win; an id the file no longer carries cannot be edited
+  // (the editor places nothing new); and what was applied is written
+  // back, so it is backed up as this page's work.
+  it("restores a draft's changes and deletions, live work winning, unknown ids skipped", async () => {
+    const { session, manifest } = await opened([pin("a"), pin("b"), pin("c")]);
+    const draft = loggedDraft();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft,
+    });
+    editor.editText("b", "live");
+    draft.calls.length = 0;
+    const applied = editor.restore({
+      objects: [pin("a", "restored"), pin("b", "old draft"), pin("x")],
+      deleted: ["c", "gone"],
+    });
+    expect(applied).toEqual({ changed: 1, deleted: 1 });
+    expect(draft.calls).toEqual(["save a restored", "tombstone c"]);
+    const labels = editor
+      .model()
+      .items.filter((i) => i.kind === "pin")
+      .map((i) => i.title);
+    expect(labels).toEqual(["restored", "live"]);
+    expect(editor.changeCount()).toBe(3);
+    const saved = await editor.save({ keepScan: false });
+    expect(saved.written.objects.map((o) => o.id)).toEqual(["a", "b"]);
+    await session.close();
+  });
+
+  // Why (E2c plan review #5): the draft's key moves with an in-place
+  // save to the key of the bytes written, and must be the key a later
+  // open of that file gives - computed the open's own way, without a
+  // session over the bytes.
+  it("keys a saved zip as opening it would", async () => {
+    const { session, manifest } = await opened([pin("a")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    editor.editText("a", "Saved");
+    const saved = await editor.save({ keepScan: false });
+    const file = new File([saved.blob], "tour.zip", {
+      type: "application/zip",
+    });
+    const reopened = await openTourFile(file);
+    expect(await tourFileKeyOfFile(file)).toBe(reopened.archive.url);
+    // A tour of notes alone: its key changed with the save.
+    expect(reopened.archive.url).not.toBe(session.archive.url);
+    await reopened.close();
+    await session.close();
+  });
+
+  // Why (E2c plan review #11, decided here): a card can outlive its
+  // object (a restore's deletion, a save), and an edit of an id the tour
+  // no longer carries threw. It is refused in words and changes nothing.
+  it("refuses an edit, a move and a delete of an id the tour no longer carries", async () => {
+    const { session, manifest } = await opened([pin("a")]);
+    const draft = loggedDraft();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft,
+    });
+    expect(editor.editText("zzz", "x")).toEqual({
+      kind: "refused",
+      reason: NOT_IN_TOUR,
+    });
+    expect(editor.move("zzz", 48.5, 9.0)).toBe(false);
+    expect(editor.remove("zzz")()).toBe(false);
+    expect(editor.changeCount()).toBe(0);
+    expect(draft.calls).toEqual([]);
     await session.close();
   });
 });

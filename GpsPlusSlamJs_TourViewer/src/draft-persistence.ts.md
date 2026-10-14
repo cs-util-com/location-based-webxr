@@ -23,6 +23,9 @@ are the framework's.
   base as seen hosted (`creator-draft.ts` passes the tour as opened). Both
   writes run at once; the result is the record's write only (E2p review
   #6). The page's object writes go through it.
+- `writeDraftBase(store, id, base)` (M6 E2c) - a whole `base:<id>`
+  written at once: the desktop editor's draft moving a record to a new
+  namespace with the versions it knows (`editor/editor-draft.ts`).
 - `addDraftBaseKey(store, id, list, key)` - one key added to `base:<id>`
   (JSON `{ seen, written }`), read and written in place, nothing written
   for a key already there; an update that does not land removes the base

@@ -32,6 +32,7 @@ import {
   removeDraftObject,
   addDraftBaseKey,
   parseDraftBase,
+  writeDraftBase,
   writeDraftEdit,
   writeDraftDeletion,
   writeDraftMeta,
@@ -802,5 +803,24 @@ describe("parseDraftBase (M6 E2p)", () => {
     ]) {
       expect(parseDraftBase(bad)).toBeUndefined();
     }
+  });
+});
+
+describe("writeDraftBase (M6 E2c)", () => {
+  // Why: the desktop editor's draft moves its records to a new namespace
+  // when an in-place save changes the tour's key; a record moved without
+  // its known versions would read every later file version as "made
+  // elsewhere" - or, worse, lose its seen list and stop being protected.
+  it("writes a whole base that reads back beside its record", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftEdit(store, pin("a"), undefined, undefined);
+    expect(
+      await writeDraftBase(store, "a", { seen: ["v0"], written: ["v1"] }),
+    ).toBe(true);
+    expect((await readDraft(store))?.draft.bases?.get("a")).toEqual({
+      seen: ["v0"],
+      written: ["v1"],
+    });
   });
 });

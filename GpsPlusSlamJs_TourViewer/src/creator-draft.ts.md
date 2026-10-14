@@ -27,7 +27,7 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     draft write of an object adds the opened tour's version of it as seen,
     taken when the write is queued (a queued write can run after another
     open, whose tour is not the one edited); `finished(ids, written)` adds a
-    Finish's versions as written, keyed as a reader of the written file
+    Finish's versions as written, keyed as a reader of the written file (`manifestAsRead`, `authoring-draft.ts`)
     parses them; records the hosted zip carries unchanged
     are added as seen on open (`draftObjectsPublished`). Superseded
     records are not offered, one line says so (combined with the AR note

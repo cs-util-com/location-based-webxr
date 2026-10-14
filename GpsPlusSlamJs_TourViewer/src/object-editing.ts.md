@@ -32,7 +32,9 @@ Wired by `creator-setup.ts`, drawn by `object-list.ts`.
   for the settle's per-moment alignment, D33), `settleInputs` (the level in hand, this visit's
   measurement and sighting, the GPS accuracy), the stored codes, the draft
   writes (`saveDraftObject`, `saveDraftDeletion`, `forgetDraftObject`,
-  `forgetDraftDeletion`), `schedule` (the app's one-shot timer seam),
+  `forgetDraftDeletion`; a delete's and an undo's sequences over them are
+  `draft-actions.ts`'s, which the desktop editor runs too), `schedule` (the
+  app's one-shot timer seam),
   `syncPreviews` and `renderAuthorReadout`.
 - `OUTCOME_HOLD_MS` (8 000) - how long an outcome stands against a tap
   that only selects, and how long a delete's Undo is offered (see below).

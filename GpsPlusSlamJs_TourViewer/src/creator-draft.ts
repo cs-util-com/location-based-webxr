@@ -11,11 +11,9 @@
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { readSideM, writeSideM } from "./printed-side.js";
-import {
-  parseTourManifest,
-  serializeTourManifest,
-  type TourManifest,
-  type TourObject,
+import type {
+  TourManifest,
+  TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import {
@@ -27,6 +25,7 @@ import {
   draftObjectsNotYetHosted,
   draftObjectsPublished,
   draftObjectsSuperseded,
+  manifestAsRead,
   objectContentKey,
   restoredText,
   supersededLine,
@@ -252,18 +251,6 @@ export function wireCreatorDraft(deps: {
    *  hosted until the creator uploads it. Every hosted comparison of
    *  `present` uses it (re-review #3). */
   let opened: TourManifest | null = null;
-  /** `manifest` as a reader of the written file sees it (third review #5):
-   *  the parser normalises some fields (a heading into [0, 360)), and every
-   *  other comparison is between parsed versions. The manifest itself if
-   *  the round trip fails - a key that may not match only offers too much. */
-  function asRead(manifest: TourManifest): TourManifest {
-    try {
-      return parseTourManifest(JSON.parse(serializeTourManifest(manifest)));
-    } catch {
-      return manifest;
-    }
-  }
-
   /** The line saying the draft gave way to newer edits, for the open. */
   let supersededNote: string | null = null;
 
@@ -864,7 +851,8 @@ export function wireCreatorDraft(deps: {
       const store = draftStore;
       const tourUrl = draftTourUrl;
       if (store === undefined || tourUrl === null) return;
-      const read = asRead(written);
+      // As a reader of the written file sees it (third review #5).
+      const read = manifestAsRead(written);
       for (const id of ids) {
         const object = read.objects.find((o) => o.id === id);
         if (object === undefined) continue;

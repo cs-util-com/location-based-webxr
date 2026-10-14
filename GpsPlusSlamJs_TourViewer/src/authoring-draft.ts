@@ -25,9 +25,11 @@
  * cannot see.
  */
 
-import type {
-  TourManifest,
-  TourObject,
+import {
+  parseTourManifest,
+  serializeTourManifest,
+  type TourManifest,
+  type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 /**
@@ -453,10 +455,28 @@ export function restoredText(
   return `${listed(parts)} restored - ${total === 1 ? "it goes" : "they go"} into the zip on the next Finish.${alsoVisits}${measured}`;
 }
 
-/** Said when the phone's draft gave way to newer edits in the tour file
- *  (M6 E2p; owner question Q-E2-2's default: the file wins, said once). */
-export function supersededLine(count: number): string {
+/** Said when a draft gave way to newer edits in the tour file (M6 E2p;
+ *  owner question Q-E2-2's default: the file wins, said once). `where`
+ *  names where the draft was kept: the phone's, or the desktop editor's
+ *  "in this browser" (M6 E2c). */
+export function supersededLine(count: number, where = "on this phone"): string {
   return count === 1
-    ? "1 change on this phone was replaced by a newer one in the tour file."
-    : `${String(count)} changes on this phone were replaced by newer ones in the tour file.`;
+    ? `1 change ${where} was replaced by a newer one in the tour file.`
+    : `${String(count)} changes ${where} were replaced by newer ones in the tour file.`;
+}
+
+/**
+ * `manifest` as a reader of the written file sees it (the E2p third
+ * review #5): the parser normalises some fields (a heading into
+ * [0, 360)), and every base comparison is between parsed versions. The
+ * manifest itself when the round trip fails - a key that may not match
+ * only offers too much. The phone's `creator-draft.ts` and the desktop
+ * editor's `editor/editor-draft.ts` key their written versions by it.
+ */
+export function manifestAsRead(manifest: TourManifest): TourManifest {
+  try {
+    return parseTourManifest(JSON.parse(serializeTourManifest(manifest)));
+  } catch {
+    return manifest;
+  }
 }

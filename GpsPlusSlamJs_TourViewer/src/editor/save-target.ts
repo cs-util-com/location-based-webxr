@@ -234,6 +234,26 @@ export function holdEditorLock(
   locks: LockManager | undefined,
   fileName: string,
 ): Promise<EditorLock> {
+  return holdLock(locks, `${LOCK_PREFIX}${fileName}`);
+}
+
+/**
+ * This tab's hold on a tour's DRAFT (M6 E2c, the E2c plan review #6): the
+ * draft is keyed by the tour's content (`editor/editor-draft.ts`), the
+ * in-place save's lock by the file's name, so each has its own; only the
+ * holder writes the draft. Same contract as {@link holdEditorLock}.
+ */
+export function holdEditorDraftLock(
+  locks: LockManager | undefined,
+  draftKey: string,
+): Promise<EditorLock> {
+  return holdLock(locks, `${LOCK_PREFIX}draft/${draftKey}`);
+}
+
+function holdLock(
+  locks: LockManager | undefined,
+  name: string,
+): Promise<EditorLock> {
   const free: EditorLock = {
     granted: true,
     release: () => undefined,
@@ -246,7 +266,7 @@ export function holdEditorLock(
       markReleased = settle;
     });
     locks
-      .request(`${LOCK_PREFIX}${fileName}`, { ifAvailable: true }, (lock) => {
+      .request(name, { ifAvailable: true }, (lock) => {
         if (lock === null) {
           resolve({
             granted: false,

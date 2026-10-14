@@ -178,6 +178,16 @@ export function parseDraftBase(
   }
 }
 
+/** Write an object's whole base (M6 E2c): the desktop editor's draft
+ *  moving a record to a new namespace with the versions it knows. */
+export async function writeDraftBase(
+  store: DraftFileStore,
+  id: string,
+  base: DraftBase,
+): Promise<boolean> {
+  return store.put(baseKey(id), JSON.stringify(base));
+}
+
 /** Add one key to an object's base (M6 E2p), read and written in place;
  *  a key already there writes nothing, and a write that fails removes the
  *  base. */

@@ -6,7 +6,8 @@ The composition root of the desktop editor (`edit.html`, M6 E1): opens a
 tour (chosen, dropped, or the sample), builds its model and wires the map,
 the rail and the card in the chosen variant 1 layout, and edits it (E2a);
 where the browser allows it, it saves the opened file in place (E2b-1,
-`save-target.ts`).
+`save-target.ts`); and it keeps every edit since the opened file in this
+browser, offered back by the next open (E2c, `editor-draft.ts`).
 
 ## Behaviour
 
@@ -81,7 +82,10 @@ where the browser allows it, it saves the opened file in place (E2b-1,
   touched, a new modified time with the same bytes, which Chromium's
   snapshot check on the opened `File` refuses - cannot be rebuilt: those
   edits cannot be saved, and the status says to open the file again; the
-  desktop's draft (E2c) is what would keep them. Each save opens a session
+  desktop's draft (E2c) keeps them: the toast says this browser keeps a
+  copy, offered back when the file is opened again - if the change on disk
+  kept the tour's key (a tour built on a walk recording, or a listed tour)
+  and the edited notes (E2c plan review #9). Each save opens a session
   over the written copy, whose whole-archive check hashes a listed tour
   again in the background (E2b-1 review #9, for E2b-2's autosave to weigh).
 - **Save** builds the tour (`keepScan` from the "Keep the walk recording"
@@ -97,6 +101,20 @@ where the browser allows it, it saves the opened file in place (E2b-1,
   save picker - the one undelivered case the page can see, since an
   `<a download>` always reports started - keeps the built file, and
   Save offers it again ("Not saved yet - tap Save again").
+- **The draft (M6 E2c).** Read inside the open, before the tour shows
+  (`draft.open` over the session's file key). What an earlier visit left is
+  offered in a toast that stays until answered (`.draft-offer`): Restore
+  (`session.restore`, live edits winning; "N earlier changes are back - not
+  saved yet"), Not now (offered again next time), Delete it
+  (`draft.discard`; a failure is said). Records an edit elsewhere replaced
+  are said once. Every edit goes to the draft through the session; a build
+  adds its versions (`draft.built`), and an in-place write that landed
+  clears what it wrote and moves the draft to the written bytes' key
+  (`tourFileKeyOfFile`, worked out before the write, `draft.landed`). A tab
+  that keeps no backup (no storage, a failed write, another tab holding the
+  tour) says so once, after the tour shows. `body[data-draft]` is
+  `writing` / `saved` / `off`: the e2e waits for `saved` before it closes a
+  page (`page.close()` skips `beforeunload`).
 - **Leaving** with unsaved work asks first (`beforeunload`), and so does
   "Open another tour" (`window.confirm`).
 - **Free area** for the card: right of the rail, under the top bar (read

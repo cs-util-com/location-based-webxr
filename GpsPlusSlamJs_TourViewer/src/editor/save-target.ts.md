@@ -43,6 +43,10 @@ build plan, re-cut" and its cold review
   once the hold has let go: the same name asked before that is refused, so
   the page waits for it before opening the same file again (E2b-1 review
   #3).
+- `holdEditorDraftLock(locks, draftKey)` (M6 E2c) - the same hold on a
+  tour's DRAFT key, `gps-plus-slam/tour-viewer-editor/draft/<key>`: the
+  draft is keyed by content (`editor-draft.ts`), the in-place save by the
+  file's name, so each has its own lock (E2c plan review #6).
 - `InPlaceRefusal`, `EditorLock`, `WritableFileHandle`, `PickerWindow`, `PickOutcome`,
   `SaveTarget`.
 

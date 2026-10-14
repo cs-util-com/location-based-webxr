@@ -462,6 +462,21 @@ export async function openTourFile(
   );
 }
 
+/**
+ * The key `openTourFile` gives `file` as its `archive.url` (M6 E2c): the
+ * desktop editor computes it from the bytes an in-place save wrote, so its
+ * draft follows a key a later open of that file finds - without opening a
+ * session over them.
+ *
+ * @throws as `openTourFile` does for a file that is not a readable zip.
+ */
+export function tourFileKeyOfFile(
+  file: File,
+  limits: Partial<ArchiveLimits> = {},
+): Promise<string> {
+  return fileKeyOf(file, { ...DEFAULT_ARCHIVE_LIMITS, ...limits });
+}
+
 /** The file's content key, from its central directory (walked under the
  *  same entry cap as any open). A file that is not a zip fails here, in
  *  plain words. */

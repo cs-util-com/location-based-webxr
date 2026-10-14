@@ -17,7 +17,12 @@ import { FINISH_LABELS } from "../qr-author-mode.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import { describeIntegrityError } from "../open-errors.js";
 import { scanEntryNames } from "../tour-read-set.js";
-import { openTourFile, type TourSession } from "../tour-session.js";
+import { openDraftStore } from "../draft-store-root.js";
+import {
+  openTourFile,
+  tourFileKeyOfFile,
+  type TourSession,
+} from "../tour-session.js";
 import {
   CARD_RESIZED,
   createEditorCard,
@@ -30,6 +35,11 @@ import {
   type EditorModel,
 } from "./editor-model.js";
 import { openTourForEditing } from "./editor-open.js";
+import {
+  createEditorDraft,
+  type EditorDraftOffer,
+  type NoBackupReason,
+} from "./editor-draft.js";
 import { createEditorRail } from "./editor-rail.js";
 import {
   createEditorSession,
@@ -39,6 +49,7 @@ import {
 import { revealPadding, type Box } from "./popover-place.js";
 import {
   createSaveTarget,
+  holdEditorDraftLock,
   holdEditorLock,
   pickTourFile,
   InPlaceRefusal,
@@ -66,6 +77,31 @@ const UNDO_TOO_LATE =
  *  `OUTCOME_HOLD_MS`). A Save ends it sooner: the saved file no longer
  *  carries the object. */
 const UNDO_MS = 8000;
+
+/** Said when "Delete it" did not land: nothing was thrown away. */
+const DISCARD_FAILED =
+  "The earlier changes could not be deleted - they are still kept, and offered again next time.";
+
+/** Said once the offer was restored. */
+function restoredLine(count: number): string {
+  if (count === 0) {
+    return "Nothing was restored: the notes those changes were for are edited here already.";
+  }
+  const back =
+    count === 1
+      ? "1 earlier change is"
+      : `${String(count)} earlier changes are`;
+  return `${back} back - not saved yet.`;
+}
+
+/** Said once per opened tour when its edits are not backed up in this
+ *  browser (M6 E2c, the E2c plan review #6, #10). */
+const NO_BACKUP: Readonly<Record<NoBackupReason, string>> = {
+  storage:
+    "This page keeps no backup copy of your edits in this browser - save before you close it.",
+  "other-tab":
+    "Another tab has this tour open, so this page keeps no backup copy of your edits - save before you close it.",
+};
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -118,6 +154,9 @@ let picking = false;
  *  after a refusal turned them into downloads (E2b plan review #1). */
 let keepsWalk = false;
 let editor: EditorSession | null = null;
+/** The open tour's draft key: its opened file's, then the key of each
+ *  in-place write that landed (M6 E2c). */
+let fileKey: string | null = null;
 let model: EditorModel | null = null;
 let selected: string | null = null;
 let busy = false;
@@ -135,6 +174,35 @@ let message: { id: string; text: string; refused?: true } | null = null;
 /** The open delete's Undo toast, until it times out or a Save starts. */
 let undoOffer: { toast: HTMLElement; timer: number } | null = null;
 
+/** The open tour's edits, backed up in this browser (M6 E2c): the page
+ *  says once when they are not, and marks when every write landed
+ *  (`data-draft`: `writing`, `saved`, or `off` - the e2e's readiness
+ *  mark before it closes a page, which skips `beforeunload`). */
+const draft = createEditorDraft({
+  openStore: (key) => openDraftStore(navigator, key),
+  holdLock: (key) => holdEditorDraftLock(navigator.locks, key),
+  noBackup: (reason) => {
+    document.body.dataset["draft"] = "off";
+    noBackupNote = NO_BACKUP[reason];
+    // Said during an open, it waits until the tour shows: switching tours
+    // takes the old file's toasts away.
+    if (!busy) sayNoBackup();
+  },
+  onWriting: (writing) => {
+    if (document.body.dataset["draft"] === "off") return;
+    document.body.dataset["draft"] = writing ? "writing" : "saved";
+  },
+});
+
+/** The no-backup line not yet shown (said once per opened tour). */
+let noBackupNote: string | null = null;
+
+function sayNoBackup(): void {
+  if (noBackupNote === null) return;
+  fileToasts.push(toast(noBackupNote, undefined, null));
+  noBackupNote = null;
+}
+
 /** "2 codes, 3 notes" - and the stations when the story has any. */
 function openedSummary(opened: EditorModel): string {
   const n = (count: number, one: string, many: string): string =>
@@ -147,6 +215,11 @@ function openedSummary(opened: EditorModel): string {
   ].join(", ");
 }
 
+interface ToastAction {
+  readonly label: string;
+  readonly run: () => void;
+}
+
 /**
  * A toast. `holdMs` is how long it stays; `null` keeps it until the
  * creator closes it - the save's result, an instruction they have to act
@@ -154,23 +227,25 @@ function openedSummary(opened: EditorModel): string {
  */
 function toast(
   text: string,
-  action?: { label: string; run: () => void },
+  action?: ToastAction | readonly ToastAction[],
   holdMs: number | null = UNDO_MS,
+  closable = holdMs === null,
 ): HTMLElement {
   const t = document.createElement("div");
   t.className = "toast";
   const words = document.createElement("span");
   words.textContent = text;
   t.append(words);
-  if (action !== undefined) {
+  const actions = action === undefined ? [] : [action].flat();
+  for (const a of actions) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "btn small";
-    b.textContent = action.label;
-    b.addEventListener("click", action.run);
+    b.textContent = a.label;
+    b.addEventListener("click", a.run);
     t.append(b);
   }
-  if (holdMs === null) {
+  if (holdMs === null && closable) {
     const close = document.createElement("button");
     close.type = "button";
     close.className = "btn small";
@@ -179,7 +254,7 @@ function toast(
       t.remove();
     });
     t.append(close);
-  } else {
+  } else if (holdMs !== null) {
     setTimeout(() => {
       t.remove();
     }, holdMs);
@@ -327,9 +402,10 @@ function finishMove(): void {
   moving = null;
   if (done.drop !== null) {
     try {
-      editor.move(done.id, done.drop.lat, done.drop.lng);
-      moved.add(done.id);
-      message = { id: done.id, text: "Moved - not saved yet." };
+      if (editor.move(done.id, done.drop.lat, done.drop.lng)) {
+        moved.add(done.id);
+        message = { id: done.id, text: "Moved - not saved yet." };
+      }
     } catch (err) {
       message = {
         id: done.id,
@@ -542,6 +618,8 @@ function dropTour(reason: string): void {
   session = null;
   editor = null;
   model = null;
+  fileKey = null;
+  draft.close();
   resetEditing();
   leaveFile();
   void open?.close().catch(() => undefined);
@@ -622,8 +700,8 @@ async function openFile(
       if (failed === session) dropTour(describeIntegrityError(err));
     },
   });
-  setBusy(false, "");
   if (outcome.kind === "refused") {
+    setBusy(false, "");
     openError.textContent = outcome.reason;
     openError.hidden = false;
     return false;
@@ -632,22 +710,33 @@ async function openFile(
   // (E1 review #6).
   const latched = outcome.session.integrityFailure();
   if (latched !== null) {
+    setBusy(false, "");
     await outcome.session.close().catch(() => undefined);
     openError.textContent = describeIntegrityError(latched);
     openError.hidden = false;
     return false;
   }
+  // The draft is read inside the open, before the tour shows (E2c plan
+  // review #7): what an earlier visit left is offered with the tour.
+  document.body.dataset["draft"] = "writing";
+  const drafted = await draft.open(
+    outcome.session.archive.url,
+    outcome.manifest,
+  );
+  setBusy(false, "");
   select(null);
   const previous = session;
   session = outcome.session;
   void previous?.close().catch(() => undefined);
   resetEditing();
   leaveFile();
+  fileKey = outcome.session.archive.url;
   editor = createEditorSession({
     session: outcome.session,
     manifest: outcome.manifest,
     levels: outcome.levels,
     fileName: outcome.fileName,
+    draft,
   });
   model = editor.model();
   // The walk-recording switch only for a tour that carries one (S-D10:
@@ -670,8 +759,59 @@ async function openFile(
   map.show(model, { left: free.left, top: free.top });
   renderSaveState();
   toast(`Opened ${outcome.fileName}: ${openedSummary(model)}`);
+  sayNoBackup();
+  if (drafted.superseded !== null) {
+    fileToasts.push(toast(drafted.superseded, undefined, null));
+  }
+  if (drafted.offer !== null) offerDraft(editor, drafted.offer);
   if (handle !== null) void attachTarget(editor, handle, file);
   return true;
+}
+
+/**
+ * What an earlier visit left, offered with the tour (E2c plan review #7):
+ * Restore puts it back by the session's own rules (live edits made
+ * meanwhile win), Not now leaves it for the next open, Delete it throws
+ * it away. It stays until answered.
+ */
+function offerDraft(mine: EditorSession, offer: EditorDraftOffer): void {
+  const t = toast(
+    offer.text,
+    [
+      {
+        label: "Restore",
+        run: () => {
+          t.remove();
+          if (editor !== mine) return;
+          card.commit();
+          const applied = mine.restore(offer);
+          draft.restored();
+          refresh();
+          toast(restoredLine(applied.changed + applied.deleted));
+        },
+      },
+      {
+        label: "Not now",
+        run: () => {
+          t.remove();
+        },
+      },
+      {
+        label: "Delete it",
+        run: () => {
+          t.remove();
+          if (editor !== mine) return;
+          void draft.discard().then((ok) => {
+            if (!ok && editor === mine) toast(DISCARD_FAILED, undefined, null);
+          });
+        },
+      },
+    ],
+    null,
+    false,
+  );
+  t.classList.add("draft-offer");
+  fileToasts.push(t);
 }
 
 /** "Choose…" and the drop box: the browser's file picker where it exists,
@@ -723,9 +863,14 @@ function refuseInPlace(
     // no longer reads once something else wrote it: no build can be made,
     // and a download offer would be a promise the page cannot keep (E2b-1
     // review #4).
+    // The draft keeps the edits - but a later open finds them only when
+    // the change on disk kept the tour's key and the edited notes (E2c
+    // plan review #9): said as it is.
     fileToasts.push(
       toast(
-        `Not saved to ${name}. ${why} This page can no longer read the file it opened, so these edits cannot be saved here. Open the file again to go on editing it.`,
+        draft.backsUp()
+          ? `Not saved to ${name}. ${why} This page can no longer read the file it opened, so these edits cannot be saved here - but this browser keeps a copy of them. Open the file again and they are offered back, if the change on disk left the notes you edited in it and the file is still the same tour (one built on a walk recording, or a listed tour, stays the same; a tour of notes alone does not).`
+          : `Not saved to ${name}. ${why} This page can no longer read the file it opened, so these edits cannot be saved here. Open the file again to go on editing it.`,
         undefined,
         null,
       ),
@@ -802,8 +947,19 @@ async function deliver(
     }
     return { arrived, inPlace: false };
   }
+  // The key of the bytes about to be written, worked out BEFORE the
+  // write: once it lands, the draft follows it in the same step (E2c plan
+  // review #5). Unreadable (never for a zip this page built) keeps the
+  // key the draft has.
+  const writtenKey = await tourFileKeyOfFile(
+    new File([save.blob], save.filename, { type: "application/zip" }),
+  ).catch(() => fileKey);
   try {
     await into.write(save.blob);
+    if (editor === mine && writtenKey !== null) {
+      draft.landed(save.written, writtenKey);
+      fileKey = writtenKey;
+    }
     // The photos read from this page's copy of what it wrote, never from
     // the file on disk: once something else rewrites that file, a File
     // read from it no longer reads. The copy is the one the next rebuild
@@ -877,6 +1033,11 @@ async function runSave(): Promise<void> {
     if (editor !== mine) {
       abandon();
       return;
+    }
+    if (save !== undelivered) {
+      // A build's versions are this browser's own work, delivered or not
+      // (E2c plan review #1).
+      draft.built(save.written);
     }
     built = true;
     // A later save rebuilds from this one's bytes, so the walk switch can
