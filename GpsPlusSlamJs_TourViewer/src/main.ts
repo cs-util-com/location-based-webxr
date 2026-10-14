@@ -70,8 +70,7 @@ import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
 import { wireVisitorStations } from "./visitor-stations.js";
 import { relocationRequested } from "./tour-relocation.js";
-import { wireVisitorScreen } from "./visitor-screen.js";
-import { isLockableLevel } from "./scan-gate.js";
+import { tourCodesUsable, wireVisitorScreen } from "./visitor-screen.js";
 import { wireVisitorStart } from "./visitor-start.js";
 import { wireFoldingLabel } from "./folding-label.js";
 import { pictureProblem } from "./image-cap.js";
@@ -368,11 +367,9 @@ const visitor = wireVisitorScreen({
     hooks.renderArEntry();
   },
   // A tour with no code that can place it keeps the denial copy (M1b-1
-  // review #2); null while the levels are not known yet.
-  codesUsable: () =>
-    ctx.currentLevels === null
-      ? null
-      : [...ctx.currentLevels.values()].some(isLockableLevel),
+  // review #2); null while the levels are not known yet, false once their
+  // read failed (r857 review #4).
+  codesUsable: () => tourCodesUsable(ctx.currentLevels, ctx.levelsUnreadable),
   // A tour marked "needs no GPS" never asks its visitor (Q-QF-1).
   needsNoGps: () => ctx.tourManifest?.needsNoGps === true,
 });
@@ -396,6 +393,11 @@ if (mode === "visitor") {
   hooks.presentTourInfo = (manifest, loadImage) => {
     if (manifest === null) visitorStart.clear();
     else visitorStart.present(manifest, loadImage);
+    visitor.tourChanged();
+  };
+  // The levels settle after the manifest, often: the line follows whether
+  // a code can place the tour (r857 review #5).
+  hooks.presentTourLevels = () => {
     visitor.tourChanged();
   };
 }

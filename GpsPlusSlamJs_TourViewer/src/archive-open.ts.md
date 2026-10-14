@@ -96,7 +96,10 @@ DOM glue, its own module since the flows plan M6.
   `openGeneration`; a successful open re-derives the scan gate for a
   running session (`hooks.startScanGate`) and its level load's outcome
   reaches the gate either way (`hooks.reconsiderScanGate(levels)` or
-  `"unavailable"` on a failed read, M5 review #1);
+  `"unavailable"` on a failed read, M5 review #1), and the visitor screen
+  either way (`hooks.presentTourLevels()`, r857 review #5); a failed read
+  sets `ctx.levelsUnreadable` (no code of this tour can place it, r857
+  review #4);
   `teardownSession` clears tour state ONLY when a tour was open at its
   start (scan-to-open plan §9 #1): with none, nothing tour-scoped exists,
   and the creator's pre-open work (a measured level, placements, the
@@ -117,7 +120,12 @@ DOM glue, its own module since the flows plan M6.
   real vote - M2b review #6) and the placement fields the
   closing tour owned (`imagePlanes`, `imagePlanesLoading`,
   `planesRunGeneration` bump, `placementAttempted`, `joinDeclined`,
-  `placement`) and the QR controller's level cache, and a failed
+  `placement`) and the QR controller's level cache, the compass wait
+  (`codeZeroWaitUntilMs` and its timer: a code of the closing tour set
+  it, r857 review #9 - a tour opened in the same AR session starts
+  without it; the session zero stays, so the new tour's codes start no
+  wait of their own, as after a device-set zero), `levelsUnreadable`,
+  and a failed
   finish (`finishError`, which keeps Save off - scan-to-open plan §9 #8).
   The measured level goes with the tour, and so does its measurement (the
   settle's raw inputs, authoring plan 2026-09-28-0953 M2c) - a closing
@@ -202,7 +210,10 @@ local hook instead of the print prefill, the content key reaching the
 draft, and a closed picker doing nothing; its "step 2's link check" block
 covers the unverified hand-off on `missing`, none on `cors`, and the
 auto-check on paste and change, once per link. `archive-open.test.ts` drives the real submit handler through
-a failed open: the tour switch clears the fused-pose hint state. The logic
+a failed open: the tour switch clears the fused-pose hint state and the
+compass wait (r857 review #9). Its "the levels' settle reaches the visitor
+screen" block (in `archive-open-file.test.ts`) holds `presentTourLevels`
+on a read and on a failed read, and `levelsUnreadable`. The logic
 beneath: `tour-session.test.ts`,
 `stats-view.test.ts`, `open-errors.test.ts`, `tour-flow.test.ts`
 (`clearCacheLabel`).

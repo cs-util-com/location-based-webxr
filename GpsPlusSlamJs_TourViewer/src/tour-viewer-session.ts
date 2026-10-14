@@ -147,6 +147,11 @@ export interface TourViewerHooks {
   /** The open tour's codes arrived: the print step continues their
    *  numbering (polish round M0b). */
   presentTourCodes(): void;
+  /** The open tour's levels settled - read, or their read failed
+   *  (`levelsUnreadable`): the visitor screen's line and its "needs no
+   *  GPS" start follow whether a code can place the tour (r857 review #4,
+   *  #5). */
+  presentTourLevels(): void;
   /** The open tour's manifest arrived (null: no tour any more): the
    *  visitor's start page shows its name, its subline and its cover,
    *  read from the zip by its archive path (polish round M4a). */
@@ -216,6 +221,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     presentLocalTour: () => undefined,
     presentUnverifiedLink: () => undefined,
     presentTourCodes: () => undefined,
+    presentTourLevels: () => undefined,
     presentTourInfo: () => undefined,
     finishFromAr: () => false,
     resetFinishStep: () => undefined,
@@ -243,6 +249,10 @@ export interface TourViewerSession {
    *  (`TourSession.levelTexts`): what the hosted zip holds for each code
    *  (code book plan M1). */
   currentLevelTexts: ReadonlyMap<string, string> | null;
+  /** The open tour's levels could not be read (their load rejected): they
+   *  never come, so the tour has no usable code (`tourCodesUsable`, r857
+   *  review #4). Reset when the tour closes. */
+  levelsUnreadable: boolean;
   /** The open tour's `tour.json` (null: none, or not loaded yet). The
    *  finish step writes it back, so content already in the zip survives a
    *  re-measure. */
@@ -519,6 +529,7 @@ export function createTourViewerSession(): TourViewerSession {
     session: null,
     currentLevels: null,
     currentLevelTexts: null,
+    levelsUnreadable: false,
     tourManifest: null,
     tourManifestStatus: "settled",
     scanEntries: new Set(),

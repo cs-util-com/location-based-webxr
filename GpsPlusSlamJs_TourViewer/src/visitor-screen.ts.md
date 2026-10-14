@@ -38,13 +38,17 @@ start a session.
   `VisitorScreen.tourChanged()` re-renders that line and the button when
   the tour's file settles or the tour closes (`main.ts`, from
   `presentTourInfo`). A tap before the tour's file settled still asks, as
-  for any tour. The flag holds only while `codesUsable()` is not `false`:
-  a flagged tour with no code that can place it asks as any other (the
+  for any tour. The flag holds only once `codesUsable()` is `true`: a
+  flagged tour with no code that can place it asks as any other (the
   file is external data; without the location such a visitor could
-  place nothing).
+  place nothing), and so does one whose levels are unread or failed to
+  read (r857 milestone review #4: asking is the safe direction to be
+  wrong in). `tourChanged()` also runs when the levels settle
+  (`main.ts`, `presentTourLevels`; r857 review #5), so the line follows.
 - Optional dep `codesUsable(): boolean | null` (M1b-1 review #2): whether
   the open tour has a code that can place it (`main.ts`: any lockable
-  level; null while the levels are unknown). `false` means codes alone
+  level, `tourCodesUsable`; null while the levels are unknown, false once
+  their read failed - those levels never come). `false` means codes alone
   cannot help: a denial keeps the gate pending with the settings copy
   ("Location is needed to place this tour. Allow location for this site
   in your browser settings, then tap again."), and a blocked site's
@@ -72,6 +76,10 @@ start a session.
   alert). The visitor hint names "the tour's code (on the poster)", not
   "the printed code you scanned" (a link-opener scanned none, review F15).
 - `type LocationRequestOutcome = "granted" | "denied" | "unavailable"`.
+- `tourCodesUsable(levels, unreadable): boolean | null` - pure: the
+  page's `codesUsable` answer. `unreadable` (the levels' read failed,
+  `ctx.levelsUnreadable`) is false; unread levels are null; otherwise
+  whether a level is lockable (`isLockableLevel`).
 - `locationTapNeeded(permission): boolean` - pure: true while the browser
   may still ask (`"prompt"`, and `"unknown"` - no permissions API); a grant
   and, since M1b-1, a denial need no location tap.
@@ -97,6 +105,10 @@ start a session.
   "Your browser will ask for your location - tap Allow. Then Start the
   tour."; a `"denied"` site, and a request DENIED at the tap, get the
   codes-only line instead (the browser will not ask again - M4 review #3).
+- Every line an answer writes (a request's outcome, a re-offer, the
+  denial on a tour no code can place) becomes the permission's line, so a
+  later `tourChanged()` - every manifest settle - keeps it (r857 review
+  #2: it used to bring "your browser will ask" back after the answer).
 
 ## Examples
 
@@ -121,4 +133,7 @@ const visitor = wireVisitorScreen({
 `visitor-screen.test.ts` - the pure rule (property over the four states),
 creator mode leaves everything visible with the gate cleared, visitor mode
 hides the setup and clears the gate on a granted query, and the
-prompt → refused → granted sequence with the error text.
+prompt → refused → granted sequence with the error text; the line an
+answer wrote surviving `tourChanged()` (r857 review #2); the `needsNoGps`
+flag holding only with `codesUsable() === true` and `tourCodesUsable`'s
+four cases (r857 review #4).

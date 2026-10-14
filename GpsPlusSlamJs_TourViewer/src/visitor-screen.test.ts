@@ -4,6 +4,7 @@ import fc from "fast-check";
 import { realSeams, type TourViewerSeams } from "./seams";
 import {
   CODES_ONLY_HINT,
+  tourCodesUsable,
   codesOnlyAfterRequest,
   locationRequestNotice,
   locationTapNeeded,
@@ -376,6 +377,71 @@ describe("the permission is read again before a codes-only start (M1b-1 review #
   });
 });
 
+// Why (r857 milestone review #2): `main.ts` calls `tourChanged()` on every
+// manifest settle, and on a slow archive that comes AFTER the visitor
+// answered the location question. The line the answer wrote must survive
+// it - "your browser will ask" after an answer was the M4 review #3 defect.
+describe("the line an answer wrote survives a tour change (r857 review #2)", () => {
+  it("keeps the codes-only line after a denial when the tour's file settles", async () => {
+    const d = dom();
+    const renderArEntry = vi.fn();
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("prompt"),
+        requestLocationOnce: () => Promise.resolve("denied"),
+      }),
+      dom: d,
+      renderArEntry,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    await screen.locationGate.request();
+    expect(d.arHint.textContent).toBe(CODES_ONLY_HINT);
+    screen.tourChanged();
+    expect(d.arHint.textContent).toBe(CODES_ONLY_HINT);
+  });
+
+  it("keeps the 'location allowed' line after a grant when the tour's file settles", async () => {
+    const d = dom();
+    const renderArEntry = vi.fn();
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("prompt"),
+        requestLocationOnce: () => Promise.resolve("granted"),
+      }),
+      dom: d,
+      renderArEntry,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    await screen.locationGate.request();
+    const answered = locationRequestNotice("granted").hint;
+    expect(d.arHint.textContent).toBe(answered);
+    screen.tourChanged();
+    expect(d.arHint.textContent).toBe(answered);
+  });
+
+  it("keeps the plain line of a denial on a tour whose codes cannot place it when the tour's file settles", async () => {
+    const d = dom();
+    const renderArEntry = vi.fn();
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("prompt"),
+        requestLocationOnce: () => Promise.resolve("denied"),
+      }),
+      dom: d,
+      renderArEntry,
+      codesUsable: () => false,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    await screen.locationGate.request();
+    expect(d.arHint.textContent).not.toMatch(/browser will ask/i);
+    screen.tourChanged();
+    expect(d.arHint.textContent).not.toMatch(/browser will ask/i);
+  });
+});
+
 // Why (owner decision Q-QF-1, the per-tour half): a creator can mark a tour
 // "needs no GPS" (`tour.json` `needsNoGps`). Its visitor is never asked for
 // the location: the button starts the tour at once, on codes alone, and the
@@ -399,6 +465,7 @@ describe("a tour that needs no GPS (Q-QF-1)", () => {
       dom: d,
       renderArEntry,
       needsNoGps: () => flag,
+      codesUsable: () => true,
     });
     await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
     expect(screen.locationGate.pending()).toBe(true);
@@ -421,8 +488,11 @@ describe("a tour that needs no GPS (Q-QF-1)", () => {
   // `tour.json` is external data. A flagged tour with no code that can
   // place it would start a visitor on codes alone with nothing able to
   // place anything and no way to grant location; it asks as before (the
-  // M1b-1 review #2 rule for codes-only starts).
-  it("asks as before when the flagged tour has no code that can place it", async () => {
+  // M1b-1 review #2 rule for codes-only starts). The flag holds only once
+  // the codes are KNOWN to place it (r857 review #4): while the levels are
+  // unread - which is for good when their read failed - a tap asks for
+  // the location, the safe direction to be wrong in.
+  it("holds only while the codes are known to place the tour: unknown and none ask as before", async () => {
     let usable: boolean | null = null;
     const renderArEntry = vi.fn();
     const screen = wireVisitorScreen({
@@ -436,6 +506,10 @@ describe("a tour that needs no GPS (Q-QF-1)", () => {
       codesUsable: () => usable,
     });
     await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    // Levels not read yet (or failed to read): ask.
+    expect(screen.locationGate.pending()).toBe(true);
+    expect(screen.locationGate.codesOnly()).toBe(false);
+    usable = true;
     expect(screen.locationGate.pending()).toBe(false);
     expect(screen.locationGate.codesOnly()).toBe(true);
     usable = false;
@@ -455,6 +529,7 @@ describe("a tour that needs no GPS (Q-QF-1)", () => {
       dom: d,
       renderArEntry,
       needsNoGps: () => flag,
+      codesUsable: () => true,
     });
     await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
     expect(screen.locationGate.pending()).toBe(false);
@@ -464,5 +539,32 @@ describe("a tour that needs no GPS (Q-QF-1)", () => {
     expect(screen.locationGate.pending()).toBe(true);
     expect(screen.locationGate.codesOnly()).toBe(false);
     expect(d.arHint.textContent).toMatch(/browser will ask/i);
+  });
+});
+
+// Why (r857 review #4): the screen's `codesUsable` answer as the page
+// computes it. A tour whose levels could not be read never gets any, so
+// "unknown" would last for the tour: a failed read is "no usable code"
+// (false), which keeps a denial on the settings copy and a "needs no GPS"
+// flag from starting a visitor no code can place.
+describe("tourCodesUsable", () => {
+  const lockable = {
+    version: 1,
+    qr: {
+      physicalSizeM: 0.2,
+      geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+    },
+  } as const;
+  const sizeOnly = { version: 1, qr: { physicalSizeM: 0.2 } } as const;
+
+  it("is unknown while the levels are unread, and false once their read failed", () => {
+    expect(tourCodesUsable(null, false)).toBeNull();
+    expect(tourCodesUsable(null, true)).toBe(false);
+  });
+
+  it("is true with a lockable code, false without one", () => {
+    expect(tourCodesUsable(new Map([["a", lockable]]), false)).toBe(true);
+    expect(tourCodesUsable(new Map([["a", sizeOnly]]), false)).toBe(false);
+    expect(tourCodesUsable(new Map(), false)).toBe(false);
   });
 });

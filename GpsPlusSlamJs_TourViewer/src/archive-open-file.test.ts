@@ -426,3 +426,34 @@ describe("step 2's link check (polish round M2, A13/A16)", () => {
     );
   });
 });
+
+// Why (r857 review #4 and #5): the visitor's line above the button and its
+// "needs no GPS" start read whether the tour's codes can place it, and that
+// is known only once the levels settle - often after `tour.json`. Both
+// outcomes must reach the visitor screen (`presentTourLevels`), and a read
+// that failed must say so for good, or the tour stays "unknown" forever.
+describe("the levels' settle reaches the visitor screen", () => {
+  it("calls presentTourLevels once the levels are read", async () => {
+    mocks.openTourFile.mockResolvedValueOnce(fakeSession("local-file:abc"));
+    const { dom, hooks, ctx } = wire();
+    const presentTourLevels = vi.spyOn(hooks, "presentTourLevels");
+    pick(dom, new File(["zip"], "tour.zip"));
+    await vi.waitFor(() => expect(presentTourLevels).toHaveBeenCalledOnce());
+    expect(ctx.currentLevels).not.toBeNull();
+    expect(ctx.levelsUnreadable).toBe(false);
+  });
+
+  it("marks a failed read unreadable and calls presentTourLevels", async () => {
+    mocks.openTourFile.mockResolvedValueOnce({
+      ...fakeSession("local-file:abc"),
+      loadQrLevels: () => Promise.reject(new Error("bad qr/x.json")),
+    });
+    const { dom, hooks, ctx } = wire();
+    const presentTourLevels = vi.spyOn(hooks, "presentTourLevels");
+    pick(dom, new File(["zip"], "tour.zip"));
+    await vi.waitFor(() => expect(presentTourLevels).toHaveBeenCalledOnce());
+    expect(ctx.currentLevels).toBeNull();
+    expect(ctx.levelsUnreadable).toBe(true);
+    expect(dom.errorBox.textContent).toContain("printed-code levels failed");
+  });
+});

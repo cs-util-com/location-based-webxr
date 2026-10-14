@@ -151,6 +151,7 @@ export function wireArchiveOpen(deps: {
     // closing tour — a newly opened tour must not relocalize against them.
     ctx.currentLevels = null;
     ctx.currentLevelTexts = null;
+    ctx.levelsUnreadable = false;
     ctx.tourManifest = null;
     hooks.presentTourInfo(null, () =>
       Promise.reject(new Error("no tour is open")),
@@ -186,6 +187,12 @@ export function wireArchiveOpen(deps: {
     ctx.qrController?.reset();
     ctx.levelByText.clear();
     ctx.levelIdByText.clear();
+    // The compass wait started with a code of the closing tour (r857
+    // review #9): a tour opened in the same AR session must not inherit it,
+    // nor have the old timer end it at a moment that means nothing to it.
+    ctx.cancelCodeZeroWait?.();
+    ctx.cancelCodeZeroWait = null;
+    ctx.codeZeroWaitUntilMs = null;
     // The code keep-alive holds a closing tour's code for up to ~4 min,
     // and the vote budget remembers which codes voted; the pipeline
     // outlives the switch, so both end with the tour here (M2b; review #6).
@@ -534,6 +541,7 @@ export function wireArchiveOpen(deps: {
           ctx.currentLevels = levels;
           ctx.currentLevelTexts = opened.levelTexts();
           hooks.presentTourCodes();
+          hooks.presentTourLevels();
           hooks.renderAuthorReadout();
           hooks.reconsiderScanGate(levels);
           // The controller caches a level (or the negative-cache
@@ -555,6 +563,10 @@ export function wireArchiveOpen(deps: {
           dom.errorBox.textContent = `Reading the tour's printed-code levels failed: ${
             err instanceof Error ? err.message : String(err)
           }`;
+          // These levels never come: no code of this tour can place it
+          // (r857 review #4), and the visitor's line says so.
+          ctx.levelsUnreadable = true;
+          hooks.presentTourLevels();
           // The gate cannot wait for levels that never come (M5 review #1);
           // its own line names the failure inside the overlay.
           hooks.reconsiderScanGate("unavailable");

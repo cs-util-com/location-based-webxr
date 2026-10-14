@@ -20,7 +20,10 @@
  * granted permission without a fix keeps GPS on.
  */
 
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+
 import type { ViewerMode } from "./mode.js";
+import { isLockableLevel } from "./scan-gate.js";
 import type { TourViewerSeams } from "./seams.js";
 
 /** The permission states `navigator.permissions` reports, plus "unknown"
@@ -41,6 +44,20 @@ export function locationTapNeeded(permission: LocationPermission): boolean {
  *  on codes alone needs. Also the in-AR scan line in that mode. */
 export const CODES_ONLY_HINT =
   "Scan one of the tour's printed codes to start - without location, the codes place the tour.";
+
+/** The screen's `codesUsable` answer for the open tour: whether one of
+ *  its codes can place it (a lockable level). Unknown (null) while the
+ *  levels are unread; a read that FAILED (`unreadable`) is false - those
+ *  levels never come, so "unknown" would hold for the tour (r857 review
+ *  #4). */
+export function tourCodesUsable(
+  levels: ReadonlyMap<string, QrLevel> | null,
+  unreadable: boolean,
+): boolean | null {
+  if (unreadable) return false;
+  if (levels === null) return null;
+  return [...levels.values()].some(isLockableLevel);
+}
 
 /** What one position request came back with. */
 export type LocationRequestOutcome = "granted" | "denied" | "unavailable";
@@ -123,8 +140,9 @@ export interface VisitorScreenDom {
 
 export interface VisitorScreen {
   locationGate: LocationGate;
-  /** The open tour changed (its `tour.json` settled, or it closed): the
-   *  line above the button follows its `needsNoGps` flag. */
+  /** The open tour changed (its `tour.json` settled, its levels settled,
+   *  or it closed): the line above the button follows its `needsNoGps`
+   *  flag. */
   tourChanged(): void;
 }
 
@@ -150,8 +168,9 @@ export function wireVisitorScreen(deps: {
   renderArEntry: () => void;
   /** Whether the open tour has a code that can place it: `false` keeps
    *  a denial on the old "allow location" copy (M1b-1 review #2), `null`
-   *  (unknown, or no tour yet) and `true` allow the codes-only start.
-   *  Absent: unknown. */
+   *  (unknown, or no tour yet) and `true` allow the codes-only start after
+   *  a denial; only `true` lets a `needsNoGps` flag hold
+   *  (`tourCodesUsable`). Absent: unknown. */
   codesUsable?: () => boolean | null;
   /** Whether the open tour needs no GPS (`tour.json` `needsNoGps`, owner
    *  decision Q-QF-1): its visitor is never asked for the location and
@@ -161,9 +180,11 @@ export function wireVisitorScreen(deps: {
   const { mode, seams, dom, renderArEntry } = deps;
   const codesUsable = deps.codesUsable ?? (() => null);
   const flaggedNoGps = deps.needsNoGps ?? (() => false);
-  /** The flag holds only while the tour's codes may place it: a flagged
-   *  tour with no usable code asks as any other (M1b-1 review #2). */
-  const needsNoGps = (): boolean => flaggedNoGps() && codesUsable() !== false;
+  /** The flag holds only once the tour's codes are KNOWN to place it: a
+   *  flagged tour with no usable code asks as any other (M1b-1 review #2),
+   *  and so does one whose levels are unread or failed to read (r857
+   *  review #4) - asking is the safe direction to be wrong in. */
+  const needsNoGps = (): boolean => flaggedNoGps() && codesUsable() === true;
   /** The line the permission query chose; a tour that needs no GPS shows
    *  the plain visitor line instead (`showHint`). */
   let permissionHint = VISITOR_HINT;
@@ -226,7 +247,8 @@ export function wireVisitorScreen(deps: {
           reoffered = true;
           codesOnly = false;
           pending = true;
-          dom.arHint.textContent = ALLOW_HINT;
+          permissionHint = ALLOW_HINT;
+          showHint();
         } else {
           return;
         }
@@ -249,7 +271,8 @@ export function wireVisitorScreen(deps: {
           pending = true;
           codesOnly = false;
           dom.errorBox.textContent = DENIED_NO_CODES_ERROR;
-          dom.arHint.textContent = VISITOR_HINT;
+          permissionHint = VISITOR_HINT;
+          showHint();
           renderArEntry();
           return outcome;
         }
@@ -257,8 +280,11 @@ export function wireVisitorScreen(deps: {
         codesOnly = codesOnlyAfterRequest(outcome);
         const notice = locationRequestNotice(outcome);
         dom.errorBox.textContent = notice.error;
-        // Never "your browser will ask" after an answer (M4 review #3).
-        dom.arHint.textContent = notice.hint;
+        // Never "your browser will ask" after an answer (M4 review #3) -
+        // also not after a later `tourChanged` (r857 review #2): the
+        // answer's line is the permission's line from here on.
+        permissionHint = notice.hint;
+        showHint();
         renderArEntry();
         return outcome;
       },

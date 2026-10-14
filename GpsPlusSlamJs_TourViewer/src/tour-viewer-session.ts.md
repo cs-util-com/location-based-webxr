@@ -34,7 +34,8 @@ lives here.
   `archive-open.ts`'s teardown calls it.
 - `interface TourViewerSession` - the fields, grouped by owner:
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
-    `openGeneration`;
+    `levelsUnreadable` (the levels' read failed: the tour has no usable
+    code, r857 review #4), `openGeneration`;
   - shared AR session state (`ar-entry.ts`): `qrController`, `qrDebugView`,
     `cameraFrameCount`; `levelByText` is grouped here but OWNED by
     `viewer-placement.ts` (its only reader/writer) and cleared on tour
@@ -108,7 +109,9 @@ lives here.
   link whose file is not there yet, or that could not be checked offline:
   printed as given, marked unverified - polish round M2, A16),
   `presentTourCodes` (the open tour's codes arrived: the print step
-  continues their numbering - polish round M0b), `presentTourInfo(manifest,
+  continues their numbering - polish round M0b), `presentTourLevels`
+  (the open tour's levels settled, read or failed: the visitor screen's
+  line follows - r857 review #5), `presentTourInfo(manifest,
 loadImage)` (the open tour's manifest settled, or null on teardown: the
   visitor's start page shows its name, subline and cover, read from the
   zip by archive path - polish round M4a), `finishFromAr()` (a creator's
