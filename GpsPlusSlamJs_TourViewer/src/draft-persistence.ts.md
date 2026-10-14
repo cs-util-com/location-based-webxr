@@ -104,7 +104,10 @@ are the framework's.
   disk rejects, files or not. Until the next meta write lands, the pruned
   ids are still rejected on disk, so a change of one must be claimed
   against this list, or the next read hides it.
-- `readDraft(store) -> Promise<StoredDraft | undefined>` -
+- `readDraft(store, { photoBytesRequired? }) -> Promise<StoredDraft | undefined>` -
+  (`photoBytesRequired: false`, M6 E2c review #1: the desktop editor keeps a
+  photo record without its bytes - they are in the file it opened; the
+  phone's default drops one) -
   `{ draft, photos, rejectedIds, rejectedOnDisk, visits, storedIds }`, or
   `undefined` when there
   is no meta file. Objects the meta rejects are absent from `draft.objects`
