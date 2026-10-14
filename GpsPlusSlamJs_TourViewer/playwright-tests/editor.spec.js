@@ -336,8 +336,10 @@ test("the sample tour opens with its story's stations on the map", async ({
 /** A tour in the wrapped shape ("compress this folder"): a recorded photo
  *  whose image is the archive's entry name, and a code with no stored
  *  position. */
-/** @param {{ pin: boolean, extra?: boolean }} options - `extra`: a second
- *  pin, as another program's edit of the same tour would add */
+/** @param {{ pin: boolean, extra?: boolean, spots?: boolean }} options -
+ *  `extra`: a second pin, as another program's edit of the same tour would
+ *  add; `spots: false`: no stored photo spots, so a save bakes them from
+ *  the (empty) walk recording, which cannot place them */
 async function wrappedTour(options = { pin: false }) {
   const id = await qrCodeId("https://gps.csutil.com/tour/?qr=wrapped");
   const manifest = {
@@ -365,16 +367,20 @@ async function wrappedTour(options = { pin: false }) {
             : []),
         ]
       : [],
-    captureSpots: {
-      fixes: 3,
-      gpsAccuracyMedianM: 4,
-      captures: [
-        {
-          image: "mytour/images/frame-000002.png",
-          geo: { ...geo(5, 5), rotation: [0, 0, 0, 1] },
-        },
-      ],
-    },
+    ...(options.spots === false
+      ? {}
+      : {
+          captureSpots: {
+            fixes: 3,
+            gpsAccuracyMedianM: 4,
+            captures: [
+              {
+                image: "mytour/images/frame-000002.png",
+                geo: { ...geo(5, 5), rotation: [0, 0, 0, 1] },
+              },
+            ],
+          },
+        }),
   };
   return zip([
     { path: "mytour/tour.json", data: serializeTourManifest(manifest) },
@@ -1518,6 +1524,11 @@ test("the changed-on-disk refusal points to the browser's copy, and the file ope
   await expect(
     page.locator(".toast", { hasText: "this browser keeps a copy of them" }),
   ).toBeVisible();
+  // Save cannot work here, so the status must not send the creator to it
+  // (E2b-2 milestone review #8): it says what the toast says.
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - it cannot be saved here: open the file again",
+  );
   page.once("dialog", (dialog) => {
     void dialog.accept();
   });
@@ -1796,9 +1807,9 @@ test("an edit after a download, with the downloaded copy put in place, is offere
 
 /**
  * The origin-private tour file, offered by a picker whose handle counts its
- * writes (`window.__writes`), fails them while `window.__failWrites` is
- * set, and holds each one while `window.__holdWrites` is set until
- * `window.__release()`.
+ * writes (`window.__writes`), holds each one while `window.__holdWrites` is
+ * set until `window.__release()`, and then fails it while
+ * `window.__failWrites` is set.
  * @param {import("@playwright/test").Page} page
  * @param {Buffer} buffer
  * @param {string} name
@@ -1823,19 +1834,19 @@ async function offerCountedOpfsFile(page, buffer, name) {
             // @ts-expect-error - set above.
             window.__writes += 1;
             // @ts-expect-error - set by the test.
+            if (window.__holdWrites) {
+              await new Promise((resolve) => {
+                // @ts-expect-error - called by the test.
+                window.__release = resolve;
+              });
+            }
+            // @ts-expect-error - set by the test.
             if (window.__failWrites) {
               return {
                 write: () => Promise.reject(new Error("the disk is full")),
                 close: () => Promise.resolve(),
                 abort: () => Promise.resolve(),
               };
-            }
-            // @ts-expect-error - set by the test.
-            if (window.__holdWrites) {
-              await new Promise((resolve) => {
-                // @ts-expect-error - called by the test.
-                window.__release = resolve;
-              });
             }
             return handle.createWritable();
           },
@@ -1966,6 +1977,9 @@ test("a write that fails pauses autosave until Save, with no write loop", async 
     "1 change not saved - not saved by itself until you Save",
   );
   await page.clock.runFor(60_000);
+  // Still paused, read BEFORE the count (E2b-2 milestone review #11): a
+  // count read while an autosave was still starting would pass a loop.
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "paused");
   expect(await writes(page)).toBe(1);
   await page.locator("#save-btn").click();
   await expect(page.locator("#save-status")).toHaveText(
@@ -2045,4 +2059,219 @@ test("an edit made while an autosave writes is kept for the next one, and by the
   await expect(
     next.locator("#rail .row", { hasText: "Made during the write" }),
   ).toHaveCount(1);
+});
+
+// ---------------------------------------------------------------------------
+// The E2b-2 milestone review's findings on the page (#1, #3, #5, #6, #7).
+// ---------------------------------------------------------------------------
+
+test("autosave waits while another tour is being chosen, and goes on when that is cancelled", async ({
+  page,
+}) => {
+  // Why (E2b-2 milestone review #1): an autosave that ran while the next
+  // tour was being opened landed in the middle of that open and moved the
+  // NEW tour's draft. The page holds autosave while the open dialog shows.
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await editTownHall(page, "Kept while choosing");
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+  await page.locator("#open-another").click();
+  await expect(page.locator("#open-modal")).toBeVisible();
+  await page.clock.runFor(4_000);
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "held");
+  expect(await writes(page)).toBe(0);
+  await page.locator("#open-cancel").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to editor-fixture.zip",
+  );
+  expect(await writes(page)).toBe(1);
+});
+
+test("a large tour is saved when Save is pressed, and the status line says so", async ({
+  page,
+}) => {
+  // Why (E2b-2 milestone review #3): every save rebuilds and rewrites the
+  // whole file, so on a large tour an autosave every few seconds costs
+  // gigabytes of writes (and sync-client uploads) per session. Above the
+  // cap autosave is off and the status says how the tour is saved. The cap
+  // is lowered here by the dev seam, so the fixture counts as large.
+  await page.addInitScript(() => {
+    // @ts-expect-error - the editor's dev-only autosave cap.
+    window.__tourEditorAutosave = { maxBytes: 1 };
+  });
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await editTownHall(page, "Saved by hand");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - large tour: saved when you press Save; your changes are kept in this browser meanwhile",
+  );
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "off");
+  await page.clock.runFor(60_000);
+  expect(await writes(page)).toBe(0);
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to editor-fixture.zip",
+  );
+  expect(await writes(page)).toBe(1);
+});
+
+test("a Save that fails does not start an autosave at once", async ({
+  page,
+}) => {
+  // Why (E2b-2 milestone review #5): the explicit save's end woke an
+  // autosave that fell due during it BEFORE autosave learned the save had
+  // failed - a second write, at once, into a file that had just refused
+  // one.
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__holdWrites = true;
+    // @ts-expect-error - read by the picker.
+    window.__failWrites = true;
+  });
+  await editTownHall(page, "Saved by hand");
+  await page.locator("#save-btn").click();
+  await page.waitForFunction(
+    // @ts-expect-error - set by the held write.
+    () => typeof window.__release === "function",
+  );
+  // An edit made while the Save writes falls due during it: held.
+  await editPin(page, "Saved by hand", "Edited while it writes");
+  await page.clock.runFor(3_500);
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "held");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__holdWrites = false;
+    // @ts-expect-error - set by the held write.
+    window.__release();
+  });
+  await expect(
+    page.locator(".toast", { hasText: "the disk is full" }),
+  ).toBeVisible();
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "paused");
+  expect(await writes(page)).toBe(1);
+});
+
+test("the photos a save could not place are said once, also when only autosave saves", async ({
+  page,
+}) => {
+  // Why (E2b-2 milestone review #6): an autosave shows no toast, and the
+  // explicit Save's toast was the only place that said the recorded photos
+  // could not be placed - a creator who never pressed Save never heard it.
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await offerOpfsFile(
+    page,
+    await wrappedTour({ pin: true, spots: false }),
+    "wrapped.zip",
+  );
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await editPin(page, "Wrapped pin", "By itself");
+  await page.clock.runFor(3_500);
+  await expect(page.locator("#save-status")).toHaveText("Saved to wrapped.zip");
+  const said = page.locator(".toast", { hasText: "could not be placed" });
+  await expect(said).toHaveCount(1);
+  await editPin(page, "By itself", "By itself again");
+  await page.clock.runFor(3_500);
+  await expect(page.locator("#save-status")).toHaveText("Saved to wrapped.zip");
+  expect(
+    (await readOpfsTour(page, "wrapped.zip"))["mytour/tour.json"],
+  ).toContain("By itself again");
+  await expect(said).toHaveCount(1);
+});
+
+test("a Ctrl+S pressed while the last tour's save still ran is not run later, unasked", async ({
+  page,
+}) => {
+  // Why (E2b-2 milestone review #7): a save of the closed tour left
+  // "an autosave runs" set, so a Ctrl+S in the next tour was queued behind
+  // it - and since that save ended without a word, the queue stayed and
+  // fired after the next tour's own autosave, as an explicit save nobody
+  // asked for then.
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__holdWrites = true;
+  });
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await editTownHall(page, "Written while the next tour opens");
+  await page.clock.runFor(3_500);
+  await page.waitForFunction(
+    // @ts-expect-error - set by the held write.
+    () => typeof window.__release === "function",
+  );
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+  await page.locator("#open-another").click();
+  await offerCountedOpfsFile(page, await editorTour(), "second.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-file")).toHaveText("second.zip");
+  await page.keyboard.press("Control+s");
+  await page.evaluate(() => {
+    // @ts-expect-error - set by the held write.
+    const release = window.__release;
+    // @ts-expect-error - the next held write sets its own.
+    window.__release = undefined;
+    release();
+  });
+  // The closed tour's save lands in its own file, and ends quietly.
+  await expect
+    .poll(async () => {
+      try {
+        return (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"];
+      } catch {
+        return "";
+      }
+    })
+    .toContain("Written while the next tour opens");
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  // The second tour's autosave, held in its write, and an edit meanwhile.
+  await editTownHall(page, "First in the second tour");
+  // Twice: the first look may still find the closed tour's save ending.
+  await page.clock.runFor(3_500);
+  await page.clock.runFor(3_500);
+  await page.waitForFunction(
+    // @ts-expect-error - set by the held write.
+    () => typeof window.__release === "function",
+  );
+  await editPin(page, "First in the second tour", "Made during its autosave");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__holdWrites = false;
+    // @ts-expect-error - set by the held write.
+    window.__release();
+  });
+  // Nobody pressed Save in this tour: the edit made during the autosave
+  // waits for the next one - no explicit save, and no Save toast.
+  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(
+    page.locator(".toast", { hasText: "Saved to second.zip" }),
+  ).toHaveCount(0);
+  await page.clock.runFor(3_500);
+  await expect(page.locator("#save-status")).toHaveText("Saved to second.zip");
+  expect((await readOpfsTour(page, "second.zip"))["tour.json"]).toContain(
+    "Made during its autosave",
+  );
+  expect(await writes(page)).toBe(2);
+  await expect(
+    page.locator(".toast", { hasText: "Saved to second.zip" }),
+  ).toHaveCount(0);
 });

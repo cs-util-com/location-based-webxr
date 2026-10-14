@@ -21,10 +21,13 @@ editor's own namespace, one tab at a time. Design:
     `"other-tab"`: another tab holds the draft); `onWriting(true|false)` -
     writes started / all settled (the page's `data-draft` mark).
 - `EditorDraft` - the four `DraftObjectWrites` (`draft-actions.ts`), plus:
-  - `writes()` - those four bound to the tour open NOW, which the page gives
-    the editor session: once another tour opens they are dropped (resolve
-    without writing), so a late write of the old editor never lands in the
-    new tour's namespace with the new tour's `seen` (milestone review #6).
+  - `writes(): EditorTourDraft` - those four, and `built` and `landed`
+    below, bound to the tour open NOW, which the page gives the editor
+    session and its saves: once another tour opens they are dropped
+    (resolve without writing), so a late write of the old editor never
+    lands in the new tour's namespace with the new tour's `seen` (milestone
+    review #6), and a save of the old tour that lands while the next one
+    opens moves nothing of the new tour's draft (E2b-2 milestone review #1).
   - `open(fileKey, manifest)` - closes the last tour's hold, holds
     `editor:<fileKey>`, reads it, clears what the file carries, and
     resolves `{ offer, superseded, backedUp }`: `offer` (`objects`,
@@ -36,10 +39,10 @@ editor's own namespace, one tab at a time. Design:
   - `discard()` - "Delete it": the offer's ids, minus those written since
     the open, rejected in the meta (the commit point), then removed; false
     when the meta write did not land (the offer comes back next time).
-  - `built(written)` - a save was built: each pending record's version in
+  - `writes().built(written)` - a save was built: each pending record's version in
     the written manifest (as a reader parses it, `manifestAsRead`) joins its
     base's `written` list.
-  - `landed(written, fileKey)` - an in-place write landed: pending changes
+  - `writes().landed(written, fileKey)` - an in-place write landed: pending changes
     the file now carries clear, the file's versions become the `seen`
     source; when `fileKey` is another key, the draft moves to it
     synchronously.

@@ -117,11 +117,22 @@ interface EditorDraftOpened {
   readonly backedUp: boolean;
 }
 
+/** The writes and a save's two notes for one opened tour (E2c review #6,
+ *  the E2b-2 milestone review #1): once that tour closes or another opens,
+ *  each is dropped, so a late write or save of the old tour never lands in
+ *  the new tour's namespace, its seen versions or its key. */
+export interface EditorTourDraft extends DraftObjectWrites {
+  /** A save was built: its versions are this browser's own work. */
+  built(written: TourManifest): void;
+  /** An in-place write of `written` landed, whose bytes have `fileKey`:
+   *  what it carries clears, and the draft follows the key. */
+  landed(written: TourManifest, fileKey: string): void;
+}
+
 export interface EditorDraft extends DraftObjectWrites {
-  /** The writes for the tour open NOW (E2c review #6): once another tour
-   *  opens they are dropped, so an old editor's late write never lands in
-   *  the new tour's namespace. The session is given these. */
-  writes(): DraftObjectWrites;
+  /** The writes, and a save's notes, for the tour open NOW: the session is
+   *  given the writes, the page's save path the notes. */
+  writes(): EditorTourDraft;
   /** A tour opened: hold its draft, read it, clear what the file carries,
    *  and say what to offer. Awaited before the tour shows. */
   open(fileKey: string, manifest: TourManifest): Promise<EditorDraftOpened>;
@@ -130,11 +141,6 @@ export interface EditorDraft extends DraftObjectWrites {
   /** "Delete it": the offer's records go, minus ids edited since the
    *  open; false when the rejection did not land (offered again). */
   discard(): Promise<boolean>;
-  /** A save was built: its versions are this browser's own work. */
-  built(written: TourManifest): void;
-  /** An in-place write of `written` landed, whose bytes have `fileKey`:
-   *  what it carries clears, and the draft follows the key. */
-  landed(written: TourManifest, fileKey: string): void;
   /** Whether this tab backs the open tour's edits up. */
   backsUp(): boolean;
   /** The tour closed: the hold goes. */
@@ -419,7 +425,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     backedUp: false,
   };
 
-  const api: EditorDraft = {
+  // `built` and `landed` are reached only through `writes()`, bound to the
+  // tour open when it was called.
+  const api: EditorDraft & Pick<EditorTourDraft, "built" | "landed"> = {
     async open(fileKey, manifest) {
       close();
       const mine = generation;
@@ -499,6 +507,12 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           live() ? api.forgetDeletion(id) : Promise.resolve(true),
         forgetObject: (id) =>
           live() ? api.forgetObject(id) : Promise.resolve(),
+        built: (written) => {
+          if (live()) api.built(written);
+        },
+        landed: (written, fileKey) => {
+          if (live()) api.landed(written, fileKey);
+        },
       };
     },
 

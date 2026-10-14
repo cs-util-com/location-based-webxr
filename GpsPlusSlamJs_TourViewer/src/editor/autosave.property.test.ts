@@ -20,7 +20,8 @@ const UNDO_MS = 8_000;
 type Step =
   | { readonly at: number; readonly kind: "edit" }
   | { readonly at: number; readonly kind: "delete" }
-  | { readonly at: number; readonly kind: "type"; readonly forMs: number };
+  | { readonly at: number; readonly kind: "type"; readonly forMs: number }
+  | { readonly at: number; readonly kind: "revert"; readonly forMs: number };
 
 interface Outcome {
   readonly writes: number;
@@ -29,14 +30,19 @@ interface Outcome {
    *  being typed in. */
   readonly startedWhileHeld: number;
   readonly lastSaved: boolean;
+  /** When the save that carried the last change landed (ms from the
+   *  start), or null. */
+  readonly lastSavedAt: number | null;
 }
 
 /**
  * Play `steps` against the scheduler as the page wires it: an edit is a
  * committed change; a delete is one too, held for the undo window, with a
  * poke when the window ends; typing holds until it is committed (a change
- * and a poke). Each save takes `saveMs` and writes the version it
- * snapshotted when it started.
+ * and a poke); a field typed in and put back as it was (`revert`) holds
+ * and then ends with no change and NO poke - the card has nothing to
+ * commit (E2b-2 milestone review #4). Each save takes `saveMs` and writes
+ * the version it snapshotted when it started.
  */
 async function play(
   steps: readonly Step[],
@@ -50,6 +56,7 @@ async function play(
   let maxInFlight = 0;
   let writes = 0;
   let startedWhileHeld = 0;
+  let lastSavedAt: number | null = null;
   const now = (): number => Date.now();
   const held = (): boolean => typing > 0 || now() < undoUntil;
   const autosave = createAutosave({
@@ -67,6 +74,7 @@ async function play(
         setTimeout(() => {
           inFlight -= 1;
           saved = Math.max(saved, snapshot);
+          if (saved === version) lastSavedAt ??= now() - start;
           resolve("saved");
         }, options.saveMs);
       });
@@ -76,8 +84,19 @@ async function play(
   const start = now();
   let end = 0;
   for (const step of steps) {
-    end = Math.max(end, step.at + (step.kind === "type" ? step.forMs : 0));
+    end = Math.max(
+      end,
+      step.at +
+        (step.kind === "type" || step.kind === "revert" ? step.forMs : 0),
+    );
     setTimeout(() => {
+      if (step.kind === "revert") {
+        typing += 1;
+        setTimeout(() => {
+          typing -= 1;
+        }, step.forMs);
+        return;
+      }
       if (step.kind === "type") {
         typing += 1;
         setTimeout(() => {
@@ -110,6 +129,7 @@ async function play(
     maxInFlight,
     startedWhileHeld,
     lastSaved: saved === version,
+    lastSavedAt,
   };
 }
 
@@ -162,6 +182,18 @@ function steadySession(): Step[] {
   }));
 }
 
+/** When the reverted field's hold ends in `revertedSession`. */
+const REVERT_ENDS_MS = 1_500 + 9_000;
+
+/** One edit, then a field typed in for 9 s and put back as it was: the
+ *  hold ends with no change and no poke (E2b-2 milestone review #4). */
+function revertedSession(): Step[] {
+  return [
+    { at: 1_000, kind: "edit" },
+    { at: 1_500, kind: "revert", forMs: 9_000 },
+  ];
+}
+
 const DELAYS_MS = [500, 1_000, 2_000, 3_000, 5_000, 10_000];
 const MAX_WAITS_MS = [15_000, 30_000, 60_000, 120_000];
 const SAVE_MS = [200, 2_000];
@@ -176,6 +208,7 @@ afterEach(() => {
 describe("autosave across delays and max waits (the sweep)", () => {
   const creator = creatorSession();
   const steady = steadySession();
+  const reverted = revertedSession();
   /** Writes per session, for the design doc (printed with
    *  `AUTOSAVE_SWEEP_REPORT=1`; stdout, since the runner's reporter keeps
    *  `console` output of passing tests to itself). */
@@ -201,6 +234,17 @@ describe("autosave across delays and max waits (the sweep)", () => {
           );
           // Never more writes than changes.
           expect(a.writes).toBeLessThanOrEqual(creator.length);
+          // A hold that ends with no poke still saves the change that fell
+          // due in it, within one delay of the hold's end (and so within
+          // the max wait, which is never shorter).
+          const c = await play(reverted, options);
+          expect(c.lastSaved).toBe(true);
+          expect(c.maxInFlight).toBe(1);
+          expect(c.startedWhileHeld).toBe(0);
+          expect(c.lastSavedAt).not.toBeNull();
+          expect(c.lastSavedAt!).toBeLessThanOrEqual(
+            Math.max(REVERT_ENDS_MS, 1_000 + delayMs) + delayMs + saveMs,
+          );
           report.push(
             `${String(delayMs)}\t${String(maxWaitMs)}\t${String(saveMs)}\t${String(a.writes)}\t${String(b.writes)}`,
           );
@@ -235,6 +279,10 @@ describe("autosave on random sessions (property)", () => {
         fc.constant({ kind: "delete" as const }),
         fc.record({
           kind: fc.constant("type" as const),
+          forMs: fc.integer({ min: 100, max: 10_000 }),
+        }),
+        fc.record({
+          kind: fc.constant("revert" as const),
           forMs: fc.integer({ min: 100, max: 10_000 }),
         }),
       ),

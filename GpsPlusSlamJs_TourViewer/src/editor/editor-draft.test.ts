@@ -247,7 +247,7 @@ describe("createEditorDraft", () => {
     await draft.open(K1, original);
     void draft.saveObject(pin("a", "edited"));
     const downloaded = tour(pin("a", "edited"));
-    draft.built(downloaded);
+    draft.writes().built(downloaded);
     await draft.idle();
     draft.close();
     expect(
@@ -270,8 +270,8 @@ describe("createEditorDraft", () => {
     await draft.open(K1, tour(pin("a")));
     void draft.saveObject(pin("a", "first"));
     const written = tour(pin("a", "first"));
-    draft.built(written);
-    draft.landed(written, K1);
+    draft.writes().built(written);
+    draft.writes().landed(written, K1);
     void draft.saveObject(pin("a", "second"));
     await draft.idle();
     draft.close();
@@ -287,7 +287,7 @@ describe("createEditorDraft", () => {
     await draft.open(K1, original);
     void draft.saveObject(pin("a", "first"));
     const built = tour(pin("a", "first"));
-    draft.built(built);
+    draft.writes().built(built);
     void draft.saveObject(pin("a", "second"));
     await draft.idle();
     draft.close();
@@ -325,10 +325,10 @@ describe("createEditorDraft", () => {
     await draft.open(K1, tour(pin("a"), pin("b")));
     void draft.saveObject(pin("a", "saved"));
     const written = tour(pin("a", "saved"), pin("b"));
-    draft.built(written);
+    draft.writes().built(written);
     // Made while the save ran: not in the written file.
     void draft.saveObject(pin("b", "during"));
-    draft.landed(written, K1);
+    draft.writes().landed(written, K1);
     await draft.idle();
     const files = b.spaces.get(editorDraftKey(K1));
     expect(files?.has(objectKey("a"))).toBe(false);
@@ -344,8 +344,8 @@ describe("createEditorDraft", () => {
     void draft.saveObject(pin("a", "saved"));
     void draft.saveDeletion("b");
     const written = tour(pin("a", "saved"));
-    draft.built(written);
-    draft.landed(written, K2);
+    draft.writes().built(written);
+    draft.writes().landed(written, K2);
     void draft.saveObject(pin("a", "after"));
     await draft.idle();
     draft.close();
@@ -373,9 +373,9 @@ describe("createEditorDraft", () => {
     expect(offer?.objects.map((o) => o.id)).toEqual(["c"]);
     void draft.saveObject(pin("a", "saved"));
     const written = tour(pin("a", "saved"), pin("b"), pin("c"));
-    draft.built(written);
+    draft.writes().built(written);
     void draft.saveObject(pin("b", "during"));
-    draft.landed(written, K2);
+    draft.writes().landed(written, K2);
     await draft.idle();
     draft.close();
     const reopened = await draftIn(b).open(K2, written);
@@ -550,9 +550,9 @@ describe("createEditorDraft", () => {
     await draft.open(K1, original);
     void draft.saveObject(pin("a", "saved"));
     const written = tour(pin("a", "saved"), pin("c"));
-    draft.built(written);
+    draft.writes().built(written);
     b.holdOpenOf.add(editorDraftKey(K2));
-    draft.landed(written, K2);
+    draft.writes().landed(written, K2);
     await new Promise((resolve) => setTimeout(resolve, 0));
     // The new namespace has not opened yet: the old still holds the record.
     expect(b.spaces.get(editorDraftKey(K1))?.has(objectKey("c"))).toBe(true);
@@ -574,7 +574,7 @@ describe("createEditorDraft", () => {
     await draft.open(K1, original);
     const written = tour(pin("a"), pin("c"));
     b.failIn.add(editorDraftKey(K2));
-    draft.landed(written, K2);
+    draft.writes().landed(written, K2);
     await draft.idle();
     expect(b.spaces.get(editorDraftKey(K1))?.has(objectKey("c"))).toBe(true);
     expect(b.spaces.get(editorDraftKey(K1))?.has(META_KEY)).toBe(true);
@@ -594,7 +594,7 @@ describe("createEditorDraft", () => {
     const draft = draftIn(b);
     await draft.open(K1, original);
     const written = tour(pin("a"), pin("c"));
-    draft.landed(written, K2);
+    draft.writes().landed(written, K2);
     expect(await draft.discard()).toBe(true);
     await draft.idle();
     draft.close();
@@ -617,6 +617,51 @@ describe("createEditorDraft", () => {
     // The current tour's writes go through.
     expect(await draft.writes().saveObject(pin("a", "new"))).toBe(true);
     expect(b.spaces.get(editorDraftKey(K2))?.has(objectKey("a"))).toBe(true);
+  });
+
+  // Why (E2b-2 milestone review #1): an autosave of the old tour can land
+  // while "Open another tour" is still reading the new tour's draft - the
+  // page makes the new tour current only after that read. Its `landed`
+  // then moved the NEW tour's draft to the old file's key, emptied it, and
+  // made the old file the source of the new tour's seen versions.
+  it("a save of the old tour that lands while the next tour opens changes nothing of it", async () => {
+    const b = browser();
+    const K3 = "local-file:00000000000000000000000000000003";
+    const second = tour(pin("b"));
+    const earlier = draftIn(b);
+    await earlier.open(K2, second);
+    void earlier.saveObject(pin("b", "from an earlier visit"));
+    await earlier.idle();
+    earlier.close();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    const old = draft.writes();
+    void old.saveObject(pin("a", "saved"));
+    await draft.idle();
+    const written = tour(pin("a", "saved"));
+    old.built(written);
+    b.holdOpenOf.add(editorDraftKey(K2));
+    const opening = draft.open(K2, second);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    old.built(written);
+    old.landed(written, K3);
+    b.releaseOpens();
+    const opened = await opening;
+    expect(opened.offer?.objects.map((o) => o.label)).toEqual([
+      "from an earlier visit",
+    ]);
+    expect(await draft.writes().saveObject(pin("b", "new"))).toBe(true);
+    await draft.idle();
+    expect(b.spaces.has(editorDraftKey(K3))).toBe(false);
+    const files = b.spaces.get(editorDraftKey(K2));
+    expect(files?.has(objectKey("b"))).toBe(true);
+    expect(files?.has(META_KEY)).toBe(true);
+    draft.close();
+    // The new edit's seen version is the second tour's, never the old
+    // file's: it is offered, not called replaced.
+    const again = await draftIn(b).open(K2, second);
+    expect(again.superseded).toBeNull();
+    expect(again.offer?.objects.map((o) => o.label)).toEqual(["new"]);
   });
 
   // Why (review #6): the hold was released before the closed tour's

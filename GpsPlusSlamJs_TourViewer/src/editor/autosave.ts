@@ -10,9 +10,11 @@
  *   who never pauses is still saved (a debounce alone starves a stream that
  *   trails off instead of ending).
  * - Never while the page holds it (`held()`: a delete's undo is live, a
- *   field is being typed in, a marker is being moved, another save runs).
- *   A save that fell due while held starts at the next `poke()` after the
- *   hold ended.
+ *   field is being typed in, a marker is being moved, another save runs,
+ *   another tour is being opened). A save that fell due while held starts
+ *   at the next `poke()` after the hold ended - or, when no poke comes (a
+ *   field typed in and put back as it was commits nothing), at the next
+ *   look, once per delay (the E2b-2 milestone review #4).
  * - One at a time: a change made while a save runs is saved after it.
  * - A save that did not land (a refusal, a disk error) PAUSES autosave
  *   until an explicit save or a download lands (`saved()`): no write loop
@@ -28,6 +30,26 @@ export const AUTOSAVE_DELAY_MS = 3_000;
 /** The longest the first unsaved change waits while changes keep coming.
  *  Swept over 15 s to 120 s. */
 export const AUTOSAVE_MAX_WAIT_MS = 30_000;
+
+/**
+ * The largest opened tour file the page saves by itself (the E2b-2
+ * milestone review #3): 200 MiB. Every save rebuilds the tour with its
+ * entries hashed and rewrites the whole file, which a sync client uploads
+ * again - about 6 s and a full write per GiB, so the cost is linear in the
+ * file's size and the timers only set how often it is paid. Above the cap
+ * the creator saves with Save. A judgement, not a measurement: no large
+ * tour's save was timed on a real disk or sync client.
+ */
+export const AUTOSAVE_MAX_BYTES = 200 * 1024 * 1024;
+
+/** Whether a tour file of `bytes` is saved by itself; false for a size
+ *  that is not a finite, non-negative number. */
+export function autosaveFits(
+  bytes: number,
+  maxBytes: number = AUTOSAVE_MAX_BYTES,
+): boolean {
+  return Number.isFinite(bytes) && bytes >= 0 && bytes <= maxBytes;
+}
 
 /**
  * `off` - no file to write in place; `idle` - nothing to save; `waiting` -
@@ -137,6 +159,15 @@ export function createAutosave(deps: AutosaveDeps): Autosave {
     show("waiting");
   }
 
+  /** Due, but held: looked at again once per delay, so a hold that ends
+   *  without a poke still saves (never sooner: no loop). */
+  function hold(): void {
+    due = true;
+    show("held");
+    clear();
+    timer = setTimeout(fire, delayMs);
+  }
+
   function fire(): void {
     timer = null;
     if (!enabled || paused || inFlight) return;
@@ -147,8 +178,7 @@ export function createAutosave(deps: AutosaveDeps): Autosave {
       return;
     }
     if (deps.held()) {
-      due = true;
-      show("held");
+      hold();
       return;
     }
     run();
@@ -180,8 +210,7 @@ export function createAutosave(deps: AutosaveDeps): Autosave {
           return;
         }
         if (result === "held") {
-          due = true;
-          show("held");
+          hold();
           return;
         }
         // Still pending with no change since the save began: the page's
@@ -215,7 +244,9 @@ export function createAutosave(deps: AutosaveDeps): Autosave {
       arm();
     },
     poke() {
-      if (due && timer === null) fire();
+      if (!due) return;
+      clear();
+      fire();
     },
     saved() {
       paused = false;

@@ -16,6 +16,14 @@ built").
 - `AUTOSAVE_MAX_WAIT_MS` (30 s) - the longest the first unsaved change
   waits while changes keep coming (a debounce alone starves a creator who
   never pauses: the lessons-learned entry on streams that trail off).
+- `AUTOSAVE_MAX_BYTES` (200 MiB) - above it the page leaves autosave off
+  (E2b-2 milestone review #3): every save rebuilds the tour with its entry
+  hashing and rewrites the whole file, so the cost is linear in the size.
+  A judgement, not a measurement - a parameter to move once a large tour
+  is timed.
+- `autosaveFits(bytes, maxBytes = AUTOSAVE_MAX_BYTES)` - whether a file
+  of `bytes` is small enough to save by itself; `false` for a negative,
+  `NaN` or infinite size.
 - `createAutosave(deps): Autosave`
   - `deps.save(): Promise<AutosaveOutcome>` - run one save; `saved` (it
     landed, or there was nothing to save), `failed` (refused or not
@@ -45,9 +53,12 @@ built").
 
 - At most one of its saves runs at a time; a change made during one is
   saved after it (timed from that change).
-- Nothing starts while `held()`; the page must `poke()` when a hold ends
-  (the undo window closes, a field commits, a move ends, a save ends), or
-  the due save waits for the next change.
+- Nothing starts while `held()`. The page `poke()`s when a hold ends (the
+  undo window closes, a field commits, a move ends, an autosave ends, the
+  open dialog closes); a hold that ends without one (typing reverted to
+  what it was) is looked at again once per delay, so a due save never
+  waits forever (E2b-2 milestone review #4). A `held` outcome is re-looked
+  at the same way.
 - A save that did not land pauses autosave until `saved()`: no write loop
   against a file that refuses it ("fail, change, fail" makes one attempt).
 - A save that says `saved` while the changes stay pending (the page's
@@ -79,12 +90,14 @@ autosave.poke(); // when the undo window closes
   at a time, fail-change-fail with no loop, a rejected save, an explicit
   failure and success, off/on, nothing pending, the states, a `held`
   outcome, a stop during a save, the retry that is never a loop, the
-  argument checks.
+  argument checks, a hold that ends without a poke (review #4), and
+  `autosaveFits`'s boundary (review #3).
 - `autosave.property.test.ts`: the sweep - delays 0.5-10 s, max waits
   15-120 s, saves of 0.2 s and 2 s, on a scripted ten-minute creator
   session and a steady one (an edit every 2 s): at most one save in
   flight, the last change saved, no save started in a hold, the steady
-  creator saved at least once per max wait; `AUTOSAVE_SWEEP_REPORT=1`
+  creator saved at least once per max wait, and a session whose hold ends
+  with no poke (a reverted typing) saved within a delay of the hold's end; `AUTOSAVE_SWEEP_REPORT=1`
   prints the writes per session. Plus a fast-check property over random
   sessions and timings.
 - The page's wiring: `playwright-tests/editor.spec.js` (the autosave walks).

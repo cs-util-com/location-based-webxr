@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AUTOSAVE_DELAY_MS,
+  AUTOSAVE_MAX_BYTES,
   AUTOSAVE_MAX_WAIT_MS,
+  autosaveFits,
   createAutosave,
   type Autosave,
   type AutosaveOutcome,
@@ -105,6 +107,24 @@ describe("createAutosave", () => {
     expect(page.calls).toBe(1);
   });
 
+  // Why (E2b-2 milestone review #4): a field typed in and then put back
+  // as it was commits nothing, so the page has no change to report and no
+  // poke to give - and a save that fell due during the typing waited for
+  // the NEXT change, however long that took.
+  it("a hold that ends without a poke still saves: it is looked at again each delay", async () => {
+    const { page, autosave, edit } = fakePage();
+    edit();
+    page.held = true;
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS * 3);
+    expect(page.calls).toBe(0);
+    expect(autosave.state()).toBe("held");
+    page.held = false;
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    expect(page.calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(page.saved).toBe(page.version);
+  });
+
   it("a poke with no save due starts nothing", async () => {
     const { page, autosave, edit } = fakePage();
     autosave.poke();
@@ -161,10 +181,12 @@ describe("createAutosave", () => {
     expect(page.saved).toBe(page.version);
   });
 
-  it("a save the page found held when it began waits for the next poke, and is not paused", async () => {
+  it("a save the page found held when it began waits for the next poke or the delay, and is not paused", async () => {
     // Why: the page checks the file before it builds, an await; a delete
     // made in that moment would be in the save's snapshot and lose its
-    // undo, so the page gives the save back as "held".
+    // undo, so the page gives the save back as "held". It is tried again
+    // at the next poke, or once per delay when no poke comes (E2b-2
+    // milestone review #4) - never at once, in a loop.
     let answer: AutosaveOutcome = "held";
     let calls = 0;
     let done = false;
@@ -182,12 +204,16 @@ describe("createAutosave", () => {
     await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS + 1);
     expect(calls).toBe(1);
     expect(autosave.state()).toBe("held");
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MAX_WAIT_MS * 2);
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS - 10);
     expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(calls).toBe(2);
+    expect(autosave.state()).toBe("held");
     answer = "saved";
     autosave.poke();
     await vi.advanceTimersByTimeAsync(1);
-    expect(calls).toBe(2);
+    expect(calls).toBe(3);
+    expect(autosave.state()).toBe("idle");
   });
 
   it("a save still running when the tour closed does not pause the next tour's", async () => {
@@ -323,5 +349,27 @@ describe("createAutosave", () => {
     expect(() =>
       createAutosave({ ...deps, delayMs: 5_000, maxWaitMs: 1_000 }),
     ).toThrow(RangeError);
+  });
+});
+
+// Why (E2b-2 milestone review #3): every save of a tour rebuilds it with
+// its entries hashed and rewrites the whole file, which a sync client then
+// uploads again - about 6 s and a full write per GiB, every few seconds.
+// The cost grows with the file, not with the timers, so autosave is on only
+// up to a size; the cap is a judgement, not a measurement.
+describe("autosaveFits", () => {
+  it("is on up to the cap and off above it", () => {
+    expect(AUTOSAVE_MAX_BYTES).toBe(200 * 1024 * 1024);
+    expect(autosaveFits(0)).toBe(true);
+    expect(autosaveFits(AUTOSAVE_MAX_BYTES)).toBe(true);
+    expect(autosaveFits(AUTOSAVE_MAX_BYTES + 1)).toBe(false);
+    expect(autosaveFits(10, 10)).toBe(true);
+    expect(autosaveFits(11, 10)).toBe(false);
+  });
+
+  it("is off for a size that is not a size", () => {
+    expect(autosaveFits(Number.NaN)).toBe(false);
+    expect(autosaveFits(-1)).toBe(false);
+    expect(autosaveFits(Number.POSITIVE_INFINITY)).toBe(false);
   });
 });

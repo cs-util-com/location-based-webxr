@@ -86,9 +86,14 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   desktop's draft (E2c) keeps them: the toast says this browser keeps a
   copy, offered back when the file is opened again - if the change on disk
   kept the tour's key (a tour built on a walk recording, or a listed tour)
-  and the edited notes (E2c plan review #9). Each save opens a session
+  and the edited notes (E2c plan review #9); until it is reopened the
+  status line says "N changes not saved - it cannot be saved here: open
+  the file again" (E2b-2 milestone review #8). Each save opens a session
   over the written copy, whose whole-archive check hashes a listed tour
-  again in the background (E2b-1 review #9, for E2b-2's autosave to weigh).
+  again in the background (E2b-1 review #9); `photo-copy.ts` opens one
+  copy at a time, so those checks never overlap: while one runs, the
+  newest copy waits and replaces any copy waiting before it (E2b-2
+  milestone review #3).
 - **Save** builds the tour (`keepScan` from the "Keep the walk recording"
   switch, shown only for a tour that carries a walk) and downloads it
   through the framework's `downloadZip` under `finishedFileName`; the
@@ -106,31 +111,48 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (a target attached: `autosave.enable(true)`; off after "Download instead"
   and for every download-only tour), the page saves by itself
   `AUTOSAVE_DELAY_MS` (3 s) after the last committed change, at the latest
-  `AUTOSAVE_MAX_WAIT_MS` (30 s) after the first unsaved one.
+  `AUTOSAVE_MAX_WAIT_MS` (30 s) after the first unsaved one - unless the
+  opened file is larger than `AUTOSAVE_MAX_BYTES` (200 MiB, a judgement,
+  not a measurement: every save rebuilds and rewrites the whole file).
+  Such a tour is saved when Save is pressed, and the status line says
+  "large tour: saved when you press Save", adding "your changes are kept in
+  this browser meanwhile" only when the draft backs up (E2b-2 milestone
+  review #3).
   - **Held** while a delete's Undo is live, the card's field holds typing not
-    yet committed, a marker is being moved, or a save runs (`editing()`,
-    `saving`); the hold's end pokes it (`endUndo`, the field's commit, a
-    move's end, a save's end). An autosave commits nothing and ends no undo;
+    yet committed, a marker is being moved, a save runs, or the open dialog
+    shows or an open is busy (`editing()`, `saving`, `!modal.hidden`,
+    `busy`: an autosave landing in the middle of an open moved the NEW
+    tour's draft, E2b-2 milestone review #1); the hold's end pokes it
+    (`endUndo`, the field's commit, a move's end, an autosave's end, the
+    dialog closing), and a hold that ends without a poke is looked at again
+    once per delay (`autosave.ts`). An explicit save's end does not poke: its
+    outcome reaches the autosave first, so a failed Save pauses it rather
+    than starting a second write at once (milestone review #5). An autosave commits nothing and ends no undo;
     an edit begun while it checked the file (an await before the session's
     snapshot) gives it back as `held`, so a delete made in that moment
     keeps its Undo. A delete ends the earlier undo BEFORE it is made, for
     the same reason.
   - **Quiet:** the status line says "Saving…" and then "Saved to <name>",
-    with no toast; a refusal or a failed write shows the in-place refusal
+    with no toast - except, once per tour, the photos a save could not
+    place (`FINISH_LABELS.photosNotPlaced`), which an explicit Save's toast
+    carries too: a creator who never presses Save hears it once (E2b-2
+    milestone review #6); a refusal or a failed write shows the in-place refusal
     toast (one at a time: a new one replaces the last) and PAUSES autosave -
     the status adds "not saved by itself until you Save" - until an
     explicit Save or a download lands (no write loop).
-  - **Save during an autosave** (Ctrl+S; the button is disabled while any
-    save runs) commits the card and runs right after it. A restored draft's
-    work is saved by itself like any edit.
+  - **Ctrl+S during an autosave** commits the card and runs right after
+    it; the Save button is disabled while any save runs, so only the key
+    queues (E2b-2 milestone review #10). A queued Ctrl+S belongs to its tour:
+    a save whose tour closed meanwhile drops it (`abandon`, milestone review
+    #7). A restored draft's work is saved by itself like any edit.
   - `body[data-autosave]` is the scheduler's state (`off`, `idle`,
     `waiting`, `held`, `saving`, `paused`), the e2e's readiness mark. In
     the dev server only, `window.__tourEditorAutosave` (an init script) sets
-    the delays, so a walk that times its own in-place saves can move
+    the delays and the size cap (`maxBytes`), so a walk that times its own in-place saves can move
     autosave out of its way; a production build strips the read
     (`import.meta.env.DEV`).
-  - Each autosave is an in-place write like Save's: `draft.built` and
-    `draft.landed` run as for Save (an edit made while it ran stays in the
+  - Each autosave is an in-place write like Save's: the tour's
+    `writes().built` and `writes().landed` run as for Save (an edit made while it ran stays in the
     draft, carried along when a tour of notes alone moves its key), and each
     opens a session over the written copy (a listed tour is hashed again in
     the background, E2b-1 review #9) - the delay and the max wait bound how
@@ -144,9 +166,12 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   are said once. Every edit goes to the draft through the session, whose
   writes are bound to its tour (`draft.writes()`: a closed tour's late
   write is dropped); a build
-  adds its versions (`draft.built`), and an in-place write that landed
+  adds its versions (`built`), and an in-place write that landed
   clears what it wrote and moves the draft to the written bytes' key
-  (`tourFileKeyOfFile`, worked out before the write, `draft.landed`). A tab
+  (`tourFileKeyOfFile`, worked out before the write, `landed`) - both
+  through the tour's own `draft.writes()`, taken when the save started, so
+  a save of a closed tour moves nothing of the next (E2b-2 milestone
+  review #1). A tab
   that keeps no backup (no storage, a failed write, another tab holding the
   tour) says so once, after the tour shows; for another tab it says how to
   get a backup (close that tab, open the tour again here). `body[data-draft]` is
