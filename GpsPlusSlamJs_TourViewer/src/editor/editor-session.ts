@@ -63,7 +63,7 @@ export const NOT_IN_TOUR = "That note is no longer in this tour.";
 
 /** An edit, move or delete of an id the tour no longer carries, said in
  *  words (`NOT_IN_TOUR`) by all three alike (PR #622 bot finding C). */
-export interface EditorRefusal {
+interface EditorRefusal {
   readonly kind: "refused";
   readonly reason: string;
 }

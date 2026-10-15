@@ -23,7 +23,7 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
     `refused` with the phone's sentence; `refused` with `NOT_IN_TOUR` for an
     id the tour no longer carries).
   - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept):
-    `{ kind: "moved" }`, or `EditorRefusal` (`refused` with `NOT_IN_TOUR`)
+    `{ kind: "moved" }`, or `EditorRefusal` (module-private: `refused` with `NOT_IN_TOUR`)
     for an id the tour no longer carries (PR #622 bot finding C); throws
     for a position the tour cannot hold.
   - `remove(id)` - `deleteObject`; `{ kind: "deleted", undo }` with the
