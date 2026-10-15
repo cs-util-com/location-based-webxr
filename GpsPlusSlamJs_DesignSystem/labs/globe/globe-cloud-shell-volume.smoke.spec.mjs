@@ -642,7 +642,10 @@ test("the clouds' shadow stays on the ground all the way down", async ({
         return window.__idleReads >= 10;
       },
       null,
-      { timeout: 480_000, polling: 200 },
+      // The relief's 113 tiles at 10 km settled in 4-8 minutes under
+      // SwiftShader, later on a loaded machine (2026-10-14): a load wait,
+      // not a measurement.
+      { timeout: 900_000, polling: 200 },
     );
   const go = async (hash) => {
     // The relief is loaded with the shell off first: the relief parses about
