@@ -24,9 +24,11 @@ both must hold for EVERY vote:
 outlierFalloffExponent: 1, outlierRejectionEnabled: false }`. From r863 to r868 it also carried
   `coldStartObservabilityWindow: 1` against the core's compass cold start
   overwriting a code's rotation (the owner's bug, 2026-10-15); core 1.26.2
-  does that for every app (while code votes are stored, its cold start judges
-  the latest solve alone), so the key is gone and no compass key may return
-  without a measurement. Background:
+  does it itself (a solve that stores code votes restarts the cold start's
+  steadiness check, scaled by the reach of that sighting's own votes, those
+  sharing its timestamp; equal to the key in all 384 swept viewer cases), so
+  the key is gone and no compass key may return without a measurement. The
+  rule needs this ring's reach: under 2.5 m radius it does nothing. Background:
   `GpsPlusSlamJs_Docs/docs/2026-10-15-0511-code-rotation-overwritten-by-compass-investigation.md`
   and `GpsPlusSlamJs/docs/2026-10-15-1246-qr-votes-one-rule-for-every-app-plan.md`.
   - **Scope:** the keys go on right before the entry's first vote, so an
@@ -34,7 +36,7 @@ outlierFalloffExponent: 1, outlierRejectionEnabled: false }`. From r863 to r868 
     solve of the entry runs with them - the GPS-only ones after the
     keep-alive handed back, and those after a tour switch - until the next
     entry's start or a retraction clears them.
-  - **The cost of trusting one lock** (the core rule has it as the key had):
+  - **The cost of trusting one lock** (measured with the key; the core rule matched the key in every swept case):
     a bad first lock shows for one lock interval in a code-first scan of 2+
     locks, decays over about 5 locks in a fix-first one, and after a 1-lock
     glance is held by the keep-alive (it re-votes the latest voted lock's

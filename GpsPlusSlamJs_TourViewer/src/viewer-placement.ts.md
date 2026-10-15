@@ -112,8 +112,9 @@ recording. Its own module since the flows plan M6.
     full weight over a short scan and the content turned by about the
     compass's error. The owner raised that as a bug of its own: once a code
     is recognised, its rotation must stand at once. The core's cold start
-    yields to stored code votes (core 1.26.2; from r863 to r868 the entry's
-    overrides carried a 1-solve compass window for it), so the compass
+    restarts on a solve that stores a wide sighting's votes (core 1.26.2;
+    from r863 to r868 the entry's overrides carried a 1-solve compass window
+    for it), so the compass
     weight is 0 from the first voted lock, and everything shows on that lock: harness `CODE_YAW_PROBE=scan`
     (`code-yaw-compass-overwrite.test.ts`) measured at most 0.27 deg seen
     within 30 s of showing over compass bias 0-30 deg, a drifting compass,

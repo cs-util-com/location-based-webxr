@@ -55,11 +55,17 @@ import {
  * **A code's rotation no longer needs a key here.** From r863 to r868 this
  * set also carried `coldStartObservabilityWindow: 1`, because the core's
  * compass cold start gave the first compass reading full weight over a
- * code's votes (the owner's bug, 2026-10-15). The core now does that itself
- * for every app: while code votes are stored, its cold start judges the
- * latest solve alone (core 1.26.2; `GpsPlusSlamJs/docs/2026-10-15-1246-qr-votes-one-rule-for-every-app-plan.md`
- * rule (a)). The viewer's behaviour tests (`viewer-content-alignment.test.ts`)
- * stayed unchanged when the key went, as the proof.
+ * code's votes (the owner's bug, 2026-10-15). Core 1.26.2 does it itself: a
+ * solve that stores code votes restarts the cold start's steadiness check,
+ * scaled by the odometry reach of that sighting's own votes (those sharing
+ * its timestamp; plan `GpsPlusSlamJs/docs/2026-10-15-1246-qr-votes-one-rule-for-every-app-plan.md` §11.6-§11.9). This ring
+ * (16 votes, 30 m radius) reaches far past the core's 15 m, so the compass
+ * weight is 0 from the first lock, as with the key: the core's sweep found
+ * the same heading errors as the key in all 384 viewer cases, to 0.01 deg,
+ * over compass bias 0-30 deg and 6 minutes after the keep-alive's fade, and
+ * the viewer's behaviour tests (`viewer-content-alignment.test.ts`) stayed
+ * unchanged when the key went. What would reverse it: a ring of radius under
+ * 2.5 m (the rule does nothing) or under 7.5 m (it only partly acts).
  *
  * **Scope: the whole entry after its first vote.** An entry that never
  * votes keeps the core's own solver (nothing is set until a vote). From the

@@ -178,9 +178,9 @@ describe("an AR entry's vote sink: the per-entry solver overrides (M2e; the seam
   });
 
   // Why: the keys are M0c's measured trim and nothing else. The 1-solve
-  // compass window it carried from r863 is gone: the core's cold start now
-  // yields to stored code votes itself (core 1.26.2), so a code's rotation
-  // stands from its first lock in every app, and viewer-content-alignment's
+  // compass window it carried from r863 is gone: core 1.26.2's cold start
+  // restarts on a solve that stores a wide sighting's votes, so a code's
+  // rotation stands from this ring's first lock, and viewer-content-alignment's
   // behaviour tests pin that unchanged. No compass key of any kind may
   // return here without a measurement.
   it("the soft keys are M0c's trim (kernel on, r0 = 1 m, p = 1, hard trim off) and no compass key", () => {

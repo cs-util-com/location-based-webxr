@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Requires `gps-plus-slam-js` ^1.26.2. In 1.26.2 a solve that stores a QR code sighting's votes keeps the code's rotation against the compass cold start when those votes span 5 m or more (see that package's changelog). `buildQrGpsVotes` stamps each call with `Date.now()`, and the core treats votes sharing one timestamp as one sighting: give each code's sighting its own call.
+
 ## [1.29.0] - 2026-10-15
 
 ### Added
