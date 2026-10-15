@@ -3680,6 +3680,34 @@
                 >
                   Copy the file's Drive address
                 </button>
+                <!-- Asked once per Finish, after its save delivered (F19):
+                 a yes notes in the draft that the file was put in place.
+                 Written by creator-handoff.ts. -->
+                <div id="upload-ask" data-testid="upload-ask" hidden>
+                  <p
+                    id="upload-ask-text"
+                    data-testid="upload-ask-text"
+                    class="step-copy"
+                    role="status"
+                    aria-live="polite"
+                  ></p>
+                  <button
+                    type="button"
+                    id="upload-yes"
+                    class="btn btn--prose"
+                    data-testid="upload-yes"
+                  >
+                    Yes, it is replaced
+                  </button>
+                  <button
+                    type="button"
+                    id="upload-no"
+                    class="btn btn--prose"
+                    data-testid="upload-no"
+                  >
+                    Not yet
+                  </button>
+                </div>
               </div>
             </div>
             <p

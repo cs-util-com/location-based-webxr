@@ -40,6 +40,11 @@ import {
   type AuthoringObject as SharedAuthoringObject,
   type DeletedRecord,
 } from "./object-edits.js";
+import {
+  recordDelete,
+  recordUndoDelete,
+  type DraftObjectWrites,
+} from "./draft-actions.js";
 import { objectListModel, type ObjectListView } from "./object-list.js";
 import {
   objectDeleted,
@@ -150,6 +155,13 @@ interface DeletedObject extends DeletedRecord<PlacedEntry> {
 
 export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
   const { ctx, arStore, view } = deps;
+  /** The draft's writes, for the shared delete and undo sequences. */
+  const draftWrites: DraftObjectWrites = {
+    saveObject: deps.saveDraftObject,
+    saveDeletion: deps.saveDraftDeletion,
+    forgetDeletion: deps.forgetDraftDeletion,
+    forgetObject: deps.forgetDraftObject,
+  };
   let selectedId: string | null = null;
   let note = "";
   /** The note is still within {@link OUTCOME_HOLD_MS}: a tap that only
@@ -431,26 +443,22 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     say(`Deleting ${name}…`);
     const deleted: DeletedObject = { ...gone.record, name };
     const manifest = ctx.tourManifest;
-    const write = found.hosted
-      ? deps.saveDraftDeletion(id)
-      : deps.forgetDraftObject(id).then(() => true);
-    void write
-      .catch(() => false)
-      .then((ok) => {
-        // Undo is offered with the outcome either way: a delete the draft
-        // did not record is still a delete in memory, and the next Finish.
-        say(
-          ok
-            ? `Deleted ${name} - ${found.hosted ? "it leaves the zip when you save the tour." : "it will not be in the zip."}`
-            : `Deleted ${name}, but ${NOT_BACKED_UP}`,
-          {
-            manifest,
-            run: () => {
-              undoDelete(deleted);
-            },
+    // The shared sequence (`draft-actions.ts`), as the desktop editor runs it.
+    void recordDelete(draftWrites, id, found.hosted).then((ok) => {
+      // Undo is offered with the outcome either way: a delete the draft
+      // did not record is still a delete in memory, and the next Finish.
+      say(
+        ok
+          ? `Deleted ${name} - ${found.hosted ? "it leaves the zip when you save the tour." : "it will not be in the zip."}`
+          : `Deleted ${name}, but ${NOT_BACKED_UP}`,
+        {
+          manifest,
+          run: () => {
+            undoDelete(deleted);
           },
-        );
-      });
+        },
+      );
+    });
   }
 
   /**
@@ -463,7 +471,6 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
    */
   function undoDelete(deleted: DeletedObject): void {
     if (refusedDuringFinish()) return;
-    const id = deleted.object.id;
     const back = undoDeleteLists(
       { placed: ctx.placedObjects, deleted: ctx.deletedObjectIds },
       deleted,
@@ -482,16 +489,10 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     deps.syncPreviews();
     deps.renderAuthorReadout();
     say(`Restoring ${deleted.name}…`);
-    const writes: Promise<boolean>[] = [];
-    if (deleted.placed !== null) {
-      writes.push(
-        deps.saveDraftObject(deleted.placed.object, deleted.placed.blob),
-      );
-    }
-    if (deleted.hosted) writes.push(deps.forgetDraftDeletion(id));
-    void Promise.all(writes.map((w) => w.catch(() => false))).then((oks) => {
+    // The record first, then the tombstone (`draft-actions.ts`).
+    void recordUndoDelete(draftWrites, deleted).then((ok) => {
       say(
-        oks.every(Boolean)
+        ok
           ? `Restored ${deleted.name}.`
           : `Restored ${deleted.name}, but ${NOT_BACKED_UP}`,
       );

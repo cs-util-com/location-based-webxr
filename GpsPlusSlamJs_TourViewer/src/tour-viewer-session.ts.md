@@ -185,6 +185,8 @@ unchanged across the split (the split's behaviour-neutrality proof).
   leave an unsaved rebuilt file for another tour (U2; `main.ts` binds it,
   `createUnwiredHooks` returns true).
 - `rebuiltZip.delivered` - a save delivered the rebuilt file (U2).
+- `rebuiltZip.written` - the tour.json that zip carries: what a yes to
+  "did you upload it?" notes (F19 review #2).
 - `scanEntries` - see the S1 note above.
 
 - `frameEpochAtSessionStart` (code book plan M6 v5.1): the odometry

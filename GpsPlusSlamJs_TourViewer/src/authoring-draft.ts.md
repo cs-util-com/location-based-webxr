@@ -24,8 +24,9 @@ asked. Pure - the OPFS mechanics are the framework's
   hosted version is in neither list, or the object is gone though a
   version of it was SEEN hosted (a written-only placement may simply not
   be uploaded): not offered, not keeping the draft alive
-  (`draftObjectsSuperseded`); the page says so (`supersededLine`, owner
-  question Q-E2-2's default). `draftObjectsPublished` names the records
+  (`draftObjectsSuperseded`); the page says so (`supersededLine(count,
+where)`, owner question Q-E2-2's default; `where` is the phone's "on this
+  phone" by default, the desktop editor's "in this browser", M6 E2c). `draftObjectsPublished` names the records
   the hosted zip carries with the same content not yet in `seen` - the page
   adds them, so a later delete elsewhere is not undone. A draft without
   bases (every draft before E2p) behaves as before. No hosted manifest
@@ -61,6 +62,12 @@ asked. Pure - the OPFS mechanics are the framework's
   `restoredText(count, hasLevel, { changed, deleted, visits })` - the
   creator's words; changes, deletions and AR visits are named apart from
   new placements, and visits are never said to go into the zip.
+
+- `manifestAsRead(manifest)` - the manifest as a reader of the written
+  file parses it (serialize, then parse: a heading normalised into
+  [0, 360)), or the manifest itself when the round trip fails; the phone's
+  and the editor's `written` versions are keyed by it (E2p third review #5,
+  lifted from `creator-draft.ts` for the editor, M6 E2c).
 
 ## Invariants & assumptions
 

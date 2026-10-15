@@ -3421,6 +3421,31 @@ test("a Drive tour whose host sends no name asks the creator to check it", async
   );
 });
 
+test("a delivered Finish asks once whether the file was uploaded, and a yes is noted (F19)", async ({
+  page,
+}) => {
+  // Why (follow-up F19, owner decision 2026-10-14): a page cannot know the
+  // creator uploaded the zip it saved, so a pin deleted later on the
+  // desktop came back from this phone's draft. The phone asks once, after
+  // the save delivered; a yes is noted (the composed walk with the desktop
+  // delete is in authoring-settle.test.ts), and saving the same file again
+  // asks nothing more.
+  await installTourViewerArFakes(page);
+  await measureAndFinish(page, RANGES_ARCHIVE);
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+  const text = page.getByTestId("upload-ask-text");
+  await expect(page.getByTestId("upload-ask")).toBeVisible();
+  await expect(text).toContainText("Did you upload it?");
+  await page.getByTestId("upload-yes").click();
+  await expect(text).toContainText("Noted.");
+  await expect(page.getByTestId("upload-yes")).toBeHidden();
+  await expect(page.getByTestId("upload-no")).toBeHidden();
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-download")).toBeEnabled();
+  await expect(text).toContainText("Noted.");
+  await expect(page.getByTestId("upload-yes")).toBeHidden();
+});
+
 test("an opted-in authoring session is recorded across the finish and saved as its own zip, never inside the tour zip", async ({
   page,
 }) => {

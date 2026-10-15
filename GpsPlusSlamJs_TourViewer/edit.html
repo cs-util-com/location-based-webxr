@@ -62,6 +62,24 @@
         </button>
       </div>
       <div class="rail-mini" id="rail-mini"></div>
+      <section class="rail-settings" aria-label="Tour settings">
+        <label class="setting">
+          <input type="checkbox" id="no-gps-input" />
+          <span class="setting-text">
+            <span class="setting-title">This tour needs no GPS</span>
+            <span class="setting-sub"
+              >Visitors are never asked for their location; the printed codes
+              place the tour.</span
+            >
+          </span>
+        </label>
+        <div
+          class="setting-warnings"
+          id="no-gps-warnings"
+          role="status"
+          aria-live="polite"
+        ></div>
+      </section>
       <div class="rail-search">
         <svg
           width="16"

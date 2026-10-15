@@ -31,6 +31,9 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
 "content", path }` for a placed photo (`loadContentEntry`), `{ kind:
 "entry", path }` for a recorded one (its image is the archive's entry
   name, `loadEntry`); null without a photo (E1 review #1).
+- `stationTitle(station, number)` - a station's name: its trimmed title,
+  else "Station N" (1-based); the rail's, and the "needs no GPS" warnings'
+  (`no-gps-check.ts`).
 - `filterItems(items, query)` - the rows whose title or meta contains the
   trimmed query, case-insensitive; all for an empty query.
 - `EditorItem`, `EditorItemKind`, `EditorModel` (the id prefixes `recorded:` and

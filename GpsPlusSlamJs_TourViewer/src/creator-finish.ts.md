@@ -35,6 +35,10 @@ module's sidecar states them as its contract.
   - With an AR session running (a new one began during the rebuild, or
     ending the session failed) the zip is offered on the button instead
     (`handoff.offer`): no download inside AR (F4 milestone review #6).
+  - A Finish's start calls `handoff.finishStarted()`: a "did you upload
+    it?" question left from the previous Finish's file goes, so its yes is
+    never read as this Finish's (F19 review #2). The rebuilt zip carries
+    its `written` tour.json, which a yes notes.
   - A Finish that fails AFTER making its zip still hands that zip over the
     same way (review #1); an earlier Finish's zip stays saveable from the
     button. The button is disabled while a Finish runs, so a tap cannot

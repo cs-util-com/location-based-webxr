@@ -5,7 +5,15 @@
  * `creator-finish.test.ts`.
  */
 import { describe, expect, it } from "vitest";
-import { DRIVE_COPY_LABELS, wireCreatorHandoff } from "./creator-handoff.js";
+import {
+  createEmptyTourManifest,
+  type TourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  DRIVE_COPY_LABELS,
+  UPLOAD_ASK_LABELS,
+  wireCreatorHandoff,
+} from "./creator-handoff.js";
 import { FINISH_LABELS } from "./qr-author-mode.js";
 import { hostReplaceText } from "./tour-host.js";
 import { createTourViewerSession } from "./tour-viewer-session.js";
@@ -34,7 +42,11 @@ function wired(outcome: { delivered: boolean }) {
     archive: { url: "https://example.test/tour.zip", size: 1 },
     hostedFileName: () => null,
   } as never;
-  ctx.rebuiltZip = { blob: new Blob(["zip"]), filename: "tour.zip" };
+  ctx.rebuiltZip = {
+    blob: new Blob(["zip"]),
+    filename: "tour.zip",
+    written: createEmptyTourManifest(),
+  };
   const dom = {
     downloadButton: el(),
     finishStatus: el(),
@@ -42,6 +54,10 @@ function wired(outcome: { delivered: boolean }) {
     replaceHelpGeneric: el(),
     replaceHelpDrive: el(),
     replaceDriveCopy: el(),
+    uploadAsk: el(),
+    uploadAskText: el(),
+    uploadYes: el(),
+    uploadNo: el(),
   };
   const handoff = wireCreatorHandoff({
     ctx,
@@ -96,7 +112,11 @@ describe("the replace steps follow the chosen host (polish round M2, step 6)", (
       archive: { url: "https://example.test/tour.zip", size: 1 },
       hostedFileName: () => null,
     } as never;
-    ctx.rebuiltZip = { blob: new Blob(["zip"]), filename: "tour.zip" };
+    ctx.rebuiltZip = {
+      blob: new Blob(["zip"]),
+      filename: "tour.zip",
+      written: createEmptyTourManifest(),
+    };
     const dom = {
       downloadButton: el(),
       finishStatus: el(),
@@ -104,6 +124,10 @@ describe("the replace steps follow the chosen host (polish round M2, step 6)", (
       replaceHelpGeneric: el(),
       replaceHelpDrive: el(),
       replaceDriveCopy: el(),
+      uploadAsk: el(),
+      uploadAskText: el(),
+      uploadYes: el(),
+      uploadNo: el(),
     };
     dom.replaceHelpGeneric.textContent = "The paragraph about every host.";
     const handoff = wireCreatorHandoff({
@@ -156,7 +180,11 @@ describe("the Drive address button (polish round M2, step 6)", () => {
       },
       hostedFileName: () => "tour.zip",
     } as never;
-    ctx.rebuiltZip = { blob: new Blob(["zip"]), filename: "tour.zip" };
+    ctx.rebuiltZip = {
+      blob: new Blob(["zip"]),
+      filename: "tour.zip",
+      written: createEmptyTourManifest(),
+    };
     const dom = {
       downloadButton: el(),
       finishStatus: el(),
@@ -164,6 +192,10 @@ describe("the Drive address button (polish round M2, step 6)", () => {
       replaceHelpGeneric: el(),
       replaceHelpDrive: el(),
       replaceDriveCopy: el(),
+      uploadAsk: el(),
+      uploadAskText: el(),
+      uploadYes: el(),
+      uploadNo: el(),
     };
     dom.replaceDriveCopy.hidden = true;
     const handoff = wireCreatorHandoff({
@@ -219,5 +251,220 @@ describe("the Drive address button (polish round M2, step 6)", () => {
     await flush();
     drive.handoff.reset();
     expect(drive.dom.replaceDriveCopy.hidden).toBe(true);
+  });
+});
+
+describe("the question after a download-only Finish (F19)", () => {
+  // Why (F19, owner decision 2026-10-14): a page cannot know the creator
+  // uploaded the file it saved, so a pin deleted later on the desktop came
+  // back from the phone's draft. The phone asks ONCE per Finish - after
+  // the save delivered, never before, never again for the same file - and
+  // a yes is noted in the draft (`onUploaded`), with its progress and its
+  // outcome on the line (async-UI rule).
+  function wiredAsk(
+    options: {
+      delivered?: boolean;
+      onUploaded?: () => Promise<boolean>;
+    } = {},
+  ) {
+    const ctx = createTourViewerSession();
+    ctx.session = {
+      archive: { url: "https://example.test/tour.zip", size: 1 },
+      hostedFileName: () => null,
+    } as never;
+    ctx.rebuiltZip = {
+      blob: new Blob(["zip"]),
+      filename: "tour.zip",
+      written: createEmptyTourManifest(),
+    };
+    const dom = {
+      downloadButton: el(),
+      finishStatus: el(),
+      replaceHelp: el(),
+      replaceHelpGeneric: el(),
+      replaceHelpDrive: el(),
+      replaceDriveCopy: el(),
+      uploadAsk: el(),
+      uploadAskText: el(),
+      uploadYes: el(),
+      uploadNo: el(),
+    };
+    const answers: string[] = [];
+    /** The manifests each yes noted. */
+    const noted: TourManifest[] = [];
+    const wiring = {
+      ctx,
+      dom,
+      answers,
+      noted,
+      /** What the next save comes to. */
+      delivered: options.delivered ?? true,
+      handoff: null as unknown as ReturnType<typeof wireCreatorHandoff>,
+    };
+    wiring.handoff = wireCreatorHandoff({
+      ctx,
+      seams: {
+        downloadZip: () => Promise.resolve(wiring.delivered),
+      },
+      dom: dom as never,
+      render: () => undefined,
+      onUploaded: (written) => {
+        answers.push("yes");
+        noted.push(written);
+        return options.onUploaded?.() ?? Promise.resolve(true);
+      },
+    });
+    return wiring;
+  }
+
+  it("is hidden until a save delivered the file", async () => {
+    const { dom, handoff } = wiredAsk({ delivered: false });
+    expect(dom.uploadAsk.hidden).toBe(true);
+    handoff.save();
+    await flush();
+    expect(dom.uploadAsk.hidden).toBe(true);
+  });
+
+  it("asks after a delivered save, and a yes is noted with its progress and its outcome", async () => {
+    let land: (ok: boolean) => void = () => undefined;
+    const { dom, handoff, answers } = wiredAsk({
+      onUploaded: () =>
+        new Promise<boolean>((resolve) => {
+          land = resolve;
+        }),
+    });
+    handoff.save();
+    await flush();
+    expect(dom.uploadAsk.hidden).toBe(false);
+    expect(dom.uploadAskText.textContent).toBe(UPLOAD_ASK_LABELS.question);
+    expect(dom.uploadYes.textContent).toBe(UPLOAD_ASK_LABELS.yes);
+    dom.uploadYes.click();
+    expect(answers).toEqual(["yes"]);
+    expect(dom.uploadYes.disabled).toBe(true);
+    expect(dom.uploadNo.disabled).toBe(true);
+    expect(dom.uploadAskText.textContent).toBe(UPLOAD_ASK_LABELS.noting);
+    land(true);
+    await flush();
+    expect(dom.uploadAskText.textContent).toBe(UPLOAD_ASK_LABELS.noted);
+    expect(dom.uploadYes.hidden).toBe(true);
+    expect(dom.uploadNo.hidden).toBe(true);
+    // A second tap cannot note it twice.
+    dom.uploadYes.click();
+    expect(answers).toEqual(["yes"]);
+  });
+
+  it("says when the yes could not be noted", async () => {
+    const { dom, handoff } = wiredAsk({
+      onUploaded: () => Promise.resolve(false),
+    });
+    handoff.save();
+    await flush();
+    dom.uploadYes.click();
+    await flush();
+    expect(dom.uploadAskText.textContent).toBe(UPLOAD_ASK_LABELS.failed);
+    expect(dom.uploadYes.hidden).toBe(true);
+  });
+
+  // Why (F19 milestone review #9): "Not yet" was a dead end for the page
+  // load - the file uploaded later, then saved again, was never asked
+  // about. One question per save that delivered; a yes is never asked for
+  // again.
+  it("Not yet puts the question away, a later save of the same file asks once more, and a yes ends it", async () => {
+    const { dom, handoff, answers } = wiredAsk();
+    handoff.save();
+    await flush();
+    dom.uploadNo.click();
+    expect(dom.uploadAsk.hidden).toBe(true);
+    dom.downloadButton.click();
+    await flush();
+    expect(dom.uploadAsk.hidden).toBe(false);
+    expect(dom.uploadYes.hidden).toBe(false);
+    expect(answers).toEqual([]);
+    dom.uploadYes.click();
+    await flush();
+    expect(dom.uploadAskText.textContent).toBe(UPLOAD_ASK_LABELS.noted);
+    dom.downloadButton.click();
+    await flush();
+    expect(dom.uploadAskText.textContent).toBe(UPLOAD_ASK_LABELS.noted);
+    expect(dom.uploadYes.hidden).toBe(true);
+    expect(answers).toEqual(["yes"]);
+  });
+
+  // Why (F19 milestone review #2): the question stayed on screen through a
+  // later Finish whose save did not go through, and a yes then noted THAT
+  // file's versions - read from the draft's "last written" - as hosted.
+  it("a yes notes the file the question was asked about, never a later Finish's", async () => {
+    const { ctx, dom, handoff, noted } = wiredAsk();
+    const asked = ctx.rebuiltZip!.written;
+    handoff.save();
+    await flush();
+    // A later Finish made another file; its save has not run.
+    ctx.rebuiltZip = {
+      blob: new Blob(["zip 2"]),
+      filename: "tour.zip",
+      written: createEmptyTourManifest(),
+    };
+    dom.uploadYes.click();
+    await flush();
+    expect(noted).toHaveLength(1);
+    expect(noted[0]).toBe(asked);
+  });
+
+  it("a new Finish, or a save of another file, takes the question away", async () => {
+    const started = wiredAsk();
+    started.handoff.save();
+    await flush();
+    started.handoff.finishStarted();
+    expect(started.dom.uploadAsk.hidden).toBe(true);
+    // A tap on the hidden question notes nothing.
+    started.dom.uploadYes.click();
+    await flush();
+    expect(started.noted).toHaveLength(0);
+
+    const other = wiredAsk({ delivered: false });
+    other.delivered = true;
+    other.handoff.save();
+    await flush();
+    expect(other.dom.uploadAsk.hidden).toBe(false);
+    other.ctx.rebuiltZip = {
+      blob: new Blob(["zip 2"]),
+      filename: "tour.zip",
+      written: createEmptyTourManifest(),
+    };
+    other.delivered = false;
+    other.handoff.save();
+    expect(other.dom.uploadAsk.hidden).toBe(true);
+    await flush();
+    expect(other.dom.uploadAsk.hidden).toBe(true);
+
+    const offered = wiredAsk();
+    offered.handoff.save();
+    await flush();
+    offered.ctx.rebuiltZip = {
+      blob: new Blob(["zip 2"]),
+      filename: "tour.zip",
+      written: createEmptyTourManifest(),
+    };
+    offered.handoff.offer("");
+    expect(offered.dom.uploadAsk.hidden).toBe(true);
+  });
+
+  it("asks again for the next Finish's file, and a closed tour takes the question away", async () => {
+    const { ctx, dom, handoff } = wiredAsk();
+    handoff.save();
+    await flush();
+    dom.uploadNo.click();
+    ctx.rebuiltZip = {
+      blob: new Blob(["zip 2"]),
+      filename: "tour.zip",
+      written: createEmptyTourManifest(),
+    };
+    handoff.save();
+    await flush();
+    expect(dom.uploadAsk.hidden).toBe(false);
+    expect(dom.uploadYes.hidden).toBe(false);
+    expect(dom.uploadYes.disabled).toBe(false);
+    handoff.reset();
+    expect(dom.uploadAsk.hidden).toBe(true);
   });
 });

@@ -342,6 +342,9 @@ export interface TourViewerSession {
    *  R7): a second Finish rebuilds from this zip, so its list starts there. */
   rebuiltZip: {
     blob: Blob;
+    /** The tour.json this zip carries: what a yes to "did you upload
+     *  it?" notes (F19). */
+    written: TourManifest;
     filename: string;
     signedManifest?: SignedTourManifest;
     /** A save delivered it (UI round 1, U2: the leave guard). */

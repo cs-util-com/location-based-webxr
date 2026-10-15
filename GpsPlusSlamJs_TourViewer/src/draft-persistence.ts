@@ -178,6 +178,16 @@ export function parseDraftBase(
   }
 }
 
+/** Write an object's whole base (M6 E2c): the desktop editor's draft
+ *  moving a record to a new namespace with the versions it knows. */
+export async function writeDraftBase(
+  store: DraftFileStore,
+  id: string,
+  base: DraftBase,
+): Promise<boolean> {
+  return store.put(baseKey(id), JSON.stringify(base));
+}
+
 /** Add one key to an object's base (M6 E2p), read and written in place;
  *  a key already there writes nothing, and a write that fails removes the
  *  base. */
@@ -335,6 +345,13 @@ export interface StoredDraft {
    */
   rejectedIds: readonly string[];
   /**
+   * EVERY id the meta on disk rejects, files or not (M6 E2c review #3).
+   * `rejectedIds` is pruned, and the next meta write stores it - but until
+   * that write lands the meta still rejects the pruned ids, so a change of
+   * one must be claimed against THIS list, or the next read hides it.
+   */
+  rejectedOnDisk: readonly string[];
+  /**
    * The AR visits' logs (M3b), oldest first: what the summary after Finish
    * needs from visits of an earlier page load. Not part of `draft`: a visit
    * is never written into the zip - but it is offered with the draft and
@@ -372,6 +389,13 @@ export interface StoredDraft {
  */
 export async function readDraft(
   store: DraftFileStore,
+  options: {
+    /** Drop a photo record whose bytes are missing (the phone's rule,
+     *  default). The desktop editor reads with it off (M6 E2c review #1):
+     *  its photo notes' bytes are in the file it opened, never in the
+     *  draft. */
+    readonly photoBytesRequired?: boolean;
+  } = {},
 ): Promise<StoredDraft | undefined> {
   const metaText = await store.getText(META_KEY);
   if (metaText === undefined) return undefined;
@@ -453,7 +477,9 @@ export async function readDraft(
     const blob = await store.getBlob(photoKey(object.id));
     // A photo record whose bytes are gone would name a content entry the
     // rebuilt zip does not contain, which is the failure mode PR #435 was
-    // about. Drop the record with them.
+    // about. Drop the record with them - unless the caller's photos live
+    // in the file it opened (the editor's).
+    if (blob === undefined && options.photoBytesRequired === false) continue;
     if (blob === undefined) {
       objects.pop();
       continue;
@@ -497,6 +523,7 @@ export async function readDraft(
     },
     photos,
     rejectedIds: [...rejected].filter((id) => onDisk.has(id)),
+    rejectedOnDisk: [...rejected],
     visits,
     storedIds,
   };

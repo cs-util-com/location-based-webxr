@@ -32,10 +32,8 @@ import {
   packFilesAsZip,
 } from "gps-plus-slam-app-framework/storage";
 
-import {
-  openDraftNamespace,
-  openRemoteArchive,
-} from "gps-plus-slam-app-framework/storage";
+import { openRemoteArchive } from "gps-plus-slam-app-framework/storage";
+import { openDraftStore } from "./draft-store-root.js";
 import { sanitizedPageUrl } from "gps-plus-slam-app-framework/storage/session-metadata-record";
 import { getBuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 
@@ -540,6 +538,10 @@ const setup = wireCreatorSetup({
     controls: element("setup-controls"),
     finishBlock: element("finish-block"),
     replaceHelp: element("replace-help"),
+    uploadAsk: element("upload-ask"),
+    uploadAskText: element("upload-ask-text"),
+    uploadYes: element<HTMLButtonElement>("upload-yes"),
+    uploadNo: element<HTMLButtonElement>("upload-no"),
     sizeInput,
     printSettings: element<HTMLDetailsElement>("print-settings"),
     printPanel,
@@ -569,24 +571,9 @@ const setup = wireCreatorSetup({
     // Editing placed objects (authoring plan 2026-09-28-0953 M4).
     objectList: createObjectListView(element("object-list"), document),
   },
-  // Crash-safe authoring (F13). OPFS, not a file handle: the File System
-  // Access pickers do not exist on Chrome for Android, which is the only
-  // device the creator's AR session runs on.
-  openDraftStore: async (key) => {
-    try {
-      // `getDirectory()` can REJECT rather than simply be absent - a
-      // private window, an embedded WebView, a non-secure origin.
-      // `openDraftNamespace` carries its own try/catch precisely so a
-      // caller never sees a throw, but this call sits outside it, and the
-      // rejection landed in a `void`-ed continuation with no handler.
-      const root = await navigator.storage?.getDirectory?.();
-      return root === undefined
-        ? undefined
-        : await openDraftNamespace(root, key);
-    } catch {
-      return undefined;
-    }
-  },
+  // Crash-safe authoring (F13), in this origin's private file system - the
+  // desktop editor's draft opens through the same wrapper (M6 E2c).
+  openDraftStore: (key) => openDraftStore(navigator, key),
 });
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;

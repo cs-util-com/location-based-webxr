@@ -79,7 +79,7 @@ export function wireCreatorFinish(deps: {
     | "showSummary"
     | "unsettle"
   >;
-  handoff: Pick<CreatorHandoff, "save" | "offer">;
+  handoff: Pick<CreatorHandoff, "save" | "offer" | "finishStarted">;
   previews: Pick<CreatorPreviews, "keepFinishedPhoto" | "sync">;
   draft: Pick<CreatorDraft, "saveMeta" | "finished">;
   sessionLive: () => boolean;
@@ -199,6 +199,9 @@ export function wireCreatorFinish(deps: {
     // A tap now would save the previous Finish's zip just before this one
     // saves the new one under the same name (F4 milestone review #5).
     dom.downloadButton.disabled = true;
+    // A question about the previous Finish's file is put away: its yes must
+    // not be read as this Finish's (F19 review #2).
+    deps.handoff.finishStarted();
     ctx.finishError = null;
     // The AR button reads the finish ("Saving…"): a finish started from the
     // panel's retry left it saying "Close AR" (M3 review #3).
@@ -251,6 +254,7 @@ export function wireCreatorFinish(deps: {
         const { blob, written, signedManifest, scanLeftOut } = finished;
         ctx.rebuiltZip = {
           blob,
+          written,
           ...(signedManifest === undefined ? {} : { signedManifest }),
           // The hosted file's own name, made safe (`finishedFileName`, the
           // rule the desktop editor shares); the Drive steps then ask for the

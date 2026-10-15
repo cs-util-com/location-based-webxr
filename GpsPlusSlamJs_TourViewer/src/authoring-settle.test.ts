@@ -67,6 +67,7 @@ import { readPrintedText } from "./level-printed.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import { OUTCOME_HOLD_MS } from "./object-editing.js";
+import { UPLOAD_ASK_LABELS } from "./creator-handoff.js";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 import {
   correctedAlignment,
@@ -222,6 +223,10 @@ const DOM_KEYS = [
   "replaceHelpGeneric",
   "replaceHelpDrive",
   "replaceDriveCopy",
+  "uploadAsk",
+  "uploadAskText",
+  "uploadYes",
+  "uploadNo",
   "sizeInput",
   "printPanel",
   "status",
@@ -626,6 +631,11 @@ function authoring(
   return {
     ctx,
     dom,
+    /** The page's seams, for a test that changes one (a save that does
+     *  not go through). */
+    seams: seams as {
+      downloadZip: (blob: Blob, name: string) => Promise<boolean>;
+    },
     setup,
     codes: setup.codes,
     dispatched,
@@ -3191,12 +3201,13 @@ describe(
         })!;
       }
 
-      /** One page load: the tour as hosted now, the draft presented. */
+      /** One page load: the tour as hosted now, the draft presented;
+       *  `undefined` is a phone without a draft store. */
       async function load(
-        store: DraftFileStore,
+        store: DraftFileStore | undefined,
         objects: TourObject[],
       ): Promise<ReturnType<typeof authoring>> {
-        const a = authoring({ store });
+        const a = authoring(store === undefined ? {} : { store });
         await openFinishableTour(a);
         a.ctx.tourManifest = { ...createEmptyTourManifest(), objects };
         a.setup.presentDraftForTour(TOUR);
@@ -3317,6 +3328,115 @@ describe(
           expect(c.dom.draftOfferText.textContent).not.toBe("");
         });
         expect(c.dom.draftOfferText.textContent).toMatch(/1 change/);
+      });
+
+      // Why (F19, owner decision 2026-10-14): place a pin, Finish with a
+      // download, upload that file, delete the pin on the desktop - the
+      // phone's draft never learned of the upload, so the next open offered
+      // the deleted pin back. Nothing tells a page an upload happened, so it
+      // asks once; a yes makes the written versions SEEN hosted.
+      describe("a download-only Finish, then a delete elsewhere (F19)", () => {
+        async function placeAndFinish(
+          store: DraftFileStore | undefined,
+        ): Promise<ReturnType<typeof authoring>> {
+          const a = await load(store, []);
+          expect(a.dom.uploadAsk.hidden).toBe(true);
+          a.setWalk(walk());
+          await a.mint();
+          await a.placePin("Gate", [2, 0, -1]);
+          a.endVisit();
+          await flush();
+          a.device.live = false;
+          a.dom.finishButton.click();
+          await finished(a.ctx);
+          // Asked once the Finish's own save delivered the file.
+          await vi.waitFor(() => {
+            expect(a.dom.uploadAsk.hidden).toBe(false);
+          });
+          return a;
+        }
+
+        it("after a yes, a pin deleted on the desktop stays deleted", async () => {
+          const { store } = memoryDraftStore();
+          const a = await placeAndFinish(store);
+          a.dom.uploadYes.click();
+          await vi.waitFor(() => {
+            expect(a.dom.uploadYes.hidden).toBe(true);
+          });
+          await flush();
+          // The desktop's file, uploaded: the tour without the pin.
+          const b = await load(store, []);
+          await vi.waitFor(() => {
+            expect(b.ctx.placementNote ?? "").toMatch(
+              /replaced by a newer one/,
+            );
+          });
+          expect(b.dom.draftOfferText.textContent).not.toMatch(/you placed/);
+        });
+
+        // Why (PR #626 bot finding 3): a phone without a draft store has
+        // nothing to note, so a yes cannot fail there - yet it said "This
+        // phone could not note it", a warning that cannot come true, and
+        // every later Save again asked again and failed again.
+        it("on a phone without a draft store, a yes is noted: nothing to note, nothing failed", async () => {
+          const a = await placeAndFinish(undefined);
+          a.dom.uploadYes.click();
+          await vi.waitFor(() => {
+            expect(a.dom.uploadYes.hidden).toBe(true);
+          });
+          await flush();
+          expect(a.dom.uploadAskText.textContent).toBe(UPLOAD_ASK_LABELS.noted);
+        });
+
+        it("with no yes, the pin is offered back as before", async () => {
+          const { store } = memoryDraftStore();
+          const a = await placeAndFinish(store);
+          a.dom.uploadNo.click();
+          expect(a.dom.uploadAsk.hidden).toBe(true);
+          await flush();
+          const b = await load(store, []);
+          await vi.waitFor(() => {
+            expect(b.dom.draftOfferText.textContent).toMatch(
+              /1 thing you placed/,
+            );
+          });
+          expect(b.ctx.placementNote ?? "").not.toMatch(/replaced/);
+        });
+
+        // Why (F19 milestone review #2): the question about Finish A's file
+        // stayed on screen through a second Finish whose save did not go
+        // through, and a yes then noted that LATER, never-delivered file's
+        // versions as hosted - so a pin placed after Finish A read as
+        // "deleted elsewhere" at the next open of A's file, and was lost.
+        it("a question left from an earlier Finish never notes a later Finish that was not saved", async () => {
+          const { store } = memoryDraftStore();
+          const a = await placeAndFinish(store);
+          const first = a.ctx.rebuiltZip;
+          const hostedA = [...a.ctx.tourManifest!.objects];
+          a.beginVisit();
+          a.seeTheCode();
+          await flush();
+          await a.placePin("Bench", [3, 0, 1]);
+          a.endVisit();
+          await flush();
+          a.device.live = false;
+          a.seams.downloadZip = () => Promise.resolve(false);
+          a.dom.finishButton.click();
+          await vi.waitFor(() => {
+            expect(a.ctx.rebuiltZip).not.toBe(first);
+          });
+          await flush();
+          a.dom.uploadYes.click();
+          await flush();
+          // A's file is the one hosted: the bench is offered back.
+          const b = await load(store, hostedA);
+          await vi.waitFor(() => {
+            expect(b.dom.draftOfferText.textContent).toMatch(
+              /1 thing you placed/,
+            );
+          });
+          expect(b.ctx.placementNote ?? "").not.toMatch(/replaced/);
+        });
       });
 
       it("says a desktop edit won once, and forgets the replaced record (review #4)", async () => {

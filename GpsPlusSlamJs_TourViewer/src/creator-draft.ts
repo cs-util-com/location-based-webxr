@@ -11,11 +11,9 @@
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { readSideM, writeSideM } from "./printed-side.js";
-import {
-  parseTourManifest,
-  serializeTourManifest,
-  type TourManifest,
-  type TourObject,
+import type {
+  TourManifest,
+  TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import {
@@ -27,6 +25,7 @@ import {
   draftObjectsNotYetHosted,
   draftObjectsPublished,
   draftObjectsSuperseded,
+  manifestAsRead,
   objectContentKey,
   restoredText,
   supersededLine,
@@ -80,6 +79,16 @@ export interface CreatorDraft {
    *  their versions there are this device's own work, whether or not the
    *  creator uploads the file. */
   finished(ids: readonly string[], written: TourManifest): void;
+  /**
+   * The creator said a Finish's file was uploaded (follow-up F19):
+   * `written` is the tour.json of THAT file, captured when the question
+   * was asked (F19 review #2) - never a later Finish's that was not
+   * saved. Every object a Finish of this load wrote gets its version in
+   * `written` as SEEN hosted, so a delete made elsewhere afterwards is
+   * honoured rather than offered back. Whether every note landed; true
+   * with nothing to note.
+   */
+  uploaded(written: TourManifest): Promise<boolean>;
   /** One awaited write for object `id` (the object list's actions). */
   write(
     id: string,
@@ -157,6 +166,14 @@ export function wireCreatorDraft(deps: {
    */
   let draftRejected: readonly string[] = [];
   /**
+   * The ids the meta ON DISK rejects (M6 E2c review #3): the read's raw
+   * list, then each landed meta write's. `draftRejected` is pruned to ids
+   * with files, but until a meta write lands the disk still rejects the
+   * rest - and a change of one of those, not claimed, would be hidden by
+   * the next read and swept by the next open.
+   */
+  let diskRejected: ReadonlySet<string> = new Set();
+  /**
    * The draft's writes, queued so that each lands after the ones issued
    * before it: one queue per tour's META, one per OBJECT ID within a tour
    * (an id's record, photo and tombstone move together). Keys from
@@ -228,6 +245,17 @@ export function wireCreatorDraft(deps: {
     /** The draft's AR visits (M3b), for the summary after Finish. */
     visits: readonly VisitLogEntry[];
   } | null = null;
+  /**
+   * The stored draft's codes while they are not this page's (M6 E2c review
+   * #3): from the read until Restore brings them in or "Delete it" rejects
+   * them. A meta write meanwhile - a claim, a mint, "Not now" then a
+   * Finish - re-states them beside the page's own, or the draft's measured
+   * code would be gone from disk at the next read.
+   */
+  let storedCodes: {
+    level: { id: string; json: string } | null;
+    levels: readonly { id: string; json: string }[];
+  } | null = null;
   /** Said once, not per placement: a creator mid-walk cannot act on it. */
   let warnedAboutPersistence = false;
 
@@ -252,20 +280,11 @@ export function wireCreatorDraft(deps: {
    *  hosted until the creator uploads it. Every hosted comparison of
    *  `present` uses it (re-review #3). */
   let opened: TourManifest | null = null;
-  /** `manifest` as a reader of the written file sees it (third review #5):
-   *  the parser normalises some fields (a heading into [0, 360)), and every
-   *  other comparison is between parsed versions. The manifest itself if
-   *  the round trip fails - a key that may not match only offers too much. */
-  function asRead(manifest: TourManifest): TourManifest {
-    try {
-      return parseTourManifest(JSON.parse(serializeTourManifest(manifest)));
-    } catch {
-      return manifest;
-    }
-  }
-
   /** The line saying the draft gave way to newer edits, for the open. */
   let supersededNote: string | null = null;
+  /** The objects this load's Finishes wrote (F19): what a yes to "did you
+   *  upload it?" can be about. */
+  const finishedIds = new Set<string>();
 
   /** The opened tour's version of an object, recorded as seen with each
    *  draft write of it (M6 E2p); none for an object it does not carry.
@@ -356,7 +375,10 @@ export function wireCreatorDraft(deps: {
   ): Promise<boolean> {
     return draftWrites.run(objectChainKey(tourUrl, id), async () => {
       let claimed = true;
-      if (draftStore === store && draftRejected.includes(id)) {
+      if (
+        draftStore === store &&
+        (draftRejected.includes(id) || diskRejected.has(id))
+      ) {
         await removeDraftObject(store, id);
         draftRejected = draftRejected.filter((rejected) => rejected !== id);
         claimed = await recordMeta(tourUrl);
@@ -442,10 +464,12 @@ export function wireCreatorDraft(deps: {
       tourUrl,
       sizeM:
         Number.isFinite(sizeM) && sizeM > 0 ? sizeM : AUTHOR_DEFAULT_SIZE_M,
-      level: deps.codes.inHand(),
+      level: deps.codes.inHand() ?? storedCodes?.level ?? null,
       // Every code the hosted zip does not hold yet (M4c-1), the code in
       // hand among them; `level` stays for an older build reading this.
-      levels: deps.codes.notHosted(),
+      // The stored draft's too while they are not this page's; a live code
+      // with the same id is newer and wins.
+      levels: withStoredCodes(deps.codes.notHosted()),
       // Re-stated on every write, not only on the discard's: this file is
       // rewritten on each mint, each finish and each tour open, and one
       // that omitted the list would hand a rejected draft back on the next
@@ -455,9 +479,23 @@ export function wireCreatorDraft(deps: {
     };
     // Values captured NOW, write ordered by call within this tour. The
     // chain keeps one refused write from breaking the queue behind it.
-    return draftWrites.run(metaChainKey(tourUrl), () =>
-      writeDraftMeta(store, meta),
-    );
+    return draftWrites
+      .run(metaChainKey(tourUrl), () => writeDraftMeta(store, meta))
+      .then((wrote) => {
+        // In call order (one chain per meta), so the last landed is the
+        // disk's list.
+        if (wrote && draftStore === store)
+          diskRejected = new Set(meta.rejected);
+        return wrote;
+      });
+  }
+
+  function withStoredCodes(
+    live: readonly { id: string; json: string }[],
+  ): readonly { id: string; json: string }[] {
+    if (storedCodes === null) return live;
+    const ids = new Set(live.map((l) => l.id));
+    return [...live, ...storedCodes.levels.filter((l) => !ids.has(l.id))];
   }
 
   /** Put a restored draft's objects and deletions back into the lists
@@ -487,6 +525,8 @@ export function wireCreatorDraft(deps: {
     dom.draftOffer.hidden = true;
     offered = null;
     if (waiting === null) return;
+    // The codes become this page's below (`restoreLevels`).
+    storedCodes = null;
     // Into the SAME list a live placement fills, so the finish needs no
     // second path: it writes these into the manifest exactly as it writes
     // anything else (an edit of a hosted object replaces it by id), and
@@ -541,6 +581,8 @@ export function wireCreatorDraft(deps: {
     // Minus the ids changed live since (`notLive`, M4).
     const rejectedIds = notLive(offered?.storedIds ?? []);
     offered = null;
+    // Rejected with the draft: the meta below writes this page's codes only.
+    storedCodes = null;
     const store = draftStore;
     if (store === undefined) return;
     // The one way a creator can throw a draft away deliberately - and the
@@ -662,6 +704,11 @@ export function wireCreatorDraft(deps: {
       // Per-tour state: never carry the previous tour's rejections into
       // this one's meta.
       draftRejected = stored?.rejectedIds ?? [];
+      storedCodes =
+        stored === undefined
+          ? null
+          : { level: stored.draft.level, levels: draftLevels(stored.draft) };
+      diskRejected = new Set(stored?.rejectedOnDisk ?? []);
       // Deletes that did not finish last time. `rejectedIds` is exactly
       // the ids the meta rejects whose files are still on disk, so this
       // is the only thing that reclaims them - and it is safe to repeat,
@@ -762,6 +809,8 @@ export function wireCreatorDraft(deps: {
         // live change's.
         const sweep = notLive(stored.storedIds);
         draftRejected = sweep;
+        // Spent: the zip holds its codes, so nothing of them is re-stated.
+        storedCodes = null;
         // Same commit point as the discard, for the same reason: an
         // interrupted sweep must not bring a spent draft back - and the
         // same notice when it does not land.
@@ -843,11 +892,14 @@ export function wireCreatorDraft(deps: {
     reset: () => {
       opened = null;
       supersededNote = null;
+      finishedIds.clear();
       dom.draftOffer.hidden = true;
       offered = null;
       draftStore = undefined;
       draftTourUrl = null;
       draftRejected = [];
+      diskRejected = new Set();
+      storedCodes = null;
     },
     saveMeta: () =>
       draftTourUrl === null ? Promise.resolve(true) : recordMeta(draftTourUrl),
@@ -861,10 +913,12 @@ export function wireCreatorDraft(deps: {
       );
     },
     finished: (ids, written) => {
+      for (const id of ids) finishedIds.add(id);
       const store = draftStore;
       const tourUrl = draftTourUrl;
       if (store === undefined || tourUrl === null) return;
-      const read = asRead(written);
+      // As a reader of the written file sees it (third review #5).
+      const read = manifestAsRead(written);
       for (const id of ids) {
         const object = read.objects.find((o) => o.id === id);
         if (object === undefined) continue;
@@ -873,6 +927,25 @@ export function wireCreatorDraft(deps: {
           addDraftBaseKey(s, id, "written", key),
         );
       }
+    },
+    uploaded: async (written) => {
+      // No draft here (no persistence, or no tour's namespace yet): there
+      // is nothing a later open could offer back, so nothing to note and
+      // nothing failed - never "could not note it", asked again on every
+      // Save again (PR #626 bot finding 3).
+      if (draftStore === undefined || draftTourUrl === null) return true;
+      // The file asked about: an earlier Finish's objects are in it too, in
+      // the version the creator just said is hosted (a later Finish carries
+      // them on); an object absent from it is not noted. As a reader of
+      // that file sees them (third review #5).
+      const read = manifestAsRead(written);
+      const notes = [...finishedIds].flatMap((id) => {
+        const object = read.objects.find((o) => o.id === id);
+        if (object === undefined) return [];
+        const key = objectContentKey(object);
+        return [draftWrite(id, (s) => addDraftBaseKey(s, id, "seen", key))];
+      });
+      return (await Promise.all(notes)).every(Boolean);
     },
     forgetObject: (id) => {
       const store = draftStore;

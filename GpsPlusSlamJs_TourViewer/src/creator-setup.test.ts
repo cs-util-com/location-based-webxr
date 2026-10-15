@@ -92,6 +92,10 @@ const DOM_KEYS = [
   "replaceHelpGeneric",
   "replaceHelpDrive",
   "replaceDriveCopy",
+  "uploadAsk",
+  "uploadAskText",
+  "uploadYes",
+  "uploadNo",
   "sizeInput",
   "printPanel",
   "status",
@@ -1471,6 +1475,78 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
 
     expect(onDisk(files, "hosted")).toEqual(EDITED);
     expect(rejectedOf(String(files.get(META_KEY)))).not.toContain("hosted");
+  });
+
+  // Why (found building M6 E2c, confirmed by its milestone review #3):
+  // `readDraft` prunes the rejected list to ids that still have files,
+  // but the meta ON DISK keeps the longer list until the next meta write.
+  // After "Delete it" and a reload, with a draft left that is not spent
+  // (here a placement not hosted yet), an edit of a discarded id was not
+  // claimed - the pruned list no longer named it - so the next read hid
+  // it, listed it as rejected because its file existed, and swept it: the
+  // edit deleted for good. A deletion went the same way, and the deleted
+  // object came back at the next Finish.
+  const DISCARDED_ON_DISK = {
+    [META_KEY]: JSON.stringify({
+      tourUrl: TOUR,
+      sizeM: 0.16,
+      level: null,
+      rejected: ["hosted"],
+    }),
+    [objectKey("placed")]: JSON.stringify(pin("placed")),
+  };
+
+  it("keeps an edit of an id a discard rejected, made after a reload", async () => {
+    const { store } = memoryStore(DISCARDED_ON_DISK);
+    const second = await reopen(store);
+    second.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
+    await settle();
+
+    const third = await reopen(store);
+    third.dom.draftRestore.click();
+    expect(third.ctx.placedObjects.map((p) => p.object)).toContainEqual(EDITED);
+  });
+
+  it("keeps a deletion of an id a discard rejected, made after a reload", async () => {
+    const { store } = memoryStore(DISCARDED_ON_DISK);
+    const second = await reopen(store);
+    second.dom.objectList.listHandlers!.remove("hosted");
+    await settle();
+
+    const third = await reopen(store);
+    third.dom.draftRestore.click();
+    expect(third.ctx.deletedObjectIds).toEqual(["hosted"]);
+  });
+
+  // Why (the same review #3): that claim rewrites the meta, and a meta
+  // write before the offer is answered wrote only this page's codes - so
+  // the offered draft's measured code was gone from disk, and a reload
+  // offered the objects without it (Finish refused until the creator
+  // walked back to the poster).
+  it("keeps the offered draft's code in a meta written before the offer is answered", async () => {
+    const level = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
+    const { store, files } = memoryStore({
+      ...DISCARDED_ON_DISK,
+      [META_KEY]: JSON.stringify({
+        tourUrl: TOUR,
+        sizeM: 0.16,
+        level,
+        levels: [level],
+        rejected: ["hosted"],
+      }),
+    });
+    const second = await reopen(store);
+    second.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
+    await settle();
+    const meta = JSON.parse(String(files.get(META_KEY))) as {
+      level: unknown;
+      levels: unknown;
+    };
+    expect(meta.level).toEqual(level);
+    expect(meta.levels).toEqual([level]);
+    const third = await reopen(store);
+    third.dom.draftRestore.click();
+    expect(third.setup.codes.inHand()).toEqual(level);
   });
 
   it("does not bring back a rejected file the sweep could not remove, when a crash follows the claim", async () => {

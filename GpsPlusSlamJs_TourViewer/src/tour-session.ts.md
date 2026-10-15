@@ -32,6 +32,11 @@ loading with MIME types, and the poisoned-cache recovery loop.
     `archive.url` is `tour-file-key.ts`'s key: the series id when the
     zip carries `manifest.json` (tour kit plan K1, R7), else the content
     key.
+- `tourFileKeyOfFile(file, limits?): Promise<string>` (M6 E2c) - the key
+  `openTourFile` would give `file`, without opening a session: the desktop
+  editor's draft follows the bytes an in-place save wrote
+  (`editor/editor-draft.ts`). Rejects as the open does for a file that is
+  not a readable zip.
 - `TourSession { entries; archive; fromFile; hasRecording; manifestWrap; budget; stats(); loadEntry(filename); loadEntryText(filename); loadContentEntry(image); close() }`
   - `integrity` (tour kit plan K1, §8 D3) - TIER 1's result
     (`tour-integrity.ts`): `none` for a tour without `manifest.json`,

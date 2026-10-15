@@ -422,6 +422,7 @@ button:disabled {
 }
 
 #rail.collapsed .rail-head h2,
+#rail.collapsed .rail-settings,
 #rail.collapsed .rail-search,
 #rail.collapsed .rail-body {
   display: none;
@@ -904,6 +905,47 @@ kbd {
 #save-status[data-state="saving"] {
   background: var(--accent-soft);
   color: var(--accent-ink);
+}
+
+/* The tour-level settings at the top of the rail (QR-first M1b-2). */
+.rail-settings {
+  margin: 0 12px 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-small);
+  background: var(--panel-lo);
+}
+
+.setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.setting input {
+  margin: 2px 0 0;
+  flex: none;
+  accent-color: var(--accent);
+}
+
+.setting-text {
+  min-width: 0;
+}
+
+.setting-title {
+  display: block;
+  font-weight: 600;
+}
+
+.setting-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.setting-warnings .note-line {
+  margin: 8px 0 0;
+  font-size: 12px;
 }
 
 .keep-walk {
