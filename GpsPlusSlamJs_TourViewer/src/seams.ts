@@ -269,7 +269,9 @@ export const realSeams: TourViewerSeams = {
   createQrFrontEnd: () => createBarcodeDetectorFrontEnd(),
   solveQrPose: (input) => solveQrPose({ ...input, solver: pnpSolver }),
   estimateQrPrintSize: (entries) => estimateQrSizeFromParallax(entries),
-  // Depth is OFF in this app (QD-5), so the projection comes from the
+  // The QR pipelines never use depth (QD-5; a creator's depth feeds only
+  // the mesh cursor and the recording, and a visitor's is off unless
+  // recorded), so the projection comes from the
   // in-session three camera — WebXR owns its projectionMatrix during an
   // immersive session (the wayfinding-placement precedent) — scaled to the
   // DETECTOR buffer's width/height, never the render size.

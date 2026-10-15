@@ -105,6 +105,12 @@ describe("surface smoothing invariants (property)", () => {
   it("is frame-rate independent for a held target", () => {
     // N small steps equal one large one: the same 0.4 s at 30, 60, 90,
     // 120 Hz and at an irregular rate land the ring at the same place.
+    // Pairs within 1 degree of opposite are left out (r867 review #1): there
+    // the turn's axis is ill-conditioned (`setFromUnitVectors` divides by
+    // 1 + cos), so float noise picks different axes at different step
+    // counts - 4 of 15 runs failed on it. The exactly opposite case is
+    // pinned deterministically in surface-smoothing.test.ts.
+    const cosNearlyOpposite = Math.cos((179 * Math.PI) / 180);
     fc.assert(
       fc.property(
         point,
@@ -113,6 +119,9 @@ describe("surface smoothing invariants (property)", () => {
         direction,
         fc.constantFrom(12, 24, 36, 48),
         (from, to, n0, n1, frames) => {
+          const u0 = new Vector3(...n0).normalize();
+          const u1 = new Vector3(...n1).normalize();
+          fc.pre(u0.dot(u1) > cosNearlyOpposite);
           const run = (n: number) => {
             const s = createSurfaceSmoother({ snapRatio: 1e6 });
             let out = s.update(surface(from, n0), 1 / 60, 1);

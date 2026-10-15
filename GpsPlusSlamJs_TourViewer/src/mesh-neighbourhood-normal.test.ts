@@ -298,37 +298,74 @@ describe("neighbourhoodNormal sweeps (owner rule 2026-09-13)", () => {
     // down to 0.2 m it is at most half a triangle's. Above 0.3 m the gain
     // is small and a bigger radius reaches farther onto neighbouring
     // surfaces (a kerb, a step), which is why the default stops there.
+    // Pinned at 1, 2 and 3 cm of vertex noise (r867 review #7: the sidecar's
+    // table covers all three, the test had only 2 cm); at the default the
+    // tilt is cut more than six-fold at every level (measured 6.5 - 6.7).
     const radii = [0.1, 0.15, 0.2, 0.3, 0.45, 0.6];
-    const rows = radii.map((radiusM) => ({ radiusM, ...tilts({ radiusM }) }));
-    for (let i = 1; i < rows.length; i += 1) {
-      expect(rows[i]!.averaged).toBeLessThan(rows[i - 1]!.averaged + 0.1);
-    }
-    for (const row of rows.filter((r) => r.radiusM >= 0.2)) {
-      expect(row.averaged, `radius ${String(row.radiusM)}`).toBeLessThan(
-        row.face / 2,
+    for (const noiseM of [0.01, 0.02, 0.03]) {
+      const rows = radii.map((radiusM) => ({
+        radiusM,
+        ...tilts({ radiusM }, noiseM),
+      }));
+      for (let i = 1; i < rows.length; i += 1) {
+        expect(rows[i]!.averaged).toBeLessThan(rows[i - 1]!.averaged + 0.1);
+      }
+      for (const row of rows.filter((r) => r.radiusM >= 0.2)) {
+        expect(
+          row.averaged,
+          `noise ${String(noiseM)}, radius ${String(row.radiusM)}`,
+        ).toBeLessThan(row.face / 2);
+      }
+      const atDefault = rows.find((r) => r.radiusM === 0.3)!;
+      expect(atDefault.averaged, `noise ${String(noiseM)}`).toBeLessThan(
+        atDefault.face / 6,
       );
     }
   });
 
-  it("holds a corner upright and a noisy floor calm for every gate from 30 to 60 degrees", () => {
-    // The gate's trade: too narrow drops the floor's own noisy triangles,
-    // too wide lets the wall in. For a 90-degree corner and the noise
-    // here, the whole range 30 - 60 works; 45 is its middle.
-    for (const maxAngleDeg of [30, 45, 60]) {
-      const corner = floorMesh({ wallAtX: 0.3, noiseM: 0.01 });
-      corner.updateMatrixWorld(true);
-      for (const x of [0.05, 0.15, 0.25]) {
-        const n = neighbourhoodNormal(hitDown(corner, x, 0.05), {
+  /** The tilt from up, in degrees, at 5, 15 and 25 cm from a wall. */
+  function cornerTilts(maxAngleDeg: number): number[] {
+    const corner = floorMesh({ wallAtX: 0.3, noiseM: 0.01 });
+    corner.updateMatrixWorld(true);
+    return [0.05, 0.15, 0.25].map(
+      (x) =>
+        (neighbourhoodNormal(hitDown(corner, x, 0.05), {
           radiusM: 0.3,
           maxAngleDeg,
-        })!;
+        })!.angleTo(UP) *
+          180) /
+        Math.PI,
+    );
+  }
+
+  it("holds a corner upright and a noisy floor calm for every gate from 30 to 75 degrees", () => {
+    // The gate's trade: too narrow drops the floor's own noisy triangles,
+    // too wide lets the wall in. For a 90-degree corner and the noise
+    // here, the whole range 30 - 75 works (corner measured within 1.5
+    // degrees); 45 is the most conservative toward a corner.
+    for (const maxAngleDeg of [30, 45, 60, 75]) {
+      for (const [k, tilt] of cornerTilts(maxAngleDeg).entries()) {
         expect(
-          (n.angleTo(UP) * 180) / Math.PI,
-          `gate ${String(maxAngleDeg)}, x ${String(x)}`,
-        ).toBeLessThan(6);
+          tilt,
+          `gate ${String(maxAngleDeg)}, corner ${String(k)}`,
+        ).toBeLessThan(2);
       }
       const { face, averaged } = tilts({ radiusM: 0.3, maxAngleDeg });
       expect(averaged, `gate ${String(maxAngleDeg)}`).toBeLessThan(face / 2);
     }
+  });
+
+  it("lets the wall in without a gate (90 degrees), and a narrow one (30) drops the floor's own triangles", () => {
+    // The two ends that bound the range above (r867 review #7): at 90 the
+    // wall's triangles count and the ring tilts by 15 - 43 degrees near the
+    // corner; at 30, on a 3 cm noisy floor, the gate leaves out some of the
+    // floor's own tilted triangles and calms it less than 45 does (measured
+    // 2.47 against 1.70 degrees).
+    for (const [k, tilt] of cornerTilts(90).entries()) {
+      expect(tilt, `corner ${String(k)}`).toBeGreaterThan(10);
+    }
+    const narrow = tilts({ radiusM: 0.3, maxAngleDeg: 30 }, 0.03);
+    const middle = tilts({ radiusM: 0.3, maxAngleDeg: 45 }, 0.03);
+    expect(narrow.averaged).toBeGreaterThan(middle.averaged * 1.2);
   });
 });

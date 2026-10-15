@@ -76,18 +76,25 @@ startCameraFrameCapture, now }` (seam-injected).
 
 - **Isolation flags are a plan decision, not a default** (QD-5/delta #7):
   `enableCameraAccess: true` + `enableCameraTextureAcquisition: true` in
-  BOTH modes (QR detection needs camera frames everywhere), depth OFF in
-  both (v1 authoring takes the printed size as input). These are the
-  opposite of MinimalExample/AnchorStarter, which avoid the camera path's
-  Chromium crash surface; this app needs it.
-  - **The one exception: an entry the troubleshooting recording records**
-    (authoring recording plan 2026-09-28-0953, decision D4). Its hooks carry
-    `onDepthSample`, which sets `enableDepthSensingFeature: true` and passes
-    `callbacks.depth` (the framework builds its depth sampler at initAR from
-    that; `startDepthCapture` starts it once the session runs). Depth is an
-    OPTIONAL session feature, and `requestDepth` (the controller's permission
-    probe, which fails the whole entry on a denial) stays unset - a phone
-    without depth starts AR all the same and records none.
+  BOTH modes (QR detection needs camera frames everywhere). The QR
+  pipelines never need depth (v1 authoring takes the printed size as
+  input). These are the opposite of MinimalExample/AnchorStarter, which
+  avoid the camera path's Chromium crash surface; this app needs it.
+  - **Depth only with `onDepthSample` - which every creator entry now has.**
+    The mesh cursor is a creator default since 2026-10-15 (polish round M5,
+    mesh-cursor smoothing plan 2026-10-15-0944; `?mesh=0` drops it), so a
+    creator entry asks for depth at the mesh density (24 x 24 at 5 Hz), and
+    an entry the troubleshooting recording records (a creator's, or a
+    visitor's with `?debug=1`) asks at the recording's 16 x 16 / 1 Hz
+    instead (authoring recording plan 2026-09-28-0953, decision D4). An
+    unrecorded visitor entry, and a creator one with `?mesh=0` and no
+    recording, ask for none. The hook sets `enableDepthSensingFeature: true`
+    and passes `callbacks.depth` (the framework builds its depth sampler at
+    initAR from that; `startDepthCapture` starts it once the session runs).
+    Depth is an OPTIONAL session feature, and `requestDepth` (the
+    controller's permission probe, which fails the whole entry on a denial)
+    stays unset - a phone without depth starts AR all the same and records
+    none.
 - **`callbacks.cameraFrame` must ride into `initAR`** — the framework
   constructs the frame source there; `startCameraFrameCapture` without it
   warns-and-no-ops. It cannot be added after session start.

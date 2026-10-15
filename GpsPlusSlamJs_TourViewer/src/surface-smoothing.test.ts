@@ -75,6 +75,29 @@ describe("createSurfaceSmoother", () => {
     expect(Math.abs(out.normal.length() - 1)).toBeLessThan(1e-12);
   });
 
+  it("turns an exactly opposite normal the whole way, finite and unit at every step", () => {
+    // Why (r867 review #1, #9): a face seen from behind gives the exactly
+    // opposite normal, where the great circle is not unique - three's
+    // `setFromUnitVectors` then turns about an arbitrary perpendicular axis.
+    // The ring must still turn by the step's share of 180 degrees, stay a
+    // unit vector, and settle on the target; the property test leaves this
+    // ill-conditioned pair out, so it is pinned here.
+    const down = new Vector3(0, -1, 0);
+    const s = createSurfaceSmoother({ snapRatio: 1e6 });
+    s.update(at(0, 0, 0, UP), 1 / 60, 1);
+    const dt = 1 / 60;
+    const first = s.update(at(0, 0, 0, down), dt, 1)!;
+    const alpha = smoothingAlpha(DEFAULT_SURFACE_SMOOTHING.normalTauS, dt);
+    expect(first.normal.angleTo(down)).toBeCloseTo((1 - alpha) * Math.PI, 9);
+    let last = first;
+    for (let i = 0; i < 300; i += 1) {
+      last = s.update(at(0, 0, 0, down), dt, 1)!;
+      expect(last.normal.toArray().every(Number.isFinite)).toBe(true);
+      expect(Math.abs(last.normal.length() - 1)).toBeLessThan(1e-9);
+    }
+    expect(last.normal.angleTo(down)).toBeLessThan(1e-3);
+  });
+
   it("snaps when the ring would glide to a different surface", () => {
     // A table edge at 1 m, the floor behind it at 2.5 m: 1.5 m of lag
     // against 0.3 x 2.5 m - the ring jumps instead of floating there.

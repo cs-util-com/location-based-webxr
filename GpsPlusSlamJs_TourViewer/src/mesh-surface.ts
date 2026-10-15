@@ -18,6 +18,7 @@
  */
 
 import {
+  Matrix4,
   Raycaster,
   type Camera,
   type Intersection,
@@ -175,10 +176,12 @@ export function createMeshSurface(deps: {
   });
   let disposed = false;
   let lastPickAt: number | null = null;
-  /** When the smoother last took a point: a hole in the mesh is a gap in
-   *  its time, so a ring back from the hit-test catches up by itself. */
+  /** When the smoother last took a point; null after a pick that gave
+   *  none (a hole: the hit-test drew the ring, so the smoother forgot it). */
   let lastSmoothedAt: number | null = null;
   const smoother = createSurfaceSmoother();
+  /** World to the parent's own frame, refreshed per pick (no allocation). */
+  const toParent = new Matrix4();
   const frames = createFrameTimes(FRAME_GAPS_KEPT);
   // One raycaster for every frame's pick (no per-frame allocation).
   const raycaster = new Raycaster();
@@ -190,22 +193,50 @@ export function createMeshSurface(deps: {
     return at;
   }
 
-  /** The hit as the ring's point: the neighbourhood's normal, smoothed. */
+  /** The ring has no point this frame: the driver falls back to the RAW
+   *  hit-test pose, so the smoother forgets the ring and the mesh re-enters
+   *  on its own raw point - resuming from the stale one would jump the ring
+   *  back for a frame (r867 review #4). */
+  function forget(): void {
+    smoother.reset();
+    lastSmoothedAt = null;
+  }
+
+  /**
+   * The hit as the ring's point: the neighbourhood's normal, smoothed in
+   * the PARENT's frame and handed back in world (r867 review #2). The mesh,
+   * the camera and the reticle all hang under the world group, which the
+   * alignment eases every frame; smoothed in world, each such step would
+   * be a lag and the ring would slide over a still surface. In the
+   * parent's frame a still surface under a still phone is a still target.
+   * Assumes the parent's world matrix is rigid (the alignment is); a
+   * singular one turns the normal to zero, which the smoother takes as no
+   * sample (the hit-test then drives the ring).
+   */
   function smoothed(hit: Intersection | null, at: number): SurfacePoint | null {
     const raw = surfacePointFromHit(hit);
     if (hit === null || raw === null) return null;
     const normal = neighbourhoodNormal(hit) ?? raw.normal;
+    const toWorld = deps.parent.matrixWorld;
+    toParent.copy(toWorld).invert();
     const dtS =
       lastSmoothedAt === null
         ? Number.POSITIVE_INFINITY
         : (at - lastSmoothedAt) / 1000;
-    const point = smoother.update(
-      { position: raw.position, normal },
+    const local = smoother.update(
+      {
+        position: raw.position.applyMatrix4(toParent),
+        normal: normal.transformDirection(toParent),
+      },
       dtS,
       hit.distance,
     );
-    lastSmoothedAt = point === null ? null : at;
-    return point;
+    if (local === null) return null;
+    lastSmoothedAt = at;
+    return {
+      position: local.position.applyMatrix4(toWorld),
+      normal: local.normal.transformDirection(toWorld),
+    };
   }
 
   return {
@@ -213,11 +244,15 @@ export function createMeshSurface(deps: {
       if (disposed) return null;
       const at = noteFrame();
       const camera = deps.getCamera();
-      if (camera === null) return null;
-      return smoothed(
-        raycastPointer(camera, SCREEN_CENTRE, [handle.mesh()], raycaster),
-        at,
-      );
+      const point =
+        camera === null
+          ? null
+          : smoothed(
+              raycastPointer(camera, SCREEN_CENTRE, [handle.mesh()], raycaster),
+              at,
+            );
+      if (point === null) forget();
+      return point;
     },
     stats() {
       return {
@@ -229,7 +264,7 @@ export function createMeshSurface(deps: {
       if (disposed) return;
       grid.clear();
       handle.sink.clear();
-      smoother.reset();
+      forget();
     },
     dispose() {
       if (disposed) return;

@@ -34,10 +34,13 @@ now? }) → MeshSurface` - composes the framework's pieces:
     raycast hit's world point with the neighbourhood's world normal
     (`neighbourhoodNormal` at its defaults, 0.3 m and 45 degrees; the face normal when
     it gives none), through the smoother (`createSurfaceSmoother` at its defaults,
-    0.1 s / 0.2 s, snap at 0.3 x the hit's distance). Its time step is the time since
-    the last SMOOTHED pick, so a ring back from a hole in the mesh (the hit-test for a
-    while) catches up by itself, and its first point lands exactly on the surface. Also
-    notes the frame gap (one pick per frame). One `Raycaster`, reused.
+    0.1 s / 0.2 s, snap at 0.3 x the hit's distance). The smoothing runs in the
+    PARENT's own frame (`parent.matrixWorld`, as the raycast reads it), and the point
+    comes back in world (r867 review #2). Its time step is the time since the last
+    smoothed pick. A pick with no point (no camera, no mesh hit, bad input) resets the
+    smoother (r867 review #4), so the mesh re-enters on its raw point after a hole -
+    one frame or many - and its very first point lands exactly on the surface. Also
+    notes the frame gap (one pick per frame). One `Raycaster` and one `Matrix4`, reused.
   - `stats()` - `{ frame: FrameTimesSummary | null, triangles }` (the sink handle's
     `triangleCount()`, and the framework's
     `createFrameTimes` over the last 120 gaps).
@@ -68,13 +71,28 @@ now? }) → MeshSurface` - composes the framework's pieces:
 - Without a worker (`createWorker` absent, or one that fails to load) the framework driver
   meshes on the main thread - slower, never broken.
 - No mesh hit returns null, so the WebXR hit-test keeps driving the ring there (unsmoothed:
-  the framework driver's own path). The pick reads last frame's mesh, so it can lag the
+  the framework driver's own path; smoothing it too is filed as F25). The smoother is
+  reset then: resuming from the mesh's last point after the driver drew the raw
+  hit-test pose would jump the ring back for a frame and glide forward again. The pick
+  reads last frame's mesh, so it can lag the
   hit-test by one re-mesh (filed, M5 review #8 / F10); the smoothing's time constant
   (0.1 s) is a deliberate lag of its own, several frames long.
+- **Smoothed in the world group's frame, not in world** (r867 review #2): the mesh, the
+  camera and the reticle all hang under `parent`, which the alignment lerper eases every
+  frame. In world, each alignment step was a lag: the ring slid over a still surface
+  (about 35 cm at 50 m from the pivot of a small turn). In the parent's frame a still
+  surface under a still phone is a still target. Assumes `parent.matrixWorld` is rigid
+  (the alignment is); a singular one turns the normal to zero, which the smoother takes as
+  no sample (the hit-test then drives the ring).
 - A placed pin goes where the ring is (the driver reads the reticle), so it lands on the
   smoothed point the creator sees.
-- Per pick: the raycast plus one more pass over the triangles for the normal (the same
-  order of cost; F13 tracks the frame cost on the phone).
+- Per pick: the raycast plus one more pass over the triangles for the normal. Measured
+  2026-10-15 on a desktop (i7-1185G7, Node 26, one-off, not a test), on noisy floors of
+  0.15 m cells: the pass costs 0.09 / 0.19 - 0.23 / 0.36 - 0.44 / 0.70 - 0.84 ms at
+  5k / 10k / 20k / 40k triangles, about 40 % of the raycast's 0.22 / 0.56 - 0.60 /
+  0.83 - 1.14 / 1.75 - 2.25 ms. Below the 0.5 ms-at-10k bar the r867 review set, so no
+  reduction (caching, every other frame) was built. The PHONE's cost is still unmeasured
+  (F13's baseline without the mesh is still missing).
 - The frame gaps are measured between picks, which the reticle asks once per XR frame.
 
 ## Examples
@@ -111,12 +129,15 @@ surface.dispose();
     through the store is picked within 3 cm of its height, facing up, and every mesh is
     hidden; after `reset()` nothing is picked, and a lower floor fed
     after it is picked at its own height (mutation-checked: without the
-    grid's clear the old floor is hit); a floor meshed from noisy depth is picked flatter
-    than the triangle hit (measured across depth spacing 5-15 cm and noise 2-5 cm: the
-    ring tilts 3 to 3.7 times less);
+    grid's clear the old floor is hit); a floor meshed from noisy depth is picked at
+    least 2.5 times flatter than the triangle hit at every depth spacing 5 / 10 / 15 cm
+    and noise 2 / 5 cm (pinned; measured 3.0 - 3.8 times, the faces tilting only
+    0.5 - 2.5 degrees);
   - the smoothing (mesh-cursor smoothing plan): eases toward a moved point and settles,
-    jumps onto a table 1 m higher, lies flat over a bumped triangle, continues after a
-    one-frame hole and catches up after a long one, starts afresh after `reset()`
+    jumps onto a table 1 m higher, lies flat over a bumped triangle, re-enters on its raw
+    point after a one-frame hole and after a long one, then smooths again (seen red
+    before the reset on a null pick), rides a moved and turned parent with no lag (seen
+    red with world-frame smoothing: 16 cm behind), starts afresh after `reset()`
     (mutation-checked: without the smoother's reset the ring glides).
 - `surface-smoothing*.test.ts`, `mesh-neighbourhood-normal.test.ts` - the two pieces on
   their own, with their sweeps.

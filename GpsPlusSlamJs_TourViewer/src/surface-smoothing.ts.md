@@ -41,8 +41,17 @@ different surface.
   surface behind (a table edge to the floor) snaps.
 - Never past the target and never away from it for a held target (alpha in [0, 1]).
 - Normals are unit length out; the target's is normalised in.
-- The caller supplies `dtS`; the mesh surface passes the time since the last SMOOTHED pick,
-  so a hole in the mesh is a gap in the smoother's time.
+- **An exactly opposite target normal** (a face seen from behind) has no unique great
+  circle: three's `setFromUnitVectors` then turns about an arbitrary axis perpendicular to
+  the ring's normal (its fallback when `1 + cos` is below `Number.EPSILON`). The ring still
+  turns by the step's share of 180 degrees and settles on the target (a unit test pins
+  it); WHICH way it swings is not specified. Within about a degree of opposite the axis is
+  ill-conditioned (float noise in `1 + cos`), so the frame-rate independence property
+  leaves those pairs out (r867 review #1, #9).
+- The caller supplies `dtS` and the frame: the mesh surface passes the time since the last
+  smoothed pick, resets the smoother whenever its pick has no point (a hole: the hit-test
+  draws the ring meanwhile, so the mesh re-enters on its raw point), and smooths in the
+  world group's own frame, not in world (r867 review #2, #4; `mesh-surface.ts.md`).
 
 ## Parameter sweeps (60 Hz, analytic and pinned by the property test)
 
@@ -55,7 +64,8 @@ different surface.
 - `snapRatio` 0.1 - 0.6: across the whole range a pan at 1 m/s (2 m away) glides and a
   table-to-floor jump (1 m to 2.5 m) snaps; 0.3 is not on an edge.
 - `normalTauS` 0.2 s: the same curve at twice the time constant (the owner asked for the
-  rotation to be calmed more).
+  rotation to be calmed more) - analytic, from the position rows above; not a separate
+  test row.
 
 ## Examples
 
@@ -70,10 +80,13 @@ smoother.reset();
 ## Tests
 
 - `surface-smoothing.test.ts` - the exact step, gaps and bad `dt`, the first point, easing
-  and convergence, the slower normal, the snap and the no-snap, a short hole and a long
-  gap, `reset()`, bad input as no sample, unknown distance, copies out, bad settings, the
-  defaults (mutation-checked: the linear `clampedAlpha` form fails six tests, no snap
-  fails four).
+  and convergence, the slower normal, an exactly opposite normal turned the whole way, the
+  snap and the no-snap, a short hole and a long gap, `reset()`, bad input as no sample,
+  unknown distance, copies out, bad settings, the defaults (mutation-checked: the linear
+  `clampedAlpha` form fails six tests, no snap fails four).
 - `surface-smoothing.property.test.ts` - finite point and unit normal for any input and
-  `dt`; never away from or past a held target; frame-rate independence; no lag beyond the
-  snap ratio survives a step; alpha composition; the sweeps above.
+  `dt`; never away from or past a held target; frame-rate independence (pairs within
+  1 degree of opposite left out: 4 of 15 runs had failed there; after the exclusion 30 of
+  30 runs and one run at 20 000 cases passed, and the same 20 000 cases without it
+  failed); no lag beyond the snap ratio survives a step; alpha composition; the sweeps
+  above.
