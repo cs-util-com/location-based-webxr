@@ -166,7 +166,16 @@ activateM)` (each tick, each offered station with a distance: the
   radius at the station pose floor (`STATION_POSE_FLOOR_M`, 5 m) - the
   code-placed position is assumed no worse than the stored spots
   themselves (up to 3.6 m at p90) - or the creator's wider found radius.
-  Outside it the skip reads as before ("Can't get there?").
+  Outside it the skip reads as before ("Can't get there?"). **"I'm here"
+  supersedes the skip, it does not sit beside it** (the owner's decision
+  says "in place of"; kept after the PR #624 review): the one button
+  offers it while `hereOffered` holds, so a visitor inside the band who
+  cannot reach the station (a locked door) has no skip there; the way past
+  is "I'm here", which marks it found by the visitor. Since the PR #623
+  fix this holds in a session with location granted but no usable fix
+  too, not only without location. An undoable skip still comes first
+  (`undo` is checked before it). Put to the owner as a candidate, should
+  field use show a need for both.
 
 ## Examples
 

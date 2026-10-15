@@ -254,6 +254,25 @@ describe("wireArEntry session end", () => {
     expect(h.ctx.fusedPose).toBeNull();
   });
 
+  // Why (PR #624 review): the compass wait arms on the first voted lock of
+  // every entry, read as a voted-lock count of 0 (`viewer-placement.ts`
+  // `armCodeZeroWait`); a wait or a count the session end left behind would
+  // keep the next entry's scan from waiting, or end it at a moment that
+  // means nothing to that entry.
+  it("ends the compass wait and zeroes the voted-lock count, so the next entry's scan waits again", async () => {
+    const h = harness();
+    const cancel = vi.fn();
+    await h.enter();
+    h.ctx.codeZeroWaitUntilMs = 12_345;
+    h.ctx.cancelCodeZeroWait = cancel;
+    h.ctx.viewerVotedLocks = 8;
+    h.enabledConfig()!.callbacks?.onSessionEnd?.({ requestedByApp: false });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(h.ctx.codeZeroWaitUntilMs).toBeNull();
+    expect(h.ctx.cancelCodeZeroWait).toBeNull();
+    expect(h.ctx.viewerVotedLocks).toBe(0);
+  });
+
   // Why this test matters (owner report 2026-10-07): the pipeline starts
   // BEFORE the session is requested, and a declined permission prompt
   // fails the start. No session ever ran, so no session end disposed it,

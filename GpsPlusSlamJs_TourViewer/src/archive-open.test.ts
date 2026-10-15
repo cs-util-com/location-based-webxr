@@ -174,12 +174,17 @@ describe("a tour switch ends the closing tour's compass wait", () => {
     ctx.codeZeroWaitUntilMs = 12_345;
     ctx.cancelCodeZeroWait = cancel;
     ctx.levelsUnreadable = true;
+    // The new tour's first voted lock arms the wait again, read as a
+    // voted-lock count of 0 (PR #624 review; `viewer-placement.ts`
+    // `armCodeZeroWait`).
+    ctx.viewerVotedLocks = 8;
     const dom = openAnotherTour(ctx);
     await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
     expect(cancel).toHaveBeenCalledOnce();
     expect(ctx.codeZeroWaitUntilMs).toBeNull();
     expect(ctx.cancelCodeZeroWait).toBeNull();
     expect(ctx.levelsUnreadable).toBe(false);
+    expect(ctx.viewerVotedLocks).toBe(0);
   });
 });
 

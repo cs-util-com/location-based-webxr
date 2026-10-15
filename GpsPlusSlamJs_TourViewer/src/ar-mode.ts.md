@@ -36,7 +36,16 @@ identical here — they diverge in M3/M4.
 - `buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig` -
   `hooks.requestHitTest` asks for the WebXR `hit-test` feature (the
   creator's reticle; without it the reticle never shows) - hooks:
-  `{ container, trackingStore, onFrame, onSessionEnd, onGpsPosition, onOrientation }`.
+  `{ container, requestHitTest, trackingStore, onFrame, onSessionEnd, onGpsPosition, onOrientation }`,
+  and the optional `onDepthSample`, `onTrackingRestarted` and `location`
+  (each below).
+  `location: "none"` (QR-first M1b-1) is forwarded as the config's
+  `location`: the framework's codes-only mode, for a visitor who declined
+  location (`ar-entry.ts` passes it when `ctx.codesOnly` is set).
+  `enable()` then asks for no location permission and starts no GPS watch,
+  so `onGpsPosition` is never called for the session; the camera, the
+  orientation and every other hook work as with location. Absent (every
+  other entry): the framework's default, location required.
   `onFrame(frame: CapturedCameraFrame)` receives every throttled camera
   frame - top-left RGBA plus the camera pose and epoch-ms time of its capture
   (QR perf plan 2026-09-23 M4) - forwarded unchanged from
@@ -91,6 +100,13 @@ startCameraFrameCapture, now }` (seam-injected).
 - GPS fixes arriving between watch start and the `startSession` dispatch
   (a sub-second window during `enable()`) are dropped, as in MinimalExample;
   fixes are continuous, so the loss is immaterial.
+- **In the codes-only mode (`location: "none"`) no watch starts at all**:
+  no fix reaches `onGpsPosition` for the whole session, so the session's
+  zero and alignment come from the scanned codes alone (`viewer-placement.ts`
+  `zeroFromCode`), and nothing the viewer derives from device fixes (the
+  moved-code check, the keep-alive's hand-over, the compass wait) has
+  anything to work on. The runtime start is the same (`startSession`
+  included): the codes' votes go through the same coordinator gate.
 - Hit-test only for a creator (`requestHitTest`, the placement reticle
   since M4); no depth permission: the QR flows anchor to detected codes
   and GPS positions, never to hit-test planes.
@@ -113,7 +129,8 @@ if (result.ok) {
 ## Tests
 
 `ar-mode.test.ts` — the isolation-flag pin (and depth ON only with
-`onDepthSample`, its samples reaching the hook, no permission probe),
+`onDepthSample`, its samples reaching the hook, no permission probe), the
+codes-only `location` forwarded and the default left alone,
 camera-frame wiring at initAR-callback level, the real-recording-slice `startSession` proof, the
 alignment/capture arguments, the loud world-group failure, and the full
 button-view table. The composed boot is proven by

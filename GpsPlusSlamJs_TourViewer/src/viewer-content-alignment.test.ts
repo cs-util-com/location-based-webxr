@@ -53,6 +53,7 @@ import {
   selectAlignmentMatrix,
   selectZeroReference,
   setZeroPos,
+  teardownArSessionState,
 } from "gps-plus-slam-app-framework/state";
 
 import {
@@ -66,6 +67,8 @@ import {
   createTourViewerSession,
   createTourViewerStore,
   createUnwiredHooks,
+  endQrPipeline,
+  endTourCodeVotes,
 } from "./tour-viewer-session.js";
 import {
   CODE_ZERO_WAIT_LOCKS,
@@ -316,6 +319,7 @@ async function visitorSession(
     clock,
     fireTimers,
     hooks,
+    placement,
   };
 }
 
@@ -676,4 +680,158 @@ describe("after a code-set zero the first placement waits for the compass (QR-fi
     await flush();
     expect(s.label.parent?.parent).toBe(s.scene);
   }, 60_000);
+
+  // Why (PR #624 review): the wait armed only where a code SET the zero, and
+  // the zero survives an AR exit (`resetGpsSessionData` keeps it) while the
+  // alignment and the solver's cold-start yaw window do not. So a second AR
+  // entry - and a tour opened inside one entry - showed its first voted lock
+  // at once: the 6-7-lock swing of 13.8-33.8 deg the wait exists to hide.
+  // The wait arms on the first voted lock of every entry and every tour while
+  // no device fix reached the entry's GPS history.
+  describe("arms on every AR entry and every tour, not only where a code set the zero", () => {
+    /** The AR exit and the next entry, as `ar-entry.ts` `onSessionEnd`
+     *  leaves what the placement reads: the store's session teardown (the
+     *  zero kept), the entry's pipeline ended, the wait, the placed content,
+     *  the gate and the lock count reset; then the next entry's pipeline. */
+    function reEnterAr(s: Awaited<ReturnType<typeof visitorSession>>): void {
+      teardownArSessionState(s.arStore);
+      endQrPipeline(s.ctx);
+      s.ctx.cancelCodeZeroWait?.();
+      s.ctx.cancelCodeZeroWait = null;
+      s.ctx.codeZeroWaitUntilMs = null;
+      s.ctx.contentRendered?.dispose();
+      s.ctx.contentRendered = null;
+      s.ctx.contentAttempted = false;
+      s.ctx.imagePlanes?.dispose();
+      s.ctx.imagePlanes = null;
+      s.ctx.scanGate = { kind: "idle" };
+      s.ctx.viewerVotedLocks = 0;
+      s.ctx.viewerLockedText = null;
+      s.ctx.placement = { kind: "idle" };
+      s.ctx.placementAttempted = false;
+      s.ctx.joinDeclined = false;
+      s.ctx.planesRunGeneration += 1;
+      s.placement.startViewerPipeline();
+      s.placement.startScanGate();
+    }
+
+    /** The same tour closed and opened again inside the entry, as
+     *  `archive-open.ts` `teardownSession` leaves what the placement reads:
+     *  the codes' caches, the wait, the code votes, the placed content, the
+     *  gate and the lock count reset; the GPS history (old votes and all)
+     *  and the zero stay. Then the reopened tour's gate. */
+    function switchTour(s: Awaited<ReturnType<typeof visitorSession>>): void {
+      s.ctx.qrController?.reset();
+      s.ctx.levelByText.clear();
+      s.ctx.levelIdByText.clear();
+      s.ctx.cancelCodeZeroWait?.();
+      s.ctx.cancelCodeZeroWait = null;
+      s.ctx.codeZeroWaitUntilMs = null;
+      endTourCodeVotes(s.ctx);
+      s.ctx.imagePlanes?.dispose();
+      s.ctx.imagePlanes = null;
+      s.ctx.contentRendered?.dispose();
+      s.ctx.contentRendered = null;
+      s.ctx.contentAttempted = false;
+      s.placement.resetScanGate();
+      s.ctx.placementAttempted = false;
+      s.ctx.joinDeclined = false;
+      s.ctx.viewerVotedLocks = 0;
+      s.ctx.viewerLockedText = null;
+      s.ctx.planesRunGeneration += 1;
+      s.placement.startScanGate();
+    }
+
+    /** A first entry: the code alone, a full scan, the content shown. */
+    async function firstEntryShown(): Promise<
+      Awaited<ReturnType<typeof visitorSession>>
+    > {
+      const s = await visitorSession(8, false);
+      s.clock.nowMs = T0 + 500;
+      expect(await firstVotedLock(s)).toBe(1);
+      for (let i = 1; i < CODE_ZERO_WAIT_LOCKS; i += 1) await s.frame();
+      await flush();
+      expect(s.label.parent?.parent).toBe(s.scene);
+      return s;
+    }
+
+    /** Frames until `locks` more voted locks have landed. */
+    async function scanLocks(
+      s: Awaited<ReturnType<typeof visitorSession>>,
+      locks: number,
+    ): Promise<void> {
+      const target = s.syntheticVotes() + locks * VIEWER_VOTE_COUNT;
+      let frames = 0;
+      while (s.syntheticVotes() < target && frames < 40) {
+        await s.frame();
+        frames += 1;
+      }
+      expect(s.syntheticVotes()).toBe(target);
+      await flush();
+    }
+
+    it("waits again on a second AR entry: nothing after a 3-lock glance until the timeout", async () => {
+      const s = await firstEntryShown();
+      reEnterAr(s);
+      expect(selectZeroReference(s.arStore.getState())).not.toBeNull();
+      expect(s.label.parent?.parent).not.toBe(s.scene);
+      s.clock.nowMs = T0 + 60_000;
+      await scanLocks(s, 3);
+      expect(s.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+      expect(s.label.parent?.parent).not.toBe(s.scene);
+      s.clock.nowMs = T0 + 60_000 + CODE_ZERO_WAIT_MS;
+      expect(s.fireTimers(CODE_ZERO_WAIT_MS)).toBe(1);
+      await flush();
+      expect(s.label.parent?.parent).toBe(s.scene);
+    }, 60_000);
+
+    it("waits again on a second AR entry: a full scan is shown on its eighth voted lock", async () => {
+      const s = await firstEntryShown();
+      reEnterAr(s);
+      s.clock.nowMs = T0 + 60_000;
+      await scanLocks(s, CODE_ZERO_WAIT_LOCKS - 1);
+      expect(s.label.parent?.parent).not.toBe(s.scene);
+      await scanLocks(s, 1);
+      expect(s.label.parent?.parent).toBe(s.scene);
+    }, 60_000);
+
+    it("waits again for a tour opened inside the entry: 8 locks, or the timeout", async () => {
+      const s = await firstEntryShown();
+      switchTour(s);
+      s.clock.nowMs = T0 + 60_000;
+      await scanLocks(s, CODE_ZERO_WAIT_LOCKS - 1);
+      expect(s.label.parent?.parent).not.toBe(s.scene);
+      await scanLocks(s, 1);
+      expect(s.label.parent?.parent).toBe(s.scene);
+
+      switchTour(s);
+      s.clock.nowMs = T0 + 120_000;
+      await scanLocks(s, 3);
+      expect(s.label.parent?.parent).not.toBe(s.scene);
+      s.clock.nowMs = T0 + 120_000 + CODE_ZERO_WAIT_MS;
+      expect(s.fireTimers(CODE_ZERO_WAIT_MS)).toBe(1);
+      await flush();
+      expect(s.label.parent?.parent).toBe(s.scene);
+    }, 60_000);
+
+    it("does not wait on a second AR entry when a device fix came before its first lock", async () => {
+      const s = await firstEntryShown();
+      reEnterAr(s);
+      s.clock.nowMs = T0 + 60_000;
+      s.fix([6, 1.5, -20.5], s.clock.nowMs);
+      await scanLocks(s, 1);
+      expect(s.label.parent?.parent).toBe(s.scene);
+      expect(s.fireTimers(CODE_ZERO_WAIT_MS)).toBe(0);
+    }, 60_000);
+
+    it("does not wait for a tour opened after a device fix in the entry", async () => {
+      const s = await firstEntryShown();
+      s.clock.nowMs = T0 + 30_000;
+      s.fix([6, 1.5, -20.5], s.clock.nowMs);
+      switchTour(s);
+      s.clock.nowMs = T0 + 60_000;
+      await scanLocks(s, 1);
+      expect(s.label.parent?.parent).toBe(s.scene);
+    }, 60_000);
+  });
 });
