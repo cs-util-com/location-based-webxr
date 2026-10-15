@@ -804,7 +804,8 @@ const arEntry = wireArEntry({
   mode,
   arStore,
   // The creator's ring on a mesh of the surroundings (polish round M5,
-  // Q-Mesh): behind ?mesh=1 until the owner likes it on the phone.
+  // Q-Mesh): the default since the owner's phone test of 2026-10-15;
+  // ?mesh=0 turns it off.
   meshCursor: mode === "creator" && meshCursorFromSearch(location.search),
   arController,
   gpsHandler,

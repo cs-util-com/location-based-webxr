@@ -393,9 +393,11 @@ test("visitor mode boots to running: session started, alignment bound, capture a
     };
   });
   // Camera frames must be wired AT initAR time (the source is built there),
-  // with the M2 isolation flags: camera + texture ON, depth OFF. A VISITOR
-  // does not request hit-test (only the creator's reticle needs it), and
-  // hands initAR no depth callback (only a recorded creator entry does).
+  // with the M2 isolation flags: camera + texture ON, and for an unrecorded
+  // VISITOR depth OFF. A visitor does not request hit-test (only the
+  // creator's reticle needs it), and hands initAR no depth callback: that
+  // is every creator entry's (the mesh cursor, unless ?mesh=0) and a
+  // recorded entry's (at the recording's 16 x 16 / 1 Hz).
   expect(wiring.initAR).toEqual([
     {
       hasCameraFrame: true,
@@ -3749,7 +3751,10 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
   await expect(page.getByTestId("recording-marker")).toHaveText(
     "Recording this session",
   );
-  // Depth while recording, as the creator's recording (decision D4).
+  // Depth while recording, as the creator's recording (decision D4), and
+  // at the recording's rate (r867 review #6): a visitor has no mesh cursor,
+  // so this entry's depth is the recording's alone, and the capture call
+  // pins that density rather than only that depth was asked for.
   expect(
     await page.evaluate(
       () =>
@@ -3757,6 +3762,13 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
           .hasDepth,
     ),
   ).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => /** @type {any} */ (window).__tourViewerTest.depthCaptureCalls,
+      ),
+    )
+    .toEqual([{ intervalMs: 1000, gridSize: 16, rgb: false }]);
 
   await seedAlignment(page);
   await forceTrackingReady(page);
@@ -3978,13 +3990,14 @@ test("a code hung far from its saved spot is ignored after a minute of walking: 
   await expect(status).toContainText("seems to have been moved");
 });
 
-test("with ?mesh=1 a creator's ring follows a mesh: depth at the mesh density, one mesh per session (polish round M5)", async ({
+test("a creator's ring follows a mesh by default: depth at the mesh density, one mesh per session, none with ?mesh=0 (polish round M5)", async ({
   page,
 }) => {
-  // Why: the mesh cursor is behind ?mesh=1 until the owner likes it on the
-  // phone (Q-Mesh); the e2e scene has no depth to mesh, so this pins the
-  // wiring - the depth request, the mesh's life, the ring given its pick -
-  // and that without the flag nothing of it runs.
+  // Why: the mesh cursor is the creator default since the owner tried it
+  // on the phone (2026-10-15, mesh-cursor smoothing plan); the e2e scene has no
+  // depth to mesh, so this pins the wiring - the depth request, the mesh's
+  // life, the ring given its pick - and that with ?mesh=0 nothing of it
+  // runs (the hit-test ring alone, as before M5).
   const state = () =>
     page.evaluate(() => {
       const t = /** @type {any} */ (window).__tourViewerTest;
@@ -3995,7 +4008,7 @@ test("with ?mesh=1 a creator's ring follows a mesh: depth at the mesh density, o
         pick: t.reticleSurfacePick,
       };
     });
-  await page.goto("/?mesh=1");
+  await page.goto("/");
   await openMeasureStep(page);
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();
@@ -4011,10 +4024,24 @@ test("with ?mesh=1 a creator's ring follows a mesh: depth at the mesh density, o
   await expect(page.getByTestId("enter-ar")).toHaveText("Start creating");
   expect((await state()).disposed).toBe(1);
 
-  await page.goto("/");
+  await page.goto("/?mesh=0");
   await openMeasureStep(page);
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();
   await expect(page.getByTestId("enter-ar")).toHaveText("Done");
   expect(await state()).toMatchObject({ depth: [], meshes: 0, pick: false });
+
+  // The old opt-in links (?mesh=1, from the phone test) keep the mesh on
+  // through the composed page, not only in the flag's parser (r867 review
+  // #7: the plan's verification named this case).
+  await page.goto("/?mesh=1");
+  await openMeasureStep(page);
+  await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("enter-ar").click();
+  await expect(page.getByTestId("enter-ar")).toHaveText("Done");
+  await expect.poll(async () => (await state()).meshes).toBe(1);
+  expect(await state()).toMatchObject({
+    depth: [{ intervalMs: 200, gridSize: 24 }],
+    pick: true,
+  });
 });

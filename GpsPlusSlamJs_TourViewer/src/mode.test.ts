@@ -45,14 +45,28 @@ describe("viewerModeFromSearch", () => {
   );
 });
 
-describe("meshCursorFromSearch (polish round M5, Q-Mesh)", () => {
-  // Why: the mesh cursor stays behind ?mesh=1 until the owner likes it on
-  // the phone; any other value, or none, keeps today's hit-test ring.
-  it("is on only for mesh=1", () => {
-    expect(meshCursorFromSearch("?mesh=1")).toBe(true);
-    expect(meshCursorFromSearch("?debug=1&mesh=1")).toBe(true);
-    for (const search of ["", "?mesh=0", "?mesh", "?mesh=true", "?debug=1"]) {
-      expect(meshCursorFromSearch(search), search).toBe(false);
+describe("meshCursorFromSearch (polish round M5, Q-Mesh; the default since 2026-10-15)", () => {
+  // Why: the owner tested the mesh cursor on the phone ("it works fine")
+  // and it became the creator default (mesh-cursor smoothing plan
+  // 2026-10-15-0944): only ?mesh=0 turns it off, and the old ?mesh=1 links
+  // keep working. The off values mirror the debug flag's on values
+  // (`1`/`true`, case and spaces tolerated); any other value keeps it on,
+  // so a typo never silently drops a creator back to the hit-test ring.
+  it("is on unless mesh=0 (or false)", () => {
+    for (const search of [
+      "",
+      "?mesh=1",
+      "?debug=1&mesh=1",
+      "?debug=1",
+      "?mesh",
+      "?mesh=true",
+      "?mesh=01",
+    ]) {
+      expect(meshCursorFromSearch(search), search).toBe(true);
     }
+    expect(meshCursorFromSearch("?mesh=0")).toBe(false);
+    expect(meshCursorFromSearch("?debug=1&mesh=0")).toBe(false);
+    expect(meshCursorFromSearch("?mesh=false")).toBe(false);
+    expect(meshCursorFromSearch("?mesh=%20FALSE%20")).toBe(false);
   });
 });

@@ -20,8 +20,10 @@ since the flows plan M6.
     `buildArEnableConfig` and each sample is dispatched as-is as
     `recording/recordDepthSample` (the Recorder's way); once the runtime runs,
     `seams.startDepthCapture(RECORDING_DEPTH)` starts the sampler, and the
-    session end stops it. A creator's entry with `?mesh=1` (`deps.meshCursor`,
-    polish round M5) that is not recorded asks for depth at `MESH_DEPTH` the
+    session end stops it. A creator's entry with the mesh cursor
+    (`deps.meshCursor`, polish round M5; `main.ts` sets it for every
+    creator unless `?mesh=0`, the default since 2026-10-15) that is not
+    recorded asks for depth at `MESH_DEPTH` the
     same way (a recorded one keeps `RECORDING_DEPTH`: the recording's byte
     estimate assumes it), starts `seams.startMeshSurface` under the world
     group, hands the reticle its `pick`, puts its frame time and triangles in

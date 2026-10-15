@@ -40,7 +40,13 @@ author flag.
    camera; keep the code in view until the panel says it is measured
    (walking a few metres with GPS reception lets the phone align to the
    map, and the panel shows the accuracy). At the spots you choose,
-   "Place a pin here" (a text label on the surface under the ring) and
+   "Place a pin here" (a text label on the surface under the ring; the
+   ring follows a mesh the phone builds of the surroundings from its depth
+   sensor, easing over the surface and lying flat to it, and falls back to
+   the phone's own surface detection where there is no mesh - a phone
+   without depth, the first seconds, gaps; a troubleshooting recording
+   samples depth more sparsely, so its mesh is thinner; `?mesh=0` turns
+   the mesh off) and
    "Capture a photo" (the camera frame, placed where you stood). Placing
    needs only the GPS alignment, never the code: it works anywhere along
    the walk, also before the code is measured or after its print size
