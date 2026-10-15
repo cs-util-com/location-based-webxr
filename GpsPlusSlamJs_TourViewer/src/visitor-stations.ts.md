@@ -16,8 +16,8 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   test switch `?relocate=here` (`tour-relocation.ts`): the stations are
   held back until the phone's first raw GPS fix, then moved there.
 - `stationPlacementAllowed(ctx, mode): boolean` - the guide's
-  `placementAllowed`, exported so the compass wait's test drives the
-  page's own rule (see below).
+  `placementAllowed`, exported so the placement test drives the page's
+  own rule (see below).
 
 ## Invariants & assumptions
 
@@ -30,14 +30,12 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
 - Placement is allowed for a visitor with a live session
   (`ctx.placementUnsubscribe`) and a gate that allows it
   (`gateAllowsPlacement`, DEC-N3): the stations wait behind the scan gate
-  like the tour's other content. They also wait behind the compass wait
-  (`ctx.codeZeroWaitUntilMs === null`;
-  `viewer-placement` `CODE_ZERO_WAIT_LOCKS`, r857 milestone review #1): a
-  station on the scanned code was found and offered at lock 1, its figure
-  and breadcrumbs then turning with the compass swing the wait hides. The
-  wait's end reports the last locked code to the guide again
-  (`hooks.stationCodeLocked`), so a glance that ends by the timeout still
-  finds its station.
+  like the tour's other content. From r857 to r863 they also waited behind
+  the compass wait (a station on the scanned code turned with the compass
+  swing the wait hid, r857 milestone review #1); since r863 a code's
+  rotation stands from its first lock (`viewer-vote-sink.ts`
+  `VIEWER_SOFT_TRIM`), so a station on the scanned code is found on that
+  lock.
 - Media are read through `ctx.session.loadContentEntry` (K0's allowlist and
   `.glb` check, K1's per-entry hash check), ahead of time as the visitor
   approaches (`station-prefetch.ts`; the story's own reads go through the
@@ -75,7 +73,6 @@ hooks.tickStations = stations.tick;
 ## Tests
 
 - `playwright-tests/stations.spec.js` (the composition).
-- `viewer-content-alignment.test.ts` ("holds the stations back too"): the
-  real station guide over the real placement and `stationPlacementAllowed`
-  - no station found during a 3-lock glance or before the eighth voted
-    lock, found when the wait ends by either path.
+- `viewer-content-alignment.test.ts` ("finds the station on the scanned
+  code on the first voted lock"): the real station guide over the real
+  placement and `stationPlacementAllowed`.

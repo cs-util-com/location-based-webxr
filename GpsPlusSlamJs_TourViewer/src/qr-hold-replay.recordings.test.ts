@@ -19,7 +19,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import {
@@ -102,9 +102,18 @@ describe.runIf(MODE === "recording")(
     let actions: RecordedAction[] = [];
     let parsed: ParsedRecording;
 
-    it("reads the recording into replay events", async () => {
+    // Loaded once for every test here (PR #627 bot review): loaded inside
+    // the first test, a tier run alone (`-t "tier 1"`) or after a failed
+    // load compared an empty list and passed with no data. A missing
+    // recording fails here, as `loadRecording` already throws for one.
+    beforeAll(async () => {
       actions = await loadRecording();
+      if (actions.length === 0)
+        throw new Error(`the recording holds no actions: ${ZIP}`);
       parsed = parseViewerRecording(actions);
+    }, 300_000);
+
+    it("reads the recording into replay events", () => {
       const kinds = new Map<string, number>();
       for (const e of parsed.events)
         kinds.set(e.kind, (kinds.get(e.kind) ?? 0) + 1);

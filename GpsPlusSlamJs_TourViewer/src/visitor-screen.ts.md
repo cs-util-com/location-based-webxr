@@ -25,7 +25,9 @@ start a session.
   `codesOnly()` (the next start runs without location - QR-first M1b-1)
   and `recheck()` (read the permission again before a codes-only start,
   M1b-1 review #3: `"granted"` turns codes-only off, so the start uses
-  GPS; `"prompt"` - Chrome's reading after a DISMISSED prompt - offers
+  GPS, and the line above the button becomes the granted line
+  (`locationRequestNotice("granted").hint`, PR #627 bot review: the
+  codes-only line stayed and showed again after AR exit); `"prompt"` - Chrome's reading after a DISMISSED prompt - offers
   the location once more, pending again with the "browser will ask"
   hint; once per page, so a second dismissal starts on codes and never
   loops; `"denied"`/`"unknown"`/a throwing query change nothing).
@@ -150,4 +152,5 @@ answer wrote surviving `tourChanged()` (r857 review #2); the `needsNoGps`
 flag holding only with `codesUsable() === true` and `tourCodesUsable`'s
 four cases (r857 review #4); the rendered codes line giving way once the
 codes are known unusable, on a blocked site and after a denial (PR
-#621/#623 reviews).
+#621/#623 reviews); the recheck (granted turns codes-only off and writes
+the granted line, PR #627; a dismissed prompt offered once more).
