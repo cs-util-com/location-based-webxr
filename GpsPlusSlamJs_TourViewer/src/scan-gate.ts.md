@@ -56,7 +56,9 @@ clock, the escape button).
   plan review #1: keying on a vote left a visibly locked code unable to
   pass) placed the content through an alignment no code had corrected
   whenever the lock came before the first GPS fix or while the pose
-  converged, and said the code had worked (§2.2 B3). A lock that cannot
+  converged, and said the code had worked (§2.2 B3). (The first cause is
+  history: since QR-first M1 a stable code sets the session zero itself,
+  so its lock votes with no fix; a converging pose is the cause left.) A lock that cannot
   vote now keeps the gate scanning: the fused pose's hint says what it
   waits for, and the escape still offers GPS-only placement.
 - The escape has its own clock in the driver, independent of camera frames

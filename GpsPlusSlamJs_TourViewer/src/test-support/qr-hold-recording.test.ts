@@ -1,0 +1,44 @@
+import { describe, expect, it } from "vitest";
+import type { RecordGpsEventPayload } from "gps-plus-slam-app-framework/state";
+
+import {
+  parseViewerRecording,
+  type RecordedAction,
+} from "./qr-hold-recording.js";
+
+const fix = (id: string, timestamp: number): RecordGpsEventPayload => ({
+  odomPosition: [0, 0, 0],
+  odomRotation: [0, 0, 0, 1],
+  rawGpsPoint: {
+    id,
+    latitude: 47.5,
+    longitude: 8.7,
+    latLongAccuracy: 5,
+    timestamp,
+  },
+});
+
+// Why (PR #623 bot review): a veto whose recovery left no action behind -
+// zero re-fed batches (the `retractVotes() ?? { batches: 0 }` fallback in
+// `viewer-placement.ts`) and no reset or cleared overrides before it - had
+// an empty block, so `Math.min()` anchored it at Infinity and the replay
+// had no `veto` event at all. Under `veto: "as-recorded"` the replayed
+// code then kept voting where the phone ignored it. The veto must stay,
+// anchored at its own `codeIgnored` entry, and the notes must say why.
+describe("parseViewerRecording: a veto with no recovery actions", () => {
+  it("keeps the veto, after the next GPS event, and notes the empty recovery", () => {
+    const actions: RecordedAction[] = [
+      { type: "gpsData/recordGpsEvent", payload: fix("gps-1", 1_000) },
+      {
+        type: "tourViewing/codeIgnored",
+        payload: { text: "CODE-A", atMs: 1_500, recovery: { batches: 0 } },
+      },
+      { type: "gpsData/recordGpsEvent", payload: fix("gps-2", 2_000) },
+    ];
+    const parsed = parseViewerRecording(actions);
+    const kinds = parsed.events.map((e) => e.kind);
+    expect(kinds).toEqual(["fix", "fix", "veto"]);
+    expect(parsed.events[2]).toEqual({ kind: "veto", text: "CODE-A" });
+    expect(parsed.notes.some((n) => /no recovery actions/.test(n))).toBe(true);
+  });
+});

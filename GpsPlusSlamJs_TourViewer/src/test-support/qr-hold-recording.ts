@@ -27,7 +27,8 @@
  *   event of any kind; the notes name it) - the recorder numbers an action
  *   when its dispatch returns, so the retraction, dispatched from inside
  *   that event's store notification, is recorded before it; its actions are
- *   not replayed (the engine's sink does the same retraction).
+ *   not replayed (the engine's sink does the same retraction). A recovery
+ *   that left no action at all is read from its `codeIgnored` entry alone.
  * - `gpsData/setAlignmentOverrides` with `null` outside a veto is an AR
  *   entry (`entry`): the sink's clear. A non-null one is the sink turning the
  *   soft trim on: set aside, the engine regenerates it.
@@ -154,7 +155,15 @@ function vetoBlocks(actions: readonly RecordedAction[]): {
       );
     }
     for (const k of block) consumed.add(k);
-    vetoAt.set(Math.min(...block), text);
+    // A recovery that left no action (no re-fed batch, reset or cleared
+    // overrides) still vetoed the code: anchored at its own entry, never
+    // at `Math.min()` of nothing, which no action index matches.
+    if (block.length === 0) {
+      notes.push(
+        `veto at action ${String(i)}: no recovery actions before it, anchored at its own entry`,
+      );
+    }
+    vetoAt.set(block.length === 0 ? i : Math.min(...block), text);
   });
   return { consumed, vetoAt, notes };
 }
@@ -217,7 +226,9 @@ export function parseViewerRecording(
     const vetoText = vetoAt.get(i);
     if (vetoText !== undefined) {
       pendingVeto = { text: vetoText, snaps: [], anchorsMs: [] };
-      return;
+      // A veto anchored at its own entry: that entry's snapshot and time
+      // still go with it (the `codeIgnored` case below).
+      if (a.type !== "tourViewing/codeIgnored") return;
     }
     if (consumed.has(i)) return;
     switch (a.type) {

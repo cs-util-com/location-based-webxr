@@ -834,8 +834,20 @@ describe("a station without a printed code, without location (codes only)", () =
       order: "fixed",
       levels: null,
     });
-    withGps.at(26, 0, null);
+    // A usable fix: GPS finds the station on its own. (This case used to
+    // pass no accuracy - the no-fix shape, which is offered: below.)
+    withGps.at(26, 0);
+    expect(withGps.found).toEqual(["well"]);
     expect(withGps.dom.skip.textContent).not.toBe(HERE);
+    // A usable fix outside the found band: neither found nor offered.
+    const outside = harness({
+      stations: [station("well", 30, 0)],
+      order: "fixed",
+      levels: null,
+    });
+    outside.at(10, 0);
+    expect(outside.found).toEqual([]);
+    expect(outside.dom.skip.textContent).not.toBe(HERE);
 
     const geo = calcGpsCoords(zero, [30, 0, 0]);
     const levels = new Map<string, QrLevel>([
@@ -858,5 +870,23 @@ describe("a station without a printed code, without location (codes only)", () =
     coded.setCodesOnly(true);
     coded.at(28, 0, null);
     expect(coded.dom.skip.textContent).not.toBe(HERE);
+  });
+
+  // Why (PR #623 bot review): what makes such a station unreachable is no
+  // usable device accuracy, not the session's mode. A visitor whose
+  // permission is granted but who gets no fix (indoors) runs with GPS on,
+  // so codes-only is off - yet nothing finds the station by position, and
+  // the line guided them to the spot with only the skip to tap there.
+  it("is offered with location on but no device fix (granted, indoors)", () => {
+    const h = harness({
+      stations: [station("well", 30, 0)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(26, 0, null);
+    expect(h.found).toEqual([]);
+    expect(h.dom.skip.textContent).toBe(HERE);
+    h.guide.skipTapped();
+    expect(h.found).toEqual(["well"]);
   });
 });

@@ -73,7 +73,8 @@ export interface StationGuideDeps {
   placementAllowed(): boolean;
   /** The session runs without location (QR-first M1b-1): a station without
    *  a printed code is offered to the visitor's own "I'm here" inside its
-   *  found band. Absent: never. */
+   *  found band - as it is, with location on, while no device fix carries
+   *  an accuracy (`hereOffered`). Absent: only the no-fix case. */
   codesOnly?(): boolean;
   zero(): LatLong | null;
   visitor(): VisitorPosition;
@@ -412,16 +413,20 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
 
   /**
    * Whether to offer the visitor's own "I'm here" for this station (owner
-   * decision after the M1b-1 review): without location only, for a station
-   * without a printed code (one with a code is found by locking it), while
-   * the phone's own estimate - the code-placed position - is inside its
-   * found band. No fix measures that estimate's accuracy, so the band is
-   * taken at the station pose floor (`STATION_POSE_FLOOR_M`, 5 m: the stored
-   * spots themselves are off by up to 3.6 m at p90), or the creator's wider
-   * found radius. Nothing is found without the tap.
+   * decision after the M1b-1 review): without a usable device accuracy only
+   * - a session without location, or one with location but no fix yet
+   * (granted, indoors: PR #623 review), where the run finds nothing by
+   * position - for a station without a printed code (one with a code is
+   * found by locking it), while the phone's own estimate - the code-placed
+   * position - is inside its found band. No fix measures that estimate's
+   * accuracy, so the band is taken at the station pose floor
+   * (`STATION_POSE_FLOOR_M`, 5 m: the stored spots themselves are off by up
+   * to 3.6 m at p90), or the creator's wider found radius. Nothing is found
+   * without the tap.
    */
   function hereOffered(id: string): boolean {
-    if (deps.codesOnly?.() !== true) return false;
+    const noFix = (last?.visitor.accuracyM ?? null) === null;
+    if (deps.codesOnly?.() !== true && !noFix) return false;
     const station = stationById(id);
     const d = last?.distances.get(id);
     if (station === undefined || station.anchor.code !== undefined)

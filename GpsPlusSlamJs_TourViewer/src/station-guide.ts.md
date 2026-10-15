@@ -159,7 +159,9 @@ activateM)` (each tick, each offered station with a distance: the
   measures its accuracy). Instead (owner decision after the M1b-1 review,
   "both"): **a station without a printed code offers "I'm here - play the
   story"** in place of the skip while the code-placed position is inside
-  its found band (`hereOffered`, dep `codesOnly()`); the tap finds it
+  its found band (`hereOffered`: dep `codesOnly()`, or, with location on,
+  no device fix carrying an accuracy - a granted permission indoors, where
+  the run finds nothing by position either, PR #623 review); the tap finds it
   (`run.arrive`), nothing finds it on its own. The band is the found
   radius at the station pose floor (`STATION_POSE_FLOOR_M`, 5 m) - the
   code-placed position is assumed no worse than the stored spots

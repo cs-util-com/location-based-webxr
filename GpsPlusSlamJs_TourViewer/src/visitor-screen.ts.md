@@ -109,6 +109,18 @@ start a session.
   denial on a tour no code can place) becomes the permission's line, so a
   later `tourChanged()` - every manifest settle - keeps it (r857 review
   #2: it used to bring "your browser will ask" back after the answer).
+  One exception: the codes line (`CODES_ONLY_HINT`, from a blocked site or
+  a denial) gives way to the plain visitor line once `codesUsable()` reads
+  `false` (the levels landed with no usable code, or their read failed),
+  because the button is a location tap again then (PR #621/#623 reviews).
+- A tap BEFORE the levels land on a blocked site starts codes-only even on
+  a tour with no usable code (unknown counts as yes); the in-AR line then
+  says nothing can place it (`visitor-status.ts`). Chosen over waiting for
+  the levels (PR #621 review): a denied visitor gets no GPS either way, and
+  a wait would hold the start of every tour whose codes do work.
+- `tourChanged()` clears no error: every tour open empties the error box
+  first (`archive-open.ts` `openTour`), and `codesUsable() === false`
+  never turns back within one tour, so a denial error cannot go stale.
 
 ## Examples
 
@@ -136,4 +148,6 @@ hides the setup and clears the gate on a granted query, and the
 prompt → refused → granted sequence with the error text; the line an
 answer wrote surviving `tourChanged()` (r857 review #2); the `needsNoGps`
 flag holding only with `codesUsable() === true` and `tourCodesUsable`'s
-four cases (r857 review #4).
+four cases (r857 review #4); the rendered codes line giving way once the
+codes are known unusable, on a blocked site and after a denial (PR
+#621/#623 reviews).

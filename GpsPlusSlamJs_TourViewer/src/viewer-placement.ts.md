@@ -251,8 +251,10 @@ recording. Its own module since the flows plan M6.
   60 s of device fixes (`CODE_MOVE_RULE.minSpanS`; measured 60-75 s for a
   25 m move), and a code hung less than the 20 m floor
   (`MOVED_CODE_FLOOR_M`) from its saved spot is never read (measured: 15 m,
-  no veto in 120 s) - it holds the tour off by its offset until its hold
-  hands over to GPS.
+  no veto in 120 s) - it holds the tour off by its offset until device
+  fixes take over from its hold; with no device fix at all there is no
+  hand-over (the keep-alive casts only on a device fix), so the offset
+  stands for the whole session (PR #620 review).
 - **Effectively unreachable lines, kept on purpose** (M1 review #6): the
   placement decline "waiting for a GPS fix or a scanned code" (a code's
   votes need the zero it sets itself, and `ready` needs GPS data) and the

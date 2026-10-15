@@ -573,6 +573,57 @@ describe("viewerStatusLine", () => {
     ).toMatch(/holds the placement for 96 s more/);
   });
 
+  // Why (PR #620 bot review): the zero-fix rule was a cliff. The hold's
+  // phase runs on the clock, but the hand-over happens per device fix, so
+  // with ONE fix after the hold window the line said "GPS places the tour
+  // now" while that one fix stood against the code's whole ring. Below
+  // one lock's ring of device fixes (VIEWER_VOTE_COUNT) no hand-over is
+  // claimed; the countdown, which is true at any count, stays.
+  it("claims no GPS hand-over while the device fixes are fewer than one lock's ring (sweep)", () => {
+    const spent = {
+      status: "tracking" as const,
+      unknownCode: null,
+      votedLocks: MAX_VOTED_LOCKS_PER_CODE,
+      lockedText: TEXT,
+    };
+    const handover = [
+      { kind: "fading", text: TEXT, share: 0.4 },
+      { kind: "ended", text: TEXT },
+    ] as const;
+    for (
+      let deviceFixes = 1;
+      deviceFixes < VIEWER_VOTE_COUNT;
+      deviceFixes += 1
+    ) {
+      for (const hold of handover) {
+        const line = viewerStatusLine({ ...spent, deviceFixes, hold });
+        expect(line).not.toMatch(/GPS places|takes over/);
+        expect(line).toMatch(/the code places the tour/);
+      }
+      expect(
+        viewerStatusLine({
+          ...spent,
+          deviceFixes,
+          hold: { kind: "holding", text: TEXT, remainingMs: 95_200 },
+        }),
+      ).toMatch(/holds the placement for 96 s more/);
+    }
+    expect(
+      viewerStatusLine({
+        ...spent,
+        deviceFixes: VIEWER_VOTE_COUNT,
+        hold: { kind: "ended", text: TEXT },
+      }),
+    ).toMatch(/GPS places the tour now/);
+    expect(
+      viewerStatusLine({
+        ...spent,
+        deviceFixes: VIEWER_VOTE_COUNT,
+        hold: { kind: "fading", text: TEXT, share: 0.4 },
+      }),
+    ).toMatch(/GPS takes over gradually/);
+  });
+
   // Why this matters (authoring plan 2026-09-28-0953 §2.2 B1): the line
   // said "placement holds" once the budget was spent, while the code's
   // votes were already fading out of the solve and, above a 5 m GPS bias,

@@ -321,6 +321,64 @@ describe("a denial on a tour without a usable code keeps the settings copy (M1b-
     expect(screen.locationGate.pending()).toBe(true);
     expect(screen.locationGate.codesOnly()).toBe(false);
   });
+
+  // Why (PR #621 bot review): the RENDERED line, not only `pending()`. A
+  // blocked site's line said "scan one of the tour's printed codes" before
+  // the levels were known; once they land with no usable code the button
+  // turns back into "Allow location", and a line pointing at codes the
+  // tour does not have contradicts it.
+  it("drops the codes line on a blocked site once the levels land with no usable code", async () => {
+    let usable: boolean | null = null;
+    const d = dom();
+    const renderArEntry = vi.fn();
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("denied"),
+      }),
+      dom: d,
+      renderArEntry,
+      codesUsable: () => usable,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    expect(d.arHint.textContent).toBe(CODES_ONLY_HINT);
+    usable = false;
+    renderArEntry.mockClear();
+    screen.tourChanged();
+    expect(renderArEntry).toHaveBeenCalled();
+    expect(screen.locationGate.pending()).toBe(true);
+    expect(d.arHint.textContent).not.toBe(CODES_ONLY_HINT);
+  });
+
+  // Why (PR #623 bot review): the same flip after an ANSWER. A visitor who
+  // taps before the levels settle and denies starts codes-only with the
+  // codes line latched; when the levels' read then fails, the button is
+  // "Allow location" again and the latched line must not survive the
+  // `tourChanged()` the failed read triggers.
+  it("drops the codes line an answer wrote once the codes turn out unusable", async () => {
+    let usable: boolean | null = null;
+    const d = dom();
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("prompt"),
+        requestLocationOnce: () => Promise.resolve("denied"),
+      }),
+      dom: d,
+      renderArEntry: vi.fn(),
+      codesUsable: () => usable,
+    });
+    await vi.waitFor(() =>
+      expect(d.arHint.textContent).toMatch(/browser will ask/i),
+    );
+    await screen.locationGate.request();
+    expect(d.arHint.textContent).toBe(CODES_ONLY_HINT);
+    usable = false;
+    screen.tourChanged();
+    expect(screen.locationGate.pending()).toBe(true);
+    expect(d.arHint.textContent).not.toBe(CODES_ONLY_HINT);
+    expect(d.arHint.textContent).not.toMatch(/browser will ask/i);
+  });
 });
 
 // Why (M1b-1 review #3): Chrome reports a DISMISSED prompt as a denial while

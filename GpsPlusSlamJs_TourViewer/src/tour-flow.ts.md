@@ -29,7 +29,12 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
   M4, DEC-F3): true when `computeOnboardingGuidance(report).phase ===
 "ready"`, i.e. the tracking-quality `ok` state. At the first GPS fix the
   alignment is the identity (no heading), so an earlier trigger could start
-  the scene up to 180° wrong.
+  the scene up to 180° wrong. One exemption (QR-first M1): a code that
+  placed the tour (`viewer-placement.ts` `codePlacedTour()`) triggers the
+  placement before this gate - on votes alone the phase reads `degraded`.
+  It cannot be 180° wrong: a voted lock's ring carries the code's saved
+  heading, unlike a single GPS fix (`viewer-content-alignment.test.ts`
+  places the pin to under 1 cm on votes alone).
 - `PlacementState` also carries `waiting-ready` (renders the readiness
   hint, or "Waiting for tracking to warm up…" without one) and
   `nothing-to-place` (a tour with neither a recording nor printed codes).

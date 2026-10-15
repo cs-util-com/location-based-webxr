@@ -436,8 +436,9 @@ export function viewerStatusLine(input: {
   hold?: KeepAlivePhase | null;
   /** Device GPS fixes stored this session (votes not counted). 0: the
    *  code alone places the tour (QR-first M1), the hold's clock means
-   *  nothing and no GPS takes over, so the line claims neither. Absent:
-   *  not known, the hold lines as before. */
+   *  nothing and no GPS takes over, so the line claims neither. Fewer than
+   *  one lock's ring ({@link VIEWER_VOTE_COUNT}): no hand-over claimed, the
+   *  countdown kept. Absent: not known, the hold lines as before. */
   deviceFixes?: number;
 }): string {
   if (input.unknownCode !== null) {
@@ -478,6 +479,18 @@ function holdLine(
   // fix, so the votes keep their whole weight and nothing hands over.
   if (deviceFixes === 0) {
     return "Relocalized - the code places the tour (no GPS fix yet).";
+  }
+  // The phase runs on the clock, the hand-over per fix (PR #620 review):
+  // with fewer device fixes than one lock's ring, that ring alone outnumbers
+  // the GPS in the solve, so no hand-over is claimed. A floor where the
+  // claim is surely false, not the measured hand-over point (M0c's rest on
+  // pre-scan walks of 49 s and more); the countdown is true at any count.
+  if (
+    hold.kind !== "holding" &&
+    deviceFixes !== undefined &&
+    deviceFixes < VIEWER_VOTE_COUNT
+  ) {
+    return "Relocalized - the code places the tour (too few GPS fixes yet for GPS to take over).";
   }
   switch (hold.kind) {
     case "holding":

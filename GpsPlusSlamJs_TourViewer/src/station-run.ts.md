@@ -25,8 +25,8 @@ focusedAtMs, focusDistanceM }`.
     caller filters the moved-code check's ignored codes, D20).
   - `arrive(id, nowMs)` - the visitor's own "I'm here" (an offered
     station still waiting): found with `via: "visitor"`. The caller decides
-    when to offer it (the guide: without location, for a station without a
-    printed code inside its found band).
+    when to offer it (the guide: without a usable device accuracy, for a
+    station without a printed code inside its found band).
   - `finish(id, nowMs)` - the scene ended (found stations only).
   - `skip(id, nowMs)` - any offered station not done.
   - `skipSuggested(id, nowMs)` - an offered, unfound station whose clock ran
@@ -41,7 +41,7 @@ focusedAtMs, focusDistanceM }`.
   - `upcoming()` - under `fixed` or `branch` order, while the one offered
     station is found: the station offered once it is done (the prefetch
     reads it ahead, K4 review R5); null otherwise and always under `any`.
-- `StationEvent`: `found` (`via: gps | code`),
+- `StationEvent`: `found` (`via: gps | code | visitor`),
   `done` (`skipped`), `offered` (the full new set), `complete`.
 - `stationTitle(station)` - the station's title, or "the next station".
 - `skipSuggestAfterMs(focusDistanceM)`, `SKIP_SUGGEST_BASE_MS` (2 min),

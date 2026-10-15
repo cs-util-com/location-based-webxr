@@ -74,7 +74,11 @@ export interface LocationGate {
   request(): Promise<LocationRequestOutcome>;
   /** Whether the next start runs without location (QR-first M1b-1): the
    *  visitor declined it, now or before - and the tour's codes can place it
-   *  (unknown counts as yes). */
+   *  (unknown counts as yes). So a tap before the levels land on a tour
+   *  with no usable code starts on codes, and the in-AR line says nothing
+   *  can place it (`visitor-status.ts`, PR #621 review): a denied visitor
+   *  gets no GPS either way, and waiting for the levels would hold the
+   *  start of every tour whose codes do work. */
   codesOnly(): boolean;
   /** Before a codes-only start, read the permission again (M1b-1 review
    *  #3): "granted" starts with GPS; "prompt" (a dismissed prompt reads as
@@ -186,10 +190,15 @@ export function wireVisitorScreen(deps: {
    *  review #4) - asking is the safe direction to be wrong in. */
   const needsNoGps = (): boolean => flaggedNoGps() && codesUsable() === true;
   /** The line the permission query chose; a tour that needs no GPS shows
-   *  the plain visitor line instead (`showHint`). */
+   *  the plain visitor line instead (`showHint`), and so does a codes line
+   *  once the tour's codes are known unusable (PR #621/#623 reviews): the
+   *  button is a location tap again then, as after a denial on such a tour. */
   let permissionHint = VISITOR_HINT;
   const showHint = (): void => {
-    dom.arHint.textContent = needsNoGps() ? VISITOR_HINT : permissionHint;
+    const codesLineStale =
+      permissionHint === CODES_ONLY_HINT && codesUsable() === false;
+    dom.arHint.textContent =
+      needsNoGps() || codesLineStale ? VISITOR_HINT : permissionHint;
   };
   /** Whether the location was offered again after a codes-only start
    *  (`recheck`): once per page. */
@@ -291,6 +300,9 @@ export function wireVisitorScreen(deps: {
     },
     tourChanged: () => {
       if (!visitor) return;
+      // No stale denial error to clear here (PR #623 review): every tour
+      // open empties the error box first (`archive-open.ts` `openTour`),
+      // and a tour's `codesUsable() === false` never turns back within it.
       showHint();
       renderArEntry();
     },
