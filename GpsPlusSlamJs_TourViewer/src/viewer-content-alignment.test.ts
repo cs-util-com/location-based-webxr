@@ -40,6 +40,7 @@ import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-l
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type { TourPin } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-stations";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import {
   calcGpsCoords,
@@ -50,6 +51,7 @@ import {
 } from "gps-plus-slam-app-framework/core";
 import {
   selectAlignmentMatrix,
+  selectZeroReference,
   setZeroPos,
 } from "gps-plus-slam-app-framework/state";
 
@@ -58,13 +60,19 @@ import {
   VIEWER_VOTE_COUNT,
 } from "./qr-viewer-mode.js";
 import type { TourViewerSeams } from "./seams.js";
+import { wireStationGuide } from "./station-guide.js";
 import type { TourSession } from "./tour-session.js";
 import {
   createTourViewerSession,
   createTourViewerStore,
   createUnwiredHooks,
 } from "./tour-viewer-session.js";
-import { createViewerPlacement } from "./viewer-placement.js";
+import {
+  CODE_ZERO_WAIT_LOCKS,
+  CODE_ZERO_WAIT_MS,
+  createViewerPlacement,
+} from "./viewer-placement.js";
+import { stationPlacementAllowed } from "./visitor-stations.js";
 
 /** The code's converged (fused) pose: a stand-in, its own tests are
  *  `fused-pose-wiring.test.ts`. */
@@ -76,6 +84,14 @@ vi.mock("gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source", () => ({
     last: () => null,
   }),
 }));
+/** A decoded photo, so a ring can be placed without a browser decoder. */
+vi.mock(
+  "gps-plus-slam-app-framework/visualization/frame-texture-decoder",
+  async () => {
+    const { Texture } = await import("three");
+    return { decodeFrameTexture: () => Promise.resolve(new Texture()) };
+  },
+);
 
 const ZERO = { lat: 47.5, lon: 8.7 };
 const T0 = 1_790_000_000_000;
@@ -155,7 +171,14 @@ function tourAtTruth(): { level: QrLevel; pin: TourPin } {
  * biased by `biasM` at bearing 60°. Returns what the scan and the checks
  * need.
  */
-async function visitorSession(biasM: number) {
+async function visitorSession(
+  biasM: number,
+  /** `false`: no device fix and no zero before the scan (QR-first M1). */
+  withZero = true,
+  /** Fields of the open tour's session over the default one (a tour
+   *  without a recording whose photos cannot be read). */
+  sessionOverrides: Record<string, unknown> = {},
+) {
   const bias = [biasM * 0.5, biasM * Math.sqrt(3) * 0.5] as const; // N, E
   // First: the store's construction activates the licence-gated geodesy.
   const arStore = createTourViewerStore();
@@ -168,8 +191,16 @@ async function visitorSession(biasM: number) {
     ).length;
   /** The synthetic votes in the store when the pin's label was made. */
   const atRender: { votes: number | null } = { votes: null };
+  /** The page timers (`seams.schedule`), fired by hand. */
+  const timers: { fn: () => void; ms: number; cancelled: boolean }[] = [];
   const seams = {
-    schedule: () => () => undefined,
+    schedule: (fn: () => void, ms: number) => {
+      const timer = { fn, ms, cancelled: false };
+      timers.push(timer);
+      return () => {
+        timer.cancelled = true;
+      };
+    },
     createQrFrontEnd: () => ({
       kind: "barcode-detector",
       detect: () =>
@@ -203,11 +234,13 @@ async function visitorSession(biasM: number) {
     hasRecording: false,
     archive: { url: "https://example.test/tour.zip" },
     loadContentEntry: () => Promise.reject(new Error("no photos here")),
+    ...sessionOverrides,
   } as unknown as TourSession;
   ctx.tourManifest = { version: 1, objects: [pin] } as never;
   ctx.tourManifestStatus = "settled";
   ctx.currentLevels = new Map([[await qrCodeId(TEXT), level]]);
   ctx.placementUnsubscribe = () => undefined; // a viewer session is live
+  const hooks = createUnwiredHooks();
   const placement = createViewerPlacement({
     ctx,
     mode: "visitor",
@@ -219,15 +252,17 @@ async function visitorSession(biasM: number) {
       hidden: true,
       addEventListener: () => undefined,
     } as unknown as HTMLButtonElement,
-    hooks: createUnwiredHooks(),
+    hooks,
     now: () => clock.nowMs,
   });
   fused.pose = CODE_ODOM;
   placement.startViewerPipeline();
   placement.startScanGate();
 
-  /** A device fix at odometry `p` (WebXR), reported biased. */
-  const fix = (p: NumTriple, t: number): void => {
+  /** A device fix at odometry `p` (WebXR), reported biased; with
+   *  `compassDeg`, carrying a compass reading of that heading (the phone
+   *  faces north, so the reading's error is `compassDeg`). */
+  const fix = (p: NumTriple, t: number, compassDeg?: number): void => {
     const nue = webxrToNUE(p);
     const geo = calcGpsCoords(ZERO, [nue[0] + bias[0], 0, nue[2] + bias[1]]);
     // Through the page's device-fix path (main.ts: the coordinator's
@@ -243,7 +278,19 @@ async function visitorSession(biasM: number) {
         latLongAccuracy: 3,
         timestamp: t,
       },
+      ...(compassDeg === undefined
+        ? {}
+        : { rawAbsoluteOrientation: uprightPhoneFacing(compassDeg, t) }),
     });
+  };
+  /** Fires the pending timers scheduled for `ms`. */
+  const fireTimers = (ms: number): number => {
+    const due = timers.filter((x) => x.ms === ms && !x.cancelled);
+    for (const timer of due) {
+      timer.cancelled = true;
+      timer.fn();
+    }
+    return due.length;
   };
   /** One camera frame through the real controller. */
   let frameNo = 0;
@@ -256,7 +303,7 @@ async function visitorSession(biasM: number) {
     } as never);
     await flush();
   };
-  arStore.dispatch(setZeroPos(ZERO));
+  if (withZero) arStore.dispatch(setZeroPos(ZERO));
   return {
     ctx,
     arStore,
@@ -267,7 +314,39 @@ async function visitorSession(biasM: number) {
     syntheticVotes,
     atRender,
     clock,
+    fireTimers,
+    hooks,
   };
+}
+
+/** A compass reading from an upright phone facing heading `deg`: device
+ *  X east, Y up, Z south, turned clockwise by the heading about the
+ *  vertical (the core's own batch tests build it the same way). */
+function uprightPhoneFacing(deg: number, t: number) {
+  const h = (deg * Math.PI) / 180;
+  return {
+    quaternion: [
+      Math.cos(-h / 2) * Math.SQRT1_2,
+      Math.sin(-h / 2) * Math.SQRT1_2,
+      Math.sin(-h / 2) * Math.SQRT1_2,
+      Math.cos(-h / 2) * Math.SQRT1_2,
+    ] as [number, number, number, number],
+    referenceFrame: "device" as const,
+    screenAngleDeg: 0,
+    sampleTimestamp: t,
+  };
+}
+
+/** Frames until the first one that votes; returns the voted locks so far. */
+async function firstVotedLock(
+  s: Awaited<ReturnType<typeof visitorSession>>,
+): Promise<number> {
+  let frames = 0;
+  while (s.syntheticVotes() === 0 && frames < 20) {
+    await s.frame();
+    frames += 1;
+  }
+  return s.syntheticVotes() / VIEWER_VOTE_COUNT;
 }
 
 /** The walk from the zero north, then east, towards the code: 1 Hz fixes. */
@@ -347,6 +426,38 @@ describe("viewer content follows the live alignment (D10a, M2d)", () => {
     expect(distance(inView(after, pinScene), PIN_TRUE_NUE)).toBeLessThan(0.01);
   }, 60_000);
 
+  // Why (QR-first plan 2026-10-14-0445 §3 M1, the owner's field test): a
+  // visitor who scans before the phone's first GPS fix used to read "waiting
+  // for the first GPS fix" while nothing was placed. The code alone must
+  // place the tour: through the real controller and store, with no device
+  // fix at all, the first frame that votes sets the session zero at the
+  // code's geo, passes the gate and places the pin where it belongs in the
+  // visitor's view - the code is the session's whole GPS.
+  it("is placed by a code alone, before any device fix, at its true spot in the visitor's view", async () => {
+    const s = await visitorSession(8, false);
+    s.clock.nowMs = T0 + 500;
+    expect(selectZeroReference(s.arStore.getState())).toBeNull();
+    let frames = 0;
+    while (s.syntheticVotes() === 0 && frames < 20) {
+      await s.frame();
+      frames += 1;
+    }
+    expect(s.syntheticVotes()).toBe(VIEWER_VOTE_COUNT);
+    const zero = selectZeroReference(s.arStore.getState())!;
+    const level = [...s.ctx.currentLevels!.values()][0]!;
+    expect(zero).toEqual({ lat: level.qr.geo!.lat, lon: level.qr.geo!.lon });
+    expect(s.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+    for (let i = 1; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) await s.frame();
+    await flush();
+    expect(s.label.parent?.parent).toBe(s.scene);
+    const placed = s.label.getWorldPosition(new Vector3());
+    const after = selectAlignmentMatrix(s.arStore.getState())!;
+    // Votes alone, exact by construction: the pin lands on its true spot.
+    expect(
+      distance(inView(after, [placed.x, placed.y, placed.z]), PIN_TRUE_NUE),
+    ).toBeLessThan(0.01);
+  }, 60_000);
+
   // Why: the case above is exact by construction, so it cannot tell "the
   // content follows the alignment" from "the solve happens to be exact".
   // Here the GPS keeps its say - B = 3 m is inside the hard trim, and a
@@ -381,4 +492,188 @@ describe("viewer content follows the live alignment (D10a, M2d)", () => {
     expect(residual).toBeGreaterThan(0.005);
     expect(residual).toBeLessThan(0.1);
   }, 120_000);
+});
+
+// Why (owner decision 2026-10-14 after the M1 review, "wait about a second
+// before showing"): after a code set the session zero, a scan of fewer than
+// eight voted locks leaves the compass memory's yaw window under-full when the
+// first compass reading arrives, so the content turned by about the
+// compass's error (34 deg at a 30 deg bias) for 1-10 s (m1-compare). The
+// first placement therefore waits for eight voted locks, or a timeout so a
+// glance still places. The numbers are the harness's (`m1b-wait`).
+describe("after a code-set zero the first placement waits for the compass (QR-first, the compass wait)", () => {
+  it("shows nothing after a 3-lock glance while fixes with a 30 deg biased compass arrive, and places at the timeout", async () => {
+    const s = await visitorSession(8, false);
+    s.clock.nowMs = T0 + 500;
+    expect(await firstVotedLock(s)).toBe(1);
+    await s.frame();
+    await s.frame();
+    expect(s.syntheticVotes()).toBe(3 * VIEWER_VOTE_COUNT);
+    expect(s.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+    // The visitor looks away; the first fixes arrive, their compass 30 deg
+    // off. Up to just before the timeout nothing is shown.
+    for (let i = 1; i <= 11; i += 1) {
+      s.clock.nowMs = T0 + 500 + i * 1000;
+      s.fix([6, 1.5, -20.5], s.clock.nowMs, 30);
+    }
+    await flush();
+    expect(s.label.parent).toBeNull();
+    s.clock.nowMs = T0 + 500 + CODE_ZERO_WAIT_MS;
+    expect(s.fireTimers(CODE_ZERO_WAIT_MS)).toBe(1);
+    await flush();
+    expect(s.label.parent?.parent).toBe(s.scene);
+  }, 60_000);
+
+  it("places a full scan on its eighth voted lock, not before, with no timer", async () => {
+    const s = await visitorSession(8, false);
+    s.clock.nowMs = T0 + 500;
+    expect(await firstVotedLock(s)).toBe(1);
+    while (
+      s.syntheticVotes() <
+      (CODE_ZERO_WAIT_LOCKS - 1) * VIEWER_VOTE_COUNT
+    ) {
+      await s.frame();
+    }
+    await flush();
+    expect(s.label.parent).toBeNull();
+    await s.frame();
+    await flush();
+    expect(s.syntheticVotes()).toBe(CODE_ZERO_WAIT_LOCKS * VIEWER_VOTE_COUNT);
+    expect(s.label.parent?.parent).toBe(s.scene);
+    // The wait ended with the locks: its timer is cancelled.
+    expect(s.fireTimers(CODE_ZERO_WAIT_MS)).toBe(0);
+  }, 60_000);
+
+  // Why (r857 milestone review #1): the wait held back the content and the
+  // photos but not the stations - a station on the scanned code was found
+  // and offered at lock 1 (its figure at its pose, the breadcrumbs), then
+  // turned with the compass swing the wait exists to hide. The real station
+  // guide over the real placement: nothing is found while the wait holds,
+  // and the station IS found when it ends - also by its timeout, where no
+  // further lock comes to report the code again.
+  describe("holds the stations back too", () => {
+    function withStationOnCode(s: Awaited<ReturnType<typeof visitorSession>>) {
+      const levelId = [...s.ctx.currentLevels!.keys()][0]!;
+      const stations: readonly TourStation[] = [
+        {
+          id: "tower",
+          title: "TOWER",
+          anchor: { code: levelId },
+          activateRadiusM: 30,
+          foundRadiusM: 5,
+          hint: "arrow",
+          steps: [
+            {
+              id: "s",
+              block: { kind: "text", text: "Hi" },
+              advance: { mode: "tap" },
+            },
+          ],
+        },
+      ];
+      const found: { id: string; locks: number }[] = [];
+      const guide = wireStationGuide({
+        dom: {
+          line: { textContent: "", hidden: true },
+          skip: { textContent: "", hidden: true },
+        },
+        tour: () => ({
+          stations,
+          order: "fixed",
+          levels: s.ctx.currentLevels,
+        }),
+        // The page's own gate (`visitor-stations.ts`).
+        placementAllowed: () => stationPlacementAllowed(s.ctx, "visitor"),
+        zero: () => selectZeroReference(s.arStore.getState()),
+        visitor: () => ({ nue: null, accuracyM: null, fixNue: null }),
+        isIgnoredCode: () => false,
+        startHud: () => null,
+        now: () => s.clock.nowMs,
+        onFound: (station) => {
+          found.push({ id: station.id, locks: s.ctx.viewerVotedLocks });
+        },
+      });
+      s.hooks.stationCodeLocked = (id) => {
+        guide.codeLocked(id);
+      };
+      return found;
+    }
+
+    it("finds no station on the scanned code during a 3-lock glance, and finds it when the wait times out", async () => {
+      const s = await visitorSession(8, false);
+      const found = withStationOnCode(s);
+      s.clock.nowMs = T0 + 500;
+      expect(await firstVotedLock(s)).toBe(1);
+      await s.frame();
+      await s.frame();
+      expect(s.syntheticVotes()).toBe(3 * VIEWER_VOTE_COUNT);
+      expect(found).toEqual([]);
+      s.clock.nowMs = T0 + 500 + CODE_ZERO_WAIT_MS;
+      expect(s.fireTimers(CODE_ZERO_WAIT_MS)).toBe(1);
+      expect(found).toEqual([{ id: "tower", locks: 3 }]);
+    }, 60_000);
+
+    it("finds it on the eighth voted lock of a full scan, not before", async () => {
+      const s = await visitorSession(8, false);
+      const found = withStationOnCode(s);
+      s.clock.nowMs = T0 + 500;
+      expect(await firstVotedLock(s)).toBe(1);
+      while (
+        s.syntheticVotes() <
+        (CODE_ZERO_WAIT_LOCKS - 1) * VIEWER_VOTE_COUNT
+      ) {
+        await s.frame();
+      }
+      expect(found).toEqual([]);
+      await s.frame();
+      expect(found).toEqual([{ id: "tower", locks: CODE_ZERO_WAIT_LOCKS }]);
+    }, 60_000);
+  });
+
+  // Why (r857 milestone review #3): the wait's end ran the trigger's
+  // placement first - a join WITHOUT the code - whose loading latch then
+  // blocked the ring the code's lock would have placed. A tour whose
+  // recording cannot place its photos got no ring until a rescan. The end
+  // starts the join WITH the locked code, so a declining join falls back to
+  // the ring in the same run.
+  it("places the ring after the wait when the recording declines the join", async () => {
+    const s = await visitorSession(8, false, {
+      hasRecording: true,
+      loadSessionMeta: () => Promise.resolve(null),
+      loadRecordingActions: () => Promise.resolve(null),
+      entries: [{ filename: "photo.jpg", isImage: true, size: 3 }],
+      loadEntry: () => Promise.resolve(new Blob(["jpg"])),
+    });
+    s.clock.nowMs = T0 + 500;
+    expect(await firstVotedLock(s)).toBe(1);
+    await s.frame();
+    await s.frame();
+    await flush();
+    expect(s.ctx.imagePlanes).toBeNull();
+    s.clock.nowMs = T0 + 500 + CODE_ZERO_WAIT_MS;
+    expect(s.fireTimers(CODE_ZERO_WAIT_MS)).toBe(1);
+    await flush();
+    expect(s.ctx.joinDeclined).toBe(true);
+    expect(s.ctx.placement).toMatchObject({
+      kind: "placed",
+      placedKind: "ring",
+    });
+  }, 60_000);
+
+  it("does not wait without location (codes only: no compass reading ever reaches the solve)", async () => {
+    const s = await visitorSession(8, false);
+    s.ctx.codesOnly = true;
+    s.clock.nowMs = T0 + 500;
+    expect(await firstVotedLock(s)).toBe(1);
+    await flush();
+    expect(s.label.parent?.parent).toBe(s.scene);
+  }, 60_000);
+
+  it("does not wait when a device fix set the zero (the scan follows a walk)", async () => {
+    const s = await visitorSession(8);
+    walk(s);
+    expect(await firstVotedLock(s)).toBe(1);
+    await flush();
+    expect(s.label.parent?.parent).toBe(s.scene);
+  }, 60_000);
 });

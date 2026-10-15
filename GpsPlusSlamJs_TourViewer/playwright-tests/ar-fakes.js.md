@@ -47,7 +47,10 @@ camera, so `installTourViewerArFakes(page)` installs
   production ordering; `locationPermission` / `locationOutcome` /
   `locationRequests` (the visitor screen's gate: what the permission
   query answers, what a location-only tap comes back with, how many taps
-  were made); `pdfViewer` + `pdfTabs` (the option `{ pdfViewer: true }`
+  were made); `geolocationPermissionRequests` (how often the controller
+  asked for the location permission - none in the codes-only mode, QR-first
+  M1b-1) and `controllerLocationResult` (what that request answers; a phone
+  indoors answers `granted: null`, M1b-1 review #1); `pdfViewer` + `pdfTabs` (the option `{ pdfViewer: true }`
   makes `openPdfTab` return a recording tab - the PDF's inline path, M0b -
   otherwise it returns null and the PDF is downloaded); `copied` (what
   `copyText` was given: step 6's Drive

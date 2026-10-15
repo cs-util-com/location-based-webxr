@@ -229,6 +229,7 @@ export function wireArEntry(deps: {
       arStatus: arController.getState().status,
       arError: arController.getState().error ?? null,
       cameraFrames: ctx.cameraFrameCount,
+      codesOnly: ctx.codesOnly,
       tour:
         ctx.session === null
           ? { kind: "none" }
@@ -245,6 +246,9 @@ export function wireArEntry(deps: {
         reprojectionErrorPx: ctx.viewerReprojectionPx,
         // The code keep-alive's phase at render time (it counts down).
         hold: ctx.viewerKeepAlive?.phase(Date.now()) ?? null,
+        // Device fixes only (votes excluded): with none, no GPS hand-over
+        // is claimed (QR-first M1 review #4).
+        deviceFixes: sessionGpsQuality().fixes,
         // A code the moved-code check ignores (D20, M5c).
         ignoredCode: ctx.viewerIgnoredText,
         // Read from the last evaluation, never re-evaluated here: this runs
@@ -457,6 +461,9 @@ export function wireArEntry(deps: {
     // The gate and the placed content are session state (M5).
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
+    ctx.cancelCodeZeroWait?.();
+    ctx.cancelCodeZeroWait = null;
+    ctx.codeZeroWaitUntilMs = null;
     ctx.scanGate = { kind: "idle" };
     ctx.contentRendered?.dispose();
     ctx.contentRendered = null;
@@ -545,6 +552,13 @@ export function wireArEntry(deps: {
       await locationGate.request();
       return;
     }
+    // A codes-only start reads the permission again first (M1b-1 review
+    // #3): a grant in the settings starts with GPS, a dismissed prompt is
+    // offered once more - then this tap is not a start.
+    if (!authorMode && locationGate.codesOnly()) {
+      await locationGate.recheck();
+      if (locationGate.pending()) return;
+    }
     // The start the two steps led to: a later start is one tap again.
     hadLocationStep = false;
     ctx.cameraFrameCount = 0;
@@ -553,12 +567,17 @@ export function wireArEntry(deps: {
     // looking. The viewer pipeline is best-effort: without a detector the
     // session is plain AR.
     if (authorMode && !hooks.startAuthorPipeline()) return;
+    // A visitor who declined location starts on codes alone (QR-first
+    // M1b-1): no location permission, no GPS watch; the scan gate then
+    // offers no GPS escape. Set before the pipeline and its gate start.
+    ctx.codesOnly = !authorMode && locationGate.codesOnly();
     if (!authorMode) hooks.startViewerPipeline();
     const depth = entryDepth();
     const result = await arController.enable(
       buildArEnableConfig({
         container: dom.arRoot,
         requestHitTest: mode === "creator",
+        ...(ctx.codesOnly ? { location: "none" as const } : {}),
         trackingStore: arStore,
         onFrame: (frame) => {
           ctx.cameraFrameCount += 1;

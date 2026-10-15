@@ -952,3 +952,74 @@ describe('createEnableGpsArController — session end (system or external)', () 
     expect(appOnSessionEnd).not.toHaveBeenCalled();
   });
 });
+
+// Why (QR-first plan 2026-10-14-0445 §7 #10, §8 Q-QF-1; M1b-1): a tour whose
+// positions come from its printed codes must run for a visitor who declines
+// location. The codes-only mode asks for no location permission and starts
+// no GPS watch - so neither prompt nor watch can stop or slow AR - while the
+// AR session and every other watch start as before; the default is unchanged.
+describe('createEnableGpsArController — codes-only mode (location: none)', () => {
+  it('requests no location permission and starts no GPS watch, but enables AR', async () => {
+    const deps = makeDeps({
+      requestGeolocationPermission: vi.fn(() => Promise.resolve(denied)),
+    });
+    const controller = createEnableGpsArController(deps);
+    const onGpsPosition = vi.fn();
+    const onOrientation = vi.fn();
+
+    const result = await controller.enable({
+      container: fakeContainer(),
+      location: 'none',
+      onGpsPosition,
+      onOrientation,
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(deps.requestGeolocationPermission).not.toHaveBeenCalled();
+    expect(deps.startGpsWatch).not.toHaveBeenCalled();
+    expect(deps.initAR).toHaveBeenCalledTimes(1);
+    expect(deps.startOrientationWatch).toHaveBeenCalledWith(onOrientation);
+    expect(controller.getState().status).toBe('running');
+  });
+
+  it('stops no GPS watch it never started on disable', async () => {
+    const deps = makeDeps();
+    const controller = createEnableGpsArController(deps);
+    await controller.enable({
+      container: fakeContainer(),
+      location: 'none',
+      onGpsPosition: vi.fn(),
+    });
+    await controller.disable();
+    expect(deps.stopGpsWatch).not.toHaveBeenCalled();
+    expect(controller.getState().status).toBe('ready');
+  });
+
+  it('keeps the default: location required, a denial still fails', async () => {
+    const deps = makeDeps({
+      requestGeolocationPermission: vi.fn(() => Promise.resolve(denied)),
+    });
+    const controller = createEnableGpsArController(deps);
+    const result = await controller.enable({
+      container: fakeContainer(),
+      location: 'required',
+    });
+    expect(result.ok).toBe(false);
+    expect(deps.initAR).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unknown location mode instead of guessing', async () => {
+    const deps = makeDeps();
+    const controller = createEnableGpsArController(deps);
+    const result = await controller.enable({
+      container: fakeContainer(),
+      location: 'off' as never,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/location/);
+    // Refused BEFORE any permission is asked for (M1b-1 review #5).
+    expect(deps.requestGeolocationPermission).not.toHaveBeenCalled();
+    expect(deps.requestOrientationPermission).not.toHaveBeenCalled();
+    expect(deps.initAR).not.toHaveBeenCalled();
+  });
+});

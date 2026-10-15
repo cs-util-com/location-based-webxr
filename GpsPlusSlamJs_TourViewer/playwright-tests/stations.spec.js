@@ -241,3 +241,91 @@ test("leaving AR stops the story but keeps the progress, and the cut-short story
   await expect(page.getByTestId("scene-panel")).toBeVisible();
   await expect(page.getByTestId("scene-text")).toHaveText("Halt, traveller!");
 });
+
+/**
+ * Put the camera at a GPS-world spot (north, east m of the session zero)
+ * with NO device fix: the AR pose is that spot taken back through the
+ * store's current alignment, as `standAt` does, but nothing reaches the GPS
+ * watch - the codes-only visitor's phone, which moves by odometry alone.
+ */
+async function walkWithoutGps(page, north, east) {
+  await page.evaluate(
+    ({ north, east }) => {
+      const test = /** @type {any} */ (window).__tourViewerTest;
+      const a = Array.from(
+        test.alignmentStore.getState().gpsData.gpsEvents.alignmentMatrix,
+      );
+      const d = [north - a[12], 1.4 - a[13], east - a[14]];
+      const n = a[0] * d[0] + a[1] * d[1] + a[2] * d[2];
+      const u = a[4] * d[0] + a[5] * d[1] + a[6] * d[2];
+      const e = a[8] * d[0] + a[9] * d[1] + a[10] * d[2];
+      test.arPose = {
+        position: { x: e, y: u, z: -n },
+        orientation: { x: 0, y: 0, z: 0, w: 1 },
+      };
+      // A camera frame re-judges the stations, as on a phone.
+      test.emitFrames(1);
+    },
+    { north, east },
+  );
+}
+
+test("without location, a station with no printed code is reached by the visitor's own I'm here (owner decision after the M1b-1 review)", async ({
+  page,
+}) => {
+  // Why this test matters: a visitor who declined location has no fix, so
+  // nothing can find "The well" (no code) by position - its only button was
+  // the skip. Walking there on the code-placed position must offer "I'm
+  // here - play the story", and the tap must play it.
+  await page.addInitScript(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    if (t) t.locationPermission = "denied";
+  });
+  await page.goto(`/?qr=${encodeURIComponent(STATIONS_ARCHIVE)}`);
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    { timeout: 15000 },
+  );
+  const button = page.getByTestId("enter-ar");
+  await expect(button).toHaveText("Start the tour", { timeout: 10000 });
+  await button.click();
+  await expect(button).toHaveText("Exit AR");
+  // The phone stands at the poster; the code places the tour and finds
+  // "The gate" (no device fix at any point).
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.arPose = {
+      position: { x: 0, y: 1.4, z: 0 },
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+    };
+  });
+  await lockTheCode(page);
+  await expect(page.getByTestId("scene-title")).toHaveText("The gate");
+  await page.getByTestId("scene-continue").click();
+  await page.getByTestId("scene-choices").getByText("Yes").click();
+  await page.getByTestId("scene-continue").click();
+  await expect(page.getByTestId("scene-panel")).toBeHidden();
+
+  const line = page.getByTestId("station-line");
+  const skip = page.getByTestId("station-skip");
+  await expect(line).toHaveText(/^Next: The well, \d+ m$/);
+  await expect(skip).toHaveText("Can't get there?");
+  // Walk to the well on odometry alone: where the HUD points.
+  const well = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest.hud
+      .getTargets()
+      .find((x) => x.id === "well");
+    return { north: t.position.x, east: t.position.z };
+  });
+  await walkWithoutGps(page, well.north - 20, well.east);
+  await expect(skip).toHaveText("Can't get there?");
+  await walkWithoutGps(page, well.north - 2, well.east);
+  await expect(skip).toHaveText("I'm here - play the story");
+  await skip.click();
+  await expect(page.getByTestId("scene-title")).toHaveText("The well");
+  expect(
+    await page.evaluate(
+      () => /** @type {any} */ (window).__tourViewerTest.gpsCallback,
+    ),
+  ).toBeNull();
+});

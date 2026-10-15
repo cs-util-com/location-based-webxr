@@ -9,9 +9,10 @@
  * - Only OFFERED stations change state: under `fixed` order a station later
  *   in the list is not found by walking past it, nor by scanning its code.
  * - FOUND is a latch: a noisy estimate never un-finds a station. Found by
- *   GPS inside the effective found radius (`station-bands.ts`), or by a
+ *   GPS inside the effective found radius (`station-bands.ts`), by a
  *   lock of the station's own code from any distance (the caller drops a
- *   code the moved-code check ignores, D20).
+ *   code the moved-code check ignores, D20), or by the visitor's own "I'm
+ *   here" (`arrive`: without location, where no fix can find it).
  * - DONE when the station's steps finish (`finish`), or skipped (`skip`).
  *   A station with no steps (a newer minor's steps all left out, K1 review
  *   R4) is done the moment it is found.
@@ -35,7 +36,7 @@ interface StationStatus {
   readonly state: StationState;
   /** Done by the visitor's "skip, I can't get there". */
   readonly skipped: boolean;
-  readonly foundVia: "gps" | "code" | null;
+  readonly foundVia: "gps" | "code" | "visitor" | null;
   /** When it first became the focus (the skip clock's start, K4 review
    *  R14), on the caller's clock; null until then. */
   readonly focusedAtMs: number | null;
@@ -48,7 +49,7 @@ export type StationEvent =
   | {
       readonly kind: "found";
       readonly id: string;
-      readonly via: "gps" | "code";
+      readonly via: "gps" | "code" | "visitor";
     }
   | { readonly kind: "done"; readonly id: string; readonly skipped: boolean }
   /** The offered set changed; the full new set. */
@@ -118,6 +119,9 @@ export interface StationRun {
     nowMs: number,
     admit?: (stationId: string) => boolean,
   ): StationEvent[];
+  /** The visitor's own "I'm here" (an offered station still waiting):
+   *  found as the visitor's. The caller decides when to offer it. */
+  arrive(id: string, nowMs: number): StationEvent[];
   /** The station's steps finished (a found station only). */
   finish(id: string, nowMs: number): StationEvent[];
   /** "Skip, I can't get there" (an offered station not yet done). */
@@ -146,7 +150,7 @@ export interface StationRun {
 interface Mutable {
   state: StationState;
   skipped: boolean;
-  foundVia: "gps" | "code" | null;
+  foundVia: "gps" | "code" | "visitor" | null;
   focusedAtMs: number | null;
   focusDistanceM: number | null;
 }
@@ -236,7 +240,7 @@ export function createStationRun(input: {
     return events;
   }
 
-  function found(id: string, via: "gps" | "code"): StationEvent[] {
+  function found(id: string, via: "gps" | "code" | "visitor"): StationEvent[] {
     const s = states.get(id)!;
     s.state = "found";
     s.foundVia = via;
@@ -287,6 +291,11 @@ export function createStationRun(input: {
         events.push(...found(station.id, "code"));
       }
       return events;
+    },
+
+    arrive(id) {
+      if (states.get(id)?.state !== "waiting" || !isOffered(id)) return [];
+      return found(id, "visitor");
     },
 
     finish(id) {

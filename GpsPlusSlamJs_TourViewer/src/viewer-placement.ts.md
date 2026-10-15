@@ -29,7 +29,10 @@ recording. Its own module since the flows plan M6.
   - `ViewerPlacement.startScanGate()` (called when the session reaches
     running, and again when a tour opens into a running session) derives
     the scan gate (`scan-gate.ts`) and arms the escape clock
-    (`seams.schedule`, `SCAN_GATE_ESCAPE_MS`, 10 s) while it scans; idle when no session runs.
+    (`seams.schedule`, `SCAN_GATE_ESCAPE_MS`, 10 s) while it scans - but
+    not in the codes-only mode (`ctx.codesOnly`, QR-first M1b-1): without
+    location there is no GPS to continue with, so the "Continue with GPS
+    only" button never shows; idle when no session runs.
     `resetScanGate()` (a tour closed) returns it to idle with the clock
     cancelled - a gate waived for one tour never carries into the next.
     `reconsiderScanGate(levels | "unavailable")` (the levels arrived, or
@@ -98,8 +101,56 @@ recording. Its own module since the flows plan M6.
     open and a viewer session live (`ctx.placementUnsubscribe !== null`),
     runs the capture join ONCE per session+tour
     (`ctx.placementAttempted`) as soon as
-    `isPlacementReady(selectTrackingQuality(state))`; until then sets
-    `waiting-ready`. It also waits while `tour.json` is still loading
+    `isPlacementReady(selectTrackingQuality(state))` - or as soon as a
+    code placed the tour (the gate passed on a voted lock of a trusted code;
+    QR-first M1, §7 #9: on votes alone the tracking-quality report reads
+    `degraded`, its smoothed convergence score having seen too few
+    snapshots); until then sets `waiting-ready`. **After a code-set zero
+    it also waits for the compass** (owner decision after the M1 review,
+    "wait about a second before showing"): nothing is placed - neither the
+    content nor the photos, by the trigger or a voted lock - until the
+    code has `CODE_ZERO_WAIT_LOCKS` (8) voted locks or
+    `CODE_ZERO_WAIT_MS` (12 s) passed since the zero; the lock or the
+    timeout (`seams.schedule`) that ends the wait places what it held back,
+    the ring included, and reports the last locked code's station to the
+    guide again (`hooks.stationCodeLocked`; the stations wait too, r857
+    milestone review #1, `visitor-stations.ts`). Whenever a code placed the
+    tour, the trigger's join runs WITH the locked code
+    (`placeTourImagePlanes(ctx.viewerLockedText)`), so a declining join
+    falls back to the ring in the same run (r857 review #3: the join
+    without the code set the loading latch and dropped the ring of the lock
+    that ended the wait, and a glance gets no later lock). A tour switch
+    ends the wait with the tour (`archive-open.ts` teardown, r857 review
+    #9). Meanwhile the placement stays as it was, so the line
+    reads "Code found - placing the tour...". Not in author mode, not
+    without location (`ctx.codesOnly`: no compass reading reaches the
+    solve), and not when a device fix set the zero. Why the numbers
+    (harness `m1b-wait` in `qr-vote-compass-batching.test.ts`, results
+    in the M1 results doc): a scan of fewer than 8 voted locks leaves the
+    compass memory's 9-solve yaw window under-full at the first compass
+    reading, and the content turned by about the compass's error (34 deg at
+    a 30 deg bias) for 1-10 s; 8 locks leave 0.04 deg after showing, 6 and
+    7 do not. The timeout covers a glance only while the first fix comes
+    within about 3 s of the scan (at most 1.9 deg seen at 12 s); a first
+    fix 8 s late still shows a 1-3 lock glance turned by up to 30 deg - a
+    limit of a fixed timeout, which cannot know when the first fix comes.
+    A first fix WITH a compass reading that arrives DURING the scan (0.25
+    or 0.5 s after it starts; the r857 review's sweep gap) still turns the
+    content by up to 2.5 deg after an 8-lock showing at a 30 deg compass
+    bias (1.0 deg at 10 deg; 1.9 deg when it comes 1 s in); 9 locks leave
+    0.19 deg. **A named coupling, not a tripwire:** 8 rests on the core's
+    default `coldStartObservabilityWindow` (9;
+    `GpsPlusSlamJs/src/state/models/alignment-config.ts`), which the
+    published library does not export (only an override can be set,
+    `setAlignmentOverrides`), so no unit test here can pin
+    `CODE_ZERO_WAIT_LOCKS >= window - 1`. A core change of that default
+    (a window of 10 or more) reverses the 8 and must re-run the harness's
+    `m1b-wait` group. The code rule changes
+    little (corrected after the M1 review #5; the M1 commit overstated it):
+    every voted lock AFTER the gate already starts the placement itself
+    (`onVotedLock`), bypassing readiness, so the rule decides only a scan
+    whose single voted lock opened the gate, and this trigger's own latch
+    (`placementAttempted`). It also waits while `tour.json` is still loading
     (`tourManifestStatus === "pending"`; the manifest's settle calls it
     again), because the baked spots live there. A tour with neither a
     recording nor baked spots declines at once (the ring waits for a
@@ -185,6 +236,30 @@ recording. Its own module since the flows plan M6.
 - Votes: `canAcceptVotes` tests the session ZERO, not merely the slice
   (PR #386 review) - votes before the zero would charge the budget while
   `recordGpsEvent` wrote nothing.
+- **A code alone sets the zero (QR-first plan 2026-10-14-0445 §3 M1).** The
+  stable-pose gate (`resolveStablePose`) sets the session zero at the code's
+  stored geo when a code's pose is stable and the session has none, so the
+  frame's votes land at once. The order is the controller's: the zero
+  BEFORE the votes are dispatched (the sink's soft trim and the store need
+  it) and before `onVotedPose` pins the moved-code check on it (§7 #9). A
+  later device fix joins that frame: the coordinator sets a zero only when
+  the session has none. A code without geo sets nothing. With no device fix
+  at all a wrongly placed code cannot be detected - the moved-code check
+  needs device fixes; once they arrive it reads and retracts as before, and
+  the retraction keeps the code's zero. **Latency** (M1 review #2): with no
+  fix before the pin, a wrong code is read at the earliest after the rule's
+  60 s of device fixes (`CODE_MOVE_RULE.minSpanS`; measured 60-75 s for a
+  25 m move), and a code hung less than the 20 m floor
+  (`MOVED_CODE_FLOOR_M`) from its saved spot is never read (measured: 15 m,
+  no veto in 120 s) - it holds the tour off by its offset until device
+  fixes take over from its hold; with no device fix at all there is no
+  hand-over (the keep-alive casts only on a device fix), so the offset
+  stands for the whole session (PR #620 review).
+- **Effectively unreachable lines, kept on purpose** (M1 review #6): the
+  placement decline "waiting for a GPS fix or a scanned code" (a code's
+  votes need the zero it sets itself, and `ready` needs GPS data) and the
+  fused hint "Code measured - placing the tour." (the same frame votes).
+  Both stay so no state is ever silent.
 - **The entry's vote sink is the one way a vote reaches the store**
   (`viewer-vote-sink.ts`; authoring plan M2b, batched in M2e): a lock's
   ring and each keep-alive tick (with its device fix) are ONE
@@ -303,8 +378,11 @@ recording as source-stamped GPS events, its state changes as
 exit's stop included; nothing without a running recording).
 
 `viewer-votes.test.ts` (authoring plan M2b) - with the real store: the
-scan gate stays scanning on a lock that cast no vote (no GPS zero yet, a
-converging pose) and passes on the first one that did, and a code that
+scan gate stays scanning on a lock that cast no vote (a converging pose)
+and passes on the first one that did - since QR-first M1 also before any
+device fix, the code setting the zero itself (its order before the votes
+and the moved-code pin, a later fix in the same frame through the page's
+composed handler, readiness on votes alone), and a code that
 locks but never votes still gets the escape (M2b review #8); the
 keep-alive casts exactly one ring per device fix from the kept pose,
 answers no synthetic point, stops at AR exit, and starts fresh per entry;
@@ -326,6 +404,15 @@ clear at entry start, the merge before the first vote and once only, a
 keep-alive tick bringing the first vote, a ringless fix changing nothing,
 `endTour`, the soft keys as M0c measured them, one batch per lock, the
 tick's fix-first batch, a malformed fix dropped alone.
+
+`viewer-content-alignment.test.ts` (D10a, M2d; QR-first) - through the
+real controller and store: the content follows the live alignment, a code
+alone places the tour, and the compass wait - nothing shown during a
+3-lock glance until the timeout, a full scan shown on its eighth voted
+lock, no wait without location or after a device-set zero; the stations
+wait too and are found when the wait ends by either path (r857 review
+#1); a recording that declines the join still gets the ring after the
+wait (r857 review #3).
 
 `fused-pose-wiring.test.ts` - the votes' stable pose is the fused one (at
 the true rotation where single-frame poses scatter past the old average's

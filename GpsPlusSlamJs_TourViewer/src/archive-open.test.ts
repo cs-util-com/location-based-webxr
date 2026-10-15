@@ -160,6 +160,29 @@ describe("a tour switch forgets the closing tour's fused-pose state", () => {
   });
 });
 
+// Why (r857 review #9): the compass wait holds a code-set zero's first
+// placement back, and the code that set it belongs to the closing tour. A
+// tour opened in the same AR session would otherwise inherit a wait its own
+// codes never started, and the old timer would end it at a moment that
+// means nothing to the new tour. A closing tour's failed levels read is its
+// own too.
+describe("a tour switch ends the closing tour's compass wait", () => {
+  it("clears the wait and cancels its timer", async () => {
+    const ctx = createTourViewerSession();
+    ctx.session = openTour();
+    const cancel = vi.fn();
+    ctx.codeZeroWaitUntilMs = 12_345;
+    ctx.cancelCodeZeroWait = cancel;
+    ctx.levelsUnreadable = true;
+    const dom = openAnotherTour(ctx);
+    await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(ctx.codeZeroWaitUntilMs).toBeNull();
+    expect(ctx.cancelCodeZeroWait).toBeNull();
+    expect(ctx.levelsUnreadable).toBe(false);
+  });
+});
+
 describe("a tour switch forgets the closing tour's failed finish", () => {
   it("clears finishError, which otherwise locks Save in the next tour", async () => {
     // Why this test matters (TourViewer scan-to-open plan §9 #8, a

@@ -13,8 +13,8 @@ tour kit plan K1 and §8 D7
 ## Public API
 
 - `TOUR_MANIFEST_VERSION = 2` (the format's major number) and
-  `TOUR_MANIFEST_MINOR = 1` (the newest additive revision this module
-  knows; minor 1 added `captureSpots`).
+  `TOUR_MANIFEST_MINOR = 2` (the newest additive revision this module
+  knows; minor 1 added `captureSpots`, minor 2 `needsNoGps`).
 - `parseTourManifest(data: unknown): TourManifest` - validates every field;
   throws `TourManifestValidationError` naming the object
   (`"objects[3].geo.lat" …`, `"stations[0].steps[2].block.asset" …`).
@@ -62,7 +62,26 @@ order: "fixed", objects: [], assets: [], stations: [] }`, the starter
 - **The minor the writer stamps is `minorNeeded`, which must learn every
   new field at a bump.** Forgetting it writes a too-low minor, and a reader
   at that minor parses strictly and refuses the tour. A tripwire test pins
-  `TOUR_MANIFEST_MINOR` to 1 so a bump cannot happen without reading this.
+  `TOUR_MANIFEST_MINOR` (now 2) so a bump cannot happen without reading
+  this.
+
+## A tour that needs no GPS (minor 2, Tour Viewer QR-first, Q-QF-1)
+
+- `needsNoGps?: true`: the tour's printed codes place it on their own, so
+  a viewer never asks its visitors for their location and starts without
+  it (the Tour Viewer: no "Allow location" step, `enable()` with
+  `location: 'none'`).
+- Only `true` is kept. `false` and absent both read as absent, and a
+  tour without the flag is written exactly as before (version 1 when
+  nothing else needs version 2). A non-boolean is a broken file at this
+  reader's minor and reads as absent from a newer one. A version 1
+  document carries none.
+- Written at minor 2 (`minorNeeded`). A minor-1 reader opens such a tour
+  and ignores the flag - its visitors are asked for location, as before;
+  a minor-1 writer refuses to save it, so the flag is never dropped.
+- Setting it is the creator's choice (the desktop editor's toggle, not in
+  this module); a tour flagged with stations that have no printed code
+  cannot reach them by position - the editor is meant to warn.
 
 ## The version policy (K1)
 

@@ -4,7 +4,13 @@ import { describe, expect, it } from "vitest";
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-stations";
 
 import {
+  GPS_POINT_SOURCE_SYNTHETIC_QR,
+  type GpsPoint,
+} from "gps-plus-slam-app-framework/core";
+
+import {
   createStationRelocator,
+  firstDeviceFix,
   RELOCATE_LEAD_NORTH_M,
   relocateStations,
   relocationRequested,
@@ -218,5 +224,39 @@ describe("relocateStations", () => {
         },
       ),
     );
+  });
+});
+
+// Why (QR-first M1 review #3): since M1 a code scanned before any GPS fix
+// stores its votes first, so the history's first point is a synthetic vote
+// on the code's 30 m ring - and `?relocate=here` moved the stations there.
+// The relocation must take the first DEVICE fix.
+describe("firstDeviceFix", () => {
+  const point = (lat: number, source?: string): GpsPoint =>
+    ({
+      latitude: lat,
+      longitude: 8.7,
+      altitude: 400,
+      latLongAccuracy: 5,
+      timestamp: 1,
+      ...(source === undefined ? {} : { source }),
+    }) as unknown as GpsPoint;
+
+  it("skips the code's synthetic votes and takes the first device fix", () => {
+    expect(
+      firstDeviceFix([
+        point(47.1, GPS_POINT_SOURCE_SYNTHETIC_QR),
+        point(47.2, GPS_POINT_SOURCE_SYNTHETIC_QR),
+        point(47.3),
+        point(47.4),
+      ]),
+    ).toEqual({ lat: 47.3, lon: 8.7, alt: 400 });
+  });
+
+  it("is null while only votes are stored", () => {
+    expect(
+      firstDeviceFix([point(47.1, GPS_POINT_SOURCE_SYNTHETIC_QR)]),
+    ).toBeNull();
+    expect(firstDeviceFix([])).toBeNull();
   });
 });

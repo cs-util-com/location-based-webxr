@@ -10,6 +10,11 @@
  * memory, for the open tour only.
  */
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-stations";
+import {
+  GPS_POINT_SOURCE_DEVICE,
+  gpsPointSourceOf,
+  type GpsPoint,
+} from "gps-plus-slam-app-framework/core";
 
 /** How far north of the phone the first moved station stands, metres. */
 export const RELOCATE_LEAD_NORTH_M = 15;
@@ -22,6 +27,26 @@ export interface RelocationTarget {
   readonly lat: number;
   readonly lon: number;
   readonly alt: number;
+}
+
+/**
+ * The phone's first DEVICE fix in a GPS history, as a relocation target;
+ * null while none is stored. A code's synthetic votes are skipped: since
+ * QR-first M1 a code scanned before any fix stores its votes first, and they
+ * sit on a 30 m ring around the code, not where the phone is.
+ */
+export function firstDeviceFix(
+  points: readonly GpsPoint[],
+): RelocationTarget | null {
+  const first = points.find(
+    (p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_DEVICE,
+  );
+  if (first === undefined) return null;
+  return {
+    lat: first.latitude,
+    lon: first.longitude,
+    alt: first.altitude ?? Number.NaN,
+  };
 }
 
 /** Whether the page was opened with the test switch `?relocate=here`. */

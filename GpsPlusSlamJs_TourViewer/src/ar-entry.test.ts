@@ -61,6 +61,8 @@ function harness(
     enableOk?: boolean;
     mode?: "visitor" | "creator";
     locationPending?: () => boolean;
+    codesOnly?: () => boolean;
+    recheck?: () => Promise<void>;
     copyText?: (text: string) => Promise<void>;
     meshCursor?: boolean;
   } = {},
@@ -149,6 +151,8 @@ function harness(
     locationGate: {
       pending: options.locationPending ?? (() => false),
       busy: () => false,
+      codesOnly: options.codesOnly ?? (() => false),
+      recheck: options.recheck ?? (() => Promise.resolve()),
       request: () => Promise.resolve(),
     } as never,
     dom: dom as unknown as ArEntryDom,
@@ -834,5 +838,49 @@ describe("the creator's mesh cursor behind ?mesh=1 (polish round M5)", () => {
     expect(h.dom.arDebug.textContent).toContain(
       "mesh: 1200 triangles · frame 16/30/40 ms",
     );
+  });
+});
+
+// Why (QR-first plan 2026-10-14-0445 §7 #10, M1b-1): a visitor who declined
+// location starts the tour on codes alone - AR without the location
+// permission or a GPS watch - and the session says so, so the scan gate can
+// hide its "Continue with GPS only" escape. A visitor with location keeps
+// the framework's default.
+describe("a visitor without location starts on codes alone (QR-first M1b-1)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("starts AR in the codes-only mode and marks the session", async () => {
+    const h = harness({ codesOnly: () => true, enableOk: true });
+    await h.enter();
+    expect(h.enabledConfig()?.location).toBe("none");
+    expect(h.ctx.codesOnly).toBe(true);
+  });
+
+  // Why (M1b-1 review #3): a codes-only start reads the permission again
+  // first; when that re-offers the location, this tap is not a start.
+  it("reads the permission again before a codes-only start, and does not start when that re-offers the location", async () => {
+    let pending = false;
+    const recheck = vi.fn(() => {
+      pending = true;
+      return Promise.resolve();
+    });
+    const h = harness({
+      codesOnly: () => !pending,
+      locationPending: () => pending,
+      recheck,
+      enableOk: true,
+    });
+    await h.enter();
+    expect(recheck).toHaveBeenCalledTimes(1);
+    expect(h.arController.enable).not.toHaveBeenCalled();
+  });
+
+  it("starts with location as before when the visitor allowed it", async () => {
+    const h = harness({ enableOk: true });
+    await h.enter();
+    expect(h.enabledConfig()?.location).toBeUndefined();
+    expect(h.ctx.codesOnly).toBe(false);
   });
 });

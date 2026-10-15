@@ -28,12 +28,35 @@ import { createSceneView, type SceneViewDom } from "./scene-view.js";
 import type { TourViewerSeams } from "./seams.js";
 import { wireStationGuide, type StationGuideDom } from "./station-guide.js";
 import { createStationPrefetch, decodeFigure } from "./station-prefetch.js";
-import { createStationRelocator } from "./tour-relocation.js";
+import { createStationRelocator, firstDeviceFix } from "./tour-relocation.js";
 import type {
   TourViewerSession,
   TourViewerStore,
 } from "./tour-viewer-session.js";
 import { visitorPosition } from "./visitor-position.js";
+
+/**
+ * Whether the visitor's stations may be found, offered and pointed at now:
+ * a visitor's running session whose scan gate allows placement and whose
+ * compass wait is over (`viewer-placement` `CODE_ZERO_WAIT_LOCKS`; r857
+ * review #1): a station found during the wait stood where the content
+ * would have, and turned with the swing the wait hides. The wait's end
+ * reports the last locked code to the guide again.
+ */
+export function stationPlacementAllowed(
+  ctx: Pick<
+    TourViewerSession,
+    "placementUnsubscribe" | "scanGate" | "codeZeroWaitUntilMs"
+  >,
+  mode: ViewerMode,
+): boolean {
+  return (
+    mode === "visitor" &&
+    ctx.placementUnsubscribe !== null &&
+    gateAllowsPlacement(ctx.scanGate) &&
+    ctx.codeZeroWaitUntilMs === null
+  );
+}
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
 export interface VisitorStations {
@@ -78,15 +101,10 @@ export function wireVisitorStations(deps: {
     deps.relocate !== undefined,
     deps.relocate?.onRelocated,
   );
-  /** The phone's first raw GPS fix, for the test relocation. */
+  /** The phone's first DEVICE fix, for the test relocation (never a
+   *  code's vote: QR-first M1 review #3). */
   function firstFix(): { lat: number; lon: number; alt: number } | null {
-    const first = selectGpsPositions(arStore.getState())[0];
-    if (first === undefined) return null;
-    return {
-      lat: first.latitude,
-      lon: first.longitude,
-      alt: first.altitude ?? Number.NaN,
-    };
+    return firstDeviceFix(selectGpsPositions(arStore.getState()));
   }
   const objectUrls = {
     create: (blob: Blob) => URL.createObjectURL(blob),
@@ -187,10 +205,10 @@ export function wireVisitorStations(deps: {
         levels: ctx.currentLevels,
       };
     },
-    placementAllowed: () =>
-      deps.mode === "visitor" &&
-      ctx.placementUnsubscribe !== null &&
-      gateAllowsPlacement(ctx.scanGate),
+    placementAllowed: () => stationPlacementAllowed(ctx, deps.mode),
+    // Without location a station without a code is reached by the
+    // visitor's own "I'm here" (owner decision after the M1b-1 review).
+    codesOnly: () => ctx.codesOnly,
     zero: () => selectZeroReference(arStore.getState()),
     visitor: () => {
       const state = arStore.getState();

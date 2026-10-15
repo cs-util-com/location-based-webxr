@@ -37,7 +37,11 @@ import { EYE_HEIGHT_M } from "./breadcrumbs.js";
 import { objectPoseNue, rotationFromHeading } from "./content-placement.js";
 import type { StagePose } from "./scene-stage.js";
 import { CODE_MOVE_RULE } from "./code-displacement.js";
-import { ACCURACY_CEILING_M, stationBands } from "./station-bands.js";
+import {
+  ACCURACY_CEILING_M,
+  STATION_POSE_FLOOR_M,
+  stationBands,
+} from "./station-bands.js";
 import {
   createStationRun,
   stationTitle,
@@ -67,6 +71,11 @@ export interface StationGuideDeps {
   /** Whether the tour's content may be placed now (a visitor's session
    *  with the scan gate passed or not required). */
   placementAllowed(): boolean;
+  /** The session runs without location (QR-first M1b-1): a station without
+   *  a printed code is offered to the visitor's own "I'm here" inside its
+   *  found band - as it is, with location on, while no device fix carries
+   *  an accuracy (`hereOffered`). Absent: only the no-fix case. */
+  codesOnly?(): boolean;
   zero(): LatLong | null;
   visitor(): VisitorPosition;
   /** The moved-code check ignores this level id (D20). */
@@ -176,7 +185,7 @@ export const CODE_HOLD_MAX_MS = (CODE_MOVE_RULE.minSpanS + 15) * 1000;
 
 /** What a tap on the skip button does (its label says which). */
 interface SkipAction {
-  readonly kind: "ask-skip" | "skip" | "ask-end" | "end" | "undo";
+  readonly kind: "ask-skip" | "skip" | "ask-end" | "end" | "undo" | "here";
   readonly id: string;
 }
 
@@ -402,6 +411,30 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     }
   }
 
+  /**
+   * Whether to offer the visitor's own "I'm here" for this station (owner
+   * decision after the M1b-1 review): without a usable device accuracy only
+   * - a session without location, or one with location but no fix yet
+   * (granted, indoors: PR #623 review), where the run finds nothing by
+   * position - for a station without a printed code (one with a code is
+   * found by locking it), while the phone's own estimate - the code-placed
+   * position - is inside its found band. No fix measures that estimate's
+   * accuracy, so the band is taken at the station pose floor
+   * (`STATION_POSE_FLOOR_M`, 5 m: the stored spots themselves are off by up
+   * to 3.6 m at p90), or the creator's wider found radius. Nothing is found
+   * without the tap.
+   */
+  function hereOffered(id: string): boolean {
+    const noFix = (last?.visitor.accuracyM ?? null) === null;
+    if (deps.codesOnly?.() !== true && !noFix) return false;
+    const station = stationById(id);
+    const d = last?.distances.get(id);
+    if (station === undefined || station.anchor.code !== undefined)
+      return false;
+    if (d === undefined) return false;
+    return d <= stationBands(station, STATION_POSE_FLOOR_M).foundM;
+  }
+
   /** The offered station the skip and the line are about: the nearest
    *  one not yet found (the first in list order without a distance). */
   function focusStation(): string | null {
@@ -532,6 +565,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       return null;
     }
     if (skipArmedFor !== null && skipArmedFor !== target) skipArmedFor = null;
+    if (focus !== null && hereOffered(focus))
+      return { kind: "here", id: focus };
     if (story !== null) {
       // Nothing unfound is offered: the button ends the story playing, so
       // one that never ends cannot hold the tour (K4 review R9).
@@ -555,6 +590,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         return `End the story of ${title} now`;
       case "undo":
         return `Undo: bring back ${title}`;
+      case "here":
+        return "I'm here - play the story";
     }
   }
 
@@ -684,6 +721,11 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
             return;
           }
           handle(run.finish(action.id, deps.now()));
+          break;
+        case "here":
+          // The visitor confirms the arrival; nothing found it on its own.
+          skipArmedFor = null;
+          handle(run.arrive(action.id, deps.now()));
           break;
         case "undo":
           if (undoable?.id !== action.id) break;

@@ -143,6 +143,31 @@ activateM)` (each tick, each offered station with a distance: the
   between ticks (a skip, a story's end) has its distance at once. A code
   lock before any tick measures first.
 
+- **With no device fix ever (QR-first M1b-1, codes only; M1 review's list
+  of device-GPS readers):** the visitor's position (`visitor-position.ts`)
+  is the camera through the code-placed alignment - null before a scan,
+  odometry from the code after it - with `accuracyM` and `fixNue` null. So:
+  arrivals by position never fire (`station-run` needs a usable accuracy);
+  a station with a printed code is found by locking that code; the line
+  says "waiting for your position..." before a scan and the distance from
+  the code-placed position after it - never "GPS too weak", which needs an
+  accuracy; a station's code lock finds it at once (`codeAgrees`: no
+  independent fix to judge by, as for the moved-code check, which with no
+  device fix never decides). Under `?relocate=here` the stations stay held
+  back (the relocation waits for a first device fix that never comes).
+  Position arrivals do not fire on the code-placed position (no fix
+  measures its accuracy). Instead (owner decision after the M1b-1 review,
+  "both"): **a station without a printed code offers "I'm here - play the
+  story"** in place of the skip while the code-placed position is inside
+  its found band (`hereOffered`: dep `codesOnly()`, or, with location on,
+  no device fix carrying an accuracy - a granted permission indoors, where
+  the run finds nothing by position either, PR #623 review); the tap finds it
+  (`run.arrive`), nothing finds it on its own. The band is the found
+  radius at the station pose floor (`STATION_POSE_FLOOR_M`, 5 m) - the
+  code-placed position is assumed no worse than the stored spots
+  themselves (up to 3.6 m at p90) - or the creator's wider found radius.
+  Outside it the skip reads as before ("Can't get there?").
+
 ## Examples
 
 ```ts

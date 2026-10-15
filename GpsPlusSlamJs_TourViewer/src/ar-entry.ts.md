@@ -146,6 +146,16 @@ entry; C7).
 - The runtime start is all-or-nothing (`startTourArRuntime`); its failure
   surfaces in the error box and disables back to `ready`.
 
+- **Codes-only start (QR-first M1b-1):** a visitor whose location gate
+  reports `codesOnly()` (the location was declined) starts AR with
+  `location: "none"` - no location permission, no GPS watch, so no compass
+  watch either (the coordinator starts it at the first fix) - and marks the
+  session (`ctx.codesOnly`, set before the viewer pipeline and its gate
+  start). The status input carries it (`codesOnly`), and the debug hold
+  line reads the device-fix count (`deviceFixes`). Before such a start the
+  gate's `recheck()` runs (M1b-1 review #3); when it leaves the gate
+  pending (a dismissed prompt offered again) the tap is not a start.
+
 ## Examples
 
 ```ts

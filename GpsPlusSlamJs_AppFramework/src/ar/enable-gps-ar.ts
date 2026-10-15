@@ -97,7 +97,18 @@ export interface EnableGpsArConfig {
    * forwarded verbatim to `initAR` — see {@link ArSessionCallbacks}.
    */
   callbacks?: ArSessionCallbacks;
-  /** Receives every GPS fix from the started watch. */
+  /**
+   * `'required'` (default): the location permission is requested and its
+   * denial fails `enable()`, as always. `'none'` - the codes-only mode: no
+   * location permission is requested and no GPS watch is started, even with
+   * `onGpsPosition` set; AR and every other watch start as before. For an app
+   * that places its content from something other than GPS (the Tour Viewer's
+   * printed codes, QR-first plan 2026-10-14-0445 §7 #10). Anything else is
+   * refused: `enable()` fails without touching a permission or the session.
+   */
+  location?: 'required' | 'none';
+  /** Receives every GPS fix from the started watch (not in `location:
+   *  'none'`). */
   onGpsPosition?: (position: GpsPosition) => void;
   /** Receives every device-orientation sample from the started watch. */
   onOrientation?: (orientation: RawDeviceOrientation) => void;
@@ -244,9 +255,14 @@ export function createEnableGpsArController(
   async function requestPermissions(
     config: EnableGpsArConfig
   ): Promise<string | null> {
-    const geolocation = await resolved.requestGeolocationPermission();
-    if (geolocation.granted !== true) {
-      return geolocation.error ?? 'Location permission is required for GPS AR.';
+    // The codes-only mode asks for no location at all.
+    if (config.location !== 'none') {
+      const geolocation = await resolved.requestGeolocationPermission();
+      if (geolocation.granted !== true) {
+        return (
+          geolocation.error ?? 'Location permission is required for GPS AR.'
+        );
+      }
     }
 
     // Orientation is recommended, not blocking: many Android devices grant it
@@ -284,6 +300,15 @@ export function createEnableGpsArController(
     }
 
     setState({ status: 'starting' });
+
+    // Validated, not coerced: a typo must not silently ask for (or skip) the
+    // location the app meant to have.
+    const locationMode = config.location ?? 'required';
+    if (locationMode !== 'required' && locationMode !== 'none') {
+      return fail(
+        `enable(): location must be 'required' or 'none', got ${String(locationMode)}`
+      );
+    }
 
     // Wrap the app's per-session callbacks so the controller OBSERVES the
     // session ending (system back gesture, or an external endARSession call).
@@ -332,7 +357,7 @@ export function createEnableGpsArController(
       sessionStarted = true;
 
       // --- Sensor watches ---
-      if (config.onGpsPosition) {
+      if (config.onGpsPosition && locationMode === 'required') {
         resolved.startGpsWatch(config.onGpsPosition);
         gpsWatchActive = true;
       }

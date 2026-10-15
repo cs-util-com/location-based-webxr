@@ -11,6 +11,25 @@
  */
 
 import type { ArStatusInput } from "./tour-flow.js";
+/** The in-AR scan line without location (QR-first M1b-1), under the scan
+ *  card's title ("Scan the code again so the tour can start"): what the
+ *  absence of location means, not a second "scan". */
+const CODES_ONLY_SCAN_LINE =
+  "Without location, the tour's printed codes place it - any of them will do.";
+
+/** Without location, why nothing can place the tour, per waived gate
+ *  (QR-first M1b-1 review #2): never a "placed by GPS" line. */
+const CODES_ONLY_NOTHING: Record<
+  "no-detector" | "no-lockable-level" | "levels-unavailable",
+  string
+> = {
+  "no-detector":
+    "This browser can't read the tour's codes, and without location nothing can place the tour.",
+  "no-lockable-level":
+    "This tour has no printed codes, and without location nothing can place it.",
+  "levels-unavailable":
+    "The tour's code file could not be read, and without location nothing can place it.",
+};
 
 type VisitorStatusState =
   | "before-ar"
@@ -192,6 +211,10 @@ function codeSentence(input: ArStatusInput): VisitorStatus | null {
     return { state: "measuring-code", text: qr.fusedHint };
   }
   if (gate.kind === "scanning") {
+    // Without location the codes are the only way in (QR-first M1b-1).
+    if (input.codesOnly === true) {
+      return { state: "scan", text: CODES_ONLY_SCAN_LINE };
+    }
     return {
       state: "scan",
       text: escape
@@ -260,6 +283,15 @@ function runningSentence(input: ArStatusInput): VisitorStatus {
       state: "no-tour",
       text: "No tour is open here, so there is nothing to show. Open the tour's link again.",
     };
+  }
+  // Without location, a gate waived for any reason but the creator's
+  // leaves nothing that can place the tour (QR-first M1b-1, review #2).
+  if (
+    input.codesOnly === true &&
+    input.gate.kind === "not-required" &&
+    input.gate.reason !== "creator"
+  ) {
+    return { state: "nothing", text: CODES_ONLY_NOTHING[input.gate.reason] };
   }
   if (isPlaced(input)) {
     // Tracking lost after placing: the framework's hint (DEC-H3), since

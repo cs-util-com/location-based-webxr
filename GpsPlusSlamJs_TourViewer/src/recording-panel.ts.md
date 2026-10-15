@@ -54,7 +54,8 @@ estimateStorage, now, saveGuard }): RecordingPanel`
   for as long as it runs. The switch then locks on: a recording runs for the
   page's life, and unticking would promise a stop that does not exist.
 - **Only the page's first AR entry can be recorded.** The store's zero
-  reference (`setZeroPos`) is set by the first GPS fix of the page's first AR
+  reference (`setZeroPos`) is set by the first GPS fix (or, since QR-first M1,
+  the first stable code) of the page's first AR
   session and kept across sessions, so a recording started on a later entry
   would hold none and replay empty (M1a review finding 1). Once `arHasRun()`
   is true with no recording running, the switch is disabled and the notice

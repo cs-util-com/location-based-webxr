@@ -61,6 +61,13 @@ controller to `ready` — see "Session-end awareness".
   blocking — a non-`granted` status routes to `error` and `initAR` is never
   reached. Orientation is best-effort: a denial is ignored (the compass simply
   degrades; we still request it so iOS prompts inside the gesture).
+- **Codes-only mode (`config.location: 'none'`, QR-first plan
+  2026-10-14-0445 §7 #10):** no location permission is requested and no GPS
+  watch is started, even with `onGpsPosition` set; orientation, `initAR` and
+  the orientation watch run as before. For an app whose content is placed by
+  something other than GPS (the Tour Viewer's printed codes). The default
+  (`'required'`) is unchanged; any other value fails `enable()` with a
+  message naming `location` before any permission or session is touched.
 - **Async UX rule:** `enable()` always passes through the transitional
   `starting` state before the durable `running`/`error` final state, on both the
   success and the denied path. `disable()` likewise passes through `stopping`
@@ -148,7 +155,9 @@ controller.subscribe((s) => {
 
 `enable-gps-ar.test.ts` covers: support probe (`ready`/`unsupported`/throwing),
 minimal default set (depth NOT probed), `requestHitTest` forwarding, depth opt-in,
-geolocation-denied error (no `initAR`), orientation-denied proceed, depth-denied
+geolocation-denied error (no `initAR`), the codes-only mode (no location
+request, no GPS watch, AR running, nothing to stop on disable, an unknown mode
+refused), orientation-denied proceed, depth-denied
 error, `initAR` rejection, the `starting → running` and `starting → error`
 transitional ordering, idempotency (running + still-starting), unsubscribe
 hygiene, listener isolation (a throwing subscriber does not abort dispatch or

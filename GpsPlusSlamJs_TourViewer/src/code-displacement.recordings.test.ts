@@ -46,15 +46,11 @@
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   arNorthBearingDeg,
   bearingDeltaDeg,
-  calcGpsCoords,
-  calcRelativeCoordsInMeters,
-  type LatLong,
   type Quaternion,
   type Vector3,
 } from "gps-plus-slam-app-framework/core";
@@ -94,6 +90,25 @@ import { createTourViewerStore } from "./tour-viewer-session.js";
 import { throughAlignment, type NuePose } from "./visit-anchoring.js";
 import { isReliable } from "./code-position-rule.js";
 import { correctionBoundM } from "./visit-settle.js";
+import {
+  CACHE_DIR,
+  type Place,
+  type WalkFix,
+  type WalkMark,
+  type Walk,
+  MINT_GATE_FIXES,
+  type CollisionRule,
+  COLLISION_RULE,
+  loadWalks,
+  nueOdom,
+  nueToOtherZero,
+  dayOf,
+  type Obs,
+  usableMarks,
+  pairId,
+  nameCollisions,
+  markSites,
+} from "./test-support/real-walks.js";
 
 // ---------------------------------------------------------------------------
 // Corpus and cache
@@ -104,12 +119,6 @@ const MODE = process.env.D20_REAL;
 const PRIMARY =
   process.env.D20_REAL_PRIMARY ??
   path.resolve(import.meta.dirname, "../../../gps-plus-slam");
-const CACHE_DIR =
-  process.env.D20_REAL_CACHE ?? path.join(os.tmpdir(), "d20-real-walks");
-
-/** Where a recording was taken, by the folder it is filed in (the
- *  Investigation's filing rule, GpsPlusSlamJs_Docs 2026-07-28-1903). */
-type Place = "outdoor" | "indoor" | "mixed" | "other";
 
 interface CorpusDir {
   readonly dir: string;
@@ -234,49 +243,6 @@ function corpusZips(): {
 // ---------------------------------------------------------------------------
 // The cached walk
 // ---------------------------------------------------------------------------
-
-/** One device fix of a replayed walk. */
-interface WalkFix {
-  /** Fix time (epoch ms). */
-  readonly t: number;
-  /** Device fix, metres from the zero: north, east. */
-  readonly g: readonly [number, number];
-  /** Its odometry partner, odometry-NUE: north, up, east. */
-  readonly o: readonly [number, number, number];
-  /** Reported horizontal accuracy (m), or null. */
-  readonly acc: number | null;
-  /** The alignment published after this fix (column-major), or null. */
-  readonly a: readonly number[] | null;
-  /** Magnetic bearing of the AR north axis from the compass and the AR
-   *  pose (core `arNorthBearingDeg`), portrait readings only; or null. */
-  readonly compass: number | null;
-}
-
-/** One reference-point mark: a physically fixed spot the walker marked. */
-interface WalkMark {
-  /** The point's identity: its name when the walker gave one, else its id. */
-  readonly key: string;
-  readonly t: number;
-  /** The mark's AR pose (raw WebXR). */
-  readonly position: Vector3;
-  readonly rotation: Quaternion;
-  /** The alignment in effect when the mark was taken, or null. */
-  readonly a: readonly number[] | null;
-  /** Device fixes recorded before the mark (the mint gate counts them). */
-  readonly fixesBefore: number;
-}
-
-interface Walk {
-  readonly key: string;
-  readonly place: Place;
-  readonly era: number | null;
-  readonly skipped?: string;
-  readonly zero?: LatLong;
-  readonly fixes?: readonly WalkFix[];
-  readonly marks?: readonly WalkMark[];
-  readonly actionTypes?: Record<string, number>;
-  readonly portraitShare?: number;
-}
 
 /** The data actions replayed into the viewer store. Configuration toggles
  *  (`gpsData/set*Enabled`, compass modes, overrides) are deliberately left
@@ -564,31 +530,12 @@ const PAIR_MAX_RAW_M = 60;
  *  largest genuine GPS disagreements along with any collision left. */
 const PAIR_MAX_RAW_SWEEP_M = [60, 25, 15, 1000] as const;
 const HEADING_MIN_EXTENT_M = [20, 30, 50] as const;
-const MINT_GATE_FIXES = 3;
 const SHIPPED_GATE = { minSpanS: 60, minSpreadM: 2 } as const;
 /** A saved pose minted this long into its walk counts as settled. */
 const SETTLED_S = 60;
 /** Lowered correction-refusal bounds measured for D1 (report only). */
 const REFUSAL_BOUNDS_M = [12, 15, 20] as const;
 
-/** How a name collision is told apart from GPS error without GPS. */
-interface CollisionRule {
-  /** One name marked further apart than this within ONE walk (odometry)
-   *  names several spots. Within-walk repeats of one spot measure 0.1-3.4 m
-   *  in this corpus, the smallest multi-spot name 21.5 m. */
-  readonly withinWalkM: number;
-  /** Two walks' odometry distances between two shared points disagree
-   *  beyond pairAbsM + pairRel x the distance (odometry drift grows with
-   *  distance; agreeing distances measure median 0.8 m, p90 2.5 m). */
-  readonly pairAbsM: number;
-  readonly pairRel: number;
-}
-
-const COLLISION_RULE: CollisionRule = {
-  withinWalkM: 10,
-  pairAbsM: 10,
-  pairRel: 0.05,
-};
 const COLLISION_RULE_SWEEP: readonly CollisionRule[] = [
   COLLISION_RULE,
   { withinWalkM: 5, pairAbsM: 5, pairRel: 0.02 },
@@ -598,18 +545,6 @@ const COLLISION_RULE_SWEEP: readonly CollisionRule[] = [
 ];
 
 const RESIDUAL_20: DisplacementEstimator = { kind: "residual", radiusM: 20 };
-
-function loadWalks(): Walk[] {
-  if (!fs.existsSync(CACHE_DIR)) return [];
-  return fs
-    .readdirSync(CACHE_DIR)
-    .filter((f) => f.endsWith(".json"))
-    .sort()
-    .map(
-      (f) =>
-        JSON.parse(fs.readFileSync(path.join(CACHE_DIR, f), "utf8")) as Walk,
-    );
-}
 
 function quantile(values: readonly number[], q: number): number {
   const finite = values.filter(Number.isFinite).sort((a, b) => a - b);
@@ -739,9 +674,6 @@ const poseAt = (
   position: [o[0]!, o[1]!, o[2]!],
   rotation,
 });
-
-/** Raw WebXR position to odometry-NUE (north, up, east). */
-const nueOdom = (p: Vector3): [number, number, number] => [-p[2], p[1], p[0]];
 
 /** A saved pose moved by -move (north, east) and turned by -turn about Up:
  *  the poster now sits `move` from, and `turn` turned against, where it was
@@ -995,21 +927,6 @@ function virtualCases(w: Walk): Case[] {
   return out;
 }
 
-function nueToOtherZero(
-  position: readonly number[],
-  from: LatLong,
-  to: LatLong,
-): [number, number, number] {
-  const geo = calcGpsCoords(from, [position[0]!, position[1]!, position[2]!]);
-  const nue = calcRelativeCoordsInMeters(to, geo, 0, 0);
-  return [nue[0], position[1]!, nue[2]];
-}
-
-/** The UTC day of a walk, from its file name; null when it has none. */
-function dayOf(walkKey: string): string | null {
-  return /(\d{4}-\d{2}-\d{2})_\d{2}-\d{2}-\d{2}utc$/.exec(walkKey)?.[1] ?? null;
-}
-
 interface PairResult {
   readonly key: string;
   readonly walkA: string;
@@ -1043,8 +960,6 @@ function fixIndexAt(fixes: readonly WalkFix[], tMs: number): number {
 
 const horizontal = (a: readonly number[], b: readonly number[]): number =>
   Math.hypot(a[0]! - b[0]!, a[2]! - b[2]!);
-
-type Obs = { readonly w: Walk; readonly m: WalkMark };
 
 /** One ordered pair: A saved the point, B sees it. Null when unusable. No
  *  identity test here: the raw-GPS distance is carried and filtered on. */
@@ -1126,18 +1041,6 @@ function pairResult(A: Obs, B: Obs): PairResult | null {
   };
 }
 
-/** The marks the pairs are built from: with an alignment, past the mint
- *  gate, on a walk with a zero. */
-function usableMarks(walks: readonly Walk[]): Obs[] {
-  return walks.flatMap((w) =>
-    w.zero === undefined
-      ? []
-      : (w.marks ?? [])
-          .filter((m) => m.a !== null && m.fixesBefore >= MINT_GATE_FIXES)
-          .map((m) => ({ w, m })),
-  );
-}
-
 /** Every ordered pair of two walks' marks of one name, unfiltered. */
 function allPairs(walks: readonly Walk[]): PairResult[] {
   const byKey = new Map<string, Obs[]>();
@@ -1154,88 +1057,6 @@ function allPairs(walks: readonly Walk[]): PairResult[] {
       }
   }
   return pairs;
-}
-
-/** A mark's horizontal odometry position (north, east) in its own walk. */
-interface MarkSite {
-  readonly key: string;
-  readonly walk: string;
-  readonly n: number;
-  readonly e: number;
-}
-
-const pairId = (a: string, b: string, key: string): string =>
-  a < b ? `${a}|${b}|${key}` : `${b}|${a}|${key}`;
-
-/**
- * Name collisions found WITHOUT GPS (see COLLISION_RULE): `ambiguous` names
- * label several spots within one walk; `inconsistent` holds pairId(walkA,
- * walkB, name) where that name's odometry distances to the other points
- * both walks marked disagree for MORE than half of them. With exactly two
- * shared points that disagree, both are flagged: odometry cannot tell
- * which one moved. With one shared point there is nothing to compare.
- */
-function nameCollisions(
-  sites: readonly MarkSite[],
-  rule: CollisionRule,
-): { ambiguous: Set<string>; inconsistent: Set<string> } {
-  const byWalk = new Map<string, Map<string, MarkSite[]>>();
-  for (const s of sites) {
-    const keys = byWalk.get(s.walk) ?? new Map<string, MarkSite[]>();
-    keys.set(s.key, [...(keys.get(s.key) ?? []), s]);
-    byWalk.set(s.walk, keys);
-  }
-  const ambiguous = new Set<string>();
-  const centres = new Map<string, Map<string, readonly [number, number]>>();
-  for (const [walk, keys] of byWalk) {
-    const c = new Map<string, readonly [number, number]>();
-    for (const [key, list] of keys) {
-      for (const a of list)
-        for (const b of list)
-          if (Math.hypot(a.n - b.n, a.e - b.e) > rule.withinWalkM)
-            ambiguous.add(key);
-      c.set(key, [
-        list.reduce((x, s) => x + s.n, 0) / list.length,
-        list.reduce((x, s) => x + s.e, 0) / list.length,
-      ]);
-    }
-    centres.set(walk, c);
-  }
-  const inconsistent = new Set<string>();
-  const walks = [...centres.keys()].sort();
-  const dist = (p: readonly [number, number], q: readonly [number, number]) =>
-    Math.hypot(p[0] - q[0], p[1] - q[1]);
-  for (let i = 0; i < walks.length; i += 1) {
-    const A = centres.get(walks[i]!)!;
-    for (let j = i + 1; j < walks.length; j += 1) {
-      const B = centres.get(walks[j]!)!;
-      const shared = [...A.keys()].filter((k) => B.has(k) && !ambiguous.has(k));
-      if (shared.length < 2) continue;
-      for (const P of shared) {
-        let disagree = 0;
-        for (const Q of shared) {
-          if (Q === P) continue;
-          const dA = dist(A.get(P)!, A.get(Q)!);
-          const dB = dist(B.get(P)!, B.get(Q)!);
-          if (
-            Math.abs(dA - dB) >
-            rule.pairAbsM + rule.pairRel * Math.max(dA, dB)
-          )
-            disagree += 1;
-        }
-        if (disagree > (shared.length - 1) / 2)
-          inconsistent.add(pairId(walks[i]!, walks[j]!, P));
-      }
-    }
-  }
-  return { ambiguous, inconsistent };
-}
-
-function markSites(walks: readonly Walk[]): MarkSite[] {
-  return usableMarks(walks).map(({ w, m }) => {
-    const o = nueOdom(m.position);
-    return { key: m.key, walk: w.key, n: o[0], e: o[2] };
-  });
 }
 
 /** The pairs a collision verdict keeps, and what it dropped. */
