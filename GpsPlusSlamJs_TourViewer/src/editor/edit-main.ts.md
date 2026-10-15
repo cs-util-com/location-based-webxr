@@ -180,6 +180,16 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   get a backup (close that tab, open the tour again here). `body[data-draft]` is
   `writing` / `saved` / `off`: the e2e waits for `saved` before it closes a
   page (`page.close()` skips `beforeunload`).
+- **"This tour needs no GPS" (QR-first M1b-2, owner Q-QF-1).** A checkbox
+  at the top of the rail (`#no-gps-input`, hidden with the folded rail):
+  turning it on or off is an edit (`session.setNeedsNoGps`) - pending in the
+  status line, backed up by the draft, saved by Save and by autosave like
+  any change. A tour opened with `needsNoGps` shows it on. While it is on,
+  `#no-gps-warnings` (a polite status region, never blocking the save)
+  carries `no-gps-check.ts`'s lines: the stations without a printed code,
+  by name and count, or - when no code can place the tour - that visitors
+  are asked for their location anyway. Redrawn on every `refresh()` (a
+  restore, a save) and on each toggle.
 - **Leaving** with unsaved work asks first (`beforeunload`), and so does
   "Open another tour" (`window.confirm`).
 - **Free area** for the card: right of the rail, under the top bar (read

@@ -12,13 +12,26 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
 ## Public API
 
 - `createEditorSession({ session, manifest, levels, fileName?, draft? }): EditorSession`
-  - `draft` (M6 E2c) - the `DraftObjectWrites` every edit, move, delete
-    and undo is backed up through (`editor-draft.ts`); the delete's and
-    the undo's sequences are `draft-actions.ts`'s, as the phone runs them.
+  - `draft` (M6 E2c) - the `EditorSessionDraft` every edit, move,
+    delete and undo is backed up through (`editor-draft.ts`): the four
+    `DraftObjectWrites`, whose delete and undo sequences are
+    `draft-actions.ts`'s as the phone runs them, plus `saveSettings` for
+    the tour-level settings (QR-first M1b-2).
   - `model()` - the `EditorModel` of the tour with the edits applied.
   - `changeCount()` - edits and deletions not yet in a saved file, by
-    content (a text edited back is no change); `pendingIds()` - the notes
+    content (a text edited back is no change), plus one while the "needs no
+    GPS" setting differs from the saved file; `pendingIds()` - the notes
     with an edit or a move not yet saved.
+  - `needsNoGps()` / `setNeedsNoGps(on)` (QR-first M1b-2, owner Q-QF-1) -
+    the tour's "needs no GPS" setting as it stands with the edits, and its
+    edit: `changed` (backed up through `draft.saveSettings`) or
+    `unchanged` (the same value: nothing written). A save writes it into
+    the manifest it builds (`needsNoGps: true`, which the framework's
+    writer puts at minor 2) or leaves the field out (false is never
+    written). The phone's Finish keeps the flag the same way: the rebuild
+    spreads the opened manifest (`finish-rebuild.ts`).
+  - `noGpsCheck()` - `no-gps-check.ts`'s `checkNoGps` over the open
+    tour's stations and codes: what the setting's warnings are about.
   - `editText(id, text)` - `pinTextEdit`'s outcome (`edited`, `unchanged`,
     `refused` with the phone's sentence; `refused` with `NOT_IN_TOUR` for an
     id the tour no longer carries).
@@ -35,18 +48,20 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
     as `editText` and `move`, so the page shows no "Deleted" toast and no
     Undo that would answer "too late" (finding C). The undo of a
     delete of an edited note writes the record to the draft again.
-  - `restore({ objects, deleted })` (M6 E2c) - a draft's work put back by
-    the session's own rules: an object the tour carries takes the draft's
-    version (`upsertPlaced`), a deletion its tombstone (`deleteObject`);
-    live work on an id wins; an id the tour no longer carries is skipped;
-    what was applied is written to the draft again. Returns the counts.
+  - `restore({ objects, deleted, settings? })` (M6 E2c) - a draft's work
+    put back by the session's own rules: an object the tour carries takes
+    the draft's version (`upsertPlaced`), a deletion its tombstone
+    (`deleteObject`); live work on an id wins; an id the tour no longer
+    carries is skipped; the settings are applied unless the setting was
+    changed here since the open (counted among `changed`); what was
+    applied is written to the draft again. Returns the counts.
   - `save({ keepScan })` - `rebuildFinishedTour` with `levels: []`, the
     photo spots decided once per open (`captureSpotsForRebuild`, its result
     kept), `previous` = the last save's bytes; returns `{ blob, filename,
 scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
     carries, for the draft's bases) and advances to what was written
     (`pendingAfterRebuild`).
-- `EditorSession`, `EditorSave`.
+- `EditorSession`, `EditorSave`, `EditorSessionDraft`.
 
 ## Invariants & assumptions
 
@@ -65,6 +80,8 @@ scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
   the undo when a save starts.
 - The editor places nothing new yet: every entry is an edit or a move of
   an object the tour carries.
+- The setting is snapshotted with the edits: a toggle made while a save
+  runs is the next save's.
 
 ## Tests
 
@@ -73,4 +90,9 @@ the saved `tour.json`; an empty pin refused; a delete undone in place; an
 edit made during a save kept for the next; the saved file's name; the
 draft's calls (an edited note's delete undone writes its record again),
 a restore (live work winning, unknown ids skipped), an unknown id refused,
-and a saved zip keyed as opening it would (`tourFileKeyOfFile`).
+and a saved zip keyed as opening it would (`tourFileKeyOfFile`). The
+"needs no GPS" setting (QR-first M1b-2): written at minor 2 when on and
+left out when off (the raw `tour.json`), a toggle back being no change, a
+flagged tour opening on and keeping the flag through another edit's save, a
+toggle during a save waiting for the next, its draft writes, a restore
+(live change winning), and `noGpsCheck`.

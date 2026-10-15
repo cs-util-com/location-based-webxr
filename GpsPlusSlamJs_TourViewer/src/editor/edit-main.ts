@@ -56,6 +56,7 @@ import {
   type EditorSave,
   type EditorSession,
 } from "./editor-session.js";
+import { noGpsWarnings } from "./no-gps-check.js";
 import { revealPadding, type Box } from "./popover-place.js";
 import {
   createSaveTarget,
@@ -164,6 +165,9 @@ const saveButton = element<HTMLButtonElement>("save-btn");
 const saveStatus = element("save-status");
 const keepWalk = element("keep-walk");
 const keepWalkInput = element<HTMLInputElement>("keep-walk-input");
+/** The tour's "needs no GPS" setting and its warnings (QR-first M1b-2). */
+const noGpsInput = element<HTMLInputElement>("no-gps-input");
+const noGpsWarningsBox = element("no-gps-warnings");
 
 let session: TourSession | null = null;
 /** The written file, for the card's photos once a save replaced the bytes
@@ -464,6 +468,26 @@ function pendingSuffix(): string {
   return "";
 }
 
+/** The "needs no GPS" setting as the session holds it, and - while it is
+ *  on - what visitors without location will meet (QR-first M1b-2): plain
+ *  lines, never blocking the save. */
+function renderNoGps(): void {
+  const on = editor?.needsNoGps() ?? false;
+  noGpsInput.checked = on;
+  noGpsInput.disabled = editor === null;
+  const lines =
+    editor === null || !on ? [] : noGpsWarnings(editor.noGpsCheck());
+  noGpsWarningsBox.replaceChildren(
+    ...lines.map((line) => {
+      const p = document.createElement("p");
+      p.className = "note-line warn";
+      p.textContent = line;
+      return p;
+    }),
+  );
+  noGpsWarningsBox.hidden = lines.length === 0;
+}
+
 /** After an edit: the rail, the markers, the card and the status follow. */
 function refresh(): void {
   if (editor === null) return;
@@ -476,6 +500,7 @@ function refresh(): void {
   map.select(selected);
   rail.select(selected);
   showCard();
+  renderNoGps();
   renderSaveState();
 }
 
@@ -902,6 +927,7 @@ async function openFile(
   if (window.innerWidth < NARROW_PX) rail.collapse(true);
   const free = freeArea();
   map.show(model, { left: free.left, top: free.top });
+  renderNoGps();
   renderSaveState();
   toast(`Opened ${outcome.fileName}: ${openedSummary(model)}`);
   sayNoBackup();
@@ -1327,6 +1353,15 @@ async function buildAndDeliver(
 
 saveButton.addEventListener("click", () => {
   void runSave();
+});
+// A tour-level edit (QR-first M1b-2): pending like a note's, backed up by
+// the draft, saved by itself like any change.
+noGpsInput.addEventListener("change", () => {
+  if (editor === null) return;
+  const outcome = editor.setNeedsNoGps(noGpsInput.checked);
+  renderNoGps();
+  renderSaveState();
+  if (outcome.kind === "changed") autosave.changed();
 });
 // One handler for the drop box and its "Choose…" button (a click on the
 // button reaches the label too). The input's own click - the fallback's -

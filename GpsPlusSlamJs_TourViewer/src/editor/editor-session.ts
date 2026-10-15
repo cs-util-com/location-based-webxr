@@ -37,7 +37,9 @@ import {
   type AuthoringObject,
 } from "../object-edits.js";
 import type { TourSession } from "../tour-session.js";
+import type { EditorTourSettings } from "./editor-draft.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
+import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 
 /** An edited or moved object (the editor places nothing new yet). */
 interface EditorEntry {
@@ -72,6 +74,23 @@ interface EditorRefusal {
 interface EditorRestore {
   readonly objects: readonly TourObject[];
   readonly deleted: readonly string[];
+  /** The tour-level settings, when the draft holds a change of them. */
+  readonly settings?: EditorTourSettings;
+}
+
+/** Where the session backs its edits up: the objects' writes the phone
+ *  shares (`draft-actions.ts`), and the tour's settings (QR-first M1b-2). */
+export interface EditorSessionDraft extends DraftObjectWrites {
+  saveSettings(settings: EditorTourSettings): Promise<boolean>;
+}
+
+/** `manifest` with the "needs no GPS" flag set, or without the field:
+ *  false is never written (`tour-manifest.ts`). */
+function withNeedsNoGps(manifest: TourManifest, on: boolean): TourManifest {
+  if (on) return { ...manifest, needsNoGps: true };
+  const off = { ...manifest };
+  delete off.needsNoGps;
+  return off;
 }
 
 export interface EditorSession {
@@ -82,6 +101,15 @@ export interface EditorSession {
   changeCount(): number;
   /** The ids of the notes with an edit or a move not yet saved. */
   pendingIds(): string[];
+  /** The tour's "needs no GPS" setting as it stands with the edits
+   *  (QR-first M1b-2, owner Q-QF-1). */
+  needsNoGps(): boolean;
+  /** Turn it on or off: one pending change while it differs from the
+   *  saved file, none once it is back at the file's own value. */
+  setNeedsNoGps(on: boolean): { kind: "changed" | "unchanged" };
+  /** What the setting's warnings are about: the code-less stations and
+   *  whether a code can place the tour (`no-gps-check.ts`). */
+  noGpsCheck(): NoGpsCheck;
   editText(
     id: string,
     text: string,
@@ -98,7 +126,9 @@ export interface EditorSession {
   /** Put a draft's work back by the session's own rules (M6 E2c): an
    *  object the tour carries gets the draft's version, a deletion its
    *  tombstone; live work on an id wins, and an id the tour no longer
-   *  carries is skipped. What was applied is written to the draft again. */
+   *  carries is skipped. The settings likewise: a change made here since
+   *  the open wins, and an applied one counts among `changed`. What was
+   *  applied is written to the draft again. */
   restore(work: EditorRestore): { changed: number; deleted: number };
   /** Build the saved zip from the newest bytes; edits made while it runs
    *  wait for the next save. Saves run one after another: one called
@@ -114,10 +144,17 @@ export function createEditorSession(input: {
   readonly fileName?: string;
   /** Where every edit, move, delete and undo is backed up (M6 E2c); none
    *  in a test that does not need it. */
-  readonly draft?: DraftObjectWrites;
+  readonly draft?: EditorSessionDraft;
 }): EditorSession {
   const { session, levels } = input;
   let manifest = input.manifest;
+  /** The "needs no GPS" setting with the edits; pending while it differs
+   *  from `manifest` (the file as last saved). */
+  let noGps = manifest.needsNoGps === true;
+  /** The setting was changed here since the open: live work, which wins
+   *  over a draft's offer. */
+  let noGpsTouched = false;
+  const noGpsPending = (): boolean => noGps !== (manifest.needsNoGps === true);
   let placed: EditorEntry[] = [];
   let deleted: string[] = [];
   let previous: { blob: Blob; signedManifest?: SignedTourManifest } | null =
@@ -177,10 +214,23 @@ export function createEditorSession(input: {
       });
     },
     changeCount() {
-      return unsaved().length + deleted.length;
+      return unsaved().length + deleted.length + (noGpsPending() ? 1 : 0);
     },
     pendingIds() {
       return unsaved().map((p) => p.object.id);
+    },
+    needsNoGps() {
+      return noGps;
+    },
+    setNeedsNoGps(on) {
+      if (on === noGps) return { kind: "unchanged" };
+      noGps = on;
+      noGpsTouched = true;
+      void input.draft?.saveSettings({ needsNoGps: on });
+      return { kind: "changed" };
+    },
+    noGpsCheck() {
+      return checkNoGps({ stations: manifest.stations, levels });
     },
     editText(id, text) {
       const found = find(id);
@@ -244,6 +294,16 @@ export function createEditorSession(input: {
         void input.draft?.saveDeletion(id);
         gone += 1;
       }
+      const settings = work.settings;
+      if (
+        settings !== undefined &&
+        !noGpsTouched &&
+        settings.needsNoGps !== noGps
+      ) {
+        noGps = settings.needsNoGps;
+        void input.draft?.saveSettings(settings);
+        changed += 1;
+      }
       return { changed, deleted: gone };
     },
     save(options) {
@@ -267,7 +327,7 @@ export function createEditorSession(input: {
     snapshots += 1;
     const placedNow = [...placed];
     const deletedNow = [...deleted];
-    const manifestNow = manifest;
+    const manifestNow = withNeedsNoGps(manifest, noGps);
     spots ??= captureSpotsForRebuild(session, manifestNow);
     const photos = await spots;
     const finished = await rebuildFinishedTour({

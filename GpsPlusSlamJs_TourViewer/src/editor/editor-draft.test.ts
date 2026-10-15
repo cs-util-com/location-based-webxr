@@ -780,3 +780,259 @@ describe("createEditorDraft", () => {
     expect(draft.said).toEqual(["storage"]);
   });
 });
+
+/**
+ * Why (QR-first M1b-2, the draft gap): the draft held objects only, so a
+ * changed tour-level setting - "needs no GPS" - was lost with a closed tab
+ * while every note edit beside it survived. The setting is ONE record
+ * (`settings`) in the editor's namespace with the objects' rules: offered
+ * by a later open while the file does not carry it, cleared by a file
+ * that does (an in-place write that landed, or a copy put in place),
+ * carried along by a key move, thrown away by "Delete it" unless changed
+ * since the open. A boolean has no versions beyond its two values, so the
+ * objects' bases reduce to "the file's value differs from the record's"
+ * (`editor-draft.ts`, THE SETTINGS).
+ */
+describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
+  const SETTINGS = "settings";
+  const flagged = (...objects: TourObject[]): TourManifest => ({
+    ...tour(...objects),
+    needsNoGps: true,
+  });
+
+  it("a changed setting survives a closed tab and is offered as a change", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = tour(pin("a"));
+    await first.open(K1, opened);
+    expect(await first.saveSettings({ needsNoGps: true })).toBe(true);
+    await first.idle();
+    first.close();
+    const { offer } = await draftIn(b).open(K1, opened);
+    expect(offer?.settings).toEqual({ needsNoGps: true });
+    expect(offer?.objects).toEqual([]);
+    expect(offer?.text).toContain("1 change");
+  });
+
+  it("is counted with the notes' changes in the offer's words", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = tour(pin("a"));
+    await first.open(K1, opened);
+    void first.saveObject(pin("a", "edited"));
+    void first.saveSettings({ needsNoGps: true });
+    await first.idle();
+    first.close();
+    const { offer } = await draftIn(b).open(K1, opened);
+    expect(offer?.text).toContain("2 changes");
+  });
+
+  it("a setting put back to the file's own value leaves nothing to offer", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = flagged(pin("a"));
+    await first.open(K1, opened);
+    void first.saveSettings({ needsNoGps: false });
+    void first.saveSettings({ needsNoGps: true });
+    await first.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
+    first.close();
+    expect((await draftIn(b).open(K1, opened)).offer).toBeNull();
+  });
+
+  it("turning a flagged tour's setting off is kept too", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = flagged(pin("a"));
+    await first.open(K1, opened);
+    void first.saveSettings({ needsNoGps: false });
+    await first.idle();
+    first.close();
+    expect((await draftIn(b).open(K1, opened)).offer?.settings).toEqual({
+      needsNoGps: false,
+    });
+  });
+
+  it("a file that carries the setting spends the record: a downloaded copy put in place", async () => {
+    // Why (review #2's rule): a download clears nothing - the original
+    // reopened still offers - but a file seen to carry the value does.
+    const b = browser();
+    const draft = draftIn(b);
+    const original = tour(pin("a"));
+    await draft.open(K1, original);
+    void draft.saveSettings({ needsNoGps: true });
+    draft.writes().built(flagged(pin("a")));
+    await draft.idle();
+    draft.close();
+    expect((await draftIn(b).open(K1, original)).offer?.settings).toEqual({
+      needsNoGps: true,
+    });
+    const again = draftIn(b);
+    expect((await again.open(K1, flagged(pin("a")))).offer).toBeNull();
+    await again.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
+  });
+
+  it("a save built but never put in place: a setting changed back is still offered by the built copy", async () => {
+    // Why (review #1's second walk, for the setting): turned on, built
+    // as a download, turned off again - back at the opened file's value,
+    // but the built copy carries "on", and putting it in place must not
+    // lose the creator's last choice.
+    const b = browser();
+    const draft = draftIn(b);
+    const original = tour(pin("a"));
+    await draft.open(K1, original);
+    void draft.saveSettings({ needsNoGps: true });
+    const built = flagged(pin("a"));
+    draft.writes().built(built);
+    void draft.saveSettings({ needsNoGps: false });
+    await draft.idle();
+    draft.close();
+    const copy = draftIn(b);
+    expect((await copy.open(K1, built)).offer?.settings).toEqual({
+      needsNoGps: false,
+    });
+    copy.close();
+    // The original carries "off": spent there.
+    expect((await draftIn(b).open(K1, original)).offer).toBeNull();
+  });
+
+  it("an in-place write that landed clears it, and a change after it is pending against the written file", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    void draft.saveSettings({ needsNoGps: true });
+    const written = flagged(pin("a"));
+    draft.writes().built(written);
+    draft.writes().landed(written, K1);
+    await draft.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
+    // Off again after the landed save: pending against the file on disk
+    // NOW (flagged), not against the file first opened.
+    void draft.saveSettings({ needsNoGps: false });
+    await draft.idle();
+    draft.close();
+    expect((await draftIn(b).open(K1, written)).offer?.settings).toEqual({
+      needsNoGps: false,
+    });
+  });
+
+  it("an in-place write keeps a setting changed while it ran", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    void draft.saveObject(pin("a", "saved"));
+    const written = tour(pin("a", "saved"));
+    draft.writes().built(written);
+    void draft.saveSettings({ needsNoGps: true });
+    draft.writes().landed(written, K1);
+    await draft.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(true);
+  });
+
+  it("a key move carries the setting, and empties the old namespace", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    void draft.saveObject(pin("a", "saved"));
+    const written = tour(pin("a", "saved"));
+    draft.writes().built(written);
+    // Changed while the save ran: not in the written file.
+    void draft.saveSettings({ needsNoGps: true });
+    draft.writes().landed(written, K2);
+    await draft.idle();
+    draft.close();
+    expect(b.spaces.get(editorDraftKey(K1))?.size ?? 0).toBe(0);
+    expect((await draftIn(b).open(K2, written)).offer?.settings).toEqual({
+      needsNoGps: true,
+    });
+  });
+
+  it("a key move carries an offered setting not yet answered", async () => {
+    const b = browser();
+    const earlier = draftIn(b);
+    const original = tour(pin("a"));
+    await earlier.open(K1, original);
+    void earlier.saveSettings({ needsNoGps: true });
+    await earlier.idle();
+    earlier.close();
+    const draft = draftIn(b);
+    expect((await draft.open(K1, original)).offer?.settings).toEqual({
+      needsNoGps: true,
+    });
+    void draft.saveObject(pin("a", "saved"));
+    const written = tour(pin("a", "saved"));
+    draft.writes().built(written);
+    draft.writes().landed(written, K2);
+    await draft.idle();
+    draft.close();
+    expect((await draftIn(b).open(K2, written)).offer?.settings).toEqual({
+      needsNoGps: true,
+    });
+  });
+
+  it("Delete it throws an offered setting away, never one changed since the open", async () => {
+    const b = browser();
+    const original = tour(pin("a"));
+    for (const changedSince of [false, true]) {
+      const earlier = draftIn(b);
+      await earlier.open(K1, original);
+      void earlier.saveSettings({ needsNoGps: true });
+      await earlier.idle();
+      earlier.close();
+      const draft = draftIn(b);
+      expect((await draft.open(K1, original)).offer?.settings).toEqual({
+        needsNoGps: true,
+      });
+      // The creator turned it on here as well: live work.
+      if (changedSince) await draft.saveSettings({ needsNoGps: true });
+      expect(await draft.discard()).toBe(true);
+      await draft.idle();
+      draft.close();
+      const later = draftIn(b);
+      const reopened = await later.open(K1, original);
+      expect(reopened.offer?.settings).toEqual(
+        changedSince ? { needsNoGps: true } : undefined,
+      );
+      await later.idle();
+      later.close();
+    }
+  });
+
+  it("drops a settings write of a tour that is no longer open", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    const old = draft.writes();
+    await draft.open(K2, tour(pin("a")));
+    expect(await old.saveSettings({ needsNoGps: true })).toBe(true);
+    await draft.idle();
+    expect(b.spaces.get(editorDraftKey(K2))?.has(SETTINGS)).toBe(false);
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS) ?? false).toBe(
+      false,
+    );
+  });
+
+  it("an unreadable settings record is no offer, and goes", async () => {
+    // Why: a record that does not read costs itself (the draft's rule).
+    const b = browser();
+    const first = draftIn(b);
+    await first.open(K1, tour(pin("a")));
+    await first.idle();
+    first.close();
+    b.spaces.get(editorDraftKey(K1))?.set(SETTINGS, "{not json");
+    const again = draftIn(b);
+    expect((await again.open(K1, tour(pin("a")))).offer).toBeNull();
+    await again.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
+  });
+
+  it("a settings write that does not land is said once", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    b.failIn.add(editorDraftKey(K1));
+    expect(await draft.saveSettings({ needsNoGps: true })).toBe(false);
+    expect(draft.said).toEqual(["storage"]);
+  });
+});

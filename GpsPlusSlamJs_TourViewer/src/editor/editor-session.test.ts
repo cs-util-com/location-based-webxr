@@ -26,8 +26,11 @@ import {
   type TourSession,
 } from "../tour-session.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
-import type { DraftObjectWrites } from "../draft-actions.js";
-import { createEditorSession, NOT_IN_TOUR } from "./editor-session.js";
+import {
+  createEditorSession,
+  NOT_IN_TOUR,
+  type EditorSessionDraft,
+} from "./editor-session.js";
 
 /** The undo of a delete that was made; a refusal fails the test. */
 function undoOf(
@@ -63,11 +66,18 @@ function photo(id: string): TourObject {
   };
 }
 
-async function opened(objects: readonly TourObject[]): Promise<{
+async function opened(
+  objects: readonly TourObject[],
+  extra: Partial<TourManifest> = {},
+): Promise<{
   session: TourSession;
   manifest: TourManifest;
 }> {
-  const manifest = { ...createEmptyTourManifest(), objects: [...objects] };
+  const manifest = {
+    ...createEmptyTourManifest(),
+    ...extra,
+    objects: [...objects],
+  };
   const zip = await packFilesAsZip([
     { path: "tour.json", data: serializeTourManifest(manifest) },
     ...objects
@@ -86,6 +96,15 @@ async function carried(blob: Blob): Promise<TourManifest> {
     "tour.json",
   );
   return parseTourManifest(JSON.parse(new TextDecoder().decode(bytes)));
+}
+
+/** The saved `tour.json` as written, before any parse fills defaults. */
+async function writtenJson(blob: Blob): Promise<Record<string, unknown>> {
+  const bytes = readStoredEntryBytes(
+    new Uint8Array(await blob.arrayBuffer()),
+    "tour.json",
+  );
+  return JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
 }
 
 describe("createEditorSession", () => {
@@ -312,10 +331,14 @@ describe("createEditorSession, the review's cases (E0c + E2a review #9, #10, #12
 
 /** Draft writes that log their calls (the editor's draft is
  *  `editor-draft.test.ts`'s; here only what the session asks of it). */
-function loggedDraft(): DraftObjectWrites & { calls: string[] } {
+function loggedDraft(): EditorSessionDraft & { calls: string[] } {
   const calls: string[] = [];
   return {
     calls,
+    saveSettings: (settings) => {
+      calls.push(`settings needsNoGps=${String(settings.needsNoGps)}`);
+      return Promise.resolve(true);
+    },
     saveObject: (object) => {
       calls.push(
         `save ${object.id}${object.kind === "pin" ? ` ${object.label}` : ""}`,
@@ -454,6 +477,196 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     });
     expect(editor.changeCount()).toBe(0);
     expect(draft.calls).toEqual([]);
+    await session.close();
+  });
+});
+
+describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)", () => {
+  // Why (owner Q-QF-1): "needs no GPS" is a tour-level edit like any
+  // other - it is a pending change until a save writes it, the saved
+  // tour.json carries `needsNoGps: true` at minor 2 (the framework's
+  // writer), and turning it off writes the tour exactly as before (no
+  // field at all, false is never written).
+  it("writes needsNoGps: true at minor 2 when on, and leaves the field out when off", async () => {
+    const { session, manifest } = await opened([pin("a")], { title: "T" });
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.needsNoGps()).toBe(false);
+    expect(editor.setNeedsNoGps(true)).toEqual({ kind: "changed" });
+    expect(editor.needsNoGps()).toBe(true);
+    expect(editor.changeCount()).toBe(1);
+    const on = await editor.save({ keepScan: false });
+    expect(await writtenJson(on.blob)).toMatchObject({
+      minor: 2,
+      needsNoGps: true,
+    });
+    expect(on.written.needsNoGps).toBe(true);
+    expect(editor.changeCount()).toBe(0);
+    expect(editor.setNeedsNoGps(false)).toEqual({ kind: "changed" });
+    expect(editor.changeCount()).toBe(1);
+    const off = await editor.save({ keepScan: false });
+    const json = await writtenJson(off.blob);
+    expect(json).not.toHaveProperty("needsNoGps");
+    // The title keeps it at version 2; nothing else needs a newer minor.
+    expect(json).toMatchObject({ version: 2, minor: 0 });
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
+  it("a toggle back to the file's own value is no change", async () => {
+    const { session, manifest } = await opened([pin("a")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.setNeedsNoGps(false)).toEqual({ kind: "unchanged" });
+    editor.setNeedsNoGps(true);
+    editor.setNeedsNoGps(false);
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
+  it("a flagged tour opens with the setting on and keeps it through a save of another edit", async () => {
+    const { session, manifest } = await opened([pin("a")], {
+      needsNoGps: true,
+    });
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.needsNoGps()).toBe(true);
+    editor.editText("a", "edited");
+    const saved = await editor.save({ keepScan: false });
+    expect(await writtenJson(saved.blob)).toMatchObject({
+      minor: 2,
+      needsNoGps: true,
+    });
+    await session.close();
+  });
+
+  it("a toggle made while a save runs waits for the next save", async () => {
+    // Why (E2a review #9's rule, for the setting): the save snapshots
+    // before its first await; a change after that is the next save's,
+    // never lost and never half in this one.
+    const { session, manifest } = await opened([pin("a")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    editor.editText("a", "first");
+    const running = editor.save({ keepScan: false });
+    editor.setNeedsNoGps(true);
+    const first = await running;
+    expect(await writtenJson(first.blob)).not.toHaveProperty("needsNoGps");
+    expect(editor.changeCount()).toBe(1);
+    const second = await editor.save({ keepScan: false });
+    expect(await writtenJson(second.blob)).toMatchObject({ needsNoGps: true });
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
+  it("backs each change of the setting up, and an unchanged one writes nothing", async () => {
+    const { session, manifest } = await opened([pin("a")]);
+    const draft = loggedDraft();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft,
+    });
+    editor.setNeedsNoGps(true);
+    editor.setNeedsNoGps(true);
+    editor.setNeedsNoGps(false);
+    expect(draft.calls).toEqual([
+      "settings needsNoGps=true",
+      "settings needsNoGps=false",
+    ]);
+    await session.close();
+  });
+
+  it("restores a draft's setting unless it was changed here meanwhile", async () => {
+    // Why (E2c's "live work wins"): the offer is older than anything the
+    // creator did since the open.
+    const restoring = await opened([pin("a")]);
+    const draft = loggedDraft();
+    const editor = createEditorSession({
+      ...restoring,
+      levels: new Map(),
+      draft,
+    });
+    expect(
+      editor.restore({
+        objects: [],
+        deleted: [],
+        settings: { needsNoGps: true },
+      }),
+    ).toEqual({ changed: 1, deleted: 0 });
+    expect(editor.needsNoGps()).toBe(true);
+    expect(editor.changeCount()).toBe(1);
+    expect(draft.calls).toEqual(["settings needsNoGps=true"]);
+    await restoring.session.close();
+
+    const live = await opened([pin("a")]);
+    const mine = createEditorSession({ ...live, levels: new Map() });
+    mine.setNeedsNoGps(true);
+    mine.setNeedsNoGps(false);
+    expect(
+      mine.restore({
+        objects: [],
+        deleted: [],
+        settings: { needsNoGps: true },
+      }),
+    ).toEqual({ changed: 0, deleted: 0 });
+    expect(mine.needsNoGps()).toBe(false);
+    await live.session.close();
+  });
+
+  it("checks the open tour's stations and codes for the setting's warnings", async () => {
+    const { session, manifest } = await opened([], {
+      stations: [
+        {
+          id: "s1",
+          title: "The column",
+          anchor: { geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 } },
+          activateRadiusM: 30,
+          foundRadiusM: 5,
+          hint: "arrow",
+          steps: [
+            {
+              id: "hi",
+              block: { kind: "text", text: "Hello" },
+              advance: { mode: "tap" },
+            },
+          ],
+        },
+      ],
+    });
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map([
+        [
+          "c",
+          {
+            version: 1,
+            qr: {
+              physicalSizeM: 0.2,
+              geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
+            },
+          },
+        ],
+      ]),
+    });
+    expect(editor.noGpsCheck()).toEqual({
+      codeless: ["The column"],
+      codesPlace: true,
+    });
     await session.close();
   });
 });

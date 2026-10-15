@@ -21,7 +21,11 @@ editor's own namespace, one tab at a time. Design:
     `"other-tab"`: another tab holds the draft); `onWriting(true|false)` -
     writes started / all settled (the page's `data-draft` mark).
 - `EditorDraft` - the four `DraftObjectWrites` (`draft-actions.ts`), plus:
-  - `writes(): EditorTourDraft` - those four, and `built` and `landed`
+  - `saveSettings(settings)` (QR-first M1b-2) - the tour's settings
+    (`EditorTourSettings`, today `{ needsNoGps }`) as they stand now: the
+    `settings` record is written while it differs from the file on disk
+    (or from a build's value), removed once it does not; whether it landed.
+  - `writes(): EditorTourDraft` - those five, and `built` and `landed`
     below, bound to the tour open NOW, which the page gives the editor
     session and its saves: once another tour opens they are dropped
     (resolve without writing), so a late write of the old editor never
@@ -31,8 +35,9 @@ editor's own namespace, one tab at a time. Design:
   - `open(fileKey, manifest)` - closes the last tour's hold, holds
     `editor:<fileKey>`, reads it, clears what the file carries, and
     resolves `{ offer, superseded, backedUp }`: `offer` (`objects`,
-    `deleted`, `text` from `restoreOfferText`, changes and deletions named
-    apart) or null; `superseded` - `supersededLine(n, "in this browser")`
+    `deleted`, `settings?` - the record when the file does not carry it,
+    `text` from `restoreOfferText`, changes and deletions named apart, a
+    changed setting counted as a change) or null; `superseded` - `supersededLine(n, "in this browser")`
     or null. Awaited before the tour shows.
   - `restored()` - the session applied the offer (its writes rewrote what
     it applied).
@@ -48,7 +53,7 @@ editor's own namespace, one tab at a time. Design:
     synchronously.
   - `backsUp()`, `close()`, `idle()`.
 - `editorDraftKey(fileKey)` - `editor:<fileKey>`; `NoBackupReason`,
-  `EditorDraftDeps`, `EditorDraftOffer` (`open`'s result type stays
+  `EditorDraftDeps`, `EditorDraftOffer`, `EditorTourSettings` (`open`'s result type stays
   module-private).
 
 ## Invariants & assumptions
@@ -107,6 +112,20 @@ editor's own namespace, one tab at a time. Design:
   phone does): a pruning write that did not land - said, like any write
   that did not land - no longer hides the next edit of such an id (PR #622
   bot finding A).
+- **The settings record (QR-first M1b-2, the draft gap).** One file,
+  `settings`, in the editor's namespace (not a prefix the phone's
+  `readDraft` reads, so the shared reader skips it), in its own queue. The
+  objects' rules, for a boolean: kept while the file on disk differs, or a
+  build wrote the other value (a build never put in place); offered by a
+  later open whose file does not carry it - read whether or not a meta
+  landed, since the namespace names the tour; spent or unreadable, it goes;
+  a landed write that carries it clears it; a key move carries it (and an
+  unanswered offer's), and the old namespace's goes with it; "Delete it"
+  removes an offered one after the meta's commit point, never one changed
+  since the open. **No base:** a file that differs from a boolean record
+  holds the other value, which this browser saw or wrote, so the objects'
+  base rule would always offer it. Named: an ABA made elsewhere (on, then
+  off again) cannot be told apart and is offered.
 - **Never throws to the page**; a write that did not land is `false` and
   the page hears it once (`noBackup`); the leave guard stays on.
 - **Not covered, named:** a carried record that did not land leaves the
@@ -141,7 +160,11 @@ made meanwhile; the key move (the later edit under the new key, the old
 namespace emptied); a key move carrying a during-save edit and an
 unanswered offer; "Delete it" sparing a live edit and a later edit of a
 rejected id; the pruned rejection list; the undo of a delete of an edited
-note; a second tab; no storage and a failed write said once; the same tour
+note; a second tab; no storage and a failed write said once; the settings
+record (offered as a change, counted with the notes', spent when put back
+or when the file carries it, a build never put in place, a landed write
+clearing it and one made during it kept, key moves, "Delete it", a closed
+tour's write dropped, an unreadable record, a failed write said); the same tour
 reopened in the same tab; a moved photo note and the undo of a delete of
 one (no bytes); the old namespace kept until the carried records landed,
 and kept when they did not; "Delete it" right after a key move; a closed

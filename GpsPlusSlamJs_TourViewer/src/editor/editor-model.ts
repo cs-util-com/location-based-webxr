@@ -14,6 +14,7 @@ import type {
   TourManifest,
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-stations";
 import { codeDistanceLine, objectTitle } from "../object-describe.js";
 import {
   buildSummaryModel,
@@ -62,6 +63,16 @@ const RECORDED_PREFIX = "recorded:";
 /** A station's id in the editor: stations and objects have separate id
  *  spaces in the manifest. */
 const STATION_PREFIX = "station:";
+
+/** A station's name in the rail, the map and the editor's warnings: its
+ *  title, else "Station N" by its 1-based place in the story. */
+export function stationTitle(
+  station: Pick<TourStation, "title">,
+  number: number,
+): string {
+  const title = station.title?.trim() ?? "";
+  return title === "" ? `Station ${String(number)}` : title;
+}
 
 function noteMeta(object: TourObject, codes: readonly QrGeoPose[]): string {
   const distance = codeDistanceLine(object, codes);
@@ -156,12 +167,11 @@ export function buildEditorModel(input: {
           : { lat: station.anchor.geo.lat, lng: station.anchor.geo.lon };
       const ownDrawn = own !== null && readablePoint(own);
       const at = ownDrawn ? own : (code?.at ?? null);
-      const title = station.title?.trim() ?? "";
       return [
         {
           id: `${STATION_PREFIX}${station.id}`,
           kind: "station",
-          title: title === "" ? `Station ${String(number)}` : title,
+          title: stationTitle(station, number),
           meta:
             code === undefined
               ? `Station ${String(number)}`

@@ -33,6 +33,18 @@
  * its own queued writes. The draft key is also the Web Lock's: only the
  * tab holding it writes, and any other tab says it keeps no backup.
  *
+ * THE SETTINGS (QR-first M1b-2). The tour-level settings the editor changes
+ * - today only "needs no GPS" - are ONE record (`settings`) beside the
+ * objects', by the same rules: kept while the file on disk does not carry
+ * it (or a build wrote the other value, the "built but never put in place"
+ * walk), offered by a later open whose file does not carry it, spent by one
+ * that does, carried along by a key move, and thrown away by "Delete it"
+ * unless changed since the open. No base: the setting is a boolean, so a
+ * file that differs from the record holds the other value, which this
+ * browser saw (the opened file's) or wrote (a build's) - the objects'
+ * base rule would always offer it, so the record alone decides. An ABA
+ * made elsewhere (on and off again) cannot be told apart, and is offered.
+ *
  * @see editor-draft.ts.md
  */
 
@@ -67,6 +79,36 @@ import {
 } from "../draft-persistence.js";
 import { createKeyedChain } from "../keyed-chain.js";
 import type { EditorLock } from "./save-target.js";
+
+/** The tour-level settings the editor changes (QR-first M1b-2): what the
+ *  draft's settings record holds. */
+export interface EditorTourSettings {
+  readonly needsNoGps: boolean;
+}
+
+/** The settings record's file in a namespace. Not a prefix the phone's
+ *  `readDraft` reads, so the shared reader skips it. */
+const SETTINGS_KEY = "settings";
+
+function settingsOf(manifest: TourManifest): EditorTourSettings {
+  return { needsNoGps: manifest.needsNoGps === true };
+}
+
+/** A stored settings record; undefined for anything that does not read
+ *  (a record that does not read costs itself). */
+function parseSettings(
+  text: string | undefined,
+): EditorTourSettings | undefined {
+  if (text === undefined) return undefined;
+  try {
+    const value: unknown = JSON.parse(text);
+    if (value === null || typeof value !== "object") return undefined;
+    const { needsNoGps } = value as Record<string, unknown>;
+    return typeof needsNoGps === "boolean" ? { needsNoGps } : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Every editor draft's namespace starts with this; the phone's never do
  *  (a link, or a file key, `tour-file-key.ts`). */
@@ -103,8 +145,11 @@ export interface EditorDraftOffer {
   readonly objects: readonly TourObject[];
   /** Deleted ids the opened file still carries. */
   readonly deleted: readonly string[];
+  /** The tour's settings, when the opened file does not carry the draft's
+   *  (QR-first M1b-2). */
+  readonly settings?: EditorTourSettings;
   /** The offer's words: changes and deletions named apart
-   *  (`restoreOfferText`). */
+   *  (`restoreOfferText`); a changed setting is a change. */
   readonly text: string;
 }
 
@@ -121,7 +166,15 @@ interface EditorDraftOpened {
  *  the E2b-2 milestone review #1): once that tour closes or another opens,
  *  each is dropped, so a late write or save of the old tour never lands in
  *  the new tour's namespace, its seen versions or its key. */
-export interface EditorTourDraft extends DraftObjectWrites {
+/** The settings record's write (QR-first M1b-2). */
+interface DraftSettingsWrites {
+  /** The tour's settings as they stand now: kept while the file does not
+   *  carry them, the record removed once it does. */
+  saveSettings(settings: EditorTourSettings): Promise<boolean>;
+}
+
+export interface EditorTourDraft
+  extends DraftObjectWrites, DraftSettingsWrites {
   /** A save was built: its versions are this browser's own work. */
   built(written: TourManifest): void;
   /** An in-place write of `written` landed, whose bytes have `fileKey`:
@@ -129,7 +182,7 @@ export interface EditorTourDraft extends DraftObjectWrites {
   landed(written: TourManifest, fileKey: string): void;
 }
 
-export interface EditorDraft extends DraftObjectWrites {
+export interface EditorDraft extends DraftObjectWrites, DraftSettingsWrites {
   /** The writes, and a save's notes, for the tour open NOW: the session is
    *  given the writes, the page's save path the notes. */
   writes(): EditorTourDraft;
@@ -189,7 +242,17 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   let offer: {
     readonly objects: readonly TourObject[];
     readonly deleted: readonly string[];
+    readonly settings?: EditorTourSettings;
   } | null = null;
+  /** The settings record this page keeps (THE SETTINGS), or null. */
+  let settingsPending: EditorTourSettings | null = null;
+  /** The settings were changed here since the open: live work, which
+   *  wins over the offer and is never thrown away with it. */
+  let settingsTouched = false;
+  /** The "needs no GPS" values builds wrote since the open: a change back
+   *  to the file's value still differs from a built copy that may be put
+   *  in place, so its record is kept (review #1's walk, for the setting). */
+  const builtNoGps = new Set<boolean>();
   let told = false;
   let generation = 0;
   /** When the last tour's hold let go: the next open waits for it (the
@@ -254,6 +317,40 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   }
   function objectChain(s: Space, id: string): string {
     return JSON.stringify([s.key, "object", id]);
+  }
+  function settingsChain(s: Space): string {
+    return JSON.stringify([s.key, "settings"]);
+  }
+
+  /** `s`'s settings record written (`value`) or removed (null), in its
+   *  own queue; whether it landed. Not said: callers say what they ask. */
+  function settingsIn(
+    s: Space,
+    value: EditorTourSettings | null,
+  ): Promise<boolean> {
+    return inSpace(
+      s,
+      chain.run(settingsChain(s), async () => {
+        const store = await s.store;
+        if (store === undefined) return false;
+        if (value === null) {
+          await store.remove(SETTINGS_KEY);
+          return true;
+        }
+        return store.put(SETTINGS_KEY, JSON.stringify(value));
+      }),
+    ).catch(() => false);
+  }
+
+  /** `settingsIn`, and a write that did not land said, once. */
+  function writeSettingsIn(
+    s: Space,
+    value: EditorTourSettings | null,
+  ): Promise<boolean> {
+    return settingsIn(s, value).then((ok) => {
+      if (!ok) say(s, s.refused ?? "storage");
+      return ok;
+    });
   }
 
   /** The meta `readDraft` reads: the editor has no code to measure, so a
@@ -399,6 +496,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         ),
       ),
     );
+    await settingsIn(old, null);
     await inSpace(
       old,
       chain.run(metaChain(old), async () => {
@@ -422,6 +520,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     pending.clear();
     touched.clear();
     bases.clear();
+    settingsPending = null;
+    settingsTouched = false;
+    builtNoGps.clear();
     if (s === null) return;
     // After its queued writes (E2c review #6): until they land, another
     // tab taking the draft would read it half written.
@@ -457,13 +558,38 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         say(s, s.refused ?? "storage");
         return none;
       }
+      // The settings record (THE SETTINGS), read whether or not a meta
+      // landed: its namespace already names the tour. Offered while the
+      // file does not carry it; spent or unreadable, it goes.
+      const settingsText = await store.getText(SETTINGS_KEY);
+      if (mine !== generation) return none;
+      const storedSettings = parseSettings(settingsText);
+      const settings =
+        storedSettings !== undefined &&
+        storedSettings.needsNoGps !== settingsOf(manifest).needsNoGps
+          ? storedSettings
+          : undefined;
+      if (settingsText !== undefined && settings === undefined) {
+        void settingsIn(s, null);
+      }
       // A photo note's bytes are in the opened file, never in the draft
       // (E2c review #1): its record is kept without them.
       const stored = await readDraft(store, { photoBytesRequired: false });
       if (mine !== generation) return none;
       if (stored === undefined) {
         void writeMeta(s);
-        return { offer: null, superseded: null, backedUp: true };
+        offer =
+          settings === undefined
+            ? null
+            : { objects: [], deleted: [], settings };
+        return {
+          offer:
+            offer === null
+              ? null
+              : { ...offer, text: restoreOfferText(0, false, { changed: 1 }) },
+          superseded: null,
+          backedUp: true,
+        };
       }
       for (const id of stored.storedIds) s.ids.add(id);
       // The pruned list, written back at once: a rejected id whose files
@@ -497,7 +623,14 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         const base = stored.draft.bases?.get(id);
         if (base !== undefined) bases.set(id, base);
       }
-      offer = kept.size === 0 ? null : { objects: waiting, deleted };
+      offer =
+        kept.size === 0 && settings === undefined
+          ? null
+          : {
+              objects: waiting,
+              deleted,
+              ...(settings === undefined ? {} : { settings }),
+            };
       return {
         offer:
           offer === null
@@ -505,7 +638,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             : {
                 ...offer,
                 text: restoreOfferText(0, false, {
-                  changed: waiting.length,
+                  changed: waiting.length + (settings === undefined ? 0 : 1),
                   deleted: deleted.length,
                 }),
               },
@@ -527,6 +660,8 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           live() ? api.forgetDeletion(id) : Promise.resolve(true),
         forgetObject: (id) =>
           live() ? api.forgetObject(id) : Promise.resolve(),
+        saveSettings: (settings) =>
+          live() ? api.saveSettings(settings) : Promise.resolve(true),
         built: (written) => {
           if (live()) api.built(written);
         },
@@ -558,6 +693,12 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         void writeMeta(s);
         return false;
       }
+      // The offered settings record goes too, unless changed since the
+      // open (live work); after the commit point, so a rejection that did
+      // not land throws nothing away.
+      if (was.settings !== undefined && !settingsTouched) {
+        void settingsIn(s, null);
+      }
       for (const id of ids) {
         // Counted among the namespace's writes, like the meta (finding B).
         void inSpace(
@@ -579,6 +720,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       if (s === null) return;
       // As a reader of the written file sees it (the E2p third review #5).
       const read = manifestAsRead(written);
+      builtNoGps.add(settingsOf(read).needsNoGps);
       for (const [id, change] of pending) {
         if (change === null) continue;
         const object = read.objects.find((o) => o.id === id);
@@ -615,9 +757,15 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         pending.delete(id);
         bases.delete(id);
       }
+      // The settings the file carries now are spent too.
+      const settingsSpent =
+        settingsPending !== null &&
+        settingsPending.needsNoGps === settingsOf(read).needsNoGps;
+      if (settingsSpent) settingsPending = null;
       opened = read;
       if (editorDraftKey(fileKey) === s.key) {
         for (const id of spent) removeIn(s, id);
+        if (settingsSpent) void settingsIn(s, null);
         return;
       }
       // The key moves (a tour of notes alone): synchronously, so every
@@ -628,6 +776,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       for (const [id, change] of pending) {
         carried.push(carry(next, id, change, bases.get(id)));
       }
+      if (settingsPending !== null) {
+        carried.push(writeSettingsIn(next, settingsPending));
+      }
       // An offer not yet answered (or put off with "Not now") moves too.
       if (offer !== null) {
         for (const object of offer.objects) {
@@ -637,6 +788,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         }
         for (const id of offer.deleted) {
           if (!touched.has(id)) carried.push(carry(next, id, null, undefined));
+        }
+        if (offer.settings !== undefined && !settingsTouched) {
+          carried.push(writeSettingsIn(next, offer.settings));
         }
       }
       // The old namespace goes only once the new one holds everything
@@ -688,6 +842,20 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       if (pending.get(id) === null) pending.delete(id);
       touched.add(id);
       return write(id, (store) => removeDraftDeletion(store, id));
+    },
+    saveSettings(settings) {
+      settingsTouched = true;
+      // Kept while the file on disk differs, or a build wrote the other
+      // value (THE SETTINGS); else the record goes.
+      const keep =
+        opened === null ||
+        settings.needsNoGps !== settingsOf(opened).needsNoGps ||
+        builtNoGps.has(!settings.needsNoGps);
+      settingsPending = keep ? settings : null;
+      const s = space;
+      return s === null
+        ? Promise.resolve(true)
+        : writeSettingsIn(s, settingsPending);
     },
     forgetObject(id) {
       pending.delete(id);

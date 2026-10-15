@@ -70,7 +70,11 @@ async function zip(entries) {
   return Buffer.from(await writer.close());
 }
 
-async function editorTour(options = { station: false }) {
+/**
+ * @param {{ station?: boolean, codeless?: boolean }} [options] - a story
+ *   station at the first code; two stations without a printed code
+ */
+async function editorTour({ station = false, codeless = false } = {}) {
   const codes = [];
   /** @type {string[]} */
   const codeIds = [];
@@ -92,19 +96,44 @@ async function editorTour(options = { station: false }) {
     ...createEmptyTourManifest(),
     title: "Editor fixture",
     // A story station at the first code's point (PR #609 review).
-    stations: options.station
-      ? [
-          {
-            id: "gate",
-            title: "At the gate",
-            anchor: { code: codeIds[0] },
-            activateRadiusM: 30,
-            foundRadiusM: 5,
-            hint: "arrow",
-            steps: [{ id: "hi", block: { kind: "text", text: "Hello" } }],
-          },
-        ]
-      : [],
+    stations: [
+      ...(station
+        ? [
+            {
+              id: "gate",
+              title: "At the gate",
+              anchor: { code: codeIds[0] },
+              activateRadiusM: 30,
+              foundRadiusM: 5,
+              hint: "arrow",
+              steps: [{ id: "hi", block: { kind: "text", text: "Hello" } }],
+            },
+          ]
+        : []),
+      // Two stations without a printed code (QR-first M1b-2): one named,
+      // one the rail calls by its number.
+      ...(codeless
+        ? [
+            {
+              id: "well",
+              title: "Old well",
+              anchor: { geo: { ...geo(5, 5), headingDeg: 0 } },
+              activateRadiusM: 30,
+              foundRadiusM: 5,
+              hint: "arrow",
+              steps: [{ id: "w", block: { kind: "text", text: "A well" } }],
+            },
+            {
+              id: "bench",
+              anchor: { geo: { ...geo(-5, 5), headingDeg: 0 } },
+              activateRadiusM: 30,
+              foundRadiusM: 5,
+              hint: "arrow",
+              steps: [{ id: "b", block: { kind: "text", text: "A bench" } }],
+            },
+          ]
+        : []),
+    ],
     objects: [
       {
         id: "pin-markup",
@@ -2274,4 +2303,97 @@ test("a Ctrl+S pressed while the last tour's save still ran is not run later, un
   await expect(
     page.locator(".toast", { hasText: "Saved to second.zip" }),
   ).toHaveCount(0);
+});
+
+/**
+ * The tour's saved `tour.json`, parsed as written.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} name
+ * @returns {Promise<Record<string, unknown>>}
+ */
+async function savedManifest(page, name) {
+  return JSON.parse((await readOpfsTour(page, name))["tour.json"] ?? "{}");
+}
+
+test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left out when off", async ({
+  page,
+  context,
+}) => {
+  // Why (QR-first M1b-2, owner Q-QF-1): a creator marks a tour that the
+  // printed codes place, so its visitors are never asked for location.
+  // It is an edit like a note's: pending until saved, written as
+  // `needsNoGps: true` at minor 2 (the framework's writer), read back on
+  // the next open - and turned off, the field is gone, never `false`.
+  // While it is on, the stations without a printed code are named.
+  await autosaveOutOfTheWay(page);
+  await page.goto("/edit.html");
+  await offerOpfsFile(
+    page,
+    await editorTour({ station: true, codeless: true }),
+    "nogps.zip",
+  );
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  const setting = page.locator("#no-gps-input");
+  const warnings = page.locator("#no-gps-warnings");
+  await expect(setting).not.toBeChecked();
+  await expect(warnings).toBeHidden();
+  await setting.check();
+  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(warnings).toHaveText(
+    '2 stations have no printed code: "Old well" and "Station 3". Without location, visitors reach them only by tapping "I\'m here - play the story" once they stand there.',
+  );
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText("Saved to nogps.zip");
+  expect(await savedManifest(page, "nogps.zip")).toMatchObject({
+    version: 2,
+    minor: 2,
+    needsNoGps: true,
+  });
+  await backedUp(page);
+  await page.close();
+
+  const next = await context.newPage();
+  await answerTiles(next);
+  await next.goto("/edit.html");
+  await offerExistingOpfsFile(next, "nogps.zip");
+  await next.locator("#choose-btn").click();
+  await expect(next.locator("#tour-name")).toHaveText("Editor fixture");
+  await expect(next.locator("#no-gps-input")).toBeChecked();
+  await expect(next.locator("#no-gps-warnings")).toContainText(
+    "2 stations have no printed code",
+  );
+  await backedUp(next);
+  await expect(next.locator(".toast.draft-offer")).toHaveCount(0);
+  await next.locator("#no-gps-input").uncheck();
+  await expect(next.locator("#no-gps-warnings")).toBeHidden();
+  await next.locator("#save-btn").click();
+  await expect(next.locator("#save-status")).toHaveText("Saved to nogps.zip");
+  const off = await savedManifest(next, "nogps.zip");
+  expect(off).not.toHaveProperty("needsNoGps");
+  expect(off).toMatchObject({ version: 2, minor: 0 });
+});
+
+test("a changed needs-no-GPS setting survives a closed tab, and Restore brings it back", async ({
+  page,
+  context,
+}) => {
+  // Why (the draft gap, M1b-2): the draft kept the notes' edits but not a
+  // tour-level setting, so a closed tab lost the setting alone.
+  const buffer = await editorTour();
+  await page.goto("/edit.html");
+  await openThroughChooser(page, buffer, "editor-fixture.zip");
+  await page.locator("#no-gps-input").check();
+  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await backedUp(page);
+  await page.close();
+  const next = await newEditorPage(context);
+  await openThroughChooser(next, buffer, "editor-fixture.zip");
+  const offer = next.locator(".toast.draft-offer");
+  await expect(offer).toContainText("1 change");
+  // Until it is answered the tour is the file's.
+  await expect(next.locator("#no-gps-input")).not.toBeChecked();
+  await offer.locator("button", { hasText: "Restore" }).click();
+  await expect(next.locator("#no-gps-input")).toBeChecked();
+  await expect(next.locator("#save-status")).toHaveText("1 change not saved");
 });
