@@ -1,13 +1,18 @@
 /**
  * The surroundings as a mesh, for the creator's cursor (polish round M5,
- * B3, behind `?mesh=1` - Q-Mesh): depth samples fold into an occupancy
- * grid, a mesher turns it into the framework's occluder mesh - kept as a
- * HIDDEN pick target, it occludes nothing - under the world group, and
+ * B3; Q-Mesh: a creator's default since 2026-10-15, off with `?mesh=0`):
+ * depth samples fold into an occupancy grid, a mesher turns it into the
+ * framework's occluder mesh - kept as a HIDDEN pick target, it occludes
+ * nothing - under the world group, and
  * `pick()` casts the screen centre against it: the point the reticle then
  * sits on (`startHitTestReticle`'s `surfacePick`). The pieces are the
  * framework's (`OccupancyGrid`, `createOccluderSink`,
  * `createOccluderMeshWorker`, `subscribeReplayOccupancy`, `raycastPointer`,
- * `createFrameTimes`); this composes them for one AR session.
+ * `createFrameTimes`); this composes them for one AR session. The ring
+ * lies flat to the mesh around the hit, not to one triangle
+ * (`neighbourhoodNormal`), and eases toward each frame's point
+ * (`createSurfaceSmoother`) - the owner's phone test of 2026-10-15
+ * (mesh-cursor smoothing plan 2026-10-15-0944).
  *
  * @see mesh-surface.ts.md
  */
@@ -44,6 +49,8 @@ import {
   type FrameTimesSummary,
 } from "gps-plus-slam-app-framework/utils/frame-times";
 import { createLogger } from "gps-plus-slam-app-framework/utils/logger";
+import { neighbourhoodNormal } from "./mesh-neighbourhood-normal.js";
+import { createSurfaceSmoother } from "./surface-smoothing.js";
 
 const log = createLogger("MeshSurface");
 
@@ -94,7 +101,8 @@ export interface MeshSurface {
   stats(): MeshSurfaceStats;
   /** Start again from nothing: the grid and the mesh are cleared (a
    *  tracking origin reset left their cells in a frame that no longer
-   *  exists - follow-up F11); the next samples build it anew. */
+   *  exists - follow-up F11), and the ring's smoothing forgets where it
+   *  was; the next samples build it anew. */
   reset(): void;
   /** Stop feeding, free the mesh and the worker (idempotent). */
   dispose(): void;
@@ -167,24 +175,48 @@ export function createMeshSurface(deps: {
   });
   let disposed = false;
   let lastPickAt: number | null = null;
+  /** When the smoother last took a point: a hole in the mesh is a gap in
+   *  its time, so a ring back from the hit-test catches up by itself. */
+  let lastSmoothedAt: number | null = null;
+  const smoother = createSurfaceSmoother();
   const frames = createFrameTimes(FRAME_GAPS_KEPT);
   // One raycaster for every frame's pick (no per-frame allocation).
   const raycaster = new Raycaster();
 
-  function noteFrame(): void {
+  function noteFrame(): number {
     const at = now();
     if (lastPickAt !== null) frames.push(at - lastPickAt);
     lastPickAt = at;
+    return at;
+  }
+
+  /** The hit as the ring's point: the neighbourhood's normal, smoothed. */
+  function smoothed(hit: Intersection | null, at: number): SurfacePoint | null {
+    const raw = surfacePointFromHit(hit);
+    if (hit === null || raw === null) return null;
+    const normal = neighbourhoodNormal(hit) ?? raw.normal;
+    const dtS =
+      lastSmoothedAt === null
+        ? Number.POSITIVE_INFINITY
+        : (at - lastSmoothedAt) / 1000;
+    const point = smoother.update(
+      { position: raw.position, normal },
+      dtS,
+      hit.distance,
+    );
+    lastSmoothedAt = point === null ? null : at;
+    return point;
   }
 
   return {
     pick() {
       if (disposed) return null;
-      noteFrame();
+      const at = noteFrame();
       const camera = deps.getCamera();
       if (camera === null) return null;
-      return surfacePointFromHit(
+      return smoothed(
         raycastPointer(camera, SCREEN_CENTRE, [handle.mesh()], raycaster),
+        at,
       );
     },
     stats() {
@@ -197,6 +229,7 @@ export function createMeshSurface(deps: {
       if (disposed) return;
       grid.clear();
       handle.sink.clear();
+      smoother.reset();
     },
     dispose() {
       if (disposed) return;
@@ -207,9 +240,9 @@ export function createMeshSurface(deps: {
   };
 }
 
-/** A readout line for `?mesh=1`: the triangles and the frame gaps (p50 /
- *  p95 / max) between picks - the frame as a whole, not the mesh's share
- *  of it (the owner compares it with and without the flag). */
+/** The `?debug=1` readout line while the mesh runs: the triangles and the
+ *  frame gaps (p50 / p95 / max) between picks - the frame as a whole, not
+ *  the mesh's share of it. */
 export function meshSurfaceLine(stats: MeshSurfaceStats): string {
   const frame =
     stats.frame === null

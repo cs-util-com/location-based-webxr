@@ -107,8 +107,8 @@ export function wireArEntry(deps: {
   /** The creator's troubleshooting recording (authoring recording plan
    *  2026-09-28-0953, M1a): asked at each entry whether it records. */
   recording?: Pick<RecordingPanel, "beginOnArEntry">;
-  /** `?mesh=1`: a creator's ring follows a mesh of the surroundings
-   *  (polish round M5, Q-Mesh). */
+  /** A creator's ring follows a mesh of the surroundings (polish round
+   *  M5, Q-Mesh; `main.ts` turns it on unless `?mesh=0`). */
   meshCursor?: boolean;
 }): ArEntry {
   const {
@@ -133,7 +133,7 @@ export function wireArEntry(deps: {
   /** Whether that sampler serves a recorded entry (the readout's line);
    *  the mesh cursor runs it too (polish round M5). */
   let depthRecorded = false;
-  /** The creator's mesh of the surroundings, with `?mesh=1` (M5). */
+  /** The creator's mesh of the surroundings (M5; off with `?mesh=0`). */
   let meshSurface: MeshSurface | null = null;
   /** The device fixes' extent, for the ?debug=1 GPS line (polish round C4). */
   const gpsExtent = createGpsExtentTracker();
@@ -164,8 +164,8 @@ export function wireArEntry(deps: {
   }
 
   /** The depth this entry asks for: a recorded entry's at the recording's
-   *  density (its byte estimate assumes it), else a creator's with
-   *  `?mesh=1` at the mesh's (polish round M5), else none - depth stays
+   *  density (its byte estimate assumes it), else a creator's with the
+   *  mesh cursor at the mesh's (polish round M5), else none - depth stays
    *  off otherwise (QD-5). Either feeds the store's latest depth sample. */
   function entryDepth(): {
     hooks: Pick<ArEnableHooks, "onDepthSample">;
@@ -356,7 +356,8 @@ export function wireArEntry(deps: {
       // A recorded entry's sampler (the mesh cursor's is not a recording).
       recordingOn: depthRecorded,
     })
-      // With ?mesh=1, the frame time the owner judges the mesh by (Q-Mesh).
+      // With the mesh running, the frame time the owner judges it by
+      // (Q-Mesh; ?mesh=0 has no line - F13).
       .concat(
         meshSurface === null ? [] : [meshSurfaceLine(meshSurface.stats())],
       )
@@ -651,8 +652,8 @@ export function wireArEntry(deps: {
       // selects the object under it (authoring plan 2026-09-28-0953 M4;
       // taps on the panel are cancelled there, `beforexrselect`).
       if (authorMode) {
-        // With ?mesh=1 the ring follows a mesh of the surroundings where
-        // there is one, the hit-test elsewhere (polish round M5).
+        // The ring follows a mesh of the surroundings where there is one,
+        // the hit-test elsewhere (polish round M5; off with ?mesh=0).
         meshSurface =
           deps.meshCursor === true ? startMeshSurfaceSafely(worldGroup) : null;
         const surface = meshSurface;

@@ -760,10 +760,10 @@ describe("a creator's one way out of AR (polish round M3, Q-Done)", () => {
   });
 });
 
-describe("the creator's mesh cursor behind ?mesh=1 (polish round M5)", () => {
-  // Why: with the flag the creator's ring follows a mesh of the
+describe("the creator's mesh cursor (polish round M5; main.ts's default unless ?mesh=0)", () => {
+  // Why: with `meshCursor` the creator's ring follows a mesh of the
   // surroundings: depth at the reconstruction density, the mesh under the
-  // world group, its pick preferred by the reticle; without the flag
+  // world group, its pick preferred by the reticle; without it (?mesh=0)
   // nothing changes (depth stays off unless the entry is recorded), and a
   // recorded entry keeps the recording's own density (its byte estimate
   // assumes it).
@@ -793,7 +793,7 @@ describe("the creator's mesh cursor behind ?mesh=1 (polish round M5)", () => {
     expect(h.seams.startMeshSurface).toHaveBeenCalledTimes(1);
   });
 
-  it("changes nothing without the flag", async () => {
+  it("changes nothing with the mesh off (?mesh=0)", async () => {
     const h = harness({ mode: "creator", enableOk: true });
     await h.enter();
     expect(h.seams.startDepthCapture).not.toHaveBeenCalled();

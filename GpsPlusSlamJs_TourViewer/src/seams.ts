@@ -195,11 +195,11 @@ export interface TourViewerSeams {
     arWorldGroup: Object3D,
     onSelect?: (tap: SelectTargetRay | null) => void,
     /** A surface point from the app's mesh, preferred over the hit-test
-     *  each frame (polish round M5, `?mesh=1`). */
+     *  each frame (polish round M5, the mesh cursor). */
     surfacePick?: () => SurfacePoint | null,
   ): HitTestReticleHandle;
   /** The surroundings as a mesh for the creator's cursor (polish round M5,
-   *  `?mesh=1`): fed from the store's depth samples, meshed in a worker
+   *  off with `?mesh=0`): fed from the store's depth samples, meshed in a worker
    *  under `parent` (`mesh-surface.ts`). A seam because the e2e scene has
    *  no depth to mesh. */
   startMeshSurface(parent: Object3D, store: DepthSampleStore): MeshSurface;

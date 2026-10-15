@@ -37,7 +37,8 @@ createAudioElement }`
   - `createAudioElement()` (K4) - `new Audio()`: the page's ONE element
     for the stories (`scene-audio.ts`). The e2e fake records what plays.
   - `startMeshSurface(parent, store)` - the creator's mesh of the
-    surroundings behind `?mesh=1` (polish round M5, `mesh-surface.ts`), with
+    surroundings, a creator's default unless `?mesh=0` (polish round M5,
+    `mesh-surface.ts`), with
     the app's mesh worker (`./workers/occlusion-mesher.worker.ts`, a
     `new Worker(new URL(...))` here because it resolves against this app's
     source). A seam because the e2e scene has no depth to mesh.
