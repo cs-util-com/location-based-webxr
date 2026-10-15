@@ -510,8 +510,9 @@ describe("viewer content follows the live alignment (D10a, M2d)", () => {
 // weight over a short scan. The viewer's overrides now keep the code's
 // rotation from its first lock (`VIEWER_SOFT_TRIM`), so the content, the
 // photos and the stations show on the first voted lock again - and the
-// harness (`CODE_YAW_PROBE=scan`) measured at most 0.04 deg seen after
-// that, against up to 34.7 deg with the wait. These pin that nothing waits
+// harness (`CODE_YAW_PROBE=scan`) measured at most 0.27 deg seen after
+// that with the code first (0.04 unless the first fix lands inside the
+// scan), against up to 34.7 deg with the wait. These pin that nothing waits
 // any more, on every entry and every tour.
 describe("after a code-set zero the content shows on the first voted lock (no compass wait since r863)", () => {
   it("places the content on the first voted lock, and a 3-lock glance with 30 deg biased compass fixes keeps it within 1 deg", async () => {
@@ -761,10 +762,12 @@ describe("a code's rotation is not overwritten by the first compass reading (the
     expect(Math.max(...worst)).toBeLessThan(1);
   }, 60_000);
 
-  it("a 3-lock glance whose first fix (compass 20 deg off) comes 11.5 s later (the old wait timed out at 12 s): the shown tour is within 1 deg of the code's rotation", async () => {
+  it("a 3-lock glance whose first fix (compass 20 deg off) comes 11.5 s later: the tour, shown on the first lock, stays within 1 deg of the code's rotation", async () => {
     const s = await visitorSession(8, false);
     s.clock.nowMs = T0 + 500;
     expect(await firstVotedLock(s)).toBe(1);
+    await flush();
+    expect(s.label.parent?.parent).toBe(s.scene);
     await s.frame();
     await s.frame();
     expect(s.syntheticVotes()).toBe(3 * VIEWER_VOTE_COUNT);
@@ -772,12 +775,8 @@ describe("a code's rotation is not overwritten by the first compass reading (the
     // with a reading 11.5 s after the scan.
     s.clock.nowMs = T0 + 12_000;
     s.fix(STAND, s.clock.nowMs, 20);
-    // Anything that still held the content back (until r863 the wait's
-    // 12 s timeout) ends now: the page's timers.
-    s.clock.nowMs = T0 + 500 + 12_000;
-    s.fireAllTimers();
-    await flush();
-    expect(s.label.parent?.parent).toBe(s.scene);
+    // No page timer was armed for the placement.
+    expect(s.fireAllTimers()).toBe(0);
     const seen = [turnNow(s)];
     for (let i = 1; i <= 10; i += 1) {
       s.clock.nowMs = T0 + 12_000 + i * 1000;
@@ -787,18 +786,29 @@ describe("a code's rotation is not overwritten by the first compass reading (the
     expect(Math.max(...seen)).toBeLessThan(1);
   }, 60_000);
 
-  it("a fix first (compass 20 deg off), then the scan: the content shown on the first voted lock is within 1 deg of the code's rotation", async () => {
+  // The fix-first order keeps one residue, by decision (r863 milestone
+  // review #1): the bearing the compass applied BEFORE the scan eases out
+  // at the core's snap alpha 0.15, compounded over the lock's 16 votes
+  // (D18), so the first lock still shows 0.85^16 (about 7.4 %) of it and
+  // the second lock clears it. Snap alpha 1 removed it and was dropped: it
+  // published every later GPS-only yaw unsmoothed, 2-4 times the per-fix
+  // heading steps for the rest of the entry (`CODE_YAW_PROBE=handback`).
+  it("a fix first (compass 20 deg off), then the scan: the first voted lock keeps 7.4 % of the compass's turn, the second lock clears it", async () => {
     const s = await visitorSession(8);
     s.clock.nowMs = T0 + 1000;
     s.fix(STAND, s.clock.nowMs, 20);
     // GPS alone, one fix: the normal cold start, the compass leads.
-    expect(turnNow(s)).toBeGreaterThan(15);
+    const compassTurn = turnNow(s);
+    expect(compassTurn).toBeGreaterThan(15);
     s.clock.nowMs = T0 + 1500;
     expect(await firstVotedLock(s)).toBe(1);
     await flush();
     // No wait arms after a device fix: the content shows on this lock.
     expect(s.label.parent?.parent).toBe(s.scene);
-    expect(turnNow(s)).toBeLessThan(1);
+    expect(turnNow(s)).toBeCloseTo(0.85 ** VIEWER_VOTE_COUNT * compassTurn, 1);
+    await s.frame();
+    expect(s.syntheticVotes()).toBe(2 * VIEWER_VOTE_COUNT);
+    expect(turnNow(s)).toBeLessThan(0.5);
   }, 60_000);
 
   // Why: the fix must not touch the GPS-only cold start (the owner's model:
