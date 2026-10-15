@@ -37,24 +37,19 @@ import { visitorPosition } from "./visitor-position.js";
 
 /**
  * Whether the visitor's stations may be found, offered and pointed at now:
- * a visitor's running session whose scan gate allows placement and whose
- * compass wait is over (`viewer-placement` `CODE_ZERO_WAIT_LOCKS`; r857
- * review #1): a station found during the wait stood where the content
- * would have, and turned with the swing the wait hides. The wait's end
- * reports the last locked code to the guide again.
+ * a visitor's running session whose scan gate allows placement. (Until
+ * r863 the stations also waited for the compass wait; a code's rotation
+ * now stands from its first lock, `viewer-vote-sink.ts` `VIEWER_SOFT_TRIM`,
+ * so nothing is left to wait for.)
  */
 export function stationPlacementAllowed(
-  ctx: Pick<
-    TourViewerSession,
-    "placementUnsubscribe" | "scanGate" | "codeZeroWaitUntilMs"
-  >,
+  ctx: Pick<TourViewerSession, "placementUnsubscribe" | "scanGate">,
   mode: ViewerMode,
 ): boolean {
   return (
     mode === "visitor" &&
     ctx.placementUnsubscribe !== null &&
-    gateAllowsPlacement(ctx.scanGate) &&
-    ctx.codeZeroWaitUntilMs === null
+    gateAllowsPlacement(ctx.scanGate)
   );
 }
 

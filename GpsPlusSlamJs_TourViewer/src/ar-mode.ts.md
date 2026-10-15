@@ -104,7 +104,7 @@ startCameraFrameCapture, now }` (seam-injected).
   no fix reaches `onGpsPosition` for the whole session, so the session's
   zero and alignment come from the scanned codes alone (`viewer-placement.ts`
   `zeroFromCode`), and nothing the viewer derives from device fixes (the
-  moved-code check, the keep-alive's hand-over, the compass wait) has
+  moved-code check, the keep-alive's hand-over) has
   anything to work on. The runtime start is the same (`startSession`
   included): the codes' votes go through the same coordinator gate.
 - Hit-test only for a creator (`requestHitTest`, the placement reticle

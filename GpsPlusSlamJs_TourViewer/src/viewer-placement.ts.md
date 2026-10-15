@@ -105,59 +105,28 @@ recording. Its own module since the flows plan M6.
     code placed the tour (the gate passed on a voted lock of a trusted code;
     QR-first M1, §7 #9: on votes alone the tracking-quality report reads
     `degraded`, its smoothed convergence score having seen too few
-    snapshots); until then sets `waiting-ready`. **When a code places the
-    tour before any device fix, it also waits for the compass** (owner
-    decision after the M1 review, "wait about a second before showing"):
-    nothing is placed - neither the content nor the photos, by the trigger
-    or a voted lock - until the code has `CODE_ZERO_WAIT_LOCKS` (8) voted
-    locks or `CODE_ZERO_WAIT_MS` (12 s) passed since the wait armed. It
-    arms (`armCodeZeroWait`, from the stable-pose gate after `zeroFromCode`)
-    on the first voted lock of EVERY AR entry and EVERY tour (read as
-    `viewerVotedLocks === 0`, which the AR exit and a tour switch both
-    reset), when the code has geo and the GPS history holds no device fix.
-    Not only where the code set the zero (PR #624 review): the zero survives an
-    AR exit (`resetGpsSessionData` keeps it) and a tour switch, but the next
-    entry's alignment and cold-start yaw window are new, so its first scan
-    swung like the first entry's; the old rule armed on the page's first
-    entry alone. The lock or the
-    timeout (`seams.schedule`) that ends the wait places what it held back,
-    the ring included, and reports the last locked code's station to the
-    guide again (`hooks.stationCodeLocked`; the stations wait too, r857
-    milestone review #1, `visitor-stations.ts`). Whenever a code placed the
+    snapshots); until then sets `waiting-ready`. **No compass wait (since
+    r863).** From 2026-10-14 to r863 a code that placed the tour before any
+    device fix held the first placement back for 8 voted locks or 12 s,
+    because the core's 9-solve compass window gave the first compass reading
+    full weight over a short scan and the content turned by about the
+    compass's error. The owner raised that as a bug of its own: once a code
+    is recognised, its rotation must stand at once. The entry's overrides
+    now carry a 1-solve compass window and snap alpha 1
+    (`viewer-vote-sink.ts` `VIEWER_SOFT_TRIM`), so the compass weight is 0
+    from the first voted lock, and everything shows on that lock: harness
+    `CODE_YAW_PROBE=scan` (`code-yaw-compass-overwrite.test.ts`) measured at
+    most 0.04 deg seen within 30 s of showing over compass bias 0-30 deg, a
+    drifting compass, the first fix in the scan, 0-8 s late or before it,
+    GPS noise 0 and 2 m and 1-10 locks - against up to 34.7 deg with the
+    wait, which also never covered the fix-first order. Investigation:
+    `GpsPlusSlamJs_Docs/docs/2026-10-15-0511-code-rotation-overwritten-by-compass-investigation.md`.
+    Whenever a code placed the
     tour, the trigger's join runs WITH the locked code
     (`placeTourImagePlanes(ctx.viewerLockedText)`), so a declining join
     falls back to the ring in the same run (r857 review #3: the join
     without the code set the loading latch and dropped the ring of the lock
-    that ended the wait, and a glance gets no later lock). A tour switch
-    ends the wait with the tour (`archive-open.ts` teardown, r857 review
-    #9), and the new tour's first voted lock arms it again. Meanwhile the
-    placement stays as it was, so the line
-    reads "Code found - placing the tour...". Not in author mode, not
-    without location (`ctx.codesOnly`: no watch starts, so no compass
-    reading reaches the solve), and not when a device fix reached the GPS
-    history before the entry's (or the tour's) first voted lock; in the
-    first entry that is the fix that set the zero. Why the numbers
-    (harness `m1b-wait` in `qr-vote-compass-batching.test.ts`, results
-    in the M1 results doc): a scan of fewer than 8 voted locks leaves the
-    compass memory's 9-solve yaw window under-full at the first compass
-    reading, and the content turned by about the compass's error (34 deg at
-    a 30 deg bias) for 1-10 s; 8 locks leave 0.04 deg after showing, 6 and
-    7 do not. The timeout covers a glance only while the first fix comes
-    within about 3 s of the scan (at most 1.9 deg seen at 12 s); a first
-    fix 8 s late still shows a 1-3 lock glance turned by up to 30 deg - a
-    limit of a fixed timeout, which cannot know when the first fix comes.
-    A first fix WITH a compass reading that arrives DURING the scan (0.25
-    or 0.5 s after it starts; the r857 review's sweep gap) still turns the
-    content by up to 2.5 deg after an 8-lock showing at a 30 deg compass
-    bias (1.0 deg at 10 deg; 1.9 deg when it comes 1 s in); 9 locks leave
-    0.19 deg. **A named coupling, not a tripwire:** 8 rests on the core's
-    default `coldStartObservabilityWindow` (9;
-    `GpsPlusSlamJs/src/state/models/alignment-config.ts`), which the
-    published library does not export (only an override can be set,
-    `setAlignmentOverrides`), so no unit test here can pin
-    `CODE_ZERO_WAIT_LOCKS >= window - 1`. A core change of that default
-    (a window of 10 or more) reverses the 8 and must re-run the harness's
-    `m1b-wait` group. The code rule changes
+    that placed the tour, and a glance gets no later lock). The code rule changes
     little (corrected after the M1 review #5; the M1 commit overstated it):
     every voted lock AFTER the gate already starts the placement itself
     (`onVotedLock`), bypassing readiness, so the rule decides only a scan
@@ -414,21 +383,22 @@ them off until the next tour's first vote).
 `viewer-vote-sink.test.ts` (M2e) - the sink against the real store: the
 clear at entry start, the merge before the first vote and once only, a
 keep-alive tick bringing the first vote, a ringless fix changing nothing,
-`endTour`, the soft keys as M0c measured them, one batch per lock, the
+`endTour`, the soft keys as M0c measured them plus the two compass keys
+(r863), one batch per lock, the
 tick's fix-first batch, a malformed fix dropped alone.
 
 `viewer-content-alignment.test.ts` (D10a, M2d; QR-first) - through the
 real controller and store: the content follows the live alignment, a code
-alone places the tour, and the compass wait - nothing shown during a
-3-lock glance until the timeout, a full scan shown on its eighth voted
-lock, no wait without location or after a device-set zero; the stations
-wait too and are found when the wait ends by either path (r857 review
-#1); a recording that declines the join still gets the ring after the
-wait (r857 review #3); and the wait arms again on a second AR entry and
-for a tour opened inside one entry (8 locks, or the timeout), but not
-after a device fix in that entry (PR #624 review; the AR exit and the tour
-switch are mirrored in the test, their resets pinned by
-`ar-entry.test.ts` and `archive-open.test.ts`).
+alone places the tour, and since r863 no compass wait: the content and
+the station on the scanned code show on the first voted lock (r857 review
+#1 the other way round), a recording that declines the join still gets the
+ring (r857 review #3), a second AR entry and a tour opened inside one entry
+show on their first voted lock too (PR #624 review; the AR exit and the
+tour switch are mirrored in the test); and the owner's bug (r863): a
+code's rotation stays within 1 deg of the code's when device fixes with a
+20-30 deg biased compass follow one voted lock, a 3-lock glance with a late
+first fix, the fix-first order, a second entry and a reopened tour - while
+without a code the compass still leads the GPS-only cold start.
 
 `fused-pose-wiring.test.ts` - the votes' stable pose is the fused one (at
 the true rotation where single-frame poses scatter past the old average's

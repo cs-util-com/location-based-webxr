@@ -51,12 +51,36 @@ import {
  * returns), r0 of 3 m or more (the hold breaks, 0.66 m), the core's own
  * defaults r0 = 5 m, p = 2 (only blends, 0.76 m). The hard trim has to go
  * off with it, or both run and it behaves like the hard trim.
+ *
+ * **It also makes the code's rotation stand from its first lock** (the
+ * owner's bug, 2026-10-15, r863; the name predates these two keys). The
+ * core's cold-start compass override gives the compass full weight until its
+ * yaw window holds 9 solves, and a lock is ONE solve, so the first device
+ * fix with a compass reading replaced the code's rotation - verbatim, since
+ * nothing was applied before. A window of one solve makes the observability
+ * the baseline term alone, which the 30 m ring meets at once: the compass
+ * weight is 0 from the first lock. The snap alpha 1 replaces at once a
+ * compass bearing that fixes BEFORE the scan applied, where 0.15 eased it
+ * out over several solves. Harness `CODE_YAW_PROBE=scan`
+ * (`code-yaw-compass-overwrite.test.ts`; compass bias 0-30 deg and a
+ * drifting one, the first fix in the scan, 0-8 s after it or before it, GPS
+ * noise 0 and 2 m, 1-10 locks): at most 0.04 deg seen within 30 s of the
+ * content showing, against up to 34.7 deg with the old 8-lock wait and
+ * 2.46 deg with the window alone. What would reverse it: a ring whose
+ * odometry reach falls short of the core's 15 m baseline (this ring's
+ * radius under about 15 m with a fix first, under about 8 m with the code
+ * first) - the compass would lead again. The cost: one lock is trusted at
+ * once, so a bad first lock shows for one lock interval
+ * (`CODE_YAW_PROBE=badlock`). GPS alone keeps the core's own cold start:
+ * none of this is set until a vote.
  */
 export const VIEWER_SOFT_TRIM: Readonly<AlignmentOverrides> = Object.freeze({
   outlierFalloffEnabled: true,
   outlierFalloffRadiusMeters: 1,
   outlierFalloffExponent: 1,
   outlierRejectionEnabled: false,
+  coldStartObservabilityWindow: 1,
+  coldStartSnapAlpha: 1,
 });
 
 /** The re-feed's batch size: the core's limit per `recordGpsEventBatch`

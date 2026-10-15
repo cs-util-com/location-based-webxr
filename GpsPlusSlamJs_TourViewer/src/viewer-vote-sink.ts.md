@@ -21,7 +21,20 @@ both must hold for EVERY vote:
 
 - `VIEWER_SOFT_TRIM` - the frozen override set M0c adopted:
   `{ outlierFalloffEnabled: true, outlierFalloffRadiusMeters: 1,
-outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
+outlierFalloffExponent: 1, outlierRejectionEnabled: false }`, plus since
+  r863 `coldStartObservabilityWindow: 1, coldStartSnapAlpha: 1` (the name
+  predates them). Why the two compass keys: the core's cold-start compass
+  override gives the compass full weight until its yaw window holds 9
+  solves, and a voted lock is ONE solve, so the first device fix with a
+  compass reading replaced a code's rotation (the owner's bug, 2026-10-15).
+  A 1-solve window leaves the baseline term alone, which the 30 m ring
+  meets at once, so the compass weight is 0 from the first lock; alpha 1
+  replaces a compass bearing applied by fixes before the scan at once. The
+  harness numbers and what would reverse them are in the constant's doc
+  comment and in
+  `GpsPlusSlamJs_Docs/docs/2026-10-15-0511-code-rotation-overwritten-by-compass-investigation.md`.
+  Both keys go with the trim: cleared at the entry's start and on a
+  retraction, so GPS alone always meets the core's own cold start.
 - (module-private) `RETRACT_BATCH_SIZE` (256) - the core's per-batch
   limit, the re-feed's batch size. The framework does not re-export the core's
   `MAX_GPS_EVENT_BATCH_SIZE`; a test reads it from the core the framework
@@ -117,7 +130,8 @@ sink.recordFix(fix, keepAlive.votesForFix({ atMs, stampMs })); // one batch
   keep-alive tick bringing the first vote, a ringless fix changing nothing,
   the soft trimming staying on for the rest of the entry until the next
   entry's start, the soft keys as
-  M0c measured them and accepted by the installed core, one batch per lock,
+  M0c measured them plus the two compass keys (r863) and accepted by the
+  installed core, the retraction clearing them all, one batch per lock,
   the tick's fix-first batch, a malformed fix dropped alone without a throw.
 - `viewer-votes.test.ts` - the same rules through `viewer-placement` (a
   plain-AR entry, a re-entry, a tour switch, the composed GPS handler).
