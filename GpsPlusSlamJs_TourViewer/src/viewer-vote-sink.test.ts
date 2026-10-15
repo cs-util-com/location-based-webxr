@@ -134,7 +134,6 @@ describe("an AR entry's vote sink: the per-entry solver overrides (M2e; the seam
       outlierFalloffRadiusMeters: 1,
       outlierFalloffExponent: 1,
       outlierRejectionEnabled: false,
-      coldStartObservabilityWindow: 1,
     });
   });
 
@@ -178,20 +177,18 @@ describe("an AR entry's vote sink: the per-entry solver overrides (M2e; the seam
     expect(overrides(store)).toBeNull();
   });
 
-  // Why: the first four keys are M0c's measured trim; the window is what
-  // keeps a code's rotation standing from its first lock (r863, the owner's
-  // bug: the core's 9-solve compass window gave the first compass reading
-  // full weight over a code's votes). No snap alpha key: alpha 1 was built
-  // and dropped on the r863 review's hand-back sweep (2-4 times the per-fix
-  // heading steps for the rest of the entry at 5-8 m GPS noise, against a
-  // residue of at most 2.47 deg that lasts one lock).
-  it("the soft keys are M0c's trim (kernel on, r0 = 1 m, p = 1, hard trim off) plus a 1-solve compass window, and the core's own snap alpha", () => {
+  // Why: the keys are M0c's measured trim and nothing else. The 1-solve
+  // compass window it carried from r863 is gone: the core's cold start now
+  // yields to stored code votes itself (core 1.26.2), so a code's rotation
+  // stands from its first lock in every app, and viewer-content-alignment's
+  // behaviour tests pin that unchanged. No compass key of any kind may
+  // return here without a measurement.
+  it("the soft keys are M0c's trim (kernel on, r0 = 1 m, p = 1, hard trim off) and no compass key", () => {
     expect(VIEWER_SOFT_TRIM).toEqual({
       outlierFalloffEnabled: true,
       outlierFalloffRadiusMeters: 1,
       outlierFalloffExponent: 1,
       outlierRejectionEnabled: false,
-      coldStartObservabilityWindow: 1,
     });
     // The published core takes them (it refused them before 1.26).
     expect(() => setAlignmentOverrides({ ...VIEWER_SOFT_TRIM })).not.toThrow();

@@ -52,51 +52,26 @@ import {
  * defaults r0 = 5 m, p = 2 (only blends, 0.76 m). The hard trim has to go
  * off with it, or both run and it behaves like the hard trim.
  *
- * **It also makes the code's rotation stand from its first lock** (the
- * owner's bug, 2026-10-15, r863; the name predates this key). The core's
- * cold-start compass override gives the compass full weight until its yaw
- * window holds 9 solves, and a lock is ONE solve, so the first device fix
- * with a compass reading replaced the code's rotation - verbatim, since
- * nothing was applied before. A window of one solve makes the observability
- * the baseline term alone, which the 30 m ring meets at once: the compass
- * weight is 0 from the first lock. Harness `CODE_YAW_PROBE=scan` and
- * `scannoise` (`code-yaw-compass-overwrite.test.ts`; compass bias 0-30 deg
- * and a drifting one, the first fix in the scan, 0-8 s after it or before
- * it, GPS noise 0 and 2 m (5 and 8 m too for a fix first), 1-10 locks):
- * against up to 34.7 deg with the old 8-lock wait, at most 0.27 deg seen
- * within 30 s of the content showing, except a compass bearing that fixes
- * BEFORE the scan applied: up to 2.47 deg on the first lock, gone by the
- * second (after a 1-lock glance, by the next keep-alive tick): a lock's 16
- * votes compound the core's snap alpha 0.15 to about 0.93. Snap alpha 1
- * removed that residue and was dropped (r863 milestone review #1): it
- * publishes every later GPS-only yaw unsmoothed, 2-4 times the per-fix
- * heading steps for the rest of the entry at 5-8 m GPS noise
- * (`CODE_YAW_PROBE=handback`). What would reverse the window: a ring
- * whose odometry reach falls short of the core's 15 m baseline (this
- * ring's radius under about 15 m with a fix first, under about 8 m with
- * the code first) - the compass would lead again.
- *
- * The cost of trusting one lock (`CODE_YAW_PROBE=badlock`): a bad first
- * lock shows for one lock interval in a code-first scan of 2 or more locks,
- * decays over about 5 locks in a fix-first one, and after a 1-lock glance
- * is held by the keep-alive, which re-votes the latest voted lock's pose
- * (`qr-vote-keep-alive.ts`), until its fade hands back to GPS.
+ * **A code's rotation no longer needs a key here.** From r863 to r868 this
+ * set also carried `coldStartObservabilityWindow: 1`, because the core's
+ * compass cold start gave the first compass reading full weight over a
+ * code's votes (the owner's bug, 2026-10-15). The core now does that itself
+ * for every app: while code votes are stored, its cold start judges the
+ * latest solve alone (core 1.26.2; `GpsPlusSlamJs/docs/2026-10-15-1246-qr-votes-one-rule-for-every-app-plan.md`
+ * rule (a)). The viewer's behaviour tests (`viewer-content-alignment.test.ts`)
+ * stayed unchanged when the key went, as the proof.
  *
  * **Scope: the whole entry after its first vote.** An entry that never
- * votes keeps the core's own cold start (nothing is set until a vote). From
- * the first vote on, every solve of the entry runs with these keys, the
- * GPS-only ones after the keep-alive handed back and those after a tour
- * switch included, until the next entry start or a retraction. A 1-solve
- * window has no spread, so the window's spread gate is off for the rest of
- * the entry too (an effect of the key, not its aim); the baseline term
- * still gates.
+ * votes keeps the core's own solver (nothing is set until a vote). From the
+ * first vote on, every solve of the entry runs with these keys, the GPS-only
+ * ones after the keep-alive handed back and those after a tour switch
+ * included, until the next entry start or a retraction.
  */
 export const VIEWER_SOFT_TRIM: Readonly<AlignmentOverrides> = Object.freeze({
   outlierFalloffEnabled: true,
   outlierFalloffRadiusMeters: 1,
   outlierFalloffExponent: 1,
   outlierRejectionEnabled: false,
-  coldStartObservabilityWindow: 1,
 });
 
 /** The re-feed's batch size: the core's limit per `recordGpsEventBatch`
