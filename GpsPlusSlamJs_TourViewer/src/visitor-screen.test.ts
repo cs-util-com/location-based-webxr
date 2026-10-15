@@ -409,6 +409,30 @@ describe("the permission is read again before a codes-only start (M1b-1 review #
     expect(screen.locationGate.pending()).toBe(false);
   });
 
+  // Why (PR #627 bot review): the start after a found grant uses GPS, but
+  // the line above the button kept saying the codes place the tour without
+  // location - wrong for every later start (it shows again after AR exit).
+  it("says location is allowed once the recheck finds the grant", async () => {
+    let permission: LocationPermission = "prompt";
+    const d = dom();
+    const renderArEntry = vi.fn();
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve(permission),
+        requestLocationOnce: () => Promise.resolve("denied"),
+      }),
+      dom: d,
+      renderArEntry,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    await screen.locationGate.request();
+    expect(d.arHint.textContent).toBe(CODES_ONLY_HINT);
+    permission = "granted";
+    await screen.locationGate.recheck();
+    expect(d.arHint.textContent).toBe(locationRequestNotice("granted").hint);
+  });
+
   it("offers the location once more after a dismissed prompt, then starts on codes", async () => {
     const d = dom();
     const renderArEntry = vi.fn();

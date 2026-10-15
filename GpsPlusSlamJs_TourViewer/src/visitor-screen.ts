@@ -252,6 +252,10 @@ export function wireVisitorScreen(deps: {
         }
         if (permission === "granted") {
           codesOnly = false;
+          // The start uses GPS now: the line above the button says so, not
+          // the codes-only line (it shows again after AR exit).
+          permissionHint = locationRequestNotice("granted").hint;
+          showHint();
         } else if (permission === "prompt" && !reoffered) {
           reoffered = true;
           codesOnly = false;

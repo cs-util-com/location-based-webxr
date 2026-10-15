@@ -28,9 +28,10 @@
  *   when its dispatch returns, so the retraction, dispatched from inside
  *   that event's store notification, is recorded before it; its actions are
  *   not replayed (the engine's sink does the same retraction). A recovery
- *   that left no action at all is read from its `codeIgnored` entry alone,
- *   as a veto that retracted nothing (`retracted: false`: the phone had no
- *   vote sink), so the replay takes nothing back either.
+ *   that left no action at all and names no re-fed batch is read from its
+ *   `codeIgnored` entry alone, as a veto that retracted nothing
+ *   (`retracted: false`: the phone had no vote sink), so the replay takes
+ *   nothing back either; one that names batches retracted, found or not.
  * - `gpsData/setAlignmentOverrides` with `null` outside a veto is an AR
  *   entry (`entry`): the sink's clear. A non-null one is the sink turning the
  *   soft trim on: set aside, the engine regenerates it.
@@ -165,11 +166,14 @@ function vetoBlocks(actions: readonly RecordedAction[]): {
         `veto at action ${String(i)}: no recovery actions before it, anchored at its own entry`,
       );
     }
-    // The phone retracted only when it left a recovery behind: an empty
-    // block is the sink-less fallback, where nothing was taken back.
+    // The phone retracted when it re-fed batches (the recorded count, which
+    // holds even where the walk-back above could not find them) or left a
+    // recovery behind (a sink with no fixes re-feeds nothing but still
+    // clears and resets). Neither: the sink-less fallback, where nothing was
+    // taken back.
     vetoAt.set(block.length === 0 ? i : Math.min(...block), {
       text,
-      retracted: block.length > 0,
+      retracted: block.length > 0 || (recovery?.batches ?? 0) > 0,
     });
   });
   return { consumed, vetoAt, notes };

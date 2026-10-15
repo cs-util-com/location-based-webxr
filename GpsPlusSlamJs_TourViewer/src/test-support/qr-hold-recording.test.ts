@@ -108,4 +108,34 @@ describe("a replayed veto retracts only where the phone did", () => {
     });
     expect(resets(parsed)).toBe(1);
   });
+
+  // Why (PR #627 bot review): the recording says how many batches the
+  // phone re-fed (`recovery.batches`), but the walk-back over them stops at
+  // the first action that is neither a batch nor a `tourViewing/*` log
+  // entry. A veto whose batches are not where the walk-back expects them
+  // left an empty block, read as "nothing taken back", so the replay
+  // skipped a retraction the phone made. The recorded count decides too.
+  it("still resets it when the phone re-fed batches the walk-back cannot find", () => {
+    const parsed = parseViewerRecording(
+      recording([
+        {
+          type: "gpsData/recordGpsEvent",
+          payload: fix("gps-1b", 1_200),
+        },
+        {
+          type: "tourViewing/codeIgnored",
+          payload: { text: "CODE-A", atMs: 1_500, recovery: { batches: 1 } },
+        },
+      ]),
+    );
+    expect(parsed.events.find((e) => e.kind === "veto")).toEqual({
+      kind: "veto",
+      text: "CODE-A",
+      retracted: true,
+    });
+    expect(resets(parsed)).toBe(1);
+    expect(parsed.notes.some((n) => /re-fed batches not found/.test(n))).toBe(
+      true,
+    );
+  });
 });
