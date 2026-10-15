@@ -666,8 +666,49 @@ export function cloudShellColumn(
 }
 
 /**
+ * asin's Maclaurin coefficients, of z^(2n + 1) for n = 0..9:
+ * (2n)! / (4^n n!^2 (2n + 1)). Up to z = 0.5 the terms left out sum to
+ * under 1e-8.
+ */
+const ASIN_SERIES = Array.from({ length: 10 }, (_, n) => {
+  let c = 1;
+  for (let k = 1; k <= n; k++) c *= (2 * k - 1) / (2 * k);
+  return c / (2 * n + 1);
+});
+
+/**
+ * The CPU twin of the chunk's `globeShellAsin`, in float32 as the GPU runs
+ * it: the series up to 0.5, asin(a) = pi / 2 - 2 asin(sqrt((1 - a) / 2))
+ * above, |x| clamped to 1 (as the chunk does). Within 2e-7 rad of asin.
+ * RangeError for NaN.
+ */
+export function cloudShellAsin(x: number): number {
+  if (Number.isNaN(x)) throw new RangeError("asin of NaN");
+  const f = Math.fround;
+  const a = Math.min(Math.abs(f(x)), 1);
+  const high = a > 0.5;
+  const z = high ? f(Math.sqrt(f(0.5 * f(1 - a)))) : a;
+  const z2 = f(z * z);
+  let p = f(ASIN_SERIES[9] as number);
+  for (let n = 8; n >= 1; n--) p = f(f(p * z2) + f(ASIN_SERIES[n] as number));
+  const s = f(z + f(f(z * z2) * p));
+  const r = high ? f(f(Math.PI / 2) - f(2 * s)) : s;
+  return x < 0 ? -r : r;
+}
+
+const ASIN_HORNER = ASIN_SERIES.slice(1, 9)
+  .reverse()
+  .map((c) => `  p = p * z2 + ${c.toPrecision(17)};`)
+  .join("\n");
+
+/**
  * The GLSL twin of `cloudShellColumn`, for a pass marching in the model
- * frame (km): `globeShellMapUv(p)` and `globeShellChartKm(p)`. Uniforms:
+ * frame (km): `globeShellMapUv(p)` and `globeShellChartKm(p)`, and
+ * `globeShellAsin(x)` (`cloudShellAsin`), which every asin here goes
+ * through: a GPU's built-in asin is a polynomial with an absolute error
+ * near 7e-5 rad, which put the chart's arc 0.8 km off on a real GPU (exact
+ * in SwiftShader), so the shell drew each cloud 0.8 km from the slab's
+ * (the owner's doubled clouds, 2026-10-15). Uniforms:
  * `uShellWorldFromEcef` (the frame, `CloudShellFrame.worldFromEcef`),
  * `uShellRadii` (m), `uShellGroundKm`, `uShellGaussianM` and
  * `uShellLonOffset` (the map's drift, radians). float32: the frame's
@@ -680,10 +721,21 @@ uniform vec3 uShellRadii;
 uniform float uShellGroundKm;
 uniform float uShellGaussianM;
 uniform float uShellLonOffset;
+float globeShellAsin( float x ) {
+  float a = min( abs( x ), 1.0 );
+  bool high = a > 0.5;
+  float z = high ? sqrt( 0.5 * ( 1.0 - a ) ) : a;
+  float z2 = z * z;
+  float p = ${(ASIN_SERIES[9] as number).toPrecision(17)};
+${ASIN_HORNER}
+  float s = z + z * z2 * p;
+  float r = high ? 1.5707963267948966 - 2.0 * s : s;
+  return x < 0.0 ? -r : r;
+}
 vec2 globeShellMapUv( vec3 p ) {
   vec3 n = normalize( p / uShellRadii );
   float lon = atan( n.y, n.x );
-  float lat = asin( clamp( n.z, -1.0, 1.0 ) );
+  float lat = globeShellAsin( n.z );
   return vec2( ( lon - uShellLonOffset ) * 0.15915494309189535 + 0.5, lat * 0.3183098861837907 + 0.5 );
 }
 vec2 globeShellChartKm( vec3 p ) {
@@ -691,6 +743,6 @@ vec2 globeShellChartKm( vec3 p ) {
   vec3 l = ( uShellWorldFromEcef * vec4( g, 1.0 ) ).xyz;
   float chord = length( l );
   float rho = length( l.xz );
-  float arc = 2.0 * uShellGaussianM * asin( min( 1.0, chord / ( 2.0 * uShellGaussianM ) ) );
+  float arc = 2.0 * uShellGaussianM * globeShellAsin( chord / ( 2.0 * uShellGaussianM ) );
   return rho > 1e-3 ? l.xz * ( arc / rho * 0.001 ) : vec2( 0.0 );
 }`;

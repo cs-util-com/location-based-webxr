@@ -251,9 +251,10 @@ highp float shellInStepLight( highp float tau, highp float sunA, highp float sun
 // One node: the column's raw thickness (m, before its clamp, scaled), the
 // deck height of the ray there (m), the noise and the threshold.
 // The slab's disc at a point: 1 within 0.7 r of its centre, 0 from r, the
-// slab's own fade between, by the arc from the centre (R4d review).
+// slab's own fade between, by the arc from the centre (R4d review); the
+// chunk's asin, the GPU's built-in being 0.8 km off at this scale.
 float shellDiscMask( vec3 p ) {
-  float d = uShellGroundKm * 2.0 * asin( min( 1.0, 0.5 * length( normalize( p ) - normalize( uDiscCentre ) ) ) );
+  float d = uShellGroundKm * 2.0 * globeShellAsin( 0.5 * length( normalize( p ) - normalize( uDiscCentre ) ) );
   return 1.0 - smoothstep( 0.7 * uDiscRadiusKm, uDiscRadiusKm, d );
 }
 

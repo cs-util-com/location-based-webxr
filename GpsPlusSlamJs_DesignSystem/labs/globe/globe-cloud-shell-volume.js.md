@@ -62,7 +62,10 @@ radiusM }` from its state, the centre null on the camera, where its flat
   (the map at the point's geodetic latitude and longitude, B-spline at level
   0 handing over to the mips by the footprint, times the opacity, the
   volume's gain and the shell's fade-in) through the live field's threshold
-  table, and N1's live field on the chart (`globeShellChartKm`): the two
+  table, and N1's live field on the chart (`globeShellChartKm`; it and the
+  slab's disc mask take the chunk's `globeShellAsin`, never the GPU's
+  built-in asin, which drew every cloud twice, 0.8 km apart, on a real GPU):
+  the two
   stations' fields, each at its own fixed cell scale, mixed by
   `cloudShellFieldWeights(cellMix)` (one field at a station), its octaves capped at the law's fractional count (the
   last one in part, so the cap never jumps), each faded by the footprint

@@ -29,6 +29,7 @@ import {
   GLOBE_CLOUD_SHELL_GLSL,
   type CloudShellStation,
   cloudLayerOver,
+  cloudShellAsin,
   cloudShellFieldWeights,
   cloudShellNoiseCascade,
   cloudShellPixelWeight,
@@ -330,6 +331,50 @@ describe("GLOBE_CLOUD_SHELL_GLSL", () => {
     ]) {
       expect(GLOBE_CLOUD_SHELL_GLSL).toContain(name);
     }
+  });
+
+  // WHY (the owner, 2026-10-15, r845 on his phone: "viele von den Wolken
+  // werden doppelt gerendert" below 40 km): a GPU's built-in asin is a
+  // polynomial with an absolute error near 7e-5 rad, so the chart's arc,
+  // 2 R asin(c / 2R), sat 0.8 km off on a real GPU (Intel Iris Xe, D3D11,
+  // measured against SwiftShader at his pose: the chart +0.40, +0.69 km on
+  // every row, the ray's entry within 31 m) while the slab, which has no
+  // asin, stayed put: each cloud drawn twice, 0.8 km apart. SwiftShader's
+  // asin is exact, so no browser test of this repo could see it; this
+  // holds the chunk to its own asin instead.
+  it("calls its own asin, never the GPU's built-in one", () => {
+    expect(GLOBE_CLOUD_SHELL_GLSL).toContain("float globeShellAsin( float x )");
+    expect(GLOBE_CLOUD_SHELL_GLSL).not.toMatch(/(?<![A-Za-z_])asin\s*\(/);
+  });
+});
+
+// WHY: the twin of the chunk's `globeShellAsin`, in float32 as the GPU
+// runs it, must hold the arc to well under the finest octave's 690 m cell
+// at every chord; 2e-7 rad is about 1.3 m of the Earth's arc.
+describe("cloudShellAsin", () => {
+  it("is asin to 2e-7 rad over [-1, 1] in float32", () => {
+    fc.assert(
+      fc.property(fc.double({ min: -1, max: 1, noNaN: true }), (x) => {
+        const xf = Math.fround(x);
+        expect(Math.abs(cloudShellAsin(xf) - Math.asin(xf))).toBeLessThan(2e-7);
+      }),
+      { numRuns: 2000 },
+    );
+  });
+
+  it("keeps its relative precision near 0, where the chart's chords are", () => {
+    for (const x of [1e-6, 1e-4, 1.6e-3, 0.01, 0.1, 0.5, 0.5000001, 0.9, 1]) {
+      const xf = Math.fround(x);
+      const exact = Math.asin(xf);
+      expect(Math.abs(cloudShellAsin(xf) - exact) / exact).toBeLessThan(3e-7);
+      expect(cloudShellAsin(-xf)).toBe(-cloudShellAsin(xf));
+    }
+    expect(cloudShellAsin(0)).toBe(0);
+  });
+
+  it("clamps beyond 1 as the chunk does, and refuses NaN", () => {
+    expect(cloudShellAsin(1.5)).toBe(cloudShellAsin(1));
+    expect(() => cloudShellAsin(Number.NaN)).toThrow(RangeError);
   });
 });
 

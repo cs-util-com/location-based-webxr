@@ -115,7 +115,12 @@ chartKm }`: the geodetic latitude and longitude from the normal
   along the geodesic's first heading further out, the chord taken back to
   the arc with the Gaussian radius). RangeError for a point that is not
   finite or is the centre.
-- `GLOBE_CLOUD_SHELL_GLSL`: `globeShellMapUv(p)`, `globeShellChartKm(p)`;
+- `cloudShellAsin(x)`: the CPU twin, in float32, of the chunk's
+  `globeShellAsin`: asin's series up to 0.5, `pi / 2 - 2 asin(sqrt((1 - a) /
+2))` above, |x| clamped to 1; within 2e-7 rad of `Math.asin`. RangeError
+  for NaN.
+- `GLOBE_CLOUD_SHELL_GLSL`: `globeShellAsin(x)`, `globeShellMapUv(p)`,
+  `globeShellChartKm(p)`;
   uniforms `uShellWorldFromEcef`, `uShellRadii` (m), `uShellGroundKm`,
   `uShellGaussianM`, `uShellLonOffset`.
 
@@ -144,6 +149,14 @@ chartKm }`: the geodetic latitude and longitude from the normal
   below 150 km, where the horizon is about 1,400 km away).
 - float32 in the shader: the frame's product of 6,400 km numbers leaves
   about a metre, under the finest octave the march reads.
+- No built-in asin in the chunk: a GPU's is a polynomial with an absolute
+  error near 7e-5 rad, which put the chart's arc 0.8 km off on a real GPU
+  (Intel Iris Xe, D3D11) while SwiftShader's is exact, so the shell drew
+  each cloud 0.8 km from the slab's: the owner's doubled clouds below
+  40 km (2026-10-15, on his phone). `globeShellAsin` is within 2e-7 rad
+  (about 1.3 m of arc) and cost nothing measurable on that GPU. The
+  longitude's `atan` is still the built-in one (the map's lookup, where
+  the error is a small part of a texel).
 - The chart is singular at the frame origin's antipode (seen only from far
   out with the frame left far away: the frame recentres only below 150 km).
 
@@ -182,7 +195,9 @@ const { uv, chartKm } = cloudShellColumn([4000, 600, 4700], frame, 0);
   where the shell draws, the slab's hand-over, refusals); the high layer's
   defaults;
   the premultiplied over (opaque front, clear front, order, alpha never
-  past 1).
+  past 1); the chunk's own asin (no built-in asin left in it; the float32
+  twin within 2e-7 rad over [-1, 1], relatively precise near 0, odd,
+  clamped, NaN refused).
 - `globe-cloud-shell-volume.property.test.ts`: the map at the ellipsoid's
   own latitude and longitude with the drift; the chart near the origin
   against `worldFromEcefAt`; the ground distance far out; the recentre
