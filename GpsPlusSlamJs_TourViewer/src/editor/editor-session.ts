@@ -107,8 +107,9 @@ export interface EditorSession {
   /** Turn it on or off: one pending change while it differs from the
    *  saved file, none once it is back at the file's own value. */
   setNeedsNoGps(on: boolean): { kind: "changed" | "unchanged" };
-  /** What the setting's warnings are about: the code-less stations and
-   *  whether a code can place the tour (`no-gps-check.ts`). */
+  /** What the setting's warnings are about: the code-less stations, the
+   *  stations on a code the viewer cannot use, and whether a code can
+   *  place the tour (`no-gps-check.ts`). */
   noGpsCheck(): NoGpsCheck;
   editText(
     id: string,

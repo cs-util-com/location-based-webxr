@@ -665,6 +665,7 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
     });
     expect(editor.noGpsCheck()).toEqual({
       codeless: ["The column"],
+      unlockable: [],
       codesPlace: true,
     });
     await session.close();

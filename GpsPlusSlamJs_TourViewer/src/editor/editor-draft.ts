@@ -39,11 +39,17 @@
  * it (or a build wrote the other value, the "built but never put in place"
  * walk), offered by a later open whose file does not carry it, spent by one
  * that does, carried along by a key move, and thrown away by "Delete it"
- * unless changed since the open. No base: the setting is a boolean, so a
- * file that differs from the record holds the other value, which this
- * browser saw (the opened file's) or wrote (a build's) - the objects'
- * base rule would always offer it, so the record alone decides. An ABA
- * made elsewhere (on and off again) cannot be told apart, and is offered.
+ * unless changed since the open. The value last set here is kept, and the
+ * keep is decided again whenever a build or a landed write changes what
+ * it is measured against (M1b-2 milestone review #1: a setting turned
+ * back while a save builds). No base, deliberately: a file that differs
+ * from the record holds the other value, and this browser cannot tell
+ * whether it saw or wrote that value or a colleague made it since - so
+ * the offer NAMES the setting and its value (milestone review #3), and the
+ * creator decides. Not covered, named: Restore of an offered setting can
+ * undo a colleague's newer change of it when the creator does not notice
+ * the named value; a version base for one boolean was declined as heavier
+ * than that risk.
  *
  * @see editor-draft.ts.md
  */
@@ -89,6 +95,55 @@ export interface EditorTourSettings {
 /** The settings record's file in a namespace. Not a prefix the phone's
  *  `readDraft` reads, so the shared reader skips it. */
 const SETTINGS_KEY = "settings";
+
+/** The setting's name as the page shows it (`edit.html`). */
+const NO_GPS_LABEL = '"This tour needs no GPS"';
+
+/**
+ * The offer's words (`restoreOfferText`), and - when it holds the setting -
+ * which setting and to what value (M1b-2 milestone review #3): Restore
+ * then never puts a value back the creator did not see named.
+ */
+function offerText(
+  notes: number,
+  deleted: number,
+  settings: EditorTourSettings | undefined,
+): string {
+  const counted = restoreOfferText(0, false, {
+    changed: notes + (settings === undefined ? 0 : 1),
+    deleted,
+  });
+  if (settings === undefined) return counted;
+  const value = `${NO_GPS_LABEL} turned ${settings.needsNoGps ? "on" : "off"}`;
+  return notes + deleted === 0
+    ? `${counted} It is ${value}.`
+    : `${counted} One of the changes is ${value}.`;
+}
+
+/**
+ * Said once an offer was restored: what came back, or - when nothing did,
+ * live work having won - why, in the offer's own terms (M1b-2 milestone
+ * review #6).
+ */
+export function restoredLine(
+  count: number,
+  offer: Pick<EditorDraftOffer, "objects" | "deleted" | "settings">,
+): string {
+  if (count > 0) {
+    const back =
+      count === 1
+        ? "1 earlier change is"
+        : `${String(count)} earlier changes are`;
+    return `${back} back - not saved yet.`;
+  }
+  if (offer.settings === undefined) {
+    return "Nothing was restored: the notes those changes were for are edited here already.";
+  }
+  if (offer.objects.length + offer.deleted.length === 0) {
+    return `Nothing was restored: this tour's "needs no GPS" setting is changed here already.`;
+  }
+  return "Nothing was restored: the notes and the setting those changes were for are changed here already.";
+}
 
 function settingsOf(manifest: TourManifest): EditorTourSettings {
   return { needsNoGps: manifest.needsNoGps === true };
@@ -246,13 +301,37 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   } | null = null;
   /** The settings record this page keeps (THE SETTINGS), or null. */
   let settingsPending: EditorTourSettings | null = null;
-  /** The settings were changed here since the open: live work, which
-   *  wins over the offer and is never thrown away with it. */
-  let settingsTouched = false;
+  /** The settings as last set here since the open, or null: live work,
+   *  which wins over the offer and is never thrown away with it. Kept
+   *  whether or not its record is, so a build or a landed write can decide
+   *  the keep again (M1b-2 milestone review #1). */
+  let settingsWanted: EditorTourSettings | null = null;
   /** The "needs no GPS" values builds wrote since the open: a change back
    *  to the file's value still differs from a built copy that may be put
    *  in place, so its record is kept (review #1's walk, for the setting). */
   const builtNoGps = new Set<boolean>();
+
+  /** Whether `settings` must be kept: the file on disk differs, or a
+   *  build wrote the other value (THE SETTINGS). */
+  function keepSettings(settings: EditorTourSettings): boolean {
+    return (
+      opened === null ||
+      settings.needsNoGps !== settingsOf(opened).needsNoGps ||
+      builtNoGps.has(!settings.needsNoGps)
+    );
+  }
+
+  /** The keep decided again for the value last set here, after a build or
+   *  a landed write changed what it is measured against; whether the
+   *  record must now be written (`settingsPending`) or removed (null). */
+  function redecideSettings(): boolean {
+    const wanted = settingsWanted;
+    if (wanted === null) return false;
+    const next = keepSettings(wanted) ? wanted : null;
+    if (next?.needsNoGps === settingsPending?.needsNoGps) return false;
+    settingsPending = next;
+    return true;
+  }
   let told = false;
   let generation = 0;
   /** When the last tour's hold let go: the next open waits for it (the
@@ -521,7 +600,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     touched.clear();
     bases.clear();
     settingsPending = null;
-    settingsTouched = false;
+    settingsWanted = null;
     builtNoGps.clear();
     if (s === null) return;
     // After its queued writes (E2c review #6): until they land, another
@@ -586,7 +665,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           offer:
             offer === null
               ? null
-              : { ...offer, text: restoreOfferText(0, false, { changed: 1 }) },
+              : { ...offer, text: offerText(0, 0, settings) },
           superseded: null,
           backedUp: true,
         };
@@ -637,10 +716,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             ? null
             : {
                 ...offer,
-                text: restoreOfferText(0, false, {
-                  changed: waiting.length + (settings === undefined ? 0 : 1),
-                  deleted: deleted.length,
-                }),
+                text: offerText(waiting.length, deleted.length, settings),
               },
         superseded:
           replaced === 0 ? null : supersededLine(replaced, SUPERSEDED_WHERE),
@@ -688,16 +764,26 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       s.rejected = [...new Set([...before, ...ids])];
       // THE COMMIT POINT: once the meta rejects them, the next read
       // refuses them whether or not the removals below ran.
-      if (!(await writeMeta(s))) {
+      // A rejection that did not land throws nothing away: the meta is
+      // put back and the offer re-armed - a key move before the next open
+      // still carries it - and the page says so.
+      const fail = (): false => {
         s.rejected = before;
         void writeMeta(s);
+        offer = was;
         return false;
-      }
+      };
+      if (!(await writeMeta(s))) return fail();
       // The offered settings record goes too, unless changed since the
-      // open (live work); after the commit point, so a rejection that did
-      // not land throws nothing away.
-      if (was.settings !== undefined && !settingsTouched) {
-        void settingsIn(s, null);
+      // open (live work): awaited, inside the namespace's work, so "Delete
+      // it" is done only once it went, and a removal that did not land
+      // fails it like the meta (M1b-2 milestone review #4).
+      if (
+        was.settings !== undefined &&
+        settingsWanted === null &&
+        !(await settingsIn(s, null))
+      ) {
+        return fail();
       }
       for (const id of ids) {
         // Counted among the namespace's writes, like the meta (finding B).
@@ -721,6 +807,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // As a reader of the written file sees it (the E2p third review #5).
       const read = manifestAsRead(written);
       builtNoGps.add(settingsOf(read).needsNoGps);
+      // A setting turned back while this save built is measured against
+      // the build now (M1b-2 milestone review #1).
+      if (redecideSettings()) void writeSettingsIn(s, settingsPending);
       for (const [id, change] of pending) {
         if (change === null) continue;
         const object = read.objects.find((o) => o.id === id);
@@ -757,15 +846,14 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         pending.delete(id);
         bases.delete(id);
       }
-      // The settings the file carries now are spent too.
-      const settingsSpent =
-        settingsPending !== null &&
-        settingsPending.needsNoGps === settingsOf(read).needsNoGps;
-      if (settingsSpent) settingsPending = null;
       opened = read;
+      // The settings decided again against the file on disk now: spent
+      // when it carries them, kept when it does not (M1b-2 milestone
+      // review #1); a key move below carries what is kept.
+      const settingsChanged = redecideSettings();
       if (editorDraftKey(fileKey) === s.key) {
         for (const id of spent) removeIn(s, id);
-        if (settingsSpent) void settingsIn(s, null);
+        if (settingsChanged) void writeSettingsIn(s, settingsPending);
         return;
       }
       // The key moves (a tour of notes alone): synchronously, so every
@@ -789,7 +877,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         for (const id of offer.deleted) {
           if (!touched.has(id)) carried.push(carry(next, id, null, undefined));
         }
-        if (offer.settings !== undefined && !settingsTouched) {
+        if (offer.settings !== undefined && settingsWanted === null) {
           carried.push(writeSettingsIn(next, offer.settings));
         }
       }
@@ -844,14 +932,10 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       return write(id, (store) => removeDraftDeletion(store, id));
     },
     saveSettings(settings) {
-      settingsTouched = true;
+      settingsWanted = settings;
       // Kept while the file on disk differs, or a build wrote the other
       // value (THE SETTINGS); else the record goes.
-      const keep =
-        opened === null ||
-        settings.needsNoGps !== settingsOf(opened).needsNoGps ||
-        builtNoGps.has(!settings.needsNoGps);
-      settingsPending = keep ? settings : null;
+      settingsPending = keepSettings(settings) ? settings : null;
       const s = space;
       return s === null
         ? Promise.resolve(true)

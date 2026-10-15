@@ -163,8 +163,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - **The draft (M6 E2c).** Read inside the open, before the tour shows
   (`draft.open` over the session's file key). What an earlier visit left is
   offered in a toast that stays until answered (`.draft-offer`): Restore
-  (`session.restore`, live edits winning; "N earlier changes are back - not
-  saved yet"), Not now (offered again next time), Delete it
+  (`session.restore`, live edits winning; `editor-draft.ts` `restoredLine`:
+  "N earlier changes are back - not saved yet", or why nothing came back in
+  the offer's own terms - notes, the setting, or both, M1b-2 milestone
+  review #6), Not now (offered again next time), Delete it
   (`draft.discard`; a failure is said). Records an edit elsewhere replaced
   are said once. Every edit goes to the draft through the session, whose
   writes are bound to its tour (`draft.writes()`: a closed tour's late
@@ -187,9 +189,14 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   any change. A tour opened with `needsNoGps` shows it on. While it is on,
   `#no-gps-warnings` (a polite status region, never blocking the save)
   carries `no-gps-check.ts`'s lines: the stations without a printed code,
-  by name and count, or - when no code can place the tour - that visitors
-  are asked for their location anyway. Redrawn on every `refresh()` (a
-  restore, a save) and on each toggle.
+  and the stations on a code the viewer cannot use (no printed size, or not
+  in the tour), by name and count - or, when no code can place the tour,
+  that visitors are asked for their location anyway. Redrawn on every
+  `refresh()` (a restore, a save) and on each toggle, through
+  `status-lines.ts`: the lines are replaced only when their words change,
+  and the region is never `hidden` (an empty one is zero-height), so a
+  screen reader announces the first lines and never the same ones again
+  (M1b-2 milestone review #5).
 - **Leaving** with unsaved work asks first (`beforeunload`), and so does
   "Open another tour" (`window.confirm`).
 - **Free area** for the card: right of the rail, under the top bar (read

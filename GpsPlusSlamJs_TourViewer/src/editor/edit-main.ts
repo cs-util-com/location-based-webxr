@@ -38,6 +38,7 @@ import {
 import { openTourForEditing } from "./editor-open.js";
 import {
   createEditorDraft,
+  restoredLine,
   type EditorDraftOffer,
   type EditorTourDraft,
   type NoBackupReason,
@@ -58,6 +59,7 @@ import {
 } from "./editor-session.js";
 import { noGpsWarnings } from "./no-gps-check.js";
 import { revealPadding, type Box } from "./popover-place.js";
+import { createStatusLines } from "./status-lines.js";
 import {
   createSaveTarget,
   holdEditorDraftLock,
@@ -92,18 +94,6 @@ const UNDO_MS = 8000;
 /** Said when "Delete it" did not land: nothing was thrown away. */
 const DISCARD_FAILED =
   "The earlier changes could not be deleted - they are still kept, and offered again next time.";
-
-/** Said once the offer was restored. */
-function restoredLine(count: number): string {
-  if (count === 0) {
-    return "Nothing was restored: the notes those changes were for are edited here already.";
-  }
-  const back =
-    count === 1
-      ? "1 earlier change is"
-      : `${String(count)} earlier changes are`;
-  return `${back} back - not saved yet.`;
-}
 
 /** Said once per opened tour when its edits are not backed up in this
  *  browser (M6 E2c, the E2c plan review #6, #10). */
@@ -167,7 +157,15 @@ const keepWalk = element("keep-walk");
 const keepWalkInput = element<HTMLInputElement>("keep-walk-input");
 /** The tour's "needs no GPS" setting and its warnings (QR-first M1b-2). */
 const noGpsInput = element<HTMLInputElement>("no-gps-input");
-const noGpsWarningsBox = element("no-gps-warnings");
+/** Its warnings' live region: never hidden (an empty one is zero-height),
+ *  and its lines replaced only when their words change, so a refresh does
+ *  not announce the same warning again (M1b-2 milestone review #5). */
+const noGpsLines = createStatusLines(element("no-gps-warnings"), (line) => {
+  const p = document.createElement("p");
+  p.className = "note-line warn";
+  p.textContent = line;
+  return p;
+});
 
 let session: TourSession | null = null;
 /** The written file, for the card's photos once a save replaced the bytes
@@ -475,17 +473,9 @@ function renderNoGps(): void {
   const on = editor?.needsNoGps() ?? false;
   noGpsInput.checked = on;
   noGpsInput.disabled = editor === null;
-  const lines =
-    editor === null || !on ? [] : noGpsWarnings(editor.noGpsCheck());
-  noGpsWarningsBox.replaceChildren(
-    ...lines.map((line) => {
-      const p = document.createElement("p");
-      p.className = "note-line warn";
-      p.textContent = line;
-      return p;
-    }),
+  noGpsLines.show(
+    editor === null || !on ? [] : noGpsWarnings(editor.noGpsCheck()),
   );
-  noGpsWarningsBox.hidden = lines.length === 0;
 }
 
 /** After an edit: the rail, the markers, the card and the status follow. */
@@ -958,7 +948,7 @@ function offerDraft(mine: EditorSession, offer: EditorDraftOffer): void {
           const applied = mine.restore(offer);
           draft.restored();
           refresh();
-          toast(restoredLine(applied.changed + applied.deleted));
+          toast(restoredLine(applied.changed + applied.deleted, offer));
           // Restored work is pending work: saved by itself like any edit.
           if (applied.changed + applied.deleted > 0) autosave.changed();
         },

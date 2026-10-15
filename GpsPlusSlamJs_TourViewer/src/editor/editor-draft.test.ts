@@ -31,6 +31,7 @@ import { META_KEY, objectKey, readDraft } from "../draft-persistence.js";
 import {
   createEditorDraft,
   editorDraftKey,
+  restoredLine,
   type EditorDraft,
   type NoBackupReason,
 } from "./editor-draft.js";
@@ -40,7 +41,9 @@ import type { EditorLock } from "./save-target.js";
  *  one namespace's writes refuse; `holdPuts` holds every write until
  *  `releasePuts`; `holdOpenOf` holds a namespace's open until
  *  `releaseOpens` - the order a key move's writes land in; `failMetaPuts`
- *  refuses that many of the next meta writes. */
+ *  refuses that many of the next meta writes; `failRemoveOf` makes a
+ *  removal of those keys throw (a store breaking its never-throws
+ *  contract: the one way a removal can be seen not to land). */
 function browser(): {
   spaces: Map<string, Map<string, Blob | string>>;
   open: (key: string) => Promise<DraftFileStore | undefined>;
@@ -51,6 +54,7 @@ function browser(): {
   holdOpenOf: Set<string>;
   releaseOpens: () => void;
   failMetaPuts: number;
+  failRemoveOf: Set<string>;
 } {
   const spaces = new Map<string, Map<string, Blob | string>>();
   const heldPuts: ((ok: boolean) => void)[] = [];
@@ -65,6 +69,7 @@ function browser(): {
       for (const land of heldPuts.splice(0)) land(ok);
     },
     failMetaPuts: 0,
+    failRemoveOf: new Set<string>(),
     holdOpenOf: new Set<string>(),
     releaseOpens: () => {
       state.holdOpenOf.clear();
@@ -94,6 +99,9 @@ function browser(): {
           return Promise.resolve(true);
         },
         remove: (k) => {
+          if (state.failRemoveOf.has(k)) {
+            return Promise.reject(new Error("the removal failed"));
+          }
           files.delete(k);
           return Promise.resolve();
         },
@@ -1034,5 +1042,194 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     b.failIn.add(editorDraftKey(K1));
     expect(await draft.saveSettings({ needsNoGps: true })).toBe(false);
     expect(draft.said).toEqual(["storage"]);
+  });
+});
+
+/**
+ * Why (QR-first M1b-2 milestone review #1, #3, #4, #6): the settings
+ * record's walks the first build of it lost or mis-said - a setting turned
+ * back while a save builds, an offer that did not say it was about the
+ * setting (so Restore could undo a newer value unknowingly), "Delete it"
+ * removing the record outside its commit point, and a "nothing restored"
+ * line that spoke of notes for an offer of the setting.
+ */
+describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone review)", () => {
+  const SETTINGS = "settings";
+  const flagged = (...objects: TourObject[]): TourManifest => ({
+    ...tour(...objects),
+    needsNoGps: true,
+  });
+
+  it("a setting turned back while a save builds keeps its record: in place, on a key move, and as a download", async () => {
+    // Why (#1): on, a save starts (its snapshot carries "on"), off before
+    // the build is told. "Off" equals the opened file and no build was
+    // known yet, so the record went - and the build's "on" never
+    // re-decided it: the file said on, the session off, and a closed tab
+    // lost "off".
+    for (const path of ["in place", "key move", "download"] as const) {
+      const b = browser();
+      const draft = draftIn(b);
+      const original = tour(pin("a"));
+      await draft.open(K1, original);
+      void draft.saveSettings({ needsNoGps: true });
+      void draft.saveSettings({ needsNoGps: false });
+      const written = flagged(pin("a"));
+      draft.writes().built(written);
+      if (path !== "download") {
+        draft.writes().landed(written, path === "key move" ? K2 : K1);
+      }
+      await draft.idle();
+      draft.close();
+      const reopened = draftIn(b);
+      const { offer } = await reopened.open(
+        path === "key move" ? K2 : K1,
+        written,
+      );
+      expect(offer?.settings, path).toEqual({ needsNoGps: false });
+      await reopened.idle();
+      reopened.close();
+    }
+  });
+
+  it("the download's original, reopened, carries the value turned back to: spent there", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    const original = tour(pin("a"));
+    await draft.open(K1, original);
+    void draft.saveSettings({ needsNoGps: true });
+    void draft.saveSettings({ needsNoGps: false });
+    draft.writes().built(flagged(pin("a")));
+    await draft.idle();
+    draft.close();
+    expect((await draftIn(b).open(K1, original)).offer).toBeNull();
+  });
+
+  it("the offer names the setting and its value, alone and beside notes", async () => {
+    // Why (#3): "1 change" alone did not say the change is the setting, so
+    // Restore could put back a value a colleague changed since, unknowingly.
+    const b = browser();
+    const first = draftIn(b);
+    await first.open(K1, tour(pin("a")));
+    void first.saveSettings({ needsNoGps: true });
+    await first.idle();
+    first.close();
+    const alone = draftIn(b);
+    expect((await alone.open(K1, tour(pin("a")))).offer?.text).toBe(
+      'Unsaved work from this tour is still on this device: 1 change. Add it back? It is "This tour needs no GPS" turned on.',
+    );
+    await alone.idle();
+    alone.close();
+
+    const c = browser();
+    const second = draftIn(c);
+    await second.open(K1, flagged(pin("a")));
+    void second.saveObject(pin("a", "edited"));
+    void second.saveSettings({ needsNoGps: false });
+    await second.idle();
+    second.close();
+    expect((await draftIn(c).open(K1, flagged(pin("a")))).offer?.text).toBe(
+      'Unsaved work from this tour is still on this device: 2 changes. Add them back? One of the changes is "This tour needs no GPS" turned off.',
+    );
+  });
+
+  it("Delete it has removed an offered setting by the time it says it is done", async () => {
+    // Why (#4): the removal ran outside the commit point, fire-and-forget,
+    // so "deleted" was said before the record went.
+    const b = browser();
+    const earlier = draftIn(b);
+    await earlier.open(K1, tour(pin("a")));
+    void earlier.saveSettings({ needsNoGps: true });
+    await earlier.idle();
+    earlier.close();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    expect(await draft.discard()).toBe(true);
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
+  });
+
+  it("a removal of the offered setting that does not land fails Delete it, and everything is offered again", async () => {
+    // Why (#4): a failed removal was ignored, so the page said the earlier
+    // changes were deleted while the setting stayed - and the notes went.
+    const b = browser();
+    const original = tour(pin("a"));
+    const earlier = draftIn(b);
+    await earlier.open(K1, original);
+    void earlier.saveObject(pin("a", "edited"));
+    void earlier.saveSettings({ needsNoGps: true });
+    await earlier.idle();
+    earlier.close();
+    const draft = draftIn(b);
+    await draft.open(K1, original);
+    b.failRemoveOf.add(SETTINGS);
+    expect(await draft.discard()).toBe(false);
+    await draft.idle();
+    draft.close();
+    b.failRemoveOf.clear();
+    const { offer } = await draftIn(b).open(K1, original);
+    expect(offer?.objects.map((o) => o.id)).toEqual(["a"]);
+    expect(offer?.settings).toEqual({ needsNoGps: true });
+  });
+
+  it("a Delete it that did not land re-arms the offer: a key move still carries it", async () => {
+    // Why (#4, "re-arm the offer"): "offered again next time" must hold
+    // even when an in-place save moves the key before that next time.
+    const b = browser();
+    const original = tour(pin("a"), pin("b"));
+    const earlier = draftIn(b);
+    await earlier.open(K1, original);
+    void earlier.saveObject(pin("a", "edited"));
+    void earlier.saveSettings({ needsNoGps: true });
+    await earlier.idle();
+    earlier.close();
+    const draft = draftIn(b);
+    await draft.open(K1, original);
+    // The open's own meta write lands first: the refusal is the discard's.
+    await draft.idle();
+    b.failMetaPuts = 1;
+    expect(await draft.discard()).toBe(false);
+    void draft.saveObject(pin("b", "saved"));
+    const written = tour(pin("a"), pin("b", "saved"));
+    draft.writes().built(written);
+    draft.writes().landed(written, K2);
+    await draft.idle();
+    draft.close();
+    const { offer } = await draftIn(b).open(K2, written);
+    expect(offer?.objects.map((o) => o.id)).toEqual(["a"]);
+    expect(offer?.settings).toEqual({ needsNoGps: true });
+  });
+});
+
+describe("restoredLine (M1b-2 milestone review #6)", () => {
+  // Why: Restore's "nothing restored" line spoke of notes even when the
+  // offer was the setting alone.
+  const notes = { objects: [pin("a")], deleted: [] };
+  const setting = {
+    objects: [],
+    deleted: [],
+    settings: { needsNoGps: true },
+  };
+
+  it("counts what came back", () => {
+    expect(restoredLine(1, notes)).toBe(
+      "1 earlier change is back - not saved yet.",
+    );
+    expect(restoredLine(2, { ...setting, objects: [pin("a")] })).toBe(
+      "2 earlier changes are back - not saved yet.",
+    );
+  });
+
+  it("says why nothing came back in the offer's own terms", () => {
+    expect(restoredLine(0, notes)).toBe(
+      "Nothing was restored: the notes those changes were for are edited here already.",
+    );
+    expect(restoredLine(0, { objects: [], deleted: ["a"] })).toBe(
+      "Nothing was restored: the notes those changes were for are edited here already.",
+    );
+    expect(restoredLine(0, setting)).toBe(
+      'Nothing was restored: this tour\'s "needs no GPS" setting is changed here already.',
+    );
+    expect(restoredLine(0, { ...setting, objects: [pin("a")] })).toBe(
+      "Nothing was restored: the notes and the setting those changes were for are changed here already.",
+    );
   });
 });

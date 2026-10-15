@@ -2338,13 +2338,20 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   const warnings = page.locator("#no-gps-warnings");
   await expect(setting).not.toBeChecked();
   await expect(warnings).toBeHidden();
+  // The live region is empty, never `hidden` (M1b-2 milestone review #5):
+  // one shown and filled in the same task is commonly not announced.
+  await expect(warnings).not.toHaveAttribute("hidden");
   await setting.check();
   await expect(page.locator("#save-status")).toHaveText("1 change not saved");
   await expect(warnings).toHaveText(
     '2 stations have no printed code: "Old well" and "Station 3". Without location, visitors reach them only by tapping "I\'m here - play the story" once they stand there.',
   );
+  const line = await warnings.locator("p").first().elementHandle();
   await page.locator("#save-btn").click();
   await expect(page.locator("#save-status")).toHaveText("Saved to nogps.zip");
+  // The save's refresh drew the same words: the node stays, so a screen
+  // reader does not announce the warning again.
+  expect(await line?.evaluate((node) => node.isConnected)).toBe(true);
   expect(await savedManifest(page, "nogps.zip")).toMatchObject({
     version: 2,
     minor: 2,

@@ -37,21 +37,33 @@ editor's own namespace, one tab at a time. Design:
     resolves `{ offer, superseded, backedUp }`: `offer` (`objects`,
     `deleted`, `settings?` - the record when the file does not carry it,
     `text` from `restoreOfferText`, changes and deletions named apart, a
-    changed setting counted as a change) or null; `superseded` - `supersededLine(n, "in this browser")`
-    or null. Awaited before the tour shows.
+    changed setting counted as a change and NAMED with its value - "It is
+    "This tour needs no GPS" turned on." alone, "One of the changes is
+    ..." beside notes, M1b-2 milestone review #3) or null; `superseded` -
+    `supersededLine(n, "in this browser")` or null. Awaited before the
+    tour shows.
   - `restored()` - the session applied the offer (its writes rewrote what
     it applied).
   - `discard()` - "Delete it": the offer's ids, minus those written since
-    the open, rejected in the meta (the commit point), then removed; false
-    when the meta write did not land (the offer comes back next time).
+    the open, rejected in the meta (the commit point), then the offered
+    settings record removed (awaited, unless the setting was changed since
+    the open) and the ids' files removed; false when the meta write or the
+    settings removal did not land - the meta is put back and the offer
+    re-armed, so a key move before the next open still carries it (M1b-2
+    milestone review #4).
   - `writes().built(written)` - a save was built: each pending record's version in
     the written manifest (as a reader parses it, `manifestAsRead`) joins its
-    base's `written` list.
+    base's `written` list; the setting's keep is decided again against the
+    build's value.
   - `writes().landed(written, fileKey)` - an in-place write landed: pending changes
     the file now carries clear, the file's versions become the `seen`
-    source; when `fileKey` is another key, the draft moves to it
-    synchronously.
+    source, the setting's keep is decided again; when `fileKey` is another
+    key, the draft moves to it synchronously.
   - `backsUp()`, `close()`, `idle()`.
+- `restoredLine(count, offer)` - the line said once an offer was restored:
+  "N earlier change(s) is/are back - not saved yet.", or, when nothing came
+  back (live work won), why in the offer's own terms: the notes, this
+  tour's "needs no GPS" setting, or both (M1b-2 milestone review #6).
 - `editorDraftKey(fileKey)` - `editor:<fileKey>`; `NoBackupReason`,
   `EditorDraftDeps`, `EditorDraftOffer`, `EditorTourSettings` (`open`'s result type stays
   module-private).
@@ -121,11 +133,26 @@ editor's own namespace, one tab at a time. Design:
   landed, since the namespace names the tour; spent or unreadable, it goes;
   a landed write that carries it clears it; a key move carries it (and an
   unanswered offer's), and the old namespace's goes with it; "Delete it"
-  removes an offered one after the meta's commit point, never one changed
-  since the open. **No base:** a file that differs from a boolean record
-  holds the other value, which this browser saw or wrote, so the objects'
-  base rule would always offer it. Named: an ABA made elsewhere (on, then
-  off again) cannot be told apart and is offered.
+  removes an offered one after the meta's commit point, awaited, failing
+  the discard when it does not land, never one changed since the open.
+  **The value last set here is kept** (`settingsWanted`), whether or not
+  its record is, and the keep is decided again by each build and each
+  landed write (M1b-2 milestone review #1): turned on, a save started, and
+  turned off before the build was known, "off" first equals the opened
+  file and its record goes - the build's "on" then brings it back, so the
+  file says on, the draft says off, and a closed tab keeps "off" (in place,
+  on a key move, and as a download alike).
+  **No base, and what that costs** (milestone review #3; the first build of
+  this bullet claimed the other value was always one "this browser saw or
+  wrote", which does not hold): a file that differs from the record holds
+  the other value, but this browser cannot tell whether it saw it, wrote
+  it, or a colleague made it since - a file F' carrying "on" need not be
+  this browser's build. The offer therefore NAMES the setting and its
+  value, and the creator decides. Named, not covered: Restore of an offered
+  setting can undo a colleague's newer change when the creator does not
+  notice the named value; an ABA made elsewhere (on, then off again) cannot
+  be told apart and is offered. A version base for one boolean was
+  declined as heavier than that risk.
 - **Never throws to the page**; a write that did not land is `false` and
   the page hears it once (`noBackup`); the leave guard stays on.
 - **Not covered, named:** a carried record that did not land leaves the
@@ -164,7 +191,13 @@ note; a second tab; no storage and a failed write said once; the settings
 record (offered as a change, counted with the notes', spent when put back
 or when the file carries it, a build never put in place, a landed write
 clearing it and one made during it kept, key moves, "Delete it", a closed
-tour's write dropped, an unreadable record, a failed write said); the same tour
+tour's write dropped, an unreadable record, a failed write said); the
+settings record's edge walks (M1b-2 milestone review: a setting turned back
+while a save builds, in place, on a key move and as a download; the offer
+naming the setting and its value, alone and beside notes; "Delete it"
+done only once the record went, failing when its removal does not land,
+and re-arming the offer so a key move still carries it); `restoredLine`'s
+words for notes, the setting, and both; the same tour
 reopened in the same tab; a moved photo note and the undo of a delete of
 one (no bytes); the old namespace kept until the carried records landed,
 and kept when they did not; "Delete it" right after a key move; a closed

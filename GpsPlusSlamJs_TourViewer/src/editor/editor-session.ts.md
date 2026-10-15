@@ -31,7 +31,9 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
     written). The phone's Finish keeps the flag the same way: the rebuild
     spreads the opened manifest (`finish-rebuild.ts`).
   - `noGpsCheck()` - `no-gps-check.ts`'s `checkNoGps` over the open
-    tour's stations and codes: what the setting's warnings are about.
+    tour's stations and codes: what the setting's warnings are about (the
+    code-less stations, the stations on a code the viewer cannot use, and
+    whether a code can place the tour).
   - `editText(id, text)` - `pinTextEdit`'s outcome (`edited`, `unchanged`,
     `refused` with the phone's sentence; `refused` with `NOT_IN_TOUR` for an
     id the tour no longer carries).

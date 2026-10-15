@@ -1,12 +1,17 @@
 /**
  * Why these tests matter (QR-first M1b-2, owner decision 2026-10-14 "code-
  * less stations without location"): a creator who marks a tour "needs no
- * GPS" takes the location question away from every visitor. Two things
+ * GPS" takes the location question away from every visitor. Three things
  * then go wrong silently, and the editor is the only place that can say so
  * before a visitor finds out on site:
  *
  * - a station without a printed code is reached only by the visitor's own
  *   "I'm here - play the story" tap, so the creator must know WHICH;
+ * - a station on a code the viewer can never lock (no printed size, or not
+ *   among the tour's codes) is unreachable without location: the tracker
+ *   never solves a code without a size, a station with a code is found
+ *   only by that code's lock, and "I'm here" is not offered for it (M1b-2
+ *   milestone review #2) - visitors can only skip it;
  * - a tour none of whose codes can place it (no level with a printed size
  *   and a stored position) does not get the flag at all: the viewer asks
  *   for the location anyway (`visitor-screen.ts` `tourCodesUsable`, r857
@@ -57,6 +62,7 @@ describe("checkNoGps", () => {
     // rail names it (`editor-model.ts` `stationTitle`).
     expect(check).toEqual({
       codeless: ["The column", "Station 3"],
+      unlockable: [],
       codesPlace: true,
     });
   });
@@ -83,9 +89,12 @@ describe("checkNoGps", () => {
     ).toBe(true);
   });
 
-  it("agrees with the viewer's own rule for any set of levels", () => {
+  it("tripwire: stays wired to the viewer's own rule for any set of levels", () => {
     // Why (DEC-H3): the editor's warning and the viewer's decision must
-    // never disagree, or the editor promises what the viewer refuses.
+    // never disagree. This compares `checkNoGps` with the very function it
+    // calls, so it cannot catch a wrong rule - only a rewiring that stops
+    // calling it, or a changed "unreadable" argument. The fixed cases
+    // below say what the rule IS (M1b-2 milestone review #7).
     const qr = fc.record(
       {
         physicalSizeM: fc.double({ min: 0.05, max: 2, noNaN: true }),
@@ -103,6 +112,55 @@ describe("checkNoGps", () => {
     );
   });
 
+  // Why (M1b-2 milestone review #2, #7): fixed cases of what the viewer
+  // does with a station's code, read from its own code: the tracker
+  // blocks the solve without a printed size (`qr-tracking-controller.ts`;
+  // the Tour Viewer passes no `resolveSizeM`), a station with a code is
+  // found only on that code's lock (`station-run.ts` `codeLocked`), and
+  // "I'm here" is refused for it (`station-guide.ts` `hereOffered`). A
+  // code with a size but no position still locks and finds its station.
+  it.each([
+    {
+      name: "a usable code (size and position)",
+      levels: [["c", USABLE]] as [string, QrLevel][],
+      codesPlace: true,
+      unlockable: [] as string[],
+    },
+    {
+      name: "a code with a position and no size",
+      levels: [["c", level({ geo: AT })]] as [string, QrLevel][],
+      codesPlace: false,
+      unlockable: ["On c"],
+    },
+    {
+      name: "a code with a size and no position",
+      levels: [["c", level({ physicalSizeM: 0.2 })]] as [string, QrLevel][],
+      codesPlace: false,
+      unlockable: [] as string[],
+    },
+    {
+      name: "a code the tour does not carry (another one usable)",
+      levels: [["u", USABLE]] as [string, QrLevel][],
+      codesPlace: true,
+      unlockable: ["On c"],
+    },
+  ])("a station on $name", ({ levels, codesPlace, unlockable }) => {
+    const check = checkNoGps({
+      stations: [station("s", { code: "c" }, "On c")],
+      levels: new Map(levels),
+    });
+    expect(check).toEqual({ codeless: [], unlockable, codesPlace });
+  });
+
+  it("a tour without codes: its station is code-less, and nothing places it", () => {
+    expect(
+      checkNoGps({
+        stations: [station("s", { geo: AT }, "Bench")],
+        levels: new Map(),
+      }),
+    ).toEqual({ codeless: ["Bench"], unlockable: [], codesPlace: false });
+  });
+
   it("counts exactly the stations whose anchor has no code", () => {
     fc.assert(
       fc.property(fc.array(fc.boolean(), { maxLength: 8 }), (coded) => {
@@ -118,12 +176,18 @@ describe("checkNoGps", () => {
 
 describe("noGpsWarnings", () => {
   it("says nothing for a tour whose codes place it and whose stations all have one", () => {
-    expect(noGpsWarnings({ codeless: [], codesPlace: true })).toEqual([]);
+    expect(
+      noGpsWarnings({ codeless: [], unlockable: [], codesPlace: true }),
+    ).toEqual([]);
   });
 
   it("names one code-less station and how visitors still reach it", () => {
     expect(
-      noGpsWarnings({ codeless: ["The column"], codesPlace: true }),
+      noGpsWarnings({
+        codeless: ["The column"],
+        unlockable: [],
+        codesPlace: true,
+      }),
     ).toEqual([
       '1 station has no printed code: "The column". Without location, visitors reach it only by tapping "I\'m here - play the story" once they stand there.',
     ]);
@@ -131,17 +195,43 @@ describe("noGpsWarnings", () => {
 
   it("counts and lists several", () => {
     expect(
-      noGpsWarnings({ codeless: ["A", "B", "C"], codesPlace: true }),
+      noGpsWarnings({
+        codeless: ["A", "B", "C"],
+        unlockable: [],
+        codesPlace: true,
+      }),
     ).toEqual([
       '3 stations have no printed code: "A", "B" and "C". Without location, visitors reach them only by tapping "I\'m here - play the story" once they stand there.',
     ]);
   });
 
+  it('names the stations on a code the viewer cannot use apart, and never with "I\'m here"', () => {
+    // Why (M1b-2 milestone review #2): "I'm here" is refused for a station
+    // with a code, so the only way past it without location is the skip.
+    expect(
+      noGpsWarnings({ codeless: [], unlockable: ["Gate"], codesPlace: true }),
+    ).toEqual([
+      '1 station is on a printed code the viewer cannot use (it has no printed size, or is not in this tour): "Gate". Without location, visitors can only skip it.',
+    ]);
+    const both = noGpsWarnings({
+      codeless: ["Well"],
+      unlockable: ["Gate", "Tower"],
+      codesPlace: true,
+    });
+    expect(both).toEqual([
+      '1 station has no printed code: "Well". Without location, visitors reach it only by tapping "I\'m here - play the story" once they stand there.',
+      '2 stations are on a printed code the viewer cannot use (it has no printed size, or is not in this tour): "Gate" and "Tower". Without location, visitors can only skip them.',
+    ]);
+    expect(both[1]).not.toContain("I'm here");
+  });
+
   it("says the setting does not hold when no code can place the tour, and only that", () => {
     // Why: without a usable code the viewer asks for the location anyway,
-    // so visitors reach the code-less stations by GPS - a line about them
-    // would describe a tour that never runs.
-    expect(noGpsWarnings({ codeless: ["A"], codesPlace: false })).toEqual([
+    // so visitors reach every station by GPS - a line about the code-less
+    // or the unlockable ones would describe a tour that never runs.
+    expect(
+      noGpsWarnings({ codeless: ["A"], unlockable: ["B"], codesPlace: false }),
+    ).toEqual([
       "None of this tour's printed codes can place it (a code needs its printed size and a measured position), so visitors will be asked for their location anyway.",
     ]);
   });
