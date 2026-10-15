@@ -21,33 +21,24 @@ both must hold for EVERY vote:
 
 - `VIEWER_SOFT_TRIM` - the frozen override set M0c adopted:
   `{ outlierFalloffEnabled: true, outlierFalloffRadiusMeters: 1,
-outlierFalloffExponent: 1, outlierRejectionEnabled: false }`, plus since
-  r863 `coldStartObservabilityWindow: 1` (the name predates it). Why the
-  compass key: the core's cold-start compass override gives the compass
-  full weight until its yaw window holds 9 solves, and a voted lock is ONE
-  solve, so the first device fix with a compass reading replaced a code's
-  rotation (the owner's bug, 2026-10-15). A 1-solve window leaves the
-  baseline term alone, which the 30 m ring meets at once, so the compass
-  weight is 0 from the first lock. A compass bearing applied by fixes
-  BEFORE the scan still eases out at the core's snap alpha (up to 2.47 deg
-  on the first lock, gone by the second); `coldStartSnapAlpha: 1` removed
-  that and was dropped in the r863 milestone review: it published every
-  later GPS-only yaw unsmoothed, 2-4 times the per-fix heading steps for
-  the rest of the entry at 5-8 m GPS noise. The harness numbers and what
-  would reverse them are in the constant's doc comment and in
+outlierFalloffExponent: 1, outlierRejectionEnabled: false }`. From r863 to r868 it also carried
+  `coldStartObservabilityWindow: 1` against the core's compass cold start
+  overwriting a code's rotation (the owner's bug, 2026-10-15); core 1.26.2
+  does that for every app (while code votes are stored, its cold start judges
+  the latest solve alone), so the key is gone and no compass key may return
+  without a measurement. Background:
   `GpsPlusSlamJs_Docs/docs/2026-10-15-0511-code-rotation-overwritten-by-compass-investigation.md`
-  (section 7).
-  - **Scope:** the key goes with the trim, so an entry that never votes
-    meets the core's own cold start; but from the entry's first vote on,
-    EVERY solve of the entry runs with it - the GPS-only ones after the
+  and `GpsPlusSlamJs/docs/2026-10-15-1246-qr-votes-one-rule-for-every-app-plan.md`.
+  - **Scope:** the keys go on right before the entry's first vote, so an
+    entry that never votes meets the core's own solver; from then on EVERY
+    solve of the entry runs with them - the GPS-only ones after the
     keep-alive handed back, and those after a tour switch - until the next
-    entry's start or a retraction clears it. A 1-solve window has no
-    spread, so the window's spread gate is off for the rest of the entry
-    too (an effect, not an aim); the baseline term still gates.
-  - **The cost of trusting one lock:** a bad first lock shows for one lock
-    interval in a code-first scan of 2+ locks, decays over about 5 locks
-    in a fix-first one, and after a 1-lock glance is held by the
-    keep-alive (it re-votes the latest voted lock's pose) until its fade.
+    entry's start or a retraction clears them.
+  - **The cost of trusting one lock** (the core rule has it as the key had):
+    a bad first lock shows for one lock interval in a code-first scan of 2+
+    locks, decays over about 5 locks in a fix-first one, and after a 1-lock
+    glance is held by the keep-alive (it re-votes the latest voted lock's
+    pose) until its fade.
 - (module-private) `RETRACT_BATCH_SIZE` (256) - the core's per-batch
   limit, the re-feed's batch size. The framework does not re-export the core's
   `MAX_GPS_EVENT_BATCH_SIZE`; a test reads it from the core the framework
