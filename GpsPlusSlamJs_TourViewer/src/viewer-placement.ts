@@ -21,7 +21,11 @@
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import { createQrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
-import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
+import {
+  calcRelativeCoordsInMeters,
+  GPS_POINT_SOURCE_DEVICE,
+  gpsPointSourceOf,
+} from "gps-plus-slam-app-framework/core";
 import {
   recordGpsEvent,
   recordQrDetection,
@@ -89,7 +93,8 @@ const CAPTURE_PLANE_DECODE_DIVISOR = 2;
 
 /**
  * The compass wait (owner decision 2026-10-14 after the M1 review, "wait
- * about a second before showing"): after a code set the session zero, the
+ * about a second before showing"): when a code places the tour before any
+ * device fix of the AR entry (`armCodeZeroWait`: on every entry and tour), the
  * first placement waits for this many voted locks of the code - about a
  * second at the 8 Hz lock cadence. Why 8: the compass memory's yaw window
  * holds 9 solves, and a scan of fewer voted locks leaves it under-full when
@@ -107,7 +112,7 @@ const CAPTURE_PLANE_DECODE_DIVISOR = 2;
 export const CODE_ZERO_WAIT_LOCKS = Math.min(8, MAX_VOTED_LOCKS_PER_CODE);
 
 /**
- * The compass wait's timeout (ms after the code set the zero): a glance of
+ * The compass wait's timeout (ms after the wait armed): a glance of
  * fewer locks still places. Harness `m1b-wait`: the swing ends about 8 s
  * after the first device fix, so 12 s shows a 1-3 lock glance at most 0.12
  * deg off when the first fix comes on time and at most 1.9 deg when it
@@ -274,9 +279,29 @@ export function createViewerPlacement(deps: {
     const geo = ctx.levelByText.get(text)?.qr.geo;
     if (geo === undefined) return;
     arStore.dispatch(setZeroPos({ lat: geo.lat, lon: geo.lon }));
-    // The compass wait (`CODE_ZERO_WAIT_LOCKS`): not without location,
-    // where no compass reading ever reaches the solve.
+  }
+
+  /**
+   * The compass wait (`CODE_ZERO_WAIT_LOCKS`) arms on the FIRST voted lock of
+   * every AR entry and every tour - called from the stable-pose gate after
+   * `zeroFromCode`, before that lock's votes, while `viewerVotedLocks` (reset
+   * by the AR exit and by a tour switch) is still 0 - when the code places
+   * the tour (it has geo) and no device fix is in the entry's GPS history.
+   * Not "when the code set the zero" (PR #624 review): the zero survives an
+   * AR exit (`resetGpsSessionData` keeps it) and a tour switch, while the
+   * alignment and the solver's cold-start yaw window are new in the next
+   * entry, so its first scan swung like the first entry's. Not in author
+   * mode, not without location (no compass reading ever reaches the solve),
+   * and not after a device fix in this entry (GPS has already been solving).
+   */
+  function armCodeZeroWait(text: string): void {
     if (authorMode || ctx.codesOnly) return;
+    if (ctx.viewerVotedLocks > 0 || ctx.codeZeroWaitUntilMs !== null) return;
+    if (ctx.levelByText.get(text)?.qr.geo === undefined) return;
+    const deviceFixed = selectGpsPositions(arStore.getState()).some(
+      (p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_DEVICE,
+    );
+    if (deviceFixed) return;
     ctx.cancelCodeZeroWait?.();
     ctx.codeZeroWaitUntilMs = now() + CODE_ZERO_WAIT_MS;
     ctx.cancelCodeZeroWait = seams.schedule(() => {
@@ -525,10 +550,14 @@ export function createViewerPlacement(deps: {
         // The same convergence gate minting uses (M4 review #3): the
         // controller skips the vote — budget untouched — while null.
         // A stable pose before any device fix sets the zero from the code
-        // (QR-first M1), before this frame's votes are built and dispatched.
+        // (QR-first M1), before this frame's votes are built and dispatched;
+        // the entry's and the tour's first one arms the compass wait.
         resolveStablePose: (text) => {
           const pose = fusedPose.resolve(text);
-          if (pose !== null) zeroFromCode(text);
+          if (pose !== null) {
+            zeroFromCode(text);
+            armCodeZeroWait(text);
+          }
           return pose;
         },
         recordDetection: (event) => {
@@ -839,7 +868,7 @@ export function createViewerPlacement(deps: {
     // Nothing is placed until the gate allows it (DEC-N3): the capture-spot
     // join below, the content here.
     if (!gateAllowsPlacement(ctx.scanGate)) return;
-    // After a code-set zero nothing is shown until the compass wait ends
+    // While the compass wait holds, nothing is shown until it ends
     // (`CODE_ZERO_WAIT_LOCKS`); its end calls this trigger again. The
     // placement stays as it is, so the line reads "Code found - placing the
     // tour..." meanwhile, not the tracking coaching.

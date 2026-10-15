@@ -469,9 +469,10 @@ export interface TourViewerSession {
   scanGate: ScanGate;
   /** Cancels the escape clock while the gate scans. */
   cancelEscapeClock: (() => void) | null;
-  /** While a code-set zero's compass wait holds the first placement back
+  /** While the compass wait holds the first placement back
    *  (viewer-placement `CODE_ZERO_WAIT_LOCKS`): when it times out (page
-   *  clock, ms); null otherwise. Session state. */
+   *  clock, ms); null otherwise. Armed on the first voted lock of each AR
+   *  entry and each tour before any device fix (`armCodeZeroWait`). */
   codeZeroWaitUntilMs: number | null;
   /** Cancels the compass wait's timeout. */
   cancelCodeZeroWait: (() => void) | null;

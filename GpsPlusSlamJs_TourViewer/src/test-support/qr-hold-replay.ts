@@ -483,8 +483,14 @@ export type ReplayEvent =
         readonly stampMs: number;
       };
     }
-  /** The moved-code veto took `text`'s votes back (D20). */
-  | { readonly kind: "veto"; readonly text: string }
+  /** The moved-code veto ignored `text` (D20) and, when `retracted`, took
+   *  every vote back; false where the phone had no vote sink and retracted
+   *  nothing (its recovery left no action in the recording). */
+  | {
+      readonly kind: "veto";
+      readonly text: string;
+      readonly retracted: boolean;
+    }
   /** The GPS history was reset outside a veto (an AR exit). */
   | { readonly kind: "reset" }
   /** Any other recorded action the store should see, dispatched as is. */
@@ -906,10 +912,11 @@ export function replayVotePath(
       case "veto":
         if (knobs.veto === "none") break;
         // viewer-placement's vetoMovedCode: ignore, stop its hold, take
-        // every vote back, give every other code its budget back.
+        // every vote back (only where the phone did), give every other code
+        // its budget back (always: the viewer resets it after either).
         ignored.add(event.text);
         if (kept?.text === event.text) keepAlive?.stop();
-        sink?.retractVotes();
+        if (event.retracted) sink?.retractVotes();
         budget.reset();
         break;
       case "reset":

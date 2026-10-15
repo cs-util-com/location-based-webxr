@@ -105,12 +105,21 @@ recording. Its own module since the flows plan M6.
     code placed the tour (the gate passed on a voted lock of a trusted code;
     QR-first M1, §7 #9: on votes alone the tracking-quality report reads
     `degraded`, its smoothed convergence score having seen too few
-    snapshots); until then sets `waiting-ready`. **After a code-set zero
-    it also waits for the compass** (owner decision after the M1 review,
-    "wait about a second before showing"): nothing is placed - neither the
-    content nor the photos, by the trigger or a voted lock - until the
-    code has `CODE_ZERO_WAIT_LOCKS` (8) voted locks or
-    `CODE_ZERO_WAIT_MS` (12 s) passed since the zero; the lock or the
+    snapshots); until then sets `waiting-ready`. **When a code places the
+    tour before any device fix, it also waits for the compass** (owner
+    decision after the M1 review, "wait about a second before showing"):
+    nothing is placed - neither the content nor the photos, by the trigger
+    or a voted lock - until the code has `CODE_ZERO_WAIT_LOCKS` (8) voted
+    locks or `CODE_ZERO_WAIT_MS` (12 s) passed since the wait armed. It
+    arms (`armCodeZeroWait`, from the stable-pose gate after `zeroFromCode`)
+    on the first voted lock of EVERY AR entry and EVERY tour (read as
+    `viewerVotedLocks === 0`, which the AR exit and a tour switch both
+    reset), when the code has geo and the GPS history holds no device fix.
+    Not only where the code set the zero (PR #624 review): the zero survives an
+    AR exit (`resetGpsSessionData` keeps it) and a tour switch, but the next
+    entry's alignment and cold-start yaw window are new, so its first scan
+    swung like the first entry's; the old rule armed on the page's first
+    entry alone. The lock or the
     timeout (`seams.schedule`) that ends the wait places what it held back,
     the ring included, and reports the last locked code's station to the
     guide again (`hooks.stationCodeLocked`; the stations wait too, r857
@@ -121,10 +130,13 @@ recording. Its own module since the flows plan M6.
     without the code set the loading latch and dropped the ring of the lock
     that ended the wait, and a glance gets no later lock). A tour switch
     ends the wait with the tour (`archive-open.ts` teardown, r857 review
-    #9). Meanwhile the placement stays as it was, so the line
+    #9), and the new tour's first voted lock arms it again. Meanwhile the
+    placement stays as it was, so the line
     reads "Code found - placing the tour...". Not in author mode, not
-    without location (`ctx.codesOnly`: no compass reading reaches the
-    solve), and not when a device fix set the zero. Why the numbers
+    without location (`ctx.codesOnly`: no watch starts, so no compass
+    reading reaches the solve), and not when a device fix reached the GPS
+    history before the entry's (or the tour's) first voted lock; in the
+    first entry that is the fix that set the zero. Why the numbers
     (harness `m1b-wait` in `qr-vote-compass-batching.test.ts`, results
     in the M1 results doc): a scan of fewer than 8 voted locks leaves the
     compass memory's 9-solve yaw window under-full at the first compass
@@ -412,7 +424,11 @@ alone places the tour, and the compass wait - nothing shown during a
 lock, no wait without location or after a device-set zero; the stations
 wait too and are found when the wait ends by either path (r857 review
 #1); a recording that declines the join still gets the ring after the
-wait (r857 review #3).
+wait (r857 review #3); and the wait arms again on a second AR entry and
+for a tour opened inside one entry (8 locks, or the timeout), but not
+after a device fix in that entry (PR #624 review; the AR exit and the tour
+switch are mirrored in the test, their resets pinned by
+`ar-entry.test.ts` and `archive-open.test.ts`).
 
 `fused-pose-wiring.test.ts` - the votes' stable pose is the fused one (at
 the true rotation where single-frame poses scatter past the old average's

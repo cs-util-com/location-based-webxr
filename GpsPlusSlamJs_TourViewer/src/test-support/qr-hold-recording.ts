@@ -28,7 +28,9 @@
  *   when its dispatch returns, so the retraction, dispatched from inside
  *   that event's store notification, is recorded before it; its actions are
  *   not replayed (the engine's sink does the same retraction). A recovery
- *   that left no action at all is read from its `codeIgnored` entry alone.
+ *   that left no action at all is read from its `codeIgnored` entry alone,
+ *   as a veto that retracted nothing (`retracted: false`: the phone had no
+ *   vote sink), so the replay takes nothing back either.
  * - `gpsData/setAlignmentOverrides` with `null` outside a veto is an AR
  *   entry (`entry`): the sink's clear. A non-null one is the sink turning the
  *   soft trim on: set aside, the engine regenerates it.
@@ -113,11 +115,11 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
  *  overrides (keep-alive log entries in between are skipped). */
 function vetoBlocks(actions: readonly RecordedAction[]): {
   consumed: Set<number>;
-  vetoAt: Map<number, string>;
+  vetoAt: Map<number, { text: string; retracted: boolean }>;
   notes: string[];
 } {
   const consumed = new Set<number>();
-  const vetoAt = new Map<number, string>();
+  const vetoAt = new Map<number, { text: string; retracted: boolean }>();
   const notes: string[] = [];
   actions.forEach((a, i) => {
     if (a.type !== "tourViewing/codeIgnored" || !isObj(a.payload)) return;
@@ -163,7 +165,12 @@ function vetoBlocks(actions: readonly RecordedAction[]): {
         `veto at action ${String(i)}: no recovery actions before it, anchored at its own entry`,
       );
     }
-    vetoAt.set(block.length === 0 ? i : Math.min(...block), text);
+    // The phone retracted only when it left a recovery behind: an empty
+    // block is the sink-less fallback, where nothing was taken back.
+    vetoAt.set(block.length === 0 ? i : Math.min(...block), {
+      text,
+      retracted: block.length > 0,
+    });
   });
   return { consumed, vetoAt, notes };
 }
@@ -196,6 +203,7 @@ export function parseViewerRecording(
    *  with it, and the notes name the trigger. */
   let pendingVeto: {
     text: string;
+    retracted: boolean;
     snaps: { type: string; atMs: number; matrix: number[] }[];
     anchorsMs: number[];
   } | null = null;
@@ -204,7 +212,11 @@ export function parseViewerRecording(
     notes.push(
       `a veto placed after the GPS event that triggered it: ${trigger}`,
     );
-    events.push({ kind: "veto", text: pendingVeto.text });
+    events.push({
+      kind: "veto",
+      text: pendingVeto.text,
+      retracted: pendingVeto.retracted,
+    });
     const at = events.length - 1;
     for (const snap of pendingVeto.snaps)
       phoneAlignments.push({ afterEvent: at, ...snap });
@@ -223,9 +235,9 @@ export function parseViewerRecording(
 
   actions.forEach((a, i) => {
     const p = a.payload;
-    const vetoText = vetoAt.get(i);
-    if (vetoText !== undefined) {
-      pendingVeto = { text: vetoText, snaps: [], anchorsMs: [] };
+    const veto = vetoAt.get(i);
+    if (veto !== undefined) {
+      pendingVeto = { ...veto, snaps: [], anchorsMs: [] };
       // A veto anchored at its own entry: that entry's snapshot and time
       // still go with it (the `codeIgnored` case below).
       if (a.type !== "tourViewing/codeIgnored") return;
@@ -398,7 +410,11 @@ export function parseViewerRecording(
   });
 
   if (pendingVeto !== null) {
-    events.push({ kind: "veto", text: (pendingVeto as { text: string }).text });
+    const { text, retracted } = pendingVeto as {
+      text: string;
+      retracted: boolean;
+    };
+    events.push({ kind: "veto", text, retracted });
     notes.push("a veto with no fix after it: placed at the end");
   }
 

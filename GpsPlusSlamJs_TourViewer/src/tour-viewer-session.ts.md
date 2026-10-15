@@ -63,8 +63,9 @@ lives here.
     encodes plus the capture pose the photo is placed with);
   - the scan gate and the placed content (viewer-placement.ts, M5):
     `codesOnly`, `scanGate`, `cancelEscapeClock`, `codeZeroWaitUntilMs` and
-    `cancelCodeZeroWait` (the compass wait after a code-set zero, reset at
-    the session's end), `contentRendered`, `contentAttempted`,
+    `cancelCodeZeroWait` (the compass wait, armed on the first voted lock of
+    each AR entry and tour before any device fix; reset at
+    the session's end and at a tour switch), `contentRendered`, `contentAttempted`,
     `contentError`; the hooks `startScanGate` / `resetScanGate` /
     `reconsiderScanGate(levels | "unavailable")`;
   - the visitor's stations (tour kit plan K4, `visitor-stations.ts`):

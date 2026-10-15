@@ -31,7 +31,7 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   (`ctx.placementUnsubscribe`) and a gate that allows it
   (`gateAllowsPlacement`, DEC-N3): the stations wait behind the scan gate
   like the tour's other content. They also wait behind the compass wait
-  after a code-set zero (`ctx.codeZeroWaitUntilMs === null`;
+  (`ctx.codeZeroWaitUntilMs === null`;
   `viewer-placement` `CODE_ZERO_WAIT_LOCKS`, r857 milestone review #1): a
   station on the scanned code was found and offered at lock 1, its figure
   and breadcrumbs then turning with the compass swing the wait hides. The
