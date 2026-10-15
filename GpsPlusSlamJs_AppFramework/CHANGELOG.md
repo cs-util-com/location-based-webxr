@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.29.0] - 2026-10-15
+
 ### Added
 
 - **`needsNoGps` in `tour.json`** (`ar/tour-manifest`, format version 2,
