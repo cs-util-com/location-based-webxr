@@ -44,7 +44,10 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     about, never a later Finish's (F19 review #2): every object a Finish of
     this load wrote gets its version in `written` added as SEEN (`addDraftBaseKey`, in the id's queue), so a delete
     made elsewhere afterwards is honoured instead of offered back. Resolves
-    whether every note landed (true with nothing to note); a note that did
+    whether every note landed (true with nothing to note - and true on a
+    phone without a draft store or before the tour's namespace exists,
+    where no later open could offer anything back, so a yes never says
+    "could not note it" there, PR #626 bot finding 3); a note that did
     not land leaves no base, which is never superseded (the safe side).
   - **Not covered (E2p review #3, #7).** A desktop delete is honoured only
     once a version of the record was SEEN hosted. Nothing tells the phone an

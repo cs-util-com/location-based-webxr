@@ -604,8 +604,11 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     builtNoGps.clear();
     if (s === null) return;
     // After its queued writes (E2c review #6): until they land, another
-    // tab taking the draft would read it half written.
-    letGo = s.store
+    // tab taking the draft would read it half written. Chained on the last
+    // hold's let-go, which a key move may still be running (PR #626 bot
+    // finding 2).
+    letGo = letGo
+      .then(() => s.store)
       .then(() => drained(s))
       .then(async () => {
         s.lock?.release();
@@ -656,7 +659,15 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       const stored = await readDraft(store, { photoBytesRequired: false });
       if (mine !== generation) return none;
       if (stored === undefined) {
-        void writeMeta(s);
+        // Said when it does not land, as the pruning write below is: the
+        // shared reader reads nothing without a meta, so the namespace
+        // would be unreadable while the page claimed a backup (PR #626 bot
+        // finding 1). Tracked with its line, so `idle()` covers the saying.
+        void track(
+          writeMeta(s).then((ok) => {
+            if (!ok) say(s, s.refused ?? "storage");
+          }),
+        );
         offer =
           settings === undefined
             ? null
@@ -886,16 +897,23 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // asks, no change is pending - must not find both half written.
       // When anything did not land the old one stays (its key is the
       // overwritten file's, so it is reached only by a copy of that file).
-      void track(
-        Promise.all(carried)
-          .then(async (oks) => {
-            if (oks.every(Boolean)) await empty(s);
-          })
-          .catch(() => undefined)
-          .finally(() => {
-            s.lock?.release();
-          }),
-      );
+      const moved = Promise.all(carried)
+        .then(async (oks) => {
+          if (oks.every(Boolean)) await empty(s);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          s.lock?.release();
+        });
+      void track(moved);
+      // The next open waits for the old key's hold to go, as after
+      // `close()`: the pre-save file reopened in this tab must not find
+      // this tab's own hold and say "another tab" (PR #626 bot finding 2).
+      letGo = letGo
+        .then(() => moved)
+        .then(async () => {
+          await s.lock?.released;
+        });
     },
 
     backsUp() {

@@ -58,7 +58,11 @@ built").
   open dialog closes); a hold that ends without one (typing reverted to
   what it was) is looked at again once per delay, so a due save never
   waits forever (E2b-2 milestone review #4). A `held` outcome is re-looked
-  at the same way.
+  at the same way, and keeps the max-wait anchor of the oldest unsaved
+  change (nothing was saved): a creator who never stops is still saved
+  within the max wait, plus one change interval per held attempt (PR #626
+  bot finding 4; before, each held attempt pushed the oldest change one
+  more max wait out).
 - A save that did not land pauses autosave until `saved()`: no write loop
   against a file that refuses it ("fail, change, fail" makes one attempt).
 - A save that says `saved` while the changes stay pending (the page's
@@ -89,7 +93,8 @@ autosave.poke(); // when the undo window closes
   max wait against a creator who never stops, a hold and its poke, one save
   at a time, fail-change-fail with no loop, a rejected save, an explicit
   failure and success, off/on, nothing pending, the states, a `held`
-  outcome, a stop during a save, the retry that is never a loop, the
+  outcome, a `held` outcome keeping the max-wait anchor (1-3 held in a
+  row, PR #626 bot finding 4), a stop during a save, the retry that is never a loop, the
   argument checks, a hold that ends without a poke (review #4), and
   `autosaveFits`'s boundary (review #3).
 - `autosave.property.test.ts`: the sweep - delays 0.5-10 s, max waits

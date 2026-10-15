@@ -111,9 +111,16 @@ editor's own namespace, one tab at a time. Design:
   closes, after that tour's queued writes landed (milestone review #6) -
   the meta writes and "Delete it"'s removals among them, so a close right
   after "Delete it" keeps the hold until the rejection landed (PR #622 bot
-  finding B).
+  finding B). A key move lets the old key's hold go once its carried
+  records landed, and the next open in this tab waits for that too (the
+  close's let-go is chained on it): the pre-save file reopened here never
+  finds this tab's own hold and says "another tab" (PR #626 bot finding 2).
 - **The no-backup line is about the tour open now**: a closed tour's late
-  failure does not use it up.
+  failure does not use it up. **Every meta write of an open is said when
+  it does not land**, the first one too (PR #626 bot finding 1): the
+  shared reader reads nothing without a meta, so a refused first meta
+  leaves the namespace unreadable, and `backsUp()` turns false with the
+  line.
 - **Writes per (namespace, id)** through one keyed chain, the meta's under
   its own key; a write to an id the meta rejects claims it first (files
   removed, meta rewritten without it), the phone's `creator-draft.ts` rule.
@@ -204,6 +211,8 @@ and kept when they did not; "Delete it" right after a key move; a closed
 tour's late write dropped; the hold kept until the queued writes landed;
 an edit claimed against the meta on disk when the pruning write was refused
 (PR #622 A); a close right after "Delete it" holding until its meta write
-landed (PR #622 B). A
+landed (PR #622 B); a refused first meta write said, and the backup no
+longer claimed (PR #626 1); the pre-save file reopened in this tab right
+after a key move, not "another tab" (PR #626 2). A
 scoped mutation pass (12 mutants of the rules above) killed all 12. The page's walks are in
 `playwright-tests/editor.spec.js` (the E2c block).

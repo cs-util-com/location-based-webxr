@@ -1233,3 +1233,42 @@ describe("restoredLine (M1b-2 milestone review #6)", () => {
     );
   });
 });
+
+/**
+ * Why (PR #626 bot findings 1 and 2): two ways the editor's draft claimed
+ * a backup it did not have, or refused one it did - a first meta write
+ * that did not land (the phone's `readDraft` reads nothing without a
+ * meta, so the whole namespace is unreadable), and a key move whose old
+ * hold went without the next open waiting for it.
+ */
+describe("createEditorDraft, the PR #626 bot findings", () => {
+  it("a first meta write that does not land is said, and the backup is no longer claimed", async () => {
+    const b = browser();
+    b.failMetaPuts = 1;
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    await draft.idle();
+    expect(draft.said).toEqual(["storage"]);
+    expect(draft.backsUp()).toBe(false);
+  });
+
+  it("after a key move, the pre-save file reopened in this tab waits for the old hold, never 'another tab'", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    const original = tour(pin("a"));
+    await draft.open(K1, original);
+    void draft.saveObject(pin("a", "saved"));
+    await draft.idle();
+    const written = tour(pin("a", "saved"));
+    draft.writes().built(written);
+    // The carried records are still being written when the reopen starts.
+    b.holdPuts = true;
+    draft.writes().landed(written, K2);
+    const reopening = draft.open(K1, original);
+    b.releasePuts();
+    const { backedUp } = await reopening;
+    expect(draft.said).toEqual([]);
+    expect(backedUp).toBe(true);
+    expect(draft.backsUp()).toBe(true);
+  });
+});

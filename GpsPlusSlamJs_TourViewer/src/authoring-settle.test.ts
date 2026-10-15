@@ -67,6 +67,7 @@ import { readPrintedText } from "./level-printed.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import { OUTCOME_HOLD_MS } from "./object-editing.js";
+import { UPLOAD_ASK_LABELS } from "./creator-handoff.js";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 import {
   correctedAlignment,
@@ -3200,12 +3201,13 @@ describe(
         })!;
       }
 
-      /** One page load: the tour as hosted now, the draft presented. */
+      /** One page load: the tour as hosted now, the draft presented;
+       *  `undefined` is a phone without a draft store. */
       async function load(
-        store: DraftFileStore,
+        store: DraftFileStore | undefined,
         objects: TourObject[],
       ): Promise<ReturnType<typeof authoring>> {
-        const a = authoring({ store });
+        const a = authoring(store === undefined ? {} : { store });
         await openFinishableTour(a);
         a.ctx.tourManifest = { ...createEmptyTourManifest(), objects };
         a.setup.presentDraftForTour(TOUR);
@@ -3335,7 +3337,7 @@ describe(
       // asks once; a yes makes the written versions SEEN hosted.
       describe("a download-only Finish, then a delete elsewhere (F19)", () => {
         async function placeAndFinish(
-          store: DraftFileStore,
+          store: DraftFileStore | undefined,
         ): Promise<ReturnType<typeof authoring>> {
           const a = await load(store, []);
           expect(a.dom.uploadAsk.hidden).toBe(true);
@@ -3370,6 +3372,20 @@ describe(
             );
           });
           expect(b.dom.draftOfferText.textContent).not.toMatch(/you placed/);
+        });
+
+        // Why (PR #626 bot finding 3): a phone without a draft store has
+        // nothing to note, so a yes cannot fail there - yet it said "This
+        // phone could not note it", a warning that cannot come true, and
+        // every later Save again asked again and failed again.
+        it("on a phone without a draft store, a yes is noted: nothing to note, nothing failed", async () => {
+          const a = await placeAndFinish(undefined);
+          a.dom.uploadYes.click();
+          await vi.waitFor(() => {
+            expect(a.dom.uploadYes.hidden).toBe(true);
+          });
+          await flush();
+          expect(a.dom.uploadAskText.textContent).toBe(UPLOAD_ASK_LABELS.noted);
         });
 
         it("with no yes, the pin is offered back as before", async () => {

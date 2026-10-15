@@ -188,7 +188,8 @@ export function createAutosave(deps: AutosaveDeps): Autosave {
     inFlight = true;
     due = false;
     // What changes from here on is the next save's (the session snapshots
-    // before its first await).
+    // before its first await). The anchor is kept for a "held" answer.
+    const anchor = firstUnsaved;
     firstUnsaved = null;
     show("saving");
     const mine = generation;
@@ -210,6 +211,10 @@ export function createAutosave(deps: AutosaveDeps): Autosave {
           return;
         }
         if (result === "held") {
+          // Nothing was saved: the oldest unsaved change keeps its max
+          // wait, never re-anchored at a change made after it (PR #626
+          // bot finding 4).
+          firstUnsaved = anchor ?? firstUnsaved ?? lastChange;
           hold();
           return;
         }

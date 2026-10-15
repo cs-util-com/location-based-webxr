@@ -336,6 +336,45 @@ describe("createAutosave", () => {
     expect(page.states).toEqual(["idle", "waiting", "saving", "idle"]);
   });
 
+  it("a save given back as held keeps the max-wait anchor: a creator who never stops is still saved within the max wait", async () => {
+    // Why (PR #626 bot finding 4): `run()` dropped the anchor of the first
+    // unsaved change before the page answered; a "held" answer then left
+    // the next deadline anchored at the first change AFTER it, so every
+    // held attempt pushed the oldest change one more max wait out. Swept
+    // over 1-3 held answers in a row; the bound is the max wait plus one
+    // change interval per held attempt (each retry waits for the next
+    // change or look, never a loop).
+    const interval = AUTOSAVE_DELAY_MS / 2;
+    for (const helds of [1, 2, 3]) {
+      let calls = 0;
+      let savedAt: number | null = null;
+      // Fake time, counted by the loop (never a clock read): the save lands
+      // within the step that starts at `elapsed`.
+      let elapsed = 0;
+      const autosave = createAutosave({
+        save: () => {
+          calls += 1;
+          if (calls <= helds) return Promise.resolve("held");
+          savedAt ??= elapsed;
+          return Promise.resolve("saved");
+        },
+        held: () => false,
+        pending: () => savedAt === null,
+      });
+      autosave.enable(true);
+      // A change every half delay: the quiet the delay waits for never comes.
+      for (; elapsed < 3 * AUTOSAVE_MAX_WAIT_MS; elapsed += interval) {
+        autosave.changed();
+        await vi.advanceTimersByTimeAsync(interval);
+      }
+      autosave.stop();
+      expect(savedAt, `${String(helds)} held`).not.toBeNull();
+      expect(savedAt ?? Infinity, `${String(helds)} held`).toBeLessThanOrEqual(
+        AUTOSAVE_MAX_WAIT_MS + helds * interval,
+      );
+    }
+  });
+
   it("refuses delays that are not positive numbers", () => {
     const deps = {
       save: () => Promise.resolve("saved" as const),

@@ -929,6 +929,11 @@ export function wireCreatorDraft(deps: {
       }
     },
     uploaded: async (written) => {
+      // No draft here (no persistence, or no tour's namespace yet): there
+      // is nothing a later open could offer back, so nothing to note and
+      // nothing failed - never "could not note it", asked again on every
+      // Save again (PR #626 bot finding 3).
+      if (draftStore === undefined || draftTourUrl === null) return true;
       // The file asked about: an earlier Finish's objects are in it too, in
       // the version the creator just said is hosted (a later Finish carries
       // them on); an object absent from it is not noted. As a reader of
