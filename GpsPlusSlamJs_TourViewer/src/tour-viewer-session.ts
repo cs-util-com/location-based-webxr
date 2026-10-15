@@ -147,6 +147,11 @@ export interface TourViewerHooks {
   /** The open tour's codes arrived: the print step continues their
    *  numbering (polish round M0b). */
   presentTourCodes(): void;
+  /** The open tour's levels settled - read, or their read failed
+   *  (`levelsUnreadable`): the visitor screen's line and its "needs no
+   *  GPS" start follow whether a code can place the tour (r857 review #4,
+   *  #5). */
+  presentTourLevels(): void;
   /** The open tour's manifest arrived (null: no tour any more): the
    *  visitor's start page shows its name, its subline and its cover,
    *  read from the zip by its archive path (polish round M4a). */
@@ -216,6 +221,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     presentLocalTour: () => undefined,
     presentUnverifiedLink: () => undefined,
     presentTourCodes: () => undefined,
+    presentTourLevels: () => undefined,
     presentTourInfo: () => undefined,
     finishFromAr: () => false,
     resetFinishStep: () => undefined,
@@ -243,6 +249,10 @@ export interface TourViewerSession {
    *  (`TourSession.levelTexts`): what the hosted zip holds for each code
    *  (code book plan M1). */
   currentLevelTexts: ReadonlyMap<string, string> | null;
+  /** The open tour's levels could not be read (their load rejected): they
+   *  never come, so the tour has no usable code (`tourCodesUsable`, r857
+   *  review #4). Reset when the tour closes. */
+  levelsUnreadable: boolean;
   /** The open tour's `tour.json` (null: none, or not loaded yet). The
    *  finish step writes it back, so content already in the zip survives a
    *  re-measure. */
@@ -332,6 +342,9 @@ export interface TourViewerSession {
    *  R7): a second Finish rebuilds from this zip, so its list starts there. */
   rebuiltZip: {
     blob: Blob;
+    /** The tour.json this zip carries: what a yes to "did you upload
+     *  it?" notes (F19). */
+    written: TourManifest;
     filename: string;
     signedManifest?: SignedTourManifest;
     /** A save delivered it (UI round 1, U2: the leave guard). */
@@ -453,9 +466,19 @@ export interface TourViewerSession {
   joinDeclined: boolean;
 
   // --- the scan gate and the placed content (viewer-placement.ts, M5) ------
+  /** This AR entry runs without location (QR-first M1b-1): the visitor
+   *  declined it, so no GPS fix will come; the gate offers no GPS escape. */
+  codesOnly: boolean;
   scanGate: ScanGate;
   /** Cancels the escape clock while the gate scans. */
   cancelEscapeClock: (() => void) | null;
+  /** While the compass wait holds the first placement back
+   *  (viewer-placement `CODE_ZERO_WAIT_LOCKS`): when it times out (page
+   *  clock, ms); null otherwise. Armed on the first voted lock of each AR
+   *  entry and each tour before any device fix (`armCodeZeroWait`). */
+  codeZeroWaitUntilMs: number | null;
+  /** Cancels the compass wait's timeout. */
+  cancelCodeZeroWait: (() => void) | null;
   /** The tour's `tour.json` objects, rendered after the gate. */
   contentRendered: RenderedTourObjects | null;
   /** Whether this session already attempted the content placement. */
@@ -510,6 +533,7 @@ export function createTourViewerSession(): TourViewerSession {
     session: null,
     currentLevels: null,
     currentLevelTexts: null,
+    levelsUnreadable: false,
     tourManifest: null,
     tourManifestStatus: "settled",
     scanEntries: new Set(),
@@ -565,8 +589,11 @@ export function createTourViewerSession(): TourViewerSession {
     placementUnsubscribe: null,
     placementAttempted: false,
     joinDeclined: false,
+    codesOnly: false,
     scanGate: { kind: "idle" },
     cancelEscapeClock: null,
+    codeZeroWaitUntilMs: null,
+    cancelCodeZeroWait: null,
     contentRendered: null,
     contentAttempted: false,
   };

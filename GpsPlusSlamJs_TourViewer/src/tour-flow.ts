@@ -87,6 +87,9 @@ export interface ArStatusInput {
    *  visitor's line maps it to a plain cause, UI round 1). */
   arError?: string | null;
   cameraFrames: number;
+  /** The session runs without location (QR-first M1b-1): the codes place
+   *  the tour, no GPS fix will come. Absent: false. */
+  codesOnly?: boolean;
   tour: TourFlowTour;
   qr: {
     status: QrTrackingStatus | null;
@@ -100,6 +103,10 @@ export interface ArStatusInput {
     /** The code keep-alive's phase (authoring plan M2b): what the line
      *  says once the vote budget is spent. */
     hold?: KeepAlivePhase | null;
+    /** Device GPS fixes stored this session (votes not counted): with none
+     *  the hold line claims no countdown and no GPS (QR-first M1); with
+     *  fewer than one lock's ring, no hand-over (PR #620 review). */
+    deviceFixes?: number;
     /** A code the moved-code check ignores, vetoed or seen in this AR entry
      *  (authoring plan 2026-09-28-0953 §3.6, D20, M5c). */
     ignoredCode?: string | null;
@@ -132,7 +139,10 @@ export function contentSegment(content: ArStatusInput["content"]): string {
  *  through the framework's onboarding mapping so the threshold and the
  *  coaching copy stay one contract (DEC-H3). At the first GPS fix the
  *  alignment is the identity - no heading - so an earlier trigger would
- *  start the scene up to 180° wrong. */
+ *  start the scene up to 180° wrong. One exemption (QR-first M1): a code
+ *  that placed the tour (`viewer-placement.ts` `codePlacedTour()`) places
+ *  before this gate, and cannot be 180° wrong - a voted lock's ring
+ *  carries the code's saved heading, unlike a single GPS fix. */
 export function isPlacementReady(
   report: TrackingQualityReport | null,
 ): boolean {
@@ -263,7 +273,9 @@ export function arStatusLine(input: ArStatusInput): string {
       (qr === NO_PRINTED_CODES || qr === "Scanning for the printed code…"))
       ? ""
       : qr,
-    gateIgnored && qr === IGNORED_CODE_LINE ? "" : gateSegment(input.gate),
+    gateIgnored && qr === IGNORED_CODE_LINE
+      ? ""
+      : gateSegment(input.gate, input.codesOnly === true),
     gateScanning ? "" : placementSegment(placement, input.readiness),
     contentSegment(input.content),
     input.planesError === null ? "" : `images failed: ${input.planesError}`,

@@ -116,7 +116,9 @@ describe("visitorFusedHint", () => {
     ).toBe("Measuring the code: code not read clearly, move closer.");
   });
 
-  // Plan §67 #1: a stable pose that did not vote waits for the GPS zero.
+  // Plan §67 #1, QR-first M1: a stable pose no longer waits for a GPS fix
+  // (the code sets the zero itself), so the line says what happens next -
+  // the visitor once read "waiting for the first GPS fix" after a good scan.
   it("does not send the visitor walking when the pose is stable", () => {
     expect(
       visitorFusedHint({
@@ -124,7 +126,7 @@ describe("visitorFusedHint", () => {
         status: "tracking",
         nowMs: 1000,
       }),
-    ).toBe("Code measured - waiting for the first GPS fix.");
+    ).toBe("Code measured - placing the tour.");
   });
 
   // Milestone review of b4c #1: one missed detection turns the status to

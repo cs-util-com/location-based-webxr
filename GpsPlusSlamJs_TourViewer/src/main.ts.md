@@ -24,7 +24,14 @@ listed in `index.html.md`. The concerns and their modules:
 - `link-check.ts` - the PDF's re-check of an unverified link, bound here
   to `openRemoteArchive` with the Drive proxy.
 - `visitor-screen.ts` - the visitor's consent screen and the location
-  gate (`wireVisitorScreen`).
+  gate (`wireVisitorScreen`), with `codesUsable` read from the open tour's
+  levels (`tourCodesUsable`: any lockable level, false once the levels'
+  read failed; M1b-1 review #2, r857 review #4) and `needsNoGps` from its
+  `tour.json` (Q-QF-1; `tourChanged()` from `presentTourInfo` and from
+  `presentTourLevels`, r857 review #5).
+- `location-permission.ts` - wraps the AR controller's location request
+  (`locationPermissionWithoutFix`) so a granted permission with no fix yet
+  starts AR (M1b-1 review #1).
 - `creator-setup.ts` - the creator's AR setup panel: measuring, finish
   (the zip rebuild), the download (`wireCreatorSetup`); `main.ts` builds
   the object list's DOM view (`createObjectListView` over `#object-list`,

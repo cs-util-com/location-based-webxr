@@ -263,3 +263,22 @@ describe("scanCardShown (polish round M4b, the owner's S1)", () => {
     expect(scanCardShown("visitor", "running", { kind: "idle" })).toBe(false);
   });
 });
+
+// Why (M1b-1 review #6): the ?debug=1 line said "placing by GPS" in the
+// codes-only mode, which has no GPS at all.
+describe("gateSegment without location (M1b-1)", () => {
+  it("never says GPS places the tour", () => {
+    for (const reason of [
+      "no-detector",
+      "no-lockable-level",
+      "levels-unavailable",
+    ] as const) {
+      const line = gateSegment({ kind: "not-required", reason }, true);
+      expect(line).not.toMatch(/GPS/);
+      expect(line).toMatch(/nothing can place the tour without location/);
+    }
+    expect(
+      gateSegment({ kind: "scanning", escapeOffered: true }, true),
+    ).not.toMatch(/GPS/);
+  });
+});

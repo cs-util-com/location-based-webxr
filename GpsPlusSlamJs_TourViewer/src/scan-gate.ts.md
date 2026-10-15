@@ -32,7 +32,11 @@ clock, the escape button).
   gate when the arrived levels cannot lock, or could not be read at all
   (`levels-unavailable`, its own copy); every other state stands.
 - `gateAllowsPlacement(gate)` - passed or not required.
-- `gateSegment(gate)` - the status line's segment.
+- `gateSegment(gate, codesOnly = false)` - the status line's segment
+  (`?debug=1`). With `codesOnly` (QR-first M1b-1 review #6) no line names
+  GPS: a waived gate (any reason but creator) reads "No code can be read
+  here - nothing can place the tour without location.", and the scanning
+  line never mentions continuing with GPS.
 
 ## A code the moved-code check ignores (D20, M5c; §7j #4)
 
@@ -52,7 +56,9 @@ clock, the escape button).
   plan review #1: keying on a vote left a visibly locked code unable to
   pass) placed the content through an alignment no code had corrected
   whenever the lock came before the first GPS fix or while the pose
-  converged, and said the code had worked (§2.2 B3). A lock that cannot
+  converged, and said the code had worked (§2.2 B3). (The first cause is
+  history: since QR-first M1 a stable code sets the session zero itself,
+  so its lock votes with no fix; a converging pose is the cause left.) A lock that cannot
   vote now keeps the gate scanning: the fused pose's hint says what it
   waits for, and the escape still offers GPS-only placement.
 - The escape has its own clock in the driver, independent of camera frames

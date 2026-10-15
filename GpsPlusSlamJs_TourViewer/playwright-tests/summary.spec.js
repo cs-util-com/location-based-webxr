@@ -232,12 +232,15 @@ test("a visitor's page never loads Leaflet", async ({ page }) => {
         await page.evaluate(() => {
           /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
         });
-        return page.getByTestId("ar-status").textContent();
+        return page.getByTestId("ar-status").getAttribute("data-gate");
       },
       { timeout: 20000 },
     )
-    // Seen and measured; the lock itself waits for GPS, which no map needs.
-    .toMatch(/Code (recognised|measured)/);
+    // Seen, measured and voted: since QR-first M1 the code sets the session
+    // zero itself, so its lock passes the scan gate without waiting for GPS
+    // (the line itself then reports tracking, which the fakes do not feed) -
+    // and none of it needs the map.
+    .toBe("passed-code");
   // The whole visit, AR and all, without one request for the map.
   expect(leafletRequests(urls)).toEqual([]);
   // ...while the page's modules did load (the check sees requests at all).

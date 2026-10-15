@@ -152,7 +152,8 @@ export interface ViewerPipelineDeps {
    *  2026-09-28-0953 D18; `viewer-vote-sink.ts`). */
   dispatchVotes(payloads: readonly RecordGpsEventPayload[]): void;
   /** Can the store ACCEPT votes right now? `recordGpsEvent` silently
-   *  no-ops until the session zero exists (first real GPS fix) — charging
+   *  no-ops until the session zero exists (the first device fix, or since
+   *  QR-first M1 the code's own geo once its pose is stable) — charging
    *  the budget for dropped votes would tell the visitor "Relocalized"
    *  after writing nothing (M4 milestone review #2). */
   canAcceptVotes(): boolean;
@@ -433,6 +434,12 @@ export function viewerStatusLine(input: {
   /** The keep-alive's phase now (`QrVoteKeepAlive.phase`); what the line
    *  says once the budget is spent. Absent or another code's: no claim. */
   hold?: KeepAlivePhase | null;
+  /** Device GPS fixes stored this session (votes not counted). 0: the
+   *  code alone places the tour (QR-first M1), the hold's clock means
+   *  nothing and no GPS takes over, so the line claims neither. Fewer than
+   *  one lock's ring ({@link VIEWER_VOTE_COUNT}): no hand-over claimed, the
+   *  countdown kept. Absent: not known, the hold lines as before. */
+  deviceFixes?: number;
 }): string {
   if (input.unknownCode !== null) {
     return `Code ${input.unknownCode} has no level in this tour.`;
@@ -448,7 +455,7 @@ export function viewerStatusLine(input: {
         ? ` Pose error ${input.reprojectionErrorPx.toFixed(1)} px.`
         : "";
     return input.votedLocks >= MAX_VOTED_LOCKS_PER_CODE
-      ? `${holdLine(input.hold, input.lockedText)}${quality}`
+      ? `${holdLine(input.hold, input.lockedText, input.deviceFixes)}${quality}`
       : `Relocalizing — ${String(input.votedLocks)} of ${String(MAX_VOTED_LOCKS_PER_CODE)} vote batches.${quality}`;
   }
   if (input.fusedHint != null) return input.fusedHint;
@@ -463,9 +470,27 @@ export function viewerStatusLine(input: {
 function holdLine(
   hold: KeepAlivePhase | null | undefined,
   lockedText: string,
+  deviceFixes: number | undefined,
 ): string {
   if (hold == null || hold.kind === "none" || hold.text !== lockedText) {
     return `Relocalized - all ${String(MAX_VOTED_LOCKS_PER_CODE)} vote batches cast.`;
+  }
+  // No device fix yet (QR-first M1 review #4): the keep-alive casts only per
+  // fix, so the votes keep their whole weight and nothing hands over.
+  if (deviceFixes === 0) {
+    return "Relocalized - the code places the tour (no GPS fix yet).";
+  }
+  // The phase runs on the clock, the hand-over per fix (PR #620 review):
+  // with fewer device fixes than one lock's ring, that ring alone outnumbers
+  // the GPS in the solve, so no hand-over is claimed. A floor where the
+  // claim is surely false, not the measured hand-over point (M0c's rest on
+  // pre-scan walks of 49 s and more); the countdown is true at any count.
+  if (
+    hold.kind !== "holding" &&
+    deviceFixes !== undefined &&
+    deviceFixes < VIEWER_VOTE_COUNT
+  ) {
+    return "Relocalized - the code places the tour (too few GPS fixes yet for GPS to take over).";
   }
   switch (hold.kind) {
     case "holding":

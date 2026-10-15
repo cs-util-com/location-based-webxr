@@ -2,10 +2,12 @@
  * Viewer mode (QR-pose plan M4) and the photo placement (geo-join plan,
  * flows plan M4); its own module since the flows plan M6. The default
  * passerby flow: the tour's photos are placed at their capture spots once
- * the tracking-quality phase reports ready (`tryPlaceTour`), scanned codes
- * relocalize the session via budgeted synthetic GPS votes and REFINE the
- * alignment under the placed planes, and the ring around a code is the
- * fallback for a tour without a recording.
+ * the tracking-quality phase reports ready or a code placed the tour
+ * (`tryPlaceTour`), scanned codes relocalize the session via budgeted
+ * synthetic GPS votes and REFINE the alignment under the placed planes, and
+ * the ring around a code is the fallback for a tour without a recording. A
+ * code scanned before any GPS fix sets the session zero itself (QR-first
+ * M1, `zeroFromCode`).
  *
  * A scanned code is also CHECKED after the scan (authoring plan
  * 2026-09-28-0953 §3.6, D20, M5c; `moved-code-check.ts`): on each new device
@@ -19,7 +21,11 @@
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import { createQrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
-import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
+import {
+  calcRelativeCoordsInMeters,
+  GPS_POINT_SOURCE_DEVICE,
+  gpsPointSourceOf,
+} from "gps-plus-slam-app-framework/core";
 import {
   recordGpsEvent,
   recordQrDetection,
@@ -28,6 +34,7 @@ import {
   selectQrFusedEntries,
   selectTrackingQuality,
   selectZeroReference,
+  setZeroPos,
   type RecordGpsEventPayload,
 } from "gps-plus-slam-app-framework/state";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
@@ -83,6 +90,37 @@ import type { ViewingLog } from "./viewing-log.js";
  *  are a GPU-memory hazard the owner's decision did not include
  *  (milestone review, finding 4). */
 const CAPTURE_PLANE_DECODE_DIVISOR = 2;
+
+/**
+ * The compass wait (owner decision 2026-10-14 after the M1 review, "wait
+ * about a second before showing"): when a code places the tour before any
+ * device fix of the AR entry (`armCodeZeroWait`: on every entry and tour), the
+ * first placement waits for this many voted locks of the code - about a
+ * second at the 8 Hz lock cadence. Why 8: the compass memory's yaw window
+ * holds 9 solves, and a scan of fewer voted locks leaves it under-full when
+ * the first compass reading arrives, so the compass gets full weight and
+ * the content turns by about its error. Harness `m1b-wait` (compass bias
+ * 10 / 30 deg, first fix with and without a compass reading, 0 / 3 / 8 s
+ * late): 8 is the smallest threshold with no swing after showing (0.04
+ * deg); 6 and 7 still show 6- and 7-lock scans turned by 13.8 / 33.8 deg.
+ * At or below the vote budget (10), so a spent budget is reached after it.
+ * A first fix with a compass reading DURING the scan still turns an 8-lock
+ * showing by up to 2.5 deg (9 locks: 0.19 deg; the r857 review's sweep).
+ * Coupled to the core's default window (9), which the published library
+ * does not export: a core change of it must re-run `m1b-wait` (sidecar).
+ */
+export const CODE_ZERO_WAIT_LOCKS = Math.min(8, MAX_VOTED_LOCKS_PER_CODE);
+
+/**
+ * The compass wait's timeout (ms after the wait armed): a glance of
+ * fewer locks still places. Harness `m1b-wait`: the swing ends about 8 s
+ * after the first device fix, so 12 s shows a 1-3 lock glance at most 0.12
+ * deg off when the first fix comes on time and at most 1.9 deg when it
+ * comes 3 s late; a first fix 8 s late still swings 30 deg at 1-3 locks
+ * (that needs 20 s). What would reverse 12: first fixes typically arriving
+ * more than about 3 s after the scan.
+ */
+export const CODE_ZERO_WAIT_MS = 12_000;
 
 type Scene = NonNullable<ReturnType<TourViewerSeams["getScene"]>>;
 
@@ -224,6 +262,92 @@ export function createViewerPlacement(deps: {
     });
   }
 
+  /**
+   * A code alone starts the tour (QR-first plan 2026-10-14-0445 §3 M1): when
+   * a code's pose is stable and the session has no zero yet, the zero is set
+   * at the code's stored geo, so its votes land at once. The zero is only the
+   * local tangent-plane origin and the votes are built around this point; a
+   * later device fix joins the same frame (the coordinator sets a zero only
+   * when the session has none). Called from the stable-pose gate, i.e. in the
+   * controller's order BEFORE the frame's votes are dispatched and before the
+   * moved-code check pins the code on the zero (§7 #9). A code without geo
+   * cannot vote and sets nothing. With no device fix at all a wrongly placed
+   * code cannot be detected: the moved-code check needs device fixes.
+   */
+  function zeroFromCode(text: string): void {
+    if (selectZeroReference(arStore.getState()) !== null) return;
+    const geo = ctx.levelByText.get(text)?.qr.geo;
+    if (geo === undefined) return;
+    arStore.dispatch(setZeroPos({ lat: geo.lat, lon: geo.lon }));
+  }
+
+  /**
+   * The compass wait (`CODE_ZERO_WAIT_LOCKS`) arms on the FIRST voted lock of
+   * every AR entry and every tour - called from the stable-pose gate after
+   * `zeroFromCode`, before that lock's votes, while `viewerVotedLocks` (reset
+   * by the AR exit and by a tour switch) is still 0 - when the code places
+   * the tour (it has geo) and no device fix is in the entry's GPS history.
+   * Not "when the code set the zero" (PR #624 review): the zero survives an
+   * AR exit (`resetGpsSessionData` keeps it) and a tour switch, while the
+   * alignment and the solver's cold-start yaw window are new in the next
+   * entry, so its first scan swung like the first entry's. Not in author
+   * mode, not without location (no compass reading ever reaches the solve),
+   * and not after a device fix in this entry (GPS has already been solving).
+   */
+  function armCodeZeroWait(text: string): void {
+    if (authorMode || ctx.codesOnly) return;
+    if (ctx.viewerVotedLocks > 0 || ctx.codeZeroWaitUntilMs !== null) return;
+    if (ctx.levelByText.get(text)?.qr.geo === undefined) return;
+    const deviceFixed = selectGpsPositions(arStore.getState()).some(
+      (p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_DEVICE,
+    );
+    if (deviceFixed) return;
+    ctx.cancelCodeZeroWait?.();
+    ctx.codeZeroWaitUntilMs = now() + CODE_ZERO_WAIT_MS;
+    ctx.cancelCodeZeroWait = seams.schedule(() => {
+      ctx.cancelCodeZeroWait = null;
+      endCodeZeroWait();
+    }, CODE_ZERO_WAIT_MS);
+  }
+
+  /** Whether the compass wait still holds the first placement back. */
+  function codeZeroWaiting(): boolean {
+    const until = ctx.codeZeroWaitUntilMs;
+    if (until === null) return false;
+    return ctx.viewerVotedLocks < CODE_ZERO_WAIT_LOCKS && now() < until;
+  }
+
+  /** The wait ended (enough locks, or its timeout): place what it held
+   *  back - the trigger's placement (a join that falls back to the ring
+   *  around the last locked code, `tryPlaceTour`), the ring a voted lock
+   *  would have placed (`placeOnVotedLock`), and the station on that code
+   *  (r857 review #1: a glance that ends by the timeout gets no further
+   *  lock to report it; a lock's own report after this finds it found). */
+  function endCodeZeroWait(): void {
+    if (ctx.codeZeroWaitUntilMs === null) return;
+    ctx.codeZeroWaitUntilMs = null;
+    ctx.cancelCodeZeroWait?.();
+    ctx.cancelCodeZeroWait = null;
+    tryPlaceTour();
+    const text = ctx.viewerLockedText;
+    if (text !== null) {
+      placeOnVotedLock(text);
+      const levelId = ctx.levelIdByText.get(text);
+      if (levelId !== undefined) hooks.stationCodeLocked(levelId);
+    }
+    hooks.renderArStatus();
+  }
+
+  /** Whether a code's votes placed this tour: the gate passed on a voted
+   *  lock of a trusted code (M5). The placement trigger then runs whatever
+   *  the tracking-quality phase reads (§7 #9) - which changes only a scan
+   *  whose one voted lock opened the gate, since every later voted lock
+   *  starts the placement itself (`onVotedLock`). */
+  const codePlacedTour = (): boolean =>
+    ctx.scanGate.kind === "passed" &&
+    ctx.scanGate.via === "code" &&
+    ctx.viewerVotedLocks > 0;
+
   const ignoredLevelIds = (): ReadonlySet<string> =>
     new Set(ctx.ignoredCodes.keys());
 
@@ -252,7 +376,9 @@ export function createViewerPlacement(deps: {
       levels: ctx.currentLevels,
       ignoredLevelIds: ignoredLevelIds(),
     });
-    if (ctx.scanGate.kind === "scanning") {
+    // Without location there is no GPS to continue with (QR-first M1b-1):
+    // no escape clock, so the button never shows.
+    if (ctx.scanGate.kind === "scanning" && !ctx.codesOnly) {
       // Its own clock (plan review #11): a device without frames must still
       // get the escape.
       ctx.cancelEscapeClock = seams.schedule(() => {
@@ -423,7 +549,17 @@ export function createViewerPlacement(deps: {
         canAcceptVotes: () => arStore.getState().gpsData?.zero != null,
         // The same convergence gate minting uses (M4 review #3): the
         // controller skips the vote — budget untouched — while null.
-        resolveStablePose: (text) => fusedPose.resolve(text),
+        // A stable pose before any device fix sets the zero from the code
+        // (QR-first M1), before this frame's votes are built and dispatched;
+        // the entry's and the tour's first one arms the compass wait.
+        resolveStablePose: (text) => {
+          const pose = fusedPose.resolve(text);
+          if (pose !== null) {
+            zeroFromCode(text);
+            armCodeZeroWait(text);
+          }
+          return pose;
+        },
         recordDetection: (event) => {
           lastDetectedText = event.text;
           lastDetectedPose = event.qrPoseWorld;
@@ -501,27 +637,37 @@ export function createViewerPlacement(deps: {
           // first voted lock arrives while the gate still scans; the ring
           // waits for the next budgeted vote instead of relying on that
           // ordering.
-          if (
-            gateAllowsPlacement(ctx.scanGate) &&
-            ctx.imagePlanes === null &&
-            !ctx.imagePlanesLoading
-          ) {
-            void placeTourImagePlanes(text).catch((err: unknown) => {
-              // The archive URL is known here — a Drive failure during
-              // plane loading deserves the Drive-specific message too
-              // (milestone review, finding 7).
-              ctx.viewerPlanesError = describeOpenError(
-                err,
-                ctx.session?.archive.url,
-              );
-              hooks.renderArStatus();
-            });
+          // The lock that ends the compass wait places what it held back.
+          if (ctx.codeZeroWaitUntilMs !== null && !codeZeroWaiting()) {
+            endCodeZeroWait();
           }
+          placeOnVotedLock(text);
           hooks.renderArStatus();
         },
       }),
     );
     return true;
+  }
+
+  /** A voted lock's placement: the ring (or the join) once the gate
+   *  allows it and the compass wait is over, unless planes are placed or
+   *  loading. */
+  function placeOnVotedLock(text: string): void {
+    if (
+      !gateAllowsPlacement(ctx.scanGate) ||
+      codeZeroWaiting() ||
+      ctx.imagePlanes !== null ||
+      ctx.imagePlanesLoading
+    ) {
+      return;
+    }
+    void placeTourImagePlanes(text).catch((err: unknown) => {
+      // The archive URL is known here — a Drive failure during plane
+      // loading deserves the Drive-specific message too (milestone review,
+      // finding 7).
+      ctx.viewerPlanesError = describeOpenError(err, ctx.session?.archive.url);
+      hooks.renderArStatus();
+    });
   }
 
   /**
@@ -703,9 +849,14 @@ export function createViewerPlacement(deps: {
   /**
    * The placement trigger: with a tour open and a viewer session running,
    * the capture join runs ONCE per session+tour as soon as the
-   * tracking-quality phase reports ready (DEC-F3). A later voted lock
-   * refines the alignment under the placed planes, or places the ring when
-   * the join declined. Author mode never places.
+   * tracking-quality phase reports ready (DEC-F3) - or a code placed the
+   * tour (`codePlacedTour`, QR-first M1: on votes alone that phase reads
+   * `degraded`). The rule matters little: every voted lock AFTER the gate
+   * starts the placement itself (`onVotedLock`), bypassing readiness; it
+   * decides only a scan whose one voted lock opened the gate, and this
+   * trigger's own latch (`placementAttempted`). A later voted lock refines
+   * the alignment under the placed planes, or places the ring when the join
+   * declined. Author mode never places.
    */
   function tryPlaceTour(): void {
     if (authorMode || ctx.placementUnsubscribe === null) return;
@@ -717,10 +868,18 @@ export function createViewerPlacement(deps: {
     // Nothing is placed until the gate allows it (DEC-N3): the capture-spot
     // join below, the content here.
     if (!gateAllowsPlacement(ctx.scanGate)) return;
+    // While the compass wait holds, nothing is shown until it ends
+    // (`CODE_ZERO_WAIT_LOCKS`); its end calls this trigger again. The
+    // placement stays as it is, so the line reads "Code found - placing the
+    // tour..." meanwhile, not the tracking coaching.
+    if (codeZeroWaiting()) return;
     tryPlaceContent(current);
     if (ctx.placementAttempted || ctx.imagePlanes !== null) return;
     if (ctx.imagePlanesLoading) return;
-    if (!isPlacementReady(selectTrackingQuality(arStore.getState()))) {
+    if (
+      !isPlacementReady(selectTrackingQuality(arStore.getState())) &&
+      !codePlacedTour()
+    ) {
       // Only over idle/waiting: a pre-ready lock whose ring failed leaves a
       // decline reason that the next dispatch must not overwrite
       // (milestone review, residual hardening).
@@ -744,7 +903,12 @@ export function createViewerPlacement(deps: {
       hooks.renderArStatus();
       return;
     }
-    void placeTourImagePlanes(null).catch((err: unknown) => {
+    // A code placed the tour: the join runs WITH its code, so a join that
+    // declines falls back to the ring in the same run (r857 review #3).
+    // Without it the run's loading latch dropped the ring of the lock that
+    // ended the compass wait, and a glance gets no later lock to retry.
+    const lockedText = codePlacedTour() ? ctx.viewerLockedText : null;
+    void placeTourImagePlanes(lockedText).catch((err: unknown) => {
       ctx.viewerPlanesError = describeOpenError(err, current.archive.url);
       hooks.renderArStatus();
     });
@@ -821,13 +985,15 @@ export function createViewerPlacement(deps: {
     const zero = selectZeroReference(arStore.getState());
     if (current === null) return;
     if (zero === null) {
-      // Unreachable in practice (`ready` needs GPS data, which sets the
-      // zero) but never silent and never final (M6 review #9): give the
-      // attempt back so the trigger retries on the next dispatch.
+      // Unreachable in practice (`ready` needs GPS data, and a code's
+      // votes need the zero it sets itself, QR-first M1), so this decline
+      // is effectively never shown; kept so it is never silent and never
+      // final (M6 review #9): give the attempt back so the trigger retries
+      // on the next dispatch.
       ctx.placementAttempted = false;
       ctx.placement = {
         kind: "declined",
-        reason: "waiting for the first GPS fix",
+        reason: "waiting for a GPS fix or a scanned code",
       };
       hooks.renderArStatus();
       return;

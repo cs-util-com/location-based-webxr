@@ -27,9 +27,12 @@ import type {
 } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import {
   createGpsPositionHandler,
+  poseReceived,
   qrFrameChanged,
   recordGpsEvent,
   setAlignmentOverrides,
+  selectTrackingQuality,
+  selectZeroReference,
   setZeroPos,
   startSession,
   type RecordGpsEventPayload,
@@ -48,6 +51,7 @@ import {
   VIEWER_VOTE_COUNT,
 } from "./qr-viewer-mode.js";
 import { SCAN_GATE_ESCAPE_MS } from "./scan-gate.js";
+import { isPlacementReady } from "./tour-flow.js";
 import type { TourViewerSeams } from "./seams.js";
 import {
   createTourViewerSession,
@@ -95,6 +99,13 @@ const LEVEL: QrLevel = {
   },
 };
 const CODE_POSE: Pose = { position: [0.5, 1.5, -2], rotation: [0, 0, 0, 1] };
+/** What the tracking-quality report reads after a scan with no device fix
+ *  (QR-first M1, §7 #9), measured 2026-10-14: `degraded`, confidence 0.44 -
+ *  the smoothed convergence score (0.44) has seen too few alignment
+ *  snapshots; residual consensus 1.0, GPS accuracy 0.91 (the votes' 5 m),
+ *  coverage 1 (the ring's points read as 1198 m "walked"). Not `ready`, so
+ *  the placement trigger must not depend on it once a code placed the tour. */
+const READINESS_ON_VOTES_ALONE = "degraded";
 
 function viewer() {
   captured.configs.length = 0;
@@ -212,7 +223,11 @@ function viewer() {
     over: Partial<RecordGpsEventPayload["rawGpsPoint"]> = {},
   ): void => {
     clock.nowMs = atMs;
-    if (fixes === 0) arStore.dispatch(setZeroPos(ZERO));
+    // The coordinator's rule: the first fix sets the zero only when the
+    // session has none (a code may have set it, QR-first M1).
+    if (arStore.getState().gpsData?.zero == null) {
+      arStore.dispatch(setZeroPos(ZERO));
+    }
     fixes += 1;
     placement.recordDeviceFix(fixPayload(stampMs, over));
   };
@@ -287,12 +302,14 @@ describe(
   "the scan gate passes on a lock that cast votes (M2b, plan §2.2 B3)",
   { timeout: 30_000 },
   () => {
-    it("stays scanning on a lock before the first GPS fix - the store could not take its votes", () => {
+    it("passes on a lock before the first GPS fix: the code sets the zero and votes (QR-first M1)", () => {
+      // Until M1 this lock cast nothing (the store took no votes before the
+      // first fix's zero) and the gate kept scanning.
       const v = viewer();
       expect(v.ctx.scanGate.kind).toBe("scanning");
       v.lock(T0);
-      expect(v.positions()).toHaveLength(0);
-      expect(v.ctx.scanGate.kind).toBe("scanning");
+      expect(v.positions()).toHaveLength(VIEWER_VOTE_COUNT);
+      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
     });
 
     it("stays scanning on a lock whose pose is still converging", () => {
@@ -310,6 +327,152 @@ describe(
       v.lock(T0 + 100);
       expect(v.positions().length).toBeGreaterThan(1);
       expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+    });
+  },
+);
+
+// Why (QR-first plan 2026-10-14-0445 §3 M1, §7 #9; the owner's field test:
+// "the scanned code IS the first GPS signal"): the session zero used to come
+// only from the first device fix, so a stable code before it cast nothing
+// and the visitor read "waiting for the first GPS fix". The zero is only a
+// local tangent-plane origin, so the code's own stored geo serves, and its
+// votes land at once. A device fix arriving later must join that frame, not
+// start another; the zero must exist BEFORE the votes are dispatched (the
+// sink's soft trim and the store need it) and before the moved-code check
+// pins the code (it pins nothing without a zero).
+describe(
+  "a code alone starts the tour (QR-first M1)",
+  { timeout: 60_000 },
+  () => {
+    it("sets the session zero at the code's stored geo and votes on a lock before any device fix", () => {
+      const v = viewer();
+      v.lock(T0);
+      expect(selectZeroReference(v.arStore.getState())).toEqual({
+        lat: LEVEL.qr.geo!.lat,
+        lon: LEVEL.qr.geo!.lon,
+      });
+      expect(v.positions()).toHaveLength(VIEWER_VOTE_COUNT);
+      for (const p of v.positions()) {
+        expect(gpsPointSourceOf(p)).toBe(GPS_POINT_SOURCE_SYNTHETIC_QR);
+      }
+      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+    });
+
+    it("sets the zero before the lock's votes, and the moved-code check pins the code on it", () => {
+      const v = viewer();
+      v.ctx.levelIdByText.set(TEXT, "m2b");
+      const log = dispatchLog(v);
+      v.lock(T0);
+      const types = log.types();
+      const zeroAt = types.indexOf("gpsData/setZeroPos");
+      const votesAt = types.indexOf("gpsData/recordGpsEventBatch");
+      expect(zeroAt).toBeGreaterThanOrEqual(0);
+      expect(votesAt).toBeGreaterThan(zeroAt);
+      // The soft trim went on between them (it needs the zero too).
+      expect(types.slice(zeroAt, votesAt)).toContain(
+        "gpsData/setAlignmentOverrides",
+      );
+      // A pin needs a session zero: one check runs, on the code.
+      expect(v.ctx.movedCodeChecks?.snapshot().map((c) => c.text)).toEqual([
+        TEXT,
+      ]);
+    });
+
+    it("leaves a zero that already exists where it is", () => {
+      const v = viewer();
+      v.fix(T0);
+      v.lock(T0 + 100);
+      expect(selectZeroReference(v.arStore.getState())).toEqual(ZERO);
+    });
+
+    it("does not set a zero from a lock whose pose is still converging", () => {
+      const v = viewer();
+      captured.stablePose = null;
+      v.lock(T0);
+      expect(selectZeroReference(v.arStore.getState())).toBeNull();
+      expect(v.ctx.scanGate.kind).toBe("scanning");
+    });
+
+    it("records a device fix after a code-set zero in the same frame (the page's composed handler)", () => {
+      const v = viewer();
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + i * 125);
+      }
+      const zero = selectZeroReference(v.arStore.getState());
+      v.arStore.dispatch(
+        startSession({
+          contextTag: "tour-viewer",
+          sessionName: "entry",
+          startTime: T0,
+        }),
+      );
+      const handler = createGpsPositionHandler({
+        store: v.arStore,
+        getArPose: () => ({
+          position: { x: 0.2, y: 1.4, z: -0.5 },
+          orientation: { x: 0, y: 0, z: 0, w: 1 },
+        }),
+        recordFix: v.placement.recordDeviceFix,
+      });
+      const before = v.positions().length;
+      const log = dispatchLog(v);
+      handler({
+        lat: ZERO.lat,
+        lon: ZERO.lon,
+        altitude: 401,
+        accuracy: 3,
+        altitudeAccuracy: null,
+        heading: null,
+        speed: null,
+        timestamp: T0 + 3000,
+      });
+      // No second zero: the fix lands in the code's frame, with its ring.
+      expect(log.types()).not.toContain("gpsData/setZeroPos");
+      expect(selectZeroReference(v.arStore.getState())).toEqual(zero);
+      expect(v.positions()).toHaveLength(before + 1 + VIEWER_VOTE_COUNT);
+      expect(gpsPointSourceOf(v.positions()[before]!)).toBe(
+        GPS_POINT_SOURCE_DEVICE,
+      );
+    });
+
+    // Why (§7 #9): the placement trigger reads the tracking-quality phase,
+    // which counts every stored point, votes included. This pins what it reads
+    // on votes alone, and that the trigger itself does not wait on it once a
+    // code placed the tour. Scope (M1 review #5): every voted lock AFTER the
+    // gate already starts the placement (onVotedLock), so this rule decides
+    // only a scan whose one voted lock opened the gate, and the trigger's
+    // own placementAttempted latch - which is what this test calls directly.
+    it("pins readiness on votes alone, and places once a code placed the tour", () => {
+      const v = viewer();
+      v.ctx.session = {
+        hasRecording: true,
+        archive: { url: "https://example.test/tour.zip" },
+      } as never;
+      v.ctx.tourManifestStatus = "settled";
+      v.ctx.placementUnsubscribe = () => undefined;
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + i * 125);
+      }
+      v.arStore.dispatch(
+        poseReceived({
+          pose: {
+            position: { x: 0, y: 1.4, z: 0 },
+            orientation: { x: 0, y: 0, z: 0, w: 1 },
+          },
+          sensorOrientation: { alpha: 0, beta: 0, gamma: 0, absolute: false },
+        }),
+      );
+      const report = selectTrackingQuality(v.arStore.getState());
+      expect(report?.diagnostics.observationsSeen).toBe(
+        MAX_VOTED_LOCKS_PER_CODE * VIEWER_VOTE_COUNT,
+      );
+      expect(report?.state).toBe(READINESS_ON_VOTES_ALONE);
+      // `degraded` is not ready: the trigger would wait without the rule.
+      expect(isPlacementReady(report)).toBe(false);
+      v.placement.tryPlaceTour();
+      // Attempted (the scene is not ready in this harness), not waiting.
+      expect(v.ctx.placementAttempted).toBe(true);
+      expect(v.ctx.placement.kind).not.toBe("waiting-ready");
     });
   },
 );
@@ -524,20 +687,20 @@ describe(
 // that never converges - leaves the visitor at the gate. The escape
 // is their way out; the e2e covers only a code that never locks, and the
 // wiring stubbed the clock away, so nothing proved a vote-less lock does
-// not cancel it.
+// not cancel it. Since QR-first M1 "no GPS zero yet" is no cause any more
+// (a stable code sets the zero itself), so both cases are a pose that never
+// converges - before any fix and after one.
 describe(
   "the gate's escape is offered to a code that locks but never votes (M2b review #8)",
   { timeout: 30_000 },
   () => {
     it.each([
-      ["no GPS zero yet", false],
+      ["a pose that never converges, before any GPS fix", false],
       ["a pose that never converges", true],
     ] as const)("%s", (_cause, withZero) => {
       const v = viewer();
-      if (withZero) {
-        v.fix(T0);
-        captured.stablePose = null;
-      }
+      if (withZero) v.fix(T0);
+      captured.stablePose = null;
       expect(v.scheduled).toHaveLength(1);
       expect(v.scheduled[0]!.delayMs).toBe(SCAN_GATE_ESCAPE_MS);
       const before = v.positions().length;
@@ -559,6 +722,28 @@ describe(
       v.clickEscape();
       expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "skipped" });
       expect(v.escapeButton.hidden).toBe(true);
+    });
+  },
+);
+
+// Why (QR-first M1b-1): without location there is no GPS to continue
+// with, so the scan gate offers no "Continue with GPS only" escape - its
+// clock is never started and the button stays hidden; the gate passes
+// on the code.
+describe(
+  "codes-only mode hides the GPS escape (QR-first M1b-1)",
+  { timeout: 30_000 },
+  () => {
+    it("starts no escape clock and keeps the button hidden; a code still passes the gate", () => {
+      const v = viewer();
+      v.ctx.codesOnly = true;
+      v.scheduled.length = 0;
+      v.placement.startScanGate();
+      expect(v.ctx.scanGate.kind).toBe("scanning");
+      expect(v.scheduled).toHaveLength(0);
+      expect(v.escapeButton.hidden).toBe(true);
+      v.lock(T0);
+      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
     });
   },
 );

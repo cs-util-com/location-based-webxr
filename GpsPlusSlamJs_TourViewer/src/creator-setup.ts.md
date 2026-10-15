@@ -69,7 +69,10 @@ were here. What stays is the Finish's side:
     6's replace steps (polish round M2).
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
-    and the e2e can supply one without OPFS.
+    and the e2e can supply one without OPFS; `main.ts` passes
+    `draft-store-root.ts`'s `openDraftStore(navigator, key)`. The object
+    list's four draft writes are `draft-actions.ts`'s `draftObjectWrites`
+    over the creator draft (M6 E2c).
   - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; }`
     - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
       `object-list.ts` view (`bind`, `render`); `main.ts` builds it over

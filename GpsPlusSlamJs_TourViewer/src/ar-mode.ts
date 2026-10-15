@@ -192,6 +192,10 @@ export interface ArEnableHooks {
    *  (follow-up F11). Only told; the restart is not dispatched to the
    *  solver (the 2026-10-02 follow-up's decision). */
   onTrackingRestarted?: () => void;
+  /** `"none"`: the framework's codes-only mode - no location permission,
+   *  no GPS watch (QR-first M1b-1, a visitor who declined location).
+   *  Absent: the framework's default, location required. */
+  location?: "none";
 }
 
 /**
@@ -232,6 +236,7 @@ export function buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig {
   return {
     container: hooks.container,
     requestHitTest: hooks.requestHitTest,
+    ...(hooks.location === undefined ? {} : { location: hooks.location }),
     // Camera ON (access + texture acquisition), depth OFF — in BOTH modes,
     // unless this entry is recorded (then depth is requested as an OPTIONAL
     // feature: a phone without it starts AR all the same, without depth).

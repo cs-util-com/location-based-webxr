@@ -35,9 +35,11 @@ import {
   draftObjectsNotYetHosted,
   draftObjectsPublished,
   draftObjectsSuperseded,
+  manifestAsRead,
   objectContentKey,
   restoredText,
   restoreOfferText,
+  supersededLine,
   type AuthoringDraft,
   type DraftBase,
   DRAFT_BASE_MAX_KEYS,
@@ -587,5 +589,39 @@ describe("a newer edit elsewhere wins over the phone's draft (M6 E2p)", () => {
     }
     expect(many?.written).toHaveLength(DRAFT_BASE_MAX_KEYS);
     expect(many?.written.at(-1)).toBe(`k${DRAFT_BASE_MAX_KEYS + 2}`);
+  });
+});
+
+describe("the editor's uses of the shared rules (M6 E2c)", () => {
+  // Why: the desktop editor's draft says the same line in its own place
+  // ("in this browser"); the phone's words stay as they were.
+  it("names where the replaced changes were kept", () => {
+    expect(supersededLine(1)).toBe(
+      "1 change on this phone was replaced by a newer one in the tour file.",
+    );
+    expect(supersededLine(2, "in this browser")).toBe(
+      "2 changes in this browser were replaced by newer ones in the tour file.",
+    );
+  });
+
+  // Why (E2p third review #5, lifted for the editor): the written
+  // versions are keyed as a READER of the written file sees them - the
+  // parser normalises a heading into [0, 360) - or a base never matches
+  // the version the file carries.
+  it("reads a manifest as a reader of the written file would", () => {
+    const manifest: TourManifest = {
+      ...createEmptyTourManifest(),
+      objects: [
+        { ...pin("a"), geo: { lat: 1, lon: 2, alt: 3, headingDeg: 370 } },
+      ],
+    };
+    const read = manifestAsRead(manifest);
+    expect(read.objects[0]?.geo).toMatchObject({ headingDeg: 10 });
+    // A manifest the serializer refuses is returned as it is.
+    const twice: TourManifest = {
+      ...createEmptyTourManifest(),
+      objects: [pin("a"), pin("a")],
+    };
+    expect(manifestAsRead(twice)).toBe(twice);
   });
 });

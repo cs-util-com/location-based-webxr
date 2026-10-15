@@ -35,8 +35,10 @@ hasVoted)` is forwarded from every controller lock (no detected-text
   `dispatchVotes` (one voted lock's whole ring at once - the viewer stores
   it as ONE `recordGpsEventBatch`, one solve per lock, D18 / M2e),
   `canAcceptVotes` (the
-  budget must NOT be charged while the store drops votes — before the
-  first GPS fix), `resolveStablePose` (the same convergence gate minting
+  budget must NOT be charged while the store drops votes - until the
+  session zero exists: the first device fix, or since QR-first M1 the
+  code's own geo once its pose is stable, so a stable code's lock is not
+  dropped for want of a fix), `resolveStablePose` (the same convergence gate minting
   uses - the fused pose since plan §60; the controller skips unconverged
   votes with the budget untouched, and the config stops asking once the
   code's vote budget is spent - ~10 ms per lock saved, §61 #6),
@@ -69,6 +71,17 @@ hasVoted)` is forwarded from every controller lock (no detected-text
   `hold` (the keep-alive's phase) decides the spent-budget line: "the code
   holds the placement for N s more", "the code's hold is fading; GPS takes
   over gradually", or "the code's hold has ended - GPS places the tour now";
+  with `deviceFixes: 0` (no device fix stored, QR-first M1 review #4)
+  "Relocalized - the code places the tour (no GPS fix yet)." instead - the
+  keep-alive's phase runs on the clock alone, so without a fix the
+  countdown means nothing and no GPS takes over; with fewer device fixes
+  than one lock's ring (`VIEWER_VOTE_COUNT`, PR #620 review) the fading
+  and ended lines become "Relocalized - the code places the tour (too few
+  GPS fixes yet for GPS to take over)." - that ring alone outnumbers the
+  GPS in the solve - while the countdown stays (true at any count). The
+  16 is a floor where the hand-over claim is surely false, not a measured
+  hand-over point (M0c's hand-overs rest on pre-scan walks of 49 s and
+  more); a measurement with a short GPS history could raise it;
   without a phase for the locked code it only says the batches were cast.
   It used to say "placement holds" unconditionally while the votes faded
   out of the solve (authoring plan §2.2 B1).

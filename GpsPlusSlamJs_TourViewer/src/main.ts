@@ -9,6 +9,8 @@
  */
 
 import { createEnableGpsArController } from "gps-plus-slam-app-framework/ar";
+import { requestGeolocationPermission } from "gps-plus-slam-app-framework/sensors";
+import { locationPermissionWithoutFix } from "./location-permission.js";
 import {
   createEmptyTourManifest,
   serializeTourManifest,
@@ -30,10 +32,8 @@ import {
   packFilesAsZip,
 } from "gps-plus-slam-app-framework/storage";
 
-import {
-  openDraftNamespace,
-  openRemoteArchive,
-} from "gps-plus-slam-app-framework/storage";
+import { openRemoteArchive } from "gps-plus-slam-app-framework/storage";
+import { openDraftStore } from "./draft-store-root.js";
 import { sanitizedPageUrl } from "gps-plus-slam-app-framework/storage/session-metadata-record";
 import { getBuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 
@@ -68,7 +68,7 @@ import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
 import { wireVisitorStations } from "./visitor-stations.js";
 import { relocationRequested } from "./tour-relocation.js";
-import { wireVisitorScreen } from "./visitor-screen.js";
+import { tourCodesUsable, wireVisitorScreen } from "./visitor-screen.js";
 import { wireVisitorStart } from "./visitor-start.js";
 import { wireFoldingLabel } from "./folding-label.js";
 import { pictureProblem } from "./image-cap.js";
@@ -138,7 +138,18 @@ const recording = createAuthoringRecording({
   holdFolder: (name) => holdRecordingFolder(navigator.locks, name),
 });
 const arStore = createTourViewerStore(recording);
-const arController = createEnableGpsArController(seams.controllerDeps);
+// The location permission enable() asks for is settled without waiting for
+// a fix (QR-first M1b-1 review #1): indoors a visitor who allowed location
+// got none, and the framework's requester failed enable() on every tap.
+const arController = createEnableGpsArController({
+  ...seams.controllerDeps,
+  requestGeolocationPermission: locationPermissionWithoutFix({
+    query: () => seams.queryGeolocationPermission(),
+    request:
+      seams.controllerDeps.requestGeolocationPermission ??
+      requestGeolocationPermission,
+  }),
+});
 const ctx = createTourViewerSession();
 ctx.debug = debug;
 // The gallery is a creator's debugging aid (polish round M2): shown only
@@ -353,6 +364,12 @@ const visitor = wireVisitorScreen({
   renderArEntry: () => {
     hooks.renderArEntry();
   },
+  // A tour with no code that can place it keeps the denial copy (M1b-1
+  // review #2); null while the levels are not known yet, false once their
+  // read failed (r857 review #4).
+  codesUsable: () => tourCodesUsable(ctx.currentLevels, ctx.levelsUnreadable),
+  // A tour marked "needs no GPS" never asks its visitor (Q-QF-1).
+  needsNoGps: () => ctx.tourManifest?.needsNoGps === true,
 });
 
 // The visitor's start page leads with the tour's name, a line and one of
@@ -374,6 +391,12 @@ if (mode === "visitor") {
   hooks.presentTourInfo = (manifest, loadImage) => {
     if (manifest === null) visitorStart.clear();
     else visitorStart.present(manifest, loadImage);
+    visitor.tourChanged();
+  };
+  // The levels settle after the manifest, often: the line follows whether
+  // a code can place the tour (r857 review #5).
+  hooks.presentTourLevels = () => {
+    visitor.tourChanged();
   };
 }
 
@@ -515,6 +538,10 @@ const setup = wireCreatorSetup({
     controls: element("setup-controls"),
     finishBlock: element("finish-block"),
     replaceHelp: element("replace-help"),
+    uploadAsk: element("upload-ask"),
+    uploadAskText: element("upload-ask-text"),
+    uploadYes: element<HTMLButtonElement>("upload-yes"),
+    uploadNo: element<HTMLButtonElement>("upload-no"),
     sizeInput,
     printSettings: element<HTMLDetailsElement>("print-settings"),
     printPanel,
@@ -544,24 +571,9 @@ const setup = wireCreatorSetup({
     // Editing placed objects (authoring plan 2026-09-28-0953 M4).
     objectList: createObjectListView(element("object-list"), document),
   },
-  // Crash-safe authoring (F13). OPFS, not a file handle: the File System
-  // Access pickers do not exist on Chrome for Android, which is the only
-  // device the creator's AR session runs on.
-  openDraftStore: async (key) => {
-    try {
-      // `getDirectory()` can REJECT rather than simply be absent - a
-      // private window, an embedded WebView, a non-secure origin.
-      // `openDraftNamespace` carries its own try/catch precisely so a
-      // caller never sees a throw, but this call sits outside it, and the
-      // rejection landed in a `void`-ed continuation with no handler.
-      const root = await navigator.storage?.getDirectory?.();
-      return root === undefined
-        ? undefined
-        : await openDraftNamespace(root, key);
-    } catch {
-      return undefined;
-    }
-  },
+  // Crash-safe authoring (F13), in this origin's private file system - the
+  // desktop editor's draft opens through the same wrapper (M6 E2c).
+  openDraftStore: (key) => openDraftStore(navigator, key),
 });
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;

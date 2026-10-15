@@ -129,12 +129,16 @@ export function gateAllowsPlacement(gate: ScanGate): boolean {
   return gate.kind === "passed" || gate.kind === "not-required";
 }
 
-/** The gate's segment of the status line. */
-export function gateSegment(gate: ScanGate): string {
+/** The gate's segment of the status line. `codesOnly`: the session runs
+ *  without location (QR-first M1b-1), so no line names GPS. */
+export function gateSegment(gate: ScanGate, codesOnly = false): string {
   switch (gate.kind) {
     case "idle":
       return "";
     case "not-required":
+      if (codesOnly && gate.reason !== "creator") {
+        return "No code can be read here - nothing can place the tour without location.";
+      }
       switch (gate.reason) {
         case "creator":
           return "";
@@ -147,7 +151,7 @@ export function gateSegment(gate: ScanGate): string {
       }
       break;
     case "scanning":
-      return gate.escapeOffered
+      return gate.escapeOffered && !codesOnly
         ? "Point the phone at the tour's code (on the poster) - or continue with GPS only below (less accurate)."
         : "Point the phone at the tour's code (on the poster).";
     case "passed":

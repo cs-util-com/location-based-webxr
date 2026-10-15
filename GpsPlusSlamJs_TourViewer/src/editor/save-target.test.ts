@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createSaveTarget,
+  holdEditorDraftLock,
   holdEditorLock,
   pickTourFile,
   InPlaceRefusal,
@@ -246,6 +247,25 @@ describe("holdEditorLock", () => {
     first.release();
     await first.released;
     expect((await holdEditorLock(locks, "tour.zip")).granted).toBe(true);
+  });
+
+  // Why (E2c plan review #6): the draft is keyed by the tour's CONTENT,
+  // the in-place save's lock by the file's NAME; each has its own lock,
+  // in the editor's family (the recordings' housekeeping never lists it).
+  it("holds a draft key apart from a file name, in the editor's family", async () => {
+    const { locks, held } = fakeLocks();
+    const file = await holdEditorLock(locks, "tour.zip");
+    const draft = await holdEditorDraftLock(locks, "editor:local-file:abc");
+    expect(file.granted && draft.granted).toBe(true);
+    expect(held).toEqual(
+      new Set([
+        "gps-plus-slam/tour-viewer-editor/tour.zip",
+        "gps-plus-slam/tour-viewer-editor/draft/editor:local-file:abc",
+      ]),
+    );
+    expect(
+      (await holdEditorDraftLock(locks, "editor:local-file:abc")).granted,
+    ).toBe(false);
   });
 
   it("grants without Web Locks, or when the request fails: nothing to coordinate", async () => {

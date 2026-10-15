@@ -23,6 +23,9 @@
  * - `/no-cors/tour.zip` - the archive WITHOUT CORS headers: a host that
  *   blocks browsers, which the "download the file and open it here"
  *   advice exists for (tour kit plan K0).
+ * - `/ranges-ok/no-gps-tour.zip` - the default tour with its `tour.json`
+ *   marked `needsNoGps` (version 2, minor 2; Tour Viewer QR-first, owner
+ *   decision Q-QF-1): its visitor is never asked for the location.
  * - `/ranges-ok/stations-tour.zip` - a `tour.json` version 2 with three
  *   stations (tour kit plan K4): one found by the fixture's printed code
  *   (a knight with a voice and a scene choice), one by walking to it (a
@@ -58,8 +61,10 @@ const TINY_PNG = Uint8Array.from(
 
 /** The default tour: images, an authored level, padding. `withLevel: false`
  *  is the PLAIN tour (flows plan M4) - images only, no recording and no
- *  printed code: the "nothing to place" case the status line must name. */
-async function buildZip({ withLevel = true } = {}) {
+ *  printed code: the "nothing to place" case the status line must name.
+ *  `needsNoGps`: the same tour, its `tour.json` marked as needing no GPS
+ *  (written at version 2, minor 2 - the revision that added the flag). */
+async function buildZip({ withLevel = true, needsNoGps = false } = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   await writer.add("session.json", new TextReader('{"kind":"e2e-tour"}'));
   for (let i = 0; i < 8; i += 1) {
@@ -101,7 +106,9 @@ async function buildZip({ withLevel = true } = {}) {
       "tour.json",
       new TextReader(
         JSON.stringify({
-          version: 1,
+          ...(needsNoGps
+            ? { version: 2, minor: 2, needsNoGps: true }
+            : { version: 1 }),
           objects: [
             {
               id: "fixturepin01",
@@ -436,6 +443,7 @@ async function buildBakedZip() {
 const zipBytes = await buildZip();
 const bakedZipBytes = await buildBakedZip();
 const plainZipBytes = await buildZip({ withLevel: false });
+const noGpsZipBytes = await buildZip({ needsNoGps: true });
 const recordingZipBytes = await buildRecordingZip();
 const stationsZipBytes = await buildStationsZip();
 const sampleZipBytes = new Uint8Array(
@@ -605,6 +613,10 @@ createServer((req, res) => {
   if (url.pathname === "/ranges-ok/sample-tour.zip") {
     // The committed sample tour (public/samples, owner decision S-D9).
     handleArchive(req, res, "ranges-ok", sampleZipBytes, '"e2e-sample-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/no-gps-tour.zip") {
+    handleArchive(req, res, "ranges-ok", noGpsZipBytes, '"e2e-no-gps-v1"');
     return;
   }
   if (url.pathname === "/ranges-ok/plain-tour.zip") {

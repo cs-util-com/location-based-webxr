@@ -33,6 +33,7 @@ import {
 } from "gps-plus-slam-app-framework/core";
 import {
   selectAlignmentMatrix,
+  selectZeroReference,
   setZeroPos,
   type RecordGpsEventPayload,
 } from "gps-plus-slam-app-framework/state";
@@ -267,7 +268,11 @@ function viewer(level: QrLevel = LEVEL, withCodeB = false) {
     gpsBias: readonly [number, number] = [0, 0],
   ): void => {
     clock.nowMs = T0 + s * 1000;
-    if (fixes === 0) arStore.dispatch(setZeroPos(ZERO));
+    // The coordinator's rule: a zero only when the session has none (a
+    // code may have set it, QR-first M1).
+    if (selectZeroReference(arStore.getState()) === null) {
+      arStore.dispatch(setZeroPos(ZERO));
+    }
     fixes += 1;
     const g = calcGpsCoords(ZERO, [n + gpsBias[0], 400, e + gpsBias[1]]);
     const payload: RecordGpsEventPayload = {
@@ -651,6 +656,87 @@ describe(
         v.logged.filter((a) => a.type === "tourViewing/codeRestored"),
       ).toHaveLength(1);
     });
+
+    // Why (QR-first plan 2026-10-14-0445 §7 #9): a code scanned before any
+    // device fix sets the session zero itself (M1), so a WRONG code - or a
+    // phone whose GPS is somewhere else entirely - is first seen in the
+    // fixes that follow. The check must still read it and take the votes
+    // back, and the retraction must keep the session's frame (the zero stays
+    // at the code: `resetGpsSessionData` keeps it). With no device fix at
+    // all nothing can tell a wrong code from a right one.
+    it("vetoes a code scanned before any fix when the fixes say the phone is 2 km away, and keeps the code's zero", () => {
+      const v = viewer();
+      captured.stablePose = raw(
+        [SAVED.positionNue[0], SAVED.positionNue[1], SAVED.positionNue[2]],
+        new Quaternion(...SAVED.rotationNue),
+      );
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + i * 100);
+      }
+      const codeZero = { lat: SAVED_GEO.lat, lon: SAVED_GEO.lon };
+      expect(selectZeroReference(v.arStore.getState())).toEqual(codeZero);
+      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+      let vetoAt = -1;
+      for (let s = 1; s <= 120 && vetoAt < 0; s += 1) {
+        const a = (2 * Math.PI * s) / 30;
+        v.fixAt(
+          s,
+          SAVED.positionNue[0] + 10 * Math.cos(a),
+          SAVED.positionNue[2] + 10 * Math.sin(a),
+          {},
+          [0, 2000],
+        );
+        if (v.ctx.ignoredCodes.has(LEVEL_ID)) vetoAt = s;
+      }
+      expect(vetoAt).toBeGreaterThanOrEqual(60);
+      expect(v.votesStored()).toBe(0);
+      expect(selectZeroReference(v.arStore.getState())).toEqual(codeZero);
+    });
+
+    // Why (QR-first M1 review #2): under M1 a code scanned before any fix
+    // has no device fix before its pin, so the check reads a wrong code only
+    // from the fixes that follow - at the earliest after the rule's 60 s of
+    // evidence (CODE_MOVE_RULE.minSpanS), and below the 20 m floor
+    // (MOVED_CODE_FLOOR_M) never: such a code holds the tour off by its
+    // offset until its hold hands over to GPS. Measured here: 15 m never,
+    // 25 m once 60 s of fixes are in.
+    it.each([
+      [15, false],
+      [25, true],
+    ] as const)(
+      "reads a code scanned before any fix and hung %i m from its saved spot: vetoed = %s",
+      (offsetM, vetoed) => {
+        const v = viewer();
+        captured.stablePose = raw(
+          [
+            SAVED.positionNue[0],
+            SAVED.positionNue[1],
+            SAVED.positionNue[2] + offsetM,
+          ],
+          new Quaternion(...SAVED.rotationNue),
+        );
+        for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+          v.lock(T0 + i * 100);
+        }
+        let vetoAt = -1;
+        for (let s = 1; s <= 120 && vetoAt < 0; s += 1) {
+          const a = (2 * Math.PI * s) / 30;
+          v.fixAt(
+            s,
+            SAVED.positionNue[0] + 10 * Math.cos(a),
+            SAVED.positionNue[2] + offsetM + 10 * Math.sin(a),
+          );
+          if (v.ctx.ignoredCodes.has(LEVEL_ID)) vetoAt = s;
+        }
+        const read =
+          vetoAt < 0
+            ? "never"
+            : vetoAt >= 60 && vetoAt < 75
+              ? "after 60-75 s"
+              : `at ${String(vetoAt)} s`;
+        expect(read).toBe(vetoed ? "after 60-75 s" : "never");
+      },
+    );
 
     it("never vetoes a code that hangs where it was saved", () => {
       captured.stablePose = null;

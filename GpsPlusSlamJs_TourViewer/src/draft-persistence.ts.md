@@ -23,6 +23,9 @@ are the framework's.
   base as seen hosted (`creator-draft.ts` passes the tour as opened). Both
   writes run at once; the result is the record's write only (E2p review
   #6). The page's object writes go through it.
+- `writeDraftBase(store, id, base)` (M6 E2c) - a whole `base:<id>`
+  written at once: the desktop editor's draft moving a record to a new
+  namespace with the versions it knows (`editor/editor-draft.ts`).
 - `addDraftBaseKey(store, id, list, key)` - one key added to `base:<id>`
   (JSON `{ seen, written }`), read and written in place, nothing written
   for a key already there; an update that does not land removes the base
@@ -97,8 +100,15 @@ are the framework's.
     tour;
   - **the sweep** - those are deletes that did not finish, and with
     `clear` uncalled nothing else would ever reclaim them.
-- `readDraft(store) -> Promise<StoredDraft | undefined>` -
-  `{ draft, photos, rejectedIds, visits, storedIds }`, or
+- `StoredDraft.rejectedOnDisk` (M6 E2c review #3) - EVERY id the meta on
+  disk rejects, files or not. Until the next meta write lands, the pruned
+  ids are still rejected on disk, so a change of one must be claimed
+  against this list, or the next read hides it.
+- `readDraft(store, { photoBytesRequired? }) -> Promise<StoredDraft | undefined>` -
+  (`photoBytesRequired: false`, M6 E2c review #1: the desktop editor keeps a
+  photo record without its bytes - they are in the file it opened; the
+  phone's default drops one) -
+  `{ draft, photos, rejectedIds, rejectedOnDisk, visits, storedIds }`, or
   `undefined` when there
   is no meta file. Objects the meta rejects are absent from `draft.objects`
   and `photos` whether or not their files are still on disk.

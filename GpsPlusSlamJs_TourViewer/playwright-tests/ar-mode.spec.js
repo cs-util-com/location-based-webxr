@@ -69,6 +69,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 const RANGES_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
+/** The same tour, its `tour.json` marked as needing no GPS (Q-QF-1). */
+const NO_GPS_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/no-gps-tour.zip";
 
 /** The visitor's way in (DEC-N1): a `?qr=` launch, which opens the tour on
  *  boot and shows the visitor screen instead of the setup. */
@@ -176,9 +178,15 @@ test("the plain page is the creator's setup; a ?qr= launch is the visitor's scre
   await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
 });
 
-test("a visitor who refuses the location stays on 'Allow location' with the settings hint; a granted-but-no-fix visitor may start (M2 review #1)", async ({
+test("a visitor who refuses the location starts the tour on codes alone: no location request, no GPS watch, no GPS escape, and a code places the tour (QR-first M1b-1)", async ({
   page,
 }) => {
+  // Why this matters (QR-first plan 2026-10-14-0445 §7 #10, §8 Q-QF-1): a
+  // denial used to end at "allow location in your settings" with no way in,
+  // though the tour's printed codes place it on their own (M1). The page
+  // must start AR without the location permission or a GPS watch, say what
+  // a tour without location needs, offer no "Continue with GPS only", and
+  // let a code pass the gate.
   await page.addInitScript(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;
     if (t) {
@@ -190,13 +198,141 @@ test("a visitor who refuses the location stays on 'Allow location' with the sett
   const button = page.getByTestId("enter-ar");
   await expect(button).toHaveText("Allow location", { timeout: 10000 });
   await button.click();
-  await expect(button).toHaveText("Allow location");
-  await expect(page.getByTestId("error")).toContainText(/browser settings/i);
-  // The same phone, now indoors: the permission is fine, the fix is not.
+  await expect(button).toHaveText("Start the tour");
+  await expect(page.getByTestId("error")).toBeEmpty();
+  const codesLine =
+    "Scan one of the tour's printed codes to start - without location, the codes place the tour.";
+  await expect(page.getByTestId("ar-hint")).toHaveText(codesLine);
+  // The visitor tapped "Block": the browser now reports the site denied, so
+  // the re-check before a codes-only start (review #3) does not ask again.
   await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.locationOutcome =
-      "unavailable";
+    /** @type {any} */ (window).__tourViewerTest.locationPermission = "denied";
   });
+  await button.click();
+  await expect(button).toHaveText("Exit AR");
+  const fakes = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    return {
+      permissionRequests: t.geolocationPermissionRequests,
+      gpsWatch: t.gpsCallback !== null,
+    };
+  });
+  expect(fakes).toEqual({ permissionRequests: 0, gpsWatch: false });
+  await expect(page.getByTestId("ar-status")).toContainText(
+    "Without location, the tour's printed codes place it - any of them will do.",
+  );
+  // No GPS to continue with: the escape's clock never offers it.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.fireTimers();
+  });
+  await expect(page.getByTestId("scan-escape")).toBeHidden();
+  // ...and the code places the tour on its own: the visitor's state reaches
+  // "placed", not only the gate (M1b-1 review #4).
+  await lockTheCode(page);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        await forceTrackingReady(page);
+        return page.getByTestId("ar-status").getAttribute("data-state");
+      },
+      { timeout: 20000 },
+    )
+    .toBe("placed");
+});
+
+test("a visitor of a tour that needs no GPS is never asked for the location and starts on codes alone (Q-QF-1)", async ({
+  page,
+}) => {
+  // Why this matters (owner decision Q-QF-1, the per-tour half): a creator
+  // marks a tour whose printed codes place it on their own (`tour.json`
+  // `needsNoGps`). Its visitor must see no "Allow location" step, no
+  // "your browser will ask" line, no permission request and no GPS watch -
+  // even with the permission still at "prompt" - and a code places it.
+  await page.addInitScript(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    if (t) t.locationPermission = "prompt";
+  });
+  await openAsVisitor(page, NO_GPS_ARCHIVE);
+  const button = page.getByTestId("enter-ar");
+  await expect(button).toHaveText("Start the tour", { timeout: 10000 });
+  await expect(page.getByTestId("ar-hint")).toHaveText(
+    "Once AR starts, point your phone at the tour's code (on the poster).",
+  );
+  await button.click();
+  await expect(button).toHaveText("Exit AR");
+  const fakes = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    return {
+      locationRequests: t.locationRequests,
+      permissionRequests: t.geolocationPermissionRequests,
+      gpsWatch: t.gpsCallback !== null,
+    };
+  });
+  expect(fakes).toEqual({
+    locationRequests: 0,
+    permissionRequests: 0,
+    gpsWatch: false,
+  });
+  await lockTheCode(page);
+});
+
+test("a visitor who dismissed the location prompt is offered it once more before a codes-only start (M1b-1 review #3)", async ({
+  page,
+}) => {
+  // Why this matters: Chrome reports a DISMISSED prompt as a denial while
+  // the permission still reads "prompt", so one stray tap used to mean no
+  // GPS for the whole page load. The start re-reads the permission and
+  // offers the location again - once: a second dismissal starts on codes.
+  await page.addInitScript(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    if (t) {
+      t.locationPermission = "prompt";
+      t.locationOutcome = "denied";
+    }
+  });
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  const button = page.getByTestId("enter-ar");
+  await expect(button).toHaveText("Allow location", { timeout: 10000 });
+  await button.click();
+  await expect(button).toHaveText("Start the tour");
+  await button.click();
+  await expect(button).toHaveText("Allow location");
+  await expect(page.getByTestId("ar-hint")).toContainText(/browser will ask/i);
+  await button.click();
+  await expect(button).toHaveText("Start the tour");
+  await button.click();
+  await expect(button).toHaveText("Exit AR");
+  const fakes = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    return {
+      locationRequests: t.locationRequests,
+      gpsWatch: t.gpsCallback !== null,
+    };
+  });
+  expect(fakes).toEqual({ locationRequests: 2, gpsWatch: false });
+});
+
+test("a visitor who allowed location but gets no fix starts AR with location (M2 review #1, M1b-1 review #1)", async ({
+  page,
+}) => {
+  // Why this matters: indoors the permission is fine and the fix is not.
+  // The framework's requester fetches a fix and answered granted: null, so
+  // enable() failed on every tap ("AR could not start") - worse off than a
+  // visitor who declined. The permission, not a fix, must start AR.
+  await page.addInitScript(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    if (t) {
+      t.locationPermission = "prompt";
+      t.locationOutcome = "unavailable";
+      t.controllerLocationResult = { supported: true, granted: null };
+    }
+  });
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  const button = page.getByTestId("enter-ar");
+  await expect(button).toHaveText("Allow location", { timeout: 10000 });
   await button.click();
   await expect(button).toHaveText("Start the tour");
   // A benign note above the button, not the red alert (UI round 1, U1).
@@ -3283,6 +3419,31 @@ test("a Drive tour whose host sends no name asks the creator to check it", async
   await expect(page.getByTestId("replace-help-drive")).toContainText(
     'Check that the file on Drive is named "tour.zip"',
   );
+});
+
+test("a delivered Finish asks once whether the file was uploaded, and a yes is noted (F19)", async ({
+  page,
+}) => {
+  // Why (follow-up F19, owner decision 2026-10-14): a page cannot know the
+  // creator uploaded the zip it saved, so a pin deleted later on the
+  // desktop came back from this phone's draft. The phone asks once, after
+  // the save delivered; a yes is noted (the composed walk with the desktop
+  // delete is in authoring-settle.test.ts), and saving the same file again
+  // asks nothing more.
+  await installTourViewerArFakes(page);
+  await measureAndFinish(page, RANGES_ARCHIVE);
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+  const text = page.getByTestId("upload-ask-text");
+  await expect(page.getByTestId("upload-ask")).toBeVisible();
+  await expect(text).toContainText("Did you upload it?");
+  await page.getByTestId("upload-yes").click();
+  await expect(text).toContainText("Noted.");
+  await expect(page.getByTestId("upload-yes")).toBeHidden();
+  await expect(page.getByTestId("upload-no")).toBeHidden();
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-download")).toBeEnabled();
+  await expect(text).toContainText("Noted.");
+  await expect(page.getByTestId("upload-yes")).toBeHidden();
 });
 
 test("an opted-in authoring session is recorded across the finish and saved as its own zip, never inside the tour zip", async ({

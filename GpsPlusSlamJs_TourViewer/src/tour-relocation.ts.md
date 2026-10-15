@@ -20,6 +20,12 @@ anywhere. Nothing about the phone's position is stored or sent.
   (heading included). Code-only stations are returned as they are. A
   target altitude that is not finite (a fix without altitude) keeps the
   stations' own heights.
+- `firstDeviceFix(points): RelocationTarget | null` - the first point of a
+  GPS history whose source is a device fix (`gpsPointSourceOf`), as a
+  target; null while none is stored. A code's synthetic votes are skipped:
+  since QR-first M1 a code scanned before any fix stores its votes first,
+  on a 30 m ring around the code, and the relocation once latched one of
+  them (M1 review #3).
 - `createStationRelocator(enabled, onRelocated?)` - for an open page: off,
   stations pass through; on, `null` until the first fix, which is then kept
   as the target (a later fix never drags the tour), `onRelocated` told

@@ -41,7 +41,17 @@ the automatic save is in
     live;
   - `reset()` - a tour closed: the button disabled with its label, the line
     and the notes cleared, the replace steps hidden and the generic text
-    back.
+    back, the upload question hidden and forgotten;
+  - `finishStarted()` - `creator-finish.ts` at a Finish's start: a
+    question left from an earlier Finish's file is put away, so its yes is
+    never read as this Finish's (F19 review #2).
+- `onUploaded?(written)` (follow-up F19) - the creator answered yes to the
+  question after a delivered save; `written` is the tour.json of the file
+  the question was asked about (`rebuiltZip.written`, captured when it was
+  asked). `creator-setup.ts` passes `draft.uploaded(written)`
+  (`creator-draft.ts`), which resolves whether it was noted. Without it the
+  question is never asked. `dom.uploadAsk`, `uploadAskText`, `uploadYes`,
+  `uploadNo` are its box, line and answers; `UPLOAD_ASK_LABELS` its words.
 
 ## Invariants & assumptions
 
@@ -81,6 +91,25 @@ the automatic save is in
   nothing on the next tour's panel (PR #440 review); `reset` restores the
   button's label for the same reason (PR #441 review).
 
+- **Asked after each delivered save, until a yes (F19, owner decision
+  2026-10-14; review #9).** After a save that DELIVERED a Finish's file -
+  never before, never for a save that did not go through - the steps end
+  with "Did you upload it?", one question per save (a fresh one replaces
+  the last). Yes: "Noting it…" with both answers off, then "Noted…" or,
+  when the draft could not note it, a line saying a note deleted on a
+  computer may be offered back and can be declined; the answers go, the
+  line stays. After a yes that was noted, no save of that file (keyed by
+  the rebuilt blob) asks again; a note that did not land is asked about
+  again at the next save. Not yet: the question goes, the draft stays as
+  it is (as does no answer), and a later "Save again" of the same file
+  asks once more - "Not yet" is not final within the page load.
+- **A yes is about the file it was asked for (F19 review #2).** The
+  question captures that file's blob and its `written` manifest when it is
+  asked, and a yes notes exactly that `written`. It is put away when a new
+  Finish starts (`finishStarted`), when a save of another file starts, or
+  when another file is offered, so a stale question's yes can never mark a
+  later Finish - one that was never saved - as uploaded.
+
 ## Examples
 
 ```ts
@@ -101,7 +130,17 @@ handoff.save(notes);
 - `creator-handoff.test.ts` "the replace steps follow the chosen host": the
   host's own text after a save, the paragraph with no host, and its return
   on a tour close.
+- `creator-handoff.test.ts` "the question after a download-only Finish":
+  hidden until a delivered save, the yes's progress and both outcomes, Not
+  yet and a later save of the same file asking once more, the yes noting
+  the file asked about (never a later Finish's), the question put away by
+  a new Finish or another file, the next Finish, a close. The stale yes
+  across two Finishes is walked in `authoring-settle.test.ts` (F19 review
+  #2).
+  The composed walk (a yes, then a desktop delete honoured; no yes, the pin
+  offered back) is in `authoring-settle.test.ts` (F19).
 - `qr-author-mode.test.ts` "the finish saves the tour zip by itself" and the
   Drive steps: the copy.
 - `playwright-tests/ar-mode.spec.js`: the Finish's own save in a browser,
-  the button's save again, the Drive tour's name and steps.
+  the button's save again, the Drive tour's name and steps, and the
+  upload question answered yes (F19).

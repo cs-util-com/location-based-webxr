@@ -27,7 +27,7 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     draft write of an object adds the opened tour's version of it as seen,
     taken when the write is queued (a queued write can run after another
     open, whose tour is not the one edited); `finished(ids, written)` adds a
-    Finish's versions as written, keyed as a reader of the written file
+    Finish's versions as written, keyed as a reader of the written file (`manifestAsRead`, `authoring-draft.ts`)
     parses them; records the hosted zip carries unchanged
     are added as seen on open (`draftObjectsPublished`). Superseded
     records are not offered, one line says so (combined with the AR note
@@ -37,12 +37,28 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     with its seen version (`creator-setup.ts`'s `saveDraftObject`).
   - `finished(ids, written)` - `creator-finish.ts` after a Finish wrote
     these objects: their versions in `written` are this device's own work.
+    The ids (all of this load's Finishes) are kept for `uploaded`.
+  - `uploaded(written)` (follow-up F19, owner decision 2026-10-14) - the
+    creator answered yes to "did you upload it?" (`creator-handoff.ts`),
+    and `written` is the tour.json of the file the question was asked
+    about, never a later Finish's (F19 review #2): every object a Finish of
+    this load wrote gets its version in `written` added as SEEN (`addDraftBaseKey`, in the id's queue), so a delete
+    made elsewhere afterwards is honoured instead of offered back. Resolves
+    whether every note landed (true with nothing to note - and true on a
+    phone without a draft store or before the tour's namespace exists,
+    where no later open could offer anything back, so a yes never says
+    "could not note it" there, PR #626 bot finding 3); a note that did
+    not land leaves no base, which is never superseded (the safe side).
   - **Not covered (E2p review #3, #7).** A desktop delete is honoured only
-    once a version of the record was SEEN hosted: the usual walk (place,
-    upload, delete on the desktop, with no phone open in between) still
-    offers the pin back - nothing tells the phone an upload happened
-    (`rebuiltZip.delivered` is not proof of one), and a written version
-    alone cannot tell "deleted" from "not uploaded" (follow-up F19). And a
+    once a version of the record was SEEN hosted. Nothing tells the phone an
+    upload happened (`rebuiltZip.delivered` is not proof of one), so since
+    F19 the phone asks once after a delivered Finish; without a yes the usual
+    walk (place, upload, delete on the desktop, with no phone open in
+    between) still offers the pin back, as before - the offer is a question
+    the creator can decline. A yes given for a file that was NOT uploaded
+    makes the phone's own new objects read as "deleted elsewhere" at the
+    next open of the old file, and they are not offered back: the question's
+    words say to answer yes only once the file is replaced. And a
     record superseded by a desktop edit is dropped whole: a code move the
     phone made to it since is not merged. And (third review #3, #4) a
     Finish that completes before the draft namespace opens records no
@@ -152,6 +168,17 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   nothing for the id, never the rejected version. A sweep (discard, spent,
   an unfinished earlier sweep) removes an id's files only if it is STILL
   rejected when its turn comes, so a claim made meanwhile survives it.
+  The claim is made against the meta ON DISK too (`rejectedOnDisk`, then
+  each landed meta write's list), not only the pruned in-memory list: after
+  "Delete it" and a reload the pruned list no longer names an id whose files
+  are gone while the meta still rejects it, and an edit of it was hidden at
+  the next read and swept - deleted for good; a deletion came back at the
+  next Finish (found building M6 E2c, its milestone review #3).
+- **A meta written before the offer is answered keeps the stored draft's
+  codes** (M6 E2c review #3): `level` falls back to the draft's, and its
+  `levels` are re-stated beside the page's (a live code with the same id
+  wins), until Restore makes them the page's or "Delete it" rejects them;
+  "Not now" keeps them. A spent draft re-states nothing.
 - **Work done before the draft opened is written after the read, ALL of
   it** (M4 review #2): an edit or a deletion keeps its id, so the draft
   may hold an older change of the same id, and writing only ids the draft
