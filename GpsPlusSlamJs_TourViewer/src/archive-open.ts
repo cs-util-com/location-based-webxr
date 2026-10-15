@@ -187,12 +187,6 @@ export function wireArchiveOpen(deps: {
     ctx.qrController?.reset();
     ctx.levelByText.clear();
     ctx.levelIdByText.clear();
-    // The compass wait started with a code of the closing tour (r857
-    // review #9): a tour opened in the same AR session must not inherit it,
-    // nor have the old timer end it at a moment that means nothing to it.
-    ctx.cancelCodeZeroWait?.();
-    ctx.cancelCodeZeroWait = null;
-    ctx.codeZeroWaitUntilMs = null;
     // The code keep-alive holds a closing tour's code for up to ~4 min,
     // and the vote budget remembers which codes voted; the pipeline
     // outlives the switch, so both end with the tour here (M2b; review #6).

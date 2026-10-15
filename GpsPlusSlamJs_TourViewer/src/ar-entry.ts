@@ -462,9 +462,6 @@ export function wireArEntry(deps: {
     // The gate and the placed content are session state (M5).
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
-    ctx.cancelCodeZeroWait?.();
-    ctx.cancelCodeZeroWait = null;
-    ctx.codeZeroWaitUntilMs = null;
     ctx.scanGate = { kind: "idle" };
     ctx.contentRendered?.dispose();
     ctx.contentRendered = null;
