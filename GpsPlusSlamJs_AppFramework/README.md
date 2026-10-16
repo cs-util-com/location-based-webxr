@@ -34,6 +34,28 @@ It is part toolkit, part fusion engine: the toolkit covers the AR + GPS plumbing
 - **Field-data capture tools** — record synchronized GPS, AR poses, camera frames, and depth as reusable datasets for 3D reconstruction (COLMAP / Gaussian splatting), alignment-quality evaluation, desktop replay, geo-anchored site documentation, and ML training.
   - The recorded zips can be opened directly in third-party reconstruction tools such as [colmapview.github.io](https://colmapview.github.io/) or [LichtFeld-Studio](https://github.com/MrNeRF/LichtFeld-Studio).
 
+### Recorder COLMAP ZIP core
+
+The `gps-plus-slam-app-framework/colmap` subpath reads the recorder's COLMAP
+text ZIP into typed cameras, images, poses, and points, then writes the model
+back while preserving untouched archive entries. It supports the recorder's
+`PINHOLE` text profile with empty image observations and point tracks; binary
+and generic COLMAP models are outside this API.
+
+```ts
+import {
+  readRecorderZip,
+  writeRecorderZip,
+} from 'gps-plus-slam-app-framework/colmap';
+
+const dataset = await readRecorderZip(zipBytes);
+const outputZipBytes = await writeRecorderZip(dataset, dataset.model);
+```
+
+This is the browser-compatible ZIP/model seam only. A separate offline tool
+may refine poses and return a verified ZIP for reconstruction tools such as
+LichtFeld; the framework does not run native COLMAP or PyCOLMAP.
+
 ## Zero-Install Onboarding
 
 Because everything runs in the browser, there is no native build to ship, no store review to wait on, and nothing for the user to download or sign up for — which removes most of the friction that normally sits between "interested" and "in the experience".
