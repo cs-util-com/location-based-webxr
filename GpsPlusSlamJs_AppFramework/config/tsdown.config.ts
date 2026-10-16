@@ -17,6 +17,9 @@ const entryFiles = [
   // Root barrel
   'src/index.ts',
 
+  // Recorder-specific COLMAP ZIP/model core.
+  'src/colmap/index.ts',
+
   // ar/
   'src/ar/index.ts',
   'src/ar/ar-crash-isolation.ts',

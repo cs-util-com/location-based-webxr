@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Recorder COLMAP ZIP round trips** (`colmap`): parse and validate the
+  recorder's COLMAP text model, inspect its typed cameras/images/points, and
+  write a structurally faithful ZIP while preserving untouched entries.
+
 ## [1.29.0] - 2026-10-15
 
 ### Added

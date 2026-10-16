@@ -12,6 +12,7 @@
     "./ar/qr": "./dist/ar/qr/index.js",
     "./ar/*": "./dist/ar/*.js",
     "./core": "./dist/core/index.js",
+    "./colmap": "./dist/colmap/index.js",
     "./sensors": "./dist/sensors/index.js",
     "./sensors/*": "./dist/sensors/*.js",
     "./state": "./dist/state/index.js",
