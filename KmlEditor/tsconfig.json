@@ -1,0 +1,44 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "types": [
+      "node",
+      "vitest/globals"
+    ],
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "paths": {
+      "gps-plus-slam-app-framework/ar": [
+        "../GpsPlusSlamJs_AppFramework/src/ar/index.ts"
+      ],
+      "gps-plus-slam-app-framework/sensors": [
+        "../GpsPlusSlamJs_AppFramework/src/sensors/index.ts"
+      ],
+      "gps-plus-slam-app-framework/sensors/*": [
+        "../GpsPlusSlamJs_AppFramework/src/sensors/*.ts"
+      ],
+      "gps-plus-slam-app-framework/core": [
+        "../GpsPlusSlamJs_AppFramework/src/core/index.ts"
+      ],
+      "gps-plus-slam-app-framework/licensing": [
+        "../GpsPlusSlamJs_AppFramework/src/licensing/index.ts"
+      ],
+      "gps-plus-slam-app-framework": [
+        "../GpsPlusSlamJs_AppFramework/src/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts"
+  ]
+}

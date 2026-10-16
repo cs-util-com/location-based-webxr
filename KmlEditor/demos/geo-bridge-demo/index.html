@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Geo-Bridge Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #09111f;
+        --panel: rgba(12, 19, 36, 0.88);
+        --panel-2: rgba(20, 32, 60, 0.94);
+        --text: #f3f7ff;
+        --muted: #a7b3cf;
+        --border: rgba(167, 179, 207, 0.18);
+        --accent: #6dd3ff;
+        --accent-2: #9b87f5;
+        --good: #74f0b7;
+        --warn: #ffbf69;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(109, 211, 255, 0.16), transparent 32%),
+          radial-gradient(circle at 80% 15%, rgba(155, 135, 245, 0.18), transparent 30%),
+          linear-gradient(135deg, #060b14 0%, #0a1324 42%, #101c36 100%);
+        color: var(--text);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+      }
+
+      main {
+        width: min(1240px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 28px 0 40px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 3.8rem);
+        line-height: 0.98;
+        letter-spacing: -0.04em;
+      }
+
+      .lede {
+        max-width: 72ch;
+        margin: 12px 0 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .hero {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 12px;
+        border: 1px solid rgba(109, 211, 255, 0.24);
+        border-radius: 999px;
+        background: rgba(109, 211, 255, 0.1);
+        color: #c6efff;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+        gap: 16px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--panel);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.26);
+        -webkit-backdrop-filter: blur(12px);
+        backdrop-filter: blur(12px);
+        overflow: hidden;
+      }
+
+      .panel header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        background: linear-gradient(180deg, rgba(255,255,255,0.04), transparent);
+      }
+
+      .panel header h2 {
+        margin: 0;
+        font-size: 0.98rem;
+        letter-spacing: 0.01em;
+      }
+
+      .panel header small {
+        color: var(--muted);
+      }
+
+      .content {
+        padding: 16px;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+
+      .field.full {
+        grid-column: 1 / -1;
+      }
+
+      label {
+        color: var(--muted);
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      input,
+      select {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid rgba(167, 179, 207, 0.22);
+        border-radius: 12px;
+        background: var(--panel-2);
+        color: var(--text);
+        padding: 0 12px;
+        font: inherit;
+      }
+
+      input[type="number"] {
+        appearance: textfield;
+      }
+
+      input:focus,
+      select:focus,
+      button:focus-visible {
+        outline: 2px solid rgba(109, 211, 255, 0.5);
+        outline-offset: 2px;
+      }
+
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 12px;
+        min-height: 42px;
+        padding: 0 14px;
+        color: #07111f;
+        background: linear-gradient(135deg, var(--accent) 0%, #b7f1ff 100%);
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        color: var(--text);
+        background: linear-gradient(135deg, rgba(155, 135, 245, 0.24), rgba(109, 211, 255, 0.14));
+        border: 1px solid rgba(167, 179, 207, 0.2);
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .metrics.spaced {
+        margin-top: 12px;
+      }
+
+      .content.compact {
+        padding: 0;
+      }
+
+      .metric {
+        padding: 12px 14px;
+        border: 1px solid rgba(167, 179, 207, 0.14);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .metric span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.76rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 1.1rem;
+        font-variant-numeric: tabular-nums;
+        word-break: break-word;
+      }
+
+      .status {
+        min-height: 22px;
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .status[data-tone="ok"] {
+        color: var(--good);
+      }
+
+      .status[data-tone="warn"] {
+        color: var(--warn);
+      }
+
+      .status[data-tone="error"] {
+        color: #ff8ba7;
+      }
+
+      .scene-wrap {
+        display: grid;
+        gap: 12px;
+      }
+
+      canvas {
+        width: 100%;
+        height: 420px;
+        display: block;
+        border-top: 1px solid rgba(255,255,255,0.06);
+        background:
+          radial-gradient(circle at top, rgba(109, 211, 255, 0.08), transparent 40%),
+          linear-gradient(180deg, rgba(4, 9, 19, 0.2), rgba(4, 9, 19, 0.86));
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        text-align: left;
+        vertical-align: top;
+        font-size: 0.92rem;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      td:last-child,
+      th:last-child {
+        text-align: right;
+      }
+
+      .mono {
+        font-variant-numeric: tabular-nums;
+      }
+
+      .footnote {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 0.88rem;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 980px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .hero {
+          align-items: start;
+          flex-direction: column;
+        }
+
+        .metrics,
+        .form-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="hero">
+        <div>
+          <h1>Geo-Bridge Demo</h1>
+          <p class="lede">
+            A tiny standalone page for the pure geo ↔ world bridge. Edit the anchor or
+            position, watch the world-space result update, and check the inverse
+            conversion plus stable coordinate formatting.
+          </p>
+        </div>
+        <div class="badge">GeoBridgeImpl · altitude modes · live round-trip</div>
+      </div>
+
+      <div class="grid">
+        <div class="stack">
+          <section class="panel">
+            <header>
+              <h2>Inputs</h2>
+              <small>Anchor, geo point, altitude mode</small>
+            </header>
+            <div class="content">
+              <div class="form-grid">
+                <div class="field">
+                  <label for="anchor-lon">Anchor lon</label>
+                  <input id="anchor-lon" type="number" step="any" value="10" />
+                </div>
+                <div class="field">
+                  <label for="anchor-lat">Anchor lat</label>
+                  <input id="anchor-lat" type="number" step="any" value="50" />
+                </div>
+                <div class="field">
+                  <label for="anchor-alt">Anchor alt</label>
+                  <input id="anchor-alt" type="number" step="any" value="100" />
+                </div>
+                <div class="field">
+                  <label for="anchor-heading">Heading</label>
+                  <input id="anchor-heading" type="number" step="any" value="37" />
+                </div>
+
+                <div class="field full">
+                  <label for="altitude-mode">Altitude mode</label>
+                  <select id="altitude-mode">
+                    <option value="clampToGround">clampToGround</option>
+                    <option value="relativeToGround">relativeToGround</option>
+                    <option value="absolute" selected>absolute</option>
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label for="geo-lon">Geo lon</label>
+                  <input id="geo-lon" type="number" step="any" value="10.0025" />
+                </div>
+                <div class="field">
+                  <label for="geo-lat">Geo lat</label>
+                  <input id="geo-lat" type="number" step="any" value="50.0012" />
+                </div>
+                <div class="field full">
+                  <label for="geo-alt">Geo alt</label>
+                  <input id="geo-alt" type="number" step="any" value="146.75" />
+                </div>
+              </div>
+
+              <div class="button-row">
+                <button id="use-anchor" type="button">Use anchor as geo point</button>
+                <button id="load-fixture" type="button" class="secondary">Load sample point</button>
+              </div>
+
+              <p id="input-status" class="status" aria-live="polite">Ready.</p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <header>
+              <h2>Round-trip result</h2>
+              <small>Forward and inverse conversion</small>
+            </header>
+            <div class="content">
+              <div class="metrics">
+                <div class="metric">
+                  <span>World x</span>
+                  <strong id="world-x" class="mono">0</strong>
+                </div>
+                <div class="metric">
+                  <span>World y</span>
+                  <strong id="world-y" class="mono">0</strong>
+                </div>
+                <div class="metric">
+                  <span>World z</span>
+                  <strong id="world-z" class="mono">0</strong>
+                </div>
+              </div>
+
+              <div class="metrics spaced">
+                <div class="metric">
+                  <span>Restored lon</span>
+                  <strong id="restored-lon" class="mono">0</strong>
+                </div>
+                <div class="metric">
+                  <span>Restored lat</span>
+                  <strong id="restored-lat" class="mono">0</strong>
+                </div>
+                <div class="metric">
+                  <span>Restored alt</span>
+                  <strong id="restored-alt" class="mono">0</strong>
+                </div>
+              </div>
+
+              <div class="metrics spaced">
+                <div class="metric">
+                  <span>Formatted lon</span>
+                  <strong id="formatted-lon" class="mono">0</strong>
+                </div>
+                <div class="metric">
+                  <span>Formatted lat</span>
+                  <strong id="formatted-lat" class="mono">0</strong>
+                </div>
+                <div class="metric">
+                  <span>Formatted alt</span>
+                  <strong id="formatted-alt" class="mono">0</strong>
+                </div>
+              </div>
+
+              <div class="footnote" id="delta-text"></div>
+            </div>
+          </section>
+        </div>
+
+        <div class="stack">
+          <section class="panel scene-wrap">
+            <header>
+              <h2>World scene</h2>
+              <small>Dots plotted in meters on the local x/z plane</small>
+            </header>
+            <canvas id="scene" width="960" height="560" aria-label="Geo-bridge world scene"></canvas>
+            <div class="content">
+              <p class="footnote">
+                The scene shows the anchor at the origin, the current point in cyan, and a few hard-coded sample
+                positions around it, including an antimeridian example.
+              </p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <header>
+              <h2>Sample points</h2>
+              <small>Hard-coded fixtures for the scene</small>
+            </header>
+            <div class="content compact">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Geo</th>
+                    <th>World</th>
+                  </tr>
+                </thead>
+                <tbody id="sample-table"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <script type="module">
+      import { createGeoBridge } from '../../src/geo-bridge/index.ts';
+
+      const bridge = createGeoBridge();
+      const samples = [
+        { name: 'Anchor', position: { lon: 10, lat: 50, alt: 100 } },
+        { name: 'North', position: { lon: 10, lat: 50.001, alt: 100 } },
+        { name: 'East', position: { lon: 10.001, lat: 50, alt: 100 } },
+        { name: 'Diagonal', position: { lon: 10.0007, lat: 50.0006, alt: 118 } },
+        { name: 'Antimeridian', position: { lon: -179.8, lat: 0, alt: 0 } },
+      ];
+
+      const anchorLon = document.getElementById('anchor-lon');
+      const anchorLat = document.getElementById('anchor-lat');
+      const anchorAlt = document.getElementById('anchor-alt');
+      const anchorHeading = document.getElementById('anchor-heading');
+      const geoLon = document.getElementById('geo-lon');
+      const geoLat = document.getElementById('geo-lat');
+      const geoAlt = document.getElementById('geo-alt');
+      const altitudeMode = document.getElementById('altitude-mode');
+      const useAnchorButton = document.getElementById('use-anchor');
+      const loadFixtureButton = document.getElementById('load-fixture');
+      const inputStatus = document.getElementById('input-status');
+      const sampleTable = document.getElementById('sample-table');
+      const canvas = document.getElementById('scene');
+      const context = canvas.getContext('2d');
+
+      const worldX = document.getElementById('world-x');
+      const worldY = document.getElementById('world-y');
+      const worldZ = document.getElementById('world-z');
+      const restoredLon = document.getElementById('restored-lon');
+      const restoredLat = document.getElementById('restored-lat');
+      const restoredAlt = document.getElementById('restored-alt');
+      const formattedLon = document.getElementById('formatted-lon');
+      const formattedLat = document.getElementById('formatted-lat');
+      const formattedAlt = document.getElementById('formatted-alt');
+      const deltaText = document.getElementById('delta-text');
+
+      function numberValue(input) {
+        return Number(input.value);
+      }
+
+      function readAnchor() {
+        return {
+          position: {
+            lon: numberValue(anchorLon),
+            lat: numberValue(anchorLat),
+            alt: numberValue(anchorAlt),
+          },
+          heading: numberValue(anchorHeading),
+        };
+      }
+
+      function readGeoPoint() {
+        return {
+          lon: numberValue(geoLon),
+          lat: numberValue(geoLat),
+          alt: numberValue(geoAlt),
+        };
+      }
+
+      function setStatus(message, tone = '') {
+        inputStatus.textContent = message;
+        inputStatus.dataset.tone = tone;
+      }
+
+      function formatValue(value, originalInput) {
+        return bridge.formatCoordinate(value, originalInput?.value);
+      }
+
+      function syncBridge() {
+        try {
+          bridge.setAnchor(readAnchor());
+          const mode = altitudeMode.value;
+          const geo = readGeoPoint();
+          const world = bridge.geoToWorld(geo, mode);
+          const restored = bridge.worldToGeo(world, mode);
+
+          worldX.textContent = bridge.formatCoordinate(world.x);
+          worldY.textContent = bridge.formatCoordinate(world.y);
+          worldZ.textContent = bridge.formatCoordinate(world.z);
+
+          restoredLon.textContent = bridge.formatCoordinate(restored.lon);
+          restoredLat.textContent = bridge.formatCoordinate(restored.lat);
+          restoredAlt.textContent = bridge.formatCoordinate(restored.alt);
+
+          formattedLon.textContent = formatValue(geo.lon, geoLon);
+          formattedLat.textContent = formatValue(geo.lat, geoLat);
+          formattedAlt.textContent = formatValue(geo.alt, geoAlt);
+
+          const lonDelta = Math.abs(restored.lon - geo.lon);
+          const latDelta = Math.abs(restored.lat - geo.lat);
+          const altDelta = Math.abs(restored.alt - geo.alt);
+          deltaText.textContent = `Round-trip delta: lon ${lonDelta.toExponential(2)}, lat ${latDelta.toExponential(2)}, alt ${altDelta.toExponential(2)}.`;
+          setStatus(`Converted ${mode} point against anchor (${anchorLon.value}, ${anchorLat.value}, ${anchorAlt.value}) at heading ${anchorHeading.value}°`, 'ok');
+
+          renderSamples(mode);
+          drawScene(world);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setStatus(message, 'error');
+          deltaText.textContent = 'Update the inputs to recover.';
+          drawScene(null);
+        }
+      }
+
+      function sampleToTableRow(sample, mode) {
+        try {
+          const world = bridge.geoToWorld(sample.position, mode);
+          return `
+            <tr>
+              <td>${sample.name}</td>
+              <td class="mono">${bridge.formatCoordinate(sample.position.lon)}, ${bridge.formatCoordinate(sample.position.lat)}, ${bridge.formatCoordinate(sample.position.alt)}</td>
+              <td class="mono">${bridge.formatCoordinate(world.x)}, ${bridge.formatCoordinate(world.y)}, ${bridge.formatCoordinate(world.z)}</td>
+            </tr>
+          `;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return `
+            <tr>
+              <td>${sample.name}</td>
+              <td class="mono">${message}</td>
+              <td class="mono">—</td>
+            </tr>
+          `;
+        }
+      }
+
+      function renderSamples(mode) {
+        sampleTable.innerHTML = samples.map((sample) => sampleToTableRow(sample, mode)).join('');
+      }
+
+      function drawScene(currentWorld) {
+        const width = canvas.width;
+        const height = canvas.height;
+        context.clearRect(0, 0, width, height);
+
+        const worldPoints = samples
+          .map((sample) => {
+            try {
+              return { name: sample.name, ...bridge.geoToWorld(sample.position, altitudeMode.value) };
+            } catch {
+              return null;
+            }
+          })
+          .filter(Boolean);
+
+        if (currentWorld) {
+          worldPoints.push({ name: 'Current', ...currentWorld });
+        }
+
+        const maxRange = Math.max(
+          80,
+          ...worldPoints.map((point) => Math.max(Math.abs(point.x), Math.abs(point.z)))
+        );
+        const scale = Math.min(width, height) * 0.38 / maxRange;
+        const centerX = width / 2;
+        const centerY = height / 2;
+
+        function toScreen(point) {
+          return {
+            x: centerX + point.x * scale,
+            y: centerY - point.z * scale,
+          };
+        }
+
+        context.save();
+        context.lineWidth = 1;
+        context.strokeStyle = 'rgba(180, 200, 255, 0.16)';
+
+        for (let i = -4; i <= 4; i += 1) {
+          const x = centerX + (i * maxRange * scale) / 4;
+          context.beginPath();
+          context.moveTo(x, 0);
+          context.lineTo(x, height);
+          context.stroke();
+
+          const y = centerY + (i * maxRange * scale) / 4;
+          context.beginPath();
+          context.moveTo(0, y);
+          context.lineTo(width, y);
+          context.stroke();
+        }
+
+        context.strokeStyle = 'rgba(109, 211, 255, 0.65)';
+        context.lineWidth = 2;
+        context.beginPath();
+        context.moveTo(0, centerY);
+        context.lineTo(width, centerY);
+        context.moveTo(centerX, 0);
+        context.lineTo(centerX, height);
+        context.stroke();
+
+        const axisLabelStyle = 'rgba(243, 247, 255, 0.72)';
+        context.fillStyle = axisLabelStyle;
+        context.font = '12px Inter, system-ui, sans-serif';
+        context.fillText('north / south', centerX + 8, 18);
+        context.fillText('east / west', width - 84, centerY - 8);
+
+        const anchorPoint = { x: 0, z: 0 };
+        const anchorScreen = toScreen(anchorPoint);
+        context.fillStyle = '#ffffff';
+        context.beginPath();
+        context.arc(anchorScreen.x, anchorScreen.y, 6, 0, Math.PI * 2);
+        context.fill();
+        context.strokeStyle = 'rgba(255,255,255,0.36)';
+        context.lineWidth = 2;
+        context.stroke();
+        context.fillStyle = '#f3f7ff';
+        context.fillText('Anchor', anchorScreen.x + 10, anchorScreen.y - 10);
+
+        for (const point of worldPoints) {
+          const screen = toScreen(point);
+          const isCurrent = point.name === 'Current';
+          context.fillStyle = isCurrent ? '#6dd3ff' : '#9b87f5';
+          context.strokeStyle = isCurrent ? '#d7f7ff' : 'rgba(167, 179, 207, 0.55)';
+          context.lineWidth = isCurrent ? 2.5 : 1.5;
+          context.beginPath();
+          context.arc(screen.x, screen.y, isCurrent ? 7 : 5, 0, Math.PI * 2);
+          context.fill();
+          context.stroke();
+          context.fillStyle = '#f3f7ff';
+          context.fillText(point.name, screen.x + 10, screen.y - 8);
+        }
+
+        context.restore();
+      }
+
+      function loadSamplePoint() {
+        geoLon.value = '10.00125';
+        geoLat.value = '50.00055';
+        geoAlt.value = '124.25';
+        altitudeMode.value = 'absolute';
+        syncBridge();
+      }
+
+      function useAnchorAsGeoPoint() {
+        geoLon.value = anchorLon.value;
+        geoLat.value = anchorLat.value;
+        geoAlt.value = anchorAlt.value;
+        altitudeMode.value = 'clampToGround';
+        syncBridge();
+      }
+
+      [anchorLon, anchorLat, anchorAlt, anchorHeading, geoLon, geoLat, geoAlt, altitudeMode].forEach((element) => {
+        element.addEventListener('input', syncBridge);
+        element.addEventListener('change', syncBridge);
+      });
+
+      loadFixtureButton.addEventListener('click', loadSamplePoint);
+      useAnchorButton.addEventListener('click', useAnchorAsGeoPoint);
+
+      syncBridge();
+    </script>
+  </body>
+</html>

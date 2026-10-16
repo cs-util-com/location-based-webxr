@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KMZ IO Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        --bg: #1A1A2E;
+        --panel: #16213E;
+        --panel-2: #0F3460;
+        --accent: #E94560;
+        --accent-2: #533483;
+        --text: #f8fafc;
+        --muted: #cbd5e1;
+        --border: rgba(255,255,255,0.14);
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(135deg, var(--bg) 0%, var(--panel) 100%);
+        color: var(--text);
+      }
+
+      main {
+        width: min(1120px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 32px 0 48px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(2rem, 4vw, 3.5rem);
+        line-height: 1;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        padding: 0 14px;
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+        color: #fff;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      button:disabled {
+        border-color: rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.12);
+        color: rgba(248,250,252,0.55);
+        cursor: not-allowed;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 24px;
+      }
+
+      .picker {
+        display: grid;
+        gap: 10px;
+        min-width: min(420px, 100%);
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgba(22, 33, 62, 0.92);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+      }
+
+      .picker label {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--text);
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+        gap: 16px;
+      }
+
+      section {
+        min-width: 0;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgba(22, 33, 62, 0.92);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 56px;
+        padding: 14px 16px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      }
+
+      .panel-header h2 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .status {
+        min-height: 24px;
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .status[data-tone="error"] {
+        color: #ff7b92;
+      }
+
+      .status[data-tone="ok"] {
+        color: #7dd3fc;
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      }
+
+      .metric {
+        padding: 14px 16px;
+        border-right: 1px solid rgba(255,255,255,0.1);
+      }
+
+      .metric:last-child {
+        border-right: 0;
+      }
+
+      .metric span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 1.4rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+
+      th,
+      td {
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 0.78rem;
+        text-transform: uppercase;
+      }
+
+      td {
+        font-size: 0.92rem;
+        overflow-wrap: anywhere;
+      }
+
+      td:last-child,
+      th:last-child {
+        width: 104px;
+        text-align: right;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        border-radius: 999px;
+        padding: 0 8px;
+        background: rgba(233, 69, 96, 0.16);
+        color: #ff9fb0;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .tag.asset {
+        background: rgba(15, 52, 96, 0.45);
+        color: #7dd3fc;
+      }
+
+      .tag.missing {
+        background: rgba(233, 69, 96, 0.2);
+        color: #ff9fb0;
+      }
+
+      .tag.changed,
+      .tag.removed {
+        background: rgba(233, 69, 96, 0.2);
+        color: #ff9fb0;
+      }
+
+      .tag.added,
+      .tag.moved {
+        background: rgba(83, 52, 131, 0.28);
+        color: #d8b4fe;
+      }
+
+      .tag.same {
+        background: rgba(15, 52, 96, 0.45);
+        color: #7dd3fc;
+      }
+
+      .scroll {
+        max-height: 420px;
+        overflow: auto;
+      }
+
+      pre {
+        height: 420px;
+        margin: 0;
+        padding: 16px;
+        overflow: auto;
+        background: #0b1020;
+        color: #dce7f7;
+        font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+        font-size: 0.82rem;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
+      .empty {
+        padding: 32px 16px;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      @media (max-width: 860px) {
+        main {
+          width: min(100vw - 20px, 720px);
+          padding-top: 20px;
+        }
+
+        .topbar,
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        .topbar {
+          display: grid;
+        }
+
+        .summary {
+          grid-template-columns: 1fr;
+        }
+
+        .metric {
+          border-right: 0;
+          border-bottom: 1px solid #e2e8f0;
+        }
+
+        .metric:last-child {
+          border-bottom: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="topbar">
+        <div>
+          <h1>KMZ IO Demo</h1>
+          <p>Pick a KMZ, inspect doc.kml and packaged assets, then download a freshly saved copy.</p>
+        </div>
+
+        <div class="picker">
+          <label for="fileInput">KMZ file</label>
+          <input id="fileInput" type="file" accept=".kmz,application/vnd.google-earth.kmz,application/zip" />
+          <button id="downloadButton" type="button" disabled>Download re-saved KMZ</button>
+          <div id="status" class="status">Waiting for a .kmz file.</div>
+        </div>
+      </div>
+
+      <section aria-label="KMZ summary">
+        <div class="summary">
+          <div class="metric">
+            <span>doc.kml</span>
+            <strong id="docSize">-</strong>
+          </div>
+          <div class="metric">
+            <span>Assets</span>
+            <strong id="assetCount">-</strong>
+          </div>
+          <div class="metric">
+            <span>Href refs</span>
+            <strong id="hrefCount">-</strong>
+          </div>
+          <div class="metric">
+            <span>Diff</span>
+            <strong id="diffStatus">-</strong>
+          </div>
+        </div>
+      </section>
+
+      <div class="workspace">
+        <section>
+          <div class="panel-header">
+            <h2>Archive entries</h2>
+          </div>
+          <div class="scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Path</th>
+                  <th>Type</th>
+                  <th>Size</th>
+                </tr>
+              </thead>
+              <tbody id="entryTable">
+                <tr>
+                  <td class="empty" colspan="3">No file loaded.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section>
+          <div class="panel-header">
+            <h2>doc.kml preview</h2>
+          </div>
+          <pre id="docPreview">No doc.kml loaded.</pre>
+        </section>
+      </div>
+
+      <section style="margin-top: 16px">
+        <div class="panel-header">
+          <h2>Original vs re-saved</h2>
+        </div>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Path</th>
+                <th>Original</th>
+                <th>Re-saved</th>
+                <th>Order</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="diffTable">
+              <tr>
+                <td class="empty" colspan="5">No diff loaded.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section style="margin-top: 16px">
+        <div class="panel-header">
+          <h2>Href references</h2>
+        </div>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Href</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="hrefTable">
+              <tr>
+                <td class="empty" colspan="2">No references loaded.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script type="module">
+      import { createKmzContainer } from "/src/kmz-io/index.ts";
+      import { SimpleZipAdapter } from "/src/kmz-io/zip-adapter.ts";
+
+      const fileInput = document.querySelector("#fileInput");
+      const downloadButton = document.querySelector("#downloadButton");
+      const status = document.querySelector("#status");
+      const docSize = document.querySelector("#docSize");
+      const assetCount = document.querySelector("#assetCount");
+      const hrefCount = document.querySelector("#hrefCount");
+      const diffStatus = document.querySelector("#diffStatus");
+      const entryTable = document.querySelector("#entryTable");
+      const diffTable = document.querySelector("#diffTable");
+      const hrefTable = document.querySelector("#hrefTable");
+      const docPreview = document.querySelector("#docPreview");
+
+      const zipAdapter = new SimpleZipAdapter();
+      let activeContainer;
+      let activeFile;
+      let activeSavedBuffer;
+      let downloadUrl;
+
+      fileInput.addEventListener("change", async () => {
+        const file = fileInput.files?.[0];
+        resetDownload();
+
+        if (!file) {
+          resetView("Waiting for a .kmz file.");
+          return;
+        }
+
+        activeContainer?.dispose();
+        activeContainer = createKmzContainer();
+        activeFile = file;
+        setStatus(`Opening ${file.name}...`);
+
+        try {
+          const originalBuffer = await file.arrayBuffer();
+          const originalArchive = await zipAdapter.readArchive(new Uint8Array(originalBuffer));
+          await activeContainer.open(originalBuffer);
+          activeSavedBuffer = await activeContainer.save();
+          const savedArchive = await zipAdapter.readArchive(new Uint8Array(activeSavedBuffer));
+
+          renderContainer(activeContainer);
+          renderDiff(originalArchive, savedArchive);
+          downloadButton.disabled = false;
+          setStatus(`${file.name} is ready.`, "ok");
+        } catch (error) {
+          activeContainer.dispose();
+          activeContainer = undefined;
+          resetView(error instanceof Error ? error.message : "Could not open this KMZ.", "error");
+        }
+      });
+
+      downloadButton.addEventListener("click", async () => {
+        if (!activeContainer || !activeFile) {
+          return;
+        }
+
+        resetDownload();
+        downloadButton.disabled = true;
+        setStatus("Saving a new KMZ archive...");
+
+        try {
+          const buffer = activeSavedBuffer ?? await activeContainer.save();
+          const blob = new Blob([buffer], { type: "application/vnd.google-earth.kmz" });
+          downloadUrl = URL.createObjectURL(blob);
+
+          const link = document.createElement("a");
+          link.href = downloadUrl;
+          link.download = reSavedName(activeFile.name);
+          document.body.append(link);
+          link.click();
+          link.remove();
+
+          setStatus(`Downloaded ${link.download}.`, "ok");
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : "Could not save this KMZ.", "error");
+        } finally {
+          downloadButton.disabled = false;
+        }
+      });
+
+      function renderContainer(container) {
+        const doc = container.getDocKml();
+        const assets = container.listAssets();
+        const hrefs = container.getHrefReferences();
+        const provider = container.getAssetProvider();
+
+        docSize.textContent = formatBytes(new TextEncoder().encode(doc).byteLength);
+        assetCount.textContent = String(assets.length);
+        hrefCount.textContent = String(hrefs.length);
+        docPreview.textContent = doc;
+
+        entryTable.replaceChildren(
+          row(["doc.kml", tag("doc.kml"), formatBytes(new TextEncoder().encode(doc).byteLength)]),
+          ...assets.map((asset) => row([asset.path, tag("asset", "asset"), formatBytes(asset.size)])),
+        );
+
+        if (hrefs.length === 0) {
+          hrefTable.replaceChildren(emptyRow("No href references found.", 2));
+          return;
+        }
+
+        hrefTable.replaceChildren(
+          ...hrefs.map((href) => {
+            const isRemote = /^https?:\/\//i.test(href);
+            const state = isRemote ? "remote" : provider.hasAsset(href) ? "packaged" : "missing";
+            return row([href, tag(state, state === "missing" ? "missing" : "")]);
+          }),
+        );
+      }
+
+      function renderDiff(originalArchive, savedArchive) {
+        const originalEntries = Array.from(originalArchive.entries());
+        const savedEntries = Array.from(savedArchive.entries());
+        const originalPaths = originalEntries.map(([path]) => path);
+        const savedPaths = savedEntries.map(([path]) => path);
+        const paths = Array.from(new Set([...originalPaths, ...savedPaths]));
+        const structureMatches =
+          originalPaths.length === savedPaths.length &&
+          originalPaths.every((path, index) => path === savedPaths[index]);
+        const allBytesMatch = paths.every((path) => bytesEqual(originalArchive.get(path), savedArchive.get(path)));
+
+        diffStatus.textContent = structureMatches && allBytesMatch ? "same" : "changed";
+
+        if (paths.length === 0) {
+          diffTable.replaceChildren(emptyRow("No archive entries found.", 5));
+          return;
+        }
+
+        diffTable.replaceChildren(
+          ...paths.map((path) => {
+            const originalBytes = originalArchive.get(path);
+            const savedBytes = savedArchive.get(path);
+            const originalIndex = originalPaths.indexOf(path);
+            const savedIndex = savedPaths.indexOf(path);
+            const status = diffEntryStatus(originalBytes, savedBytes, originalIndex, savedIndex);
+
+            return row([
+              path,
+              originalBytes ? formatBytes(originalBytes.byteLength) : "-",
+              savedBytes ? formatBytes(savedBytes.byteLength) : "-",
+              orderText(originalIndex, savedIndex),
+              tag(status, status),
+            ]);
+          }),
+        );
+      }
+
+      function resetView(message, tone = "") {
+        activeContainer?.dispose();
+        activeContainer = undefined;
+        activeFile = undefined;
+        activeSavedBuffer = undefined;
+        downloadButton.disabled = true;
+        docSize.textContent = "-";
+        assetCount.textContent = "-";
+        hrefCount.textContent = "-";
+        diffStatus.textContent = "-";
+        entryTable.replaceChildren(emptyRow("No file loaded.", 3));
+        diffTable.replaceChildren(emptyRow("No diff loaded.", 5));
+        hrefTable.replaceChildren(emptyRow("No references loaded.", 2));
+        docPreview.textContent = "No doc.kml loaded.";
+        setStatus(message, tone);
+      }
+
+      function setStatus(message, tone = "") {
+        status.textContent = message;
+        status.dataset.tone = tone;
+      }
+
+      function resetDownload() {
+        if (downloadUrl) {
+          URL.revokeObjectURL(downloadUrl);
+          downloadUrl = undefined;
+        }
+      }
+
+      function row(cells) {
+        const tr = document.createElement("tr");
+        for (const cell of cells) {
+          const td = document.createElement("td");
+          if (cell instanceof Node) {
+            td.append(cell);
+          } else {
+            td.textContent = cell;
+          }
+          tr.append(td);
+        }
+        return tr;
+      }
+
+      function emptyRow(message, colSpan) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.className = "empty";
+        td.colSpan = colSpan;
+        td.textContent = message;
+        tr.append(td);
+        return tr;
+      }
+
+      function tag(text, variant = "") {
+        const span = document.createElement("span");
+        span.className = variant ? `tag ${variant}` : "tag";
+        span.textContent = text;
+        return span;
+      }
+
+      function formatBytes(value) {
+        if (value < 1024) {
+          return `${value} B`;
+        }
+        if (value < 1024 * 1024) {
+          return `${(value / 1024).toFixed(1)} KB`;
+        }
+        return `${(value / 1024 / 1024).toFixed(2)} MB`;
+      }
+
+      function reSavedName(name) {
+        return name.replace(/\.kmz$/i, "") + ".resaved.kmz";
+      }
+
+      function diffEntryStatus(originalBytes, savedBytes, originalIndex, savedIndex) {
+        if (!originalBytes) {
+          return "added";
+        }
+        if (!savedBytes) {
+          return "removed";
+        }
+        if (!bytesEqual(originalBytes, savedBytes)) {
+          return "changed";
+        }
+        if (originalIndex !== savedIndex) {
+          return "moved";
+        }
+        return "same";
+      }
+
+      function orderText(originalIndex, savedIndex) {
+        const originalOrder = originalIndex === -1 ? "-" : String(originalIndex + 1);
+        const savedOrder = savedIndex === -1 ? "-" : String(savedIndex + 1);
+        return `${originalOrder} -> ${savedOrder}`;
+      }
+
+      function bytesEqual(left, right) {
+        if (!left || !right || left.byteLength !== right.byteLength) {
+          return false;
+        }
+        for (let index = 0; index < left.byteLength; index += 1) {
+          if (left[index] !== right[index]) {
+            return false;
+          }
+        }
+        return true;
+      }
+    </script>
+  </body>
+</html>

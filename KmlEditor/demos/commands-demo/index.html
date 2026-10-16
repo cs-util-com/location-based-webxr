@@ -1,0 +1,1725 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Commands Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07111f;
+        --bg-2: #0d1730;
+        --panel: rgba(13, 21, 39, 0.9);
+        --panel-2: rgba(20, 31, 56, 0.96);
+        --text: #f5f8ff;
+        --muted: #aeb9d5;
+        --border: rgba(174, 185, 213, 0.16);
+        --accent: #72e3ff;
+        --accent-2: #ffb86c;
+        --good: #7cf3be;
+        --warn: #ffd27a;
+        --danger: #ff92b5;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(114, 227, 255, 0.15), transparent 30%),
+          radial-gradient(circle at 80% 18%, rgba(255, 184, 108, 0.12), transparent 26%),
+          linear-gradient(135deg, #050a14 0%, #0a1324 52%, #101b31 100%);
+        color: var(--text);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+      }
+
+      main {
+        width: min(1560px, calc(100vw - 24px));
+        margin: 0 auto;
+        padding: 28px 0 40px;
+      }
+
+      .hero {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2.1rem, 4vw, 4rem);
+        line-height: 0.96;
+        letter-spacing: -0.05em;
+      }
+
+      .lede {
+        max-width: 74ch;
+        margin: 12px 0 0;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 0 12px;
+        border: 1px solid rgba(114, 227, 255, 0.24);
+        border-radius: 999px;
+        background: rgba(114, 227, 255, 0.1);
+        color: #caf5ff;
+        font-size: 0.82rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+      }
+
+      .badge.alt {
+        border-color: rgba(255, 184, 108, 0.22);
+        background: rgba(255, 184, 108, 0.1);
+        color: #ffe5c0;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(330px, 410px) minmax(0, 1.15fr);
+        gap: 16px;
+        align-items: start;
+      }
+
+      .stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--panel);
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+        -webkit-backdrop-filter: blur(12px);
+        backdrop-filter: blur(12px);
+        overflow: hidden;
+      }
+
+      .panel > header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent);
+      }
+
+      .panel > header h2 {
+        margin: 0;
+        font-size: 0.98rem;
+        letter-spacing: 0.01em;
+      }
+
+      .panel > header small {
+        color: var(--muted);
+      }
+
+      .content {
+        padding: 16px;
+      }
+
+      .controls {
+        display: grid;
+        gap: 12px;
+      }
+
+      .field-row {
+        display: grid;
+        gap: 6px;
+      }
+
+      label {
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+      }
+
+      select,
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid rgba(174, 185, 213, 0.22);
+        border-radius: 12px;
+        background: var(--panel-2);
+        color: var(--text);
+        padding: 0 12px;
+        font: inherit;
+      }
+
+      select,
+      input {
+        min-height: 42px;
+      }
+
+      textarea {
+        min-height: 320px;
+        resize: vertical;
+        padding: 12px;
+        line-height: 1.5;
+        font-size: 0.84rem;
+        white-space: pre;
+      }
+
+      select:focus,
+      input:focus,
+      button:focus-visible,
+      textarea:focus {
+        outline: 2px solid rgba(114, 227, 255, 0.46);
+        outline-offset: 2px;
+      }
+
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      button {
+        min-height: 42px;
+        border: 0;
+        border-radius: 12px;
+        padding: 0 14px;
+        color: #07111f;
+        background: linear-gradient(135deg, var(--accent) 0%, #c9f7ff 100%);
+        font: inherit;
+        font-weight: 900;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        color: var(--text);
+        background: linear-gradient(135deg, rgba(255, 184, 108, 0.18), rgba(114, 227, 255, 0.12));
+        border: 1px solid rgba(174, 185, 213, 0.2);
+      }
+
+      button.ghost {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(174, 185, 213, 0.18);
+        font-weight: 800;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .metric {
+        padding: 12px 14px;
+        border: 1px solid rgba(174, 185, 213, 0.14);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .metric span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.74rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 1.08rem;
+        font-variant-numeric: tabular-nums;
+        word-break: break-word;
+      }
+
+      .status {
+        min-height: 22px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .status[data-tone="ok"] {
+        color: var(--good);
+      }
+
+      .status[data-tone="warn"] {
+        color: var(--warn);
+      }
+
+      .status[data-tone="error"] {
+        color: var(--danger);
+      }
+
+      .table-wrap {
+        overflow: auto;
+        border: 1px solid rgba(174, 185, 213, 0.12);
+        border-radius: 14px;
+      }
+
+      .scene-shell {
+        display: grid;
+        gap: 12px;
+      }
+
+      .scene-stage {
+        position: relative;
+        aspect-ratio: 960 / 560;
+        border: 1px solid rgba(174, 185, 213, 0.12);
+        border-radius: 16px;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 50% 20%, rgba(114, 227, 255, 0.08), transparent 26%),
+          linear-gradient(180deg, rgba(7, 17, 31, 0.88), rgba(15, 26, 47, 0.98));
+      }
+
+      .scene-meta {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      .grid-line {
+        stroke: rgba(174, 185, 213, 0.08);
+        stroke-width: 1;
+      }
+
+      .axis-line {
+        stroke: rgba(114, 227, 255, 0.22);
+        stroke-width: 1.5;
+      }
+
+      .world-label {
+        fill: rgba(245, 248, 255, 0.82);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .overlay-shape {
+        fill: rgba(114, 227, 255, 0.08);
+        stroke: rgba(114, 227, 255, 0.28);
+        stroke-width: 1.5;
+        stroke-dasharray: 8 6;
+      }
+
+      .scene-polyline {
+        fill: none;
+        stroke: rgba(124, 243, 190, 0.18);
+        stroke-width: 10;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .scene-line {
+        fill: none;
+        stroke: #7cf3be;
+        stroke-width: 4;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        marker-end: url(#ray-arrow);
+      }
+
+      .scene-vertex {
+        fill: #07111f;
+        stroke: #d8fff0;
+        stroke-width: 3;
+        cursor: grab;
+      }
+
+      .scene-vertex.selected {
+        fill: #7cf3be;
+        stroke: #ffffff;
+        stroke-width: 4;
+      }
+
+      .scene-marker {
+        cursor: grab;
+      }
+
+      .scene-marker .halo {
+        fill: rgba(114, 227, 255, 0.18);
+        stroke: rgba(114, 227, 255, 0.55);
+        stroke-width: 2;
+      }
+
+      .scene-marker .core {
+        fill: #72e3ff;
+        stroke: #d6fbff;
+        stroke-width: 2;
+      }
+
+      .scene-marker .stem {
+        stroke: rgba(174, 185, 213, 0.65);
+        stroke-width: 2;
+      }
+
+      .scene-model {
+        cursor: grab;
+      }
+
+      .scene-model .body {
+        fill: rgba(255, 184, 108, 0.18);
+        stroke: #ffb86c;
+        stroke-width: 2;
+      }
+
+      .scene-model .roof {
+        fill: rgba(255, 184, 108, 0.44);
+      }
+
+      .scene-model .orientation-handle {
+        fill: #ffb86c;
+        stroke: #0d1730;
+        stroke-width: 2;
+        cursor: crosshair;
+      }
+
+      .selection-ring {
+        fill: none;
+        stroke: rgba(255, 255, 255, 0.9);
+        stroke-width: 2;
+        stroke-dasharray: 6 4;
+        pointer-events: none;
+      }
+
+      .scene-caption {
+        display: grid;
+        gap: 4px;
+      }
+
+      .scene-caption strong {
+        font-size: 0.98rem;
+      }
+
+      .scene-caption span {
+        color: var(--muted);
+        font-size: 0.88rem;
+        line-height: 1.45;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 720px;
+      }
+
+      th,
+      td {
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(174, 185, 213, 0.12);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: rgba(12, 18, 34, 0.98);
+        color: var(--muted);
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      tr[data-selected="true"] td {
+        background: rgba(114, 227, 255, 0.07);
+      }
+
+      td code,
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.92rem;
+      }
+
+      .feature-picker {
+        display: grid;
+        gap: 10px;
+      }
+
+      .command-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .command-card {
+        padding: 14px;
+        border: 1px solid rgba(174, 185, 213, 0.12);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.03);
+        display: grid;
+        gap: 10px;
+      }
+
+      .command-card h3 {
+        margin: 0;
+        font-size: 0.96rem;
+      }
+
+      .command-card p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+        font-size: 0.92rem;
+      }
+
+      .log {
+        display: grid;
+        gap: 10px;
+      }
+
+      .log-entry {
+        padding: 10px 12px;
+        border: 1px solid rgba(174, 185, 213, 0.12);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .log-entry .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 20px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: rgba(114, 227, 255, 0.11);
+        color: #cdf4ff;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+      }
+
+      .pill.warn {
+        background: rgba(255, 184, 108, 0.11);
+        color: #ffe2ba;
+      }
+
+      .pill.error {
+        background: rgba(255, 146, 181, 0.13);
+        color: #ffd0de;
+      }
+
+      .diff {
+        display: grid;
+        gap: 8px;
+      }
+
+      .diff-line {
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr);
+        gap: 12px;
+        padding: 6px 10px;
+        border-radius: 10px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.86rem;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .diff-line.add {
+        background: rgba(124, 243, 190, 0.08);
+      }
+
+      .diff-line.remove {
+        background: rgba(255, 146, 181, 0.08);
+      }
+
+      .diff-line.same {
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .diff-line .sign {
+        color: var(--muted);
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+        gap: 12px;
+      }
+
+      .code-panel {
+        min-height: 320px;
+        padding: 12px;
+        border: 1px solid rgba(174, 185, 213, 0.12);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.03);
+        overflow: auto;
+      }
+
+      pre {
+        margin: 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.86rem;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      @media (max-width: 1120px) {
+        .grid,
+        .split,
+        .command-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="hero">
+        <div>
+          <span class="badge">Commands Demo</span>
+          <h1>Undoable edits with a live command log</h1>
+          <p class="lede">
+            This page loads a real fixture into the KML document model, binds it to the geo bridge and command stack, and lets you execute marker, line, model, create, delete, and text edits without the rest of the editor.
+          </p>
+        </div>
+        <div class="badge alt">fixture-driven · stack-scoped · undo/redo</div>
+      </div>
+
+      <div class="grid">
+        <section class="stack">
+          <article class="panel">
+            <header>
+              <h2>Controls</h2>
+              <small id="load-state">Loading fixture…</small>
+            </header>
+            <div class="content controls">
+              <div class="metrics">
+                <div class="metric">
+                  <span>Features</span>
+                  <strong id="feature-count">—</strong>
+                </div>
+                <div class="metric">
+                  <span>Undo / Redo</span>
+                  <strong id="stack-state">—</strong>
+                </div>
+                <div class="metric">
+                  <span>Active selection</span>
+                  <strong id="selection-state">—</strong>
+                </div>
+              </div>
+
+              <div class="feature-picker">
+                <div class="field-row">
+                  <label for="feature-select">Selected feature</label>
+                  <select id="feature-select"></select>
+                </div>
+                <div class="field-row">
+                  <label for="rename-input">Rename target</label>
+                  <input id="rename-input" type="text" placeholder="Enter a new name" />
+                </div>
+              </div>
+
+              <div class="toolbar">
+                <button id="undo-button" type="button" class="secondary">Undo</button>
+                <button id="redo-button" type="button" class="secondary">Redo</button>
+                <button id="reset-button" type="button" class="ghost">Reset demo</button>
+              </div>
+
+              <div class="status" id="status" aria-live="polite">Ready.</div>
+
+              <div class="command-grid">
+                <div class="command-card">
+                  <h3>Marker move</h3>
+                  <p>Moves the marker through the geo bridge so the command stack stores the world-space intent and restores the original position on undo.</p>
+                  <button id="move-marker-button" type="button">Move marker northeast</button>
+                </div>
+
+                <div class="command-card">
+                  <h3>Line vertex edit</h3>
+                  <p>Moves one line vertex to a new world position and keeps the rest of the line intact.</p>
+                  <button id="move-line-button" type="button">Move line vertex</button>
+                </div>
+
+                <div class="command-card">
+                  <h3>Name edit</h3>
+                  <p>Renames the currently selected feature via a text command and restores the exact previous string on undo.</p>
+                  <button id="rename-button" type="button">Rename selected feature</button>
+                </div>
+
+                <div class="command-card">
+                  <h3>Model edit</h3>
+                  <p>Rotates the model feature using a typed model command.</p>
+                  <button id="rotate-model-button" type="button">Rotate model</button>
+                </div>
+
+                <div class="command-card">
+                  <h3>Create feature</h3>
+                  <p>Creates a new marker, captures the generated id, and selects it so you can immediately inspect and delete it.</p>
+                  <button id="create-button" type="button">Create marker</button>
+                </div>
+
+                <div class="command-card">
+                  <h3>Delete feature</h3>
+                  <p>Deletes the current selection and preserves the returned snapshot for undo.</p>
+                  <button id="delete-button" type="button">Delete selected feature</button>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <header>
+              <h2>Command log</h2>
+              <small>Most recent actions first</small>
+            </header>
+            <div class="content log" id="command-log"></div>
+          </article>
+        </section>
+
+        <section class="stack">
+          <article class="panel scene-shell">
+            <header>
+              <h2>Desktop Scene</h2>
+              <small>Click, drag, and rotate objects directly</small>
+            </header>
+            <div class="content">
+              <div class="scene-meta">
+                <span id="scene-status">Select a feature or drag an object.</span>
+                <span class="mono">grid: 40 m · view: 960 × 560</span>
+              </div>
+              <div class="scene-stage">
+                <svg id="scene-svg" viewBox="0 0 960 560" role="img" aria-label="Interactive desktop scene">
+                  <defs>
+                    <marker id="ray-arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto-start-reverse">
+                      <path d="M 0 0 L 12 6 L 0 12 z" fill="#7cf3be"></path>
+                    </marker>
+                  </defs>
+                </svg>
+              </div>
+              <div class="scene-caption">
+                <strong>Manual interactions</strong>
+                <span>Drag a marker or line vertex to emit a move command. Drag the orange handle above the model to rotate it. Click any object to select it before renaming or deleting it.</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <header>
+              <h2>Feature list</h2>
+              <small>IDs, names, and types from the real document</small>
+            </header>
+            <div class="content">
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Type</th>
+                      <th>Name</th>
+                      <th>Description</th>
+                      <th>Details</th>
+                    </tr>
+                  </thead>
+                  <tbody id="feature-table"></tbody>
+                </table>
+              </div>
+            </div>
+          </article>
+
+          <div class="split">
+            <article class="panel">
+              <header>
+                <h2>Serialized KML</h2>
+                <small>Current document state</small>
+              </header>
+              <div class="content">
+                <textarea id="kml-output" readonly aria-label="Serialized KML output" placeholder="Serialized KML output appears here."></textarea>
+              </div>
+            </article>
+
+            <article class="panel">
+              <header>
+                <h2>Diff</h2>
+                <small>Compared with the original fixture</small>
+              </header>
+              <div class="content">
+                <div class="hint" id="diff-summary">Waiting for fixture load…</div>
+                <div class="code-panel diff" id="diff-panel"></div>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script type="module">
+      import { createGeoBridge } from '../../src/geo-bridge/index.ts';
+      import { createKmlDocument } from '../../src/document-model/index.ts';
+      import {
+        createAddLineVertexCommand,
+        createCommandStack,
+        createCreateFeatureCommand,
+        createDeleteFeatureCommand,
+        createMoveLineVertexCommand,
+        createMoveMarkerCommand,
+        createMoveModelCommand,
+        createMoveOverlayCommand,
+        createRemoveLineVertexCommand,
+        createRotateModelCommand,
+        createRotateOverlayCommand,
+        createScaleModelCommand,
+        createSetDescriptionCommand,
+        createSetNameCommand,
+      } from '../../src/commands/index.ts';
+
+      const fixtureUrl = '/fixtures/google-earth/emilsborg.kml';
+      const documentModel = createKmlDocument();
+      const geoBridge = createGeoBridge();
+      const commandStack = createCommandStack(documentModel, geoBridge);
+
+      const loadState = document.getElementById('load-state');
+      const status = document.getElementById('status');
+      const sceneStatus = document.getElementById('scene-status');
+      const featureCount = document.getElementById('feature-count');
+      const stackState = document.getElementById('stack-state');
+      const selectionState = document.getElementById('selection-state');
+      const featureSelect = document.getElementById('feature-select');
+      const renameInput = document.getElementById('rename-input');
+      const undoButton = document.getElementById('undo-button');
+      const redoButton = document.getElementById('redo-button');
+      const resetButton = document.getElementById('reset-button');
+      const moveMarkerButton = document.getElementById('move-marker-button');
+      const moveLineButton = document.getElementById('move-line-button');
+      const renameButton = document.getElementById('rename-button');
+      const rotateModelButton = document.getElementById('rotate-model-button');
+      const createButton = document.getElementById('create-button');
+      const deleteButton = document.getElementById('delete-button');
+      const commandLog = document.getElementById('command-log');
+      const featureTable = document.getElementById('feature-table');
+      const sceneSvg = document.getElementById('scene-svg');
+      const kmlOutput = document.getElementById('kml-output');
+      const diffPanel = document.getElementById('diff-panel');
+      const diffSummary = document.getElementById('diff-summary');
+
+      const logEntries = [];
+      // width: 960, height: 560
+      const sceneSize = { width: 1500, height: 900 };
+      const sceneScale = 2.8;
+      let originalKml = '';
+      let currentFeatures = [];
+      let selectedFeatureId = null;
+      let sceneSeedModelId = null;
+      let sceneDrag = null;
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function formatXmlForDisplay(xml) {
+        const normalized = xml
+          .replace(/>\s+</g, '><')
+          .replace(/\r\n/g, '\n')
+          .trim();
+
+        const withBreaks = normalized.replace(/(>)(<)(\/?)/g, '$1\n$2$3');
+        const lines = withBreaks.split('\n');
+        const indentSize = 2;
+        let indent = 0;
+
+        return lines.map((line) => {
+          const trimmed = line.trim();
+          if (!trimmed) {
+            return '';
+          }
+
+          if (/^<\//.test(trimmed) || /^<.*\/>$/.test(trimmed)) {
+            indent = Math.max(indent - 1, 0);
+          }
+
+          const formattedLine = `${' '.repeat(indent * indentSize)}${trimmed}`;
+
+          if (/^<[^!?/][^>]*[^/]>$/.test(trimmed) && !/^<.*>.*<\/.*>$/.test(trimmed)) {
+            indent += 1;
+          }
+
+          return formattedLine;
+        }).join('\n');
+      }
+
+      function getFormattedKml() {
+        return formatXmlForDisplay(documentModel.serialize());
+      }
+
+      function formatPosition(position) {
+        return `${position.lon.toFixed(6)}, ${position.lat.toFixed(6)}, ${position.alt.toFixed(2)}`;
+      }
+
+      function formatFeatureDetails(feature) {
+        if (feature.type === 'marker') {
+          return `position ${formatPosition(feature.position)}`;
+        }
+
+        if (feature.type === 'line') {
+          return `${feature.coordinates.length} vertices`;
+        }
+
+        if (feature.type === 'ground-overlay') {
+          const box = feature.latLonBox;
+          return `box ${box.west.toFixed(2)} → ${box.east.toFixed(2)}, rot ${box.rotation.toFixed(1)}`;
+        }
+
+        if (feature.type === 'model') {
+          return `location ${formatPosition(feature.location)} · rot ${feature.orientation.heading.toFixed(1)}`;
+        }
+
+        return '';
+      }
+
+      function featureSummary(feature) {
+        return `${feature.name || '(untitled)'} · ${feature.type}`;
+      }
+
+      function findFeature(type, name) {
+        return currentFeatures.find((feature) => feature.type === type && feature.name === name) || null;
+      }
+
+      function worldToScene(position) {
+        return {
+          x: sceneSize.width / 2 + position.x * sceneScale,
+          y: sceneSize.height / 2 - position.z * sceneScale,
+        };
+      }
+
+      function sceneToWorld(point) {
+        return {
+          x: (point.x - sceneSize.width / 2) / sceneScale,
+          z: (sceneSize.height / 2 - point.y) / sceneScale,
+        };
+      }
+
+      function getWorldPosition(feature) {
+        if (feature.type === 'marker') {
+          return geoBridge.geoToWorld(feature.position, 'absolute');
+        }
+
+        if (feature.type === 'line') {
+          return feature.coordinates.map((coordinate) => geoBridge.geoToWorld(coordinate, 'absolute'));
+        }
+
+        if (feature.type === 'model') {
+          return geoBridge.geoToWorld(feature.location, feature.altitudeMode);
+        }
+
+        return null;
+      }
+
+      function getPointerPoint(event) {
+        if (!sceneSvg) return { x: 0, y: 0 };
+        const matrix = sceneSvg.getScreenCTM();
+        if (!matrix) return { x: 0, y: 0 };
+        return new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+      }
+
+      function getSelectedFeature() {
+        return selectedFeatureId ? currentFeatures.find((feature) => feature.id === selectedFeatureId) || null : null;
+      }
+
+      function setSelectedFeature(featureId) {
+        selectedFeatureId = featureId;
+        if (featureSelect) {
+          featureSelect.value = featureId || '';
+        }
+      }
+
+      function formatWorldPoint(world) {
+        return `${world.x.toFixed(1)}, ${world.z.toFixed(1)}`;
+      }
+
+      function previewDragWorld(feature) {
+        if (!sceneDrag || sceneDrag.featureId !== feature.id) {
+          return null;
+        }
+
+        return sceneDrag.previewWorld || null;
+      }
+
+      function previewModelRotation(feature) {
+        if (!sceneDrag || sceneDrag.featureId !== feature.id || sceneDrag.kind !== 'rotate-model') {
+          return null;
+        }
+
+        return sceneDrag.previewHeading;
+      }
+
+      function updateDerivedState() {
+        currentFeatures = documentModel.getFeatures();
+        if (!currentFeatures.some((feature) => feature.id === selectedFeatureId)) {
+          selectedFeatureId = currentFeatures[0]?.id ?? null;
+        }
+
+        if (featureCount) {
+          featureCount.textContent = String(currentFeatures.length);
+        }
+        if (stackState) {
+          stackState.textContent = `${commandStack.canUndo() ? 'can undo' : 'no undo'} / ${commandStack.canRedo() ? 'can redo' : 'no redo'}`;
+        }
+        if (selectionState) {
+          const selected = selectedFeatureId ? currentFeatures.find((feature) => feature.id === selectedFeatureId) : null;
+          selectionState.textContent = selected ? `${selected.name || '(untitled)'} · ${selected.type}` : 'none';
+        }
+        if (undoButton) {
+          undoButton.disabled = !commandStack.canUndo();
+        }
+        if (redoButton) {
+          redoButton.disabled = !commandStack.canRedo();
+        }
+      }
+
+      function renderFeatureSelect() {
+        if (!featureSelect) return;
+        const previousValue = selectedFeatureId;
+        featureSelect.innerHTML = '';
+
+        for (const feature of currentFeatures) {
+          const option = document.createElement('option');
+          option.value = feature.id;
+          option.textContent = featureSummary(feature);
+          option.title = `ID: ${feature.id}`;
+          featureSelect.appendChild(option);
+        }
+
+        if (currentFeatures.length) {
+          featureSelect.value = previousValue && currentFeatures.some((feature) => feature.id === previousValue)
+            ? previousValue
+            : currentFeatures[0].id;
+          selectedFeatureId = featureSelect.value;
+        }
+      }
+
+      function renderFeatureTable() {
+        if (!featureTable) return;
+        featureTable.innerHTML = '';
+
+        for (const feature of currentFeatures) {
+          const row = document.createElement('tr');
+          if (feature.id === selectedFeatureId) {
+            row.dataset.selected = 'true';
+          }
+
+          row.innerHTML = `
+            <td class="mono"><code>${escapeHtml(feature.id)}</code></td>
+            <td>${escapeHtml(feature.type)}</td>
+            <td>${escapeHtml(feature.name || '')}</td>
+            <td>${escapeHtml(feature.description || '')}</td>
+            <td>${escapeHtml(formatFeatureDetails(feature))}</td>
+          `;
+          row.addEventListener('click', () => {
+            selectedFeatureId = feature.id;
+            if (featureSelect) {
+              featureSelect.value = feature.id;
+            }
+            refreshUI();
+          });
+          featureTable.appendChild(row);
+        }
+      }
+
+      function renderScene() {
+        if (!sceneSvg) return;
+
+        currentFeatures = documentModel.getFeatures();
+        const selected = getSelectedFeature();
+        const elements = [];
+
+        for (let i = 0; i <= sceneSize.width; i += 40) {
+          elements.push(`<line class="grid-line" x1="${i}" y1="0" x2="${i}" y2="${sceneSize.height}" />`);
+        }
+
+        for (let j = 0; j <= sceneSize.height; j += 40) {
+          elements.push(`<line class="grid-line" x1="0" y1="${j}" x2="${sceneSize.width}" y2="${j}" />`);
+        }
+
+        elements.push(`<line class="axis-line" x1="${sceneSize.width / 2}" y1="0" x2="${sceneSize.width / 2}" y2="${sceneSize.height}" />`);
+        elements.push(`<line class="axis-line" x1="0" y1="${sceneSize.height / 2}" x2="${sceneSize.width}" y2="${sceneSize.height / 2}" />`);
+
+        for (const feature of currentFeatures) {
+          if (feature.type === 'line') {
+            const points = feature.coordinates.map((coordinate, index) => {
+              const baseWorld = geoBridge.geoToWorld(coordinate, 'absolute');
+              if (sceneDrag && sceneDrag.kind === 'line-vertex' && sceneDrag.featureId === feature.id && sceneDrag.vertexIndex === index) {
+                return sceneDrag.previewWorld || baseWorld;
+              }
+
+              return baseWorld;
+            });
+
+            const pathPoints = points.map((point) => {
+              const scenePoint = worldToScene(point);
+              return `${scenePoint.x.toFixed(1)},${scenePoint.y.toFixed(1)}`;
+            }).join(' ');
+
+            const rayOpacity = selected?.id === feature.id ? '1' : '0.92';
+
+            elements.push(`<polyline class="scene-polyline" points="${pathPoints}" opacity="${rayOpacity}" />`);
+            elements.push(`<polyline class="scene-line" points="${pathPoints}" opacity="${rayOpacity}" />`);
+
+            points.forEach((point, index) => {
+              const scenePoint = worldToScene(point);
+              const isSelectedHandle = sceneDrag && sceneDrag.kind === 'line-vertex' && sceneDrag.featureId === feature.id && sceneDrag.vertexIndex === index;
+              elements.push(`
+                <circle
+                  class="scene-vertex ${isSelectedHandle ? 'selected' : ''}"
+                  cx="${scenePoint.x.toFixed(1)}"
+                  cy="${scenePoint.y.toFixed(1)}"
+                  r="${isSelectedHandle || selected?.id === feature.id ? 9 : 7}"
+                  data-feature-id="${feature.id}"
+                  data-drag-kind="line-vertex"
+                  data-vertex-index="${index}"
+                  data-feature-type="line"
+                />
+              `);
+            });
+
+            if (selected?.id === feature.id) {
+              const xs = points.map((point) => worldToScene(point).x);
+              const ys = points.map((point) => worldToScene(point).y);
+              const minX = Math.min(...xs) - 24;
+              const maxX = Math.max(...xs) + 24;
+              const minY = Math.min(...ys) - 24;
+              const maxY = Math.max(...ys) + 24;
+              elements.push(`<rect class="selection-ring" x="${minX.toFixed(1)}" y="${minY.toFixed(1)}" width="${(maxX - minX).toFixed(1)}" height="${(maxY - minY).toFixed(1)}" rx="12" />`);
+            }
+          }
+
+          if (feature.type === 'marker') {
+            const baseWorld = geoBridge.geoToWorld(feature.position, 'absolute');
+            const dragWorld = sceneDrag && sceneDrag.kind === 'marker' && sceneDrag.featureId === feature.id ? sceneDrag.previewWorld || baseWorld : null;
+            const world = dragWorld || baseWorld;
+            const scenePoint = worldToScene(world);
+            const isSelected = selected?.id === feature.id;
+
+            elements.push(`
+              <g
+                class="scene-marker"
+                transform="translate(${scenePoint.x.toFixed(1)} ${scenePoint.y.toFixed(1)})"
+                data-feature-id="${feature.id}"
+                data-drag-kind="marker"
+                data-feature-type="marker"
+              >
+                <circle class="halo" r="18" />
+                <line class="stem" x1="0" y1="16" x2="0" y2="28" />
+                <circle class="core" r="${isSelected ? 10 : 8}" />
+                <text class="world-label" y="-24" text-anchor="middle">${escapeHtml(feature.name || feature.id)}</text>
+              </g>
+            `);
+
+            if (isSelected) {
+              elements.push(`<circle class="selection-ring" cx="${scenePoint.x.toFixed(1)}" cy="${scenePoint.y.toFixed(1)}" r="26" />`);
+            }
+          }
+
+          if (feature.type === 'model') {
+            const baseWorld = geoBridge.geoToWorld(feature.location, feature.altitudeMode);
+            const scenePoint = worldToScene(baseWorld);
+            const heading = previewModelRotation(feature) ?? feature.orientation.heading;
+            const isSelected = selected?.id === feature.id;
+
+            elements.push(`
+              <g
+                class="scene-model"
+                transform="translate(${scenePoint.x.toFixed(1)} ${scenePoint.y.toFixed(1)}) rotate(${heading.toFixed(2)})"
+                data-feature-id="${feature.id}"
+                data-feature-type="model"
+              >
+                <rect class="body" x="-34" y="-22" width="68" height="44" rx="10" />
+                <path class="roof" d="M -34 -22 L 0 -48 L 34 -22 Z" />
+                <circle class="orientation-handle" cx="0" cy="-58" r="8" data-feature-id="${feature.id}" data-drag-kind="rotate-model" data-feature-type="model" />
+                <text class="world-label" y="62" text-anchor="middle">${escapeHtml(feature.name || feature.id)}</text>
+              </g>
+            `);
+
+            if (isSelected) {
+              elements.push(`<rect class="selection-ring" x="${(scenePoint.x - 46).toFixed(1)}" y="${(scenePoint.y - 64).toFixed(1)}" width="92" height="116" rx="16" />`);
+            }
+          }
+        }
+
+        const selectedFeatureText = selected ? `${selected.name || selected.id} · ${selected.type}` : 'none';
+        if (sceneStatus) {
+          if (sceneDrag) {
+            if (sceneDrag.kind === 'marker' || sceneDrag.kind === 'line-vertex') {
+              sceneStatus.textContent = `Dragging ${sceneDrag.kind.replace('-', ' ')} on ${selectedFeatureText} at ${formatWorldPoint(sceneDrag.previewWorld || sceneDrag.originalWorld)}.`;
+            } else if (sceneDrag.kind === 'rotate-model') {
+              sceneStatus.textContent = `Rotating model ${selectedFeatureText} to heading ${sceneDrag.previewHeading.toFixed(1)}°.`;
+            }
+          } else {
+            sceneStatus.textContent = `Selected ${selectedFeatureText}. Drag a marker or line vertex; drag the orange model handle to rotate.`;
+          }
+        }
+
+        sceneSvg.innerHTML = elements.join('');
+      }
+
+      function beginSceneDrag(event, feature, kind, extra = {}) {
+        setSelectedFeature(feature.id);
+
+        if (kind === 'marker') {
+          const originalWorld = getWorldPosition(feature);
+          sceneDrag = {
+            kind,
+            featureId: feature.id,
+            pointerId: event.pointerId,
+            originalWorld,
+            previewWorld: originalWorld,
+          };
+        } else if (kind === 'line-vertex') {
+          const originalWorld = getWorldPosition(feature)[extra.vertexIndex];
+          sceneDrag = {
+            kind,
+            featureId: feature.id,
+            vertexIndex: extra.vertexIndex,
+            pointerId: event.pointerId,
+            originalWorld,
+            previewWorld: originalWorld,
+          };
+        } else if (kind === 'rotate-model') {
+          const centerWorld = getWorldPosition(feature);
+          sceneDrag = {
+            kind,
+            featureId: feature.id,
+            pointerId: event.pointerId,
+            centerWorld,
+            originalHeading: feature.orientation.heading,
+            previewHeading: feature.orientation.heading,
+          };
+        }
+
+        if (sceneSvg && sceneSvg.setPointerCapture) {
+          sceneSvg.setPointerCapture(event.pointerId);
+        }
+
+        event.preventDefault();
+        renderScene();
+      }
+
+      function handleScenePointerDown(event) {
+        if (!(event.target instanceof Element) || !sceneSvg) {
+          return;
+        }
+
+        const target = event.target.closest('[data-feature-id]');
+        if (!target) {
+          setSelectedFeature(null);
+          renderScene();
+          return;
+        }
+
+        const featureId = target.getAttribute('data-feature-id');
+        const dragKind = target.getAttribute('data-drag-kind');
+        const vertexIndexValue = target.getAttribute('data-vertex-index');
+        const feature = featureId ? currentFeatures.find((item) => item.id === featureId) || null : null;
+        if (!feature) {
+          return;
+        }
+
+        if (!dragKind) {
+          setSelectedFeature(feature.id);
+          refreshUI();
+          return;
+        }
+
+        if (dragKind === 'marker') {
+          beginSceneDrag(event, feature, 'marker');
+          return;
+        }
+
+        if (dragKind === 'line-vertex') {
+          beginSceneDrag(event, feature, 'line-vertex', { vertexIndex: Number(vertexIndexValue) || 0 });
+          return;
+        }
+
+        if (dragKind === 'rotate-model') {
+          beginSceneDrag(event, feature, 'rotate-model');
+        }
+      }
+
+      function handleScenePointerMove(event) {
+        if (!sceneDrag) {
+          return;
+        }
+
+        const point = getPointerPoint(event);
+        const planeWorld = sceneToWorld(point);
+
+        if (sceneDrag.kind === 'marker' || sceneDrag.kind === 'line-vertex') {
+          sceneDrag.previewWorld = {
+            x: planeWorld.x,
+            y: sceneDrag.originalWorld.y,
+            z: planeWorld.z,
+          };
+        }
+
+        if (sceneDrag.kind === 'rotate-model') {
+          const dx = planeWorld.x - sceneDrag.centerWorld.x;
+          const dz = planeWorld.z - sceneDrag.centerWorld.z;
+          sceneDrag.previewHeading = (Math.atan2(dx, dz) * 180 / Math.PI + 360) % 360;
+        }
+
+        renderScene();
+      }
+
+      function finishSceneDrag(event) {
+        if (!sceneDrag) {
+          return;
+        }
+
+        const drag = sceneDrag;
+        sceneDrag = null;
+
+        if (sceneSvg && sceneSvg.hasPointerCapture && sceneSvg.hasPointerCapture(event.pointerId)) {
+          sceneSvg.releasePointerCapture(event.pointerId);
+        }
+
+        const feature = currentFeatures.find((item) => item.id === drag.featureId) || null;
+        if (!feature) {
+          renderScene();
+          return;
+        }
+
+        if (drag.kind === 'marker' && drag.previewWorld) {
+          const targetWorld = drag.previewWorld;
+          runCommand(
+            () => createMoveMarkerCommand(feature.id, targetWorld),
+            () => `Moved marker ${feature.name || feature.id} to ${formatWorldPoint(targetWorld)}.`,
+          );
+        }
+
+        if (drag.kind === 'line-vertex' && drag.previewWorld) {
+          const vertexIndex = drag.vertexIndex;
+          runCommand(
+            () => createMoveLineVertexCommand(feature.id, vertexIndex, drag.previewWorld),
+            () => `Moved vertex ${vertexIndex + 1} on ${feature.name || feature.id}.`,
+          );
+        }
+
+        if (drag.kind === 'rotate-model' && typeof drag.previewHeading === 'number') {
+          runCommand(
+            () => createRotateModelCommand(feature.id, {
+              heading: drag.previewHeading,
+              tilt: feature.orientation.tilt,
+              roll: feature.orientation.roll,
+            }),
+            () => `Rotated model ${feature.name || feature.id} to ${drag.previewHeading.toFixed(1)}°.`,
+          );
+        }
+
+        renderScene();
+      }
+
+      function computeDiffLines(beforeText, afterText) {
+        const beforeLines = beforeText.split(/\r?\n/);
+        const afterLines = afterText.split(/\r?\n/);
+        const rows = Array.from({ length: beforeLines.length + 1 }, () => Array(afterLines.length + 1).fill(0));
+
+        for (let i = beforeLines.length - 1; i >= 0; i -= 1) {
+          for (let j = afterLines.length - 1; j >= 0; j -= 1) {
+            rows[i][j] = beforeLines[i] === afterLines[j]
+              ? rows[i + 1][j + 1] + 1
+              : Math.max(rows[i + 1][j], rows[i][j + 1]);
+          }
+        }
+
+        const diff = [];
+        let i = 0;
+        let j = 0;
+
+        while (i < beforeLines.length && j < afterLines.length) {
+          if (beforeLines[i] === afterLines[j]) {
+            diff.push({ sign: ' ', text: beforeLines[i], kind: 'same' });
+            i += 1;
+            j += 1;
+            continue;
+          }
+
+          if (rows[i + 1][j] >= rows[i][j + 1]) {
+            diff.push({ sign: '-', text: beforeLines[i], kind: 'remove' });
+            i += 1;
+          } else {
+            diff.push({ sign: '+', text: afterLines[j], kind: 'add' });
+            j += 1;
+          }
+        }
+
+        while (i < beforeLines.length) {
+          diff.push({ sign: '-', text: beforeLines[i], kind: 'remove' });
+          i += 1;
+        }
+
+        while (j < afterLines.length) {
+          diff.push({ sign: '+', text: afterLines[j], kind: 'add' });
+          j += 1;
+        }
+
+        return diff;
+      }
+
+      function renderDiff() {
+        if (!diffPanel || !diffSummary) return;
+        const currentKml = getFormattedKml();
+        const diffLines = computeDiffLines(formatXmlForDisplay(originalKml), currentKml);
+        const changedLines = diffLines.filter((line) => line.kind !== 'same').length;
+        diffSummary.textContent = changedLines === 0
+          ? 'No diff from the original fixture.'
+          : `${changedLines} changed line${changedLines === 1 ? '' : 's'} in the serialized KML.`;
+
+        diffPanel.innerHTML = diffLines
+          .map((line) => `<div class="diff-line ${line.kind}"><span class="sign">${escapeHtml(line.sign)}</span><span>${escapeHtml(line.text)}</span></div>`)
+          .join('');
+      }
+
+      function renderCommandLog() {
+        if (!commandLog) return;
+        commandLog.innerHTML = '';
+
+        if (!logEntries.length) {
+          commandLog.innerHTML = '<div class="status" data-tone="warn">No commands executed yet.</div>';
+          return;
+        }
+
+        for (const entry of logEntries) {
+          const item = document.createElement('div');
+          item.className = 'log-entry';
+          item.innerHTML = `
+            <div class="meta">
+              <span class="pill ${entry.kind === 'error' ? 'error' : entry.kind === 'undo' || entry.kind === 'redo' ? 'warn' : ''}">${escapeHtml(entry.kind)}</span>
+              <span>${escapeHtml(entry.commandType)}</span>
+              <span>${escapeHtml(entry.description)}</span>
+              <span>${escapeHtml(entry.time)}</span>
+            </div>
+            <div>${escapeHtml(entry.detail)}</div>
+          `;
+          commandLog.appendChild(item);
+        }
+      }
+
+      function refreshUI() {
+        updateDerivedState();
+        renderFeatureSelect();
+        renderFeatureTable();
+        renderScene();
+        renderCommandLog();
+        renderDiff();
+
+        if (kmlOutput) {
+          kmlOutput.value = getFormattedKml();
+        }
+      }
+
+      function setStatus(message, tone = 'ok') {
+        if (!status) return;
+        status.textContent = message;
+        status.dataset.tone = tone;
+      }
+
+      function log(kind, command, detail) {
+        logEntries.unshift({
+          kind,
+          commandType: command?.type || 'system',
+          description: command?.description || detail,
+          detail,
+          time: new Date().toLocaleTimeString(),
+        });
+        logEntries.splice(14);
+      }
+
+      function runCommand(factory, successMessage) {
+        try {
+          const command = factory();
+          commandStack.execute(command);
+          selectedFeatureId = command.featureId || selectedFeatureId;
+          if (featureSelect) {
+            featureSelect.value = selectedFeatureId || '';
+          }
+          log('execute', command, successMessage(command));
+          setStatus(successMessage(command), 'ok');
+          refreshUI();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          log('error', null, message);
+          setStatus(message, 'error');
+          refreshUI();
+        }
+      }
+
+      function executeUndo() {
+        const command = commandStack.undo();
+        if (!command) {
+          setStatus('Nothing to undo.', 'warn');
+          log('undo', null, 'Undo requested at the history boundary.');
+          refreshUI();
+          return;
+        }
+
+        setStatus(`Undid ${command.description}.`, 'warn');
+        log('undo', command, `Undid ${command.description}.`);
+        refreshUI();
+      }
+
+      function executeRedo() {
+        const command = commandStack.redo();
+        if (!command) {
+          setStatus('Nothing to redo.', 'warn');
+          log('redo', null, 'Redo requested at the history boundary.');
+          refreshUI();
+          return;
+        }
+
+        setStatus(`Redid ${command.description}.`, 'warn');
+        log('redo', command, `Redid ${command.description}.`);
+        refreshUI();
+      }
+
+      function resetDemo() {
+        documentModel.parse(originalKml);
+        currentFeatures = documentModel.getFeatures();
+        selectedFeatureId = currentFeatures[0]?.id ?? null;
+        sceneDrag = null;
+        logEntries.length = 0;
+        setStatus('Demo reset to the original fixture.', 'ok');
+        refreshUI();
+      }
+
+      function selectedFeature() {
+        return currentFeatures.find((feature) => feature.id === selectedFeatureId) || null;
+      }
+
+      async function loadFixture() {
+        const response = await fetch(fixtureUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to load fixture: ${response.status} ${response.statusText}`);
+        }
+
+        originalKml = await response.text();
+        documentModel.parse(originalKml);
+        currentFeatures = documentModel.getFeatures();
+        sceneSeedModelId = documentModel.insertFeature({
+          type: 'model',
+          name: 'Scene Model',
+          modelHref: 'scene-model.dae',
+          location: { lon: 6.0615, lat: 50.7789, alt: 228 },
+          orientation: { heading: 18, tilt: 12, roll: 0 },
+          scale: { x: 1, y: 1, z: 1 },
+        }, currentFeatures[0]?.id);
+        originalKml = documentModel.serialize();
+        currentFeatures = documentModel.getFeatures();
+
+        const anchor = findFeature('marker', 'busch_infozentrum')?.position || currentFeatures.find((feature) => feature.type === 'marker')?.position || { lon: 0, lat: 0, alt: 0 };
+        geoBridge.setAnchor({ position: anchor, heading: 12 });
+
+        selectedFeatureId = currentFeatures.find((feature) => feature.id !== sceneSeedModelId)?.id ?? currentFeatures[0]?.id ?? null;
+        if (renameInput) {
+          renameInput.value = 'Commands demo feature';
+        }
+
+        if (loadState) {
+          loadState.textContent = `Loaded ${currentFeatures.length} features from ${fixtureUrl}`;
+        }
+
+        setStatus('Fixture loaded and command stack bound.', 'ok');
+        refreshUI();
+      }
+
+      if (featureSelect) {
+        featureSelect.addEventListener('change', () => {
+          selectedFeatureId = featureSelect.value;
+          refreshUI();
+        });
+      }
+
+      if (sceneSvg) {
+        sceneSvg.addEventListener('pointerdown', handleScenePointerDown);
+        sceneSvg.addEventListener('pointermove', handleScenePointerMove);
+        sceneSvg.addEventListener('pointerup', finishSceneDrag);
+        sceneSvg.addEventListener('pointercancel', finishSceneDrag);
+        sceneSvg.addEventListener('pointerleave', (event) => {
+          if (sceneDrag) {
+            finishSceneDrag(event);
+          }
+        });
+      }
+
+      if (undoButton) undoButton.addEventListener('click', executeUndo);
+      if (redoButton) redoButton.addEventListener('click', executeRedo);
+      if (resetButton) resetButton.addEventListener('click', resetDemo);
+
+      if (moveMarkerButton) {
+        moveMarkerButton.addEventListener('click', () => {
+          const marker = findFeature('marker', 'busch_infozentrum') || currentFeatures.find((feature) => feature.type === 'marker');
+          if (!marker) {
+            setStatus('No marker available to move.', 'error');
+            return;
+          }
+
+          const nextWorld = geoBridge.geoToWorld({ lon: marker.position.lon + 0.0009, lat: marker.position.lat + 0.0007, alt: marker.position.alt + 14 }, 'absolute');
+          runCommand(
+            () => createMoveMarkerCommand(marker.id, nextWorld),
+            () => `Moved marker ${marker.name || marker.id}.`,
+          );
+        });
+      }
+
+      if (moveLineButton) {
+        moveLineButton.addEventListener('click', () => {
+          const line = currentFeatures.find((feature) => feature.type === 'line');
+          if (!line) {
+            setStatus('No line available to edit.', 'error');
+            return;
+          }
+
+          const target = geoBridge.geoToWorld({ lon: 6.0615, lat: 50.7791, alt: 230 }, 'absolute');
+          const command = line.coordinates.length > 1
+            ? createMoveLineVertexCommand(line.id, 1, target)
+            : createAddLineVertexCommand(line.id, 0, target);
+
+          runCommand(
+            () => command,
+            () => `Adjusted a vertex on ${line.name || line.id}.`,
+          );
+        });
+      }
+
+      if (renameButton) {
+        renameButton.addEventListener('click', () => {
+          const feature = selectedFeature();
+          if (!feature) {
+            setStatus('Select a feature to rename.', 'warn');
+            return;
+          }
+
+          const nextName = renameInput?.value.trim() || 'Commands demo rename';
+          runCommand(
+            () => createSetNameCommand(feature.id, nextName),
+            () => `Renamed ${feature.type} ${feature.id}.`,
+          );
+        });
+      }
+
+      if (rotateModelButton) {
+        rotateModelButton.addEventListener('click', () => {
+          const model = currentFeatures.find((feature) => feature.type === 'model');
+          if (!model) {
+            setStatus('No model available to rotate.', 'error');
+            return;
+          }
+
+          runCommand(
+            () => createRotateModelCommand(model.id, { heading: 28, tilt: 12, roll: 4 }),
+            () => `Rotated model ${model.name || model.id}.`,
+          );
+        });
+      }
+
+      if (createButton) {
+        createButton.addEventListener('click', () => {
+          const afterId = currentFeatures[currentFeatures.length - 1]?.id;
+          const template = {
+            type: 'marker',
+            name: 'Created demo marker',
+            position: { lon: 6.0625, lat: 50.7798, alt: 228 },
+          };
+
+          runCommand(
+            () => createCreateFeatureCommand(template, afterId),
+            (command) => {
+              selectedFeatureId = command.featureId;
+              if (featureSelect) {
+                featureSelect.value = command.featureId;
+              }
+              return `Created marker ${command.featureId}.`;
+            },
+          );
+        });
+      }
+
+      if (deleteButton) {
+        deleteButton.addEventListener('click', () => {
+          const feature = selectedFeature();
+          if (!feature) {
+            setStatus('Select a feature to delete.', 'warn');
+            return;
+          }
+
+          runCommand(
+            () => createDeleteFeatureCommand(feature.id),
+            () => `Deleted ${feature.type} ${feature.id}.`,
+          );
+        });
+      }
+
+      if (renameInput) {
+        renameInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            renameButton?.click();
+          }
+        });
+      }
+
+      loadFixture().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (loadState) {
+          loadState.textContent = `Failed to load fixture: ${message}`;
+        }
+        setStatus(message, 'error');
+        console.error(error);
+      });
+    </script>
+  </body>
+</html>

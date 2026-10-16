@@ -33,6 +33,7 @@
         "test:tour": "node scripts/test-timing/timed-stage.mjs test:tour",
         "test:site-worker": "node scripts/test-timing/timed-stage.mjs test:site-worker",
         "test:design-system": "node scripts/test-timing/timed-stage.mjs test:design-system",
+        "test:kml-editor": "node scripts/test-timing/timed-stage.mjs test:kml-editor",
         "test:changed": "node scripts/test-changed/test-changed.mjs",
         "deploy:site": "wrangler versions upload"
     },
@@ -41,6 +42,8 @@
     },
     "license": "Apache-2.0",
     "devDependencies": {
+        "@types/node": "^26.1.0",
+        "@zip.js/zip.js": "^2.8.26",
         "fast-check": "^4.9.0",
         "knip": "^6.34.0",
         "vitest": "^5.0.0",

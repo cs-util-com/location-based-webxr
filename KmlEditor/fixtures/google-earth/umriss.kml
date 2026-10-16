@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
+<Document>
+	<name>umriss.kmz</name>
+	<open>1</open>
+	<atom:link rel="app" href="https://www.google.com/earth/about/versions/#earth-pro" title="Google Earth Pro 7.3.7.1155"></atom:link>
+	<StyleMap id="msn_ylw-pushpin">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#sn_ylw-pushpin</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#sh_ylw-pushpin00</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="msn_ylw-pushpin0">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#sn_ylw-pushpin00</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#sh_ylw-pushpin</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="msn_ylw-pushpin00">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#sn_ylw-pushpin0</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#sh_ylw-pushpin0</styleUrl>
+		</Pair>
+	</StyleMap>
+	<Style id="sh_ylw-pushpin">
+		<IconStyle>
+			<color>ffffaa00</color>
+			<scale>1.3</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sh_ylw-pushpin0">
+		<IconStyle>
+			<color>ffffaa00</color>
+			<scale>1.3</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sh_ylw-pushpin00">
+		<IconStyle>
+			<scale>1.3</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+		<LineStyle>
+			<color>ff7faa00</color>
+			<width>3</width>
+		</LineStyle>
+	</Style>
+	<Style id="sn_ylw-pushpin">
+		<IconStyle>
+			<scale>1.1</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+		<LineStyle>
+			<color>ff7faa00</color>
+			<width>3</width>
+		</LineStyle>
+	</Style>
+	<Style id="sn_ylw-pushpin0">
+		<IconStyle>
+			<color>ffffaa00</color>
+			<scale>1.1</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sn_ylw-pushpin00">
+		<IconStyle>
+			<color>ffffaa00</color>
+			<scale>1.1</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Folder>
+		<name>umriss</name>
+		<open>1</open>
+		<Placemark>
+			<name>Mein 3D Modell</name>
+			<description>joo</description>
+			<Model id="model-3d-dae">
+				<altitudeMode>relativeToGround</altitudeMode>
+				<Location>
+					<longitude>6.06</longitude>
+					<latitude>50.7785</latitude>
+					<altitude>0</altitude>
+				</Location>
+				<Orientation>
+					<heading>0</heading>
+					<tilt>0</tilt>
+					<roll>0</roll>
+				</Orientation>
+				<Scale>
+					<x>4</x>
+					<y>4</y>
+					<z>4</z>
+				</Scale>
+				<Link>
+					<href>http://localhost:5173/models/model.dae</href>
+				</Link>
+			</Model>
+		</Placemark>
+		<Placemark>
+			<name>1</name>
+			<description><![CDATA[<img style="max-width:500px;" src="file:///C:/Users/admin/Downloads/cow.png"><img src="">]]></description>
+			<LookAt>
+				<longitude>6.061361518388884</longitude>
+				<latitude>50.77835996524869</latitude>
+				<altitude>12.23633023079342</altitude>
+				<heading>-11.62919900579745</heading>
+				<tilt>0</tilt>
+				<range>606.3495986173282</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_ylw-pushpin0</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>6.0591408489,50.7782487716,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>2</name>
+			<open>1</open>
+			<LookAt>
+				<longitude>6.061606180888203</longitude>
+				<latitude>50.77835505562511</latitude>
+				<altitude>0</altitude>
+				<heading>-11.62899164782117</heading>
+				<tilt>0</tilt>
+				<range>736.7110769763559</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_ylw-pushpin00</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>6.058167773049852,50.7795053622919,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>3</name>
+			<open>1</open>
+			<LookAt>
+				<longitude>6.061606180888203</longitude>
+				<latitude>50.77835505562511</latitude>
+				<altitude>0</altitude>
+				<heading>-11.62899164782117</heading>
+				<tilt>0</tilt>
+				<range>736.7110769763559</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_ylw-pushpin00</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>6.059684364,50.7799245984,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>4</name>
+			<open>1</open>
+			<LookAt>
+				<longitude>6.061606180888203</longitude>
+				<latitude>50.77835505562511</latitude>
+				<altitude>0</altitude>
+				<heading>-11.62899164782117</heading>
+				<tilt>0</tilt>
+				<range>736.7110769763559</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_ylw-pushpin00</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>6.0607095486,50.7793702504,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>5</name>
+			<open>1</open>
+			<LookAt>
+				<longitude>6.061606180888203</longitude>
+				<latitude>50.77835505562511</latitude>
+				<altitude>0</altitude>
+				<heading>-11.62899164782117</heading>
+				<tilt>0</tilt>
+				<range>736.7110769763559</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_ylw-pushpin00</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>6.0613631946,50.778007192,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>outlineInfozentrum</name>
+			<styleUrl>#msn_ylw-pushpin</styleUrl>
+			<LineString>
+				<tessellate>1</tessellate>
+				<coordinates>
+					6.059140848930385,50.7782487716097,0 6.058144922572302,50.77953949494446,0 6.059684364041543,50.77992459837002,0 6.060709548596989,50.77937025038239,0 6.0613969772131,50.77800719199799,0 6.061364207438087,50.77803645802795,0 6.059140848930385,50.7782487716097,0 
+				</coordinates>
+			</LineString>
+		</Placemark>
+		<GroundOverlay>
+			<name>rwthLogo</name>
+			<Icon>
+				<href>https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQVAsd1IsCjpE6L6J0acZP0tegCzrCnSZozHnZDwdwl5OWHPMtD25Mg9Q&amp;s=10</href>
+				<viewBoundScale>0.75</viewBoundScale>
+			</Icon>
+			<LatLonBox>
+				<north>50.78136817475565</north>
+				<south>50.78077322102295</south>
+				<east>6.058765783656126</east>
+				<west>6.057417990796368</west>
+				<rotation>-39.02674102783203</rotation>
+			</LatLonBox>
+		</GroundOverlay>
+	</Folder>
+</Document>
+</kml>

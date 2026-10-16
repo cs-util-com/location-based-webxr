@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Persistence Demo — KmlEditor</title>
+    <meta name="description" content="Chrome-only demo for KmlEditor persistence service: native in-place autosave via File System Access API, marker movement persistence, OPFS/export fallback, and live save-status monitoring." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+        --bg:        #0d1117;
+        --surface:   #161b22;
+        --surface-2: #1c2333;
+        --border:    rgba(255,255,255,0.10);
+        --accent:    #58a6ff;
+        --accent-g:  #3fb950;
+        --accent-r:  #f85149;
+        --accent-y:  #e3b341;
+        --text:      #e6edf3;
+        --muted:     #8b949e;
+        --mono:      'JetBrains Mono', 'Fira Code', monospace;
+      }
+
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        min-height: 100vh;
+        background: var(--bg);
+        background-image:
+          radial-gradient(ellipse 80% 50% at 50% -20%, rgba(88,166,255,0.12) 0%, transparent 70%);
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      /* ── Layout ─────────────────────────────────────────────────────────── */
+      header {
+        padding: 24px 32px 16px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      header h1 {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: var(--text);
+        letter-spacing: -0.01em;
+      }
+
+      header p {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin-top: 2px;
+      }
+
+      .badge-chrome {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: rgba(88,166,255,0.12);
+        border: 1px solid rgba(88,166,255,0.3);
+        color: var(--accent);
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        padding: 2px 9px;
+        border-radius: 12px;
+        margin-left: 10px;
+        vertical-align: middle;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 20px;
+        padding: 24px 32px 48px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      @media (max-width: 840px) {
+        main { grid-template-columns: 1fr; }
+      }
+
+      /* ── Cards ──────────────────────────────────────────────────────────── */
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+      .card:last-child { margin-bottom: 0; }
+
+      .card h2 {
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      /* ── Buttons ────────────────────────────────────────────────────────── */
+      button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        width: 100%;
+        padding: 9px 14px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--surface-2);
+        color: var(--text);
+        font-family: inherit;
+        font-size: 0.85rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s, transform 0.1s;
+        margin-bottom: 8px;
+      }
+      button:last-child { margin-bottom: 0; }
+      button:hover:not(:disabled) {
+        background: rgba(88,166,255,0.10);
+        border-color: rgba(88,166,255,0.35);
+        transform: translateY(-1px);
+      }
+      button:active:not(:disabled) { transform: translateY(0); }
+      button:disabled { opacity: 0.38; cursor: not-allowed; }
+
+      button.primary {
+        background: rgba(88,166,255,0.15);
+        border-color: rgba(88,166,255,0.4);
+        color: #79c0ff;
+      }
+      button.primary:hover:not(:disabled) {
+        background: rgba(88,166,255,0.25);
+        border-color: #58a6ff;
+      }
+
+      button.success {
+        background: rgba(63,185,80,0.15);
+        border-color: rgba(63,185,80,0.4);
+        color: #56d364;
+      }
+      button.success:hover:not(:disabled) {
+        background: rgba(63,185,80,0.25);
+        border-color: #3fb950;
+      }
+
+      button .icon { font-size: 1rem; }
+
+      /* ── Status badge ───────────────────────────────────────────────────── */
+      #status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        transition: background 0.25s, border-color 0.25s, color 0.25s;
+        border: 1px solid transparent;
+      }
+      .dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        transition: background 0.25s;
+      }
+
+      #status-badge.idle    { background: rgba(139,148,158,0.12); border-color: rgba(139,148,158,0.25); color: var(--muted); }
+      #status-badge.idle    .dot { background: var(--muted); }
+      #status-badge.saving  { background: rgba(227,179,65,0.12);  border-color: rgba(227,179,65,0.3);   color: var(--accent-y); animation: pulse 0.8s ease-in-out infinite alternate; }
+      #status-badge.saving  .dot { background: var(--accent-y); }
+      #status-badge.saved   { background: rgba(63,185,80,0.12);   border-color: rgba(63,185,80,0.3);    color: var(--accent-g); }
+      #status-badge.saved   .dot { background: var(--accent-g); }
+      #status-badge.error   { background: rgba(248,81,73,0.12);   border-color: rgba(248,81,73,0.3);    color: var(--accent-r); }
+      #status-badge.error   .dot { background: var(--accent-r); }
+
+      @keyframes pulse {
+        from { opacity: 0.7; } to { opacity: 1; }
+      }
+
+      /* ── Info rows ──────────────────────────────────────────────────────── */
+      .info-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.8rem;
+      }
+      .info-row:last-child { border-bottom: none; }
+      .info-row .label { color: var(--muted); }
+      .info-row .value { font-family: var(--mono); font-size: 0.78rem; color: var(--text); }
+      .info-row .value.native { color: var(--accent-g); }
+      .info-row .value.detached { color: var(--accent-y); }
+      .info-row .value.none { color: var(--muted); }
+
+      /* ── Feature Table & Controls ───────────────────────────────────────── */
+      .feature-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 10px;
+        max-height: 280px;
+        overflow-y: auto;
+      }
+
+      .feature-item {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .feature-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .feature-title {
+        font-weight: 600;
+        color: var(--text);
+        font-size: 0.88rem;
+      }
+
+      .feature-type {
+        font-size: 0.7rem;
+        font-family: var(--mono);
+        text-transform: uppercase;
+        background: rgba(88,166,255,0.15);
+        color: var(--accent);
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+
+      .coords-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 6px;
+        font-size: 0.75rem;
+        font-family: var(--mono);
+      }
+
+      .coord-box {
+        background: rgba(0,0,0,0.25);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 4px 6px;
+      }
+
+      .coord-lbl { color: var(--muted); font-size: 0.68rem; }
+      .coord-val { color: #58a6ff; font-weight: 600; }
+
+      .edit-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 4px;
+      }
+
+      .edit-actions button {
+        margin-bottom: 0;
+        padding: 5px 8px;
+        font-size: 0.75rem;
+      }
+
+      /* ── Event log ──────────────────────────────────────────────────────── */
+      #event-log {
+        font-family: var(--mono);
+        font-size: 0.76rem;
+        background: #0d1117;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        padding: 12px;
+        height: 240px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column-reverse; /* newest at top */
+      }
+
+      .log-entry {
+        padding: 2px 0;
+        display: flex;
+        gap: 10px;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+        animation: fadeIn 0.2s ease;
+      }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; } }
+      .log-entry .ts { color: var(--muted); flex-shrink: 0; }
+      .log-entry .msg { color: var(--text); }
+      .log-entry.status-saved  .msg { color: var(--accent-g); }
+      .log-entry.status-saving .msg { color: var(--accent-y); }
+      .log-entry.status-error  .msg { color: var(--accent-r); }
+      .log-entry.status-idle   .msg { color: var(--muted); }
+      .log-entry.action .msg   { color: var(--accent); }
+
+      /* ── Error box ──────────────────────────────────────────────────────── */
+      #error-box {
+        background: rgba(248,81,73,0.08);
+        border: 1px solid rgba(248,81,73,0.25);
+        border-radius: 7px;
+        padding: 10px 14px;
+        font-size: 0.78rem;
+        font-family: var(--mono);
+        color: var(--accent-r);
+        margin-top: 12px;
+        display: none;
+        word-break: break-word;
+      }
+      #error-box.visible { display: block; }
+
+      /* ── Counter row ────────────────────────────────────────────────────── */
+      .counter-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .counter-cell {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        padding: 12px;
+        text-align: center;
+      }
+      .counter-cell .num {
+        font-family: var(--mono);
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--accent);
+        display: block;
+        line-height: 1.2;
+      }
+      .counter-cell .lbl {
+        font-size: 0.72rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      /* ── Environment warning ────────────────────────────────────────────── */
+      #env-warning {
+        background: rgba(248,81,73,0.10);
+        border: 1px solid rgba(248,81,73,0.3);
+        border-radius: 8px;
+        padding: 12px 16px;
+        color: var(--accent-r);
+        font-size: 0.82rem;
+        margin-bottom: 16px;
+        display: none;
+      }
+      #env-warning.visible { display: block; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Persistence Demo <span class="badge-chrome">Chrome FSA API</span></h1>
+        <p>File System Access API · Native in-place debounced autosave · OPFS Working Copy & Export Fallback</p>
+      </div>
+      <div id="status-badge" class="idle">
+        <span class="dot"></span>
+        <span id="status-text">idle</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- Left column: Session & File controls -->
+      <aside>
+        <div class="card">
+          <h2>1. File Session</h2>
+          <div id="env-warning"></div>
+          <button id="btn-open-picker" class="primary"><span class="icon">📂</span> Open via FSA API (In-place save)</button>
+          <button id="btn-open-fallback"><span class="icon">📄</span> Open standard File (Detached mode)</button>
+          <button id="btn-dispose" disabled><span class="icon">✕</span> Close session</button>
+        </div>
+
+        <div class="card">
+          <h2>2. Manual Actions</h2>
+          <button id="btn-flush" disabled><span class="icon">⚡</span> Flush now (Immediate write)</button>
+          <button id="btn-export" disabled><span class="icon">⬇️</span> Export / Download fallback</button>
+          <button id="btn-opfs-save" disabled><span class="icon">💾</span> Backup to OPFS working copy</button>
+        </div>
+
+        <div class="card">
+          <h2>3. Session Info</h2>
+          <div class="info-row">
+            <span class="label">Mode</span>
+            <span id="mode-value" class="value none">—</span>
+          </div>
+          <div class="info-row">
+            <span class="label">File</span>
+            <span id="file-value" class="value none">—</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Sync State</span>
+            <span id="sync-value" class="value native">Synced to file</span>
+          </div>
+          <div class="info-row">
+            <span class="label">hasNativeFileAccess</span>
+            <span id="native-value" class="value"></span>
+          </div>
+
+          <div id="error-box"></div>
+
+          <div class="counter-grid">
+            <div class="counter-cell">
+              <span class="num" id="count-saves">0</span>
+              <span class="lbl">Saves committed</span>
+            </div>
+            <div class="counter-cell">
+              <span class="num" id="count-changes">0</span>
+              <span class="lbl">Edits notified</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right column: Document Features & Event Log -->
+      <section>
+        <div class="card">
+          <h2>
+            <span>Document Features</span>
+            <span id="feature-count-badge" style="font-size:0.7rem; color:var(--muted)">No file loaded</span>
+          </h2>
+          <div id="feature-container">
+            <p style="color:var(--muted); font-size:0.85rem; padding:12px 0;">
+              Open a <code>.kmz</code> or <code>.kml</code> file to inspect features and edit marker positions.
+              Edits will automatically trigger debounced autosave back to the native file!
+            </p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Event Log</h2>
+          <div id="event-log" aria-label="Event log" role="log" aria-live="polite"></div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module">
+      import { createPersistenceService } from '../../src/persistence/index.ts';
+      import { createKmlDocument } from '../../src/document-model/index.ts';
+
+      // ── State ───────────────────────────────────────────────────────────
+      let svc = createPersistenceService();
+      let activeContainer = null;
+      let activeKmlDoc = null;
+      let activeFileName = null;
+      let isNativeSession = false;
+      let countSaves = 0;
+      let countChanges = 0;
+
+      // ── DOM Refs ────────────────────────────────────────────────────────
+      const $ = id => document.getElementById(id);
+      const btnOpenPicker   = $('btn-open-picker');
+      const btnOpenFallback = $('btn-open-fallback');
+      const btnDispose      = $('btn-dispose');
+      const btnFlush        = $('btn-flush');
+      const btnExport       = $('btn-export');
+      const btnOpfsSave     = $('btn-opfs-save');
+
+      const statusBadge     = $('status-badge');
+      const statusText      = $('status-text');
+      const modeValue       = $('mode-value');
+      const fileValue       = $('file-value');
+      const syncValue       = $('sync-value');
+      const nativeValue     = $('native-value');
+      const errorBox        = $('error-box');
+      const eventLog        = $('event-log');
+      const envWarning      = $('env-warning');
+      const featureContainer= $('feature-container');
+      const featureCountBadge = $('feature-count-badge');
+
+      function updateSyncState() {
+        const mode = svc.mode || (isNativeSession ? 'native' : 'detached');
+        if (svc.hasUnsavedChanges) {
+          syncValue.textContent = 'Unsaved changes (autosaving...)';
+          syncValue.className = 'value detached';
+        } else if (mode === 'native') {
+          syncValue.textContent = 'Synced to disk file';
+          syncValue.className = 'value native';
+        } else if (mode === 'opfs') {
+          syncValue.textContent = 'Synced to OPFS working copy';
+          syncValue.className = 'value native';
+        } else {
+          syncValue.textContent = 'In memory (not on disk)';
+          syncValue.className = 'value detached';
+        }
+      }
+
+      // ── Location / destination helpers ──────────────────────────────────
+      function describeTarget() {
+        if (!activeContainer) return 'no active session';
+        const mode = svc.mode;
+        if (mode === 'native') {
+          return `disk file "${activeFileName}" (native handle via File System Access API — writes go directly back to original file on disk)`;
+        } else if (mode === 'opfs') {
+          return `OPFS working copy of "${activeFileName}" (browser sandboxed storage — debounced autosaves persist in OPFS working copy across reloads)`;
+        }
+        return `in-memory detached copy of "${activeFileName}"`;
+      }
+
+      function describeSavedLocation() {
+        const mode = svc.mode;
+        if (mode === 'native') {
+          return `Written in place to disk at "${activeFileName}".`;
+        } else if (mode === 'opfs') {
+          return `Persisted to OPFS working copy for "${activeFileName}" (browser sandboxed storage). Use "Export / Download" to save out to a real file.`;
+        }
+        return `Held in memory. Use "Export / Download" to save to disk.`;
+      }
+
+      // ── Environment check ───────────────────────────────────────────────
+      if (!svc.hasNativeFileAccess) {
+        envWarning.textContent =
+          '⚠️ File System Access API not available in this browser. Native in-place save disabled; falling back to OPFS working copy + explicit Export.';
+        envWarning.classList.add('visible');
+        btnOpenPicker.disabled = true;
+      }
+
+      nativeValue.textContent = String(svc.hasNativeFileAccess);
+      nativeValue.className   = 'value ' + (svc.hasNativeFileAccess ? 'native' : 'detached');
+
+      // ── Status Listener ─────────────────────────────────────────────────
+      svc.onStatusChange(status => {
+        statusBadge.className = status;
+        statusText.textContent = status;
+        updateSyncState();
+
+        if (status === 'saving') {
+          log(
+            `Autosave in progress — persisting changes for "${activeFileName}"...`,
+            'status-saving'
+          );
+        } else if (status === 'saved') {
+          countSaves++;
+          updateCounters();
+          log(`Save complete. ${describeSavedLocation()}`, 'status-saved');
+        } else if (status === 'error') {
+          log('Autosave failed — see error details below.', 'status-error');
+        } else {
+          log(`Status → idle.`, 'status-idle');
+        }
+
+        if (status !== 'error') {
+          errorBox.textContent = '';
+          errorBox.classList.remove('visible');
+        }
+      });
+
+      // ── Logging & UI Helpers ────────────────────────────────────────────
+      function log(msg, cls = '') {
+        const entry = document.createElement('div');
+        entry.className = 'log-entry ' + cls;
+        const ts = new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        entry.innerHTML = `<span class="ts">${ts}</span><span class="msg">${escHtml(msg)}</span>`;
+        eventLog.prepend(entry);
+      }
+
+      function escHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }
+
+      function updateCounters() {
+        $('count-saves').textContent   = String(countSaves);
+        $('count-changes').textContent = String(countChanges);
+      }
+
+      function showError(err) {
+        errorBox.textContent = err?.message ?? String(err);
+        errorBox.classList.add('visible');
+        log('Error: ' + (err?.message ?? err), 'status-error');
+      }
+
+      // ── Render Document Features ────────────────────────────────────────
+      function renderFeatures() {
+        if (!activeKmlDoc) {
+          featureContainer.innerHTML = '<p style="color:var(--muted); font-size:0.85rem">No document loaded.</p>';
+          featureCountBadge.textContent = 'No file loaded';
+          return;
+        }
+
+        const features = activeKmlDoc.getFeatures();
+        featureCountBadge.textContent = `${features.length} feature(s) found`;
+
+        if (features.length === 0) {
+          featureContainer.innerHTML = '<p style="color:var(--muted); font-size:0.85rem">No Placemarks found in doc.kml.</p>';
+          return;
+        }
+
+        let html = '<div class="feature-list">';
+        features.forEach(f => {
+          html += `
+            <div class="feature-item" data-id="${escHtml(f.id)}">
+              <div class="feature-header">
+                <span class="feature-title">${escHtml(f.name || 'Unnamed Feature')}</span>
+                <span class="feature-type">${escHtml(f.type)}</span>
+              </div>
+          `;
+
+          if (f.type === 'marker') {
+            const m = f;
+            html += `
+              <div class="coords-grid">
+                <div class="coord-box"><span class="coord-lbl">LAT:</span> <span class="coord-val">${m.position.lat.toFixed(6)}</span></div>
+                <div class="coord-box"><span class="coord-lbl">LON:</span> <span class="coord-val">${m.position.lon.toFixed(6)}</span></div>
+                <div class="coord-box"><span class="coord-lbl">ALT:</span> <span class="coord-val">${(m.position.alt ?? 0).toFixed(1)}m</span></div>
+              </div>
+              <div class="edit-actions">
+                <button class="btn-move-marker" data-id="${escHtml(f.id)}" data-dir="north">⬆️ Shift North (+0.001°)</button>
+                <button class="btn-move-marker" data-id="${escHtml(f.id)}" data-dir="east">➡️ Shift East (+0.001°)</button>
+              </div>
+            `;
+          } else if (f.type === 'line') {
+            const l = f;
+            html += `
+              <div style="font-size:0.75rem; color:var(--muted)">LineString with ${l.coordinates.length} vertices.</div>
+            `;
+          } else {
+            html += `<div style="font-size:0.75rem; color:var(--muted)">${escHtml(f.type)} feature</div>`;
+          }
+
+          html += `</div>`;
+        });
+        html += '</div>';
+
+        featureContainer.innerHTML = html;
+
+        // Attach event listeners for marker move buttons
+        featureContainer.querySelectorAll('.btn-move-marker').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            const id = e.currentTarget.getAttribute('data-id');
+            const dir = e.currentTarget.getAttribute('data-dir');
+            moveMarker(id, dir);
+          });
+        });
+      }
+
+      // ── Mutate Feature & Trigger Debounced Autosave ─────────────────────
+      function moveMarker(id, dir) {
+        if (!activeKmlDoc || !activeContainer) return;
+        const feature = activeKmlDoc.getFeatureById(id);
+        if (!feature || feature.type !== 'marker') return;
+
+        const newPos = { ...feature.position };
+        if (dir === 'north') newPos.lat += 0.001;
+        if (dir === 'east')  newPos.lon += 0.001;
+        feature.position = newPos; // Invokes setter -> updates XML in document model!
+
+        // Update container's KML content from document model
+        const updatedKml = activeKmlDoc.serialize();
+        activeContainer.setDocKml(updatedKml);
+
+        // Re-render updated feature UI
+        renderFeatures();
+
+        // Trigger debounced autosave through persistence service!
+        countChanges++;
+        updateCounters();
+        svc.notifyChange();
+        updateSyncState();
+
+        const targetDesc = describeTarget();
+        log(`Shifted marker "${feature.name}" ${dir} (+0.001°) [LAT: ${newPos.lat.toFixed(6)}, LON: ${newPos.lon.toFixed(6)}]. Debounced autosave queued (~600ms) → ${targetDesc}.`, 'action');
+      }
+
+      // ── Open Session Handler ───────────────────────────────────────────
+      async function setupSession(container, fileName, nativeBound) {
+        activeContainer = container;
+        activeFileName = fileName;
+        isNativeSession = nativeBound;
+
+        // Read and parse doc.kml from container
+        const kmlText = container.getDocKml();
+        activeKmlDoc = createKmlDocument();
+        activeKmlDoc.parse(kmlText);
+
+        // UI state
+        const currentMode = svc.mode;
+        modeValue.textContent = currentMode;
+        modeValue.className   = 'value ' + (currentMode === 'native' ? 'native' : 'detached');
+        fileValue.textContent = fileName || '—';
+        fileValue.className   = 'value';
+
+        [btnDispose, btnFlush, btnExport, btnOpfsSave].forEach(b => b.disabled = false);
+
+        renderFeatures();
+        updateSyncState();
+        log(`Session ready. Editing target: ${describeTarget()}.`, 'action');
+      }
+
+      // ── 1. Native Open via FSA API ──────────────────────────────────────
+      btnOpenPicker.addEventListener('click', async () => {
+        log('Opening native File System Access picker — pick a .kmz/.kml to bind a live, writable handle to that exact file on disk...', 'action');
+        try {
+          const container = await svc.open();
+          // Container opened with native handle!
+          setupSession(container, svc.fileName, svc.mode === 'native');
+        } catch (err) {
+          if (err.name !== 'AbortError') showError(err);
+          else log('File picker cancelled — no file handle was acquired, nothing opened.', 'status-idle');
+        }
+      });
+
+      // Automatically flush any pending edits when unloading page
+      window.addEventListener('beforeunload', () => {
+        if (activeContainer) {
+          svc.flush(activeContainer);
+        }
+      });
+
+      // ── 2. Standard File Open (Fallback / Detached) ─────────────────────
+      btnOpenFallback.addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.kmz,.kml';
+        input.onchange = async () => {
+          const file = input.files[0];
+          if (!file) return;
+          log(`Opening "${file.name}" via standard file picker — no native handle is granted, so this session will be detached (in-memory only).`, 'action');
+          try {
+            const container = await svc.open(file);
+            setupSession(container, file.name, false);
+          } catch (err) {
+            showError(err);
+          }
+        };
+        input.click();
+      });
+
+      // ── Dispose Session ─────────────────────────────────────────────────
+      btnDispose.addEventListener('click', () => {
+        const closedTarget = describeTarget();
+        svc.dispose();
+        activeContainer = null;
+        activeKmlDoc = null;
+        activeFileName = null;
+        isNativeSession = false;
+
+        modeValue.textContent = '—';
+        modeValue.className   = 'value none';
+        fileValue.textContent = '—';
+        fileValue.className   = 'value none';
+
+        [btnDispose, btnFlush, btnExport, btnOpfsSave].forEach(b => b.disabled = true);
+        renderFeatures();
+        log(`Session disposed. Was editing: ${closedTarget}. Any changes not already flushed/saved are lost.`, 'action');
+      });
+
+      // ── Manual Flush ────────────────────────────────────────────────────
+      btnFlush.addEventListener('click', async () => {
+        if (!activeContainer) return;
+        log(
+          isNativeSession
+            ? `flush() requested — forcing an immediate (non-debounced) write to disk at "${activeFileName}"...`
+            : `flush() requested — this only updates the in-memory detached copy, the original file on disk is not reachable from here...`,
+          'action'
+        );
+        try {
+          await svc.flush(activeContainer);
+          log(`flush() completed. ${describeSavedLocation()}`, 'status-saved');
+        } catch (err) {
+          showError(err);
+        }
+      });
+
+      // ── Export / Download Fallback ──────────────────────────────────────
+      btnExport.addEventListener('click', async () => {
+        if (!activeContainer) return;
+        const filename = activeFileName || 'exported.kmz';
+        log(`downloadAs("${filename}") triggered — the browser will save a NEW copy to your default Downloads folder; this does not overwrite the original file you opened.`, 'action');
+        try {
+          await svc.downloadAs(activeContainer, filename);
+          log(`Download sent: "${filename}" should now be in your browser's Downloads folder (check your browser's download bar/history for the exact path).`, 'action');
+        } catch (err) {
+          showError(err);
+        }
+      });
+
+      // ── OPFS Working Copy Backup ───────────────────────────────────────
+      btnOpfsSave.addEventListener('click', async () => {
+          if (!activeContainer) return;
+          try {
+            const opfsName = activeFileName || 'opfs-working-copy.kmz';
+            log(`Writing "${opfsName}" to the Origin Private File System — a sandboxed storage bucket owned by this browser profile + this site's origin. It is NOT part of your regular file system, has no visible path in Explorer/Finder, and is only reachable from this same browser/site again (not from other browsers, devices, or the original file's real location)...`, 'action');
+            const root = await navigator.storage.getDirectory();
+            const handle = await root.getFileHandle(opfsName, { create: true });
+            const writable = await handle.createWritable();
+            const bytes = await activeContainer.save();
+            await writable.write(bytes);
+            await writable.close();
+            log(`Saved to OPFS as "${opfsName}". It will persist across reloads of this site in this browser profile, but stays isolated from your real file system.`, 'status-saved');
+          } catch (err) {
+            showError(new Error('OPFS write failed: ' + err.message));
+          }
+        });
+
+      // ── Ready ──────────────────────────────────────────────────────────
+      updateCounters();
+      log('Persistence Demo initialized. Open a .kmz / .kml to begin — the log will report exactly where each save actually lands (disk vs. memory vs. Downloads vs. OPFS).', 'action');
+    </script> 
+  </body>
+</html>

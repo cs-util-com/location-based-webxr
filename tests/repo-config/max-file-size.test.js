@@ -69,6 +69,16 @@ const ALLOWLIST = new Set([
   // recording to drive a replay. Shrinking it is a real change to what that
   // suite covers, so it gets an entry rather than a trim.
   'GpsPlusSlamJs_PhysicsDemo/playwright-tests/fixtures/sample-recording.zip',
+
+  // KML editor demo media and field recordings, retained as irreplaceable
+  // presentation and replay fixtures for the editor's workflows.
+  'KmlEditor/presentation/ar-demo-video.mp4',
+  'KmlEditor/fixtures/recordings/2026-06-24_13-58-24utc.zip',
+  'KmlEditor/fixtures/recordings/2026-06-24_14-09-28utc.zip',
+  'KmlEditor/fixtures/recordings/2026-06-24_14-19-00utc.zip',
+  'KmlEditor/fixtures/recordings/2026-06-24_14-04-36utc.zip',
+  'KmlEditor/fixtures/recordings/2026-06-24_14-12-35utc.zip',
+  'KmlEditor/fixtures/recordings/2026-06-24_13-56-01utc.zip',
 ]);
 
 /** Size of a tracked path, or `undefined` if it is not on disk. */

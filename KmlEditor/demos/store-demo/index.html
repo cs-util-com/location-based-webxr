@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KML Editor Store Component Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Outfit, Inter, system-ui, -apple-system, sans-serif;
+        --bg: #0d0e15;
+        --panel: rgba(20, 21, 33, 0.85);
+        --panel-accent: #1f2035;
+        --accent: #00b894;
+        --accent-glow: rgba(0, 184, 148, 0.4);
+        --text: #f3f4f6;
+        --muted: #9ca3af;
+        --border: rgba(255, 255, 255, 0.08);
+        --danger: #ff7675;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: var(--bg);
+        color: var(--text);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        overflow-x: hidden;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 460px 1fr;
+        gap: 1.5rem;
+        width: 1200px;
+        max-width: 95%;
+        margin: 2rem auto;
+      }
+
+      /* Sidebar & Main styling */
+      .sidebar, .main-content {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+
+      h1 {
+        font-size: 1.6rem;
+        margin: 0 0 0.5rem 0;
+        font-weight: 700;
+        letter-spacing: -0.025em;
+        background: linear-gradient(135deg, #fff 0%, var(--muted) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin-bottom: 0.5rem;
+      }
+
+      /* Glowing Cards */
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 1.5rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(12px);
+        transition: border-color 0.25s, box-shadow 0.25s;
+      }
+
+      .card:hover {
+        border-color: rgba(0, 184, 148, 0.25);
+        box-shadow: 0 10px 40px rgba(0, 184, 148, 0.03);
+      }
+
+      .section-title {
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--accent);
+        margin: 0 0 1rem 0;
+        font-weight: 600;
+      }
+
+      .form-row {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+
+      .form-row:last-child {
+        margin-bottom: 0;
+      }
+
+      label {
+        font-size: 0.8rem;
+        color: var(--muted);
+        font-weight: 500;
+      }
+
+      /* Controls */
+      input[type="file"] {
+        display: none;
+      }
+
+      .file-upload-btn {
+        background: var(--panel-accent);
+        border: 1px dashed var(--accent);
+        color: var(--accent);
+        padding: 1rem;
+        border-radius: 10px;
+        text-align: center;
+        cursor: pointer;
+        font-weight: 600;
+        transition: background 0.2s, border-style 0.2s;
+      }
+
+      .file-upload-btn:hover {
+        background: rgba(0, 184, 148, 0.05);
+        border-style: solid;
+      }
+
+      input[type="text"] {
+        background: var(--panel-accent);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 0.65rem 0.85rem;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        transition: border-color 0.2s;
+      }
+
+      input[type="text"]:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+
+      button {
+        background: var(--accent);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.65rem 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.1s, filter 0.2s;
+      }
+
+      button:hover {
+        filter: brightness(1.1);
+      }
+
+      button:active {
+        transform: scale(0.98);
+      }
+
+      button:disabled {
+        background: var(--panel-accent);
+        color: var(--muted);
+        cursor: not-allowed;
+        transform: none;
+        filter: none;
+      }
+
+      .btn-group {
+        display: flex;
+        gap: 0.75rem;
+      }
+
+      .btn-group button {
+        flex: 1;
+      }
+
+      /* Listing & Details */
+      .feature-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        max-height: 220px;
+        overflow-y: auto;
+      }
+
+      .feature-item {
+        background: var(--panel-accent);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.65rem 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        transition: border-color 0.2s, background 0.2s;
+      }
+
+      .feature-item:hover {
+        border-color: rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .feature-item.selected {
+        border-color: var(--accent);
+        background: rgba(0, 184, 148, 0.05);
+      }
+
+      .badge {
+        font-size: 0.7rem;
+        padding: 0.15rem 0.4rem;
+        border-radius: 6px;
+        font-weight: 600;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--muted);
+      }
+
+      .badge.marker { background: rgba(9, 132, 227, 0.2); color: #74b9ff; }
+      .badge.line { background: rgba(232, 67, 147, 0.2); color: #fd79a8; }
+      .badge.ground-overlay { background: rgba(253, 150, 68, 0.2); color: #f9ca24; }
+      .badge.model { background: rgba(108, 92, 231, 0.2); color: #a29bfe; }
+
+      pre {
+        background: #08090d;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1rem;
+        font-family: monospace;
+        font-size: 0.85rem;
+        overflow-x: auto;
+        color: #55efc4;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--muted);
+        display: inline-block;
+        margin-right: 0.5rem;
+      }
+
+      .status-dot.active {
+        background: #00b894;
+        box-shadow: 0 0 8px #00b894;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <!-- Left sidebar panel for file picker and modifications -->
+      <aside class="sidebar">
+        <div class="card">
+          <h1>KML Editor Store</h1>
+          <div class="subtitle">Global state manager orchestrator</div>
+          <div class="subtitle" style="margin-top: 0.5rem; color: #a29bfe; font-size: 0.8rem;">💡 Tip: Click on a feature in the directory on the right to select it and enable edit controls!</div>
+          <div class="form-row" style="margin-top: 1rem;">
+            <label class="file-upload-btn" for="input-file">
+              Select KML or KMZ archive
+            </label>
+            <input type="file" id="input-file" accept=".kml,.kmz" />
+          </div>
+          <div id="txt-file-name" class="subtitle" style="text-align: center; margin-top: 0.5rem;">No file loaded</div>
+        </div>
+
+        <!-- History card -->
+        <div class="card">
+          <div class="section-title">Command Stack</div>
+          <div class="btn-group">
+            <button id="btn-undo" disabled>Undo</button>
+            <button id="btn-redo" disabled>Redo</button>
+          </div>
+        </div>
+
+        <!-- Modifications panel -->
+        <div class="card">
+          <div class="section-title">Modify Feature</div>
+          <div class="form-row">
+            <label for="input-name">Rename Selected</label>
+            <input type="text" id="input-name" placeholder="Enter new name" disabled />
+          </div>
+          <div class="form-row" style="margin-top: 0.5rem;">
+            <button id="btn-apply-rename" disabled>Apply Rename</button>
+          </div>
+          <div class="form-row" style="margin-top: 1rem;">
+            <button id="btn-move-marker" disabled>Simulate Move Marker (5m East)</button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right main area showing parsed state -->
+      <main class="main-content">
+        <!-- Document metadata details -->
+        <div class="card">
+          <div class="section-title">Active Workspace State</div>
+          <div style="display: flex; gap: 2rem;">
+            <div>
+              <label>KML Features Count:</label>
+              <div id="txt-features-count" style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">0</div>
+            </div>
+            <div>
+              <label>Anchor Coordinates:</label>
+              <div id="txt-anchor" style="font-size: 1.1rem; font-weight: 600; margin-top: 0.5rem; font-family: monospace; color: #a29bfe;">Not Anchored</div>
+            </div>
+            <div>
+              <label>Selected Feature ID:</label>
+              <div id="txt-selection" style="font-size: 1.1rem; font-weight: 600; margin-top: 0.5rem; font-family: monospace; color: #fd79a8;">None Selected</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Features list -->
+        <div class="card" style="flex: 1;">
+          <div class="section-title">Features Directory</div>
+          <div class="feature-list" id="list-features">
+            <div style="text-align: center; color: var(--muted); margin-top: 2rem;">No KML file loaded yet. Pick a file to inspect coordinates.</div>
+          </div>
+        </div>
+
+        <!-- Serialized preview -->
+        <div class="card">
+          <div class="section-title">Active KML Document Preview (Live Mutated)</div>
+          <pre id="txt-kml-preview">&lt;!-- Serialized KML code will render here --&gt;</pre>
+        </div>
+      </main>
+    </div>
+
+    <!-- Script bootstrapping the store environment -->
+    <script type="module">
+      import { createEditorStore } from '../../src/store/index.ts';
+      import { createSetNameCommand } from '../../src/commands/index.ts';
+      import { createMoveMarkerCommand } from '../../src/commands/index.ts';
+
+      const store = createEditorStore();
+
+      // UI Element Bindings
+      const inputFile = document.getElementById('input-file');
+      const txtFileName = document.getElementById('txt-file-name');
+      const txtFeaturesCount = document.getElementById('txt-features-count');
+      const txtAnchor = document.getElementById('txt-anchor');
+      const txtSelection = document.getElementById('txt-selection');
+      const listFeatures = document.getElementById('list-features');
+      const txtKmlPreview = document.getElementById('txt-kml-preview');
+
+      const btnUndo = document.getElementById('btn-undo');
+      const btnRedo = document.getElementById('btn-redo');
+      const inputName = document.getElementById('input-name');
+      const btnApplyRename = document.getElementById('btn-apply-rename');
+      const btnMoveMarker = document.getElementById('btn-move-marker');
+
+      let currentSelectedId = null;
+
+      // Pre-load a default mock KML on startup to enable instant interaction
+      const mockKml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Demo Document</name>
+    <Placemark id="marker-1">
+      <name>Aachen Cathedral (Marker)</name>
+      <description>Historical monument</description>
+      <Point>
+        <coordinates>6.0838,50.7749,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark id="marker-2">
+      <name>Elisenbrunnen (Marker)</name>
+      <description>Mineral thermal springs</description>
+      <Point>
+        <coordinates>6.0864,50.7740,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark id="line-1">
+      <name>Walking Path (Line)</name>
+      <LineString>
+        <coordinates>
+          6.0838,50.7749,0
+          6.0850,50.7745,0
+          6.0864,50.7740,0
+        </coordinates>
+      </LineString>
+    </Placemark>
+  </Document>
+</kml>`;
+
+      const defaultFile = new File([mockKml], "demo.kml", { type: "application/vnd.google-earth.kml+xml" });
+      store.loadFile(defaultFile).then(() => {
+        txtFileName.textContent = "demo.kml (Preloaded)";
+      }).catch(console.error);      // Subscribe to global store changes
+      store.subscribe((state) => {
+        const { selectedFeatureId, canUndo, canRedo, documentStatus } = state;
+        const doc = store.document;
+        const features = doc ? doc.getFeatures() : [];
+        currentSelectedId = selectedFeatureId;
+
+        // 1. Update selection visual state
+        txtSelection.textContent = selectedFeatureId ? String(selectedFeatureId) : "None Selected";
+        
+        if (selectedFeatureId && doc) {
+          inputName.disabled = false;
+          btnApplyRename.disabled = false;
+          
+          const activeFeat = doc.getFeatureById(selectedFeatureId);
+          if (activeFeat) {
+            inputName.value = activeFeat.name || "";
+            btnMoveMarker.disabled = (activeFeat.type !== 'marker');
+          }
+        } else {
+          inputName.disabled = true;
+          inputName.value = "";
+          btnApplyRename.disabled = true;
+          btnMoveMarker.disabled = true;
+        }
+
+        // 2. Update File Name / Metadata
+        if (documentStatus === 'ready' || documentStatus === 'loading') {
+          txtFeaturesCount.textContent = String(features.length);
+          
+          const anchor = store.geoBridge.worldToGeo({ x: 0, y: 0, z: 0 }); // World origin coordinate
+          txtAnchor.textContent = `${anchor.lon.toFixed(5)}, ${anchor.lat.toFixed(5)}`;
+        } else {
+          txtFileName.textContent = "No file loaded";
+          txtFeaturesCount.textContent = "0";
+          txtAnchor.textContent = "Not Anchored";
+        }
+
+        // 3. Update Undo/Redo Buttons
+        btnUndo.disabled = !canUndo;
+        btnRedo.disabled = !canRedo;
+
+        // 4. Update Features directory using Document SSOT
+        renderFeatures(features, selectedFeatureId);
+
+        // 5. Update live mutated XML preview
+        if (doc) {
+          const rawXml = doc.serialize();
+          // Truncate XML string if huge for display performance
+          txtKmlPreview.textContent = rawXml.length > 5000 
+            ? rawXml.substring(0, 5000) + "\n\n<!-- ... output truncated for display performance ... -->"
+            : rawXml;
+        } else {
+          txtKmlPreview.textContent = "<!-- Serialized KML code will render here -->";
+        }
+      });
+
+      // Render feature list items from Document SSOT
+      function renderFeatures(features, selectedId) {
+        if (features.length === 0) {
+          listFeatures.innerHTML = '<div style="text-align: center; color: var(--muted); margin-top: 2rem;">No spatial features found in this document.</div>';
+          return;
+        }
+
+        listFeatures.innerHTML = '';
+        features.forEach((feat) => {
+          if (!feat) return;
+
+          const item = document.createElement('div');
+          item.className = `feature-item ${feat.id === selectedId ? 'selected' : ''}`;
+          
+          item.innerHTML = `
+            <div>
+              <div style="font-weight: 600;">${feat.name || '(untitled)'}</div>
+              <div style="font-size: 0.75rem; color: var(--muted); font-family: monospace; margin-top: 0.15rem;">ID: ${feat.id}</div>
+            </div>
+            <span class="badge ${feat.type}">${feat.type}</span>
+          `;
+
+          item.addEventListener('click', () => {
+            if (feat.id === currentSelectedId) {
+              store.selectFeature(null);
+            } else {
+              store.selectFeature(feat.id);
+            }
+          });
+
+          listFeatures.appendChild(item);
+        });
+      }
+
+      // 6. Handle File Pick events
+      inputFile.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        txtFileName.textContent = `Loading ${file.name}...`;
+        try {
+          await store.loadFile(file);
+          txtFileName.textContent = file.name;
+        } catch (err) {
+          console.error(err);
+          txtFileName.textContent = `Error: ${err.message || String(err)}`;
+        }
+      });
+
+      // 7. Command Execution Events
+      btnApplyRename.addEventListener('click', () => {
+        if (!currentSelectedId) return;
+        const newName = inputName.value.trim();
+        const command = createSetNameCommand(currentSelectedId, newName);
+        store.executeCommand(command);
+      });
+
+      btnMoveMarker.addEventListener('click', () => {
+        if (!currentSelectedId || !store.document) return;
+        const feat = store.document.getFeatureById(currentSelectedId);
+        if (!feat || feat.type !== 'marker') return;
+
+        // Shift 5 meters East (roughly +0.000045 degrees longitude locally)
+        const oldPos = feat.position;
+        const newPos = { lon: oldPos.lon + 0.000045, lat: oldPos.lat, alt: oldPos.alt };
+        
+        const command = createMoveMarkerCommand(currentSelectedId, newPos);
+        store.executeCommand(command);
+      });
+
+      btnUndo.addEventListener('click', () => {
+        store.undo();
+      });
+
+      btnRedo.addEventListener('click', () => {
+        store.redo();
+      });});
+    </script>
+  </body>
+</html>

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KML Document Model Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --bg: #1A1A2E;
+        --panel: #16213E;
+        --panel-2: #0F3460;
+        --accent: #E94560;
+        --accent-2: #533483;
+        --text: #f8fafc;
+        --muted: #cbd5e1;
+        --border: rgba(255,255,255,0.14);
+      }
+      body {
+        margin: 0;
+        padding: 1.25rem;
+        background: linear-gradient(135deg, var(--bg) 0%, var(--panel) 100%);
+        color: var(--text);
+      }
+      .layout {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: minmax(280px, 380px) 1fr;
+      }
+      .panel {
+        background: rgba(22, 33, 62, 0.92);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+      }
+      textarea {
+        width: 100%;
+        min-height: 360px;
+        resize: vertical;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.9rem;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #0b1020;
+        color: var(--text);
+        padding: 0.75rem;
+        box-sizing: border-box;
+      }
+      select,
+      input {
+        width: 85%;
+        padding: 0.65rem 0.75rem;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--text);
+        margin-top: 0.35rem;
+      }
+      .controls {
+        display: grid;
+        gap: 0.75rem;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      button {
+        padding: 0.75rem 0.95rem;
+        border: none;
+        border-radius: 10px;
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+        color: white;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button:hover {
+        filter: brightness(1.08);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>KML Document Model Demo</h1>
+    <p class="muted">Load a KML fixture, inspect the typed feature list, and edit a marker or name field to see the document update immediately.</p>
+
+    <div class="layout">
+      <section class="panel">
+        <div class="controls">
+          <label>
+            Feature
+            <select id="feature-select"></select>
+          </label>
+          <p id="feature-id" class="muted" aria-live="polite"></p>
+          <label>
+            Property
+            <select id="property-select">
+              <option value="name">name</option>
+              <option value="position">position</option>
+            </select>
+          </label>
+          <label id="value-label">
+            Value
+            <input id="value-input" type="text" />
+          </label>
+          <button id="apply-button" type="button">Apply edit</button>
+          <p id="status" class="muted">Loading fixture…</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <label for="kml-output">Serialized KML</label>
+        <textarea id="kml-output"></textarea>
+      </section>
+    </div>
+
+    <script type="module">
+      import { createKmlDocument } from '../../src/document-model/index.ts';
+
+      const fixtureUrl = '/fixtures/google-earth/dreieck.kml';
+      const documentModel = createKmlDocument();
+      const featureSelect = document.getElementById('feature-select');
+      const featureId = document.getElementById('feature-id');
+      const propertySelect = document.getElementById('property-select');
+      const valueInput = document.getElementById('value-input');
+      const applyButton = document.getElementById('apply-button');
+      const status = document.getElementById('status');
+      const output = document.getElementById('kml-output');
+      const valueLabel = document.getElementById('value-label');
+
+      let features = [];
+
+      function renderFeatureList() {
+        if (!featureSelect) return;
+        const selectedId = featureSelect.value || (features[0]?.id ?? null);
+        featureSelect.innerHTML = '';
+        features.forEach((feature) => {
+          const option = document.createElement('option');
+          option.value = feature.id;
+          option.textContent = `${feature.name || '(untitled)'} · ${feature.type}`;
+          option.title = `ID: ${feature.id}`;
+          featureSelect.appendChild(option);
+        });
+        if (features.length) {
+          featureSelect.value = selectedId && features.some((feature) => feature.id === selectedId) ? selectedId : features[0].id;
+          updateFeatureSelection();
+        }
+      }
+
+      function updateFeatureSelection() {
+        const feature = features.find((item) => item.id === featureSelect.value);
+        if (featureId) {
+          featureId.textContent = feature ? `ID: ${feature.id}` : '';
+        }
+        updateValueInput();
+      }
+
+      function updateValueInput() {
+        const feature = features.find((item) => item.id === featureSelect.value);
+        if (!feature) return;
+        const property = propertySelect.value;
+        const helper = valueLabel.querySelector('div');
+        if (helper) {
+          helper.remove();
+        }
+        if (property === 'position' && feature.type === 'marker') {
+          const hint = document.createElement('div');
+          hint.className = 'muted';
+          hint.textContent = 'Format: lon,lat,alt';
+          valueLabel.appendChild(hint);
+          valueInput.value = `${feature.position.lon},${feature.position.lat},${feature.position.alt}`;
+        } else {
+          valueInput.value = feature.name || '';
+        }
+      }
+
+      async function loadFixture() {
+        const response = await fetch(fixtureUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to load fixture: ${response.status} ${response.statusText}`);
+        }
+        const text = await response.text();
+        documentModel.parse(text);
+        features = documentModel.getFeatures();
+        renderFeatureList();
+        output.value = documentModel.serialize();
+        status.textContent = `Loaded ${features.length} features from ${fixtureUrl}`;
+      }
+
+      function applyEdit() {
+        const selectedId = featureSelect.value;
+        const feature = features.find((item) => item.id === selectedId);
+        if (!feature) return;
+
+        if (propertySelect.value === 'position' && feature.type === 'marker') {
+          const [lon, lat, alt] = valueInput.value.split(',').map((part) => Number(part.trim()));
+          feature.position = { lon, lat, alt };
+        } else {
+          feature.name = valueInput.value;
+        }
+
+        features = documentModel.getFeatures();
+        renderFeatureList();
+        output.value = documentModel.serialize();
+        status.textContent = 'Edit applied; serialized output updated.';
+      }
+
+      featureSelect.addEventListener('change', updateFeatureSelection);
+      propertySelect.addEventListener('change', updateValueInput);
+      applyButton.addEventListener('click', applyEdit);
+
+      loadFixture().catch((error) => {
+        console.error(error);
+        status.textContent = `Failed to load fixture: ${error instanceof Error ? error.message : String(error)}`;
+      });
+    </script>
+  </body>
+</html>

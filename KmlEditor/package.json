@@ -1,0 +1,30 @@
+{
+  "name": "kml-editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KML/KMZ editor for location-based WebXR",
+  "type": "module",
+  "scripts": {
+    "dev:ar-scene": "vite --open /demos/ar-scene-demo/",
+    "dev:presentation": "vite --open /presentation.html",
+    "dev:commands": "vite --open /demos/commands-demo/",
+    "dev:geo-bridge": "vite --open /demos/geo-bridge-demo/",
+    "dev:document-model": "vite --open /demos/document-model-demo/",
+    "dev:editor": "vite --open /demos/editor-demo/",
+    "dev:persistence": "vite --open /demos/persistence-demo/",
+    "dev:renderers": "vite --open /demos/renderers-demo/",
+    "test": "node ../scripts/test-timing/run-gate.mjs",
+    "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "three": "^0.184.0",
+    "vite": "^8.0.12",
+    "vitest": "^4.1.6"
+  },
+  "dependencies": {
+    "@reduxjs/toolkit": "^2.11.2",
+    "gps-plus-slam-app-framework": "workspace:*"
+  }
+}

@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Location-Based WebXR KML Editor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --bg-card: rgba(18, 26, 43, 0.85);
+      --bg-card-hover: rgba(24, 34, 56, 0.95);
+      --border-color: rgba(255, 255, 255, 0.14);
+      --border-accent: rgba(99, 102, 241, 0.5);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --primary: #6366f1;
+      --secondary: #a855f7;
+      --emerald: #10b981;
+      --rose: #f43f5e;
+      --amber: #f59e0b;
+      --font-body: 'Inter', -apple-system, sans-serif;
+      --font-code: 'Fira Code', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-body);
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      user-select: none;
+    }
+
+    /* Top Progress Bar */
+    .progress-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.05);
+      z-index: 100;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: var(--primary);
+      transition: width 0.25s ease;
+    }
+
+    /* Top Header */
+    header {
+      position: fixed;
+      top: 24px;
+      left: 48px;
+      right: 48px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 50;
+      pointer-events: none;
+    }
+
+    .header-title {
+      font-weight: 700;
+      font-size: 1rem;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .header-controls {
+      pointer-events: auto;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .btn-icon {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: var(--font-body);
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    .btn-icon:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: var(--primary);
+    }
+
+    /* Full Widescreen Deck Viewport */
+    .deck-container {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      padding: 70px 48px 80px 48px;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(10px);
+      transition: opacity 0.3s ease, transform 0.3s ease, visibility 0.3s;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      width: 100%;
+      max-width: 1850px;
+      margin: 0 auto;
+    }
+
+    .slide.active {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+
+    /* Typography */
+    .slide-section-num {
+      font-size: 1.05rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--primary);
+      margin-bottom: 8px;
+    }
+
+    .slide-title {
+      font-size: 3.2rem;
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 24px;
+      color: #ffffff;
+    }
+
+    /* Grids */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 28px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+    }
+
+    /* Fragment Animation */
+    .fragment {
+      opacity: 0.12;
+      transform: translateY(12px);
+      transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s ease;
+      filter: blur(1px);
+    }
+
+    .fragment.visible {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
+
+    /* Full-Screen Glass Cards */
+    .glass-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 32px;
+      transition: background 0.2s ease, border-color 0.2s ease;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .glass-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-accent);
+    }
+
+    .glass-card.highlight {
+      border-color: var(--border-accent);
+    }
+
+    .glass-card.problem-card {
+      border-color: rgba(244, 63, 94, 0.4);
+    }
+
+    .glass-card.success-card {
+      border-color: rgba(16, 185, 129, 0.4);
+    }
+
+    .card-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 16px;
+    }
+
+    .card-text {
+      color: #cbd5e1;
+      font-size: 1.15rem;
+      line-height: 1.65;
+    }
+
+    /* Large Bullet List */
+    .bullet-list {
+      list-style-type: disc;
+      padding-left: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .bullet-item {
+      color: #f1f5f9;
+      font-size: 1.18rem;
+      line-height: 1.55;
+    }
+
+    .bullet-item strong {
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    /* Code Block & Chips */
+    .code-chip {
+      font-family: var(--font-code);
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #a5b4fc;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 1rem;
+    }
+
+    .code-block {
+      font-family: var(--font-code);
+      background: rgba(10, 14, 23, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 0.95rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+
+    .code-block span.highlight-green {
+      color: #34d399;
+      font-weight: bold;
+      background: rgba(16, 185, 129, 0.2);
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .code-block span.highlight-red {
+      color: #fb7185;
+      text-decoration: line-through;
+      background: rgba(244, 63, 94, 0.2);
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    /* Demo Frame & Video Frame */
+    .demo-frame-container, .video-frame-container {
+      width: 100%;
+      height: 620px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border-accent);
+      background: rgba(10, 14, 23, 0.95);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      position: relative;
+    }
+
+    .demo-frame-container iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .demo-frame-header, .video-frame-header {
+      background: rgba(18, 26, 43, 0.95);
+      border-bottom: 1px solid var(--border-color);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+
+    .demo-frame-header span.live-tag, .video-frame-header span.live-tag {
+      color: #34d399;
+      font-weight: 700;
+    }
+
+    /* Screenshot Placeholder Cards */
+    .screenshot-card {
+      background: rgba(10, 14, 23, 0.8);
+      border: 2px dashed rgba(99, 102, 241, 0.35);
+      border-radius: 10px;
+      height: 340px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      text-align: center;
+      padding: 20px;
+      transition: all 0.2s ease;
+    }
+
+    .screenshot-card:hover {
+      border-color: var(--primary);
+      background: rgba(99, 102, 241, 0.08);
+    }
+
+    .screenshot-card span.title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #a5b4fc;
+      margin-bottom: 8px;
+    }
+
+    /* VECTOR RENDERED DIAGRAM CONTAINER (Slide 3) */
+    .rendered-vector-diagram-container {
+      width: 100%;
+      height: 680px;
+      background: rgba(10, 14, 23, 0.85);
+      border: 1px solid var(--border-accent);
+      border-radius: 14px;
+      padding: 10px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* Step-by-Step Flow Cards for Slide 6 */
+    .flow-step-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 16px;
+      margin-top: 14px;
+    }
+
+    .flow-step-card {
+      background: rgba(18, 26, 43, 0.9);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .flow-step-num {
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: var(--primary);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .flow-step-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 10px;
+    }
+
+    .flow-step-desc {
+      font-size: 1.05rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+      margin-bottom: 14px;
+    }
+
+    .flow-diagram-snippet {
+      background: rgba(10, 14, 23, 0.9);
+      border: 1.5px solid var(--border-accent);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 0.9rem;
+      color: #a5b4fc;
+      font-family: var(--font-code);
+      margin-top: auto;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .flow-diagram-snippet span.comp {
+      font-weight: bold;
+      color: #60a5fa;
+    }
+
+    /* Large Concluding Key Takeaway Banner */
+    .large-takeaway-banner {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.15));
+      border: 2px solid var(--border-accent);
+      border-radius: 10px;
+      padding: 20px 32px;
+      margin-top: 24px;
+      font-size: 1.25rem;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+
+    .large-takeaway-banner strong {
+      color: #a5b4fc;
+      font-size: 1.3rem;
+      white-space: nowrap;
+    }
+
+    /* Bottom Control Bar */
+    footer {
+      position: fixed;
+      bottom: 24px;
+      left: 48px;
+      right: 48px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 50;
+    }
+
+    .slide-counter {
+      font-weight: 600;
+      font-size: 1rem;
+      color: var(--text-muted);
+    }
+
+    .slide-counter span {
+      color: var(--text-main);
+    }
+
+    .nav-buttons {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn-nav {
+      width: 48px;
+      height: 48px;
+      border-radius: 6px;
+      background: rgba(18, 26, 43, 0.85);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-nav:hover:not(:disabled) {
+      background: var(--primary);
+      border-color: var(--primary);
+    }
+
+    .btn-nav:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .kbd-hint {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    kbd {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-family: var(--font-code);
+      font-size: 0.8rem;
+      color: var(--text-main);
+    }
+
+    .hero-slide {
+      text-align: center;
+      align-items: center;
+    }
+
+    .hero-title {
+      font-size: 4.5rem;
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 24px;
+      color: #ffffff;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Progress Bar -->
+  <div class="progress-container">
+    <div class="progress-bar" id="progressBar"></div>
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div class="header-title">
+      <span>LOCATION-BASED WEBXR</span>
+    </div>
+    <div class="header-controls">
+      <div class="kbd-hint">
+        <kbd>←</kbd> <kbd>→</kbd> or <kbd>Space</kbd>
+      </div>
+      <button class="btn-icon" id="btnFullscreen" onclick="toggleFullscreen()">
+        Fullscreen
+      </button>
+    </div>
+  </header>
+
+  <!-- Slide Viewport -->
+  <main class="deck-container">
+
+    <!-- SLIDE 1: TITLE -->
+    <section class="slide hero-slide active" id="slide-1">
+      <h1 class="hero-title">Location-Based WebXR<br>KML / KMZ Editor</h1>
+      <div class="fragment" style="margin-top: 30px;">
+      </div>
+    </section>
+
+    <!-- SLIDE 2: SECTION 1 - INTRODUCTION & MOTIVATION -->
+<section class="slide" id="slide-2" style="padding: 40px 48px;">
+  <div class="slide-section-num">1. INTRODUCTION &amp; MOTIVATION</div>
+  <h2 class="slide-title">Why We Built This System</h2>
+
+  <!-- 3-column layout: text | 2 stacked landscape images | tall portrait image -->
+  <div class="fragment" style="display: grid; grid-template-columns: 1fr 1.1fr 1fr; gap: 24px; align-items: stretch; margin-top: 24px;">
+
+    <!-- LEFT COLUMN: Combined Text Box -->
+    <div class="glass-card highlight" style="display: flex; flex-direction: column; gap: 20px; padding: 24px;">
+      <div>
+        <div class="card-title">The Goal</div>
+        <ul class="bullet-list">
+          <li class="bullet-item">Load, view, and edit geographic KML/KMZ files directly in the browser.</li>
+          <li class="bullet-item">Inspect and edit markers anchored at real GPS positions on smartphones.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="card-title">Our Solution</div>
+        <ul class="bullet-list">
+          <li class="bullet-item">Dual-mode application: 3D Desktop Map Editor + Mobile Field AR View.</li>
+          <li class="bullet-item">Unified architecture ensuring edits persist identically across desktop and mobile.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- MIDDLE COLUMN: 2 Stacked Landscape Screenshots -->
+    <div style="display: flex; flex-direction: column; gap: 24px; height: 100%;">
+      <div class="glass-card" style="padding: 12px; flex: 1; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="width: 100%; flex: 1; border-radius: 8px; background: rgba(0,0,0,0.25); display: flex; align-items: center; justify-content: center; overflow: hidden;">
+          <img src="slide-google-earth.jpg" alt="Google Earth Source Map" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+        </div>
+        <div style="font-weight: 700; color: #a5b4fc; font-size: 1.05rem; margin-top: 8px;">1. Google Earth Source Map</div>
+      </div>
+
+      <div class="glass-card" style="padding: 12px; flex: 1; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="width: 100%; flex: 1; border-radius: 8px; background: rgba(0,0,0,0.25); display: flex; align-items: center; justify-content: center; overflow: hidden;">
+          <img src="slide-desktop-editor.png" alt="Desktop 3D Editor" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+        </div>
+        <div style="font-weight: 700; color: #a5b4fc; font-size: 1.05rem; margin-top: 8px;">2. 3D Desktop Editor</div>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN: Tall Portrait Screenshot -->
+    <div class="glass-card" style="padding: 12px; text-align: center; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+      <div style="width: 100%; flex: 1; border-radius: 8px; background: rgba(0,0,0,0.25); display: flex; align-items: center; justify-content: center; overflow: hidden;">
+        <img src="slide-mobile-ar.png" alt="Mobile Field AR App" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+      </div>
+      <div style="font-weight: 700; color: #a5b4fc; font-size: 1.05rem; margin-top: 8px;">3. Mobile Field AR App</div>
+    </div>
+
+  </div>
+</section>
+
+    <!-- SLIDE 3: SECTION 2 - SYSTEM ARCHITECTURE (PERFECT VECTOR SVG DIAGRAM) -->
+    <section class="slide" id="slide-3">
+      <div class="slide-section-num">2. SYSTEM ARCHITECTURE</div>
+      <h2 class="slide-title">Core Components &amp; Data Flow</h2>
+      
+      <div class="rendered-vector-diagram-container fragment">
+        <img src="slide-architecture-schema.png" alt="System Architecture Diagram" style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px;">
+      </div>
+    </section>
+
+    <!-- SLIDE 4: SECTION 2 - DATA LOSSLESSNESS (Original Slide 2 Example) -->
+    <section class="slide" id="slide-4">
+      <div class="slide-section-num">2. IMPLEMENTATION DETAILS</div>
+      <h2 class="slide-title">Data Losslessness &amp; Geo-Bridge</h2>
+      
+      <div class="grid-2">
+        <div class="glass-card highlight fragment">
+          <div class="card-title">Lossless Roundtrip Editing</div>
+          <ul class="bullet-list">
+            <li class="bullet-item"><strong>Lossless Roundtrip:</strong> Edit coordinates on desktop or mobile AR, save the file, and reopen in Google Earth.</li>
+            <li class="bullet-item"><strong>100% Tag Preservation:</strong> All custom Google Earth styles, CDATA blocks, comments, and structure tags remain intact.</li>
+            <li class="bullet-item"><strong>Substring Range Search:</strong> Uses <span class="code-chip">DOMParser</span> to locate exact character offsets of <span class="code-chip">&lt;coordinates&gt;</span>.</li>
+            <li class="bullet-item"><strong>Targeted Text Replacement:</strong> Replaces only coordinate numbers in the raw XML text without re-serializing.</li>
+          </ul>
+        </div>
+
+        <div class="glass-card highlight fragment">
+          <div class="card-title">Concrete KML Code Example</div>
+          <div class="code-block">
+&lt;Placemark id="marker1"&gt;
+  &lt;name&gt;Templergraben Gate&lt;/name&gt;
+  &lt;styleUrl&gt;#customPinStyle&lt;/styleUrl&gt;
+  &lt;Point&gt;
+    &lt;coordinates&gt;<span class="highlight-red">6.08388,50.77534,0</span> <span class="highlight-green">6.08450,50.77610,0</span>&lt;/coordinates&gt;
+  &lt;/Point&gt;
+  &lt;!-- Custom Google Earth tags &amp; comments preserved --&gt;
+&lt;/Placemark&gt;
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 5: SECTION 2 - RENDERING & LIVE RENDERERS DEMO -->
+    <section class="slide" id="slide-5">
+      <div class="slide-section-num">2. IMPLEMENTATION &amp; LIVE DEMO</div>
+      <h2 class="slide-title">Three.js Asset Renderers</h2>
+      
+      <div class="grid-2" style="align-items: center;">
+        <div class="glass-card highlight fragment">
+          <div class="card-title">Renderers Specifications</div>
+          <ul class="bullet-list">
+            <li class="bullet-item"><strong>Marker Renderer:</strong> Pins &amp; canvas icon sprites positioned in 3D meter space.</li>
+            <li class="bullet-item"><strong>Line Renderer:</strong> 3D polylines with custom stroke width, color, and altitude mode.</li>
+            <li class="bullet-item"><strong>GroundOverlay Renderer:</strong> 2D image overlays projected onto terrain bounding box.</li>
+            <li class="bullet-item"><strong>3D Model Renderer:</strong> Loads <span class="code-chip">.dae</span> COLLADA models with textures via <span class="code-chip">ColladaLoader</span>.</li>
+            <li class="bullet-item"><strong>VRAM TextureCache:</strong> Reuses shared materials to prevent GPU memory leaks.</li>
+          </ul>
+        </div>
+
+        <!-- EMBEDDED LIVE DEMO: renderers-demo -->
+        <div class="demo-frame-container fragment">
+          <div class="demo-frame-header">
+            <span>LIVE DEMO: renderers-demo</span>
+            <span class="live-tag">Interactive 3D Viewport</span>
+          </div>
+          <iframe src="/demos/renderers-demo/" title="Live Renderers Demo" loading="lazy"></iframe>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 6: SECTION 3 - ARCHITECTURAL INSIGHTS (How It Works with Diagram Snippets) -->
+    <section class="slide" id="slide-6">
+      <div class="slide-section-num">3. ARCHITECTURAL INSIGHTS</div>
+      <h2 class="slide-title">How It Works</h2>
+      
+      <div class="flow-step-grid">
+        <!-- STEP 1 -->
+        <div class="flow-step-card fragment">
+          <div class="flow-step-num">STEP 1</div>
+          <div class="flow-step-title">User Edit Gesture</div>
+          <div class="flow-step-desc">User drags a marker on the 3D map or smartphone AR screen.</div>
+          <div class="flow-diagram-snippet">
+            <span class="comp">UI Layer</span>
+            <span>editor / ar-scene</span>
+          </div>
+        </div>
+
+        <!-- STEP 2 -->
+        <div class="flow-step-card fragment">
+          <div class="flow-step-num">STEP 2</div>
+          <div class="flow-step-title">Command Dispatch</div>
+          <div class="flow-step-desc">Creates atomic command object &amp; pushes to Redux Undo stack.</div>
+          <div class="flow-diagram-snippet">
+            <span class="comp">State Layer</span>
+            <span>commands ➔ store</span>
+          </div>
+        </div>
+
+        <!-- STEP 3 -->
+        <div class="flow-step-card fragment">
+          <div class="flow-step-num">STEP 3</div>
+          <div class="flow-step-title">Geo-Bridge Math</div>
+          <div class="flow-step-desc">Converts 3D drag meters relative to anchor into GPS Lat/Lon.</div>
+          <div class="flow-diagram-snippet">
+            <span class="comp">Math Layer</span>
+            <span>geo-bridge (WGS84)</span>
+          </div>
+        </div>
+
+        <!-- STEP 4 -->
+        <div class="flow-step-card fragment">
+          <div class="flow-step-num">STEP 4</div>
+          <div class="flow-step-title">AST XML Substring Edit</div>
+          <div class="flow-step-desc"><strong>AST</strong> = Parsed XML tree in memory. Replaces coordinate substring in-place.</div>
+          <div class="flow-diagram-snippet">
+            <span class="comp">AST Model</span>
+            <span>document-model</span>
+          </div>
+        </div>
+
+        <!-- STEP 5 -->
+        <div class="flow-step-card fragment">
+          <div class="flow-step-num">STEP 5</div>
+          <div class="flow-step-title">Debounced Auto-Save</div>
+          <div class="flow-step-desc">Waits 500ms after dragging stops before writing file to disk (prevents lagging during 60 FPS drag).</div>
+          <div class="flow-diagram-snippet">
+            <span class="comp">Disk Save</span>
+            <span>persistence (500ms)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Large Concluding Key Takeaway Banner -->
+      <div class="large-takeaway-banner fragment">
+        <strong>Key Takeaway:</strong>
+        <span>Because commands &amp; math are isolated, both Desktop and AR views share 100% identical save logic and spatial math without code duplication.</span>
+      </div>
+    </section>
+
+    <!-- SLIDE 7: SECTION 4 - RESULTS & LIVE EDITOR DEMO EMBED -->
+    <section class="slide" id="slide-7">
+      <div class="slide-section-num">4. THE RESULTS &amp; LIVE DEMO</div>
+      <h2 class="slide-title">Desktop Editor Live Preview</h2>
+      
+      <div class="grid-2" style="align-items: center;">
+        <div class="glass-card highlight fragment">
+          <div class="card-title">Desktop Editor Features</div>
+          <ul class="bullet-list">
+            <li class="bullet-item"><strong>Interactive 3D Map:</strong> OrbitControls for navigating around KML features.</li>
+            <li class="bullet-item"><strong>Sidebar &amp; Inspector:</strong> Feature tree view and property editing panel.</li>
+            <li class="bullet-item"><strong>Undo / Redo:</strong> History stack supported via <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>.</li>
+            <li class="bullet-item"><strong>Google Earth Compatible:</strong> Reopens saved KMZ files with modified coordinates intact.</li>
+          </ul>
+        </div>
+
+        <!-- EMBEDDED LIVE DEMO: editor-demo -->
+        <div class="demo-frame-container fragment">
+          <div class="demo-frame-header">
+            <span>LIVE DEMO: editor-demo</span>
+            <span class="live-tag">Interactive Desktop Editor</span>
+          </div>
+          <iframe src="/demos/editor-demo/" title="Live Desktop Editor Demo" loading="lazy"></iframe>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 8: SECTION 4 - MOBILE AR VIDEO DEMO -->
+    <section class="slide" id="slide-8">
+      <div class="slide-section-num">4. THE RESULTS &amp; MOBILE AR DEMO</div>
+      <h2 class="slide-title">Mobile AR Field Demo (Video)</h2>
+      
+      <div class="grid-2" style="align-items: center;">
+        <div class="glass-card highlight fragment">
+          <div class="card-title">Mobile AR Features</div>
+          <ul class="bullet-list">
+            <li class="bullet-item"><strong>Live Camera Pass-Through:</strong> Overlays 3D KML features onto real-world camera video feed.</li>
+            <li class="bullet-item"><strong>Anchoring point</strong> Calculations are less error prone - using offset </li>
+            <li class="bullet-item"><strong>Real GPS vs. Mock GPS:</strong> mobile XR with real GPS or desktop with mock GPS - markers are positioned around a point.</li>
+            <li class="bullet-item"><strong>Orientation Sensors:</strong> Uses smartphone Gyroscope &amp; syncing 3D objects positions</li>
+            <li class="bullet-item"><strong>Grab-to-Move POV Editing:</strong> Drag markers on screen in real time to alter their GPS position.</li>
+          </ul>
+        </div>
+
+        <!-- MOBILE AR VIDEO CONTAINER -->
+        <div class="video-frame-container fragment">
+          <div class="video-frame-header">
+            <span>VIDEO DEMO: Mobile XR</span>
+            <span class="live-tag" style="color: #a5b4fc;">ar-demo-video.mp4</span>
+          </div>
+          <video controls preload="metadata" style="width: 100%; height: 560px; object-fit: contain; background: #000;">
+            <source src="presentation/ar-demo-video.mp4" type="video/mp4">
+            Your browser does not support HTML5 video playback.
+          </video>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 9: SECTION 5 - PROBLEMS ENCOUNTERED -->
+    <section class="slide" id="slide-9">
+      <div class="slide-section-num">5. PROBLEMS ENCOUNTERED</div>
+      <h2 class="slide-title">Lab Challenges &amp; Honest Learnings</h2>
+      
+      <div class="grid-2">
+        <div class="glass-card problem-card fragment">
+          <div class="card-title" style="color: #fb7185;">Code Comprehension under High Workload &amp; AI Code</div>
+          <ul class="bullet-list">
+            <li class="bullet-item">Rapid development with heavy AI code generation created high code volume.</li>
+            <li class="bullet-item">Under tight time constraints, gaining deep understanding of every underlying layer was difficult.</li>
+          </ul>
+        </div>
+
+        <div class="glass-card problem-card fragment">
+          <div class="card-title" style="color: #fb7185;">AR Marker Positioning Issues</div>
+          <ul class="bullet-list">
+            <li class="bullet-item">Positioning markers accurately in mobile AR proved problematic.</li>
+            <li class="bullet-item">Framework positioning functions were not utilized correctly by our viewer layer.</li>
+            <li class="bullet-item">Resolving this would require refactoring the viewer layer from scratch (unresolved due to time).</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 10: SECTION 6 - WHAT WORKED WELL -->
+    <section class="slide" id="slide-10">
+      <div class="slide-section-num">6. WHAT WORKED WELL</div>
+      <h2 class="slide-title">Lab Successes</h2>
+      
+      <div class="grid-2">
+        <div class="glass-card success-card fragment">
+          <div class="card-title" style="color: #34d399;">Fast Modular Prototyping</div>
+          <ul class="bullet-list">
+            <li class="bullet-item">Individual components (parser, math bridge, renderers, store) were created quickly.</li>
+            <li class="bullet-item">Strict modular separation established a clean system architecture.</li>
+          </ul>
+        </div>
+
+        <div class="glass-card success-card fragment">
+          <div class="card-title" style="color: #34d399;">Lossless KML Round-Trip Editing</div>
+          <ul class="bullet-list">
+            <li class="bullet-item">Lossless coordinate editing works reliably across saved files.</li>
+            <li class="bullet-item">Modifying coordinates in our app updates only target values, keeping all XML styles intact in Google Earth.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 11: RECAP SLIDE (Placeholder for 3-4 Screenshots) -->
+    <section class="slide" id="slide-11">
+      <div class="slide-section-num">7. RECAP &amp; OVERVIEW</div>
+      <h2 class="slide-title">Recap</h2>
+      
+      <div class="grid-4 fragment">
+        <!-- 1. Rendered Architecture Schema Image -->
+        <div class="glass-card" style="padding: 10px; height: 340px; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+          <img src="slide-architecture-schema.png" alt="System Schema" style="width: 100%; height: 265px; object-fit: contain; background: #0a0e17; border-radius: 8px;">
+          <div style="font-weight: 700; color: #a5b4fc; font-size: 1rem; margin-top: 8px;">1. System Schema</div>
+        </div>
+
+        <!-- 2. Google Earth Screenshot -->
+        <div class="glass-card" style="padding: 10px; height: 340px; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+          <img src="slide-google-earth.jpg" alt="Google Earth Source Map" style="width: 100%; height: 265px; object-fit: cover; border-radius: 8px;">
+          <div style="font-weight: 700; color: #a5b4fc; font-size: 1rem; margin-top: 8px;">2. Google Earth Map</div>
+        </div>
+
+        <!-- 3. Desktop Editor Screenshot -->
+        <div class="glass-card" style="padding: 10px; height: 340px; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+          <img src="slide-desktop-editor.png" alt="Desktop 3D Editor" style="width: 100%; height: 265px; object-fit: cover; border-radius: 8px;">
+          <div style="font-weight: 700; color: #a5b4fc; font-size: 1rem; margin-top: 8px;">3. 3D Desktop Editor</div>
+        </div>
+
+        <!-- 4. Mobile AR Field Screenshot -->
+        <div class="glass-card" style="padding: 10px; height: 340px; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+          <img src="slide-mobile-ar.png" alt="Mobile Field AR App" style="width: 100%; height: 265px; object-fit: cover; border-radius: 8px;">
+          <div style="font-weight: 700; color: #a5b4fc; font-size: 1rem; margin-top: 8px;">4. Mobile AR Field App</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 12: SECTION 7 - SUMMARY & QUESTIONS -->
+    <section class="slide hero-slide" id="slide-12">
+      <h1 class="hero-title">Thank You</h1>
+      <div class="glass-card highlight fragment" style="max-width: 700px; text-align: center; margin: 20px auto;">
+        <div class="card-title" style="justify-content: center; font-size: 1.8rem; color: #a5b4fc;">
+          Questions &amp; Discussion
+        </div>
+        <p class="card-text" style="font-size: 1.25rem; color: #e2e8f0; margin-top: 10px;">
+          5-Minute Q&amp;A Session
+        </p>
+      </div>
+
+      <div class="fragment" style="margin-top: 30px;">
+        <button class="btn-icon" style="padding: 12px 28px; font-size: 1rem;" onclick="goToSlide(0)">
+          Restart Deck
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Bottom Control Bar -->
+  <footer>
+    <div class="slide-counter">
+      Slide <span id="currentSlideNum">1</span> of <span id="totalSlideNum">12</span>
+    </div>
+    
+    <div class="nav-buttons">
+      <button class="btn-nav" id="btnPrev" onclick="prevStep()" title="Previous (←)">
+        ←
+      </button>
+      <button class="btn-nav" id="btnNext" onclick="nextStep()" title="Next (→ or Space)">
+        →
+      </button>
+    </div>
+  </footer>
+
+  <script>
+    const slides = document.querySelectorAll('.slide');
+    const totalSlides = slides.length;
+    let currentSlide = 0;
+
+    document.getElementById('totalSlideNum').textContent = totalSlides;
+
+    function getActiveFragments() {
+      return slides[currentSlide].querySelectorAll('.fragment');
+    }
+
+    function getUnrevealedFragmentIndex() {
+      const fragments = getActiveFragments();
+      for (let i = 0; i < fragments.length; i++) {
+        if (!fragments[i].classList.contains('visible')) {
+          return i;
+        }
+      }
+      return -1;
+    }
+
+    function updateSlideState() {
+      slides.forEach((slide, idx) => {
+        if (idx === currentSlide) {
+          slide.classList.add('active');
+        } else {
+          slide.classList.remove('active');
+        }
+      });
+
+      document.getElementById('currentSlideNum').textContent = currentSlide + 1;
+      const progressPercent = ((currentSlide + 1) / totalSlides) * 100;
+      document.getElementById('progressBar').style.width = progressPercent + '%';
+
+      document.getElementById('btnPrev').disabled = (currentSlide === 0 && getRevealedFragmentCount() === 0);
+      document.getElementById('btnNext').disabled = (currentSlide === totalSlides - 1 && getUnrevealedFragmentIndex() === -1);
+    }
+
+    function getRevealedFragmentCount() {
+      const fragments = getActiveFragments();
+      let count = 0;
+      fragments.forEach(f => {
+        if (f.classList.contains('visible')) count++;
+      });
+      return count;
+    }
+
+    function nextStep() {
+      const fragments = getActiveFragments();
+      const nextFragIdx = getUnrevealedFragmentIndex();
+
+      if (nextFragIdx !== -1) {
+        fragments[nextFragIdx].classList.add('visible');
+        updateSlideState();
+      } else if (currentSlide < totalSlides - 1) {
+        currentSlide++;
+        const newFragments = getActiveFragments();
+        newFragments.forEach(f => f.classList.remove('visible'));
+        updateSlideState();
+      }
+    }
+
+    function prevStep() {
+      const fragments = getActiveFragments();
+      const revealedCount = getRevealedFragmentCount();
+
+      if (revealedCount > 0) {
+        fragments[revealedCount - 1].classList.remove('visible');
+        updateSlideState();
+      } else if (currentSlide > 0) {
+        currentSlide--;
+        const prevFragments = getActiveFragments();
+        prevFragments.forEach(f => f.classList.add('visible'));
+        updateSlideState();
+      }
+    }
+
+    function goToSlide(index) {
+      if (index >= 0 && index < totalSlides) {
+        currentSlide = index;
+        slides.forEach(slide => {
+          const frags = slide.querySelectorAll('.fragment');
+          frags.forEach(f => f.classList.remove('visible'));
+        });
+        updateSlideState();
+      }
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.error(`Error enabling fullscreen: ${err.message}`);
+        });
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        e.preventDefault();
+        nextStep();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        prevStep();
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        goToSlide(0);
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        goToSlide(totalSlides - 1);
+      } else if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      }
+    });
+
+    let touchStartX = 0;
+    let touchEndX = 0;
+
+    document.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    }, false);
+
+    document.addEventListener('touchend', (e) => {
+      touchEndX = e.changedTouches[0].screenX;
+      if (touchEndX < touchStartX - 50) nextStep();
+      if (touchEndX > touchStartX + 50) prevStep();
+    }, false);
+
+    updateSlideState();
+  </script>
+</body>
+</html>

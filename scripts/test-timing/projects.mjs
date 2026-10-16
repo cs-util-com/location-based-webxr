@@ -229,6 +229,7 @@ export const PROJECTS = [
       // Static design playground: format-only gate, seconds-cheap and
       // dependency-free, so it surfaces before the slow app gates run.
       packageGateStage("test:design-system", "gps-plus-slam-design-system"),
+      packageGateStage("test:kml-editor", "kml-editor"),
       // ONE workspace-wide knip for the whole cascade, not one per package.
       // It used to sit in seven package stage lists running the IDENTICAL
       // analysis each time — ~26 s warm, plus a ~25 s cold pass in whichever
@@ -693,6 +694,12 @@ export const PROJECTS = [
   },
   demoAppProject("GpsPlusSlamJs_PhysicsDemo"),
   demoAppProject("GpsPlusSlamJs_WayfindingHudDemo"),
+  {
+    name: "KmlEditor",
+    dir: "KmlEditor",
+    chainNames: [],
+    stages: [{ name: "test:unit", command: "vitest run", counts: "vitest" }],
+  },
 ];
 
 /**
