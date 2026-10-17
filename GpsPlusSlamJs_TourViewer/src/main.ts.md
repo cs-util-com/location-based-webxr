@@ -49,6 +49,11 @@ listed in `index.html.md`. The concerns and their modules:
   section, the `?qr=` boot (`wireArchiveOpen`), and step 4's scan-to-open,
   which the setup panel reaches through a local late binding (the panel is
   wired before the open path).
+- `have-tour.ts` - the creator page's "You already have a tour?" box on a
+  phone (`wireHaveTour`, tour editor plan 2026-10-17-1816 W1), wired for a
+  creator only, after the open path, over `ArchiveOpen.openFile` /
+  `openLink`; "Play it" is `visitorLaunchHref` (keeps `?debug=1`) and
+  "Continue setting it up" scrolls `#setup-card` into view.
 - `tour-viewer-session.ts` - the session object, the store factory and
   the hooks contract they share.
 - `recording-switch.ts` - the visitor's hidden switch (QR-first plan M1c):

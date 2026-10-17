@@ -105,15 +105,23 @@ export interface ArchiveOpenDom {
   clearCacheButton: HTMLButtonElement;
 }
 
-/** The one entry point the composition root needs; the interactive open
- *  is reached through the form listener (M6 review #6: an `openUrl` handle
- *  was returned and never called). */
+/** The composition root's entry points; step 2's open is reached through
+ *  the form listener (M6 review #6: an `openUrl` handle was returned and
+ *  never called). */
 export interface ArchiveOpen {
   /** The `?qr=` launch: resolve the payload and open. Rejections reach the
    *  error box - a printed code is the one flow with no retry. */
   boot: () => Promise<void>;
   /** Step 4's scan-to-open, fed by the creator's AR pipeline (plan §9). */
   scanOpen: ScanOpen;
+  /** The "You already have a tour?" box (tour editor plan 2026-10-17-1816,
+   *  W1): `url` becomes the link of record and is checked as step 2's
+   *  link is (its status line, the unverified hand-off); the outcome is
+   *  the box's to show. */
+  openLink: (url: string) => Promise<OpenOutcome>;
+  /** The same box's file: opened as step 1's "Open it from this device"
+   *  opens one. */
+  openFile: (file: File) => Promise<OpenOutcome>;
 }
 
 export function wireArchiveOpen(deps: {
@@ -631,7 +639,7 @@ export function wireArchiveOpen(deps: {
    *  outcome in the status line. A link whose file is not there yet, or
    *  that could not be asked offline, still goes on to printing - marked
    *  unverified - so the creator gives the link once. */
-  async function checkLinkStep(url: string): Promise<void> {
+  async function checkLinkStep(url: string): Promise<OpenOutcome> {
     lastChecked = url;
     checking = url;
     showLinkStatus({ kind: "checking" });
@@ -657,6 +665,7 @@ export function wireArchiveOpen(deps: {
       dom.linkStatus.hidden = true;
     }
     // superseded: the newer check owns the line.
+    return outcome;
   }
 
   function showLinkStatus(status: LinkStatus, url?: string): void {
@@ -701,6 +710,11 @@ export function wireArchiveOpen(deps: {
 
   return {
     scanOpen,
+    openLink: (url) => {
+      dom.linkInput.value = url;
+      return checkLinkStep(url);
+    },
+    openFile: (file) => openTour({ kind: "file", file }),
     boot: async () => {
       const payload = new URLSearchParams(location.search).get("qr");
       if (payload === null) return;

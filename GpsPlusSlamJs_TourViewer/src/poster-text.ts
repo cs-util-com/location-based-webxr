@@ -10,8 +10,10 @@
 /** The second line on a poster (the S1 design's wording, r820 feedback). */
 export const DEFAULT_EXPLANATION = "AR tour starts here";
 
-/** The line under the code. */
-export const DEFAULT_CALL_TO_ACTION = "Scan with your phone camera";
+/** The line under the code. It names the phone a tour needs (D8 of tour
+ *  editor plan 2026-10-17-1816: Android-only, said plainly on the poster
+ *  too); it was "Scan with your phone camera". */
+export const DEFAULT_CALL_TO_ACTION = "Scan with an Android phone";
 
 export interface PosterFields {
   title: string;

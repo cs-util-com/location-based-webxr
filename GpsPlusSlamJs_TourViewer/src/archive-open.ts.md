@@ -70,6 +70,13 @@ DOM glue, its own module since the flows plan M6.
     session is torn down (the visitor's start page, polish round M4a). It resolves an `OpenOutcome` (`opened`,
     `superseded`, or `failed` with the reject cause) and keeps a real
     in-flight flag; a successful open sets `ctx.tourLabel`.
+  - `ArchiveOpen.openLink(url)` / `ArchiveOpen.openFile(file)` - the
+    "You already have a tour?" box on a phone (`have-tour.ts`, tour editor
+    plan 2026-10-17-1816, W1) opens through this same path: `openLink`
+    writes the link of record into `linkInput` and runs step 2's check
+    (its status line, the unverified hand-off), `openFile` runs the file
+    open. Both resolve the `OpenOutcome`, so the box can ask its question
+    only once the tour is really open.
   - `ArchiveOpen.scanOpen` - step 4's scan-to-open (`scan-open.ts`)
     over this open path: it writes the link of record, opens with origin
     `measure-step`, and re-renders the creator panel when it settles.
@@ -206,7 +213,8 @@ stand-ins: the in-progress state on both outcomes, the file named, the
 local hook instead of the print prefill, the content key reaching the
 draft, and a closed picker doing nothing; its "step 2's link check" block
 covers the unverified hand-off on `missing`, none on `cors`, and the
-auto-check on paste and change, once per link. `archive-open.test.ts` drives the real submit handler through
+auto-check on paste and change, once per link; its `openLink` / `openFile`
+block pins the outcome each returns and the link of record `openLink` writes. `archive-open.test.ts` drives the real submit handler through
 a failed open: the tour switch clears the fused-pose hint state, the
 failed levels read and the voted-lock count (r857 review #9). Its "the levels' settle reaches the visitor
 screen" block (in `archive-open-file.test.ts`) holds `presentTourLevels`

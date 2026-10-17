@@ -25,9 +25,12 @@ visitor's `?debug=1`.
 
 ## Invariants & assumptions
 
-- The `unsupported` sentence ends "Copy the link and open it in Chrome on
-  an Android phone that supports AR." - a visitor's button under it is
-  the Copy link (polish round M4a, V4).
+- The `unsupported` sentence says first that the tour needs an Android
+  phone with Chrome (D8 of tour editor plan 2026-10-17-1816: Android-only,
+  said plainly, no view without AR), and ends "Copy the link and open it
+  in Chrome on an Android phone." - a visitor's button under it is the
+  Copy link (polish round M4a, V4). A session the browser refuses
+  (`NotSupportedError`) names the same need.
 - **Order:** not running (an error maps the framework's message - it keeps
   only `err.message` - to a plain cause: the location permission, the
   camera, an unsupported session, else "Tap Try again"); no tour open;

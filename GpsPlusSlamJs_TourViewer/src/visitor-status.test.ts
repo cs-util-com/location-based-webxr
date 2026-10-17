@@ -52,7 +52,7 @@ describe("visitorStatus - one plain sentence per state", () => {
       "an unsupported phone",
       { arStatus: "unsupported" },
       "unsupported",
-      "This phone or browser can't show the tour in AR. Copy the link and open it in Chrome on an Android phone that supports AR.",
+      "This tour needs an Android phone with Chrome, and this phone or browser can't show it in AR. Copy the link and open it in Chrome on an Android phone.",
     ],
     [
       "AR failed to start",
@@ -235,7 +235,7 @@ describe("visitorStatus - why AR did not start, in plain words (review F5)", () 
     [
       "a session the browser refuses",
       "NotSupportedError: The specified session configuration is not supported.",
-      "This phone can't start AR for this tour. Open this page in Chrome on an Android phone that supports AR.",
+      "This phone can't start AR for this tour, which needs an Android phone with Chrome. Open this page there.",
     ],
     [
       "anything else",
