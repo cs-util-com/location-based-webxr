@@ -6,8 +6,11 @@
   and frame-hitch recorder sit along the bottom.
 - Opened, it shows (4 times a second) the altitude, the distance to the
   target, latitude and longitude under the camera, heading and pitch, E,
-  the band share, each carrier's tiles and cache, the relief's kept
-  heights (count and MiB), and the event count.
+  the band share, each carrier's tiles and cache (the relief's against its
+  cap, and "CACHE FULL, not refining" while its cache turns tiles away,
+  `reliefCache().stalled`, G1 1c: the G0 spikes found it stalling
+  silently), the relief's kept heights (count and MiB), and the event
+  count.
   - **Record** starts a recording of frame times and events while the owner
     zooms by hand: touches do not void it, unlike `#perf=1`'s scripted
     runs. **Stop** ends it and shows the framework's summary.

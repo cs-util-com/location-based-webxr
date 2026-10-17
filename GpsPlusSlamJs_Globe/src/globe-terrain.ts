@@ -43,6 +43,12 @@ import {
   installLazyHeightScale,
   type LazyHeightScale,
 } from "./globe-lazy-height-scale.js";
+import {
+  type ReliefCacheBudget,
+  type ReliefCacheState,
+  checkReliefCacheBudget,
+  watchReliefCache,
+} from "./globe-relief-cache.js";
 import { createMaterialRetirer } from "./globe-warm-material.js";
 
 export const GLOBE_TERRAIN = Object.freeze({
@@ -476,6 +482,7 @@ function checkTerrainOptions(
   url: string,
   heightScale: number,
   tileDimension: number,
+  cache: ReliefCacheBudget,
 ): void {
   if (typeof url !== "string" || url.length === 0) {
     throw new RangeError("the terrain needs a tile url");
@@ -490,6 +497,7 @@ function checkTerrainOptions(
       `the tile size must be a power of two from 1 to ${GLOBE_TERRAIN.maxTileDimension} px, got ${tileDimension}`,
     );
   }
+  checkReliefCacheBudget(cache);
 }
 
 /** The relief carrier, as `createGlobeTerrain` returns it. */
@@ -509,6 +517,12 @@ export interface GlobeTerrain {
   heightScaleStats(): ReturnType<LazyHeightScale["stats"]>;
   /** The kept heights' counters (`installHeightKeeper`). */
   heightKeeperStats(): ReturnType<HeightKeeper["stats"]>;
+  /**
+   * The relief cache now: bytes used and allowed, and whether it is full
+   * and turning tiles away (`watchReliefCache`): a stalled cache stops
+   * the relief refining, with nothing else on the page saying so.
+   */
+  reliefCache(): ReliefCacheState;
   dispose(): void;
 }
 
@@ -535,6 +549,7 @@ export function createGlobeTerrain(options: {
   tileDimension?: number;
   lazyHeightScale?: boolean;
   keepHeightsBytes?: number;
+  cache?: ReliefCacheBudget;
 }): GlobeTerrain {
   const {
     url,
@@ -545,8 +560,12 @@ export function createGlobeTerrain(options: {
     tileDimension = GLOBE_TERRAIN.tileDimension,
     lazyHeightScale: lazy = true,
     keepHeightsBytes = GLOBE_TERRAIN.keepHeightsBytes,
+    cache: budget = {
+      maxBytes: GLOBE_TERRAIN.cacheBytes,
+      minBytes: GLOBE_TERRAIN.cacheFloorBytes,
+    },
   } = options;
-  checkTerrainOptions(url, heightScale, tileDimension);
+  checkTerrainOptions(url, heightScale, tileDimension, budget);
   if (typeof terrariumRuntime !== "function") {
     throw new Error(
       "3d-tiles-renderer no longer exports TerrariumMeshPlugin from its plugins entry",
@@ -565,9 +584,13 @@ export function createGlobeTerrain(options: {
   const cache = new LRUCache();
   // The library's unload order (least recently used, deepest first).
   cache.unloadPriorityCallback = tiles.lruCache.unloadPriorityCallback;
-  cache.maxBytesSize = GLOBE_TERRAIN.cacheBytes;
-  cache.minBytesSize = GLOBE_TERRAIN.cacheFloorBytes;
+  cache.maxBytesSize = budget.maxBytes;
+  cache.minBytesSize = budget.minBytes;
   tiles.lruCache = cache;
+  // Its refusals kept, so a full cache is seen (G0 spikes: it stalled silently).
+  const cacheWatch = watchReliefCache(
+    tiles as unknown as Parameters<typeof watchReliefCache>[0],
+  );
   // Its own queues too, with the library's limits and order: the shared
   // ones held a relief not updated outside the band in front of the
   // globe's tiles (F1).
@@ -630,8 +653,10 @@ export function createGlobeTerrain(options: {
         scaleChanges: 0,
       },
     heightKeeperStats: () => heightKeeper.stats(),
+    reliefCache: () => cacheWatch.state(),
     litTiles: () => owned.size,
     dispose() {
+      cacheWatch.dispose();
       heightKeeper.dispose();
       for (const lit of owned) lit.dispose();
       owned.clear();

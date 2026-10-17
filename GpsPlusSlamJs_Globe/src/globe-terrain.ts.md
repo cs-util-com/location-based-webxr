@@ -92,8 +92,16 @@
     `_tiling` and `_gridCache` (as `globe-height-keeper.ts` does); null, never
     a throw, if they change (`globe-terrain.finest.test.ts` checks the real
     plugin has them).
-  - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom?, tileDimension?, lazyHeightScale?, keepHeightsBytes? })`
-    -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), heightScaleStats(), heightKeeperStats(), dispose() }`
+  - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom?, tileDimension?, lazyHeightScale?, keepHeightsBytes?, cache? })`
+    -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), heightScaleStats(), heightKeeperStats(), reliefCache(), dispose() }`
+    (`cache` the relief cache's `{ maxBytes, minBytes }`, the app's to set
+    per tile format and device class with `reliefCacheBudget`
+    (`globe-relief-cache.ts`), `GLOBE_TERRAIN.cacheBytes` /
+    `cacheFloorBytes` by default; `reliefCache()` the cache's state from
+    `watchReliefCache`: bytes used and allowed, its refusals and whether
+    it is `stalled`, full and turning tiles away, which the G0 spikes found
+    happening silently with 512 px heights; RangeError for an impossible
+    budget)
     (the decoded heights its tiles release are kept within
     `keepHeightsBytes`, `GLOBE_TERRAIN.keepHeightsBytes` 16 MiB by default
     and 0 for none, so a return into the band finds them;
@@ -154,7 +162,8 @@
   46.5 N; the overlay adapter's calls; the half-float upload and its
   steps; the box from normals; the lit material's maps, hooks, UV patch
   and key; the overlay plugin's defines carried; the tile size passed
-  through and refused; the fade side; the detail patch's place, shared uniforms and
+  through and refused; the cache budget taken and a full cache seen
+  stalling; the fade side; the detail patch's place, shared uniforms and
   refused anchor; the factory on a simulated tile load and dispose, its
   detail on and off; refusals; the library guard). The GPU side (heights read back with the extension
   hidden, the look against the globe at noon, dusk and night, the data

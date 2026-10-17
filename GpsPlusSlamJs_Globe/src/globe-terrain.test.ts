@@ -36,6 +36,7 @@ import {
   DETAIL_FRAGMENT,
   createGlobeDetailUniforms,
 } from "./globe-detail.js";
+import { reliefCacheBudget } from "./globe-relief-cache.js";
 
 const DEG = Math.PI / 180;
 /** Normalised Web Mercator y (0 south, 1 north) of a latitude. */
@@ -807,6 +808,78 @@ describe("createGlobeTerrain", () => {
       expect(() =>
         createGlobeTerrain({ ...options, tileDimension: bad }),
       ).toThrow(RangeError);
+    }
+  });
+
+  // Why (G0 spikes 2026-10-17, the headline finding): 512 px heights filled
+  // the 64 MB relief cache at 49 tiles and the tree silently stopped at
+  // level 2. The app must be able to set the budget (per tile format and
+  // device class, `reliefCacheBudget`), and to SEE a full cache that turns
+  // tiles away: the terrain's `reliefCache()` reads the library's own
+  // refusals. Driven here through the terrain's real cache and the
+  // renderer's real queue step.
+  it("takes the app's cache budget and reports a full cache that stalls", () => {
+    const options = {
+      url: "/heights/{z}/{x}/{y}.webp",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+    };
+    // The default stays the phone's 256 px budget, 64/48 MB.
+    expect(reliefCacheBudget(256, "phone")).toEqual({
+      maxBytes: GLOBE_TERRAIN.cacheBytes,
+      minBytes: GLOBE_TERRAIN.cacheFloorBytes,
+    });
+    const budget = reliefCacheBudget(512, "desktop");
+    const terrain = createGlobeTerrain({ ...options, cache: budget });
+    const cache = terrain.tiles.lruCache;
+    expect(cache.maxBytesSize).toBe(budget.maxBytes);
+    expect(cache.minBytesSize).toBe(budget.minBytes);
+    expect(terrain.reliefCache()).toEqual({
+      usedBytes: 0,
+      maxBytes: budget.maxBytes,
+      full: false,
+      refusedRequests: 0,
+      refusedLoads: 0,
+      stalled: false,
+    });
+    // Fill it, then run an update's queue step as the library does.
+    const tile = { internal: { loadingState: 3 } };
+    cache.add(tile, () => {});
+    cache.setLoaded(tile, true);
+    cache.setMemoryUsage(tile, budget.maxBytes);
+    const tiles = terrain.tiles as unknown as {
+      stats: { refused: number };
+      frameCount: number;
+      queueTileForDownload(t: unknown): void;
+      dispatchEvent(e: { type: string }): void;
+    };
+    tiles.stats.refused = 0;
+    tiles.frameCount++;
+    tiles.queueTileForDownload({ internal: { loadingState: 0 } });
+    tiles.dispatchEvent({ type: "update-after" });
+    expect(terrain.reliefCache()).toMatchObject({
+      full: true,
+      refusedRequests: 1,
+      stalled: true,
+    });
+    terrain.dispose();
+    for (const bad of [
+      { maxBytes: 0, minBytes: 0 },
+      { maxBytes: 1_000, minBytes: 2_000 },
+      { maxBytes: Number.NaN, minBytes: 1 },
+      { maxBytes: 1_000, minBytes: -1 },
+    ]) {
+      expect(() => createGlobeTerrain({ ...options, cache: bad })).toThrow(
+        RangeError,
+      );
     }
   });
 

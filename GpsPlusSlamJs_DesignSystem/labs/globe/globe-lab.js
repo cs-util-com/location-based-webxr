@@ -3720,6 +3720,9 @@ async function start() {
       reliefVisible: terrain ? terrain.tiles.visibleTiles.size : null,
       reliefPending: rs ? rs.downloading + rs.parsing : null,
       reliefMiB: terrain ? terrain.tiles.lruCache.cachedBytes / 2 ** 20 : null,
+      // The relief cache's cap and whether it is full and turning tiles
+      // away (G1 1c): with 512 px heights it stalled silently in G0.
+      reliefCache: terrain ? terrain.reliefCache() : null,
       keptHeights: terrain ? terrain.heightKeeperStats() : null,
       programs: renderer.info.programs?.length ?? null,
       textures: renderer.info.memory.textures,
@@ -4019,6 +4022,8 @@ async function start() {
             }))(terrain.tiles.stats),
             cachedBytes: terrain.tiles.lruCache.cachedBytes,
             globeCachedBytes: globe.tiles.lruCache.cachedBytes,
+            // Full and turning tiles away (`watchReliefCache`, G1 1c).
+            cache: terrain.reliefCache(),
             releasedBytes: { ...released },
             // The decoded heights kept past their tiles, and the height
             // tiles requested so far (synthetic heights only; DEC-N1).

@@ -435,8 +435,9 @@
     placement smoke).
   - `state()` adds `relief` (`{ heightScale, litTiles, visibleTiles,
 heights, share, groundUnderCameraM, clearanceLifts, settled, stats,
-cachedBytes, globeCachedBytes, releasedBytes, globeDrawn, reliefDrawn,
-globeTiles, detail }` or null; `detail` is the region's state, with its
+cachedBytes, cache, globeCachedBytes, releasedBytes, globeDrawn, reliefDrawn,
+globeTiles, detail }` or null; `cache` is the terrain's `reliefCache()`
+    (full, refusals, stalled; G1 1c); `detail` is the region's state, with its
     height tiles and bytes once ready) and `cameraDepressionDeg`.
   - Not yet (the F2 plan 2026-10-03-1922): the re-oriented frame, the
     planes from the exaggerated relief, the atmosphere hand-over and the
