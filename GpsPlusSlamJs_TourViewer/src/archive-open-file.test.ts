@@ -473,6 +473,31 @@ describe('the open path for the "You already have a tour?" box (tour editor plan
     expect(hooks.presentTourForPrint).toHaveBeenCalledWith(url, "host-step");
   });
 
+  // Why (PR #637 review, claude[bot]): step 2 hands a link it could not
+  // confirm but that may still work (offline, a file not uploaded yet) on
+  // to printing. The box is not about printing: a bad link pasted there
+  // jumped the wizard to the print step and became step 2's link. Step 2
+  // hears of the box's link only once it opened.
+  it.each(["offline", "missing"] as const)(
+    "openLink leaves step 2 alone when the link does not open (%s): no hand-off to printing, the open's own words kept",
+    async (cause) => {
+      mocks.openTourSession.mockRejectedValueOnce(
+        new OpenRemoteArchiveError("x", cause),
+      );
+      const { dom, hooks, archive } = wire();
+      const unverified = vi.spyOn(hooks, "presentUnverifiedLink");
+      dom.linkInput.value = "https://step-two.example/kept.zip";
+      expect(
+        await archive.openLink("https://own-server.example/tour.zip"),
+      ).toEqual({ kind: "failed", cause });
+      expect(unverified).not.toHaveBeenCalled();
+      expect(hooks.presentTourForPrint).not.toHaveBeenCalled();
+      expect(dom.linkInput.value).toBe("https://step-two.example/kept.zip");
+      expect(dom.linkStatus.textContent).toBe("");
+      expect(dom.errorBox.textContent).not.toBe("");
+    },
+  );
+
   it("openLink reports a failure with its cause", async () => {
     mocks.openTourSession.mockRejectedValueOnce(
       new OpenRemoteArchiveError("x", "cors"),

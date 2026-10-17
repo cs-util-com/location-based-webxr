@@ -78,7 +78,7 @@ import {
   visitorLaunchHref,
   wireWizard,
 } from "./wizard.js";
-import { wireHaveTour } from "./have-tour.js";
+import { editorPitch, wireHaveTour } from "./have-tour.js";
 import { readPrintedText } from "./level-printed.js";
 import { wireTourNameField } from "./tour-name-field.js";
 import { renderTourContact } from "./tour-contact.js";
@@ -905,6 +905,8 @@ scanOpen = archive.scanOpen;
 // 2026-10-17-1816, W1): a phone opens a tour through the page's one open
 // path, then plays it or goes on setting it up. A creator's only.
 if (mode === "creator") {
+  // The computer's half: what the editor's Save does in this browser.
+  element("have-tour-editor-text").textContent = editorPitch(window);
   wireHaveTour({
     dom: {
       fileButton: element<HTMLButtonElement>("have-tour-file"),

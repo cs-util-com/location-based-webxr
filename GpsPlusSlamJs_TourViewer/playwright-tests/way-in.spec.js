@@ -187,6 +187,16 @@ test.describe("a computer (no AR)", () => {
     // <button>, so the label sat at the top, underlined, without this.
     await expect(editor).toHaveCSS("align-items", "center");
     await expect(editor).toHaveCSS("text-decoration-line", "none");
+    // What the editor's Save does in THIS browser (PR #637 review): back
+    // into the chosen file where the file picker exists, else a new copy.
+    const picker = await page.evaluate(
+      () => typeof Reflect.get(window, "showOpenFilePicker") === "function",
+    );
+    await expect(page.getByTestId("have-tour-editor-text")).toContainText(
+      picker
+        ? "save it back into the tour file"
+        : "a new copy of the tour file",
+    );
     await expect(page.getByTestId("have-tour-phone")).toBeHidden();
     // Below the story, never in front of it.
     const stage = await page.getByTestId("setup-stage").boundingBox();
@@ -197,6 +207,31 @@ test.describe("a computer (no AR)", () => {
     await editor.click();
     await expect(page).toHaveURL(/\/edit\.html$/);
     await expect(page.locator("#open-title")).toHaveText("Open a tour");
+  });
+
+  test("the box waits for the AR check: no heading over an empty box", async ({
+    page,
+  }) => {
+    // Why (PR #637 review): while the check ran (and before it began) both
+    // halves were hidden but the section was not, so "You already have a
+    // tour?" stood over nothing. The states are set by hand: the real
+    // check settles too fast to be caught in between.
+    await page.goto("/?nocache=1");
+    const box = page.getByTestId("have-tour");
+    await expect(box).toBeVisible({ timeout: 10000 });
+    const arState = (/** @type {string | null} */ state) =>
+      page.evaluate((value) => {
+        const button = document.getElementById("enter-ar");
+        if (button === null) throw new Error("no #enter-ar");
+        if (value === null) button.removeAttribute("data-ar-state");
+        else button.setAttribute("data-ar-state", value);
+      }, state);
+    await arState("checking");
+    await expect(box).toBeHidden();
+    await arState(null);
+    await expect(box).toBeHidden();
+    await arState("unsupported");
+    await expect(box).toBeVisible();
   });
 
   test("step 5 points to the editor and to an Android phone, not to a dead button", async ({
@@ -230,6 +265,15 @@ test.describe("a computer (no AR)", () => {
       { timeout: 10000 },
     );
     await expect(page.getByTestId("have-tour")).toBeHidden();
+    // Why (PR #637 review, coderabbit): the rule that shows step 5's
+    // computer pointer once AR is unsupported has no mode check. It is
+    // `.creator-only` and keeps `hidden` on a visitor's page, which the
+    // design system's [hidden] rule wins over.
+    await expect(page.getByTestId("enter-ar")).toHaveAttribute(
+      "data-ar-state",
+      "unsupported",
+    );
+    await expect(page.getByTestId("measure-desktop")).toBeHidden();
   });
 });
 

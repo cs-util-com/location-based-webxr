@@ -35,6 +35,22 @@ export const PLAY_OR_CONTINUE = "Play it, or continue setting it up?";
 export const FILE_OPENED_ASK =
   "Continue setting it up? To play it, open its link: a tour plays from where it is hosted.";
 
+/**
+ * The computer's line about the editor, true for this browser (PR #637
+ * review): the editor saves a chosen file into itself where the file
+ * picker exists - the test `editor/save-target.ts` makes for its own fine
+ * print, repeated here because this page must not import the editor's
+ * modules (`config/.dependency-cruiser.cjs`, viewer-not-to-editor) - and
+ * gives a new copy elsewhere.
+ */
+export function editorPitch(win: object): string {
+  const does =
+    "The editor shows your tour on a map: fix a text, move a pin or remove a photo,";
+  return typeof Reflect.get(win, "showOpenFilePicker") === "function"
+    ? `${does} and save it back into the tour file.`
+    : `${does} and save a new copy of the tour file to put in place of the old one.`;
+}
+
 interface Listening {
   addEventListener(
     type: string,
@@ -69,8 +85,9 @@ export interface HaveTourDeps {
   dom: HaveTourDom;
   /** The page's open path for a picked file (`ArchiveOpen.openFile`). */
   openFile: (file: File) => Promise<OpenOutcome>;
-  /** The page's open path for a link, as step 2's check runs it
-   *  (`ArchiveOpen.openLink`: the link of record, its status line). */
+  /** The page's open path for a link (`ArchiveOpen.openLink`: once
+   *  opened, the link of record; a link that did not open is never handed
+   *  on to printing). */
   openLink: (url: string) => Promise<OpenOutcome>;
   /** The visitor's page for a link (`wizard.ts` `visitorLaunchHref`). */
   playHref: (url: string) => string;
@@ -97,9 +114,8 @@ export function wireHaveTour(deps: HaveTourDeps): void {
   }
 
   /** The open's own words (the page's error box), except for a host that
-   *  blocks browsers; a cause's own sentence where step 2's check cleared
-   *  the box for a link it tolerates (a file not uploaded yet). Never
-   *  step 2's printing messages: the box is not about printing. */
+   *  blocks browsers; the cause's own sentence where the box is empty.
+   *  Never step 2's printing messages: the box is not about printing. */
   function failureText(kind: "file" | "link", cause: string): string {
     if (kind === "link" && cause === "cors") return HAVE_TOUR_CORS_TEXT;
     return (

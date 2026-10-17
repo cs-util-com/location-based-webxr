@@ -115,9 +115,11 @@ export interface ArchiveOpen {
   /** Step 4's scan-to-open, fed by the creator's AR pipeline (plan §9). */
   scanOpen: ScanOpen;
   /** The "You already have a tour?" box (tour editor plan 2026-10-17-1816,
-   *  W1): `url` becomes the link of record and is checked as step 2's
-   *  link is (its status line, the unverified hand-off); the outcome is
-   *  the box's to show. */
+   *  W1): `url` is opened through the one open path; once it opened it
+   *  is the link of record (step 2's field and "found" line). A link that
+   *  did not open leaves step 2 alone - no unverified hand-off to
+   *  printing (PR #637 review); the outcome, and the error box's words,
+   *  are the box's to show. */
   openLink: (url: string) => Promise<OpenOutcome>;
   /** The same box's file: opened as step 1's "Open it from this device"
    *  opens one. */
@@ -710,9 +712,17 @@ export function wireArchiveOpen(deps: {
 
   return {
     scanOpen,
-    openLink: (url) => {
-      dom.linkInput.value = url;
-      return checkLinkStep(url);
+    openLink: async (url) => {
+      // Not step 2's check (PR #637 review): a link the box could not open
+      // is never handed on to printing, nor made step 2's link - step 2
+      // hears of it once it opened. The open's own error stays for the box.
+      const outcome = await openUrl(url);
+      if (outcome.kind === "opened") {
+        dom.linkInput.value = url;
+        lastChecked = url;
+        showLinkStatus({ kind: "found" });
+      }
+      return outcome;
     },
     openFile: (file) => openTour({ kind: "file", file }),
     boot: async () => {

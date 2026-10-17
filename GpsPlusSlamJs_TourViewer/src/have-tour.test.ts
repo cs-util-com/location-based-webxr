@@ -20,6 +20,7 @@ import {
   HAVE_TOUR_FAILED_TEXT,
   HAVE_TOUR_LABELS,
   PLAY_OR_CONTINUE,
+  editorPitch,
   wireHaveTour,
   type HaveTourDom,
 } from "./have-tour.js";
@@ -246,5 +247,30 @@ describe("wireHaveTour", () => {
     await h.finish();
     submitLink(h, "https://example.test/other.zip");
     expect(h.dom.ask.hidden).toBe(true);
+  });
+});
+
+/**
+ * Why (PR #637 review, coderabbit): the box's line on a computer said the
+ * editor saves "back into the tour file" in every browser; the review
+ * wanted "a new copy" in every browser. Both are wrong somewhere: the words
+ * follow what this browser's editor can do, as the editor's own fine print
+ * (`editor/save-target.ts` `saveFinePrint`) does.
+ */
+describe("editorPitch", () => {
+  it("says the editor saves into the tour file where the file picker exists", () => {
+    const text = editorPitch({
+      showOpenFilePicker: () => Promise.resolve([]),
+    });
+    expect(text).toContain("fix a text, move a pin or remove a photo");
+    expect(text).toContain("save it back into the tour file");
+    expect(text).not.toContain("new copy");
+  });
+
+  it("says the editor gives a new copy where it does not", () => {
+    const text = editorPitch({});
+    expect(text).toContain("fix a text, move a pin or remove a photo");
+    expect(text).toContain("a new copy of the tour file");
+    expect(text).not.toContain("back into");
   });
 });

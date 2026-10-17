@@ -116,14 +116,23 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   plan 2026-10-17-1816 W1): BELOW the map and the steps, so the first-time
   story stays first. Two halves, chosen by CSS from the page's AR check
   (`#enter-ar[data-ar-state]`, written by `ar-entry.ts`): `unsupported`
-  (a computer) shows `.have-tour-desktop` - one line and "Open the
+  (a computer) shows `.have-tour-desktop` - one line
+  (`#have-tour-editor-text`, said per browser by `main.ts` with
+  `have-tour.ts`'s `editorPitch`: saved back into the tour file where the
+  file picker exists, else a new copy; the markup holds the latter, PR #637
+  review) and "Open the
   editor" (`edit.html`); any other settled state (a phone with AR) shows
   `.have-tour-phone` - "From this device" (`#have-tour-file` over its own
   hidden `#have-tour-input`, no test id), the link form (`#have-tour-form`,
   `#have-tour-link`, `#have-tour-open`), the status line
   `#have-tour-status` and, after an open, `#have-tour-ask` ("Play it" /
-  "Continue setting it up"); `checking` shows neither. Behaviour:
-  `have-tour.ts`.
+  "Continue setting it up"). While the check runs (`checking`) and before
+  it began (no state) the whole section stays out of view, its heading
+  too: a heading over two hidden halves read as an empty box (PR #637
+  review). `#measure-desktop`'s rule carries no mode check and needs none:
+  it is `.creator-only` and keeps `hidden` on a visitor's page, which the
+  design system's `[hidden]` rule wins over (`way-in.spec.js` pins it).
+  Behaviour: `have-tour.ts`.
 - **Step 5 on a computer** (W1, plan review #9): `#measure-desktop` says
   the step runs on site on an Android phone with Chrome and links the
   editor; the same AR check shows it, and on the creator page an
@@ -179,7 +188,7 @@ setup page in a new tab, polish round A8), `step-hang`, `hang-done`, `step-measu
 `draft-offer`,
 `draft-offer-text`, `draft-restore`, `draft-dismiss`, `draft-discard`),
 `measure-desktop`, `have-tour` (owns `have-tour-desktop`,
-`have-tour-editor`, `have-tour-phone`, `have-tour-file`,
+`have-tour-editor-text`, `have-tour-editor`, `have-tour-phone`, `have-tour-file`,
 `have-tour-link`, `have-tour-open`, `have-tour-status`, `have-tour-ask`,
 `have-tour-play`, `have-tour-continue`),
 `step-done` (owns `done-pending`, `finish-block`,

@@ -609,13 +609,19 @@
       /* ===== "You already have a tour?" (tour editor plan 2026-10-17-1816,
          W1) ===== Below the stage. Which half shows follows the AR check
          (`data-ar-state` on #enter-ar, written by ar-entry.ts): none while
-         it runs, the editor without AR, the phone's open with it. */
+         it runs, the editor without AR, the phone's open with it. The whole
+         section waits for the check too (PR #637 review): its heading over
+         two hidden halves read as an empty box. */
       .have-tour {
-        display: grid;
+        display: none;
         gap: var(--space-2);
         max-width: 48rem;
         margin: var(--space-4) auto;
         padding: 0 var(--space-4) var(--space-4);
+      }
+      body:has(#enter-ar[data-ar-state]:not([data-ar-state="checking"]))
+        .have-tour {
+        display: grid;
       }
       .have-tour h2 {
         font-family: var(--map-serif);
@@ -3956,9 +3962,17 @@
       >
         <h2 id="have-tour-title">You already have a tour?</h2>
         <div class="have-tour-desktop" data-testid="have-tour-desktop">
-          <p class="hint--dim">
+          <!-- Said per browser by main.ts (editorPitch, PR #637 review):
+               this text is the one for a browser that cannot write a
+               chosen file. -->
+          <p
+            class="hint--dim"
+            id="have-tour-editor-text"
+            data-testid="have-tour-editor-text"
+          >
             The editor shows your tour on a map: fix a text, move a pin or
-            remove a photo, and save it back into the tour file.
+            remove a photo, and save a new copy of the tour file to put in place
+            of the old one.
           </p>
           <a
             class="btn setup-primary"

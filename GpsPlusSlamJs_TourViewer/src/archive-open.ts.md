@@ -57,9 +57,10 @@ DOM glue, its own module since the flows plan M6.
     copies (`?nocache=1`, no Cache API); the Storage section then hides.
   - `ArchiveOpen.boot()` - the `?qr=` launch (bare-name payloads resolve
     under the GeoTales raw-GitHub prefix); the caller catches into the
-    error box. The only returned entry point (M6 review #6): the
-    interactive open is the form listener, and both run the module-private
-    `openUrl` - tear down the previous session (which also clears
+    error box. Step 2's interactive open is the form listener, not a
+    returned handle (M6 review #6); beside `boot` the page gets
+    `scanOpen`, `openLink` and `openFile` (below). All of them run the
+    module-private `openTour` (`openUrl` for a link) - tear down the previous session (which also clears
     `levelByText`), open, render stats, stream the gallery, call
     `hooks.tryPlaceTour()` and `hooks.presentTourForPrint(url, origin)` -
     the origin says which form submitted, so an open started in step 4
@@ -73,10 +74,13 @@ DOM glue, its own module since the flows plan M6.
   - `ArchiveOpen.openLink(url)` / `ArchiveOpen.openFile(file)` - the
     "You already have a tour?" box on a phone (`have-tour.ts`, tour editor
     plan 2026-10-17-1816, W1) opens through this same path: `openLink`
-    writes the link of record into `linkInput` and runs step 2's check
-    (its status line, the unverified hand-off), `openFile` runs the file
-    open. Both resolve the `OpenOutcome`, so the box can ask its question
-    only once the tour is really open.
+    opens the link, and only once it opened writes it into `linkInput` as
+    the link of record with step 2's "found" line; a link that did not
+    open leaves step 2 alone - never the unverified hand-off to printing,
+    which a bad link pasted into the box used to trigger (PR #637 review)
+    - and the error box keeps the open's own words for the box. `openFile`
+      runs the file open. Both resolve the `OpenOutcome`, so the box can ask its question
+      only once the tour is really open.
   - `ArchiveOpen.scanOpen` - step 4's scan-to-open (`scan-open.ts`)
     over this open path: it writes the link of record, opens with origin
     `measure-step`, and re-renders the creator panel when it settles.
@@ -214,7 +218,8 @@ local hook instead of the print prefill, the content key reaching the
 draft, and a closed picker doing nothing; its "step 2's link check" block
 covers the unverified hand-off on `missing`, none on `cors`, and the
 auto-check on paste and change, once per link; its `openLink` / `openFile`
-block pins the outcome each returns and the link of record `openLink` writes. `archive-open.test.ts` drives the real submit handler through
+block pins the outcome each returns, the link of record `openLink` writes,
+and that a link that did not open (offline, missing) is never handed on. `archive-open.test.ts` drives the real submit handler through
 a failed open: the tour switch clears the fused-pose hint state, the
 failed levels read and the voted-lock count (r857 review #9). Its "the levels' settle reaches the visitor
 screen" block (in `archive-open-file.test.ts`) holds `presentTourLevels`

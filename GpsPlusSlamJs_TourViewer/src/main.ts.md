@@ -53,7 +53,9 @@ listed in `index.html.md`. The concerns and their modules:
   phone (`wireHaveTour`, tour editor plan 2026-10-17-1816 W1), wired for a
   creator only, after the open path, over `ArchiveOpen.openFile` /
   `openLink`; "Play it" is `visitorLaunchHref` (keeps `?debug=1`) and
-  "Continue setting it up" scrolls `#setup-card` into view.
+  "Continue setting it up" scrolls `#setup-card` into view. The computer's
+  half gets its line from `have-tour.ts`'s `editorPitch(window)`:
+  what the editor's Save does in this browser (PR #637 review).
 - `tour-viewer-session.ts` - the session object, the store factory and
   the hooks contract they share.
 - `recording-switch.ts` - the visitor's hidden switch (QR-first plan M1c):

@@ -30,8 +30,18 @@ plain markup in `index.html` and has no behaviour here.
 - `HAVE_TOUR_LABELS` (`file`, `link`, `busy`), `PLAY_OR_CONTINUE`,
   `FILE_OPENED_ASK`, `HAVE_TOUR_CORS_TEXT`, `HAVE_TOUR_FAILED_TEXT` - the
   box's words, exported for the tests.
+- `editorPitch(win)` (PR #637 review) - the computer's line about the
+  editor (`#have-tour-editor-text`, set by `main.ts`), true for this
+  browser: "save it back into the tour file" where `showOpenFilePicker`
+  exists, else "save a new copy of the tour file to put in place of the old
+  one". Both fixed wordings were wrong somewhere (the line said "back into"
+  everywhere; the review asked for "a new copy" everywhere). The test is
+  the one `editor/save-target.ts`'s `saveFinePrint` makes, repeated here:
+  the setup page may not import the editor's modules
+  (`viewer-not-to-editor`, which keeps Leaflet off the visitor's page).
 - **"Continue setting it up" lands where the creator got to**: the link
-  open goes through step 2's check, whose `presentTour` opens the step
+  open goes through the page's open path, whose `presentTourForPrint`
+  (the wizard's `presentTour`) opens the step
   remembered for that link (`wizard.ts`, "the remembered step (M6)" in
   `wizard.test.ts`), and the print step only for a link never set up on
   this device.
@@ -39,8 +49,9 @@ plain markup in `index.html` and has no behaviour here.
 ## Invariants & assumptions
 
 - **One open path.** The box never opens a tour itself: a link goes through
-  step 2's check (the link of record, its status line, the unverified
-  hand-off), a file through the file open (its content key, its
+  `ArchiveOpen.openLink` (once opened, the link of record and step 2's
+  "found" line; a link that did not open is never handed on to printing,
+  PR #637 review), a file through the file open (its content key, its
   `presentLocalTour`). What the steps show after an open from the box is
   what they show after an open from the steps.
 - **Async-UI rule.** Both buttons are disabled and read "Opening…" from the
@@ -59,9 +70,8 @@ plain markup in `index.html` and has no behaviour here.
     review #3). A link refused by a host that blocks browsers gets
     `HAVE_TOUR_CORS_TEXT` (`open-errors.ts` `HOST_REFUSED_TEXT`, then the
     way around: download the file and open it with "From this device");
-    a link step 2's check tolerates (a file not uploaded yet, offline)
-    leaves the error box empty, so the cause's own sentence
-    (`describeOpenCause`) is shown; `HAVE_TOUR_FAILED_TEXT` otherwise.
+    an empty error box falls back to the cause's own sentence
+    (`describeOpenCause`), then `HAVE_TOUR_FAILED_TEXT`.
     `#have-tour-status` keeps the sentences' line breaks (`pre-line`);
   - cancelled - the creator kept a tour with an unsaved rebuilt file, and
     the status says so;

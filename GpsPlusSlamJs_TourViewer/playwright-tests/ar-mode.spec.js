@@ -1984,7 +1984,7 @@ test("the print panel draws one tile per poster at the declared size, and prints
     "AR tour starts here",
   );
   await expect(page.getByTestId("print-tile").first()).toContainText(
-    "Scan with an Android phone",
+    "Scan with Chrome on Android",
   );
   // The defaults sit behind "Settings" (r820 feedback R7).
   await expect(page.getByTestId("author-size")).toBeHidden();
@@ -2335,7 +2335,7 @@ test("the print step builds a real PDF of numbered codes", async ({ page }) => {
   // The poster text around every code (polish round D-P7), defaults.
   expect(text).toContain("(AR tour starts here) Tj");
   // One line under the code (D8: it names the phone a tour needs).
-  expect(text).toContain("(Scan with an Android phone) Tj");
+  expect(text).toContain("(Scan with Chrome on Android) Tj");
   // Every page actually carries ink.
   expect((text.match(/ re f/g) ?? []).length).toBeGreaterThan(100);
 
