@@ -9,9 +9,10 @@
  * not apply inside a worker.
  *
  * ONE LOAD AT A TIME (round-4 plan 2026-10-11-0122 §5): `{ kind: "load", id,
- * target, zoom }` starts the library's `loadCityData` for the place, on the
- * library's `cityDataPlan` with the relief's own heights (Terrarium at the
- * relief's zoom, R13), so the warm-up and the build are ONE load and read
+ * target, zoom, heightsUrl? }` starts the library's `loadCityData` for the
+ * place, on the library's `cityDataPlan` with the relief's own heights (the
+ * relief's source `heightsUrl` at the relief's zoom, R13; AWS Terrarium when
+ * the message names none; `globe-city-heights.js`, G1 1d), so the warm-up and the build are ONE load and read
  * the same tiles and heights by construction (validation finding F6). A new
  * load, or `{ kind: "abort", id }`, stops the one before. Replies, each
  * carrying its `id`:
@@ -50,17 +51,13 @@ import {
 } from "gps-plus-slam-osm";
 import { openPersistentOsmStore } from "gps-plus-slam-app-framework/osm-bridge";
 
+import { cityHeights } from "./globe-city-heights.js";
+
 /** How the globe identifies itself to the Overpass operators. */
 const USER_AGENT = "gps-plus-slam-globe (github.com/cs-util-com)";
 
 let store;
 let current = null;
-
-/** The relief's heights: its own source at its zoom (R13). */
-const reliefHeights = (zoom) => ({
-  urlTemplates: [TERRARIUM_URL_TEMPLATE],
-  zoom,
-});
 
 /** The buffers a reply hands over rather than copies (built per request). */
 function transferables(chunks) {
@@ -75,19 +72,18 @@ function transferables(chunks) {
   return [...new Set(out)];
 }
 
-function validate(target, zoom) {
+/** The place checked, and the relief's heights: its own source at its zoom (R13). */
+function validate(target, zoom, heightsUrl) {
   if (!(Number.isFinite(target?.lat) && Number.isFinite(target?.lng))) {
     throw new RangeError(`a city needs a finite target, got ${target}`);
   }
-  if (!(Number.isInteger(zoom) && zoom >= 1 && zoom <= 15)) {
-    throw new RangeError(`a city needs the relief's zoom (1-15), got ${zoom}`);
-  }
+  return cityHeights(zoom, heightsUrl ?? TERRARIUM_URL_TEMPLATE);
 }
 
-async function start(id, target, zoom, firstRings) {
+async function start(id, target, heights, firstRings) {
   store ??= (await openPersistentOsmStore()) ?? new MemoryBlobStore();
   if (current?.id !== id) return; // superseded while the store opened
-  const plan = cityDataPlan(target, { heights: reliefHeights(zoom) });
+  const plan = cityDataPlan(target, { heights });
   let built = false;
   const load = loadCityData(plan, {
     source: createCityTileSource(store, { userAgent: USER_AGENT }),
@@ -149,7 +145,7 @@ async function start(id, target, zoom, firstRings) {
 }
 
 self.addEventListener("message", (event) => {
-  const { kind, id, target, zoom, firstRings } = event.data ?? {};
+  const { kind, id, target, zoom, heightsUrl, firstRings } = event.data ?? {};
   if (kind === "abort") {
     if (current?.id === id) {
       current.load?.abort();
@@ -160,14 +156,15 @@ self.addEventListener("message", (event) => {
   if (kind !== "load") return;
   current?.load?.abort();
   current = { id, load: null };
+  let heights;
   try {
-    validate(target, zoom);
+    heights = validate(target, zoom, heightsUrl);
   } catch (error) {
     self.postMessage({ id, kind: "city", ok: false, message: String(error) });
     self.postMessage({ id, kind: "finished", outcome: "invalid-target" });
     return;
   }
-  start(id, target, zoom, firstRings ?? 1).catch((error) => {
+  start(id, target, heights, firstRings ?? 1).catch((error) => {
     self.postMessage({
       id,
       kind: "city",

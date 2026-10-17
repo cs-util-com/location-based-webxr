@@ -8,8 +8,9 @@
   worker.
 - Protocol (one load at a time; a new `load` or an `abort` stops the one
   before; every reply carries its `id`):
-  - in: `{ kind: "load", id, target: { lat, lng }, zoom, firstRings? }`
+  - in: `{ kind: "load", id, target: { lat, lng }, zoom, heightsUrl?, firstRings? }`
     (`zoom` the relief's, `GLOBE_TERRAIN.maxZoom`, so the two cannot drift;
+    `heightsUrl` the relief's height source, AWS Terrarium when absent;
     `firstRings` default 1); `{ kind: "abort", id }`;
   - out: `{ kind: "progress", counts, progress, landing }` after each
     settled job (`landing`: the library's `landingProgress`, the first
@@ -26,12 +27,16 @@ groundM }` per delivery (`first` after the first ring, `full`, `retry`),
     `{ kind: "finished", outcome, counts, missingTiles, missingHeights,
 elapsedMs }` after the retries; before it `{ kind: "city", ok: false,
 message }` when no city was delivered (heights still missing, no tile).
-    A target that is not finite or a zoom outside 1-15 is a failed reply,
-    never a throw.
+    A target that is not finite, a zoom outside 1-15 or a height template
+    without `{z}`/`{x}`/`{y}` is a failed reply, never a throw.
 - Steps (round-4 plan 2026-10-11-0122 §5): the store (the framework's
   `openPersistentOsmStore`, or memory without OPFS); the library's
-  `cityDataPlan` for the target with the relief's heights (AWS Terrarium at
-  the relief's zoom, R13; never OsmDemo's Mapterhorn-first race); the
+  `cityDataPlan` for the target with the relief's heights (the relief's
+  own source at its zoom, R13, `globe-city-heights.js`: since G1 1d the
+  template comes with the load, so a Mapterhorn relief gets a city on
+  Mapterhorn heights, where a template fixed here put it on AWS heights up
+  to 12 m apart in towns; one source, never OsmDemo's Mapterhorn-first
+  race); the
   library's `loadCityData` through its `createCityTileSource` (the globe's
   user agent) and `createCachingTileFetch` (tiles and heights side by side,
   the first ring delivered first, a 20 s deadline per height tile, retries

@@ -8,7 +8,11 @@
   frame at the target, scaled from the library's ruler to the true
   ellipsoid, R2). A frame recentre therefore moves nothing (R16).
 - Public API: `createGlobeCity({ parent, ellipsoid, createWorker?, roads?,
-roadLiftM?, roadOffset? })` →
+roadLiftM?, roadOffset?, heightsUrl? })` (`heightsUrl` the relief's height
+  source, passed to the worker with every load so the city stands on the
+  heights the ground is drawn from, G1 1d; checked by `cityHeights`,
+  RangeError for a template it cannot read; the worker reads AWS Terrarium
+  without it) →
   - `root`: the city's group, on `parent` (the lab passes `globe.group`);
   - `load({ lat, lng }, { zoom, fresh? })`: loads and builds the city at a
     place, its heights at the relief's zoom (round-4 plan 2026-10-11-0122

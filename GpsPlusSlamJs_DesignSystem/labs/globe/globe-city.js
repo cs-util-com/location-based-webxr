@@ -23,6 +23,8 @@ import * as THREE from "three";
 
 import { ecefFromCityAt } from "/globe/globe-frame.js";
 
+import { cityHeights } from "./globe-city-heights.js";
+
 /**
  * How long a city fades in once it arrives (ms). The build usually lands
  * after the dive, below the altitude fade's band, so without this the whole
@@ -44,11 +46,14 @@ const keyOf = (target) => `${target.lat},${target.lng}`;
 /**
  * @param {{ parent: THREE.Object3D, ellipsoid: object,
  *   createWorker?: () => Worker, roads?: boolean, roadLiftM?: number,
- *   roadOffset?: number }} options
+ *   roadOffset?: number, heightsUrl?: string }} options
  *   `parent` the globe's Earth-centred group (its world matrix is the frame);
  *   `roads` whether the roads are drawn; `roadLiftM` how far they are lifted
  *   off the ground (metres, along the city's up); `roadOffset` a polygon
- *   offset pulling them forward in depth (0: none).
+ *   offset pulling them forward in depth (0: none); `heightsUrl` the relief's
+ *   height source (a `{z}/{x}/{y}` template), so the city stands on the
+ *   heights the ground is drawn from (G1 1d); the worker reads AWS
+ *   Terrarium without it. RangeError for a template it cannot read.
  */
 export function createGlobeCity({
   parent,
@@ -61,7 +66,9 @@ export function createGlobeCity({
   roads = true,
   roadLiftM = 2,
   roadOffset = 0,
+  heightsUrl,
 }) {
+  if (heightsUrl !== undefined) cityHeights(1, heightsUrl);
   const root = new THREE.Group();
   root.name = "globe-city";
   root.matrixAutoUpdate = false;
@@ -251,6 +258,7 @@ export function createGlobeCity({
       id: requestId,
       target: state.target,
       zoom,
+      heightsUrl,
     });
     return current;
   };

@@ -2629,6 +2629,9 @@ async function start() {
           roads: params.cityRoads === 1,
           roadLiftM: params.roadLiftM,
           roadOffset: params.roadOffset,
+          // The relief's own height source (G1 1d): the city stands on the
+          // heights the ground is drawn from.
+          heightsUrl: terrariumModule?.TERRARIUM_URL_TEMPLATE,
         })
       : null;
   /** The place the city was last asked for, as "lat,lng". */
