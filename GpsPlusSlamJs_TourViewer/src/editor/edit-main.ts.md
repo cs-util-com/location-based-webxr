@@ -104,7 +104,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   the error, with the Finish's result sentences (the walk left out,
   photos not placed) in the toast. Save is on whenever a tour is open
   and commits the card's typing first ("Nothing to save" when there is
-  none); a save belongs to its tour and ends quietly if another was
+  none - in the status line and, since plan 2026-10-15-0348 M0, in a toast:
+  the status line already read "No changes", so the swap alone looked like
+  nothing happened); a save belongs to its tour and ends quietly if another was
   opened meanwhile; the walk switch hides once a save is built (a later
   save rebuilds from it and could not bring the walk back). A dismissed
   save picker - the one undelivered case the page can see, since an
@@ -213,4 +215,5 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 ## Tests
 
 The modules it wires have their own unit tests; the page is pinned by
-`playwright-tests/editor.spec.js`.
+`playwright-tests/editor.spec.js` and `editor-entry.spec.js` (the
+"Nothing to save" toast); `way-in.spec.js` checks its first paint.

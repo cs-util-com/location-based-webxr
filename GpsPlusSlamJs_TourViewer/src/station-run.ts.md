@@ -43,7 +43,12 @@ focusedAtMs, focusDistanceM }`.
     reads it ahead, K4 review R5); null otherwise and always under `any`.
 - `StationEvent`: `found` (`via: gps | code | visitor`),
   `done` (`skipped`), `offered` (the full new set), `complete`.
-- `stationTitle(station)` - the station's title, or "the next station".
+- `stationTitle(station, number?)` - a station's name, the package's ONE
+  rule for it (plan 2026-10-15-0348 M0; the editor had its own until
+  then, with another fallback): the trimmed title; an untitled or blank
+  one is "Station N" by its 1-based `number` where the caller knows it
+  (the editor's rail, map and warnings), else "the next station" (the
+  visitor's lines).
 - `skipSuggestAfterMs(focusDistanceM)`, `SKIP_SUGGEST_BASE_MS` (2 min),
   `SKIP_SUGGEST_SLOW_MPS` (0.5 m/s).
 
@@ -93,6 +98,7 @@ run.finish("gate", nowMs); // done, the next station offered
   ceiling, the code lock, the empty station, each order preset, the skip,
   the suggestion clock; properties: no deadlock and completion within one
   action per station for every preset, a done station never offered and
-  never changed.
+  never changed; `stationTitle`: the trimmed title, "Station N" by its
+  place, "the next station" without one (a blank title included).
 - `station-run.sweep.test.ts` - the suggestion clock over distance, speed,
   detour and set-off time.

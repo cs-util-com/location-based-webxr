@@ -24,7 +24,7 @@
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-stations";
 import { tourCodesUsable } from "../visitor-screen.js";
-import { stationTitle } from "./editor-model.js";
+import { stationTitle } from "../station-run.js";
 
 export interface NoGpsCheck {
   /** The stations without a printed code (`anchor.code` absent), by

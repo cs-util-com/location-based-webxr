@@ -14,7 +14,7 @@ changes).
 - `checkNoGps({ stations, levels }): NoGpsCheck`
   - `codeless` - the names of the stations whose anchor has no printed code
     (`anchor.code` absent), in the story's order, named as the rail names
-    them (`editor-model.ts` `stationTitle`: the title, else "Station N").
+    them (`station-run.ts` `stationTitle`: the title, else "Station N").
   - `unlockable` (M1b-2 milestone review #2) - the names of the stations on
     a code the viewer can never lock: the tour does not carry that code, or
     its level has no `physicalSizeM`. Same naming and order.

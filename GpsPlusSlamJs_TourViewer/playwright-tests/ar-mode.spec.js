@@ -1203,7 +1203,7 @@ test("the creator's AR visit first asks for the tour's code, and stops asking on
   );
   await enterAr(page);
   await expect(page.getByTestId("setup-status")).toHaveText(
-    /^First, point the camera at the code you scanned to open this tour\./,
+    /^First, point the camera at this tour's printed code:/,
   );
   // It asks; it does not block (D5): the readout is there beside it.
   await expect(page.getByTestId("setup-status")).toHaveText(

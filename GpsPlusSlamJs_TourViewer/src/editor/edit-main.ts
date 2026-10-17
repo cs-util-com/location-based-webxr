@@ -75,6 +75,10 @@ import {
 const SAMPLE_URL = "samples/marienplatz-tour.zip";
 const SAMPLE_NAME = "marienplatz-tour.zip";
 
+/** Save's answer when there is nothing to save. */
+const NOTHING_TO_SAVE =
+  "Nothing to save: there are no changes since the tour was opened or last saved.";
+
 /** The gap between the panels and the window's edges (`--gap`). */
 const EDGE_PX = 12;
 /** Below this width the rail starts folded (the prototype's 760 px). */
@@ -1202,6 +1206,10 @@ async function saveTour(mode: "explicit" | "auto"): Promise<AutosaveOutcome> {
       if (mode === "explicit") {
         saveStatus.dataset["state"] = "clean";
         saveStatus.textContent = "Nothing to save";
+        // Said where a click's answer is looked for too (plan
+        // 2026-10-15-0348 M0): the status line already read "No changes",
+        // so the swap alone looked like nothing happened.
+        toast(NOTHING_TO_SAVE);
       }
       return "saved";
     }
