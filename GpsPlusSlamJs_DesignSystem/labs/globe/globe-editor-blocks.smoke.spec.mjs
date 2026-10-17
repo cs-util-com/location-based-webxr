@@ -74,3 +74,139 @@ test("a relief cache too small for the view reads stalled; the default does not"
   expect(normal.cache.refusedRequests + normal.cache.refusedLoads).toBe(0);
   expect(normal.cache.stalled).toBe(false);
 });
+
+/** The synthetic heights' surface (`../globe-terrain/synthetic-heights.js`, seaM 0). */
+const syntheticHeightM = (lat, lng) =>
+  Math.max(
+    0,
+    1000 +
+      900 *
+        Math.sin((2 * Math.PI * lng) / 0.5) *
+        Math.sin((2 * Math.PI * lat) / 0.4) +
+      300 *
+        Math.sin((2 * Math.PI * lng) / 0.07) *
+        Math.cos((2 * Math.PI * lat) / 0.06),
+  );
+
+/**
+ * A fake of both height hosts on the CONTEXT (the page's and the city
+ * worker's requests): Mapterhorn answers 512 px synthetic tiles, except a
+ * coverage gap (every tile with x + y odd from zoom 10 on: wider than the
+ * real one, z13 and finer, so the check does not depend on the depth the
+ * view reaches) with a 404; AWS answers 256 px synthetic tiles of the
+ * same surface. Returns the requests seen.
+ */
+async function routeHeightHosts(context, page) {
+  const seen = { mapterhorn: 0, gaps: [], aws: [] };
+  const cors = { "Access-Control-Allow-Origin": "*" };
+  await context.route(
+    (url) =>
+      url.hostname === "tiles.mapterhorn.com" ||
+      (url.hostname === "s3.amazonaws.com" &&
+        url.pathname.startsWith("/elevation-tiles-prod/")),
+    async (route) => {
+      const url = new URL(route.request().url());
+      const [z, x, y] = url.pathname
+        .replace(/\.(png|webp)$/, "")
+        .split("/")
+        .slice(-3)
+        .map(Number);
+      const mapterhorn = url.hostname === "tiles.mapterhorn.com";
+      if (mapterhorn) {
+        seen.mapterhorn += 1;
+        if (z >= 10 && (x + y) % 2 === 1) {
+          seen.gaps.push(`${z}/${x}/${y}`);
+          return route.fulfill({ status: 404, headers: cors, body: "" });
+        }
+      } else {
+        seen.aws.push(`${z}/${x}/${y}`);
+      }
+      const b64 = await page.evaluate(
+        async ([tz, tx, ty, size, module]) => {
+          const { syntheticTile } = await import(module);
+          const blob = await syntheticTile(tz, tx, ty, 0, size);
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          let s = "";
+          for (const b of bytes) s += String.fromCharCode(b);
+          return btoa(s);
+        },
+        [
+          z,
+          x,
+          y,
+          mapterhorn ? 512 : 256,
+          "/labs/globe-terrain/synthetic-heights.js",
+        ],
+      );
+      return route.fulfill({
+        status: 200,
+        headers: { ...cors, "Content-Type": "image/png" },
+        body: Buffer.from(b64, "base64"),
+      });
+    },
+  );
+  return seen;
+}
+
+// WHY (G0 spikes 2026-10-17, Q1 and "Coverage"): the 3D editor draws
+// Mapterhorn (512 px, national LiDAR at z13-14), which answers 404 outside
+// national coverage. On the real page, against a fake of both hosts: the
+// relief must load Mapterhorn's tiles at their size, ask AWS for every
+// tile Mapterhorn has not got (same z/x/y), draw without an error, stand
+// at the surface both serve, and credit both sources with their links.
+test("the Mapterhorn relief draws, falls back to AWS where it answers 404, and credits both", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(400_000);
+  // The tiles are generated in the lab page itself (its own module).
+  const seen = await routeHeightHosts(context, page);
+  const errors = await bootGlobe(
+    page,
+    BASE.replace("&reliefHeights=synthetic", "") +
+      `&reliefSource=mapterhorn&view=${LOW_VIEW}`,
+    { phase: "user", routeCity: false },
+  );
+  await page.waitForFunction(
+    () => {
+      const r = window.__globeLab.state().relief;
+      return Boolean(r?.settled && r.fallback?.fallbacks > 0);
+    },
+    null,
+    { timeout: 240_000 },
+  );
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
+  const out = await page.evaluate(() => {
+    const s = window.__globeLab.state();
+    const live = JSON.parse(window.__globeLab.debug.exportText()).live;
+    return {
+      relief: s.relief,
+      lat: live.lat,
+      lng: live.lng,
+      credits: document.getElementById("globe-credits").textContent,
+      links: [...document.querySelectorAll("#globe-credits a")].map((a) =>
+        a.getAttribute("href"),
+      ),
+    };
+  });
+  const expected = syntheticHeightM(out.lat, out.lng);
+  const gapsAsked = seen.gaps.filter((t) => seen.aws.includes(t)).length;
+  console.log(
+    `Mapterhorn relief at ${LOW_VIEW}: ${seen.mapterhorn} Mapterhorn requests, ${seen.gaps.length} answered 404, ${gapsAsked} of them asked of AWS (${seen.aws.length} AWS requests); fallback ${JSON.stringify(out.relief.fallback)}; ${out.relief.visibleTiles} tiles visible, ${out.relief.litTiles} lit; ground under the camera ${out.relief.groundUnderCameraM?.toFixed(1)} m against the surface's ${expected.toFixed(1)} m; cache ${JSON.stringify(out.relief.cache)}`,
+  );
+  expect(errors).toEqual([]);
+  expect(out.relief.source).toBe("mapterhorn");
+  expect(seen.gaps.length).toBeGreaterThan(0);
+  expect(out.relief.fallback.fallbacks).toBeGreaterThan(0);
+  expect(out.relief.fallback.failures).toBe(0);
+  // AWS was asked only for tiles Mapterhorn has not got, at the same tile.
+  expect(seen.aws.every((t) => seen.gaps.includes(t))).toBe(true);
+  expect(gapsAsked).toBeGreaterThanOrEqual(out.relief.fallback.fallbacks);
+  expect(out.relief.litTiles).toBeGreaterThan(0);
+  // The 300 m ripple has a 5 km wavelength: a few metres of mesh error.
+  expect(Math.abs(out.relief.groundUnderCameraM - expected)).toBeLessThan(10);
+  expect(out.credits).toContain("Elevation data © Mapterhorn");
+  expect(out.credits).toContain("Mapzen");
+  expect(out.links).toContain("https://mapterhorn.com/attribution");
+  expect(out.relief.cache.stalled).toBe(false);
+});

@@ -883,6 +883,140 @@ describe("createGlobeTerrain", () => {
     }
   });
 
+  // Why (G0 spikes 2026-10-17, "Mapterhorn DRAWN depends on mesh density"):
+  // z14 drawn at the library's default depth (level 15, about 25.5 m
+  // between vertices) is good enough only on flat ground; at level 17
+  // (about 6.5 m) it passes everywhere from 0.75 m. The tree's depth is the
+  // library's max(source levels + 1, the overlay tiling's maxLevel), so
+  // `meshMaxLevel` deepens it through the overlay the plugin reads; the
+  // tree only refines there near the camera (screen-space error).
+  it("deepens the relief's tree to meshMaxLevel, and leaves it alone without", async () => {
+    const options = {
+      url: "/heights/{z}/{x}/{y}.webp",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+      maxZoom: 14,
+      tileDimension: 512,
+    };
+    type Rooted = {
+      loadRootTileset(): Promise<unknown>;
+      _tiling: { maxLevel: number };
+    };
+    // The library resolves its tileset's base path against the page.
+    vi.stubGlobal("window", { location: { href: "http://127.0.0.1/" } });
+    const plain = createGlobeTerrain(options);
+    await (plain.plugin as unknown as Rooted).loadRootTileset();
+    expect((plain.plugin as unknown as Rooted)._tiling.maxLevel).toBe(15);
+    plain.dispose();
+    const dense = createGlobeTerrain({ ...options, meshMaxLevel: 17 });
+    await (dense.plugin as unknown as Rooted).loadRootTileset();
+    expect((dense.plugin as unknown as Rooted)._tiling.maxLevel).toBe(17);
+    dense.dispose();
+    for (const bad of [-1, 16.5, 25, Number.NaN]) {
+      expect(() =>
+        createGlobeTerrain({ ...options, meshMaxLevel: bad }),
+      ).toThrow(RangeError);
+    }
+  });
+
+  // Why (G0 spikes, "Coverage"): Mapterhorn answers 404 at z14 outside
+  // national coverage. Driven through the REAL plugin and image source
+  // (only the network is a fake): the tile the library asks for, by its
+  // own token order and url, must be asked of the fallback at the same
+  // z/x/y, through the relief's download queue.
+  it("asks the fallback source for a tile the relief's source answers 404 for", async () => {
+    // The library resolves its tileset's base path against the page.
+    vi.stubGlobal("window", { location: { href: "http://127.0.0.1/" } });
+    // The download queue schedules its jobs a frame later.
+    vi.stubGlobal("requestAnimationFrame", (cb: () => void) =>
+      setTimeout(cb, 0),
+    );
+    const requests: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        requests.push(url);
+        return Promise.resolve(
+          url.startsWith("https://primary/")
+            ? new Response(null, { status: 404 })
+            : new Response(null, { status: 503 }),
+        );
+      }),
+    );
+    const terrain = createGlobeTerrain({
+      url: "https://primary/{z}/{x}/{y}.webp",
+      fallbackUrl: "https://fallback/{z}/{x}/{y}.png",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+      maxZoom: 14,
+      tileDimension: 512,
+    });
+    const plugin = terrain.plugin as unknown as {
+      loadRootTileset(): Promise<unknown>;
+      _source: {
+        fetchItem(tokens: number[], signal?: AbortSignal): Promise<unknown>;
+      };
+    };
+    await plugin.loadRootTileset();
+    await expect(plugin._source.fetchItem([8712, 5678, 14])).rejects.toThrow(
+      /404, and its fallback HTTP 503/,
+    );
+    expect(requests).toEqual([
+      "https://primary/14/8712/5678.webp",
+      "https://fallback/14/8712/5678.png",
+    ]);
+    expect(terrain.reliefFallback()).toEqual({ fallbacks: 0, failures: 1 });
+    terrain.dispose();
+    // Without a fallback the library's own fetch stays in place.
+    const plain = createGlobeTerrain({
+      url: "https://primary/{z}/{x}/{y}.webp",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+    });
+    expect(plain.reliefFallback()).toBeNull();
+    plain.dispose();
+    expect(() =>
+      createGlobeTerrain({
+        url: "https://primary/{z}/{x}/{y}.webp",
+        fallbackUrl: "https://fallback/{z}.png",
+        imagery: {
+          tiling: { maxLevel: 5 },
+          init: () => Promise.resolve(),
+          hasContent: () => false,
+          lockTexture: () => Promise.resolve(null),
+          getTexture: () => new THREE.Texture(),
+          releaseTexture: () => {},
+        },
+        template: new THREE.MeshStandardMaterial(),
+        heightScale: 1,
+      }),
+    ).toThrow(RangeError);
+  });
+
   it("refuses a missing url or a height scale that is not finite and >= 0", () => {
     const template = new THREE.MeshStandardMaterial();
     const imagery = {

@@ -120,6 +120,13 @@ import {
   finestElevationAt,
 } from "/globe/globe-terrain.js";
 import {
+  awsTerrariumRelief,
+  mapterhornRelief,
+  reliefCredits,
+  reliefTerrainOptions,
+} from "/globe/globe-relief-source.js";
+import { reliefCacheBudget } from "/globe/globe-relief-cache.js";
+import {
   LANDING_GROUND,
   groundRevisionM,
   readLandingGroundM,
@@ -308,13 +315,18 @@ function statusView() {
  * full texts, links and GIBS's acknowledgement in a <details>. Built with
  * textContent only: the texts come from the registry, never from markup.
  */
-function renderCredits(credits, heightsCredit = null) {
+function renderCredits(credits, heights = null) {
   const details = document.createElement("details");
   const summary = document.createElement("summary");
-  summary.textContent = `Imagery: ${credits.map((c) => c.short).join(" · ")}. ${PROCEDURAL_STARS}${heightsCredit ? ` ${heightsCredit}` : ""}`;
+  // `heights`: the relief's credits (`reliefCredits`, linked below like the
+  // imagery's), or a plain sentence (synthetic heights).
+  const heightsText = Array.isArray(heights)
+    ? heights.map((c) => c.full).join(" · ")
+    : heights;
+  summary.textContent = `Imagery: ${credits.map((c) => c.short).join(" · ")}. ${PROCEDURAL_STARS}${heightsText ? ` ${heightsText}` : ""}`;
   details.append(summary);
   const list = document.createElement("ul");
-  for (const c of credits) {
+  for (const c of [...credits, ...(Array.isArray(heights) ? heights : [])]) {
     const item = document.createElement("li");
     const link = document.createElement("a");
     link.href = c.href;
@@ -781,10 +793,16 @@ const PARAMS = {
   // The relief's cache cap (MiB; its floor keeps the same ratio) and its
   // queues (§4.3), settable within one page load.
   reliefCacheMiB: {
+    // Set from the relief's source and device class once the source is
+    // known (`reliefCacheBudget`, G1 1c): 64 MiB for AWS on a phone.
     fallback: GLOBE_TERRAIN.cacheBytes / 2 ** 20,
     min: 8,
     max: 4096,
   },
+  // The relief tree's deepest level (G1 2, `meshMaxLevel`): a denser mesh
+  // near the camera; the source's own depth when unset. The G0 spikes
+  // measured Mapterhorn z14 at level 17 (about 6.5 m between vertices).
+  reliefMeshLevel: { fallback: null, min: 0, max: 24 },
   parseJobs: { fallback: 5, min: 1, max: 32 },
   downloadsPerOrigin: { fallback: 25, min: 1, max: 64 },
   // The frame-hitch recorder (`globe-perf.js`, §4): 1 loads it and shows
@@ -850,6 +868,13 @@ function readHashParams() {
     // `synthetic` (generated in the page, for the smokes: no network).
     reliefHeights:
       params.get("reliefHeights") === "synthetic" ? "synthetic" : "terrarium",
+    // Which real heights (G1 2): AWS Terrarium (the default) or Mapterhorn
+    // (512 px, national LiDAR at z13-14, AWS where it answers 404).
+    reliefSource:
+      params.get("reliefSource") === "mapterhorn" ? "mapterhorn" : "aws",
+    // The relief cache's device class (`reliefCacheBudget`): phone or desktop.
+    reliefDevice:
+      params.get("reliefDevice") === "desktop" ? "desktop" : "phone",
     url: parseLatLngText(params.get("at")),
     // A camera pose to open at (volume-cloud plan §16): the Debug export's
     // `link`; the intro is skipped and the camera handed to the controls.
@@ -2373,12 +2398,41 @@ async function start() {
       : null;
   const terrarium =
     startParams.reliefHeights !== "synthetic" ? terrariumModule : null;
+  // The relief's source (G1 2): its URL and credit from the Osm library
+  // (DEC-H3), what the globe needs to know of it from `globe-relief-source`.
+  const awsRelief = terrariumModule
+    ? awsTerrariumRelief({
+        url: terrariumModule.TERRARIUM_URL_TEMPLATE,
+        attribution: terrariumModule.TERRARIUM_ATTRIBUTION,
+      })
+    : null;
+  const reliefSource =
+    awsRelief && startParams.reliefSource === "mapterhorn"
+      ? mapterhornRelief(
+          {
+            url: terrariumModule.MAPTERHORN_URL_TEMPLATE,
+            attribution: terrariumModule.MAPTERHORN_ATTRIBUTION,
+          },
+          awsRelief,
+        )
+      : awsRelief;
+  // Synthetic heights are 256 px tiles generated in the page, whatever the
+  // source; the zoom the city and the landing read is the source's global one.
+  const reliefOptions = terrarium
+    ? reliefTerrainOptions(reliefSource)
+    : { url: SYNTHETIC_HEIGHTS_URL, tileDimension: 256 };
+  const reliefGlobalZoom = reliefSource?.globalZoom ?? GLOBE_TERRAIN.maxZoom;
+  const reliefBudget = reliefCacheBudget(
+    reliefOptions.tileDimension,
+    startParams.reliefDevice,
+  );
+  PARAMS.reliefCacheMiB.fallback = reliefBudget.maxBytes / 2 ** 20;
   const terrain =
     startParams.relief === 1
       ? createGlobeTerrain({
-          url: terrarium
-            ? terrarium.TERRARIUM_URL_TEMPLATE
-            : SYNTHETIC_HEIGHTS_URL,
+          ...reliefOptions,
+          cache: reliefBudget,
+          meshMaxLevel: startParams.reliefMeshLevel ?? undefined,
           // Its own overlay of the same imagery: an overlay's image cache is
           // shared by its users, so releasing one carrier freed imagery the
           // other was still composing.
@@ -2490,7 +2544,7 @@ async function start() {
     !terrain
       ? null
       : terrarium
-        ? terrarium.TERRARIUM_ATTRIBUTION
+        ? reliefCredits(reliefSource)
         : "Heights: synthetic, generated in the page.",
   );
   const status = statusView();
@@ -2630,8 +2684,9 @@ async function start() {
           roadLiftM: params.roadLiftM,
           roadOffset: params.roadOffset,
           // The relief's own height source (G1 1d): the city stands on the
-          // heights the ground is drawn from.
-          heightsUrl: terrariumModule?.TERRARIUM_URL_TEMPLATE,
+          // heights the ground is drawn from (the worker's AWS default with
+          // synthetic heights, which the smokes route to synthetic tiles).
+          heightsUrl: terrarium ? reliefSource.url : undefined,
         })
       : null;
   /** The place the city was last asked for, as "lat,lng". */
@@ -2888,9 +2943,7 @@ async function start() {
   const groundSource = terrariumModule
     ? new terrariumModule.TerrariumProvider({
         decodePng: terrariumModule.browserPngDecoder(),
-        urlTemplate: terrarium
-          ? terrarium.TERRARIUM_URL_TEMPLATE
-          : SYNTHETIC_HEIGHTS_URL,
+        urlTemplate: terrarium ? reliefSource.url : SYNTHETIC_HEIGHTS_URL,
         zoom: LANDING_GROUND.zoom,
         requestTimeoutMs: LANDING_GROUND.timeoutMs,
         maxCachedTiles: 4,
@@ -2956,7 +3009,7 @@ async function start() {
     // where it can be drawn: the relief at true heights near the ground (R14).
     startCityLoad: (target) =>
       city && exaggerationAt(0, heightLaw()) === 1
-        ? city.load(target, { zoom: GLOBE_TERRAIN.maxZoom, fresh: true })
+        ? city.load(target, { zoom: reliefGlobalZoom, fresh: true })
         : null,
     // The relief's detail colour over the target's region, built while
     // the dive runs.
@@ -3146,7 +3199,7 @@ async function start() {
           groundTrue &&
           wanted
         ) {
-          city.load(place, { zoom: GLOBE_TERRAIN.maxZoom });
+          city.load(place, { zoom: reliefGlobalZoom });
           cityKey = key;
           cityTries += 1;
           cityFailedAt = null;
@@ -4027,6 +4080,11 @@ async function start() {
             globeCachedBytes: globe.tiles.lruCache.cachedBytes,
             // Full and turning tiles away (`watchReliefCache`, G1 1c).
             cache: terrain.reliefCache(),
+            // The heights' source, its 404 fallback's counts and the tree's
+            // deepest level when set (G1 2).
+            source: terrarium ? reliefSource.id : "synthetic",
+            fallback: terrain.reliefFallback(),
+            meshMaxLevel: startParams.reliefMeshLevel,
             releasedBytes: { ...released },
             // The decoded heights kept past their tiles, and the height
             // tiles requested so far (synthetic heights only; DEC-N1).

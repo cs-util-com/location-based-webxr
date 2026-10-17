@@ -92,8 +92,22 @@
     `_tiling` and `_gridCache` (as `globe-height-keeper.ts` does); null, never
     a throw, if they change (`globe-terrain.finest.test.ts` checks the real
     plugin has them).
-  - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom?, tileDimension?, lazyHeightScale?, keepHeightsBytes?, cache? })`
-    -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), heightScaleStats(), heightKeeperStats(), reliefCache(), dispose() }`
+  - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom?, tileDimension?, lazyHeightScale?, keepHeightsBytes?, cache?, fallbackUrl?, meshMaxLevel? })`
+    -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), heightScaleStats(), heightKeeperStats(), reliefCache(), reliefFallback(), dispose() }`
+    (G1 step 2: `fallbackUrl` a second Terrarium source asked for the same
+    tile where `url` answers 404, its heights resampled to `tileDimension`
+    (`installReliefFallback`, `globe-relief-fallback.ts`; Mapterhorn's
+    z13-14 exist only under national models), and `reliefFallback()` its
+    counts, null without one; `meshMaxLevel` the relief tree's deepest
+    level, at most `GLOBE_TERRAIN.maxMeshLevel` 24: the library builds its
+    tree to the overlay tiling's `maxLevel` when that is deeper than its own
+    source levels, so the overlay the plugin reads carries it, and the tree
+    refines that deep only near the camera; the G0 spikes measured z14 at
+    level 17, about 6.5 m between vertices, against the default level 15,
+    25.5 m; `reliefTerrainOptions(source)` from `globe-relief-source.ts`
+    gives `url`, `maxZoom`, `tileDimension` and `fallbackUrl` together;
+    RangeError for a fallback template without `{z}/{x}/{y}` or a mesh
+    level that is not an integer 0-24)
     (`cache` the relief cache's `{ maxBytes, minBytes }`, the app's to set
     per tile format and device class with `reliefCacheBudget`
     (`globe-relief-cache.ts`), `GLOBE_TERRAIN.cacheBytes` /
@@ -162,7 +176,8 @@
   46.5 N; the overlay adapter's calls; the half-float upload and its
   steps; the box from normals; the lit material's maps, hooks, UV patch
   and key; the overlay plugin's defines carried; the tile size passed
-  through and refused; the cache budget taken and a full cache seen
+  through and refused; the tree deepened by `meshMaxLevel`; a 404 asked
+  of the fallback through the real plugin and image source; the cache budget taken and a full cache seen
   stalling; the fade side; the detail patch's place, shared uniforms and
   refused anchor; the factory on a simulated tile load and dispose, its
   detail on and off; refusals; the library guard). The GPU side (heights read back with the extension

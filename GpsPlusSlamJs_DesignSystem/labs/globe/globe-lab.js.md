@@ -407,6 +407,22 @@
     the band. `reliefHeights=synthetic` serves heights generated
     in the page (`../globe-terrain/synthetic-heights.js`; the smokes),
     otherwise the live Terrarium tiles, credited in the credits line.
+  - The relief's source (G1 step 2, read at start; tour editor plan
+    `2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md` §13):
+    `reliefSource=aws` (the default: AWS Terrarium, 256 px, z12) or
+    `mapterhorn` (512 px, z14 where a national model exists, AWS
+    Terrarium for the same tile where it answers 404,
+    `/globe/globe-relief-fallback.js`). URLs and credits are the Osm
+    library's constants, described by `/globe/globe-relief-source.js`;
+    the credits line names the source and its fallback with their links.
+    The city's heights and the landing's ground read the same source at
+    its global zoom (12); the detail colour stays on AWS z8.
+    `reliefDevice=phone|desktop` (default phone) sets the relief cache's
+    budget for the source's tile size (`reliefCacheBudget`: 64 MiB for
+    AWS on a phone, about 151 MiB for Mapterhorn; desktop twice), which
+    becomes `reliefCacheMiB`'s default. `reliefMeshLevel` (0-24, unset
+    by default) deepens the relief's tree (`meshMaxLevel`): 17 draws
+    Mapterhorn z14 at about 6.5 m between vertices near the camera.
   - Every frame the relief's exaggeration is `exaggerationAt` of the
     camera's altitude (`/globe/globe-flight.js`: 1 at globe scale, the
     near value `reliefNear` from 20 km down: default 1, true heights at
@@ -436,8 +452,11 @@
   - `state()` adds `relief` (`{ heightScale, litTiles, visibleTiles,
 heights, share, groundUnderCameraM, clearanceLifts, settled, stats,
 cachedBytes, cache, globeCachedBytes, releasedBytes, globeDrawn, reliefDrawn,
-globeTiles, detail }` or null; `cache` is the terrain's `reliefCache()`
-    (full, refusals, stalled; G1 1c); `detail` is the region's state, with its
+globeTiles, detail, source, fallback, meshMaxLevel }` or null; `cache` is
+    the terrain's `reliefCache()` (full, refusals, stalled; G1 1c);
+    `source` the heights' source id (or `synthetic`), `fallback` its 404
+    fallback's counts (`reliefFallback()`, null without one) and
+    `meshMaxLevel` the tree's set depth (G1 2); `detail` is the region's state, with its
     height tiles and bytes once ready) and `cameraDepressionDeg`.
   - Not yet (the F2 plan 2026-10-03-1922): the re-oriented frame, the
     planes from the exaggerated relief, the atmosphere hand-over and the
@@ -922,7 +941,8 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   - The factors it varies, also hash keys that apply live:
     `adjustHeight` (the controls' height adjustment, its two raycasts a
     frame, default 1), `reliefCacheMiB` (the relief's cache cap, 8-4096,
-    default 64; its floor keeps the same ratio), `parseJobs` (1-32,
+    default the source's budget, 64 for AWS on a phone; its floor keeps
+    the same ratio), `parseJobs` (1-32,
     default 5) and `downloadsPerOrigin` (1-64, default 25), the relief's
     own queues.
   - While a path runs the recorder owns the camera (ahead of the fly-in,

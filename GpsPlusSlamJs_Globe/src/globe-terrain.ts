@@ -49,6 +49,7 @@ import {
   checkReliefCacheBudget,
   watchReliefCache,
 } from "./globe-relief-cache.js";
+import { installReliefFallback } from "./globe-relief-fallback.js";
 import { createMaterialRetirer } from "./globe-warm-material.js";
 
 export const GLOBE_TERRAIN = Object.freeze({
@@ -68,6 +69,11 @@ export const GLOBE_TERRAIN = Object.freeze({
    */
   tileDimension: 256,
   maxTileDimension: 4096,
+  /**
+   * The deepest relief tree level `meshMaxLevel` may ask for: 24 is about
+   * 5 cm between vertices at the equator, far past any height source.
+   */
+  maxMeshLevel: 24,
   /**
    * The tiles' error target, picked by the look on real heights over the
    * Alps (review 2026-10-02-1235 major 4): 2 draws what the library's default 1 draws
@@ -483,6 +489,7 @@ function checkTerrainOptions(
   heightScale: number,
   tileDimension: number,
   cache: ReliefCacheBudget,
+  meshMaxLevel: number | undefined,
 ): void {
   if (typeof url !== "string" || url.length === 0) {
     throw new RangeError("the terrain needs a tile url");
@@ -498,6 +505,41 @@ function checkTerrainOptions(
     );
   }
   checkReliefCacheBudget(cache);
+  if (
+    meshMaxLevel !== undefined &&
+    !(
+      Number.isInteger(meshMaxLevel) &&
+      meshMaxLevel >= 0 &&
+      meshMaxLevel <= GLOBE_TERRAIN.maxMeshLevel
+    )
+  ) {
+    throw new RangeError(
+      `the mesh level must be an integer from 0 to ${GLOBE_TERRAIN.maxMeshLevel}, got ${meshMaxLevel}`,
+    );
+  }
+}
+
+/**
+ * `overlay` with its tiling's `maxLevel` raised to at least `level`: the
+ * library's terrain plugin builds its tree to the overlay tiling's
+ * `maxLevel` when that is deeper than its own source levels (read once,
+ * in its root load), so the relief's mesh refines to `level` near the
+ * camera. Everything else is the overlay's own.
+ */
+function deeperTree(overlay: TerrainImagery, level: number): TerrainImagery {
+  return {
+    get tiling() {
+      const tiling = overlay.tiling as { maxLevel?: number } | null;
+      return Object.create(tiling ?? null, {
+        maxLevel: { value: Math.max(tiling?.maxLevel ?? 0, level) },
+      }) as unknown;
+    },
+    init: () => overlay.init(),
+    hasContent: (range, l) => overlay.hasContent(range, l),
+    lockTexture: (range, l) => overlay.lockTexture(range, l),
+    getTexture: (range, l) => overlay.getTexture(range, l),
+    releaseTexture: (range, l) => overlay.releaseTexture(range, l),
+  };
 }
 
 /** The relief carrier, as `createGlobeTerrain` returns it. */
@@ -517,6 +559,12 @@ export interface GlobeTerrain {
   heightScaleStats(): ReturnType<LazyHeightScale["stats"]>;
   /** The kept heights' counters (`installHeightKeeper`). */
   heightKeeperStats(): ReturnType<HeightKeeper["stats"]>;
+  /**
+   * The fallback's counters (`installReliefFallback`): tiles its source
+   * answered 404 for and the fallback drew, and tiles that failed; null
+   * without a `fallbackUrl`.
+   */
+  reliefFallback(): { fallbacks: number; failures: number } | null;
   /**
    * The relief cache now: bytes used and allowed, and whether it is full
    * and turning tiles away (`watchReliefCache`): a stalled cache stops
@@ -550,6 +598,8 @@ export function createGlobeTerrain(options: {
   lazyHeightScale?: boolean;
   keepHeightsBytes?: number;
   cache?: ReliefCacheBudget;
+  fallbackUrl?: string;
+  meshMaxLevel?: number;
 }): GlobeTerrain {
   const {
     url,
@@ -564,8 +614,10 @@ export function createGlobeTerrain(options: {
       maxBytes: GLOBE_TERRAIN.cacheBytes,
       minBytes: GLOBE_TERRAIN.cacheFloorBytes,
     },
+    fallbackUrl,
+    meshMaxLevel,
   } = options;
-  checkTerrainOptions(url, heightScale, tileDimension, budget);
+  checkTerrainOptions(url, heightScale, tileDimension, budget, meshMaxLevel);
   if (typeof terrariumRuntime !== "function") {
     throw new Error(
       "3d-tiles-renderer no longer exports TerrariumMeshPlugin from its plugins entry",
@@ -576,10 +628,21 @@ export function createGlobeTerrain(options: {
     url,
     maxZoom,
     tileDimension,
-    overlay: geographicOverlay(imagery),
+    overlay:
+      meshMaxLevel === undefined
+        ? geographicOverlay(imagery)
+        : deeperTree(geographicOverlay(imagery), meshMaxLevel),
     applyOverlayTexture: true,
     heightScale,
   });
+  // Where the source answers 404, the same tile from `fallbackUrl` (G1 2).
+  const fallback =
+    fallbackUrl === undefined
+      ? null
+      : installReliefFallback(
+          plugin as unknown as Parameters<typeof installReliefFallback>[0],
+          { fallbackUrl, tileDimension },
+        );
   const tiles = new TilesRenderer();
   const cache = new LRUCache();
   // The library's unload order (least recently used, deepest first).
@@ -654,9 +717,11 @@ export function createGlobeTerrain(options: {
       },
     heightKeeperStats: () => heightKeeper.stats(),
     reliefCache: () => cacheWatch.state(),
+    reliefFallback: () => fallback?.stats() ?? null,
     litTiles: () => owned.size,
     dispose() {
       cacheWatch.dispose();
+      fallback?.dispose();
       heightKeeper.dispose();
       for (const lit of owned) lit.dispose();
       owned.clear();
