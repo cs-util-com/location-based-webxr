@@ -74,7 +74,13 @@
     side of the altitude band's dither (`globe-surface-material.ts`). With
     `detail` (`globe-detail.ts`'s uniforms, one object for every tile) the
     detail factor multiplies the imagery right after `map_fragment`; a
-    missing or doubled anchor then throws, naming it.
+    missing or doubled anchor then throws, naming it. The copy carries
+    `own`'s defines in a fresh object next to the standard material's (G0
+    spikes 2026-10-17, Q5): a second overlay through the library's
+    `ImageOverlayPlugin` declares its layers under the `LAYER_COUNT`
+    define, and without it the shader failed to compile and the relief
+    vanished; the plugin writes later layer changes to the mesh's material,
+    which is this copy.
   - `finestElevationAt(plugin, lat, lon)` (radians): the drawn height at a
     place from the relief's FINEST source level only (z12, the landing's own
     read, round-4 plan 2026-10-11-0122 DEC-R4-1), null where that tile's
@@ -143,7 +149,7 @@
 - Tests: `globe-terrain.test.ts` (the range conversion and its size at
   46.5 N; the overlay adapter's calls; the half-float upload and its
   steps; the box from normals; the lit material's maps, hooks, UV patch
-  and key; the fade side; the detail patch's place, shared uniforms and
+  and key; the overlay plugin's defines carried; the fade side; the detail patch's place, shared uniforms and
   refused anchor; the factory on a simulated tile load and dispose, its
   detail on and off; refusals; the library guard). The GPU side (heights read back with the extension
   hidden, the look against the globe at noon, dusk and night, the data

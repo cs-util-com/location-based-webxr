@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 
 import * as THREE from "three";
 import { TilesRenderer } from "3d-tiles-renderer";
+import * as plugins from "3d-tiles-renderer/plugins";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -358,6 +359,52 @@ describe("litTerrainMaterial", () => {
         {} as THREE.WebGLRenderer,
       ),
     ).toThrow("#include <map_fragment>");
+  });
+
+  // Why (G0 spikes 2026-10-17, Q5): a second imagery overlay through the
+  // library's ImageOverlayPlugin wraps each tile's material: its compile
+  // hook declares the layers under `#if ... < LAYER_COUNT`, and the count
+  // is a DEFINE on the material. The lit copy carried the hook but not the
+  // defines, so the shader failed to compile ("LAYER_COUNT: unexpected
+  // token") and the relief vanished. The copy must carry the tile's defines
+  // (its own object: the plugin later writes to the material the mesh
+  // wears, which is the lit copy), next to the standard material's own.
+  it("carries the overlay plugin's defines next to the material's own", () => {
+    const template = new THREE.MeshStandardMaterial();
+    const own = new THREE.MeshLambertMaterial();
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), own);
+    const model = new THREE.Group();
+    model.add(mesh);
+    const overlays = new plugins.ImageOverlayPlugin({
+      overlays: [],
+      renderer: {} as THREE.WebGLRenderer,
+    }) as unknown as {
+      _wrapMaterials(scene: THREE.Object3D): void;
+    };
+    overlays._wrapMaterials(model);
+    // What the plugin's layer update writes once a layer's texture is in.
+    own.defines!.LAYER_COUNT = 1;
+    own.defines!.LAYER_0_EXISTS = 1;
+    const lit = litTerrainMaterial(template, own, {
+      west: 0.1,
+      south: 0.7,
+      east: 0.2,
+      north: 0.8,
+    });
+    expect(lit.defines).toEqual({
+      STANDARD: "",
+      LAYER_COUNT: 1,
+      LAYER_0_EXISTS: 1,
+    });
+    expect(lit.defines).not.toBe(own.defines);
+    expect(lit.defines).not.toBe(template.defines);
+    // A tile without the plugin keeps exactly the standard material's.
+    const plain = litTerrainMaterial(
+      template,
+      new THREE.MeshLambertMaterial(),
+      { west: 0.1, south: 0.7, east: 0.2, north: 0.8 },
+    );
+    expect(plain.defines).toEqual({ STANDARD: "" });
   });
 });
 

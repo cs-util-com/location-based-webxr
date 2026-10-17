@@ -347,6 +347,13 @@ export function litTerrainMaterial(
     shader.fragmentShader = `#define GLOBE_FADE_SIDE 1\n${shader.fragmentShader}`;
   };
   lit.customProgramCacheKey = () => GLOBE_TERRAIN.programKey;
+  // The tile's defines too (G0 spikes 2026-10-17, Q5): an image overlay
+  // plugin's hook declares its layers under `LAYER_COUNT`, a define on the
+  // material; without it the shader does not compile and the relief
+  // vanishes. A copy of its own: the plugin writes later layer changes to
+  // the material the mesh wears, this one. Defines are part of three's
+  // program key, so the shared key above still tells the programs apart.
+  lit.defines = { ...lit.defines, ...own.defines };
   lit.map = own.map ?? null;
   lit.displacementMap = own.displacementMap ?? null;
   lit.displacementScale = own.displacementScale ?? 1;
