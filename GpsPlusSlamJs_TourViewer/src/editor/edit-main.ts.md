@@ -25,7 +25,12 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 
 - **Open:** the file input's change and a drop on `#drop` call
   `openTourForEditing` (`editor-open.ts`); "Use the sample tour" fetches
-  `samples/marienplatz-tour.zip` beside the page. While a file is read the
+  `samples/marienplatz-tour.zip` beside the page; `#link-form` fetches a
+  hosted tour from its link (`editor-link.ts`, the viewer's transport and
+  Drive proxy, tour editor plan 2026-10-17-1816 W1) and opens it as a
+  chosen file - without a file handle, so Save downloads the new copy -
+  saying "Fetching the tour from its link…" meanwhile and the refusal in
+  `#open-error` (`linkOpenErrorText`). While a file is read the
   modal says "Opening <name>…" and its buttons are disabled; then the tour
   is drawn and a toast names what opened, or the reason shows in
   `#open-error` and the modal stays (root `CLAUDE.md`, async feedback).
@@ -216,4 +221,4 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 
 The modules it wires have their own unit tests; the page is pinned by
 `playwright-tests/editor.spec.js` and `editor-entry.spec.js` (the
-"Nothing to save" toast); `way-in.spec.js` checks its first paint.
+"Nothing to save" toast, the open from a link); `way-in.spec.js` checks its first paint.

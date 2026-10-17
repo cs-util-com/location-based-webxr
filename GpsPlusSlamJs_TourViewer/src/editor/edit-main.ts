@@ -35,6 +35,8 @@ import {
   type EditorModel,
 } from "./editor-model.js";
 import { openTourForEditing } from "./editor-open.js";
+import { fetchTourFile, linkOpenErrorText } from "./editor-link.js";
+import { driveProxyBaseUrl } from "../drive-proxy-url.js";
 import {
   createEditorDraft,
   restoredLine,
@@ -148,6 +150,9 @@ const zipInput = element<HTMLInputElement>("zip-input");
  *  tab order, so a keyboard user reaches the chooser here (PR #612 review);
  *  its click is the drop box's. */
 const chooseButton = element<HTMLButtonElement>("choose-btn");
+const linkForm = element<HTMLFormElement>("link-form");
+const linkInput = element<HTMLInputElement>("link-input");
+const linkButton = element<HTMLButtonElement>("link-btn");
 const openStatus = element("open-status");
 const openError = element("open-error");
 const sampleButton = element<HTMLButtonElement>("sample-btn");
@@ -729,6 +734,8 @@ function setBusy(on: boolean, text: string): void {
   sampleButton.disabled = on;
   zipInput.disabled = on;
   chooseButton.disabled = on;
+  linkInput.disabled = on;
+  linkButton.disabled = on;
   cancelButton.disabled = on;
   openStatus.textContent = text;
 }
@@ -1413,6 +1420,28 @@ sampleButton.addEventListener("click", () => {
       openError.textContent = `The sample tour could not be fetched: ${
         err instanceof Error ? err.message : String(err)
       }`;
+      openError.hidden = false;
+    });
+});
+// A hosted tour, from its link (tour editor plan 2026-10-17-1816, W1): the
+// viewer's transport fetches it whole, then it opens as a chosen file does
+// (no file handle: Save downloads the new copy).
+linkForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (busy) return;
+  const link = linkInput.value;
+  openError.hidden = true;
+  setBusy(true, "Fetching the tour from its link…");
+  fetchTourFile(link, {
+    corsProxyBaseUrl: driveProxyBaseUrl(location.hostname),
+  })
+    .then(async (file) => {
+      setBusy(false, "");
+      await openFile(file);
+    })
+    .catch((err: unknown) => {
+      setBusy(false, "");
+      openError.textContent = linkOpenErrorText(err, link);
       openError.hidden = false;
     });
 });

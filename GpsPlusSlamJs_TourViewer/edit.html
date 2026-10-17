@@ -157,6 +157,28 @@
             hidden
           />
         </label>
+        <!-- A hosted tour opens from its link (tour editor plan 2026-10-17-1816,
+             W1): fetched whole, then opened as a chosen file is
+             (editor-link.ts). type="text": the dialog says what is wrong
+             with a link, not the browser. -->
+        <form class="link-open" id="link-form">
+          <label class="link-label" for="link-input"
+            >Or open it from its link</label
+          >
+          <div class="link-row">
+            <input
+              id="link-input"
+              type="text"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="https://…"
+            />
+            <button class="btn small" id="link-btn" type="submit">
+              Open the link
+            </button>
+          </div>
+        </form>
         <div id="open-status" role="status" aria-live="polite"></div>
         <div id="open-error" role="alert" hidden></div>
         <div class="modal-actions">
