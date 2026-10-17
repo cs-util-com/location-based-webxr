@@ -98,7 +98,7 @@ function objectName(object: TourObject): string {
 
 /** The outcome of an undo or a redo: the step taken (in words), nothing
  *  to take, or a refusal in words. */
-export type UndoOutcome =
+type UndoOutcome =
   | { readonly kind: "undone" | "redone"; readonly what: string }
   | { readonly kind: "nothing" }
   | EditorRefusal;
@@ -157,7 +157,7 @@ export const TOUR_NAME_MAX_CHARS = 80;
 
 /** One image a tour may show as its cover (W2): a placed photo, or an
  *  image the tour carries as a content asset. */
-export interface CoverChoice {
+interface CoverChoice {
   readonly id: string;
   /** Its entry in the zip (`content/<id>.jpg`). */
   readonly image: string;

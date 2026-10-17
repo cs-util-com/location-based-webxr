@@ -101,8 +101,7 @@ changes`; a label is cut at 40 characters, a label-less note is "a
 scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
     carries, for the draft's bases) and advances to what was written
     (`pendingAfterRebuild`).
-- `EditorSession`, `EditorSave`, `EditorSessionDraft`, `CoverChoice`, `UndoOutcome`,
-  `TOUR_NAME_MAX_CHARS`.
+- `EditorSession`, `EditorSave`, `EditorSessionDraft`, `TOUR_NAME_MAX_CHARS`; the module-private `CoverChoice` (an image id and its zip entry) and `UndoOutcome` (`undo()` / `redo()`'s result) are read through the session's methods.
 
 ## Invariants & assumptions
 
