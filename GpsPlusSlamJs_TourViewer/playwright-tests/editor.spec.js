@@ -1062,20 +1062,21 @@ test("Ctrl+S saves, and the browser's own save never opens", async ({
   // The page's keydown handler exists once its script is wired; a press
   // before that reached the browser (a flaky run under load).
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  const prevented = page.evaluate(
-    () =>
-      new Promise((resolve) => {
-        window.addEventListener(
-          "keydown",
-          (event) => {
-            resolve(event.defaultPrevented);
-          },
-          { once: true },
-        );
-      }),
-  );
+  // The listener is in place BEFORE the press, and reads the S key's own
+  // keydown: an evaluate not awaited installed it while the press ran -
+  // early enough it caught the Control keydown (never prevented), late
+  // enough it caught nothing and timed out (2026-10-17, under load); it
+  // passed only between the two.
+  await page.evaluate(() => {
+    window.addEventListener("keydown", (event) => {
+      if (event.key.toLowerCase() !== "s") return;
+      // @ts-expect-error - read back below.
+      window.__savePrevented = event.defaultPrevented;
+    });
+  });
   await page.keyboard.press("Control+s");
-  expect(await prevented).toBe(true);
+  // @ts-expect-error - set by the listener above.
+  expect(await page.evaluate(() => window.__savePrevented)).toBe(true);
   await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
   await page.locator("#rail .row", { hasText: "Town hall" }).click();
   await page.locator("#card textarea").fill("By keyboard");
