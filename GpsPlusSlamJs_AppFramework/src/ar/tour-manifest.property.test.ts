@@ -178,3 +178,76 @@ describe('baked capture spots (properties, scan-pass plan S1)', () => {
     );
   });
 });
+
+describe('tour details (properties, minor 3)', () => {
+  // Why this matters: the details are typed in the editor and read by
+  // every visitor. Whatever the generators produce - any text, any cover,
+  // with or without the photo it names - a written tour reads back to the
+  // same manifest, a cover never names an image the tour lacks, and the
+  // minor written is 3 exactly when a detail is kept.
+  const text = fc.string({ minLength: 0, maxLength: 60 });
+  const v2 = fc
+    .record({
+      objects: manifest.map((m) => m.objects),
+      description: fc.option(text, { nil: undefined }),
+      contact: fc.option(
+        fc.oneof(
+          text,
+          fc.emailAddress(),
+          fc.webUrl({ validSchemes: ['https', 'http'] })
+        ),
+        { nil: undefined }
+      ),
+      cover: fc.option(fc.oneof(id, fc.constant('missing')), {
+        nil: undefined,
+      }),
+    })
+    .map(({ description, contact, cover, objects }) => ({
+      version: 2,
+      minor: 3,
+      objects,
+      ...(description === undefined ? {} : { description }),
+      ...(contact === undefined ? {} : { contact }),
+      // Half the time the cover is one of the generated photos.
+      ...(cover === undefined
+        ? {}
+        : {
+            cover:
+              objects.find((o) => o.kind === 'photo' && cover.length % 2 === 0)
+                ?.id ?? cover,
+          }),
+    }));
+
+  it('round-trips, keeps only covers the tour has, and writes minor 3 exactly with a detail', () => {
+    fc.assert(
+      fc.property(v2, (m) => {
+        const parsed = parseTourManifest(m);
+        // A kept cover is one of the tour's photos.
+        expect(
+          parsed.cover === undefined ||
+            parsed.objects.some(
+              (o) => o.kind === 'photo' && o.id === parsed.cover
+            )
+        ).toBe(true);
+        const written = JSON.parse(serializeTourManifest(parsed)) as {
+          version: number;
+          minor?: number;
+        };
+        const kept =
+          parsed.description !== undefined ||
+          parsed.contact !== undefined ||
+          parsed.cover !== undefined;
+        // Written at the minor the content needs, not the one it was read
+        // at; everything else reads back exactly.
+        expect(parseTourManifest(written)).toEqual({
+          ...parsed,
+          minor: kept ? 3 : 0,
+        });
+        expect([written.version, written.minor]).toEqual(
+          kept ? [2, 3] : [1, undefined]
+        );
+      }),
+      { numRuns: 300 }
+    );
+  });
+});

@@ -524,8 +524,9 @@ describe('baked capture spots (scan-pass plan S1, S-D11)', () => {
     // reader parses minor-1 files strictly - so the tour would stop
     // opening there. When this fails: extend minorNeeded for the new
     // field, add its round trip, then move this number. Minor 2 added
-    // `needsNoGps` (its describe block below).
-    expect(TOUR_MANIFEST_MINOR).toBe(2);
+    // `needsNoGps`, minor 3 the tour details (their describe blocks
+    // below).
+    expect(TOUR_MANIFEST_MINOR).toBe(3);
   });
 
   it('a version 1 document carries no baked spots (the field is version 2)', () => {
@@ -623,5 +624,175 @@ describe('a tour that needs no GPS (Tour Viewer QR-first, owner decision Q-QF-1)
     expect(
       parseTourManifest({ version: 1, objects: [], needsNoGps: true })
     ).not.toHaveProperty('needsNoGps');
+  });
+});
+
+describe('tour details (minor 3, tour editor plan 2026-10-17-1816, W2, D15)', () => {
+  // Why: a tour gained a description, a cover (one of its own images) and
+  // a contact the visitor's error messages show. They are additive: a
+  // minor-2 reader opens such a tour and shows it without them, a minor-2
+  // writer refuses to save it (so they are never dropped), and a tour
+  // without them is written exactly as before. They are cosmetic, so a bad
+  // value costs the value, never the tour - a deleted cover photo
+  // included.
+  const asset = { id: 'art', path: 'content/art.png', width: 640, height: 480 };
+  const details = {
+    description: 'Up to the castle and back.',
+    cover: 'f1',
+    contact: 'guide@example.org',
+  };
+
+  it('reads and round-trips the details, written at minor 3', () => {
+    const manifest = parseTourManifest({
+      version: 2,
+      minor: 3,
+      objects: [pin, photo],
+      ...details,
+    });
+    expect(manifest).toMatchObject(details);
+    const written = JSON.parse(serializeTourManifest(manifest)) as {
+      version: number;
+      minor: number;
+    };
+    expect(written).toMatchObject({ version: 2, minor: 3, ...details });
+    expect(parseTourManifest(written)).toEqual(manifest);
+  });
+
+  it('each detail alone needs minor 3', () => {
+    for (const [field, value] of Object.entries(details)) {
+      const manifest = parseTourManifest({
+        version: 2,
+        minor: 3,
+        objects: [photo],
+        [field]: value,
+      });
+      const written = JSON.parse(serializeTourManifest(manifest)) as {
+        minor: number;
+      };
+      expect(written.minor, field).toBe(3);
+    }
+  });
+
+  it('a cover may be an image asset as well as a placed photo, never another kind', () => {
+    const manifest = parseTourManifest({
+      version: 2,
+      minor: 3,
+      objects: [pin],
+      assets: [asset, { id: 'song', path: 'content/song.mp3' }],
+      cover: 'art',
+    });
+    expect(manifest.cover).toBe('art');
+    expect(
+      parseTourManifest({
+        version: 2,
+        minor: 3,
+        objects: [pin],
+        assets: [{ id: 'song', path: 'content/song.mp3' }],
+        cover: 'song',
+      })
+    ).not.toHaveProperty('cover');
+    // A pin is not an image either.
+    expect(
+      parseTourManifest({ version: 2, minor: 3, objects: [pin], cover: 'p1' })
+    ).not.toHaveProperty('cover');
+  });
+
+  it('a bad detail is dropped with its reason, and the tour still opens', () => {
+    const dropped: string[] = [];
+    const manifest = parseTourManifest(
+      {
+        version: 2,
+        minor: 3,
+        objects: [pin],
+        description: 'Fine.',
+        cover: 'f1',
+        contact: 'javascript:alert(1)',
+      },
+      {
+        onDropped: (drop) => {
+          dropped.push(`${drop.field}: ${drop.reason}`);
+        },
+      }
+    );
+    expect(manifest.description).toBe('Fine.');
+    expect(manifest).not.toHaveProperty('cover');
+    expect(manifest).not.toHaveProperty('contact');
+    expect(dropped).toEqual([
+      'cover: "cover" names no image of this tour',
+      expect.stringMatching(/^contact: /),
+    ]);
+  });
+
+  it('the writer drops a cover whose image went (a deleted photo), and says so', () => {
+    const manifest = parseTourManifest({
+      version: 2,
+      minor: 3,
+      objects: [pin, photo],
+      cover: 'f1',
+    });
+    const withoutPhoto = { ...manifest, objects: [manifest.objects[0]!] };
+    const dropped: string[] = [];
+    const written = JSON.parse(
+      serializeTourManifest(withoutPhoto, {
+        onDropped: (drop) => {
+          dropped.push(drop.field);
+        },
+      })
+    ) as Record<string, unknown>;
+    expect(written).not.toHaveProperty('cover');
+    expect(dropped).toEqual(['cover']);
+    // Nothing else of version 2 left: written as version 1, as before.
+    expect(written).toEqual({ version: 1, objects: withoutPhoto.objects });
+  });
+
+  it('the writer refuses a description or contact its reader would drop: a programming error fails loud', () => {
+    const manifest = parseTourManifest({ version: 2, minor: 3, objects: [] });
+    expect(() =>
+      serializeTourManifest({ ...manifest, contact: 'call me' })
+    ).toThrow(/"contact" must be an e-mail address/);
+    expect(() =>
+      serializeTourManifest({ ...manifest, description: '   ' })
+    ).toThrow(/"description" is empty/);
+  });
+
+  it('a minor-2 reader meets the details as unknown fields: the same tour without them', () => {
+    // What an older reader does with the new fields is what this reader
+    // does with any unknown field: ignore it. So the minor-3 document,
+    // details removed, is exactly the tour an older reader shows.
+    const withDetails = parseTourManifest({
+      version: 2,
+      minor: 3,
+      title: 'The castle',
+      objects: [pin, photo],
+      ...details,
+    });
+    const asOlder = parseTourManifest({
+      version: 2,
+      minor: 3,
+      title: 'The castle',
+      objects: [pin, photo],
+      futureField: { anything: true },
+    });
+    const { description, cover, contact, ...rest } = withDetails;
+    expect({ description, cover, contact }).toEqual(details);
+    expect(rest).toEqual(asOlder);
+  });
+
+  it("a newer minor's malformed details are dropped like this minor's", () => {
+    expect(
+      parseTourManifest({
+        version: 2,
+        minor: TOUR_MANIFEST_MINOR + 1,
+        objects: [],
+        description: 42,
+        contact: 'ftp://x',
+      })
+    ).toEqual(expect.not.objectContaining({ description: expect.anything() }));
+  });
+
+  it('a version 1 document carries no details (the fields are version 2)', () => {
+    expect(
+      parseTourManifest({ version: 1, objects: [photo], ...details })
+    ).not.toHaveProperty('description');
   });
 });

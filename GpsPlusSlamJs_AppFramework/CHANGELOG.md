@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Tour details in `tour.json`** (`ar/tour-manifest`, format version 2,
+  minor 3; the checks in the new `ar/tour-details`): an optional
+  `description` (at most 2000 characters), `cover` (the id of one of the
+  tour's images: a placed photo or an image asset) and `contact` (an
+  e-mail address, bare or `mailto:`, or an http(s) link without a user
+  name). `TOUR_MANIFEST_MINOR` is now 3: a tour carrying any of them is
+  written at minor 3, so an older writer refuses to save it rather than
+  drop them, while an older reader opens it and ignores them. The details
+  are cosmetic, so a reader DROPS a value that fails its check instead of
+  failing the tour, and reports it through the new optional
+  `parseTourManifest(data, { onDropped })`; the writer leaves out a cover
+  whose image went (reported the same way) and refuses any other value its
+  reader would drop. `checkTourDescription`, `checkTourContact`,
+  `checkTourCover`, `tourContactHref`, `tourImageIds`, `tourCoverEntry`
+  and `parseTourDetails` are the
+  same checks for an app's own fields and for a later format version.
+
 ### Changed
 
 - Requires `gps-plus-slam-js` ^1.26.2. In 1.26.2 a solve that stores a QR code sighting's votes keeps the code's rotation against the compass cold start when those votes span 5 m or more (see that package's changelog). `buildQrGpsVotes` stamps each call with `Date.now()`, and the core treats votes sharing one timestamp as one sighting: give each code's sighting its own call.

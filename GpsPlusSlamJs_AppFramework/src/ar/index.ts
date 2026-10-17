@@ -282,7 +282,24 @@ export {
   createEmptyTourManifest,
   parseTourManifest,
   serializeTourManifest,
+  type TourManifestReadOptions,
 } from './tour-manifest.js';
+export {
+  TOUR_CONTACT_MAX_CHARS,
+  TOUR_DESCRIPTION_MAX_CHARS,
+  checkTourContact,
+  checkTourCover,
+  checkTourDescription,
+  parseTourDetails,
+  tourContactHref,
+  tourCoverEntry,
+  tourImageIds,
+  type TourDetailCheck,
+  type TourDetails,
+  type TourDetailsDrop,
+  type TourDetailsField,
+  type TourImages,
+} from './tour-details.js';
 export {
   TOUR_MANIFEST_ENTRY,
   TOUR_CONTENT_FOLDER,

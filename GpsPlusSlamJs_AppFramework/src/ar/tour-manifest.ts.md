@@ -13,15 +13,18 @@ tour kit plan K1 and §8 D7
 ## Public API
 
 - `TOUR_MANIFEST_VERSION = 2` (the format's major number) and
-  `TOUR_MANIFEST_MINOR = 2` (the newest additive revision this module
-  knows; minor 1 added `captureSpots`, minor 2 `needsNoGps`).
-- `parseTourManifest(data: unknown): TourManifest` - validates every field;
-  throws `TourManifestValidationError` naming the object
-  (`"objects[3].geo.lat" …`, `"stations[0].steps[2].block.asset" …`).
-  Unknown kinds and duplicate ids reject - except in a file of a NEWER
-  minor, where an unknown value of a closed list degrades (below). A
-  version 1 document MIGRATES.
-- `serializeTourManifest(manifest): string` - re-validates through the
+  `TOUR_MANIFEST_MINOR = 3` (the newest additive revision this module
+  knows; minor 1 added `captureSpots`, minor 2 `needsNoGps`, minor 3 the
+  tour details).
+- `parseTourManifest(data: unknown, options?: TourManifestReadOptions): TourManifest`
+  - validates every field;
+    throws `TourManifestValidationError` naming the object
+    (`"objects[3].geo.lat" …`, `"stations[0].steps[2].block.asset" …`).
+    Unknown kinds and duplicate ids reject - except in a file of a NEWER
+    minor, where an unknown value of a closed list degrades (below). A
+    version 1 document MIGRATES. `options.onDropped(drop)` hears each tour
+    detail left out (below).
+- `serializeTourManifest(manifest, options?): string` - re-validates through the
   reader, refuses a manifest of a newer minor, then pretty-prints - as
   `{ version: 1, objects }` when nothing in it needs version 2, else at
   the lowest minor its content needs (below).
@@ -83,6 +86,32 @@ order: "fixed", objects: [], assets: [], stations: [] }`, the starter
   this module); a tour flagged with stations that have no printed code
   cannot reach them by position - the editor is meant to warn.
 
+## Tour details (minor 3, tour editor plan 2026-10-17-1816, W2, D15)
+
+- `description?`, `cover?`, `contact?` (`TourDetails`, checked by
+  `tour-details.ts`): a few sentences on the tour; the id of one of its
+  images - a placed photo's or an image asset's (a pin, a model or an
+  audio asset is not an image); an e-mail address or an http(s) link the
+  visitor's error messages show.
+- **Dropped, never failed, by the reader, at every minor**: a detail that
+  fails its check (a deleted cover photo, a hand-edited contact) is left
+  out and reported through `onDropped`; the tour opens. This departs on
+  purpose from the strict rule for this reader's own minor: the details
+  are cosmetic, and losing the tour over one would be the wrong trade.
+- **The writer** leaves out a cover whose image is no longer in the tour
+  (reported through its own `onDropped`), so a Finish or a save that
+  deleted the cover photo still writes; a description or contact its
+  reader would drop is a programming error (the app checks with the same
+  functions) and throws.
+- Written at minor 3 (`minorNeeded`) when any is present. A minor-2
+  reader opens such a tour without them (unknown fields are ignored); a
+  minor-2 writer refuses to save it, so they are never dropped. A version
+  1 document carries none.
+- A hand-edited file whose description is too long loses it on the next
+  save (the reader dropped it): named, accepted.
+- Format version 3 (stations as parents, W3) reuses `parseTourDetails`
+  unchanged; minor-3 tours of the test period are not migrated (D5).
+
 ## The version policy (K1)
 
 - **Major (`version`).** 2 is read as is; 1 MIGRATES: its pins and photos
@@ -143,6 +172,8 @@ order: "fixed", objects: [], assets: [], stations: [] }`, the starter
   `imageHeight` (the plane's aspect without decoding), and may carry a
   label. `createdAtIso` must parse as a date.
 - `title` is optional and non-blank; `order` is `fixed | any | branch`.
+- `cover`, when kept, names a placed photo or an image asset of this
+  manifest.
 - Assets and stations are validated by `tour-stations.ts`, with the
   object ids passed in (an asset id must not be an object id: both name a
   content file by id).
@@ -171,8 +202,13 @@ parseTourManifest({ version: 1, objects: [] }).version; // 2 (migrated)
   refused; the baked capture spots: read and round trip, written at
   minor 1, a tour without them written as version 1 whatever minor it was
   read at, a null median kept, and each malformed capture or spot set
-  refused.
+  refused; the tour details: round trip at minor 3 (each alone too), a
+  cover on an image asset and never on a pin or an audio asset, a bad
+  detail dropped with its reason, the writer dropping a cover whose photo
+  went and refusing a bad description or contact, the details read as an
+  older reader's unknown fields, and none in a version 1 document.
 - `tour-manifest.property.test.ts` - serialize→parse is the identity and
   parse is idempotent over generated manifests; a generated v1 manifest
   migrates to the v2 manifest with the same objects, and migrating is
-  idempotent.
+  idempotent; generated details round-trip, a kept cover is always one of
+  the tour's photos, and minor 3 is written exactly when a detail is kept.

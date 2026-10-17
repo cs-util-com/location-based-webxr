@@ -54,6 +54,12 @@ import type { QrGeoPose } from './qr/qr-gps-vote.js';
 import { tourContentEntryName } from './tour-archive.js';
 import { tourMediaTypeOf, tourMediaTypeOfEntry } from './tour-media.js';
 import {
+  parseTourDetails,
+  tourImageIds,
+  type TourDetails,
+  type TourDetailsDrop,
+} from './tour-details.js';
+import {
   parseTourAssets,
   parseTourStations,
   type TourAsset,
@@ -81,8 +87,9 @@ export const TOUR_MANIFEST_VERSION = 2;
 
 /** The newest additive revision of version 2 this module knows. Minor 1
  *  added `captureSpots` (scan-pass plan S1); minor 2 added `needsNoGps`
- *  (Tour Viewer QR-first, owner decision Q-QF-1). */
-export const TOUR_MANIFEST_MINOR = 2;
+ *  (Tour Viewer QR-first, owner decision Q-QF-1); minor 3 the tour details
+ *  `description`, `cover` and `contact` (`tour-details.ts`). */
+export const TOUR_MANIFEST_MINOR = 3;
 
 /** Format versions this reader still opens by migrating them. */
 const LEGACY_VERSION = 1;
@@ -142,7 +149,7 @@ export interface TourCaptureSpots {
   captures: TourCapture[];
 }
 
-export interface TourManifest {
+export interface TourManifest extends TourDetails {
   version: typeof TOUR_MANIFEST_VERSION;
   /** The additive revision the file was written at (0 when absent). */
   minor: number;
@@ -164,6 +171,13 @@ export interface TourManifest {
    * usual", so a tour without the flag is written exactly as before.
    */
   needsNoGps?: true;
+  // Minor 3: `description`, `cover`, `contact` (`TourDetails`).
+}
+
+/** How a reader or writer reports a detail it left out (`tour-details.ts`):
+ *  a detail is cosmetic, so a bad one costs the detail, never the tour. */
+export interface TourManifestReadOptions {
+  readonly onDropped?: (drop: TourDetailsDrop) => void;
 }
 
 const ORDERS: ReadonlySet<string> = new Set(['fixed', 'any', 'branch']);
@@ -417,7 +431,8 @@ function orderOf(value: unknown, lenient: boolean): TourOrder {
 function parseV2Parts(
   data: Record<string, unknown>,
   objects: readonly TourObject[],
-  minor: number
+  minor: number,
+  options: TourManifestReadOptions
 ): Omit<TourManifest, 'version' | 'objects'> {
   const lenient = minor > TOUR_MANIFEST_MINOR;
   const assets = parseTourAssets(data.assets ?? [], {
@@ -430,9 +445,15 @@ function parseV2Parts(
   const captureSpots = lenient
     ? captureSpotsOrNone(data.captureSpots)
     : parseCaptureSpots(data.captureSpots);
+  // Dropped, never failed, at every minor: the details are cosmetic.
+  const { details, dropped } = parseTourDetails(data, {
+    imageIds: tourImageIds({ objects, assets }),
+  });
+  for (const drop of dropped) options.onDropped?.(drop);
   return {
     minor,
     ...(title === undefined ? {} : { title }),
+    ...details,
     order: orderOf(data.order, lenient),
     assets,
     stations: parseTourStations(data.stations ?? [], {
@@ -450,17 +471,25 @@ function parseV2Parts(
  * version 1 document to version 2. Throws
  * {@link TourManifestValidationError} naming the first violation.
  */
-export function parseTourManifest(data: unknown): TourManifest {
+export function parseTourManifest(
+  data: unknown,
+  options: TourManifestReadOptions = {}
+): TourManifest {
   if (!isRecord(data)) fail('manifest must be a JSON object');
   const version = formatVersionOf(data.version);
   const v2 = version === LEGACY_VERSION ? {} : data;
   const minor = minorOf(v2.minor);
   const objects = parseObjects(data.objects, minor > TOUR_MANIFEST_MINOR);
-  const parts = parseV2Parts(v2, objects, minor);
+  const parts = parseV2Parts(v2, objects, minor, options);
   return {
     version: TOUR_MANIFEST_VERSION,
     minor: parts.minor,
     ...(parts.title === undefined ? {} : { title: parts.title }),
+    ...(parts.description === undefined
+      ? {}
+      : { description: parts.description }),
+    ...(parts.cover === undefined ? {} : { cover: parts.cover }),
+    ...(parts.contact === undefined ? {} : { contact: parts.contact }),
     order: parts.order,
     objects,
     assets: parts.assets,
@@ -476,6 +505,13 @@ export function parseTourManifest(data: unknown): TourManifest {
  *  holds. Writing it, rather than the minor the file was read at, loses
  *  nothing: this module knows every field up to its own minor. */
 function minorNeeded(manifest: TourManifest): number {
+  if (
+    manifest.description !== undefined ||
+    manifest.cover !== undefined ||
+    manifest.contact !== undefined
+  ) {
+    return 3;
+  }
   if (manifest.needsNoGps === true) return 2;
   return manifest.captureSpots === undefined ? 0 : 1;
 }
@@ -501,9 +537,22 @@ function needsVersion2(manifest: TourManifest): boolean {
  * (`{ version: 1, objects }`), which builds from before K1 open (R10); any
  * other is written at the lowest minor its content needs, so a tour gains
  * a newer minor, and older writers' refusal, only with a newer field.
+ *
+ * Of the details, only a cover whose image went (a deleted photo) is left
+ * out, reported through `onDropped`: a description or a contact the
+ * reader would drop is a programming error here (the editor checks them
+ * with the same rules) and fails loud.
  */
-export function serializeTourManifest(manifest: TourManifest): string {
-  const parsed = parseTourManifest(manifest);
+export function serializeTourManifest(
+  manifest: TourManifest,
+  options: TourManifestReadOptions = {}
+): string {
+  const parsed = parseTourManifest(manifest, {
+    onDropped: (drop) => {
+      if (drop.field !== 'cover') fail(drop.reason);
+      options.onDropped?.(drop);
+    },
+  });
   if (parsed.minor > TOUR_MANIFEST_MINOR) {
     fail(
       `this tour was made with a newer version of the app (format ${String(TOUR_MANIFEST_VERSION)}.${String(parsed.minor)}); saving it here would drop what this version cannot read`
