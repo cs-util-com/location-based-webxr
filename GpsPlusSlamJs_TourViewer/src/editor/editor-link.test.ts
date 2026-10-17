@@ -14,7 +14,7 @@ import { OpenRemoteArchiveError } from "gps-plus-slam-app-framework/storage";
 import { describe, expect, it, vi } from "vitest";
 
 import { describeOpenError } from "../open-errors.js";
-import { fetchTourFile, linkOpenErrorText } from "./editor-link.js";
+import { NOT_A_LINK, fetchTourFile, linkOpenErrorText } from "./editor-link.js";
 
 function fakeArchive(bytes: Uint8Array, url: string) {
   return {
@@ -76,7 +76,7 @@ describe("fetchTourFile", () => {
   it("refuses what is not a web link, before any request", async () => {
     const open = vi.fn();
     for (const text of ["", "   ", "castle.zip", "ftp://example.test/a.zip"]) {
-      await expect(fetchTourFile(text, { open })).rejects.toThrow(/link/i);
+      await expect(fetchTourFile(text, { open })).rejects.toThrow(NOT_A_LINK);
     }
     expect(open).not.toHaveBeenCalled();
   });

@@ -30,7 +30,8 @@ saved exactly as a chosen file is.
   viewer's `describeOpenError`, except for `cors`, whose viewer text names
   the viewer's "Open the downloaded file" button; here it says to download
   the file and choose it above.
-- `NOT_A_LINK`, `OpenArchive`, `FetchTourOptions`.
+- `NOT_A_LINK` (the sentence for text that is not a link), `FetchTourOptions`;
+  the transport type `OpenArchive` is module-private.
 
 ## Invariants & assumptions
 

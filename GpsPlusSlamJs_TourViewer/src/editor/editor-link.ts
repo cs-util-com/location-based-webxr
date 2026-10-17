@@ -20,7 +20,7 @@ import { describeOpenError } from "../open-errors.js";
 import { archiveFileName, readArchiveInSlices } from "../tour-session.js";
 
 /** What the editor's link open needs of the transport; injected in tests. */
-export type OpenArchive = (
+type OpenArchive = (
   url: string,
   options: Pick<OpenRemoteArchiveOptions, "corsProxyBaseUrl" | "warm">,
 ) => Promise<Pick<OpenedArchive, "size" | "source" | "dispose">>;
