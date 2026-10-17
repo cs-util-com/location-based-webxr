@@ -3,7 +3,8 @@
  * composition root. Opens a tour (a file chosen or dropped, or the
  * sample), draws it in the chosen variant 1 layout (full map, the left
  * rail, the card beside the selected marker), and edits it: a pin's text,
- * Move and Delete with Undo, and a Save that downloads the tour to put in
+ * Move and Delete, undo and redo of every edit (Ctrl+Z, Ctrl+Shift+Z,
+ * Ctrl+Y; W2), and a Save that downloads the tour to put in
  * place of the old file - or, where the browser allows it (Chromium's file
  * picker, M6 E2b-1), writes the opened file in place - by itself too, a
  * few seconds after a change (M6 E2b-2, `autosave.ts`). The tour's name in
@@ -97,15 +98,10 @@ const NOTHING_TO_SAVE =
 const EDGE_PX = 12;
 /** Below this width the rail starts folded (the prototype's 760 px). */
 const NARROW_PX = 760;
-/** An undo tapped after a save already wrote the delete (E2b plan
- *  review #2). The page ends an undo when a save starts, so this is the
- *  defensive answer, not an expected path. */
-const UNDO_TOO_LATE =
-  "That delete is already in the saved file - it cannot be undone here.";
-
-/** How long a delete can be undone - the phone's hold (`object-editing.ts`
- *  `OUTCOME_HOLD_MS`). A Save ends it sooner: the saved file no longer
- *  carries the object. */
+/** How long a delete's toast offers its Undo - the phone's hold
+ *  (`object-editing.ts` `OUTCOME_HOLD_MS`). Ctrl+Z undoes it later too
+ *  (W2: the session's edit stack), also after a save wrote it; a newer
+ *  edit ends the toast, whose Undo would no longer take back the delete. */
 const UNDO_MS = 8000;
 
 /** Said when "Delete it" did not land: nothing was thrown away. */
@@ -245,7 +241,8 @@ let moving: { id: string; drop: { lat: number; lng: number } | null } | null =
 const moved = new Set<string>();
 /** The card's last outcome line, for the item it was said about. */
 let message: { id: string; text: string; refused?: true } | null = null;
-/** The open delete's Undo toast, until it times out or a Save starts. */
+/** The open delete's Undo toast, until it times out or a newer edit
+ *  comes. */
 let undoOffer: { toast: HTMLElement; timer: number } | null = null;
 /** The save that runs was started by autosave (M6 E2b-2). */
 let autoRunning = false;
@@ -255,10 +252,11 @@ let saveQueued = false;
 let refusalToast: HTMLElement | null = null;
 
 /** Edits being made that a save must not cut into (M6 E2b-2, the E2b plan
- *  review #3, #7): a delete's undo (a save that writes the delete ends it),
- *  typing not yet committed, a marker being moved. */
+ *  review #3, #7): typing not yet committed, a marker being moved. A
+ *  delete's undo no longer holds a save (W2): an undo after the save that
+ *  wrote the delete brings the note back as a change of its own. */
 function editing(): boolean {
-  return undoOffer !== null || card.dirty() || moving !== null;
+  return card.dirty() || moving !== null;
 }
 
 /** The page saves by itself, a few seconds after a committed change, while
@@ -533,8 +531,36 @@ function endUndo(): void {
   clearTimeout(undoOffer.timer);
   undoOffer.toast.remove();
   undoOffer = null;
-  // An autosave held for the undo window may start now.
-  autosave.poke();
+}
+
+/** Said for each undo or redo (the async-UI rule's confirmation: the keys
+ *  change things off screen as often as on it). */
+const STEP_WORDS = {
+  undo: { done: "Undone", none: "Nothing to undo." },
+  redo: { done: "Redone", none: "Nothing to redo." },
+} as const;
+
+/** Ctrl+Z / Ctrl+Shift+Z (and Ctrl+Y), and the delete toast's Undo: one
+ *  step of the session's edit stack (W2), an edit like any other. */
+function runStep(which: "undo" | "redo"): void {
+  if (editor === null) return;
+  if (moving !== null) cancelMove();
+  card.commit();
+  const outcome = which === "undo" ? editor.undo() : editor.redo();
+  message = null;
+  refresh();
+  if (outcome.kind === "refused") {
+    // A delete toast stays: its Undo can be tapped again once the save ends.
+    toast(outcome.reason);
+    return;
+  }
+  endUndo();
+  if (outcome.kind === "nothing") {
+    toast(STEP_WORDS[which].none);
+    return;
+  }
+  toast(`${STEP_WORDS[which].done}: ${outcome.what}.`);
+  autosave.changed();
 }
 
 function startMove(id: string): void {
@@ -556,6 +582,7 @@ function finishMove(): void {
       if (outcome.kind === "moved") {
         moved.add(done.id);
         message = { id: done.id, text: "Moved - not saved yet." };
+        endUndo();
         autosave.changed();
       } else {
         // Said, never dropped (PR #622 bot finding C).
@@ -631,6 +658,10 @@ const card = createEditorCard(
   },
   {
     loadImage: (item) => {
+      // A photo an undo brought back after a save took it out: its picture
+      // is the session's until the next save writes it (W2).
+      const kept = editor?.pictureOf(item.id);
+      if (kept !== undefined) return Promise.resolve(kept);
       const open = photos.current() ?? session;
       const source = photoSource(item);
       if (open === null || source === null) {
@@ -663,7 +694,10 @@ const card = createEditorCard(
       card.note(message?.text ?? "");
       renderSaveState();
       // Committed (or given back unchanged): the typing hold is over.
-      if (outcome.kind === "edited") autosave.changed();
+      if (outcome.kind === "edited") {
+        endUndo();
+        autosave.changed();
+      }
       autosave.poke();
     },
     onMove: startMove,
@@ -672,9 +706,7 @@ const card = createEditorCard(
     onDelete: (id) => {
       if (editor === null) return;
       const item = model?.items.find((i) => i.id === id);
-      // The earlier undo ends BEFORE the delete: an autosave it releases
-      // checks the file first and then finds this delete's undo, so it
-      // waits (the saves it would snapshot hold no delete with a live undo).
+      // One delete toast at a time: its Undo takes back the newest edit.
       endUndo();
       const outcome = editor.remove(id);
       if (outcome.kind === "refused") {
@@ -685,19 +717,20 @@ const card = createEditorCard(
         toast(outcome.reason);
         return;
       }
-      const { undo } = outcome;
       select(null);
       refresh();
+      // The toast's Undo is the stack's (W2), while this delete is the
+      // newest edit; a newer one ends the toast.
+      const mine = editor;
+      const at = editor.revision();
       const t = toast(`Deleted ${item?.title ?? "the note"}`, {
         label: "Undo",
         run: () => {
-          // Undone while the window still holds autosave off.
-          const back = undo();
-          endUndo();
-          // Refused once a save wrote the delete: said, never a dead tap.
-          if (!back) toast(UNDO_TOO_LATE);
-          refresh();
-          if (back) autosave.changed();
+          if (editor !== mine || mine.revision() !== at) {
+            endUndo();
+            return;
+          }
+          runStep("undo");
         },
       });
       undoOffer = {
@@ -805,6 +838,7 @@ const details = wireDetailsDialog({
       reason: "No tour is open.",
     },
   onApplied: (kind) => {
+    if (kind === "changed") endUndo();
     refresh();
     toast(kind === "changed" ? DETAILS_CHANGED : DETAILS_UNCHANGED);
     if (kind === "changed") autosave.changed();
@@ -823,6 +857,41 @@ tourName.addEventListener("click", () => {
   card.commit();
   details.open();
 });
+
+/** Where a key goes to a field's own undo (typing in the card, a dialog,
+ *  the search): the page's undo stays out of it. */
+function inField(at: EventTarget | null): boolean {
+  return (
+    at instanceof HTMLElement &&
+    (at.isContentEditable ||
+      at instanceof HTMLInputElement ||
+      at instanceof HTMLTextAreaElement ||
+      at instanceof HTMLSelectElement)
+  );
+}
+
+/** Whether `event` is the letter `letter` with Ctrl (or Cmd) and no Alt:
+ *  by the key's letter, so Dvorak's and Colemak's work; by its position
+ *  only where the layout's letter is not Latin (E2b-1 review #6). */
+function commandKey(event: KeyboardEvent, letter: string): boolean {
+  const byLetter =
+    event.key.toLowerCase() === letter ||
+    (event.code === `Key${letter.toUpperCase()}` &&
+      !/^[a-z]$/i.test(event.key));
+  return (event.ctrlKey || event.metaKey) && !event.altKey && byLetter;
+}
+
+/** Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y on the page (W2); whether the key was
+ *  the page's. Inside a field, and over a dialog, they are left alone. */
+function undoKeys(event: KeyboardEvent): boolean {
+  const z = commandKey(event, "z");
+  const y = commandKey(event, "y");
+  if (!z && !y) return false;
+  if (inField(event.target) || !modal.hidden || details.isOpen()) return true;
+  event.preventDefault();
+  runStep(y || event.shiftKey ? "redo" : "undo");
+  return true;
+}
 
 function showModal(on: boolean): void {
   modal.hidden = !on;
@@ -851,16 +920,12 @@ window.addEventListener("beforeunload", (event) => {
 document.addEventListener("keydown", (event) => {
   // Ctrl+S / Cmd+S saves the tour; the browser's "Save page as" never opens
   // here, open tour or not (E2b plan review #10).
-  // By the key's letter, so Dvorak's and Colemak's S work; by its
-  // position only where the layout's letter is not Latin (E2b-1 review #6).
-  const isS =
-    event.key.toLowerCase() === "s" ||
-    (event.code === "KeyS" && !/^[a-z]$/i.test(event.key));
-  if ((event.ctrlKey || event.metaKey) && !event.altKey && isS) {
+  if (commandKey(event, "s")) {
     event.preventDefault();
     if (modal.hidden) void runSave();
     return;
   }
+  if (undoKeys(event)) return;
   if (event.key !== "Escape") return;
   if (details.isOpen()) {
     details.close();
@@ -1047,11 +1112,16 @@ async function openFile(
   fileKey = outcome.session.archive.url;
   const writes = draft.writes();
   tourDraft = writes;
+  const opened = outcome.session;
   editor = createEditorSession({
     session: outcome.session,
     manifest: outcome.manifest,
     levels: outcome.levels,
     fileName: outcome.fileName,
+    // A deleted photo's picture, from the copy the page reads now (the
+    // opened file stops reading once something else rewrote it), for an
+    // undo after a save took it out (W2).
+    loadPhoto: (image) => (photos.current() ?? opened).loadContentEntry(image),
     // Bound to this tour: once another opens, this session's late writes
     // are dropped (E2c review #6).
     draft: writes,
@@ -1105,6 +1175,7 @@ function offerDraft(mine: EditorSession, offer: EditorDraftOffer): void {
           card.commit();
           const applied = mine.restore(offer);
           draft.restored();
+          if (applied.changed + applied.deleted > 0) endUndo();
           refresh();
           toast(restoredLine(applied.changed + applied.deleted, offer));
           // Restored work is pending work: saved by itself like any edit.
@@ -1368,9 +1439,6 @@ async function saveTour(mode: "explicit" | "auto"): Promise<AutosaveOutcome> {
       }
       return "saved";
     }
-    // The saved file will not carry a deleted object any more: its Undo
-    // ends. (An autosave never runs while one is live.)
-    if (mode === "explicit") endUndo();
     return await buildAndDeliver(mine, mode);
   } finally {
     // Every path above has said its own state; this only lets go - and
@@ -1410,8 +1478,8 @@ async function buildAndDeliver(
       return "failed";
     }
   }
-  // An edit began while the file was checked: the session would snapshot
-  // it, and a delete's undo would be lost - the autosave waits (E2b plan
+  // An edit began while the file was checked (typing, a move): the
+  // session would snapshot it half made - the autosave waits (E2b plan
   // review #3).
   if (mode === "auto" && editing()) {
     saving = false;
@@ -1513,7 +1581,10 @@ noGpsInput.addEventListener("change", () => {
   const outcome = editor.setNeedsNoGps(noGpsInput.checked);
   renderNoGps();
   renderSaveState();
-  if (outcome.kind === "changed") autosave.changed();
+  if (outcome.kind === "changed") {
+    endUndo();
+    autosave.changed();
+  }
 });
 // One handler for the drop box and its "Choose…" button (a click on the
 // button reaches the label too). The input's own click - the fallback's -

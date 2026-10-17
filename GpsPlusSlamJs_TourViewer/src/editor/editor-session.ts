@@ -30,17 +30,12 @@ import {
   rebuildFinishedTour,
 } from "../finish-rebuild.js";
 import { objectContentKey } from "../authoring-draft.js";
-import {
-  recordDelete,
-  recordUndoDelete,
-  type DraftObjectWrites,
-} from "../draft-actions.js";
+import { recordDelete, type DraftObjectWrites } from "../draft-actions.js";
 import {
   authoringObjects,
   deleteObject,
   moveObjectTo,
   pinTextEdit,
-  undoDelete,
   upsertPlaced,
   type AuthoringObject,
 } from "../object-edits.js";
@@ -54,10 +49,59 @@ import {
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 
-/** An edited or moved object (the editor places nothing new yet). */
+/** An edited or moved object, or one an undo brought back after a save
+ *  wrote its delete - a photo then with its picture's bytes, which the
+ *  saved file no longer carries (W2). */
 interface EditorEntry {
   readonly object: TourObject;
+  readonly blob?: Blob;
 }
+
+/** The tour as an undo step finds it: the objects with the edits, the
+ *  setting and the details. A step goes BACK to such a state, whatever was
+ *  saved since: what differs from the saved file is pending again. */
+interface EditState {
+  readonly objects: readonly TourObject[];
+  readonly noGps: boolean;
+  readonly details: EditorTourDetails;
+}
+
+interface UndoStep {
+  readonly state: EditState;
+  /** The edit in words: "the move of "Fountain"". */
+  readonly what: string;
+}
+
+/** How many steps are kept: enough for a working session, bounded. */
+const UNDO_LIMIT = 200;
+
+/** Said for an undo or a redo asked for while a save runs: the save's end
+ *  decides what the file carries, so the step waits (W2). */
+const SAVE_RUNNING = "A save is running - undo or redo once it has finished.";
+
+/** Said when an undo would bring back a photo a save already took out of
+ *  the file, and its picture could not be kept. */
+const PICTURE_GONE =
+  "This photo's picture is no longer at hand, so its delete cannot be undone here.";
+
+/** An object as the undo's words name it: its text, shortened, or what
+ *  it is. */
+function objectName(object: TourObject): string {
+  const label =
+    "label" in object && typeof object.label === "string"
+      ? object.label.trim()
+      : "";
+  if (label === "") return object.kind === "photo" ? "a photo" : "a note";
+  const chars = [...label];
+  return `"${chars.length > 40 ? `${chars.slice(0, 39).join("")}…` : label}"`;
+}
+
+/** The outcome of an undo or a redo: the step taken (in words), nothing
+ *  to take, or a refusal in words. */
+export type UndoOutcome =
+  | { readonly kind: "undone" | "redone"; readonly what: string }
+  | { readonly kind: "nothing" }
+  | EditorRefusal;
 
 export interface EditorSave {
   readonly blob: Blob;
@@ -229,17 +273,28 @@ export interface EditorSession {
    *  id the tour no longer carries. Throws for a position the tour
    *  cannot hold (`moveObjectTo`). */
   move(id: string, lat: number, lon: number): { kind: "moved" } | EditorRefusal;
-  /** Delete, with its undo, which refuses (false) once a save wrote the
-   *  delete - the saved file no longer carries the object or its photo
-   *  (E2a review #9). Refused, deleting nothing, for an id the tour no
-   *  longer carries. */
-  remove(id: string): { kind: "deleted"; undo: () => boolean } | EditorRefusal;
+  /** Delete (undone by `undo`, also after a save wrote it: a photo's
+   *  picture is kept for that). Refused, deleting nothing, for an id the
+   *  tour no longer carries. */
+  remove(id: string): { kind: "deleted" } | EditorRefusal;
+  /** Take back the newest edit (W2): the tour goes back to how it stood
+   *  before it - an edit like any other, pending until saved and backed up
+   *  by the draft. Refused while a save runs. */
+  undo(): UndoOutcome;
+  /** Take an undone edit again; a new edit drops what could be redone. */
+  redo(): UndoOutcome;
+  /** Counts every edit, undo and redo: a page holding an older offer
+   *  (the delete toast's Undo) tells whether it is still the newest. */
+  revision(): number;
+  /** A photo's picture this session holds and the opened file may not (one
+   *  an undo brought back after a save took it out), for the card. */
+  pictureOf(id: string): Blob | undefined;
   /** Put a draft's work back by the session's own rules (M6 E2c): an
    *  object the tour carries gets the draft's version, a deletion its
    *  tombstone; live work on an id wins, and an id the tour no longer
    *  carries is skipped. The settings likewise: a change made here since
    *  the open wins, and an applied one counts among `changed`. What was
-   *  applied is written to the draft again. */
+   *  applied is written to the draft again; it is one step to undo. */
   restore(work: EditorRestore): { changed: number; deleted: number };
   /** Build the saved zip from the newest bytes; edits made while it runs
    *  wait for the next save. Saves run one after another: one called
@@ -256,6 +311,10 @@ export function createEditorSession(input: {
   /** Where every edit, move, delete and undo is backed up (M6 E2c); none
    *  in a test that does not need it. */
   readonly draft?: EditorSessionDraft;
+  /** Read a photo's picture by its entry (`content/<id>.jpg`) when it is
+   *  deleted, so an undo after a save can bring it back (default: the
+   *  opened file's; the page reads its copy of what it last wrote). */
+  readonly loadPhoto?: (image: string) => Promise<Blob>;
 }): EditorSession {
   const { session, levels } = input;
   let manifest = input.manifest;
@@ -288,11 +347,15 @@ export function createEditorSession(input: {
   /** The name the page shows when the tour has no title. */
   const shownName = input.fileName ?? savedName;
 
-  /** Saves whose snapshot was taken: a delete's undo is refused once a
-   *  save snapshotted AFTER it - that save writes the delete - and not for
-   *  a save already running when it was made (E2b plan review #2, the
-   *  third E2p review #6). */
-  let snapshots = 0;
+  /** The edit stack (W2): the states to go back to, newest last, and the
+   *  undone ones to go to again. */
+  const undoSteps: UndoStep[] = [];
+  const redoSteps: UndoStep[] = [];
+  let revisionCount = 0;
+  /** Deleted photos' pictures, for an undo after a save took them out. */
+  const pictures = new Map<string, Blob>();
+  const loadPhoto =
+    input.loadPhoto ?? ((image: string) => session.loadContentEntry(image));
   /** The saves started and not yet ended, and the end of the last. */
   let inFlight = 0;
   let tail: Promise<unknown> = Promise.resolve();
@@ -384,6 +447,183 @@ export function createEditorSession(input: {
     void input.draft?.saveObject(object);
   }
 
+  /** `object` as an entry, keeping the picture its entry carries. */
+  function entryOf(object: TourObject): EditorEntry {
+    const blob = placed.find((p) => p.object.id === object.id)?.blob;
+    return blob === undefined ? { object } : { object, blob };
+  }
+
+  function stateNow(): EditState {
+    return { objects: objects().map((o) => o.object), noGps, details };
+  }
+
+  /** An edit was made from `before`: one step to undo, and nothing left
+   *  to redo. */
+  function edited(what: string, before: EditState): void {
+    undoSteps.push({ state: before, what });
+    if (undoSteps.length > UNDO_LIMIT) undoSteps.shift();
+    redoSteps.length = 0;
+    revisionCount += 1;
+  }
+
+  /** Keep a deleted photo's picture for an undo after a save. */
+  function keepPicture(found: AuthoringObject<EditorEntry>): void {
+    const object = found.object;
+    if (object.kind !== "photo") return;
+    const id = object.id;
+    const carried = found.placed?.blob;
+    if (carried !== undefined) {
+      pictures.set(id, carried);
+      return;
+    }
+    if (pictures.has(id)) return;
+    // Read now, while the copy that carries it is at hand; a read that
+    // fails leaves an undo after a save refused, in words.
+    loadPhoto(object.image).then(
+      (blob) => {
+        pictures.set(id, blob);
+      },
+      () => undefined,
+    );
+  }
+
+  /** Where an id stands against the saved file. */
+  function standing(
+    id: string,
+    entries: readonly EditorEntry[],
+    gone: readonly string[],
+  ): EditorEntry | "deleted" | null {
+    if (gone.includes(id)) return "deleted";
+    return entries.find((p) => p.object.id === id) ?? null;
+  }
+
+  /** The draft follows a step: each id whose standing changed is written
+   *  as the edits' own writes would (a record before its tombstone goes,
+   *  as `recordUndoDelete` does). */
+  function backUpStep(
+    entries: readonly EditorEntry[],
+    gone: readonly string[],
+  ): void {
+    const draft = input.draft;
+    if (draft === undefined) return;
+    const ids = new Set([
+      ...placed.map((p) => p.object.id),
+      ...deleted,
+      ...entries.map((p) => p.object.id),
+      ...gone,
+    ]);
+    for (const id of ids) {
+      backUpId(
+        draft,
+        id,
+        standing(id, placed, deleted),
+        standing(id, entries, gone),
+      );
+    }
+  }
+
+  /** One id's draft writes for a step from `was` to `now`. */
+  function backUpId(
+    draft: EditorSessionDraft,
+    id: string,
+    was: EditorEntry | "deleted" | null,
+    now: EditorEntry | "deleted" | null,
+  ): void {
+    if (now === "deleted") {
+      if (was !== "deleted") void draft.saveDeletion(id);
+      return;
+    }
+    if (now === null) {
+      if (was === "deleted") void draft.forgetDeletion(id);
+      else if (was !== null) void draft.forgetObject(id);
+      return;
+    }
+    const same =
+      was !== null &&
+      was !== "deleted" &&
+      objectContentKey(was.object) === objectContentKey(now.object);
+    if (!same) void draft.saveObject(now.object, now.blob);
+    if (was === "deleted") void draft.forgetDeletion(id);
+  }
+
+  /** The tour back at `target`, measured against the file as saved now;
+   *  a refusal, changing nothing, when a photo it brings back has no
+   *  picture. */
+  function goTo(target: EditState): EditorRefusal | null {
+    const entries = entriesFor(target);
+    if (entries === null) return { kind: "refused", reason: PICTURE_GONE };
+    const kept = new Set(target.objects.map((o) => o.id));
+    const gone = manifest.objects
+      .filter((o) => !kept.has(o.id))
+      .map((o) => o.id);
+    backUpStep(entries, gone);
+    placed = entries;
+    deleted = gone;
+    settingsTo(target);
+    return null;
+  }
+
+  /** The entries that make the saved file look like `target`; null when a
+   *  photo it brings back has no picture. */
+  function entriesFor(target: EditState): EditorEntry[] | null {
+    const hosted = new Map(manifest.objects.map((o) => [o.id, o]));
+    const entries: EditorEntry[] = [];
+    for (const object of target.objects) {
+      const host = hosted.get(object.id);
+      if (
+        host !== undefined &&
+        objectContentKey(host) === objectContentKey(object)
+      ) {
+        continue;
+      }
+      const blob =
+        placed.find((p) => p.object.id === object.id)?.blob ??
+        pictures.get(object.id);
+      if (host === undefined && object.kind === "photo" && blob === undefined) {
+        return null;
+      }
+      entries.push(blob === undefined ? { object } : { object, blob });
+    }
+    return entries;
+  }
+
+  /** The setting and the details at `target`'s, backed up when they move. */
+  function settingsTo(target: EditState): void {
+    const settingMoved = target.noGps !== noGps;
+    const detailsMoved = DETAIL_FIELDS.some(
+      (f) => target.details[f] !== details[f],
+    );
+    noGps = target.noGps;
+    details = target.details;
+    if (settingMoved) noGpsTouched = true;
+    if (detailsMoved) {
+      detailsTouched = true;
+      detailsRecorded = true;
+    }
+    if (settingMoved || detailsMoved) {
+      void input.draft?.saveSettings(record());
+    }
+  }
+
+  /** One step from `from` (undo or redo), the state left behind kept on
+   *  `to`. */
+  function step(
+    from: UndoStep[],
+    to: UndoStep[],
+    kind: "undone" | "redone",
+  ): UndoOutcome {
+    if (inFlight > 0) return { kind: "refused", reason: SAVE_RUNNING };
+    const next = from.at(-1);
+    if (next === undefined) return { kind: "nothing" };
+    const here = stateNow();
+    const refused = goTo(next.state);
+    if (refused !== null) return refused;
+    from.pop();
+    to.push({ state: here, what: next.what });
+    revisionCount += 1;
+    return { kind, what: next.what };
+  }
+
   return {
     model() {
       return buildEditorModel({
@@ -408,6 +648,7 @@ export function createEditorSession(input: {
     },
     setNeedsNoGps(on) {
       if (on === noGps) return { kind: "unchanged" };
+      edited('the "needs no GPS" setting', stateNow());
       noGps = on;
       noGpsTouched = true;
       void input.draft?.saveSettings(record());
@@ -429,6 +670,7 @@ export function createEditorSession(input: {
       if (DETAIL_FIELDS.every((f) => checked.details[f] === now[f])) {
         return { kind: "unchanged" };
       }
+      edited("the tour details", stateNow());
       details = checked.details;
       detailsTouched = true;
       detailsRecorded = true;
@@ -451,7 +693,8 @@ export function createEditorSession(input: {
       if (found === undefined) return notInTour;
       const edit = pinTextEdit(found.object, text);
       if (edit.kind === "edited") {
-        placed = upsertPlaced(placed, { object: edit.after });
+        edited(`the text of ${objectName(edit.after)}`, stateNow());
+        placed = upsertPlaced(placed, entryOf(edit.after));
         backUp(edit.after);
         return { kind: "edited" };
       }
@@ -461,13 +704,16 @@ export function createEditorSession(input: {
       const found = find(id);
       if (found === undefined) return notInTour;
       const after = moveObjectTo(found.object, lat, lon);
-      placed = upsertPlaced(placed, { object: after });
+      edited(`the move of ${objectName(found.object)}`, stateNow());
+      placed = upsertPlaced(placed, entryOf(after));
       backUp(after);
       return { kind: "moved" };
     },
     remove(id) {
       const found = find(id);
       if (found === undefined) return notInTour;
+      edited(`the delete of ${objectName(found.object)}`, stateNow());
+      keepPicture(found);
       const gone = deleteObject({ placed, deleted }, found);
       placed = gone.placed;
       deleted = gone.deleted;
@@ -475,21 +721,22 @@ export function createEditorSession(input: {
       if (input.draft !== undefined) {
         void recordDelete(input.draft, id, gone.record.hosted);
       }
-      const at = snapshots;
-      const undo = (): boolean => {
-        if (snapshots > at) return false;
-        const back = undoDelete({ placed, deleted }, gone.record);
-        placed = back.placed;
-        deleted = back.deleted;
-        // An edited note's record comes back too: the delete removed it.
-        if (input.draft !== undefined) {
-          void recordUndoDelete(input.draft, gone.record);
-        }
-        return true;
-      };
-      return { kind: "deleted", undo };
+      return { kind: "deleted" };
+    },
+    undo() {
+      return step(undoSteps, redoSteps, "undone");
+    },
+    redo() {
+      return step(redoSteps, undoSteps, "redone");
+    },
+    revision() {
+      return revisionCount;
+    },
+    pictureOf(id) {
+      return placed.find((p) => p.object.id === id)?.blob;
     },
     restore(work) {
+      const before = stateNow();
       const live = new Set([...placed.map((p) => p.object.id), ...deleted]);
       let changed = 0;
       let gone = 0;
@@ -522,17 +769,21 @@ export function createEditorSession(input: {
         settingsChanged += restoreDetails(settings.details);
       }
       if (settingsChanged > 0) void input.draft?.saveSettings(record());
+      if (changed + gone + settingsChanged > 0) {
+        edited("the restored changes", before);
+      }
       return { changed: changed + settingsChanged, deleted: gone };
     },
     save(options) {
       const start = (): Promise<EditorSave> => runSave(options);
-      const next = inFlight === 0 ? start() : tail.then(start, start);
+      const run = inFlight === 0 ? start() : tail.then(start, start);
       inFlight += 1;
-      tail = next
-        .catch(() => undefined)
-        .finally(() => {
-          inFlight -= 1;
-        });
+      // Counted down BEFORE the caller hears the end: an undo asked for
+      // right after an awaited save is not refused as "a save is running".
+      const next = run.finally(() => {
+        inFlight -= 1;
+      });
+      tail = next.catch(() => undefined);
       return next;
     },
   };
@@ -542,7 +793,6 @@ export function createEditorSession(input: {
   }): Promise<EditorSave> {
     // Snapshots before the first await: an edit made from here on waits
     // for the next save (`pendingAfterRebuild`).
-    snapshots += 1;
     const placedNow = [...placed];
     const deletedNow = [...deleted];
     const manifestNow = withDetails(

@@ -11,12 +11,18 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
 
 ## Public API
 
-- `createEditorSession({ session, manifest, levels, fileName?, draft? }): EditorSession`
+- `createEditorSession({ session, manifest, levels, fileName?, draft?, loadPhoto? }): EditorSession`
   - `draft` (M6 E2c) - the `EditorSessionDraft` every edit, move,
-    delete and undo is backed up through (`editor-draft.ts`): the four
-    `DraftObjectWrites`, whose delete and undo sequences are
-    `draft-actions.ts`'s as the phone runs them, plus `saveSettings` for
-    the tour-level settings (QR-first M1b-2).
+    delete, undo and redo is backed up through (`editor-draft.ts`): the
+    four `DraftObjectWrites`, whose delete sequence is `draft-actions.ts`'s
+    as the phone runs it, plus `saveSettings` for the tour-level settings
+    (QR-first M1b-2). An undo or a redo writes, per id whose standing
+    against the saved file changed, the record, its tombstone, or their
+    removal (`backUpStep`), and the settings record when the setting or
+    the details moved.
+  - `loadPhoto` (W2) - reads a placed photo's picture by its image name
+    (default: the opened zip's `loadContentEntry`); the page passes the
+    copy last written, since a save replaces the file.
   - `model()` - the `EditorModel` of the tour with the edits applied.
   - `changeCount()` - edits and deletions not yet in a saved file, by
     content (a text edited back is no change), plus one while the "needs no
@@ -54,15 +60,32 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
     `{ kind: "moved" }`, or `EditorRefusal` (module-private: `refused` with `NOT_IN_TOUR`)
     for an id the tour no longer carries (PR #622 bot finding C); throws
     for a position the tour cannot hold.
-  - `remove(id)` - `deleteObject`; `{ kind: "deleted", undo }` with the
-    undo (`undoDelete`), which
-    refuses (`false`) once a save that writes the delete has started (its snapshot
-    taken after the delete), not for one already running when it was made
-    (E2b plan review #2, the third E2p review #6). For an id the tour no
-    longer carries it changes nothing and returns the same `EditorRefusal`
-    as `editText` and `move`, so the page shows no "Deleted" toast and no
-    Undo that would answer "too late" (finding C). The undo of a
-    delete of an edited note writes the record to the draft again.
+  - `remove(id)` - `deleteObject`; `{ kind: "deleted" }`, undone like any
+    edit (`undo()`). A deleted photo's picture is kept for that undo - the
+    one its entry carries, else read once through `loadPhoto` - since a
+    save that writes the delete leaves it out of the file. For an id the
+    tour no longer carries it changes nothing and returns the same
+    `EditorRefusal` as `editText` and `move`, so the page shows no
+    "Deleted" toast and no Undo (finding C). The undo of a delete of an
+    edited note writes the record to the draft again.
+  - `undo()` / `redo()` (W2 of the tour editor plan 2026-10-17-1816) - one
+    step of the edit stack: `{ kind: "undone" | "redone", what }` (`what`
+    names the step: `the text of "<label>"`, `the move of …`, `the delete
+of …`, `the "needs no GPS" setting`, `the tour details`, `the restored
+changes`; a label is cut at 40 characters, a label-less note is "a
+    photo" / "a note"), `{ kind: "nothing" }` at either end, or `refused`
+    in words: while a save runs (`SAVE_RUNNING`), and for a photo whose
+    delete a save wrote and whose picture could not be read
+    (`PICTURE_GONE`; the step stays). Every edit kind is one step - a
+    text, a move, a delete, the setting, the details (all at once), a
+    restore (all of it); a new edit drops what could be redone; at most
+    200 steps are kept (`UNDO_LIMIT`).
+  - `revision()` (W2) - counts every edit, undo and redo: the page's
+    delete toast runs its Undo only while its delete is still the newest
+    step.
+  - `pictureOf(id)` (W2) - the kept picture of a photo brought back by an
+    undo after a save; the card draws it, since the file no longer carries
+    it.
   - `restore({ objects, deleted, settings? })` (M6 E2c) - a draft's work
     put back by the session's own rules: an object the tour carries takes
     the draft's version (`upsertPlaced`), a deletion its tombstone
@@ -78,14 +101,21 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
 scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
     carries, for the draft's bases) and advances to what was written
     (`pendingAfterRebuild`).
-- `EditorSession`, `EditorSave`, `EditorSessionDraft`, `CoverChoice`,
+- `EditorSession`, `EditorSave`, `EditorSessionDraft`, `CoverChoice`, `UndoOutcome`,
   `TOUR_NAME_MAX_CHARS`.
 
 ## Invariants & assumptions
 
 - `find()` never throws (E2c plan review #11, decided): an id the tour no
   longer carries - a card outliving its object - is refused in words.
-- A restored deletion has no Undo (named).
+- A restore is one step to undo, the deletions it applied with it.
+- **An undo is an edit** (W2): a step is a snapshot of the edits' effect
+  (the objects as they stand, the setting, the details), and going back
+  to it is measured against the file as saved NOW - so an undo after the
+  save that wrote its step is a change of its own, pending until the next
+  save writes it, and autosave never has to wait for an Undo.
+- Undo and redo are refused while a save runs: the save's end moves the
+  saved file the step is measured against.
 
 - Saves run one after another: one called while another runs starts when
   it ends (E2a review #9).
@@ -93,9 +123,6 @@ scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
   while it runs stays for the next save, by content.
 - `filename` is `finishedFileName(session)` (the opened file's name, made
   safe); the model's title falls back to `fileName` (the shown name).
-- A delete's undo works on the lists as they stand: after a save that
-  wrote the delete, the object is no longer in the zip, so the page ends
-  the undo when a save starts.
 - The editor places nothing new yet: every entry is an edit or a move of
   an object the tour carries.
 - The setting is snapshotted with the edits: a toggle made while a save
@@ -125,4 +152,10 @@ at minor 3, each a change until saved; an emptied field removing the
 detail and the same values no change; plain-words refusals changing
 nothing; the cover choices (photos only, never a pin); the cover going with
 its photo; the whole record backed up once per change; a draft's details
-restored unless changed here.
+restored unless changed here. Undo and redo (W2): every edit kind undone
+newest first and redone; a new edit dropping the redo; the revision; an
+undo after a save being a change the next save writes; a saved photo
+delete coming back with its picture, and refused in words (the step kept)
+when the picture could not be read; refused while a save runs; every step
+backed up in the draft; a cover coming back with its photo; a restore as
+one step.

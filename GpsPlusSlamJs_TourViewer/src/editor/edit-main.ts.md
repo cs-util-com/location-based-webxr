@@ -50,11 +50,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   on blur or Ctrl+Enter; an empty pin is refused in the phone's words),
   Move (the marker made draggable, Done applies the drop, Cancel or Esc
   puts it back; the card then says the height was kept), Delete with an
-  Undo toast for 8 s (the phone's hold) that a Save ends sooner, since
-  the saved file no longer carries the object. Codes, stations and the
+  Undo toast for 8 s (the phone's hold). Codes, stations and the
   walk's recorded photos stay read-only.
-  A refused undo (the delete already written) says so in a toast
-  rather than doing nothing. A delete or a move of a note the tour no longer carries
+  The toast's Undo is the edit stack's (below): it runs while its delete
+  is still the newest step (`editor.revision()` unchanged), also after a
+  save wrote the delete, and a newer edit ends the toast. A delete or a move of a note the tour no longer carries
   (a card outliving its object) is refused in the session's words
   (`NOT_IN_TOUR`): the delete in a toast, with no "Deleted" toast and no
   Undo; the move on the card (PR #622 bot finding C).
@@ -128,20 +128,19 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   "large tour: saved when you press Save", adding "your changes are kept in
   this browser meanwhile" only when the draft backs up (E2b-2 milestone
   review #3).
-  - **Held** while a delete's Undo is live, the card's field holds typing not
+  - **Held** while the card's field holds typing not
     yet committed, a marker is being moved, a save runs, or the open dialog
     shows or an open is busy (`editing()`, `saving`, `!modal.hidden`,
     `busy`: an autosave landing in the middle of an open moved the NEW
     tour's draft, E2b-2 milestone review #1); the hold's end pokes it
-    (`endUndo`, the field's commit, a move's end, an autosave's end, the
+    (the field's commit, a move's end, an autosave's end, the
     dialog closing), and a hold that ends without a poke is looked at again
     once per delay (`autosave.ts`). An explicit save's end does not poke: its
     outcome reaches the autosave first, so a failed Save pauses it rather
-    than starting a second write at once (milestone review #5). An autosave commits nothing and ends no undo;
+    than starting a second write at once (milestone review #5). An autosave commits nothing;
     an edit begun while it checked the file (an await before the session's
-    snapshot) gives it back as `held`, so a delete made in that moment
-    keeps its Undo. A delete ends the earlier undo BEFORE it is made, for
-    the same reason.
+    snapshot) gives it back as `held`. A delete's Undo no longer holds it
+    (W2): the Undo works after the save that wrote the delete.
   - **Quiet:** the status line says "Saving…" and then "Saved to <name>",
     with no toast - except, once per tour, the photos a save could not
     place (`FINISH_LABELS.photosNotPlaced`), which an explicit Save's toast
@@ -216,6 +215,18 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   back to the name. The dialog sits above the toasts (a save's result toast
   stays until closed and covered its buttons). Opening another tour or
   losing this one closes it.
+- **Undo and redo (W2 of the tour editor plan 2026-10-17-1816).** Ctrl+Z
+  undoes, Ctrl+Shift+Z and Ctrl+Y redo (Cmd on a Mac; by the key's letter,
+  as Ctrl+S): one step of the session's edit stack (`editor.undo()` /
+  `redo()`), over every edit kind - a text, a move, a delete, the "needs
+  no GPS" setting, the details, a restore. `runStep` cancels a move,
+  commits the card, ends the delete toast, takes the step and says it in a
+  toast ("Undone: the delete of "Fountain".", "Nothing to undo.", or the
+  session's refusal while a save runs); a step is an edit, so it tells
+  autosave. In a field (the card's text, a dialog's input, the search) and
+  while a dialog shows, the keys are left to the browser: the field's own
+  undo. A photo brought back after a save wrote its delete is drawn from
+  the picture the session kept (`pictureOf`).
 - **Titles:** the top bar and the tab say the tour's name (`model.title`,
   the file's name when it has none): `<name> - Tour editor`.
 - **The open dialog's fine print** is `save-target.ts`'s
@@ -238,6 +249,6 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 ## Tests
 
 The modules it wires have their own unit tests; the page is pinned by
-`playwright-tests/editor.spec.js` (the details dialog and the fine print
-among them) and `editor-entry.spec.js` (the
+`playwright-tests/editor.spec.js` (the details dialog, the fine print,
+the undo keys and a delete's Undo after its autosave among them) and `editor-entry.spec.js` (the
 "Nothing to save" toast, the open from a link); `way-in.spec.js` checks its first paint.

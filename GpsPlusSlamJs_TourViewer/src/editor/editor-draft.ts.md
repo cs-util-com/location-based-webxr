@@ -182,7 +182,10 @@ editor's own namespace, one tab at a time. Design:
   empty directory stays behind each moved namespace; a hold whose queued
   write never settles keeps the next open of the same tour in this tab
   waiting; storage in a private
-  window may go with the window; a restored delete has no Undo.
+  window may go with the window; a restored delete has no Undo toast of
+  its own (the whole restore is one Ctrl+Z step, W2); an object an undo
+  re-adds after a save wrote its delete is backed up, but this draft's
+  "places nothing new" rule (above) does not offer it after a closed tab.
 
 ## Examples
 

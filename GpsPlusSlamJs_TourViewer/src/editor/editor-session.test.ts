@@ -35,14 +35,6 @@ import {
 import type { DetailsForm } from "./details-dialog.js";
 import type { EditorTourSettings } from "./editor-draft.js";
 
-/** The undo of a delete that was made; a refusal fails the test. */
-function undoOf(
-  outcome: { kind: "deleted"; undo: () => boolean } | { kind: "refused" },
-): () => boolean {
-  if (outcome.kind !== "deleted") throw new Error("the delete was refused");
-  return outcome.undo;
-}
-
 beforeAll(() => {
   createTourViewerStore();
 });
@@ -157,9 +149,9 @@ describe("createEditorSession", () => {
       manifest,
       levels: new Map(),
     });
-    const undo = undoOf(editor.remove("a"));
+    editor.remove("a");
     expect(editor.model().items.map((i) => i.id)).toEqual(["b"]);
-    undo();
+    editor.undo();
     expect(editor.model().items.map((i) => i.id)).toEqual(["a", "b"]);
     expect(editor.changeCount()).toBe(0);
     await session.close();
@@ -238,24 +230,38 @@ describe("createEditorSession, the review's cases (E0c + E2a review #9, #10, #12
     await session.close();
   });
 
-  it("refuses an undo once a save wrote the delete", async () => {
+  // Why (W2 of the tour editor plan, replacing E2a review #9's refusal):
+  // an undo after the save that wrote the delete used to be refused, so
+  // autosave had to wait out the Undo. It now brings the note back as a
+  // change of its own, which the next save writes.
+  it("brings a delete back after a save wrote it, as a change the next save writes", async () => {
     const { session, manifest } = await opened([pin("a"), pin("b")]);
     const editor = createEditorSession({
       session,
       manifest,
       levels: new Map(),
     });
-    const undo = undoOf(editor.remove("a"));
+    editor.remove("a");
     await editor.save({ keepScan: false });
-    expect(undo()).toBe(false);
-    expect(editor.model().items.map((i) => i.id)).toEqual(["b"]);
+    expect(editor.undo().kind).toBe("undone");
+    expect(
+      editor
+        .model()
+        .items.map((i) => i.id)
+        .sort(),
+    ).toEqual(["a", "b"]);
+    expect(editor.changeCount()).toBe(1);
+    const tour = await carried((await editor.save({ keepScan: false })).blob);
+    expect(tour.objects.map((o) => o.id).sort()).toEqual(["a", "b"]);
     await session.close();
   });
 
-  // Why (E2b plan review #2, DEC-A3): a save that was already running when
-  // the delete was made did not write it, so its end must not end the
-  // undo - it silently did, and the creator's Undo tap did nothing.
-  it("keeps the undo of a delete made while a save runs, until a save writes it", async () => {
+  // Why (E2b plan review #2, DEC-A3; the third E2p review #6): a delete
+  // made while a save runs is not that save's, and an undo while a save
+  // runs would race the save's end over what the file carries - so it is
+  // refused in words, and works once the save has ended, whichever save
+  // wrote the delete.
+  it("refuses an undo while a save runs, and undoes the delete once it ended", async () => {
     const { session, manifest } = await opened([pin("a"), pin("b")]);
     const editor = createEditorSession({
       session,
@@ -264,36 +270,23 @@ describe("createEditorSession, the review's cases (E0c + E2a review #9, #10, #12
     });
     editor.editText("b", "First");
     const running = editor.save({ keepScan: false });
-    const undo = undoOf(editor.remove("a"));
+    editor.remove("a");
+    expect(editor.undo().kind).toBe("refused");
     await running;
-    expect(undo()).toBe(true);
+    expect(editor.undo().kind).toBe("undone");
     expect(editor.model().items.map((i) => i.id)).toEqual(["a", "b"]);
-    const again = undoOf(editor.remove("a"));
-    const writes = editor.save({ keepScan: false });
-    await writes;
-    expect(again()).toBe(false);
-    expect(
-      (await carried((await writes).blob)).objects.map((o) => o.id),
-    ).toEqual(["b"]);
-    await session.close();
-  });
-
-  // Why (third E2p review #6): a save that snapshotted after the delete
-  // writes it, so an undo while it runs would bring back a note the file
-  // it is writing no longer carries.
-  it("refuses the undo as soon as a save that writes the delete starts", async () => {
-    const { session, manifest } = await opened([pin("a"), pin("b")]);
-    const editor = createEditorSession({
-      session,
-      manifest,
-      levels: new Map(),
-    });
-    const undo = undoOf(editor.remove("a"));
+    editor.remove("a");
     const writing = editor.save({ keepScan: false });
-    expect(undo()).toBe(false);
+    expect(editor.undo().kind).toBe("refused");
     const tour = await carried((await writing).blob);
     expect(tour.objects.map((o) => o.id)).toEqual(["b"]);
-    expect(editor.model().items.map((i) => i.id)).toEqual(["b"]);
+    expect(editor.undo().kind).toBe("undone");
+    expect(
+      editor
+        .model()
+        .items.map((i) => i.id)
+        .sort(),
+    ).toEqual(["a", "b"]);
     await session.close();
   });
 
@@ -379,8 +372,8 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     });
     editor.editText("a", "New");
     editor.move("b", 48.53, 9.06);
-    const undo = undoOf(editor.remove("a"));
-    expect(undo()).toBe(true);
+    editor.remove("a");
+    expect(editor.undo().kind).toBe("undone");
     expect(draft.calls).toEqual([
       "save a New",
       "save b pin b",
@@ -865,6 +858,238 @@ describe("createEditorSession, the tour details (W2)", () => {
       other.restore({ objects: [], deleted: [], settings: offered }),
     ).toEqual({ changed: 0, deleted: 0 });
     expect(other.details().name).toBe("Typed here");
+    await session.close();
+  });
+});
+
+/**
+ * Why (tour editor plan 2026-10-17-1816, W2): undo covered only a delete,
+ * for 8 s, and was lost to any save. Ctrl+Z / Ctrl+Shift+Z now walk an
+ * edit stack in the session, over every edit kind - a text, a move, a
+ * delete, the "needs no GPS" setting, the tour details, a restore. An undo
+ * is an edit like any other: pending until saved, backed up by the draft,
+ * written by the next save - also when a save already wrote the step it
+ * undoes, which is what lets autosave run during the old 8 s window.
+ */
+describe("createEditorSession, undo and redo (W2)", () => {
+  const form = (over: Partial<DetailsForm> = {}): DetailsForm => ({
+    name: "",
+    description: "",
+    cover: null,
+    contact: "",
+    ...over,
+  });
+
+  it("undoes every edit kind, newest first, and redoes them", async () => {
+    const { session, manifest } = await opened([pin("a", "Old"), pin("b")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const original = editor.model();
+    expect(editor.undo()).toEqual({ kind: "nothing" });
+    editor.editText("a", "New");
+    editor.move("b", 48.53, 9.06);
+    editor.remove("a");
+    editor.setNeedsNoGps(true);
+    editor.setDetails(form({ name: "Castle walk" }));
+    expect(editor.changeCount()).toBe(4);
+    const undone = [1, 2, 3, 4, 5].map(() => editor.undo());
+    expect(undone.map((u) => u.kind)).toEqual(Array(5).fill("undone"));
+    expect(undone.map((u) => (u.kind === "undone" ? u.what : ""))).toEqual([
+      "the tour details",
+      'the "needs no GPS" setting',
+      'the delete of "New"',
+      'the move of "pin b"',
+      'the text of "New"',
+    ]);
+    expect(editor.undo()).toEqual({ kind: "nothing" });
+    expect(editor.changeCount()).toBe(0);
+    expect(editor.model()).toEqual(original);
+    for (let i = 0; i < 5; i += 1) expect(editor.redo().kind).toBe("redone");
+    expect(editor.redo()).toEqual({ kind: "nothing" });
+    expect(editor.changeCount()).toBe(4);
+    expect(editor.needsNoGps()).toBe(true);
+    expect(editor.details().name).toBe("Castle walk");
+    expect(editor.model().items.some((i) => i.id === "a")).toBe(false);
+    await session.close();
+  });
+
+  it("a new edit drops what could be redone", async () => {
+    const { session, manifest } = await opened([pin("a", "Old")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    editor.editText("a", "One");
+    editor.undo();
+    editor.editText("a", "Two");
+    expect(editor.redo()).toEqual({ kind: "nothing" });
+    await session.close();
+  });
+
+  it("counts every edit, undo and redo in its revision", async () => {
+    const { session, manifest } = await opened([pin("a", "Old")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const r0 = editor.revision();
+    editor.editText("a", "One");
+    const r1 = editor.revision();
+    expect(r1).toBeGreaterThan(r0);
+    editor.editText("a", "One"); // unchanged: no edit
+    expect(editor.revision()).toBe(r1);
+    editor.undo();
+    expect(editor.revision()).toBeGreaterThan(r1);
+    await session.close();
+  });
+
+  it("an undo after a save is a change the next save writes", async () => {
+    const { session, manifest } = await opened([pin("a", "Old")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    editor.editText("a", "New");
+    await editor.save({ keepScan: false });
+    expect(editor.changeCount()).toBe(0);
+    expect(editor.undo().kind).toBe("undone");
+    expect(editor.changeCount()).toBe(1);
+    const saved = await carried((await editor.save({ keepScan: false })).blob);
+    expect(saved.objects[0]).toMatchObject({ label: "Old" });
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
+  it("a delete a save already wrote comes back, a photo with its picture", async () => {
+    const { session, manifest } = await opened([pin("a"), photo("f")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    editor.remove("a");
+    editor.remove("f");
+    const first = await editor.save({ keepScan: false });
+    expect(
+      readStoredCentralDirectory(
+        new Uint8Array(await first.blob.arrayBuffer()),
+      ).map((e) => e.name),
+    ).not.toContain("content/f.jpg");
+    expect(editor.undo().kind).toBe("undone");
+    expect(editor.undo().kind).toBe("undone");
+    expect(editor.changeCount()).toBe(2);
+    const second = await editor.save({ keepScan: false });
+    const tour = await carried(second.blob);
+    expect(tour.objects.map((o) => o.id).sort()).toEqual(["a", "f"]);
+    const bytes = readStoredEntryBytes(
+      new Uint8Array(await second.blob.arrayBuffer()),
+      "content/f.jpg",
+    );
+    expect(new TextDecoder().decode(bytes)).toBe("f");
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
+  it("refuses, and keeps, the undo of a saved photo delete whose picture could not be read", async () => {
+    const { session, manifest } = await opened([photo("f")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      loadPhoto: () => Promise.reject(new Error("gone")),
+    });
+    editor.remove("f");
+    await editor.save({ keepScan: false });
+    const outcome = editor.undo();
+    expect(outcome.kind).toBe("refused");
+    expect(outcome.kind === "refused" ? outcome.reason : "").toMatch(/picture/);
+    expect(editor.changeCount()).toBe(0);
+    expect(editor.redo()).toEqual({ kind: "nothing" });
+    await session.close();
+  });
+
+  it("refuses an undo or a redo while a save runs, in words", async () => {
+    const { session, manifest } = await opened([pin("a", "Old")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    editor.editText("a", "New");
+    const running = editor.save({ keepScan: false });
+    expect(editor.undo()).toMatchObject({ kind: "refused" });
+    await running;
+    expect(editor.undo().kind).toBe("undone");
+    await session.close();
+  });
+
+  it("backs every undo and redo up in the draft", async () => {
+    const { session, manifest } = await opened([pin("a", "Old"), pin("b")]);
+    const draft = loggedDraft();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft,
+    });
+    editor.editText("a", "New");
+    editor.remove("b");
+    draft.calls.length = 0;
+    editor.undo();
+    editor.undo();
+    expect(draft.calls).toEqual(["untombstone b", "forget a"]);
+    draft.calls.length = 0;
+    editor.redo();
+    editor.redo();
+    expect(draft.calls).toEqual(["save a New", "tombstone b"]);
+    await session.close();
+  });
+
+  it("a cover comes back with its photo's undo, and the details' own undo puts the old ones back", async () => {
+    const { session, manifest } = await opened([photo("f")], {
+      cover: "f",
+      title: "Old",
+    });
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    editor.remove("f");
+    expect(editor.details().cover).toBeNull();
+    editor.undo();
+    expect(editor.details().cover).toBe("f");
+    editor.setDetails(form({ name: "New", cover: "f" }));
+    editor.undo();
+    expect(editor.details()).toEqual(form({ name: "Old", cover: "f" }));
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
+  it("a restore is one step to undo", async () => {
+    const { session, manifest } = await opened([pin("a", "Old"), pin("b")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    editor.restore({
+      objects: [pin("a", "From the draft")],
+      deleted: ["b"],
+      settings: { needsNoGps: true },
+    });
+    expect(editor.changeCount()).toBe(3);
+    expect(editor.undo()).toEqual({
+      kind: "undone",
+      what: "the restored changes",
+    });
+    expect(editor.changeCount()).toBe(0);
     await session.close();
   });
 });

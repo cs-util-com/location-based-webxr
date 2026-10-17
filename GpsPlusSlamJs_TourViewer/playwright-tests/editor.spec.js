@@ -1945,11 +1945,14 @@ test("saves by itself a few seconds after a change, quietly, and the next open f
   await expect(next.locator(".toast.draft-offer")).toHaveCount(0);
 });
 
-test("a delete is not written while its Undo can still be used", async ({
+test("a delete is saved by itself, and its Undo still brings the photo back as a change of its own", async ({
   page,
 }) => {
-  // Why (E2b plan review #3): a save that writes the delete ends the Undo;
-  // an autosave must wait for the window to close.
+  // Why (tour editor plan 2026-10-17-1816, W2): autosave used to wait out
+  // the delete's 8 s Undo, because a save that wrote the delete ended it.
+  // The Undo is now the session's edit stack: the delete is saved at once,
+  // and the Undo brings the photo back - its picture too, which the saved
+  // file no longer carried - as a change the next save writes.
   await page.clock.install();
   await page.goto("/edit.html");
   await offerOpfsFile(page, await editorTour(), "editor-fixture.zip");
@@ -1958,23 +1961,75 @@ test("a delete is not written while its Undo can still be used", async ({
   await page.locator("#rail .row", { hasText: "Fountain" }).click();
   await page.locator("#card button", { hasText: "Delete" }).click();
   await expect(page.locator("#save-status")).toHaveText("1 change not saved");
-  // Past the delay, inside the 8 s window: due, and held.
-  await page.clock.runFor(4_000);
-  await expect(page.locator("body")).toHaveAttribute("data-autosave", "held");
-  expect(
-    (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"],
-  ).toContain("photo-ok");
-  await expect(
-    page.locator(".toast button", { hasText: "Undo" }),
-  ).toBeVisible();
-  // The window closes: the delete is saved by itself.
-  await page.clock.runFor(5_000);
+  await page.clock.runFor(3_500);
   await expect(page.locator("#save-status")).toHaveText(
     "Saved to editor-fixture.zip",
   );
-  expect(
-    (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"],
-  ).not.toContain("photo-ok");
+  const without = await readOpfsTour(page, "editor-fixture.zip");
+  expect(without["tour.json"]).not.toContain("photo-ok");
+  expect(Object.keys(without)).not.toContain("content/photo-ok.png");
+  await page.locator(".toast button", { hasText: "Undo" }).click();
+  await expect(page.locator(".toast").last()).toHaveText(
+    'Undone: the delete of "Fountain".',
+  );
+  await expect(page.locator("#rail .row", { hasText: "Fountain" })).toHaveCount(
+    1,
+  );
+  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  // Its card shows the picture the session kept.
+  await page.locator("#rail .row", { hasText: "Fountain" }).click();
+  await expect(page.locator("#card img.card-photo")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.clock.runFor(3_500);
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to editor-fixture.zip",
+  );
+  const back = await readOpfsTour(page, "editor-fixture.zip");
+  expect(back["tour.json"]).toContain("photo-ok");
+  expect(Object.keys(back)).toContain("content/photo-ok.png");
+});
+
+test("Ctrl+Z undoes, Ctrl+Shift+Z and Ctrl+Y redo, each said; in a field Ctrl+Z is the field's own", async ({
+  page,
+}) => {
+  // Why (W2): the edit stack's keys. Each step is said in a toast (it can
+  // change something off screen), the stack walks newest first, and a key
+  // pressed while typing belongs to the field, not to the tour.
+  await page.goto("/edit.html");
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  await editPin(page, "Town hall", "First");
+  await page.locator("#rail .row", { hasText: "Fountain" }).click();
+  await page.locator("#card button", { hasText: "Delete" }).click();
+  await expect(page.locator("#save-status")).toHaveText("2 changes not saved");
+  const last = page.locator(".toast").last();
+  await page.keyboard.press("Control+z");
+  await expect(last).toHaveText('Undone: the delete of "Fountain".');
+  await expect(page.locator("#rail .row", { hasText: "Fountain" })).toHaveCount(
+    1,
+  );
+  await page.keyboard.press("Control+z");
+  await expect(last).toHaveText('Undone: the text of "First".');
+  await expect(
+    page.locator("#rail .row", { hasText: "Town hall" }),
+  ).toHaveCount(1);
+  await expect(page.locator("#save-status")).toHaveText("No changes");
+  await page.keyboard.press("Control+z");
+  await expect(last).toHaveText("Nothing to undo.");
+  await page.keyboard.press("Control+Shift+z");
+  await expect(last).toHaveText('Redone: the text of "First".');
+  await page.keyboard.press("Control+y");
+  await expect(last).toHaveText('Redone: the delete of "Fountain".');
+  await expect(page.locator("#save-status")).toHaveText("2 changes not saved");
+  await page.keyboard.press("Control+y");
+  await expect(last).toHaveText("Nothing to redo.");
+  // Typing in the card: Ctrl+Z is the field's.
+  await page.locator("#rail .row", { hasText: "First" }).click();
+  const field = page.locator("#card textarea");
+  await field.focus();
+  const said = await page.locator(".toast").count();
+  await page.keyboard.press("Control+z");
+  await expect(page.locator("#save-status")).toHaveText("2 changes not saved");
+  expect(await page.locator(".toast").count()).toBe(said);
 });
 
 test("a write that fails pauses autosave until Save, with no write loop", async ({
