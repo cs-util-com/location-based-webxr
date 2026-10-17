@@ -20,7 +20,9 @@
 - Public API:
   - `GLOBE_TERRAIN`: `maxZoom` 12 (the finest Terrarium zoom the relief
     loads, its default; the globe's city samples its heights at it from the
-    same source, globe city plan 2026-10-05-0040 §12.4 R13), `programKey` (shared by every terrain tile's lit
+    same source, globe city plan 2026-10-05-0040 §12.4 R13), `tileDimension`
+    256 (the height tiles' size by default, AWS Terrarium's; Mapterhorn
+    passes 512) and `maxTileDimension` 4096, `programKey` (shared by every terrain tile's lit
     material), `halfFloatStepM(h)` (the step R16F stores at `h` metres:
     0.5 m at 1,000 m, 2 m at 4,000 m, 8 m at 8,848 m), `errorTarget`
     (2, set on the tiles after the plugin registers, since the library's
@@ -90,7 +92,7 @@
     `_tiling` and `_gridCache` (as `globe-height-keeper.ts` does); null, never
     a throw, if they change (`globe-terrain.finest.test.ts` checks the real
     plugin has them).
-  - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom?, lazyHeightScale?, keepHeightsBytes? })`
+  - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom?, tileDimension?, lazyHeightScale?, keepHeightsBytes? })`
     -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), heightScaleStats(), heightKeeperStats(), dispose() }`
     (the decoded heights its tiles release are kept within
     `keepHeightsBytes`, `GLOBE_TERRAIN.keepHeightsBytes` 16 MiB by default
@@ -113,8 +115,10 @@
     `dispose-model` the copy is retired (`globe-warm-material.ts`: the
     last one stays alive, so the relief's program outlives a release). The caller adds `tiles.group` to
     its scene, sets the camera and resolution and calls `tiles.update()`.
-    RangeError for an empty url or a height scale that is not finite and
-    at least 0; Error if the library stops exporting the plugin (0.5.3
+    RangeError for an empty url, a height scale that is not finite and
+    at least 0, or a `tileDimension` that is not a power of two from 1 to
+    4096 (G0 spikes 2026-10-17, Q1: a 512 px Mapterhorn tile read as 256 px
+    is a quarter of it per level); Error if the library stops exporting the plugin (0.5.3
     ships it without typings, so it is read off the plugins entry at
     runtime). The tile meshes are found by `tileMeshes` from
     `globe-surface.ts` (one implementation, DEC-H3).
@@ -149,7 +153,8 @@
 - Tests: `globe-terrain.test.ts` (the range conversion and its size at
   46.5 N; the overlay adapter's calls; the half-float upload and its
   steps; the box from normals; the lit material's maps, hooks, UV patch
-  and key; the overlay plugin's defines carried; the fade side; the detail patch's place, shared uniforms and
+  and key; the overlay plugin's defines carried; the tile size passed
+  through and refused; the fade side; the detail patch's place, shared uniforms and
   refused anchor; the factory on a simulated tile load and dispose, its
   detail on and off; refusals; the library guard). The GPU side (heights read back with the extension
   hidden, the look against the globe at noon, dusk and night, the data

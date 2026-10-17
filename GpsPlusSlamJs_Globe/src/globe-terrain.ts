@@ -56,6 +56,13 @@ export const GLOBE_TERRAIN = Object.freeze({
    */
   maxZoom: 12,
   /**
+   * The height tiles' size in pixels by default (AWS Terrarium's). A
+   * source with another size passes `tileDimension` (Mapterhorn: 512);
+   * a power of two from 1 to `maxTileDimension`, as XYZ tiles are.
+   */
+  tileDimension: 256,
+  maxTileDimension: 4096,
+  /**
    * The tiles' error target, picked by the look on real heights over the
    * Alps (review 2026-10-02-1235 major 4): 2 draws what the library's default 1 draws
    * (mean 0.12 levels, 95th percentile 0 at 30 km) for 9.9 MiB of heights
@@ -448,6 +455,7 @@ export function finestElevationAt(
 type TerrariumMeshPluginConstructor = new (options: {
   url: string;
   maxZoom?: number;
+  tileDimension?: number;
   overlay?: TerrainImagery;
   applyOverlayTexture?: boolean;
   heightScale?: number;
@@ -456,6 +464,33 @@ type TerrariumMeshPluginConstructor = new (options: {
 const terrariumRuntime: unknown = (plugins as Record<string, unknown>)[
   "TerrariumMeshPlugin"
 ];
+
+const isTileDimension = (n: number): boolean =>
+  Number.isInteger(n) &&
+  n >= 1 &&
+  n <= GLOBE_TERRAIN.maxTileDimension &&
+  (n & (n - 1)) === 0;
+
+/** `createGlobeTerrain`'s refusals (RangeError), in one place. */
+function checkTerrainOptions(
+  url: string,
+  heightScale: number,
+  tileDimension: number,
+): void {
+  if (typeof url !== "string" || url.length === 0) {
+    throw new RangeError("the terrain needs a tile url");
+  }
+  if (!(heightScale >= 0 && Number.isFinite(heightScale))) {
+    throw new RangeError(
+      `the height scale must be finite and >= 0, got ${heightScale}`,
+    );
+  }
+  if (!isTileDimension(tileDimension)) {
+    throw new RangeError(
+      `the tile size must be a power of two from 1 to ${GLOBE_TERRAIN.maxTileDimension} px, got ${tileDimension}`,
+    );
+  }
+}
 
 /** The relief carrier, as `createGlobeTerrain` returns it. */
 export interface GlobeTerrain {
@@ -479,16 +514,17 @@ export interface GlobeTerrain {
 
 /**
  * The library's terrain tiles (`TerrariumMeshPlugin` on `url`, Terrarium
- * encoded, up to `maxZoom`) with the plate-carree `imagery` through
- * `geographicOverlay`, and on every tile it loads: heights as R16F
- * (`useHalfFloatHeights`) and the globe's lit copy of `template` over the
- * tile's box (`litTerrainMaterial`). The caller adds `tiles.group` to its
+ * encoded, up to `maxZoom`, tiles of `tileDimension` px) with the
+ * plate-carree `imagery` through `geographicOverlay`, and on every tile
+ * it loads: heights as R16F (`useHalfFloatHeights`) and the globe's lit
+ * copy of `template` over the tile's box (`litTerrainMaterial`). The caller adds `tiles.group` to its
  * scene and calls `tiles.update()`. A height-scale step refreshes only the
  * bounding volumes that are read (`installLazyHeightScale`) unless
  * `lazyHeightScale` is false, which keeps the library's whole-tree step (the
- * before case of a frame-time comparison). RangeError for an empty url or a
- * height scale that is not finite and >= 0; Error if the library stops
- * exporting the plugin.
+ * before case of a frame-time comparison). RangeError for an empty url, a
+ * height scale that is not finite and >= 0, or a tile size that is not a
+ * power of two up to `GLOBE_TERRAIN.maxTileDimension`; Error if the
+ * library stops exporting the plugin.
  */
 export function createGlobeTerrain(options: {
   url: string;
@@ -496,6 +532,7 @@ export function createGlobeTerrain(options: {
   template: THREE.MeshStandardMaterial;
   heightScale: number;
   maxZoom?: number;
+  tileDimension?: number;
   lazyHeightScale?: boolean;
   keepHeightsBytes?: number;
 }): GlobeTerrain {
@@ -505,17 +542,11 @@ export function createGlobeTerrain(options: {
     template,
     heightScale,
     maxZoom = GLOBE_TERRAIN.maxZoom,
+    tileDimension = GLOBE_TERRAIN.tileDimension,
     lazyHeightScale: lazy = true,
     keepHeightsBytes = GLOBE_TERRAIN.keepHeightsBytes,
   } = options;
-  if (typeof url !== "string" || url.length === 0) {
-    throw new RangeError("the terrain needs a tile url");
-  }
-  if (!(heightScale >= 0 && Number.isFinite(heightScale))) {
-    throw new RangeError(
-      `the height scale must be finite and >= 0, got ${heightScale}`,
-    );
-  }
+  checkTerrainOptions(url, heightScale, tileDimension);
   if (typeof terrariumRuntime !== "function") {
     throw new Error(
       "3d-tiles-renderer no longer exports TerrariumMeshPlugin from its plugins entry",
@@ -525,6 +556,7 @@ export function createGlobeTerrain(options: {
   const plugin = new Plugin({
     url,
     maxZoom,
+    tileDimension,
     overlay: geographicOverlay(imagery),
     applyOverlayTexture: true,
     heightScale,

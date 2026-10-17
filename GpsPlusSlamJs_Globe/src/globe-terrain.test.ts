@@ -773,6 +773,43 @@ describe("createGlobeTerrain", () => {
     ).toThrow(RangeError);
   });
 
+  // Why (G0 spikes 2026-10-17, Q1): Mapterhorn serves 512 px tiles. The
+  // library reads the size from its own option (default 256), and a 512 px
+  // tile read as 256 px loads a quarter of the tile at every level: the
+  // relief stood at the wrong place. The factory must pass it through, and
+  // refuse a size the source tiling cannot have.
+  it("passes the source's tile size to the plugin, 256 px by default", () => {
+    const options = {
+      url: "/heights/{z}/{x}/{y}.webp",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+    };
+    const plain = createGlobeTerrain(options);
+    expect(
+      (plain.plugin as unknown as { tileDimension: number }).tileDimension,
+    ).toBe(256);
+    expect(GLOBE_TERRAIN.tileDimension).toBe(256);
+    plain.dispose();
+    const fine = createGlobeTerrain({ ...options, tileDimension: 512 });
+    expect(
+      (fine.plugin as unknown as { tileDimension: number }).tileDimension,
+    ).toBe(512);
+    fine.dispose();
+    for (const bad of [0, 100, 256.5, 8192, -256, Number.NaN]) {
+      expect(() =>
+        createGlobeTerrain({ ...options, tileDimension: bad }),
+      ).toThrow(RangeError);
+    }
+  });
+
   it("refuses a missing url or a height scale that is not finite and >= 0", () => {
     const template = new THREE.MeshStandardMaterial();
     const imagery = {
