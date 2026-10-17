@@ -827,6 +827,8 @@ kbd {
 #open-error {
   margin: 12px 4px 0;
   color: var(--danger);
+  /* A refusal's sentences arrive on their own lines (editor-link.ts). */
+  white-space: pre-line;
 }
 
 .modal-actions {

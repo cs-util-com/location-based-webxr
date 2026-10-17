@@ -28,8 +28,10 @@ saved exactly as a chosen file is.
     error.
 - `linkOpenErrorText(err, link): string` - the dialog's sentence: the
   viewer's `describeOpenError`, except for `cors`, whose viewer text names
-  the viewer's "Open the downloaded file" button; here it says to download
-  the file and choose it above.
+  the viewer's "Open the downloaded file" button; here the viewer's first
+  sentence (`HOST_REFUSED_TEXT`, shared, M1 review #6) is followed by
+  "download the file and choose it above" on its own line (`#open-error`
+  keeps line breaks, `white-space: pre-line`).
 - `NOT_A_LINK` (the sentence for text that is not a link), `FetchTourOptions`;
   the transport type `OpenArchive` is module-private.
 

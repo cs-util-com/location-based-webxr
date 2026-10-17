@@ -644,6 +644,11 @@
       .have-tour-form .input {
         flex: 1 1 14rem;
       }
+      /* A failure's sentences arrive separated by line breaks
+         (have-tour.ts, open-errors.ts). */
+      #have-tour-status {
+        white-space: pre-line;
+      }
       #have-tour-ask {
         display: flex;
         flex-wrap: wrap;
@@ -3173,9 +3178,9 @@
               hidden
             >
               <p class="step-copy">
-                This step runs on site, on an Android phone with Chrome: open
-                this page there. On this computer, the editor opens a tour you
-                made: fix its texts, move its pins, remove photos.
+                This step runs on site and needs an Android phone with Chrome
+                that supports AR: open this page there. Here, the editor opens a
+                tour you made: fix its texts, move its pins, remove photos.
               </p>
               <a class="btn setup-primary" href="edit.html">Open the editor</a>
             </div>

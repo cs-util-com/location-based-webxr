@@ -59,7 +59,8 @@ describe("checkNoGps", () => {
       levels: new Map([["c1", USABLE]]),
     });
     // An untitled station is "Station N" by its place in the list, as the
-    // rail names it (`editor-model.ts` `stationTitle`).
+    // rail names it (`station-run.ts` `stationTitle`, which the editor
+    // model and this check share).
     expect(check).toEqual({
       codeless: ["The column", "Station 3"],
       unlockable: [],

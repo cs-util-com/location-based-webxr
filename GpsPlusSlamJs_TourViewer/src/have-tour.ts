@@ -9,9 +9,8 @@
  * @see have-tour.ts.md
  */
 
-import { linkStatusText } from "./link-check.js";
+import { HOST_REFUSED_TEXT, describeOpenCause } from "./open-errors.js";
 import type { OpenOutcome } from "./scan-open.js";
-import { hostOfLink } from "./tour-host.js";
 
 /** The box's button labels (async-UI rule: busy while an open runs). */
 export const HAVE_TOUR_LABELS = {
@@ -19,6 +18,14 @@ export const HAVE_TOUR_LABELS = {
   link: "Open the link",
   busy: "Opening…",
 } as const;
+
+/** A host that blocks browsers, in the box's words: the way around is the
+ *  box's own other button, not step 2's "pick another host" (M1 review
+ *  #3) nor the error box's "Open the downloaded file below". */
+export const HAVE_TOUR_CORS_TEXT = `${HOST_REFUSED_TEXT}\nDownload the file to this device, then open it with "${HAVE_TOUR_LABELS.file}".`;
+
+/** The box's own line when nothing else words a failure. */
+export const HAVE_TOUR_FAILED_TEXT = "This tour could not be opened.";
 
 /** The question once a tour opened from its link. */
 export const PLAY_OR_CONTINUE = "Play it, or continue setting it up?";
@@ -89,6 +96,17 @@ export function wireHaveTour(deps: HaveTourDeps): void {
       : HAVE_TOUR_LABELS.link;
   }
 
+  /** The open's own words (the page's error box), except for a host that
+   *  blocks browsers; a cause's own sentence where step 2's check cleared
+   *  the box for a link it tolerates (a file not uploaded yet). Never
+   *  step 2's printing messages: the box is not about printing. */
+  function failureText(kind: "file" | "link", cause: string): string {
+    if (kind === "link" && cause === "cors") return HAVE_TOUR_CORS_TEXT;
+    return (
+      deps.errorText() || describeOpenCause(cause) || HAVE_TOUR_FAILED_TEXT
+    );
+  }
+
   function say(text: string): void {
     dom.status.textContent = text;
     dom.status.hidden = text === "";
@@ -124,14 +142,7 @@ export function wireHaveTour(deps: HaveTourDeps): void {
         dom.ask.hidden = false;
         return;
       case "failed":
-        say(
-          source.kind === "link"
-            ? linkStatusText(
-                { kind: "failed", cause: outcome.cause },
-                hostOfLink(source.url),
-              )
-            : deps.errorText() || "This file could not be opened.",
-        );
+        say(failureText(source.kind, outcome.cause));
         return;
       case "cancelled":
         say("Kept the tour that is open: its rebuilt file is not saved yet.");

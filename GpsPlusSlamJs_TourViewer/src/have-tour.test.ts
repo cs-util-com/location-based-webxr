@@ -12,13 +12,18 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+import { OpenRemoteArchiveError } from "gps-plus-slam-app-framework/storage";
+
 import {
   FILE_OPENED_ASK,
+  HAVE_TOUR_CORS_TEXT,
+  HAVE_TOUR_FAILED_TEXT,
   HAVE_TOUR_LABELS,
   PLAY_OR_CONTINUE,
   wireHaveTour,
   type HaveTourDom,
 } from "./have-tour.js";
+import { HOST_REFUSED_TEXT, describeOpenError } from "./open-errors.js";
 import type { OpenOutcome } from "./scan-open.js";
 
 function el() {
@@ -123,14 +128,51 @@ describe("wireHaveTour", () => {
     expect(h.dom.linkButton.disabled).toBe(false);
   });
 
-  it("says why a link failed, in step 2's words, and comes back", async () => {
+  it("says why a host refused a link in the box's own words, pointing to From this device, and comes back", async () => {
+    // M1 review #3: the box used step 2's printing message ("a printed
+    // code would not open for visitors... pick another host in step 1"),
+    // which answers a question the box never asked. Here the way around a
+    // host that blocks browsers is the box's own other button.
     const h = wire();
     submitLink(h);
     await h.finish({ kind: "failed", cause: "cors" });
     expect(h.dom.linkButton.disabled).toBe(false);
     expect(h.dom.ask.hidden).toBe(true);
     expect(h.dom.status.hidden).toBe(false);
-    expect(h.dom.status.textContent).toMatch(/does not let browsers read/);
+    expect(h.dom.status.textContent).toBe(HAVE_TOUR_CORS_TEXT);
+    expect(h.dom.status.textContent).toContain(HOST_REFUSED_TEXT);
+    expect(h.dom.status.textContent).toContain(`"${HAVE_TOUR_LABELS.file}"`);
+    expect(h.dom.status.textContent).not.toMatch(/printed code|step 1/);
+  });
+
+  it("words any other failed link in the open's own words (the page's error box)", async () => {
+    const h = wire();
+    h.deps.errorText.mockReturnValue("Google Drive refused that file.");
+    submitLink(h);
+    await h.finish({ kind: "failed", cause: "other" });
+    expect(h.dom.status.textContent).toBe("Google Drive refused that file.");
+  });
+
+  it("words a missing file in the open's own words when step 2 cleared its error box", async () => {
+    // Step 2's check clears the error box for a link it tolerates (a file
+    // not uploaded yet), so the box reads the cause's own sentence, never
+    // step 2's "not verified yet, you can print".
+    const h = wire();
+    h.deps.errorText.mockReturnValue("");
+    submitLink(h);
+    await h.finish({ kind: "failed", cause: "missing" });
+    expect(h.dom.status.textContent).toBe(
+      describeOpenError(new OpenRemoteArchiveError("gone", "missing")),
+    );
+    expect(h.dom.status.textContent).not.toMatch(/print/);
+  });
+
+  it("falls back to a line of its own when nothing else words the failure", async () => {
+    const h = wire();
+    h.deps.errorText.mockReturnValue("");
+    submitLink(h);
+    await h.finish({ kind: "failed", cause: "other" });
+    expect(h.dom.status.textContent).toBe(HAVE_TOUR_FAILED_TEXT);
   });
 
   it("comes back from an open that threw, and says it failed", async () => {

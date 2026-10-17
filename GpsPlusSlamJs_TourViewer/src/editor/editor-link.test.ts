@@ -13,7 +13,7 @@
 import { OpenRemoteArchiveError } from "gps-plus-slam-app-framework/storage";
 import { describe, expect, it, vi } from "vitest";
 
-import { describeOpenError } from "../open-errors.js";
+import { HOST_REFUSED_TEXT, describeOpenError } from "../open-errors.js";
 import { NOT_A_LINK, fetchTourFile, linkOpenErrorText } from "./editor-link.js";
 
 function fakeArchive(bytes: Uint8Array, url: string) {
@@ -88,7 +88,9 @@ describe("linkOpenErrorText", () => {
       new OpenRemoteArchiveError("blocked", "cors"),
       LINK,
     );
-    expect(text).toMatch(/refused the browser access/);
+    // One wording for one refusal (M1 review #6): the viewer's first
+    // sentence itself, not a copy that can drift from it.
+    expect(text.split("\n")[0]).toBe(HOST_REFUSED_TEXT);
     // The viewer's "tap Open the downloaded file below" names a button
     // the editor has not got: here the way around is its own picker.
     expect(text).toMatch(/download the file to this computer, then choose it/i);

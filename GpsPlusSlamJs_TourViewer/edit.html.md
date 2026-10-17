@@ -11,8 +11,9 @@ delete one, then Save a new copy (M6 E2a). Design and decisions:
 (§5, §9).
 
 A Vite build entry (`vite.config.ts`, `edit`), so it is built and reachable
-on a deployed branch preview at `/tour/edit.html`; linked from nothing
-until the phone's draft gives way to desktop edits (E2p).
+on a deployed branch preview at `/tour/edit.html`; linked from the setup
+page's "You already have a tour?" box and from step 5 on a device without
+AR (tour editor plan 2026-10-17-1816, W1).
 
 ## Structure
 

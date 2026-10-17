@@ -20,7 +20,9 @@ The Tour Viewer's Vite config: the dev server (the e2e's too) and the build.
   (`write-probe.html.md`); an entry so that it is built and reachable at
   `/tour/write-probe.html` on a branch preview, as the Recorder does for its
   measurement pages. And `edit.html`, the desktop editor (M6 E1, `edit.html.md`),
-  reachable at `/tour/edit.html` and linked from nothing until the phone's draft gives way to desktop edits (E2p).
+  reachable at `/tour/edit.html` and linked from the setup page's "You
+  already have a tour?" box and step 5 on a device without AR (tour editor
+  plan 2026-10-17-1816, W1).
 
 ## Invariants & assumptions
 

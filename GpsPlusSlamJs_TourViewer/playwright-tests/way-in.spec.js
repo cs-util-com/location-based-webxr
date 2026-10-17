@@ -24,6 +24,19 @@ const PHONE = { width: 412, height: 915 };
 
 /** The setup and visitor page's paper (`index.html`, the L5 look). */
 const PAPER = "rgb(244, 238, 223)";
+/** `main.ts` writes `body[data-debug]` at boot on every page, whatever
+ *  the URL ("false" without `?debug=1`); unset until it has run. The
+ *  sentinel that proves the module was still held when the page was
+ *  measured (M1 review #5: the attribute read before was unset either
+ *  way, so it could not fail).
+ *
+ * @param {import("@playwright/test").Page} page
+ * @returns {Promise<boolean>}
+ */
+async function moduleHasRun(page) {
+  return page.evaluate(() => document.body.dataset["debug"] !== undefined);
+}
+
 /** The editor's own paper (`src/editor/editor.css`). */
 const EDITOR_PAPER = "rgb(242, 241, 237)";
 
@@ -51,9 +64,12 @@ async function openWithModuleHeld(page, path, script, sheet) {
     await route.continue();
   });
   await page.goto(path, { waitUntil: "commit" });
+  // "interactive": the parser has read the whole markup. A held module
+  // script is deferred, so it cannot have run yet (M1 review #5: the old
+  // wait on `body > *:last-child` was true from the body's first child).
   await page.waitForFunction(
     (end) =>
-      document.querySelector("body > *:last-child") !== null &&
+      document.readyState !== "loading" &&
       Array.from(document.styleSheets).some((s) =>
         (s.href ?? "").endsWith(end),
       ),
@@ -88,17 +104,19 @@ test.describe("the first paint, before the page's module has run", () => {
       step5: getComputedStyle(
         /** @type {Element} */ (document.getElementById("step-measure")),
       ).display,
-      // Still held: nothing of main.ts has run.
-      wired: document.body.dataset["tourOpen"],
     }));
+    // Still held: nothing of main.ts has run, so the inline script alone
+    // painted this.
+    expect(await moduleHasRun(page)).toBe(false);
     expect(painted).toEqual({
       mode: "creator",
       paper: PAPER,
       header: "none",
       step5: "none",
-      wired: undefined,
     });
     await release();
+    // The sentinel can change: once the module runs, it does.
+    await expect.poll(() => moduleHasRun(page)).toBe(true);
   });
 
   test("the visitor's page paints its paper, without the header", async ({
@@ -117,8 +135,10 @@ test.describe("the first paint, before the page's module has run", () => {
         /** @type {Element} */ (document.querySelector("body > header")),
       ).display,
     }));
+    expect(await moduleHasRun(page)).toBe(false);
     expect(painted).toEqual({ mode: "visitor", paper: PAPER, header: "none" });
     await release();
+    await expect.poll(() => moduleHasRun(page)).toBe(true);
   });
 
   test("the editor paints its own look, not the browser's plain page", async ({
@@ -294,10 +314,14 @@ test.describe("a phone with AR", () => {
       .getByTestId("have-tour-link")
       .fill("http://127.0.0.1:5197/no-cors/tour.zip");
     await page.getByTestId("have-tour-open").click();
-    await expect(page.getByTestId("have-tour-status")).toContainText(
-      "does not let browsers read the file",
-      { timeout: 15000 },
-    );
+    // In the box's own words (M1 review #3): the way around is its other
+    // button, not step 2's printing advice.
+    const status = page.getByTestId("have-tour-status");
+    await expect(status).toContainText("refused the browser access", {
+      timeout: 15000,
+    });
+    await expect(status).toContainText('open it with "From this device"');
+    await expect(status).not.toContainText("printed code");
     await expect(page.getByTestId("have-tour-ask")).toBeHidden();
     await expect(page.getByTestId("have-tour-open")).toBeEnabled();
   });

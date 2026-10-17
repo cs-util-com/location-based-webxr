@@ -6,8 +6,9 @@
  * Move and Delete with Undo, and a Save that downloads the tour to put in
  * place of the old file - or, where the browser allows it (Chromium's file
  * picker, M6 E2b-1), writes the opened file in place - by itself too, a
- * few seconds after a change (M6 E2b-2, `autosave.ts`). Linked from nothing
- * yet.
+ * few seconds after a change (M6 E2b-2, `autosave.ts`). Linked from the
+ * setup page's "You already have a tour?" box and its step 5 on a device
+ * without AR.
  *
  * @see edit-main.ts.md
  */

@@ -23,12 +23,18 @@ plain markup in `index.html` and has no behaviour here.
     each resolving an `OpenOutcome` (`scan-open.ts`).
   - `playHref(url)` - the visitor's page for a link (`main.ts` passes
     `wizard.ts`'s `visitorLaunchHref`, which keeps `?debug=1`).
-  - `errorText()` - the open's own error sentence (the page's error box),
-    shown for a failed file.
+  - `errorText()` - the open's own error sentence (the page's error box,
+    `describeOpenError`), shown for a failed open.
   - `continueSetup()` - back to the step card (`main.ts` scrolls
     `#setup-card` into view; the open already moved the steps on).
 - `HAVE_TOUR_LABELS` (`file`, `link`, `busy`), `PLAY_OR_CONTINUE`,
-  `FILE_OPENED_ASK` - the box's words, exported for the tests.
+  `FILE_OPENED_ASK`, `HAVE_TOUR_CORS_TEXT`, `HAVE_TOUR_FAILED_TEXT` - the
+  box's words, exported for the tests.
+- **"Continue setting it up" lands where the creator got to**: the link
+  open goes through step 2's check, whose `presentTour` opens the step
+  remembered for that link (`wizard.ts`, "the remembered step (M6)" in
+  `wizard.test.ts`), and the print step only for a link never set up on
+  this device.
 
 ## Invariants & assumptions
 
@@ -48,9 +54,15 @@ plain markup in `index.html` and has no behaviour here.
     read once at boot from `?qr=`, and a visitor's page opens a tour by its
     link, so a file has nothing to play from (an open question in the W1
     report: host it first, or a later hand-off of the file);
-  - failed - a link says why in step 2's words (`linkStatusText` for the
-    host the link points to), a file in the open's own words (the error
-    box) or a plain fallback;
+  - failed - in the open's own words (the error box), never step 2's
+    printing messages, which answer a question the box never asked (M1
+    review #3). A link refused by a host that blocks browsers gets
+    `HAVE_TOUR_CORS_TEXT` (`open-errors.ts` `HOST_REFUSED_TEXT`, then the
+    way around: download the file and open it with "From this device");
+    a link step 2's check tolerates (a file not uploaded yet, offline)
+    leaves the error box empty, so the cause's own sentence
+    (`describeOpenCause`) is shown; `HAVE_TOUR_FAILED_TEXT` otherwise.
+    `#have-tour-status` keeps the sentences' line breaks (`pre-line`);
   - cancelled - the creator kept a tour with an unsaved rebuilt file, and
     the status says so;
   - superseded - nothing; the newer open speaks.

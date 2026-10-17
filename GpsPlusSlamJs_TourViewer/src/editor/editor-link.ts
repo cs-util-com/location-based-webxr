@@ -16,7 +16,7 @@ import {
   type OpenRemoteArchiveOptions,
 } from "gps-plus-slam-app-framework/storage";
 
-import { describeOpenError } from "../open-errors.js";
+import { HOST_REFUSED_TEXT, describeOpenError } from "../open-errors.js";
 import { archiveFileName, readArchiveInSlices } from "../tour-session.js";
 
 /** What the editor's link open needs of the transport; injected in tests. */
@@ -72,10 +72,7 @@ export async function fetchTourFile(
  *  (`open-errors.ts`), except where those name the viewer's own button. */
 export function linkOpenErrorText(err: unknown, link: string): string {
   if (err instanceof OpenRemoteArchiveError && err.rejectCause === "cors") {
-    return (
-      "The host refused the browser access (it blocks reads from other sites, or the connection dropped).\n" +
-      "Download the file to this computer, then choose it above."
-    );
+    return `${HOST_REFUSED_TEXT}\nDownload the file to this computer, then choose it above.`;
   }
   return describeOpenError(err, link.trim());
 }

@@ -227,8 +227,8 @@ export interface TourSession {
  *  without a second copy (M3 review #4). */
 const FULL_READ_SLICE_BYTES = 4 * 1024 * 1024;
 
-/** Exported for its unit test (a fake source with a small slice); the
- *  session always reads with the default slice. */
+/** The whole archive in slices: the session's full read, and the editor's
+ *  link open (`editor/editor-link.ts`); a unit test passes a small slice. */
 export async function readArchiveInSlices(
   archive: Pick<OpenedArchive, "size" | "source">,
   sliceBytes: number = FULL_READ_SLICE_BYTES,
