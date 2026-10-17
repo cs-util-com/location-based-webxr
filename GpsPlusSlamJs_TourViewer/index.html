@@ -602,6 +602,68 @@
         overflow-wrap: anywhere;
       }
 
+      /* ===== "You already have a tour?" (tour editor plan 2026-10-17-1816,
+         W1) ===== Below the stage. Which half shows follows the AR check
+         (`data-ar-state` on #enter-ar, written by ar-entry.ts): none while
+         it runs, the editor without AR, the phone's open with it. */
+      .have-tour {
+        display: grid;
+        gap: var(--space-2);
+        max-width: 48rem;
+        margin: var(--space-4) auto;
+        padding: 0 var(--space-4) var(--space-4);
+      }
+      .have-tour h2 {
+        font-family: var(--map-serif);
+        margin: 0;
+      }
+      .have-tour-desktop,
+      .have-tour-phone,
+      .measure-desktop {
+        display: none;
+      }
+      body:has(#enter-ar[data-ar-state="unsupported"]) .have-tour-desktop,
+      body:has(
+          #enter-ar[data-ar-state]:not(
+              [data-ar-state="unsupported"],
+              [data-ar-state="checking"]
+            )
+        )
+        .have-tour-phone,
+      body:has(#enter-ar[data-ar-state="unsupported"]) .measure-desktop {
+        display: grid;
+        gap: var(--space-2);
+        justify-items: start;
+      }
+      .have-tour-form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        width: 100%;
+      }
+      .have-tour-form .input {
+        flex: 1 1 14rem;
+      }
+      #have-tour-ask {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      #have-tour-ask > p {
+        flex-basis: 100%;
+        margin: 0;
+      }
+      /* The editor's links wear the button: the sheet's .btn is written
+         for a <button>, which centres its label by itself. */
+      .have-tour a.btn,
+      .measure-desktop a.btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+      }
+
       /* ===== The setup page in the L5 look (polish round M2b) =====
          The owner chose the "spatial path" prototype (verdict P1, D-P1).
          The paper palette is set on the design system's OWN tokens, so the
@@ -1732,9 +1794,38 @@
         height: 22px;
         flex: none;
       }
+      /* Step 5 on a computer (tour editor plan 2026-10-17-1816, W1): the
+         #measure-desktop pointer replaces the disabled "AR not supported"
+         button, a dead end (review #9), and the AR lines that describe a
+         session this device cannot start. Last in the sheet: these out-rank
+         the visitor's and the HUD's rules for the same elements (stylelint
+         no-descending-specificity). */
+      body[data-mode="creator"]:has(#enter-ar[data-ar-state="unsupported"])
+        #enter-ar,
+      body[data-mode="creator"]:has(#enter-ar[data-ar-state="unsupported"])
+        #ar-hint,
+      body[data-mode="creator"]:has(#enter-ar[data-ar-state="unsupported"])
+        #ar-status {
+        display: none;
+      }
     </style>
   </head>
   <body class="page">
+    <script id="first-paint-mode">
+      // The first paint (tour editor plan 2026-10-17-1816, W1): the page's
+      // CSS keys the light paper and the hidden header on body[data-mode],
+      // and main.ts sets it only after its imports - until then the design
+      // system's dark default, the plain header and step 5's empty card
+      // showed. A classic script as the body's FIRST child runs before
+      // anything is painted. The same rule as viewerModeFromSearch
+      // (src/mode.ts), held to it by mode.test.ts: a qr parameter, whatever
+      // its value, is a visitor.
+      document.body.dataset.mode = new URLSearchParams(location.search).has(
+        "qr",
+      )
+        ? "visitor"
+        : "creator";
+    </script>
     <header>
       <h1>Tour Viewer</h1>
       <!-- Two pages in one (guided-setup plan DEC-N1): the plain page is the
@@ -1812,6 +1903,7 @@
             A tour can be as simple as a short walk with notes and photos - with
             more to come. Visitors scan the code you printed and hung, and your
             tour opens right in their phone's browser, with nothing to install.
+            Tours run on Android phones with Chrome.
           </p>
           <ul class="setup-why" aria-label="Why it works this way">
             <li>Lives in your own storage</li>
@@ -3071,6 +3163,22 @@
               When you are done, the tour file is saved to this phone, and the
               last step shows how to put it in place.
             </p>
+            <!-- Step 5 on a device without AR (tour editor plan 2026-10-17-1816,
+             W1, review #9): shown by the CSS once the AR check says
+             "unsupported", in place of the disabled button. -->
+            <div
+              id="measure-desktop"
+              class="creator-only measure-desktop"
+              data-testid="measure-desktop"
+              hidden
+            >
+              <p class="step-copy">
+                This step runs on site, on an Android phone with Chrome: open
+                this page there. On this computer, the editor opens a tour you
+                made: fix its texts, move its pins, remove photos.
+              </p>
+              <a class="btn setup-primary" href="edit.html">Open the editor</a>
+            </div>
             <!-- The troubleshooting recording (authoring recording plan
              2026-09-28-0953, M1a). OPT-IN and page-side: the switch arms it
              before AR starts (it then runs for the rest of the page's
@@ -3778,6 +3886,98 @@
           <ul id="gallery" data-testid="gallery" hidden></ul>
         </div>
       </div>
+      <!-- "You already have a tour?" (tour editor plan 2026-10-17-1816, W1):
+           BELOW the map and the six steps, so the first-time story stays
+           first. Which half shows follows the AR check on #enter-ar
+           (have-tour.ts.md): without AR (a computer) the editor, a phone
+           with AR opens a tour from this device or from its link and then
+           asks "Play it, or continue setting it up?" (plan 2026-10-15-0348,
+           round 2) - through the page's one open path (archive-open.ts). -->
+      <section
+        id="have-tour"
+        class="creator-only have-tour"
+        data-testid="have-tour"
+        aria-labelledby="have-tour-title"
+        hidden
+      >
+        <h2 id="have-tour-title">You already have a tour?</h2>
+        <div class="have-tour-desktop" data-testid="have-tour-desktop">
+          <p class="hint--dim">
+            The editor shows your tour on a map: fix a text, move a pin or
+            remove a photo, and save it back into the tour file.
+          </p>
+          <a
+            class="btn setup-primary"
+            href="edit.html"
+            data-testid="have-tour-editor"
+            >Open the editor</a
+          >
+        </div>
+        <div class="have-tour-phone" data-testid="have-tour-phone">
+          <p class="hint--dim">
+            Open it to play it, or to go on setting it up.
+          </p>
+          <button
+            type="button"
+            id="have-tour-file"
+            class="btn"
+            data-testid="have-tour-file"
+          >
+            From this device
+          </button>
+          <input
+            id="have-tour-input"
+            type="file"
+            accept=".zip,application/zip,application/x-zip-compressed"
+            hidden
+          />
+          <form id="have-tour-form" class="have-tour-form">
+            <input
+              id="have-tour-link"
+              class="input"
+              type="text"
+              autocomplete="off"
+              placeholder="https://… link to the tour .zip"
+              aria-label="The tour's link"
+              data-testid="have-tour-link"
+            />
+            <button
+              type="submit"
+              id="have-tour-open"
+              class="btn"
+              data-testid="have-tour-open"
+            >
+              Open the link
+            </button>
+          </form>
+          <p
+            id="have-tour-status"
+            class="hint--dim"
+            role="status"
+            aria-live="polite"
+            data-testid="have-tour-status"
+            hidden
+          ></p>
+          <div id="have-tour-ask" data-testid="have-tour-ask" hidden>
+            <p id="have-tour-ask-text"></p>
+            <a
+              id="have-tour-play"
+              class="btn setup-primary"
+              data-testid="have-tour-play"
+              hidden
+              >Play it</a
+            >
+            <button
+              type="button"
+              id="have-tour-continue"
+              class="btn"
+              data-testid="have-tour-continue"
+            >
+              Continue setting it up
+            </button>
+          </div>
+        </div>
+      </section>
       <section id="visitor-more" hidden data-testid="visitor-more">
         <details id="visitor-what">
           <summary>What happens?</summary>

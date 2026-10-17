@@ -25,7 +25,12 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 
 - **Open:** the file input's change and a drop on `#drop` call
   `openTourForEditing` (`editor-open.ts`); "Use the sample tour" fetches
-  `samples/marienplatz-tour.zip` beside the page. While a file is read the
+  `samples/marienplatz-tour.zip` beside the page; `#link-form` fetches a
+  hosted tour from its link (`editor-link.ts`, the viewer's transport and
+  Drive proxy, tour editor plan 2026-10-17-1816 W1) and opens it as a
+  chosen file - without a file handle, so Save downloads the new copy -
+  saying "Fetching the tour from its link…" meanwhile and the refusal in
+  `#open-error` (`linkOpenErrorText`). While a file is read the
   modal says "Opening <name>…" and its buttons are disabled; then the tour
   is drawn and a toast names what opened, or the reason shows in
   `#open-error` and the modal stays (root `CLAUDE.md`, async feedback).
@@ -104,7 +109,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   the error, with the Finish's result sentences (the walk left out,
   photos not placed) in the toast. Save is on whenever a tour is open
   and commits the card's typing first ("Nothing to save" when there is
-  none); a save belongs to its tour and ends quietly if another was
+  none - in the status line and, since plan 2026-10-15-0348 M0, in a toast:
+  the status line already read "No changes", so the swap alone looked like
+  nothing happened); a save belongs to its tour and ends quietly if another was
   opened meanwhile; the walk switch hides once a save is built (a later
   save rebuilds from it and could not bring the walk back). A dismissed
   save picker - the one undelivered case the page can see, since an
@@ -213,4 +220,5 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 ## Tests
 
 The modules it wires have their own unit tests; the page is pinned by
-`playwright-tests/editor.spec.js`.
+`playwright-tests/editor.spec.js` and `editor-entry.spec.js` (the
+"Nothing to save" toast, the open from a link); `way-in.spec.js` checks its first paint.

@@ -25,7 +25,10 @@ until the phone's draft gives way to desktop edits (E2p).
   (`src/editor/editor-card.ts`).
 - `#open-modal` - "Open a tour": the file input inside `#drop` (a click
   opens the chooser; a drop works too), `#open-status` (the async state),
-  `#open-error`, "Use the sample tour".
+  `#open-error`, "Use the sample tour", and `#link-form` (`#link-input`,
+  `#link-btn` "Open the link": a hosted tour from its link, tour editor
+  plan 2026-10-17-1816 W1; a text input, so the dialog, not the browser,
+  says what is wrong with a link).
 - `#toasts` - "Opened <file>: N codes, M notes".
 
 ## Invariants
@@ -33,13 +36,21 @@ until the phone's draft gives way to desktop edits (E2p).
 - Every text the zip supplies is set with `textContent` by the modules;
   the page holds no tour data in its markup.
 - Its look is `src/editor/editor.css` (paper tokens of its own), not
-  `design.css`.
+  `design.css` - a `<link>` in the head, not an import of `edit-main.ts`:
+  a module's CSS arrives with the module, so the page painted unstyled
+  until the module had loaded (tour editor plan 2026-10-17-1816, W1). The
+  map's Leaflet CSS stays an import of `editor-map.ts`: nothing of the
+  map shows before the module runs anyway.
 - The visitor page never imports `src/editor/` (dependency-cruiser rule
   `viewer-not-to-editor`), so a visitor never downloads the editor's
   Leaflet.
 
 ## Tests
 
+`playwright-tests/editor-entry.spec.js` (the link form: busy until the
+linked tour opened, a refused link, text that is not a link),
+`playwright-tests/way-in.spec.js` (the first paint with the module held
+back: the editor's paper, not the browser's plain page),
 `playwright-tests/editor.spec.js` (the real file chooser, the rail and the
 markers, the card beside its marker, a capped photo, a refused non-tour,
 the layout at three viewports).

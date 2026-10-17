@@ -11,8 +11,12 @@ PDF writer lays them out around every code (`qr-print-pdf.ts`, option
 ## Public API
 
 - `DEFAULT_EXPLANATION` = "AR tour starts here", `DEFAULT_CALL_TO_ACTION`
-  = "Scan with your phone camera" - the owner's wording on r820 (the S1
-  design's poster).
+  = "Scan with an Android phone" - the owner's wording on r820
+  (the S1 design's poster), the call to action naming the phone a tour
+  needs since D8 of tour editor plan 2026-10-17-1816 (it was "Scan with
+  your phone camera"). It stays one line on the poster: "(Chrome)" added a
+  second, and the visitor's page names Chrome. A poster text stored for a tour before keeps its
+  old line until the creator edits it.
 - `type PosterFields = { title, explanation, callToAction }` (strings).
 - `defaultPosterFields(tourTitle)` - the tour's name (its `manifest.json`
   `title`, trimmed; empty when it has none) and the two defaults.

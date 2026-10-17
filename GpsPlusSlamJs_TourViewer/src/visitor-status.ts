@@ -77,7 +77,7 @@ function startFailureText(error: string | null | undefined): string {
     return "Camera access was blocked. Allow the camera for this site in the browser settings, then tap Try again.";
   }
   if (error != null && /NotSupportedError|not supported/i.test(error)) {
-    return "This phone can't start AR for this tour. Open this page in Chrome on an Android phone that supports AR.";
+    return "This phone can't start AR for this tour, which needs an Android phone with Chrome. Open this page there.";
   }
   return "AR could not start. Tap Try again.";
 }
@@ -102,7 +102,7 @@ function beforeRunning(
       return {
         state: "unsupported",
         // The button under it copies the link (polish round M4a, V4).
-        text: "This phone or browser can't show the tour in AR. Copy the link and open it in Chrome on an Android phone that supports AR.",
+        text: "This tour needs an Android phone with Chrome, and this phone or browser can't show it in AR. Copy the link and open it in Chrome on an Android phone.",
       };
     case "error":
       return { state: "error", text: startFailureText(arError) };

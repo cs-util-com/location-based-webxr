@@ -40,8 +40,11 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   setup's guidance since the guided-setup plan M3 ("Hold the phone on the
   printed code…"; since UI round 1 U3 the ready line is "Code measured." - it is measured on its own).
 - `entryHint({ tourOpen, codeSeen })` - the AR visit's first hint (authoring
-  plan 2026-09-28-0953 §3.2a, decision D5): "First, point the camera at the
-  code you scanned to open this tour." while a tour is open and the code in
+  plan 2026-09-28-0953 §3.2a, decision D5): "First, point the camera at
+  this tour's printed code: pins and photos placed before it is seen are
+  less exact." (plan 2026-10-15-0348 M0: it used to name "the code you
+  scanned to open this tour", false for a tour opened from a file or a
+  link) while a tour is open and the code in
   hand has not been seen stable in this visit; empty otherwise. It blocks
   nothing: a later visit's notes are corrected through the code only when
   the code was seen (D10b), and the owner chose a hint over a rule.

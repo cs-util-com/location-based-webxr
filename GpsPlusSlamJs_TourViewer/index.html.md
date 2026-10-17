@@ -108,6 +108,28 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   (the visitor's sentence); `#scan-escape` lives in it, at the bottom of
   the screen, the only part that takes taps. Sideways: animation beside
   the words. `ar-mode.spec.js` pins its centring and the skip's place.
+- **"You already have a tour?"** (`#have-tour`, creator-only, tour editor
+  plan 2026-10-17-1816 W1): BELOW the map and the steps, so the first-time
+  story stays first. Two halves, chosen by CSS from the page's AR check
+  (`#enter-ar[data-ar-state]`, written by `ar-entry.ts`): `unsupported`
+  (a computer) shows `.have-tour-desktop` - one line and "Open the
+  editor" (`edit.html`); any other settled state (a phone with AR) shows
+  `.have-tour-phone` - "From this device" (`#have-tour-file` over its own
+  hidden `#have-tour-input`, no test id), the link form (`#have-tour-form`,
+  `#have-tour-link`, `#have-tour-open`), the status line
+  `#have-tour-status` and, after an open, `#have-tour-ask` ("Play it" /
+  "Continue setting it up"); `checking` shows neither. Behaviour:
+  `have-tour.ts`.
+- **Step 5 on a computer** (W1, plan review #9): `#measure-desktop` says
+  the step runs on site on an Android phone with Chrome and links the
+  editor; the same AR check shows it, and on the creator page an
+  `unsupported` `#enter-ar`, `#ar-hint` and `#ar-status` are hidden
+  rather than shown as a dead "AR not supported" button (the button keeps
+  its text and disabled state for the code that reads them).
+- **Android only, said plainly** (D8): the setup lede says tours run on
+  Android phones with Chrome; the visitor's no-AR sentence
+  (`visitor-status.ts`) and the poster's default call to action
+  (`poster-text.ts`) say it too.
 - Below the steps, creator-only: the Storage section (`#storage-panel`,
   summary "Other settings" - something you normally do not open, F9).
 - Shared: `#error`, `#ar-root` (the DOM-overlay root: hint, status line,
@@ -149,6 +171,10 @@ new tab, polish round A17), `make-your-own` (on the visitor screen: the
 setup page in a new tab, polish round A8), `step-hang`, `hang-done`, `step-measure` (owns
 `draft-offer`,
 `draft-offer-text`, `draft-restore`, `draft-dismiss`, `draft-discard`),
+`measure-desktop`, `have-tour` (owns `have-tour-desktop`,
+`have-tour-editor`, `have-tour-phone`, `have-tour-file`,
+`have-tour-link`, `have-tour-open`, `have-tour-status`, `have-tour-ask`,
+`have-tour-play`, `have-tour-continue`),
 `step-done` (owns `done-pending`, `finish-block`,
 `finish-status`, `finish-download`, `summary` (the summary after Finish,
 authoring plan 2026-09-28-0953 M3b: owns `summary-codes`, `summary-map`,
@@ -220,6 +246,16 @@ the creator's; `visitor-screen.ts` re-words it for a visitor.
 
 ## Invariants & assumptions
 
+- **The first paint has its mode** (tour editor plan 2026-10-17-1816, W1):
+  `<script id="first-paint-mode">`, a classic inline script and the
+  body's FIRST child, sets `body[data-mode]` before anything is painted.
+  The paper, the hidden header and the closed steps are keyed on it, and
+  `main.ts` sets it only after its imports - the owner saw the design
+  system's dark default, the header and step 5's empty card until then.
+  Its rule is a copy of `viewerModeFromSearch` (`src/mode.ts`): a classic
+  script cannot import a module, so `mode.test.ts` runs the script's text
+  against the function (fixed cases and a property). `main.ts` still
+  writes the same value.
 - **Step 4 must never be collapsed while an AR session runs.** Its content
   is `#ar-root`, the DOM-overlay root, and a collapsed `<details>` renders
   nothing - so a collapse mid-session blanks the overlay, on a phone,
@@ -250,6 +286,8 @@ the creator's; `visitor-screen.ts` re-words it for a visitor.
 
 ## Tests
 
-Driven by `playwright-tests/*.spec.js`; the no-console-errors smoke boots
+Driven by `playwright-tests/*.spec.js`; `way-in.spec.js` holds the
+module back and checks the first paint (paper, no header, no empty step)
+for a creator and a visitor; the no-console-errors smoke boots
 exactly this page. `src/printed-size-default.test.ts` reads this file for
 the size default.

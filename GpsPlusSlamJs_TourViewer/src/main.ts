@@ -73,7 +73,12 @@ import { wireVisitorStart } from "./visitor-start.js";
 import { wireFoldingLabel } from "./folding-label.js";
 import { pictureProblem } from "./image-cap.js";
 import { driveProxyBaseUrl } from "./drive-proxy-url.js";
-import { stepStoreOrUndefined, wireWizard } from "./wizard.js";
+import {
+  stepStoreOrUndefined,
+  visitorLaunchHref,
+  wireWizard,
+} from "./wizard.js";
+import { wireHaveTour } from "./have-tour.js";
 import { readPrintedText } from "./level-printed.js";
 
 /** Keep at most this many archives cached (LRU) — see BoundedLocalCacheStore. */
@@ -804,7 +809,8 @@ const arEntry = wireArEntry({
   mode,
   arStore,
   // The creator's ring on a mesh of the surroundings (polish round M5,
-  // Q-Mesh): behind ?mesh=1 until the owner likes it on the phone.
+  // Q-Mesh): the default since the owner's phone test of 2026-10-15;
+  // ?mesh=0 turns it off.
   meshCursor: mode === "creator" && meshCursorFromSearch(location.search),
   arController,
   gpsHandler,
@@ -857,6 +863,36 @@ const archive = wireArchiveOpen({
   hooks,
 });
 scanOpen = archive.scanOpen;
+
+// "You already have a tour?" below the steps (tour editor plan
+// 2026-10-17-1816, W1): a phone opens a tour through the page's one open
+// path, then plays it or goes on setting it up. A creator's only.
+if (mode === "creator") {
+  wireHaveTour({
+    dom: {
+      fileButton: element<HTMLButtonElement>("have-tour-file"),
+      fileInput: element<HTMLInputElement>("have-tour-input"),
+      form: element("have-tour-form"),
+      linkInput: element<HTMLInputElement>("have-tour-link"),
+      linkButton: element<HTMLButtonElement>("have-tour-open"),
+      status: element("have-tour-status"),
+      ask: element("have-tour-ask"),
+      askText: element("have-tour-ask-text"),
+      play: element<HTMLAnchorElement>("have-tour-play"),
+      continueButton: element("have-tour-continue"),
+    },
+    openFile: archive.openFile,
+    openLink: archive.openLink,
+    playHref: (url) => visitorLaunchHref(url, ctx.debug),
+    errorText: () => errorBox.textContent ?? "",
+    continueSetup: () => {
+      element("setup-card").scrollIntoView({
+        block: "start",
+        behavior: "smooth",
+      });
+    },
+  });
+}
 
 // The QR launch is the one flow with no retry (a printed code) — an
 // unexpected boot failure must reach the error box, not vanish in an

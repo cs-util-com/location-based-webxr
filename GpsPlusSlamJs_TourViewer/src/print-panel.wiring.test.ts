@@ -232,7 +232,7 @@ describe("the poster text (polish round D-P7, r820 feedback R8)", () => {
     panel.presentTour("https://h.example/t.zip");
     expect(dom.posterTitle.value).toBe("Harbour Lights");
     expect(dom.posterExplanation.value).toBe("AR tour starts here");
-    expect(dom.posterCallToAction.value).toBe("Scan with your phone camera");
+    expect(dom.posterCallToAction.value).toBe("Scan with an Android phone");
     dom.posterExplanation.value = "";
     dom.posterExplanation.fire("input");
     dom.pdfButton.fire("click");
@@ -241,7 +241,7 @@ describe("the poster text (polish round D-P7, r820 feedback R8)", () => {
       poster: {
         title: "Harbour Lights",
         explanation: "",
-        callToAction: "Scan with your phone camera",
+        callToAction: "Scan with an Android phone",
       },
     });
   });
@@ -252,7 +252,7 @@ describe("the poster text (polish round D-P7, r820 feedback R8)", () => {
   it("starts with the default wording before any tour opens", () => {
     const { dom } = wire();
     expect(dom.posterExplanation.value).toBe("AR tour starts here");
-    expect(dom.posterCallToAction.value).toBe("Scan with your phone camera");
+    expect(dom.posterCallToAction.value).toBe("Scan with an Android phone");
     expect(dom.posterTitle.value).toBe("");
   });
 
