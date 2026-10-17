@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
@@ -69,4 +72,58 @@ describe("meshCursorFromSearch (polish round M5, Q-Mesh; the default since 2026-
     expect(meshCursorFromSearch("?mesh=false")).toBe(false);
     expect(meshCursorFromSearch("?mesh=%20FALSE%20")).toBe(false);
   });
+});
+
+/**
+ * Why these tests matter (tour editor plan 2026-10-17-1816, W1): the page
+ * paints before `main.ts` has run its imports, and the paper colour and the
+ * hidden header are keyed on `body[data-mode]`. A tiny inline script, the
+ * body's first child, sets the mode for that first paint - with its own
+ * copy of the rule, since a classic inline script cannot import this
+ * module. These tests hold the copy to the rule: if the two ever disagreed,
+ * the page would paint one mode and then switch to the other.
+ */
+describe("the first-paint script in index.html", () => {
+  const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const html = readFileSync(resolve(packageRoot, "index.html"), "utf8");
+  const match =
+    /<body class="page">\s*<script id="first-paint-mode">([\s\S]*?)<\/script>/.exec(
+      html,
+    );
+
+  it("is the body's first child, so it runs before anything is painted", () => {
+    expect(match).not.toBeNull();
+  });
+
+  /** The mode the inline script writes for `search`. */
+  function inlineMode(search: string): string | undefined {
+    const dataset: Record<string, string> = {};
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const run = new Function("location", "document", match?.[1] ?? "") as (
+      location: { search: string },
+      document: { body: { dataset: Record<string, string> } },
+    ) => void;
+    run({ search }, { body: { dataset } });
+    return dataset["mode"];
+  }
+
+  it.each(["", "?", "?qr=abc", "?qr=", "?nocache=1&qr=~blob", "?QR=abc"])(
+    "writes the mode viewerModeFromSearch reads for %j",
+    (search) => {
+      expect(inlineMode(search)).toBe(viewerModeFromSearch(search));
+    },
+  );
+
+  it(
+    "agrees with viewerModeFromSearch on random queries (property)",
+    { timeout: 30_000 },
+    () => {
+      fc.assert(
+        fc.property(fc.webQueryParameters(), (query) => {
+          const search = `?${query}`;
+          expect(inlineMode(search)).toBe(viewerModeFromSearch(search));
+        }),
+      );
+    },
+  );
 });

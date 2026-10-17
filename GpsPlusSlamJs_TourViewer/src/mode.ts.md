@@ -21,6 +21,12 @@ creator in the guided setup. Replaces the flows plan's `?author=1` flag
 
 ## Invariants & assumptions
 
+- **`index.html` carries a copy of the mode rule** for its first paint
+  (`<script id="first-paint-mode">`, tour editor plan 2026-10-17-1816,
+  W1): a classic inline script cannot import this module. `mode.test.ts`
+  runs that script's text against `viewerModeFromSearch`, so the two
+  cannot drift apart.
+
 - Read once at boot in `main.ts`; switching is a page reload (the AR
   controller refuses `enable()` mid-session anyway).
 - An empty or unreadable payload is still visitor mode: the boot's payload
@@ -37,4 +43,6 @@ const mode = viewerModeFromSearch(location.search); // "visitor" for ?qr=…
 
 `mode.test.ts` - visitor for any `qr` presence, creator otherwise, and a
 property over random query strings against `URLSearchParams.has`; the
+first-paint script of `index.html` against this function (fixed cases and
+a property); the
 mesh flag on by default, off for `0`/`false` only.

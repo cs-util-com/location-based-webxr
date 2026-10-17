@@ -1735,6 +1735,21 @@
     </style>
   </head>
   <body class="page">
+    <script id="first-paint-mode">
+      // The first paint (tour editor plan 2026-10-17-1816, W1): the page's
+      // CSS keys the light paper and the hidden header on body[data-mode],
+      // and main.ts sets it only after its imports - until then the design
+      // system's dark default, the plain header and step 5's empty card
+      // showed. A classic script as the body's FIRST child runs before
+      // anything is painted. The same rule as viewerModeFromSearch
+      // (src/mode.ts), held to it by mode.test.ts: a qr parameter, whatever
+      // its value, is a visitor.
+      document.body.dataset.mode = new URLSearchParams(location.search).has(
+        "qr",
+      )
+        ? "visitor"
+        : "creator";
+    </script>
     <header>
       <h1>Tour Viewer</h1>
       <!-- Two pages in one (guided-setup plan DEC-N1): the plain page is the

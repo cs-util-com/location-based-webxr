@@ -220,6 +220,16 @@ the creator's; `visitor-screen.ts` re-words it for a visitor.
 
 ## Invariants & assumptions
 
+- **The first paint has its mode** (tour editor plan 2026-10-17-1816, W1):
+  `<script id="first-paint-mode">`, a classic inline script and the
+  body's FIRST child, sets `body[data-mode]` before anything is painted.
+  The paper, the hidden header and the closed steps are keyed on it, and
+  `main.ts` sets it only after its imports - the owner saw the design
+  system's dark default, the header and step 5's empty card until then.
+  Its rule is a copy of `viewerModeFromSearch` (`src/mode.ts`): a classic
+  script cannot import a module, so `mode.test.ts` runs the script's text
+  against the function (fixed cases and a property). `main.ts` still
+  writes the same value.
 - **Step 4 must never be collapsed while an AR session runs.** Its content
   is `#ar-root`, the DOM-overlay root, and a collapsed `<details>` renders
   nothing - so a collapse mid-session blanks the overlay, on a phone,
@@ -250,6 +260,8 @@ the creator's; `visitor-screen.ts` re-words it for a visitor.
 
 ## Tests
 
-Driven by `playwright-tests/*.spec.js`; the no-console-errors smoke boots
+Driven by `playwright-tests/*.spec.js`; `way-in.spec.js` holds the
+module back and checks the first paint (paper, no header, no empty step)
+for a creator and a visitor; the no-console-errors smoke boots
 exactly this page. `src/printed-size-default.test.ts` reads this file for
 the size default.

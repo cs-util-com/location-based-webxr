@@ -12,7 +12,6 @@
  * @see edit-main.ts.md
  */
 
-import "./editor.css";
 import { downloadZip } from "gps-plus-slam-app-framework/storage";
 import { FINISH_LABELS } from "../qr-author-mode.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";

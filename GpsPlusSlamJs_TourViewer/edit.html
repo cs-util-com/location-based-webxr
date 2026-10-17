@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tour editor</title>
+    <!-- A link of the page, not an import of edit-main.ts: a module's CSS
+         arrives with the module, so the page painted unstyled until then
+         (tour editor plan 2026-10-17-1816, W1). -->
+    <link rel="stylesheet" href="/src/editor/editor.css" />
   </head>
   <body>
     <div id="map" aria-label="Tour map"></div>
