@@ -221,10 +221,7 @@ test.describe("the L5 look (polish round M2b)", () => {
           .toLowerCase(),
       );
     expect(await paper()).toBe("#f4eedf");
-    await page.evaluate(() => {
-      document.body.dataset["arActive"] = "true";
-    });
-    expect(await paper()).not.toBe("#f4eedf");
+    expect(await paperInAr(page)).not.toBe("#f4eedf");
   });
 
   // The visitor's start page wears the paper look too since the owner
@@ -246,12 +243,29 @@ test.describe("the L5 look (polish round M2b)", () => {
           .toLowerCase(),
       );
     expect(await paper()).toBe("#f4eedf");
-    await page.evaluate(() => {
-      document.body.dataset["arActive"] = "true";
-    });
-    expect(await paper()).not.toBe("#f4eedf");
+    expect(await paperInAr(page)).not.toBe("#f4eedf");
   });
 });
+
+/**
+ * The paper token with the page's "a session is up" flag set, read in the
+ * SAME task that sets it. `ar-entry.ts` rewrites that flag on every render
+ * (a tour's open, the location permission's answer), so a set and a read
+ * in two evaluates raced those renders: the visitor test failed 3 runs in
+ * 5 of the full spec on 2026-10-18, never alone.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @returns {Promise<string>}
+ */
+function paperInAr(page) {
+  return page.evaluate(() => {
+    document.body.dataset["arActive"] = "true";
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue("--paper")
+      .trim()
+      .toLowerCase();
+  });
+}
 
 test.describe("the print PDF (polish round M0b)", () => {
   // Why: where the browser shows PDFs itself, the owner wants the PDF to
