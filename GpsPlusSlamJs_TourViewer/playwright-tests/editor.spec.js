@@ -2404,3 +2404,126 @@ test("a changed needs-no-GPS setting survives a closed tab, and Restore brings i
   await expect(next.locator("#no-gps-input")).toBeChecked();
   await expect(next.locator("#save-status")).toHaveText("1 change not saved");
 });
+
+/**
+ * Why (tour editor plan 2026-10-17-1816, W2): the tour's name, description,
+ * cover and contact had no place in the editor. The name in the top bar
+ * opens them; Apply makes each changed field a pending change, saved into
+ * `tour.json` (minor 3), and an emptied name removes the title rather than
+ * silently keeping it. A value the format would drop is refused in the
+ * dialog, in words, and changes nothing.
+ */
+test("the tour's name opens its details: applied, saved into tour.json, and an emptied name removes the title", async ({
+  page,
+}) => {
+  await noSavePicker(page);
+  await page.goto("/edit.html");
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  await expect(page).toHaveTitle("Editor fixture - Tour editor");
+  await page.locator("#tour-name").click();
+  const dialog = page.locator("#details-modal");
+  await expect(dialog).toBeVisible();
+  const name = page.locator("#details-name");
+  await expect(name).toHaveValue("Editor fixture");
+  await expect(name).toBeFocused();
+  // The tour's placed photos are the choices, "None" chosen.
+  await expect(page.locator(".cover-choice")).toHaveText([
+    /None/,
+    /Fountain/,
+    /Too big/,
+  ]);
+  await expect(page.locator('.cover-choice input[value=""]')).toBeChecked();
+  // Each photo shows its picture, read from the zip.
+  await expect(
+    page.locator(".cover-choice", { hasText: "Fountain" }).locator("img"),
+  ).toBeVisible();
+  await name.fill("Castle walk");
+  await page.locator("#details-description").fill("Up to the castle and back.");
+  await page.locator(".cover-choice", { hasText: "Fountain" }).click();
+  await page.locator("#details-contact").fill("guide@example.org");
+  await page.locator("#details-apply").click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(".toast").last()).toHaveText(
+    "Tour details changed - not saved yet.",
+  );
+  await expect(page.locator("#tour-name")).toHaveText("Castle walk");
+  await expect(page.locator("#tour-name")).toBeFocused();
+  await expect(page).toHaveTitle("Castle walk - Tour editor");
+  await expect(page.locator("#save-status")).toHaveText("4 changes not saved");
+  const saved = await saveAndRead(page);
+  expect(saved.manifest).toMatchObject({
+    version: 2,
+    minor: 3,
+    title: "Castle walk",
+    description: "Up to the castle and back.",
+    cover: "photo-ok",
+    contact: "guide@example.org",
+  });
+
+  // Opened again it shows what was saved; an emptied name removes the
+  // title (the top bar then names the file).
+  await page.locator("#tour-name").click();
+  await expect(page.locator("#details-description")).toHaveValue(
+    "Up to the castle and back.",
+  );
+  await expect(
+    page.locator('.cover-choice input[value="photo-ok"]'),
+  ).toBeChecked();
+  await name.fill("");
+  await page.locator("#details-apply").click();
+  await expect(page.locator("#tour-name")).toHaveText("editor-fixture.zip");
+  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  const untitled = await saveAndRead(page);
+  expect(untitled.manifest).not.toHaveProperty("title");
+  expect(untitled.manifest).toMatchObject({ cover: "photo-ok" });
+});
+
+test("a contact the format refuses stays in the dialog with the reason; Esc closes it and changes nothing", async ({
+  page,
+}) => {
+  await page.goto("/edit.html");
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  await page.locator("#tour-name").click();
+  const contact = page.locator("#details-contact");
+  await contact.fill("call me at the gate");
+  await page.locator("#details-apply").click();
+  await expect(page.locator("#details-modal")).toBeVisible();
+  await expect(page.locator("#details-error")).toHaveText(
+    "The contact must be an e-mail address or a web link starting with https://.",
+  );
+  await expect(contact).toHaveValue("call me at the gate");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#details-modal")).toBeHidden();
+  await expect(page.locator("#tour-name")).toBeFocused();
+  await expect(page.locator("#save-status")).toHaveText("No changes");
+  // Opened again, the error is gone and the tour's own values show.
+  await page.locator("#tour-name").click();
+  await expect(page.locator("#details-error")).toBeHidden();
+  await expect(contact).toHaveValue("");
+});
+
+test("the open dialog's fine print says what Save does in this browser", async ({
+  page,
+}) => {
+  // Why (W2): it said "Save gives you a new copy" everywhere, which is
+  // wrong where the file picker lets Save write the chosen file itself.
+  // This suite takes the picker away before each test: a new copy.
+  await page.goto("/edit.html");
+  const fine = page.locator("#open-fineprint");
+  await expect(fine).toContainText("Save gives you a new copy");
+  const withPicker = await page.context().newPage();
+  await answerTiles(withPicker);
+  await withPicker.addInitScript(() => {
+    // Put back after the suite's own init script took it away.
+    /** @type {any} */ (window).showOpenFilePicker = () =>
+      Promise.reject(new DOMException("not in this test", "AbortError"));
+  });
+  await withPicker.goto("/edit.html");
+  await expect(withPicker.locator("#open-fineprint")).toContainText(
+    "saved into that file",
+  );
+  await expect(withPicker.locator("#open-fineprint")).not.toContainText(
+    "Save gives you a new copy",
+  );
+  await withPicker.close();
+});

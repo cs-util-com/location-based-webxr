@@ -62,6 +62,9 @@ const entryFiles = [
   // `tour.json` schema + archive convention (guided-setup plan M1) - deep-
   // imported by the Tour Viewer via the `./ar/*` wildcard, so per-file.
   'src/ar/tour-manifest.ts',
+  // The tour details' checks (W2), deep-imported by the Tour Viewer's
+  // editor and visitor page.
+  'src/ar/tour-details.ts',
   'src/ar/tour-archive.ts',
   // The tour media allowlist (tour kit plan K0), deep-imported the same way.
   'src/ar/tour-media.ts',

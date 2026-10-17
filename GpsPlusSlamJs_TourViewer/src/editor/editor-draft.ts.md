@@ -22,7 +22,8 @@ editor's own namespace, one tab at a time. Design:
     writes started / all settled (the page's `data-draft` mark).
 - `EditorDraft` - the four `DraftObjectWrites` (`draft-actions.ts`), plus:
   - `saveSettings(settings)` (QR-first M1b-2) - the tour's settings
-    (`EditorTourSettings`, today `{ needsNoGps }`) as they stand now: the
+    (`EditorTourSettings`: `{ needsNoGps, details? }`, the details since
+    W2 of the tour editor plan) as they stand now: the
     `settings` record is written while it differs from the file on disk
     (or from a build's value), removed once it does not; whether it landed.
   - `writes(): EditorTourDraft` - those five, and `built` and `landed`
@@ -39,7 +40,11 @@ editor's own namespace, one tab at a time. Design:
     `text` from `restoreOfferText`, changes and deletions named apart, a
     changed setting counted as a change and NAMED with its value - "It is
     "This tour needs no GPS" turned on." alone, "One of the changes is
-    ..." beside notes, M1b-2 milestone review #3) or null; `superseded` -
+    ..." beside notes, M1b-2 milestone review #3; changed details counted
+    one per field and named by field - "Changed: the tour's details (name,
+    contact)." - W2), `settingsWhat` (how `restoredLine` names the
+    settings part: the setting, "this tour's details", or "this tour's
+    settings" for both), or null; `superseded` -
     `supersededLine(n, "in this browser")` or null. Awaited before the
     tour shows.
   - `restored()` - the session applied the offer (its writes rewrote what
@@ -149,6 +154,15 @@ editor's own namespace, one tab at a time. Design:
   file and its record goes - the build's "on" then brings it back, so the
   file says on, the draft says off, and a closed tab keeps "off" (in place,
   on a key move, and as a download alike).
+  **The details (W2)** join the record by the same rules: `details` holds
+  the manifest's `title`, `description`, `cover` and `contact` as they
+  stand (each present only when set); a record WITHOUT `details` (written
+  before they existed, or before any was changed) has no opinion about
+  them, so it never offers to change or blank them. "Differs from the
+  file" compares the setting and, when the record has details, each of
+  them (`differs`); the builds' values are kept whole (`built`). A record
+  whose details do not read (a field that is not a string) is unreadable
+  and goes, like any.
   **No base, and what that costs** (milestone review #3; the first build of
   this bullet claimed the other value was always one "this browser saw or
   wrote", which does not hold): a file that differs from the record holds
@@ -201,7 +215,10 @@ clearing it and one made during it kept, key moves, "Delete it", a closed
 tour's write dropped, an unreadable record, a failed write said); the
 settings record's edge walks (M1b-2 milestone review: a setting turned back
 while a save builds, in place, on a key move and as a download; the offer
-naming the setting and its value, alone and beside notes; "Delete it"
+naming the setting and its value, alone and beside notes; the details
+(W2: offered and named by field, put back to the file's leaving nothing,
+spent by a file that carries them, an old record offering only its
+setting, both named together, an unreadable details part); "Delete it"
 done only once the record went, failing when its removal does not land,
 and re-arming the offer so a key move still carries it); `restoredLine`'s
 words for notes, the setting, and both; the same tour

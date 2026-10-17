@@ -6,7 +6,9 @@
  * Move and Delete with Undo, and a Save that downloads the tour to put in
  * place of the old file - or, where the browser allows it (Chromium's file
  * picker, M6 E2b-1), writes the opened file in place - by itself too, a
- * few seconds after a change (M6 E2b-2, `autosave.ts`). Linked from the
+ * few seconds after a change (M6 E2b-2, `autosave.ts`). The tour's name in
+ * the top bar opens its details (W2 of the tour editor plan,
+ * `details-dialog.ts`). Linked from the
  * setup page's "You already have a tour?" box and its step 5 on a device
  * without AR.
  *
@@ -46,6 +48,7 @@ import {
   type NoBackupReason,
 } from "./editor-draft.js";
 import { createPhotoCopies } from "./photo-copy.js";
+import { wireDetailsDialog } from "./details-dialog.js";
 import { createEditorRail } from "./editor-rail.js";
 import {
   AUTOSAVE_MAX_BYTES,
@@ -67,6 +70,7 @@ import {
   holdEditorDraftLock,
   holdEditorLock,
   pickTourFile,
+  saveFinePrint,
   InPlaceRefusal,
   type EditorLock,
   type PickerWindow,
@@ -77,6 +81,13 @@ import {
 /** The committed sample tour (`public/samples/`), beside this page. */
 const SAMPLE_URL = "samples/marienplatz-tour.zip";
 const SAMPLE_NAME = "marienplatz-tour.zip";
+
+/** The page's own title (`edit.html`), after the tour's name. */
+const EDITOR_TITLE = "Tour editor";
+
+/** Said when the details dialog's Apply changed something, or nothing. */
+const DETAILS_CHANGED = "Tour details changed - not saved yet.";
+const DETAILS_UNCHANGED = "The tour details are as they were.";
 
 /** Save's answer when there is nothing to save. */
 const NOTHING_TO_SAVE =
@@ -159,6 +170,10 @@ const openError = element("open-error");
 const sampleButton = element<HTMLButtonElement>("sample-btn");
 const cancelButton = element<HTMLButtonElement>("open-cancel");
 const topbar = element("topbar");
+/** The tour's name in the top bar: it opens the tour's details (W2). */
+const tourName = element<HTMLButtonElement>("tour-name");
+const coverList = element("details-covers");
+const coversNone = element("details-covers-none");
 const toasts = element("toasts");
 const saveButton = element<HTMLButtonElement>("save-btn");
 const saveStatus = element("save-status");
@@ -487,10 +502,20 @@ function renderNoGps(): void {
   );
 }
 
+/** The tour's name in the top bar and the tab's title (W2: link titles
+ *  use the tour's name, not the app's). */
+function renderTourName(): void {
+  const title = model?.title;
+  tourName.textContent = title ?? "";
+  document.title =
+    title === undefined ? EDITOR_TITLE : `${title} - ${EDITOR_TITLE}`;
+}
+
 /** After an edit: the rail, the markers, the card and the status follow. */
 function refresh(): void {
   if (editor === null) return;
   model = editor.model();
+  renderTourName();
   rail.update(model);
   map.update(model);
   if (selected !== null && !model.items.some((i) => i.id === selected)) {
@@ -684,6 +709,121 @@ const card = createEditorCard(
   },
 );
 
+/** The cover choices' thumbnails, let go when the dialog closes. */
+let coverUrls: string[] = [];
+
+function releaseCoverThumbs(): void {
+  for (const url of coverUrls) URL.revokeObjectURL(url);
+  coverUrls = [];
+}
+
+/** One cover choice: a radio with its picture (or "None") and its name. */
+function coverChoice(
+  id: string,
+  label: string,
+  checked: boolean,
+): { choice: HTMLLabelElement; thumb: HTMLElement } {
+  const choice = document.createElement("label");
+  choice.className = "cover-choice";
+  const radio = document.createElement("input");
+  radio.type = "radio";
+  radio.name = "details-cover";
+  radio.value = id;
+  radio.checked = checked;
+  const thumb = document.createElement("span");
+  thumb.className = "cover-thumb";
+  const name = document.createElement("span");
+  name.className = "cover-label";
+  name.textContent = label;
+  choice.append(radio, thumb, name);
+  return { choice, thumb };
+}
+
+/** The cover picker: "None" and the tour's photos, `chosen` chosen. */
+function showCovers(chosen: string | null): void {
+  releaseCoverThumbs();
+  coverList.replaceChildren();
+  const choices = editor?.coverChoices() ?? [];
+  coversNone.hidden = choices.length > 0;
+  const none = coverChoice("", "None", chosen === null);
+  none.thumb.textContent = "No cover";
+  coverList.append(none.choice);
+  const open = photos.current() ?? session;
+  for (const c of choices) {
+    const title = model?.items.find((i) => i.id === c.id)?.title ?? c.id;
+    const { choice, thumb } = coverChoice(c.id, title, c.id === chosen);
+    coverList.append(choice);
+    if (open === null) continue;
+    const urls = coverUrls;
+    void open
+      .loadContentEntry(c.image)
+      .then((blob) => {
+        // A dialog closed (or opened again) meanwhile has let go of these.
+        if (urls !== coverUrls) return;
+        const url = URL.createObjectURL(blob);
+        coverUrls.push(url);
+        const img = document.createElement("img");
+        img.className = "cover-thumb";
+        img.alt = "";
+        img.src = url;
+        thumb.replaceWith(img);
+      })
+      .catch(() => {
+        thumb.textContent = "No preview";
+      });
+  }
+}
+
+/** The tour's details (W2), from the name in the top bar. */
+const details = wireDetailsDialog({
+  dom: {
+    backdrop: element("details-modal"),
+    form: element<HTMLFormElement>("details-form"),
+    name: element<HTMLInputElement>("details-name"),
+    description: element<HTMLTextAreaElement>("details-description"),
+    contact: element<HTMLInputElement>("details-contact"),
+    error: element("details-error"),
+    cancel: element<HTMLButtonElement>("details-cancel"),
+  },
+  current: () =>
+    editor?.details() ?? {
+      name: "",
+      description: "",
+      cover: null,
+      contact: "",
+    },
+  showCovers,
+  chosenCover: () => {
+    const checked = coverList.querySelector<HTMLInputElement>(
+      'input[name="details-cover"]:checked',
+    );
+    return checked === null || checked.value === "" ? null : checked.value;
+  },
+  apply: (next) =>
+    editor?.setDetails(next) ?? {
+      kind: "refused",
+      reason: "No tour is open.",
+    },
+  onApplied: (kind) => {
+    refresh();
+    toast(kind === "changed" ? DETAILS_CHANGED : DETAILS_UNCHANGED);
+    if (kind === "changed") autosave.changed();
+  },
+  onClose: () => {
+    releaseCoverThumbs();
+    coverList.replaceChildren();
+    if (!topbar.hidden) tourName.focus();
+  },
+});
+
+tourName.addEventListener("click", () => {
+  if (editor === null || busy) return;
+  // Typing in the card is committed first: the dialog shows the tour as it
+  // stands.
+  card.commit();
+  details.open();
+});
+
 function showModal(on: boolean): void {
   modal.hidden = !on;
   // Cancel returns to the open tour; with none there is nothing to return to.
@@ -722,6 +862,10 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (event.key !== "Escape") return;
+  if (details.isOpen()) {
+    details.close();
+    return;
+  }
   if (moving !== null) {
     cancelMove();
     return;
@@ -773,6 +917,7 @@ function resetEditing(): void {
 /** The tour is gone (a late integrity failure): nothing of it stays on
  *  screen, and the dialog says why. */
 function dropTour(reason: string): void {
+  details.close();
   select(null);
   const open = session;
   session = null;
@@ -785,6 +930,7 @@ function dropTour(reason: string): void {
   leaveFile();
   void open?.close().catch(() => undefined);
   topbar.hidden = true;
+  renderTourName();
   element("rail").hidden = true;
   showModal(true);
   openError.textContent = reason;
@@ -891,6 +1037,7 @@ async function openFile(
     outcome.manifest,
   );
   setBusy(false, "");
+  details.close();
   select(null);
   const previous = session;
   session = outcome.session;
@@ -919,7 +1066,7 @@ async function openFile(
       outcome.manifest,
       outcome.session.manifestWrap,
     ).length === 0;
-  element("tour-name").textContent = model.title;
+  renderTourName();
   element("tour-file").textContent = outcome.fileName;
   topbar.hidden = false;
   showModal(false);
@@ -1462,6 +1609,12 @@ element<HTMLButtonElement>("open-another").addEventListener("click", () => {
   }
   showModal(true);
 });
+
+// What Save does in this browser (W2): a chosen file is written in place
+// only where the file picker exists.
+element("open-fineprint").textContent = saveFinePrint(
+  window as unknown as PickerWindow,
+);
 
 // Everything above is wired: the open dialog's controls answer from here
 // on (a keyboard press before the module ran would go nowhere - the e2e

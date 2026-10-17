@@ -77,7 +77,8 @@ export interface FinishInput {
   readonly deleted: readonly string[];
   /** The code levels to write, in order. */
   readonly levels: readonly LevelText[];
-  /** The tour's name as typed; one that says something becomes `title`. */
+  /** The tour's name as typed: one that says something becomes `title`,
+   *  an emptied one removes it, null (or absent) keeps the tour's own. */
   readonly title?: string | null;
   /** The recorded photos' spots, when the tour has them. */
   readonly captureSpots?: TourCaptureSpots;
@@ -104,15 +105,18 @@ export interface FinishedTour {
   readonly scanLeftOut: readonly string[];
 }
 
-/** The title a finished tour carries: the name typed in step 3 when it
- *  says something, else the title the tour had (polish round M4a: the
- *  visitor's start page leads with it). */
+/** The title a finished tour carries (polish round M4a: the visitor's
+ *  start page leads with it): the name as typed, none when the name was
+ *  emptied (W2 of the tour editor plan: an emptied name no longer keeps
+ *  the old title silently), and the title the tour had when no name was
+ *  typed (null). */
 function finishTitle(
   current: string | undefined,
   typed: string | null,
 ): string | undefined {
-  const name = typed?.trim() ?? "";
-  return name === "" ? current : name;
+  if (typed === null) return current;
+  const name = typed.trim();
+  return name === "" ? undefined : name;
 }
 
 /** A written entry's record for `manifest.json`: the SHA-256 and size of
@@ -153,8 +157,10 @@ export async function rebuildFinishedTour(
   // §3.4, M4); the photos' bytes become content entries next to it.
   const deleted = [...input.deleted];
   const title = finishTitle(manifest.title, input.title ?? null);
+  const untitled = { ...manifest };
+  delete untitled.title;
   const written: TourManifest = {
-    ...manifest,
+    ...untitled,
     ...(title === undefined ? {} : { title }),
     ...(input.captureSpots === undefined
       ? {}

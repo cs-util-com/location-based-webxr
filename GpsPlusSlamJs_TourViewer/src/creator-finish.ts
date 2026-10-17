@@ -83,8 +83,9 @@ export function wireCreatorFinish(deps: {
   previews: Pick<CreatorPreviews, "keepFinishedPhoto" | "sync">;
   draft: Pick<CreatorDraft, "saveMeta" | "finished">;
   sessionLive: () => boolean;
-  /** The tour's name as typed in step 3; a non-empty one becomes the
-   *  manifest's `title` (polish round M4a). */
+  /** The tour's name as typed in step 3 (`tour-name-field.ts`): a name
+   *  becomes the manifest's `title` (polish round M4a), an emptied one
+   *  removes it, null keeps the tour's own (W2). */
   tourTitle?: () => string | null;
   render: () => void;
   /** Re-render the AR button when a finish ends (polish round M3). */

@@ -154,6 +154,10 @@
         padding: var(--space-2) var(--space-3);
         border-radius: var(--radius-small);
       }
+      .error-contact {
+        margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+        overflow-wrap: anywhere;
+      }
       /* Step 4's content IS the WebXR DOM-overlay root. Nothing may clip it
          (the .step atom is `overflow: hidden`, and whether the overlay's
          top-layer promotion escapes that clip is not something any test
@@ -1224,6 +1228,12 @@
         font-size: var(--visitor-subline-size);
         line-height: 1.35;
       }
+      .visitor-description {
+        margin: var(--space-2) 0 0;
+        color: var(--ink);
+        line-height: 1.45;
+        white-space: pre-line;
+      }
 
       /* The action: the status sentence above (a reason, when there is
          one), the round button, the hint as the one line under it. */
@@ -1887,6 +1897,13 @@
           id="visitor-subline"
           class="visitor-subline"
           data-testid="visitor-subline"
+          hidden
+        ></p>
+        <!-- The tour's description (tour editor plan W2), when it has one. -->
+        <p
+          id="visitor-description"
+          class="visitor-description"
+          data-testid="visitor-description"
           hidden
         ></p>
       </section>
@@ -2884,6 +2901,22 @@
                     data-testid="print-url-shown"
                     hidden
                   ></div>
+                  <!-- The tour's own name (tour editor plan 2026-10-17-1816,
+                   W2), apart from the poster's title: it shows the open
+                   tour's title and is written at the Finish; an emptied one
+                   removes the title (tour-name-field.ts). -->
+                  <label class="tour-name-ask" id="tour-name-ask"
+                    >Tour name
+                    <input
+                      id="tour-name-input"
+                      class="input"
+                      data-testid="tour-name-input"
+                      type="text"
+                      maxlength="80"
+                      autocomplete="off"
+                      placeholder="Visitors see it when they open the tour"
+                    />
+                  </label>
                   <!-- The poster text (polish round D-P7, r820 feedback R8):
                    printed with every code so a sheet can be hung as it
                    comes out of the printer. Filled in; an emptied field is
@@ -2899,7 +2932,7 @@
                         type="text"
                         maxlength="80"
                         autocomplete="off"
-                        placeholder="Your tour's name"
+                        placeholder="The poster's headline"
                       />
                     </label>
                     <label
@@ -3093,6 +3126,22 @@
             </li>
           </ol>
           <div id="error" class="prose" role="alert" data-testid="error"></div>
+          <!-- Who to ask, under a visitor's error, when the tour names a
+           contact (tour editor plan 2026-10-17-1816, W2, D15;
+           tour-contact.ts). -->
+          <p
+            id="error-contact"
+            class="error-contact"
+            data-testid="error-contact"
+            hidden
+          >
+            Questions about this tour? Contact its maker:
+            <a
+              id="error-contact-link"
+              rel="noopener noreferrer"
+              target="_blank"
+            ></a>
+          </p>
           <!-- Both modes (tour kit plan K0): the advice's button under a "host
            blocks browsers" error, the line naming a file-opened tour, and
            the one file picker both "open a file" buttons click. -->

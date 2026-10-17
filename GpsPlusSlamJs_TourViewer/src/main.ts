@@ -80,6 +80,8 @@ import {
 } from "./wizard.js";
 import { wireHaveTour } from "./have-tour.js";
 import { readPrintedText } from "./level-printed.js";
+import { wireTourNameField } from "./tour-name-field.js";
+import { renderTourContact } from "./tour-contact.js";
 
 /** Keep at most this many archives cached (LRU) — see BoundedLocalCacheStore. */
 const MAX_CACHED_ARCHIVES = 5;
@@ -384,6 +386,8 @@ if (mode === "visitor") {
     dom: {
       title: element("visitor-title"),
       subline: element("visitor-subline"),
+      description: element("visitor-description"),
+      page: document,
       cover: element("visitor-cover"),
       coverImage: element<HTMLImageElement>("visitor-cover-image"),
     },
@@ -393,9 +397,29 @@ if (mode === "visitor") {
     },
     checkPicture: pictureProblem,
   });
+  // The tour's contact under an error (W2, D15): while an error shows,
+  // for the tour open now. An error before its manifest is read names no
+  // contact: the contact is inside the file.
+  const contactDom = {
+    line: element("error-contact"),
+    link: element<HTMLAnchorElement>("error-contact-link"),
+  };
+  const renderContact = (): void => {
+    renderTourContact(
+      contactDom,
+      errorBox.textContent ?? "",
+      ctx.tourManifest?.contact,
+    );
+  };
+  new MutationObserver(renderContact).observe(errorBox, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
   hooks.presentTourInfo = (manifest, loadImage) => {
     if (manifest === null) visitorStart.clear();
     else visitorStart.present(manifest, loadImage);
+    renderContact();
     visitor.tourChanged();
   };
   // The levels settle after the manifest, often: the line follows whether
@@ -507,6 +531,18 @@ if (mode === "creator") {
   }
 }
 
+/** The tour's own name in step 3 (tour editor plan 2026-10-17-1816, W2):
+ *  it shows the open tour's title and tells the Finish what the creator
+ *  did with it (`tour-name-field.ts`). */
+const tourNameField = wireTourNameField(
+  element<HTMLInputElement>("tour-name-input"),
+);
+if (mode === "creator") {
+  hooks.presentTourInfo = (manifest) => {
+    tourNameField.present(manifest?.title ?? null);
+  };
+}
+
 const setup = wireCreatorSetup({
   ctx,
   mode,
@@ -521,9 +557,10 @@ const setup = wireCreatorSetup({
   },
   // Step 6 names the host chosen in step 1 (polish round M2).
   host: () => readTourHost(stepStore),
-  // The tour's name, typed in step 3 for the posters, becomes its title
-  // at the Finish (polish round M4a: the visitor's start page shows it).
-  tourTitle: () => element<HTMLInputElement>("poster-title").value,
+  // The tour's name, typed in step 3's own field, becomes its title at the
+  // Finish (polish round M4a: the visitor's start page shows it; W2: an
+  // emptied name removes it, an untouched one keeps the tour's own).
+  tourTitle: () => tourNameField.typed(),
   codeTour: {
     onDetection: (text) => {
       scanOpen?.onDetection(text);

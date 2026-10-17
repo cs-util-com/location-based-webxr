@@ -16,7 +16,14 @@
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">T</div>
         <div class="brand-text">
-          <div class="tour-name" id="tour-name"></div>
+          <!-- The tour's name opens its details (W2 of the tour editor plan). -->
+          <button
+            class="tour-name"
+            id="tour-name"
+            type="button"
+            aria-haspopup="dialog"
+            title="Edit the tour's details"
+          ></button>
           <div class="tour-file" id="tour-file"></div>
         </div>
       </div>
@@ -189,11 +196,71 @@
             Use the sample tour
           </button>
         </div>
-        <p class="fineprint">
+        <!-- Said per browser by edit-main.ts (saveFinePrint): this text is
+             the one for a browser that cannot write a chosen file. -->
+        <p class="fineprint" id="open-fineprint">
           The file stays on this computer: nothing is uploaded. Save gives you a
           new copy of the tour to put in place of the old one.
         </p>
       </div>
+    </div>
+
+    <!-- The tour's details (W2 of the tour editor plan): opened from the
+         name in the top bar, applied to the editor session as one change of
+         each field (details-dialog.ts). -->
+    <div class="backdrop" id="details-modal" hidden>
+      <form
+        class="modal details"
+        id="details-form"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="details-title"
+        novalidate
+      >
+        <h1 id="details-title">Tour details</h1>
+        <p class="lede">
+          What visitors see when they open the tour. An empty field removes it.
+        </p>
+        <label class="field" for="details-name">Name</label>
+        <input
+          id="details-name"
+          type="text"
+          maxlength="80"
+          autocomplete="off"
+        />
+        <label class="field" for="details-description">Description</label>
+        <textarea id="details-description" rows="4" maxlength="2000"></textarea>
+        <fieldset class="covers">
+          <legend class="field">Cover photo</legend>
+          <div class="cover-list" id="details-covers"></div>
+          <p class="field-sub" id="details-covers-none" hidden>
+            This tour has no photos to choose from. Add photos with the phone,
+            then choose one here.
+          </p>
+        </fieldset>
+        <label class="field" for="details-contact">Contact</label>
+        <input
+          id="details-contact"
+          type="text"
+          inputmode="email"
+          autocomplete="off"
+          spellcheck="false"
+          maxlength="320"
+          placeholder="you@example.org or https://…"
+          aria-describedby="details-contact-sub"
+        />
+        <p class="field-sub" id="details-contact-sub">
+          An e-mail address or a web link. Visitors see it when the tour fails
+          to open or show.
+        </p>
+        <div id="details-error" role="alert" hidden></div>
+        <div class="modal-actions">
+          <button class="btn" id="details-cancel" type="button">Cancel</button>
+          <button class="btn primary" id="details-apply" type="submit">
+            Apply
+          </button>
+        </div>
+      </form>
     </div>
 
     <script type="module" src="/src/editor/edit-main.ts"></script>

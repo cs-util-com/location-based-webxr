@@ -55,7 +55,10 @@ screen. Everything marked `.creator-only` is hidden for a visitor
      wizard, so a visitor reaches them too - with `#file-advice`, the
      "Open the downloaded file" button shown under a "host blocks
      browsers" error.
-  3. **Print** (`#print-panel`): by PDF only since polish round M0b - a
+  3. **Print** (`#print-panel`): the tour's own name first (`#tour-name-input`,
+     W2 of the tour editor plan 2026-10-17-1816: apart from the poster's
+     title, it shows the open tour's title and is written at the Finish -
+     an emptied one removes the title, `tour-name-field.ts`); by PDF only since polish round M0b - a
      PDF of N numbered posters (`#print-count` between the big - and +
      `#print-count-down` / `#print-count-up`, three by default), each
      carrying the poster text of `#poster-title`, `#poster-explanation`
@@ -88,7 +91,8 @@ screen. Everything marked `.creator-only` is hidden for a visitor
 - The visitor's start page in the owner's V4 look (polish round M4a,
   D-R12/D-R14; reference `public/prototypes/visitor-4-one-tap/`):
   `#visitor-screen` (kicker, `#visitor-cover` one photo, `#visitor-title`,
-  `#visitor-subline` - written by `visitor-start.ts`), then `#ar-root`
+  `#visitor-subline`, `#visitor-description` (W2) - written by
+  `visitor-start.ts`, which also titles the tab after the tour), then `#ar-root`
   restyled as the action (the status sentence above, the round
   `#enter-ar` with its ring and `data-step` marker, `#ar-hint` as the
   one line under it, by flex `order`), then `#visitor-more` after the
@@ -132,7 +136,10 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   (`poster-text.ts`) say it too.
 - Below the steps, creator-only: the Storage section (`#storage-panel`,
   summary "Other settings" - something you normally do not open, F9).
-- Shared: `#error`, `#ar-root` (the DOM-overlay root: hint, status line,
+- Shared: `#error`, and under it `#error-contact` (W2, D15: "Questions
+  about this tour? Contact its maker:" and the tour's contact as a link,
+  `#error-contact-link`, shown for a visitor while an error shows and the
+  open tour names a contact, `tour-contact.ts`), `#ar-root` (the DOM-overlay root: hint, status line,
   button, the setup panel `#setup-panel` with `setup-status` and, inside
   `#setup-controls` (the code is measured on its own and its position
   decided by the settle: the measure button, the explicit replace and its
@@ -162,7 +169,7 @@ drawn `map-station-<step>`), `setup-card` (owns `setup-badge`, `setup-of`,
 `file-input`, `file-status`, `tour-trust`, `file-advice`, `open-file-advice`,
 `storage-panel`,
 `clear-cache`, `print-panel` (owns `print-url-ask`, `print-url`,
-`print-url-shown`, `poster-text` (`poster-title`, `poster-explanation`,
+`print-url-shown`, `tour-name-input`, `poster-text` (`poster-title`, `poster-explanation`,
 `poster-cta`), `print-count-down`, `print-count`, `print-count-up`,
 `print-settings` (`author-size`, `print-paper`, `author-c`), `print-pdf`,
 `print-info`,
@@ -181,7 +188,7 @@ authoring plan 2026-09-28-0953 M3b: owns `summary-codes`, `summary-map`,
 `summary-map-status`, `summary-start-ar`; written by `summary-panel.ts`,
 its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
 `replace-help-generic`, `replace-help-drive`, `replace-drive-copy`)), `visitor-screen`,
-`stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
+`visitor-description`, `stats`, `error`, `error-contact`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
 `setup-panel`, `setup-status`, `size-offer`, `size-offer-text`,
 `size-offer-use`, `size-offer-keep`, `setup-controls`,
 `object-list` (its rows carry

@@ -173,7 +173,11 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
     await tour.close();
   });
 
-  it("titles the tour with a typed name that says something, else keeps its own", async () => {
+  // Why (tour editor plan 2026-10-17-1816, W2): an emptied name used to
+  // keep the old title silently, so a creator could not remove it. Now the
+  // phone's own name field says what the title is: typed, emptied (gone),
+  // or never touched (null: the tour keeps its own).
+  it("titles the tour with a typed name, removes it for an emptied one, keeps its own for none", async () => {
     const tour = await plainTour([]);
     const own = { ...manifestOf([]), title: "Old name" };
     const typed = await rebuildFinishedTour({
@@ -189,7 +193,15 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
       manifest: own,
       title: "   ",
     });
-    expect(blank!.written.title).toBe("Old name");
+    expect(blank!.written).not.toHaveProperty("title");
+    expect(await zipManifest(blank!.blob)).not.toHaveProperty("title");
+    const untouched = await rebuildFinishedTour({
+      ...NO_EDITS,
+      tour,
+      manifest: own,
+      title: null,
+    });
+    expect(untouched!.written.title).toBe("Old name");
     await tour.close();
   });
 

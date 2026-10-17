@@ -18,7 +18,8 @@ AR (tour editor plan 2026-10-17-1816, W1).
 ## Structure
 
 - `#map` - the full-window map (`src/editor/editor-map.ts`).
-- `#topbar` - the tour's title and file name, the "Keep the walk recording"
+- `#topbar` - the tour's title (`#tour-name`, a button that opens the
+  tour's details, W2) and file name, the "Keep the walk recording"
   switch (`#keep-walk`, only for a tour carrying a walk), `#save-status`,
   `#save-btn` (Save downloads the tour, M6 E2a), "Open another tour".
 - `#rail` - the codes, pins and photos (`src/editor/editor-rail.ts`).
@@ -30,6 +31,16 @@ AR (tour editor plan 2026-10-17-1816, W1).
   `#link-btn` "Open the link": a hosted tour from its link, tour editor
   plan 2026-10-17-1816 W1; a text input, so the dialog, not the browser,
   says what is wrong with a link).
+- `#open-fineprint` - what Save does, written per browser by
+  `edit-main.ts` (`saveFinePrint`); the markup's text is the one for a
+  browser without the file picker.
+- `#details-modal` - "Tour details" (W2 of the tour editor plan
+  2026-10-17-1816): `#details-form` with `#details-name` (80 characters,
+  the phone's poster title's limit), `#details-description` (2000),
+  `#details-covers` (the cover radios `edit-main.ts` draws; `#details-
+covers-none` when the tour has no photo to choose), `#details-contact`
+  (320), `#details-error` (`role="alert"`), Cancel and Apply
+  (`src/editor/details-dialog.ts`). Above the toasts (z-index).
 - `#toasts` - "Opened <file>: N codes, M notes".
 
 ## Invariants
@@ -54,4 +65,4 @@ linked tour opened, a refused link, text that is not a link),
 back: the editor's paper, not the browser's plain page),
 `playwright-tests/editor.spec.js` (the real file chooser, the rail and the
 markers, the card beside its marker, a capped photo, a refused non-tour,
-the layout at three viewports).
+the layout at three viewports, the details dialog, the fine print).

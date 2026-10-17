@@ -217,7 +217,16 @@ button:disabled {
   min-width: 0;
 }
 
+/* A button: the name opens the tour's details (W2). */
 .tour-name {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
   font-family: var(--serif);
   font-size: 18px;
   font-weight: 600;
@@ -225,6 +234,11 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.15;
+}
+
+.tour-name:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
 }
 
 .tour-file {
@@ -844,6 +858,110 @@ kbd {
   font-size: 12px;
   color: var(--ink-dim);
   line-height: 1.5;
+}
+
+/* The tour's details dialog (W2). */
+/* Above the toasts (#toasts, 1200): a save's result toast stays until it is
+   closed and sat over the dialog's buttons. The dialog is short-lived, and
+   its own outcome is said once it has closed. */
+#details-modal {
+  z-index: 1300;
+}
+
+.details .field {
+  display: block;
+  margin: 14px 4px 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.details input[type="text"],
+.details textarea {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--hairline);
+  background: #fff;
+  font: inherit;
+}
+
+.details textarea {
+  resize: vertical;
+}
+
+.details .field-sub {
+  margin: 6px 4px 0;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.covers {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.covers legend {
+  padding: 0;
+}
+
+.cover-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.cover-choice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: var(--radius-small);
+  border: 1.5px solid var(--hairline);
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.cover-choice:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.cover-choice:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cover-choice input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cover-thumb {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  border-radius: 6px;
+  background: var(--panel-lo);
+  color: var(--ink-dim);
+  object-fit: cover;
+  width: 100%;
+}
+
+.cover-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#details-error {
+  margin: 12px 4px 0;
+  color: var(--danger);
 }
 
 @media (width <= 980px) {

@@ -63,7 +63,9 @@ describe("visitorStartView", () => {
     expect(visitorStartView(null)).toEqual({
       title: "An AR tour",
       subline: null,
+      description: null,
       coverPath: null,
+      pageTitle: "Tour Viewer",
     });
   });
 
@@ -103,6 +105,33 @@ describe("visitorStartView", () => {
     ).toBeNull();
   });
 
+  // Why (tour editor plan 2026-10-17-1816, W2): a creator may now choose
+  // the cover and write a description in the editor; the start page must
+  // show what they chose, and the tab (and a shared link's title) the
+  // tour's name rather than the app's.
+  it("takes the cover the creator chose over the first photo", () => {
+    expect(
+      visitorStartView(tour({ objects: [photo("b"), photo("c")], cover: "c" }))
+        .coverPath,
+    ).toBe("content/c.jpg");
+  });
+
+  it("shows the tour's description, trimmed, and none without one", () => {
+    expect(
+      visitorStartView(tour({ description: "  Up and back. " })).description,
+    ).toBe("Up and back.");
+    expect(visitorStartView(tour({})).description).toBeNull();
+    expect(visitorStartView(null).description).toBeNull();
+  });
+
+  it("names the page after the tour, else the app", () => {
+    expect(visitorStartView(tour({ title: " Harbour " })).pageTitle).toBe(
+      "Harbour",
+    );
+    expect(visitorStartView(tour({})).pageTitle).toBe("Tour Viewer");
+    expect(visitorStartView(null).pageTitle).toBe("Tour Viewer");
+  });
+
   // A tour made from a recording carries its photos as baked capture
   // spots, not as photo objects: they are its places and its cover too.
   it("counts and covers a recorded tour by its capture spots", () => {
@@ -121,7 +150,9 @@ describe("visitorStartView", () => {
     expect(visitorStartView(recorded)).toEqual({
       title: "An AR tour",
       subline: "3 places to discover",
+      description: null,
       coverPath: "images/frame-0.png",
+      pageTitle: "Tour Viewer",
     });
     // A placed photo still comes first.
     expect(
@@ -142,7 +173,13 @@ describe("visitorStartView", () => {
       fc.property(
         fc.array(fc.constantFrom("pin", "photo"), { maxLength: 8 }),
         fc.nat({ max: 4 }),
-        (kinds, captureCount) => {
+        // A chosen cover (W2): a photo, a pin or an id the tour lacks.
+        fc.option(
+          fc
+            .constantFrom("f", "p", "x")
+            .chain((p) => fc.nat({ max: 9 }).map((n) => `${p}${String(n)}`)),
+        ),
+        (kinds, captureCount, cover) => {
           const objects = kinds.map((kind, i) =>
             kind === "pin" ? pin(`p${String(i)}`) : photo(`f${String(i)}`),
           );
@@ -151,6 +188,7 @@ describe("visitorStartView", () => {
           );
           const manifest = tour({
             objects,
+            ...(cover === null ? {} : { cover }),
             ...(captureCount === 0
               ? {}
               : {
@@ -168,8 +206,16 @@ describe("visitorStartView", () => {
             ),
             ...captures.map((c) => c.image),
           ];
-          // The first of them, in that order, or none when there is none.
-          expect(coverPath).toBe(own[0] ?? null);
+          // The chosen photo when it is one of them, else the first of
+          // them, in that order, or none when there is none.
+          const chosen = objects.find(
+            (o) => o.id === cover && o.kind === "photo",
+          );
+          expect(coverPath).toBe(
+            chosen === undefined
+              ? (own[0] ?? null)
+              : (chosen as { image: string }).image,
+          );
         },
       ),
     );
@@ -187,6 +233,8 @@ describe("wireVisitorStart", () => {
     const dom = {
       title: { textContent: "" },
       subline: { textContent: "", hidden: true },
+      description: { textContent: "", hidden: true },
+      page: { title: "" },
       cover: { hidden: true },
       coverImage: { src: "" },
     };
@@ -216,6 +264,8 @@ describe("wireVisitorStart", () => {
     expect(dom.title.textContent).toBe("Harbour Lights");
     expect(dom.subline.textContent).toBe("1 place to discover");
     expect(dom.subline.hidden).toBe(false);
+    expect(dom.page.title).toBe("Harbour Lights");
+    expect(dom.description.hidden).toBe(true);
     await vi.waitFor(() => {
       expect(dom.cover.hidden).toBe(false);
     });
@@ -257,5 +307,18 @@ describe("wireVisitorStart", () => {
     expect(dom.subline.hidden).toBe(true);
     expect(dom.cover.hidden).toBe(true);
     expect(revoked).toEqual(["blob:1"]);
+    expect(dom.page.title).toBe("Tour Viewer");
+  });
+
+  it("writes the description under the subline, and hides it for none", () => {
+    const { dom, start } = setup();
+    start.present(tour({ description: "Up and back." }), () =>
+      Promise.reject(new Error("no photo")),
+    );
+    expect(dom.description.textContent).toBe("Up and back.");
+    expect(dom.description.hidden).toBe(false);
+    start.clear();
+    expect(dom.description.textContent).toBe("");
+    expect(dom.description.hidden).toBe(true);
   });
 });

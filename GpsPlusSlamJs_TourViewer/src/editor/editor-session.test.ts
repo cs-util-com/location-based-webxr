@@ -29,8 +29,11 @@ import { createTourViewerStore } from "../tour-viewer-session.js";
 import {
   createEditorSession,
   NOT_IN_TOUR,
+  TOUR_NAME_MAX_CHARS,
   type EditorSessionDraft,
 } from "./editor-session.js";
+import type { DetailsForm } from "./details-dialog.js";
+import type { EditorTourSettings } from "./editor-draft.js";
 
 /** The undo of a delete that was made; a refusal fails the test. */
 function undoOf(
@@ -668,6 +671,200 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
       unlockable: [],
       codesPlace: true,
     });
+    await session.close();
+  });
+});
+
+/**
+ * Why (tour editor plan 2026-10-17-1816, W2): the tour's name,
+ * description, cover and contact are edited in the editor's "Tour
+ * details" dialog. Each must be a pending change like a note's (counted,
+ * backed up by the draft, saved by itself), reach `tour.json` by the
+ * format's rules (minor 3), be refused in plain words when the format
+ * would drop it, and an emptied field must REMOVE the detail - never keep
+ * the old one silently. A cover follows its photo: deleting the photo
+ * takes the cover with it, and undoing that brings it back.
+ */
+describe("createEditorSession, the tour details (W2)", () => {
+  const form = (over: Partial<DetailsForm> = {}): DetailsForm => ({
+    name: "",
+    description: "",
+    cover: null,
+    contact: "",
+    ...over,
+  });
+
+  it("writes the name, description, cover and contact into the saved tour, each a change until then", async () => {
+    const { session, manifest } = await opened([pin("a"), photo("f")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.details()).toEqual(form());
+    expect(
+      editor.setDetails({
+        name: "  The castle ",
+        description: "Up and back.",
+        cover: "f",
+        contact: "guide@example.org",
+      }),
+    ).toEqual({ kind: "changed" });
+    expect(editor.changeCount()).toBe(4);
+    expect(editor.details()).toEqual({
+      name: "The castle",
+      description: "Up and back.",
+      cover: "f",
+      contact: "guide@example.org",
+    });
+    const saved = await editor.save({ keepScan: false });
+    expect(await writtenJson(saved.blob)).toMatchObject({
+      version: 2,
+      minor: 3,
+      title: "The castle",
+      description: "Up and back.",
+      cover: "f",
+      contact: "guide@example.org",
+    });
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
+  it("an emptied field removes the detail; the same values are no change", async () => {
+    const { session, manifest } = await opened([photo("f")], {
+      title: "Old",
+      description: "Old words.",
+      cover: "f",
+      contact: "https://example.org",
+    });
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.setDetails(editor.details())).toEqual({ kind: "unchanged" });
+    expect(editor.setDetails(form())).toEqual({ kind: "changed" });
+    const saved = await editor.save({ keepScan: false });
+    const json = await writtenJson(saved.blob);
+    for (const field of ["title", "description", "cover", "contact"]) {
+      expect(json, field).not.toHaveProperty(field);
+    }
+    await session.close();
+  });
+
+  it("refuses what the format would drop, in plain words, and changes nothing", async () => {
+    const { session, manifest } = await opened([pin("a"), photo("f")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const refusals = [
+      form({ contact: "call me" }),
+      form({ contact: "javascript:alert(1)" }),
+      form({ description: "x".repeat(2001) }),
+      form({ name: "x".repeat(TOUR_NAME_MAX_CHARS + 1) }),
+      form({ cover: "a" }),
+      form({ cover: "gone" }),
+    ];
+    for (const bad of refusals) {
+      const outcome = editor.setDetails(bad);
+      expect(outcome.kind, JSON.stringify(bad).slice(0, 60)).toBe("refused");
+      // Plain words, never the format's field names in quotes.
+      expect(outcome.kind === "refused" ? outcome.reason : "").not.toMatch(
+        /"(contact|description|cover)"/,
+      );
+    }
+    expect(editor.changeCount()).toBe(0);
+    expect(editor.details()).toEqual(form());
+    await session.close();
+  });
+
+  it("offers the placed photos as covers, never a pin or a recorded photo", async () => {
+    const { session, manifest } = await opened([
+      pin("a"),
+      photo("f"),
+      photo("g"),
+    ]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.coverChoices().map((c) => c.id)).toEqual(["f", "g"]);
+    expect(editor.coverChoices()[0]).toMatchObject({
+      id: "f",
+      image: "content/f.jpg",
+    });
+    await session.close();
+  });
+
+  it("the cover goes with its photo, and no change lingers after the save", async () => {
+    const { session, manifest } = await opened([photo("f"), photo("g")], {
+      cover: "f",
+    });
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.details().cover).toBe("f");
+    editor.remove("f");
+    expect(editor.details().cover).toBeNull();
+    expect(editor.coverChoices().map((c) => c.id)).toEqual(["g"]);
+    const saved = await editor.save({ keepScan: false });
+    expect(await writtenJson(saved.blob)).not.toHaveProperty("cover");
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
+  it("backs each change of the details up with the whole settings record", async () => {
+    const { session, manifest } = await opened([pin("a")], { title: "Old" });
+    const settings: EditorTourSettings[] = [];
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: {
+        ...loggedDraft(),
+        saveSettings: (s) => {
+          settings.push(s);
+          return Promise.resolve(true);
+        },
+      },
+    });
+    editor.setDetails(form({ name: "New", contact: "guide@example.org" }));
+    editor.setDetails(form({ name: "New", contact: "guide@example.org" }));
+    expect(settings).toEqual([
+      {
+        needsNoGps: false,
+        details: { title: "New", contact: "guide@example.org" },
+      },
+    ]);
+    await session.close();
+  });
+
+  it("restores a draft's details unless they were changed here meanwhile", async () => {
+    const { session, manifest } = await opened([pin("a")], { title: "Old" });
+    const offered = {
+      needsNoGps: false,
+      details: { title: "From the draft" },
+    };
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(
+      editor.restore({ objects: [], deleted: [], settings: offered }),
+    ).toEqual({ changed: 1, deleted: 0 });
+    expect(editor.details().name).toBe("From the draft");
+    const other = createEditorSession({ session, manifest, levels: new Map() });
+    other.setDetails(form({ name: "Typed here" }));
+    expect(
+      other.restore({ objects: [], deleted: [], settings: offered }),
+    ).toEqual({ changed: 0, deleted: 0 });
+    expect(other.details().name).toBe("Typed here");
     await session.close();
   });
 });

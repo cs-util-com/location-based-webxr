@@ -63,10 +63,11 @@ module's sidecar states them as its contract.
 
 ## Invariants & assumptions
 
-- **The tour's title** (polish round M4a): the name typed in step 3 for
-  the posters (`deps.tourTitle`, trimmed) becomes the manifest's `title`
-  when it says something; otherwise the tour keeps the title it had. The
-  visitor's start page (V4) leads with it.
+- **The tour's title** (polish round M4a; W2 of the tour editor plan
+  2026-10-17-1816): the name typed in step 3's own "Tour name" field
+  (`deps.tourTitle`, `tour-name-field.ts`, trimmed) becomes the manifest's
+  `title`; an emptied name removes it; a name never typed (null) keeps
+  the title the tour had. The visitor's start page (V4) leads with it.
 
 - **Finish** (`finishReadiness`): needs something to write (`hasWork`,
   code book plan M4d: a code the book would write, a changed or deleted

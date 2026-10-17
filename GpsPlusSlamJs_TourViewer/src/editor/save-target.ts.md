@@ -50,7 +50,13 @@ build plan, re-cut" and its cold review
 - `InPlaceRefusal`, `EditorLock`, `WritableFileHandle`, `PickerWindow`, `PickOutcome`,
   `SaveTarget`.
 
-## Invariants & assumptions
+- `saveFinePrint(win)` (W2 of the tour editor plan 2026-10-17-1816) - the
+  open dialog's fine print about Save, true for this browser: where
+  `showOpenFilePicker` exists, a chosen file is saved into itself (and by
+  itself after a change) while a tour from a link or the sample is saved as
+  a new copy; elsewhere Save gives a new copy.
+
+## Invariants & assumptions & assumptions
 
 - The permission is asked FIRST, while the picker's activation holds; the
   file's reads come after (E2b plan review #8).

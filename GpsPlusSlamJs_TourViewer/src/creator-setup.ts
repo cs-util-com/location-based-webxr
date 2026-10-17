@@ -229,9 +229,10 @@ export function wireCreatorSetup(deps: {
   /** The host chosen in step 1, for step 6's replace steps (polish round
    *  M2); absent in the node tests that do not need it. */
   host?: () => TourHost | null;
-  /** The tour's name as typed in step 3 (the poster title): written as the
+  /** The tour's name as typed in step 3's "Tour name" field
+   *  (`tour-name-field.ts`; null when not typed): written as the
    *  manifest's `title` at the Finish, for the visitor's start page
-   *  (polish round M4a). Absent in the node tests that do not need it. */
+   *  (polish round M4a, W2). Absent in the node tests that do not need it. */
   tourTitle?: () => string | null;
   /** Re-render the AR button: it reads the finish (polish round M3). */
   renderArEntry?: () => void;

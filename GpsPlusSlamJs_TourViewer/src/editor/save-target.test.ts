@@ -12,6 +12,7 @@ import {
   holdEditorDraftLock,
   holdEditorLock,
   pickTourFile,
+  saveFinePrint,
   InPlaceRefusal,
   type WritableFileHandle,
 } from "./save-target.js";
@@ -274,5 +275,30 @@ describe("holdEditorLock", () => {
       request: () => Promise.reject(new Error("no locks here")),
     } as unknown as LockManager;
     expect((await holdEditorLock(failing, "tour.zip")).granted).toBe(true);
+  });
+});
+
+/**
+ * Why (tour editor plan 2026-10-17-1816, W2): the open dialog's fine print
+ * said "Save gives you a new copy" in every browser, which is wrong where
+ * the file picker lets Save write the chosen file itself (and autosave
+ * does). The words follow what this browser can do.
+ */
+describe("saveFinePrint", () => {
+  it("says Save writes the chosen file where the picker exists", () => {
+    const text = saveFinePrint({
+      showOpenFilePicker: () => Promise.resolve([]),
+    });
+    expect(text).toContain("nothing is uploaded");
+    expect(text).toContain("saved into that file");
+    expect(text).toContain("from a link");
+    expect(text).not.toContain("Save gives you a new copy");
+  });
+
+  it("says Save gives a new copy where it does not", () => {
+    const text = saveFinePrint({});
+    expect(text).toContain("nothing is uploaded");
+    expect(text).toContain("Save gives you a new copy");
+    expect(text).not.toContain("saved into that file");
   });
 });

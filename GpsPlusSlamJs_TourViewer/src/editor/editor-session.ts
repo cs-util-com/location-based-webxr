@@ -16,6 +16,14 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
+  checkTourContact,
+  checkTourDescription,
+  tourCoverEntry,
+  tourImageIds,
+  TOUR_CONTACT_MAX_CHARS,
+  TOUR_DESCRIPTION_MAX_CHARS,
+} from "gps-plus-slam-app-framework/ar/tour-details";
+import {
   captureSpotsForRebuild,
   finishedFileName,
   pendingAfterRebuild,
@@ -37,7 +45,12 @@ import {
   type AuthoringObject,
 } from "../object-edits.js";
 import type { TourSession } from "../tour-session.js";
-import type { EditorTourSettings } from "./editor-draft.js";
+import type { DetailsForm, DetailsOutcome } from "./details-dialog.js";
+import {
+  detailsOf,
+  type EditorTourDetails,
+  type EditorTourSettings,
+} from "./editor-draft.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 
@@ -79,7 +92,8 @@ interface EditorRestore {
 }
 
 /** Where the session backs its edits up: the objects' writes the phone
- *  shares (`draft-actions.ts`), and the tour's settings (QR-first M1b-2). */
+ *  shares (`draft-actions.ts`), and the tour's settings (QR-first M1b-2)
+ *  with its details (W2). */
 export interface EditorSessionDraft extends DraftObjectWrites {
   saveSettings(settings: EditorTourSettings): Promise<boolean>;
 }
@@ -91,6 +105,90 @@ function withNeedsNoGps(manifest: TourManifest, on: boolean): TourManifest {
   const off = { ...manifest };
   delete off.needsNoGps;
   return off;
+}
+
+/** The longest tour name the editor takes: the phone's poster title's
+ *  (`index.html`, `maxlength`), so a name fits the poster either way. */
+export const TOUR_NAME_MAX_CHARS = 80;
+
+/** One image a tour may show as its cover (W2): a placed photo, or an
+ *  image the tour carries as a content asset. */
+export interface CoverChoice {
+  readonly id: string;
+  /** Its entry in the zip (`content/<id>.jpg`). */
+  readonly image: string;
+}
+
+/** The details' fields, as the manifest names them. */
+const DETAIL_FIELDS = ["title", "description", "cover", "contact"] as const;
+
+/** `manifest` carrying `details` in place of its own. */
+function withDetails(
+  manifest: TourManifest,
+  details: EditorTourDetails,
+): TourManifest {
+  const next = { ...manifest };
+  for (const field of DETAIL_FIELDS) {
+    const value = details[field];
+    if (value === undefined) delete next[field];
+    else next[field] = value;
+  }
+  return next;
+}
+
+/** Text counted as a reader counts it: in characters, not UTF-16 units. */
+function charCount(text: string): number {
+  return [...text].length;
+}
+
+/** A form checked by the format's rules (`tour-details.ts`), in plain
+ *  words: the details to keep, or why not. */
+function checkForm(
+  form: DetailsForm,
+  covers: ReadonlySet<string>,
+): { ok: true; details: EditorTourDetails } | { ok: false; reason: string } {
+  const details: { -readonly [K in keyof EditorTourDetails]: string } = {};
+  const name = form.name.trim();
+  if (charCount(name) > TOUR_NAME_MAX_CHARS) {
+    return {
+      ok: false,
+      reason: `The name is longer than ${String(TOUR_NAME_MAX_CHARS)} characters.`,
+    };
+  }
+  if (name !== "") details.title = name;
+  if (form.description.trim() !== "") {
+    const checked = checkTourDescription(form.description);
+    if (!checked.ok) {
+      return {
+        ok: false,
+        reason: `The description is longer than ${String(TOUR_DESCRIPTION_MAX_CHARS)} characters.`,
+      };
+    }
+    details.description = checked.value;
+  }
+  if (form.cover !== null) {
+    if (!covers.has(form.cover)) {
+      return {
+        ok: false,
+        reason: "That cover is not one of this tour's photos any more.",
+      };
+    }
+    details.cover = form.cover;
+  }
+  if (form.contact.trim() !== "") {
+    const checked = checkTourContact(form.contact);
+    if (!checked.ok) {
+      return {
+        ok: false,
+        reason:
+          charCount(form.contact.trim()) > TOUR_CONTACT_MAX_CHARS
+            ? `The contact is longer than ${String(TOUR_CONTACT_MAX_CHARS)} characters.`
+            : "The contact must be an e-mail address or a web link starting with https://.",
+      };
+    }
+    details.contact = checked.value;
+  }
+  return { ok: true, details };
 }
 
 export interface EditorSession {
@@ -107,6 +205,18 @@ export interface EditorSession {
   /** Turn it on or off: one pending change while it differs from the
    *  saved file, none once it is back at the file's own value. */
   setNeedsNoGps(on: boolean): { kind: "changed" | "unchanged" };
+  /** The tour's name, description, cover and contact as they stand with
+   *  the edits (W2); a cover whose image is gone (a deleted photo) is
+   *  none. */
+  details(): DetailsForm;
+  /** Change them all at once (the "Tour details" dialog): each field that
+   *  differs from the saved file is one pending change, an emptied field
+   *  removes the detail. Refused in plain words, changing nothing, for
+   *  what the format would drop. */
+  setDetails(next: DetailsForm): DetailsOutcome;
+  /** The images the tour may show as its cover: its placed photos and
+   *  image assets, as they stand with the edits. */
+  coverChoices(): CoverChoice[];
   /** What the setting's warnings are about: the code-less stations, the
    *  stations on a code the viewer cannot use, and whether a code can
    *  place the tour (`no-gps-check.ts`). */
@@ -156,6 +266,15 @@ export function createEditorSession(input: {
    *  over a draft's offer. */
   let noGpsTouched = false;
   const noGpsPending = (): boolean => noGps !== (manifest.needsNoGps === true);
+  /** The tour's details with the edits (W2); the cover as chosen, shown
+   *  and written only while its image is in the tour (`effectiveDetails`). */
+  let details: EditorTourDetails = detailsOf(manifest);
+  /** The details were changed here since the open: live work, which wins
+   *  over a draft's offer. */
+  let detailsTouched = false;
+  /** The settings record carries the details: once they were set or
+   *  restored here (an untouched record keeps no opinion about them). */
+  let detailsRecorded = false;
   let placed: EditorEntry[] = [];
   let deleted: string[] = [];
   let previous: { blob: Blob; signedManifest?: SignedTourManifest } | null =
@@ -200,6 +319,65 @@ export function createEditorSession(input: {
     return objects().find((o) => o.object.id === id);
   }
 
+  /** The tour as it stands with the edits, for what reads its images. */
+  function current(): TourManifest {
+    return { ...manifest, objects: objects().map((o) => o.object) };
+  }
+
+  function coverIds(): Set<string> {
+    const tour = current();
+    return tourImageIds({ objects: tour.objects, assets: tour.assets });
+  }
+
+  /** The details as shown and written: a cover whose image is gone (a
+   *  deleted photo) is none, and comes back with an undo of the delete. */
+  function effectiveDetails(): EditorTourDetails {
+    if (details.cover === undefined || coverIds().has(details.cover)) {
+      return details;
+    }
+    const { cover: _gone, ...rest } = details;
+    return rest;
+  }
+
+  /** The details' fields that differ from the saved file. */
+  function detailChanges(): number {
+    const now = effectiveDetails();
+    return DETAIL_FIELDS.filter((f) => now[f] !== manifest[f]).length;
+  }
+
+  /** The whole settings record as it stands (THE SETTINGS of
+   *  `editor-draft.ts`). */
+  function record(): EditorTourSettings {
+    return detailsRecorded
+      ? { needsNoGps: noGps, details }
+      : { needsNoGps: noGps };
+  }
+
+  /** A draft's details put back by the dialog's own checks (a record
+   *  whose details the format would drop leaves them as they are); how
+   *  many fields changed. */
+  function restoreDetails(offered: EditorTourDetails): number {
+    const checked = checkForm(
+      {
+        name: offered.title ?? "",
+        description: offered.description ?? "",
+        cover: offered.cover ?? null,
+        contact: offered.contact ?? "",
+      },
+      coverIds(),
+    );
+    if (!checked.ok) return 0;
+    const now = effectiveDetails();
+    const fields = DETAIL_FIELDS.filter(
+      (f) => checked.details[f] !== now[f],
+    ).length;
+    if (fields > 0) {
+      details = checked.details;
+      detailsRecorded = true;
+    }
+    return fields;
+  }
+
   /** The draft's copy of an edit (fire-and-forget: the draft says its own
    *  failures, once). */
   function backUp(object: TourObject): void {
@@ -209,13 +387,18 @@ export function createEditorSession(input: {
   return {
     model() {
       return buildEditorModel({
-        manifest: { ...manifest, objects: objects().map((o) => o.object) },
+        manifest: withDetails(current(), effectiveDetails()),
         levels,
         fileName: shownName,
       });
     },
     changeCount() {
-      return unsaved().length + deleted.length + (noGpsPending() ? 1 : 0);
+      return (
+        unsaved().length +
+        deleted.length +
+        (noGpsPending() ? 1 : 0) +
+        detailChanges()
+      );
     },
     pendingIds() {
       return unsaved().map((p) => p.object.id);
@@ -227,8 +410,38 @@ export function createEditorSession(input: {
       if (on === noGps) return { kind: "unchanged" };
       noGps = on;
       noGpsTouched = true;
-      void input.draft?.saveSettings({ needsNoGps: on });
+      void input.draft?.saveSettings(record());
       return { kind: "changed" };
+    },
+    details() {
+      const now = effectiveDetails();
+      return {
+        name: now.title ?? "",
+        description: now.description ?? "",
+        cover: now.cover ?? null,
+        contact: now.contact ?? "",
+      };
+    },
+    setDetails(next) {
+      const checked = checkForm(next, coverIds());
+      if (!checked.ok) return { kind: "refused", reason: checked.reason };
+      const now = effectiveDetails();
+      if (DETAIL_FIELDS.every((f) => checked.details[f] === now[f])) {
+        return { kind: "unchanged" };
+      }
+      details = checked.details;
+      detailsTouched = true;
+      detailsRecorded = true;
+      void input.draft?.saveSettings(record());
+      return { kind: "changed" };
+    },
+    coverChoices() {
+      const tour = current();
+      const ids = coverIds();
+      return [...ids].flatMap((id) => {
+        const image = tourCoverEntry({ ...tour, cover: id });
+        return image === null ? [] : [{ id, image }];
+      });
     },
     noGpsCheck() {
       return checkNoGps({ stations: manifest.stations, levels });
@@ -296,16 +509,20 @@ export function createEditorSession(input: {
         gone += 1;
       }
       const settings = work.settings;
+      let settingsChanged = 0;
       if (
         settings !== undefined &&
         !noGpsTouched &&
         settings.needsNoGps !== noGps
       ) {
         noGps = settings.needsNoGps;
-        void input.draft?.saveSettings(settings);
-        changed += 1;
+        settingsChanged += 1;
       }
-      return { changed, deleted: gone };
+      if (settings?.details !== undefined && !detailsTouched) {
+        settingsChanged += restoreDetails(settings.details);
+      }
+      if (settingsChanged > 0) void input.draft?.saveSettings(record());
+      return { changed: changed + settingsChanged, deleted: gone };
     },
     save(options) {
       const start = (): Promise<EditorSave> => runSave(options);
@@ -328,7 +545,10 @@ export function createEditorSession(input: {
     snapshots += 1;
     const placedNow = [...placed];
     const deletedNow = [...deleted];
-    const manifestNow = withNeedsNoGps(manifest, noGps);
+    const manifestNow = withDetails(
+      withNeedsNoGps(manifest, noGps),
+      effectiveDetails(),
+    );
     spots ??= captureSpotsForRebuild(session, manifestNow);
     const photos = await spots;
     const finished = await rebuildFinishedTour({

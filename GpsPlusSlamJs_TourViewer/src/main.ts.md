@@ -124,8 +124,12 @@ listed in `index.html.md`. The concerns and their modules:
   and `presentTourCodes` - the print step re-reads the codes, when the
   tour's arrive and whenever the creator setup's set of codes changes
   (follow-up F16);
-  and, for a visitor only, `presentTourInfo` - `visitor-start.ts`'s
-  page, with `URL.createObjectURL` and `pictureProblem` for the cover),
+  and `presentTourInfo` - for a visitor, `visitor-start.ts`'s page
+  (with `URL.createObjectURL` and `pictureProblem` for the cover) and the
+  contact line under `#error` (`tour-contact.ts`, also re-rendered by a
+  `MutationObserver` on the error box: W2 of the tour editor plan
+  2026-10-17-1816); for a creator, step 3's "Tour name" field
+  (`tour-name-field.ts`), whose `typed()` is the Finish's `tourTitle`),
   and callers read the hooks at call time - which
   is what keeps the modules free of import cycles (`check:cycles` is in
   the gate). A hook read before its owner is wired is the no-op from

@@ -20,7 +20,8 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
   - `model()` - the `EditorModel` of the tour with the edits applied.
   - `changeCount()` - edits and deletions not yet in a saved file, by
     content (a text edited back is no change), plus one while the "needs no
-    GPS" setting differs from the saved file; `pendingIds()` - the notes
+    GPS" setting differs from the saved file, plus one per detail that
+    differs from it (W2); `pendingIds()` - the notes
     with an edit or a move not yet saved.
   - `needsNoGps()` / `setNeedsNoGps(on)` (QR-first M1b-2, owner Q-QF-1) -
     the tour's "needs no GPS" setting as it stands with the edits, and its
@@ -30,6 +31,18 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
     writer puts at minor 2) or leaves the field out (false is never
     written). The phone's Finish keeps the flag the same way: the rebuild
     spreads the opened manifest (`finish-rebuild.ts`).
+  - `details()` / `setDetails(form)` / `coverChoices()` (W2 of the tour
+    editor plan 2026-10-17-1816) - the tour's name, description, cover and
+    contact as a `DetailsForm` (`details-dialog.ts`), with the edits; their
+    edit, all at once: checked by the format's rules (`tour-details.ts` in
+    the framework; the name trimmed, at most `TOUR_NAME_MAX_CHARS` = 80),
+    refused in plain words for what the format would drop (never its field
+    names in quotes), `unchanged` for the same values, else `changed` and
+    backed up through `draft.saveSettings` with the whole record. An
+    emptied field REMOVES the detail. The cover choices are the tour's
+    images as they stand (its placed photos and image assets,
+    `tourImageIds`) with their zip entry (`tourCoverEntry`); a recorded
+    walk photo has no id and is no choice.
   - `noGpsCheck()` - `no-gps-check.ts`'s `checkNoGps` over the open
     tour's stations and codes: what the setting's warnings are about (the
     code-less stations, the stations on a code the viewer cannot use, and
@@ -55,15 +68,18 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
     the draft's version (`upsertPlaced`), a deletion its tombstone
     (`deleteObject`); live work on an id wins; an id the tour no longer
     carries is skipped; the settings are applied unless the setting was
-    changed here since the open (counted among `changed`); what was
-    applied is written to the draft again. Returns the counts.
+    changed here since the open (counted among `changed`), and the
+    record's details likewise unless they were (each changed field counted;
+    details the format would drop are left as they are); what was applied
+    is written to the draft again. Returns the counts.
   - `save({ keepScan })` - `rebuildFinishedTour` with `levels: []`, the
     photo spots decided once per open (`captureSpotsForRebuild`, its result
     kept), `previous` = the last save's bytes; returns `{ blob, filename,
 scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
     carries, for the draft's bases) and advances to what was written
     (`pendingAfterRebuild`).
-- `EditorSession`, `EditorSave`, `EditorSessionDraft`.
+- `EditorSession`, `EditorSave`, `EditorSessionDraft`, `CoverChoice`,
+  `TOUR_NAME_MAX_CHARS`.
 
 ## Invariants & assumptions
 
@@ -83,7 +99,14 @@ scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
 - The editor places nothing new yet: every entry is an edit or a move of
   an object the tour carries.
 - The setting is snapshotted with the edits: a toggle made while a save
-  runs is the next save's.
+  runs is the next save's; the details likewise.
+- **A cover follows its image** (W2): the cover as chosen is kept, but
+  shown and written only while its image is in the tour - a deleted photo
+  takes the cover with it (no change lingers once that is saved), and an
+  undo of the delete brings it back.
+- The settings record carries the details only once they were set or
+  restored here: a record without them has no opinion about them
+  (`editor-draft.ts`).
 
 ## Tests
 
@@ -97,4 +120,9 @@ and a saved zip keyed as opening it would (`tourFileKeyOfFile`). The
 left out when off (the raw `tour.json`), a toggle back being no change, a
 flagged tour opening on and keeping the flag through another edit's save, a
 toggle during a save waiting for the next, its draft writes, a restore
-(live change winning), and `noGpsCheck`.
+(live change winning), and `noGpsCheck`. The tour details (W2): written
+at minor 3, each a change until saved; an emptied field removing the
+detail and the same values no change; plain-words refusals changing
+nothing; the cover choices (photos only, never a pin); the cover going with
+its photo; the whole record backed up once per change; a draft's details
+restored unless changed here.

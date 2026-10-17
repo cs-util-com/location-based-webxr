@@ -34,7 +34,8 @@
  * tab holding it writes, and any other tab says it keeps no backup.
  *
  * THE SETTINGS (QR-first M1b-2). The tour-level settings the editor changes
- * - today only "needs no GPS" - are ONE record (`settings`) beside the
+ * - "needs no GPS" and, since W2 of the tour editor plan, the tour's
+ * details (name, description, cover, contact) - are ONE record (`settings`) beside the
  * objects', by the same rules: kept while the file on disk does not carry
  * it (or a build wrote the other value, the "built but never put in place"
  * walk), offered by a later open whose file does not carry it, spent by one
@@ -86,10 +87,78 @@ import {
 import { createKeyedChain } from "../keyed-chain.js";
 import type { EditorLock } from "./save-target.js";
 
+/** The tour's details as the settings record holds them (tour editor
+ *  plan 2026-10-17-1816, W2): the manifest's own fields, each present only
+ *  when the tour carries it. */
+export interface EditorTourDetails {
+  readonly title?: string;
+  readonly description?: string;
+  readonly cover?: string;
+  readonly contact?: string;
+}
+
 /** The tour-level settings the editor changes (QR-first M1b-2): what the
  *  draft's settings record holds. */
 export interface EditorTourSettings {
   readonly needsNoGps: boolean;
+  /** The tour's details as they stand (W2). Absent in a record written
+   *  before the details existed, or before any was changed: no opinion
+   *  about them, so it never offers to change (or blank) them. */
+  readonly details?: EditorTourDetails;
+}
+
+/** The details' fields, in the order the offer names them. */
+const DETAIL_FIELDS = ["title", "description", "cover", "contact"] as const;
+type DetailField = (typeof DETAIL_FIELDS)[number];
+
+/** Each field as the page names it (`edit.html`'s "Tour details"). */
+const DETAIL_NAMES: Readonly<Record<DetailField, string>> = {
+  title: "name",
+  description: "description",
+  cover: "cover",
+  contact: "contact",
+};
+
+/** The details a manifest carries. */
+export function detailsOf(manifest: TourManifest): EditorTourDetails {
+  const details: Partial<Record<DetailField, string>> = {};
+  for (const field of DETAIL_FIELDS) {
+    const value = manifest[field];
+    if (value !== undefined) details[field] = value;
+  }
+  return details;
+}
+
+/** The fields `wanted` changes against `against`; none for a record
+ *  without details (no opinion). */
+function changedDetails(
+  wanted: EditorTourDetails | undefined,
+  against: EditorTourDetails | undefined,
+): DetailField[] {
+  if (wanted === undefined) return [];
+  return DETAIL_FIELDS.filter((f) => wanted[f] !== against?.[f]);
+}
+
+/** Whether `wanted` changes anything `against` holds. */
+function differs(
+  wanted: EditorTourSettings,
+  against: EditorTourSettings,
+): boolean {
+  return (
+    wanted.needsNoGps !== against.needsNoGps ||
+    changedDetails(wanted.details, against.details).length > 0
+  );
+}
+
+/** Two records alike (null is "no record"). */
+function sameRecord(
+  a: EditorTourSettings | null,
+  b: EditorTourSettings | null,
+): boolean {
+  if (a === null || b === null) return a === b;
+  if (a.needsNoGps !== b.needsNoGps) return false;
+  if ((a.details === undefined) !== (b.details === undefined)) return false;
+  return changedDetails(a.details, b.details).length === 0;
 }
 
 /** The settings record's file in a namespace. Not a prefix the phone's
@@ -99,25 +168,67 @@ const SETTINGS_KEY = "settings";
 /** The setting's name as the page shows it (`edit.html`). */
 const NO_GPS_LABEL = '"This tour needs no GPS"';
 
+/** How the offer names its settings part: the setting, the details, or
+ *  both (`restoredLine`). */
+const NO_GPS_WHAT = `this tour's "needs no GPS" setting`;
+const DETAILS_WHAT = "this tour's details";
+const BOTH_WHAT = "this tour's settings";
+
+/** What an offered record changes against the opened file: whether the
+ *  setting, and which details. */
+function settingsChanges(
+  settings: EditorTourSettings,
+  manifest: TourManifest,
+): { readonly noGps: boolean; readonly details: DetailField[] } {
+  const file = settingsOf(manifest);
+  return {
+    noGps: settings.needsNoGps !== file.needsNoGps,
+    details: changedDetails(settings.details, file.details),
+  };
+}
+
 /**
- * The offer's words (`restoreOfferText`), and - when it holds the setting -
- * which setting and to what value (M1b-2 milestone review #3): Restore
- * then never puts a value back the creator did not see named.
+ * The offer's words (`restoreOfferText`), and - when it holds settings -
+ * which and to what (M1b-2 milestone review #3; W2 names the details by
+ * field): Restore then never puts a value back the creator did not see
+ * named. Each changed detail counts as one change, as the session counts
+ * it.
  */
 function offerText(
   notes: number,
   deleted: number,
   settings: EditorTourSettings | undefined,
+  manifest: TourManifest,
 ): string {
+  const changes =
+    settings === undefined ? null : settingsChanges(settings, manifest);
   const counted = restoreOfferText(0, false, {
-    changed: notes + (settings === undefined ? 0 : 1),
+    changed:
+      notes +
+      (changes === null ? 0 : (changes.noGps ? 1 : 0) + changes.details.length),
     deleted,
   });
-  if (settings === undefined) return counted;
-  const value = `${NO_GPS_LABEL} turned ${settings.needsNoGps ? "on" : "off"}`;
-  return notes + deleted === 0
-    ? `${counted} It is ${value}.`
-    : `${counted} One of the changes is ${value}.`;
+  if (settings === undefined || changes === null) return counted;
+  const noGps = `${NO_GPS_LABEL} turned ${settings.needsNoGps ? "on" : "off"}`;
+  if (changes.details.length === 0) {
+    return notes + deleted === 0
+      ? `${counted} It is ${noGps}.`
+      : `${counted} One of the changes is ${noGps}.`;
+  }
+  const details = `the tour's details (${changes.details
+    .map((f) => DETAIL_NAMES[f])
+    .join(", ")})`;
+  return `${counted} Changed: ${changes.noGps ? `${noGps}, and ${details}` : details}.`;
+}
+
+/** `settingsWhat` of an offer that holds `settings`. */
+function settingsWhatOf(
+  settings: EditorTourSettings,
+  manifest: TourManifest,
+): string {
+  const changes = settingsChanges(settings, manifest);
+  if (changes.details.length === 0) return NO_GPS_WHAT;
+  return changes.noGps ? BOTH_WHAT : DETAILS_WHAT;
 }
 
 /**
@@ -127,7 +238,10 @@ function offerText(
  */
 export function restoredLine(
   count: number,
-  offer: Pick<EditorDraftOffer, "objects" | "deleted" | "settings">,
+  offer: Pick<
+    EditorDraftOffer,
+    "objects" | "deleted" | "settings" | "settingsWhat"
+  >,
 ): string {
   if (count > 0) {
     const back =
@@ -139,14 +253,40 @@ export function restoredLine(
   if (offer.settings === undefined) {
     return "Nothing was restored: the notes those changes were for are edited here already.";
   }
+  const what = offer.settingsWhat ?? NO_GPS_WHAT;
   if (offer.objects.length + offer.deleted.length === 0) {
-    return `Nothing was restored: this tour's "needs no GPS" setting is changed here already.`;
+    return `Nothing was restored: ${what} ${what === NO_GPS_WHAT ? "is" : "are"} changed here already.`;
   }
-  return "Nothing was restored: the notes and the setting those changes were for are changed here already.";
+  const part =
+    what === NO_GPS_WHAT
+      ? "the setting"
+      : what === DETAILS_WHAT
+        ? "the details"
+        : "the settings";
+  return `Nothing was restored: the notes and ${part} those changes were for are changed here already.`;
 }
 
 function settingsOf(manifest: TourManifest): EditorTourSettings {
-  return { needsNoGps: manifest.needsNoGps === true };
+  return {
+    needsNoGps: manifest.needsNoGps === true,
+    details: detailsOf(manifest),
+  };
+}
+
+/** A stored record's details: undefined when absent, null when they do
+ *  not read (a known field that is not a string). */
+function parseDetails(value: unknown): EditorTourDetails | undefined | null {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const details: Partial<Record<DetailField, string>> = {};
+  for (const field of DETAIL_FIELDS) {
+    const text = record[field];
+    if (text === undefined) continue;
+    if (typeof text !== "string") return null;
+    details[field] = text;
+  }
+  return details;
 }
 
 /** A stored settings record; undefined for anything that does not read
@@ -158,8 +298,11 @@ function parseSettings(
   try {
     const value: unknown = JSON.parse(text);
     if (value === null || typeof value !== "object") return undefined;
-    const { needsNoGps } = value as Record<string, unknown>;
-    return typeof needsNoGps === "boolean" ? { needsNoGps } : undefined;
+    const record = value as Record<string, unknown>;
+    const { needsNoGps } = record;
+    const details = parseDetails(record["details"]);
+    if (typeof needsNoGps !== "boolean" || details === null) return undefined;
+    return details === undefined ? { needsNoGps } : { needsNoGps, details };
   } catch {
     return undefined;
   }
@@ -203,8 +346,12 @@ export interface EditorDraftOffer {
   /** The tour's settings, when the opened file does not carry the draft's
    *  (QR-first M1b-2). */
   readonly settings?: EditorTourSettings;
+  /** How the offer's settings part is named in plain words ("this tour's
+   *  details"), present with `settings` (`restoredLine`). */
+  readonly settingsWhat?: string;
   /** The offer's words: changes and deletions named apart
-   *  (`restoreOfferText`); a changed setting is a change. */
+   *  (`restoreOfferText`); a changed setting, and each changed detail, is
+   *  a change. */
   readonly text: string;
 }
 
@@ -306,18 +453,18 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
    *  whether or not its record is, so a build or a landed write can decide
    *  the keep again (M1b-2 milestone review #1). */
   let settingsWanted: EditorTourSettings | null = null;
-  /** The "needs no GPS" values builds wrote since the open: a change back
-   *  to the file's value still differs from a built copy that may be put
-   *  in place, so its record is kept (review #1's walk, for the setting). */
-  const builtNoGps = new Set<boolean>();
+  /** The settings builds wrote since the open: a change back to the
+   *  file's value still differs from a built copy that may be put in
+   *  place, so its record is kept (review #1's walk, for the settings). */
+  const built: EditorTourSettings[] = [];
 
   /** Whether `settings` must be kept: the file on disk differs, or a
-   *  build wrote the other value (THE SETTINGS). */
+   *  build wrote other values (THE SETTINGS). */
   function keepSettings(settings: EditorTourSettings): boolean {
     return (
       opened === null ||
-      settings.needsNoGps !== settingsOf(opened).needsNoGps ||
-      builtNoGps.has(!settings.needsNoGps)
+      differs(settings, settingsOf(opened)) ||
+      built.some((b) => differs(settings, b))
     );
   }
 
@@ -328,7 +475,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     const wanted = settingsWanted;
     if (wanted === null) return false;
     const next = keepSettings(wanted) ? wanted : null;
-    if (next?.needsNoGps === settingsPending?.needsNoGps) return false;
+    if (sameRecord(next, settingsPending)) return false;
     settingsPending = next;
     return true;
   }
@@ -601,7 +748,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     bases.clear();
     settingsPending = null;
     settingsWanted = null;
-    builtNoGps.clear();
+    built.length = 0;
     if (s === null) return;
     // After its queued writes (E2c review #6): until they land, another
     // tab taking the draft would read it half written. Chained on the last
@@ -648,9 +795,19 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       const storedSettings = parseSettings(settingsText);
       const settings =
         storedSettings !== undefined &&
-        storedSettings.needsNoGps !== settingsOf(manifest).needsNoGps
+        differs(storedSettings, settingsOf(manifest))
           ? storedSettings
           : undefined;
+      /** The offer's words, and how its settings part is named. */
+      const offerWords = (
+        notes: number,
+        gone: number,
+      ): { text: string; settingsWhat?: string } => ({
+        text: offerText(notes, gone, settings, manifest),
+        ...(settings === undefined
+          ? {}
+          : { settingsWhat: settingsWhatOf(settings, manifest) }),
+      });
       if (settingsText !== undefined && settings === undefined) {
         void settingsIn(s, null);
       }
@@ -673,10 +830,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             ? null
             : { objects: [], deleted: [], settings };
         return {
-          offer:
-            offer === null
-              ? null
-              : { ...offer, text: offerText(0, 0, settings) },
+          offer: offer === null ? null : { ...offer, ...offerWords(0, 0) },
           superseded: null,
           backedUp: true,
         };
@@ -727,7 +881,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             ? null
             : {
                 ...offer,
-                text: offerText(waiting.length, deleted.length, settings),
+                ...offerWords(waiting.length, deleted.length),
               },
         superseded:
           replaced === 0 ? null : supersededLine(replaced, SUPERSEDED_WHERE),
@@ -817,7 +971,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       if (s === null) return;
       // As a reader of the written file sees it (the E2p third review #5).
       const read = manifestAsRead(written);
-      builtNoGps.add(settingsOf(read).needsNoGps);
+      built.push(settingsOf(read));
       // A setting turned back while this save built is measured against
       // the build now (M1b-2 milestone review #1).
       if (redecideSettings()) void writeSettingsIn(s, settingsPending);
@@ -951,8 +1105,8 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     },
     saveSettings(settings) {
       settingsWanted = settings;
-      // Kept while the file on disk differs, or a build wrote the other
-      // value (THE SETTINGS); else the record goes.
+      // Kept while the file on disk differs, or a build wrote other
+      // values (THE SETTINGS); else the record goes.
       settingsPending = keepSettings(settings) ? settings : null;
       const s = space;
       return s === null

@@ -22,8 +22,10 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
     at the call: pass a snapshot, not a list the page keeps changing.
   - `input.deleted` - ids to delete.
   - `input.levels` - code levels to write (`LevelText`, in order).
-  - `input.title` - the typed name; one that says something (trimmed)
-    becomes `title`, else the tour keeps its own.
+  - `input.title` - the typed name: one that says something (trimmed)
+    becomes `title`; an emptied one removes it (W2 of the tour editor
+    plan 2026-10-17-1816: it used to keep the old title silently); null or
+    omitted keeps the tour's own.
   - `input.captureSpots` - the recorded photos' spots, when there are any.
   - `input.keepScan` - keep the entries visitors never read.
   - `input.previous` - the last rebuild of this open tour

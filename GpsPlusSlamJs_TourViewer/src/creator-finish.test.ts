@@ -1599,7 +1599,9 @@ describe("the tour's name at the Finish (polish round M4a)", () => {
   // Why: the visitor's start page (V4, D-R12) leads with the tour's name,
   // which the manifest carries as `title` - and nothing wrote it, so
   // every tour would have shown none. The name the creator types in step 3
-  // for the posters is the tour's name.
+  // is the tour's name - in its own field since W2 of the tour editor plan
+  // (2026-10-17-1816), where an emptied name removes the title instead of
+  // silently keeping the old one.
   it("writes the typed name as the manifest's title", async () => {
     const { dom, ctx } = await wireFinishable({
       hosted: [pin("a")],
@@ -1613,7 +1615,20 @@ describe("the tour's name at the Finish (polish round M4a)", () => {
     expect(written.title).toBe("Harbour Lights");
   });
 
-  it("keeps the tour's title when nothing was typed", async () => {
+  it("keeps the tour's title when no name was typed", async () => {
+    const { dom, ctx } = await wireFinishable({
+      hosted: [pin("a")],
+      placed: [],
+      manifestExtras: { title: "Castle walk" },
+      tourTitle: null,
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    const written = await publishedManifest(ctx.rebuiltZip!.blob);
+    expect(written.title).toBe("Castle walk");
+  });
+
+  it("removes the tour's title when the name was emptied", async () => {
     const { dom, ctx } = await wireFinishable({
       hosted: [pin("a")],
       placed: [],
@@ -1623,7 +1638,7 @@ describe("the tour's name at the Finish (polish round M4a)", () => {
     dom.finishButton.click();
     await settle(ctx);
     const written = await publishedManifest(ctx.rebuiltZip!.blob);
-    expect(written.title).toBe("Castle walk");
+    expect(written.title).toBeUndefined();
   });
 
   it("writes no title when there is none either way", async () => {

@@ -26,6 +26,10 @@
  * - `/ranges-ok/no-gps-tour.zip` - the default tour with its `tour.json`
  *   marked `needsNoGps` (version 2, minor 2; Tour Viewer QR-first, owner
  *   decision Q-QF-1): its visitor is never asked for the location.
+ * - `/ranges-ok/details-tour.zip` - a tour carrying its details (tour
+ *   editor plan 2026-10-17-1816, W2; minor 3): a name, a description, a
+ *   contact, and a cover that is its SECOND photo (3 px wide; the first is
+ *   1 px), so a page that took the first photo is told apart.
  * - `/ranges-ok/stations-tour.zip` - a `tour.json` version 2 with three
  *   stations (tour kit plan K4): one found by the fixture's printed code
  *   (a knight with a voice and a scene choice), one by walking to it (a
@@ -38,6 +42,7 @@
 
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { crc32, deflateSync } from "node:zlib";
 import {
   TextReader,
   Uint8ArrayReader,
@@ -440,7 +445,66 @@ async function buildBakedZip() {
   return writer.close();
 }
 
+/** A real, decodable grey PNG of `width` x 1 px. */
+function greyPng(width) {
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(1, 4);
+  header[8] = 8; // bit depth
+  header[9] = 0; // greyscale
+  const row = Buffer.alloc(1 + width, 0x80);
+  row[0] = 0; // no filter
+  return new Uint8Array(
+    Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk("IHDR", header),
+      chunk("IDAT", deflateSync(row)),
+      chunk("IEND", Buffer.alloc(0)),
+    ]),
+  );
+}
+
+/** The details tour (W2): two placed photos, the second the cover. */
+async function buildDetailsZip() {
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+  const photo = (id, width, lat) => ({
+    id,
+    kind: "photo",
+    image: `content/${id}.png`,
+    imageWidth: width,
+    imageHeight: 1,
+    createdAtIso: "2026-10-17T00:00:00.000Z",
+    geo: { lat, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+  });
+  await writer.add(
+    "tour.json",
+    new TextReader(
+      JSON.stringify({
+        version: 2,
+        minor: 3,
+        title: "Harbour Lights",
+        description: "Six places along the old harbour.",
+        cover: "second",
+        contact: "guide@example.org",
+        objects: [photo("first", 1, 47.5), photo("second", 3, 47.5001)],
+      }),
+    ),
+  );
+  await writer.add("content/first.png", new Uint8ArrayReader(greyPng(1)));
+  await writer.add("content/second.png", new Uint8ArrayReader(greyPng(3)));
+  return writer.close();
+}
+
 const zipBytes = await buildZip();
+const detailsZipBytes = await buildDetailsZip();
 const bakedZipBytes = await buildBakedZip();
 const plainZipBytes = await buildZip({ withLevel: false });
 const noGpsZipBytes = await buildZip({ needsNoGps: true });
@@ -604,6 +668,10 @@ createServer((req, res) => {
   }
   if (url.pathname === "/ranges-ok/baked-tour.zip") {
     handleArchive(req, res, "ranges-ok", bakedZipBytes, '"e2e-baked-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/details-tour.zip") {
+    handleArchive(req, res, "ranges-ok", detailsZipBytes, '"e2e-details-v1"');
     return;
   }
   if (url.pathname === "/ranges-ok/stations-tour.zip") {

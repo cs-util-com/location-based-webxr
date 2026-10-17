@@ -50,6 +50,19 @@ export type PickOutcome =
     };
 
 /**
+ * The open dialog's fine print about Save, true for this browser (tour
+ * editor plan 2026-10-17-1816, W2): where the file picker exists, a chosen
+ * file is written in place (and saved by itself after a change); elsewhere,
+ * and for a tour from a link or the sample, Save downloads a new copy.
+ */
+export function saveFinePrint(win: PickerWindow): string {
+  const stays = "The file stays on this computer: nothing is uploaded.";
+  return typeof win.showOpenFilePicker === "function"
+    ? `${stays} A file you choose is saved into that file, where the browser allows it, and by itself a few seconds after each change. A tour opened from a link, or the sample, is saved as a new copy to put in place of the old one.`
+    : `${stays} Save gives you a new copy of the tour to put in place of the old one.`;
+}
+
+/**
  * Let the creator pick a tour zip, and ask to write it on the same gesture.
  * The permission is asked FIRST, before any read of the file, while the
  * picker's activation still holds (E2b plan review #8). `unavailable` is a

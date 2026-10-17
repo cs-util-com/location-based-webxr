@@ -46,7 +46,10 @@ an action stream, for the capture-spots placement), `/ranges-ok/baked-tour.zip`
 walk kept for a co-author - `session.json`, an action, a third frame no spot
 shows - that a visitor must neither show nor replay: scan-pass plan S1), `/ranges-ok/plain-tour.zip`
 (images only - no level, no recording: the "nothing to place" case, flows
-plan M4), `/flip`, `/warm-gate`, and a CORS preflight handler.
+plan M4), `/ranges-ok/details-tour.zip` (a `tour.json` at minor 3 carrying
+its details - name, description, contact - and a cover that is its SECOND
+photo, 3 px wide against the first's 1 px, so a page that took the first
+photo is told apart: tour editor plan 2026-10-17-1816 W2), `/flip`, `/warm-gate`, and a CORS preflight handler.
 
 ## Invariants & assumptions
 

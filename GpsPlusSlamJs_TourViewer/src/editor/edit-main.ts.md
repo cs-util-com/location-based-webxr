@@ -204,6 +204,24 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   and the region is never `hidden` (an empty one is zero-height), so a
   screen reader announces the first lines and never the same ones again
   (M1b-2 milestone review #5).
+- **Tour details (W2 of the tour editor plan 2026-10-17-1816).** The
+  tour's name in the top bar (`#tour-name`, a button) opens the details
+  dialog (`details-dialog.ts`, `#details-modal`): name, description, cover
+  and contact. The cover picker is drawn here: "None" and the session's
+  `coverChoices()` as radios, each with its picture read from the zip as
+  an object URL (released when the dialog closes). Apply goes through
+  `session.setDetails`; a change refreshes, says "Tour details changed -
+  not saved yet." and tells autosave (an edit like any other); no change
+  says so too; a refusal stays in the dialog. Esc closes it; focus goes
+  back to the name. The dialog sits above the toasts (a save's result toast
+  stays until closed and covered its buttons). Opening another tour or
+  losing this one closes it.
+- **Titles:** the top bar and the tab say the tour's name (`model.title`,
+  the file's name when it has none): `<name> - Tour editor`.
+- **The open dialog's fine print** is `save-target.ts`'s
+  `saveFinePrint(window)`: Save writes the chosen file where the file
+  picker exists, else gives a new copy (W2: it said "a new copy" in every
+  browser).
 - **Leaving** with unsaved work asks first (`beforeunload`), and so does
   "Open another tour" (`window.confirm`).
 - **Free area** for the card: right of the rail, under the top bar (read
@@ -220,5 +238,6 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 ## Tests
 
 The modules it wires have their own unit tests; the page is pinned by
-`playwright-tests/editor.spec.js` and `editor-entry.spec.js` (the
+`playwright-tests/editor.spec.js` (the details dialog and the fine print
+among them) and `editor-entry.spec.js` (the
 "Nothing to save" toast, the open from a link); `way-in.spec.js` checks its first paint.

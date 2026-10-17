@@ -17,10 +17,17 @@ plus a small wiring that writes the page and loads the photo from the zip.
     stations counts its stations (the objects they show are not places of
     their own); any other tour its objects and baked capture spots; `null`
     when there are none.
-  - `coverPath`: the first placed `photo` object's `image`, else the first
-    capture spot's `image` (a tour made from a recording), else `null`.
+  - `description`: the manifest's `description` (W2 of the tour editor
+    plan 2026-10-17-1816), trimmed; `null` for none.
+  - `coverPath`: the cover the creator chose (`cover`, W2; its entry by
+    the framework's `tourCoverEntry`), else the first placed `photo`
+    object's `image`, else the first capture spot's `image` (a tour made
+    from a recording), else `null`.
+  - `pageTitle`: the tab's title, which a shared link's title shows too:
+    the tour's name, else "Tour Viewer".
 - `wireVisitorStart({ dom, createObjectUrl, revokeObjectUrl, checkPicture }): VisitorStart`
-  - `dom`: `title`, `subline`, `cover` (the figure, hidden without a
+  - `dom`: `title`, `subline`, `description` (hidden without one),
+    `page` (the document, for its `title`), `cover` (the figure, hidden without a
     photo), `coverImage` (decorative, `alt=""` in the markup: the title
     names the tour). Structural types, so the node unit tests pass plain
     objects.
@@ -32,10 +39,16 @@ plus a small wiring that writes the page and loads the photo from the zip.
 
 ## Invariants & assumptions
 
-- **Only the tour's own photos can be the cover:** the path always comes
-  from a photo object or a capture spot, never from anything else the zip
-  holds (a property test over pins, photos and capture spots pins the
-  choice: the first own photo, placed photos first).
+- **Only the tour's own images can be the cover:** the path always comes
+  from a photo object, an image asset the tour names as its cover, or a
+  capture spot, never from anything else the zip holds (a property test
+  over pins, photos, capture spots and chosen covers - a photo, a pin, an
+  unknown id - pins the choice: the chosen photo, else the first own photo,
+  placed photos first).
+- **Open-graph previews are not covered:** a crawler reads the static
+  `<title>` of `index.html` and runs no script, so a shared link's
+  preview card still says "Tour Viewer"; the tab's title (and a link
+  copied from it) says the tour's name.
 - **A newer tour wins:** each `present` / `clear` bumps a generation; a
   cover that finishes loading for an older tour is dropped (checked both
   after the read and after the picture check).
@@ -46,8 +59,9 @@ plus a small wiring that writes the page and loads the photo from the zip.
   button matter, the photo is decoration).
 - Only wired for a visitor (`main.ts`); a creator never sees the page and
   never pays for the photo read.
-- The manifest's title is written at the creator's Finish from the step-3
-  poster title (`finish-rebuild.ts`, `finishTitle`, which the Finish calls).
+- The manifest's title is written at the creator's Finish from step 3's
+  "Tour name" field (`tour-name-field.ts`; `finish-rebuild.ts`
+  `finishTitle`), or in the desktop editor's details dialog.
 
 ## Examples
 
@@ -65,10 +79,12 @@ hooks.presentTourInfo = (manifest, loadImage) =>
 ## Tests
 
 - `visitor-start.test.ts` - the view (name, fallback, counts including
-  stations and capture spots, cover choice, a property test that the cover
-  is always a photo's own image) and the wiring (cover shown after load,
+  stations and capture spots, cover choice and the chosen cover, the
+  description, the page title, a property test that the cover is always a
+  photo's own image) and the wiring (description, page title, cover shown after load,
   rejected by the picture check, a newer tour's cover kept over an older
   one's, clear releases the URL).
 - `playwright-tests/visitor-start.spec.js` - the real page: the sample
-  tour's name and subline, the layout at three viewports, and a baked
-  tour's cover loading from the zip.
+  tour's name and subline, the layout at three viewports, a baked
+  tour's cover loading from the zip, and the details tour (its chosen
+  cover, description, page title and contact under an error).

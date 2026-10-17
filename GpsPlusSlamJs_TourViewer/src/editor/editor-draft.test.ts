@@ -1272,3 +1272,106 @@ describe("createEditorDraft, the PR #626 bot findings", () => {
     expect(draft.backsUp()).toBe(true);
   });
 });
+
+/**
+ * Why (tour editor plan 2026-10-17-1816, W2): the tour's details join
+ * "needs no GPS" in the ONE settings record, by the same rules - kept
+ * while the file does not carry them, offered by a later open, spent by a
+ * file that does. A record written before the details existed carries no
+ * opinion about them, so it never offers to change (or blank) them.
+ */
+describe("createEditorDraft, the tour's details (W2)", () => {
+  const named = (title: string, ...objects: TourObject[]): TourManifest => ({
+    ...tour(...objects),
+    title,
+  });
+
+  it("changed details survive a closed tab, and the offer names them", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = named("Old", pin("a"));
+    await first.open(K1, opened);
+    await first.saveSettings({
+      needsNoGps: false,
+      details: { title: "New", contact: "guide@example.org" },
+    });
+    await first.idle();
+    first.close();
+    const { offer } = await draftIn(b).open(K1, opened);
+    expect(offer?.settings).toEqual({
+      needsNoGps: false,
+      details: { title: "New", contact: "guide@example.org" },
+    });
+    expect(offer?.text).toContain("the tour's details (name, contact)");
+    expect(offer?.settingsWhat).toBe("this tour's details");
+  });
+
+  it("details put back to the file's own leave nothing to offer", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = named("Old", pin("a"));
+    await first.open(K1, opened);
+    void first.saveSettings({ needsNoGps: false, details: { title: "New" } });
+    void first.saveSettings({ needsNoGps: false, details: { title: "Old" } });
+    await first.idle();
+    first.close();
+    expect((await draftIn(b).open(K1, opened)).offer).toBeNull();
+  });
+
+  it("a file that carries the details spends the record", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    await first.open(K1, named("Old", pin("a")));
+    void first.saveSettings({ needsNoGps: false, details: { title: "New" } });
+    await first.idle();
+    first.close();
+    expect(
+      (await draftIn(b).open(K1, named("New", pin("a")))).offer,
+    ).toBeNull();
+  });
+
+  it("a record from before the details offers only its setting, whatever the file's name", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = named("Old", pin("a"));
+    await first.open(K1, opened);
+    void first.saveSettings({ needsNoGps: true });
+    await first.idle();
+    first.close();
+    const { offer } = await draftIn(b).open(K1, opened);
+    expect(offer?.settings).toEqual({ needsNoGps: true });
+    expect(offer?.text).toContain('"This tour needs no GPS" turned on');
+    expect(offer?.text).not.toContain("details");
+  });
+
+  it("both at once are named together", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = named("Old", pin("a"));
+    await first.open(K1, opened);
+    void first.saveSettings({ needsNoGps: true, details: { title: "New" } });
+    await first.idle();
+    first.close();
+    const { offer } = await draftIn(b).open(K1, opened);
+    expect(offer?.text).toContain(
+      `"This tour needs no GPS" turned on, and the tour's details (name)`,
+    );
+    expect(offer?.settingsWhat).toBe("this tour's settings");
+  });
+
+  it("an unreadable details part makes the record unreadable: no offer", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = named("Old", pin("a"));
+    await first.open(K1, opened);
+    await first.idle();
+    first.close();
+    b.spaces
+      .get(editorDraftKey(K1))
+      ?.set(
+        "settings",
+        JSON.stringify({ needsNoGps: false, details: { title: 7 } }),
+      );
+    expect((await draftIn(b).open(K1, opened)).offer).toBeNull();
+  });
+});
