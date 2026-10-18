@@ -6,7 +6,8 @@
   milestone G1, for G2). Re-exports only.
 - Public API (each block's own sidecar holds its rules):
   - The relief: `createGlobeTerrain`, `GLOBE_TERRAIN`, `GlobeTerrain`
-    (`globe-terrain.ts`: `tileDimension`, `cache`, `fallbackUrl`,
+    (`globe-terrain.ts`: `device` (required), `tileDimension`, `cache`,
+    `ancestorFallback`,
     `meshMaxLevel`, `reliefCache()`, `reliefFallback()`).
   - Its sources: `RELIEF_SOURCES`, `awsTerrariumRelief`,
     `mapterhornRelief`, `reliefCredits`, `reliefTerrainOptions`,

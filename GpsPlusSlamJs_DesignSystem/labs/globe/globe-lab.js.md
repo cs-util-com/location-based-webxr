@@ -410,16 +410,19 @@
   - The relief's source (G1 step 2, read at start; tour editor plan
     `2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md` §13):
     `reliefSource=aws` (the default: AWS Terrarium, 256 px, z12) or
-    `mapterhorn` (512 px, z14 where a national model exists, AWS
-    Terrarium for the same tile where it answers 404,
+    `mapterhorn` (512 px, z14 where a national model exists; where it
+    answers 404, its own nearest ancestor cropped and upsampled,
     `/globe/globe-relief-fallback.js`). URLs and credits are the Osm
     library's constants, described by `/globe/globe-relief-source.js`;
-    the credits line names the source and its fallback with their links.
-    The city's heights and the landing's ground read the same source at
-    its global zoom (12); the detail colour stays on AWS z8.
+    the credits line names Mapterhorn and Copernicus GLO-30 with their
+    links. The city's heights and the landing's ground read the same
+    source at its global zoom (12; the relief draws z14 where it can, an
+    unmeasured difference, `globe-city-heights.js.md`); the detail
+    colour stays on AWS z8.
     `reliefDevice=phone|desktop` (default phone) sets the relief cache's
     budget for the source's tile size (`reliefCacheBudget`: 64 MiB for
-    AWS on a phone, about 151 MiB for Mapterhorn; desktop twice), which
+    AWS on a phone, about 151 MiB for Mapterhorn; desktop 256 and about
+    604 MiB, from the 2026-10-18 sweep in `globe-relief-cache.ts.md`), which
     becomes `reliefCacheMiB`'s default. `reliefMeshLevel` (0-24, unset
     by default) deepens the relief's tree (`meshMaxLevel`): 17 draws
     Mapterhorn z14 at about 6.5 m between vertices near the camera.
@@ -427,7 +430,10 @@
     (2026-10-18, 256 px synthetic heights) the relief's whole tree took
     about 130 MiB, so 64 and 128 MiB stayed full and missed tiles (the
     state's `relief.cache.stalled` and the Debug line say so), 256 MiB
-    did not.
+    did not. Known defect (found in the same sweep, not fixed): a first
+    view looking steeply down from below about 300 m (30 m at pitch -45
+    or -70, 1.7 m at -70) never hands over to the relief: the band share
+    stays 0 and the globe draws its own two tiles.
   - First person (G1 step 5, read at start): `eye=1` keeps the camera
     1.7 m over the drawn ground (`GLOBE_EYE.clearanceM`, not the
     flight's 100 m), lowers the controls' limits to it
@@ -491,7 +497,8 @@ cachedBytes, cache, globeCachedBytes, releasedBytes, globeDrawn, reliefDrawn,
 globeTiles, detail, source, fallback, meshMaxLevel }` or null; `cache` is
     the terrain's `reliefCache()` (full, refusals, stalled; G1 1c);
     `source` the heights' source id (or `synthetic`), `fallback` its 404
-    fallback's counts (`reliefFallback()`, null without one) and
+    fallback's counts (`reliefFallback()`: tiles drawn from an ancestor
+    and failures; null without it) and
     `meshMaxLevel` the tree's set depth (G1 2); `detail` is the region's state, with its
     height tiles and bytes once ready) and `cameraDepressionDeg`.
   - Not yet (the F2 plan 2026-10-03-1922): the re-oriented frame, the

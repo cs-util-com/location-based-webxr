@@ -17,7 +17,12 @@ import * as THREE from "three";
 import type { Ellipsoid } from "3d-tiles-renderer";
 
 export const GROUND_HIT = Object.freeze({
-  /** How far along the ray the march looks (m); the spike's 5 km. */
+  /**
+   * How far along the ray the march looks (m); the spike's 5 km. A ray
+   * from height h reaches the ground within it only when pitched at least
+   * asin(h / 5 km) down: from 3 km, about 37 degrees. A shallow overview
+   * passes a larger `maxDistanceM`.
+   */
   maxDistanceM: 5_000,
   /** The least step (m)... */
   minStepM: 1,
@@ -128,11 +133,15 @@ function unitRay(ray: THREE.Ray): THREE.Ray {
 /**
  * Where `ray` first goes from above the ground to on or below it, by
  * `aboveGround`: marched in steps of max(`minStepM`, `stepFraction` x the
- * distance), then bisected. A step with an unloaded end is skipped (a null
- * never brackets a crossing). Null when the ray stays above the ground
- * within `maxDistanceM`, starts below it, or finds nothing loaded. A
- * ridge thinner than a step can be stepped over (2 m at 100 m). RangeError
- * for a zero direction or an option out of range.
+ * distance), then bisected between the last loaded sample above the
+ * ground and the first loaded sample on or below it, unloaded samples
+ * between them or not (a crossing inside an unloaded stretch is found
+ * within that stretch; a bisection that meets an unloaded midpoint stops
+ * there). Null when the ray stays above the ground within `maxDistanceM`,
+ * starts on or below it (its first LOADED sample is: an unloaded start
+ * proves nothing), or finds nothing loaded. A ridge thinner than a step
+ * can be stepped over (2 m at 100 m). RangeError for a zero direction or
+ * an option out of range.
  */
 export function marchToGround(
   ray: THREE.Ray,
@@ -153,24 +162,28 @@ export function marchToGround(
     }
     return h;
   };
-  let t = o.startM;
-  let a = above(t);
-  // A ray that starts on or under the ground has no crossing to find.
-  if (a !== null && a <= 0) return null;
-  while (t < o.maxDistanceM) {
-    const next = Math.min(
-      o.maxDistanceM,
-      t + Math.max(o.minStepM, o.stepFraction * t),
-    );
-    const b = above(next);
-    if (a !== null && a > 0 && b !== null && b <= 0) {
-      const hit = bisect(t, next, above, o.bisections);
-      return { t: hit, point: r.at(hit, new THREE.Vector3()), samples, nulls };
+  // The last loaded sample above the ground (null before the first).
+  let lastAbove: number | null = null;
+  for (let t = o.startM; ;) {
+    const h = above(t);
+    if (h !== null) {
+      if (h > 0) lastAbove = t;
+      // On or under the ground: a crossing if anything loaded was above,
+      // else the ray started there, as far as anything loaded shows.
+      else if (lastAbove === null) return null;
+      else {
+        const hit = bisect(lastAbove, t, above, o.bisections);
+        return {
+          t: hit,
+          point: r.at(hit, new THREE.Vector3()),
+          samples,
+          nulls,
+        };
+      }
     }
-    t = next;
-    a = b;
+    if (t >= o.maxDistanceM) return null;
+    t = Math.min(o.maxDistanceM, t + Math.max(o.minStepM, o.stepFraction * t));
   }
-  return null;
 }
 
 /** What `terrainAboveGround` reads of a terrain (`createGlobeTerrain`'s). */

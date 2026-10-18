@@ -17,9 +17,20 @@
   - Pure, no imports: the worker (through the worker view), the page's
     `globe-city.js` (whose boot graph stays free of the Osm library) and
     node tests import it alike.
-  - One template, never a race between sources: the city must read what
-    the relief draws. A source with gaps (Mapterhorn's fine zooms) is read
-    at its global zoom (12), so a single template suffices.
+  - One template, never a race between sources: the city reads the
+    relief's SOURCE, at the source's global zoom (12), so a single
+    template suffices for a source with gaps (Mapterhorn's fine zooms).
+  - **The city does not read exactly what the relief draws** (G1 review
+    L5). With Mapterhorn the relief draws z14 where a national model
+    exists (z12 elsewhere), the city reads z12 everywhere. z12 is
+    Copernicus GLO-30 resampled, z14 the national LiDAR model; the G0
+    spikes put AWS 5-11 m off the national models in towns, and z12 of
+    Mapterhorn is not AWS, so the offset between the city's ground and the
+    drawn ground at z14 is UNMEASURED. Measure it (city base heights
+    against `finestElevationAt` on the relief at a few towns) before
+    claiming the city stands on the drawn ground with Mapterhorn. With AWS
+    both are z12 and the same numbers. What the reader does where the
+    source answers 404 at z12 (Mapterhorn over deep ocean) was not checked.
 - Example:
 
   ```js

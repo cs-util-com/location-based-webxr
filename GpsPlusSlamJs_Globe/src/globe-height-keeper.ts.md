@@ -29,7 +29,8 @@
     258 x 258 source grid) are kept, on the CPU. The tile's imagery, mesh
     and GPU copies go as before, so a return builds those again.
   - The kept bytes are outside the relief's tile cache accounting
-    (`GLOBE_TERRAIN.cacheBytes`); the budget (`keepHeightsBytes`, 16 MiB by
+    (`reliefCacheBudget`, `globe-relief-cache.ts`); the budget
+    (`keepHeightsBytes`, 16 MiB by
     default) is their own ceiling.
   - It touches private members of 3d-tiles-renderer 0.5.3, guarded by a
     test that reads the library source (the symbol, the lock at parse, the

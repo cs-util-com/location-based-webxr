@@ -115,6 +115,7 @@ describe("finestElevationAt", () => {
       },
       template: new THREE.MeshStandardMaterial(),
       heightScale: 1,
+      device: "phone",
     });
     const internals = terrain.plugin as unknown as {
       _maxSourceLevel: number;

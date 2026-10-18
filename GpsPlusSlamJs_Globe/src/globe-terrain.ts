@@ -46,7 +46,9 @@ import {
 import {
   type ReliefCacheBudget,
   type ReliefCacheState,
+  type ReliefDeviceClass,
   checkReliefCacheBudget,
+  reliefCacheBudget,
   watchReliefCache,
 } from "./globe-relief-cache.js";
 import { installReliefFallback } from "./globe-relief-fallback.js";
@@ -81,15 +83,6 @@ export const GLOBE_TERRAIN = Object.freeze({
    * a phone descent against 11.5; 4 (7.7 MiB) differs by 42 levels.
    */
   errorTarget: 2,
-  /**
-   * The relief's own tile cache, the globe's phone budget (cap and the
-   * floor the library evicts down to). Its own: the library shares one
-   * cache between renderers by default, the globe caps that at 64 MB, and
-   * in the altitude band the two carriers filled it and it refused every
-   * request (F1). In the band both are resident: up to twice this.
-   */
-  cacheBytes: 64 * 1024 * 1024,
-  cacheFloorBytes: 48 * 1024 * 1024,
   /**
    * The decoded heights kept past their tiles (owner decision 2026-10-04,
    * DEC-N1; `globe-height-keeper.ts`): a source grid is 258 x 258 floats,
@@ -488,7 +481,6 @@ function checkTerrainOptions(
   url: string,
   heightScale: number,
   tileDimension: number,
-  cache: ReliefCacheBudget,
   meshMaxLevel: number | undefined,
 ): void {
   if (typeof url !== "string" || url.length === 0) {
@@ -504,7 +496,6 @@ function checkTerrainOptions(
       `the tile size must be a power of two from 1 to ${GLOBE_TERRAIN.maxTileDimension} px, got ${tileDimension}`,
     );
   }
-  checkReliefCacheBudget(cache);
   if (
     meshMaxLevel !== undefined &&
     !(
@@ -561,8 +552,8 @@ export interface GlobeTerrain {
   heightKeeperStats(): ReturnType<HeightKeeper["stats"]>;
   /**
    * The fallback's counters (`installReliefFallback`): tiles its source
-   * answered 404 for and the fallback drew, and tiles that failed; null
-   * without a `fallbackUrl`.
+   * answered 404 for and drew from their nearest ancestor, and tiles that
+   * failed; null without `ancestorFallback`.
    */
   reliefFallback(): { fallbacks: number; failures: number } | null;
   /**
@@ -575,6 +566,23 @@ export interface GlobeTerrain {
 }
 
 /**
+ * The relief cache's budget: the app's own, else the device's for the
+ * tile size. The device class is checked either way, so a missing one is
+ * caught before an app's own budget hides it. RangeError for a bad budget
+ * or device class.
+ */
+function terrainCacheBudget(
+  tileDimension: number,
+  device: ReliefDeviceClass,
+  own: ReliefCacheBudget | undefined,
+): ReliefCacheBudget {
+  const deviceBudget = reliefCacheBudget(tileDimension, device);
+  const budget = own ?? deviceBudget;
+  checkReliefCacheBudget(budget);
+  return budget;
+}
+
+/**
  * The library's terrain tiles (`TerrariumMeshPlugin` on `url`, Terrarium
  * encoded, up to `maxZoom`, tiles of `tileDimension` px) with the
  * plate-carree `imagery` through `geographicOverlay`, and on every tile
@@ -583,10 +591,16 @@ export interface GlobeTerrain {
  * scene and calls `tiles.update()`. A height-scale step refreshes only the
  * bounding volumes that are read (`installLazyHeightScale`) unless
  * `lazyHeightScale` is false, which keeps the library's whole-tree step (the
- * before case of a frame-time comparison). RangeError for an empty url, a
- * height scale that is not finite and >= 0, or a tile size that is not a
- * power of two up to `GLOBE_TERRAIN.maxTileDimension`; Error if the
- * library stops exporting the plugin.
+ * before case of a frame-time comparison). The relief has a tile cache of
+ * its own (the library's shared one, capped at the globe's 64 MB, filled
+ * with both carriers in the altitude band and refused every request, F1):
+ * `cache` if given, else `reliefCacheBudget(tileDimension, device)`, so a
+ * 512 px source gets a 512 px budget (G1 review M1). `ancestorFallback`
+ * draws a tile the source answers 404 for from its nearest ancestor
+ * (`installReliefFallback`). RangeError for an empty url, a height scale
+ * that is not finite and >= 0, a tile size that is not a power of two up
+ * to `GLOBE_TERRAIN.maxTileDimension`, a bad budget or device class;
+ * Error if the library stops exporting the plugin.
  */
 export function createGlobeTerrain(options: {
   url: string;
@@ -597,8 +611,11 @@ export function createGlobeTerrain(options: {
   tileDimension?: number;
   lazyHeightScale?: boolean;
   keepHeightsBytes?: number;
+  /** Who the default budget is for; required, never guessed (G1 review M3). */
+  device: ReliefDeviceClass;
+  /** A budget of the app's own (the lab's setting) in place of the device's. */
   cache?: ReliefCacheBudget;
-  fallbackUrl?: string;
+  ancestorFallback?: boolean;
   meshMaxLevel?: number;
 }): GlobeTerrain {
   const {
@@ -610,14 +627,13 @@ export function createGlobeTerrain(options: {
     tileDimension = GLOBE_TERRAIN.tileDimension,
     lazyHeightScale: lazy = true,
     keepHeightsBytes = GLOBE_TERRAIN.keepHeightsBytes,
-    cache: budget = {
-      maxBytes: GLOBE_TERRAIN.cacheBytes,
-      minBytes: GLOBE_TERRAIN.cacheFloorBytes,
-    },
-    fallbackUrl,
+    device,
+    cache: ownBudget,
+    ancestorFallback = false,
     meshMaxLevel,
   } = options;
-  checkTerrainOptions(url, heightScale, tileDimension, budget, meshMaxLevel);
+  checkTerrainOptions(url, heightScale, tileDimension, meshMaxLevel);
+  const budget = terrainCacheBudget(tileDimension, device, ownBudget);
   if (typeof terrariumRuntime !== "function") {
     throw new Error(
       "3d-tiles-renderer no longer exports TerrariumMeshPlugin from its plugins entry",
@@ -635,14 +651,13 @@ export function createGlobeTerrain(options: {
     applyOverlayTexture: true,
     heightScale,
   });
-  // Where the source answers 404, the same tile from `fallbackUrl` (G1 2).
-  const fallback =
-    fallbackUrl === undefined
-      ? null
-      : installReliefFallback(
-          plugin as unknown as Parameters<typeof installReliefFallback>[0],
-          { fallbackUrl, tileDimension },
-        );
+  // Where the source answers 404, its nearest ancestor (G1 review M2).
+  const fallback = ancestorFallback
+    ? installReliefFallback(
+        plugin as unknown as Parameters<typeof installReliefFallback>[0],
+        { tileDimension },
+      )
+    : null;
   const tiles = new TilesRenderer();
   const cache = new LRUCache();
   // The library's unload order (least recently used, deepest first).

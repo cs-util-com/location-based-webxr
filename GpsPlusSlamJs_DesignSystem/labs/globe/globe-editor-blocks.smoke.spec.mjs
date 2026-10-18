@@ -33,7 +33,7 @@ const DOWN_VIEW = "46.5,9.0,3,0,-70";
 // reads `stalled` in the lab's state (and the Debug panel's line), and a
 // cache with room for the view does not. Swept 2026-10-18 at this view
 // (256 px synthetic heights, settled): 64 MiB (the phone default) and 128
-// MiB (desktop) stay full and miss tiles; 256 and 1024 MiB hold the
+// MiB stay full and miss tiles; 256 (the desktop default) and 1024 MiB hold the
 // view's whole tree in about 130 MiB. The two ends are kept here: 8 MiB,
 // the lab's floor, and 256.
 test("a relief cache too small for the view reads stalled; one with room does not", async ({
@@ -101,13 +101,19 @@ const syntheticHeightM = (lat, lng) =>
         Math.cos((2 * Math.PI * lat) / 0.06),
   );
 
+/** The zoom the fake Mapterhorn's coverage gap starts at. */
+const GAP_ZOOM = 11;
+
 /**
  * A fake of both height hosts on the CONTEXT (the page's and the city
  * worker's requests): Mapterhorn answers 512 px synthetic tiles, except a
- * coverage gap (every tile with x + y odd from zoom 10 on: wider than the
- * real one, z13 and finer, so the check does not depend on the depth the
- * view reaches) with a 404; AWS answers 256 px synthetic tiles of the
- * same surface. Returns the requests seen.
+ * coverage gap with a 404: every tile from zoom 11 on whose zoom-11
+ * ancestor has x + y odd. The gap is nested, as the real coverage is (a
+ * tile exists only where its parent does), and wider than the real one
+ * (z13 and finer), so the check does not depend on the depth the view
+ * reaches; the view's centre (46.5 N, 9 E) sits on a zoom-11 tile edge,
+ * so it holds tiles of both kinds. AWS answers 256 px synthetic tiles of
+ * the same surface (the city worker's heights). Returns the requests seen.
  */
 async function routeHeightHosts(context, page) {
   const seen = { mapterhorn: 0, gaps: [], aws: [] };
@@ -127,7 +133,8 @@ async function routeHeightHosts(context, page) {
       const mapterhorn = url.hostname === "tiles.mapterhorn.com";
       if (mapterhorn) {
         seen.mapterhorn += 1;
-        if (z >= 10 && (x + y) % 2 === 1) {
+        const shift = z - GAP_ZOOM;
+        if (shift >= 0 && ((x >> shift) + (y >> shift)) % 2 === 1) {
           seen.gaps.push(`${z}/${x}/${y}`);
           return route.fulfill({ status: 404, headers: cors, body: "" });
         }
@@ -161,13 +168,17 @@ async function routeHeightHosts(context, page) {
   return seen;
 }
 
-// WHY (G0 spikes 2026-10-17, Q1 and "Coverage"): the 3D editor draws
-// Mapterhorn (512 px, national LiDAR at z13-14), which answers 404 outside
-// national coverage. On the real page, against a fake of both hosts: the
-// relief must load Mapterhorn's tiles at their size, ask AWS for every
-// tile Mapterhorn has not got (same z/x/y), draw without an error, stand
-// at the surface both serve, and credit both sources with their links.
-test("the Mapterhorn relief draws, falls back to AWS where it answers 404, and credits both", async ({
+// WHY (G0 spikes 2026-10-17, Q1 and "Coverage"; G1 review M2 and L1): the
+// 3D editor draws Mapterhorn (512 px, national LiDAR at z13-14), which
+// answers 404 outside national coverage. Without a fallback a 404 tile
+// fails and the library keeps its coarser ancestor drawn over the whole
+// parent, for good. On the real page, against a fake of both hosts: the
+// relief must load Mapterhorn's tiles at their size, draw a missing tile
+// from Mapterhorn's own nearest ancestor (no second source, so AWS is
+// never asked by the relief), draw without an error, stand at the surface
+// the source serves, and credit Mapterhorn and Copernicus GLO-30 with
+// their links.
+test("the Mapterhorn relief draws, fills a 404 from its own ancestor, and credits its sources", async ({
   page,
   context,
 }) => {
@@ -205,9 +216,9 @@ test("the Mapterhorn relief draws, falls back to AWS where it answers 404, and c
     };
   });
   const expected = syntheticHeightM(out.lat, out.lng);
-  const gapsAsked = seen.gaps.filter((t) => seen.aws.includes(t)).length;
+  const gapZooms = [...new Set(seen.gaps.map((t) => Number(t.split("/")[0])))];
   console.log(
-    `Mapterhorn relief at ${DOWN_VIEW}: ${seen.mapterhorn} Mapterhorn requests, ${seen.gaps.length} answered 404, ${gapsAsked} of them asked of AWS (${seen.aws.length} AWS requests); fallback ${JSON.stringify(out.relief.fallback)}; ${out.relief.visibleTiles} tiles visible, ${out.relief.litTiles} lit; ground under the camera ${out.relief.groundUnderCameraM?.toFixed(1)} m against the surface's ${expected.toFixed(1)} m; cache ${JSON.stringify(out.relief.cache)}`,
+    `Mapterhorn relief at ${DOWN_VIEW}: ${seen.mapterhorn} Mapterhorn requests, ${seen.gaps.length} answered 404 (zooms ${gapZooms.sort((a, b) => a - b).join(",")}), ${seen.aws.length} AWS requests; fallback ${JSON.stringify(out.relief.fallback)}; ${out.relief.visibleTiles} tiles visible, ${out.relief.litTiles} lit; ground under the camera ${out.relief.groundUnderCameraM?.toFixed(1)} m against the surface's ${expected.toFixed(1)} m; cache ${JSON.stringify(out.relief.cache)}`,
   );
   // The browser logs each 404 of the coverage gap itself (a failed
   // resource load); nothing else may reach the console.
@@ -220,14 +231,17 @@ test("the Mapterhorn relief draws, falls back to AWS where it answers 404, and c
   expect(seen.gaps.length).toBeGreaterThan(0);
   expect(out.relief.fallback.fallbacks).toBeGreaterThan(0);
   expect(out.relief.fallback.failures).toBe(0);
-  // AWS was asked only for tiles Mapterhorn has not got, at the same tile.
-  expect(seen.aws.every((t) => seen.gaps.includes(t))).toBe(true);
-  expect(gapsAsked).toBeGreaterThanOrEqual(out.relief.fallback.fallbacks);
+  // No second source: nothing asks AWS (the city's heights come from the
+  // relief's own source, G1 1d).
+  expect(seen.aws).toEqual([]);
+  // The walk went up: a 404 was answered above the finest zoom asked.
+  expect(Math.min(...gapZooms)).toBeLessThan(Math.max(...gapZooms));
   expect(out.relief.litTiles).toBeGreaterThan(0);
   // The 300 m ripple has a 5 km wavelength: a few metres of mesh error.
   expect(Math.abs(out.relief.groundUnderCameraM - expected)).toBeLessThan(10);
   expect(out.credits).toContain("Elevation data © Mapterhorn");
-  expect(out.credits).toContain("Mapzen");
+  expect(out.credits).toContain("Copernicus GLO-30");
+  expect(out.credits).not.toContain("Mapzen");
   expect(out.links).toContain("https://mapterhorn.com/attribution");
   expect(out.relief.cache.stalled).toBe(false);
 });
@@ -542,6 +556,10 @@ test("OSM tiles: none by default; near the camera only, z15 and finer, under the
   // Within the fade (300 m) of a region the camera can reach: a z15 tile
   // is about 850 m across here, so its centre is at most ~900 m off.
   expect(farthest).toBeLessThan(300 + 900);
+  // The policy's ceiling, held as a statement more than a test: at about
+  // 18 requests a run this cannot fail (G1 review L7). What would catch
+  // a request storm is the sliding-minute ceiling's own unit tests
+  // (`globe-osm-overlay.test.ts`).
   expect(worstMinute(eye.seen.map((t) => t.t))).toBeLessThanOrEqual(150);
   expect(eye.osm.unpatchedShaders).toBe(0);
   expect(magenta(eye.feet)).toBe(true);

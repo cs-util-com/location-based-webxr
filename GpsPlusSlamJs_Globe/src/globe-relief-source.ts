@@ -1,24 +1,32 @@
 /**
  * The relief's height sources (tour editor plan 2026-10-17-1816 §13, G1
  * step 2; G0 spikes Q1): what each source is (its tile size, its deepest
- * zoom, the zoom it covers the whole planet at, its credit), the fallback
- * that keeps Mapterhorn usable where its fine zooms do not exist, and the
- * arithmetic from a vertex spacing to the relief tree's level.
+ * zoom, the zoom it covers the whole planet at, its credits), whether a
+ * tile it answers 404 for is drawn from its nearest ancestor (Mapterhorn,
+ * where its fine zooms do not exist), and the arithmetic from a vertex
+ * spacing to the relief tree's level.
  *
  * - AWS Terrarium (Mapzen terrain tiles): 256 px, the globe's z12; biased
  *   +5 to +11 m in towns at z12 and z14 alike.
  * - Mapterhorn: 512 px Terrarium (WebP); national LiDAR where it exists
  *   (z13 and finer: 404 elsewhere, e.g. Morocco), Copernicus GLO-30 to
- *   z12 everywhere; within 0.5 m at 96-100 % of points on the spikes'
- *   eight sites, when drawn at about 6.5 m between vertices.
+ *   z12 on land (no tile over the deep ocean finer than about z5); within
+ *   0.5 m at 96-100 % of points on the spikes' eight sites, when drawn at
+ *   about 6.5 m between vertices.
  *
  * URLs and attribution texts are the caller's (the Osm library's
  * `TERRARIUM_URL_TEMPLATE` / `MAPTERHORN_URL_TEMPLATE` and their
  * attributions: one home, DEC-H3); this module adds what the globe needs
- * to know about each source.
+ * to know about each source, and the credit lines of the sources BEHIND
+ * one (Copernicus GLO-30 behind Mapterhorn), which have no other home.
  *
  * @see globe-relief-source.ts.md
  */
+import {
+  type ReliefCacheBudget,
+  type ReliefDeviceClass,
+  reliefCacheBudget,
+} from "./globe-relief-cache.js";
 import type { GlobeCredit } from "./globe-sources.js";
 
 export const RELIEF_SOURCES = Object.freeze({
@@ -38,6 +46,20 @@ export const RELIEF_SOURCES = Object.freeze({
     short: "Mapterhorn",
     href: "https://mapterhorn.com/attribution",
   }),
+});
+
+/**
+ * The line of the source Mapterhorn draws from wherever no national model
+ * exists (G1 review L1): Copernicus GLO-30, credited as its producers
+ * word it in Mapterhorn's own attribution list
+ * (download.mapterhorn.com/attribution.json, read 2026-10-18). The
+ * national models (about 150) are listed on the page Mapterhorn's credit
+ * links; which of them a view draws depends on where it is.
+ */
+const COPERNICUS_GLO30_CREDIT: GlobeCredit = Object.freeze({
+  short: "Copernicus GLO-30",
+  full: "Copernicus GLO-30: © DLR e.V. 2010-2014, Airbus Defence and Space GmbH 2014-2018, provided under COPERNICUS by the European Union and ESA. All rights reserved.",
+  href: "https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM",
 });
 
 /** The relief mesh: segments per tile edge (the library's `MESH_SIZE`). */
@@ -60,11 +82,13 @@ export interface GlobeReliefSource {
   readonly globalZoom: number;
   readonly tileDimension: number;
   readonly credit: GlobeCredit;
+  /** The credit lines of the sources behind this one, shown with it. */
+  readonly sourceCredits: readonly GlobeCredit[];
   /**
-   * Asked at the same tile where this source answers 404, its heights
-   * resampled to this source's tile size; null for none.
+   * A tile this source answers 404 for is drawn from its nearest ancestor
+   * in the same source, cropped and upsampled (`installReliefFallback`).
    */
-  readonly fallback: GlobeReliefSource | null;
+  readonly ancestorFallback: boolean;
 }
 
 /** The caller's constants for a source: its URL and its attribution text. */
@@ -94,7 +118,10 @@ function checkConstants(c: ReliefSourceConstants, name: string): void {
 function describe(
   s: (typeof RELIEF_SOURCES)[keyof typeof RELIEF_SOURCES],
   c: ReliefSourceConstants,
-  fallback: GlobeReliefSource | null,
+  {
+    sourceCredits,
+    ancestorFallback,
+  }: { sourceCredits: readonly GlobeCredit[]; ancestorFallback: boolean },
 ): GlobeReliefSource {
   return Object.freeze({
     id: s.id,
@@ -107,7 +134,8 @@ function describe(
       full: c.attribution,
       href: s.href,
     }),
-    fallback,
+    sourceCredits: Object.freeze([...sourceCredits]),
+    ancestorFallback,
   });
 }
 
@@ -116,46 +144,57 @@ export function awsTerrariumRelief(
   c: ReliefSourceConstants,
 ): GlobeReliefSource {
   checkConstants(c, "the AWS Terrarium relief");
-  return describe(RELIEF_SOURCES.awsTerrarium, c, null);
+  return describe(RELIEF_SOURCES.awsTerrarium, c, {
+    sourceCredits: [],
+    ancestorFallback: false,
+  });
 }
 
 /**
- * The Mapterhorn relief, z14 where a national model exists; `fallback`
- * (the AWS relief, or null to keep the parent tile) where it answers 404.
- * RangeError for a fallback that has a fallback of its own.
+ * The Mapterhorn relief, z14 where a national model exists; where it
+ * answers 404 (z13 and finer outside national coverage, the deep ocean)
+ * the tile is drawn from its nearest ancestor in Mapterhorn itself: one
+ * pyramid, so no step between two sources (G1 review M2;
+ * AWS at the same tile was +5 to +12 m off in towns, G0). Credited with
+ * Copernicus GLO-30 beside its own line.
  */
-export function mapterhornRelief(
-  c: ReliefSourceConstants,
-  fallback: GlobeReliefSource | null,
-): GlobeReliefSource {
+export function mapterhornRelief(c: ReliefSourceConstants): GlobeReliefSource {
   checkConstants(c, "the Mapterhorn relief");
-  if (fallback !== null && fallback.fallback !== null) {
-    throw new RangeError(
-      "a fallback source must not have a fallback of its own",
-    );
-  }
-  return describe(RELIEF_SOURCES.mapterhorn, c, fallback);
+  return describe(RELIEF_SOURCES.mapterhorn, c, {
+    sourceCredits: [COPERNICUS_GLO30_CREDIT],
+    ancestorFallback: true,
+  });
 }
 
-/** The credits a relief owes: its own, then its fallback's (it may draw). */
+/** The credits a relief owes: its own, then the sources' behind it. */
 export function reliefCredits(source: GlobeReliefSource): GlobeCredit[] {
-  return source.fallback
-    ? [source.credit, source.fallback.credit]
-    : [source.credit];
+  return [source.credit, ...source.sourceCredits];
 }
 
-/** `createGlobeTerrain`'s options for a source. */
-export function reliefTerrainOptions(source: GlobeReliefSource): {
+/**
+ * `createGlobeTerrain`'s options for a source on a `device`: its url,
+ * zoom, tile size, fallback and the cache budget for its tile size
+ * (`reliefCacheBudget`; G1 review M1: a 512 px source in the 256 px
+ * budget stalls). RangeError for a missing or unknown device class.
+ */
+export function reliefTerrainOptions(
+  source: GlobeReliefSource,
+  device: ReliefDeviceClass,
+): {
   url: string;
   maxZoom: number;
   tileDimension: number;
-  fallbackUrl: string | undefined;
+  ancestorFallback: boolean;
+  device: ReliefDeviceClass;
+  cache: ReliefCacheBudget;
 } {
   return {
     url: source.url,
     maxZoom: source.maxZoom,
     tileDimension: source.tileDimension,
-    fallbackUrl: source.fallback?.url,
+    ancestorFallback: source.ancestorFallback,
+    device,
+    cache: reliefCacheBudget(source.tileDimension, device),
   };
 }
 

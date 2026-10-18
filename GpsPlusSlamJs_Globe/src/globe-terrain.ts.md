@@ -30,13 +30,17 @@
     over the Alps: 2 draws what 1 draws, mean 0.12 levels and 95th
     percentile 0 at 30 km, for 9.9 MiB of heights a phone descent against
     11.5; 4, at 7.7 MiB, differs by 42 levels).
-    `cacheBytes` 64 MB and `cacheFloorBytes` 48 MB: the relief's own tile
-    cache (`createGlobeTerrain` gives its renderer a new `LRUCache` with
-    the library's unload order). The library shares one cache between
+    The relief's own tile cache, budgeted per tile format and device
+    class (`reliefCacheBudget`, `globe-relief-cache.ts`; 64/48 MB for
+    256 px heights on a phone, the F1 budget; the constants `cacheBytes`
+    and `cacheFloorBytes` were removed in the G1 review, M1, so there is
+    one home for the number): `createGlobeTerrain` gives its renderer a
+    new `LRUCache` with the library's unload order. The library shares one cache between
     renderers by default and the globe caps it at 64 MB; in the altitude
     band both carriers loaded into it, it filled and refused every request
     (at 1,900 km the relief never settled, the globe's loaded tiles fell
-    from 178 to 70). In the band both caches are resident: up to 128 MB.
+    from 178 to 70). In the band both caches are resident: the globe's 64 MB plus the
+    relief's budget (128 MB together for AWS on a phone).
     Its own download, parse and node queues too, with the library's limits
     and order: with the shared ones a relief not updated outside the band
     kept jobs in the parse queue ahead of the globe's tiles (at 1,900 km
@@ -92,30 +96,34 @@
     `_tiling` and `_gridCache` (as `globe-height-keeper.ts` does); null, never
     a throw, if they change (`globe-terrain.finest.test.ts` checks the real
     plugin has them).
-  - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom?, tileDimension?, lazyHeightScale?, keepHeightsBytes?, cache?, fallbackUrl?, meshMaxLevel? })`
+  - `createGlobeTerrain({ url, imagery, template, heightScale, device, maxZoom?, tileDimension?, lazyHeightScale?, keepHeightsBytes?, cache?, ancestorFallback?, meshMaxLevel? })`
     -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), heightScaleStats(), heightKeeperStats(), reliefCache(), reliefFallback(), dispose() }`
-    (G1 step 2: `fallbackUrl` a second Terrarium source asked for the same
-    tile where `url` answers 404, its heights resampled to `tileDimension`
-    (`installReliefFallback`, `globe-relief-fallback.ts`; Mapterhorn's
-    z13-14 exist only under national models), and `reliefFallback()` its
-    counts, null without one; `meshMaxLevel` the relief tree's deepest
+    (G1 step 2 and review M2: `ancestorFallback` true draws a tile `url`
+    answers 404 for from the same source's nearest ancestor, cropped and
+    upsampled to `tileDimension` (`installReliefFallback`,
+    `globe-relief-fallback.ts`, which also says what a failed tile draws
+    without it; Mapterhorn's z13-14 exist only under national models, and
+    over the ocean nothing finer than about z5), and `reliefFallback()`
+    its counts, null without it; `meshMaxLevel` the relief tree's deepest
     level, at most `GLOBE_TERRAIN.maxMeshLevel` 24: the library builds its
     tree to the overlay tiling's `maxLevel` when that is deeper than its own
     source levels, so the overlay the plugin reads carries it, and the tree
     refines that deep only near the camera; the G0 spikes measured z14 at
     level 17, about 6.5 m between vertices, against the default level 15,
-    25.5 m; `reliefTerrainOptions(source)` from `globe-relief-source.ts`
-    gives `url`, `maxZoom`, `tileDimension` and `fallbackUrl` together;
-    RangeError for a fallback template without `{z}/{x}/{y}` or a mesh
-    level that is not an integer 0-24)
-    (`cache` the relief cache's `{ maxBytes, minBytes }`, the app's to set
-    per tile format and device class with `reliefCacheBudget`
-    (`globe-relief-cache.ts`), `GLOBE_TERRAIN.cacheBytes` /
-    `cacheFloorBytes` by default; `reliefCache()` the cache's state from
+    25.5 m; `reliefTerrainOptions(source, device)` from
+    `globe-relief-source.ts` gives `url`, `maxZoom`, `tileDimension`,
+    `ancestorFallback`, `device` and `cache` together; RangeError for a
+    mesh level that is not an integer 0-24)
+    (`device` the device class, REQUIRED (G1 review M3): the cache
+    defaults to `reliefCacheBudget(tileDimension, device)`, so a 512 px
+    source is never squeezed into the 256 px budget (review M1: with the
+    old 64 MB default Mapterhorn stalled again however it was set up);
+    `cache` the app's own `{ maxBytes, minBytes }` in its place; `reliefCache()` the cache's state from
     `watchReliefCache`: bytes used and allowed, its refusals and whether
     it is `stalled`, full and turning tiles away, which the G0 spikes found
-    happening silently with 512 px heights; RangeError for an impossible
-    budget)
+    happening silently with 512 px heights, and which G2 must act on, not
+    only show (`globe-relief-cache.ts.md`); RangeError for an impossible
+    budget or a missing or unknown device class, even with `cache` given)
     (the decoded heights its tiles release are kept within
     `keepHeightsBytes`, `GLOBE_TERRAIN.keepHeightsBytes` 16 MiB by default
     and 0 for none, so a return into the band finds them;
@@ -165,6 +173,7 @@
     imagery: globe.overlay,
     template: globe.template,
     heightScale: 1,
+    device: "phone",
   });
   scene.add(terrain.tiles.group);
   terrain.tiles.setCamera(camera);
@@ -176,9 +185,10 @@
   46.5 N; the overlay adapter's calls; the half-float upload and its
   steps; the box from normals; the lit material's maps, hooks, UV patch
   and key; the overlay plugin's defines carried; the tile size passed
-  through and refused; the tree deepened by `meshMaxLevel`; a 404 asked
-  of the fallback through the real plugin and image source; the cache budget taken and a full cache seen
-  stalling; the fade side; the detail patch's place, shared uniforms and
+  through and refused; the tree deepened by `meshMaxLevel`; a 404 walked
+  up the source's own pyramid through the real plugin and image source;
+  the cache budgeted by tile size and device, the app's own taken, a
+  missing device refused, and a full cache seen stalling; the fade side; the detail patch's place, shared uniforms and
   refused anchor; the factory on a simulated tile load and dispose, its
   detail on and off; refusals; the library guard). The GPU side (heights read back with the extension
   hidden, the look against the globe at noon, dusk and night, the data

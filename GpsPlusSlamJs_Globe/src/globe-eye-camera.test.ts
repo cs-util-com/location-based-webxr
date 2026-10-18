@@ -29,12 +29,22 @@ describe("GLOBE_EYE", () => {
   });
 
   // Why: G0 measured logarithmic depth losing decal pixels at 2 and 4 km;
-  // standard and reversed drew them all.
-  it("asks for reversed depth and never logarithmic", () => {
+  // standard and reversed drew them all. Standard is the default (G1
+  // review L4): reversed depth gains precision only with a float depth
+  // buffer, the default canvas has a 24-bit fixed-point one, and the
+  // lab's scene-depth readers (the cloud volume, the space pass) assume
+  // standard depth.
+  it("asks for standard depth by default and never logarithmic", () => {
     expect(GLOBE_EYE.depth).toEqual({
-      reversedDepthBuffer: true,
+      reversedDepthBuffer: false,
       logarithmicDepthBuffer: false,
     });
+  });
+
+  // Why (G1 review L6): the controls keep the camera this far from the
+  // ground under it; it is the mode's clearance, not a second number.
+  it("keeps the controls at the mode's own clearance", () => {
+    expect(GLOBE_EYE.controls.cameraRadius).toBe(GLOBE_EYE.clearanceM);
   });
 });
 

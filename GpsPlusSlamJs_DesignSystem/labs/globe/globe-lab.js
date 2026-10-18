@@ -125,7 +125,7 @@ import {
   reliefCredits,
   reliefTerrainOptions,
 } from "/globe/globe-relief-source.js";
-import { reliefCacheBudget } from "/globe/globe-relief-cache.js";
+import { RELIEF_CACHE, reliefCacheBudget } from "/globe/globe-relief-cache.js";
 // The editor's building blocks (G1), from their one entry module.
 import {
   GLOBE_EYE,
@@ -821,7 +821,7 @@ const PARAMS = {
   reliefCacheMiB: {
     // Set from the relief's source and device class once the source is
     // known (`reliefCacheBudget`, G1 1c): 64 MiB for AWS on a phone.
-    fallback: GLOBE_TERRAIN.cacheBytes / 2 ** 20,
+    fallback: RELIEF_CACHE.bytes256.phone / 2 ** 20,
     min: 8,
     max: 4096,
   },
@@ -850,10 +850,6 @@ const PERF_SWEEPS = ["quick", "full", "overhead"];
 
 /** The highest real peak (m, Everest rounded up): the far plane's reach (F2a, M4). */
 const RELIEF_PEAK_M = 8_850;
-
-/** The floor the relief keeps under its cache cap, as a fraction of it. */
-const RELIEF_FLOOR_RATIO =
-  GLOBE_TERRAIN.cacheFloorBytes / GLOBE_TERRAIN.cacheBytes;
 
 /** The floor the surface keeps under its cache cap, as a fraction of it. */
 const CACHE_FLOOR_RATIO =
@@ -895,7 +891,8 @@ function readHashParams() {
     reliefHeights:
       params.get("reliefHeights") === "synthetic" ? "synthetic" : "terrarium",
     // Which real heights (G1 2): AWS Terrarium (the default) or Mapterhorn
-    // (512 px, national LiDAR at z13-14, AWS where it answers 404).
+    // (512 px, national LiDAR at z13-14; where it answers 404, its own
+    // nearest ancestor, cropped and upsampled).
     reliefSource:
       params.get("reliefSource") === "mapterhorn" ? "mapterhorn" : "aws",
     // The relief cache's device class (`reliefCacheBudget`): phone or desktop.
@@ -2448,30 +2445,28 @@ async function start() {
     : null;
   const reliefSource =
     awsRelief && startParams.reliefSource === "mapterhorn"
-      ? mapterhornRelief(
-          {
-            url: terrariumModule.MAPTERHORN_URL_TEMPLATE,
-            attribution: terrariumModule.MAPTERHORN_ATTRIBUTION,
-          },
-          awsRelief,
-        )
+      ? mapterhornRelief({
+          url: terrariumModule.MAPTERHORN_URL_TEMPLATE,
+          attribution: terrariumModule.MAPTERHORN_ATTRIBUTION,
+        })
       : awsRelief;
   // Synthetic heights are 256 px tiles generated in the page, whatever the
-  // source; the zoom the city and the landing read is the source's global one.
+  // source; the zoom the city and the landing read is the source's global
+  // one. The cache is budgeted by tile size and the device class.
   const reliefOptions = terrarium
-    ? reliefTerrainOptions(reliefSource)
-    : { url: SYNTHETIC_HEIGHTS_URL, tileDimension: 256 };
+    ? reliefTerrainOptions(reliefSource, startParams.reliefDevice)
+    : {
+        url: SYNTHETIC_HEIGHTS_URL,
+        tileDimension: 256,
+        device: startParams.reliefDevice,
+        cache: reliefCacheBudget(256, startParams.reliefDevice),
+      };
   const reliefGlobalZoom = reliefSource?.globalZoom ?? GLOBE_TERRAIN.maxZoom;
-  const reliefBudget = reliefCacheBudget(
-    reliefOptions.tileDimension,
-    startParams.reliefDevice,
-  );
-  PARAMS.reliefCacheMiB.fallback = reliefBudget.maxBytes / 2 ** 20;
+  PARAMS.reliefCacheMiB.fallback = reliefOptions.cache.maxBytes / 2 ** 20;
   const terrain =
     startParams.relief === 1
       ? createGlobeTerrain({
           ...reliefOptions,
-          cache: reliefBudget,
           meshMaxLevel: startParams.reliefMeshLevel ?? undefined,
           // Its own overlay of the same imagery: an overlay's image cache is
           // shared by its users, so releasing one carrier freed imagery the
@@ -2878,7 +2873,7 @@ async function start() {
     if (terrain) {
       const cache = terrain.tiles.lruCache;
       cache.maxBytesSize = f.reliefCacheMiB * 2 ** 20;
-      cache.minBytesSize = f.reliefCacheMiB * RELIEF_FLOOR_RATIO * 2 ** 20;
+      cache.minBytesSize = f.reliefCacheMiB * RELIEF_CACHE.floorShare * 2 ** 20;
       terrain.tiles.parseQueue.maxJobs = f.parseJobs;
       terrain.tiles.downloadQueue.maxJobsPerOrigin = f.downloadsPerOrigin;
     }

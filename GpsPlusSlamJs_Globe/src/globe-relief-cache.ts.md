@@ -11,7 +11,8 @@
   heights stayed right. Nothing on the page said so.
 - Public API:
   - `RELIEF_CACHE`: `bytes256` (the budget for 256 px tiles: phone 64 MiB,
-    the globe's F1 budget unchanged; desktop 128 MiB), `floorShare` 0.75
+    the globe's F1 budget unchanged; desktop 256 MiB, from the sweep
+    below), `floorShare` 0.75
     (the floor the library evicts down to, 48 of 64), `otherBytesPerTile`
     (the imagery's 256 x 256 RGBA and the 32 x 32 skirted mesh),
     `stallWindowMs` 2,000 (refusals closer than that are one run),
@@ -22,13 +23,18 @@
     tile: the decoded float32 grid with its one-texel border plus
     `otherBytesPerTile`. RangeError unless a positive integer.
   - `ReliefCacheBudget` `{ maxBytes, minBytes }` and
-    `reliefCacheBudget(tileDimension, device = "phone")`: the 256 px budget
+    `reliefCacheBudget(tileDimension, device)`: the 256 px budget
     scaled by the tile-bytes ratio, so the cap holds the same NUMBER of
     tiles for every format. Phone 256 px is exactly 64/48 MiB; 512 px is
-    about 2.36 times that. RangeError for an unknown device class.
+    about 2.36 times that (phone 151 MiB, desktop 604 MiB). The device
+    class is REQUIRED (G1 review M3): a default of "phone" put a desktop
+    editor on the phone's budget without anyone choosing it. RangeError
+    for a missing or unknown device class.
   - `checkReliefCacheBudget(budget)`: RangeError unless
     `0 <= minBytes <= maxBytes`, `maxBytes > 0`, all finite.
-  - `ReliefCacheState`: `usedBytes`, `maxBytes`, `full`, `refusedRequests`
+  - `ReliefCacheState`: `usedBytes`, `inUseBytes` (the bytes of the tiles
+    the last traversing update used: the view's need, what a budget must
+    hold; 0 before the first), `maxBytes`, `full`, `refusedRequests`
     (tiles updates wanted but could not queue), `refusedLoads` (tiles
     loaded, then dropped), `stalled` (full with a refusal since the cache last
     had room, or a run of refusals lasting `sustainedMs`).
@@ -69,6 +75,46 @@
       resolved by the next unload, does not. The room-latch alone never
       read stalled here.
   - A cache with room never reads stalled.
+  - **`stalled` is a signal G2 must ACT on, not only show** (G1 review
+    M3). A stalled relief draws a coarse tile under the camera while
+    picking still answers right (the G0 headline), so a line in a debug
+    panel is not enough for the editor: on `stalled` it should raise the
+    cap within what the device allows (or lower the mesh level, or drop
+    the OSM map), and say so when it cannot. The budget below only makes
+    a stall unlikely on the views measured; nothing makes it impossible.
+- The budget's measurements (globe lab, 2026-10-18; `inUseBytes` once
+  settled, Munich 48.1373 N 11.5754 E, first person, the OSM map routed
+  to a fake tile, a 2,048 MiB cache so nothing was refused, a GPU via
+  ANGLE in headless Chromium; MiB):
+  - 1,280 x 800, mesh level 17 with the OSM map:
+    - AWS, oblique (pitch -20) at 1.7 m / 30 m / 300 m / 3 km: 188.9 /
+      188.9 / 191.3 / 147.1; steep (-70) at 300 m / 3 km: 47.1 / 51.7.
+    - Mapterhorn, oblique: 241.7 / 241.7 / 241.7 / 188.3; steep: 108.2 /
+      86.8.
+  - 1,280 x 800, the default mesh, no OSM map: AWS oblique 129.9 at every
+    height, steep 30.1 / 36.9; Mapterhorn oblique 212.7 / 212.7 / 212.7 /
+    186.3, steep 85.9 / 85.9.
+  - 1,920 x 1,080, mesh level 17 with the OSM map: AWS oblique at 1.7 m
+    270.3, at 3 km 212.2 (steep 77.3); Mapterhorn oblique at 1.7 m 332.5,
+    at 3 km 247.0 (steep 118.8).
+  - Not measured: a steep first view below about 300 m (30 m at pitch -45
+    and -70, 1.7 m at -70). The lab never handed those views to the
+    relief (band share 0, the relief's tiles released), a lab defect
+    filed with the G1 review; until it is fixed those cells are unknown.
+  - What the numbers decide, and which other value would change it:
+    - desktop 256 MiB holds every 1,280 x 800 view measured with a third
+      in hand for AWS (191) and more than half for Mapterhorn (242 of
+      604); at 1,920 x 1,080 it holds Mapterhorn (333 of 604) but NOT AWS
+      at mesh level 17 with the OSM map (270), a combination no app
+      plans (the denser mesh is for Mapterhorn). 192 MiB (the review's
+      floor) would sit AT the 800p AWS need (191); 320 MiB would also
+      hold the 1080p AWS case but gives Mapterhorn 755 MiB.
+    - the phone's 64 MiB is BELOW the need measured on a desktop canvas
+      (130 MiB, AWS at the default mesh, oblique), and Mapterhorn's 151
+      MiB below its 186-242. A phone canvas is smaller (fewer tiles in
+      view) and a phone has less memory; nothing has been measured on a
+      phone, so the phone budget is an open question for the owner, not
+      a measured one.
   - The watch reads the cache's live `maxBytesSize`, so a cap changed later
     (the globe lab's `reliefCacheMiB`) is what `state()` reports.
 - Example:
@@ -84,8 +130,11 @@
   ```
 
 - Tests: `globe-relief-cache.test.ts` (the phone's 256 px budget pinned at
-  64/48 MiB, the same tile count per format, desktop twice phone, room for
-  the spike's 197 MiB eye-height use, the budget check; the stall driven
+  64/48 MiB, the same tile count per format, no default device class,
+  the desktop budget holding every measured 1,280 x 800 view (and
+  Mapterhorn at 1,920 x 1,080) with a quarter in hand, the budget check;
+  `inUseBytes` summed over the tiles
+  the last update used and kept over a skipped update; the stall driven
   through the library's real renderer queue step and cache, lasting
   while the cache stays full, while refusals keep coming (thrashing),
   cleared by room, not raised by a refusal the same update made room for, by ordinary removals or a skipped update;

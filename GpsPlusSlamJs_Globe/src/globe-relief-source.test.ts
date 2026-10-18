@@ -22,6 +22,7 @@ import {
   reliefTerrainOptions,
   vertexSpacingM,
 } from "./globe-relief-source.js";
+import { reliefCacheBudget } from "./globe-relief-cache.js";
 
 const AWS = {
   url: "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
@@ -42,23 +43,27 @@ describe("the relief sources", () => {
       maxZoom: 12,
       globalZoom: 12,
       tileDimension: 256,
-      fallback: null,
+      ancestorFallback: false,
     });
     expect(aws.credit.full).toBe(AWS.attribution);
+    expect(reliefCredits(aws)).toEqual([aws.credit]);
   });
 
   // Why: the credit the brief names, with the link Mapterhorn's own
-  // TileJSON gives; the fallback's credit too, since its tiles may draw.
-  it("describes Mapterhorn: 512 px, z14, AWS where it answers 404, both credited", () => {
-    const aws = awsTerrariumRelief(AWS);
-    const m = mapterhornRelief(MAPTERHORN, aws);
+  // TileJSON gives, and (G1 review L1) the line of the source it draws
+  // from everywhere, Copernicus GLO-30, in its licence's own words
+  // (Mapterhorn's attribution list, read 2026-10-18). Where Mapterhorn
+  // answers 404 it draws its own ancestor (G1 review M2): no second
+  // source, so no second source's credit.
+  it("describes Mapterhorn: 512 px, z14, its own ancestor where it answers 404, credited with Copernicus", () => {
+    const m = mapterhornRelief(MAPTERHORN);
     expect(m).toMatchObject({
       id: "mapterhorn",
       url: MAPTERHORN.url,
       maxZoom: 14,
       globalZoom: 12,
       tileDimension: 512,
-      fallback: aws,
+      ancestorFallback: true,
     });
     expect(m.credit).toEqual({
       short: "Mapterhorn",
@@ -66,49 +71,63 @@ describe("the relief sources", () => {
       href: "https://mapterhorn.com/attribution",
     });
     expect(m.credit.full).toContain("Elevation data © Mapterhorn");
-    expect(reliefCredits(m)).toEqual([m.credit, aws.credit]);
-    expect(reliefCredits(aws)).toEqual([aws.credit]);
-    expect(reliefCredits(mapterhornRelief(MAPTERHORN, null))).toEqual([
-      m.credit,
-    ]);
+    const [own, copernicus, ...rest] = reliefCredits(m);
+    expect(own).toBe(m.credit);
+    expect(rest).toEqual([]);
+    expect(copernicus!.short).toBe("Copernicus GLO-30");
+    expect(copernicus!.full).toContain(
+      "DLR e.V. 2010-2014, Airbus Defence and Space GmbH 2014-2018, provided under COPERNICUS by the European Union and ESA",
+    );
+    expect(copernicus!.href).toMatch(/^https:\/\//);
   });
 
-  it("refuses a template without {z}/{x}/{y}, an empty credit or a chained fallback", () => {
+  it("refuses a template without {z}/{x}/{y} or an empty credit", () => {
     expect(() =>
       awsTerrariumRelief({ ...AWS, url: "https://x/{z}.png" }),
     ).toThrow(RangeError);
-    expect(() =>
-      mapterhornRelief({ ...MAPTERHORN, attribution: " " }, null),
-    ).toThrow(RangeError);
-    const chained = mapterhornRelief(MAPTERHORN, awsTerrariumRelief(AWS));
-    expect(() => mapterhornRelief(MAPTERHORN, chained)).toThrow(RangeError);
+    expect(() => mapterhornRelief({ ...MAPTERHORN, attribution: " " })).toThrow(
+      RangeError,
+    );
   });
 
   it("freezes what it returns", () => {
-    const m = mapterhornRelief(MAPTERHORN, awsTerrariumRelief(AWS));
+    const m = mapterhornRelief(MAPTERHORN);
     expect(Object.isFrozen(m)).toBe(true);
     expect(Object.isFrozen(m.credit)).toBe(true);
+    expect(Object.isFrozen(m.sourceCredits)).toBe(true);
     expect(Object.isFrozen(RELIEF_SOURCES.mapterhorn)).toBe(true);
   });
 });
 
 describe("reliefTerrainOptions", () => {
   // Why: createGlobeTerrain takes plain options; the source decides them,
-  // so an app cannot pair Mapterhorn's url with AWS's tile size.
-  it("gives createGlobeTerrain the source's url, zoom, tile size and fallback", () => {
+  // so an app cannot pair Mapterhorn's url with AWS's tile size, nor a
+  // 512 px source with the 256 px cache budget (G1 review M1: set up the
+  // obvious way, Mapterhorn stalled again in a 64 MiB cache). The device
+  // class is the app's to name; there is no default (M3).
+  it("gives createGlobeTerrain the source's url, zoom, tile size, fallback and cache budget", () => {
     const aws = awsTerrariumRelief(AWS);
-    expect(reliefTerrainOptions(aws)).toEqual({
+    expect(reliefTerrainOptions(aws, "phone")).toEqual({
       url: AWS.url,
       maxZoom: 12,
       tileDimension: 256,
-      fallbackUrl: undefined,
+      ancestorFallback: false,
+      device: "phone",
+      cache: reliefCacheBudget(256, "phone"),
     });
-    expect(reliefTerrainOptions(mapterhornRelief(MAPTERHORN, aws))).toEqual({
+    expect(
+      reliefTerrainOptions(mapterhornRelief(MAPTERHORN), "desktop"),
+    ).toEqual({
       url: MAPTERHORN.url,
       maxZoom: 14,
       tileDimension: 512,
-      fallbackUrl: AWS.url,
+      ancestorFallback: true,
+      device: "desktop",
+      cache: reliefCacheBudget(512, "desktop"),
     });
+    expect(() =>
+      reliefTerrainOptions(aws, undefined as unknown as "phone"),
+    ).toThrow(RangeError);
   });
 });
 

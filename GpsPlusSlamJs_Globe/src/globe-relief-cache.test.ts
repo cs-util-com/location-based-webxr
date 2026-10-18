@@ -33,7 +33,15 @@ describe("reliefCacheBudget", () => {
       maxBytes: 64 * 2 ** 20,
       minBytes: 48 * 2 ** 20,
     });
-    expect(reliefCacheBudget(256)).toEqual(reliefCacheBudget(256, "phone"));
+  });
+
+  // Why (G1 review M3): the device class defaulted to "phone", so a
+  // desktop editor that did not name it got the phone's budget and
+  // stalled. There is no default: a missing class is refused.
+  it("has no default device class", () => {
+    expect(() =>
+      reliefCacheBudget(256, undefined as unknown as "phone"),
+    ).toThrow(RangeError);
   });
 
   // Why: the cap is meant as a NUMBER OF TILES; a format whose tiles count
@@ -50,18 +58,21 @@ describe("reliefCacheBudget", () => {
     expect(reliefTileBytes(512) / reliefTileBytes(256)).toBeCloseTo(2.36, 2);
   });
 
-  it("gives a desktop twice a phone", () => {
-    expect(reliefCacheBudget(512, "desktop").maxBytes).toBe(
-      2 * reliefCacheBudget(512, "phone").maxBytes,
-    );
-  });
-
-  // Why: the spike measured 197 MB in use for Mapterhorn at eye height on
-  // a desktop; the desktop budget must hold it with room to spare.
-  it("holds the spike's measured eye-height use on a desktop", () => {
-    expect(reliefCacheBudget(512, "desktop").maxBytes).toBeGreaterThan(
-      1.4 * 197 * 2 ** 20,
-    );
+  // Why (G1 review M3): the desktop budget is sized from what the views
+  // NEED, measured in the globe lab on 2026-10-18 (bytes of the tiles the
+  // view uses, settled, Munich, 1280 x 800, real tiles): AWS at the
+  // default mesh 130 MiB for every oblique view from 1.7 m to 3 km, and
+  // up to 191 MiB at mesh level 17 with the OSM map (the editor's set-up);
+  // Mapterhorn up to 242 MiB, and 333 MiB at 1920 x 1080. The cap keeps a
+  // quarter in hand over each (motion needs room above the view's own
+  // tiles). The 128 MiB desktop base before was below AWS's own 130.
+  it("holds the measured need of every desktop view with a quarter in hand", () => {
+    const MIB = 2 ** 20;
+    const aws = reliefCacheBudget(256, "desktop").maxBytes;
+    const mapterhorn = reliefCacheBudget(512, "desktop").maxBytes;
+    expect(aws).toBeGreaterThanOrEqual(1.25 * 191 * MIB);
+    expect(mapterhorn).toBeGreaterThanOrEqual(1.25 * 333 * MIB);
+    expect(RELIEF_CACHE.bytes256.desktop).toBe(256 * MIB);
   });
 
   // Why: an app sets the budget; a cap of 0, a floor above the cap or a
@@ -114,10 +125,14 @@ describe("watchReliefCache", () => {
     tiles.lruCache = cache;
     let t = 0;
     const watch = watchReliefCache(tiles, { now: () => t, windowMs: 2_000 });
-    /** One update as the library runs it: stats reset, traversal, event. */
+    /**
+     * One update as the library runs it: stats reset, last update's tiles
+     * unmarked (the cache's `add` marks a new tile used), traversal, event.
+     */
     const update = (traverse: () => void = () => {}) => {
       tiles.stats.refused = 0;
       tiles.frameCount++;
+      cache.markAllUnused();
       traverse();
       tiles.dispatchEvent({ type: "update-after" } as never);
     };
@@ -149,12 +164,33 @@ describe("watchReliefCache", () => {
     update(() => tiles.queueTileForDownload(unloaded()));
     expect(watch.state()).toEqual({
       usedBytes: 400,
+      inUseBytes: 0,
       maxBytes: 1_000,
       full: false,
       refusedRequests: 0,
       refusedLoads: 0,
       stalled: false,
     });
+  });
+
+  // Why: the budget is sized from what a view NEEDS (G1 review M3): the
+  // bytes of the tiles the last update used, not the bytes cached, which
+  // with a roomy cache also count tiles nobody wants any more. Read in
+  // the update's own event, before the next update clears the used set.
+  it("reports the bytes of the tiles the last update used", () => {
+    const { tiles, cache, watch, update, resident } = setup(10_000);
+    const a = resident(300);
+    const b = resident(500);
+    resident(700); // cached, not used
+    update(() => {
+      cache.markUsed(a);
+      cache.markUsed(b);
+    });
+    expect(watch.state()).toMatchObject({ usedBytes: 1_500, inUseBytes: 800 });
+    // An update a plugin skips (no traversal) keeps the last measure.
+    cache.markUnused(a);
+    tiles.dispatchEvent({ type: "update-after" } as never);
+    expect(watch.state().inUseBytes).toBe(800);
   });
 
   // Why: the stall the spike found, driven through the library's own

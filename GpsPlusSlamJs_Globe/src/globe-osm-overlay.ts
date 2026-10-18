@@ -4,7 +4,8 @@
  * overlay through the library's `ImageOverlayPlugin`, faded out with the
  * distance (300 m), asked for only at z15 and finer for tiles within that
  * distance of the camera (re-evaluated as it moves), at most about 150
- * requests a minute, and off above 200 m or faster than 50 m/s.
+ * requests a minute, off above 200 m or faster than 50 m/s and on again
+ * only below 180 m and 45 m/s, faded in and out over 0.3 s.
  *
  * The OSM tile servers run under a usage policy (no heavy use, a visible
  * credit): every rule here exists to keep the editor a light user. The URL
@@ -33,6 +34,16 @@ export const GLOBE_OSM = Object.freeze({
   maxAboveGroundM: 200,
   /** ...or faster than this (m/s). */
   maxSpeedMps: 50,
+  /**
+   * On again only below this height (m) and this speed (m/s): a band
+   * under the limits, so a camera near one does not switch the map (and
+   * its requests) every frame (G1 review L2). 20 m and 5 m/s: about a
+   * tenth of each limit.
+   */
+  onBelowAboveGroundM: 180,
+  onBelowSpeedMps: 45,
+  /** How long the map takes to fade in or out when it switches (ms). */
+  rampMs: 300,
   /** How often tiles gated at load are looked at again (ms). */
   reevaluateMs: 500,
   /** At most this many tiles started per look. */
@@ -64,17 +75,43 @@ export function osmCredit(attributionHtml: string): GlobeCredit {
   return { short: "OpenStreetMap", full, href };
 }
 
-/** Whether the camera may ask for tiles: low and slow, both known. */
+/**
+ * Whether the camera may ask for tiles, given whether it could (`wasActive`,
+ * false by default): low and slow, both known. Off above
+ * `maxAboveGroundM` or `maxSpeedMps`; on only below `onBelowAboveGroundM`
+ * and `onBelowSpeedMps`; between the two, as it was.
+ */
 export function osmOverlayActive(
   { aboveGroundM, speedMps }: { aboveGroundM: number; speedMps: number },
-  limits: { maxAboveGroundM: number; maxSpeedMps: number } = GLOBE_OSM,
+  wasActive = false,
 ): boolean {
-  return (
-    typeof aboveGroundM === "number" &&
-    typeof speedMps === "number" &&
-    aboveGroundM <= limits.maxAboveGroundM &&
-    speedMps <= limits.maxSpeedMps
-  );
+  if (typeof aboveGroundM !== "number" || typeof speedMps !== "number") {
+    return false;
+  }
+  const height = wasActive
+    ? GLOBE_OSM.maxAboveGroundM
+    : GLOBE_OSM.onBelowAboveGroundM;
+  const speed = wasActive ? GLOBE_OSM.maxSpeedMps : GLOBE_OSM.onBelowSpeedMps;
+  // NaN compares false: an unknown height or speed is off.
+  return aboveGroundM <= height && speedMps <= speed;
+}
+
+/**
+ * The map's shader switch (`uOsmOn`) one frame on: `dtMs` of `rampMs`
+ * closer to `target` (0 or 1), landing on it, never past it. A step that
+ * is not finite and > 0 (no time, a clock gone back) leaves it.
+ */
+export function rampOsmOn(
+  current: number,
+  target: number,
+  dtMs: number,
+  rampMs: number = GLOBE_OSM.rampMs,
+): number {
+  if (!(dtMs > 0 && Number.isFinite(dtMs))) return current;
+  const step = rampMs > 0 ? dtMs / rampMs : 1;
+  return target > current
+    ? Math.min(target, current + step)
+    : Math.max(target, current - step);
 }
 
 /** A sliding-minute ceiling on requests. */
@@ -229,13 +266,27 @@ interface OverlayInternals {
 
 const base = XYZTilesOverlay.prototype as unknown as OverlayInternals;
 
+/**
+ * Waits `ms`, or rejects (AbortError) as soon as `signal` aborts, at once
+ * if it has already: the abort event will not fire again for a listener
+ * added after it. The listener goes when the wait ends either way.
+ */
 const sleepFor = (ms: number, signal?: AbortSignal): Promise<void> =>
   new Promise((resolve, reject) => {
-    const id = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => {
+    const aborted = () => new DOMException("aborted", "AbortError");
+    if (signal?.aborted) {
+      reject(aborted());
+      return;
+    }
+    const onAbort = () => {
       clearTimeout(id);
-      reject(new DOMException("aborted", "AbortError"));
-    });
+      reject(aborted());
+    };
+    const id = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 
 /**
@@ -546,6 +597,7 @@ export function createGlobeOsmOverlay({
     });
   };
   let lastLook = Number.NEGATIVE_INFINITY;
+  let lastNow: number | null = null;
   return {
     credit,
     overlay,
@@ -574,11 +626,17 @@ export function createGlobeOsmOverlay({
       active =
         enabled &&
         terrain !== null &&
-        osmOverlayActive({
-          aboveGroundM: pose.aboveGroundM,
-          speedMps: pose.speedMps,
-        });
-      uniforms.uOsmOn.value = active ? 1 : 0;
+        osmOverlayActive(
+          { aboveGroundM: pose.aboveGroundM, speedMps: pose.speedMps },
+          active,
+        );
+      // Requests follow `active` at once; the drawn map fades over rampMs.
+      uniforms.uOsmOn.value = rampOsmOn(
+        uniforms.uOsmOn.value,
+        active ? 1 : 0,
+        lastNow === null ? 0 : pose.nowMs - lastNow,
+      );
+      lastNow = pose.nowMs;
       if (!terrain || !active) return;
       terrain.tiles.group.worldToLocal(camera.copy(pose.position));
       if (pose.nowMs - lastLook < GLOBE_OSM.reevaluateMs) return;

@@ -25,10 +25,16 @@ const MIB = 2 ** 20;
 
 export const RELIEF_CACHE = Object.freeze({
   /**
-   * The budget for 256 px height tiles, per device class: the phone's is
-   * the globe's 64 MB (F1, unchanged); the desktop's twice that.
+   * The budget for 256 px height tiles, per device class. The phone's is
+   * the globe's 64 MB (F1, unchanged; below the need measured on a
+   * desktop canvas, see the sidecar). The desktop's is 256 MiB, from the
+   * lab sweep of 2026-10-18 (G1 review M3; bytes the view's tiles use,
+   * 1280 x 800, Munich): AWS 130 MiB at the default mesh and up to 191
+   * MiB at mesh level 17 with the OSM map, so 256 MiB keeps a third in
+   * hand; Mapterhorn (512 px, so 604 MiB) up to 242 MiB, and 333 MiB at
+   * 1920 x 1080.
    */
-  bytes256: Object.freeze({ phone: 64 * MIB, desktop: 128 * MIB }),
+  bytes256: Object.freeze({ phone: 64 * MIB, desktop: 256 * MIB }),
   /** The floor the library evicts down to, as a share of the cap (48/64). */
   floorShare: 0.75,
   /**
@@ -83,12 +89,14 @@ export function checkReliefCacheBudget(budget: ReliefCacheBudget): void {
 /**
  * The relief cache's cap and floor (bytes) for `tileDimension` px height
  * tiles on a `device`: the 256 px budget scaled by what a tile of this
- * format counts, so the cap holds the same number of tiles. RangeError for
- * a bad dimension or an unknown device class.
+ * format counts, so the cap holds the same number of tiles. The device
+ * class has no default: a desktop editor silently given the phone's budget
+ * stalls (G1 review M3). RangeError for a bad dimension or a missing or
+ * unknown device class.
  */
 export function reliefCacheBudget(
   tileDimension: number,
-  device: ReliefDeviceClass = "phone",
+  device: ReliefDeviceClass,
 ): ReliefCacheBudget {
   const base = (RELIEF_CACHE.bytes256 as Record<string, number | undefined>)[
     device
@@ -108,6 +116,11 @@ export function reliefCacheBudget(
 /** The relief cache now (`watchReliefCache`). */
 export interface ReliefCacheState {
   readonly usedBytes: number;
+  /**
+   * Bytes of the tiles the last traversing update used (the view's need:
+   * what a budget must hold), 0 before the first.
+   */
+  readonly inUseBytes: number;
   readonly maxBytes: number;
   readonly full: boolean;
   /** Tiles updates wanted to load but could not queue: the cache was full. */
@@ -139,6 +152,8 @@ export interface WatchedTiles {
 type CacheInternals = {
   cachedBytes: number;
   loadedSet?: { has(item: unknown): boolean };
+  usedSet?: Iterable<unknown>;
+  bytesMap?: { get(item: unknown): number | undefined };
 };
 
 /**
@@ -188,10 +203,16 @@ export function watchReliefCache(
   const seeRoom = () => {
     if (!cache.isFull()) refusedSinceRoom = false;
   };
+  let inUseBytes = 0;
   let seenFrame = tiles.frameCount;
   const afterUpdate = () => {
     if (tiles.frameCount === seenFrame) return;
     seenFrame = tiles.frameCount;
+    // The used set is this update's until the next one clears it.
+    inUseBytes = 0;
+    for (const item of internals.usedSet ?? []) {
+      inUseBytes += internals.bytesMap?.get(item) ?? 0;
+    }
     const refused = tiles.stats.refused;
     if (refused > 0) {
       refusedRequests += refused;
@@ -216,6 +237,7 @@ export function watchReliefCache(
       const full = cache.isFull();
       return {
         usedBytes: internals.cachedBytes,
+        inUseBytes,
         maxBytes: cache.maxBytesSize,
         full,
         refusedRequests,

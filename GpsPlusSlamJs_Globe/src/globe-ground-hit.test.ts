@@ -330,4 +330,31 @@ describe("marchToGround", () => {
     // From inside the open stretch the same ground is found at 10 m.
     expect(marchToGround(ray, ridge, { startM: 6 })!.t).toBeCloseTo(10, 5);
   });
+
+  // Why (G1 review L3): the same camera under the ground, but with no
+  // heights loaded at the ray's start (the tile under a camera that just
+  // arrived). The first sample that IS loaded reads underground, so the
+  // ray started underground as far as anything shows: null, not the far
+  // slope at 10 m.
+  it("is null when the first loaded sample is underground, the start unloaded", () => {
+    const ray = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(1, 0, 0));
+    const ground = (p: THREE.Vector3) =>
+      p.x < 1 ? null : p.x > 5 && p.x < 10 ? 1 : -1;
+    expect(marchToGround(ray, ground)).toBeNull();
+  });
+
+  // Why (G1 review L3): a crossing inside an unloaded stretch was lost:
+  // the step before the stretch read above, the step after it below, but
+  // neither step had both ends loaded. The last loaded "above" and the
+  // first loaded "at or below" bracket it, so the hit is within that
+  // bracket (here the stretch 4-8 m, where the ground is unknown).
+  it("finds a crossing inside an unloaded stretch, within its bracket", () => {
+    const ray = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(1, 0, 0));
+    const ground = (p: THREE.Vector3) => (p.x < 4 ? 1 : p.x < 8 ? null : -1);
+    const hit = marchToGround(ray, ground);
+    expect(hit).not.toBeNull();
+    expect(hit!.t).toBeGreaterThanOrEqual(3);
+    expect(hit!.t).toBeLessThanOrEqual(8 + GROUND_HIT.minStepM);
+    expect(hit!.nulls).toBeGreaterThan(0);
+  });
 });

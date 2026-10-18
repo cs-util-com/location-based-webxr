@@ -159,6 +159,9 @@ function start() {
       imagery: globe.overlay,
       template: globe.template,
       heightScale: LOOK.heightScale,
+      // The 256 px heights' phone budget (64 MiB), the cache this page
+      // has always looked at.
+      device: "phone",
     });
     terrain.tiles.errorTarget = LOOK.errorTarget;
     terrain.tiles.addEventListener("load-model", ({ scene: model }) => {

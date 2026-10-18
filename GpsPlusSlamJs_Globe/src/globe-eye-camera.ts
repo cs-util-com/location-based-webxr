@@ -12,10 +12,11 @@
  * - a near plane that follows the nearest item as well as the ground:
  *   min(0.3 x the clearance, half the distance to the nearest item), at
  *   least 0.1 m, so a held item or the ground at the feet is not clipped;
- * - standard or reversed depth, never logarithmic (G0: logarithmic depth
- *   lost decal pixels at 2 and 4 km; standard and reversed drew them all).
+ * - standard depth by default, reversed only with a float depth buffer,
+ *   never logarithmic (G0: logarithmic depth lost decal pixels at 2 and 4
+ *   km; standard and reversed drew them all).
  *
- * Pure apart from `applyEyeControls`, which sets three numbers on the
+ * Pure apart from `applyEyeControls`, which sets two numbers on the
  * controls and gives back a function that restores them.
  *
  * @see globe-eye-camera.ts.md
@@ -25,9 +26,12 @@ import type { Ellipsoid } from "3d-tiles-renderer";
 
 import { GLOBE_CLIP, clipPlanes } from "./globe-camera.js";
 
+/** The least height over the drawn ground (m): an eye height. */
+const EYE_CLEARANCE_M = 1.7;
+
 export const GLOBE_EYE = Object.freeze({
   /** The least height over the drawn ground (m): an eye height. */
-  clearanceM: 1.7,
+  clearanceM: EYE_CLEARANCE_M,
   /** The near plane's share of the camera's clearance (the globe's 0.3). */
   nearFraction: GLOBE_CLIP.nearFraction,
   /** The near plane's share of the distance to the nearest item. */
@@ -40,14 +44,21 @@ export const GLOBE_EYE = Object.freeze({
    * height, their least zoom distance half a metre (0.5.3's defaults: 5 m
    * and 10 m).
    */
-  controls: Object.freeze({ cameraRadius: 1.7, minDistance: 0.5 }),
+  controls: Object.freeze({
+    cameraRadius: EYE_CLEARANCE_M,
+    minDistance: 0.5,
+  }),
   /**
-   * The renderer options for the depth buffer: reversed (three falls back
-   * to standard, with a warning, where the context lacks EXT_clip_control),
-   * never logarithmic. Spread into the app's `WebGLRenderer` options.
+   * The renderer options for the depth buffer: standard, never
+   * logarithmic. Spread into the app's `WebGLRenderer` options. Reversed
+   * depth (`reversedDepthBuffer: true`) gains precision only with a
+   * floating-point depth buffer (a render target with a FloatType depth
+   * texture): the default canvas has a 24-bit fixed-point one, where G0
+   * measured it equal to standard, and code that reads the scene's depth
+   * (the globe lab's cloud volume and space pass) assumes standard.
    */
   depth: Object.freeze({
-    reversedDepthBuffer: true,
+    reversedDepthBuffer: false,
     logarithmicDepthBuffer: false,
   }),
 });

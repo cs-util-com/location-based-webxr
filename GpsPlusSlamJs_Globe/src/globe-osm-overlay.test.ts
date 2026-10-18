@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import fc from "fast-check";
 import * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 import { XYZTilesOverlay } from "3d-tiles-renderer/plugins";
@@ -22,10 +23,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   GLOBE_OSM,
   GatedOsmOverlay,
+  createGlobeOsmOverlay,
   createRequestCeiling,
   osmCredit,
   osmOverlayActive,
   patchOsmFade,
+  rampOsmOn,
   reevaluateGatedTiles,
   regionNearCamera,
 } from "./globe-osm-overlay.js";
@@ -71,11 +74,55 @@ describe("osmCredit", () => {
 });
 
 describe("osmOverlayActive", () => {
-  it("is on low and slow, off above 200 m or faster than 50 m/s", () => {
-    expect(osmOverlayActive({ aboveGroundM: 1.7, speedMps: 1.5 })).toBe(true);
-    expect(osmOverlayActive({ aboveGroundM: 200, speedMps: 50 })).toBe(true);
-    expect(osmOverlayActive({ aboveGroundM: 200.1, speedMps: 0 })).toBe(false);
-    expect(osmOverlayActive({ aboveGroundM: 10, speedMps: 50.1 })).toBe(false);
+  // Why (G1 review L2): one threshold for on and off made a camera at
+  // about 200 m, or about 50 m/s, switch the map (and its requests) on and
+  // off every frame. Off stays at 200 m / 50 m/s; on needs the camera
+  // below 180 m and slower than 45 m/s; in between, it stays as it was.
+  it("switches on below 180 m and 45 m/s, off above 200 m or 50 m/s, and holds between", () => {
+    const on = (aboveGroundM: number, speedMps: number, was: boolean) =>
+      osmOverlayActive({ aboveGroundM, speedMps }, was);
+    // Low and slow: on, whatever it was.
+    expect(on(1.7, 1.5, false)).toBe(true);
+    expect(on(180, 45, false)).toBe(true);
+    // The band: holds.
+    expect(on(190, 10, false)).toBe(false);
+    expect(on(190, 10, true)).toBe(true);
+    expect(on(10, 48, false)).toBe(false);
+    expect(on(10, 48, true)).toBe(true);
+    expect(on(200, 50, true)).toBe(true);
+    // Beyond: off, whatever it was.
+    expect(on(200.1, 0, true)).toBe(false);
+    expect(on(10, 50.1, true)).toBe(false);
+    // Without the last state, the stricter rule (switching on).
+    expect(osmOverlayActive({ aboveGroundM: 190, speedMps: 0 })).toBe(false);
+  });
+
+  // Why: a camera crossing the threshold back and forth must not toggle
+  // the map: along any path, it switches only on a crossing of the whole
+  // band (below 180 m and 45 m/s to switch on, above 200 m or 50 m/s to
+  // switch off), never inside it.
+  it("never switches inside the band, along any path", () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            h: fc.double({ min: 0, max: 400, noNaN: true }),
+            v: fc.double({ min: 0, max: 100, noNaN: true }),
+          }),
+          { minLength: 1, maxLength: 60 },
+        ),
+        (path) => {
+          let was = false;
+          for (const { h, v } of path) {
+            const now = osmOverlayActive({ aboveGroundM: h, speedMps: v }, was);
+            // Switched on only below the band, off only above it.
+            expect(!(now && !was) || (h <= 180 && v <= 45)).toBe(true);
+            expect(!(!now && was) || h > 200 || v > 50).toBe(true);
+            was = now;
+          }
+        },
+      ),
+    );
   });
 
   // Why: an unknown height (no ground loaded) or speed must not open the
@@ -93,6 +140,40 @@ describe("osmOverlayActive", () => {
         speedMps: 0,
       }),
     ).toBe(false);
+  });
+});
+
+describe("rampOsmOn", () => {
+  // Why (G1 review L2): the map's switch was a hard 0/1 on the shader's
+  // `uOsmOn`, so the map popped in and out. It now moves toward its
+  // target by the frame's share of `rampMs` (0.3 s), and lands exactly.
+  it("moves toward the target by the frame's share of the ramp, and lands", () => {
+    expect(GLOBE_OSM.rampMs).toBe(300);
+    expect(rampOsmOn(0, 1, 30)).toBeCloseTo(0.1, 10);
+    expect(rampOsmOn(0.5, 0, 75)).toBeCloseTo(0.25, 10);
+    expect(rampOsmOn(0.95, 1, 30)).toBe(1);
+    expect(rampOsmOn(0.05, 0, 30)).toBe(0);
+    expect(rampOsmOn(1, 1, 16)).toBe(1);
+    // A stall (a tab in the background) lands at once; a clock that went
+    // back, or no time, does not move it.
+    expect(rampOsmOn(0, 1, 10_000)).toBe(1);
+    expect(rampOsmOn(0.4, 1, -5)).toBe(0.4);
+    expect(rampOsmOn(0.4, 1, Number.NaN)).toBe(0.4);
+  });
+
+  it("stays in [0, 1] and never passes its target", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        fc.constantFrom(0, 1),
+        fc.double({ min: 0, max: 2_000, noNaN: true }),
+        (from, to, dt) => {
+          const next = rampOsmOn(from, to, dt);
+          expect(next).toBeGreaterThanOrEqual(Math.min(from, to));
+          expect(next).toBeLessThanOrEqual(Math.max(from, to));
+        },
+      ),
+    );
   });
 });
 
@@ -351,6 +432,55 @@ describe("GatedOsmOverlay", () => {
     vi.restoreAllMocks();
   });
 
+  // Why (G1 review L6): a fetch waiting for the ceiling with a signal that
+  // was aborted before the wait began must give up at once (the abort
+  // event had already fired, so a listener added then never ran and the
+  // wait ran its full minute), and a finished wait must not leave its
+  // listener on the tile's signal.
+  it("gives up a ceiling wait at once for an aborted signal, and cleans up its listener", async () => {
+    let t = 0;
+    const overlay = new GatedOsmOverlay({
+      url: TEMPLATE,
+      maxZoom: 19,
+      gate: () => true,
+      ceiling: createRequestCeiling(1, () => t),
+    });
+    const fetched = vi
+      .spyOn(proto, "fetch")
+      .mockImplementation(() => Promise.resolve("ok"));
+    await overlay.fetch("a");
+    const aborted = AbortSignal.abort();
+    const outcome = await Promise.race([
+      overlay.fetch("b", { signal: aborted }).then(
+        () => "fetched",
+        (e: Error) => e.name,
+      ),
+      new Promise((r) => setTimeout(() => r("still waiting"), 50)),
+    ]);
+    expect(outcome).toBe("AbortError");
+    expect(fetched).toHaveBeenCalledTimes(1);
+
+    // A wait that ends on its own removes its listener.
+    vi.useFakeTimers();
+    const added: unknown[] = [];
+    const removed: unknown[] = [];
+    const signal = {
+      aborted: false,
+      addEventListener: (_type: string, fn: unknown, opts: unknown) =>
+        added.push([fn, opts]),
+      removeEventListener: (_type: string, fn: unknown) => removed.push(fn),
+    } as unknown as AbortSignal;
+    const waiting = overlay.fetch("c", { signal });
+    t = 60_000;
+    await vi.advanceTimersByTimeAsync(60_000);
+    await waiting;
+    vi.useRealTimers();
+    expect(added).toHaveLength(1);
+    expect((added[0] as unknown[])[1]).toEqual({ once: true });
+    expect(removed).toEqual([(added[0] as unknown[])[0]]);
+    vi.restoreAllMocks();
+  });
+
   it("refuses a missing gate or template", () => {
     expect(
       () =>
@@ -449,5 +579,48 @@ describe("reevaluateGatedTiles", () => {
     );
     expect(src).toContain("_updateLayers( tile ) {");
     expect(src).toMatch(/overlayInfo\s*\.get\( overlay \)\s*\.tileInfo/);
+  });
+});
+
+describe("createGlobeOsmOverlay's update", () => {
+  // Why (G1 review L2): the hysteresis and the ramp must be what the
+  // frame loop runs, not only what the helpers compute: a camera hovering
+  // at 190 m keeps the state it had, and the shader switch ramps over
+  // 0.3 s instead of jumping. Driven through the factory with a fake of
+  // the relief's tiles (the plugin is never initialised in Node).
+  it("holds its state in the band and ramps the shader switch", () => {
+    const osm = createGlobeOsmOverlay({
+      url: TEMPLATE,
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      renderer: {} as THREE.WebGLRenderer,
+    });
+    osm.attach({
+      tiles: {
+        group: new THREE.Group(),
+        ellipsoid: WGS84_ELLIPSOID,
+        registerPlugin: () => {},
+        forEachLoadedModel: () => {},
+        addEventListener: () => {},
+      },
+      plugin: { sampleCartographicElevation: () => null },
+    });
+    osm.setEnabled(true);
+    const position = new THREE.Vector3();
+    const at = (aboveGroundM: number, nowMs: number) => {
+      osm.update({ position, aboveGroundM, speedMps: 0, nowMs });
+      return { active: osm.stats().active, on: osm.uniforms.uOsmOn.value };
+    };
+    // Hovering in the band from above: stays off.
+    expect(at(190, 0)).toEqual({ active: false, on: 0 });
+    // Below 180 m: on, and the switch ramps.
+    expect(at(170, 100).active).toBe(true);
+    expect(osm.uniforms.uOsmOn.value).toBeCloseTo(1 / 3, 6);
+    expect(at(190, 400).active).toBe(true); // the band: holds
+    expect(osm.uniforms.uOsmOn.value).toBe(1);
+    // Above 200 m: off, and the switch ramps down.
+    expect(at(210, 550).active).toBe(false);
+    expect(osm.uniforms.uOsmOn.value).toBeCloseTo(0.5, 6);
+    expect(at(190, 1_000)).toEqual({ active: false, on: 0 });
   });
 });

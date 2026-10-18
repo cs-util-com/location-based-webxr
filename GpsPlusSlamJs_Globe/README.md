@@ -52,8 +52,10 @@ re-check whether the patch still applies.
 `src/globe-editor.ts` is the one module an app imports for the tour
 editor's globe (tour editor plan 2026-10-17-1816 §13, in the private
 repo's docs): the relief with a tile size, a cache budget per tile format
-and device class that reports a stall, and Mapterhorn as a source with an
-AWS fallback where it answers 404 (`globe-relief-*.ts`); GPS heights to
+and device class (the app names the class; there is no default) that
+reports a stall, and Mapterhorn as a source drawing its own nearest
+ancestor where it answers 404, credited with Copernicus GLO-30
+(`globe-relief-*.ts`); GPS heights to
 drawn heights through a geoid passed in (`globe-heights.ts`); picking the
 ground under a ray (`globe-ground-hit.ts`); the first-person camera's
 rules (`globe-eye-camera.ts`); and OpenStreetMap tiles near the camera

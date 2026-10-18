@@ -11,13 +11,22 @@
 - Public API:
   - `GLOBE_OSM`: `fadeM` 300 (the fade's end and the request reach),
     `fadeStartShare` 0.7, `minZoom` 15, `requestsPerMinute` 150,
-    `maxAboveGroundM` 200, `maxSpeedMps` 50, `reevaluateMs` 500,
+    `maxAboveGroundM` 200, `maxSpeedMps` 50 (off above these),
+    `onBelowAboveGroundM` 180, `onBelowSpeedMps` 45 (on only below
+    these), `rampMs` 300 (the drawn map's fade in or out), `reevaluateMs` 500,
     `reevaluateLimit` 8, `resolution` 256.
   - `osmCredit(attributionHtml)`: the framework's `OSM_TILE_ATTRIBUTION`
     as a `GlobeCredit` (`short` "OpenStreetMap", `full` its text,
     `href` its link). RangeError without an https link.
-  - `osmOverlayActive({ aboveGroundM, speedMps }, limits?)`: true at or
-    below 200 m over the ground and 50 m/s; false for anything unknown.
+  - `osmOverlayActive({ aboveGroundM, speedMps }, wasActive = false)`:
+    with hysteresis (G1 review L2): off above 200 m over the ground or 50
+    m/s; on only at or below 180 m and 45 m/s; between the two it keeps
+    `wasActive`. False for anything unknown (NaN). Without the band a
+    camera hovering at 200 m, or a walk at the speed limit, switched the
+    map (and its requests) every frame.
+  - `rampOsmOn(current, target, dtMs, rampMs = 300)`: the shader switch
+    `uOsmOn` moved `dtMs / rampMs` toward `target`, landing on it, never
+    past it; a step that is not finite and > 0 leaves it.
   - `createRequestCeiling(perMinute, now?)`: a sliding-minute ceiling,
     `waitMs()`, `take()`, `inLastMinute()`, `total()`. RangeError unless
     a positive integer.
@@ -51,8 +60,10 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
       (each patched material gets a `GLOBE_OSM_FADE` define: its own
       program). Once only (Error on a second call).
     - `update({ position, aboveGroundM, speedMps, nowMs })` each frame:
-      the gate's camera (world to the tiles' frame), the active rule, the
-      fade's switch, and every `reevaluateMs` the gated tiles.
+      the gate's camera (world to the tiles' frame), the active rule with
+      the last frame's state, the fade's switch ramped over `rampMs`
+      (requests follow the rule at once; only the drawn map fades), and
+      every `reevaluateMs` the gated tiles.
     - `stats()`: `enabled`, `active`, `requests`, `requestsLastMinute`,
       `unpatchedShaders` (a library change shows here), `locks`,
       `gatedLocks`, `lockedRegions`, `finestLevel` (the finest level a lock
@@ -64,7 +75,8 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
     The Globe package depends on neither the framework nor the Osm
     library; the globe lab passes them.
   - A tile is asked for only when ALL hold: the overlay is enabled, the
-    camera is at or below 200 m over the ground and at or below 50 m/s,
+    rule is active (on below 180 m and 45 m/s, kept until above 200 m or
+    50 m/s),
     the level the overlay picks for the relief tile is 15 or finer, the
     tile's region comes within the fade distance of the camera, and the
     ceiling has room. Off, nothing new is asked for and the fade's
@@ -90,6 +102,14 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
     camera comes close. It calls two private methods of the plugin
     (`_fetchTileOverlayTexture`, `_updateLayers`) and reads
     `overlayInfo`; a guard test reads the library's source for them.
+  - The band's widths are a choice, not a measurement: about a tenth of
+    each limit, wide enough that GPS height noise and a walking pace's
+    jitter (a few metres, a few m/s) cannot cross it both ways in a
+    second, narrow enough that the limits stay the plan's. A band of a
+    twentieth (190 m, 47.5 m/s) would still hold against that noise; the
+    verdict "no flicker" does not depend on the exact value as long as
+    the band is wider than the noise of the input. The 300 ms ramp is a
+    look choice, nothing measured.
   - The overlay's textures count in the relief's tile cache
     (`calculateBytesUsed`): about 256 KiB per relief tile that has one.
   - A tile that leaves the reach keeps its texture until the relief
@@ -121,7 +141,12 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
   ```
 
 - Tests: `globe-osm-overlay.test.ts` (the plan's limits, the credit from
-  the framework's text, the active rule and unknowns, the sliding
+  the framework's text, the active rule and unknowns, the hysteresis
+  (both edges, the band kept, a property over paths that the state
+  changes only at the band's edges), the ramp (steps, landing, no time,
+  a property that it never overshoots), `sleepFor` rejecting at once on
+  an aborted signal and leaving no listener, the factory's update
+  through the band and the ramp, the sliding
   ceiling, the region test by extent and on the sampled ground, the fade
   patch against the library's own blend line, the gated lock and release
   through the library class, the finest level asked for, the fetch held

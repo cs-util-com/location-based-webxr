@@ -1,24 +1,25 @@
 /**
  * The relief's fallback where its source has no tile (tour editor plan
- * 2026-10-17-1816 §13, G1 step 2; G0 spikes, "Coverage").
+ * 2026-10-17-1816 §13, G1 step 2; G0 spikes, "Coverage"; G1 review M2).
  *
  * Why this test matters: Mapterhorn's fine zooms (13 and finer) exist only
- * where a national model does; elsewhere it answers 404, and the library
- * neither checks the status nor has a second source, so the tile failed to
- * decode. The fallback asks AWS Terrarium for the same tile. Its tiles are
- * 256 px, Mapterhorn's 512, and the library refills each height grid's
- * border from its neighbours assuming they have the same size, so the
- * fallback's HEIGHTS are resampled to 512 (decoded first: interpolating
- * the encoded bytes would mix the high and low bytes of a height into
- * nonsense, a step of 256 m in red is one of 1 m in green).
+ * where a national model does, and its deep-ocean tiles exist at no zoom
+ * finer than about z5; elsewhere it answers 404, and the library neither
+ * checks the status nor knows what else to draw, so the tile failed to
+ * decode. The fallback draws the same source's nearest ancestor, cropped
+ * to the tile and upsampled: one pyramid, so no step where the level of
+ * detail changes (a first version asked AWS for the same tile, which G0
+ * measured +5 to +12 m off Mapterhorn in towns). The crop is done on
+ * DECODED heights: interpolating the encoded bytes would mix a height's
+ * high and low bytes into nonsense (a step of 1 in red is 256 m).
  */
 import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  RELIEF_FALLBACK,
   decodeTerrariumM,
   encodeTerrarium,
-  fillTileTemplate,
   installReliefFallback,
   resampleTerrarium,
 } from "./globe-relief-fallback.js";
@@ -113,7 +114,68 @@ describe("resampleTerrarium", () => {
     );
   });
 
-  it("refuses sizes or data that do not match", () => {
+  // Why (M2): a tile drawn from its ancestor `depth` levels up is the
+  // ancestor's quarter (or sixteenth...) at column `col`, row `row` (north
+  // first, as the XYZ tiling counts), sampled at the tile's own pixel
+  // centres. Pinned by hand: a 4 px ancestor whose height is 10 x column
+  // + row, its north-east quarter (col 1, row 0) at 4 px. The centre of
+  // the child's pixel 0 lies at ancestor pixel x (1 + 0.5/4) / 2 x 4 - 0.5
+  // = 1.75 and y (0 + 0.5/4) / 2 x 4 - 0.5 = -0.25, clamped to 0.
+  it("crops an ancestor's quarter at the tile's own pixel centres", () => {
+    const out = resampleTerrarium(
+      tile(4, (x, y) => 10 * x + y),
+      4,
+      4,
+      { depth: 1, col: 1, row: 0 },
+    );
+    expect(heightAt(out, 4, 0, 0)).toBeCloseTo(17.5, 2);
+    expect(heightAt(out, 4, 3, 0)).toBeCloseTo(30, 2); // 3.25, clamped to 3
+    expect(heightAt(out, 4, 0, 3)).toBeCloseTo(17.5 + 1.25, 2);
+  });
+
+  // Why (M2, the property that removes the step at a level change): the
+  // children of an ancestor, cropped and upsampled one by one, are
+  // exactly the ancestor upsampled whole and cut into tiles. So adjacent
+  // fallback tiles meet without a seam, and a fallback tile matches the
+  // coarser tile it replaces wherever both are drawn.
+  it("tiles: each child equals its part of the whole ancestor upsampled", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 3 }),
+        fc.constantFrom(2, 4, 8),
+        fc.constantFrom(4, 8),
+        fc.array(fc.double({ min: -500, max: 4_000, noNaN: true }), {
+          minLength: 64,
+          maxLength: 64,
+        }),
+        fc.nat(),
+        (depth, src, dst, values, pick) => {
+          const ancestor = tile(src, (x, y) => values[(y * src + x) % 64]!);
+          const n = 2 ** depth;
+          const col = pick % n;
+          const row = Math.floor(pick / n) % n;
+          const whole = resampleTerrarium(ancestor, src, dst * n);
+          const child = resampleTerrarium(ancestor, src, dst, {
+            depth,
+            col,
+            row,
+          });
+          for (let y = 0; y < dst; y++) {
+            for (let x = 0; x < dst; x++) {
+              expect(
+                Math.abs(
+                  heightAt(child, dst, x, y) -
+                    heightAt(whole, dst * n, col * dst + x, row * dst + y),
+                ),
+              ).toBeLessThanOrEqual(1 / 256);
+            }
+          }
+        },
+      ),
+    );
+  });
+
+  it("refuses sizes, data or a crop that do not match", () => {
     expect(() => resampleTerrarium(new Uint8ClampedArray(15), 2, 4)).toThrow(
       RangeError,
     );
@@ -123,14 +185,18 @@ describe("resampleTerrarium", () => {
     expect(() => resampleTerrarium(new Uint8ClampedArray(16), 2, 2.5)).toThrow(
       RangeError,
     );
-  });
-});
-
-describe("fillTileTemplate", () => {
-  it("fills z, x and y, every occurrence", () => {
-    expect(
-      fillTileTemplate("https://h/{z}/{x}/{y}.png?z={z}", 14, 8_712, 5_678),
-    ).toBe("https://h/14/8712/5678.png?z=14");
+    for (const crop of [
+      { depth: -1, col: 0, row: 0 },
+      { depth: 1.5, col: 0, row: 0 },
+      { depth: 1, col: 2, row: 0 },
+      { depth: 1, col: 0, row: -1 },
+      { depth: 2, col: 0.5, row: 0 },
+      { depth: RELIEF_FALLBACK.maxDepth + 1, col: 0, row: 0 },
+    ]) {
+      expect(() =>
+        resampleTerrarium(new Uint8ClampedArray(16), 2, 4, crop),
+      ).toThrow(RangeError);
+    }
   });
 });
 
@@ -143,8 +209,10 @@ function fakePlugin(server: Map<string, Response>) {
       `https://primary/${z}/${x}/${y}.webp`,
     fetchData: (url: string, options: { signal?: unknown }) => {
       fetched.push({ url, signal: options.signal });
+      const res = server.get(url);
+      // A body can be read once; each request gets its own copy.
       return Promise.resolve(
-        server.get(url) ?? new Response(null, { status: 404 }),
+        res ? res.clone() : new Response(null, { status: 404 }),
       );
     },
     processBufferToTexture: (buffer: ArrayBuffer) =>
@@ -163,20 +231,28 @@ function fakePlugin(server: Map<string, Response>) {
 }
 
 describe("installReliefFallback", () => {
-  const options = {
-    fallbackUrl: "https://fallback/{z}/{x}/{y}.png",
+  /**
+   * The fakes: every ancestor decodes to a 4 px tile whose height is 10 x
+   * column + row (pixel coordinates); the texture keeps the tile's first
+   * height.
+   */
+  const options = () => ({
     tileDimension: 4,
     decodeRgba: vi.fn((_buffer: ArrayBuffer) =>
-      Promise.resolve({ data: tile(2, () => 100), width: 2, height: 2 }),
+      Promise.resolve({
+        data: tile(4, (x, y) => 10 * x + y),
+        width: 4,
+        height: 4,
+      }),
     ),
     makeTexture: vi.fn((rgba: Uint8ClampedArray, size: number) =>
       Promise.resolve({
-        kind: "fallback",
+        kind: "ancestor",
         size,
         first: heightAt(rgba, size, 0, 0),
       }),
     ),
-  };
+  });
 
   // Why: the source's own tiles must take the library's path untouched.
   it("leaves a tile the source has to the library", async () => {
@@ -184,7 +260,7 @@ describe("installReliefFallback", () => {
       ["https://primary/14/1/2.webp", new Response(new Uint8Array(7))],
     ]);
     const { plugin, source } = fakePlugin(server);
-    const fallback = installReliefFallback(plugin, options);
+    const fallback = installReliefFallback(plugin, options());
     expect(await plugin.loadRootTileset()).toEqual({ root: true });
     const signal = new AbortController().signal;
     expect(await source.fetchItem([1, 2, 14], signal)).toEqual({
@@ -194,65 +270,97 @@ describe("installReliefFallback", () => {
     expect(fallback.stats()).toEqual({ fallbacks: 0, failures: 0 });
   });
 
-  // Why: the case the spikes measured: z14 404 outside national coverage.
-  it("asks the fallback for the same tile on a 404, resampled to the source's size", async () => {
+  // Why: the case the spikes measured, and the review's fix: z14 and z13
+  // answer 404 outside national coverage, z12 (Copernicus) exists. The
+  // tile must be drawn from z12, cropped to where z14/8713/5678 lies in
+  // that ancestor (column 8713 mod 4 = 1, row 5678 mod 4 = 2), upsampled to the
+  // source's size, every request through the source's own fetch (the
+  // download queue) with the tile's abort signal, no other host asked.
+  it("draws the source's nearest ancestor on a 404, cropped and upsampled", async () => {
     const server = new Map([
-      ["https://fallback/14/1/2.png", new Response(new Uint8Array(3))],
+      ["https://primary/12/2178/1419.webp", new Response(new Uint8Array(3))],
     ]);
     const { plugin, source, fetched } = fakePlugin(server);
-    const fallback = installReliefFallback(plugin, options);
+    const fallback = installReliefFallback(plugin, options());
     await plugin.loadRootTileset();
     const signal = new AbortController().signal;
-    expect(await source.fetchItem([1, 2, 14], signal)).toEqual({
-      kind: "fallback",
-      size: 4,
-      first: 100,
-    });
-    // Both requests through the source's own fetch (the download queue),
-    // with the tile's abort signal.
+    const drawn = (await source.fetchItem([8713, 5678, 14], signal)) as {
+      size: number;
+      first: number;
+    };
     expect(fetched.map((f) => f.url)).toEqual([
-      "https://primary/14/1/2.webp",
-      "https://fallback/14/1/2.png",
+      "https://primary/14/8713/5678.webp",
+      "https://primary/13/4356/2839.webp",
+      "https://primary/12/2178/1419.webp",
     ]);
     expect(fetched.every((f) => f.signal === signal)).toBe(true);
+    // Pixel 0's centre in the ancestor: x (1 + 1/8) / 4 x 4 - 0.5 = 0.625,
+    // y (2 + 1/8) / 4 x 4 - 0.5 = 1.625, so 10 x 0.625 + 1.625.
+    expect(drawn.size).toBe(4);
+    expect(drawn.first).toBeCloseTo(7.875, 2);
     expect(fallback.stats()).toEqual({ fallbacks: 1, failures: 0 });
   });
 
+  // Why: Mapterhorn's coverage is nested (no national model under a
+  // missing z13, no land under a missing ocean tile: probed 2026-10-18,
+  // Marrakesh z14 and z13 404 with z12 present, the mid-Atlantic 404 from
+  // z12 to z6 with z5 present), and its 404s carry no cache header, so
+  // the browser asks again every time. A sibling of a tile already walked
+  // goes straight to the ancestor, not to tiles known missing.
+  it("skips tiles known missing under a missing ancestor", async () => {
+    const server = new Map([
+      ["https://primary/12/2178/1419.webp", new Response(new Uint8Array(3))],
+    ]);
+    const { plugin, source, fetched } = fakePlugin(server);
+    const fallback = installReliefFallback(plugin, options());
+    await plugin.loadRootTileset();
+    await source.fetchItem([8713, 5678, 14], undefined);
+    fetched.length = 0;
+    await source.fetchItem([8712, 5679, 14], undefined); // a sibling
+    await source.fetchItem([8713, 5678, 14], undefined); // itself, again
+    expect(fetched.map((f) => f.url)).toEqual([
+      "https://primary/12/2178/1419.webp",
+      "https://primary/12/2178/1419.webp",
+    ]);
+    expect(fallback.stats()).toEqual({ fallbacks: 3, failures: 0 });
+  });
+
   // Why: the library does not check the status; an error page decoded as
-  // heights would fail obscurely. Other failures reject with the status.
-  it("rejects, naming the status, on another error or a missing fallback tile", async () => {
+  // heights would fail obscurely. Other failures reject with the status,
+  // and a tile with no ancestor at all (every level 404) rejects too: the
+  // library then marks it failed and a coarser tile stands in.
+  it("rejects, naming the status, on another error or with no ancestor", async () => {
     const server = new Map([
       ["https://primary/14/1/3.webp", new Response(null, { status: 503 })],
+      ["https://primary/13/0/0.webp", new Response(null, { status: 500 })],
     ]);
     const { plugin, source } = fakePlugin(server);
-    const fallback = installReliefFallback(plugin, options);
+    const fallback = installReliefFallback(plugin, options());
     await plugin.loadRootTileset();
     await expect(source.fetchItem([1, 3, 14], undefined)).rejects.toThrow(
       /503/,
     );
-    await expect(source.fetchItem([9, 9, 14], undefined)).rejects.toThrow(
-      /404/,
+    // 14/1/1 is missing; its parent 13/0/0 fails with 500.
+    await expect(source.fetchItem([1, 1, 14], undefined)).rejects.toThrow(
+      /500/,
     );
-    expect(fallback.stats()).toEqual({ fallbacks: 0, failures: 2 });
+    await expect(source.fetchItem([9, 9, 4], undefined)).rejects.toThrow(
+      /no ancestor/,
+    );
+    expect(fallback.stats()).toEqual({ fallbacks: 0, failures: 3 });
   });
 
   it("restores the plugin on dispose, and refuses what it cannot use", () => {
     const { plugin } = fakePlugin(new Map());
     const own = plugin.loadRootTileset;
-    const fallback = installReliefFallback(plugin, options);
+    const fallback = installReliefFallback(plugin, options());
     expect(plugin.loadRootTileset).not.toBe(own);
     fallback.dispose();
     expect(plugin.loadRootTileset).toBe(own);
     expect(() =>
-      installReliefFallback(plugin, {
-        ...options,
-        fallbackUrl: "https://x/{z}.png",
-      }),
+      installReliefFallback(plugin, { ...options(), tileDimension: 0 }),
     ).toThrow(RangeError);
-    expect(() =>
-      installReliefFallback(plugin, { ...options, tileDimension: 0 }),
-    ).toThrow(RangeError);
-    expect(() => installReliefFallback({} as never, options)).toThrow(
+    expect(() => installReliefFallback({} as never, options())).toThrow(
       TypeError,
     );
   });
