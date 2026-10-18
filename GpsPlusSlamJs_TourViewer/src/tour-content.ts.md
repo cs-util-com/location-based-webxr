@@ -32,6 +32,9 @@ radiusM? }) -> TourManifest`: the manifest with `objects` as its pins and
   that is not positive, and an `Error` for a new station id already taken.
 - `tourObjectsOf(manifest | null) -> TourObject[]`: the world view, or `[]`
   without a tour.
+- `sameGeoPose(a, b) -> boolean`: the same geo pose field by field
+  (`===`, so -0 equals 0). It is the "nobody moved it" test, which the
+  settle's station move (D17) uses too.
 
 ## Invariants & assumptions
 

@@ -2964,6 +2964,49 @@ describe(
       expect(edit!.placement).toBeUndefined();
     });
 
+    // Why (tour editor plan 2026-10-17-1816, D17, the owner's condition):
+    // in version 3 an improved code moves the whole STATION a hosted pin
+    // sits in, atomically. The pin's local pose is never rewritten - not by
+    // the settle, and not by the Finish that writes the move.
+    it("moves the station of a hosted pin with an improved code, and the Finish keeps the pin's local pose", async () => {
+      const { a } = await secondVisit({ yawDeg: 20, northM: 3, walkM: 30 });
+      const hosted = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "near",
+      )!.object;
+      a.ctx.placedObjects = a.ctx.placedObjects.filter(
+        (p) => p.object.id !== hosted.id,
+      );
+      const opened = tourOf([hosted]);
+      a.ctx.tourManifest = opened;
+      const [station] = opened.stations;
+      a.endVisit();
+      expect(codePosition(a)?.applied).toBe(true);
+      const moved = a.ctx.tourManifest;
+      const [after] = moved.stations;
+      expect(after!.geo).not.toEqual(station!.geo);
+      expect(after!.items).toBe(station!.items);
+      // The page's edit is the pin where its moved station puts it.
+      const edit = a.ctx.placedObjects.find((p) => p.object.id === hosted.id);
+      expect(edit!.object.geo).toEqual(tourObjects(moved)[0]!.geo);
+      expect(codePosition(a)?.movedWithCode.map((m) => m.id)).toEqual([
+        hosted.id,
+      ]);
+
+      await openFinishableTour(a);
+      a.ctx.tourManifest = moved;
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+      const written = parseTourManifest(
+        JSON.parse(serializeTourManifest(a.ctx.tourManifest)),
+      );
+      const home = written.stations.find((s) => s.id === station!.id)!;
+      expect(home.items.map((i) => i.pose)).toEqual(
+        station!.items.map((i) => i.pose),
+      );
+      expect(home.geo).toEqual(after!.geo);
+    });
+
     it("keeps the stored position for a standing re-measure (R1: too little walking for the GPS accuracy)", async () => {
       const { a, stored, before, pins } = await secondVisit({
         yawDeg: 41,

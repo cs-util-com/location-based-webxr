@@ -8,16 +8,17 @@
  *
  * - **Where a station is (D19, §8 D8; tour editor plan D9):** its own geo
  *   pose, as a pin's. Its pose was fixed when it was authored (D33's
- *   settle, K6a); the viewer only reads it. A station without one has no
- *   place and is never reached (D9: no code-only station).
+ *   settle, K6a); the viewer only reads it. Since version 3 every station
+ *   has one (D9: no code-only station).
  * - **Reached by its radius alone (D16):** the phone's current best
  *   position - the alignment's, fed by GPS and codes alike; before any
  *   alignment the latest device fix - inside the station's found radius.
  *   A code lock is no arrival: it only improves that position, and the
  *   guide re-judges at once. With no position nothing is reached. A moved
  *   poster cannot pull the position onto a station: the moved-code check
- *   ignores its code and takes its votes back (`isIgnoredCode` in the
- *   viewer, D20), the one guard left since the lock-hold went (review 2 #5).
+ *   ignores its code and takes its votes back (`isIgnored` of the
+ *   viewer pipeline, `qr-viewer-mode.ts`, D20), the one guard left since
+ *   the lock-hold went (review 2 #5).
  * - **The HUD's arrival is the found radius** (`station-bands.ts`, §8 D9):
  *   each target's `distanceMin`/`distanceMax` are the station's found band at
  *   the measured accuracy, and the target sits at the visitor's own height so

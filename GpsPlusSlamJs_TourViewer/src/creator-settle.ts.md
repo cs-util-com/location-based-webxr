@@ -202,6 +202,21 @@ M4 settles every code of the book, not only the one in hand.
       hosted, restored and earlier visits' objects, as edits by id; a pin
       keeps its orientation). A real MOVE leaves them (D19) and marks the
       visit's move boundary.
+    - **Version 3: whole stations** (tour editor plan D17). The rule picks
+      STATIONS by their anchor (`station-code-move.ts`), and each moves
+      rigidly in the page's manifest (`ctx.tourManifest`). Its items keep
+      their local poses: each becomes an edit at exactly the world pose its
+      moved station now gives it, so the Finish writes the pose verbatim.
+      An item this session already moved goes along rigidly instead. An
+      object in a station that does not move stays, whatever its own
+      distance. Only objects not yet in a station (placed on this device,
+      not yet written) are judged one by one. Claims are per object id
+      and per `station:<id>`.
+    - **Known gap (filed):** the draft keeps the items' moved world poses
+      but not the station's move. After a crash before the Finish, a
+      restored draft therefore re-expresses those items in their unmoved
+      station: they stand in the right place, but their local poses
+      change.
     - A settle redone after a failed Finish re-applies the decision it
       already made (`appliedCode`): the objects are not moved twice and the
       visit log keeps the saved pose.

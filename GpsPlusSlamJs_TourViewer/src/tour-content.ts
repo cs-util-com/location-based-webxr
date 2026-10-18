@@ -79,7 +79,9 @@ export function worldCaptureSpots(
   };
 }
 
-function sameGeoPose(a: QrGeoPose, b: QrGeoPose): boolean {
+/** The same geo pose, field by field (=== on numbers, so -0 is 0): an
+ *  object nobody moved, compared with what its stored item reads as. */
+export function sameGeoPose(a: QrGeoPose, b: QrGeoPose): boolean {
   return (
     a.lat === b.lat &&
     a.lon === b.lon &&

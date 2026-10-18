@@ -63,7 +63,7 @@ activateM)` (each tick, each offered station with a distance: the
   visitor's own "I'm here" (review 2 #5).
 - **A moved poster cannot pull the position onto a station:** the
   moved-code check ignores its code and takes its votes back
-  (`isIgnoredCode` in the viewer's alignment, D20), the one guard left
+  (`isIgnored` of the viewer pipeline, `qr-viewer-mode.ts`, D20), the one guard left
   since the lock-hold went. What is left: a moved poster's votes count
   until the check has judged it (its evidence window), so a visitor who
   scans a moved poster near another station inside that window may find
