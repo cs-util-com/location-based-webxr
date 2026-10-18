@@ -42,11 +42,12 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   `VIEWER_SOFT_TRIM`), so a station on the scanned code is found on that
   lock: the lock places the visitor, and a station at the code is inside
   its radius (D16).
-- Found, pointed at and guided to the stations are only on an alignment
-  that is ready (r881, `stationAlignmentSignals`): tracking ready or a
-  code lined it up, the readiness the walk's photos wait for. The gate
-  alone was not enough: the library aligns a session from its first fix,
-  with no heading.
+- The stations are judged on the aligned frame only once it is ready
+  (r881, `stationAlignmentSignals`): tracking ready or a code lined it up,
+  re-read each tick. Before it the guide judges by the fresh device fix
+  (review H1), and the arrows and breadcrumbs wait. The gate alone was not
+  enough: the library aligns a session from its first fix, with no
+  heading.
 - Media are read through `ctx.session.loadContentEntry` (K0's allowlist and
   `.glb` check, K1's per-entry hash check), ahead of time as the visitor
   approaches (`station-prefetch.ts`; the story's own reads go through the

@@ -26,8 +26,8 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
 - Deps: `dom` (`line`, `skip`), `tour()` (stations, order),
   `placementAllowed()`, `zero()`, `visitor()` (`visitor-position.ts`),
   `codeLinedUp()` (a code's votes lined the alignment up, `tour-flow.ts`),
-  `alignmentReady()` (the alignment may be judged by: the readiness the
-  walk's photos wait for, `tour-flow.ts` `alignmentReady`),
+  `alignmentReady()` (the alignment may be judged on: tracking ready or a
+  code, re-read each tick, `tour-flow.ts` `alignmentReady`),
   `startHud(getTargets)`, `now()`, `fixMaxAgeMs?` (default
   `FIX_MAX_AGE_MS`, 5 s),
   `onFound(station)`, `onEndStory?(stationId)` (R9), `onVisitor?(nue)`, `onApproach?(station, distanceM,
@@ -58,34 +58,36 @@ activateM)` (each tick, each offered station with a distance: the
   it.
 - **Reached by its radius alone (D16):** the distance is measured from the
   phone's current best position - the alignment's (`VisitorPosition.nue`,
-  fed by GPS and codes alike) once it is ready (`alignmentReady()`), else
-  - only while there is no alignment at all (`VisitorPosition.aligned`) -
-    the latest device fix (`fixNue`) if it is at most `FIX_MAX_AGE_MS`
-    (5 s) old by its own timestamp against `now()` - and a station is found
-    inside its authored found radius: whatever the raw accuracy when a code
-    lined the position up (the accuracy is the raw fixes' and says nothing
-    about a code's position, M5c review #1), and otherwise only while the
-    raw fixes' accuracy is within the ceiling (`tooWeakToGuide`, PR #640
-    review). The accuracy never widens the radius. With neither position nothing is reached.
-- **Aligned alone is not trusted, and not judged before it is ready
+  fed by GPS and codes alike) once it is ready (`alignmentReady()`); while
+  it is not, or while there is no alignment at all, the latest device fix
+  (`fixNue`) if it is at most `FIX_MAX_AGE_MS` (5 s) old by its own
+  timestamp against `now()`. A station is found inside its authored found
+  radius: whatever the raw accuracy when a code lined the alignment up (the
+  accuracy is the raw fixes' and says nothing about a code's position, M5c
+  review #1), and otherwise only while the raw fixes' accuracy is within
+  the ceiling (`tooWeakToGuide`, PR #640 review). The accuracy never widens
+  the radius. With neither position nothing is reached. A ready session
+  whose tracking dropped (no AR pose) has no position until it is back, and
+  the line says "waiting for your position": its raw fix carries no
+  accuracy or age check and used to latch "found" (M5a review M3). 5 s is
+  argued, not measured (about four missed 1 Hz fixes, 7 m of walking);
+  2-10 s are swept in the tests. A code lock is no arrival: it only
+  improves the position, and `codeLocked()` re-judges at once. This
+  replaced the code-only station, the held code lock (`CODE_HOLD_MAX_MS`,
+  `codeAgrees`) and the visitor's own "I'm here" (review 2 #5).
+- **Aligned alone is not trusted, and not used before it is ready
   (r881):** the library aligns a session from its first fix (no rotation,
   at the zero, at any accuracy), so `aligned` holds from the first fix
   on. Until r881 it was trusted outright: the "too weak" line was dead
   and a ±500 m cold-start fix inside a station latched "found". Now only
-  a code earns the trust (`codeLinedUp()`), and an aligned position
-  counts only once `alignmentReady()` (tracking ready, or a code lined
-  it up) - before it the alignment has no heading and can be 180° wrong,
-  so there is no arrival, no HUD target, no breadcrumbs and no replay,
-  and the line says "waiting for your position…" (or "too weak"). An
-  aligned session whose tracking dropped (no AR pose) has no position
-  until it is back, and the line says "waiting for your position": its
-  raw fix carries no accuracy or age check and used to latch "found" (M5a
-  review M3). 5 s is argued, not measured (about four missed 1 Hz fixes,
-  7 m of walking); 2-10 s are swept in the tests.
-  A code lock is no arrival: it only improves the position, and
-  `codeLocked()` re-judges at once. This replaced the code-only station,
-  the held code lock (`CODE_HOLD_MAX_MS`, `codeAgrees`) and the
-  visitor's own "I'm here" (review 2 #5).
+  a code earns the trust (`codeLinedUp()`, kept through a tracking drop:
+  review L1), and the aligned position counts only once
+  `alignmentReady()` (tracking ready, or a code lined it up). Before it
+  the alignment has no heading and can be 180° wrong: the session counts
+  as unaligned, so the fresh device fix stands in, judged by its own
+  accuracy (review H1: readiness needs ten fixes, a walk and turns, and
+  never came for a visitor standing at a station or walking straight),
+  and there is no HUD target, no breadcrumbs and no replay until it is.
 - **A moved poster pulls the position only until it is judged:** the
   moved-code check then ignores its code and takes its votes back
   (`isIgnored` of the viewer pipeline, `qr-viewer-mode.ts`, D20), the one guard left
@@ -114,7 +116,10 @@ activateM)` (each tick, each offered station with a distance: the
 - **K4 review R14:**
   - the skip clock starts when a station becomes the focus (`run.focus`,
     called at every render), not at the tour's start: under `any` order
-    every focus was a one-tap skip two minutes in;
+    every focus was a one-tap skip two minutes in; and only once the
+    focus has a distance, which sizes it (r881 review M2: started without
+    one, the bare 2 min allowance suggested the skip to a visitor still
+    waiting for a position);
   - a tap does what the button's label showed, for the station it named
     (`rendered`): a clock that ran out since, or a focus that moved,
     changes nothing;
@@ -208,5 +213,12 @@ store.subscribe(() => guide.tick());
   ±500 m first fix inside a 10 m station finds nothing and says the GPS
   is too weak (ready or not), an alignment not yet ready judges nothing
   (no arrival, no HUD target, no breadcrumbs), and a code-lined-up
-  courtyard visitor at ±40 m is found.
+  courtyard visitor at ±40 m is found; an alignment not yet ready judges
+  by the fresh fix (review H1), and on the real store a visitor with no
+  code standing at a 5 m station or walking straight to it never reaches
+  tracking `ok` and is found on the fix (at once; on arrival); a tracking
+  drop in a code-placed session waits instead of "too weak" (L1); the
+  skip clock waits for a distance (M2).
+- `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
+  tracking-quality slice (L3).
 - `playwright-tests/stations.spec.js` - the whole flow on the page.

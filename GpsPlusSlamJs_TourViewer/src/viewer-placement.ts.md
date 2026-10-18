@@ -164,7 +164,10 @@ recording. Its own module since the flows plan M6.
   so the content moves ONCE, to the GPS answer; the vote budget is reset
   (M5c review M2: every code's votes are gone, so another code, even a
   spent one the keep-alive holds, votes again on its next lock; the vetoed
-  code stays blocked by `isIgnored`); the viewing log records
+  code stays blocked by `isIgnored`); `viewerVotedLocks` goes to 0 and
+  `viewerLockedText` to null (r881 review M1: nothing reads the tour as
+  lined up by a code - `codeLinedUp`, `codePlacedTour`, the stations'
+  trust - until a code votes again); the viewing log records
   `codeIgnored` with the evidence and the recovery; `viewerIgnoredText` is
   set; the gate passes `ignored` (`markGateIgnored`: a scanning gate, or
   one the code itself passed; an escape or a waived gate stays).

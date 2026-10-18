@@ -12,11 +12,12 @@
  *   has one (D9: no code-only station).
  * - **Reached by its radius alone (D16):** the phone's current best
  *   position - the alignment's, fed by GPS and codes alike, once it is
- *   ready (`alignmentReady`: before, it is the identity at the first fix,
- *   with no heading); only while there is no alignment at all, the latest
- *   device fix if it is fresh (`FIX_MAX_AGE_MS`; a tracking drop in an
- *   aligned session is no position, M5a review M3) - inside the station's
- *   found radius.
+ *   ready (`alignmentReady`); while it is not (it starts as the identity
+ *   at the first fix, with no heading) or there is no alignment at all,
+ *   the latest device fix if it is fresh (`FIX_MAX_AGE_MS`; a tracking
+ *   drop in a ready session is no position, M5a review M3) - inside the
+ *   station's found radius. The HUD's arrows and the breadcrumbs need a
+ *   heading and wait for the ready alignment.
  *   A code lock is no arrival: it only improves that position, and the
  *   guide re-judges at once. With no position nothing is reached. A moved
  *   poster can pull the position onto a station until the moved-code
@@ -89,10 +90,11 @@ export interface StationGuideDeps {
   /** Whether a code lined the alignment up (`tour-flow.ts` `codeLinedUp`):
    *  its position is then trusted whatever the raw fixes' accuracy says. */
   codeLinedUp(): boolean;
-  /** Whether the alignment may be judged by yet (`tour-flow.ts`
-   *  `alignmentReady`, the readiness the walk's photos wait for): before
-   *  it, an aligned position is no position - no arrival, no arrows, no
-   *  breadcrumbs. */
+  /** Whether the alignment may be judged on yet (`tour-flow.ts`
+   *  `alignmentReady`: tracking ready, or a code lined it up; re-read each
+   *  tick). Before it the fresh device fix stands in, judged by its own
+   *  accuracy, as before any alignment, and there are no arrows and no
+   *  breadcrumbs (they need a heading). */
   alignmentReady(): boolean;
   /** Start the HUD for this AR session; null while it cannot (no camera
    *  yet). The guide retries on the next tick. */
@@ -171,13 +173,14 @@ export const FIX_MAX_AGE_MS = 5_000;
 
 /** One measurement of the visitor, taken once per tick (K4 review R13). */
 interface Measurement {
-  /** The visitor, its camera position dropped while the alignment is not
-   *  ready (`alignmentReady`). */
+  /** The visitor; while the alignment is not ready (`alignmentReady`)
+   *  it counts as unaligned: no camera position, the fresh fix stands in. */
   readonly visitor: VisitorPosition;
   /** The best position this measurement judged by (`bestPosition`). */
   readonly best: readonly [number, number, number] | null;
-  /** A code lined up the position judged by: it is trusted whatever the
-   *  raw fixes' accuracy (`judgedAccuracy`). */
+  /** A code lined the alignment up: its position is trusted whatever
+   *  the raw fixes' accuracy (`judgedAccuracy`), through a tracking drop
+   *  too (r881 review L1: the line must not call it too weak then). */
   readonly codeLinedUp: boolean;
   /** Every placeable station's horizontal distance from `best`. */
   readonly distances: Map<string, number>;
@@ -244,22 +247,24 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   /** Measure once: the visitor, the zero, every station's pose and
-   *  horizontal distance. An alignment that is not ready yet gives no
-   *  camera position (`alignmentReady`); only a code-lined-up position is
-   *  trusted (`codeLinedUp`). */
+   *  horizontal distance. An alignment that is not ready yet counts as
+   *  none (`alignmentReady`): the fresh device fix stands in, judged by
+   *  its own accuracy (r881 review H1: readiness needs a walk with turns,
+   *  and a visitor standing at a station had no guidance at all). Only a
+   *  code-lined-up alignment is trusted (`codeLinedUp`). */
   function measure(): void {
     poseCache.clear();
     measuredZero = deps.zero();
     const seen = deps.visitor();
     const visitor =
-      seen.nue !== null && !deps.alignmentReady()
-        ? { ...seen, nue: null }
+      seen.aligned && !deps.alignmentReady()
+        ? { ...seen, nue: null, aligned: false }
         : seen;
     const best = bestPosition(visitor);
     last = {
       visitor,
       best,
-      codeLinedUp: visitor.nue !== null && deps.codeLinedUp(),
+      codeLinedUp: deps.codeLinedUp(),
       distances: horizontalDistances(best),
     };
   }
@@ -491,8 +496,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function skipAction(): SkipAction | null {
     if (run === null) return null;
     const focus = focusStation();
-    if (focus !== null) {
-      run.focus(focus, deps.now(), last?.distances.get(focus) ?? null);
+    // The skip clock starts with the first distance, sized by it (r881
+    // review M2: started without one, it suggested the skip after the bare
+    // allowance to a visitor still waiting for a position).
+    const focusDistance =
+      focus === null ? undefined : last?.distances.get(focus);
+    if (focus !== null && focusDistance !== undefined) {
+      run.focus(focus, deps.now(), focusDistance);
     }
     // A skip that can still be undone: the button undoes it (R14).
     if (undoable !== null) return { kind: "undo", id: undoable.id };

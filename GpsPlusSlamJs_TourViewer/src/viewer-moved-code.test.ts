@@ -44,7 +44,11 @@ import {
   MAX_VOTED_LOCKS_PER_CODE,
 } from "./qr-viewer-mode.js";
 import type { TourViewerSeams } from "./seams.js";
-import { arStatusLine } from "./tour-flow.js";
+import {
+  arStatusLine,
+  codePlacedTour,
+  type ArStatusInput,
+} from "./tour-flow.js";
 import {
   createTourViewerSession,
   createTourViewerStore,
@@ -55,6 +59,8 @@ import {
 import type { TourViewingAction } from "./tour-viewing-actions.js";
 import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
+import { stationAlignmentSignals } from "./visitor-stations.js";
+import { visitorStatus } from "./visitor-status.js";
 
 const captured = vi.hoisted(() => ({
   configs: [] as QrTrackingControllerConfig[],
@@ -311,29 +317,29 @@ function viewer(level: QrLevel = LEVEL, withCodeB = false) {
     (arStore.getState().gpsData?.gpsEvents?.gpsPositions ?? []).filter(
       (p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_SYNTHETIC_QR,
     ).length;
-  const statusLine = () =>
-    arStatusLine({
-      mode: "visitor",
-      arStatus: "running",
-      cameraFrames: 0,
-      tour: { kind: "open", levelCount: 1 },
-      qr: {
-        status: "tracking",
-        unknownCode: null,
-        unusableCode: null,
-        reprojectionErrorPx: null,
-        ignoredCode: ctx.viewerIgnoredText,
-        votedLocks: ctx.viewerVotedLocks,
-        lockedText: ctx.viewerLockedText,
-        hold: ctx.viewerKeepAlive?.phase(clock.nowMs) ?? null,
-      },
-      readiness: null,
-      placement: ctx.placement,
-      planesError: null,
-      contentError: null,
-      gate: ctx.scanGate,
-      content: { kind: "none" },
-    });
+  const statusInput = (): ArStatusInput => ({
+    mode: "visitor",
+    arStatus: "running",
+    cameraFrames: 0,
+    tour: { kind: "open", levelCount: 1 },
+    qr: {
+      status: "tracking",
+      unknownCode: null,
+      unusableCode: null,
+      reprojectionErrorPx: null,
+      ignoredCode: ctx.viewerIgnoredText,
+      votedLocks: ctx.viewerVotedLocks,
+      lockedText: ctx.viewerLockedText,
+      hold: ctx.viewerKeepAlive?.phase(clock.nowMs) ?? null,
+    },
+    readiness: null,
+    placement: ctx.placement,
+    planesError: null,
+    contentError: null,
+    gate: ctx.scanGate,
+    content: { kind: "none" },
+  });
+  const statusLine = () => arStatusLine(statusInput());
   return {
     ctx,
     arStore,
@@ -345,6 +351,7 @@ function viewer(level: QrLevel = LEVEL, withCodeB = false) {
     posterOffM,
     votesStored,
     statusLine,
+    statusInput,
     logged,
     enter,
   };
@@ -563,6 +570,62 @@ describe(
       expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
       expect(v.ctx.ignoredCodes.has(LEVEL_ID_B)).toBe(false);
       expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+    });
+
+    // Why (r881 review M1): the veto takes every vote back, but the page
+    // kept its count of voted locks, so every reader of "a code lined the
+    // tour up" kept believing it on what was a GPS-only alignment again:
+    // the stations trusted it whatever the raw accuracy, and the status
+    // line said "Tour placed." instead of naming the moved code.
+    it("the veto forgets the voted locks: the stations stop trusting the alignment and the line names the moved code", () => {
+      const v = scannedAndWalked();
+      expect(v.ctx.viewerVotedLocks).toBeGreaterThan(0);
+      expect(stationAlignmentSignals(v.ctx, v.arStore).codeLinedUp()).toBe(
+        true,
+      );
+      v.walk(1, 75);
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      expect(v.ctx.viewerVotedLocks).toBe(0);
+      expect(v.ctx.viewerLockedText).toBeNull();
+      expect(stationAlignmentSignals(v.ctx, v.arStore).codeLinedUp()).toBe(
+        false,
+      );
+      expect(
+        visitorStatus({
+          ...v.statusInput(),
+          content: { kind: "placed", count: 1, skipped: 0 },
+        }),
+      ).toEqual({
+        state: "placed-gps",
+        text: "Tour placed by GPS (less exact): its code seems to have been moved. Look around.",
+      });
+    });
+
+    // Why (r881 review M1): code B passed the gate and keeps it, but the
+    // veto of code A took B's votes back too. The placement trigger's
+    // "a code placed the tour" must not hold on B's spent count, or the
+    // walk's photos would place on a GPS-only alignment with no heading.
+    it("after a veto the placement trigger no longer reads the tour as code-placed, until a code votes again", () => {
+      const v = viewer(LEVEL, true);
+      v.walk(0, 0);
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 500 + i * 10, "B");
+      }
+      expect(codePlacedTour(v.ctx)).toBe(true);
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 1000 + i * 100);
+      }
+      let s = 1;
+      while (!v.ctx.ignoredCodes.has(LEVEL_ID) && s <= 90) {
+        v.walk(s, s);
+        s += 1;
+      }
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+      expect(codePlacedTour(v.ctx)).toBe(false);
+      // B's next lock votes again: code-placed once more.
+      v.lock(T0 + s * 1000, "B");
+      expect(codePlacedTour(v.ctx)).toBe(true);
     });
 
     // Why (M5c review M2): the veto takes EVERY vote back - another code's

@@ -48,8 +48,10 @@
  * code the raw accuracy judges (above the 25 m ceiling nothing latches);
  * with one, the position is the code's (modelled as the `fused` noise at a
  * code accuracy of 1 / 3 / 5 m, an assumption: no field figure exists yet)
- * and the raw accuracy does not enter at all. The cold start's wait for a
- * ready alignment only delays a latch and is not simulated.
+ * and the raw accuracy does not enter at all. Before the alignment is
+ * ready (tracking `ok`, which a visitor standing or walking straight may
+ * never reach) the guide judges by the fresh device fix with its own
+ * accuracy - the no-code rows with the `raw` model are that case.
  */
 
 import { writeFileSync } from "node:fs";

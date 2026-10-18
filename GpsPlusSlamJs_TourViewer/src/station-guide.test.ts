@@ -3,6 +3,7 @@ import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-stations";
 import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 import {
   createSlamAppStore,
+  poseReceived,
   recordGpsEvent,
   selectAlignmentMatrix,
   selectGpsPositions,
@@ -21,6 +22,8 @@ import {
   type StationTour,
 } from "./station-guide";
 import { visitorPosition, type VisitorPosition } from "./visitor-position";
+import { createTourViewerStore } from "./tour-viewer-session";
+import { stationAlignmentSignals } from "./visitor-stations";
 
 /**
  * Why these tests matter: this is where the visitor's real position, the
@@ -203,10 +206,10 @@ function harness(
     },
     /** An aligned session whose tracking dropped (no AR pose this frame):
      *  no camera position, and the latest raw fix somewhere else. */
-    trackingLost: (fixN: number, fixE: number) => {
+    trackingLost: (fixN: number, fixE: number, accuracyM = 4) => {
       visitor = {
         nue: null,
-        accuracyM: 4,
+        accuracyM,
         fixNue: [fixN, 400, fixE],
         aligned: true,
         fixAtMs: now,
@@ -991,9 +994,13 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
     }
   });
 
-  it("an alignment that is not ready yet judges nothing: no arrival, no arrows, no breadcrumbs", () => {
-    // A good fix, a station 3 m away: the heading-less identity could be
-    // 180° wrong, so the photos wait for readiness and the stations too.
+  // Changed (r881 review H1): an alignment not yet ready used to judge
+  // nothing at all. Readiness (tracking-quality `ok`) needs a walk with
+  // turns, so a visitor standing at a station, or walking straight, could
+  // wait for ever with no guidance. Before readiness the fresh device fix
+  // stands in, judged by its own accuracy, as before any alignment; only
+  // what needs a heading (the HUD's arrows, the breadcrumbs) waits.
+  it("an alignment that is not ready yet judges by the fresh raw fix: found, but no arrows and no breadcrumbs", () => {
     const store = coldStart(4);
     const signals = { codeLinedUp: false, alignmentReady: false };
     const g = guideOn(
@@ -1002,16 +1009,17 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
       signals,
     );
     g.guide.tick();
-    expect(g.found).toEqual([]);
-    expect(g.targets.at(-1)?.() ?? []).toEqual([]);
-    expect(g.guides.at(-1)).toBeNull();
-    expect(g.dom.line.textContent).toBe(
-      "Next: GATE - waiting for your position…",
-    );
-    // Ready: the same position finds it.
-    signals.alignmentReady = true;
-    g.guide.tick();
     expect(g.found).toEqual(["gate"]);
+    const far = guideOn(
+      coldStart(4),
+      [station("gate", 30, 0, { foundRadiusM: 10 })],
+      { codeLinedUp: false, alignmentReady: false },
+    );
+    far.guide.tick();
+    expect(far.found).toEqual([]);
+    expect(far.dom.line.textContent).toBe("Next: GATE, 30 m");
+    expect(far.targets.at(-1)?.() ?? []).toEqual([]);
+    expect(far.guides.at(-1)).toBeNull();
   });
 
   it("a code that lined the alignment up is trusted whatever the raw fix: the courtyard tour is found at ±40 m", () => {
@@ -1024,5 +1032,158 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
     g.guide.tick();
     expect(g.found).toEqual(["well"]);
     expect(g.dom.line.textContent).not.toMatch(/too weak/);
+  });
+});
+
+// Why (r881 review H1): the stations' readiness is the tracking-quality
+// `ok` phase or a code. `ok` needs at least ten fixes, a walk of some
+// metres AND a spread of directions, so a visitor without a code who
+// stands at the first station, or walks straight to it, never reaches it.
+// This drives the real store and the page's own signals through such
+// walks: the readiness never comes, and the fresh device fix still finds
+// the station (before the review fix it was never found).
+describe("a visitor without a code while tracking is not ready (real store)", () => {
+  const T = 1_790_000_000_000;
+
+  /** One fix a second along `path` (north, east m at second s), the AR
+   *  pose and the fix agreeing, accuracy ±5 m; the guide ticks each
+   *  second. Returns when the station was found (s), and whether the
+   *  alignment was ever ready. */
+  function walk(
+    path: (s: number) => readonly [number, number],
+    target: TourStation,
+    seconds = 120,
+  ) {
+    // The page's own store (the tracking-quality middleware included).
+    const store = createTourViewerStore();
+    const ctx = { viewerLockedText: null, viewerVotedLocks: 0 };
+    const signals = stationAlignmentSignals(ctx, store);
+    let now = T;
+    let pose = { x: 0, y: 1.5, z: 0 };
+    let foundAt: number | null = null;
+    let second = 0;
+    let everReady = false;
+    let everTargets = false;
+    const hud: { targets: (() => WayfindingTarget[]) | null } = {
+      targets: null,
+    };
+    const guide = wireStationGuide({
+      dom: {
+        line: { textContent: "", hidden: true },
+        skip: { textContent: "", hidden: true },
+      },
+      tour: () => ({ stations: [target], order: "fixed" }),
+      placementAllowed: () => true,
+      zero: () => selectZeroReference(store.getState()),
+      visitor: () =>
+        visitorPosition({
+          alignment: selectAlignmentMatrix(store.getState()),
+          arPose: { position: pose },
+          gpsPositions: selectGpsPositions(store.getState()),
+          zero: selectZeroReference(store.getState()),
+        }),
+      ...signals,
+      startHud: (getTargets) => {
+        hud.targets = getTargets;
+        return { dispose: () => undefined };
+      },
+      now: () => now,
+      onFound: () => {
+        foundAt ??= second;
+      },
+    });
+    store.dispatch(setZeroPos(zero));
+    for (second = 0; second <= seconds; second += 1) {
+      const [n, e] = path(second);
+      now = T + second * 1000;
+      // WebXR: x east, y up, z south.
+      pose = { x: e, y: 1.5, z: -n };
+      store.dispatch(
+        poseReceived({
+          pose: { position: pose, orientation: { x: 0, y: 0, z: 0, w: 1 } },
+          sensorOrientation: null,
+        }),
+      );
+      const geo = calcGpsCoords(zero, [n, 0, e]);
+      store.dispatch(
+        recordGpsEvent({
+          odomPosition: [e, 1.5, -n],
+          odomRotation: [0, 0, 0, 1],
+          rawGpsPoint: {
+            id: `fix-${String(second)}`,
+            latitude: geo.lat,
+            longitude: geo.lon,
+            altitude: 400,
+            latLongAccuracy: 5,
+            timestamp: now,
+          },
+        }),
+      );
+      everReady ||= signals.alignmentReady();
+      guide.tick();
+      if ((hud.targets?.() ?? []).length > 0) everTargets = true;
+    }
+    return { foundAt, everReady, everTargets };
+  }
+
+  it("standing at the sample's 5 m station: never ready, found at once on the fix", () => {
+    const r = walk(() => [0, 0], station("column", 3, 0, { foundRadiusM: 5 }));
+    expect(r.everReady).toBe(false);
+    expect(r.foundAt).toBe(0);
+    expect(r.everTargets).toBe(false);
+  });
+
+  it("walking straight to a 5 m station 40 m away: never ready, found on arrival", () => {
+    const r = walk(
+      (s) => [Math.min(1.4 * s, 40), 0],
+      station("column", 40, 0, { foundRadiusM: 5 }),
+    );
+    expect(r.everReady).toBe(false);
+    // 1.4 m/s: inside 5 m of the station from 35 m on, second 25.
+    expect(r.foundAt).toBe(25);
+    // No arrows on the way: they need a heading the walk never gave.
+    expect(r.everTargets).toBe(false);
+  });
+});
+
+describe("review findings on the guide (r881)", () => {
+  // Why (r881 review L1): the trust a code earned was dropped with the
+  // camera position, so a tracking drop in a code-placed courtyard tour
+  // flipped the line to "GPS too weak (±60 m)" for the visitor whose
+  // position is the code's. The trust is the code's, not the frame's.
+  it("a tracking drop in a code-placed session waits for the position; it never says the GPS is too weak", () => {
+    const h = harness({
+      stations: [station("well", 30, 0)],
+      order: "fixed",
+    });
+    h.lined(true);
+    h.at(0, 0, 60);
+    expect(h.dom.line.textContent).toBe("Next: WELL, 30 m");
+    h.trackingLost(0, 0, 60);
+    expect(h.dom.line.textContent).toBe(
+      "Next: WELL - waiting for your position…",
+    );
+  });
+
+  // Why (r881 review M2): the skip clock started on the first render with
+  // no distance, and a clock with no distance suggests the skip after the
+  // bare allowance (2 min), so a visitor still waiting for a position was
+  // told to skip. The clock starts with the first distance, sized by it.
+  it("the skip clock waits for a distance: no suggestion while there is no position, then sized by the first distance", () => {
+    const h = harness({
+      stations: [station("tower", 300, 0)],
+      order: "fixed",
+    });
+    h.lost();
+    h.advance(skipSuggestAfterMs(null) + 1);
+    h.lost();
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+    h.at(0, 0);
+    h.advance(skipSuggestAfterMs(null) + 1);
+    h.at(0, 0);
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+    h.advance(skipSuggestAfterMs(300) - skipSuggestAfterMs(null));
+    h.at(0, 0);
+    expect(h.dom.skip.textContent).toBe("Skip TOWER - I can't get there");
   });
 });

@@ -101,7 +101,10 @@ p90), 120 seeds per cell:
 The judged path (r881): the shipped run's `observe` fed by
 `judgedAccuracy`, raw accuracy 3-500 m, found radius 5 m (the sample tour)
 and 25 m (the default), 120 seeds, a visitor standing on the spot for
-120 s and one walking past at three radii:
+120 s and one walking past at three radii. Without a code this is the
+aligned position once tracking is ready, and the fresh device fix before
+(the `raw` model; review H1: readiness may never come), so it describes
+production either way:
 
 - without a code, at or below the 25 m ceiling: as above (standing found
   in 99-100 % of runs; passing a 5 m station at 3 radii found by mistake
