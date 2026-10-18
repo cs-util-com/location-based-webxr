@@ -24,16 +24,19 @@
  *   blocks browsers, which the "download the file and open it here"
  *   advice exists for (tour kit plan K0).
  * - `/ranges-ok/no-gps-tour.zip` - the default tour with its `tour.json`
- *   marked `needsNoGps` (version 2, minor 2; Tour Viewer QR-first, owner
- *   decision Q-QF-1): its visitor is never asked for the location.
+ *   marked `needsNoGps` (Tour Viewer QR-first, owner decision Q-QF-1): its
+ *   visitor is never asked for the location.
  * - `/ranges-ok/details-tour.zip` - a tour carrying its details (tour
- *   editor plan 2026-10-17-1816, W2; minor 3): a name, a description, a
+ *   editor plan 2026-10-17-1816, W2): a name, a description, a
  *   contact, and a cover that is its SECOND photo (3 px wide; the first is
  *   1 px), so a page that took the first photo is told apart.
- * - `/ranges-ok/stations-tour.zip` - a `tour.json` version 2 with three
- *   stations (tour kit plan K4): one found by the fixture's printed code
- *   (a knight with a voice and a scene choice), one by walking to it (a
- *   `.glb` model), one far away for the skip.
+ * - `/ranges-ok/stations-tour.zip` - a tour with three stations (tour
+ *   kit plan K4): one at the fixture's printed code (a knight with a voice
+ *   and a scene choice), one found by walking to it (a `.glb` model), one
+ *   far away for the skip.
+ *
+ * Every `tour.json` here is version 3 (tour editor plan W3): stations at
+ * geo poses, pins and photos as their items.
  *
  * CORS: the app origin (the vite port) differs from this server's,
  * and `Range` is not a CORS-safelisted request header, so the preflight
@@ -50,9 +53,8 @@ import {
   ZipWriter,
 } from "@zip.js/zip.js";
 
-import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
-
-import { E2E_QR_TEXT, e2eQrLevelEntryName } from "./qr-fixture.mjs";
+import { e2eQrLevelEntryName } from "./qr-fixture.mjs";
+import { inOwnStation, stationAt } from "./v3-fixture.mjs";
 
 const port = Number(process.argv[2] ?? "5197");
 
@@ -67,8 +69,7 @@ const TINY_PNG = Uint8Array.from(
 /** The default tour: images, an authored level, padding. `withLevel: false`
  *  is the PLAIN tour (flows plan M4) - images only, no recording and no
  *  printed code: the "nothing to place" case the status line must name.
- *  `needsNoGps`: the same tour, its `tour.json` marked as needing no GPS
- *  (written at version 2, minor 2 - the revision that added the flag). */
+ *  `needsNoGps`: the same tour, its `tour.json` marked as needing no GPS. */
 async function buildZip({ withLevel = true, needsNoGps = false } = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   await writer.add("session.json", new TextReader('{"kind":"e2e-tour"}'));
@@ -111,17 +112,17 @@ async function buildZip({ withLevel = true, needsNoGps = false } = {}) {
       "tour.json",
       new TextReader(
         JSON.stringify({
-          ...(needsNoGps
-            ? { version: 2, minor: 2, needsNoGps: true }
-            : { version: 1 }),
-          objects: [
-            {
+          version: 3,
+          minor: 0,
+          ...(needsNoGps ? { needsNoGps: true } : {}),
+          stations: [
+            inOwnStation({
               id: "fixturepin01",
               kind: "pin",
-              geo: { lat: 47.50009, lon: 8.7, alt: 400, headingDeg: 0 },
+              geo: { lat: 47.50009, lon: 8.7, alt: 400 },
               createdAtIso: "2026-09-08T12:00:00.000Z",
               label: "Fixture pin",
-            },
+            }),
           ],
         }),
       ),
@@ -211,10 +212,10 @@ async function buildStationsZip() {
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 2,
+        version: 3,
+        minor: 0,
         title: "E2E castle",
         order: "fixed",
-        objects: [],
         assets: [
           { id: "knight", path: "content/knight.png", width: 1, height: 1 },
           { id: "voice", path: "content/voice.mp3" },
@@ -224,12 +225,11 @@ async function buildStationsZip() {
           {
             id: "gate",
             title: "The gate",
-            anchor: {
-              code: await qrCodeId(E2E_QR_TEXT),
-              geo: geo(2, 1),
-            },
+            geo: geo(2, 1),
             activateRadiusM: 30,
             foundRadiusM: 5,
+            hint: "arrow",
+            items: [],
             steps: [
               {
                 id: "knight",
@@ -262,9 +262,11 @@ async function buildStationsZip() {
           {
             id: "well",
             title: "The well",
-            anchor: { geo: geo(30, 0) },
+            geo: geo(30, 0),
             activateRadiusM: 20,
             foundRadiusM: 5,
+            hint: "arrow",
+            items: [],
             steps: [
               {
                 id: "arch",
@@ -279,9 +281,11 @@ async function buildStationsZip() {
           {
             id: "tower",
             title: "The tower",
-            anchor: { geo: geo(0, 300) },
+            geo: geo(0, 300),
             activateRadiusM: 20,
             foundRadiusM: 5,
+            hint: "arrow",
+            items: [],
             steps: [{ id: "top", block: { kind: "text", text: "The top." } }],
           },
         ],
@@ -391,21 +395,25 @@ async function buildRecordingZip() {
  */
 async function buildBakedZip() {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
-  const spot = (i, lat) => ({
+  const spot = (i) => ({
     image: `images/frame-${String(i)}.png`,
-    geo: { lat, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+    station: `walk-${String(i)}`,
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
   });
   await writer.add(
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 2,
-        minor: 1,
-        objects: [],
+        version: 3,
+        minor: 0,
+        stations: [
+          stationAt("walk-0", { lat: 47.50002, lon: 8.7, alt: 400 }),
+          stationAt("walk-1", { lat: 47.50011, lon: 8.7, alt: 400 }),
+        ],
         captureSpots: {
           fixes: 7,
           gpsAccuracyMedianM: 3,
-          captures: [spot(0, 47.50002), spot(1, 47.50011)],
+          captures: [spot(0), spot(1)],
         },
       }),
     ),
@@ -492,13 +500,16 @@ async function buildDetailsZip() {
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 2,
-        minor: 3,
+        version: 3,
+        minor: 0,
         title: "Harbour Lights",
         description: "Six places along the old harbour.",
         cover: "second",
         contact: "guide@example.org",
-        objects: [photo("first", 1, 47.5), photo("second", 3, 47.5001)],
+        stations: [
+          inOwnStation(photo("first", 1, 47.5)),
+          inOwnStation(photo("second", 3, 47.5001)),
+        ],
       }),
     ),
   );

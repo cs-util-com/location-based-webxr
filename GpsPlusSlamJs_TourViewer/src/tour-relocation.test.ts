@@ -34,7 +34,8 @@ function geoStation(
 ): TourStation {
   return {
     id,
-    anchor: { geo: { lat, lon, alt, headingDeg: 90 } },
+    geo: { lat, lon, alt, headingDeg: 90 },
+    items: [],
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
@@ -68,8 +69,8 @@ describe("createStationRelocator", () => {
     const later = relocate(stations, { lat: 40.7, lon: -74, alt: 10 });
     // Moved once, at the first fix; a later fix does not drag the tour.
     expect(moves).toEqual([{ lat: 52.52, lon: 13.4, alt: 30 }]);
-    expect(later?.[0]?.anchor.geo?.lat).toBeCloseTo(
-      first?.[0]?.anchor.geo?.lat ?? Number.NaN,
+    expect(later?.[0]?.geo.lat).toBeCloseTo(
+      first?.[0]?.geo.lat ?? Number.NaN,
       9,
     );
   });
@@ -89,7 +90,7 @@ describe("createStationRelocator", () => {
       lon: 13.4,
       alt: Number.NaN,
     });
-    expect(moved[0]?.anchor.geo?.alt).toBe(519);
+    expect(moved[0]?.geo.alt).toBe(519);
   });
 
   it("moves a new tour again from the kept fix", () => {
@@ -97,7 +98,7 @@ describe("createStationRelocator", () => {
     relocate(stations, { lat: 52.52, lon: 13.4, alt: 30 });
     const other = [geoStation("b", 40, 0)];
     const moved = relocate(other, null);
-    expect(moved?.[0]?.anchor.geo?.lat).toBeGreaterThan(52.52);
+    expect(moved?.[0]?.geo.lat).toBeGreaterThan(52.52);
   });
 });
 
@@ -121,7 +122,7 @@ describe("relocateStations", () => {
 
   it("puts the first station a few metres north of the phone", () => {
     const moved = relocateStations(marienplatz, here);
-    const first = moved[0]?.anchor.geo;
+    const first = moved[0]?.geo;
     expect(first).toBeDefined();
     if (first === undefined) return;
     expect(first.lat).toBeGreaterThan(here.lat);
@@ -133,14 +134,8 @@ describe("relocateStations", () => {
     const moved = relocateStations(marienplatz, here);
     for (let i = 0; i < marienplatz.length; i += 1) {
       for (let j = i + 1; j < marienplatz.length; j += 1) {
-        const before = metresBetween(
-          marienplatz[i]!.anchor.geo!,
-          marienplatz[j]!.anchor.geo!,
-        );
-        const after = metresBetween(
-          moved[i]!.anchor.geo!,
-          moved[j]!.anchor.geo!,
-        );
+        const before = metresBetween(marienplatz[i]!.geo, marienplatz[j]!.geo);
+        const after = metresBetween(moved[i]!.geo, moved[j]!.geo);
         expect(Math.abs(after - before)).toBeLessThan(0.05);
       }
     }
@@ -152,29 +147,21 @@ describe("relocateStations", () => {
       geoStation("b", 48.1376, 11.5755, 523),
     ];
     const moved = relocateStations(tall, here);
-    expect(moved[1]!.anchor.geo!.alt - moved[0]!.anchor.geo!.alt).toBeCloseTo(
-      4,
-      6,
-    );
-    expect(moved[1]!.anchor.geo!.headingDeg).toBe(90);
+    expect(moved[1]!.geo.alt - moved[0]!.geo.alt).toBeCloseTo(4, 6);
+    expect(moved[1]!.geo.headingDeg).toBe(90);
   });
 
-  it("leaves a station without a spot of its own (an old code-only one, D9) untouched", () => {
-    const codeOnly: TourStation = {
-      id: "gate",
-      anchor: { code: "qr-level-1" },
-      activateRadiusM: 30,
-      foundRadiusM: 5,
-      hint: "arrow",
-      steps: [],
-    };
-    const moved = relocateStations([codeOnly, ...marienplatz], here);
-    expect(moved[0]).toBe(codeOnly);
-    // The first GEO station is the one placed north of the phone.
-    expect(metresBetween(here, moved[1]!.anchor.geo!)).toBeCloseTo(
+  it("moves every station: a version 3 station always has its own spot (D9)", () => {
+    const moved = relocateStations(marienplatz, here);
+    expect(moved).toHaveLength(marienplatz.length);
+    expect(metresBetween(here, moved[0]!.geo)).toBeCloseTo(
       RELOCATE_LEAD_NORTH_M,
       1,
     );
+  });
+
+  it("an empty tour stays empty", () => {
+    expect(relocateStations([], here)).toEqual([]);
   });
 
   it("returns the stations unchanged when none has a geo pose", () => {
@@ -209,14 +196,8 @@ describe("relocateStations", () => {
             alt: 0,
           });
           for (let i = 1; i < stations.length; i += 1) {
-            const before = metresBetween(
-              stations[0]!.anchor.geo!,
-              stations[i]!.anchor.geo!,
-            );
-            const after = metresBetween(
-              moved[0]!.anchor.geo!,
-              moved[i]!.anchor.geo!,
-            );
+            const before = metresBetween(stations[0]!.geo, stations[i]!.geo);
+            const after = metresBetween(moved[0]!.geo, moved[i]!.geo);
             // 1 % of the distance plus 5 cm: the local flat-earth step over
             // up to about 700 m.
             expect(Math.abs(after - before)).toBeLessThan(before * 0.01 + 0.05);

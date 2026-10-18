@@ -41,11 +41,11 @@ import {
   readStoredEntryBytes,
 } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
 import {
-  createEmptyTourManifest,
   parseTourManifest,
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type {
+  TourCaptureSpots,
   TourManifest,
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -66,6 +66,8 @@ import { openTourFile, type TourSession } from "./tour-session.js";
 import { describeTourTrust } from "./tour-trust-view.js";
 import { linkTrustKey, type TrustStorage } from "./tour-trust.js";
 import { FINISH_LABELS } from "./qr-author-mode.js";
+import { tourOf, withWorldObjects } from "./test-support/v3-tour.js";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 /** The element surface `creator-setup` writes to, and nothing else. */
 interface FakeEl {
@@ -172,7 +174,7 @@ async function hostedArchive(
   existing: readonly TourObject[],
   content: readonly { path: string; data: string }[] = [],
 ): Promise<Blob> {
-  const manifest = { ...createEmptyTourManifest(), objects: [...existing] };
+  const manifest = tourOf([...existing]);
   return packFilesAsZip([
     { path: `${WRAP}tour.json`, data: serializeTourManifest(manifest) },
     { path: `${WRAP}qr/${LEVEL_ID}.json`, data: '{"old":true}' },
@@ -289,11 +291,7 @@ async function wireFinishable(options: {
     ...options.sessionExtras,
   }) as never;
   ctx.tourManifestStatus = "settled";
-  ctx.tourManifest = {
-    ...createEmptyTourManifest(),
-    objects: [...options.hosted],
-    ...options.manifestExtras,
-  };
+  ctx.tourManifest = tourOf([...options.hosted], options.manifestExtras);
   ctx.deletedObjectIds = [...(options.deleted ?? [])];
   ctx.placedObjects = [
     ...options.placed.map((object) => ({ object })),
@@ -397,10 +395,7 @@ describe("the finish rebuilds the open archive under its session's budget (K0 mi
  *  from a file: the shape a Finish of a K1 tour starts from. */
 async function listedHostedSession(signed: boolean, withLevel = true) {
   const files = {
-    "tour.json": serializeTourManifest({
-      ...createEmptyTourManifest(),
-      objects: [pin("already-there")],
-    }),
+    "tour.json": serializeTourManifest(tourOf([pin("already-there")])),
     ...(withLevel ? { [`qr/${LEVEL_ID}.json`]: '{"old":true}' } : {}),
     "content/kept.jpg": "0123456789",
   };
@@ -527,7 +522,7 @@ describe("the finish continues a listed tour's series, unsigned (K1 milestone re
     await session.close();
   });
 
-  it("a tour that uses nothing of version 2 is published as tour.json version 1, which older builds open (K1 milestone review R10)", async () => {
+  it("a Finish publishes tour.json version 3, minor 0 (tour editor plan W3; older builds refuse it with 'update the app', D5)", async () => {
     const { dom, ctx } = await wireFinishable({
       hosted: [pin("already-there")],
       placed: [pin("new-one")],
@@ -539,7 +534,8 @@ describe("the finish continues a listed tour's series, unsigned (K1 milestone re
       `${WRAP}tour.json`,
     );
     expect(JSON.parse(new TextDecoder().decode(bytes))).toMatchObject({
-      version: 1,
+      version: 3,
+      minor: 0,
     });
   });
 });
@@ -620,7 +616,7 @@ describe("what the finish actually writes into the published zip", () => {
     const written = parseTourManifest(
       JSON.parse(new TextDecoder().decode(bytes)),
     );
-    const ids = written.objects.map((o) => o.id);
+    const ids = tourObjects(written).map((o) => o.id);
     expect(ids).toEqual(["already-there", "genuinely-new"]);
     expect(
       new Set(ids).size,
@@ -636,7 +632,9 @@ async function publishedManifest(blob: Blob) {
     `${WRAP}tour.json`,
   );
   expect(bytes, "the archive must carry a manifest").toBeDefined();
-  return parseTourManifest(JSON.parse(new TextDecoder().decode(bytes)));
+  return withWorldObjects(
+    parseTourManifest(JSON.parse(new TextDecoder().decode(bytes))),
+  );
 }
 
 function photo(id: string): TourObject {
@@ -668,7 +666,10 @@ describe("edits and deletions reach the published zip (authoring plan 2026-09-28
     expect(ctx.finishError).toBeNull();
     const written = await publishedManifest(ctx.rebuiltZip!.blob);
     expect(written.objects.map((o) => o.id)).toEqual(["a", "b", "c"]);
-    expect(written.objects[1]).toEqual(edited);
+    expect(written.objects[1]).toMatchObject({
+      id: "b",
+      label: "the new text",
+    });
     // The edit is in the zip, so it leaves the list of work to write.
     expect(ctx.placedObjects).toEqual([]);
   });
@@ -808,14 +809,13 @@ describe("the troubleshooting recording's log of the finish", () => {
     const finished = dispatched.filter(
       (a) => (a as { type: string }).type === "tourAuthoring/finished",
     ) as {
-      payload: { levelId: string; manifest: { objects: TourObject[] } };
+      payload: { levelId: string; manifest: TourManifest };
     }[];
     expect(finished).toHaveLength(1);
     expect(finished[0]!.payload.levelId).toBe(LEVEL_ID);
-    expect(finished[0]!.payload.manifest.objects.map((o) => o.id)).toEqual([
-      "already-there",
-      "new-one",
-    ]);
+    expect(tourObjects(finished[0]!.payload.manifest).map((o) => o.id)).toEqual(
+      ["already-there", "new-one"],
+    );
   });
 
   // Why this test matters (code book plan §3, M4 milestone review #6): a
@@ -878,8 +878,8 @@ describe("the finish settles the AR visit still running (authoring plan 2026-09-
     );
     const finished = dispatched.find(
       (a) => (a as { type: string }).type === "tourAuthoring/finished",
-    ) as { payload: { manifest: { objects: TourObject[] } } };
-    const written = finished.payload.manifest.objects[0]!;
+    ) as { payload: { manifest: TourManifest } };
+    const written = tourObjects(finished.payload.manifest)[0]!;
     const expected = new Vector3(2, 0, -1).applyMatrix4(
       new Matrix4().fromArray(END),
     );
@@ -971,7 +971,7 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     >;
   }
 
-  it("writes the spots of a tour that carries a recording, at minor 1", async () => {
+  it("writes the spots of a tour that carries a recording, each photo in a station", async () => {
     const recording = await recordingExtras();
     const { dom, ctx } = await wireFinishable({
       hosted: [],
@@ -982,8 +982,13 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     await settle(ctx);
     expect(ctx.finishError).toBeNull();
     const written = await writtenManifest(ctx);
-    expect(written).toMatchObject({ version: 2, minor: 1 });
-    const spots = parseTourManifest(written).captureSpots;
+    expect(written).toMatchObject({ version: 3, minor: 0 });
+    const read = parseTourManifest(written);
+    const spots = read.captureSpots;
+    const stations = new Set(read.stations.map((s) => s.id));
+    for (const c of spots?.captures ?? []) {
+      expect(stations.has(c.station)).toBe(true);
+    }
     // 5 of 6: the fixture's first photo precedes the GPS zero.
     expect(spots?.captures).toHaveLength(5);
     // The in-memory manifest advances with it, as with objects.
@@ -992,13 +997,14 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
 
   it("does not bake again when the tour already carries its spots", async () => {
     const recording = await recordingExtras();
-    const spots = {
+    const spots: TourCaptureSpots = {
       fixes: 9,
       gpsAccuracyMedianM: 2,
       captures: [
         {
           image: "images/frame-000002.jpg",
-          geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+          station: "walk",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
         },
       ],
     };
@@ -1006,7 +1012,20 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
       hosted: [],
       placed: [pin("new-one")],
       sessionExtras: recording.extras,
-      manifestExtras: { captureSpots: spots as never },
+      manifestExtras: {
+        stations: [
+          {
+            id: "walk",
+            geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+            activateRadiusM: 50,
+            foundRadiusM: 25,
+            hint: "arrow",
+            steps: [],
+            items: [],
+          },
+        ],
+        captureSpots: spots,
+      },
     });
     dom.finishButton.click();
     await settle(ctx);
@@ -1586,7 +1605,10 @@ describe("desk edits: a Finish with no AR visit (code book plan M4d, §9 D4)", (
     expect(ctx.finishError).toBeNull();
     const blob = ctx.rebuiltZip!.blob;
     const written = await publishedManifest(blob);
-    expect(written.objects[1]).toEqual(edited);
+    expect(written.objects[1]).toMatchObject({
+      id: "b",
+      label: "the new text",
+    });
     // The hosted level file is kept as it was: nothing rewrote it.
     const names = await entryNamesOf(blob);
     expect(names).toContain(`${WRAP}qr/${LEVEL_ID}.json`);

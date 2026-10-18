@@ -9,7 +9,10 @@
 
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
-import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  tourItems,
+  type TourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourMediaTypeOfEntry } from "gps-plus-slam-app-framework/ar/tour-media";
 import { signedManifestFilesOf } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
@@ -34,7 +37,7 @@ export function visitorEntryNames(
   const named = new Set<string>([
     `${wrap}${TOUR_MANIFEST_ENTRY}`,
     ...signedManifestFilesOf(entryNames),
-    ...manifest.objects.flatMap((o) =>
+    ...tourItems(manifest).flatMap((o) =>
       o.kind === "photo" ? [`${wrap}${o.image}`] : [],
     ),
     ...manifest.assets.map((a) => `${wrap}${a.path}`),

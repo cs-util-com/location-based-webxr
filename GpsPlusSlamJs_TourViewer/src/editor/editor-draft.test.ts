@@ -20,12 +20,10 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  createEmptyTourManifest,
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
-import { objectContentKey } from "../authoring-draft.js";
 import { recordUndoDelete } from "../draft-actions.js";
 import { META_KEY, objectKey, readDraft } from "../draft-persistence.js";
 import {
@@ -36,6 +34,8 @@ import {
   type NoBackupReason,
 } from "./editor-draft.js";
 import type { EditorLock } from "./save-target.js";
+import { tourOf } from "../test-support/v3-tour.js";
+import { hostedObjects } from "../authoring-draft.js";
 
 /** One browser's draft directories: namespace -> files. `failIn` makes
  *  one namespace's writes refuse; `holdPuts` holds every write until
@@ -202,7 +202,7 @@ function photo(id: string, lat = 48.5): TourObject {
 }
 
 function tour(...objects: TourObject[]): TourManifest {
-  return { ...createEmptyTourManifest(), objects };
+  return tourOf(objects);
 }
 
 const K1 = "local-file:00000000000000000000000000000001";
@@ -222,7 +222,8 @@ describe("createEditorDraft", () => {
     const stored = await readDraft((await b.open(editorDraftKey(K1)))!);
     expect(stored?.draft.objects.map((o) => o.id)).toEqual(["a"]);
     expect(stored?.draft.bases?.get("a")).toEqual({
-      seen: [objectContentKey(pin("a"))],
+      // The opened version as the file holds it (in its station).
+      seen: [hostedObjects(opened).key("a")],
       written: [],
     });
   });

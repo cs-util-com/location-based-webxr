@@ -41,6 +41,7 @@ import {
 } from "./draft-persistence.js";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { ObjectListHandlers } from "./object-list.js";
+import { asHosted, tourOf } from "./test-support/v3-tour.js";
 
 /** One fake element: the properties this module writes, and a click it can
  *  be told to fire. Not a DOM stand-in - only what `creator-setup` uses. */
@@ -932,7 +933,7 @@ describe("the spent-draft path", () => {
     const { ctx, dom, setup } = wire(store);
     // The hosted manifest already carries it, and the draft holds no
     // measurement, so `draftIsSpent` is true.
-    ctx.tourManifest = { objects: [pin("hosted")] } as never;
+    ctx.tourManifest = tourOf([pin("hosted")]);
 
     // Set explicitly first: the fake element starts visible, so "still
     // hidden" would otherwise be true for the wrong reason.
@@ -969,7 +970,7 @@ describe("the spent-draft path", () => {
       { removeNeverSettles: true },
     );
     const { ctx, setup } = wire(store);
-    ctx.tourManifest = { objects: [pin("hosted")] } as never;
+    ctx.tourManifest = tourOf([pin("hosted")]);
 
     setup.presentDraftForTour(TOUR);
     await settle();
@@ -994,7 +995,7 @@ describe("the spent-draft path", () => {
       { putFails: true },
     );
     const { ctx, setup } = wire(store);
-    ctx.tourManifest = { objects: [pin("hosted")] } as never;
+    ctx.tourManifest = tourOf([pin("hosted")]);
 
     setup.presentDraftForTour(TOUR);
     await settle();
@@ -1304,7 +1305,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
       [objectKey("hosted")]: JSON.stringify(EDITED),
     });
     const { ctx, dom, setup } = wire(store);
-    ctx.tourManifest = { version: 1, objects: [HOSTED] } as never;
+    ctx.tourManifest = tourOf([HOSTED]);
     dom.draftOffer.hidden = true;
     setup.presentDraftForTour(TOUR);
     await settle();
@@ -1322,7 +1323,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
       [deletedKey("hosted")]: "1",
     });
     const { ctx, dom, setup } = wire(store);
-    ctx.tourManifest = { version: 1, objects: [HOSTED] } as never;
+    ctx.tourManifest = tourOf([HOSTED]);
     dom.draftOffer.hidden = true;
     setup.presentDraftForTour(TOUR);
     await settle();
@@ -1340,7 +1341,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
       [deletedKey("gone")]: "1",
     });
     const { ctx, dom, setup } = wire(store);
-    ctx.tourManifest = { version: 1, objects: [HOSTED] } as never;
+    ctx.tourManifest = tourOf([HOSTED]);
     dom.draftOffer.hidden = true;
     setup.presentDraftForTour(TOUR);
     await settle();
@@ -1358,7 +1359,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
       [objectKey("hosted")]: JSON.stringify(HOSTED),
     });
     const { ctx, setup } = wire(store);
-    ctx.tourManifest = { version: 1, objects: [HOSTED] } as never;
+    ctx.tourManifest = tourOf([HOSTED]);
     ctx.placedObjects = [{ object: EDITED }];
     setup.presentDraftForTour(TOUR);
     await settle();
@@ -1388,15 +1389,17 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   //   could land after a quick delete of it.
   const HOSTED = pin("hosted");
   const NEW_TEXT = "the new text";
-  const EDITED: TourObject = { ...HOSTED, label: NEW_TEXT };
+  // An edit starts from the hosted pin as its station reads it back
+  // (version 3).
+  const EDITED: TourObject = { ...asHosted(HOSTED), label: NEW_TEXT };
   const OLDER: TourObject = { ...HOSTED, label: "an older edit" };
-  const PUBLISHED = { version: 1, objects: [HOSTED] };
+  const PUBLISHED = tourOf([HOSTED]);
 
   /** Open the tour on `store` in a fresh page (a reopen after the tab
    *  died), with the hosted zip carrying `HOSTED`. */
   async function reopen(store: DraftFileStore) {
     const page = wire(store);
-    page.ctx.tourManifest = PUBLISHED as never;
+    page.ctx.tourManifest = PUBLISHED;
     page.dom.draftOffer.hidden = true;
     page.setup.presentDraftForTour(TOUR);
     await settle();
@@ -1601,7 +1604,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
       [objectKey("hosted")]: JSON.stringify(OLDER),
     });
     const { ctx, setup } = wire(store);
-    ctx.tourManifest = PUBLISHED as never;
+    ctx.tourManifest = PUBLISHED;
     // Made before the draft namespace opened: nothing to write it to yet.
     ctx.placedObjects = [{ object: EDITED }];
     setup.presentDraftForTour(TOUR);
@@ -1616,7 +1619,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
       [objectKey("hosted")]: JSON.stringify(OLDER),
     });
     const { ctx, setup } = wire(store);
-    ctx.tourManifest = PUBLISHED as never;
+    ctx.tourManifest = PUBLISHED;
     ctx.deletedObjectIds = ["hosted"];
     setup.presentDraftForTour(TOUR);
     await settle();

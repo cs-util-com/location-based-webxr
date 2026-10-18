@@ -19,8 +19,8 @@ when their text changes).
   - `farFromCodes` - the names of the stations farther than
     `NO_GPS_CODE_REACH_M` (horizontal, `move-with-code.ts` `horizontalM`)
     from every code that can place the tour (`scan-gate.ts`
-    `isLockableLevel`: a printed size and a position), and of a station
-    with no spot of its own (never reached, D9), in the story's order,
+    `isLockableLevel`: a printed size and a position), in the story's
+    order (every station has its own geo pose since version 3, D9),
     named as the rail names them (`station-run.ts` `stationTitle`: the
     title, else "Station N").
   - `codesPlace` - whether one of the tour's codes can place it: the

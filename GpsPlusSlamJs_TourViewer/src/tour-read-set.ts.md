@@ -17,7 +17,8 @@ out too.
   - every code level (`qrLevelIdFromEntryName`, wherever it sits: an
     unlisted tour keeps its levels at the root);
   - the signed list and its signature (`signedManifestFilesOf`);
-  - each photo object's and each asset's file, under `wrap`;
+  - each photo item's (every station's, `tourItems`) and each asset's
+    file, under `wrap`;
   - the photos `captureSpots` names (the recording's own entry names);
   - for a tour WITHOUT baked spots, every image entry, because that is
     what the photo ring shows.

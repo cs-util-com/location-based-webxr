@@ -113,7 +113,7 @@ export interface StationGuide {
   skipTapped(): void;
   /** The AR session ended: the HUD goes; the progress stays. */
   endSession(): void;
-  /** A station's pose at the scene root, or null (no zero, no spot). */
+  /** A station's pose at the scene root, or null (no zero yet). */
   poseOf(stationId: string): StagePose | null;
 }
 
@@ -185,8 +185,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function computePose(stationId: string): StagePose | null {
     const zero = measuredZero === undefined ? deps.zero() : measuredZero;
     const station = stationById(stationId);
-    if (zero === null || station?.anchor.geo === undefined) return null;
-    return objectPoseNue(station.anchor.geo, zero);
+    if (zero === null || station === undefined) return null;
+    return objectPoseNue(station.geo, zero);
   }
 
   /** Measure once: the visitor, the zero, every station's pose and
@@ -356,8 +356,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (visitor.accuracyM !== null && visitor.accuracyM > ACCURACY_CEILING_M) {
       return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(visitor.accuracyM)}); step into the open.`;
     }
+    // Every station has a spot of its own (version 3, D9): no distance
+    // yet means no session zero to measure it in yet.
     if (d === undefined) {
-      return `${lead}${waiting} - it has no spot to guide you to.`;
+      return `${lead}${waiting} - waiting for your position…`;
     }
     return `${lead}${waiting}, ${distanceText(d)}`;
   }

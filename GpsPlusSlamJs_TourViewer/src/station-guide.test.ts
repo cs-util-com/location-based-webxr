@@ -45,11 +45,12 @@ function station(
   return {
     id,
     title: id.toUpperCase(),
-    anchor: { geo: { lat: geo.lat, lon: geo.lon, alt: 400, headingDeg: 0 } },
+    geo: { lat: geo.lat, lon: geo.lon, alt: 400, headingDeg: 0 },
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
     steps: [step],
+    items: [],
     ...extra,
   };
 }
@@ -217,23 +218,6 @@ describe("wireStationGuide", () => {
     expect(h.dom.line.textContent).toBe(
       "2 stations to find - nearest: WELL, 30 m",
     );
-  });
-
-  it("a station without a spot of its own is never pointed at nor reached, even standing at its code (D9)", () => {
-    // Why this test matters (tour editor plan D9): a station is a pin with
-    // a pose; a code-only station is gone, and a code lock is no arrival.
-    const s: TourStation = {
-      ...station("cellar", 0, 0),
-      anchor: { code: "lvl-a" },
-    };
-    const h = harness({ stations: [s], order: "fixed" });
-    h.at(0, 0);
-    h.guide.codeLocked();
-    expect(h.found).toEqual([]);
-    expect(h.dom.line.textContent).toBe(
-      "Next: CELLAR - it has no spot to guide you to.",
-    );
-    expect(h.huds[0]!.getTargets()).toEqual([]);
   });
 
   it("says when it has no position yet, or the GPS is too weak to guide", () => {

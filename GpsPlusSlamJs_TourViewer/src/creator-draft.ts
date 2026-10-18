@@ -25,8 +25,8 @@ import {
   draftObjectsNotYetHosted,
   draftObjectsPublished,
   draftObjectsSuperseded,
+  hostedObjects,
   manifestAsRead,
-  objectContentKey,
   restoredText,
   supersededLine,
   restoreOfferText,
@@ -292,8 +292,7 @@ export function wireCreatorDraft(deps: {
    *  open (`reset`, `present`), whose tour is not the one edited (third
    *  review #1). */
   function seenKey(id: string): string | undefined {
-    const hosted = opened?.objects.find((o) => o.id === id);
-    return hosted === undefined ? undefined : objectContentKey(hosted);
+    return hostedObjects(opened).key(id);
   }
 
   function recordPlacement(object: TourObject, blob?: Blob): void {
@@ -826,15 +825,21 @@ export function wireCreatorDraft(deps: {
       // base now (M6 E2p), so a later delete elsewhere is not undone. Not
       // on the spent path above, which must leave the files alone when its
       // commit is refused.
+      // The hosted key, which a stored copy reads back as.
+      const published = hostedObjects(opened);
       for (const o of draftObjectsPublished(stored.draft, opened)) {
+        const key = published.key(o.id);
+        if (key === undefined) continue;
         void writeForObject(store, tourUrl, o.id, (s) =>
-          addDraftBaseKey(s, o.id, "seen", objectContentKey(o)),
+          addDraftBaseKey(s, o.id, "seen", key),
         );
       }
       const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
       // New placements, and changes of objects the hosted zip carries.
-      const hostedIds = new Set((opened?.objects ?? []).map((o) => o.id));
-      const changed = waiting.filter((o) => hostedIds.has(o.id)).length;
+      const hosted = hostedObjects(opened);
+      const changed = waiting.filter(
+        (o) => hosted.key(o.id) !== undefined,
+      ).length;
       const counts = { placed: waiting.length - changed, changed };
       // A level measured before this open is newer than the offered
       // draft's and would otherwise live only in memory; a mint after the
@@ -918,11 +923,10 @@ export function wireCreatorDraft(deps: {
       const tourUrl = draftTourUrl;
       if (store === undefined || tourUrl === null) return;
       // As a reader of the written file sees it (third review #5).
-      const read = manifestAsRead(written);
+      const read = hostedObjects(manifestAsRead(written));
       for (const id of ids) {
-        const object = read.objects.find((o) => o.id === id);
-        if (object === undefined) continue;
-        const key = objectContentKey(object);
+        const key = read.key(id);
+        if (key === undefined) continue;
         void writeForObject(store, tourUrl, id, (s) =>
           addDraftBaseKey(s, id, "written", key),
         );
@@ -938,11 +942,10 @@ export function wireCreatorDraft(deps: {
       // the version the creator just said is hosted (a later Finish carries
       // them on); an object absent from it is not noted. As a reader of
       // that file sees them (third review #5).
-      const read = manifestAsRead(written);
+      const read = hostedObjects(manifestAsRead(written));
       const notes = [...finishedIds].flatMap((id) => {
-        const object = read.objects.find((o) => o.id === id);
-        if (object === undefined) return [];
-        const key = objectContentKey(object);
+        const key = read.key(id);
+        if (key === undefined) return [];
         return [draftWrite(id, (s) => addDraftBaseKey(s, id, "seen", key))];
       });
       return (await Promise.all(notes)).every(Boolean);

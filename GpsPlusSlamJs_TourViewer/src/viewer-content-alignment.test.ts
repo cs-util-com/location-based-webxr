@@ -34,6 +34,7 @@
  * settles.
  */
 import { describe, expect, it, vi } from "vitest";
+import { tourOf } from "./test-support/v3-tour.js";
 import { Matrix4, Object3D, Scene, Vector3 } from "three";
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -236,7 +237,7 @@ async function visitorSession(
     loadContentEntry: () => Promise.reject(new Error("no photos here")),
     ...sessionOverrides,
   } as unknown as TourSession;
-  ctx.tourManifest = { version: 1, objects: [pin] } as never;
+  ctx.tourManifest = tourOf([pin]);
   ctx.tourManifestStatus = "settled";
   ctx.currentLevels = new Map([[await qrCodeId(TEXT), level]]);
   ctx.placementUnsubscribe = () => undefined; // a viewer session is live
@@ -372,6 +373,12 @@ function walk(s: Awaited<ReturnType<typeof visitorSession>>, laps = 0): void {
   s.clock.nowMs = t + 500; // the scan follows the walk
 }
 
+/** What the rendered content hangs under: a label's group, its station's
+ *  group (version 3, tour editor plan W3), the content's root, then this. */
+function hungUnder(label: Object3D): Object3D | null {
+  return label.parent?.parent?.parent?.parent ?? null;
+}
+
 describe("viewer content follows the live alignment (D10a, M2d)", () => {
   it("is placed at the scene root on the first voted lock, through the alignment that lock's votes already corrected, and never re-placed", async () => {
     const s = await visitorSession(8);
@@ -405,7 +412,7 @@ describe("viewer content follows the live alignment (D10a, M2d)", () => {
     await flush();
     // At the scene root, in the session's NUE: no anchor, not under the
     // odometry group, and exactly where the pin's geo puts it.
-    expect(s.label.parent?.parent).toBe(s.scene);
+    expect(hungUnder(s.label)).toBe(s.scene);
     const placed = s.label.getWorldPosition(new Vector3());
     const pinScene: NumTriple = [placed.x, placed.y, placed.z];
     expect(
@@ -460,7 +467,7 @@ describe("viewer content follows the live alignment (D10a, M2d)", () => {
     expect(s.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
     for (let i = 1; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) await s.frame();
     await flush();
-    expect(s.label.parent?.parent).toBe(s.scene);
+    expect(hungUnder(s.label)).toBe(s.scene);
     const placed = s.label.getWorldPosition(new Vector3());
     const after = selectAlignmentMatrix(s.arStore.getState())!;
     // Votes alone, exact by construction: the pin lands on its true spot.
@@ -521,7 +528,7 @@ describe("after a code-set zero the content shows on the first voted lock (no co
     s.clock.nowMs = T0 + 500;
     expect(await firstVotedLock(s)).toBe(1);
     await flush();
-    expect(s.label.parent?.parent).toBe(s.scene);
+    expect(hungUnder(s.label)).toBe(s.scene);
     await s.frame();
     await s.frame();
     expect(s.syntheticVotes()).toBe(3 * VIEWER_VOTE_COUNT);
@@ -547,7 +554,8 @@ describe("after a code-set zero the content shows on the first voted lock (no co
       {
         id: "tower",
         title: "TOWER",
-        anchor: { geo: levelGeo },
+        geo: levelGeo,
+        items: [],
         activateRadiusM: 30,
         foundRadiusM: 5,
         hint: "arrow",
@@ -681,7 +689,7 @@ describe("after a code-set zero the content shows on the first voted lock (no co
       expect(await firstVotedLock(s)).toBe(1);
       for (let i = 1; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) await s.frame();
       await flush();
-      expect(s.label.parent?.parent).toBe(s.scene);
+      expect(hungUnder(s.label)).toBe(s.scene);
       return s;
     }
 
@@ -719,10 +727,10 @@ describe("after a code-set zero the content shows on the first voted lock (no co
       const s = await firstEntryShown();
       reEnterAr(s);
       expect(selectZeroReference(s.arStore.getState())).not.toBeNull();
-      expect(s.label.parent?.parent).not.toBe(s.scene);
+      expect(hungUnder(s.label)).not.toBe(s.scene);
       s.clock.nowMs = T0 + 60_000;
       await oneLock(s);
-      expect(s.label.parent?.parent).toBe(s.scene);
+      expect(hungUnder(s.label)).toBe(s.scene);
       expect(biasedFixes(s, T0 + 60_000)).toBeLessThan(1);
     }, 60_000);
 
@@ -731,7 +739,7 @@ describe("after a code-set zero the content shows on the first voted lock (no co
       switchTour(s);
       s.clock.nowMs = T0 + 60_000;
       await oneLock(s);
-      expect(s.label.parent?.parent).toBe(s.scene);
+      expect(hungUnder(s.label)).toBe(s.scene);
       expect(biasedFixes(s, T0 + 60_000)).toBeLessThan(1);
     }, 60_000);
   });
@@ -776,7 +784,7 @@ describe("a code's rotation is not overwritten by the first compass reading (the
     s.clock.nowMs = T0 + 500;
     expect(await firstVotedLock(s)).toBe(1);
     await flush();
-    expect(s.label.parent?.parent).toBe(s.scene);
+    expect(hungUnder(s.label)).toBe(s.scene);
     await s.frame();
     await s.frame();
     expect(s.syntheticVotes()).toBe(3 * VIEWER_VOTE_COUNT);
@@ -813,7 +821,7 @@ describe("a code's rotation is not overwritten by the first compass reading (the
     expect(await firstVotedLock(s)).toBe(1);
     await flush();
     // No wait arms after a device fix: the content shows on this lock.
-    expect(s.label.parent?.parent).toBe(s.scene);
+    expect(hungUnder(s.label)).toBe(s.scene);
     expect(turnNow(s)).toBeCloseTo(0.85 ** VIEWER_VOTE_COUNT * compassTurn, 1);
     await s.frame();
     expect(s.syntheticVotes()).toBe(2 * VIEWER_VOTE_COUNT);

@@ -4,7 +4,8 @@
  * through the first settled alignment after it was taken
  * (`createCapturePickTracker`), and return the spots `tour.json` carries
  * as `captureSpots`. A visitor then places those and never downloads or
- * replays the walk.
+ * replays the walk. The spots come back in the world (geo poses); the
+ * Finish puts them into stations (`tour-content.ts`, tour editor plan W3).
  *
  * Every decline is the live join's own (`preflightCaptureJoin`,
  * `assessReplayedJoin`), plus two more: no photo file left to show, and no
@@ -17,7 +18,6 @@
  * @see capture-bake.ts.md
  */
 
-import type { TourCaptureSpots } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { replayActions } from "gps-plus-slam-app-framework/state";
 
 import {
@@ -29,10 +29,11 @@ import {
   type PickTrackerState,
   type ReplayedJoinState,
 } from "./capture-geo-join.js";
+import type { CaptureSpotsInWorld } from "./tour-content.js";
 import type { TourSession } from "./tour-session.js";
 
 export type CaptureBake =
-  | { kind: "baked"; spots: TourCaptureSpots }
+  | { kind: "baked"; spots: CaptureSpotsInWorld }
   | {
       kind: "declined";
       reason: string;
@@ -150,9 +151,10 @@ export async function bakeCaptureSpots(
 }
 
 /** The baked spots as the join's poses, for the viewer's one placing path.
- *  A spot without a rotation is left out; the reader never yields one. */
+ *  A spot without a rotation is left out; the bake and a tour's own spots
+ *  (`worldCaptureSpots`, minted poses) never yield one. */
 export function posesOfCaptureSpots(
-  spots: TourCaptureSpots,
+  spots: CaptureSpotsInWorld,
 ): CaptureWorldPose[] {
   return spots.captures.flatMap(({ image, geo }) =>
     geo.rotation === undefined

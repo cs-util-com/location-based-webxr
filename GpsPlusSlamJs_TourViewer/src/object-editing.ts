@@ -58,6 +58,7 @@ import type {
 } from "./tour-viewer-session.js";
 import type { NuePose } from "./visit-anchoring.js";
 import { planMove, type SettleAlignmentInput } from "./visit-settle.js";
+import { tourObjectsOf } from "./tour-content.js";
 
 type PlacedEntry = TourViewerSession["placedObjects"][number];
 
@@ -178,7 +179,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
 
   function objects(): AuthoringObject[] {
     return authoringObjects(
-      ctx.tourManifest?.objects ?? [],
+      tourObjectsOf(ctx.tourManifest),
       ctx.placedObjects,
       ctx.deletedObjectIds,
     );

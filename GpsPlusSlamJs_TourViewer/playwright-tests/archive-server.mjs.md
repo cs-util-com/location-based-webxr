@@ -21,9 +21,8 @@ blocks browsers, for the "download the file and open it here" spec (tour
 kit plan K0). `/ranges-ok/sample-tour.zip` serves the committed sample tour
 (`public/samples/marienplatz-tour.zip`, owner decision S-D9) for
 `sample-tour.spec.js`. `/ranges-ok/no-gps-tour.zip` is the standard zip with
-its `tour.json` marked `needsNoGps` (version 2, minor 2; owner decision
-Q-QF-1), for the ar-mode spec whose visitor is never asked for the location.
-`/ranges-ok/stations-tour.zip` is a `tour.json` version 2
+its `tour.json` marked `needsNoGps` (owner decision Q-QF-1), for the ar-mode spec whose visitor is never asked for the location.
+`/ranges-ok/stations-tour.zip` is a tour
 with three stations in fixed order (tour kit plan K4, `stations.spec.js`):
 "The gate" on the fixture's printed code (a knight with a voice and a scene
 choice; the level's geo is where the fakes' armed pose puts the code under
@@ -34,6 +33,13 @@ proxy's own path so the app treats it as a Drive tour without a Google host
 (Drive replace plan §5 #12): `id=e2e-drive` sends `content-disposition`
 with the file name "My tour.zip", any other id sends none (the fallback).
 `content-disposition` is in the exposed headers, because the app (port 5187) reads this server (port 5197) cross-origin.
+
+Every `tour.json` it writes is version 3 (tour editor plan 2026-10-17-1816,
+W3): stations at geo poses, the pins and photos as their items, the baked
+photos in stations of their own. The station shapes come from
+`v3-fixture.mjs` (`stationAt`, `inOwnStation`: anchored exactly at the
+element, turned like north, so its local pose is a zero offset), which the
+editor spec uses too.
 
 ## Public API
 

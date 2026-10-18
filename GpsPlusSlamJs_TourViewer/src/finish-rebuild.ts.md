@@ -16,7 +16,11 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
   - `input.tour` - the open tour (`FinishTour`: a `TourSession`'s
     `entries`, `manifestWrap`, `integrity`, `budget`, `readWholeArchive`).
   - `input.manifest` - the manifest the tour carries now (after any
-    earlier rebuild; an empty one for a tour without).
+    earlier rebuild; an empty one for a tour without). It is written at
+    version 3 through `withTourContent` (`tour-content.ts`): the edits
+    apply to its world view (`tourObjects`), and every pin and photo is
+    then in a station (a new one joins the nearest within R or starts
+    one, D20).
   - `input.placed` - objects placed or edited (`{ object, blob? }`); a
     photo with bytes writes them as its content file. Read synchronously
     at the call: pass a snapshot, not a list the page keeps changing.
@@ -26,7 +30,11 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
     becomes `title`; an emptied one removes it (W2 of the tour editor
     plan 2026-10-17-1816: it used to keep the old title silently); null or
     omitted keeps the tour's own.
-  - `input.captureSpots` - the recorded photos' spots, when there are any.
+  - `input.captureSpots` - the recorded photos' spots in the world
+    (`CaptureSpotsInWorld`), when there are any. When the tour has no
+    spots of its own yet, the Finish assigns each photo to a station, in
+    capture order and before the new objects (D20, D21); a tour that
+    already has spots keeps them.
   - `input.keepScan` - keep the entries visitors never read.
   - `input.walkPlacesNothing` - the walk places nothing
     (`captureSpotsForRebuild`'s `placesNothing`): it is then left out
@@ -46,11 +54,13 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
 - `pendingAfterRebuild({ placed, deleted }, written, appliedDeletions)`
   (M6 E0b) - what is still to save after a write, from the page's lists
   as they are AFTER it: `placed` (content the zip does not carry, by
-  `objectContentKey` - an object edited again during the save waits),
+  `hostedObjects(written).holds` - an object edited again during the save
+  waits, and one its station stores a few micrometres off counts as
+  written),
   `finished` (the caller's own entries that left, so a photo's bytes
   travel with them), `deleted` (the deletions not applied). Pure.
 - `captureSpotsForRebuild(tour, manifest, options?)` (M6 E0b) - the
-  photos' spots for a save: the manifest's own, else baked from the
+  photos' spots for a save, in the world (`worldCaptureSpots`): the manifest's own, else baked from the
   recording (`capture-bake.ts`, `options` passes its `shouldContinue` and
   `onChunk`), else none (`{}`); a bake that declines or a recording that
   cannot be read is `{ notPlaced: reason }`, except a walk that places
@@ -126,7 +136,9 @@ listed tour staying at the open-time version + 1. Every check reads the
 zip's bytes (`tour.json`, the level), never only the returned
 `written`. The same file pins `pendingAfterRebuild` (an edit made during the save
 waits, a placement waits, only applied deletions clear, the caller's
-objects come back) and `captureSpotsForRebuild` (own spots without a
+objects come back, a stored copy micrometres off counts as written), the
+Finish putting the walk's photos into stations in capture order and
+keeping them there on the next, and `captureSpotsForRebuild` (own spots without a
 read, none without a recording, a read failure as the reason, a cap and
 an integrity failure rethrown, a decline as the reason, a walk naming no
 photo of the tour as `placesNothing` with no reason).

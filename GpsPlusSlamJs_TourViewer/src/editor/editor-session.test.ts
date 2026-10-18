@@ -17,7 +17,6 @@ import {
   readStoredEntryBytes,
 } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
 import {
-  createEmptyTourManifest,
   parseTourManifest,
   serializeTourManifest,
   type TourCaptureSpots,
@@ -48,6 +47,12 @@ import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import type { DetailsForm } from "./details-dialog.js";
 import { createEditorDraft, type EditorTourSettings } from "./editor-draft.js";
 import type { EditorLock } from "./save-target.js";
+import {
+  stationIdOf,
+  tourOf,
+  withWorldObjects,
+} from "../test-support/v3-tour.js";
+import type { EditorModel } from "./editor-model.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -75,6 +80,12 @@ function photo(id: string): TourObject {
   };
 }
 
+/** The model's notes and codes: what the rail lists besides the stations
+ *  every version 3 note sits in (one each here, `tourOf`). */
+function noteIds(model: EditorModel): string[] {
+  return model.items.filter((i) => i.kind !== "station").map((i) => i.id);
+}
+
 async function opened(
   objects: readonly TourObject[],
   extra: Partial<TourManifest> = {},
@@ -82,11 +93,7 @@ async function opened(
   session: TourSession;
   manifest: TourManifest;
 }> {
-  const manifest = {
-    ...createEmptyTourManifest(),
-    ...extra,
-    objects: [...objects],
-  };
+  const manifest = tourOf(objects, extra);
   const zip = await packFilesAsZip([
     { path: "tour.json", data: serializeTourManifest(manifest) },
     ...objects
@@ -99,12 +106,16 @@ async function opened(
   return { session, manifest };
 }
 
-async function carried(blob: Blob): Promise<TourManifest> {
+async function carried(
+  blob: Blob,
+): Promise<ReturnType<typeof withWorldObjects>> {
   const bytes = readStoredEntryBytes(
     new Uint8Array(await blob.arrayBuffer()),
     "tour.json",
   );
-  return parseTourManifest(JSON.parse(new TextDecoder().decode(bytes)));
+  return withWorldObjects(
+    parseTourManifest(JSON.parse(new TextDecoder().decode(bytes))),
+  );
 }
 
 /** The saved `tour.json` as written, before any parse fills defaults. */
@@ -136,7 +147,9 @@ describe("createEditorSession", () => {
     const tour = await carried(saved.blob);
     expect(tour.objects.map((o) => o.id)).toEqual(["a", "b"]);
     expect(tour.objects[0]).toMatchObject({ label: "New" });
-    expect(tour.objects[1]?.geo).toMatchObject({ lat: 48.53, lon: 9.06 });
+    // Re-expressed in its station's frame and read back: float32 geodesy.
+    expect(tour.objects[1]?.geo.lat).toBeCloseTo(48.53, 7);
+    expect(tour.objects[1]?.geo.lon).toBeCloseTo(9.06, 7);
     expect(editor.changeCount()).toBe(0);
     await session.close();
   });
@@ -164,9 +177,9 @@ describe("createEditorSession", () => {
       levels: new Map(),
     });
     editor.remove("a");
-    expect(editor.model().items.map((i) => i.id)).toEqual(["b"]);
+    expect(noteIds(editor.model())).toEqual(["b"]);
     editor.undo();
-    expect(editor.model().items.map((i) => i.id)).toEqual(["a", "b"]);
+    expect(noteIds(editor.model())).toEqual(["a", "b"]);
     expect(editor.changeCount()).toBe(0);
     await session.close();
   });
@@ -258,12 +271,7 @@ describe("createEditorSession, the review's cases (E0c + E2a review #9, #10, #12
     editor.remove("a");
     await editor.save({ keepScan: false });
     expect(editor.undo().kind).toBe("undone");
-    expect(
-      editor
-        .model()
-        .items.map((i) => i.id)
-        .sort(),
-    ).toEqual(["a", "b"]);
+    expect(noteIds(editor.model()).sort()).toEqual(["a", "b"]);
     expect(editor.changeCount()).toBe(1);
     const tour = await carried((await editor.save({ keepScan: false })).blob);
     expect(tour.objects.map((o) => o.id).sort()).toEqual(["a", "b"]);
@@ -288,19 +296,14 @@ describe("createEditorSession, the review's cases (E0c + E2a review #9, #10, #12
     expect(editor.undo().kind).toBe("refused");
     await running;
     expect(editor.undo().kind).toBe("undone");
-    expect(editor.model().items.map((i) => i.id)).toEqual(["a", "b"]);
+    expect(noteIds(editor.model())).toEqual(["a", "b"]);
     editor.remove("a");
     const writing = editor.save({ keepScan: false });
     expect(editor.undo().kind).toBe("refused");
     const tour = await carried((await writing).blob);
     expect(tour.objects.map((o) => o.id)).toEqual(["b"]);
     expect(editor.undo().kind).toBe("undone");
-    expect(
-      editor
-        .model()
-        .items.map((i) => i.id)
-        .sort(),
-    ).toEqual(["a", "b"]);
+    expect(noteIds(editor.model()).sort()).toEqual(["a", "b"]);
     await session.close();
   });
 
@@ -489,7 +492,10 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     expect(labels).toEqual(["restored", "live"]);
     expect(editor.changeCount()).toBe(3);
     const saved = await editor.save({ keepScan: false });
-    expect(saved.written.objects.map((o) => o.id)).toEqual(["a", "b"]);
+    expect(withWorldObjects(saved.written).objects.map((o) => o.id)).toEqual([
+      "a",
+      "b",
+    ]);
     await session.close();
   });
 
@@ -552,10 +558,10 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
 describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)", () => {
   // Why (owner Q-QF-1): "needs no GPS" is a tour-level edit like any
   // other - it is a pending change until a save writes it, the saved
-  // tour.json carries `needsNoGps: true` at minor 2 (the framework's
-  // writer), and turning it off writes the tour exactly as before (no
-  // field at all, false is never written).
-  it("writes needsNoGps: true at minor 2 when on, and leaves the field out when off", async () => {
+  // tour.json carries `needsNoGps: true` (version 3, minor 0 since the
+  // tour editor plan's W3), and turning it off writes the tour exactly as
+  // before (no field at all, false is never written).
+  it("writes needsNoGps: true when on, and leaves the field out when off", async () => {
     const { session, manifest } = await opened([pin("a")], { title: "T" });
     const editor = createEditorSession({
       session,
@@ -568,7 +574,8 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
     expect(editor.changeCount()).toBe(1);
     const on = await editor.save({ keepScan: false });
     expect(await writtenJson(on.blob)).toMatchObject({
-      minor: 2,
+      version: 3,
+      minor: 0,
       needsNoGps: true,
     });
     expect(on.written.needsNoGps).toBe(true);
@@ -578,8 +585,7 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
     const off = await editor.save({ keepScan: false });
     const json = await writtenJson(off.blob);
     expect(json).not.toHaveProperty("needsNoGps");
-    // The title keeps it at version 2; nothing else needs a newer minor.
-    expect(json).toMatchObject({ version: 2, minor: 0 });
+    expect(json).toMatchObject({ version: 3, minor: 0 });
     expect(editor.changeCount()).toBe(0);
     await session.close();
   });
@@ -611,7 +617,8 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
     editor.editText("a", "edited");
     const saved = await editor.save({ keepScan: false });
     expect(await writtenJson(saved.blob)).toMatchObject({
-      minor: 2,
+      version: 3,
+      minor: 0,
       needsNoGps: true,
     });
     await session.close();
@@ -701,7 +708,8 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
         {
           id: "s1",
           title: "The column",
-          anchor: { geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 } },
+          geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
+          items: [],
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
@@ -784,8 +792,8 @@ describe("createEditorSession, the tour details (W2)", () => {
     });
     const saved = await editor.save({ keepScan: false });
     expect(await writtenJson(saved.blob)).toMatchObject({
-      version: 2,
-      minor: 3,
+      version: 3,
+      minor: 0,
       title: "The castle",
       description: "Up and back.",
       cover: "f",
@@ -1293,7 +1301,9 @@ const WALK_SPOTS: TourCaptureSpots = {
   captures: [
     {
       image: "images/frame-000002.jpg",
-      geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+      // At pin "a"'s spot, in its station (`tourOf`).
+      station: stationIdOf("a"),
+      pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
     },
   ],
 };
@@ -1312,11 +1322,10 @@ async function walkTour(baked = true): Promise<{
   manifest: TourManifest;
   bytes: Uint8Array;
 }> {
-  const manifest: TourManifest = {
-    ...createEmptyTourManifest(),
-    objects: [pin("a")],
-    ...(baked ? { captureSpots: WALK_SPOTS } : {}),
-  };
+  const manifest: TourManifest = tourOf(
+    [pin("a")],
+    baked ? { captureSpots: WALK_SPOTS } : {},
+  );
   const zip = await packFilesAsZip([
     { path: "tour.json", data: serializeTourManifest(manifest) },
     { path: "images/frame-000002.jpg", data: "the baked photo" },
@@ -1479,12 +1488,12 @@ describe("moving the walk out (W2, D19)", () => {
     // its name and, for a listed tour, its series.
     const fixture = await buildListedTourFixture(
       {
-        "tour.json": serializeTourManifest({
-          ...createEmptyTourManifest(),
-          title: "Castle walk",
-          objects: [pin("a")],
-          captureSpots: WALK_SPOTS,
-        }),
+        "tour.json": serializeTourManifest(
+          tourOf([pin("a")], {
+            title: "Castle walk",
+            captureSpots: WALK_SPOTS,
+          }),
+        ),
         "images/frame-000002.jpg": "the baked photo",
         ...WALK_ENTRIES,
       },
@@ -1546,10 +1555,7 @@ describe("moving the walk out (W2, D19)", () => {
       [
         {
           path: "tour.json",
-          data: serializeTourManifest({
-            ...createEmptyTourManifest(),
-            objects: [pin("a")],
-          }),
+          data: serializeTourManifest(tourOf([pin("a")])),
         },
       ],
       { remove: [...SAMPLE_PHOTOS] },

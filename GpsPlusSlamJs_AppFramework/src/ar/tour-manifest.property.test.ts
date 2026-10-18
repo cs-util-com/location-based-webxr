@@ -2,9 +2,11 @@
  * Why this test matters: the creator's session writes the manifest and the
  * visitor's reads it, on different phones, days apart. The property that
  * makes that safe is exact round-trip: any manifest the writer accepts
- * parses back to the same records (up to the geo pose's own documented
- * renormalisation), for every mix of pins and photos, ids and poses the
- * generators can produce - not only the two hand-written examples.
+ * parses back to the same records - every station's geo pose and every
+ * item's local pose bit for bit (tour editor plan 2026-10-17-1816, D17:
+ * nothing may nudge a local pose) - for every mix of stations, pins,
+ * photos, recorded photos and details the generators can produce, not only
+ * the hand-written examples.
  */
 
 import fc from 'fast-check';
@@ -13,8 +15,7 @@ import { describe, expect, it } from 'vitest';
 import {
   parseTourManifest,
   serializeTourManifest,
-  TOUR_MANIFEST_MINOR,
-  type TourObject,
+  tourItems,
 } from './tour-manifest';
 
 const id = fc.stringMatching(/^[A-Za-z0-9_-]{1,12}$/);
@@ -25,54 +26,134 @@ const iso = fc
 // round trip for a reason that is JSON's, not the manifest's.
 const coordinate = (min: number, max: number) =>
   fc.double({ min, max, noNaN: true }).map((x) => (x === 0 ? 0 : x));
-const heading = coordinate(0, 359.9);
-const geoWithHeading = fc.record({
-  lat: coordinate(-89, 89),
-  lon: coordinate(-179, 179),
-  alt: coordinate(-400, 8000),
-  headingDeg: heading,
-});
 /** An identity-or-yaw unit quaternion about Up: always near-vertical, so a
  *  rotation-only pose never trips the heading/rotation consistency rule. */
 const yawRotation = fc
   .double({ min: 0, max: Math.PI * 2, noNaN: true })
-  .map((theta) => [0, Math.sin(theta / 2), 0, Math.cos(theta / 2)] as const);
-const geoWithRotation = fc.record({
-  lat: coordinate(-89, 89),
-  lon: coordinate(-179, 179),
-  alt: coordinate(-400, 8000),
-  rotation: yawRotation.map((q) => [q[0], q[1], q[2], q[3]]),
+  .map((theta): [number, number, number, number] => [
+    0,
+    Math.sin(theta / 2),
+    0,
+    Math.cos(theta / 2),
+  ]);
+const geo = fc.oneof(
+  fc.record({
+    lat: coordinate(-89, 89),
+    lon: coordinate(-179, 179),
+    alt: coordinate(-400, 8000),
+    headingDeg: coordinate(0, 359.9),
+  }),
+  fc.record({
+    lat: coordinate(-89, 89),
+    lon: coordinate(-179, 179),
+    alt: coordinate(-400, 8000),
+    rotation: yawRotation,
+  })
+);
+const pose = fc.record({
+  position: fc.tuple(
+    coordinate(-500, 500),
+    coordinate(-50, 50),
+    coordinate(-500, 500)
+  ),
+  rotation: yawRotation,
 });
-const geo = fc.oneof(geoWithHeading, geoWithRotation);
 
 const pin = fc.record({
   id,
   kind: fc.constant('pin' as const),
-  geo,
   createdAtIso: iso,
   label: fc.stringMatching(/^[A-Za-z ]{1,30}$/).filter((s) => s.trim() !== ''),
+  pose,
 });
 const photo = fc
   .record({
     id,
     kind: fc.constant('photo' as const),
-    geo,
     createdAtIso: iso,
     imageWidth: fc.integer({ min: 1, max: 4096 }),
     imageHeight: fc.integer({ min: 1, max: 4096 }),
+    pose,
   })
-  // The image entry is derived from the object's own id (M1 review #5).
+  // The image entry is derived from the item's own id (M1 review #5).
   .map((p) => ({ ...p, image: `content/${p.id}.jpg` }));
 
-const manifest = fc
-  .uniqueArray(fc.oneof(pin, photo), {
-    maxLength: 12,
-    selector: (o) => o.id,
-  })
-  .map((objects) => ({ version: 1, objects: objects as TourObject[] }));
+/** Up to four stations sharing up to twelve uniquely named items. */
+const stations = fc
+  .tuple(
+    fc.uniqueArray(id, { minLength: 1, maxLength: 4 }),
+    fc.uniqueArray(fc.oneof(pin, photo), {
+      maxLength: 12,
+      selector: (o) => o.id,
+    }),
+    fc.array(geo, { minLength: 4, maxLength: 4 }),
+    fc.array(fc.nat(), { minLength: 12, maxLength: 12 })
+  )
+  .map(([ids, items, geos, picks]) =>
+    ids.map((stationId, s) => ({
+      id: stationId,
+      geo: geos[s]!,
+      activateRadiusM: 30,
+      foundRadiusM: 25,
+      hint: 'arrow' as const,
+      // An automatic station has no story (D20).
+      steps: [],
+      items: items.filter((_, i) => (picks[i] ?? 0) % ids.length === s),
+    }))
+  );
 
-describe('tour manifest (properties)', () => {
-  it('serialize → parse is the identity on every manifest the writer accepts', () => {
+const capture = (stationIds: readonly string[]) =>
+  fc.record({
+    image: fc
+      .integer({ min: 0, max: 999_999 })
+      .map((n) => `images/frame-${String(n).padStart(6, '0')}.jpg`),
+    station: fc.constantFrom(...stationIds),
+    pose,
+  });
+
+const manifest = stations.chain((s) =>
+  fc
+    .record({
+      captureSpots: fc.option(
+        fc.record({
+          fixes: fc.integer({ min: 1, max: 5000 }),
+          gpsAccuracyMedianM: fc.option(coordinate(0, 100), { nil: null }),
+          captures: fc.uniqueArray(capture(s.map((x) => x.id)), {
+            minLength: 1,
+            maxLength: 6,
+            selector: (c) => c.image,
+          }),
+        }),
+        { nil: undefined }
+      ),
+      needsNoGps: fc.option(fc.boolean(), { nil: undefined }),
+      description: fc.option(fc.stringMatching(/^[A-Za-z]{1,40}$/), {
+        nil: undefined,
+      }),
+      cover: fc.option(fc.oneof(id, fc.constant('missing')), {
+        nil: undefined,
+      }),
+    })
+    .map(({ captureSpots, needsNoGps, description, cover }) => ({
+      version: 3,
+      stations: s,
+      ...(captureSpots === undefined ? {} : { captureSpots }),
+      ...(needsNoGps === undefined ? {} : { needsNoGps }),
+      ...(description === undefined ? {} : { description }),
+      // Half the time the cover is one of the generated photos.
+      ...(cover === undefined
+        ? {}
+        : {
+            cover:
+              tourItems({ stations: s }).find(
+                (o) => o.kind === 'photo' && cover.length % 2 === 0
+              )?.id ?? cover,
+          }),
+    }))
+);
+
+describe('tour manifest version 3 (properties)', () => {
+  it('serialize -> parse is the identity on every manifest the writer accepts, local poses bit for bit', () => {
     fc.assert(
       fc.property(manifest, (m) => {
         const parsed = parseTourManifest(m);
@@ -80,6 +161,11 @@ describe('tour manifest (properties)', () => {
           JSON.parse(serializeTourManifest(parsed))
         );
         expect(again).toEqual(parsed);
+        // The same numbers exactly, not merely close: JSON round trips a
+        // double exactly, and nothing on the way may recompute a pose.
+        expect(JSON.stringify(tourItems(again).map((i) => i.pose))).toBe(
+          JSON.stringify(tourItems(m).map((i) => i.pose))
+        );
       }),
       { numRuns: 200 }
     );
@@ -93,161 +179,21 @@ describe('tour manifest (properties)', () => {
       })
     );
   });
-});
 
-describe('the v1 migration (properties, tour kit plan K1)', () => {
-  // Why this matters: every tour and draft made before K1 is version 1.
-  // Migrating must keep every object exactly, land on the same document a
-  // version 2 file with those objects gives, and be idempotent - a
-  // migrated tour written back and read again must not change.
-  it('a v1 manifest migrates to the v2 manifest with the same objects, and stays put', () => {
+  it('keeps every item in the station it was written in, and a cover only when the tour has that photo', () => {
     fc.assert(
-      fc.property(manifest, (v1) => {
-        const migrated = parseTourManifest(v1);
-        expect(migrated.version).toBe(2);
-        expect(migrated).toEqual(parseTourManifest({ ...v1, version: 2 }));
-        expect(
-          parseTourManifest(JSON.parse(serializeTourManifest(migrated)))
-        ).toEqual(migrated);
-      }),
-      { numRuns: 200 }
-    );
-  });
-});
-
-describe('baked capture spots (properties, scan-pass plan S1)', () => {
-  // Why this matters: the spots are written once at a creator's Finish and
-  // read by every visitor. They must round-trip exactly, and the file's
-  // minor must be the one its content needs (1 with spots, the version 1
-  // form without anything of version 2) whatever minor it was read at - an
-  // exact-minor round trip would be wrong here by design.
-  const capture = fc.record({
-    image: fc
-      .integer({ min: 0, max: 999_999 })
-      .map((n) => `images/frame-${String(n).padStart(6, '0')}.jpg`),
-    geo: geoWithRotation,
-  });
-  const spots = fc.record({
-    fixes: fc.integer({ min: 1, max: 5000 }),
-    gpsAccuracyMedianM: fc.option(coordinate(0, 100), { nil: null }),
-    captures: fc.uniqueArray(capture, {
-      minLength: 1,
-      maxLength: 8,
-      selector: (c) => c.image,
-    }),
-  });
-  const v2 = fc
-    .record({
-      objects: manifest.map((m) => m.objects),
-      minor: fc.integer({ min: 0, max: TOUR_MANIFEST_MINOR }),
-      captureSpots: fc.option(spots, { nil: undefined }),
-      needsNoGps: fc.option(fc.boolean(), { nil: undefined }),
-    })
-    .map(({ captureSpots, needsNoGps, ...rest }) => ({
-      version: 2,
-      ...rest,
-      ...(captureSpots === undefined ? {} : { captureSpots }),
-      ...(needsNoGps === undefined ? {} : { needsNoGps }),
-    }));
-
-  it('round-trips the spots and writes the minor the content needs', () => {
-    fc.assert(
-      fc.property(v2, (m) => {
+      fc.property(manifest, (m) => {
         const parsed = parseTourManifest(m);
-        const written = JSON.parse(serializeTourManifest(parsed)) as {
-          version: number;
-          minor?: number;
-        };
-        const again = parseTourManifest(written);
-        expect(again.captureSpots).toEqual(parsed.captureSpots);
-        expect(again.objects).toEqual(parsed.objects);
-        // The no-GPS flag (minor 2) survives, and only a true one is kept.
-        expect(parsed.needsNoGps).toBe(
-          m.needsNoGps === true ? true : undefined
+        expect(parsed.stations.map((s) => s.items.map((i) => i.id))).toEqual(
+          m.stations.map((s) => s.items.map((i) => i.id))
         );
-        expect(again.needsNoGps).toBe(parsed.needsNoGps);
-        expect(written).toMatchObject(
-          parsed.needsNoGps === true
-            ? { version: 2, minor: 2 }
-            : parsed.captureSpots === undefined
-              ? { version: 1 }
-              : { version: 2, minor: 1 }
-        );
-      }),
-      { numRuns: 200 }
-    );
-  });
-});
-
-describe('tour details (properties, minor 3)', () => {
-  // Why this matters: the details are typed in the editor and read by
-  // every visitor. Whatever the generators produce - any text, any cover,
-  // with or without the photo it names - a written tour reads back to the
-  // same manifest, a cover never names an image the tour lacks, and the
-  // minor written is 3 exactly when a detail is kept.
-  const text = fc.string({ minLength: 0, maxLength: 60 });
-  const v2 = fc
-    .record({
-      objects: manifest.map((m) => m.objects),
-      description: fc.option(text, { nil: undefined }),
-      contact: fc.option(
-        fc.oneof(
-          text,
-          fc.emailAddress(),
-          fc.webUrl({ validSchemes: ['https', 'http'] })
-        ),
-        { nil: undefined }
-      ),
-      cover: fc.option(fc.oneof(id, fc.constant('missing')), {
-        nil: undefined,
-      }),
-    })
-    .map(({ description, contact, cover, objects }) => ({
-      version: 2,
-      minor: 3,
-      objects,
-      ...(description === undefined ? {} : { description }),
-      ...(contact === undefined ? {} : { contact }),
-      // Half the time the cover is one of the generated photos.
-      ...(cover === undefined
-        ? {}
-        : {
-            cover:
-              objects.find((o) => o.kind === 'photo' && cover.length % 2 === 0)
-                ?.id ?? cover,
-          }),
-    }));
-
-  it('round-trips, keeps only covers the tour has, and writes minor 3 exactly with a detail', () => {
-    fc.assert(
-      fc.property(v2, (m) => {
-        const parsed = parseTourManifest(m);
-        // A kept cover is one of the tour's photos.
         expect(
           parsed.cover === undefined ||
-            parsed.objects.some(
+            tourItems(parsed).some(
               (o) => o.kind === 'photo' && o.id === parsed.cover
             )
         ).toBe(true);
-        const written = JSON.parse(serializeTourManifest(parsed)) as {
-          version: number;
-          minor?: number;
-        };
-        const kept =
-          parsed.description !== undefined ||
-          parsed.contact !== undefined ||
-          parsed.cover !== undefined;
-        // Written at the minor the content needs, not the one it was read
-        // at; everything else reads back exactly.
-        expect(parseTourManifest(written)).toEqual({
-          ...parsed,
-          minor: kept ? 3 : 0,
-        });
-        expect([written.version, written.minor]).toEqual(
-          kept ? [2, 3] : [1, undefined]
-        );
-      }),
-      { numRuns: 300 }
+      })
     );
   });
 });

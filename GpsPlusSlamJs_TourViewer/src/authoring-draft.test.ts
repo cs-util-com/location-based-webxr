@@ -19,7 +19,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
-  createEmptyTourManifest,
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -45,6 +44,7 @@ import {
   DRAFT_BASE_MAX_KEYS,
   withBaseKey,
 } from "./authoring-draft.js";
+import { asHosted, tourOf } from "./test-support/v3-tour.js";
 
 function pin(id: string): TourObject {
   return {
@@ -87,7 +87,7 @@ function edited(object: TourObject, label: string): TourObject {
 }
 
 function manifestOf(objects: readonly TourObject[]): TourManifest {
-  return { ...createEmptyTourManifest(), objects: [...objects] };
+  return tourOf([...objects]);
 }
 
 describe("draftObjectsNotYetHosted", () => {
@@ -434,17 +434,14 @@ describe("a newer edit elsewhere wins over the phone's draft (M6 E2p)", () => {
   // phone draft that still held an older edit of the same object offered
   // it back ("1 change. Add it back?"), and a yes reverted the desktop's
   // edit; a pin the desktop deleted came back as "1 thing you placed".
-  const manifestOf = (objects: TourObject[]): TourManifest => ({
-    ...createEmptyTourManifest(),
-    objects,
-  });
   const relabel = (o: TourObject, label: string): TourObject => ({
     ...o,
     label,
   });
-  /** A base that saw these versions hosted. */
+  /** A base that saw these versions hosted: as the hosted file reads
+   *  them back (version 3: in their station, with a minted rotation). */
   const seen = (...objects: TourObject[]): DraftBase => ({
-    seen: objects.map(objectContentKey),
+    seen: objects.map((o) => objectContentKey(asHosted(o))),
     written: [],
   });
 
@@ -547,7 +544,10 @@ describe("a newer edit elsewhere wins over the phone's draft (M6 E2p)", () => {
       bases: new Map([
         [
           "a",
-          { seen: [objectContentKey(a0)], written: [objectContentKey(p1)] },
+          {
+            seen: [objectContentKey(asHosted(a0))],
+            written: [objectContentKey(asHosted(p1))],
+          },
         ],
       ]),
     };
@@ -609,19 +609,20 @@ describe("the editor's uses of the shared rules (M6 E2c)", () => {
   // parser normalises a heading into [0, 360) - or a base never matches
   // the version the file carries.
   it("reads a manifest as a reader of the written file would", () => {
-    const manifest: TourManifest = {
-      ...createEmptyTourManifest(),
-      objects: [
-        { ...pin("a"), geo: { lat: 1, lon: 2, alt: 3, headingDeg: 370 } },
+    const manifest = tourOf([pin("a")]);
+    const turned: TourManifest = {
+      ...manifest,
+      stations: [
+        {
+          ...manifest.stations[0]!,
+          geo: { lat: 1, lon: 2, alt: 3, headingDeg: 370 },
+        },
       ],
     };
-    const read = manifestAsRead(manifest);
-    expect(read.objects[0]?.geo).toMatchObject({ headingDeg: 10 });
+    const read = manifestAsRead(turned);
+    expect(read.stations[0]?.geo).toMatchObject({ headingDeg: 10 });
     // A manifest the serializer refuses is returned as it is.
-    const twice: TourManifest = {
-      ...createEmptyTourManifest(),
-      objects: [pin("a"), pin("a")],
-    };
+    const twice = tourOf([pin("a"), pin("a")]);
     expect(manifestAsRead(twice)).toBe(twice);
   });
 });

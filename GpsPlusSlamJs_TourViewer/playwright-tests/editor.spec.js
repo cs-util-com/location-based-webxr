@@ -15,6 +15,9 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 
+import { worldManifest } from "./ar-fakes.js";
+import { inOwnStation, stationAt } from "./v3-fixture.mjs";
+
 /**
  * Why these tests matter (Tour Viewer M6 E1): the desktop editor opens a
  * file anyone can make and draws it on a map. These drive the REAL file
@@ -76,13 +79,10 @@ async function zip(entries) {
  */
 async function editorTour({ station = false, farStation = false } = {}) {
   const codes = [];
-  /** @type {string[]} */
-  const codeIds = [];
   for (const [i, place] of [geo(0, 0), geo(30, 40)].entries()) {
     const id = await qrCodeId(
       `https://gps.csutil.com/tour/?qr=editor&n=${i + 1}`,
     );
-    codeIds.push(id);
     codes.push({
       path: `qr/${id}.json`,
       data: JSON.stringify({
@@ -91,7 +91,8 @@ async function editorTour({ station = false, farStation = false } = {}) {
       }),
     });
   }
-  // Through the serializer: a title needs tour.json version 2.
+  // Through the serializer (version 3: stations at geo poses, the pins
+  // and photos as their items, tour editor plan W3).
   const manifest = {
     ...createEmptyTourManifest(),
     title: "Editor fixture",
@@ -102,16 +103,14 @@ async function editorTour({ station = false, farStation = false } = {}) {
             {
               id: "gate",
               title: "At the gate",
-              // At the first code's point; the code link goes with
-              // format 3 (tour editor plan D9).
-              anchor: {
-                code: codeIds[0],
-                geo: { ...geo(0, 0), headingDeg: 0 },
-              },
+              // At the first code's point (version 3 has no code link,
+              // tour editor plan D9).
+              geo: { ...geo(0, 0), headingDeg: 0 },
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
               steps: [{ id: "hi", block: { kind: "text", text: "Hello" } }],
+              items: [],
             },
           ]
         : []),
@@ -123,51 +122,53 @@ async function editorTour({ station = false, farStation = false } = {}) {
             {
               id: "well",
               title: "Old well",
-              anchor: { geo: { ...geo(120, 0), headingDeg: 0 } },
+              geo: { ...geo(120, 0), headingDeg: 0 },
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
               steps: [{ id: "w", block: { kind: "text", text: "A well" } }],
+              items: [],
             },
             {
               id: "bench",
-              anchor: { geo: { ...geo(-5, 5), headingDeg: 0 } },
+              geo: { ...geo(-5, 5), headingDeg: 0 },
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
               steps: [{ id: "b", block: { kind: "text", text: "A bench" } }],
+              items: [],
             },
           ]
         : []),
-    ],
-    objects: [
-      {
-        id: "pin-markup",
-        kind: "pin",
-        label: MARKUP,
-        createdAtIso: "2026-10-13T00:00:00.000Z",
-        geo: { ...geo(10, 10), headingDeg: 0 },
-      },
-      {
-        id: "photo-ok",
-        kind: "photo",
-        label: "Fountain",
-        image: "content/photo-ok.png",
-        imageWidth: 1,
-        imageHeight: 1,
-        createdAtIso: "2026-10-13T00:00:00.000Z",
-        geo: { ...geo(-10, 20), rotation: [0, 0, 0, 1] },
-      },
-      {
-        id: "photo-big",
-        kind: "photo",
-        label: "Too big",
-        image: "content/photo-big.png",
-        imageWidth: 1,
-        imageHeight: 1,
-        createdAtIso: "2026-10-13T00:00:00.000Z",
-        geo: { ...geo(20, -20), rotation: [0, 0, 0, 1] },
-      },
+      ...[
+        {
+          id: "pin-markup",
+          kind: "pin",
+          label: MARKUP,
+          createdAtIso: "2026-10-13T00:00:00.000Z",
+          geo: { ...geo(10, 10), headingDeg: 0 },
+        },
+        {
+          id: "photo-ok",
+          kind: "photo",
+          label: "Fountain",
+          image: "content/photo-ok.png",
+          imageWidth: 1,
+          imageHeight: 1,
+          createdAtIso: "2026-10-13T00:00:00.000Z",
+          geo: { ...geo(-10, 20), rotation: [0, 0, 0, 1] },
+        },
+        {
+          id: "photo-big",
+          kind: "photo",
+          label: "Too big",
+          image: "content/photo-big.png",
+          imageWidth: 1,
+          imageHeight: 1,
+          createdAtIso: "2026-10-13T00:00:00.000Z",
+          geo: { ...geo(20, -20), rotation: [0, 0, 0, 1] },
+        },
+      ].map(inOwnStation),
     ],
   };
   return zip([
@@ -380,28 +381,31 @@ async function wrappedTour(options = { pin: false }) {
   const manifest = {
     ...createEmptyTourManifest(),
     title: "Wrapped fixture",
-    objects: options.pin
-      ? [
-          {
-            id: "pin-wrapped",
-            kind: "pin",
-            label: "Wrapped pin",
-            createdAtIso: "2026-10-13T00:00:00.000Z",
-            geo: { ...geo(6, 6), headingDeg: 0 },
-          },
-          ...(options.extra === true
-            ? [
-                {
-                  id: "pin-elsewhere",
-                  kind: "pin",
-                  label: "Added elsewhere",
-                  createdAtIso: "2026-10-14T00:00:00.000Z",
-                  geo: { ...geo(-6, 6), headingDeg: 0 },
-                },
-              ]
-            : []),
-        ]
-      : [],
+    stations: [
+      ...(options.spots === false ? [] : [stationAt("walk", geo(5, 5))]),
+      ...(options.pin
+        ? [
+            {
+              id: "pin-wrapped",
+              kind: "pin",
+              label: "Wrapped pin",
+              createdAtIso: "2026-10-13T00:00:00.000Z",
+              geo: { ...geo(6, 6), headingDeg: 0 },
+            },
+            ...(options.extra === true
+              ? [
+                  {
+                    id: "pin-elsewhere",
+                    kind: "pin",
+                    label: "Added elsewhere",
+                    createdAtIso: "2026-10-14T00:00:00.000Z",
+                    geo: { ...geo(-6, 6), headingDeg: 0 },
+                  },
+                ]
+              : []),
+          ].map(inOwnStation)
+        : []),
+    ],
     ...(options.spots === false
       ? {}
       : {
@@ -411,7 +415,8 @@ async function wrappedTour(options = { pin: false }) {
             captures: [
               {
                 image: "mytour/images/frame-000002.png",
-                geo: { ...geo(5, 5), rotation: [0, 0, 0, 1] },
+                station: "walk",
+                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
               },
             ],
           },
@@ -523,7 +528,8 @@ async function saveAndRead(page) {
   await reader.close();
   return {
     name: file.suggestedFilename(),
-    manifest: JSON.parse(texts["tour.json"] ?? "{}"),
+    manifest:
+      texts["tour.json"] === undefined ? {} : worldManifest(texts["tour.json"]),
     names: Object.keys(texts),
   };
 }
@@ -2395,7 +2401,7 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   // Why (QR-first M1b-2, owner Q-QF-1): a creator marks a tour that the
   // printed codes place, so its visitors are never asked for location.
   // It is an edit like a note's: pending until saved, written as
-  // `needsNoGps: true` at minor 2 (the framework's writer), read back on
+  // `needsNoGps: true` (the framework's writer), read back on
   // the next open - and turned off, the field is gone, never `false`.
   // While it is on, the stations farther than 40 m from every code are
   // named (tour editor plan review 2 #3).
@@ -2427,8 +2433,8 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   // reader does not announce the warning again.
   expect(await line?.evaluate((node) => node.isConnected)).toBe(true);
   expect(await savedManifest(page, "nogps.zip")).toMatchObject({
-    version: 2,
-    minor: 2,
+    version: 3,
+    minor: 0,
     needsNoGps: true,
   });
   await backedUp(page);
@@ -2452,7 +2458,7 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   await expect(next.locator("#save-status")).toHaveText("Saved to nogps.zip");
   const off = await savedManifest(next, "nogps.zip");
   expect(off).not.toHaveProperty("needsNoGps");
-  expect(off).toMatchObject({ version: 2, minor: 0 });
+  expect(off).toMatchObject({ version: 3, minor: 0 });
 });
 
 test("a changed needs-no-GPS setting survives a closed tab, and Restore brings it back", async ({
@@ -2483,7 +2489,7 @@ test("a changed needs-no-GPS setting survives a closed tab, and Restore brings i
  * Why (tour editor plan 2026-10-17-1816, W2): the tour's name, description,
  * cover and contact had no place in the editor. The name in the top bar
  * opens them; Apply makes each changed field a pending change, saved into
- * `tour.json` (minor 3), and an emptied name removes the title rather than
+ * `tour.json`, and an emptied name removes the title rather than
  * silently keeping it. A value the format would drop is refused in the
  * dialog, in words, and changes nothing.
  */
@@ -2526,8 +2532,8 @@ test("the tour's name opens its details: applied, saved into tour.json, and an e
   await expect(page.locator("#save-status")).toHaveText("4 changes not saved");
   const saved = await saveAndRead(page);
   expect(saved.manifest).toMatchObject({
-    version: 2,
-    minor: 3,
+    version: 3,
+    minor: 0,
     title: "Castle walk",
     description: "Up to the castle and back.",
     cover: "photo-ok",

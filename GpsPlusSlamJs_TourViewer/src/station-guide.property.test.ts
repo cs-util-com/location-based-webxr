@@ -60,9 +60,8 @@ describe("wireStationGuide (properties)", () => {
           return {
             id: `s${String(i)}`,
             title: `S${String(i)}`,
-            anchor: {
-              geo: { lat: geo.lat, lon: geo.lon, alt: 400, headingDeg: 0 },
-            },
+            geo: { lat: geo.lat, lon: geo.lon, alt: 400, headingDeg: 0 },
+            items: [],
             activateRadiusM: 20,
             foundRadiusM: 5,
             hint: "arrow",

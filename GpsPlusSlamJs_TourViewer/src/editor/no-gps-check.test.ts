@@ -45,17 +45,18 @@ function spot(north: number, east: number) {
 
 function station(
   id: string,
-  anchor: TourStation["anchor"],
+  geo: TourStation["geo"],
   title?: string,
 ): TourStation {
   return {
     id,
     ...(title === undefined ? {} : { title }),
-    anchor,
+    geo,
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
     steps: [],
+    items: [],
   };
 }
 
@@ -76,10 +77,10 @@ describe("checkNoGps", () => {
   it("names every station farther than the reach from every placing code, in the rail's words", () => {
     const check = checkNoGps({
       stations: [
-        station("a", { geo: spot(10, 0) }, "The column"),
-        station("b", { geo: spot(0, 41) }, "At the gate"),
-        station("c", { geo: spot(-60, 0) }),
-        station("d", { geo: spot(0, 39) }),
+        station("a", spot(10, 0), "The column"),
+        station("b", spot(0, 41), "At the gate"),
+        station("c", spot(-60, 0)),
+        station("d", spot(0, 39)),
       ],
       levels: new Map([["c1", USABLE]]),
     });
@@ -93,7 +94,7 @@ describe("checkNoGps", () => {
 
   it("counts only codes that can place the tour: a code without a size or a position is no anchor", () => {
     const check = checkNoGps({
-      stations: [station("a", { geo: spot(0, 100) }, "Far")],
+      stations: [station("a", spot(0, 100), "Far")],
       levels: new Map([
         ["near-no-size", level({ geo: spot(0, 100) })],
         ["placing", USABLE],
@@ -101,22 +102,13 @@ describe("checkNoGps", () => {
     });
     expect(check.farFromCodes).toEqual(["Far"]);
     const placed = checkNoGps({
-      stations: [station("a", { geo: spot(0, 100) }, "Far")],
+      stations: [station("a", spot(0, 100), "Far")],
       levels: new Map([
         ["near", level({ physicalSizeM: 0.2, geo: spot(0, 90) })],
         ["placing", USABLE],
       ]),
     });
     expect(placed.farFromCodes).toEqual([]);
-  });
-
-  it("names a station without a spot of its own: it is never reached (D9)", () => {
-    expect(
-      checkNoGps({
-        stations: [station("a", { code: "c1" }, "Old gate")],
-        levels: new Map([["c1", USABLE]]),
-      }).farFromCodes,
-    ).toEqual(["Old gate"]);
   });
 
   it("says the codes cannot place the tour without a level that has a size and a position", () => {
@@ -176,12 +168,10 @@ describe("checkNoGps", () => {
             stations: [
               station(
                 "s",
-                {
-                  geo: spot(
-                    distanceM * Math.cos(bearing),
-                    distanceM * Math.sin(bearing),
-                  ),
-                },
+                spot(
+                  distanceM * Math.cos(bearing),
+                  distanceM * Math.sin(bearing),
+                ),
                 "S",
               ),
             ],

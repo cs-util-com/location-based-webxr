@@ -14,6 +14,7 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   checkTourContact,
   checkTourDescription,
@@ -32,7 +33,7 @@ import {
   type RebuildPhotoSpots,
 } from "../finish-rebuild.js";
 import { recordingEntryNames, scanEntryNames } from "../tour-read-set.js";
-import { objectContentKey } from "../authoring-draft.js";
+import { hostedObjects, objectContentKey } from "../authoring-draft.js";
 import { recordDelete, type DraftObjectWrites } from "../draft-actions.js";
 import {
   authoringObjects,
@@ -442,16 +443,12 @@ export function createEditorSession(input: {
 
   /** The entries whose content the tour does not carry yet. */
   function unsaved(): EditorEntry[] {
-    const hosted = new Map(
-      manifest.objects.map((o) => [o.id, objectContentKey(o)]),
-    );
-    return placed.filter(
-      (p) => hosted.get(p.object.id) !== objectContentKey(p.object),
-    );
+    const hosted = hostedObjects(manifest);
+    return placed.filter((p) => !hosted.holds(p.object));
   }
 
   function objects(): AuthoringObject<EditorEntry>[] {
-    return authoringObjects(manifest.objects, placed, deleted);
+    return authoringObjects(tourObjects(manifest), placed, deleted);
   }
 
   const notInTour: EditorRefusal = { kind: "refused", reason: NOT_IN_TOUR };
@@ -462,14 +459,14 @@ export function createEditorSession(input: {
     return objects().find((o) => o.object.id === id);
   }
 
-  /** The tour as it stands with the edits, for what reads its images. */
-  function current(): TourManifest {
-    return { ...manifest, objects: objects().map((o) => o.object) };
+  /** The tour's pins and photos as they stand with the edits, for what
+   *  reads its images. */
+  function current(): TourObject[] {
+    return objects().map((o) => o.object);
   }
 
   function coverIds(): Set<string> {
-    const tour = current();
-    return tourImageIds({ objects: tour.objects, assets: tour.assets });
+    return tourImageIds({ objects: current(), assets: manifest.assets });
   }
 
   /** The details as shown and written: a cover whose image is gone (a
@@ -648,7 +645,7 @@ export function createEditorSession(input: {
     const entries = entriesFor(target);
     if (entries === null) return { kind: "refused", reason: PICTURE_GONE };
     const kept = new Set(target.objects.map((o) => o.id));
-    const gone = manifest.objects
+    const gone = tourObjects(manifest)
       .filter((o) => !kept.has(o.id))
       .map((o) => o.id);
     backUpStep(entries, gone);
@@ -661,16 +658,11 @@ export function createEditorSession(input: {
   /** The entries that make the saved file look like `target`; null when a
    *  photo it brings back has no picture. */
   function entriesFor(target: EditState): EditorEntry[] | null {
-    const hosted = new Map(manifest.objects.map((o) => [o.id, o]));
+    const hosted = hostedObjects(manifest);
     const entries: EditorEntry[] = [];
     for (const object of target.objects) {
-      const host = hosted.get(object.id);
-      if (
-        host !== undefined &&
-        objectContentKey(host) === objectContentKey(object)
-      ) {
-        continue;
-      }
+      if (hosted.holds(object)) continue;
+      const host = hosted.key(object.id);
       const blob =
         placed.find((p) => p.object.id === object.id)?.blob ??
         pictures.get(object.id);
@@ -722,7 +714,8 @@ export function createEditorSession(input: {
   return {
     model() {
       return buildEditorModel({
-        manifest: withDetails(current(), effectiveDetails()),
+        manifest: withDetails(manifest, effectiveDetails()),
+        objects: current(),
         levels,
         fileName: shownName,
       });
@@ -773,7 +766,7 @@ export function createEditorSession(input: {
       return { kind: "changed" };
     },
     coverChoices() {
-      const tour = current();
+      const tour = { objects: current(), assets: manifest.assets };
       const ids = coverIds();
       return [...ids].flatMap((id) => {
         const image = tourCoverEntry({ ...tour, cover: id });

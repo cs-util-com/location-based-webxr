@@ -56,9 +56,10 @@
  */
 
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
-import type {
-  TourManifest,
-  TourObject,
+import {
+  tourItems,
+  type TourManifest,
+  type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
@@ -66,8 +67,8 @@ import {
   draftDeletionsNotYetHosted,
   draftObjectsNotYetHosted,
   draftObjectsSuperseded,
+  hostedObjects,
   manifestAsRead,
-  objectContentKey,
   restoreOfferText,
   supersededLine,
   withBaseKey,
@@ -282,7 +283,7 @@ function heldAgainst(
   const cover = details?.cover;
   if (details === undefined || cover === undefined) return settings;
   const images = tourImageIds({
-    objects: manifest.objects,
+    objects: tourItems(manifest),
     assets: manifest.assets,
   });
   if (images.has(cover)) return settings;
@@ -762,8 +763,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   }
 
   function seenKey(id: string): string | undefined {
-    const hosted = opened?.objects.find((o) => o.id === id);
-    return hosted === undefined ? undefined : objectContentKey(hosted);
+    return hostedObjects(opened).key(id);
   }
 
   function close(): void {
@@ -881,12 +881,12 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           if (!ok) say(s, s.refused ?? "storage");
         }),
       );
-      const hostedIds = new Set(manifest.objects.map((o) => o.id));
+      const hosted = hostedObjects(manifest);
       const notHosted = draftObjectsNotYetHosted(stored.draft, manifest);
       // The editor places nothing new: a record of an id the file no
       // longer carries is a note deleted elsewhere, given way to like a
       // replaced one.
-      const waiting = notHosted.filter((o) => hostedIds.has(o.id));
+      const waiting = notHosted.filter((o) => hosted.key(o.id) !== undefined);
       const replaced =
         draftObjectsSuperseded(stored.draft, manifest).length +
         (notHosted.length - waiting.length);
@@ -1005,14 +1005,14 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // As a reader of the written file sees it (the E2p third review #5).
       const read = manifestAsRead(written);
       built.push(read);
+      const readObjects = hostedObjects(read);
       // A setting turned back while this save built is measured against
       // the build now (M1b-2 milestone review #1).
       if (redecideSettings()) void writeSettingsIn(s, settingsPending);
       for (const [id, change] of pending) {
         if (change === null) continue;
-        const object = read.objects.find((o) => o.id === id);
-        if (object === undefined) continue;
-        const key = objectContentKey(object);
+        const key = readObjects.key(id);
+        if (key === undefined) continue;
         bases.set(id, withBaseKey(bases.get(id), "written", key));
         // Not said when it fails: a base that did not land is removed,
         // and no base is never superseded.
@@ -1026,17 +1026,11 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       const s = space;
       if (s === null) return;
       const read = manifestAsRead(written);
-      const hosted = new Map(
-        read.objects.map((o) => [o.id, objectContentKey(o)]),
-      );
+      const hosted = hostedObjects(read);
       // What the file carries now is no longer pending; an edit made
       // while the save ran is.
       const spent = [...pending].flatMap(([id, change]) =>
-        (
-          change === null
-            ? !hosted.has(id)
-            : hosted.get(id) === objectContentKey(change)
-        )
+        (change === null ? hosted.key(id) === undefined : hosted.holds(change))
           ? [id]
           : [],
       );

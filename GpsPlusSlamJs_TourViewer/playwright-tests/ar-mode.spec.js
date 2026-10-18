@@ -7,6 +7,7 @@ import {
   openFixtureTour,
   seedAlignment,
   tapFinish,
+  worldManifest,
 } from "./ar-fakes.js";
 import {
   E2E_QR_ARCHIVE,
@@ -16,7 +17,6 @@ import {
 } from "./qr-fixture.mjs";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
-import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   BlobReader,
   TextWriter,
@@ -768,7 +768,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   expect(level.qr.mintQuality).toBeUndefined();
   // The pin the hosted zip already carried SURVIVES the rebuild - the
   // whole reason the manifest is loaded at open (M3 review #5/#7).
-  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const manifest = worldManifest(rebuilt.entries["tour.json"]);
   // The fixture's own pin SURVIVES the rebuild (M3 review #5/#7), and the
   // two objects placed above are appended after it.
   expect(manifest.objects).toHaveLength(3);
@@ -866,9 +866,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   const second = await readDownloadedZip(page, 2);
-  const secondManifest = parseTourManifest(
-    JSON.parse(second.entries["tour.json"]),
-  );
+  const secondManifest = worldManifest(second.entries["tour.json"]);
   // The fixture's pin, batch one's pin and photo, batch two's pin.
   expect(secondManifest.objects.map((o) => o.kind)).toEqual([
     "pin",
@@ -1008,7 +1006,7 @@ test("a first measurement of a code the tour does not store is minted into the r
   // SETTLE"). 3 would mean the tap's level reached the zip unsettled.
   expect(level.qr.mintQuality?.alignmentSampleCount).toBe(6);
   expect(level.qr.mintQuality?.gpsAccuracyM).toBe(5);
-  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const manifest = worldManifest(rebuilt.entries["tour.json"]);
   expect(
     manifest.objects.map((o) => (o.kind === "pin" ? o.label : o.kind)),
   ).toEqual(["First code's pin"]);
@@ -1135,7 +1133,7 @@ test("two new codes 20 m apart, measured in one visit, both reach the zip with o
   // Each code keeps ITS OWN pose: 20 m apart, as measured. One pose written
   // under both names would read 0 m.
   expect(geoDistanceM(geoOf(first), geoOf(second))).toBeCloseTo(20, 0);
-  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const manifest = worldManifest(rebuilt.entries["tour.json"]);
   expect(
     manifest.objects.map((o) => (o.kind === "pin" ? o.label : o.kind)).sort(),
   ).toEqual(["Pin at the first code", "Pin at the second code"]);
@@ -2597,7 +2595,7 @@ test("a crash does not lose the walk: placed content survives a reload and lands
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   const rebuilt = await readDownloadedZip(page, 0);
-  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const manifest = worldManifest(rebuilt.entries["tour.json"]);
   const labels = manifest.objects.flatMap((o) =>
     o.kind === "pin" ? [o.label] : [],
   );
@@ -3149,7 +3147,7 @@ test("a draft accumulates ACROSS finishes: both batches land in the zip", async 
   // record of downloads. The draft survived it because OPFS is not page
   // state - which is the whole point.
   const rebuilt = await readDownloadedZip(page, 0);
-  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const manifest = worldManifest(rebuilt.entries["tour.json"]);
   const labels = manifest.objects.flatMap((o) =>
     o.kind === "pin" ? [o.label] : [],
   );

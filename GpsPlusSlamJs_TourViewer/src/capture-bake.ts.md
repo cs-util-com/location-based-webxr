@@ -6,8 +6,9 @@ The capture join, baked (scan-pass plan
 `2026-10-05-1240-tour-scan-pass-desktop-editor-and-partial-download-plan`,
 S1 and owner decision S-D11): replay a tour's recording once, place each
 recorded photo through the first settled alignment after it was taken, and
-return the spots `tour.json` carries as `captureSpots`. The creator's
-Finish writes them; a visitor places them and never downloads or replays
+return the spots in the world (`CaptureSpotsInWorld` of `tour-content.ts`).
+The creator's Finish writes them as `captureSpots`, each photo in a station
+at a local pose (version 3, tour editor plan W3, D21); a visitor places them and never downloads or replays
 the walk. The viewer runs the same function over a tour never finished
 since S1, so a baked tour and an unbaked one show the photos at the same
 spots.
@@ -31,7 +32,7 @@ placesNothing? }`. `placesNothing: true` when the replayed walk names
     move it out (the M4b milestone review #3). Absent for a decline before
     the replay (unknown) and for photos the tour carries that the solve
     could not place.
-- `posesOfCaptureSpots(spots) -> CaptureWorldPose[]`: the spots as the
+- `posesOfCaptureSpots(spots: CaptureSpotsInWorld) -> CaptureWorldPose[]`: the spots as the
   join's poses for the viewer's one placing path (`alt` becomes
   `altitude`); a spot without a rotation is left out.
 
@@ -67,7 +68,9 @@ placesNothing? }`. `placesNothing: true` when the replayed walk names
 const bake = await bakeCaptureSpots(session, {
   shouldContinue: () => ctx.session === session,
 });
-if (bake.kind === "baked") manifest = { ...manifest, captureSpots: bake.spots };
+if (bake.kind === "baked") {
+  manifest = withTourContent(manifest, { objects, captureSpots: bake.spots });
+}
 ```
 
 ## Tests

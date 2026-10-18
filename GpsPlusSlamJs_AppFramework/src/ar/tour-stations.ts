@@ -1,9 +1,17 @@
 /**
- * The game content of `tour.json` version 2 (tour kit plan K1, §8 D7: the
- * full schema in one step): media ASSETS with their own ids, STATIONS with
- * an anchor and two radii, each station's STEPS (text, image, cut-out
+ * The game content of `tour.json` (tour kit plan K1, §8 D7: the full
+ * schema in one step): media ASSETS with their own ids, STATIONS with a geo
+ * pose and two radii, each station's STEPS (text, image, cut-out
  * character, audio, video, 3D model, a scene choice, a quiz), how a step
  * advances, and for answer-routed order the next station per answer.
+ *
+ * VERSION 3 (tour editor plan 2026-10-17-1816, W3): a station is the
+ * parent of what was placed around it - its geo pose (position and a
+ * rotation against north) and its ITEMS, pins and photos at a local pose
+ * relative to it (`tour-items.ts`). Stations behave as pins (D9): no code
+ * link (`anchor.code` went), no code-only station. A station may have no
+ * steps: an automatic station (D20) only groups what was placed there, and
+ * finding it completes it.
  *
  * K1 defines and validates this; nothing renders it yet (stations and the
  * scene player are K4, quizzes at runtime K5). That is deliberate: the
@@ -34,8 +42,8 @@
 
 import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
 import { parseGeoPose } from './qr/geo-pose.js';
-import { isWritableQrLevelId } from './qr/qr-level-archive.js';
 import type { QrGeoPose } from './qr/qr-gps-vote.js';
+import { parseTourItems, type TourItem } from './tour-items.js';
 import { tourMediaTypeOf } from './tour-media.js';
 
 type Fail = (message: string) => never;
@@ -68,13 +76,6 @@ export interface TourAsset {
 }
 
 export type TourOrder = 'fixed' | 'any' | 'branch';
-
-/** Where a station is: a printed code's level id, a geo pose, or both.
- *  A code gives the 2-5 m "found you"; GPS alone only coarse activation. */
-export interface TourStationAnchor {
-  readonly code?: string;
-  readonly geo?: QrGeoPose;
-}
 
 export type TourStepAdvance =
   { readonly mode: 'tap' } | { readonly mode: 'auto'; readonly afterS: number };
@@ -173,7 +174,9 @@ export interface TourStep {
 export interface TourStation {
   readonly id: string;
   readonly title?: string;
-  readonly anchor: TourStationAnchor;
+  /** Where the station is and how it is turned against north: the frame
+   *  its items' local poses are relative to. */
+  readonly geo: QrGeoPose;
   readonly activateRadiusM: number;
   readonly foundRadiusM: number;
   /** v1 hint mode (K-D6): the HUD's exact arrow plus distance. */
@@ -181,6 +184,8 @@ export interface TourStation {
   readonly steps: readonly TourStep[];
   /** For `branch` order: the default next station. */
   readonly next?: string;
+  /** The pins and photos placed at this station, at local poses. */
+  readonly items: readonly TourItem[];
 }
 
 /** Ids of assets, stations, steps and options: short, one path segment. */
@@ -298,15 +303,15 @@ function parseAsset(
 }
 
 /**
- * Validate the tour's media assets. An asset id must not repeat, and must
- * not be an object id: both name a content file by id
- * (`content/<id>.<ext>`), so a shared id could make two records claim one
- * file. `lenient` (a newer minor) leaves out an asset of an unknown media
- * type; a step that names it is then skipped.
+ * Validate the tour's media assets. An asset id must not repeat; that it is
+ * no item's id (both name a content file by id, `content/<id>.<ext>`, so a
+ * shared id could make two records claim one file) is checked by
+ * `tour-manifest.ts`. `lenient` (a newer minor) leaves out an asset of an
+ * unknown media type; a step that names it is then skipped.
  */
 export function parseTourAssets(
   value: unknown,
-  options: { objectIds: ReadonlySet<string>; fail: Fail; lenient?: boolean }
+  options: { fail: Fail; lenient?: boolean }
 ): TourAsset[] {
   const { fail } = options;
   const lenient = options.lenient === true;
@@ -320,11 +325,8 @@ export function parseTourAssets(
     '',
     fail
   );
-  assets.forEach((asset, i) => {
-    if (options.objectIds.has(asset.id)) {
-      fail(`"assets[${String(i)}].id" "${asset.id}" is already an object id`);
-    }
-  });
+  // An asset's id may not be an item's too (both name a content file):
+  // checked by `tour-manifest.ts`, which sees every station's items.
   return assets;
 }
 
@@ -702,26 +704,6 @@ function withoutStrandedChoices(steps: readonly TourStep[]): TourStep[] {
   }
 }
 
-function parseAnchor(
-  value: unknown,
-  at: string,
-  fail: Fail
-): TourStationAnchor {
-  if (!isRecord(value)) fail(`"${at}" must be an object`);
-  if (value.code === undefined && value.geo === undefined) {
-    fail(`"${at}" needs a code, a geo pose, or both`);
-  }
-  if (value.code !== undefined && !isWritableQrLevelId(value.code)) {
-    fail(`"${at}.code" must be a printed code's level id`);
-  }
-  return {
-    ...(value.code === undefined ? {} : { code: value.code }),
-    ...(value.geo === undefined
-      ? {}
-      : { geo: parseGeoPose(value.geo, { path: `${at}.geo`, fail }) }),
-  };
-}
-
 function parseRadii(
   v: Record<string, unknown>,
   at: string,
@@ -754,8 +736,8 @@ function parseStation(
   if (value.hint !== undefined && value.hint !== 'arrow' && !ctx.lenient) {
     fail(`"${at}.hint" must be "arrow"`);
   }
+  // May be empty (version 3): an automatic station has no story.
   const steps = requireArray(value.steps, `${at}.steps`, fail);
-  if (steps.length === 0) fail(`"${at}.steps" must be a non-empty array`);
   const parsed = steps.flatMap((s, i) => {
     const step = parseStep(s, `${at}.steps[${String(i)}]`, ctx);
     return step === null ? [] : [step];
@@ -764,7 +746,7 @@ function parseStation(
   return {
     id: requireId(value.id, `${at}.id`, fail),
     ...(title === undefined ? {} : { title }),
-    anchor: parseAnchor(value.anchor, `${at}.anchor`, fail),
+    geo: parseGeoPose(value.geo, { path: `${at}.geo`, fail }),
     ...parseRadii(value, at, fail),
     hint: 'arrow',
     // Lenient: a station whose every step was skipped keeps no steps, so
@@ -773,6 +755,10 @@ function parseStation(
     ...(value.next === undefined
       ? {}
       : { next: requireId(value.next, `${at}.next`, fail) }),
+    items: parseTourItems(value.items, `${at}.items`, {
+      fail,
+      lenient: ctx.lenient,
+    }),
   };
 }
 
@@ -786,6 +772,12 @@ function checkReferences(stations: readonly TourStation[], fail: Fail): void {
   stations.forEach((station, si) => {
     const at = `stations[${String(si)}]`;
     requireStation(station.next, `${at}.next`);
+    assertUnique(
+      station.items.map((item) => item.id),
+      'item',
+      `${at}: `,
+      fail
+    );
     assertUnique(
       station.steps.map((s) => s.id),
       'step',

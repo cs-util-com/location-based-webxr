@@ -49,10 +49,9 @@ activateM)` (each tick, each offered station with a distance: the
   session's end plays again on the first tick that has a position and the
   GPS zero (before them its figure had no pose).
 - **Where a station is (D19, §8 D8; tour editor plan D9):** its own geo
-  pose, as a pin's. A station without one (an old code-only station) has
-  no pose, no distance and no HUD target, and is never reached: the line
-  says "... - it has no spot to guide you to." The pose was fixed at
-  authoring (D33's settle, K6a); the viewer reads it.
+  pose, as a pin's; since version 3 every station has one (`station.geo`).
+  The pose was fixed at authoring (D33's settle, K6a); the viewer reads
+  it.
 - **Reached by its radius alone (D16):** the distance is measured from the
   phone's current best position - the alignment's (`VisitorPosition.nue`,
   fed by GPS and codes alike), else before any alignment the latest device
@@ -106,7 +105,7 @@ activateM)` (each tick, each offered station with a distance: the
 - **The line:** "Next: <title>, N m", "N stations to find - nearest:
   <title>, N m", "... - waiting for your position…", "... - GPS too weak to
   guide you (±N m); step into the open." (above the accuracy ceiling),
-  "... - it has no spot to guide you to." (no spot), "Station found - its story is
+  "Station found - its story is
   playing.", "Tour complete - every station visited." or "- N skipped.";
   under branch order "Tour complete - you reached the end of your path."
   (with ", N skipped."), since the other branches were never offered.
@@ -152,8 +151,7 @@ store.subscribe(() => guide.tick());
   tour completes within two taps per station (R9).
 - `station-guide.test.ts` - the undo, the focus clock under `any` order and
   the tap acting on its label (R14); the gate wait, the line, the find; the HUD
-  targets and their bands; a station with no spot (never reached, even at
-  its code); arrival by the radius alone (D16): codes only (reached after a
+  targets and their bands; arrival by the radius alone (D16): codes only (reached after a
   scan, by distance), poor GPS (found by distance, never widened), none
   before any position, the device fix before an alignment and the
   alignment after it; no position and weak GPS lines; the skip on demand and suggested,

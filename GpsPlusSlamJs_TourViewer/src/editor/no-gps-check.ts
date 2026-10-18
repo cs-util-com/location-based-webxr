@@ -35,8 +35,8 @@ export const NO_GPS_CODE_REACH_M = CODE_EVENT_REACH_M;
 
 export interface NoGpsCheck {
   /** The stations farther than {@link NO_GPS_CODE_REACH_M} from every code
-   *  that can place the tour - or with no spot of their own (never reached,
-   *  D9) - by their names in the rail, in the story's order. */
+   *  that can place the tour, by their names in the rail, in the story's
+   *  order. */
   readonly farFromCodes: readonly string[];
   /** One of the tour's codes can place it - else the flag does not hold
    *  and visitors are asked for their location anyway. */
@@ -53,8 +53,7 @@ export function checkNoGps(input: {
     isLockableLevel(level) && level.qr.geo !== undefined ? [level.qr.geo] : [],
   );
   const far = (station: TourStation): boolean => {
-    const at = station.anchor.geo;
-    if (at === undefined) return true;
+    const at = station.geo;
     return anchors.every((code) => horizontalM(code, at) > NO_GPS_CODE_REACH_M);
   };
   return {

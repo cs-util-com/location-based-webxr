@@ -16,7 +16,9 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 import {
   createEmptyTourManifest,
+  tourItems,
   serializeTourManifest,
+  type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   archiveFileName,
@@ -25,6 +27,7 @@ import {
   readArchiveInSlices,
   tourLabel,
 } from "./tour-session.js";
+import { tourOf } from "./test-support/v3-tour.js";
 
 /**
  * Why these tests matter: this module is the viewer's whole data path — if
@@ -400,14 +403,25 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
 
     const withManifest = await openTourSession("https://x/tour.zip", {
       fetchImpl: rangeServer(
-        await buildZip({ "tour.json": '{"version":1,"objects":[]}' }),
+        await buildZip({
+          "tour.json": JSON.stringify(createEmptyTourManifest()),
+        }),
       ),
     });
-    // A version 1 file is read migrated to version 2 (tour kit plan K1).
     await expect(withManifest.loadTourManifest()).resolves.toEqual(
       createEmptyTourManifest(),
     );
     await withManifest.close();
+
+    // An older format is refused with a clear message, never migrated
+    // (tour editor plan W3, D5).
+    const older = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(
+        await buildZip({ "tour.json": '{"version":2,"minor":0,"objects":[]}' }),
+      ),
+    });
+    await expect(older.loadTourManifest()).rejects.toThrow(/older format/);
+    await older.close();
 
     const broken = await openTourSession("https://x/tour.zip", {
       fetchImpl: rangeServer(await buildZip({ "tour.json": '{"version":9}' })),
@@ -425,7 +439,7 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     // exact-name `loadEntry` finds nothing and every placed photo
     // disappears into "could not load" - pins still render, so the tour
     // looks half-placed rather than broken.
-    const photo = {
+    const photo: TourObject = {
       id: "ab12ab12ab12ab12",
       kind: "photo",
       image: "content/ab12ab12ab12ab12.jpg",
@@ -437,14 +451,14 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     const wrapped = await openTourSession("https://x/wrapped.zip", {
       fetchImpl: rangeServer(
         await buildExactZip({
-          "mytour/tour.json": JSON.stringify({ version: 1, objects: [photo] }),
+          "mytour/tour.json": JSON.stringify(tourOf([photo])),
           "mytour/content/ab12ab12ab12ab12.jpg": "jpeg-bytes",
         }),
       ),
     });
     expect(wrapped.manifestWrap).toBe("mytour/");
     const manifest = await wrapped.loadTourManifest();
-    expect(manifest?.objects[0]?.id).toBe(photo.id);
+    expect(tourItems(manifest!)[0]?.id).toBe(photo.id);
     // The reader asks with the name the MANIFEST carries; the session joins
     // the prefix it found the manifest under.
     await expect(
@@ -458,7 +472,7 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     const flat = await openTourSession("https://x/flat.zip", {
       fetchImpl: rangeServer(
         await buildExactZip({
-          "tour.json": JSON.stringify({ version: 1, objects: [photo] }),
+          "tour.json": JSON.stringify(tourOf([photo])),
           "content/ab12ab12ab12ab12.jpg": "flat-bytes",
         }),
       ),

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import {
-  createEmptyTourManifest,
-  type TourManifest,
+import type {
+  TourManifest,
+  TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+
+import { tourOf } from "./test-support/v3-tour.js";
 
 import {
   entriesForVisitor,
@@ -20,18 +22,53 @@ import {
  * walk shipped to every visitor.
  */
 
-const photo = {
+const GEO = { lat: 48, lon: 11, alt: 500, rotation: [0, 0, 0, 1] } as const;
+
+const photo: TourObject = {
   id: "f1",
-  kind: "photo" as const,
-  geo: { lat: 48, lon: 11, alt: 500, rotation: [0, 0, 0, 1] as const },
+  kind: "photo",
+  geo: GEO,
   createdAtIso: "2026-10-05T10:00:00.000Z",
   image: "content/f1.jpg",
   imageWidth: 4,
   imageHeight: 3,
 };
 
-function manifest(extra: Partial<TourManifest> = {}): TourManifest {
-  return { ...createEmptyTourManifest(), ...extra };
+/** A version 3 tour: each of `objects` in a station of its own. */
+function manifest(
+  extra: Partial<TourManifest> & { objects?: readonly TourObject[] } = {},
+): TourManifest {
+  const { objects = [], ...rest } = extra;
+  return tourOf(objects, rest);
+}
+
+/** A walk's baked photos, in a station of their own (version 3). */
+function walk(
+  images: readonly string[],
+  gpsAccuracyMedianM: number | null,
+): Partial<TourManifest> {
+  return {
+    stations: [
+      {
+        id: "walk",
+        geo: GEO,
+        activateRadiusM: 50,
+        foundRadiusM: 25,
+        hint: "arrow",
+        steps: [],
+        items: [],
+      },
+    ],
+    captureSpots: {
+      fixes: 9,
+      gpsAccuracyMedianM,
+      captures: images.map((image) => ({
+        image,
+        station: "walk",
+        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      })),
+    },
+  };
 }
 
 const RECORDING = [
@@ -58,16 +95,7 @@ describe("visitorEntryNames", () => {
       manifest({
         objects: [photo],
         assets: [{ id: "knight", path: "content/knight.png" } as never],
-        captureSpots: {
-          fixes: 9,
-          gpsAccuracyMedianM: 3,
-          captures: [
-            {
-              image: "images/frame-000002.jpg",
-              geo: { lat: 48, lon: 11, alt: 500, rotation: [0, 0, 0, 1] },
-            },
-          ],
-        },
+        ...walk(["images/frame-000002.jpg"], 3),
       }),
       "",
     );
@@ -129,26 +157,11 @@ describe("scanEntryNames", () => {
   // licence file is never the walk, and dropping it from the published copy
   // would lose it silently (the first milestone browser run caught exactly
   // that).
-  const spot = {
-    image: "images/frame-000002.jpg",
-    geo: { lat: 48, lon: 11, alt: 500, rotation: [0, 0, 0, 1] as const },
-  };
+  const baked = walk(["images/frame-000002.jpg"], null);
 
   it("is the recording's own files a visitor never reads: the walk and its unbaked frames", () => {
     const names = ["tour.json", ...RECORDING, "frames/frame-000009.jpg"];
-    expect(
-      scanEntryNames(
-        names,
-        manifest({
-          captureSpots: {
-            fixes: 9,
-            gpsAccuracyMedianM: null,
-            captures: [spot],
-          },
-        }),
-        "",
-      ),
-    ).toEqual([
+    expect(scanEntryNames(names, manifest(baked), "")).toEqual([
       "session.json",
       "actions/000001.json",
       "actions/000002.json",
@@ -168,13 +181,7 @@ describe("scanEntryNames", () => {
           "depth/000001.bin",
           "images/poster.jpg",
         ],
-        manifest({
-          captureSpots: {
-            fixes: 9,
-            gpsAccuracyMedianM: null,
-            captures: [spot],
-          },
-        }),
+        manifest(baked),
         "",
       ),
     ).toEqual([]);
@@ -193,13 +200,7 @@ describe("scanEntryNames", () => {
     expect(
       scanEntryNames(
         ["tour.json", "session.json", "images/frame-000001.jpg"],
-        manifest({
-          captureSpots: {
-            fixes: 9,
-            gpsAccuracyMedianM: null,
-            captures: [spot],
-          },
-        }),
+        manifest(baked),
         "",
       ),
     ).toEqual([]);

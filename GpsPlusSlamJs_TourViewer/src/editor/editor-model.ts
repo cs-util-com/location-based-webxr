@@ -14,6 +14,7 @@ import type {
   TourManifest,
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourCaptureGeos } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { codeDistanceLine, objectTitle } from "../object-describe.js";
 import { stationTitle } from "../station-run.js";
 import {
@@ -43,9 +44,6 @@ export interface EditorItem {
   /** A recorded photo (`captureSpots`), placed for visitors at the Finish
    *  and not editable as a note. */
   readonly recorded?: boolean;
-  /** A station drawn at its code's point (it has no position of its own):
-   *  the map draws it beside the code, never under it. */
-  readonly onCode?: true;
 }
 
 export interface EditorModel {
@@ -77,10 +75,13 @@ function noteMeta(object: TourObject, codes: readonly QrGeoPose[]): string {
  */
 export function buildEditorModel(input: {
   readonly manifest: TourManifest;
+  /** The tour's pins and photos in the world, with the page's edits
+   *  (version 3 keeps them in stations; `tour-content.ts`). */
+  readonly objects: readonly TourObject[];
   readonly levels: ReadonlyMap<string, QrLevel>;
   readonly fileName: string;
 }): EditorModel {
-  const { manifest } = input;
+  const { manifest, objects } = input;
   const references = [...input.levels].map(([levelId, level]) => ({
     levelId,
     geo: level.qr.geo ?? null,
@@ -88,7 +89,7 @@ export function buildEditorModel(input: {
   const summary = buildSummaryModel({
     visits: [],
     references,
-    objects: manifest.objects,
+    objects,
   });
   const stored = references.flatMap((r) => (r.geo === null ? [] : [r.geo]));
   const codes: EditorItem[] = summary.codes.map((code, index) => ({
@@ -109,7 +110,7 @@ export function buildEditorModel(input: {
   // list without a mark, so it can still be found (E1 review #9). The
   // summary keeps only the drawable ones.
   const drawable = new Map(summary.objects.map((s) => [s.id, s]));
-  const notes: EditorItem[] = manifest.objects.map((object) => {
+  const notes: EditorItem[] = objects.map((object) => {
     const mark = drawable.get(object.id);
     return {
       id: object.id,
@@ -123,7 +124,7 @@ export function buildEditorModel(input: {
       ...(object.kind === "photo" ? { image: object.image } : {}),
     };
   });
-  const recorded: EditorItem[] = (manifest.captureSpots?.captures ?? [])
+  const recorded: EditorItem[] = tourCaptureGeos(manifest)
     .map((c) => ({ capture: c, at: { lat: c.geo.lat, lng: c.geo.lon } }))
     // A fix that cannot be drawn keeps its row, as a note's does (E1 review
     // #9, PR #609 review): off the map, still findable and counted.
@@ -141,36 +142,21 @@ export function buildEditorModel(input: {
         recorded: true,
       };
     });
-  // The story's stations (tour kit plan K4): where each starts, at its own
-  // position or at the code it is anchored to. A story tour may carry
-  // nothing else (the committed sample).
-  const stations: EditorItem[] = manifest.stations.flatMap(
-    (station, index): EditorItem[] => {
+  // The stations (tour kit plan K4; version 3: each at its own position,
+  // the frame of its pins and photos, D9). A story tour may carry nothing
+  // else (the committed sample).
+  const stations: EditorItem[] = manifest.stations.map(
+    (station, index): EditorItem => {
       const number = index + 1;
-      const code =
-        station.anchor.code === undefined
-          ? undefined
-          : codes.find((c) => c.id === station.anchor.code);
-      const own =
-        station.anchor.geo === undefined
-          ? null
-          : { lat: station.anchor.geo.lat, lng: station.anchor.geo.lon };
-      const ownDrawn = own !== null && readablePoint(own);
-      const at = ownDrawn ? own : (code?.at ?? null);
-      return [
-        {
-          id: `${STATION_PREFIX}${station.id}`,
-          kind: "station",
-          title: stationTitle(station, number),
-          meta:
-            code === undefined
-              ? `Station ${String(number)}`
-              : `Station ${String(number)} · at ${code.title}`,
-          at,
-          number,
-          ...(!ownDrawn && at !== null ? { onCode: true as const } : {}),
-        },
-      ];
+      const own = { lat: station.geo.lat, lng: station.geo.lon };
+      return {
+        id: `${STATION_PREFIX}${station.id}`,
+        kind: "station",
+        title: stationTitle(station, number),
+        meta: `Station ${String(number)}`,
+        at: readablePoint(own) ? own : null,
+        number,
+      };
     },
   );
   const items = [...codes, ...notes, ...recorded, ...stations];

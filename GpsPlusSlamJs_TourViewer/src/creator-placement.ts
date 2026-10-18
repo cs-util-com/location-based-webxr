@@ -35,6 +35,7 @@ import type {
   TourViewerStore,
 } from "./tour-viewer-session.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
+import { tourObjectsOf } from "./tour-content.js";
 
 /** The placement controls, inside `#setup-controls`. */
 export interface CreatorPlacementDom {
@@ -119,7 +120,7 @@ export function wireCreatorPlacement(deps: {
    *  edit or a move of a hosted object is in `placedObjects` too (M4),
    *  but it was not "placed". */
   function newlyPlaced(): number {
-    const hosted = new Set((ctx.tourManifest?.objects ?? []).map((o) => o.id));
+    const hosted = new Set(tourObjectsOf(ctx.tourManifest).map((o) => o.id));
     return ctx.placedObjects.filter((p) => !hosted.has(p.object.id)).length;
   }
 

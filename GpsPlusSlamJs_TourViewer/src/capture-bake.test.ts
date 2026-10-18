@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  createEmptyTourManifest,
+  parseTourManifest,
+  serializeTourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { withTourContent, worldCaptureSpots } from "./tour-content.js";
 import { MATURE_GPS_EXTENT_M } from "gps-plus-slam-app-framework/state/alignment-maturity";
 import { tourMediaTypeOfEntry } from "gps-plus-slam-app-framework/ar/tour-media";
 import {
@@ -54,13 +59,23 @@ describe("bakeCaptureSpots over the real sample recording", () => {
     // joinable position (the integration test of the live join says why).
     expect(bake.spots.captures).toHaveLength(5);
     expect(bake.spots.fixes).toBeGreaterThan(0);
-    const read = parseTourManifest({
-      version: 2,
-      minor: 1,
+    // Placed into stations as the Finish does (version 3), the reader
+    // takes them, and their world view is where the bake put them.
+    const tour = withTourContent(createEmptyTourManifest(), {
       objects: [],
       captureSpots: bake.spots,
     });
-    expect(read.captureSpots).toEqual(bake.spots);
+    const read = parseTourManifest(JSON.parse(serializeTourManifest(tour)));
+    const world = worldCaptureSpots(read)!;
+    expect(world.captures.map((c) => c.image)).toEqual(
+      bake.spots.captures.map((c) => c.image),
+    );
+    for (const [i, c] of world.captures.entries()) {
+      const baked = bake.spots.captures[i]!.geo;
+      expect(c.geo.lat).toBeCloseTo(baked.lat, 8);
+      expect(c.geo.lon).toBeCloseTo(baked.lon, 8);
+      expect(c.geo.alt).toBeCloseTo(baked.alt, 6);
+    }
   });
 
   it("places each photo through ITS pick, not the end-of-walk alignment", async () => {
@@ -102,12 +117,16 @@ describe("bakeCaptureSpots over the real sample recording", () => {
     const images = bake.spots.captures.map((c) => c.image);
     expect(new Set(images).size).toBe(images.length);
     expect(() =>
-      parseTourManifest({
-        version: 2,
-        minor: 1,
-        objects: [],
-        captureSpots: bake.spots,
-      }),
+      parseTourManifest(
+        JSON.parse(
+          serializeTourManifest(
+            withTourContent(createEmptyTourManifest(), {
+              objects: [],
+              captureSpots: bake.spots,
+            }),
+          ),
+        ),
+      ),
     ).not.toThrow();
   });
 

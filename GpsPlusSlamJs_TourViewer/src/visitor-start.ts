@@ -7,7 +7,10 @@
  */
 
 import { tourCoverEntry } from "gps-plus-slam-app-framework/ar/tour-details";
-import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  tourItems,
+  type TourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 export interface VisitorStartView {
   /** The tour's name; "An AR tour" when it has none (yet). */
@@ -33,14 +36,11 @@ const APP_TITLE = "Tour Viewer";
 /** A tour without a name still reads as a tour. */
 const UNNAMED = "An AR tour";
 
-/** "N places to discover": a tour of stations counts its stations (the
- *  objects they show are not places of their own - M4 review #10); any
- *  other tour its objects and recorded photos. */
+/** "N places to discover": a tour counts its stations (the pins and photos
+ *  they show are not places of their own - M4 review #10; since version 3
+ *  every pin and photo is in one, tour editor plan W3). */
 function sublineFor(manifest: TourManifest): string | null {
-  const count =
-    manifest.stations.length > 0
-      ? manifest.stations.length
-      : manifest.objects.length + (manifest.captureSpots?.captures.length ?? 0);
+  const count = manifest.stations.length;
   if (count === 0) return null;
   return `${String(count)} ${count === 1 ? "place" : "places"} to discover`;
 }
@@ -48,9 +48,14 @@ function sublineFor(manifest: TourManifest): string | null {
 /** The chosen cover, else the first placed photo, else the first
  *  recorded one. */
 function coverPathOf(manifest: TourManifest): string | null {
-  const chosen = tourCoverEntry(manifest);
+  const items = tourItems(manifest);
+  const chosen = tourCoverEntry({
+    objects: items,
+    assets: manifest.assets,
+    ...(manifest.cover === undefined ? {} : { cover: manifest.cover }),
+  });
   if (chosen !== null) return chosen;
-  for (const object of manifest.objects) {
+  for (const object of items) {
     if (object.kind === "photo") return object.image;
   }
   return manifest.captureSpots?.captures[0]?.image ?? null;

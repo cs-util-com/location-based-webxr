@@ -21,10 +21,8 @@ import {
   readStoredEntryBytes,
 } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
 import {
-  createEmptyTourManifest,
   parseTourManifest,
   serializeTourManifest,
-  type TourCaptureSpots,
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -45,6 +43,12 @@ import {
   SAMPLE_PHOTOS,
   sampleRecordingBytes,
 } from "./test-support/sample-recording.js";
+import { tourOf, withWorldObjects } from "./test-support/v3-tour.js";
+import {
+  type CaptureSpotsInWorld,
+  withTourContent,
+  worldCaptureSpots,
+} from "./tour-content.js";
 
 const WRAP = "mytour/";
 const LEVEL_ID = "abc123";
@@ -72,7 +76,7 @@ function photo(id: string): TourObject {
 }
 
 function manifestOf(objects: readonly TourObject[]): TourManifest {
-  return { ...createEmptyTourManifest(), objects: [...objects] };
+  return tourOf([...objects]);
 }
 
 async function open(blob: Blob): Promise<TourSession> {
@@ -117,15 +121,18 @@ async function textOf(blob: Blob, name: string): Promise<string | undefined> {
   return bytes === undefined ? undefined : new TextDecoder().decode(bytes);
 }
 
-/** The manifest the zip carries, parsed from its bytes. */
-async function zipManifest(blob: Blob): Promise<TourManifest> {
+/** The manifest the zip carries, parsed from its bytes, with its pins
+ *  and photos in the world (version 3 keeps them in stations). */
+async function zipManifest(
+  blob: Blob,
+): Promise<ReturnType<typeof withWorldObjects>> {
   const text = await textOf(blob, `${WRAP}tour.json`);
   expect(text, "the zip must carry tour.json").toBeDefined();
-  return parseTourManifest(JSON.parse(text!));
+  return withWorldObjects(parseTourManifest(JSON.parse(text!)));
 }
 
-/** Spots that let the walk go (any valid ones). */
-const SPOTS: TourCaptureSpots = {
+/** Spots that let the walk go (any valid ones), as the bake gives them. */
+const SPOTS: CaptureSpotsInWorld = {
   fixes: 3,
   gpsAccuracyMedianM: 4,
   captures: [
@@ -162,10 +169,12 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
     });
     expect(result).not.toBeNull();
     const carried = await zipManifest(result!.blob);
-    expect(carried.objects.map((o) => o.id)).toEqual(["a", "kept", "b"]);
+    // In station order (version 3): the new "b" joined the nearest
+    // station within R, a's (the automatic-station rule, D20).
+    expect(carried.objects.map((o) => o.id)).toEqual(["a", "b", "kept"]);
     expect(carried.objects[0]).toMatchObject({ label: "new text" });
     // What it reports writing is what the zip carries.
-    expect(result!.written).toEqual(carried);
+    expect(withWorldObjects(result!.written)).toEqual(carried);
     const names = await namesOf(result!.blob);
     expect(names).not.toContain(`${WRAP}content/gone.jpg`);
     expect(names).toContain(`${WRAP}content/kept.jpg`);
@@ -268,6 +277,48 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
       "p1",
       "b",
     ]);
+    await tour.close();
+  });
+
+  it("puts the walk's recorded photos into stations at the Finish, in capture order, and keeps them there on the next (D20, D21)", async () => {
+    // Why (tour editor plan W3): a version 3 tour has no loose photos; the
+    // phone's Finish bakes the walk's photos in the world and the rule
+    // assigns each, in the order they were taken, to the nearest station
+    // within R or a new one - and a later save never re-assigns them.
+    const tour = await plainTour([], {});
+    const walk: CaptureSpotsInWorld = {
+      fixes: 5,
+      gpsAccuracyMedianM: 3,
+      captures: [0, 10, 40].map((north, i) => ({
+        image: `images/frame-00000${String(i + 1)}.jpg`,
+        geo: {
+          lat: 47.5 + north / 111_320,
+          lon: 8.7,
+          alt: 400,
+          rotation: [0, 0, 0, 1],
+        },
+      })),
+    };
+    const first = await rebuildFinishedTour({
+      ...NO_EDITS,
+      tour,
+      manifest: manifestOf([]),
+      captureSpots: walk,
+    });
+    const spots = first!.written.captureSpots!;
+    const [s0, s1, s2] = spots.captures.map((c) => c.station);
+    expect(s1).toBe(s0);
+    expect(s2).not.toBe(s0);
+    expect(first!.written.stations.map((s) => s.id)).toEqual([s0, s2]);
+    const second = await rebuildFinishedTour({
+      ...NO_EDITS,
+      tour,
+      manifest: first!.written,
+      placed: [{ object: pin("b") }],
+      captureSpots: walk,
+      previous: { blob: first!.blob },
+    });
+    expect(second!.written.captureSpots).toEqual(spots);
     await tour.close();
   });
 
@@ -486,6 +537,37 @@ describe("pendingAfterRebuild (M6 E0b: what is still to save after a write)", ()
     expect(out.deleted).toEqual(["deleted-during-the-save"]);
   });
 
+  it("counts a placement as written when the station it joined reads it back a few micrometres off (version 3)", () => {
+    // Why (tour editor plan W3): a pin that joins a station is stored at a
+    // local pose and read back through the station's frame, so its geo
+    // pose differs from the placed one in the last digits. Compared by raw
+    // content it would never count as written, and every later save and
+    // draft would offer it again.
+    const near: TourObject = {
+      ...pin("near"),
+      geo: {
+        lat: 47.5 + 7 / 111_320,
+        lon: 8.70004,
+        alt: 401.37,
+        headingDeg: 0,
+      },
+    };
+    const saved = withTourContent(manifestOf([pin("a")]), {
+      objects: [pin("a"), near],
+    });
+    expect(saved.stations.map((s) => s.items.map((i) => i.id))).toEqual([
+      ["a", "near"],
+    ]);
+    const placed = { object: near };
+    const out = pendingAfterRebuild(
+      { placed: [placed], deleted: [] },
+      saved,
+      [],
+    );
+    expect(out.finished).toEqual([placed]);
+    expect(out.placed).toEqual([]);
+  });
+
   it("keeps the caller's objects, so a photo's bytes travel with it", () => {
     const shot = { object: photo("p"), blob: new Blob(["jpg"]) };
     const out = pendingAfterRebuild(
@@ -502,7 +584,11 @@ describe("captureSpotsForRebuild (M6 E0b: the photos' spots for a save)", () => 
   // and only a cap or a failed integrity check fails the save. The phone's
   // Finish had this inline; a desktop save of an older tour with a
   // recording must publish the same file the phone would (E0 review #5).
-  const OWN: TourCaptureSpots = SPOTS;
+  /** A tour whose spots are already in its stations. */
+  const own = withTourContent(manifestOf([]), {
+    objects: [],
+    captureSpots: SPOTS,
+  });
   const noRecording = {
     hasRecording: false,
     entries: [],
@@ -515,9 +601,9 @@ describe("captureSpotsForRebuild (M6 E0b: the photos' spots for a save)", () => 
     await expect(
       captureSpotsForRebuild(
         { ...noRecording, hasRecording: true, loadRecordingActions: read },
-        { ...manifestOf([]), captureSpots: OWN },
+        own,
       ),
-    ).resolves.toEqual({ spots: OWN });
+    ).resolves.toEqual({ spots: worldCaptureSpots(own) });
     expect(read).not.toHaveBeenCalled();
   });
 

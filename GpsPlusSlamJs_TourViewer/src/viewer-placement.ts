@@ -38,12 +38,13 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { Texture } from "three";
 
-import type { TourCaptureSpots } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourItems } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { bakeCaptureSpots, posesOfCaptureSpots } from "./capture-bake.js";
 import { entriesForVisitor } from "./tour-read-set.js";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type { CaptureWorldPose } from "./capture-geo-join.js";
-import { renderTourObjects } from "./content-placement.js";
+import { renderTourStations } from "./content-placement.js";
+import { type CaptureSpotsInWorld, worldCaptureSpots } from "./tour-content.js";
 import { placeCapturedImagePlanes, placeImagePlanes } from "./image-planes.js";
 import type { ViewerMode } from "./mode.js";
 import {
@@ -819,7 +820,7 @@ export function createViewerPlacement(deps: {
   function tryPlaceContent(current: TourSession): void {
     if (ctx.contentAttempted || ctx.tourManifestStatus !== "settled") return;
     const manifest = ctx.tourManifest;
-    if (manifest === null || manifest.objects.length === 0) return;
+    if (manifest === null || tourItems(manifest).length === 0) return;
     const zero = selectZeroReference(arStore.getState());
     const scene = seams.getScene();
     if (zero === null || scene === null) return;
@@ -829,7 +830,9 @@ export function createViewerPlacement(deps: {
     // it on every dispatch at the frame cadence.
     ctx.contentAttempted = true;
     const generation = ctx.planesRunGeneration;
-    void renderTourObjects(manifest.objects, {
+    // One group per station, its pins and photos as children at their
+    // local poses (tour editor plan W3).
+    void renderTourStations(manifest.stations, {
       scene,
       zero,
       makeLabel: (text) => seams.createLabel(text),
@@ -985,8 +988,11 @@ export function createViewerPlacement(deps: {
   async function captureSpotsForRun(
     current: TourSession,
     generation: number,
-  ): Promise<TourCaptureSpots | null> {
-    const baked = ctx.tourManifest?.captureSpots;
+  ): Promise<CaptureSpotsInWorld | null> {
+    const baked =
+      ctx.tourManifest === null
+        ? undefined
+        : worldCaptureSpots(ctx.tourManifest);
     if (baked !== undefined) return baked;
     const bake = await bakeCaptureSpots(current, {
       // Same bail contract as `decodeJoinedPoses` below. `onChunk` alone

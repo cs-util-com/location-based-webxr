@@ -74,6 +74,8 @@ import {
   odomNueFromWebXr,
   throughAlignment,
 } from "./visit-anchoring.js";
+import { asHosted, tourOf } from "./test-support/v3-tour.js";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 // The pipeline builds its controller from this module; capture the config
 // it hands over (its `onDetection` is how detections reach the setup) and
@@ -1662,7 +1664,7 @@ describe(
       await finished(a.ctx);
       expect(a.ctx.finishError).toBeNull();
 
-      const written = a.ctx.tourManifest!.objects.map((o) =>
+      const written = tourObjects(a.ctx.tourManifest!).map((o) =>
         o.kind === "pin" ? o.label : o.id,
       );
       expect(written).toEqual(["Gate"]);
@@ -2069,7 +2071,7 @@ describe(
     ) {
       const a = authoring(store === undefined ? {} : { store });
       await openFinishableTour(a);
-      a.ctx.tourManifest = { ...createEmptyTourManifest(), objects };
+      a.ctx.tourManifest = tourOf(objects);
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
       a.beginVisit();
@@ -2103,8 +2105,9 @@ describe(
       );
       a.dom.objectList.listHandlers!.editText("h1", "  The old mill ");
       await flush();
+      // The hosted pin as its station reads it back (version 3), relabelled.
       expect(a.ctx.placedObjects.map((p) => p.object)).toEqual([
-        { ...hostedPin("h1", "Hosted gate"), label: "The old mill" },
+        { ...asHosted(hostedPin("h1", "Hosted gate")), label: "The old mill" },
       ]);
       expect(a.labels.some((o) => o.name === "The old mill")).toBe(true);
       expect(a.ctx.placedPreviews.size).toBe(1);
@@ -2133,7 +2136,7 @@ describe(
       a.dom.objectList.listHandlers!.editText("h1", "Second");
       await flush();
       expect(parseDraftBase(files.get("base:h1") as string)).toEqual({
-        seen: [objectContentKey(hosted)],
+        seen: [objectContentKey(asHosted(hosted))],
         written: [],
       });
     });
@@ -2953,10 +2956,7 @@ describe(
       a.ctx.placedObjects = a.ctx.placedObjects.filter(
         (p) => p.object.id !== hosted.id,
       );
-      a.ctx.tourManifest = {
-        ...createEmptyTourManifest(),
-        objects: [hosted],
-      };
+      a.ctx.tourManifest = tourOf([hosted]);
       a.endVisit();
       const edit = a.ctx.placedObjects.find((p) => p.object.id === hosted.id);
       expect(edit, "an edit by id in placedObjects").toBeDefined();
@@ -3209,7 +3209,7 @@ describe(
       ): Promise<ReturnType<typeof authoring>> {
         const a = authoring(store === undefined ? {} : { store });
         await openFinishableTour(a);
-        a.ctx.tourManifest = { ...createEmptyTourManifest(), objects };
+        a.ctx.tourManifest = tourOf(objects);
         a.setup.presentDraftForTour(TOUR);
         await flush();
         return a;
@@ -3227,7 +3227,7 @@ describe(
         a.dom.finishButton.click();
         await finished(a.ctx);
         // The page's manifest now holds the pin; the hosted zip does not.
-        const id = a.ctx.tourManifest!.objects[0]!.id;
+        const id = tourObjects(a.ctx.tourManifest!)[0]!.id;
         a.dom.objectList.listHandlers!.editText(id, "Gate, edited");
         await flush();
         // The zip was never uploaded: the reload sees the tour without it.
@@ -3281,9 +3281,11 @@ describe(
         await finished(a.ctx);
         // As the next open reads it: parsed from the written file (third
         // review #5), not the page's in-memory object.
-        const uploaded = parseTourManifest(
-          JSON.parse(serializeTourManifest(a.ctx.tourManifest!)),
-        ).objects.find((o) => o.id === "h1")!;
+        const uploaded = tourObjects(
+          parseTourManifest(
+            JSON.parse(serializeTourManifest(a.ctx.tourManifest!)),
+          ),
+        ).find((o) => o.id === "h1")!;
         // Uploaded from this tab; the page stays open and edits again.
         a.dom.objectList.listHandlers!.editText("h1", "Gate, phone 2");
         await flush();
@@ -3317,7 +3319,7 @@ describe(
           }),
         });
         await openFinishableTour(b);
-        b.ctx.tourManifest = { ...createEmptyTourManifest(), objects: [desk] };
+        b.ctx.tourManifest = tourOf([desk]);
         b.setup.presentDraftForTour(TOUR);
         b.dom.objectList.listHandlers!.editText("h1", "Gate, phone again");
         await flush();
@@ -3412,7 +3414,7 @@ describe(
           const { store } = memoryDraftStore();
           const a = await placeAndFinish(store);
           const first = a.ctx.rebuiltZip;
-          const hostedA = [...a.ctx.tourManifest!.objects];
+          const hostedA = [...tourObjects(a.ctx.tourManifest!)];
           a.beginVisit();
           a.seeTheCode();
           await flush();

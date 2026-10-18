@@ -48,7 +48,8 @@ function station(id: string, steps: TourStep[], title?: string): TourStation {
   return {
     id,
     ...(title === undefined ? {} : { title }),
-    anchor: { geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 } },
+    geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
+    items: [],
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",

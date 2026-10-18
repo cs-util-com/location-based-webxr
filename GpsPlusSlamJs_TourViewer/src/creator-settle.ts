@@ -91,6 +91,7 @@ import {
   readAlignment,
   type VisitAlignmentPicks,
 } from "./visit-settle.js";
+import { tourObjectsOf } from "./tour-content.js";
 
 /** What a visit settled through (`visitSettles`). */
 interface VisitSettleRecord {
@@ -1251,7 +1252,7 @@ export function wireCreatorSettle(deps: {
     ];
     const moved: { id: string; before: QrGeoPose; after: QrGeoPose }[] = [];
     for (const entry of authoringObjects(
-      ctx.tourManifest?.objects ?? [],
+      tourObjectsOf(ctx.tourManifest),
       ctx.placedObjects,
       ctx.deletedObjectIds,
     )) {
@@ -1392,7 +1393,7 @@ export function wireCreatorSettle(deps: {
             deps.codes.references(),
             deps.codes.numbering(),
           ),
-          objects: ctx.tourManifest?.objects ?? [],
+          objects: tourObjectsOf(ctx.tourManifest),
         }),
       );
     } catch {

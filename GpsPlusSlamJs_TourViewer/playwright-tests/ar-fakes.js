@@ -1,6 +1,9 @@
 // @ts-check
 import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
 import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
+import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import { expect } from "@playwright/test";
 
 import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
@@ -707,6 +710,25 @@ export async function levelTexts(bytes) {
   );
 }
 
+/** The world view needs the core geodesy, which runs under an activated
+ *  licence: activated once, as the app does at boot. */
+let licensed = false;
+
+/**
+ * A `tour.json` text parsed, with its pins and photos in the world as
+ * `objects` (version 3 keeps them in stations at local poses, tour editor
+ * plan W3) - what the specs read back from a written tour.
+ * @param {string} text
+ */
+export function worldManifest(text) {
+  if (!licensed) {
+    createSlamAppStore({ storageBackend: new NullStorageBackend() });
+    licensed = true;
+  }
+  const manifest = parseTourManifest(JSON.parse(text));
+  return { ...manifest, objects: tourObjects(manifest) };
+}
+
 /** Entry names, the manifest and the level files of the n-th downloaded zip. */
 export async function downloadedZip(page, index) {
   const data = await page.evaluate(async (i) => {
@@ -717,7 +739,7 @@ export async function downloadedZip(page, index) {
   const { names, json } = await readZip(bytes);
   return {
     names,
-    manifest: parseTourManifest(JSON.parse(json["tour.json"])),
+    manifest: worldManifest(json["tour.json"]),
     levels: await levelTexts(bytes),
   };
 }

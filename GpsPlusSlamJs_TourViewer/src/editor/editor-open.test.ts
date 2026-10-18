@@ -54,9 +54,9 @@ describe("openTourForEditing", () => {
       {
         path: "tour.json",
         data: JSON.stringify({
-          version: 2,
-          minor: 3,
-          objects: [],
+          version: 3,
+          minor: 0,
+          stations: [],
           description: "Fine.",
           contact: "call me",
           cover: "gone",

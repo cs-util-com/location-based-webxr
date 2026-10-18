@@ -51,7 +51,9 @@ recording. Its own module since the flows plan M6.
     lock, so the first `onVotedLock` arrives while the gate still scans).
   - The tour's content (`tour.json`, M5) is rendered once per session as
     soon as the gate allows it and the GPS zero exists
-    (`renderTourObjects`; labels through `seams.createLabel`, photos
+    (`renderTourStations`: a group per station at its geo pose, its
+    pins and photos as children at their local poses, version 3; labels
+    through `seams.createLabel`, photos
     decoded through `session.loadContentEntry`, which joins the archive's
     manifest prefix - a re-zipped tour keeps its photos under
     `mytour/content/…` while the record names `content/…` (PR #435
@@ -205,8 +207,10 @@ recording. Its own module since the flows plan M6.
 !imagePlanesLoading`, review #4); a lock after a placement changes the
   status only.
 - **The photos' spots come from `tour.json` when the creator's Finish
-  baked them** (`captureSpots`, scan-pass plan S1, S-D11): no download of
-  the walk, no replay, and the status line reports the baked fixes. A tour
+  baked them** (`captureSpots`, scan-pass plan S1, S-D11; read in the
+  world through `worldCaptureSpots`, since version 3 keeps them in
+  stations): no download of the walk, no replay, and the status line
+  reports the baked fixes. A tour
   without them runs the SAME bake here (`capture-bake.ts`: each photo
   through the first settled alignment after it was taken), so both show
   the photos at the same spots.
@@ -303,7 +307,7 @@ recording. Its own module since the flows plan M6.
      core refused the keys and broke, as designed, on core 1.26.
 - **The tour's content follows the live alignment - no per-note GPS anchors
   (owner decision D10a, authoring plan 2026-09-28-0953 §3.2, M2d).**
-  `tryPlaceContent` hands `renderTourObjects` the scene root
+  `tryPlaceContent` hands `renderTourStations` the scene root
   (`seams.getScene()`), so every alignment change - a scan's votes above
   all - moves the content in the visitor's view in the same dispatch. A
   GPS anchor (`FW/visualization/gps-anchor.ts`) moves only off screen and by

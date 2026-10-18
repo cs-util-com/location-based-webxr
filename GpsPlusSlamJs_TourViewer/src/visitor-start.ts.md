@@ -13,15 +13,15 @@ plus a small wiring that writes the page and loads the photo from the zip.
   pure.
   - `title`: the manifest's `title`, trimmed; `"An AR tour"` when it has
     none, an empty one, or no manifest yet.
-  - `subline`: `"N places to discover"` (`"1 place …"`): a tour of
-    stations counts its stations (the objects they show are not places of
-    their own); any other tour its objects and baked capture spots; `null`
-    when there are none.
+  - `subline`: `"N places to discover"` (`"1 place …"`): the tour's
+    stations (the pins, photos and recorded photos they hold are not
+    places of their own; since version 3 every one of them is in a
+    station, tour editor plan W3); `null` when there are none.
   - `description`: the manifest's `description` (W2 of the tour editor
     plan 2026-10-17-1816), trimmed; `null` for none.
   - `coverPath`: the cover the creator chose (`cover`, W2; its entry by
-    the framework's `tourCoverEntry`), else the first placed `photo`
-    object's `image`, else the first capture spot's `image` (a tour made
+    the framework's `tourCoverEntry`), else the first placed photo's
+    `image` (in station order, `tourItems`), else the first capture spot's `image` (a tour made
     from a recording), else `null`.
   - `pageTitle`: the tab's title, which a shared link's title shows too:
     the tour's name, else "Tour Viewer".

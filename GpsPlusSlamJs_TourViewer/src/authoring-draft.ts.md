@@ -39,7 +39,17 @@ where)`, owner question Q-E2-2's default; `where` is the phone's "on this
   question Q-E2-2.
 - `draftObjectsNotYetHosted(draft, manifest) -> readonly TourObject[]` -
   the whole state machine in one function; see the invariants. Compares
-  CONTENT (`objectContentKey`), not ids.
+  CONTENT (`objectContentKey`), not ids, through `hostedObjects`.
+- `hostedObjects(manifest | null) -> HostedObjects` - the hosted tour's
+  pins and photos in the world (`tourObjects`, version 3) with
+  `key(id)` (the hosted content key) and `holds(object)`: the hosted
+  copy has this object's content, either exactly or as its station
+  stores it (`asStored` of `tour-content.ts`). A placement saved into a
+  station reads back a few micrometres off, and comparing it raw would
+  offer it again in every later draft and save. Every module that asks
+  "does the hosted file already have this?" goes through it
+  (`creator-draft.ts`, `editor/editor-draft.ts`,
+  `editor/editor-session.ts`, `finish-rebuild.ts`).
 - `draftDeletionsNotYetHosted(draft, manifest) -> readonly string[]` - the
   tombstones whose id the hosted manifest still carries.
 - `objectContentKey(object) -> string` - an object's JSON with every key
