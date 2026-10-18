@@ -43,7 +43,6 @@ import {
   itemGeoPose,
   localPoseOf,
   tourCaptureGeos,
-  tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import { newObjectId } from "./content-placement.js";
@@ -86,7 +85,7 @@ export function worldCaptureSpots(
 
 /** The same geo pose, field by field (=== on numbers, so -0 is 0): an
  *  object nobody moved, compared with what its stored item reads as. */
-export function sameGeoPose(a: QrGeoPose, b: QrGeoPose): boolean {
+function sameGeoPose(a: QrGeoPose, b: QrGeoPose): boolean {
   return (
     a.lat === b.lat &&
     a.lon === b.lon &&
@@ -294,10 +293,4 @@ function routedTo(station: TourStation): string[] {
     ids.push(...Object.values(byOption ?? {}));
   }
   return ids;
-}
-
-/** The tour's pins and photos in the world, in station order; none
- *  without a tour. */
-export function tourObjectsOf(manifest: TourManifest | null): TourObject[] {
-  return manifest === null ? [] : tourObjects(manifest);
 }

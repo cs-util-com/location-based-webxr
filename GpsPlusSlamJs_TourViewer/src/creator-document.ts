@@ -58,7 +58,7 @@ export interface VisitPlacement {
 
 /** One of this page's entries: the object as the document holds it, with
  *  its picture and its AR placement from the side tables. */
-export interface PlacedEntry {
+interface PlacedEntry {
   readonly object: TourObject;
   readonly blob?: Blob;
   readonly placement?: VisitPlacement;
@@ -78,13 +78,13 @@ export interface DocumentChange {
 }
 
 /** What an undo did, or why it did not. */
-export type DocumentUndo =
+type DocumentUndo =
   | ({ readonly kind: "undone"; readonly what: string } & DocumentChange)
   | { readonly kind: "nothing" }
   | { readonly kind: "refused"; readonly reason: "saving" | "picture-gone" };
 
 /** What a rename did, or why it did not (in plain words). */
-export type DocumentRename =
+type DocumentRename =
   | ({ readonly kind: "renamed" } & DocumentChange)
   | { readonly kind: "unchanged" }
   | { readonly kind: "refused"; readonly reason: string };

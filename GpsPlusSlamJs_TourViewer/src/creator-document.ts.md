@@ -57,9 +57,10 @@ generation, written, appliedDeletions, stationsAtStart })`,
 - `follow(draft)` - the draft follows the document: `followDocument`
   (`tour-document-draft.ts`) from a listener after each edit. Once per
   page (a second call throws: two drafts would write everything twice).
-- `revision()`; the types `VisitPlacement`, `PlacedEntry`,
-  `CreatorObject`, `DocumentChange`, `DocumentUndo`,
-  `CreatorDocumentStore`.
+- `revision()`; the types `VisitPlacement`, `CreatorObject`,
+  `DocumentChange`, `CreatorDocumentStore` (`PlacedEntry`,
+  `DocumentUndo` and `DocumentRename` are the methods' own shapes,
+  module-private).
 
 ## Invariants & assumptions
 
