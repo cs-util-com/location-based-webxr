@@ -2956,8 +2956,11 @@
                   ></div>
                   <!-- The tour's own name (tour editor plan 2026-10-17-1816,
                    W2), apart from the poster's title: it shows the open
-                   tour's title and is written at the Finish; an emptied one
-                   removes the title (tour-name-field.ts). -->
+                   tour's title, and a changed one is a change of the tour
+                   (saved by the next Finish); an emptied one removes the
+                   title (tour-name-field.ts). No maxlength: it counts UTF-16
+                   units, the format counts characters - the check says
+                   when a name is too long (plan §23 #8). -->
                   <label class="tour-name-ask" id="tour-name-ask"
                     >Tour name
                     <input
@@ -2965,11 +2968,17 @@
                       class="input"
                       data-testid="tour-name-input"
                       type="text"
-                      maxlength="80"
                       autocomplete="off"
                       placeholder="Visitors see it when they open the tour"
                     />
                   </label>
+                  <p
+                    id="tour-name-error"
+                    class="step-copy"
+                    data-testid="tour-name-error"
+                    role="alert"
+                    hidden
+                  ></p>
                   <!-- The poster text (polish round D-P7, r820 feedback R8):
                    printed with every code so a sheet can be hung as it
                    comes out of the printer. Filled in; an emptied field is

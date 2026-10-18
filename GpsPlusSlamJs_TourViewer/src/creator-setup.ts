@@ -218,6 +218,10 @@ export interface CreatorSetup {
   /** Every camera frame of a creator's session: the open station's line
    *  and ring (`creator-stations.ts`). */
   tickStations: () => void;
+  /** The tour's name from step 3's field (plan W2): a change of the tour
+   *  document, saved by the next Finish like any other. Null when taken
+   *  (or the same name), else why not, in words (over 80 characters). */
+  renameTour: (name: string) => string | null;
 }
 
 export function wireCreatorSetup(deps: {
@@ -242,11 +246,6 @@ export function wireCreatorSetup(deps: {
   /** The host chosen in step 1, for step 6's replace steps (polish round
    *  M2); absent in the node tests that do not need it. */
   host?: () => TourHost | null;
-  /** The tour's name as typed in step 3's "Tour name" field
-   *  (`tour-name-field.ts`; null when not typed): written as the
-   *  manifest's `title` at the Finish, for the visitor's start page
-   *  (polish round M4a, W2). Absent in the node tests that do not need it. */
-  tourTitle?: () => string | null;
   /** Re-render the AR button: it reads the finish (polish round M3). */
   renderArEntry?: () => void;
 }): CreatorSetup {
@@ -733,6 +732,7 @@ export function wireCreatorSetup(deps: {
       arAvailable: arController.getState().status !== "unsupported",
       placedCount: ctx.tourDocument.entries().length,
       deletedCount: ctx.tourDocument.deleted().length,
+      tourChanged: ctx.tourDocument.tourChanged(),
       codeCount: codes.toWrite().length,
       rebuilt:
         ctx.rebuiltZip === null
@@ -773,7 +773,6 @@ export function wireCreatorSetup(deps: {
     previews,
     draft,
     sessionLive,
-    ...(deps.tourTitle === undefined ? {} : { tourTitle: deps.tourTitle }),
     render: () => {
       renderAuthorReadout();
     },
@@ -801,6 +800,17 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout,
     tickStations: () => {
       if (creator) stations.tick();
+    },
+    renameTour: (name) => {
+      const renamed = ctx.tourDocument.rename(name);
+      if (renamed.kind === "refused") return renamed.reason;
+      if (renamed.kind === "renamed") {
+        void renamed.backedUp.then((ok) => {
+          if (!ok) draft.warnNoBackup();
+        });
+        renderAuthorReadout();
+      }
+      return null;
     },
     measuredCodeIds: () => codes.ids(),
     leaveNeedsConfirm: () => leaveNeedsConfirm(guardInput()),

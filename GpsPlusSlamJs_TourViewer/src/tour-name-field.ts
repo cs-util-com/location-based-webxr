@@ -1,12 +1,13 @@
 /**
  * The phone's tour name field (tour editor plan 2026-10-17-1816, W2): the
  * tour's own name, apart from the poster's title. It shows the open tour's
- * title, and tells the Finish what the creator did with it - a name typed,
- * a name emptied (the title goes), or nothing (the tour keeps its own) -
- * so an emptied name never keeps the old title silently. A typed name is
- * kept across a reload of the page, as the poster text is (M4a review
- * #12), for as long as the tour's file still carries the title it was
- * typed over.
+ * title, and hands what the creator did with it - a name typed, a name
+ * emptied (the title goes), or nothing (the tour keeps its own) - to the
+ * tour document as a rename when the field is left, so an emptied name
+ * never keeps the old title silently; a refused one is said beside it. A
+ * typed name is kept across a reload of the page, as the poster text is
+ * (M4a review #12), for as long as the tour's file still carries the title
+ * it was typed over.
  *
  * @see tour-name-field.ts.md
  */
@@ -14,7 +15,15 @@
 /** The field (structural, so the unit tests run in node). */
 export interface TourNameInput {
   value: string;
-  addEventListener(type: "input", handler: () => void): void;
+  addEventListener(type: "input" | "change", handler: () => void): void;
+}
+
+/** Where a typed name goes: the tour document's rename (`renameTour`),
+ *  null when taken, else why not; and the line beside the field that
+ *  says why. */
+export interface TourNameRename {
+  apply(name: string): string | null;
+  readonly error: { textContent: string; hidden: boolean | string };
 }
 
 /** The store slice a typed name is kept in (`localStorage`). */
@@ -70,8 +79,19 @@ function forget(store: TourNameStore | undefined, key: string): void {
 export function wireTourNameField(
   input: TourNameInput,
   store?: TourNameStore,
+  rename?: TourNameRename,
 ): TourNameField {
   let touched = false;
+  /** The typed name to the document, and its refusal beside the field. */
+  function commit(): void {
+    if (rename === undefined) return;
+    const refused = touched ? rename.apply(input.value) : null;
+    rename.error.textContent = refused ?? "";
+    rename.error.hidden = refused === null;
+  }
+  // On "change" (the field left, or Enter), not per key: each rename is
+  // one step of the document, and one draft write.
+  input.addEventListener("change", commit);
   /** The presented tour's key and title, for what is typed. */
   let presented: { key: string; title: string | null } | null = null;
   input.addEventListener("input", () => {
@@ -91,6 +111,8 @@ export function wireTourNameField(
       if (kept !== null && kept.over === title) {
         input.value = kept.name;
         touched = true;
+        // A name kept from before a reload is this page's work again.
+        commit();
         return;
       }
       // Spent once the file carries another title: a Finish wrote the
@@ -98,6 +120,7 @@ export function wireTourNameField(
       if (kept !== null && key !== null) forget(store, key);
       input.value = title ?? "";
       touched = false;
+      commit();
     },
     typed: () => (touched ? input.value : null),
   };

@@ -315,6 +315,12 @@ async function wireFinishable(options: {
     if (changed === null) throw new Error(`refused: ${object.id}`);
   };
   for (const object of options.placed) put(object);
+  // The name typed in step 3's field, as the page hands it over
+  // (`renameTour`).
+  if (options.tourTitle !== undefined && options.tourTitle !== null) {
+    const renamed = tour.rename(options.tourTitle);
+    if (renamed.kind === "refused") throw new Error(renamed.reason);
+  }
   for (const { object, local } of options.placedInVisit ?? []) {
     put(object, {
       visit: 0,
@@ -351,9 +357,6 @@ async function wireFinishable(options: {
     } as never,
     dom: dom as unknown as CreatorSetupDom,
     openDraftStore: () => Promise.resolve(undefined),
-    ...(options.tourTitle === undefined
-      ? {}
-      : { tourTitle: () => options.tourTitle ?? null }),
   });
   if (options.noCodeInHand !== true) {
     setup.codes.setInHand({ id: LEVEL_ID, json: '{"measured":true}' }, null);

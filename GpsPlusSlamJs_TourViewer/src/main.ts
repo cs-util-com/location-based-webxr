@@ -540,6 +540,14 @@ const tourNameField = wireTourNameField(
   // A typed name outlives a reload, as the poster text does (M4a review
   // #12), keyed by the tour's file.
   stepStore,
+  // The name becomes the tour document's (W2): a change like any other,
+  // saved by the next Finish - or refused in words beside the field (over
+  // 80 characters, counted as the format counts them). Read when a tour
+  // opens, after `setup` exists.
+  {
+    apply: (name) => setup.renameTour(name),
+    error: element<HTMLElement>("tour-name-error"),
+  },
 );
 if (mode === "creator") {
   hooks.presentTourInfo = (manifest) => {
@@ -564,10 +572,6 @@ const setup = wireCreatorSetup({
   },
   // Step 6 names the host chosen in step 1 (polish round M2).
   host: () => readTourHost(stepStore),
-  // The tour's name, typed in step 3's own field, becomes its title at the
-  // Finish (polish round M4a: the visitor's start page shows it; W2: an
-  // emptied name removes it, an untouched one keeps the tour's own).
-  tourTitle: () => tourNameField.typed(),
   codeTour: {
     onDetection: (text) => {
       scanOpen?.onDetection(text);

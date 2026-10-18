@@ -57,8 +57,11 @@ screen. Everything marked `.creator-only` is hidden for a visitor
      browsers" error.
   3. **Print** (`#print-panel`): the tour's own name first (`#tour-name-input`,
      W2 of the tour editor plan 2026-10-17-1816: apart from the poster's
-     title, it shows the open tour's title and is written at the Finish -
-     an emptied one removes the title, `tour-name-field.ts`); by PDF only since polish round M0b - a
+     title, it shows the open tour's title, and a changed one renames the
+     tour, saved by the next Finish - an emptied one removes the title,
+     `tour-name-field.ts`; no `maxlength`, which counts UTF-16 units: a
+     name over 80 characters is refused in `#tour-name-error`, plan §23
+     #8); by PDF only since polish round M0b - a
      PDF of N numbered posters (`#print-count` between the big - and +
      `#print-count-down` / `#print-count-up`, three by default), each
      carrying the poster text of `#poster-title`, `#poster-explanation`

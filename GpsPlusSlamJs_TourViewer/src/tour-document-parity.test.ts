@@ -352,7 +352,6 @@ async function phonePage(
   ctx.session = session;
   ctx.tourManifestStatus = "settled";
   ctx.tourDocument.open(tourOf(OPENED));
-  let typedName: string | null = null;
   let draftKey: string | null = null;
   const setup = wireCreatorSetup({
     ctx,
@@ -382,7 +381,6 @@ async function phonePage(
       draftKey = key;
       return stores(key);
     },
-    tourTitle: () => typedName,
   });
   setup.presentDraftForTour(session.archive.url);
   await flush();
@@ -444,8 +442,11 @@ async function phonePage(
           new NoSuchOperation("phone: a description or a contact"),
         );
       }
-      if (change.name !== undefined) typedName = change.name;
-      return Promise.resolve();
+      // As step 3's name field hands it over (`main.ts`, on "change"); a
+      // refusal is said beside the field and changes nothing, as on the
+      // desktop.
+      if (change.name !== undefined) setup.renameTour(change.name);
+      return flush();
     },
     save: async () => {
       const started = setup.finishNow();
@@ -607,7 +608,7 @@ const ROWS: readonly Row[] = [
     name: "turn on 'needs no GPS', save",
     records: true,
     diverges:
-      "the phone has no such setting (the phone adoption: `settingsChanged`)",
+      "by design: the setting is marked in the editor (Q-QF-1, the QR-first field study plan), the phone offers none - removed only if the owner wants it on the phone",
     run: async (p) => {
       await p.setNeedsNoGps(true);
       return p;
@@ -616,8 +617,6 @@ const ROWS: readonly Row[] = [
   {
     name: "name the tour, save",
     records: true,
-    diverges:
-      "the phone's Finish counts a changed name as no work, so a name alone is never saved there (the phone adoption: the name is a document change like any other)",
     run: async (p) => {
       await p.setDetails({ name: "Castle walk" });
       return p;
@@ -627,7 +626,7 @@ const ROWS: readonly Row[] = [
     name: "give the tour a description and a contact, save",
     records: true,
     diverges:
-      "the phone edits only the name (the phone adoption: `detailsChanged`)",
+      "by design: the phone has a tour name field only (W2 of the tour editor plan), the full details dialog is the editor's - removed only if the owner wants it on the phone",
     run: async (p) => {
       await p.setDetails({
         description: "A walk around the castle.",
@@ -639,8 +638,6 @@ const ROWS: readonly Row[] = [
   {
     name: "a name longer than 80 characters is refused, save",
     records: true,
-    diverges:
-      "the desktop refuses a name over 80 characters, the phone's Finish writes what its field gives (the phone adoption: the name checked by `checkTourTitle` on both pages)",
     run: async (p) => {
       await p.edit("a", "The gate");
       await p.setDetails({ name: "x".repeat(81) });

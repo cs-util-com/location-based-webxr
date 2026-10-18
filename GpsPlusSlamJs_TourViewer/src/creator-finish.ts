@@ -80,10 +80,6 @@ export function wireCreatorFinish(deps: {
   previews: Pick<CreatorPreviews, "keepFinishedPhoto" | "sync">;
   draft: Pick<CreatorDraft, "saveMeta" | "finished">;
   sessionLive: () => boolean;
-  /** The tour's name as typed in step 3 (`tour-name-field.ts`): a name
-   *  becomes the manifest's `title` (polish round M4a), an emptied one
-   *  removes it, null keeps the tour's own (W2). */
-  tourTitle?: () => string | null;
   render: () => void;
   /** Re-render the AR button when a finish ends (polish round M3). */
   renderArEntry?: () => void;
@@ -176,6 +172,7 @@ export function wireCreatorFinish(deps: {
       deps.codes.toWrite().length > 0 ||
       ctx.tourDocument.entries().length > 0 ||
       ctx.tourDocument.deleted().length > 0 ||
+      ctx.tourDocument.tourChanged() ||
       (deps.sessionLive() && deps.codes.inHand() !== null)
     );
   }
@@ -259,7 +256,6 @@ export function wireCreatorFinish(deps: {
           placed: [...tour.entries()],
           deleted,
           levels,
-          title: deps.tourTitle?.() ?? null,
           ...(photos.spots === undefined ? {} : { captureSpots: photos.spots }),
           keepScan: dom.keepScanInput.checked,
           // A walk that places nothing is left out too (the M4b milestone

@@ -44,9 +44,11 @@ import {
   type EditEntry,
 } from "./object-edits.js";
 import {
+  checkDetailsForm,
   DETAIL_FIELDS,
   detailsOf,
   withDetails,
+  type DetailsForm,
   type TourDetailFields,
 } from "./tour-details-form.js";
 import type { CaptureSpotsInWorld } from "./tour-content.js";
@@ -270,13 +272,45 @@ export function documentObjects(state: TourDocumentState): AuthoringObject[] {
 export function effectiveDetails(state: TourDocumentState): TourDetailFields {
   const { details } = state;
   if (details.cover === undefined) return details;
-  const ids = tourImageIds({
+  if (coverImageIds(state).has(details.cover)) return details;
+  const { cover: _gone, ...rest } = details;
+  return rest;
+}
+
+/** The images the tour may show as its cover: its photos as they stand
+ *  with the edits, and its image assets. */
+export function coverImageIds(state: TourDocumentState): Set<string> {
+  return tourImageIds({
     objects: documentObjects(state).map((o) => o.object),
     assets: state.written?.assets ?? [],
   });
-  if (ids.has(details.cover)) return details;
-  const { cover: _gone, ...rest } = details;
-  return rest;
+}
+
+/** What a details form would change, by the format's rules
+ *  (`checkDetailsForm`, as both pages check it): the details to dispatch
+ *  (`detailsChanged`), nothing, or why not in plain words. */
+export function detailsChange(
+  state: TourDocumentState,
+  form: DetailsForm,
+):
+  | { readonly kind: "changed"; readonly details: TourDetailFields }
+  | { readonly kind: "unchanged" }
+  | { readonly kind: "refused"; readonly reason: string } {
+  const was = effectiveDetails(state);
+  const checked = checkDetailsForm(form, coverImageIds(state), was);
+  if (!checked.ok) return { kind: "refused", reason: checked.reason };
+  if (DETAIL_FIELDS.every((f) => checked.details[f] === was[f])) {
+    return { kind: "unchanged" };
+  }
+  return { kind: "changed", details: checked.details };
+}
+
+/** The changes of the tour's own fields not written yet - its station
+ *  frames, its setting, its details: `changeCount` less the objects'. */
+export function tourFieldChanges(state: TourDocumentState): number {
+  return (
+    changeCount(state) - unsavedEntries(state).length - state.deleted.length
+  );
 }
 
 /** The manifest the next write starts from: the written tour with the

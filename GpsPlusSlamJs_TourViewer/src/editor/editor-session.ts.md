@@ -68,7 +68,8 @@ bytes (`previous`), the photo spots' cache, the pictures' side table
   - `details()` / `setDetails(form)` / `coverChoices()` (W2 of the tour
     editor plan 2026-10-17-1816) - the tour's name, description, cover and
     contact as a `DetailsForm` (`../tour-details-form.ts`), with the edits;
-    their edit, all at once: checked by `checkDetailsForm`
+    their edit, all at once: checked by `checkDetailsForm` through the
+    document's `detailsChange` (shared with the phone's rename)
     (`../tour-details-form.ts`: the format's rules, `tour-details.ts` in
     the framework; the name by `checkTourTitle`, trimmed, at most
     `TOUR_TITLE_MAX_CHARS` = 80 characters counted as code points -

@@ -294,3 +294,86 @@ describe("the creator's document: the draft follows it", () => {
     expect(calls).toEqual([]);
   });
 });
+
+describe("the creator's document: the tour's name (plan W2, §23 #8)", () => {
+  // Why these tests matter: the phone's name used to reach only its
+  // Finish, unchecked - a name alone was never saved, and a name over the
+  // format's 80 characters was written. It is a document change now,
+  // checked by the desktop's own rule, and counted as work.
+  it("renames the tour as a change of the document, and counts it as work", async () => {
+    const doc = fresh();
+    doc.open(tourOf([pin("a")], { title: "Old" }));
+    expect(doc.tourChanged()).toBe(false);
+    const renamed = doc.rename("  Castle walk ");
+    expect(renamed.kind).toBe("renamed");
+    const backedUp = renamed.kind === "renamed" ? await renamed.backedUp : null;
+    expect(backedUp).toBe(true);
+    expect(doc.manifest()?.title).toBe("Castle walk");
+    expect(doc.tourChanged()).toBe(true);
+  });
+
+  it("removes the title for an emptied name, and says nothing changed for the same one", () => {
+    const doc = fresh();
+    doc.open(tourOf([pin("a")], { title: "Old" }));
+    expect(doc.rename("Old").kind).toBe("unchanged");
+    expect(doc.rename("   ").kind).toBe("renamed");
+    expect(doc.manifest()?.title).toBeUndefined();
+  });
+
+  it("refuses a name over 80 characters, counted as a reader counts them", () => {
+    // §23 #8: characters are code points, not UTF-16 units - 80 emoji are
+    // 160 units and still a valid name.
+    const doc = fresh();
+    doc.open(tourOf([pin("a")]));
+    const refused = doc.rename("x".repeat(81));
+    expect(refused).toEqual({
+      kind: "refused",
+      reason: "The name is longer than 80 characters.",
+    });
+    expect(doc.manifest()?.title).toBeUndefined();
+    expect(doc.rename("\u{1F3F0}".repeat(80)).kind).toBe("renamed");
+  });
+
+  it("keeps the tour's other details when it renames", () => {
+    const doc = fresh();
+    doc.open(
+      tourOf([pin("a")], {
+        title: "Old",
+        description: "A walk around the castle.",
+        contact: "https://example.org",
+      }),
+    );
+    doc.rename("New");
+    expect(doc.manifest()).toMatchObject({
+      title: "New",
+      description: "A walk around the castle.",
+      contact: "https://example.org",
+    });
+  });
+
+  it("counts a station moved with no items as work too", () => {
+    const doc = fresh();
+    doc.open(
+      tourOf([], {
+        stations: [
+          {
+            id: "empty",
+            geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+            activateRadiusM: 50,
+            foundRadiusM: 25,
+            hint: "arrow",
+            steps: [],
+            items: [],
+          },
+        ],
+      }),
+    );
+    doc.moveStation(
+      "empty",
+      { lat: 48.5201, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+      "a station",
+    );
+    expect(doc.entries()).toEqual([]);
+    expect(doc.tourChanged()).toBe(true);
+  });
+});

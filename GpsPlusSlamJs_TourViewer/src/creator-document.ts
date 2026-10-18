@@ -29,7 +29,10 @@ import {
   objectFits,
   picturesNeeded,
   selectTourDocument,
+  detailsChange,
+  effectiveDetails,
   tourDocumentActions,
+  tourFieldChanges,
   type StationFrame,
   type StationPose,
   type TourDocumentState,
@@ -79,6 +82,12 @@ export type DocumentUndo =
   | ({ readonly kind: "undone"; readonly what: string } & DocumentChange)
   | { readonly kind: "nothing" }
   | { readonly kind: "refused"; readonly reason: "saving" | "picture-gone" };
+
+/** What a rename did, or why it did not (in plain words). */
+export type DocumentRename =
+  | ({ readonly kind: "renamed" } & DocumentChange)
+  | { readonly kind: "unchanged" }
+  | { readonly kind: "refused"; readonly reason: string };
 
 /** The store the document lives in (`createTourViewerStore`). */
 export interface CreatorDocumentStore {
@@ -141,6 +150,15 @@ export interface CreatorDocument {
     geo: QrGeoPose,
     what: string,
   ): DocumentChange | null;
+  /** The tour's name (the phone's one detail, plan W2), checked as the
+   *  desktop's details form checks it (`detailsChange`: at most 80
+   *  characters, counted as a reader counts them; an empty name removes
+   *  the title); its other details are kept. */
+  rename(name: string): DocumentRename;
+  /** The tour's own fields (its name, its station frames, its setting)
+   *  changed since the last write: work for a Finish though no object
+   *  changed. */
+  tourChanged(): boolean;
   /** A draft's work put back, already filtered by the page's rules, with
    *  its photos' pictures: one step. */
   restore(
@@ -341,6 +359,27 @@ export function createCreatorDocument(
       if (!state().stations.some((s) => s.id === stationId)) return null;
       return change(tourDocumentActions.stationMoved({ stationId, geo, what }));
     },
+    rename(name) {
+      const s = state();
+      const was = effectiveDetails(s);
+      const proposed = detailsChange(s, {
+        name,
+        description: was.description ?? "",
+        cover: was.cover ?? null,
+        contact: was.contact ?? "",
+      });
+      if (proposed.kind !== "changed") return proposed;
+      return {
+        kind: "renamed",
+        ...change(
+          tourDocumentActions.detailsChanged({
+            details: proposed.details,
+            what: "the tour's name",
+          }),
+        ),
+      };
+    },
+    tourChanged: () => tourFieldChanges(state()) > 0,
     restore(work, what) {
       for (const [id, blob] of work.pictures) setPicture(id, blob);
       return change(

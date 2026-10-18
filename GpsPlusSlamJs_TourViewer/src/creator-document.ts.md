@@ -40,6 +40,14 @@ copy of the tour.
   - `undo()` - `{ kind: "undone", what, backedUp }`, `{ kind: "nothing" }`,
     or refused: `"saving"` (`canStep`) or `"picture-gone"`
     (`picturesNeeded`, a photo whose picture this page does not hold).
+- `rename(name)` - the tour's name (the phone's one detail, plan W2):
+  `detailsChange` with the other details as they stand - `renamed`
+  (`backedUp`), `unchanged`, or `refused` with the reason (over 80
+  characters, counted as a reader counts them; an empty name removes the
+  title).
+- `tourChanged()` - the tour's own fields (its name, a station's frame,
+  its setting) changed since the last write (`tourFieldChanges`): work
+  for a Finish though no object changed.
 - `keepPicture(id, blob)` - a deleted photo's picture, for an undo after a
   write took it out.
 - `open(manifest | null)`, `close()` - see the invariants.

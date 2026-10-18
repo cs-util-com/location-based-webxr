@@ -4,15 +4,22 @@
 
 The phone's "Tour name" field in step 3 (tour editor plan 2026-10-17-1816,
 W2): the tour's own name, apart from the poster's title. It shows the open
-tour's title and tells the Finish (`creator-finish.ts` `tourTitle`) what the
-creator did with it. Before, the poster's title was the tour's name and an
-emptied one silently kept the old title.
+tour's title and hands what the creator did with it to the tour document
+as a rename (`creator-setup.ts` `renameTour`), saved by the next Finish.
+Before, the poster's title was the tour's name and an emptied one silently
+kept the old title.
 
 ## Public API
 
-- `wireTourNameField(input, store?): TourNameField`
-  - `input` - the field (`TourNameInput`: `value` and an `input`
-    listener); structural, so the tests run in node.
+- `wireTourNameField(input, store?, rename?): TourNameField`
+  - `input` - the field (`TourNameInput`: `value` and its `input` and
+    `change` listeners); structural, so the tests run in node.
+  - `rename` (`TourNameRename`) - `apply(name)`, the document's rename
+    (null when taken, else why not), and the `error` line beside the
+    field that says a refusal (hidden otherwise). Applied when the field
+    is left (`change`, not per key: each rename is one undo step and one
+    draft write) and at `present` - a kept name from before a reload is
+    this page's work again, and an untouched present clears a refusal.
   - `store` - where a typed name is kept across a reload
     (`localStorage`, `tour-viewer.tour-name.<tour key>`; M4a review #12:
     the poster text survived a reload, the name beside it did not).
@@ -27,10 +34,9 @@ emptied one silently kept the old title.
 
 ## Invariants & assumptions
 
-- Untouched means null, whatever the field shows: the Finish then keeps
-  the tour's own title (`finish-rebuild.ts` `finishTitle`), so a field
-  that was never presented a title cannot remove one.
-- An emptied name is `""`: the Finish removes the title.
+- Untouched means null, whatever the field shows: nothing is renamed, so
+  a field that was never presented a title cannot remove one.
+- An emptied name is `""`: the rename removes the title.
 - Every `present` starts untouched again, unless a kept name applies;
   `main.ts` presents on every open and close (`hooks.presentTourInfo`,
   creator mode).
@@ -40,10 +46,11 @@ emptied one silently kept the old title.
 ## Examples
 
 ```ts
-const field = wireTourNameField(element("tour-name-input"));
+const field = wireTourNameField(element("tour-name-input"), localStorage, {
+  apply: (name) => setup.renameTour(name),
+  error: element("tour-name-error"),
+});
 hooks.presentTourInfo = (manifest) => field.present(manifest?.title ?? null);
-// at the Finish:
-tourTitle: () => field.typed(),
 ```
 
 ## Tests
@@ -51,6 +58,9 @@ tourTitle: () => field.typed(),
 - `tour-name-field.test.ts` - presented untouched, typed, emptied, a new
   tour untouched again, no tour clears it; a typed name kept across a
   reload for its tour, spent once the file carries another title, and a
-  store that throws.
+  store that throws; the rename when the field is left (not per key), a
+  refusal said and cleared, a kept name renamed at the open.
 - `finish-rebuild.test.ts`, `creator-finish.test.ts` - typed, emptied and
-  untouched names at the Finish.
+  untouched names at the Finish; `creator-document.test.ts` the rename's
+  check; `tour-document-parity.test.ts` the phone's rename against the
+  desktop's.

@@ -122,6 +122,13 @@ different times (a walk's move lands only after the page wrote both files).
 - `changeCount(state)` - each pending entry, deletion, moved frame, the
   setting and each detail field differing from the written file.
 - `effectiveDetails(state)` - the cover only while its image is in the tour.
+- `coverImageIds(state)` - the images the tour may show as its cover (its
+  photos as they stand, its image assets).
+- `detailsChange(state, form)` - a details form checked by the format's
+  rules (`checkDetailsForm`), as both pages check it: `changed` with the
+  details to dispatch, `unchanged`, or `refused` with the reason in words.
+- `tourFieldChanges(state)` - `changeCount` less the objects': the moved
+  frames, the setting and the detail fields not written yet.
 - `viewOf(state)`, `picturesNeeded(state, view)` - for a page's undo: a
   step that brings back a photo the written file has no picture for needs
   the page's picture.

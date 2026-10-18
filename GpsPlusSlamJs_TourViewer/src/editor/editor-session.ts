@@ -16,10 +16,7 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
-import {
-  tourCoverEntry,
-  tourImageIds,
-} from "gps-plus-slam-app-framework/ar/tour-details";
+import { tourCoverEntry } from "gps-plus-slam-app-framework/ar/tour-details";
 import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
 import {
   captureSpotsForRebuild,
@@ -46,6 +43,8 @@ import {
 import {
   canStep,
   changeCount,
+  coverImageIds,
+  detailsChange,
   documentObjects,
   effectiveDetails,
   isDocumentEdit,
@@ -442,10 +441,7 @@ export function createEditorSession(input: {
   }
 
   function coverIds(state: TourDocumentState = own()): Set<string> {
-    return tourImageIds({
-      objects: documentObjects(state).map((o) => o.object),
-      assets: state.written?.assets ?? [],
-    });
+    return coverImageIds(state);
   }
 
   /** Keep a deleted photo's picture for an undo after a save. */
@@ -567,15 +563,11 @@ export function createEditorSession(input: {
     setDetails(next) {
       const state = mine();
       if (state === null) return notInTour;
-      const was = effectiveDetails(state);
-      const checked = checkDetailsForm(next, coverIds(state), was);
-      if (!checked.ok) return { kind: "refused", reason: checked.reason };
-      if (DETAIL_FIELDS.every((f) => checked.details[f] === was[f])) {
-        return { kind: "unchanged" };
-      }
+      const change = detailsChange(state, next);
+      if (change.kind !== "changed") return change;
       store.dispatch(
         tourDocumentActions.detailsChanged({
-          details: checked.details,
+          details: change.details,
           what: "the tour details",
         }),
       );
