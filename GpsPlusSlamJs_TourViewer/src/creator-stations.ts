@@ -13,7 +13,9 @@
  * - **The open station** is the nearest whose anchor is within R of where
  *   the next pin would land: the reticle's hit point while it is visible,
  *   else where the creator stands (M5c review #3; `station-assign.ts`
- *   `nearestStationWithin`, the rule the Finish assigns by). Leaving R closes it: the next element
+ *   `nearestStationWithin`, the rule the Finish assigns by). The ring is
+ *   drawn for the station the creator stands in, so it stays while they
+ *   aim past its edge (PR #642 review). Leaving R closes it: the next element
  *   placed outside every station's R starts a new one there, inside one
  *   joins the nearest. "Place a pin" with no station open therefore
  *   creates a station holding it (D21).
@@ -252,8 +254,9 @@ export function wireCreatorStations(deps: {
    *  pose). */
   creatorNue(): readonly [number, number, number] | null;
   /** Where the next pin would land (the visible reticle's hit point,
-   *  GPS-world NUE), or null: the open station is judged there, else at
-   *  the creator (M5c review #3). Absent: always at the creator. */
+   *  GPS-world NUE), or null: the open station the line names is judged
+   *  there, else at the creator (M5c review #3); the ring always at the
+   *  creator (PR #642 review). Absent: always at the creator. */
   reticleNue?(): readonly [number, number, number] | null;
   /** The walk's photos are not sorted in yet (`walkPhotosPending`): the
    *  line names no station and a placement's note says nothing about
@@ -328,9 +331,23 @@ export function wireCreatorStations(deps: {
         ring.hide();
         return;
       }
-      const judged = deps.reticleNue?.() ?? nue;
-      const at = calcGpsCoords(zero, [judged[0], judged[1], judged[2]]);
-      const open = openStationAt(list, at, radiusM);
+      // The words are judged where the next pin lands; the ring at the
+      // creator's own spot, so it stays while they aim past its edge to
+      // probe it (PR #642 review).
+      const reticle = deps.reticleNue?.() ?? null;
+      const standing = openStationAt(
+        list,
+        calcGpsCoords(zero, [nue[0], nue[1], nue[2]]),
+        radiusM,
+      );
+      const open =
+        reticle === null
+          ? standing
+          : openStationAt(
+              list,
+              calcGpsCoords(zero, [reticle[0], reticle[1], reticle[2]]),
+              radiusM,
+            );
       const left =
         open === null && lastOpen !== null ? findMarked(list, lastOpen) : null;
       if (open !== null) lastOpen = markOf(open);
@@ -339,12 +356,12 @@ export function wireCreatorStations(deps: {
           ? WALK_PENDING_TEXT
           : stationChipText(open, left),
       );
-      if (open === null) {
+      if (standing === null) {
         ring.hide();
         return;
       }
       const centre = objectPoseNue(
-        { ...open.anchor, rotation: [0, 0, 0, 1] },
+        { ...standing.anchor, rotation: [0, 0, 0, 1] },
         zero,
       ).positionNue;
       ring.show(scene, [centre[0], nue[1] - EYE_HEIGHT_M, centre[2]], radiusM);

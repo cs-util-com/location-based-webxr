@@ -400,7 +400,6 @@ describe("wireCreatorStations", () => {
     expect(h.chip.textContent).toBe(
       "No station here - what you place next starts a new one.",
     );
-    expect(h.ring()).toBeUndefined();
     h.ctx.placedObjects.push({ object: pin("aimed", 30, 0) });
     expect(h.stations.placedIn("aimed")).toBe("it starts Station 2");
     // The reticle hidden: the creator's own spot decides.
@@ -409,6 +408,41 @@ describe("wireCreatorStations", () => {
     expect(h.chip.textContent).toBe(
       "In Station 1 - what you place here joins it.",
     );
+  });
+
+  // Why (PR #642 review): the reticle decides the WORDS (where the next pin
+  // lands), but the ring is the boundary the creator walks along. Judged at
+  // the reticle too, it vanished exactly when the creator aimed past the
+  // edge to probe it - the moment it is needed most.
+  it("rings the station the creator stands in while the reticle aims past its edge", () => {
+    const h = harness();
+    h.aim([27, 0]);
+    h.stand(22, 0);
+    expect(h.chip.textContent).toBe(
+      "No station here - what you place next starts a new one.",
+    );
+    const ring = h.ring();
+    expect(ring).toBeDefined();
+    expect(ring!.position.x).toBeCloseTo(0, 6);
+    expect(ring!.position.z).toBeCloseTo(0, 6);
+    h.ctx.placedObjects.push({ object: pin("probe", 27, 0) });
+    expect(h.stations.placedIn("probe")).toBe("it starts Station 2");
+    // The reticle back inside: the words follow it, the ring stays.
+    h.ctx.placedObjects.length = 0;
+    h.aim([10, 0]);
+    h.stand(22, 0);
+    expect(h.chip.textContent).toBe(
+      "In Station 1 - what you place here joins it.",
+    );
+    expect(h.ring()).toBeDefined();
+    // The creator outside every radius, the reticle inside one: the words
+    // name it, and no ring is drawn for a station the creator is not in.
+    h.aim([20, 0]);
+    h.stand(40, 0);
+    expect(h.chip.textContent).toBe(
+      "In Station 1 - what you place here joins it.",
+    );
+    expect(h.ring()).toBeUndefined();
   });
 
   it("keeps the line's promise wherever the pin lands, the reticle up to 10 m ahead or hidden (property)", () => {

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The open station's radius in the creator's AR view (tour editor plan
+The radius of the station the creator stands in, in their AR view (tour editor plan
 2026-10-17-1816, W3 "AR authoring": the open station shows its radius): a
 thin band lying on the ground around the station's anchor, R metres out.
 

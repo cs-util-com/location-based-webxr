@@ -58,6 +58,14 @@ radiusM? }) -> { tick, placedIn, endVisit }` - `tick()` every camera
   the creator stands, so with the reticle hidden the creator's spot is
   the right one to judge; with it visible a photo is judged at the
   reticle, a few metres off, and its note says where it went.
+- **The ring is the station the creator STANDS in**, not the one at the
+  reticle (PR #642 review): the line follows where the next pin lands,
+  but the ring is the boundary the creator walks along, and judged at the
+  reticle it vanished exactly when they aimed past the edge to probe it.
+  Standing 22 m from a 25 m station's anchor and aiming 5 m further out,
+  the line says the next pin starts a new station and the ring stays.
+  Standing outside every radius with the reticle inside one, the line
+  names it and no ring is drawn.
 - **The station left** is remembered by its id when written, and by its
   first element when the next Finish starts it: its `unwritten-N` id
   shifts when an earlier one is deleted and is replaced by a minted one
@@ -70,15 +78,17 @@ radiusM? }) -> { tick, placedIn, endVisit }` - `tick()` every camera
   them and its names and numbers may be wrong until then. While that holds
   (`walkPhotosPending(session, manifest)`) the line says "Stations are set
   at Finish, once the walk's photos are sorted in." and a placement's note
-  names no station; the ring still shows the open station's radius (M5c
+  names no station; the ring still shows the radius of the station the
+  creator stands in (M5c
   review #2). Conservative: a recording that took no photos reads as
   pending until its first Finish. Feeding the live join's spots in instead
   was not chosen: the bake is an async replay of the whole recording.
 - **Cost:** the stations are recomputed only when the manifest, any
   placed object or the deletions change. Placed objects are compared entry
   by entry, because the settle re-poses them by replacing entries IN the
-  array (`creator-settle.ts`); a frame costs that comparison and one
-  horizontal search over the anchors.
+  array (`creator-settle.ts`); a frame costs that comparison and two
+  horizontal searches over the anchors (at the reticle and at the
+  creator).
 - Defensive: no position, no zero, no scene or no tour - the line hides
   and the ring goes.
 
@@ -110,7 +120,9 @@ note(`Pin placed - ${stations.placedIn(pin.id) ?? ""}`);
   pending, and `walkPhotosPending`; the station left, remembered across a
   deletion that renumbers it and across the Finish that writes it; the
   wiring: the line, the ring at the anchor on
-  the ground, leaving and re-entering, a placement's note, and nothing
+  the ground, leaving and re-entering, the ring kept at the creator's
+  station while the reticle aims past its edge, a placement's note, and
+  nothing
   without a position, a scene, a tour or after the visit.
 - `playwright-tests/creator-stations.spec.js` - the composed page: the
   line and the ring, a pin inside joining, leaving closing, a pin with
