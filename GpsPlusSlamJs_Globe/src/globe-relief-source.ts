@@ -41,7 +41,7 @@ export const RELIEF_SOURCES = Object.freeze({
 });
 
 /** The relief mesh: segments per tile edge (the library's `MESH_SIZE`). */
-export const RELIEF_MESH_SEGMENTS = 32;
+const RELIEF_MESH_SEGMENTS = 32;
 
 /** The WGS84 equatorial radius (m): the Web Mercator tiling's. */
 const EARTH_RADIUS_M = 6_378_137;

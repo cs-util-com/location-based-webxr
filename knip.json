@@ -20,6 +20,7 @@
     "GpsPlusSlamJs_Globe": {
       "entry": [
         "src/globe-surface.ts",
+        "src/globe-editor.ts",
         "src/vendor/generated-surface-plugin.ts",
         "scripts/fetch-globe-assets.mjs",
         "config/eslint.config.mjs"

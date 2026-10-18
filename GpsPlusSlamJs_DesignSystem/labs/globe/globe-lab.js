@@ -126,6 +126,20 @@ import {
   reliefTerrainOptions,
 } from "/globe/globe-relief-source.js";
 import { reliefCacheBudget } from "/globe/globe-relief-cache.js";
+// The editor's building blocks (G1), from their one entry module.
+import {
+  GLOBE_EYE,
+  applyEyeControls,
+  createGlobeOsmOverlay,
+  eyeClipPlanes,
+  groundHit,
+  nearestItemDistanceM,
+} from "/globe/globe-editor.js";
+import {
+  OSM_TILE_ATTRIBUTION,
+  OSM_TILE_MAX_ZOOM,
+  OSM_TILE_URL,
+} from "/fw/utils/osm-tiles.js";
 import {
   LANDING_GROUND,
   groundRevisionM,
@@ -315,7 +329,7 @@ function statusView() {
  * full texts, links and GIBS's acknowledgement in a <details>. Built with
  * textContent only: the texts come from the registry, never from markup.
  */
-function renderCredits(credits, heights = null) {
+function renderCredits(credits, heights = null, extra = []) {
   const details = document.createElement("details");
   const summary = document.createElement("summary");
   // `heights`: the relief's credits (`reliefCredits`, linked below like the
@@ -323,10 +337,16 @@ function renderCredits(credits, heights = null) {
   const heightsText = Array.isArray(heights)
     ? heights.map((c) => c.full).join(" · ")
     : heights;
-  summary.textContent = `Imagery: ${credits.map((c) => c.short).join(" · ")}. ${PROCEDURAL_STARS}${heightsText ? ` ${heightsText}` : ""}`;
+  // `extra`: credits that came later (the OSM map, G1 6), linked too.
+  const extraText = extra.map((c) => c.full).join(" · ");
+  summary.textContent = `Imagery: ${credits.map((c) => c.short).join(" · ")}. ${PROCEDURAL_STARS}${heightsText ? ` ${heightsText}` : ""}${extraText ? ` Map: ${extraText}` : ""}`;
   details.append(summary);
   const list = document.createElement("ul");
-  for (const c of [...credits, ...(Array.isArray(heights) ? heights : [])]) {
+  for (const c of [
+    ...credits,
+    ...(Array.isArray(heights) ? heights : []),
+    ...extra,
+  ]) {
     const item = document.createElement("li");
     const link = document.createElement("a");
     link.href = c.href;
@@ -454,6 +474,12 @@ const PARAMS = {
   // pixel no carrier drew is unambiguous: the hand-over smokes count holes
   // by it (dark water at an oblique view reads near black).
   holeColor: { fallback: 0, min: 0, max: 1 },
+  // OpenStreetMap tiles on the ground near the camera (G1 6,
+  // `/globe/globe-osm-overlay.js`): off by default; only z15 and finer,
+  // within the fade distance, below 200 m and 50 m/s, at most about 150
+  // requests a minute. The overlay is attached the first time it is on.
+  osm: { fallback: 0, min: 0, max: 1 },
+  osmFadeM: { fallback: 300, min: 50, max: 2000 },
   /**
    * The globe's error target while the relief has every pixel and the
    * globe only fills its gaps: coarse, so it keeps to its top tiles.
@@ -875,6 +901,14 @@ function readHashParams() {
     // The relief cache's device class (`reliefCacheBudget`): phone or desktop.
     reliefDevice:
       params.get("reliefDevice") === "desktop" ? "desktop" : "phone",
+    // The first-person camera (G1 5, `/globe/globe-eye-camera.js`): an
+    // eye-height clearance, the controls allowed down to it, the near plane
+    // following the nearest item. Read at start.
+    eye: params.get("eye") === "1",
+    // The depth buffer, read at start: standard (the default) or reversed
+    // (where the context has EXT_clip_control). Never logarithmic (G0). The
+    // scene-depth readers (cloud volume, the space pass) assume standard.
+    depth: params.get("depth") === "reversed" ? "reversed" : "standard",
     url: parseLatLngText(params.get("at")),
     // A camera pose to open at (volume-cloud plan §16): the Debug export's
     // `link`; the intro is skipped and the camera handed to the controls.
@@ -1403,10 +1437,14 @@ function cameraControls(
   globe,
   onTake,
   reliefPlanes = () => ({}),
+  eyeItems = null,
 ) {
   const controls = new GlobeControls(scene, camera, canvas);
   controls.setEllipsoid(globe.tiles.ellipsoid, globe.tiles.group);
   controls.enableDamping = true;
+  // First person (G1 5): the controls down to eye height, and the near
+  // plane following the nearest item (`eyeItems`: world bounding spheres).
+  if (eyeItems) applyEyeControls(controls);
   controls.addEventListener("start", onTake);
   const local = new THREE.Vector3();
   let picking = scene;
@@ -1420,11 +1458,12 @@ function cameraControls(
   const fitPlanes = () => {
     local.copy(camera.position);
     globe.tiles.group.worldToLocal(local);
-    const { near, far } = clipPlanes(
-      globe.tiles.ellipsoid,
-      local,
-      reliefPlanes(),
-    );
+    const { near, far } = eyeItems
+      ? eyeClipPlanes(globe.tiles.ellipsoid, local, {
+          ...reliefPlanes(),
+          nearestItemM: nearestItemDistanceM(camera.position, eyeItems()),
+        })
+      : clipPlanes(globe.tiles.ellipsoid, local, reliefPlanes());
     if (camera.near !== near || camera.far !== far) {
       camera.near = near;
       camera.far = far;
@@ -2202,6 +2241,7 @@ async function start() {
     canvas,
     antialias: true,
     stencil: fillAtStart,
+    reversedDepthBuffer: readHashParams().depth === "reversed",
   });
   // Phase 1's exposure (§7.3): Neutral tone mapping (the look-dev
   // default), no ambient light, a black sky; the sun at the surface's own
@@ -2539,14 +2579,54 @@ async function start() {
   const surfaceTiles = () =>
     terrain && bandShare >= 0.5 ? terrain.tiles : globe.tiles;
   const credits = creditsFor(globe.activeSources());
-  renderCredits(
-    credits,
-    !terrain
-      ? null
-      : terrarium
-        ? reliefCredits(reliefSource)
-        : "Heights: synthetic, generated in the page.",
-  );
+  const heightsCredit = !terrain
+    ? null
+    : terrarium
+      ? reliefCredits(reliefSource)
+      : "Heights: synthetic, generated in the page.";
+  renderCredits(credits, heightsCredit);
+  // The OSM map on the relief (G1 6): made with the relief, attached (its
+  // plugin registered, its credit shown) the first time `osm=1`.
+  const osm = terrain
+    ? createGlobeOsmOverlay({
+        url: OSM_TILE_URL,
+        attribution: OSM_TILE_ATTRIBUTION,
+        maxZoom: OSM_TILE_MAX_ZOOM,
+        renderer,
+        fadeM: startParams.osmFadeM,
+      })
+    : null;
+  let osmAttached = false;
+  let osmLast = null;
+  /** The pose the OSM map was given last (the lab's state reports it). */
+  let osmPose = null;
+  /** The OSM map's step each frame: attach on first use, then the pose. */
+  const osmFrame = (now) => {
+    if (!osm) return;
+    if (params.osm === 1 && !osmAttached) {
+      osm.attach(terrain);
+      osmAttached = true;
+      renderCredits(credits, heightsCredit, [osm.credit]);
+    }
+    if (!osmAttached) return;
+    osm.setEnabled(params.osm === 1);
+    osm.setFadeM(params.osmFadeM);
+    // Speed in the Earth's frame: the world is recentred under the camera.
+    const at = globe.tiles.group.worldToLocal(camera.position.clone());
+    const speedMps = osmLast
+      ? at.distanceTo(osmLast.at) / Math.max((now - osmLast.t) / 1000, 1e-3)
+      : 0;
+    osmLast = { at, t: now };
+    const altitude = globe.tiles.ellipsoid.getPositionElevation(at);
+    osmPose = {
+      aboveGroundM:
+        groundUnderCameraM === null || bandShare <= 0
+          ? Number.NaN
+          : altitude - groundUnderCameraM,
+      speedMps,
+    };
+    osm.update({ position: camera.position, ...osmPose, nowMs: now });
+  };
   const status = statusView();
   const flight = introFlight(globe.tiles.ellipsoid, {
     sunEcef: () => globe.surfaceUniforms.uSunEcef.value,
@@ -2601,6 +2681,13 @@ async function start() {
   // above the HIGHEST ground nearby, floored the near plane at 1 m under a
   // ridge (F2a's browser run, 2026-10-05).
   const planeLocal = new THREE.Vector3();
+  // The least height over the drawn ground the frame keeps (m): the
+  // flight's 100 m, or an eye height in first person (G1 5).
+  const cameraClearanceM = startParams.eye
+    ? GLOBE_EYE.clearanceM
+    : GLOBE_FLIGHT.clearanceM;
+  /** First person's items (a test hook places them): id to mesh and world sphere. */
+  const eyeItems = new Map();
   const RING = Array.from({ length: 8 }, (_, k) => (k * Math.PI) / 4);
   /** The planes' last clearance (m), for the state; null without. */
   let planeClearanceM = null;
@@ -2646,6 +2733,7 @@ async function start() {
       pin?.cameraTaken();
     },
     reliefPlanes,
+    startParams.eye ? () => [...eyeItems.values()].map((i) => i.sphere) : null,
   );
   // A frame change moves the world under the controls' drag state.
   onFrameChange = () => controls.release();
@@ -3357,7 +3445,7 @@ async function start() {
         const cleared = clearedAltitudeM(
           altitudeM,
           groundUnderCameraM,
-          GLOBE_FLIGHT.clearanceM,
+          cameraClearanceM,
         );
         if (cleared > altitudeM) {
           const lifted = ecefCamera();
@@ -3367,6 +3455,7 @@ async function start() {
           clearanceLifts += 1;
         }
       }
+      osmFrame(now);
       // With the fill the globe always draws (only where the relief left a
       // pixel) and is always updated, coarse while the relief has every
       // pixel, so it keeps to its top tiles.
@@ -4066,7 +4155,7 @@ async function start() {
             clearanceLifts,
             // The clearance the lift keeps (m), so the smokes read the
             // page's value rather than a copy (round-4 plan DEC-R4-1).
-            clearanceM: GLOBE_FLIGHT.clearanceM,
+            clearanceM: cameraClearanceM,
             // The relief's own loading, as the library counts it (its own
             // cache and queues, so `settled` is the relief's alone).
             stats: (({ queued, downloading, parsing, loaded, failed }) => ({
@@ -4107,6 +4196,20 @@ async function start() {
         : null,
       zoomOutLimitM: zoomOutM(),
       pixelRatio: renderer.getPixelRatio(),
+      // The OSM map (G1 6): on, active, requests made, locks gated.
+      osm: osm
+        ? { attached: osmAttached, pose: osmPose, ...osm.stats() }
+        : null,
+      // The first-person mode (G1 5): on, the near plane now, the
+      // depth buffer three gave, the items the plane follows.
+      eye: {
+        on: startParams.eye,
+        near: camera.near,
+        depth: renderer.capabilities.reversedDepthBuffer
+          ? "reversed"
+          : "standard",
+        items: eyeItems.size,
+      },
       errorTarget: globe.tiles.errorTarget,
       bytesDownloaded: globeBytesDownloaded(),
       tileRequestsByLevel: tileRequestsByLevel(),
@@ -4437,6 +4540,74 @@ void main() {
       return globe.tiles.ellipsoid.getPositionElevation(
         globe.tiles.group.worldToLocal(hit.point.clone()),
       );
+    },
+    /**
+     * First person's test item (G1 5): a red sphere of `radiusM` (pure
+     * red, not tone mapped), its centre `distanceM` ahead of the camera,
+     * registered so the near plane follows it unless `register` is false
+     * (the smoke's positive control); returns its id. `clearEyeItems`
+     * removes them all.
+     */
+    placeEyeItem(distanceM, radiusM, register = true) {
+      if (!(
+        distanceM > 0 &&
+        radiusM > 0 &&
+        Number.isFinite(distanceM + radiusM)
+      )) {
+        throw new RangeError("distanceM and radiusM must be finite and > 0");
+      }
+      const ahead = new THREE.Vector3(0, 0, -1).applyQuaternion(
+        camera.quaternion,
+      );
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(radiusM, 24, 16),
+        new THREE.MeshBasicMaterial({ color: 0xff0000, toneMapped: false }),
+      );
+      mesh.position.copy(camera.position).addScaledVector(ahead, distanceM);
+      scene.add(mesh);
+      mesh.updateMatrixWorld();
+      const id = eyeItems.size + 1;
+      eyeItems.set(id, {
+        mesh,
+        // An unregistered item's sphere is empty: the near plane skips it.
+        sphere: register
+          ? new THREE.Sphere(mesh.position.clone(), radiusM)
+          : new THREE.Sphere().makeEmpty(),
+      });
+      return id;
+    },
+    clearEyeItems() {
+      for (const { mesh } of eyeItems.values()) {
+        scene.remove(mesh);
+        mesh.geometry.dispose();
+        mesh.material.dispose();
+      }
+      eyeItems.clear();
+    },
+    /**
+     * The ground under a screen point (`u`, `v` from the top left, 0-1)
+     * as the editor will pick it (G1 4, `groundHit`): the camera's ray,
+     * marched over the relief's sampled heights. Null without the relief
+     * or a hit; else the distance, the place, its height over the
+     * ellipsoid and the sampled ground there.
+     */
+    groundHitAt(u, v) {
+      if (!terrain) return null;
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(new THREE.Vector2(u * 2 - 1, 1 - v * 2), camera);
+      const hit = groundHit(terrain, ray.ray);
+      if (!hit) return null;
+      const local = globe.tiles.group.worldToLocal(hit.point.clone());
+      const c = globe.tiles.ellipsoid.getPositionToCartographic(local, {});
+      return {
+        t: hit.t,
+        samples: hit.samples,
+        nulls: hit.nulls,
+        lat: c.lat / DEG,
+        lng: c.lon / DEG,
+        heightM: c.height,
+        groundM: terrain.plugin.sampleCartographicElevation(c.lat, c.lon),
+      };
     },
     readPixels(points) {
       frame();

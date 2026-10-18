@@ -28,9 +28,9 @@ credit, fallback }` and `ReliefSourceConstants` `{ url, attribution }`.
   - `reliefTerrainOptions(source)` -> `{ url, maxZoom, tileDimension,
 fallbackUrl }`, spread into `createGlobeTerrain`, so an app cannot pair
     one source's url with another's tile size.
-  - `RELIEF_MESH_SEGMENTS` 32 (the library's `MESH_SIZE`),
-    `vertexSpacingM(level, lat)` (a Web Mercator tile's width at `lat`
-    radians over 32 segments; RangeError for a level that is not an
+  - `vertexSpacingM(level, lat)` (a Web Mercator tile's width at `lat`
+    radians over the mesh's 32 segments, the library's `MESH_SIZE`;
+    RangeError for a level that is not an
     integer >= 0 or a latitude at a pole) and
     `meshLevelForSpacing(spacingM, lat)` (the coarsest level at or below
     the spacing; RangeError for a spacing that is not finite and > 0).

@@ -808,6 +808,30 @@
           <summary>Tiles and memory</summary>
           <div class="lookdev-section-body col">
             <label class="lookdev-field">
+              <span class="hint"
+                >OpenStreetMap on the ground (near the camera, below 200 m;
+                drawn only with the relief at z15 there:
+                reliefMeshLevel=17)</span
+              >
+              <select class="select" data-hash-key="osm">
+                <option value="0">Off</option>
+                <option value="1">On</option>
+              </select>
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Map fades out at (m) <output data-for="osmFadeM"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="50"
+                max="2000"
+                step="50"
+                data-hash-key="osmFadeM"
+              />
+            </label>
+            <label class="lookdev-field">
               <span class="hint">Error target (px)</span>
               <select class="select" data-hash-key="errorTarget">
                 <option value="1">1</option>

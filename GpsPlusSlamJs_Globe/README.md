@@ -47,6 +47,24 @@ every level 2-3 tile answering 404, no probe is black (81 of 81 were
 without the patch). Upstream it stays to be reported; an upgrade must
 re-check whether the patch still applies.
 
+## The 3D editor's building blocks (G1)
+
+`src/globe-editor.ts` is the one module an app imports for the tour
+editor's globe (tour editor plan 2026-10-17-1816 §13, in the private
+repo's docs): the relief with a tile size, a cache budget per tile format
+and device class that reports a stall, and Mapterhorn as a source with an
+AWS fallback where it answers 404 (`globe-relief-*.ts`); GPS heights to
+drawn heights through a geoid passed in (`globe-heights.ts`); picking the
+ground under a ray (`globe-ground-hit.ts`); the first-person camera's
+rules (`globe-eye-camera.ts`); and OpenStreetMap tiles near the camera
+under the tile usage policy's limits (`globe-osm-overlay.ts`; it needs the
+relief at z15 or finer near the camera, so the denser mesh,
+`meshMaxLevel` 15 or more). Each has
+its sidecar; the globe lab shows them all (`eye=1`, `osm=1`,
+`reliefMeshLevel=17`, `reliefSource=mapterhorn`), and its `globe-editor-blocks` smoke holds
+them on the real page. The package depends on neither the framework nor
+the Osm library: their URLs, attributions and geoid are passed in.
+
 ## How it is served
 
 The design system's route table (`serve-routes.mjs`) maps `/globe/` to

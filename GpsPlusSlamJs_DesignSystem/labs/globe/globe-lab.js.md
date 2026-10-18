@@ -423,6 +423,42 @@
     becomes `reliefCacheMiB`'s default. `reliefMeshLevel` (0-24, unset
     by default) deepens the relief's tree (`meshMaxLevel`): 17 draws
     Mapterhorn z14 at about 6.5 m between vertices near the camera.
+    The phone's 64 MiB does not hold every view: at a 3 km oblique view
+    (2026-10-18, 256 px synthetic heights) the relief's whole tree took
+    about 130 MiB, so 64 and 128 MiB stayed full and missed tiles (the
+    state's `relief.cache.stalled` and the Debug line say so), 256 MiB
+    did not.
+  - First person (G1 step 5, read at start): `eye=1` keeps the camera
+    1.7 m over the drawn ground (`GLOBE_EYE.clearanceM`, not the
+    flight's 100 m), lowers the controls' limits to it
+    (`applyEyeControls`) and fits the near plane to 0.3 x the clearance
+    or half the distance to the nearest item, at least 0.1 m
+    (`eyeClipPlanes`). `depth=reversed` asks three for a reversed
+    depth buffer (where the context has EXT_clip_control; the state's
+    `eye.depth` says what three gave); the default is standard, never
+    logarithmic. The scene-depth readers (the cloud volume, the space
+    pass) assume standard depth: with `depth=reversed` keep the cloud
+    volume off. Test hooks: `placeEyeItem(distanceM, radiusM,
+register = true)` (a red sphere ahead, which the near plane follows
+    unless unregistered), `clearEyeItems()`, and `groundHitAt(u, v)`
+    (the ground under a screen point as the editor picks it:
+    `groundHit` over the relief's sampled heights). State: `eye`
+    (`on`, `near`, `depth`, `items`).
+  - The OSM map (G1 step 6): `osm=1` (off by default; a select in
+    "Tiles and memory") attaches `createGlobeOsmOverlay` with the
+    framework's `osm-tiles.ts` constants the first time it is on, and
+    adds its credit with the copyright link. Tiles z15 and finer within
+    `osmFadeM` (default 300, a slider) of the camera, faded out by that
+    distance, only at or below 200 m over the ground and 50 m/s, at most
+    about 150 requests a minute. The relief must reach z15 near the
+    camera for any tile to be asked for: with the default mesh it stops
+    at z13, so use `reliefMeshLevel` 15 or more (17 is the editor's
+    about 6.5 m mesh). State: `osm` (`attached`, `pose` (the
+    `aboveGroundM` and `speedMps` it was given last), `enabled`,
+    `active`, `requests`, `requestsLastMinute`, `unpatchedShaders`,
+    locks, `finestLevel`).
+  - The editor's blocks come through their one entry module,
+    `/globe/globe-editor.js` (`GpsPlusSlamJs_Globe/src/globe-editor.ts`).
   - Every frame the relief's exaggeration is `exaggerationAt` of the
     camera's altitude (`/globe/globe-flight.js`: 1 at globe scale, the
     near value `reliefNear` from 20 km down: default 1, true heights at
