@@ -34,7 +34,8 @@ AR (tour editor plan 2026-10-17-1816, W1).
   says what is wrong with a link).
 - `#open-fineprint` - what Save does, written per browser by
   `edit-main.ts` (`saveFinePrint`); the markup's text is the one for a
-  browser without the file picker.
+  browser without the file picker. A span inside the fine print, beside
+  its Privacy link (`legal.html#privacy`, W6).
 - `#details-modal` - "Tour details" (W2 of the tour editor plan
   2026-10-17-1816): `#details-form` with `#details-name` (80 characters,
   the phone's poster title's limit), `#details-description` (2000),

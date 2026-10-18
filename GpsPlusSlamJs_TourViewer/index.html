@@ -1426,6 +1426,36 @@
         text-underline-offset: 3px;
       }
 
+      /* The safety line before the start button (W6, D13): the visitor's
+         start page only - never the creator's, never in AR. */
+      .visitor-safety {
+        display: none;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"]) .visitor-safety {
+        display: block;
+        max-width: 340px;
+        margin: 0 0 6px;
+        font-size: 14px;
+        color: var(--ink-dim);
+      }
+      /* The setup page's foot: the legal notice and the privacy page. */
+      .setup-foot {
+        display: flex;
+        justify-content: center;
+        gap: var(--space-4);
+        margin: 0 auto var(--space-4);
+        padding: 0 var(--space-4);
+        font-size: 13.5px;
+      }
+      .setup-foot[hidden] {
+        display: none;
+      }
+      .setup-foot a {
+        display: inline-block;
+        padding: 12px 4px;
+        color: var(--accent-ink);
+      }
+
       /* A phone without AR loses "What happens?": it describes a session
          this phone cannot start (V4's recovery states). */
       body[data-mode="visitor"]:has(#enter-ar[data-ar-state="unsupported"])
@@ -1936,7 +1966,7 @@
           <ul class="setup-why" aria-label="Why it works this way">
             <li>Lives in your own storage</li>
             <li>No app to install</li>
-            <li>Runs offline once opened</li>
+            <li>Works offline once the tour is loaded</li>
             <li>No sign-up, no account</li>
           </ul>
           <p class="setup-cta">
@@ -3371,6 +3401,17 @@
               <!-- The ?debug=1 QR readout (main.ts shows it; plan §66). Never for
                visitors without the flag. -->
               <pre id="ar-debug" data-testid="ar-debug" hidden></pre>
+              <!-- The visitor's safety line, before the start button (tour
+               editor plan 2026-10-17-1816, W6, D13); shown on the visitor's
+               start page only (the CSS above). -->
+              <p
+                id="visitor-safety"
+                class="visitor-safety"
+                data-testid="visitor-safety"
+              >
+                Watch where you walk. Look up from your phone when you move, and
+                stay off roads.
+              </p>
               <button
                 type="button"
                 class="btn"
@@ -4046,6 +4087,18 @@
           </div>
         </div>
       </section>
+      <!-- The legal notice and the privacy page (tour editor plan
+           2026-10-17-1816, W6, D13; legal.html.md), at the setup page's
+           foot. -->
+      <footer
+        id="setup-foot"
+        class="creator-only setup-foot"
+        data-testid="setup-foot"
+        hidden
+      >
+        <a href="legal.html#notice">Legal notice</a>
+        <a href="legal.html#privacy">Privacy</a>
+      </footer>
       <section id="visitor-more" hidden data-testid="visitor-more">
         <details id="visitor-what">
           <summary>What happens?</summary>
@@ -4061,7 +4114,16 @@
               </li>
               <li>
                 <b>Stays on your phone</b>
-                <span>Nothing is uploaded. No sign-up, no account.</span>
+                <span
+                  >The app sends nothing anywhere. No sign-up, no account.
+                  <a
+                    href="legal.html#privacy"
+                    target="_blank"
+                    rel="noopener"
+                    data-testid="visitor-privacy"
+                    >Privacy</a
+                  ></span
+                >
               </li>
             </ul>
             <p class="visitor-after">

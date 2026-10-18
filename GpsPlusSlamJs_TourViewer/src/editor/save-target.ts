@@ -55,9 +55,12 @@ export type PickOutcome =
  * editor plan 2026-10-17-1816, W2): where the file picker exists, a chosen
  * file is written in place (and saved by itself after a change); elsewhere,
  * and for a tour from a link or the sample, Save downloads a new copy.
+ * It opens with what leaves the computer: nothing of the tour, but the map
+ * comes from OpenStreetMap (W6: "nothing is uploaded" hid the tiles).
  */
 export function saveFinePrint(win: PickerWindow): string {
-  const stays = "The file stays on this computer: nothing is uploaded.";
+  const stays =
+    "The tour file stays on this computer. The map comes from OpenStreetMap.";
   return hasFilePicker(win)
     ? `${stays} A file you choose is saved into that file, where the browser allows it, and by itself a few seconds after each change. A tour opened from a link, or the sample, is saved as a new copy to put in place of the old one.`
     : `${stays} Save gives you a new copy of the tour to put in place of the old one.`;

@@ -282,14 +282,17 @@ describe("holdEditorLock", () => {
  * Why (tour editor plan 2026-10-17-1816, W2): the open dialog's fine print
  * said "Save gives you a new copy" in every browser, which is wrong where
  * the file picker lets Save write the chosen file itself (and autosave
- * does). The words follow what this browser can do.
+ * does). The words follow what this browser can do. And (W6): it said
+ * "nothing is uploaded" while the map's tiles come from OpenStreetMap -
+ * it now says what does leave the computer.
  */
 describe("saveFinePrint", () => {
   it("says Save writes the chosen file where the picker exists", () => {
     const text = saveFinePrint({
       showOpenFilePicker: () => Promise.resolve([]),
     });
-    expect(text).toContain("nothing is uploaded");
+    expect(text).toContain("The map comes from OpenStreetMap.");
+    expect(text).not.toContain("nothing is uploaded");
     expect(text).toContain("saved into that file");
     expect(text).toContain("from a link");
     expect(text).not.toContain("Save gives you a new copy");
@@ -297,7 +300,8 @@ describe("saveFinePrint", () => {
 
   it("says Save gives a new copy where it does not", () => {
     const text = saveFinePrint({});
-    expect(text).toContain("nothing is uploaded");
+    expect(text).toContain("The map comes from OpenStreetMap.");
+    expect(text).not.toContain("nothing is uploaded");
     expect(text).toContain("Save gives you a new copy");
     expect(text).not.toContain("saved into that file");
   });

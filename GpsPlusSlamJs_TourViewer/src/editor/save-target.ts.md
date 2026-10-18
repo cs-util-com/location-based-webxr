@@ -55,7 +55,9 @@ build plan, re-cut" and its cold review
   `showOpenFilePicker` exists (`../file-picker.ts`, the check the setup
   page's line about the editor uses too), a chosen file is saved into itself (and by
   itself after a change) while a tour from a link or the sample is saved as
-  a new copy; elsewhere Save gives a new copy.
+  a new copy; elsewhere Save gives a new copy. It opens with what leaves
+  the computer (W6): the tour file stays, the map comes from
+  OpenStreetMap (it said "nothing is uploaded", which hid the tiles).
 
 ## Invariants & assumptions & assumptions
 

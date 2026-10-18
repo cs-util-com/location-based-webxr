@@ -2719,6 +2719,8 @@ test("Done shows its save in progress and stays shut when the save fails, and a 
   await doneButton.click();
   await expect(doneButton).toHaveText("Saving…");
   await expect(doneButton).toBeDisabled();
+  // Held at the write itself: the build before it takes its time.
+  await expect.poll(() => writes(page)).toBe(1);
   await page.evaluate(() => {
     // @ts-expect-error - read by the counted picker.
     window.__holdWrites = false;

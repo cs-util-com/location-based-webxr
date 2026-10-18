@@ -96,7 +96,11 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   restyled as the action (the status sentence above, the round
   `#enter-ar` with its ring and `data-step` marker, `#ar-hint` as the
   one line under it, by flex `order`), then `#visitor-more` after the
-  stage ("What happens?" `#visitor-what` and `make-your-own`). All of it
+  stage ("What happens?" `#visitor-what`, whose "Stays on your phone"
+  says the app sends nothing anywhere and links the privacy page,
+  `visitor-privacy`; and `make-your-own`). The safety line
+  `#visitor-safety` stands before the round button (W6, D13: "Watch where
+  you walk..."), shown on the visitor's start page only. All of it
   is scoped to `body[data-mode="visitor"]:not([data-ar-active="true"])`:
   in a session `#ar-root` is the overlay and keeps the sheet's HUD look.
   The paper palette is the creator page's (`:root:has(...)`), extended to
@@ -133,6 +137,11 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   it is `.creator-only` and keeps `hidden` on a visitor's page, which the
   design system's `[hidden]` rule wins over (`way-in.spec.js` pins it).
   Behaviour: `have-tour.ts`.
+- **The setup page's foot** (`#setup-foot`, creator-only, W6, D13): the
+  legal notice and the privacy page (`legal.html#notice`,
+  `legal.html#privacy`; `legal.html.md`). The intro's "Runs offline once
+  opened" became "Works offline once the tour is loaded": the tour is
+  cached, the page is not (no service worker).
 - **Step 5 on a computer** (W1, plan review #9): `#measure-desktop` says
   the step runs on site on an Android phone with Chrome and links the
   editor; the same AR check shows it, and on the creator page an
@@ -184,7 +193,8 @@ drawn `map-station-<step>`), `setup-card` (owns `setup-badge`, `setup-of`,
 `print-info`,
 `print-tiles` (its tiles `print-tile`, the first canvas `print-canvas`), `visitor-link` - opens in a
 new tab, polish round A17), `make-your-own` (on the visitor screen: the
-setup page in a new tab, polish round A8), `step-hang`, `hang-done`, `step-measure` (owns
+setup page in a new tab, polish round A8), `visitor-safety`, `visitor-privacy`,
+`setup-foot`, `step-hang`, `hang-done`, `step-measure` (owns
 `draft-offer`,
 `draft-offer-text`, `draft-restore`, `draft-dismiss`, `draft-discard`),
 `measure-desktop`, `have-tour` (owns `have-tour-desktop`,

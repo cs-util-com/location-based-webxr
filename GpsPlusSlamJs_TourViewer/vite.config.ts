@@ -32,6 +32,10 @@ export default defineConfig({
         // from the setup page's "You already have a tour?" box and step 5
         // on a device without AR.
         edit: fileURLToPath(new URL("edit.html", import.meta.url)),
+        // The legal notice and the privacy page (tour editor plan
+        // 2026-10-17-1816, W6, `legal.html.md`): one static page, two
+        // sections.
+        legal: fileURLToPath(new URL("legal.html", import.meta.url)),
       },
     },
   },
