@@ -322,6 +322,24 @@ describe("wireCreatorStations", () => {
     expect(g.chip.hidden).toBe(true);
   });
 
+  // Why: the settle re-poses placed objects by replacing entries IN the
+  // working copy's array (`creator-settle.ts`: same array, same length). A
+  // HUD that only noticed a new array or a new length kept the pre-settle
+  // stations, and its line and ring disagreed with the Finish.
+  it("follows a settle that re-poses a placement in place", () => {
+    const h = harness();
+    h.ctx.placedObjects.push({ object: pin("far", 60, 0) });
+    h.stand(60, 0);
+    expect(h.chip.textContent).toBe(
+      "In Station 2 - what you place here joins it.",
+    );
+    h.ctx.placedObjects[0] = { object: pin("far", 100, 0) };
+    h.stand(60, 0);
+    expect(h.chip.textContent).toBe(
+      "You left Station 2 - what you place next starts a new station.",
+    );
+  });
+
   it("a creator who never stood in a station is told none is here", () => {
     const h = harness();
     h.stand(80, 0);

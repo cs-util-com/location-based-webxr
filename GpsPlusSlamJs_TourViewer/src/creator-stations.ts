@@ -169,6 +169,17 @@ export interface CreatorStationsSource {
   readonly deletedObjectIds: readonly string[];
 }
 
+/** The same placed objects, entry by entry (by reference). */
+function sameObjects(
+  kept: readonly TourObject[],
+  placed: readonly { readonly object: TourObject }[],
+): boolean {
+  return (
+    kept.length === placed.length &&
+    placed.every((entry, i) => entry.object === kept[i])
+  );
+}
+
 export function wireCreatorStations(deps: {
   readonly ctx: CreatorStationsSource;
   readonly dom: CreatorStationsDom;
@@ -182,13 +193,13 @@ export function wireCreatorStations(deps: {
 }): CreatorStations {
   const radiusM = deps.radiusM ?? STATION_RADIUS_M;
   const ring: StationRing = createStationRing();
-  /** The stations, kept until the working copy changes: the manifest, the
-   *  placed list (replaced on an edit, grown on a placement) or the
+  /** The stations, kept until the working copy changes: the manifest, any
+   *  placed object (an edit replaces the array, a placement grows it, the
+   *  settle replaces entries in place - so each object is compared) or the
    *  deletions. Read every frame, so never recomputed per frame. */
   let memo: {
     manifest: TourManifest | null;
-    placed: readonly unknown[];
-    placedCount: number;
+    objects: readonly TourObject[];
     deleted: readonly string[];
     stations: ArStation[];
   } | null = null;
@@ -200,22 +211,21 @@ export function wireCreatorStations(deps: {
     if (
       memo !== null &&
       memo.manifest === ctx.tourManifest &&
-      memo.placed === ctx.placedObjects &&
-      memo.placedCount === ctx.placedObjects.length &&
-      memo.deleted === ctx.deletedObjectIds
+      memo.deleted === ctx.deletedObjectIds &&
+      sameObjects(memo.objects, ctx.placedObjects)
     ) {
       return memo.stations;
     }
+    const objects = ctx.placedObjects.map((p) => p.object);
     const list = stationsAsFinished({
       manifest: ctx.tourManifest,
-      placed: ctx.placedObjects.map((p) => p.object),
+      placed: objects,
       deleted: ctx.deletedObjectIds,
       radiusM,
     });
     memo = {
       manifest: ctx.tourManifest,
-      placed: ctx.placedObjects,
-      placedCount: ctx.placedObjects.length,
+      objects,
       deleted: ctx.deletedObjectIds,
       stations: list,
     };

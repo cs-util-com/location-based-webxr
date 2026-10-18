@@ -59,9 +59,11 @@ radiusM? }) -> { tick, placedIn, endVisit }` - `tick()` every camera
   walk's recorded photos before the objects (`withTourContent`); they
   are baked at the Finish, so the HUD cannot see them, and on that one
   Finish a pin may join a photo's station instead of the one named.
-- **Cost:** the stations are recomputed only when the manifest, the
-  placed list (identity or length) or the deletions change; a frame
-  costs one horizontal search over the anchors.
+- **Cost:** the stations are recomputed only when the manifest, any
+  placed object or the deletions change. Placed objects are compared entry
+  by entry, because the settle re-poses them by replacing entries IN the
+  array (`creator-settle.ts`); a frame costs that comparison and one
+  horizontal search over the anchors.
 - Defensive: no position, no zero, no scene or no tour - the line hides
   and the ring goes.
 
