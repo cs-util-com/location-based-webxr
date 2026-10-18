@@ -58,17 +58,17 @@ function openTour(): NonNullable<
  *  `resetFinishStep` (code book plan M5d). */
 function creatorWork(ctx: ReturnType<typeof createTourViewerSession>) {
   const reset = vi.fn();
-  ctx.placedObjects = [
+  ctx.tourDocument.place(
     {
-      object: {
-        id: "pin-1",
-        kind: "pin",
-        label: "Gate",
-        createdAtIso: "2026-09-27T00:00:00.000Z",
-        geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-      },
+      id: "pin-1",
+      kind: "pin",
+      label: "Gate",
+      createdAtIso: "2026-09-27T00:00:00.000Z",
+      geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
     },
-  ];
+    {},
+    "a pin",
+  );
   ctx.placementNote = "1 object placed";
   ctx.printSizeCheck = { reset } as never;
   return { reset };
@@ -223,7 +223,7 @@ describe("the teardown clears tour-scoped state only when a tour closes", () => 
     await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
     // The creator's step (the code in hand, the book) is not reset.
     expect(resetFinishStep).not.toHaveBeenCalled();
-    expect(ctx.placedObjects).toHaveLength(1);
+    expect(ctx.tourDocument.entries()).toHaveLength(1);
     expect(ctx.placementNote).toBe("1 object placed");
     expect(reset).not.toHaveBeenCalled();
   });
@@ -243,7 +243,7 @@ describe("the teardown clears tour-scoped state only when a tour closes", () => 
     // (`creator-setup.ts`, whose own test holds that).
     expect(resetFinishStep).toHaveBeenCalledOnce();
     expect(ctx.mintGeneration).toBe(generation + 1);
-    expect(ctx.placedObjects).toEqual([]);
+    expect(ctx.tourDocument.entries()).toEqual([]);
     expect(ctx.placementNote).toBeNull();
     expect(reset).toHaveBeenCalledOnce();
   });

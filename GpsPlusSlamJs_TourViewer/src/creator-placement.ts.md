@@ -67,8 +67,9 @@ troubleshooting recording's record of each placement. Split out of
   `ctx.placedPreviews`, one handle per object, so two placements cannot
   race each other's disposal and a photo is decoded once). A preview of an
   object placed in the RUNNING visit is rigid (decision D2, plan §3.2, M2c):
-  it goes under the AR world group at its odometry pose, kept in
-  `placedObjects[i].placement` (`{ visit, local }`; a pin's reticle through
+  it goes under the AR world group at its odometry pose, kept beside the
+  document as the entry's `placement` (`{ visit, local }`,
+  `creator-document.ts`; a pin's reticle through
   `worldToLocal`, a photo's capture pose through `odomNueFromWebXr`), so a
   GPS re-solve moves it together with the camera instead of sliding it
   against the world (symptom A). Anything else - a restored draft object,

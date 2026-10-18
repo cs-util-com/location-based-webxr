@@ -115,7 +115,7 @@ export function wireVisitorStations(deps: {
   let indexed: { manifest: unknown; byId: Map<string, TourAsset> } | null =
     null;
   const assetsById = (): ReadonlyMap<string, TourAsset> => {
-    const manifest = ctx.tourManifest;
+    const manifest = ctx.tourDocument.manifest();
     if (indexed?.manifest !== manifest) {
       indexed = {
         manifest,
@@ -130,7 +130,7 @@ export function wireVisitorStations(deps: {
   // the tour closes or another opens (K4 review R15).
   const prefetch = createStationPrefetch({
     assets: assetsById,
-    tour: () => ctx.tourManifest,
+    tour: () => ctx.tourDocument.manifest(),
     read: (path) => {
       const session = ctx.session;
       if (session === null) return Promise.reject(new Error("no tour open"));
@@ -187,7 +187,7 @@ export function wireVisitorStations(deps: {
   const guide = wireStationGuide({
     dom: dom.guide,
     tour: () => {
-      const manifest = ctx.tourManifest;
+      const manifest = ctx.tourDocument.manifest();
       if (ctx.tourManifestStatus !== "settled" || manifest === null) {
         return null;
       }

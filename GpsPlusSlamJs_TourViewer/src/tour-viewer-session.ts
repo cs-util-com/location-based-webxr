@@ -42,7 +42,6 @@ import type {
 } from "gps-plus-slam-app-framework/ar";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
 import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import type { RenderedTourObjects } from "./content-placement.js";
 import type { FusedTallies, LastEvaluation } from "./qr-debug-readout.js";
@@ -53,28 +52,19 @@ import type { ViewerVoteSink } from "./viewer-vote-sink.js";
 import type { ScanGate } from "./scan-gate.js";
 import type { PlacedImagePlanes } from "./image-planes.js";
 import type { TourViewerSeams } from "./seams.js";
-import type { NuePose } from "./visit-anchoring.js";
 import type { PlacementState } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
+import {
+  createCreatorDocument,
+  type CreatorDocument,
+  type CreatorDocumentStore,
+} from "./creator-document.js";
 
 // Reached through the session object's fields; standalone exports count as
 // dead (knip).
 type QrController = ReturnType<typeof createQrTrackingController>;
 type FusedPoseSource = ReturnType<typeof createFusedQrPoseSource>;
 type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
-
-/**
- * Where an object was placed in AR, kept for the settle (authoring plan
- * 2026-09-28-0953 §3.2, M2c): its pose in the world group's frame
- * (odometry-NUE, `visit-anchoring.ts`) and the AR visit that frame belongs
- * to - odometry from another visit is meaningless. Absent for an object
- * that came back from a draft: it has only its geo.
- */
-interface VisitPlacement {
-  /** `arSessionGeneration` at the tap. */
-  readonly visit: number;
-  readonly local: NuePose;
-}
 
 /**
  * The page's store: the framework store with the opt-in `qrDetected` slice
@@ -276,10 +266,13 @@ export interface TourViewerSession {
    *  never come, so the tour has no usable code (`tourCodesUsable`, r857
    *  review #4). Reset when the tour closes. */
   levelsUnreadable: boolean;
-  /** The open tour's `tour.json` (null: none, or not loaded yet). The
-   *  finish step writes it back, so content already in the zip survives a
-   *  re-measure. */
-  tourManifest: TourManifest | null;
+  /** The tour as the page edits it: the shared `tourDocument` slice
+   *  through the page's handle (`creator-document.ts`, D29-D31) - the
+   *  open tour's `tour.json` (`manifest()`, null: none, or not loaded
+   *  yet), the creator's placed, edited and deleted objects, their pictures
+   *  and AR placements. The finish step writes it back, so content already
+   *  in the zip survives a re-measure. Not replaced: one per page. */
+  readonly tourDocument: CreatorDocument;
   /** Whether the manifest load settled: the finish step refuses while it
    *  is pending or broken, or it would overwrite the creator's placement
    *  with an empty list (M3 review #5). */
@@ -382,27 +375,11 @@ export interface TourViewerSession {
   walkDecidedFor: TourSession | null;
   /** What the panel calls the open tour (`tourLabel`); null with none. */
   tourLabel: string | null;
-  /** Content placed in THIS setup session (M4): the records the finish
-   *  step appends to `tour.json`, with the photo bytes that become
-   *  `content/<id>.jpg`. Survives a session end like the level does. */
-  placedObjects: {
-    object: TourObject;
-    blob?: Blob;
-    placement?: VisitPlacement;
-  }[];
   /** The creator's hit-test reticle for the running session. */
   reticle: HitTestReticleHandle | null;
   /** The most recent camera frame - what "Capture a photo" encodes, with
    *  the pose it was captured at (the photo is placed with THAT pose). */
   latestFrame: CapturedCameraFrame | null;
-  /**
-   * Ids of objects the open tour's manifest carries that the creator
-   * deleted (tombstones, authoring plan 2026-09-28-0953 §3.4): the Finish
-   * filters them out and removes a deleted photo's content file. Emptied by
-   * a Finish (the manifest no longer carries them) and when the tour
-   * closes.
-   */
-  deletedObjectIds: string[];
   /** The live previews in the running AR visit, one per object id - this
    *  device's and the hosted zip's (rendered as each lands; re-rendering
    *  everything per placement raced itself and re-decoded every photo, M4
@@ -551,13 +528,17 @@ export function endTourCodeVotes(ctx: TourViewerSession): void {
   ctx.viewerIgnoredText = null;
 }
 
-export function createTourViewerSession(): TourViewerSession {
+/** The page's session object; `store` holds its tour document (the
+ *  page's store; a fresh one in tests that need no other). */
+export function createTourViewerSession(
+  store: CreatorDocumentStore = createTourViewerStore(),
+): TourViewerSession {
   return {
     session: null,
     currentLevels: null,
     currentLevelTexts: null,
     levelsUnreadable: false,
-    tourManifest: null,
+    tourDocument: createCreatorDocument(store),
     tourManifestStatus: "settled",
     scanEntries: new Set(),
     openGeneration: 0,
@@ -583,10 +564,8 @@ export function createTourViewerSession(): TourViewerSession {
     walkDecidedFor: null,
     tourLabel: null,
     arSessionGeneration: 0,
-    placedObjects: [],
     reticle: null,
     latestFrame: null,
-    deletedObjectIds: [],
     placedPreviews: new Map(),
     placementNote: null,
     viewerQrStatus: null,

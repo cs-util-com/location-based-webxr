@@ -88,9 +88,9 @@ module's sidecar states them as its contract.
   The size note next to the button says what the rebuild will copy. Entries: each level the code
   book says changed (`creator-codes.ts` `toWrite()`, captured after the
   settle; since M4c-1 - a code the zip already holds unchanged is not
-  written again) at `qrLevelEntryName(id)` and `tour.json` from `ctx.tourManifest` (what the
-  zip already carried, so a re-measure never drops placed content) or an
-  empty manifest, plus each placed photo's bytes under
+  written again) at `qrLevelEntryName(id)` and `tour.json` from the page's tour document
+  (`ctx.tourDocument`, `creator-document.ts`: what the zip already carried,
+  so a re-measure never drops placed content, or an empty manifest), plus each placed photo's bytes under
   `session.manifestWrap` (the session's own prefix, never re-derived).
   The input is the **newest bytes for this tour**: `ctx.rebuiltZip` when a
   previous finish produced one, else `session.readWholeArchive()` (the
@@ -98,14 +98,17 @@ module's sidecar states them as its contract.
   rebuild inflates under the session's own budget (`session.budget`, K0
   milestone review R1) and a deflate bomb fails the Finish with the cap's
   sentence; a previous Finish's zip is this page's own stored output and
-  gets the rebuild's default budget. On success `ctx.rebuiltZip` is set,
-  `ctx.tourManifest` **advances to what was just written**,
+  gets the rebuild's default budget. The write is the document's:
+  `saveStarted` before the snapshot (an undo waits while it runs),
+  `saved` when the zip is built, `saveEnded` in every outcome. On success
+  `ctx.rebuiltZip` is set, the document's written tour **advances to what
+  was just written** (`saved`),
   `ctx.walkDecidedFor` is set to the open session when the walk is
   settled - its spots written, or no photo to place - so the creator's
   station HUD drops its hedge (PR #642 review); NOT after a declined bake
   (`notPlaced`), which writes nothing, so the next Finish bakes again
   (PR #643 review) - and
-  `ctx.placedObjects` is cleared, the AR session is ended through the
+  the written work leaves the page's entries (`saved`), the AR session is ended through the
   controller (the framework's session-end path runs the app teardown) and
   the wizard opens step 6, "done" (polish round M2, B9: a completion step
   of its own), and its finish block is revealed - AFTER the `disable()`, so it cannot
@@ -138,7 +141,7 @@ module's sidecar states them as its contract.
   warns that this copy is not signed. A NEW level file of a listed tour
   is written inside the tour's folder (`manifestWrap`), where its list
   can name it (a root `qr/` beside a wrapped list would be unlisted).
-  Afterwards it drops from `placedObjects` only
+  Afterwards the document (`saved`) drops from the page's entries only
   what the zip carries WITH THE SAME CONTENT, and clears the applied
   deletions. The draft's tombstones stay until the hosted zip lacks the
   ids, the same proof the objects wait for.

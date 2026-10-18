@@ -32,6 +32,7 @@ import {
   createEmptyTourManifest,
   parseTourManifest,
   serializeTourManifest,
+  type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
@@ -723,7 +724,7 @@ describe(
       a.dom.photoButton.click();
       await flush();
 
-      const [pin, photo] = a.ctx.placedObjects;
+      const [pin, photo] = a.ctx.tourDocument.entries();
       expect(pin?.placement?.visit).toBe(0);
       expect(pin?.placement?.local.position).toEqual([2, 0, -1]);
       expect(photo?.object.kind).toBe("photo");
@@ -774,7 +775,7 @@ describe(
 
       a.endVisit();
 
-      const pin = a.ctx.placedObjects[0]!.object;
+      const pin = a.ctx.tourDocument.entries()[0]!.object;
       const offset = worldOf(pin.geo).sub(codeWorldOf(a.codes.inHand()!.json));
       const expected = new Vector3(2, 0, -1)
         .sub(codeLocal)
@@ -806,8 +807,8 @@ describe(
       // reached 40 m of GPS extent, so the pin fell back to the end alignment.
       expect(payload.objects).toEqual([
         {
-          id: a.ctx.placedObjects[0]!.object.id,
-          geo: a.ctx.placedObjects[0]!.object.geo,
+          id: a.ctx.tourDocument.entries()[0]!.object.id,
+          geo: a.ctx.tourDocument.entries()[0]!.object.geo,
           basis: "measured-here",
           usedAlignment: end,
           refusedCorrection: null,
@@ -833,14 +834,14 @@ describe(
       await flush();
       await a.mint();
       await a.placePin("Gate", [2, 0, -1]);
-      const tapGeo = a.ctx.placedObjects[0]!.object.geo;
+      const tapGeo = a.ctx.tourDocument.entries()[0]!.object.geo;
       const tapLevel = a.codes.inHand()!.json;
       a.setAlignment(yawAlignment(9, [2, 400, 2]));
 
       a.endVisit();
       await flush();
 
-      const pin = a.ctx.placedObjects[0]!.object;
+      const pin = a.ctx.tourDocument.entries()[0]!.object;
       expect(pin.geo, "the settle should have moved the pin").not.toEqual(
         tapGeo,
       );
@@ -885,7 +886,7 @@ describe(
       await a.placePin("Later", [3, 0, 1]);
       a.endVisit();
 
-      const later = a.ctx.placedObjects[1]!.object;
+      const later = a.ctx.tourDocument.entries()[1]!.object;
       const offset = worldOf(later.geo).sub(
         codeWorldOf(a.codes.inHand()!.json),
       );
@@ -953,7 +954,7 @@ describe(
       await a.placePin("Later", [...spot2]);
       a.endVisit();
 
-      const later = a.ctx.placedObjects[1]!.object;
+      const later = a.ctx.tourDocument.entries()[1]!.object;
       const offset = worldOf(later.geo).sub(
         codeWorldOf(a.codes.inHand()!.json),
       );
@@ -1052,7 +1053,7 @@ describe(
       // viewer content until the code is seen in this visit, then through the
       // code correction - which, like this visit's own notes, is rigid in AR.
       const a = await firstVisit();
-      const gate = a.ctx.placedObjects[0]!.object;
+      const gate = a.ctx.tourDocument.entries()[0]!.object;
       a.setAlignment(SECOND);
       a.beginVisit();
 
@@ -1120,7 +1121,7 @@ describe(
       // At its geo in the SCENE (code book plan M1, a sampled mutant): the
       // frame moved back to the scene root, not left under the AR world
       // group with an identity matrix, which would put it 60 m off.
-      const gate = a.ctx.placedObjects[0]!.object;
+      const gate = a.ctx.tourDocument.entries()[0]!.object;
       const shown = [...a.labels].reverse().find((o) => o.name === "Gate")!;
       a.scene.updateMatrixWorld(true);
       expect(
@@ -1236,9 +1237,11 @@ describe(
       await flush();
       const near = [...a.labels].reverse().find((o) => o.name === "Near A")!;
       a.scene.updateMatrixWorld(true);
-      const gate = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin" && p.object.label === "Near A",
-      )!.object;
+      const gate = a.ctx.tourDocument
+        .entries()
+        .find(
+          (p) => p.object.kind === "pin" && p.object.label === "Near A",
+        )!.object;
       expect(
         near.getWorldPosition(new Vector3()).distanceTo(worldOf(gate.geo)),
       ).toBeLessThan(1e-3);
@@ -1357,12 +1360,33 @@ async function openFinishableTour(
       Promise.resolve(levels.find((l) => l.path === filename)?.data ?? ""),
   } as never;
   a.ctx.tourManifestStatus = "settled";
-  a.ctx.tourManifest = createEmptyTourManifest();
+  // The tour's file is the empty one, unless the test already gave the
+  // page a tour; work placed before it opened comes along (scan-to-open
+  // plan §9 #5).
+  if (a.ctx.tourDocument.manifest() === null) {
+    a.ctx.tourDocument.open(createEmptyTourManifest());
+  }
   return {
     releaseArchive: () => {
       for (const release of held.splice(0)) release();
     },
   };
+}
+
+/** The page's tour becomes `manifest` (the hosted file carries its
+ *  objects now), this page's other entries kept with their pictures and
+ *  AR placements - as a tour opened over work made before it. */
+function hostInstead(
+  a: { ctx: ReturnType<typeof createTourViewerSession> },
+  manifest: TourManifest,
+): void {
+  const hosted = new Set(tourObjects(manifest).map((o) => o.id));
+  const keep = a.ctx.tourDocument
+    .entries()
+    .filter((e) => !hosted.has(e.object.id));
+  a.ctx.tourDocument.close();
+  for (const e of keep) a.ctx.tourDocument.place(e.object, e, "kept");
+  a.ctx.tourDocument.open(manifest);
 }
 
 /** Wait for a Finish's async body to reach an end state (a real zip
@@ -1433,7 +1457,7 @@ describe(
       for (const land of a.encodes.waiting.splice(0)) land();
       await flush();
 
-      const photo = a.ctx.placedObjects.at(-1)!.object;
+      const photo = a.ctx.tourDocument.entries().at(-1)!.object;
       expect(photo.kind).toBe("photo");
       expect(worldOf(photo.geo).distanceTo(settledPhotoAt(end))).toBeLessThan(
         1e-3,
@@ -1465,7 +1489,7 @@ describe(
       for (const land of a.encodes.waiting.splice(0)) land();
       await flush();
 
-      const photo = a.ctx.placedObjects.at(-1)!.object;
+      const photo = a.ctx.tourDocument.entries().at(-1)!.object;
       // The code sits at the same odometry spot in both visits here, so
       // the corrected alignment is the first visit's.
       expect(worldOf(photo.geo).distanceTo(settledPhotoAt(first))).toBeLessThan(
@@ -1524,7 +1548,7 @@ describe(
       // sighting (M5a milestone review #2: nothing else pinned it).
       expect(late.referenceLevel?.id).toBe(stored.id);
       expect(late.sighting?.levelId).toBe(stored.id);
-      const photo = a.ctx.placedObjects.at(-1)!.object;
+      const photo = a.ctx.tourDocument.entries().at(-1)!.object;
       // A sits at the same odometry spot in both visits, so A's correction
       // is the first visit's alignment.
       expect(
@@ -1664,12 +1688,14 @@ describe(
       await finished(a.ctx);
       expect(a.ctx.finishError).toBeNull();
 
-      const written = tourObjects(a.ctx.tourManifest!).map((o) =>
+      const written = tourObjects(a.ctx.tourDocument.manifest()!).map((o) =>
         o.kind === "pin" ? o.label : o.id,
       );
       expect(written).toEqual(["Gate"]);
-      expect(a.ctx.placedObjects.map((p) => p.object.kind)).toEqual(["photo"]);
-      const photo = a.ctx.placedObjects[0]!.object;
+      expect(a.ctx.tourDocument.entries().map((p) => p.object.kind)).toEqual([
+        "photo",
+      ]);
+      const photo = a.ctx.tourDocument.entries()[0]!.object;
       expect(worldOf(photo.geo).distanceTo(settledPhotoAt(end))).toBeLessThan(
         1e-3,
       );
@@ -1701,7 +1727,7 @@ describe(
         zero: ZERO,
         nowIso: "2026-09-30T10:00:00.000Z",
       })!;
-      a.ctx.placedObjects = [{ object: old }];
+      a.ctx.tourDocument.place(old, {}, "an earlier visit's pin");
       a.setZero(null);
       a.beginVisit();
       await flush();
@@ -1775,7 +1801,7 @@ describe(
       const last = a.settledLogs().at(-1)!.payload;
       expect(last.basis).toBe("code-corrected");
       expect(last.level).toBeNull();
-      const offset = worldOf(a.ctx.placedObjects[0]!.object.geo).sub(
+      const offset = worldOf(a.ctx.tourDocument.entries()[0]!.object.geo).sub(
         codeWorldOf(stored.json),
       );
       expect(
@@ -1825,9 +1851,11 @@ describe(
 
       expect(measured()).toBe(before);
       expect(savedA()).toEqual(stored);
-      const pin = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin" && p.object.label === "Beside A",
-      )!.object;
+      const pin = a.ctx.tourDocument
+        .entries()
+        .find(
+          (p) => p.object.kind === "pin" && p.object.label === "Beside A",
+        )!.object;
       // Placed relative to the code as it was stored, not 20 m off.
       const offset = worldOf(pin.geo).sub(codeWorldOf(stored.json));
       expect(
@@ -1904,9 +1932,9 @@ describe(
       expect(settled.objects[0]?.basis).toBe("code-corrected");
       expect(settled.basis).toBe("code-corrected");
       // Placed relative to the code as it is stored, not 20 m off.
-      const pin = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin",
-      )!.object;
+      const pin = a.ctx.tourDocument
+        .entries()
+        .find((p) => p.object.kind === "pin")!.object;
       const offset = worldOf(pin.geo).sub(codeWorldOf(hosted.json));
       expect(
         offset.distanceTo(new Vector3(3, 0, 1).sub(codeLocal)),
@@ -2071,7 +2099,7 @@ describe(
     ) {
       const a = authoring(store === undefined ? {} : { store });
       await openFinishableTour(a);
-      a.ctx.tourManifest = tourOf(objects);
+      a.ctx.tourDocument.open(tourOf(objects));
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
       a.beginVisit();
@@ -2106,7 +2134,7 @@ describe(
       a.dom.objectList.listHandlers!.editText("h1", "  The old mill ");
       await flush();
       // The hosted pin as its station reads it back (version 3), relabelled.
-      expect(a.ctx.placedObjects.map((p) => p.object)).toEqual([
+      expect(a.ctx.tourDocument.entries().map((p) => p.object)).toEqual([
         { ...asHosted(hostedPin("h1", "Hosted gate")), label: "The old mill" },
       ]);
       expect(a.labels.some((o) => o.name === "The old mill")).toBe(true);
@@ -2118,7 +2146,7 @@ describe(
       expect(a.dom.objectList.lastModel?.note).toMatch(/Saved "The old mill"/);
       // An empty text changes nothing.
       a.dom.objectList.listHandlers!.editText("h1", "   ");
-      expect(a.ctx.placedObjects[0]?.object).toMatchObject({
+      expect(a.ctx.tourDocument.entries()[0]?.object).toMatchObject({
         label: "The old mill",
       });
     });
@@ -2189,7 +2217,7 @@ describe(
       const a = await withHostedTour([hostedPin("h1", "Gate")], store);
       a.dom.objectList.listHandlers!.remove("h1");
       await flush();
-      expect(a.ctx.deletedObjectIds).toEqual(["h1"]);
+      expect(a.ctx.tourDocument.deleted()).toEqual(["h1"]);
       expect(a.ctx.placedPreviews.has("h1")).toBe(false);
       expect(files.has(deletedKey("h1"))).toBe(true);
       expect(a.dom.objectList.lastModel?.rows).toEqual([]);
@@ -2205,12 +2233,12 @@ describe(
       const a = await withHostedTour([], store);
       await a.mint();
       await a.placePin("Temp", [1, 0, 1]);
-      const id = a.ctx.placedObjects.at(-1)!.object.id;
+      const id = a.ctx.tourDocument.entries().at(-1)!.object.id;
       expect(files.has(objectKey(id))).toBe(true);
       a.dom.objectList.listHandlers!.remove(id);
       await flush();
-      expect(a.ctx.placedObjects).toEqual([]);
-      expect(a.ctx.deletedObjectIds).toEqual([]);
+      expect(a.ctx.tourDocument.entries()).toEqual([]);
+      expect(a.ctx.tourDocument.deleted()).toEqual([]);
       expect(files.has(objectKey(id))).toBe(false);
     });
 
@@ -2229,7 +2257,7 @@ describe(
       await a.placePin("Gate", [2, 0, -1]);
       a.endVisit();
       const codeLocal = mintedOdom(a.dispatched);
-      const gate = a.ctx.placedObjects[0]!.object;
+      const gate = a.ctx.tourDocument.entries()[0]!.object;
       const origin = new Matrix4().compose(
         new Vector3(4, -0.3, -7),
         new Quaternion(...yawQ(70)),
@@ -2257,7 +2285,7 @@ describe(
       a.dom.objectList.listHandlers!.move(gate.id);
       await flush();
 
-      const moved = a.ctx.placedObjects[0]!.object;
+      const moved = a.ctx.tourDocument.entries()[0]!.object;
       expect(moved.id).toBe(gate.id);
       const offset = worldOf(moved.geo).sub(
         codeWorldOf(a.codes.inHand()!.json),
@@ -2279,7 +2307,7 @@ describe(
       ).toBeLessThan(1e-6);
       a.endVisit();
       expect(
-        worldOf(a.ctx.placedObjects[0]!.object.geo).distanceTo(
+        worldOf(a.ctx.tourDocument.entries()[0]!.object.geo).distanceTo(
           worldOf(moved.geo),
         ),
       ).toBeLessThan(1e-2);
@@ -2296,7 +2324,7 @@ describe(
       await a.mint();
       await a.placePin("Gate", [2, 0, -1]);
       a.endVisit();
-      const gate = a.ctx.placedObjects[0]!.object;
+      const gate = a.ctx.tourDocument.entries()[0]!.object;
       // The next visit: its GPS is 20 m and 30 degrees off.
       a.beginVisit();
       a.setAlignment(yawAlignment(30, [20, 401, -8]));
@@ -2318,7 +2346,7 @@ describe(
       a.setReticle([4, 0, 2]);
       a.dom.objectList.listHandlers!.move(gate.id);
       await flush();
-      const moved = a.ctx.placedObjects[0]!.object;
+      const moved = a.ctx.tourDocument.entries()[0]!.object;
       expect(
         logged(a, "tourAuthoring/objectMoved").at(-1)!.payload["basis"],
       ).toBe("code-corrected");
@@ -2336,7 +2364,7 @@ describe(
         "code-corrected",
       );
       expect(
-        worldOf(a.ctx.placedObjects[0]!.object.geo).distanceTo(
+        worldOf(a.ctx.tourDocument.entries()[0]!.object.geo).distanceTo(
           worldOf(moved.geo),
         ),
       ).toBeLessThan(1e-2);
@@ -2454,7 +2482,7 @@ describe(
 
       list.listHandlers!.undo();
       await flush();
-      expect(a.ctx.deletedObjectIds).toEqual([]);
+      expect(a.ctx.tourDocument.deleted()).toEqual([]);
       expect(a.ctx.placedPreviews.has("h1")).toBe(true);
       expect(files.has(deletedKey("h1")), "the tombstone is gone").toBe(false);
       expect(list.lastModel?.note).toMatch(/Restored "Gate"/);
@@ -2473,7 +2501,7 @@ describe(
       await flush();
       list.listHandlers!.undo();
       await flush();
-      expect(a.ctx.placedObjects.map((p) => p.object)).toMatchObject([
+      expect(a.ctx.tourDocument.entries().map((p) => p.object)).toMatchObject([
         { id: "h1", label: "Mill" },
       ]);
       expect(JSON.parse(String(files.get(objectKey("h1"))))).toMatchObject({
@@ -2483,13 +2511,16 @@ describe(
 
       await a.mint();
       await a.placePin("Temp", [1, 0, 1]);
-      const id = a.ctx.placedObjects.at(-1)!.object.id;
+      const id = a.ctx.tourDocument.entries().at(-1)!.object.id;
       list.listHandlers!.remove(id);
       await flush();
       expect(files.has(objectKey(id))).toBe(false);
       list.listHandlers!.undo();
       await flush();
-      expect(a.ctx.placedObjects.map((p) => p.object.id)).toEqual(["h1", id]);
+      expect(a.ctx.tourDocument.entries().map((p) => p.object.id)).toEqual([
+        "h1",
+        id,
+      ]);
       expect(files.has(objectKey(id)), "its record is written back").toBe(true);
     });
 
@@ -2504,7 +2535,7 @@ describe(
       expect(list.lastModel?.undo).toBe(false);
       list.listHandlers!.undo();
       await flush();
-      expect(a.ctx.deletedObjectIds).toEqual(["h1"]);
+      expect(a.ctx.tourDocument.deleted()).toEqual(["h1"]);
     });
 
     it("shows Deleting… until the draft write lands, then the outcome - and says so when the write is refused or throws", async () => {
@@ -2648,10 +2679,12 @@ describe(
       const stored = a.codes.inHand()!;
       const pins = () =>
         new Map(
-          a.ctx.placedObjects.map((p) => [
-            p.object.kind === "pin" ? p.object.label : p.object.id,
-            p.object.geo,
-          ]),
+          a.ctx.tourDocument
+            .entries()
+            .map((p) => [
+              p.object.kind === "pin" ? p.object.label : p.object.id,
+              p.object.geo,
+            ]),
         );
       const before = pins();
       a.beginVisit();
@@ -2718,10 +2751,12 @@ describe(
       a.endVisit();
       const pins = () =>
         new Map(
-          a.ctx.placedObjects.map((p) => [
-            p.object.kind === "pin" ? p.object.label : p.object.id,
-            p.object.geo,
-          ]),
+          a.ctx.tourDocument
+            .entries()
+            .map((p) => [
+              p.object.kind === "pin" ? p.object.label : p.object.id,
+              p.object.geo,
+            ]),
         );
       const before = pins();
       a.beginVisit();
@@ -2770,9 +2805,10 @@ describe(
         d.movedWithCode.map((m) => m.id),
       );
       expect(new Set(moved).size).toBe(moved.length);
-      const between = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin" && p.object.label === "between",
-      )!.object.id;
+      const between = a.ctx.tourDocument
+        .entries()
+        .find((p) => p.object.kind === "pin" && p.object.label === "between")!
+        .object.id;
       expect(moved.filter((id) => id === between)).toHaveLength(1);
     });
 
@@ -2821,9 +2857,10 @@ describe(
         walkM: 10,
       });
       await a.placePin("bank", [10, 0, -8]);
-      const placed = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin" && p.object.label === "bank",
-      )!.object.geo;
+      const placed = a.ctx.tourDocument
+        .entries()
+        .find((p) => p.object.kind === "pin" && p.object.label === "bank")!
+        .object.geo;
       a.endVisit();
       const decision = codePosition(a)?.decision as {
         kind: string;
@@ -2833,9 +2870,10 @@ describe(
       expect(decision.turnedDeg).toBeCloseTo(100, 0);
       expect(codePosition(a)?.applied).toBe(true);
       expect(a.codes.inHand()?.json).not.toBe(stored.json);
-      const bank = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin" && p.object.label === "bank",
-      )!.object.geo;
+      const bank = a.ctx.tourDocument
+        .entries()
+        .find((p) => p.object.kind === "pin" && p.object.label === "bank")!
+        .object.geo;
       expect(worldOf(bank).distanceTo(worldOf(placed))).toBeLessThan(0.1);
       await openFinishableTour(a);
       a.ctx.tourManifestStatus = "settled";
@@ -2950,16 +2988,17 @@ describe(
         northM: 3,
         walkM: 30,
       });
-      const hosted = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin" && p.object.label === "near",
-      )!.object;
-      a.ctx.placedObjects = a.ctx.placedObjects.filter(
-        (p) => p.object.id !== hosted.id,
-      );
-      a.ctx.tourManifest = tourOf([hosted]);
+      const hosted = a.ctx.tourDocument
+        .entries()
+        .find(
+          (p) => p.object.kind === "pin" && p.object.label === "near",
+        )!.object;
+      hostInstead(a, tourOf([hosted]));
       a.endVisit();
-      const edit = a.ctx.placedObjects.find((p) => p.object.id === hosted.id);
-      expect(edit, "an edit by id in placedObjects").toBeDefined();
+      const edit = a.ctx.tourDocument
+        .entries()
+        .find((p) => p.object.id === hosted.id);
+      expect(edit, "an edit by id in the page's work").toBeDefined();
       expect(edit!.object.geo).not.toEqual(before.get("near"));
       expect(edit!.placement).toBeUndefined();
     });
@@ -2970,35 +3009,37 @@ describe(
     // the settle, and not by the Finish that writes the move.
     it("moves the station of a hosted pin with an improved code, and the Finish keeps the pin's local pose", async () => {
       const { a } = await secondVisit({ yawDeg: 20, northM: 3, walkM: 30 });
-      const hosted = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin" && p.object.label === "near",
-      )!.object;
-      a.ctx.placedObjects = a.ctx.placedObjects.filter(
-        (p) => p.object.id !== hosted.id,
-      );
+      const hosted = a.ctx.tourDocument
+        .entries()
+        .find(
+          (p) => p.object.kind === "pin" && p.object.label === "near",
+        )!.object;
       const opened = tourOf([hosted]);
-      a.ctx.tourManifest = opened;
+      hostInstead(a, opened);
       const [station] = opened.stations;
       a.endVisit();
       expect(codePosition(a)?.applied).toBe(true);
-      const moved = a.ctx.tourManifest;
+      const moved = a.ctx.tourDocument.manifest()!;
       const [after] = moved.stations;
       expect(after!.geo).not.toEqual(station!.geo);
       expect(after!.items).toBe(station!.items);
       // The page's edit is the pin where its moved station puts it.
-      const edit = a.ctx.placedObjects.find((p) => p.object.id === hosted.id);
+      const edit = a.ctx.tourDocument
+        .entries()
+        .find((p) => p.object.id === hosted.id);
       expect(edit!.object.geo).toEqual(tourObjects(moved)[0]!.geo);
       expect(codePosition(a)?.movedWithCode.map((m) => m.id)).toEqual([
         hosted.id,
       ]);
 
+      // The page's tour stays the moved one (the archive only gains a
+      // file to rebuild from).
       await openFinishableTour(a);
-      a.ctx.tourManifest = moved;
       a.dom.finishButton.click();
       await finished(a.ctx);
       expect(a.ctx.finishError).toBeNull();
       const written = parseTourManifest(
-        JSON.parse(serializeTourManifest(a.ctx.tourManifest)),
+        JSON.parse(serializeTourManifest(a.ctx.tourDocument.manifest()!)),
       );
       const home = written.stations.find((s) => s.id === station!.id)!;
       expect(home.items.map((i) => i.pose)).toEqual(
@@ -3252,7 +3293,7 @@ describe(
       ): Promise<ReturnType<typeof authoring>> {
         const a = authoring(store === undefined ? {} : { store });
         await openFinishableTour(a);
-        a.ctx.tourManifest = tourOf(objects);
+        a.ctx.tourDocument.open(tourOf(objects));
         a.setup.presentDraftForTour(TOUR);
         await flush();
         return a;
@@ -3270,7 +3311,7 @@ describe(
         a.dom.finishButton.click();
         await finished(a.ctx);
         // The page's manifest now holds the pin; the hosted zip does not.
-        const id = tourObjects(a.ctx.tourManifest!)[0]!.id;
+        const id = tourObjects(a.ctx.tourDocument.manifest()!)[0]!.id;
         a.dom.objectList.listHandlers!.editText(id, "Gate, edited");
         await flush();
         // The zip was never uploaded: the reload sees the tour without it.
@@ -3326,7 +3367,7 @@ describe(
         // review #5), not the page's in-memory object.
         const uploaded = tourObjects(
           parseTourManifest(
-            JSON.parse(serializeTourManifest(a.ctx.tourManifest!)),
+            JSON.parse(serializeTourManifest(a.ctx.tourDocument.manifest()!)),
           ),
         ).find((o) => o.id === "h1")!;
         // Uploaded from this tab; the page stays open and edits again.
@@ -3362,7 +3403,7 @@ describe(
           }),
         });
         await openFinishableTour(b);
-        b.ctx.tourManifest = tourOf([desk]);
+        b.ctx.tourDocument.open(tourOf([desk]));
         b.setup.presentDraftForTour(TOUR);
         b.dom.objectList.listHandlers!.editText("h1", "Gate, phone again");
         await flush();
@@ -3457,7 +3498,7 @@ describe(
           const { store } = memoryDraftStore();
           const a = await placeAndFinish(store);
           const first = a.ctx.rebuiltZip;
-          const hostedA = [...tourObjects(a.ctx.tourManifest!)];
+          const hostedA = [...tourObjects(a.ctx.tourDocument.manifest()!)];
           a.beginVisit();
           a.seeTheCode();
           await flush();
@@ -3728,7 +3769,7 @@ describe(
       const log = a.settledLogs().at(-1)!.payload;
       expect(log.objects[0]!.usedAlignment).toEqual(atPlacement);
       expect(log.levelAlignment).toEqual(atPlacement);
-      const pin = a.ctx.placedObjects[0]!.object;
+      const pin = a.ctx.tourDocument.entries()[0]!.object;
       const expected = throughAlignment(
         { position: [2, 0, -1], rotation: [0, 0, 0, 1] },
         atPlacement,
@@ -3875,10 +3916,10 @@ describe(
       a.codes.setInHand({ id: "lvl", json: "{}" }, null);
       a.device.live = false;
       await a.placePin("Gate", [2, 0, -1]);
-      expect(a.ctx.placedObjects).toEqual([]);
+      expect(a.ctx.tourDocument.entries()).toEqual([]);
       a.device.live = true;
       await a.placePin("Gate", [2, 0, -1]);
-      expect(a.ctx.placedObjects).toHaveLength(1);
+      expect(a.ctx.tourDocument.entries()).toHaveLength(1);
     });
 
     it("refuses a pin before this session's fixes reach the alignment floor", async () => {
@@ -3887,10 +3928,10 @@ describe(
       // One fix of the store's was there before this session started.
       a.ctx.gpsSamplesAtSessionStart = 1;
       await a.placePin("Gate", [2, 0, -1]);
-      expect(a.ctx.placedObjects).toEqual([]);
+      expect(a.ctx.tourDocument.entries()).toEqual([]);
       a.ctx.gpsSamplesAtSessionStart = 0;
       await a.placePin("Gate", [2, 0, -1]);
-      expect(a.ctx.placedObjects).toHaveLength(1);
+      expect(a.ctx.tourDocument.entries()).toHaveLength(1);
     });
 
     // Why these tests matter (field test 2, F5; owner, 2026-10-09):
@@ -3907,7 +3948,7 @@ describe(
       await a.placePin("Gate", [2, 0, -1]);
       a.tapPhoto({ position: [0, 1.4, 0], rotation: [0, 0, 0, 1] });
       await flush();
-      expect(a.ctx.placedObjects.map((p) => p.object.kind)).toEqual([
+      expect(a.ctx.tourDocument.entries().map((p) => p.object.kind)).toEqual([
         "pin",
         "photo",
       ]);
@@ -3928,7 +3969,9 @@ describe(
       a.dom.sizeOfferUse.click();
       expect(a.codes.inHand()).toBeNull();
       await a.placePin("Outside", [30, 0, -5]);
-      expect(a.ctx.placedObjects.map((p) => p.object.kind)).toEqual(["pin"]);
+      expect(a.ctx.tourDocument.entries().map((p) => p.object.kind)).toEqual([
+        "pin",
+      ]);
     });
   },
 );
@@ -4140,9 +4183,11 @@ describe(
       await a.placePin("Beside A", [3, 0, 1]);
       a.endVisit();
 
-      const pin = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin" && p.object.label === "Beside A",
-      )!.object;
+      const pin = a.ctx.tourDocument
+        .entries()
+        .find(
+          (p) => p.object.kind === "pin" && p.object.label === "Beside A",
+        )!.object;
       const settled = a.settledLogs().at(-1)!.payload;
       expect(settled.objects.find((o) => o.id === pin.id)?.basis).toBe(
         "code-corrected",
@@ -4395,9 +4440,11 @@ describe(
       await a.placePin("at the copy", [3, 0, 1]);
       a.endVisit();
       await flush();
-      const pin = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin" && p.object.label === "at the copy",
-      )!.object;
+      const pin = a.ctx.tourDocument
+        .entries()
+        .find(
+          (p) => p.object.kind === "pin" && p.object.label === "at the copy",
+        )!.object;
       const settled = a.settledLogs().at(-1)!.payload;
       expect(settled.objects.find((o) => o.id === pin.id)?.basis).not.toBe(
         "code-corrected",
@@ -4421,9 +4468,11 @@ describe(
       walkThrough(a, 22);
       a.seeTheCode();
       await flush();
-      const pin = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin" && p.object.label === "home pin",
-      )!.object;
+      const pin = a.ctx.tourDocument
+        .entries()
+        .find(
+          (p) => p.object.kind === "pin" && p.object.label === "home pin",
+        )!.object;
       // Plainly: through this visit's alignment (a 22 m north shift).
       const plain = worldOf(pin.geo).sub(new Vector3(22, 400, 0));
       expect(a.inWorldGroup("home pin").distanceTo(plain)).toBeLessThan(0.5);
@@ -4443,9 +4492,11 @@ describe(
       await visitSeeing(a, 30);
       await visitSeeing(a, 0);
       expect(spotsOf(a).copies).toHaveLength(1);
-      const pinBefore = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin" && p.object.label === "by the copy",
-      )!.object.geo;
+      const pinBefore = a.ctx.tourDocument
+        .entries()
+        .find(
+          (p) => p.object.kind === "pin" && p.object.label === "by the copy",
+        )!.object.geo;
       // Seen 5 m off its (weakly saved) spot after a reliable walk: improved.
       await visitSeeing(a, 5);
       expect(
@@ -4457,9 +4508,11 @@ describe(
           applied: true,
         }),
       ]);
-      const pinAfter = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin" && p.object.label === "by the copy",
-      )!.object.geo;
+      const pinAfter = a.ctx.tourDocument
+        .entries()
+        .find(
+          (p) => p.object.kind === "pin" && p.object.label === "by the copy",
+        )!.object.geo;
       expect(worldOf(pinAfter).distanceTo(worldOf(pinBefore))).toBeLessThan(
         1e-6,
       );
@@ -4501,9 +4554,11 @@ describe(
       }
       // Undone back to A.
       expect(spotsOf(a).current.geo).toEqual(original.geo);
-      const pin = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin" && p.object.label === "by B",
-      )!.object;
+      const pin = a.ctx.tourDocument
+        .entries()
+        .find(
+          (p) => p.object.kind === "pin" && p.object.label === "by B",
+        )!.object;
       expect(Math.abs(worldOf(pin.geo).x - 31)).toBeLessThan(2);
     });
 
@@ -4661,12 +4716,13 @@ describe(
       await a.placePin("near the code", [2, 0, -1]);
       a.endVisit();
       await flush();
-      const pinBefore = a.ctx.placedObjects.find(
-        (p) => p.object.kind === "pin",
-      )!.object.geo;
+      const pinBefore = a.ctx.tourDocument
+        .entries()
+        .find((p) => p.object.kind === "pin")!.object.geo;
       await visitSeeing(a, 30);
-      const pinAfter = a.ctx.placedObjects.find((p) => p.object.kind === "pin")!
-        .object.geo;
+      const pinAfter = a.ctx.tourDocument
+        .entries()
+        .find((p) => p.object.kind === "pin")!.object.geo;
       expect(pinAfter).toEqual(pinBefore);
       const entries = [...files.keys()]
         .filter((k) => k.startsWith(visitKey("")))

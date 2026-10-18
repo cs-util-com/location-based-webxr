@@ -46,6 +46,7 @@ import {
 import { createStationRing, type StationRing } from "./station-ring.js";
 import { stationTitle } from "./station-run.js";
 import { tourObjectsOf, withTourContent } from "./tour-content.js";
+import type { CreatorDocument } from "./creator-document.js";
 
 /** A station as the creator's HUD reads it. */
 export interface ArStation {
@@ -239,12 +240,12 @@ export interface CreatorStations {
   endVisit(): void;
 }
 
-/** The working copy the stations are read from: the page's session. */
-export interface CreatorStationsSource {
-  readonly tourManifest: TourManifest | null;
-  readonly placedObjects: readonly { readonly object: TourObject }[];
-  readonly deletedObjectIds: readonly string[];
-}
+/** The working copy the stations are read from: the page's tour
+ *  document (`creator-document.ts`). */
+type CreatorStationsSource = Pick<
+  CreatorDocument,
+  "manifest" | "entries" | "deleted"
+>;
 
 /** The same placed objects, entry by entry (by reference). */
 function sameObjects(
@@ -258,7 +259,7 @@ function sameObjects(
 }
 
 export function wireCreatorStations(deps: {
-  readonly ctx: CreatorStationsSource;
+  readonly tour: CreatorStationsSource;
   readonly dom: CreatorStationsDom;
   /** The creator's camera in GPS-world NUE, or null (no alignment, no AR
    *  pose). */
@@ -293,28 +294,26 @@ export function wireCreatorStations(deps: {
   let lastOpen: StationMark | null = null;
 
   function stations(): ArStation[] {
-    const { ctx } = deps;
+    const { tour } = deps;
+    const manifest = tour.manifest();
+    const entries = tour.entries();
+    const deleted = tour.deleted();
     if (
       memo !== null &&
-      memo.manifest === ctx.tourManifest &&
-      memo.deleted === ctx.deletedObjectIds &&
-      sameObjects(memo.objects, ctx.placedObjects)
+      memo.manifest === manifest &&
+      memo.deleted === deleted &&
+      sameObjects(memo.objects, entries)
     ) {
       return memo.stations;
     }
-    const objects = ctx.placedObjects.map((p) => p.object);
+    const objects = entries.map((p) => p.object);
     const list = stationsAsFinished({
-      manifest: ctx.tourManifest,
+      manifest,
       placed: objects,
-      deleted: ctx.deletedObjectIds,
+      deleted,
       radiusM,
     });
-    memo = {
-      manifest: ctx.tourManifest,
-      objects,
-      deleted: ctx.deletedObjectIds,
-      stations: list,
-    };
+    memo = { manifest, objects, deleted, stations: list };
     return list;
   }
 
@@ -336,7 +335,7 @@ export function wireCreatorStations(deps: {
         return;
       }
       const list = stations();
-      if (deps.ctx.tourManifest === null) {
+      if (deps.tour.manifest() === null) {
         show("");
         ring.hide();
         return;

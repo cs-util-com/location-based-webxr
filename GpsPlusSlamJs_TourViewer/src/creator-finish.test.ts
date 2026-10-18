@@ -64,6 +64,7 @@ import {
   generateFixtureKey,
 } from "./test-support/tour-signing-fixture.js";
 import { openTourFile, type TourSession } from "./tour-session.js";
+import type { VisitPlacement } from "./creator-document.js";
 import { describeTourTrust } from "./tour-trust-view.js";
 import { linkTrustKey, type TrustStorage } from "./tour-trust.js";
 import { FINISH_LABELS } from "./qr-author-mode.js";
@@ -292,18 +293,34 @@ async function wireFinishable(options: {
     ...options.sessionExtras,
   }) as never;
   ctx.tourManifestStatus = "settled";
-  ctx.tourManifest = tourOf([...options.hosted], options.manifestExtras);
-  ctx.deletedObjectIds = [...(options.deleted ?? [])];
-  ctx.placedObjects = [
-    ...options.placed.map((object) => ({ object })),
-    ...(options.placedInVisit ?? []).map(({ object, local }) => ({
-      object,
-      placement: {
-        visit: 0,
-        local: { position: local, rotation: [0, 0, 0, 1] as const },
-      },
-    })),
-  ];
+  const tour = ctx.tourDocument;
+  tour.open(tourOf([...options.hosted], options.manifestExtras));
+  for (const id of options.deleted ?? []) {
+    if (tour.remove(id, "a deletion") === null) {
+      throw new Error(`the tour does not carry ${id} to delete`);
+    }
+  }
+  // An object the tour carries is an edit of it, any other a placement;
+  // the document refuses either outside its station's reach, which would
+  // make a test pass for the wrong reason, so a refusal fails it here.
+  const hostedIds = new Set(options.hosted.map((o) => o.id));
+  const put = (object: TourObject, placement?: VisitPlacement) => {
+    const changed = hostedIds.has(object.id)
+      ? tour.move(object, "an edit", placement)
+      : tour.place(
+          object,
+          placement === undefined ? {} : { placement },
+          "a placement",
+        );
+    if (changed === null) throw new Error(`refused: ${object.id}`);
+  };
+  for (const object of options.placed) put(object);
+  for (const { object, local } of options.placedInVisit ?? []) {
+    put(object, {
+      visit: 0,
+      local: { position: local, rotation: [0, 0, 0, 1] as const },
+    });
+  }
   const arStore = alignedArStore(options.alignment) as {
     dispatched: unknown[];
   };
@@ -604,7 +621,7 @@ describe("what the finish actually writes into the published zip", () => {
     expect(names).toContain(`${WRAP}tour.json`);
 
     // And the manifest the ARCHIVE CARRIES lists each id exactly once.
-    // Read from the bytes, not from `ctx.tourManifest`: the in-memory
+    // Read from the bytes, not from `ctx.tourDocument`: the in-memory
     // copy is the object the writer built, which this file's header
     // rejects as proof. A finish that de-duplicated its own state while
     // serializing a different list would pass the weaker assertion and
@@ -672,7 +689,7 @@ describe("edits and deletions reach the published zip (authoring plan 2026-09-28
       label: "the new text",
     });
     // The edit is in the zip, so it leaves the list of work to write.
-    expect(ctx.placedObjects).toEqual([]);
+    expect(ctx.tourDocument.entries()).toEqual([]);
   });
 
   it("drops a deleted object and takes a deleted photo's jpg out of the archive", async () => {
@@ -695,12 +712,12 @@ describe("edits and deletions reach the published zip (authoring plan 2026-09-28
     expect(names).not.toContain(`${WRAP}content/gone.jpg`);
     expect(names).toContain(`${WRAP}content/kept.jpg`);
     // Applied: the next Finish has nothing left to delete.
-    expect(ctx.deletedObjectIds).toEqual([]);
+    expect(ctx.tourDocument.deleted()).toEqual([]);
   });
 });
 
 describe("a finished photo keeps its bytes for its preview (code book plan M2)", () => {
-  // Why this test matters: the Finish takes a photo out of `placedObjects`,
+  // Why this test matters: the Finish takes a photo out of the page's work,
   // while the HOSTED zip does not carry its bytes until the creator uploads
   // the rebuilt one. The Finish hands the bytes to the previews; without
   // that, the next visit's preview asks the hosted zip, finds nothing, and
@@ -728,12 +745,16 @@ describe("a finished photo keeps its bytes for its preview (code book plan M2)",
         },
       },
     });
-    ctx.placedObjects = [{ object: photo("new"), blob: new Blob(["jpg"]) }];
+    ctx.tourDocument.place(
+      photo("new"),
+      { blob: new Blob(["jpg"]) },
+      "a photo",
+    );
     dom.finishButton.click();
     await settle(ctx);
     expect(ctx.finishError).toBeNull();
     // Written, so it left the list of work to write.
-    expect(ctx.placedObjects).toEqual([]);
+    expect(ctx.tourDocument.entries()).toEqual([]);
     setup.beginAuthorVisit();
     for (let i = 0; i < 5; i += 1) await Promise.resolve();
     expect(zipReads).toEqual([]);
@@ -993,7 +1014,7 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     // 5 of 6: the fixture's first photo precedes the GPS zero.
     expect(spots?.captures).toHaveLength(5);
     // The in-memory manifest advances with it, as with objects.
-    expect(ctx.tourManifest?.captureSpots).toEqual(spots);
+    expect(ctx.tourDocument.manifest()?.captureSpots).toEqual(spots);
     // This page knows the walk is decided (the creator's HUD drops its
     // hedge, PR #642 review).
     expect(ctx.walkDecidedFor).toBe(ctx.session);
@@ -1052,13 +1073,17 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     // Finish that settled the walk (spots written, or a walk that places
     // nothing) drops it.
     const pending = () =>
-      walkPhotosPending(ctx.session, ctx.tourManifest, ctx.walkDecidedFor);
+      walkPhotosPending(
+        ctx.session,
+        ctx.tourDocument.manifest(),
+        ctx.walkDecidedFor,
+      );
     expect(pending()).toBe(true);
     dom.finishButton.click();
     await settle(ctx);
     expect(ctx.finishError).toBeNull();
     expect(await writtenManifest(ctx)).not.toHaveProperty("captureSpots");
-    expect(ctx.tourManifest?.captureSpots).toBeUndefined();
+    expect(ctx.tourDocument.manifest()?.captureSpots).toBeUndefined();
     expect(ctx.walkDecidedFor).toBeNull();
     expect(pending()).toBe(true);
   });
@@ -1507,7 +1532,7 @@ describe("the save cannot be forgotten (UI round 1, U2)", () => {
     await settle(ctx);
     await saved();
     expect(dom.downloadButton.disabled).toBe(false);
-    ctx.placedObjects = [{ object: pin("another-one") }];
+    ctx.tourDocument.place(pin("another-one"), {}, "another pin");
     dom.finishButton.click();
     expect(ctx.finishing).toBe(true);
     expect(dom.downloadButton.disabled).toBe(true);

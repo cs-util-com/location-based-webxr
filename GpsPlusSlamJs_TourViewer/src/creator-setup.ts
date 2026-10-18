@@ -304,8 +304,14 @@ export function wireCreatorSetup(deps: {
       renderAuthorReadout();
     },
   });
-  /** The draft's object writes, as the object list calls them. */
-  const draftWrites = draftObjectWrites(draft);
+  // The draft follows the tour document (`tour-document-draft.ts`): every
+  // edit, placement, delete, undo and restore is written by the document's
+  // listener, after the reducer - the writes the desktop editor's draft
+  // makes for the same changes (`draft-actions.ts`).
+  ctx.tourDocument.follow({
+    ...draftObjectWrites(draft),
+    saveSettings: (settings) => draft.saveSettings(settings),
+  });
   /** The placed objects' previews and the earlier visits' frame
    *  (`creator-previews.ts`). */
   const previews = wireCreatorPreviews({
@@ -366,13 +372,13 @@ export function wireCreatorSetup(deps: {
       gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
     }),
     codes: () => codes.storedPoses(),
-    // With its base, decided by the draft from the tour as opened (M6 E2p);
-    // the writes the desktop editor's draft offers too (`draft-actions.ts`).
-    saveDraftObject: draftWrites.saveObject,
-    saveDraftDeletion: draftWrites.saveDeletion,
-    forgetDraftDeletion: draftWrites.forgetDeletion,
+    // A deleted photo's picture, from the opened file (an Undo after a
+    // Finish wrote the delete needs it).
+    loadPicture: (image) =>
+      ctx.session === null
+        ? Promise.reject(new Error("no tour is open"))
+        : ctx.session.loadContentEntry(image),
     schedule: (fn, ms) => seams.schedule(fn, ms),
-    forgetDraftObject: draftWrites.forgetObject,
     syncPreviews: () => {
       previews.sync();
     },
@@ -639,7 +645,7 @@ export function wireCreatorSetup(deps: {
    *  the open one's line and ring, read from the working copy through the
    *  Finish's own writer - no state of their own. */
   const stations = wireCreatorStations({
-    ctx,
+    tour: ctx.tourDocument,
     dom: { chip: dom.stationChip ?? { textContent: "", hidden: true } },
     creatorNue: () =>
       visitorPosition({
@@ -649,7 +655,11 @@ export function wireCreatorSetup(deps: {
       }).nue,
     reticleNue: () => reticleNueOf(ctx.reticle),
     walkPhotosPending: () =>
-      walkPhotosPending(ctx.session, ctx.tourManifest, ctx.walkDecidedFor),
+      walkPhotosPending(
+        ctx.session,
+        ctx.tourDocument.manifest(),
+        ctx.walkDecidedFor,
+      ),
     zero: () => selectZeroReference(arStore.getState()),
     scene: () => (creator && sessionLive() ? seams.getScene() : null),
   });
@@ -721,8 +731,8 @@ export function wireCreatorSetup(deps: {
     return {
       sessionLive: sessionLive(),
       arAvailable: arController.getState().status !== "unsupported",
-      placedCount: ctx.placedObjects.length,
-      deletedCount: ctx.deletedObjectIds.length,
+      placedCount: ctx.tourDocument.entries().length,
+      deletedCount: ctx.tourDocument.deleted().length,
       codeCount: codes.toWrite().length,
       rebuilt:
         ctx.rebuiltZip === null

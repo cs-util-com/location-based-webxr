@@ -51,14 +51,13 @@ lives here.
     declined bake, PR #643 review; a per-page view hint for the creator's
     station HUD, cleared at tour teardown, PR #642 review), `tourLabel` (set by
     archive-open); the open
-    tour's `tourManifest` (archive-open.ts) and `scanEntries` (the creator's
-    walk, from `tour-read-set.ts`; empty without a manifest); the placement layer (M4):
-    `placedObjects` (each with an optional `placement`: the odometry-NUE
-    pose in the world group and the AR visit it belongs to, authoring plan
-    2026-09-28-0953 M2c; an edit or a move of a hosted object is an entry
-    with the SAME id, M4), `deletedObjectIds` (tombstones of objects the
-    manifest carries, applied by the Finish and reset when the tour
-    closes, M4), `placedPreviews` (a `Map` by object id - this device's
+    tour's document `tourDocument` (`creator-document.ts`: the shared
+    `tourDocument` slice of the store the session was made with, plus the
+    pictures and AR placements beside it - the manifest, `manifest()`,
+    opened by archive-open.ts; the creator's placed, edited and deleted
+    objects; one per page, never replaced) and `scanEntries` (the
+    creator's walk, from `tour-read-set.ts`; empty without a manifest);
+    the placement layer (M4): `placedPreviews` (a `Map` by object id - this device's
     objects AND the hosted zip's in the running visit, so an edit, a move
     or a delete finds its preview and a tap in AR names what it hit, M4),
     `placementNote`, `reticle`,
@@ -89,7 +88,10 @@ lives here.
     `viewerPlanesError`, `imagePlanes`, `imagePlanesLoading`,
     `planesRunGeneration`, `placementUnsubscribe`, `placementAttempted`,
     `joinDeclined`.
-- `createTourViewerSession(): TourViewerSession` - the initial values.
+- `createTourViewerSession(store?): TourViewerSession` - the initial
+  values; `store` holds the tour document in the page's store (the
+  `tourDocument` slice the desktop editor uses too; a fresh
+  `createTourViewerStore()` when absent, for tests that need no other).
 - `createTourViewerStore(recording?)` - with the creator's troubleshooting
   recording (`authoring-recording.ts`; authoring recording plan
   2026-09-28-0953, M1a) the store writes into its backend under its
@@ -165,7 +167,7 @@ loadImage)` (the open tour's manifest settled, or null on teardown: the
 ## Examples
 
 ```ts
-const ctx = createTourViewerSession();
+const ctx = createTourViewerSession(arStore);
 wireArchiveOpen({ ctx, ... });
 wireArEntry({ ctx, ... });
 ```

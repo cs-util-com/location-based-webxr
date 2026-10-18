@@ -21,8 +21,8 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
 
 ## Invariants & assumptions
 
-- The tour is read from the session object each time: `ctx.tourManifest`
-  (settled) for the stations, the order and the assets, and the store's
+- The tour is read from the session object each time:
+  `ctx.tourDocument.manifest()` (settled) for the stations, the order and the assets, and the store's
   zero for the visitor's raw fix position. A code lock only re-judges the
   guide (tour editor plan D16: a lock is no arrival; the moved-code check's
   veto acts on the alignment, never here), so the code-only station's spot,
@@ -41,7 +41,8 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   `.glb` check, K1's per-entry hash check), ahead of time as the visitor
   approaches (`station-prefetch.ts`; the story's own reads go through the
   same cache). The cache lives with the open tour's manifest
-  (`ctx.tourManifest`, by identity): kept across AR sessions, dropped when
+  (`ctx.tourDocument.manifest()`, by identity; a visitor never edits it,
+  so it changes only with the tour): kept across AR sessions, dropped when
   the tour closes or another opens (K4 review R15). A figure is decoded by the framework's
   `decodeFrameTexture`, one at a time through a `keyed-chain` key, via
   `decodeFigure` (its size read from its own header, refused over the tour

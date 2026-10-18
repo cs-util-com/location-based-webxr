@@ -237,7 +237,7 @@ async function visitorSession(
     loadContentEntry: () => Promise.reject(new Error("no photos here")),
     ...sessionOverrides,
   } as unknown as TourSession;
-  ctx.tourManifest = tourOf([pin]);
+  ctx.tourDocument.open(tourOf([pin]));
   ctx.tourManifestStatus = "settled";
   ctx.currentLevels = new Map([[await qrCodeId(TEXT), level]]);
   ctx.placementUnsubscribe = () => undefined; // a viewer session is live

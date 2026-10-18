@@ -4,16 +4,20 @@
 
 Editing placed objects (authoring plan 2026-09-28-0953 §3.4, milestone
 M4): the object list's actions - Edit text, Move to the reticle, Delete -
-and the selection a tap in AR makes, over the creator's in-memory state.
-Wired by `creator-setup.ts`, drawn by `object-list.ts`.
+and the selection a tap in AR makes. The model is the shared tour
+document (`tour-document.ts`) through the page's handle
+`ctx.tourDocument` (`creator-document.ts`): an edit, a move and a
+delete are its actions, an Undo is its undo - the desktop editor's rules,
+draft writes and history. Wired by `creator-setup.ts`, drawn by
+`object-list.ts`.
 
 ## Public API
 
-- `AuthoringObject` - one object as the creator sees it now. The list
-  functions (`authoringObjects`, `upsertPlaced`) and the rules for a pin's
-  text, a delete and its undo live in `object-edits.ts` since M6 E0c, shared
-  with the desktop editor; this file wires them to the page's state, the
-  store's log, the draft and the list's sentences.
+- `AuthoringObject` - one object as the creator sees it now (the
+  document's `CreatorObject`: `documentObjects` with this page's entry
+  joined). The rule for a pin's text (`pinTextEdit`) lives in
+  `object-edits.ts`, shared with the desktop editor; this file wires the
+  document to the store's log, the scene and the list's sentences.
 - `wireObjectEditing(deps): ObjectEditing` - binds the list's handlers.
   - `render()` - redraw the list (cheap when nothing changed).
   - `select(id | null)` - a tap in AR (the id `object-pick.ts` returned).
@@ -24,31 +28,33 @@ Wired by `creator-setup.ts`, drawn by `object-list.ts`.
     told after a tap or Close changed the selection, so the place buttons
     follow object mode. A delete and `reset` do not tell it (`reset` runs
     inside a visit's teardown, M3 review #14); the next render catches up.
-  - `objects()` - `authoringObjects` over the live state.
+  - `objects()` - the document's objects now.
   - `reset()` - a visit ended or a tour closed: selection and note go.
 - `ObjectEditingDeps` - the creator setup's state and callbacks: the
   session object, the store, the view, the world group, `sessionLive`,
   `placementAllowed`, the optional `notePlaced` (a move is a new placement
   for the settle's per-moment alignment, D33), `settleInputs` (the level in hand, this visit's
-  measurement and sighting, the GPS accuracy), the stored codes, the draft
-  writes (`saveDraftObject`, `saveDraftDeletion`, `forgetDraftObject`,
-  `forgetDraftDeletion`; a delete's and an undo's sequences over them are
-  `draft-actions.ts`'s, which the desktop editor runs too), `schedule` (the
-  app's one-shot timer seam),
-  `syncPreviews` and `renderAuthorReadout`.
+  measurement and sighting, the GPS accuracy), the stored codes, the
+  optional `loadPicture` (a hosted photo's picture from the open file,
+  kept at its delete so an Undo after a Finish can bring it back), `schedule`
+  (the app's one-shot timer seam), `syncPreviews` and
+  `renderAuthorReadout`. No draft writes: the document's listener writes
+  the draft (`creator-document.ts` `follow`), and each change's
+  `backedUp` says whether they landed.
 - `OUTCOME_HOLD_MS` (8 000) - how long an outcome stands against a tap
   that only selects, and how long a delete's Undo is offered (see below).
 
 ## Invariants & assumptions
 
-- **One record per id.** An edit or a move of a hosted object puts a record
-  with the SAME id into `ctx.placedObjects` (`upsertPlaced`), never a second
-  entry: the serializer rejects duplicate ids, so a duplicate would make
-  every later Finish throw.
-- **A delete is a tombstone only when the manifest carries the id**
-  (`ctx.deletedObjectIds`, written to the draft as `deleted:<id>`); an
-  object that exists only on this device is dropped from the list and its
-  draft files are removed.
+- **One record per id**, held by the document: an edit or a move of a
+  hosted object is the slice's `edited` / `moved`, which replace the
+  record with the SAME id (the serializer rejects duplicate ids).
+- **A delete is a tombstone only when the written tour carries the id**
+  (the slice's `deleted`; the draft gets `deleted:<id>`); an object that
+  exists only on this device is dropped and its draft files are removed.
+- **The slice's guards answer first** (`objectFits` for an edit or a
+  move): a refused change is said in words ("could not be changed here",
+  "That spot is too far from its station"), never applied.
 - **A move takes the settle's alignment** (`planMove`, `visit-settle.ts`):
   corrected through the code when this visit saw a stored code (D10b), so
   a pin moved in a later visit lands where the code says. The entry keeps
@@ -69,16 +75,18 @@ Wired by `creator-setup.ts`, drawn by `object-list.ts`.
   unless used. It is offered beside the delete's outcome for
   `OUTCOME_HOLD_MS`, on the page and in AR, and withdrawn when the hold
   ends, when any later note replaces the outcome (single-level undo: it
-  undoes what the note says), when a Finish rebuilt the zip (the manifest
-  advanced - the delete is applied) or when the visit or tour ends
-  (`reset`). Undo puts the object back into the lists the Finish writes
-  (an edit or a local placement at its old index, so the zip's order
-  holds), the scene, the draft and the log
-  (`tourAuthoring/objectDeleteUndone`). The draft gets the record first and
-  loses the tombstone after, both in the id's queue: until the tombstone
-  goes it outranks the record, so an Undo cut short leaves the object
-  deleted rather than half restored. "Restoring ..." then "Restored ..." or
-  the not-backed-up wording.
+  undoes what the note says), when the document changed after the delete
+  (another open, or any later change: the document's undo takes back the
+  LAST step) or when the visit or tour ends (`reset`). A Finish changes no
+  revision, so the Undo outlives it, as on the desktop (the parity row
+  "delete, save, undo the delete, save"). The Undo is the document's
+  `undone`: the object comes back at its old place in the tour, into the
+  scene, the draft (the listener: the record first, the tombstone after,
+  both in the id's queue - an Undo cut short leaves the object deleted
+  rather than half restored) and the log
+  (`tourAuthoring/objectDeleteUndone`). Refused in words while a Finish
+  writes (`canStep`) and for a photo whose picture this device no longer
+  holds. "Restoring ..." then "Restored ..." or the not-backed-up wording.
 - **An outcome is held against a selecting tap** (M4 review #6). In AR
   every tap on the scene is a select, which used to clear the note at once
   - before it could be read. A note now stands for `OUTCOME_HOLD_MS`
@@ -93,7 +101,7 @@ Wired by `creator-setup.ts`, drawn by `object-list.ts`.
   action), or a held note read as describing the newly selected object
   (lower it).
 - **Refused while a Finish rebuilds** the zip: the rebuild has read the
-  lists, so a change then would be in neither the zip nor the list.
+  document, so a change then would be in neither the zip nor the list.
 - Edit text trims the text; an empty text changes nothing and says so.
 
 ## Examples
@@ -107,7 +115,10 @@ editing.render(); // from the panel's render
 ## Tests
 
 - `object-editing.test.ts` - `authoringObjects` (and a property that it
-  lists exactly what `applyObjectChanges` writes), `upsertPlaced`.
+  lists exactly what `applyObjectChanges` writes), `upsertPlaced` (the
+  shared list functions the document builds on).
+- `tour-document-parity.test.ts` - the phone's edit, delete and undo
+  write what the desktop's do, an undo after a Finish included.
 - `authoring-settle.test.ts` "editing placed objects, through the composed
   setup" - hosted objects rendered and listed, an edit in place with its
   log, the in-progress and final states with a held and a refused draft

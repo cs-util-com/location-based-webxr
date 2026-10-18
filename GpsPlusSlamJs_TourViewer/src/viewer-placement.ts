@@ -792,7 +792,10 @@ export function createViewerPlacement(deps: {
     // recording. The manifest's settle calls this trigger again.
     if (ctx.tourManifestStatus === "pending") return;
     ctx.placementAttempted = true;
-    if (!current.hasRecording && ctx.tourManifest?.captureSpots === undefined) {
+    if (
+      !current.hasRecording &&
+      ctx.tourDocument.manifest()?.captureSpots === undefined
+    ) {
       // No walk to place; the ring (if the tour has codes) waits for a lock.
       ctx.joinDeclined = true;
       ctx.placement = { kind: "declined", reason: "no recording in this tour" };
@@ -819,7 +822,7 @@ export function createViewerPlacement(deps: {
    */
   function tryPlaceContent(current: TourSession): void {
     if (ctx.contentAttempted || ctx.tourManifestStatus !== "settled") return;
-    const manifest = ctx.tourManifest;
+    const manifest = ctx.tourDocument.manifest();
     if (manifest === null || tourItems(manifest).length === 0) return;
     const zero = selectZeroReference(arStore.getState());
     const scene = seams.getScene();
@@ -989,10 +992,8 @@ export function createViewerPlacement(deps: {
     current: TourSession,
     generation: number,
   ): Promise<CaptureSpotsInWorld | null> {
-    const baked =
-      ctx.tourManifest === null
-        ? undefined
-        : worldCaptureSpots(ctx.tourManifest);
+    const manifest = ctx.tourDocument.manifest();
+    const baked = manifest === null ? undefined : worldCaptureSpots(manifest);
     if (baked !== undefined) return baked;
     const bake = await bakeCaptureSpots(current, {
       // Same bail contract as `decodeJoinedPoses` below. `onChunk` alone

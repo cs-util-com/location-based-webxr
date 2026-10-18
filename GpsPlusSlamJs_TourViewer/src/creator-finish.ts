@@ -10,10 +10,7 @@
  * @see creator-finish.ts.md
  */
 
-import {
-  createEmptyTourManifest,
-  type TourManifest,
-} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { CreatorCodes } from "./creator-codes.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorHandoff } from "./creator-handoff.js";
@@ -23,12 +20,12 @@ import type { CreatorSettle } from "./creator-settle.js";
 import {
   captureSpotsForRebuild,
   finishedFileName,
-  pendingAfterRebuild,
   rebuildFinishedTour,
   type RebuildPhotoSpots,
 } from "./finish-rebuild.js";
 import { FINISH_LABELS, finishReadiness } from "./qr-author-mode.js";
 import { authoringFinished } from "./tour-authoring-actions.js";
+import { manifestNow } from "./tour-document.js";
 import { scanEntryNames } from "./tour-read-set.js";
 import type { TourSession } from "./tour-session.js";
 import type {
@@ -107,16 +104,14 @@ export function wireCreatorFinish(deps: {
       dom.keepScanRow.hidden = true;
       return;
     }
-    if (
-      scanMemo?.session !== current ||
-      scanMemo.manifest !== ctx.tourManifest
-    ) {
+    const manifest = finishBase();
+    if (scanMemo?.session !== current || scanMemo.manifest !== manifest) {
       scanMemo = {
         session: current,
-        manifest: ctx.tourManifest,
+        manifest,
         count: scanEntryNames(
           current.entries.map((e) => e.filename),
-          ctx.tourManifest ?? createEmptyTourManifest(),
+          manifest,
           current.manifestWrap,
         ).length,
       };
@@ -127,6 +122,23 @@ export function wireCreatorFinish(deps: {
     // so a changed tick could not change it (U2 milestone review #2).
     dom.keepScanRow.hidden =
       deps.sessionLive() || ctx.rebuiltZip !== null || scanMemo.count === 0;
+  }
+
+  /** The manifest the next Finish starts from: the tour document's as it
+   *  stands (its frames, setting and details; the empty one while no tour
+   *  file is open). The same object until the document changes. */
+  let baseMemo: {
+    state: ReturnType<TourViewerSession["tourDocument"]["state"]>;
+    manifest: TourManifest;
+  } | null = null;
+  function finishBase(): TourManifest {
+    const state = ctx.tourDocument.state();
+    if (baseMemo?.state !== state) {
+      // Never null: the page's document is always open (no tour: an empty
+      // one, `creator-document.ts`).
+      baseMemo = { state, manifest: manifestNow(state)! };
+    }
+    return baseMemo.manifest;
   }
 
   /** The recorded photos' spots for this Finish: the shared rule
@@ -162,8 +174,8 @@ export function wireCreatorFinish(deps: {
   function hasWork(): boolean {
     return (
       deps.codes.toWrite().length > 0 ||
-      ctx.placedObjects.length > 0 ||
-      ctx.deletedObjectIds.length > 0 ||
+      ctx.tourDocument.entries().length > 0 ||
+      ctx.tourDocument.deleted().length > 0 ||
       (deps.sessionLive() && deps.codes.inHand() !== null)
     );
   }
@@ -215,6 +227,11 @@ export function wireCreatorFinish(deps: {
      *  it still hands the zip over (F4 milestone review #1). */
     let madeZip: typeof ctx.rebuiltZip = null;
     let notes = "";
+    /** The document's write: undo waits until it ends (`canStep`), and
+     *  what it lands names the open it began on. */
+    const tour = ctx.tourDocument;
+    const generation = tour.saveStarted();
+    let failure: string | undefined;
     /** Save the zip off AR; with a session running, leave it to the button
      *  (a download must not start inside an AR session, review #6). */
     const handOver = (): void => {
@@ -226,10 +243,11 @@ export function wireCreatorFinish(deps: {
         // Assembled INSIDE the try (M4 review #1): a manifest the reader
         // rejects (a duplicate id) must fail the finish visibly, not throw
         // past `finishing = true` and freeze the panel.
-        const manifest = ctx.tourManifest ?? createEmptyTourManifest();
+        const manifest = finishBase();
+        const stationsAtStart = tour.state().stations;
         const photos = await captureSpotsForFinish(current, manifest);
         if (ctx.session !== current) return; // re-opened meanwhile
-        const deleted = [...ctx.deletedObjectIds];
+        const deleted = [...tour.deleted()];
         // The Finish's rules, shared with the desktop editor (M6 E0,
         // `finish-rebuild.ts`): the edits applied, the files written and
         // removed, a listed tour's series continued, from the newest bytes.
@@ -237,8 +255,8 @@ export function wireCreatorFinish(deps: {
         const finished = await rebuildFinishedTour({
           tour: current,
           manifest,
-          // A snapshot: placements land in this list during the rebuild.
-          placed: [...ctx.placedObjects],
+          // A snapshot: placements land in the document during the rebuild.
+          placed: [...tour.entries()],
           deleted,
           levels,
           title: deps.tourTitle?.() ?? null,
@@ -289,46 +307,44 @@ export function wireCreatorFinish(deps: {
           .join(" ");
         // The placed objects are in the zip now; the next finish (a
         // re-measure, a re-opened tour) must not append them again - and
-        // the in-memory manifest has to ADVANCE to what was just written,
-        // or a second finish in the same open tour would rebuild from the
-        // pre-finish manifest and silently drop this batch (PR #435
-        // review). `tourManifest` is otherwise only written at tour open.
-        ctx.tourManifest = written;
+        // the document has to ADVANCE to what was just written, or a second
+        // finish in the same open tour would rebuild from the pre-finish
+        // manifest and silently drop this batch (PR #435 review). Only what
+        // this zip carries leaves the entries - by CONTENT, not id: a photo
+        // that landed while the zip was rebuilt is in neither, and waits
+        // for the next Finish (M2c review #6); the shared rule is the
+        // document's (`saved`, `pendingAfterRebuild`).
+        const before = tour.entries();
+        tour.saved({
+          generation,
+          written,
+          appliedDeletions: deleted,
+          stationsAtStart,
+        });
+        const kept = new Set(tour.entries().map((p) => p.object.id));
+        const finishedEntries = before.filter((p) => !kept.has(p.object.id));
         // The walk is decided for this open tour once its photos stand in
         // `written` (or it places none): the creator's HUD drops its hedge
         // (PR #642 review). Not after a declined bake: nothing was written,
         // so the next Finish bakes again and may still re-sort the stations
         // (PR #643 review).
         if (photos.notPlaced === undefined) ctx.walkDecidedFor = current;
-        // Only what this zip carries leaves the list - by CONTENT, not id:
-        // a photo that landed while the zip was rebuilt is in neither, and
-        // waits for the next Finish (M2c review #6). A photo that leaves
-        // keeps its bytes here for its preview: the hosted zip does not
-        // have them until the creator uploads this one.
-        // The shared rule (`pendingAfterRebuild`, M6 E0b), on the lists
-        // as they are NOW: a placement that landed during the rebuild stays.
-        const pending = pendingAfterRebuild(
-          { placed: ctx.placedObjects, deleted: ctx.deletedObjectIds },
-          written,
-          deleted,
-        );
-        for (const p of pending.finished) {
+        // A photo that leaves keeps its bytes here for its preview: the
+        // hosted zip does not have them until the creator uploads this one.
+        for (const p of finishedEntries) {
           if (p.blob !== undefined) {
             deps.previews.keepFinishedPhoto(p.object.id, p.blob);
           }
         }
-        ctx.placedObjects = pending.placed;
         // Their versions in this file are this device's own (M6 E2p): a
         // creator who uploads it from this tab must not see a later edit
-        // called "replaced by a newer one".
+        // called "replaced by a newer one". (The deletions' tombstones stay
+        // in the draft until the hosted zip lacks them too - the same proof
+        // the objects wait for.)
         deps.draft.finished(
-          pending.finished.map((p) => p.object.id),
+          finishedEntries.map((p) => p.object.id),
           written,
         );
-        // The deletions are applied: the manifest no longer carries them.
-        // (Their tombstones stay in the draft until the hosted zip lacks
-        // them too - the same proof the objects wait for.)
-        ctx.deletedObjectIds = pending.deleted;
         deps.previews.sync();
         wroteZip = true;
         deps.codes.finished(levels);
@@ -374,10 +390,9 @@ export function wireCreatorFinish(deps: {
         // step 4 (UI round 1, U2).
         dom.finishStatus.scrollIntoView?.({ block: "center" });
       } catch (err) {
+        failure = err instanceof Error ? err.message : String(err);
         if (ctx.session === current) {
-          ctx.finishError = FINISH_LABELS.failed(
-            err instanceof Error ? err.message : String(err),
-          );
+          ctx.finishError = FINISH_LABELS.failed(failure);
           // A file this Finish already made stays reachable with the
           // retry (U2 milestone review #4) - and is handed over: saved off
           // AR, else offered on the button (F4 milestone review #1). An
@@ -394,6 +409,7 @@ export function wireCreatorFinish(deps: {
         // settle with the rest of the visit at its end, through one
         // alignment - the tap's settle is redone then.
         if (!wroteZip) deps.settle.unsettle(settledAtTap);
+        tour.saveEnded(generation, failure);
         ctx.finishing = false;
         ctx.finishProgress = "";
         deps.render();

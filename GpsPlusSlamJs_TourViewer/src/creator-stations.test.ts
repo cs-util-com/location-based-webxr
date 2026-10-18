@@ -263,6 +263,10 @@ describe("wireCreatorStations", () => {
     options: { radiusM?: number; walkPhotosPending?: () => boolean } = {},
   ) {
     const scene = new Group();
+    // The tour as the page's document would hand it over, kept mutable so
+    // a test changes it as the creator would (a placement grows the list,
+    // a settle replaces an entry, a Finish takes the work into the
+    // manifest).
     const ctx: {
       tourManifest: TourManifest | null;
       placedObjects: { object: TourObject }[];
@@ -277,7 +281,11 @@ describe("wireCreatorStations", () => {
     let reticle: [number, number, number] | null = null;
     let sceneNow: Group | null = scene;
     const stations = wireCreatorStations({
-      ctx,
+      tour: {
+        manifest: () => ctx.tourManifest,
+        entries: () => ctx.placedObjects,
+        deleted: () => ctx.deletedObjectIds,
+      },
       dom: { chip },
       creatorNue: () => creator,
       reticleNue: () => reticle,

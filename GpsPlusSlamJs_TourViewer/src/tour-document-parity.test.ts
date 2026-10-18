@@ -34,7 +34,6 @@ import {
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   packFilesAsZip,
   type DraftFileStore,
@@ -48,8 +47,6 @@ import { createEditorDraft } from "./editor/editor-draft.js";
 import { createEditorSession } from "./editor/editor-session.js";
 import type { EditorLock } from "./editor/save-target.js";
 import type { ObjectListHandlers } from "./object-list.js";
-import { authoringObjects, upsertPlaced } from "./object-edits.js";
-import { tourObjectsOf } from "./tour-content.js";
 import { openTourFile, type TourSession } from "./tour-session.js";
 import {
   createTourViewerSession,
@@ -348,10 +345,13 @@ async function phonePage(
   const dom = Object.fromEntries(
     PHONE_DOM_KEYS.map((k) => [k, phoneElement()]),
   ) as Record<(typeof PHONE_DOM_KEYS)[number], ReturnType<typeof phoneElement>>;
-  const ctx = createTourViewerSession();
+  // One store for the page, as `main.ts` wires it: the session's tour
+  // document is the store's `tourDocument` slice.
+  const store = createTourViewerStore();
+  const ctx = createTourViewerSession(store);
   ctx.session = session;
   ctx.tourManifestStatus = "settled";
-  ctx.tourManifest = tourOf(OPENED);
+  ctx.tourDocument.open(tourOf(OPENED));
   let typedName: string | null = null;
   let draftKey: string | null = null;
   /** A station moved through the lists: no draft write followed. */
@@ -359,7 +359,7 @@ async function phonePage(
   const setup = wireCreatorSetup({
     ctx,
     mode: "creator",
-    arStore: createTourViewerStore(),
+    arStore: store,
     arController: {
       getState: () => ({ status: "idle" }),
       disable: () => Promise.resolve(),
@@ -402,11 +402,7 @@ async function phonePage(
   };
   /** The tour as the phone's object list shows it (`object-editing.ts`). */
   const objects = (): TourObject[] =>
-    authoringObjects(
-      tourObjectsOf(ctx.tourManifest),
-      ctx.placedObjects,
-      ctx.deletedObjectIds,
-    ).map((o) => o.object);
+    ctx.tourDocument.objects().map((o) => o.object);
   return {
     edit: async (id, text) => {
       list().editText(id, text);
@@ -421,38 +417,26 @@ async function phonePage(
       await flush();
     },
     place: async (object) => {
-      // As `creator-placement.ts` leaves the lists after a tap in AR.
-      ctx.placedObjects = [...ctx.placedObjects, { object }];
+      // As `creator-placement.ts` places after a tap in AR.
+      ctx.tourDocument.place(object, {}, "a pin");
       await flush();
     },
     move: async (id, lat, lon) => {
-      // As `object-editing.ts`'s move leaves the lists (its AR geometry
-      // decides the geo; here the same spot the desktop is given).
+      // As `object-editing.ts`'s move changes the document (its AR
+      // geometry decides the geo; here the same spot the desktop is given).
       const found = objects().find((o) => o.id === id);
       if (found === undefined) return;
-      ctx.placedObjects = upsertPlaced(ctx.placedObjects, {
-        object: { ...found, geo: { ...found.geo, lat, lon } },
-      });
+      ctx.tourDocument.move(
+        { ...found, geo: { ...found.geo, lat, lon } },
+        "a note",
+      );
       await flush();
     },
     moveStation: async (stationId, geo) => {
-      // As `creator-settle.ts`'s `moveStationsAlong` and `take` leave the
-      // page: the station moved in the page's manifest, and each item an
-      // edit at the place its moved station now gives it. Its draft writes
-      // (`recordPlacement`, `recordVisit`) are the AR path's, not driven.
+      // As `creator-settle.ts`'s `moveStationsAlong` moves it once its
+      // code was re-measured in AR (the geo is what the AR path computed).
       stationMoved = true;
-      const manifest = ctx.tourManifest!;
-      const before = new Map(tourObjects(manifest).map((o) => [o.id, o]));
-      ctx.tourManifest = {
-        ...manifest,
-        stations: manifest.stations.map((s) =>
-          s.id === stationId ? { ...s, geo } : s,
-        ),
-      };
-      for (const after of tourObjects(ctx.tourManifest)) {
-        if (after.station !== stationId || !before.has(after.id)) continue;
-        ctx.placedObjects = upsertPlaced(ctx.placedObjects, { object: after });
-      }
+      ctx.tourDocument.moveStation(stationId, geo, "a station");
       await flush();
     },
     setNeedsNoGps: () =>
@@ -568,8 +552,6 @@ const ROWS: readonly Row[] = [
   {
     name: "delete, save, undo the delete, save",
     records: true,
-    diverges:
-      "the phone offers no undo once a Finish wrote the delete; the desktop does (the phone adoption, if the phone gets the document's undo - not decided, plan §9 round 5)",
     run: async (p) => {
       await p.remove("b");
       await p.save();

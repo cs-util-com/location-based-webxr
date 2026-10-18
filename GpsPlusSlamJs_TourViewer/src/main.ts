@@ -157,7 +157,7 @@ const arController = createEnableGpsArController({
       requestGeolocationPermission,
   }),
 });
-const ctx = createTourViewerSession();
+const ctx = createTourViewerSession(arStore);
 ctx.debug = debug;
 // The gallery is a creator's debugging aid (polish round M2): shown only
 // with ?debug=1, and never to a visitor, whose tour appears in AR. Hidden,
@@ -212,7 +212,7 @@ const print = wirePrintPanel({
   downloadPdf: (blob, filename) => seams.downloadPdf(blob, filename),
   openPdfTab: () => seams.openPdfTab(),
   // The poster title defaults to the tour's name (polish round D-P7).
-  tourTitle: () => ctx.tourManifest?.title ?? null,
+  tourTitle: () => ctx.tourDocument.manifest()?.title ?? null,
   posterStore: stepStoreOrUndefined(),
   // The re-check before the PDF of a link step 2 could not confirm
   // (polish round M2): the same transport an open uses, probed and let go.
@@ -376,7 +376,7 @@ const visitor = wireVisitorScreen({
   // read failed (r857 review #4).
   codesUsable: () => tourCodesUsable(ctx.currentLevels, ctx.levelsUnreadable),
   // A tour marked "needs no GPS" never asks its visitor (Q-QF-1).
-  needsNoGps: () => ctx.tourManifest?.needsNoGps === true,
+  needsNoGps: () => ctx.tourDocument.manifest()?.needsNoGps === true,
 });
 
 // The visitor's start page leads with the tour's name, a line and one of
@@ -408,7 +408,7 @@ if (mode === "visitor") {
     renderTourContact(
       contactDom,
       errorBox.textContent ?? "",
-      ctx.tourManifest?.contact,
+      ctx.tourDocument.manifest()?.contact,
     );
   };
   new MutationObserver(renderContact).observe(errorBox, {

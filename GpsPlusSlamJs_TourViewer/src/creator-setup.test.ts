@@ -933,7 +933,7 @@ describe("the spent-draft path", () => {
     const { ctx, dom, setup } = wire(store);
     // The hosted manifest already carries it, and the draft holds no
     // measurement, so `draftIsSpent` is true.
-    ctx.tourManifest = tourOf([pin("hosted")]);
+    ctx.tourDocument.open(tourOf([pin("hosted")]));
 
     // Set explicitly first: the fake element starts visible, so "still
     // hidden" would otherwise be true for the wrong reason.
@@ -970,7 +970,7 @@ describe("the spent-draft path", () => {
       { removeNeverSettles: true },
     );
     const { ctx, setup } = wire(store);
-    ctx.tourManifest = tourOf([pin("hosted")]);
+    ctx.tourDocument.open(tourOf([pin("hosted")]));
 
     setup.presentDraftForTour(TOUR);
     await settle();
@@ -995,7 +995,7 @@ describe("the spent-draft path", () => {
       { putFails: true },
     );
     const { ctx, setup } = wire(store);
-    ctx.tourManifest = tourOf([pin("hosted")]);
+    ctx.tourDocument.open(tourOf([pin("hosted")]));
 
     setup.presentDraftForTour(TOUR);
     await settle();
@@ -1028,11 +1028,11 @@ describe("a placement reaches the draft", () => {
     dom.pinSave.click();
     await settle();
 
-    const placed = ctx.placedObjects[0]?.object;
+    const placed = ctx.tourDocument.entries()[0]?.object;
     expect(placed, "the tap should have placed a pin").toBeDefined();
     expect(
       files.has(objectKey(String(placed?.id))),
-      "the placed pin must be on disk, not only in ctx.placedObjects",
+      "the placed pin must be on disk, not only in the page's document",
     ).toBe(true);
   });
 
@@ -1050,7 +1050,10 @@ describe("a placement reaches the draft", () => {
     dom.pinSave.click();
     await settle();
 
-    expect(ctx.placedObjects.length, "the tap still places the pin").toBe(1);
+    expect(
+      ctx.tourDocument.entries().length,
+      "the tap still places the pin",
+    ).toBe(1);
     expect(
       ctx.placementNote,
       "and the creator is told the walk is not being saved",
@@ -1095,7 +1098,10 @@ describe("a placement reaches the draft", () => {
     dom.pinSave.click();
     await settle();
 
-    expect(ctx.placedObjects.length, "the tap still places in memory").toBe(1);
+    expect(
+      ctx.tourDocument.entries().length,
+      "the tap still places in memory",
+    ).toBe(1);
     expect(
       files.size,
       "but nothing may be written to the closed tour's folder",
@@ -1149,7 +1155,7 @@ describe("work made before the tour's draft opened reaches it", () => {
     dom.pinLabel.value = "Gate";
     dom.pinSave.click();
     await settle();
-    expect(ctx.placedObjects).toHaveLength(1);
+    expect(ctx.tourDocument.entries()).toHaveLength(1);
     ctx.placementNote = null; // the creator's next tap
 
     setup.presentDraftForTour(TOUR);
@@ -1163,7 +1169,7 @@ describe("work made before the tour's draft opened reaches it", () => {
     dom.pinLabel.value = "Gate";
     dom.pinSave.click();
     await settle();
-    const id = String(ctx.placedObjects[0]?.object.id);
+    const id = String(ctx.tourDocument.entries()[0]?.object.id);
     expect(files.has(objectKey(id)), "nothing to write to yet").toBe(false);
 
     setup.presentDraftForTour(TOUR);
@@ -1305,7 +1311,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
       [objectKey("hosted")]: JSON.stringify(EDITED),
     });
     const { ctx, dom, setup } = wire(store);
-    ctx.tourManifest = tourOf([HOSTED]);
+    ctx.tourDocument.open(tourOf([HOSTED]));
     dom.draftOffer.hidden = true;
     setup.presentDraftForTour(TOUR);
     await settle();
@@ -1314,7 +1320,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     expect(dom.draftOfferText.textContent).toContain("1 change");
     expect(files.has(objectKey("hosted")), "and it is not swept").toBe(true);
     dom.draftRestore.click();
-    expect(ctx.placedObjects.map((p) => p.object)).toEqual([EDITED]);
+    expect(ctx.tourDocument.entries().map((p) => p.object)).toEqual([EDITED]);
   });
 
   it("offers a deletion the hosted zip has not seen, and restores it as a tombstone", async () => {
@@ -1323,15 +1329,15 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
       [deletedKey("hosted")]: "1",
     });
     const { ctx, dom, setup } = wire(store);
-    ctx.tourManifest = tourOf([HOSTED]);
+    ctx.tourDocument.open(tourOf([HOSTED]));
     dom.draftOffer.hidden = true;
     setup.presentDraftForTour(TOUR);
     await settle();
 
     expect(dom.draftOfferText.textContent).toContain("1 deletion");
     dom.draftRestore.click();
-    expect(ctx.deletedObjectIds).toEqual(["hosted"]);
-    expect(ctx.placedObjects).toEqual([]);
+    expect(ctx.tourDocument.deleted()).toEqual(["hosted"]);
+    expect(ctx.tourDocument.entries()).toEqual([]);
     expect(ctx.placementNote).toContain("1 deletion restored");
   });
 
@@ -1341,7 +1347,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
       [deletedKey("gone")]: "1",
     });
     const { ctx, dom, setup } = wire(store);
-    ctx.tourManifest = tourOf([HOSTED]);
+    ctx.tourDocument.open(tourOf([HOSTED]));
     dom.draftOffer.hidden = true;
     setup.presentDraftForTour(TOUR);
     await settle();
@@ -1359,8 +1365,8 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
       [objectKey("hosted")]: JSON.stringify(HOSTED),
     });
     const { ctx, setup } = wire(store);
-    ctx.tourManifest = tourOf([HOSTED]);
-    ctx.placedObjects = [{ object: EDITED }];
+    ctx.tourDocument.open(tourOf([HOSTED]));
+    ctx.tourDocument.edit(EDITED, "the live edit");
     setup.presentDraftForTour(TOUR);
     await settle();
 
@@ -1399,7 +1405,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
    *  died), with the hosted zip carrying `HOSTED`. */
   async function reopen(store: DraftFileStore) {
     const page = wire(store);
-    page.ctx.tourManifest = PUBLISHED;
+    page.ctx.tourDocument.open(PUBLISHED);
     page.dom.draftOffer.hidden = true;
     page.setup.presentDraftForTour(TOUR);
     await settle();
@@ -1426,7 +1432,9 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
     const later = await reopen(store);
     expect(later.dom.draftOffer.hidden, "the edit is offered").toBe(false);
     later.dom.draftRestore.click();
-    expect(later.ctx.placedObjects.map((p) => p.object)).toEqual([EDITED]);
+    expect(later.ctx.tourDocument.entries().map((p) => p.object)).toEqual([
+      EDITED,
+    ]);
   });
 
   it("keeps a deletion of an object a spent draft had rejected, across a crash", async () => {
@@ -1441,7 +1449,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
     const later = await reopen(store);
     expect(later.dom.draftOfferText.textContent).toContain("1 deletion");
     later.dom.draftRestore.click();
-    expect(later.ctx.deletedObjectIds).toEqual(["hosted"]);
+    expect(later.ctx.tourDocument.deleted()).toEqual(["hosted"]);
   });
 
   it("keeps an edit made after 'Delete it' rejected the same object", async () => {
@@ -1460,7 +1468,9 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
 
     const later = await reopen(store);
     later.dom.draftRestore.click();
-    expect(later.ctx.placedObjects.map((p) => p.object)).toEqual([EDITED]);
+    expect(later.ctx.tourDocument.entries().map((p) => p.object)).toEqual([
+      EDITED,
+    ]);
   });
 
   it("keeps an edit made in the same moment as 'Delete it', before its sweep ran", async () => {
@@ -1507,7 +1517,9 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
 
     const third = await reopen(store);
     third.dom.draftRestore.click();
-    expect(third.ctx.placedObjects.map((p) => p.object)).toContainEqual(EDITED);
+    expect(
+      third.ctx.tourDocument.entries().map((p) => p.object),
+    ).toContainEqual(EDITED);
   });
 
   it("keeps a deletion of an id a discard rejected, made after a reload", async () => {
@@ -1518,7 +1530,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
 
     const third = await reopen(store);
     third.dom.draftRestore.click();
-    expect(third.ctx.deletedObjectIds).toEqual(["hosted"]);
+    expect(third.ctx.tourDocument.deleted()).toEqual(["hosted"]);
   });
 
   // Why (the same review #3): that claim rewrites the meta, and a meta
@@ -1604,9 +1616,9 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
       [objectKey("hosted")]: JSON.stringify(OLDER),
     });
     const { ctx, setup } = wire(store);
-    ctx.tourManifest = PUBLISHED;
+    ctx.tourDocument.open(PUBLISHED);
     // Made before the draft namespace opened: nothing to write it to yet.
-    ctx.placedObjects = [{ object: EDITED }];
+    ctx.tourDocument.edit(EDITED, "the live edit");
     setup.presentDraftForTour(TOUR);
     await settle();
 
@@ -1619,8 +1631,8 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
       [objectKey("hosted")]: JSON.stringify(OLDER),
     });
     const { ctx, setup } = wire(store);
-    ctx.tourManifest = PUBLISHED;
-    ctx.deletedObjectIds = ["hosted"];
+    ctx.tourDocument.open(PUBLISHED);
+    ctx.tourDocument.remove("hosted", "the hosted pin");
     setup.presentDraftForTour(TOUR);
     await settle();
 
@@ -1638,7 +1650,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
     await settle();
     dom.pinLabel.value = "Gate";
     dom.pinSave.click();
-    const id = String(ctx.placedObjects[0]?.object.id);
+    const id = String(ctx.tourDocument.entries()[0]?.object.id);
     // Deleted before its write has landed.
     dom.objectList.listHandlers!.remove(id);
     await settle();

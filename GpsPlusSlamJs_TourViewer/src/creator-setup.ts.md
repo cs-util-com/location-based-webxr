@@ -42,9 +42,10 @@ input, and the hooks, which fan out to each module's `endVisit` / `reset`.
 
 ## Crash-safe authoring and the Finish's file
 
-The object list's draft writes (`saveDraftObject`) go through
-`draft.writeObject`, which records the base from the tour as opened
-(M6 E2p; the rule is in `creator-draft.ts.md`).
+The draft follows the tour document (`ctx.tourDocument.follow`, wired
+once here): every change's writes go through `draft.writeObject`, which
+records the base from the tour as opened (M6 E2p; the rule is in
+`creator-draft.ts.md`).
 
 The on-device draft (second testing session, F13) is `creator-draft.ts`
 since the code book plan's M2 split; its sidecar holds the rules that
@@ -234,9 +235,10 @@ were here. What stays is the Finish's side:
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
   `authorErrorText`, `mintGeneration`, `finishing`,
-  `rebuiltZip`, `placedObjects`, `placedPreviews`, `placementNote`; reads
-  `gpsSamplesAtSessionStart`, `reticle`, `latestFrame` (written by
-  `ar-entry.ts`), `session`, `currentLevels`, `tourManifest`.
+  `rebuiltZip`, `placedPreviews`, `placementNote`; changes the tour
+  document (`tourDocument`) and makes the draft follow it (`follow`, once
+  per page); reads `gpsSamplesAtSessionStart`, `reticle`, `latestFrame`
+  (written by `ar-entry.ts`), `session`, `currentLevels`.
 
 ## Examples
 

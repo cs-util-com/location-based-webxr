@@ -49,7 +49,10 @@ const { stations, moved } = moveStationsWithCode(manifest.stations, {
   others: otherCodes,
   claimed,
 });
-ctx.tourManifest = { ...manifest, stations };
+for (const id of moved) {
+  const station = stations.find((s) => s.id === id);
+  if (station !== undefined) tour.moveStation(id, station.geo, "a station");
+}
 ```
 
 ## Tests

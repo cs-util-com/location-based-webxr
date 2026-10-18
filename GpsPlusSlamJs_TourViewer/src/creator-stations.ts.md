@@ -44,8 +44,8 @@ radiusM? }) -> { tick, placedIn, endVisit }` - `tick()` every camera
 ## Invariants & assumptions
 
 - **No document state.** Nothing here is stored: the stations are
-  derived from the working copy (`ctx.tourManifest`, `ctx.placedObjects`,
-  `ctx.deletedObjectIds`) each time it changes, through the Finish's own
+  derived from the tour document (`deps.tour`: its `manifest()`,
+  `entries()` and `deleted()`) each time it changes, through the Finish's own
   writer, so the HUD and the written tour cannot disagree. A station the
   creator's placements start exists only in that derivation until a
   Finish writes it (with an id the Finish mints; the HUD's `unwritten-N`

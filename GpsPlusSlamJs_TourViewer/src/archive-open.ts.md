@@ -117,8 +117,9 @@ DOM glue, its own module since the flows plan M6.
   print-size check) is kept for the tour about to open. When a tour closes,
   it stops the visitor's stations (`hooks.stopStations`, tour kit plan
   K4: the story and the HUD; the next tour's stations start a new run),
-  drops the creator's placed objects, their deletions
-  (`deletedObjectIds`, authoring plan 2026-09-28-0953 M4) and previews,
+  closes the tour document (`ctx.tourDocument.close()`: the creator's
+  placed objects, their deletions - authoring plan 2026-09-28-0953 M4 - and
+  their pictures and AR placements) and drops the previews,
   resets the gate (`hooks.resetScanGate`), the seven
   viewer QR/line fields (a lock, its vote count, an unknown or unusable
   code and a failed image placement describe the CLOSING tour - PR #434

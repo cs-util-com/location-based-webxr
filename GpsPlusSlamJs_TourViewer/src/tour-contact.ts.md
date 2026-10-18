@@ -38,7 +38,7 @@ visitor knows who to ask.
 renderTourContact(
   { line, link },
   errorBox.textContent ?? "",
-  ctx.tourManifest?.contact,
+  ctx.tourDocument.manifest()?.contact,
 );
 ```
 

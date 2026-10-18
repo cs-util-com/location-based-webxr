@@ -162,7 +162,13 @@ export function wireArchiveOpen(deps: {
     ctx.currentLevels = null;
     ctx.currentLevelTexts = null;
     ctx.levelsUnreadable = false;
-    ctx.tourManifest = null;
+    // The tour document goes with its tour: the manifest, and the
+    // creator's placed objects and deletions (M4 review #1, plan
+    // 2026-09-28-0953 §3.4) - carried into another tour they would be
+    // written into ITS zip, and into the same tour re-opened after a finish
+    // they would duplicate their own ids and break every later finish; an
+    // id deleted from one tour means nothing in another.
+    ctx.tourDocument.close();
     // A reopened tour hedges its stations again (PR #642 review); and the
     // closing session is not kept alive by the hint.
     ctx.walkDecidedFor = null;
@@ -213,14 +219,6 @@ export function wireArchiveOpen(deps: {
     // The gate belongs to the closing tour too (M5 review #8): a gate
     // waived for a code-less tour must not carry into one with a code.
     hooks.resetScanGate();
-    // The creator's placed objects belong to the closing tour (M4 review
-    // #1): carried into another tour they would be written into ITS zip,
-    // and into the same tour re-opened after a finish they would duplicate
-    // their own ids and break every later finish.
-    ctx.placedObjects = [];
-    // ...and so do its deletions (authoring plan 2026-09-28-0953 §3.4):
-    // an id deleted from one tour means nothing in another.
-    ctx.deletedObjectIds = [];
     for (const preview of ctx.placedPreviews.values()) preview.dispose();
     ctx.placedPreviews.clear();
     ctx.placementNote = null;
@@ -486,7 +484,9 @@ export function wireArchiveOpen(deps: {
       const manifestDone = opened.loadTourManifest().then(
         (manifest) => {
           if (ctx.session !== opened) return;
-          ctx.tourManifest = manifest;
+          // The creator's work made before the manifest settled (or before
+          // any tour opened) comes along (scan-to-open plan §9 #5).
+          ctx.tourDocument.open(manifest);
           ctx.tourManifestStatus = "settled";
           hooks.presentTourInfo(manifest, (path) =>
             opened.loadEntry(`${opened.manifestWrap}${path}`),

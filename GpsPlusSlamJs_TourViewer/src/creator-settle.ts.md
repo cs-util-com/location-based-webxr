@@ -70,7 +70,8 @@ M4 settles every code of the book, not only the one in hand.
   end), and a note within `CODE_EVENT_REACH_M` walked of a code event of
   the visit shares the code's alignment through the nearest event; the records
   replace the tap-time ones
-  in `ctx.placedObjects` and the code module's book, each settled object's draft
+  in the tour document (`move`, the AR placement kept) and the code
+  module's book, each settled object's draft
   record and the meta are REWRITTEN (the per-object file design already
   keys by id; no format change - so a page reload keeps the settled geo,
   while a killed tab keeps the tap-time geo, accepted in the plan), and
@@ -204,10 +205,10 @@ M4 settles every code of the book, not only the one in hand.
       visit's move boundary.
     - **Version 3: whole stations** (tour editor plan D17). The rule picks
       STATIONS by their anchor (`station-code-move.ts`), and each moves
-      rigidly in the page's manifest (`ctx.tourManifest`). Its items keep
-      their local poses: each becomes an edit at exactly the world pose its
-      moved station now gives it, so the Finish writes the pose verbatim.
-      An item this session already moved goes along rigidly instead. An
+      rigidly as the tour document's `stationMoved` (`moveStation`), the
+      desktop's own action. Its items keep their local poses and move with
+      the frame, edited ones included. This visit's own objects in a moved
+      station are put back where the visit's settle put them (`move`). An
       object in a station that does not move stays, whatever its own
       distance. Only objects not yet in a station (placed on this device,
       not yet written) are judged one by one. Claims are per object id

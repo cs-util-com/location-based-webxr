@@ -4,21 +4,16 @@
  * actions - Edit text, Move to the reticle, Delete - and the AR selection
  * they apply to, over the creator's in-memory state.
  *
- * THE MODEL, in one place ({@link authoringObjects}):
- * - the tour's objects are the manifest's (the hosted zip, or the last
- *   Finish) with this device's records REPLACING theirs by id, this
- *   device's new ones appended, and the deleted ids filtered out - exactly
- *   what the Finish writes (`applyObjectChanges`);
- * - an edit or a move of a hosted object puts a record with the SAME id
- *   into `ctx.placedObjects` (replace by id, never a second entry);
- * - a delete of an object the manifest carries is a tombstone
- *   (`ctx.deletedObjectIds`); one that exists only on this device is
- *   simply dropped.
+ * THE MODEL is the shared tour document (`tour-document.ts`, through the
+ * page's handle `ctx.tourDocument`, `creator-document.ts`): an edit, a
+ * move and a delete are its actions and an Undo is its undo - the same
+ * rules, the same draft writes and the same history as the desktop
+ * editor's.
  *
  * Every action is logged as a `tourAuthoring/*` action, reaches the draft
- * (awaited, so the row shows the in-progress state until the write
- * settles, and a refused write is said, CLAUDE.md "UI feedback for async
- * actions"), and re-renders the previews.
+ * (the document's listener writes it; the row shows the in-progress state
+ * until those writes settle, and a refused write is said, CLAUDE.md "UI
+ * feedback for async actions"), and re-renders the previews.
  *
  * @see object-editing.ts.md
  */
@@ -31,20 +26,8 @@ import {
 } from "gps-plus-slam-app-framework/state";
 import { Vector3, type Object3D } from "three";
 
-import {
-  authoringObjects,
-  deleteObject,
-  pinTextEdit,
-  undoDelete as undoDeleteLists,
-  upsertPlaced,
-  type AuthoringObject as SharedAuthoringObject,
-  type DeletedRecord,
-} from "./object-edits.js";
-import {
-  recordDelete,
-  recordUndoDelete,
-  type DraftObjectWrites,
-} from "./draft-actions.js";
+import type { CreatorObject } from "./creator-document.js";
+import { pinTextEdit } from "./object-edits.js";
 import { objectListModel, type ObjectListView } from "./object-list.js";
 import {
   objectDeleted,
@@ -58,12 +41,9 @@ import type {
 } from "./tour-viewer-session.js";
 import type { NuePose } from "./visit-anchoring.js";
 import { planMove, type SettleAlignmentInput } from "./visit-settle.js";
-import { tourObjectsOf } from "./tour-content.js";
 
-type PlacedEntry = TourViewerSession["placedObjects"][number];
-
-/** One object of the tour as the creator sees it now (`object-edits.ts`). */
-export type AuthoringObject = SharedAuthoringObject<PlacedEntry>;
+/** One object of the tour as the creator sees it now. */
+export type AuthoringObject = CreatorObject;
 
 export interface ObjectEditingDeps {
   /** Told after the selection changed (a tap, Done, a delete, a reset):
@@ -91,19 +71,10 @@ export interface ObjectEditingDeps {
   >;
   /** The stored codes' geo, for the list's distances. */
   readonly codes: () => readonly QrGeoPose[];
-  /** Write a record to the draft; false when it did not land (no store,
-   *  a refused write). */
-  readonly saveDraftObject: (
-    object: TourObject,
-    blob?: Blob,
-  ) => Promise<boolean>;
-  /** Record a deletion in the draft; false when it did not land. */
-  readonly saveDraftDeletion: (id: string) => Promise<boolean>;
-  /** Drop a record only this device had from the draft. */
-  readonly forgetDraftObject: (id: string) => Promise<void>;
-  /** Take a deletion back out of the draft (an Undo); false when it did
-   *  not land. */
-  readonly forgetDraftDeletion: (id: string) => Promise<boolean>;
+  /** Read a photo's picture from the open tour's file: a delete keeps it,
+   *  so an Undo after a Finish wrote the delete can bring the photo back.
+   *  Absent: such an Undo is refused, in words. */
+  readonly loadPicture?: (image: string) => Promise<Blob>;
   /** A one-shot timer (the app's `schedule` seam): returns the cancel. */
   readonly schedule: (fn: () => void, ms: number) => () => void;
   /** The set of objects changed: bring the previews in line. */
@@ -120,7 +91,7 @@ export interface ObjectEditing {
   /** The selected object's id, or null: object mode while it is not
    *  (polish round M3 - the place buttons step aside). */
   selected(): string | null;
-  /** The tour's objects now (see {@link authoringObjects}). */
+  /** The tour's objects now (the document's `documentObjects`). */
   objects(): AuthoringObject[];
   /** A tour closed or a visit ended: the selection and outcome go. */
   reset(): void;
@@ -148,21 +119,27 @@ const NOT_BACKED_UP =
  */
 export const OUTCOME_HOLD_MS = 8_000;
 
-/** What an Undo of a delete puts back, captured at the delete. */
-interface DeletedObject extends DeletedRecord<PlacedEntry> {
+/** A delete while its Undo can take it back: offered while the document
+ *  stands where the delete left it (the same open, the same revision) -
+ *  the document's undo takes back the LAST step, so any later change
+ *  withdraws it. A Finish changes no revision: the Undo outlives it. */
+interface Undoable {
+  readonly generation: number;
+  readonly revision: number;
+  readonly run: () => void;
+}
+
+/** What an Undo of a delete names and logs, captured at the delete. */
+interface DeletedObject {
+  readonly object: TourObject;
+  readonly hosted: boolean;
   /** "the photo" or the pin's quoted text. */
   readonly name: string;
 }
 
 export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
   const { ctx, arStore, view } = deps;
-  /** The draft's writes, for the shared delete and undo sequences. */
-  const draftWrites: DraftObjectWrites = {
-    saveObject: deps.saveDraftObject,
-    saveDeletion: deps.saveDraftDeletion,
-    forgetDeletion: deps.forgetDraftDeletion,
-    forgetObject: deps.forgetDraftObject,
-  };
+  const tour = ctx.tourDocument;
   let selectedId: string | null = null;
   let note = "";
   /** The note is still within {@link OUTCOME_HOLD_MS}: a tap that only
@@ -170,18 +147,19 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
   let held = false;
   let cancelHold: (() => void) | null = null;
   /** The last delete, while it can be undone: offered beside its note
-   *  until the hold ends, the note changes, or the zip is rebuilt. */
-  let undoable: {
-    readonly manifest: unknown;
-    readonly run: () => void;
-  } | null = null;
+   *  until the hold ends, the note changes, or the document moves on. */
+  let undoable: Undoable | null = null;
   const busy = new Map<string, string>();
 
   function objects(): AuthoringObject[] {
-    return authoringObjects(
-      tourObjectsOf(ctx.tourManifest),
-      ctx.placedObjects,
-      ctx.deletedObjectIds,
+    return tour.objects();
+  }
+
+  /** Whether `undo` still names the document's last step. */
+  function stillUndoable(undo: Undoable): boolean {
+    const state = tour.state();
+    return (
+      state.generation === undo.generation && state.revision === undo.revision
     );
   }
 
@@ -194,9 +172,10 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     if (selectedId !== null && !all.some((o) => o.object.id === selectedId)) {
       selectedId = null;
     }
-    // A Finish applied the delete (the manifest advanced) or another tour
-    // opened: there is nothing left to put it back into.
-    if (undoable !== null && undoable.manifest !== ctx.tourManifest) {
+    // A change came after the delete (an edit, a placement, a settle's
+    // re-pose) or another tour opened: the document's undo would take back
+    // that, not the delete.
+    if (undoable !== null && !stillUndoable(undoable)) {
       undoable = null;
     }
     view.render(
@@ -225,13 +204,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
    * and with `undo` offered beside it for as long. Any later note replaces
    * both.
    */
-  function say(
-    text: string,
-    undo: {
-      readonly manifest: unknown;
-      readonly run: () => void;
-    } | null = null,
-  ): void {
+  function say(text: string, undo: Undoable | null = null): void {
     note = text;
     undoable = undo;
     stopHold();
@@ -297,10 +270,11 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     }
     const after = edit.after;
     const label = after.kind === "pin" ? after.label : "";
-    ctx.placedObjects = upsertPlaced(ctx.placedObjects, {
-      ...(found.placed ?? {}),
-      object: after,
-    });
+    const changed = tour.edit(after, `the text of "${label}"`);
+    if (changed === null) {
+      say(`"${label}" could not be changed here.`);
+      return;
+    }
     arStore.dispatch(
       objectEdited({
         before,
@@ -315,7 +289,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     void withBusy(
       id,
       "Saving…",
-      () => deps.saveDraftObject(after),
+      () => changed.backedUp,
       (ok) =>
         ok
           ? `Saved "${label}" - ${SAVED_SUFFIX}`
@@ -376,14 +350,16 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     }
     const before = found.object;
     const after = planned.object;
+    const label = before.kind === "pin" ? before.label : "the pin";
     // The odometry pose is kept, so the visit's own settle recomputes it
     // with the rest of the visit at its end - and the preview is rigid in
     // AR meanwhile, like a newly placed pin.
-    ctx.placedObjects = upsertPlaced(ctx.placedObjects, {
-      ...(found.placed ?? {}),
-      object: after,
-      placement: { visit, local },
-    });
+    const moved = tour.move(after, `the move of "${label}"`, { visit, local });
+    if (moved === null) {
+      // Beyond what its station can carry (the format's bound, kilometres).
+      say(`That spot is too far from its station - "${label}" was not moved.`);
+      return;
+    }
     deps.notePlaced?.(after.id);
     arStore.dispatch(
       objectMoved({
@@ -403,11 +379,10 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     );
     deps.syncPreviews();
     deps.renderAuthorReadout();
-    const label = before.kind === "pin" ? before.label : "the pin";
     void withBusy(
       id,
       "Moving…",
-      () => deps.saveDraftObject(after),
+      () => moved.backedUp,
       (ok) =>
         ok
           ? `Moved "${label}" to the ring - ${SAVED_SUFFIX}`
@@ -420,12 +395,13 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     const found = find(id);
     if (found === undefined) return;
     const object = found.object;
-    const gone = deleteObject(
-      { placed: ctx.placedObjects, deleted: ctx.deletedObjectIds },
-      found,
-    );
-    ctx.placedObjects = gone.placed;
-    ctx.deletedObjectIds = gone.deleted;
+    const name = object.kind === "pin" ? `"${object.label}"` : "the photo";
+    keepPicture(found);
+    const gone = tour.remove(id, `the delete of ${name}`);
+    if (gone === null) return;
+    /** Where the delete left the document: its Undo is offered while the
+     *  document stays there. */
+    const { generation, revision } = tour.state();
     if (selectedId === id) selectedId = null;
     arStore.dispatch(
       objectDeleted({
@@ -438,14 +414,14 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     );
     deps.syncPreviews();
     deps.renderAuthorReadout();
-    const name = object.kind === "pin" ? `"${object.label}"` : "the photo";
     // The row is gone at once; the in-progress state is the note until the
     // draft write settles.
     say(`Deleting ${name}…`);
-    const deleted: DeletedObject = { ...gone.record, name };
-    const manifest = ctx.tourManifest;
-    // The shared sequence (`draft-actions.ts`), as the desktop editor runs it.
-    void recordDelete(draftWrites, id, found.hosted).then((ok) => {
+    const deleted: DeletedObject = { object, hosted: found.hosted, name };
+    // The draft's writes are the document's (`tour-document-draft.ts`): a
+    // tombstone for an object the file carries, the record gone for one
+    // only this device had - as the desktop editor's.
+    void gone.backedUp.then((ok) => {
       // Undo is offered with the outcome either way: a delete the draft
       // did not record is still a delete in memory, and the next Finish.
       say(
@@ -453,7 +429,8 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
           ? `Deleted ${name} - ${found.hosted ? "it leaves the zip when you save the tour." : "it will not be in the zip."}`
           : `Deleted ${name}, but ${NOT_BACKED_UP}`,
         {
-          manifest,
+          generation,
+          revision,
           run: () => {
             undoDelete(deleted);
           },
@@ -463,21 +440,48 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
   }
 
   /**
-   * Put a deleted object back (M4 review #5): into the lists the Finish
-   * writes, the scene, the draft and the log. The draft gets the record
-   * first (an edited or locally placed object's) and loses the tombstone
-   * after, both in the id's queue: until the tombstone goes it outranks
-   * the record, so an Undo cut short leaves the object deleted rather
-   * than half restored.
+   * Keep a deleted photo's picture beside the document: an Undo after a
+   * Finish wrote the delete brings the photo back as an object the file no
+   * longer carries, which needs its bytes (`picturesNeeded`). A photo
+   * placed on this device has them already; one the opened file carries
+   * is read from it now, while it is at hand.
+   */
+  function keepPicture(found: AuthoringObject): void {
+    const { object } = found;
+    const load = deps.loadPicture;
+    if (object.kind !== "photo" || !found.hosted || load === undefined) return;
+    if (tour.pictureOf(object.id) !== undefined) return;
+    const generation = tour.state().generation;
+    void load(object.image).then(
+      (blob) => {
+        // Not into another tour's table: the side table is the open one's.
+        if (tour.state().generation === generation) {
+          tour.keepPicture(object.id, blob);
+        }
+      },
+      () => undefined,
+    );
+  }
+
+  /**
+   * Put a deleted object back (M4 review #5): the document's undo. The
+   * object returns where the delete took it from (the Finish's order
+   * holds), and the draft follows as for any change - the record first,
+   * then the tombstone goes (`tour-document-draft.ts`), so an Undo cut
+   * short leaves the object deleted rather than half restored.
    */
   function undoDelete(deleted: DeletedObject): void {
     if (refusedDuringFinish()) return;
-    const back = undoDeleteLists(
-      { placed: ctx.placedObjects, deleted: ctx.deletedObjectIds },
-      deleted,
-    );
-    ctx.placedObjects = back.placed;
-    ctx.deletedObjectIds = back.deleted;
+    const undone = tour.undo();
+    if (undone.kind === "nothing") return;
+    if (undone.kind === "refused") {
+      say(
+        undone.reason === "saving"
+          ? "Wait until the zip is rebuilt, then try again."
+          : `${deleted.name} cannot come back: its picture is no longer on this device.`,
+      );
+      return;
+    }
     arStore.dispatch(
       objectDeleteUndone({
         object: deleted.object,
@@ -490,8 +494,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     deps.syncPreviews();
     deps.renderAuthorReadout();
     say(`Restoring ${deleted.name}…`);
-    // The record first, then the tombstone (`draft-actions.ts`).
-    void recordUndoDelete(draftWrites, deleted).then((ok) => {
+    void undone.backedUp.then((ok) => {
       say(
         ok
           ? `Restored ${deleted.name}.`

@@ -35,7 +35,6 @@ import type {
   TourViewerStore,
 } from "./tour-viewer-session.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
-import { tourObjectsOf } from "./tour-content.js";
 
 /** The placement controls, inside `#setup-controls`. */
 export interface CreatorPlacementDom {
@@ -65,7 +64,7 @@ export function wireCreatorPlacement(deps: {
   seams: Pick<TourViewerSeams, "getArWorldGroup" | "encodeFrameJpeg">;
   dom: CreatorPlacementDom;
   alignmentPicks: Pick<CreatorAlignmentPicks, "notePlaced">;
-  draft: Pick<CreatorDraft, "recordPlacement">;
+  draft: Pick<CreatorDraft, "warnNoBackup">;
   previews: Pick<CreatorPreviews, "sync">;
   alignmentInfo: () => MintAlignmentInfo;
   /** The printed size a code text is solved at (M4c-3). */
@@ -121,11 +120,30 @@ export function wireCreatorPlacement(deps: {
   }
 
   /** Objects placed on this device that the zip does not carry yet - an
-   *  edit or a move of a hosted object is in `placedObjects` too (M4),
-   *  but it was not "placed". */
+   *  edit or a move of a hosted object is an entry of the document too
+   *  (M4), but it was not "placed". */
   function newlyPlaced(): number {
-    const hosted = new Set(tourObjectsOf(ctx.tourManifest).map((o) => o.id));
-    return ctx.placedObjects.filter((p) => !hosted.has(p.object.id)).length;
+    return ctx.tourDocument.objects().filter((o) => !o.hosted).length;
+  }
+
+  /** Put `object` into the tour document; false (and said) when refused.
+   *  Its draft write is the document's listener's; one that does not land
+   *  is said once (`warnNoBackup`), as a placement's always was. */
+  function placeInTour(
+    object: TourObject,
+    extras: Parameters<TourViewerSession["tourDocument"]["place"]>[1],
+  ): boolean {
+    const what =
+      object.kind === "pin" ? `the pin "${object.label}"` : "a photo";
+    const change = ctx.tourDocument.place(object, extras, what);
+    if (change === null) {
+      note("That spot is too far from its station - nothing was placed.");
+      return false;
+    }
+    void change.backedUp.then((ok) => {
+      if (!ok) deps.draft.warnNoBackup();
+    });
+    return true;
   }
 
   function placed(count: number): string {
@@ -258,11 +276,11 @@ export function wireCreatorPlacement(deps: {
       note("No GPS fix yet - the pin cannot be placed.");
       return;
     }
-    ctx.placedObjects.push(
+    const placedPin = placeInTour(
+      pin,
       local === null
-        ? { object: pin }
+        ? {}
         : {
-            object: pin,
             placement: {
               visit: ctx.arSessionGeneration,
               local: {
@@ -272,8 +290,8 @@ export function wireCreatorPlacement(deps: {
             },
           },
     );
+    if (!placedPin) return;
     if (local !== null) deps.alignmentPicks.notePlaced(pin.id);
-    deps.draft.recordPlacement(pin);
     logPlacement(pin, { reticleWorld: position });
     dom.pinLabel.value = "";
     hideLabelInput();
@@ -329,14 +347,13 @@ export function wireCreatorPlacement(deps: {
           note("No usable GPS alignment yet - the photo cannot be placed.");
           return;
         }
-        ctx.placedObjects.push({
-          object: photo,
+        const placedPhoto = placeInTour(photo, {
           blob: jpeg.blob,
           // The capture pose is RAW WebXR: through the one conversion into
           // the world group's frame, never composed by hand (plan §3.2).
           placement: { visit, local: odomNueFromWebXr(cameraPose) },
         });
-        deps.draft.recordPlacement(photo, jpeg.blob);
+        if (!placedPhoto) return;
         logPlacement(photo, { cameraOdomPose: cameraPose });
         // Logged as the settle's late arrival, through its record.
         if (settled !== undefined) deps.lateArrival(visit, photo);

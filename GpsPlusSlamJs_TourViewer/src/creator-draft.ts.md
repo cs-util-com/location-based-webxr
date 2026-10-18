@@ -21,8 +21,8 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     of any sweep.
 - `CreatorDraft`:
   - The base (M6 E2p, its review and re-review): `present` snapshots the
-    tour AS OPENED (`opened`; a Finish later advances `ctx.tourManifest`
-    to what this page wrote, which is not hosted until the creator uploads
+    tour AS OPENED (`opened`; a Finish later advances the document's
+    written tour to what this page wrote, which is not hosted until the creator uploads
     it), and every hosted comparison of `present` uses that snapshot. Every
     draft write of an object adds the opened tour's version of it as seen,
     taken when the write is queued (a queued write can run after another
@@ -33,8 +33,13 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     records are not offered, one line says so (combined with the AR note
     when in AR, never overwritten by it), and their files are removed -
     unless this page changed them again first (`notLive`).
-  - `writeObject(object, blob?)` - the object list's awaited record write,
-    with its seen version (`creator-setup.ts`'s `saveDraftObject`).
+  - `writeObject(object, blob?)` - the awaited record write, with its
+    seen version: the tour document's listener writes every change through
+    it (`creator-setup.ts` hands `draftObjectWrites(draft)` to
+    `ctx.tourDocument.follow`).
+  - `saveSettings(record)` - the document's settings record (the tour's
+    setting, details and moved stations); the phone keeps none yet, so it
+    reports success without a write.
   - `finished(ids, written)` - `creator-finish.ts` after a Finish wrote
     these objects: their versions in `written` are this device's own work.
     The ids (all of this load's Finishes) are kept for `uploaded`.
@@ -79,7 +84,8 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     write may reject, as before the split.
   - `recordPlacement(object, blob?)`, `recordVisit(entry)` -
     fire-and-forget, in the id's queue; before the namespace opens they are
-    written when it does.
+    written when it does (`present` writes the document's live work with
+    `recordPlacement`).
   - `write(id, write)` - one AWAITED write for the object list's actions.
   - `forgetObject(id)` - remove an id's files after any write queued for
     it.
