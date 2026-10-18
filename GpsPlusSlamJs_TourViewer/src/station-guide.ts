@@ -43,7 +43,7 @@ import { Vector3 } from "three";
 
 import { objectPoseNue } from "./content-placement.js";
 import type { StagePose } from "./scene-stage.js";
-import { ACCURACY_CEILING_M, stationBands } from "./station-bands.js";
+import { stationBands, tooWeakToGuide } from "./station-bands.js";
 import {
   createStationRun,
   stationTitle,
@@ -385,8 +385,9 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (visitor === undefined || last?.best == null) {
       return `${lead}${waiting} - waiting for your position…`;
     }
-    if (visitor.accuracyM !== null && visitor.accuracyM > ACCURACY_CEILING_M) {
-      return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(visitor.accuracyM)}); step into the open.`;
+    const accuracyM = visitor.accuracyM;
+    if (accuracyM !== null && tooWeakToGuide(accuracyM)) {
+      return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(accuracyM)}); step into the open.`;
     }
     // Every station has a spot of its own (version 3, D9): no distance
     // yet means no session zero to measure it in yet.
@@ -532,7 +533,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       }
       if (visitor.nue !== null) deps.onVisitor?.(visitor.nue);
       approach(distances, visitor.accuracyM);
-      handle(current.observe({ distances, nowMs: deps.now() }));
+      handle(
+        current.observe({
+          distances,
+          nowMs: deps.now(),
+          accuracyM: visitor.accuracyM,
+        }),
+      );
       render();
     },
     codeLocked() {

@@ -637,7 +637,7 @@ describe("arrival by the station radius alone (D16)", () => {
     expect(h.found).toEqual(["well"]);
   });
 
-  it("poor GPS: found by distance however weak the fix, and a weak fix never widens the radius", () => {
+  it("poor GPS: a weak fix never widens the radius, and one too weak to guide by finds nothing until the GPS recovers", () => {
     const weak = harness({
       stations: [station("well", 30, 0)],
       order: "fixed",
@@ -645,8 +645,13 @@ describe("arrival by the station radius alone (D16)", () => {
     // 15 m accuracy, 10 m away: the old rule found the station here.
     weak.at(20, 0, 15);
     expect(weak.found).toEqual([]);
-    // 60 m accuracy, 2 m away: found (the line still says the GPS is weak).
+    // 60 m accuracy, 2 m away: the line says the GPS is too weak, and the
+    // run agrees - no arrival (PR #640 review; this used to latch).
     weak.at(28, 0, 60);
+    expect(weak.dom.line.textContent).toMatch(/GPS too weak to guide you/);
+    expect(weak.found).toEqual([]);
+    // The GPS recovers at the same spot: found.
+    weak.at(28, 0, 5);
     expect(weak.found).toEqual(["well"]);
   });
 
@@ -688,6 +693,21 @@ describe("arrival by the station radius alone (D16)", () => {
   // latest fix - with no accuracy or age check - while the line might say
   // the GPS is too weak, and "found" latches. The fix stands in only while
   // there is no alignment at all.
+  // Why (PR #640 review): the line said "GPS too weak to guide you" while
+  // the run latched "found" on the same ±500 m cold-start fix. The two
+  // must agree: no arrival on a fix the line calls too weak.
+  it("a ±500 m fix inside a 10 m station says the GPS is too weak and finds nothing; a ±5 m one finds it", () => {
+    const h = harness({
+      stations: [station("gate", 3, 0, { foundRadiusM: 10 })],
+      order: "fixed",
+    });
+    h.fixOnly(0, 0, 500);
+    expect(h.dom.line.textContent).toMatch(/GPS too weak to guide you/);
+    expect(h.found).toEqual([]);
+    h.fixOnly(0, 0, 5);
+    expect(h.found).toEqual(["gate"]);
+  });
+
   it("a tracking drop in an aligned session does not find a station on the raw fix", () => {
     const h = harness({
       stations: [station("gate", 30, 0)],

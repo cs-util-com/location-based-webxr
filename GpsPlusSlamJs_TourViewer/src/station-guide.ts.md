@@ -112,7 +112,8 @@ activateM)` (each tick, each offered station with a distance: the
   format, and the button now covers it.
 - **The line:** "Next: <title>, N m", "N stations to find - nearest:
   <title>, N m", "... - waiting for your position…", "... - GPS too weak to
-  guide you (±N m); step into the open." (above the accuracy ceiling),
+  guide you (±N m); step into the open." (above the accuracy ceiling,
+  `tooWeakToGuide`; the run then judges no arrival either, PR #640 review),
   "Station found - its story is
   playing.", "Tour complete - every station visited." or "- N skipped.";
   under branch order "Tour complete - you reached the end of your path."

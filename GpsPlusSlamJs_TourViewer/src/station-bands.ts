@@ -52,10 +52,22 @@ export const HUD_ARRIVAL_BAND_M = 1.5;
 /**
  * Accuracies above this are clamped (and a missing or nonsense one reads as
  * this): 25 m, the typical geofence of GPS-only tour products (plan §2).
- * The clamp only keeps the HUD's band finite; arrival reads no accuracy
- * (D16), and the station line says when the GPS is this poor.
+ * The clamp keeps the HUD's band finite; above it the station line says
+ * the GPS is too weak and the run judges no arrival (`tooWeakToGuide`).
  */
 export const ACCURACY_CEILING_M = 25;
+
+/**
+ * Whether a position is too weak to guide by: its accuracy is known and
+ * above the ceiling. The station line says so and the run judges no
+ * arrival on it - one rule, so the two agree (PR #640 review). D16 forbids
+ * WIDENING the found radius by the accuracy, not refusing a fix the guide
+ * itself calls unusable. Unknown (null, a position by a code alone) is not
+ * too weak.
+ */
+export function tooWeakToGuide(accuracyM: number | null): boolean {
+  return accuracyM !== null && accuracyM > ACCURACY_CEILING_M;
+}
 
 /** A usable accuracy, or the ceiling. */
 function clampAccuracy(accuracyM: number | null): number {
