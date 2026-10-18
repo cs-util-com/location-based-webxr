@@ -53,7 +53,11 @@ import { wireCreatorPlacement } from "./creator-placement.js";
 import { wireCreatorMeasuring } from "./creator-measuring.js";
 import { wireCreatorSettle } from "./creator-settle.js";
 import { wireCreatorFinish } from "./creator-finish.js";
-import { reticleNueOf, wireCreatorStations } from "./creator-stations.js";
+import {
+  reticleNueOf,
+  walkPhotosPending,
+  wireCreatorStations,
+} from "./creator-stations.js";
 import { visitorPosition } from "./visitor-position.js";
 
 import { newObjectId } from "./content-placement.js";
@@ -644,6 +648,7 @@ export function wireCreatorSetup(deps: {
         gpsPositions: [],
       }).nue,
     reticleNue: () => reticleNueOf(ctx.reticle),
+    walkPhotosPending: () => walkPhotosPending(ctx.session, ctx.tourManifest),
     zero: () => selectZeroReference(arStore.getState()),
     scene: () => (creator && sessionLive() ? seams.getScene() : null),
   });

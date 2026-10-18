@@ -17,10 +17,10 @@
  *   placed outside every station's R starts a new one there, inside one
  *   joins the nearest. "Place a pin" with no station open therefore
  *   creates a station holding it (D21).
- * - **Not covered:** the walk's recorded photos are placed by the FIRST
- *   Finish of a tour without photo spots, before the objects; the HUD
- *   cannot see them (they are baked at the Finish), so on that one Finish
- *   a pin may join a photo's station instead of the one named.
+ * - **The walk's photos:** the FIRST Finish of a tour with a recording and
+ *   no photo spots places the recorded photos before the objects; the HUD
+ *   cannot see them (they are baked at the Finish), so until then it names
+ *   no station and says why (`walkPhotosPending`, M5c review #2).
  *
  * @see creator-stations.ts.md
  */
@@ -149,6 +149,31 @@ export function placedInText(
     : `in ${station.name}`;
 }
 
+/** The line while the walk's recorded photos are not sorted in yet (M5c
+ *  review #2): no station names, since they may change. */
+export const WALK_PENDING_TEXT =
+  "Stations are set at Finish, once the walk's photos are sorted in.";
+
+/**
+ * Whether the next Finish still sorts the walk's recorded photos in: the
+ * tour carries a recording and no baked photo spots (`withTourContent`
+ * places them BEFORE the objects, `finish-rebuild.ts`). The HUD cannot
+ * see them until then, so its station names and numbers may be wrong.
+ * Conservative: a recording that took no photos also reads as pending
+ * until its first Finish.
+ */
+export function walkPhotosPending(
+  session: { readonly hasRecording: boolean } | null,
+  manifest: TourManifest | null,
+): boolean {
+  return (
+    session !== null &&
+    session.hasRecording &&
+    manifest !== null &&
+    manifest.captureSpots === undefined
+  );
+}
+
 /** A visible reticle's hit point in the scene's GPS-world NUE, else null.
  *  One scratch vector: read every frame. */
 const reticleScratch = new Vector3();
@@ -206,6 +231,10 @@ export function wireCreatorStations(deps: {
    *  GPS-world NUE), or null: the open station is judged there, else at
    *  the creator (M5c review #3). Absent: always at the creator. */
   reticleNue?(): readonly [number, number, number] | null;
+  /** The walk's photos are not sorted in yet (`walkPhotosPending`): the
+   *  line names no station and a placement's note says nothing about
+   *  stations. Absent: never. */
+  walkPhotosPending?(): boolean;
   zero(): LatLong | null;
   /** The scene root (GPS-world NUE), or null outside a session. */
   scene(): Object3D | null;
@@ -283,7 +312,11 @@ export function wireCreatorStations(deps: {
           ? (list.find((s) => s.id === lastOpenId) ?? null)
           : null;
       if (open !== null) lastOpenId = open.id;
-      show(stationChipText(open, left));
+      show(
+        deps.walkPhotosPending?.() === true
+          ? WALK_PENDING_TEXT
+          : stationChipText(open, left),
+      );
       if (open === null) {
         ring.hide();
         return;
@@ -295,6 +328,7 @@ export function wireCreatorStations(deps: {
       ring.show(scene, [centre[0], nue[1] - EYE_HEIGHT_M, centre[2]], radiusM);
     },
     placedIn(id) {
+      if (deps.walkPhotosPending?.() === true) return null;
       return placedInText(stations(), id);
     },
     endVisit() {

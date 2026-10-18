@@ -28,6 +28,8 @@ placement went ("it starts Station 3" / "in Station 2") for its note.
 - `placedInText(stations, objectId) -> string | null` - "it starts
   Station 3" for the first element of a station the next Finish starts,
   else "in Station 2"; null when the object is in none.
+- `walkPhotosPending(session, manifest) -> boolean` - the tour has a
+  recording and no baked photo spots; `WALK_PENDING_TEXT` is the line then.
 - `reticleNueOf(reticle) -> [n, u, e] | null` - a visible reticle's hit
   point in GPS-world NUE; null when hidden, absent or not finite.
 - `wireCreatorStations({ ctx, dom: { chip }, creatorNue, reticleNue?, zero, scene,
@@ -58,10 +60,16 @@ radiusM? }) -> { tick, placedIn, endVisit }` - `tick()` every camera
   reticle, a few metres off, and its note says where it went.
 - **R** is `STATION_RADIUS_M` (25 m, provisional until the sweep over
   recorded walks).
-- **Not covered:** a tour's FIRST Finish without photo spots places the
-  walk's recorded photos before the objects (`withTourContent`); they
-  are baked at the Finish, so the HUD cannot see them, and on that one
-  Finish a pin may join a photo's station instead of the one named.
+- **The walk's photos:** a tour's FIRST Finish with a recording and no
+  photo spots places the walk's recorded photos before the objects
+  (`withTourContent`); they are baked at the Finish, so the HUD cannot see
+  them and its names and numbers may be wrong until then. While that holds
+  (`walkPhotosPending(session, manifest)`) the line says "Stations are set
+  at Finish, once the walk's photos are sorted in." and a placement's note
+  names no station; the ring still shows the open station's radius (M5c
+  review #2). Conservative: a recording that took no photos reads as
+  pending until its first Finish. Feeding the live join's spots in instead
+  was not chosen: the bake is an async replay of the whole recording.
 - **Cost:** the stations are recomputed only when the manifest, any
   placed object or the deletions change. Placed objects are compared entry
   by entry, because the settle re-poses them by replacing entries IN the
@@ -94,7 +102,8 @@ note(`Pin placed - ${stations.placedIn(pin.id) ?? ""}`);
   station the HUD called open, or starts one when it called none (R swept
   15-40 m); the same promise through the composed HUD with the reticle
   up to 10 m ahead or hidden (property, R swept); `reticleNueOf`; the
-  words; the wiring: the line, the ring at the anchor on
+  words; the line and the note saying less while the walk's photos are
+  pending, and `walkPhotosPending`; the wiring: the line, the ring at the anchor on
   the ground, leaving and re-entering, a placement's note, and nothing
   without a position, a scene, a tour or after the visit.
 - `playwright-tests/creator-stations.spec.js` - the composed page: the

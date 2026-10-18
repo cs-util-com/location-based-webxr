@@ -14,6 +14,8 @@ import {
   reticleNueOf,
   stationChipText,
   stationsAsFinished,
+  WALK_PENDING_TEXT,
+  walkPhotosPending,
   wireCreatorStations,
   type ArStation,
 } from "./creator-stations.js";
@@ -211,6 +213,23 @@ describe("the words", () => {
   });
 });
 
+describe("walkPhotosPending", () => {
+  // Why (M5c review #2): the HUD says less exactly while a Finish would
+  // still sort the walk's photos in - a recording and no baked spots.
+  it("is true only for a tour with a recording and no photo spots yet", () => {
+    const tour = tourOf([pin("gate", 0, 0)]);
+    const spots = {
+      ...tour,
+      captureSpots: { fixes: 4, gpsAccuracyMedianM: null, captures: [] },
+    } as TourManifest;
+    expect(walkPhotosPending({ hasRecording: true }, tour)).toBe(true);
+    expect(walkPhotosPending({ hasRecording: true }, spots)).toBe(false);
+    expect(walkPhotosPending({ hasRecording: false }, tour)).toBe(false);
+    expect(walkPhotosPending(null, tour)).toBe(false);
+    expect(walkPhotosPending({ hasRecording: true }, null)).toBe(false);
+  });
+});
+
 describe("reticleNueOf", () => {
   // Why: the open station is judged where the reticle points only while it
   // is visible; a hidden or broken reticle must fall back to the creator.
@@ -228,7 +247,9 @@ describe("reticleNueOf", () => {
 });
 
 describe("wireCreatorStations", () => {
-  function harness(options: { radiusM?: number } = {}) {
+  function harness(
+    options: { radiusM?: number; walkPhotosPending?: () => boolean } = {},
+  ) {
     const scene = new Group();
     const ctx: {
       tourManifest: TourManifest | null;
@@ -251,6 +272,9 @@ describe("wireCreatorStations", () => {
       zero: () => zero,
       scene: () => sceneNow,
       ...(options.radiusM === undefined ? {} : { radiusM: options.radiusM }),
+      ...(options.walkPhotosPending === undefined
+        ? {}
+        : { walkPhotosPending: options.walkPhotosPending }),
     });
     const ring = () =>
       scene.children.find((c) => c.name === STATION_RING_NAME) as
@@ -434,6 +458,26 @@ describe("wireCreatorStations", () => {
       ),
       { numRuns: 200 },
     );
+  });
+
+  // Why (M5c review #2): a tour's first Finish sorts the walk's recorded
+  // photos in BEFORE the objects, and the HUD cannot see them (they are
+  // baked at the Finish). Until then its station names and numbers can be
+  // wrong, so it names none and says why.
+  it("says less while the walk's photos are not sorted in yet: no station names, and why", () => {
+    let pending = true;
+    const h = harness({ walkPhotosPending: () => pending });
+    h.stand(5, 0);
+    expect(h.chip.textContent).toBe(WALK_PENDING_TEXT);
+    expect(h.chip.textContent).not.toMatch(/Station \d/);
+    h.ctx.placedObjects.push({ object: pin("near", 5, 0) });
+    expect(h.stations.placedIn("near")).toBeNull();
+    pending = false;
+    h.stand(5, 0);
+    expect(h.chip.textContent).toBe(
+      "In Station 1 - what you place here joins it.",
+    );
+    expect(h.stations.placedIn("near")).toBe("in Station 1");
   });
 
   it("a creator who never stood in a station is told none is here", () => {
