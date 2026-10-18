@@ -1,11 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-stations";
 import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
-import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
+import {
+  createSlamAppStore,
+  recordGpsEvent,
+  selectAlignmentMatrix,
+  selectGpsPositions,
+  selectZeroReference,
+  setZeroPos,
+} from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 
-import { alignedStationBands, stationBands } from "./station-bands";
+import { judgedStationBands, stationBands } from "./station-bands";
 import { skipSuggestAfterMs } from "./station-run";
 import {
   FIX_MAX_AGE_MS,
@@ -13,15 +20,16 @@ import {
   wireStationGuide,
   type StationTour,
 } from "./station-guide";
-import type { VisitorPosition } from "./visitor-position";
+import { visitorPosition, type VisitorPosition } from "./visitor-position";
 
 /**
  * Why these tests matter: this is where the visitor's real position, the
  * tour's stations and the HUD meet. A station is reached by its radius alone
- * (tour editor plan D16): the phone's best position - the alignment's, else
- * before any alignment the device fix - inside the authored found radius; a
- * code lock only improves that position, and with no position nothing is
- * reached. The HUD must say "arrived" exactly there, the skip must be there
+ * (tour editor plan D16): the phone's best position - the alignment's once
+ * it is ready, else before any alignment the device fix - inside the
+ * authored found radius; a code lock only improves that position, and with
+ * no position nothing is reached. The raw fixes' accuracy judges every
+ * position but one a code lined up. The HUD must say "arrived" exactly there, the skip must be there
  * on demand and suggested after its clock, and the progress must survive
  * leaving AR and coming back.
  */
@@ -70,6 +78,9 @@ function harness(
     fixAtMs: now,
   };
   let allowed = true;
+  /** The alignment is ready (`alignmentReady`); a code lined it up. */
+  let ready = true;
+  let lined = false;
   let zeroNow: typeof zero | null = zero;
   const found: string[] = [];
   const approaches: [string, number, number][] = [];
@@ -108,6 +119,8 @@ function harness(
       calls.visitor += 1;
       return visitor;
     },
+    codeLinedUp: () => lined,
+    alignmentReady: () => ready,
     startHud: (getTargets) => {
       const h = { getTargets, disposed: false };
       huds.push(h);
@@ -202,6 +215,7 @@ function harness(
     },
     /** Placed by a code alone: an aligned position, no device fix at all. */
     byCodeOnly: (north: number, east: number) => {
+      lined = true;
       visitor = {
         nue: [north, 401.5, east],
         accuracyM: null,
@@ -222,6 +236,9 @@ function harness(
     },
     advance: (ms: number) => (now += ms),
     allow: (v: boolean) => (allowed = v),
+    /** The alignment ready or not, a code lined it up or not. */
+    ready: (v: boolean) => (ready = v),
+    lined: (v: boolean) => (lined = v),
     setZero: (z: typeof zero | null) => (zeroNow = z),
     setTour: (t: StationTour | null) => (tour = t),
   };
@@ -259,7 +276,7 @@ describe("wireStationGuide", () => {
     expect(gate.position.x).toBeCloseTo(50, 1);
     expect(gate.position.y).toBe(401.5);
     expect(gate.position.z).toBeCloseTo(20, 1);
-    const bands = alignedStationBands(s);
+    const bands = judgedStationBands(s, 6, false);
     expect([gate.distanceMin, gate.distanceMax]).toEqual([
       bands.foundM,
       bands.foundExitM,
@@ -283,8 +300,16 @@ describe("wireStationGuide", () => {
     expect(h.dom.line.textContent).toMatch(
       /GPS too weak to guide you \(±60 m\)/,
     );
-    // Aligned (M5c review #1): the accuracy is the raw fixes' and says
-    // nothing about the alignment's position, which guides as usual.
+    // Aligned with no code (r881, changed): the library aligns a session
+    // from its first fix, so the alignment's position is the fixes' own,
+    // and their accuracy speaks for it.
+    h.at(0, 0, 60);
+    expect(h.dom.line.textContent).toMatch(
+      /GPS too weak to guide you \(±60 m\)/,
+    );
+    // A code lined it up (M5c review #1): the accuracy is the raw fixes'
+    // and says nothing about the code's position, which guides as usual.
+    h.lined(true);
     h.at(0, 0, 60);
     expect(h.dom.line.textContent).toBe("Next: GATE, 50 m");
   });
@@ -546,7 +571,7 @@ describe("wireStationGuide", () => {
     });
     h.at(0, 0);
     expect(h.approaches).toEqual([
-      ["gate", 0, alignedStationBands(s).activateM],
+      ["gate", 0, judgedStationBands(s, 4, false).activateM],
     ]);
     h.guide.storyEnded("gate");
     h.at(0, 0);
@@ -577,7 +602,7 @@ describe("wireStationGuide", () => {
     });
     h.at(0, 0);
     expect(h.guides.at(-1)).toBe(
-      `well@0,80/${alignedStationBands(s).foundExitM}`,
+      `well@0,80/${judgedStationBands(s, 4, false).foundExitM}`,
     );
     h.at(0, 79);
     expect(h.guides.at(-1)).toBeNull();
@@ -665,44 +690,73 @@ describe("arrival by the station radius alone (D16)", () => {
   });
 
   // Why (M5c review #1): `accuracyM` is the raw fixes' median and says
-  // nothing about an alignment. An indoor or courtyard tour placed by one
-  // code with a ±40-60 m Wi-Fi fix was never found and was told to step
-  // into the open, though its position was the code's.
-  it("an aligned visitor is found inside the radius however weak the raw fix", () => {
+  // nothing about a position a code lined up. An indoor or courtyard tour
+  // placed by one code with a ±40-60 m Wi-Fi fix was never found and was
+  // told to step into the open, though its position was the code's.
+  // Changed (r881): this test used to grant the same to ANY aligned
+  // visitor, code or not. The library aligns a session from its first fix
+  // (the identity at the zero, at any accuracy), so "aligned" alone said
+  // nothing, and a ±500 m cold-start fix latched "found" (the PR #640
+  // case). Only a code earns the trust now.
+  it("a visitor a code lined up is found inside the radius however weak the raw fix; one without a code is not", () => {
     const h = harness({
       stations: [station("well", 30, 0)],
       order: "fixed",
     });
+    h.lined(true);
     h.at(28, 0, 60);
     expect(h.found).toEqual(["well"]);
     expect(h.dom.line.textContent).not.toMatch(/too weak/);
+    const gpsOnly = harness({
+      stations: [station("well", 30, 0)],
+      order: "fixed",
+    });
+    gpsOnly.at(28, 0, 60);
+    expect(gpsOnly.found).toEqual([]);
+    expect(gpsOnly.dom.line.textContent).toMatch(/too weak/);
+    // The GPS recovers at the same spot: found.
+    gpsOnly.at(28, 0, 5);
+    expect(gpsOnly.found).toEqual(["well"]);
   });
 
-  // Why (PR #642 review): the run and the line judged an aligned visitor
+  // Why (PR #642 review): the run and the line judged a code-placed visitor
   // without the raw fixes' accuracy, but the prefetch, the HUD's band and
   // the breadcrumbs' stop still read it - so a ±40 m Wi-Fi fix beside a
   // code-placed position moved where the arrow came back and the crumbs
   // stopped. One rule decides all of them. Swept over the raw accuracy
-  // (and none at all), aligned and not.
-  it("widens nothing for an aligned visitor however weak the raw fix; a raw fix alone keeps its own band", () => {
+  // (and none at all), with a code, without one, and with no alignment.
+  // Changed (r881): "aligned" used to be the condition; a code is now.
+  it("widens nothing for a visitor a code lined up however weak the raw fix; any other position keeps the raw accuracy's band", () => {
     // An activation radius inside the widest band, so the prefetch shows it.
     const s = station("gate", 50, 0, { activateRadiusM: 6, foundRadiusM: 5 });
     const tour: StationTour = { stations: [s], order: "fixed" };
-    const aligned = alignedStationBands(s);
+    const coded = judgedStationBands(s, null, true);
+    expect(coded.foundExitM).toBe(5 + 1.5);
     for (const accuracyM of [5, 25, 40, 100, null]) {
       const h = harness(tour);
+      h.lined(true);
       h.at(0, 0, accuracyM);
-      expect(h.approaches.at(-1)).toEqual(["gate", 50, aligned.activateM]);
-      expect(h.guides.at(-1)).toBe(`gate@50,0/${aligned.foundExitM}`);
+      expect(h.approaches.at(-1)).toEqual(["gate", 50, coded.activateM]);
+      expect(h.guides.at(-1)).toBe(`gate@50,0/${coded.foundExitM}`);
       const [target] = h.huds[0]!.getTargets();
       expect([target!.distanceMin, target!.distanceMax]).toEqual([
-        aligned.foundM,
-        aligned.foundExitM,
+        coded.foundM,
+        coded.foundExitM,
+      ]);
+      // Aligned with no code: the raw accuracy's band, as a raw fix's.
+      const own = stationBands(s, accuracyM);
+      const gpsOnly = harness(tour);
+      gpsOnly.at(0, 0, accuracyM);
+      expect(gpsOnly.approaches.at(-1)).toEqual(["gate", 50, own.activateM]);
+      expect(gpsOnly.guides.at(-1)).toBe(`gate@50,0/${own.foundExitM}`);
+      const [own0] = gpsOnly.huds[0]!.getTargets();
+      expect([own0!.distanceMin, own0!.distanceMax]).toEqual([
+        own.foundM,
+        own.foundExitM,
       ]);
       // No alignment: the raw fix IS the position, and its accuracy its band.
       const raw = harness(tour);
       raw.fixOnly(0, 0, accuracyM);
-      const own = stationBands(s, accuracyM);
       expect(raw.approaches.at(-1)).toEqual(["gate", 50, own.activateM]);
       expect(raw.guides.at(-1)).toBe(`gate@50,0/${own.foundExitM}`);
       // The HUD needs a camera position: none from a raw fix alone.
@@ -830,4 +884,145 @@ describe("arrival by the station radius alone (D16)", () => {
       expect(ahead.found).toEqual(["gate"]);
     },
   );
+});
+
+// Why (plan review of the QR-votes plan, r881): the library creates the
+// session's GPS data with the IDENTITY alignment at the first zero, and the
+// zero is the first fix at any accuracy. So a live session is "aligned" from
+// its first fix, and an aligned position used to be trusted outright: the
+// raw fixes' accuracy was never read, the "GPS too weak" line could not
+// show, and a ±500 m cold-start fix inside a station latched "found" - the
+// very case the PR #640 guard was written for. These tests drive the real
+// store, so they fail again if the library's cold start changes shape.
+describe("a cold start's first fix (the library's identity alignment)", () => {
+  /** A real store with its zero at the one fix it has, of `accuracyM`. */
+  function coldStart(accuracyM: number) {
+    const store = createSlamAppStore({
+      storageBackend: new NullStorageBackend(),
+    });
+    store.dispatch(setZeroPos(zero));
+    store.dispatch(
+      recordGpsEvent({
+        odomPosition: [0, 1.5, 0],
+        odomRotation: [0, 0, 0, 1],
+        rawGpsPoint: {
+          id: "first",
+          latitude: zero.lat,
+          longitude: zero.lon,
+          altitude: 400,
+          latLongAccuracy: accuracyM,
+          timestamp: 1_790_000_000_000,
+        },
+      }),
+    );
+    return store;
+  }
+
+  function guideOn(
+    store: ReturnType<typeof coldStart>,
+    stations: TourStation[],
+    signals: { codeLinedUp: boolean; alignmentReady: boolean },
+  ) {
+    const found: string[] = [];
+    const targets: (() => WayfindingTarget[])[] = [];
+    const guides: (string | null)[] = [];
+    const dom = {
+      line: { textContent: "" as string, hidden: true },
+      skip: { textContent: "" as string, hidden: true },
+    };
+    const guide = wireStationGuide({
+      dom,
+      tour: () => ({ stations, order: "fixed" }),
+      placementAllowed: () => true,
+      zero: () => selectZeroReference(store.getState()),
+      visitor: () =>
+        visitorPosition({
+          alignment: selectAlignmentMatrix(store.getState()),
+          arPose: { position: { x: 0, y: 1.5, z: 0 } },
+          gpsPositions: selectGpsPositions(store.getState()),
+          zero: selectZeroReference(store.getState()),
+        }),
+      codeLinedUp: () => signals.codeLinedUp,
+      alignmentReady: () => signals.alignmentReady,
+      startHud: (getTargets) => {
+        targets.push(getTargets);
+        return { dispose: () => undefined };
+      },
+      now: () => 1_790_000_000_000,
+      onFound: (s) => found.push(s.id),
+      onGuide: (v, target) =>
+        guides.push(v === null || target === null ? null : target.id),
+    });
+    return { guide, dom, found, targets, guides };
+  }
+
+  it("the precondition: one fix makes the session aligned, with no rotation", () => {
+    const store = coldStart(500);
+    const alignment = selectAlignmentMatrix(store.getState());
+    expect(alignment).not.toBeNull();
+    // Column-major: the rotation is the identity (no heading yet), and the
+    // translation only lifts the odometry to the fix's altitude.
+    const m = Array.from(alignment!);
+    expect(m.slice(0, 12)).toEqual([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+    expect([m[12], m[14], m[15]]).toEqual([0, 0, 1]);
+    const visitor = visitorPosition({
+      alignment,
+      arPose: { position: { x: 0, y: 1.5, z: 0 } },
+      gpsPositions: selectGpsPositions(store.getState()),
+      zero: selectZeroReference(store.getState()),
+    });
+    expect(visitor.aligned).toBe(true);
+    expect(visitor.nue).not.toBeNull();
+    expect(visitor.accuracyM).toBe(500);
+  });
+
+  it("a ±500 m first fix inside a 10 m station finds nothing and says the GPS is too weak, ready or not", () => {
+    for (const alignmentReady of [false, true]) {
+      const g = guideOn(
+        coldStart(500),
+        [station("gate", 3, 0, { foundRadiusM: 10 })],
+        { codeLinedUp: false, alignmentReady },
+      );
+      g.guide.tick();
+      expect(g.found).toEqual([]);
+      expect(g.dom.line.textContent).toMatch(
+        /GPS too weak to guide you \(±500 m\)/,
+      );
+    }
+  });
+
+  it("an alignment that is not ready yet judges nothing: no arrival, no arrows, no breadcrumbs", () => {
+    // A good fix, a station 3 m away: the heading-less identity could be
+    // 180° wrong, so the photos wait for readiness and the stations too.
+    const store = coldStart(4);
+    const signals = { codeLinedUp: false, alignmentReady: false };
+    const g = guideOn(
+      store,
+      [station("gate", 3, 0, { foundRadiusM: 10 })],
+      signals,
+    );
+    g.guide.tick();
+    expect(g.found).toEqual([]);
+    expect(g.targets.at(-1)?.() ?? []).toEqual([]);
+    expect(g.guides.at(-1)).toBeNull();
+    expect(g.dom.line.textContent).toBe(
+      "Next: GATE - waiting for your position…",
+    );
+    // Ready: the same position finds it.
+    signals.alignmentReady = true;
+    g.guide.tick();
+    expect(g.found).toEqual(["gate"]);
+  });
+
+  it("a code that lined the alignment up is trusted whatever the raw fix: the courtyard tour is found at ±40 m", () => {
+    // M5c review #1: a one-code courtyard tour with a ±40 m Wi-Fi fix.
+    const g = guideOn(
+      coldStart(40),
+      [station("well", 3, 0, { foundRadiusM: 5 })],
+      { codeLinedUp: true, alignmentReady: true },
+    );
+    g.guide.tick();
+    expect(g.found).toEqual(["well"]);
+    expect(g.dom.line.textContent).not.toMatch(/too weak/);
+  });
 });

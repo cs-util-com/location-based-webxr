@@ -25,9 +25,11 @@ focusDistanceM }`.
     accuracy: above `ACCURACY_CEILING_M` (`tooWeakToGuide`,
     `station-bands.ts`) nothing is judged, so the latch agrees with the
     guide's "GPS too weak to guide you" (PR #640 review); absent or null
-    is judged by the radius alone. The guide passes the raw fix's accuracy
-    only when the raw fix IS the position, null for an alignment's (M5c
-    review #1).
+    is judged by the radius alone. The guide passes the raw fixes'
+    accuracy for every position but one a code lined up, and null for that
+    one (`station-bands.ts` `judgedAccuracy`; M5c review #1): being
+    aligned alone earns no trust, since the library aligns a session from
+    its first fix.
   - `finish(id, nowMs)` - the scene ended (found stations only).
   - `skip(id, nowMs)` - any offered station not done.
   - `skipSuggested(id, nowMs)` - an offered, unfound station whose clock ran

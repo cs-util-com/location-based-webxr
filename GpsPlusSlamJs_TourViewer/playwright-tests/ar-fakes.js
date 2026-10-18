@@ -605,6 +605,35 @@ export async function enterArAndMeasure(page) {
 }
 
 /**
+ * Force the tracking-quality slice to `ok` (→ onboarding `ready`): the
+ * alignment is then ready (`tour-flow.ts` `isPlacementReady`), so the walk's
+ * photos place and the visitor's stations are judged without a code. The
+ * fake initAR never dispatches poses, and `reportUpdated` is the slice's
+ * own action (not a middleware input), so it is not recomputed away. Shared
+ * by `ar-mode.spec.js` and `sample-tour.spec.js`.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+export async function forceTrackingReady(page) {
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
+      type: "trackingQuality/reportUpdated",
+      payload: {
+        state: "ok",
+        confidence: 0.9,
+        subScores: {
+          convergence: 1,
+          residualConsensus: 1,
+          gpsAccuracy: 1,
+          coverage: 1,
+        },
+        diagnostics: {},
+      },
+    });
+  });
+}
+
+/**
  * The session zero plus three consistent fixes - the alignment a placement
  * is expressed against (and that the votes refine). Shared by the specs
  * that place, edit or lay out the AR panel; it was copied into two of them.

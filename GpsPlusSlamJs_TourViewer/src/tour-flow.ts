@@ -149,6 +149,33 @@ export function isPlacementReady(
   return computeOnboardingGuidance(report).phase === "ready";
 }
 
+/** A code lined the tour up: its votes were cast (after the escape too -
+ *  the gate stays "skipped" when a later lock votes). Read by the visitor's
+ *  status line and by the station guide, whose position is then the
+ *  code's, not the raw fixes'. */
+export function codeLinedUp(
+  qr: Pick<ArStatusInput["qr"], "lockedText" | "votedLocks">,
+): boolean {
+  return qr.lockedText !== null && qr.votedLocks > 0;
+}
+
+/**
+ * Whether the session's alignment may be judged by - the visitor's stations
+ * found, pointed at and guided to on it: the readiness the walk's photos
+ * wait for. The photos wait for `isPlacementReady` or a code that placed the
+ * tour (`viewer-placement.ts` `codePlacedTour()`), and once the gate has
+ * passed every later voted lock places them by itself (`onVotedLock`); the
+ * stations wait behind the same gate (`stationPlacementAllowed`), so a code
+ * that lined the tour up (`codeLinedUp`) stands for both. Before it the
+ * alignment is the identity at the first fix, which can be 180° wrong.
+ */
+export function alignmentReady(
+  report: TrackingQualityReport | null,
+  qr: Pick<ArStatusInput["qr"], "lockedText" | "votedLocks">,
+): boolean {
+  return isPlacementReady(report) || codeLinedUp(qr);
+}
+
 /** The printed-code line: the viewer pipeline's status, with the no-codes
  *  rule applied for an open tour. Empty in author mode. */
 const NO_PRINTED_CODES = "This tour has no printed codes.";

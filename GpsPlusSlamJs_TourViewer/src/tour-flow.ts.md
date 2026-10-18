@@ -35,6 +35,17 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
   It cannot be 180° wrong: a voted lock's ring carries the code's saved
   heading, unlike a single GPS fix (`viewer-content-alignment.test.ts`
   places the pin to under 1 cm on votes alone).
+- `codeLinedUp(qr): boolean` - a code's votes lined the tour up
+  (`qr.lockedText` set and `qr.votedLocks > 0`; after the escape too, the
+  gate staying "skipped"). Read by the visitor's status line and, through
+  `visitor-stations.ts`, by the station guide, which then trusts the
+  position whatever the raw fixes' accuracy.
+- `alignmentReady(report, qr): boolean` - `isPlacementReady(report) ||
+codeLinedUp(qr)`: the readiness the station guide waits for before it
+  judges an aligned position (r881). It is the walk's photos' readiness:
+  they wait for `isPlacementReady` or `codePlacedTour()`, and once the gate
+  passed every later voted lock places them itself (`onVotedLock`); the
+  stations wait behind the same gate.
 - `PlacementState` also carries `waiting-ready` (renders the readiness
   hint, or "Waiting for tracking to warm up…" without one) and
   `nothing-to-place` (a tour with neither a recording nor printed codes).

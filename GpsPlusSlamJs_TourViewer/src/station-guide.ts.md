@@ -25,6 +25,9 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
     stands its figure there).
 - Deps: `dom` (`line`, `skip`), `tour()` (stations, order),
   `placementAllowed()`, `zero()`, `visitor()` (`visitor-position.ts`),
+  `codeLinedUp()` (a code's votes lined the alignment up, `tour-flow.ts`),
+  `alignmentReady()` (the alignment may be judged by: the readiness the
+  walk's photos wait for, `tour-flow.ts` `alignmentReady`),
   `startHud(getTargets)`, `now()`, `fixMaxAgeMs?` (default
   `FIX_MAX_AGE_MS`, 5 s),
   `onFound(station)`, `onEndStory?(stationId)` (R9), `onVisitor?(nue)`, `onApproach?(station, distanceM,
@@ -55,14 +58,25 @@ activateM)` (each tick, each offered station with a distance: the
   it.
 - **Reached by its radius alone (D16):** the distance is measured from the
   phone's current best position - the alignment's (`VisitorPosition.nue`,
-  fed by GPS and codes alike), else - only while there is no alignment at
-  all (`VisitorPosition.aligned`) - the latest device fix (`fixNue`) if it
-  is at most `FIX_MAX_AGE_MS` (5 s) old by its own timestamp against
-  `now()` - and a station is found inside its authored found radius:
-  whatever the accuracy when aligned (the accuracy is the raw fixes' and
-  says nothing about an alignment, M5c review #1), and on the raw fix only
-  while its own accuracy is within the ceiling (`tooWeakToGuide`, PR #640
-  review). The accuracy never widens the radius. With neither position nothing is reached. An
+  fed by GPS and codes alike) once it is ready (`alignmentReady()`), else
+  - only while there is no alignment at all (`VisitorPosition.aligned`) -
+    the latest device fix (`fixNue`) if it is at most `FIX_MAX_AGE_MS`
+    (5 s) old by its own timestamp against `now()` - and a station is found
+    inside its authored found radius: whatever the raw accuracy when a code
+    lined the position up (the accuracy is the raw fixes' and says nothing
+    about a code's position, M5c review #1), and otherwise only while the
+    raw fixes' accuracy is within the ceiling (`tooWeakToGuide`, PR #640
+    review). The accuracy never widens the radius. With neither position nothing is reached.
+- **Aligned alone is not trusted, and not judged before it is ready
+  (r881):** the library aligns a session from its first fix (no rotation,
+  at the zero, at any accuracy), so `aligned` holds from the first fix
+  on. Until r881 it was trusted outright: the "too weak" line was dead
+  and a ±500 m cold-start fix inside a station latched "found". Now only
+  a code earns the trust (`codeLinedUp()`), and an aligned position
+  counts only once `alignmentReady()` (tracking ready, or a code lined
+  it up) - before it the alignment has no heading and can be 180° wrong,
+  so there is no arrival, no HUD target, no breadcrumbs and no replay,
+  and the line says "waiting for your position…" (or "too weak"). An
   aligned session whose tracking dropped (no AR pose) has no position
   until it is back, and the line says "waiting for your position": its
   raw fix carries no accuracy or age check and used to latch "found" (M5a
@@ -85,11 +99,12 @@ activateM)` (each tick, each offered station with a distance: the
   the HUD's 3D distance is the horizontal distance the run judges. Only
   offered stations not yet found are targets.
 - **One accuracy rule for every band** (PR #642 review): the prefetch's
-  activation, the HUD's band and the breadcrumbs' stop read the same
-  `judgedAccuracy` as the line and the run. An aligned visitor takes the
-  HUD's own band (`alignedStationBands`), so a ±40 m raw fix beside a
-  code-placed position widens nothing; a raw fix alone keeps its own
-  accuracy's band, as before. The HUD is started once per
+  activation, the HUD's band and the breadcrumbs' stop read the same rule
+  as the line and the run (`station-bands.ts` `judgedAccuracy` /
+  `judgedStationBands`, on the measurement's `codeLinedUp`). A visitor a
+  code lined up takes the HUD's own band, so a ±40 m raw fix beside a
+  code-placed position widens nothing; every other position - a raw fix,
+  or an alignment no code lined up - keeps the raw accuracy's band. The HUD is started once per
   AR session (retried while there is no camera) and disposed at the
   session's end and when the tour completes.
 - **The skip** is about the nearest offered, unfound station: on demand in
@@ -121,9 +136,11 @@ activateM)` (each tick, each offered station with a distance: the
   format, and the button now covers it.
 - **The line:** "Next: <title>, N m", "N stations to find - nearest:
   <title>, N m", "... - waiting for your position…", "... - GPS too weak to
-  guide you (±N m); step into the open." (only when the raw fix is the
-  position and its accuracy is above the ceiling, `tooWeakToGuide`; the run
-  then judges no arrival either, PR #640 review, M5c review #1),
+  guide you (±N m); step into the open." (when no code lined the
+  position up and the raw fixes' accuracy is above the ceiling,
+  `tooWeakToGuide` - checked before "waiting", so it shows while the
+  alignment is not ready too; the run then judges no arrival either,
+  PR #640 review, M5c review #1),
   "Station found - its story is
   playing.", "Tour complete - every station visited." or "- N skipped.";
   under branch order "Tour complete - you reached the end of your path."
@@ -156,6 +173,8 @@ const guide = wireStationGuide({
   placementAllowed,
   zero,
   visitor,
+  codeLinedUp,
+  alignmentReady,
   startHud,
   now: Date.now,
   onFound: (station) => view.offer(station),
@@ -180,7 +199,14 @@ store.subscribe(() => guide.tick());
   2-10 s (M3); no position and weak GPS lines; the skip on demand and suggested,
   the completion and the HUD's disposal; a story's end; progress across
   AR entries and a new tour; the replay of a story cut short; nothing found
-  that is not offered; an aligned visitor's prefetch, HUD band and
-  breadcrumb stop not widened by a raw fix of ±5-100 m or none, a raw fix
-  alone keeping its own band (swept, PR #642 review).
+  that is not offered; a code-lined-up visitor's prefetch, HUD band and
+  breadcrumb stop not widened by a raw fix of ±5-100 m or none, an aligned
+  visitor with no code and a raw fix alone keeping the raw accuracy's band
+  (swept, PR #642 review; changed r881); a code-lined-up visitor found
+  however weak the fix, one without a code not (r881); the cold start on
+  the real store (r881): one fix aligns the session with no rotation, a
+  ±500 m first fix inside a 10 m station finds nothing and says the GPS
+  is too weak (ready or not), an alignment not yet ready judges nothing
+  (no arrival, no HUD target, no breadcrumbs), and a code-lined-up
+  courtyard visitor at ±40 m is found.
 - `playwright-tests/stations.spec.js` - the whole flow on the page.

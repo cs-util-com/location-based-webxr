@@ -100,6 +100,9 @@ describe("wireStationGuide (properties)", () => {
           placementAllowed: () => true,
           zero: () => zero,
           visitor: () => visitor,
+          // A ready alignment no code lined up: GPS alone.
+          codeLinedUp: () => false,
+          alignmentReady: () => true,
           startHud: () => ({ dispose: () => undefined }),
           now: () => now,
           // A found station's story starts, and never ends by itself.
@@ -191,6 +194,8 @@ describe("wireStationGuide (properties)", () => {
             placementAllowed: () => true,
             zero: () => zero,
             visitor: () => visitor,
+            codeLinedUp: () => false,
+            alignmentReady: () => true,
             startHud: () => ({ dispose: () => undefined }),
             now: () => now,
             onFound: (s) => found.push(s.id),

@@ -63,7 +63,7 @@ export const ACCURACY_CEILING_M = 25;
  * arrival on it - one rule, so the two agree (PR #640 review). D16 forbids
  * WIDENING the found radius by the accuracy, not refusing a fix the guide
  * itself calls unusable. Unknown (null) is not too weak; the guide passes
- * null for an alignment's position (M5c review #1).
+ * null for a position a code lined up (`judgedAccuracy`, M5c review #1).
  */
 export function tooWeakToGuide(accuracyM: number | null): boolean {
   return accuracyM !== null && accuracyM > ACCURACY_CEILING_M;
@@ -98,16 +98,39 @@ export function stationBands(
 }
 
 /**
- * The bands of an ALIGNED position (PR #642 review): the raw fixes'
- * accuracy says nothing about it (`station-guide.ts` `judgedAccuracy`), and
- * `stationBands` would read that unknown accuracy as the ceiling, the
- * widest band there is. Its band is the HUD's own, whatever the fixes say.
+ * The accuracy a position is judged by - the run's arrival and the line's
+ * "GPS too weak" alike (`tooWeakToGuide`): the raw fixes' own (their median,
+ * `visitor-position.ts`), unless a code lined the position up; then null,
+ * unknown, since the fixes say nothing about a code's position (M5c review
+ * #1: a one-code courtyard tour with a ±40 m Wi-Fi fix was never found).
  */
-export function alignedStationBands(station: {
-  readonly activateRadiusM: number;
-  readonly foundRadiusM: number;
-}): StationBands {
-  return bandsWith(station, HUD_ARRIVAL_BAND_M);
+export function judgedAccuracy(
+  rawAccuracyM: number | null,
+  codeLinedUp: boolean,
+): number | null {
+  return codeLinedUp ? null : rawAccuracyM;
+}
+
+/**
+ * A station's bands at a position, by the same rule as `judgedAccuracy`
+ * (PR #642 review: the prefetch, the HUD's band and the breadcrumbs' stop
+ * read one rule with the run and the line):
+ * - a position a CODE lined up takes the HUD's own band, whatever the fixes
+ *   say: their accuracy says nothing about it, and `stationBands` would read
+ *   that unknown accuracy as the ceiling, the widest band there is;
+ * - any other takes the raw accuracy's (`stationBands`), an alignment no
+ *   code lined up included: from the first fix the session holds one (the
+ *   library's identity at the zero), so "aligned" alone says nothing about
+ *   how good the position is.
+ */
+export function judgedStationBands(
+  station: { readonly activateRadiusM: number; readonly foundRadiusM: number },
+  rawAccuracyM: number | null,
+  codeLinedUp: boolean,
+): StationBands {
+  return codeLinedUp
+    ? bandsWith(station, HUD_ARRIVAL_BAND_M)
+    : stationBands(station, rawAccuracyM);
 }
 
 function bandsWith(

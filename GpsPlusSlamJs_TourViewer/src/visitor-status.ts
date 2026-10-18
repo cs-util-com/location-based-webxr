@@ -10,7 +10,7 @@
  * @see visitor-status.ts.md
  */
 
-import type { ArStatusInput } from "./tour-flow.js";
+import { codeLinedUp, type ArStatusInput } from "./tour-flow.js";
 /** The in-AR scan line without location (QR-first M1b-1), under the scan
  *  card's title ("Scan the code again so the tour can start"): what the
  *  absence of location means, not a second "scan". */
@@ -135,12 +135,6 @@ function gpsOnly(gate: ArStatusInput["gate"]): boolean {
   );
 }
 
-/** A code lined the tour up: its votes were cast (after the escape too -
- *  the gate stays "skipped" when a later lock votes). */
-function codeLinedUp(input: ArStatusInput): boolean {
-  return input.qr.lockedText !== null && input.qr.votedLocks > 0;
-}
-
 /** The tour has no code that can lock (the photo ring needs one). */
 function noUsableCodes(input: ArStatusInput): boolean {
   const { tour, gate } = input;
@@ -161,7 +155,7 @@ function isPlaced(input: ArStatusInput): boolean {
  *  line the tour up. */
 function placedSentence(input: ArStatusInput): VisitorStatus {
   const { gate } = input;
-  if (!gpsOnly(gate) || codeLinedUp(input)) {
+  if (!gpsOnly(gate) || codeLinedUp(input.qr)) {
     return { state: "placed", text: `Tour placed. ${LOOK_AROUND}` };
   }
   if (gate.kind === "not-required" && gate.reason === "no-detector") {

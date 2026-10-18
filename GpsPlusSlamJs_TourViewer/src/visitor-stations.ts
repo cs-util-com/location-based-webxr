@@ -10,6 +10,7 @@
 import {
   selectAlignmentMatrix,
   selectGpsPositions,
+  selectTrackingQuality,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
 import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-stations";
@@ -28,6 +29,7 @@ import type { TourViewerSeams } from "./seams.js";
 import { wireStationGuide, type StationGuideDom } from "./station-guide.js";
 import { createStationPrefetch, decodeFigure } from "./station-prefetch.js";
 import { createStationRelocator, firstDeviceFix } from "./tour-relocation.js";
+import { alignmentReady, codeLinedUp } from "./tour-flow.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -35,11 +37,13 @@ import type {
 import { visitorPosition } from "./visitor-position.js";
 
 /**
- * Whether the visitor's stations may be found, offered and pointed at now:
- * a visitor's running session whose scan gate allows placement. (Until
- * r863 the stations also waited for the compass wait; a code's rotation
- * now stands from its first lock, `viewer-vote-sink.ts` `VIEWER_SOFT_TRIM`,
- * so nothing is left to wait for.)
+ * Whether the visitor's stations may be offered now: a visitor's running
+ * session whose scan gate allows placement. (Until r863 the stations also
+ * waited for the compass wait; a code's rotation now stands from its first
+ * lock, `viewer-vote-sink.ts` `VIEWER_SOFT_TRIM`.) Found, pointed at and
+ * guided to they are only on an alignment that is ready - the readiness
+ * the walk's photos wait for (`tour-flow.ts` `alignmentReady`, read by the
+ * guide each tick), since the alignment is the identity from the first fix.
  */
 export function stationPlacementAllowed(
   ctx: Pick<TourViewerSession, "placementUnsubscribe" | "scanGate">,
@@ -50,6 +54,27 @@ export function stationPlacementAllowed(
     ctx.placementUnsubscribe !== null &&
     gateAllowsPlacement(ctx.scanGate)
   );
+}
+
+/**
+ * What the station guide reads of the alignment each tick: whether a code
+ * lined it up (the viewer pipeline's voted locks this AR entry,
+ * `tour-flow.ts` `codeLinedUp`) and whether it is ready to be judged by
+ * (`alignmentReady`, the readiness the walk's photos wait for).
+ */
+export function stationAlignmentSignals(
+  ctx: Pick<TourViewerSession, "viewerLockedText" | "viewerVotedLocks">,
+  arStore: Pick<TourViewerStore, "getState">,
+): { codeLinedUp: () => boolean; alignmentReady: () => boolean } {
+  const votes = () => ({
+    lockedText: ctx.viewerLockedText,
+    votedLocks: ctx.viewerVotedLocks,
+  });
+  return {
+    codeLinedUp: () => codeLinedUp(votes()),
+    alignmentReady: () =>
+      alignmentReady(selectTrackingQuality(arStore.getState()), votes()),
+  };
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -206,6 +231,7 @@ export function wireVisitorStations(deps: {
         zero: selectZeroReference(state),
       });
     },
+    ...stationAlignmentSignals(ctx, arStore),
     startHud: (getTargets) => seams.createWayfindingHud({ getTargets }),
     now: deps.now,
     onFound: (station) => {
