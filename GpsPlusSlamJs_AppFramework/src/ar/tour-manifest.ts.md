@@ -96,9 +96,10 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
   `tour-details.ts`): the cover names one of the tour's images - a
   station's photo item or an image asset.
 - **Dropped, never failed, by the reader, at every minor**, and reported
-  through `onDropped`; the writer leaves out a cover whose image went (a
-  deleted photo), and throws on a description or contact its reader would
-  drop (a programming error).
+  through `onDropped`; the writer leaves out only a cover whose image went
+  (a deleted photo, the drop's `cause` `image-gone`), and throws on any
+  other drop - a cover that is not an image id, or a description or contact
+  its reader would drop (a programming error, PR #638 review).
 
 ## The version policy
 

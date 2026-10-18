@@ -604,4 +604,20 @@ describe('tour details (tour editor plan 2026-10-17-1816, W2, D15)', () => {
       serializeTourManifest({ ...manifest, description: '   ' })
     ).toThrow(/"description" is empty/);
   });
+
+  // Why (PR #638 review): the writer let EVERY dropped cover pass silently.
+  // Only a cover whose image went is a creator's ordinary edit; a cover
+  // that is not an id at all is the page's bug, and dropping it quietly
+  // hid that, as a malformed contact would have been hidden.
+  it('the writer refuses a cover that is not an image id: only a missing image is dropped quietly', () => {
+    const manifest = parseTourManifest(tour({ cover: 'f1' }));
+    for (const cover of [42, 'not/an id', '']) {
+      expect(() =>
+        serializeTourManifest({ ...manifest, cover } as never)
+      ).toThrow(/"cover" must be an image id/);
+    }
+    expect(() =>
+      serializeTourManifest({ ...manifest, cover: 'gone' })
+    ).not.toThrow();
+  });
 });

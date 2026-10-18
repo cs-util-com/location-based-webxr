@@ -450,10 +450,11 @@ export function parseTourManifest(
  * its unknown fields dropped, and writing it back would lose them. Written
  * at minor 0: version 3 has no additive revision yet.
  *
- * Of the details, only a cover whose image went (a deleted photo) is left
- * out, reported through `onDropped`: a description or a contact the
- * reader would drop is a programming error here (the editor checks them
- * with the same rules) and fails loud.
+ * Of the details, only a cover whose image went (a deleted photo, the
+ * drop's `cause` `image-gone`) is left out, reported through
+ * `onDropped`. Any other drop - a cover that is not an image id, a
+ * description or a contact the reader would drop - is a programming error
+ * here (the editor checks them with the same rules) and fails loud.
  */
 export function serializeTourManifest(
   manifest: TourManifest,
@@ -461,7 +462,7 @@ export function serializeTourManifest(
 ): string {
   const parsed = parseTourManifest(manifest, {
     onDropped: (drop) => {
-      if (drop.field !== 'cover') fail(drop.reason);
+      if (drop.cause !== 'image-gone') fail(drop.reason);
       options.onDropped?.(drop);
     },
   });

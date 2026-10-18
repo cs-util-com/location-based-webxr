@@ -41,10 +41,14 @@ unchanged (plan review 2 #10).
   choice then).
 - `parseTourDetails(data, { imageIds }): { details, dropped }` - the three
   fields of a document record, each checked; an absent (undefined) field is
-  absent, a failing one is dropped as `TourDetailsDrop { field, reason }`.
-  Never throws.
-- `TourDetailCheck` (`{ ok: true, value } | { ok: false, reason }`),
-  `TourDetailsDrop`, `TourDetailsField`.
+  absent, a failing one is dropped as `TourDetailsDrop { field, reason,
+cause? }`. Never throws.
+- `TourDetailCheck` (`{ ok: true, value } | { ok: false, reason, cause? }`),
+  `TourDetailsDrop`, `TourDetailsDropCause`, `TourDetailsField`.
+  - `cause: 'image-gone'` marks a cover that is a well-formed id naming no
+    image of the tour (a deleted photo). It is the one drop the writer
+    (`serializeTourManifest`) accepts quietly. A drop without a cause is a
+    malformed value (PR #638 review).
 
 ## Invariants & assumptions
 
@@ -71,7 +75,7 @@ checkTourContact(' guide@example.org '); // { ok: true, value: 'guide@example.or
 checkTourContact('javascript:alert(1)'); // { ok: false, reason: '"contact" must be ...' }
 tourContactHref('guide@example.org'); // 'mailto:guide@example.org'
 parseTourDetails({ cover: 'gone' }, { imageIds: new Set(['f1']) });
-// { details: {}, dropped: [{ field: 'cover', reason: '"cover" names no image of this tour' }] }
+// { details: {}, dropped: [{ field: 'cover', reason: '"cover" names no image of this tour', cause: 'image-gone' }] }
 ```
 
 ## Tests

@@ -104,12 +104,21 @@ describe('checkTourContact', () => {
 describe('checkTourCover', () => {
   it("keeps one of the tour's image ids, and nothing else", () => {
     expect(checkTourCover('f1', IMAGES)).toEqual({ ok: true, value: 'f1' });
+    // A well-formed id whose image went says so (`image-gone`): the one
+    // drop a writer accepts quietly (PR #638 review).
     expect(checkTourCover('gone', IMAGES)).toEqual({
       ok: false,
       reason: '"cover" names no image of this tour',
+      cause: 'image-gone',
     });
-    expect(checkTourCover('../f1', IMAGES)).toMatchObject({ ok: false });
-    expect(checkTourCover(7, IMAGES)).toMatchObject({ ok: false });
+    expect(checkTourCover('../f1', IMAGES)).toEqual({
+      ok: false,
+      reason: '"cover" must be an image id',
+    });
+    expect(checkTourCover(7, IMAGES)).toEqual({
+      ok: false,
+      reason: '"cover" must be an image id',
+    });
   });
 });
 

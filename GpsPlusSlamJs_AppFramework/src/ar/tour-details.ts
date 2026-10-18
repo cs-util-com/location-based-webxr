@@ -40,16 +40,26 @@ export interface TourDetails {
 
 export type TourDetailsField = keyof TourDetails;
 
+/** Why a detail was left out when the value itself is well formed:
+ *  `image-gone` - a cover naming no image of the tour (a deleted photo),
+ *  the one drop a writer accepts quietly. Absent: the value is malformed. */
+export type TourDetailsDropCause = 'image-gone';
+
 /** A detail a reader left out, and why. */
 export interface TourDetailsDrop {
   readonly field: TourDetailsField;
   readonly reason: string;
+  readonly cause?: TourDetailsDropCause;
 }
 
 /** A checked value, or the reason it cannot be kept. */
 export type TourDetailCheck =
   | { readonly ok: true; readonly value: string }
-  | { readonly ok: false; readonly reason: string };
+  | {
+      readonly ok: false;
+      readonly reason: string;
+      readonly cause?: TourDetailsDropCause;
+    };
 
 /** Ids: the manifest's own rule (short, path-safe, one segment). */
 const IMAGE_ID = TOUR_ID_PATTERN;
@@ -139,7 +149,11 @@ export function checkTourCover(
     return { ok: false, reason: '"cover" must be an image id' };
   }
   if (!imageIds.has(value)) {
-    return { ok: false, reason: `"cover" names no image of this tour` };
+    return {
+      ok: false,
+      reason: `"cover" names no image of this tour`,
+      cause: 'image-gone',
+    };
   }
   return { ok: true, value };
 }
@@ -179,7 +193,12 @@ export function parseTourDetails(
     if (data[field] === undefined) continue;
     const checked = check(data[field]);
     if (checked.ok) details[field] = checked.value;
-    else dropped.push({ field, reason: checked.reason });
+    else
+      dropped.push({
+        field,
+        reason: checked.reason,
+        ...(checked.cause === undefined ? {} : { cause: checked.cause }),
+      });
   }
   return { details, dropped };
 }
