@@ -609,10 +609,17 @@ export async function enterArAndMeasure(page) {
  * is expressed against (and that the votes refine). Shared by the specs
  * that place, edit or lay out the AR panel; it was copied into two of them.
  *
+ * The fixes are the phone's own, so they are where the phone WAS: since a
+ * station is reached by the phone's best position alone (tour editor plan
+ * D16), the walk can reach one. By default it goes 15 m north, then 15 m
+ * east; `southWest` walks 15 m south, then 15 m west instead, for a spec
+ * whose station stands 15 m north of the zero.
+ *
  * @param {import("@playwright/test").Page} page
+ * @param {{ southWest?: boolean }} [options]
  */
-export async function seedAlignment(page) {
-  await page.evaluate(() => {
+export async function seedAlignment(page, { southWest = false } = {}) {
+  await page.evaluate((southWest) => {
     const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
     store.dispatch({
       type: "gpsData/setZeroPos",
@@ -620,8 +627,15 @@ export async function seedAlignment(page) {
     });
     const pairs = [
       { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
-      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
-      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
+      ...(southWest
+        ? [
+            { odom: [0, 0, 15], lat: 47.499865, lon: 8.7 },
+            { odom: [-15, 0, 0], lat: 47.5, lon: 8.6998 },
+          ]
+        : [
+            { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
+            { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
+          ]),
     ];
     for (const [i, p] of pairs.entries()) {
       store.dispatch({
@@ -640,7 +654,7 @@ export async function seedAlignment(page) {
         },
       });
     }
-  });
+  }, southWest);
 }
 
 /** Metres to degrees at the fakes' zero (47.5, 8.7). */

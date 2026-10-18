@@ -1867,8 +1867,12 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
         t.alignmentStore.getState().gpsData.gpsEvents.gpsPositions.length,
       markerUpdates: t.qrDebugUpdates,
       planes: t.fakeScene.children.length,
+      // The content root -> a group per station at its pose (tour editor
+      // plan W3: playback as station groups) -> the station's items.
       pinLabels: t.fakeScene.children
         .flatMap((/** @type {any} */ c) => (c.isGroup ? c.children : []))
+        .flatMap((/** @type {any} */ s) => (s.isGroup ? s.children : []))
+        .flatMap((/** @type {any} */ g) => (g.isGroup ? g.children : []))
         .filter((/** @type {any} */ o) => o.isSprite === true).length,
     };
   });

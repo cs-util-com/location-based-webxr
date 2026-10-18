@@ -229,8 +229,11 @@ test("opens a tour through the file chooser and lists every code and note, label
   await page.goto("/edit.html");
   await expect(page.locator("#open-modal")).toBeVisible();
   await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  // Version 3 has no loose pins (tour editor plan W3): the fixture's three
+  // notes each sit in a station of their own, and the count, the rail and
+  // the map say so (every station is listed, the automatic ones included).
   await expect(page.locator(".toast")).toHaveText(
-    "Opened editor-fixture.zip: 2 codes, 3 notes",
+    "Opened editor-fixture.zip: 2 codes, 3 notes, 3 stations",
   );
   await expect(page.locator("#open-modal")).toBeHidden();
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
@@ -241,8 +244,11 @@ test("opens a tour through the file chooser and lists every code and note, label
     MARKUP,
     "Fountain",
     "Too big",
+    "Station 1",
+    "Station 2",
+    "Station 3",
   ]);
-  await expect(page.locator(".mk-wrap")).toHaveCount(5);
+  await expect(page.locator(".mk-wrap")).toHaveCount(8);
   // The markup is text: no element was made from it, nothing ran.
   await expect(page.locator("#rail img")).toHaveCount(0);
   expect(await page.evaluate(() => "__xss" in window)).toBe(false);
