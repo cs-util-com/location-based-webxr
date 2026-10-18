@@ -27,6 +27,7 @@
  * the result its AR path leaves in the page's lists (named per row), and
  * the row compares what the document makes of it from there on.
  */
+import { isDeepStrictEqual } from "node:util";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   serializeTourManifest,
@@ -507,6 +508,17 @@ const ROWS: readonly Row[] = [
     },
   },
   {
+    // Why (review #2a): a name change rides along with a real edit, so
+    // the phone's Finish starts - both pages must write the same name.
+    name: "edit a pin and name the tour, save",
+    records: true,
+    run: async (p) => {
+      await p.edit("a", "The gate");
+      await p.setDetails({ name: "Castle walk" });
+      return p;
+    },
+  },
+  {
     name: "delete a pin, save",
     records: true,
     run: async (p) => {
@@ -638,12 +650,18 @@ const ROWS: readonly Row[] = [
   },
 ];
 
-/** The two ways a row may diverge: a parity assertion that failed, or an
- *  operation one page does not have. */
+/** The pages wrote different tours or drafts: the one divergence a
+ *  comparison raises. */
+class PagesDisagree extends Error {}
+
+/** What a marked row may fail with: the pages disagreeing, an operation
+ *  the phone does not have, or the phone's Finish refusing to start. Not
+ *  any assertion (the r875 milestone review #2c): a `vi.waitFor` timeout
+ *  or a harness assertion is a broken row, never a divergence. */
 function isDivergence(err: unknown): boolean {
   return (
+    err instanceof PagesDisagree ||
     err instanceof NoSuchOperation ||
-    (err instanceof Error && err.name === "AssertionError") ||
     (err instanceof Error && err.message === PHONE_FINISH_REFUSED)
   );
 }
@@ -683,19 +701,45 @@ function withStationsByOrder(written: TourManifest): unknown {
   ) as unknown;
 }
 
+/** A marked row broke for a reason that is not a divergence: swallowed,
+ *  so the row PASSES and `it.fails` turns it red. An unmarked row fails. */
+function broken(row: Row, err: unknown): void {
+  if (row.diverges === undefined) throw err;
+  console.error(`${row.name}: not a divergence`, err);
+}
+
 /** Runs `row` on both pages and asserts they wrote the same. A marked
- *  row must fail for the reason it names - the pages disagree, or one has
- *  no such operation - never because the harness broke: such an error is
- *  swallowed here, so the row PASSES and `it.fails` turns it red. */
+ *  row must fail for the reason it names - the pages disagree, or the
+ *  phone has no such operation - never because the harness broke. The
+ *  desktop runs FIRST and outside the divergence net (review #2b): a
+ *  desktop that breaks in a row whose phone refuses is a red row, not an
+ *  expected failure. */
 async function samePages(row: Row): Promise<void> {
+  let desktop: Awaited<ReturnType<typeof outcome>>;
   try {
-    const phone = await outcome(row, phonePage);
-    const desktop = await outcome(row, desktopPage);
+    desktop = await outcome(row, desktopPage);
+  } catch (err) {
+    broken(row, err);
+    return;
+  }
+  let phone: Awaited<ReturnType<typeof outcome>>;
+  try {
+    phone = await outcome(row, phonePage);
+  } catch (err) {
+    if (isDivergence(err)) throw err;
+    broken(row, err);
+    return;
+  }
+  if (row.diverges === undefined) {
     expect(desktop.written).toEqual(phone.written);
     expect(desktop.records).toEqual(phone.records);
-  } catch (err) {
-    if (row.diverges === undefined || isDivergence(err)) throw err;
-    console.error(`${row.name}: not a divergence`, err);
+    return;
+  }
+  if (
+    !isDeepStrictEqual(desktop.written, phone.written) ||
+    !isDeepStrictEqual(desktop.records, phone.records)
+  ) {
+    throw new PagesDisagree(`${row.name}: the pages wrote different tours`);
   }
 }
 
