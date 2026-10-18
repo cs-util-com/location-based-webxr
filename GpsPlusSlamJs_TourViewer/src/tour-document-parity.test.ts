@@ -354,6 +354,8 @@ async function phonePage(
   ctx.tourManifest = tourOf(OPENED);
   let typedName: string | null = null;
   let draftKey: string | null = null;
+  /** A station moved through the lists: no draft write followed. */
+  let stationMoved = false;
   const setup = wireCreatorSetup({
     ctx,
     mode: "creator",
@@ -436,7 +438,9 @@ async function phonePage(
     moveStation: async (stationId, geo) => {
       // As `creator-settle.ts`'s `moveStationsAlong` and `take` leave the
       // page: the station moved in the page's manifest, and each item an
-      // edit at the place its moved station now gives it.
+      // edit at the place its moved station now gives it. Its draft writes
+      // (`recordPlacement`, `recordVisit`) are the AR path's, not driven.
+      stationMoved = true;
       const manifest = ctx.tourManifest!;
       const before = new Map(tourObjects(manifest).map((o) => [o.id, o]));
       ctx.tourManifest = {
@@ -478,7 +482,14 @@ async function phonePage(
       if (draftKey === null) throw new Error("the phone opened no draft");
       return readRecords(await stores(draftKey), true);
     },
-    reopenRestored: () => phonePage(file, stores, true),
+    reopenRestored: () =>
+      stationMoved
+        ? Promise.reject(
+            new NoSuchOperation(
+              "phone: a station move's draft writes run in its AR path (creator-settle), which this contract does not drive",
+            ),
+          )
+        : phonePage(file, stores, true),
   };
 }
 
@@ -602,6 +613,24 @@ const ROWS: readonly Row[] = [
         rotation: [0, 0, 0, 1],
       });
       return p;
+    },
+  },
+  {
+    // Why (the r875 milestone review #1): a moved station must survive a
+    // reload with its items (D17), not come back as its items at the
+    // moved spots inside the unmoved station.
+    name: "move a station, reload and restore the draft, save",
+    records: false,
+    diverges:
+      "the phone's station move writes its draft only in AR (creator-settle), which this contract cannot drive, and that draft keeps no station pose (the phone adoption: the tour document's settings record)",
+    run: async (p) => {
+      await p.moveStation("st-a", {
+        lat: NORTH,
+        lon: 9.0503,
+        alt: 340,
+        rotation: [0, 0, 0, 1],
+      });
+      return p.reopenRestored();
     },
   },
   {

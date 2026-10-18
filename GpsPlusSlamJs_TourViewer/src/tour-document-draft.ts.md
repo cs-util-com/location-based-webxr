@@ -9,13 +9,15 @@ after the reducer, never from `store.subscribe`.
 
 ## Public API
 
-- `TourSettingsRecord` - `{ needsNoGps, details? }`, the draft's settings
+- `TourSettingsRecord` - `{ needsNoGps, details?, stations? }` (`stations`:
+  `StationPose[]`, each station's `{ id, geo }`), the draft's settings
   record (`editor/editor-draft.ts`'s `EditorTourSettings` has the same
   shape).
 - `TourDocumentDraft` - `DraftObjectWrites` (`draft-actions.ts`) plus
   `saveSettings(record)`.
 - `settingsRecord(state)` - the record as the document holds it: the
-  details only once `detailsRecorded`.
+  details only once `detailsRecorded`, the station poses (every station's,
+  in the document's order) only once `stationsRecorded`.
 - `followDocument(draft, before, after, pictureOf)` - issues, in order,
   each id's writes for its change of standing against the written file
   (an entry, a tombstone, or nothing), then the settings record when it
@@ -57,7 +59,8 @@ const stop = store.listenToDocument({
 - `tour-document-draft.test.ts` - an edit (and the same content again), a
   written object's tombstone and a new one's forgotten record, an undo of
   an edited object's delete (record before tombstone), a photo's picture,
-  the settings record with and without details, nothing for a save landing
+  the settings record with and without details, the station poses once a
+  station moved (review #1), nothing for a save landing
   or across an open.
 - Through the editor: `editor/editor-session.test.ts` and the parity
   contract `tour-document-parity.test.ts` (the draft records compared).

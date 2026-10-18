@@ -1036,6 +1036,30 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
   });
 
+  it("a record whose station poses do not read is no offer, and goes", async () => {
+    // Why (the r875 milestone review #1): the poses are parsed as the
+    // format parses a pose; one that does not read costs the record, as
+    // any unreadable record does.
+    const b = browser();
+    const first = draftIn(b);
+    await first.open(K1, tour(pin("a")));
+    await first.idle();
+    first.close();
+    b.spaces.get(editorDraftKey(K1))?.set(
+      SETTINGS,
+      JSON.stringify({
+        // A real change: only the pose that does not read keeps it from
+        // being offered.
+        needsNoGps: true,
+        stations: [{ id: "s", geo: { lat: 200, lon: 9, alt: 0 } }],
+      }),
+    );
+    const again = draftIn(b);
+    expect((await again.open(K1, tour(pin("a")))).offer).toBeNull();
+    await again.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
+  });
+
   it("a settings write that does not land is said once", async () => {
     const b = browser();
     const draft = draftIn(b);

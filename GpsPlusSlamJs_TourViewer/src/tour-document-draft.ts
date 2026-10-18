@@ -14,7 +14,7 @@ import { objectContentKey } from "./authoring-draft.js";
 import type { DraftObjectWrites } from "./draft-actions.js";
 import type { EditEntry } from "./object-edits.js";
 import type { TourDetailFields } from "./tour-details-form.js";
-import type { TourDocumentState } from "./tour-document.js";
+import type { StationPose, TourDocumentState } from "./tour-document.js";
 
 /** The tour-level settings a draft keeps: the setting, and the details
  *  once they were set or restored (`editor/editor-draft.ts` THE
@@ -22,6 +22,11 @@ import type { TourDocumentState } from "./tour-document.js";
 export interface TourSettingsRecord {
   readonly needsNoGps: boolean;
   readonly details?: TourDetailFields;
+  /** Every station's pose, once a frame was moved or restored here: a
+   *  reload puts the moved stations back with their items (D17; the r875
+   *  milestone review #1 - the objects alone came back at the moved spots
+   *  inside unmoved stations). */
+  readonly stations?: readonly StationPose[];
 }
 
 /** Where a page backs its edits up: the objects' writes the pages share
@@ -32,9 +37,13 @@ export interface TourDocumentDraft extends DraftObjectWrites {
 
 /** The settings record as the document holds it now. */
 export function settingsRecord(state: TourDocumentState): TourSettingsRecord {
-  return state.detailsRecorded
-    ? { needsNoGps: state.needsNoGps, details: state.details }
-    : { needsNoGps: state.needsNoGps };
+  return {
+    needsNoGps: state.needsNoGps,
+    ...(state.detailsRecorded ? { details: state.details } : {}),
+    ...(state.stationsRecorded
+      ? { stations: state.stations.map(({ id, geo }) => ({ id, geo })) }
+      : {}),
+  };
 }
 
 /** Where an id stands against the written file. */

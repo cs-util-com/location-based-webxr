@@ -31,8 +31,13 @@ reducers' building blocks, so a page cannot apply them differently.
 - `deleted: string[]` - ids of written objects deleted and not yet written.
 - `needsNoGps`, `details` (`TourDetailFields`) - the setting and the details
   as set; `touched` says which were changed here since the open (live work,
-  which a draft's offer never overrides); `detailsRecorded` says the draft's
-  settings record carries the details.
+  which a draft's offer never overrides - `touched.stations` for a station
+  moved here); `detailsRecorded` and `stationsRecorded` say the draft's
+  settings record carries the details, and the station poses (`StationPose`,
+  `{ id, geo }`: set by a station move or by an open whose frames moved,
+  review #1 of the tour document milestone - without them a reload after a
+  station move restored its items under the file's frame, so they landed
+  elsewhere).
 - `past` / `future: TourHistoryStep[]` - the history: each step a
   `TourDocumentView` (`stations`, the world `objects`, `needsNoGps`,
   `details`) and the edit in words. At most `TOUR_HISTORY_LIMIT` (200).
@@ -77,10 +82,12 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   stays an entry (a save under a moved frame, then an undo of the move -
   found by the "undoing everything" property). A save that lands after a
   frame moved prunes the same way.
-- `restored({ objects, deleted, needsNoGps?, details?, what })` - a draft's
-  work, already filtered by the page's rules (an object beyond its
-  station's reach is skipped here too, `objectFits`): one step to undo;
-  not live work (`touched` unchanged).
+- `restored({ objects, deleted, needsNoGps?, details?, stations?, what })` -
+  a draft's work, already filtered by the page's rules: the station poses
+  first (each named station's frame takes its pose, `stationsRecorded` set),
+  then the objects under those frames (one beyond its station's reach is
+  skipped here too, `objectFits`): one step to undo; not live work
+  (`touched` unchanged).
 - `saveStarted({ generation })`, `saved({ generation, written,
 appliedDeletions, stationsAtStart })`, `saveEnded({ generation, error? })`
   - a rebuild queued, landed (the written file replaced; `pendingAfterRebuild` keeps what the

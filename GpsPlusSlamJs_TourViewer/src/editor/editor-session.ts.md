@@ -143,7 +143,11 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     record's details likewise unless they were (each changed field counted;
     a cover naming no image of the tour - a photo deleted since - is
     dropped and the rest restored, M4a review #1; other details the format
-    would drop leave them as they are); what was applied
+    would drop leave them as they are); the record's station poses unless a
+    station was moved here (each station whose pose differs counted; applied
+    before the objects, so an item restores under the frame it was placed
+    under, and its reach is checked there - review #1 of the tour document
+    milestone); what was applied
     is written to the draft again. Returns the counts.
   - `save({ keepScan })` - `rebuildFinishedTour` with `levels: []`, the
     photo spots decided once per open (`captureSpotsForRebuild`, its result

@@ -677,19 +677,42 @@ export function createEditorSession(input: {
         ...state.placed.map((p) => p.object.id),
         ...state.deleted,
       ]);
+      const settings = work.settings;
+      // The draft's station poses (D17; the r875 milestone review #1) -
+      // unless a frame was moved here meanwhile: live work wins. Only a
+      // station the tour carries, at a pose other than its own.
+      const stations = (
+        settings?.stations === undefined || state.touched.stations
+          ? []
+          : settings.stations
+      ).filter((pose) => {
+        const frame = state.stations.find((s) => s.id === pose.id);
+        return (
+          frame !== undefined &&
+          JSON.stringify(frame.geo) !== JSON.stringify(pose.geo)
+        );
+      });
+      const poses = new Map(stations.map((p) => [p.id, p.geo]));
+      const framed: TourDocumentState = {
+        ...state,
+        stations: state.stations.map((s) => {
+          const geo = poses.get(s.id);
+          return geo === undefined ? s : { ...s, geo };
+        }),
+      };
       // An object too far from its station (a draft written before far
       // moves were refused) is skipped as the reducer skips it
-      // (`objectFits`, the M5a milestone review L1).
+      // (`objectFits`, the M5a milestone review L1) - measured in the
+      // frames the restore puts back.
       const objects = work.objects.filter(
         (object) =>
           !live.has(object.id) &&
           find(object.id) !== undefined &&
-          objectFits(state, object),
+          objectFits(framed, object),
       );
       const deleted = work.deleted.filter(
         (id) => !live.has(id) && find(id) !== undefined,
       );
-      const settings = work.settings;
       const needsNoGps =
         settings !== undefined &&
         !state.touched.needsNoGps &&
@@ -700,7 +723,12 @@ export function createEditorSession(input: {
       // cover may name a photo they bring.
       const withObjects = tourDocumentReducer(
         state,
-        tourDocumentActions.restored({ objects, deleted, what: "" }),
+        tourDocumentActions.restored({
+          objects,
+          deleted,
+          ...(stations.length === 0 ? {} : { stations }),
+          what: "",
+        }),
       );
       const details =
         settings?.details === undefined || state.touched.details
@@ -712,7 +740,10 @@ export function createEditorSession(input: {
           ? 0
           : DETAIL_FIELDS.filter((f) => details[f] !== was[f]).length;
       const changed =
-        objects.length + (needsNoGps === undefined ? 0 : 1) + detailFields;
+        objects.length +
+        stations.length +
+        (needsNoGps === undefined ? 0 : 1) +
+        detailFields;
       if (changed + deleted.length > 0) {
         store.dispatch(
           tourDocumentActions.restored({
@@ -720,6 +751,7 @@ export function createEditorSession(input: {
             deleted,
             ...(needsNoGps === undefined ? {} : { needsNoGps }),
             ...(details === null ? {} : { details }),
+            ...(stations.length === 0 ? {} : { stations }),
             what: "the restored changes",
           }),
         );

@@ -1825,3 +1825,57 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
     await session.close();
   });
 });
+
+/**
+ * Why (the r875 milestone review #1): the draft kept the objects but not
+ * the station frames, so a station moved, the tab closed and the draft
+ * restored came back as its items at the moved spots inside an UNMOVED
+ * station - and the next save wrote them at new local offsets, breaking
+ * D17's rigid move silently. The frames now ride in the settings record.
+ */
+describe("createEditorSession, a moved station across a reload (review #1)", () => {
+  it("a station moved, the tab closed, the draft restored: the save is the one before the reload", async () => {
+    const { session, manifest } = await opened([pin("a"), pin("b")]);
+    const stores = memoryDraftStores();
+    const draft = createEditorDraft({
+      openStore: stores.open,
+      holdLock: freeLocks,
+      noBackup: () => undefined,
+    });
+    await draft.open(K, manifest);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: draft.writes(),
+    });
+    const station = manifest.stations[0]!;
+    const geo = { ...station.geo, lat: station.geo.lat + 0.0003 };
+    expect(editor.moveStation(station.id, geo)).toEqual({ kind: "moved" });
+    const before = await writtenJson(
+      (await editor.save({ keepScan: false })).blob,
+    );
+    await draft.idle();
+    draft.close();
+
+    const again = createEditorDraft({
+      openStore: stores.open,
+      holdLock: freeLocks,
+      noBackup: () => undefined,
+    });
+    const { offer } = await again.open(K, manifest);
+    expect(offer?.text).toMatch(/the position of a station/);
+    const reloaded = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: again.writes(),
+    });
+    expect(reloaded.restore(offer!)).toEqual({ changed: 2, deleted: 0 });
+    const after = await writtenJson(
+      (await reloaded.save({ keepScan: false })).blob,
+    );
+    expect(after.stations).toEqual(before.stations);
+    await session.close();
+  });
+});

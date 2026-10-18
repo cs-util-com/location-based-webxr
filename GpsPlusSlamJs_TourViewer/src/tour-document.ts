@@ -54,6 +54,14 @@ import {
  *  (its pose, D17); the items stay with the written tour. */
 export type StationFrame = Omit<TourStation, "items">;
 
+/** A station's pose: what a draft keeps of a frame moved here (D17), so
+ *  a reload puts the station back with its items (the r875 milestone
+ *  review #1). */
+export interface StationPose {
+  readonly id: string;
+  readonly geo: QrGeoPose;
+}
+
 /** The tour as an undo step finds it: the station frames, the objects in
  *  the world, the setting and the details. A step goes BACK to such a
  *  state, whatever was saved since: what differs from the written file is
@@ -130,10 +138,15 @@ export interface TourDocumentState {
   readonly touched: {
     readonly needsNoGps: boolean;
     readonly details: boolean;
+    /** A station's frame moved here since the open. */
+    readonly stations: boolean;
   };
   /** The draft's settings record carries the details (once they were set
    *  or restored here: an untouched record has no opinion about them). */
   readonly detailsRecorded: boolean;
+  /** The draft's settings record carries the station poses (once a frame
+   *  was moved or restored here). */
+  readonly stationsRecorded: boolean;
   readonly past: readonly TourHistoryStep[];
   readonly future: readonly TourHistoryStep[];
   /** Counts every edit, undo and redo. */
@@ -181,8 +194,9 @@ export const initialTourDocumentState: TourDocumentState = {
   deleted: [],
   needsNoGps: false,
   details: {},
-  touched: { needsNoGps: false, details: false },
+  touched: { needsNoGps: false, details: false, stations: false },
   detailsRecorded: false,
+  stationsRecorded: false,
   past: [],
   future: [],
   revision: 0,
@@ -469,6 +483,8 @@ function goTo(
   const detailsMoved = DETAIL_FIELDS.some(
     (f) => view.details[f] !== state.details[f],
   );
+  const stationsMoved =
+    JSON.stringify(view.stations) !== JSON.stringify(state.stations);
   return {
     ...state,
     ...contentAt(state.written, view),
@@ -478,8 +494,10 @@ function goTo(
     touched: {
       needsNoGps: state.touched.needsNoGps || settingMoved,
       details: state.touched.details || detailsMoved,
+      stations: state.touched.stations || stationsMoved,
     },
     detailsRecorded: state.detailsRecorded || detailsMoved,
+    stationsRecorded: state.stationsRecorded || stationsMoved,
   };
 }
 
@@ -511,6 +529,9 @@ interface TourRestore {
   readonly deleted: readonly string[];
   readonly needsNoGps?: boolean;
   readonly details?: TourDetailFields;
+  /** Station poses: each frame of that id moves there (D17), before the
+   *  objects - whose spots the moved frames carry - are put back. */
+  readonly stations?: readonly StationPose[];
 }
 
 /** The written save that landed: the manifest the zip carries, the
@@ -626,6 +647,8 @@ const tourDocumentSlice = createSlice({
           stations: before.stations.map((s) =>
             s.id === stationId ? { ...s, geo } : s,
           ),
+          touched: { ...before.touched, stations: true },
+          stationsRecorded: true,
         },
         what,
       );
@@ -672,8 +695,17 @@ const tourDocumentSlice = createSlice({
     },
     /** A draft's work put back: one step to undo. */
     restored(state, action: PayloadAction<TourRestore & { what: string }>) {
-      const before = plain(state);
+      const plainBefore = plain(state);
       const work = action.payload;
+      const poses = new Map((work.stations ?? []).map((p) => [p.id, p.geo]));
+      // The frames first: the objects' spots stand in them.
+      const before: TourDocumentState = {
+        ...plainBefore,
+        stations: plainBefore.stations.map((s) => {
+          const geo = poses.get(s.id);
+          return geo === undefined ? s : { ...s, geo };
+        }),
+      };
       let placed = before.placed;
       let deleted = before.deleted;
       for (const object of work.objects) {
@@ -692,10 +724,13 @@ const tourDocumentSlice = createSlice({
         deleted = gone.deleted;
       }
       return edited(
-        before,
+        plainBefore,
         {
           placed,
           deleted,
+          ...(work.stations === undefined
+            ? {}
+            : { stations: before.stations, stationsRecorded: true }),
           ...(work.needsNoGps === undefined
             ? {}
             : { needsNoGps: work.needsNoGps }),

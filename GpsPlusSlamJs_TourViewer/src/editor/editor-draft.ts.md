@@ -22,8 +22,9 @@ editor's own namespace, one tab at a time. Design:
     writes started / all settled (the page's `data-draft` mark).
 - `EditorDraft` - the four `DraftObjectWrites` (`draft-actions.ts`), plus:
   - `saveSettings(settings)` (QR-first M1b-2) - the tour's settings
-    (`EditorTourSettings`: `{ needsNoGps, details? }`, the details since
-    W2 of the tour editor plan) as they stand now: the
+    (`EditorTourSettings`: `{ needsNoGps, details?, stations? }`, the
+    details since W2 of the tour editor plan, the station poses since the
+    tour document milestone's review #1) as they stand now: the
     `settings` record is written while it differs from the file on disk
     (or from a build's value), removed once it does not; whether it landed.
   - `writes(): EditorTourDraft` - those five, and `built` and `landed`
@@ -42,9 +43,11 @@ editor's own namespace, one tab at a time. Design:
     "This tour needs no GPS" turned on." alone, "One of the changes is
     ..." beside notes, M1b-2 milestone review #3; changed details counted
     one per field and named by field - "Changed: the tour's details (name,
-    contact)." - W2), `settingsWhat` (how `restoredLine` names the
-    settings part: the setting, "this tour's details", or "this tour's
-    settings" for both), or null; `superseded` -
+    contact)." - W2; moved stations counted one each and named "the
+    position of a station" / "the positions of N stations"),
+    `settingsWhat` (how `restoredLine` names the settings part: the
+    setting, "this tour's details", "this tour's station positions", or
+    "this tour's settings" for more than one kind), or null; `superseded` -
     `supersededLine(n, "in this browser")` or null. Awaited before the
     tour shows.
   - `restored()` - the session applied the offer (its writes rewrote what
@@ -172,6 +175,12 @@ editor's own namespace, one tab at a time. Design:
   them (`differs`); the builds' values are kept whole (`built`). A record
   whose details do not read (a field that is not a string) is unreadable
   and goes, like any.
+  **The station poses (review #1 of the tour document milestone)** join it
+  the same way: `stations` holds every station's `{ id, geo }` once a
+  station was moved here; a record without them has no opinion about the
+  frames; "differs" compares each named station's pose with the file's
+  (`changedStations`, ids the file does not carry ignored); a pose that does
+  not read (`parseGeoPose`) makes the record unreadable, and it goes.
   **No base, and what that costs** (milestone review #3; the first build of
   this bullet claimed the other value was always one "this browser saw or
   wrote", which does not hold): a file that differs from the record holds

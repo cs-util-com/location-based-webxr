@@ -223,3 +223,27 @@ describe("the Tour Viewer store and the document", () => {
     expect(calls).toEqual(["saveObject a"]);
   });
 });
+
+/**
+ * Why (the r875 milestone review #1): the settings record is what brings
+ * a moved station back after a reload, so a frame's move must write it -
+ * with every station's pose - and a record that never saw a move carries
+ * no opinion about the stations.
+ */
+describe("followDocument, the station poses (review #1)", () => {
+  it("a station move writes the settings record with every station's pose; before any, it carries none", () => {
+    expect(settingsRecord(opened)).toEqual({ needsNoGps: false });
+    const station = opened.stations[0]!;
+    const geo = { ...station.geo, lat: station.geo.lat + 0.0001 };
+    const { after, calls } = writesFor(
+      opened,
+      act.stationMoved({ stationId: station.id, geo, what: "s" }),
+    );
+    expect(settingsRecord(after)).toEqual({
+      needsNoGps: false,
+      stations: after.stations.map(({ id, geo: pose }) => ({ id, geo: pose })),
+    });
+    expect(settingsRecord(after).stations?.[0]?.geo).toEqual(geo);
+    expect(calls.filter((c) => c.startsWith("saveSettings"))).toHaveLength(1);
+  });
+});
