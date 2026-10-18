@@ -33,5 +33,45 @@ module.exports = {
       from: { path: "^src/[^/]+\\.ts$", pathNot: "\\.test\\.ts$" },
       to: { path: "^src/editor/" },
     },
+
+    // The tour a creator edits has ONE copy: the tour document
+    // (`tour-document.ts`, D29-D31). Its rules - the object edits, the
+    // Finish's manifest, the stations' content - are applied by its
+    // reducers, so a page that imported them directly could keep a second
+    // copy that means something else (the split that earned the root rule
+    // "App state lives in the Redux store"). Only the document, the shared
+    // pure modules themselves and tests may import them; every other
+    // importer is named below with its reason.
+    {
+      name: "document-rules-through-tour-document",
+      severity: "error",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "\\.test\\.ts$",
+          "^src/test-support/",
+          // The document and the shared pure modules (each other's peers).
+          "^src/tour-document[^/]*\\.ts$",
+          "^src/(object-edits|finish-rebuild|tour-content|authoring-draft|capture-bake)\\.ts$",
+          // Read-only helpers, permanent: the visitor's photo spots
+          // (`worldCaptureSpots`), the AR placement's world view
+          // (`tourObjectsOf`), the saved file's name (`finishedFileName`).
+          "^src/viewer-placement\\.ts$",
+          "^src/creator-placement\\.ts$",
+          "^src/editor/edit-main\\.ts$",
+          // TEMPORARY - the desktop session's save: the rebuild's I/O
+          // (`rebuildFinishedTour`, `captureSpotsForRebuild`), the edit
+          // validators that shape a payload (`pinTextEdit`, `moveObjectTo`)
+          // and the `AuthoringObject` type - until the save moves into a
+          // tour-document thunk (follow-up of D30).
+          "^src/editor/editor-session\\.ts$",
+          // TEMPORARY - the phone, until it adopts the tour document (the
+          // phone adoption milestone of D30): its object list, draft,
+          // settle and Finish still keep their own copy.
+          "^src/(object-editing|creator-draft|creator-settle|creator-finish)\\.ts$",
+        ],
+      },
+      to: { path: "^src/(object-edits|finish-rebuild|tour-content)\\.ts$" },
+    },
   ],
 };

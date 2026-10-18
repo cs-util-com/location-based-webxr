@@ -115,9 +115,10 @@ different times (a walk's move lands only after the page wrote both files).
   the root dead-code check holds exports to their importers):
   `contentAt(written, view)`, `withFrames(written, frames, placed)`,
   `withNeedsNoGps(manifest, on)`, and the payload and history types
-  (`TourHistoryStep`, `TourRestore`, `TourSaved`). `nextStep(state, which)`
-  and the save status types (`TourSaveStatus`, `TourSaveHolder`) are
-  exported once a page reads them (the desktop editor, D30 step 4).
+  (`TourHistoryStep`, `TourRestore`, `TourSaved`).
+- `nextStep(state, which)` - the step an undo or a redo would go to (the
+  desktop session checks its pictures before dispatching); the save status
+  types `TourSaveStatus` and `TourSaveHolder` (the desktop page's save slot).
 - `isDocumentEdit(action)` - the actions a draft follows (not `saved`, not
   `opened`).
 
