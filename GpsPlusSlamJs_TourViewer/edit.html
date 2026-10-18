@@ -239,15 +239,18 @@
         <p class="lede">
           What visitors see when they open the tour. An empty field removes it.
         </p>
+        <!-- The caps are twice the format's limits: maxlength counts UTF-16
+             units, the format counts characters (code points), and an emoji
+             is two units. The save's check decides (page-contracts.test.ts). -->
         <label class="field" for="details-name">Name</label>
         <input
           id="details-name"
           type="text"
-          maxlength="80"
+          maxlength="160"
           autocomplete="off"
         />
         <label class="field" for="details-description">Description</label>
-        <textarea id="details-description" rows="4" maxlength="2000"></textarea>
+        <textarea id="details-description" rows="4" maxlength="4000"></textarea>
         <fieldset class="covers">
           <legend class="field">Cover photo</legend>
           <div class="cover-list" id="details-covers"></div>
@@ -263,7 +266,7 @@
           inputmode="email"
           autocomplete="off"
           spellcheck="false"
-          maxlength="320"
+          maxlength="640"
           placeholder="you@example.org or https://…"
           aria-describedby="details-contact-sub"
         />

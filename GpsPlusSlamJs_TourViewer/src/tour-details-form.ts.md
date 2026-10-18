@@ -25,7 +25,9 @@ editor (`.dependency-cruiser.cjs`, `viewer-not-to-editor`). Pure.
   `{ ok: true, details }` or `{ ok: false, reason }` in plain words (never
   the format's field names in quotes):
   - the name trimmed, by the framework's `checkTourTitle` (at most
-    `TOUR_TITLE_MAX_CHARS` = 80 characters counted as code points); a name
+    `TOUR_TITLE_MAX_CHARS` = 80 characters counted as code points, not
+    graphemes: a flag or a family emoji built of several code points counts
+    as several, as the format's reader counts it); a name
     equal to `was.title` passes whatever its length (a tour named longer
     elsewhere, M4a review #10);
   - the description and the contact by `checkTourDescription` /

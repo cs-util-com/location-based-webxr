@@ -37,12 +37,19 @@ AR (tour editor plan 2026-10-17-1816, W1).
   browser without the file picker. A span inside the fine print, beside
   its Privacy link (`legal.html#privacy`, W6).
 - `#details-modal` - "Tour details" (W2 of the tour editor plan
-  2026-10-17-1816): `#details-form` with `#details-name` (80 characters,
-  the phone's poster title's limit), `#details-description` (2000),
-  `#details-covers` (the cover radios `edit-main.ts` draws; `#details-
-covers-none` when the tour has no photo to choose), `#details-contact`
-  (320), `#details-error` (`role="alert"`), Cancel and Apply
-  (`src/editor/details-dialog.ts`). Above the toasts (z-index).
+  2026-10-17-1816): `#details-form` with `#details-name` (the format keeps
+  80 characters), `#details-description` (2000), `#details-covers` (the
+  cover radios `edit-main.ts` draws; `#details-covers-none` when the tour
+  has no photo to choose), `#details-contact` (320), `#details-error`
+  (`role="alert"`), Cancel and Apply (`src/editor/details-dialog.ts`). Above the toasts (z-index). Each
+  field's `maxlength` is TWICE the format's limit (160, 4000, 640): the
+  attribute counts UTF-16 units, the format code points, and a character
+  outside the Basic Multilingual Plane (an emoji) is two units - a cap at
+  the format's number stopped 80 emoji at 40 (the r875 milestone review
+  #8). The save's check decides and says why; `src/page-contracts.test.ts`
+  holds the caps. The phone's `#tour-name-input` (`index.html`) keeps 80:
+  the phone writes that field's value without the format's check, so its
+  cap is the only bound there until the phone adopts the details rule.
 - `#done-modal` - "Done editing" (W2, D18, D19; `src/editor/done-dialog.ts`):
   `#done-where`, the host picker `#done-host` (options drawn by
   `edit-main.ts`) with `#done-update`, `#done-public`, `#done-drive-tip`
