@@ -12,7 +12,6 @@
 
 import {
   createEmptyTourManifest,
-  type TourCaptureSpots,
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { CreatorCodes } from "./creator-codes.js";
@@ -26,6 +25,7 @@ import {
   finishedFileName,
   pendingAfterRebuild,
   rebuildFinishedTour,
+  type RebuildPhotoSpots,
 } from "./finish-rebuild.js";
 import { FINISH_LABELS, finishReadiness } from "./qr-author-mode.js";
 import { authoringFinished } from "./tour-authoring-actions.js";
@@ -135,7 +135,7 @@ export function wireCreatorFinish(deps: {
   function captureSpotsForFinish(
     current: TourSession,
     manifest: TourManifest,
-  ): Promise<{ spots?: TourCaptureSpots; notPlaced?: string }> {
+  ): Promise<RebuildPhotoSpots> {
     return captureSpotsForRebuild(current, manifest, {
       shouldContinue: () => ctx.session === current,
       onChunk: (done, total) => {
@@ -244,6 +244,9 @@ export function wireCreatorFinish(deps: {
           title: deps.tourTitle?.() ?? null,
           ...(photos.spots === undefined ? {} : { captureSpots: photos.spots }),
           keepScan: dom.keepScanInput.checked,
+          // A walk that places nothing is left out too (the M4b milestone
+          // review #3: S-D10's default, also without spots).
+          walkPlacesNothing: photos.placesNothing === true,
           previous,
           shouldContinue: () => ctx.session === current,
           onProgress: (done, total) => {

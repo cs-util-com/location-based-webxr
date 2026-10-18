@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { MATURE_GPS_EXTENT_M } from "gps-plus-slam-app-framework/state/alignment-maturity";
@@ -13,6 +12,10 @@ import {
   posesOfCaptureSpots,
   type CaptureBakeSource,
 } from "./capture-bake";
+import {
+  SAMPLE_PHOTOS,
+  sampleRecordingBytes,
+} from "./test-support/sample-recording";
 
 /**
  * Why these tests matter (scan-pass plan S1, S-D11): the creator's Finish
@@ -23,20 +26,10 @@ import {
  * whenever the live join would have declined.
  */
 
-const FIXTURE = new URL(
-  "../../GpsPlusSlamJs_PhysicsDemo/playwright-tests/fixtures/sample-recording.zip",
-  import.meta.url,
-);
-
 async function sampleSource(
   overrides: Partial<CaptureBakeSource> = {},
 ): Promise<CaptureBakeSource> {
-  if (!existsSync(FIXTURE)) {
-    throw new Error(
-      "capture-bake: the shared sample-recording.zip moved - update the fixture path",
-    );
-  }
-  const bytes = new Uint8Array(readFileSync(FIXTURE));
+  const bytes = sampleRecordingBytes();
   const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
   const entries = (await readZipEntries(bytes))
     .filter((e) => !e.directory)
@@ -138,9 +131,61 @@ describe("bakeCaptureSpots over the real sample recording", () => {
       ...source,
       entries: source.entries.filter((e) => !e.isImage),
     });
+    // The walk then places nothing (the M4b milestone review #3): a lean
+    // Finish may leave it out, and the editor may move it out.
     expect(bake).toEqual({
       kind: "declined",
       reason: "no recorded photo file in this tour",
+      placesNothing: true,
+    });
+  });
+
+  it("places nothing for a walk on which no photo was taken, whatever its GPS came to", async () => {
+    // Why (the M4b milestone review #3): a walk recorded without photos
+    // was kept in every lean Finish and could never be moved out of the
+    // editor's tour, though it places nothing for any visitor.
+    const source = await sampleSource();
+    const actions = (await source.loadRecordingActions())!;
+    const without = actions.filter((a) => a.type !== "gpsData/add2dImage");
+    // The filter took something away: a no-op would prove nothing.
+    expect(without.length).toBeLessThan(actions.length);
+    const noFixes = without.filter((a) => a.type !== "gpsData/recordGpsEvent");
+    expect(noFixes.length).toBeLessThan(without.length);
+    // GPS that solves, and GPS with no fix at all: no photo either way.
+    for (const loaded of [without, noFixes]) {
+      const bake = await bakeCaptureSpots({
+        ...source,
+        loadRecordingActions: () => Promise.resolve(loaded),
+      });
+      expect(bake).toEqual({
+        kind: "declined",
+        reason: "the recording contains no captured photos",
+        placesNothing: true,
+      });
+    }
+  });
+
+  it("does not count a photo file the recording never placed: a walk whose only photo in the tour predates its GPS zero places nothing", async () => {
+    // The fixture's first photo precedes the GPS zero, so the recording
+    // never gives it a spot (`odometryPath` does not carry it), live or
+    // baked: with only its file in the tour, the walk places nothing.
+    const source = await sampleSource();
+    const full = await bakeCaptureSpots(source);
+    if (full.kind !== "baked") throw new Error("expected a bake");
+    const unplaced = SAMPLE_PHOTOS.filter(
+      (name) => !full.spots.captures.some((c) => c.image === name),
+    );
+    expect(unplaced).toHaveLength(1);
+    const bake = await bakeCaptureSpots({
+      ...source,
+      entries: source.entries.filter(
+        (e) => !e.isImage || unplaced.includes(e.filename),
+      ),
+    });
+    expect(bake).toEqual({
+      kind: "declined",
+      reason: "no recorded photo file in this tour",
+      placesNothing: true,
     });
   });
 });

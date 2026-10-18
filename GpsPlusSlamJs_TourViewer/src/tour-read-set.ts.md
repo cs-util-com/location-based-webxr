@@ -30,6 +30,11 @@ out too.
   (timestamped GPS points)) that are not in `visitorEntryNames`. What a
   lean Finish removes. `recorder-walk-folders.test.ts` reads the
   Recorder's zip contributors and fails when one is added undecided.
+- `recordingEntryNames(entryNames) -> string[]` - the whole recording, in
+  archive order: every entry a recording writes, the frames a visitor sees
+  included; none without an action stream. `scanEntryNames` is this minus
+  `visitorEntryNames`. The editor's "Move the walk out" puts it into the
+  walk's own file (the M4b milestone review #8).
 - `entriesForVisitor(entries, scan) -> entries` - every entry except the
   walk, in archive order. The gallery and the photo ring use it.
 - `stopsVisitorDownload(mode, scan, baked) -> boolean` - true for a
@@ -71,6 +76,7 @@ the ring's images without baked spots, a wrapped tour, names the archive
 lacks; the walk of a baked tour (legacy `frames/` included), files a
 recording never writes (README, credits, other folders, a non-frame image)
 never in it, a tour without baked spots keeping its frames, no recording
-no walk; the visitor filter and when the download stops (visitor mode
+no walk; the whole recording (frames included, none without actions,
+always holding the walk); the visitor filter and when the download stops (visitor mode
 only, only with a walk). The Finish's use is in `creator-finish.test.ts`
 ("the published copy carries only what visitors need", a README kept).

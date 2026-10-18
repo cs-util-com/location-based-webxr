@@ -10,7 +10,6 @@
 
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
-  TourCaptureSpots,
   TourManifest,
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -30,8 +29,9 @@ import {
   pendingAfterRebuild,
   rebuildFinishedTour,
   type FinishedTour,
+  type RebuildPhotoSpots,
 } from "../finish-rebuild.js";
-import { scanEntryNames } from "../tour-read-set.js";
+import { recordingEntryNames, scanEntryNames } from "../tour-read-set.js";
 import { objectContentKey } from "../authoring-draft.js";
 import { recordDelete, type DraftObjectWrites } from "../draft-actions.js";
 import {
@@ -129,17 +129,38 @@ export function walkFileName(tourName: string): string {
 /** Said when "Move the walk out" finds no walk in the newest bytes. */
 const NO_WALK = "This tour carries no walk recording to move out.";
 
-/** Said when the recorded photos are still placed by the walk: moving it
- *  out would leave them nowhere (`finish-rebuild.ts`, S1 milestone review
- *  #2). */
+/** Said when the recorded photos the tour carries are still placed by the
+ *  walk: moving it out would leave them nowhere (`finish-rebuild.ts`, S1
+ *  milestone review #2). A walk that names no photo of the tour places
+ *  nothing and moves out (the M4b milestone review #3). */
 function walkStaysReason(notPlaced: string | undefined): string {
-  return `The walk cannot be moved out: the recorded photos are placed by it, and they could not be fixed in place without it${notPlaced === undefined ? "" : ` (${notPlaced})`}. The tour keeps its walk.`;
+  return `The walk cannot be moved out: this tour's recorded photos can only be placed with it, and they could not be fixed in place without it${notPlaced === undefined ? "" : ` (${notPlaced})`}. The tour keeps its walk.`;
+}
+
+/** The note inside a moved-out walk's zip, at its root: which tour it came
+ *  from (the M4b milestone review #8). */
+export const WALK_NOTE = "about-this-walk.txt";
+
+function walkNoteText(tour: {
+  readonly fileName: string;
+  readonly title: string | undefined;
+  readonly seriesId: string | null;
+}): string {
+  return [
+    "This is the walk recording of a tour: the GPS track of the walk, the depth the phone measured and the recorded photos.",
+    `It was moved out of the tour file ${tour.fileName}${tour.title === undefined ? "" : ` (the tour "${tour.title}")`} by the tour editor, so that the tour file people open does not carry it.`,
+    ...(tour.seriesId === null ? [] : [`The tour's series: ${tour.seriesId}.`]),
+    "Keep this file to yourself: the tour does not need it.",
+    "",
+  ].join("\n");
 }
 
 /**
  * A built move of the walk out of the tour (W2, D19): the walk's own zip
- * (every walk entry of the newest bytes, byte for byte, under its own
- * path) and the tour without it, with the pending edits. Nothing of the
+ * (the whole recording of the newest bytes - the frames the tour keeps for
+ * its visitors included - byte for byte, under its own paths, and a note
+ * naming the tour, `WALK_NOTE`) and the tour without the walk, with the
+ * pending edits. Nothing of the
  * session changes until `commit()`: the page writes the walk's zip first,
  * then the tour, and commits only when both landed - a commit before that
  * would let the next save rebuild from walk-free bytes the creator never
@@ -349,8 +370,9 @@ export interface EditorSession {
    *  once it was moved out, or when the last save left it out. */
   walkEntries(): Promise<string[]>;
   /** Build the move of the walk out (`WalkMove`), queued with the saves;
-   *  refused, in words, when there is no walk or the recorded photos
-   *  still need it. Bringing a walk back is a later feature. */
+   *  refused, in words, when there is no walk or the recorded photos the
+   *  tour carries still need it (a walk that places nothing moves out).
+   *  Bringing a walk back is a later feature. */
   moveWalkOut(): Promise<WalkMove | EditorRefusal>;
 }
 
@@ -392,8 +414,7 @@ export function createEditorSession(input: {
     null;
   /** The photo spots, decided once per open (a decline is not re-baked on
    *  every save, E1 review #11). */
-  let spots: Promise<{ spots?: TourCaptureSpots; notPlaced?: string }> | null =
-    null;
+  let spots: Promise<RebuildPhotoSpots> | null = null;
   /** The saved file's name: the opened one's, made safe (the Finish's rule). */
   const savedName = finishedFileName(session);
   /** The name the page shows when the tour has no title. */
@@ -903,25 +924,39 @@ export function createEditorSession(input: {
    *  it may be read from. */
   async function photoSpots(
     manifestNow: TourManifest,
-  ): Promise<{ spots?: TourCaptureSpots; notPlaced?: string }> {
+  ): Promise<RebuildPhotoSpots> {
     await Promise.all(pictureReads);
     spots ??= captureSpotsForRebuild(session, manifestNow);
     return spots;
   }
 
+  /** `whole` is the opened file as already read, when the caller read it
+   *  (the walk's move): the rebuild then does not read it again (the M4b
+   *  milestone review #11 - a listed tour's whole-file check ran twice). */
   async function rebuild(
     snap: ReturnType<typeof snapshot>,
-    photos: { spots?: TourCaptureSpots },
+    photos: RebuildPhotoSpots,
     keepScan: boolean,
+    whole?: Blob,
   ): Promise<FinishedTour> {
     const finished = await rebuildFinishedTour({
-      tour: session,
+      tour:
+        whole === undefined
+          ? session
+          : {
+              entries: session.entries,
+              manifestWrap: session.manifestWrap,
+              integrity: session.integrity,
+              budget: session.budget,
+              readWholeArchive: () => Promise.resolve(whole),
+            },
       manifest: snap.manifestNow,
       placed: snap.placedNow,
       deleted: snap.deletedNow,
       levels: [],
       keepScan,
       ...(photos.spots === undefined ? {} : { captureSpots: photos.spots }),
+      walkPlacesNothing: photos.placesNothing === true,
       previous,
     });
     if (finished === null) throw new Error("the save was stopped");
@@ -983,27 +1018,45 @@ export function createEditorSession(input: {
     }
     const photos = await photoSpots(snap.manifestNow);
     // Without baked spots the walk is what places the recorded photos: the
-    // rebuild would keep it (`finish-rebuild.ts`), so the move refuses.
-    if (photos.spots === undefined) {
+    // rebuild would keep it (`finish-rebuild.ts`), so the move refuses -
+    // unless the walk places nothing (the M4b milestone review #3).
+    if (photos.spots === undefined && photos.placesNothing !== true) {
       return { kind: "refused", reason: walkStaysReason(photos.notPlaced) };
     }
-    // The walk as the moved-out tour sees it: with its photos' spots, a
-    // recorded frame a spot shows stays in the tour.
-    const walk = new Set(
-      scanEntryNames(
-        names,
-        { ...snap.manifestNow, captureSpots: photos.spots },
-        wrap,
-      ),
-    );
+    // The walk's own file is the whole recording (the M4b milestone review
+    // #8): the frames the tour keeps for its visitors too, so it is a
+    // complete recording on its own.
+    const recording = new Set(recordingEntryNames(names));
     const source = base === null ? await session.readWholeArchive() : base.blob;
-    const walkBlob = await rebuildZipWithEntries(source, [], {
-      remove: names.filter((name) => !walk.has(name)),
-      // The opened file is untrusted: read under the session's budget, as
-      // the rebuild below reads it (K0 milestone review R1).
-      ...(base === null ? { budget: session.budget } : {}),
-    });
-    const finished = await rebuild(snap, photos, false);
+    const walkBlob = await rebuildZipWithEntries(
+      source,
+      [
+        {
+          path: WALK_NOTE,
+          data: walkNoteText({
+            fileName: savedName,
+            title: snap.manifestNow.title,
+            seriesId:
+              session.integrity.kind === "listed"
+                ? session.integrity.manifest.seriesId
+                : null,
+          }),
+        },
+      ],
+      {
+        remove: names.filter((name) => !recording.has(name)),
+        // The opened file is untrusted: read under the session's budget, as
+        // the rebuild below reads it (K0 milestone review R1).
+        ...(base === null ? { budget: session.budget } : {}),
+      },
+    );
+    // From the same bytes, read once (review #11).
+    const finished = await rebuild(
+      snap,
+      photos,
+      false,
+      base === null ? source : undefined,
+    );
     return {
       kind: "ready",
       walk: { blob: walkBlob, filename: walkFileName(savedName) },

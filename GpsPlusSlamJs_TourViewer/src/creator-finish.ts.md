@@ -157,7 +157,10 @@ module's sidecar states them as its contract.
   **Never without baked spots** (S1 milestone review #2): a recording the
   bake declined or could not read keeps its walk, and the ready line says
   why (`FINISH_LABELS.photosNotPlaced`); the walk is then the only way a
-  viewer can place the photos. The tick is cleared with the Finish step
+  viewer can place the photos - unless the walk places nothing (it names
+  no recorded photo the tour carries, `placesNothing`, passed on as
+  `walkPlacesNothing`): it is then left out like any walk, with no word
+  about photos (the M4b milestone review #3). The tick is cleared with the Finish step
   when the tour closes (review #9).
   The ready line then says so (`FINISH_LABELS.scanLeftOut`), because the
   hosted file may be the creator's only copy of the walk.

@@ -2667,8 +2667,12 @@ test("Done saves what is pending, says where it is and how to update the tour, a
   await page.locator("#done-move").click();
   const walkFile = await download;
   expect(walkFile.suggestedFilename()).toBe("wrapped-walk.zip");
+  // The whole recording - the frame the tour keeps for its visitors too -
+  // and the note naming the tour (the M4b milestone review #8).
   expect(await downloadedNames(walkFile)).toEqual([
+    "about-this-walk.txt",
     "mytour/actions/000001.json",
+    "mytour/images/frame-000002.png",
     "mytour/session.json",
   ]);
   await expect(page.locator("#done-move-status")).toContainText(

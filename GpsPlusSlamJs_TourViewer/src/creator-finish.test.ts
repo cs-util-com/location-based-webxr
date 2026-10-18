@@ -1067,19 +1067,23 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
   // A file of the creator's own that no viewer reads: never the walk.
   const README = `${WRAP}README.txt`;
 
-  async function wireRecordingTour(keepScan: boolean, odomCoordVersion = 5) {
+  async function wireRecordingTour(
+    keepScan: boolean,
+    odomCoordVersion = 5,
+    walk: readonly string[] = WALK,
+  ) {
     const bytes = new Uint8Array(readFileSync(FIXTURE));
     const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
     const wired = await wireFinishable({
       hosted: [],
       placed: [pin("new-one")],
-      hostedContent: [...WALK, README].map((path) => ({ path, data: "x" })),
+      hostedContent: [...walk, README].map((path) => ({ path, data: "x" })),
       sessionExtras: {
         hasRecording: true,
         entries: [
           { filename: `${WRAP}tour.json` },
           { filename: `${WRAP}qr/${LEVEL_ID}.json` },
-          ...[...WALK, README].map((filename) => ({
+          ...[...walk, README].map((filename) => ({
             filename,
             isImage: filename.endsWith(".jpg"),
           })),
@@ -1131,6 +1135,28 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     expect(dom.finishStatus.textContent).toContain(
       "The recorded photos could not be placed",
     );
+  });
+
+  it("leaves out a walk that places nothing - its photos are not in the tour - and says nothing of photos", async () => {
+    // Why (the M4b milestone review #3): such a walk was kept with "the
+    // recorded photos could not be placed", about photos the tour does not
+    // carry; it places nothing for any visitor, so S-D10's default holds.
+    const walk = ["session.json", "actions/000001.json"];
+    const { ctx, dom } = await wireRecordingTour(false, 5, walk);
+    expect(ctx.finishError).toBeNull();
+    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
+    for (const name of walk) expect(names).not.toContain(name);
+    expect(names).toContain(README);
+    expect(dom.finishStatus.textContent).toContain(
+      "leaves out the walk recording",
+    );
+    expect(dom.finishStatus.textContent).not.toContain(
+      "The recorded photos could not be placed",
+    );
+    // Kept when asked, as any walk.
+    const kept = await wireRecordingTour(true, 5, walk);
+    const keptNames = await entryNamesOf(kept.ctx.rebuiltZip!.blob);
+    for (const name of walk) expect(keptNames).toContain(name);
   });
 
   it("forgets the creator's tick with the tour it was given for", async () => {

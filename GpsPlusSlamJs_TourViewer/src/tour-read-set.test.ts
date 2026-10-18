@@ -6,6 +6,7 @@ import {
 
 import {
   entriesForVisitor,
+  recordingEntryNames,
   scanEntryNames,
   stopsVisitorDownload,
   visitorEntryNames,
@@ -208,6 +209,46 @@ describe("scanEntryNames", () => {
     expect(
       scanEntryNames(["tour.json", "qr/abc123.json"], manifest(), ""),
     ).toEqual([]);
+  });
+});
+
+describe("recordingEntryNames", () => {
+  // Why (the M4b milestone review #8): the editor's "Move the walk out"
+  // puts the walk into a file of its own, and that file must be the whole
+  // recording - also the frames a baked tour keeps for its visitors, which
+  // `scanEntryNames` rightly leaves in the tour. Without them the moved-out
+  // walk is a recording with photos missing.
+  it("is every entry the recording wrote, the frames a visitor sees included, in archive order", () => {
+    expect(
+      recordingEntryNames([
+        "tour.json",
+        ...RECORDING,
+        "README.txt",
+        "sparse/0/points3D.txt",
+        "refPoints/a.json",
+        "content/f1.jpg",
+      ]),
+    ).toEqual([...RECORDING, "sparse/0/points3D.txt", "refPoints/a.json"]);
+  });
+
+  it("is empty without an action stream", () => {
+    expect(
+      recordingEntryNames([
+        "tour.json",
+        "session.json",
+        "images/frame-000001.jpg",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("holds every entry scanEntryNames names, for any manifest", () => {
+    const names = ["tour.json", ...RECORDING, "frames/frame-000009.jpg"];
+    const all = recordingEntryNames(names);
+    for (const m of [manifest(), manifest({ objects: [photo] })]) {
+      for (const name of scanEntryNames(names, m, "")) {
+        expect(all).toContain(name);
+      }
+    }
   });
 });
 

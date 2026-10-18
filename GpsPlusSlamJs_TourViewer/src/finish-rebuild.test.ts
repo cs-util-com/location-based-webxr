@@ -12,7 +12,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ArchiveLimitError,
   DecompressionBudget,
+  loadActionsFromZip,
   packFilesAsZip,
+  readZipEntries,
 } from "gps-plus-slam-app-framework/storage";
 import {
   readStoredCentralDirectory,
@@ -39,6 +41,10 @@ import {
   buildSignedTourFixture,
   generateFixtureKey,
 } from "./test-support/tour-signing-fixture.js";
+import {
+  SAMPLE_PHOTOS,
+  sampleRecordingBytes,
+} from "./test-support/sample-recording.js";
 
 const WRAP = "mytour/";
 const LEVEL_ID = "abc123";
@@ -314,6 +320,34 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
     await tour.close();
   });
 
+  it("leaves out a walk that places nothing also without spots, and keeps it when asked", async () => {
+    // Why (the M4b milestone review #3): a walk whose recording names no
+    // photo the tour carries places nothing for any visitor - the phone's
+    // lean Finish leaves it out by default (S-D10) like any walk.
+    const walk = [`${WRAP}session.json`, `${WRAP}actions/000001.json`];
+    const tour = await plainTour([], {
+      "session.json": "{}",
+      "actions/000001.json": "[]",
+    });
+    const run = async (keepScan: boolean) => {
+      const r = await rebuildFinishedTour({
+        ...NO_EDITS,
+        tour,
+        manifest: manifestOf([]),
+        keepScan,
+        walkPlacesNothing: true,
+      });
+      return { left: r!.scanLeftOut, names: await namesOf(r!.blob) };
+    };
+    const lean = await run(false);
+    expect([...lean.left].sort()).toEqual([...walk].sort());
+    for (const name of walk) expect(lean.names).not.toContain(name);
+    const kept = await run(true);
+    expect(kept.left).toEqual([]);
+    for (const name of walk) expect(kept.names).toContain(name);
+    await tour.close();
+  });
+
   it("drops a signed tour's signature and continues its list unsigned", async () => {
     const fixture = await buildSignedTourFixture(
       { "tour.json": serializeTourManifest(manifestOf([])) },
@@ -531,6 +565,27 @@ describe("captureSpotsForRebuild (M6 E0b: the photos' spots for a save)", () => 
       manifestOf([]),
     );
     expect(out).toEqual({ notPlaced: "no recording in this tour" });
+  });
+
+  it("says a walk that names no photo of the tour places nothing, and gives no reason a Finish would show", async () => {
+    // Why (the M4b milestone review #3): such a walk was kept by every
+    // lean Finish with "the recorded photos could not be placed ... so the
+    // walk recording stays" - about photos that do not exist.
+    const bytes = sampleRecordingBytes();
+    const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
+    const out = await captureSpotsForRebuild(
+      {
+        hasRecording: true,
+        // The recording's photos are not in this tour.
+        entries: (await readZipEntries(bytes))
+          .filter((e) => !e.directory && !SAMPLE_PHOTOS.includes(e.filename))
+          .map((e) => ({ filename: e.filename, isImage: false })),
+        loadSessionMeta: () => Promise.resolve({ odomCoordVersion: 5 }),
+        loadRecordingActions: () => Promise.resolve(actions),
+      },
+      manifestOf([]),
+    );
+    expect(out).toEqual({ placesNothing: true });
   });
 });
 

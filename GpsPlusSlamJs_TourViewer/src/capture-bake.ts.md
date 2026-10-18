@@ -23,7 +23,14 @@ spots.
   - `options.onChunk(done, total)`: the replay's progress.
   - `options.extentOf(state)`: the pick tracker's GPS-extent measure
     (`createCapturePickTracker`'s own option); production leaves it unset.
-  - Result: `{ kind: "baked", spots }` or `{ kind: "declined", reason }`.
+  - Result: `{ kind: "baked", spots }` or `{ kind: "declined", reason,
+placesNothing? }`. `placesNothing: true` when the replayed walk names
+    no recorded photo the tour carries (no photo was taken, or none of
+    their files is in the zip): it places nothing, live or baked, whatever
+    its GPS came to, so a lean Finish may leave it out and the editor may
+    move it out (the M4b milestone review #3). Absent for a decline before
+    the replay (unknown) and for photos the tour carries that the solve
+    could not place.
 - `posesOfCaptureSpots(spots) -> CaptureWorldPose[]`: the spots as the
   join's poses for the viewer's one placing path (`alt` becomes
   `altitude`); a spot without a rotation is left out.
@@ -32,9 +39,13 @@ spots.
 
 - **Every decline is the live join's own** (`preflightCaptureJoin`: no
   recording, era, segmenting actions; `assessReplayedJoin`: no GPS, too
-  few fixes, an unsolved or malformed alignment, no captures), plus one:
-  no photo file left. A declined bake writes nothing, so the tour keeps
-  the live join, exactly as before S1.
+  few fixes, an unsolved or malformed alignment, no captures), plus two:
+  no photo file left ("no recorded photo file in this tour", checked
+  right after the replay, before the GPS verdict, with `placesNothing`),
+  and photo files none of which could be placed ("none of the recorded
+  photos could be placed"; no unit test reaches it - the sample's solve
+  places every photo whose file it names). A declined bake writes nothing,
+  so the tour keeps the live join, exactly as before S1.
 - **Only photos the zip carries as images are baked**: the live join's
   decode skips a missing frame, and a spot naming no file would show
   nothing.
@@ -66,7 +77,10 @@ PhysicsDemo fixture): five spots of six photos that the visitor's reader
 accepts; each photo through ITS pick (with every moment declared settled
 the spots move off the end-of-walk join, which a bake ignoring the picks
 cannot do - the sample walk alone never settles and could not tell them
-apart); a missing photo file dropped and none left declined; the live
+apart); a missing photo file dropped and none left declined as placing
+nothing, also when the only file left is the photo the recording never
+placed; a walk with no photo taken placing nothing, with GPS that solves
+and with no fix at all; the live
 join's declines (no recording, an old era, a stopped replay); and the pose
 conversion. The Finish's use is pinned in `creator-finish.test.ts`, the
 viewer's in `playwright-tests/ar-mode.spec.js` (a baked tour without a

@@ -112,13 +112,19 @@ scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
     (the last save's, else the opened file's; `scanEntryNames`): none once
     it was moved out, or when a save left it out.
   - `moveWalkOut()` - "Move the walk out" (W2, D19), queued with the
-    saves: a `WalkMove` with the walk's own zip (every walk entry of the
-    newest bytes, byte for byte, under its own path; named by
+    saves: a `WalkMove` with the walk's own zip (the whole recording of
+    the newest bytes, `recordingEntryNames` - the frames the tour keeps
+    for its visitors included, so it is a complete recording on its own -
+    byte for byte, under its own paths, plus `WALK_NOTE`
+    (`about-this-walk.txt`) naming the tour's file, its name and, for a
+    listed tour, its series; the M4b milestone review #8; named by
     `walkFileName`, `castle.zip` -> `castle-walk.zip`) and the tour
-    rebuilt without it (`keepScan: false`, with the pending edits and the
-    photo spots), or a refusal in words: `NO_WALK`, or the recorded
-    photos still placed by the walk (no baked spots - they would be left
-    nowhere, `finish-rebuild.ts`). **Nothing changes until
+    rebuilt without the walk (`keepScan: false`, with the pending edits
+    and the photo spots, from the same bytes: the opened file is read
+    once, review #11), or a refusal in words: `NO_WALK`, or the recorded
+    photos the tour carries still placed by the walk (no baked spots -
+    they would be left nowhere, `finish-rebuild.ts`). A walk that places
+    nothing (`placesNothing`) moves out (review #3). **Nothing changes until
     `commit()`**: the page writes the walk's zip first, then the tour,
     and commits only when both landed; `commit()` then makes the
     walk-free bytes `previous` (the series version advances as in any
@@ -127,7 +133,7 @@ scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
     another save landed since the move was built (the page holds saves
     while a move runs). Bringing a moved-out walk back into a tour is a
     later feature; nothing reads the walk's zip yet.
-- `walkFileName`; the module-private `WalkMove` and `NO_WALK` are read through `moveWalkOut()`.
+- `walkFileName`, `WALK_NOTE`; the module-private `WalkMove` and `NO_WALK` are read through `moveWalkOut()`.
 - `EditorSession`, `EditorSave`, `EditorSessionDraft`, `TOUR_NAME_MAX_CHARS`; the module-private `CoverChoice` (an image id and its zip entry) and `UndoOutcome` (`undo()` / `redo()`'s result) are read through the session's methods.
 
 ## Invariants & assumptions
@@ -187,10 +193,14 @@ the rest; a long stored name not blocking other edits; the walk-through
 with the real draft (cover chosen, saved, its photo deleted, saved,
 reopened: no offer, M4a review #1); a deleted photo's picture read from
 the session's last bytes when the page's copy does not read (#5). Moving
-the walk out (W2, D19): the walk's zip carrying every walk entry byte for
-byte and the tour none, also after the next save with `keepScan`; nothing
-changed before `commit()`; refused while the photos need the walk and
-for a tour without one; the walk's file name. Undo and redo (W2): every edit kind undone
+the walk out (W2, D19): the walk's zip carrying the whole recording byte
+for byte (the baked frame too) and the note, and the tour none of the
+walk, also after the next save with `keepScan`; nothing changed before
+`commit()`; `commit()` refused once another save landed; refused while
+the photos need the walk and for a tour without one; the note naming a
+listed tour's file, name and series; the opened file read once; a walk
+that places nothing (the real sample recording without its photos) moved
+out, and left out by a lean save with no `notPlaced`; the walk's file name. Undo and redo (W2): every edit kind undone
 newest first and redone; a new edit dropping the redo; the revision; an
 undo after a save being a change the next save writes; a saved photo
 delete coming back with its picture, and refused in words (the step kept)

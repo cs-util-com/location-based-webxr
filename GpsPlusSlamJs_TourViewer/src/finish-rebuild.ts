@@ -84,6 +84,9 @@ export interface FinishInput {
   readonly captureSpots?: TourCaptureSpots;
   /** Keep the entries visitors never read (the walk, S-D10). */
   readonly keepScan: boolean;
+  /** The walk places nothing (`captureSpotsForRebuild`'s
+   *  `placesNothing`): without spots it may still be left out. */
+  readonly walkPlacesNothing?: boolean;
   /** The last rebuild of this open tour; null or absent for the first,
    *  which reads the tour and inflates it under its budget. */
   readonly previous?: PreviousFinish | null;
@@ -189,9 +192,12 @@ export async function rebuildFinishedTour(
   // creator keeps the walk (S-D10): the walk, its unbaked frames, depth.
   // Never without baked spots (S1 milestone review #2): the walk is
   // then the only way a viewer can place the photos, and the hosted
-  // file may be the creator's only copy of it.
+  // file may be the creator's only copy of it - unless the walk places
+  // nothing (it names no photo of the tour, the M4b milestone review #3).
+  const walkNeeded =
+    written.captureSpots === undefined && input.walkPlacesNothing !== true;
   const scanLeftOut =
-    input.keepScan || written.captureSpots === undefined
+    input.keepScan || walkNeeded
       ? []
       : scanEntryNames(entryNames, written, wrap);
   const removed = [
@@ -309,28 +315,41 @@ export function pendingAfterRebuild<P extends { readonly object: TourObject }>(
 /** The tour as the photo-spot rule reads it. */
 type CaptureSpotTour = CaptureBakeSource & { readonly hasRecording: boolean };
 
+/** The photos' spots for a save: the spots, or why the photos stay with
+ *  the walk (`notPlaced`), or that the walk places nothing at all. */
+export interface RebuildPhotoSpots {
+  readonly spots?: TourCaptureSpots;
+  readonly notPlaced?: string;
+  /** The walk names no photo the tour carries (`CaptureBake`): a lean
+   *  save may leave it out without spots (`walkPlacesNothing`). */
+  readonly placesNothing?: true;
+}
+
 /**
  * The recorded photos' spots for a save (scan-pass plan S1, S-D11; M6
  * E0b): the tour's own when it carries them, else baked from its
  * recording, else none - the tour then keeps the visitor's live join, and
- * `notPlaced` says why. A recording that cannot be read or joined never
- * fails the save; a cap's refusal and a failed integrity check do, as
- * every read's does. A decline is the caller's to keep: re-baking it on
- * every save would replay the whole recording each time (E2).
+ * `notPlaced` says why, unless the walk places nothing at all
+ * (`placesNothing`, no reason: there are no photos to speak of). A
+ * recording that cannot be read or joined never fails the save; a cap's
+ * refusal and a failed integrity check do, as every read's does. A
+ * decline is the caller's to keep: re-baking it on every save would replay
+ * the whole recording each time (E2).
  */
 export async function captureSpotsForRebuild(
   tour: CaptureSpotTour,
   manifest: TourManifest,
   options: CaptureBakeOptions = {},
-): Promise<{ spots?: TourCaptureSpots; notPlaced?: string }> {
+): Promise<RebuildPhotoSpots> {
   if (manifest.captureSpots !== undefined) {
     return { spots: manifest.captureSpots };
   }
   if (!tour.hasRecording) return {};
   try {
     const bake = await bakeCaptureSpots(tour, options);
-    return bake.kind === "baked"
-      ? { spots: bake.spots }
+    if (bake.kind === "baked") return { spots: bake.spots };
+    return bake.placesNothing === true
+      ? { placesNothing: true }
       : { notPlaced: bake.reason };
   } catch (err) {
     if (err instanceof ArchiveLimitError) throw err;

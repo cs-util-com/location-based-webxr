@@ -8,7 +8,10 @@
  * zips, read back with the viewer's opener.
  */
 import { beforeAll, describe, expect, it } from "vitest";
-import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
+import {
+  packFilesAsZip,
+  rebuildZipWithEntries,
+} from "gps-plus-slam-app-framework/storage";
 import {
   readStoredCentralDirectory,
   readStoredEntryBytes,
@@ -31,9 +34,16 @@ import {
   createEditorSession,
   NOT_IN_TOUR,
   TOUR_NAME_MAX_CHARS,
+  WALK_NOTE,
   walkFileName,
+  type EditorSession,
   type EditorSessionDraft,
 } from "./editor-session.js";
+import { buildListedTourFixture } from "../test-support/tour-signing-fixture.js";
+import {
+  SAMPLE_PHOTOS,
+  sampleRecordingBytes,
+} from "../test-support/sample-recording.js";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import type { DetailsForm } from "./details-dialog.js";
 import { createEditorDraft, type EditorTourSettings } from "./editor-draft.js";
@@ -1340,7 +1350,7 @@ describe("moving the walk out (W2, D19)", () => {
     expect(walkFileName("castle")).toBe("castle-walk.zip");
   });
 
-  it("puts every walk entry, byte for byte, into the walk's zip, and the tour carries none of them, also after the next save", async () => {
+  it("puts the whole recording, byte for byte, into the walk's zip, and the tour carries none of the walk, also after the next save", async () => {
     const { session, manifest, bytes } = await walkTour();
     const editor = createEditorSession({
       session,
@@ -1352,9 +1362,15 @@ describe("moving the walk out (W2, D19)", () => {
     const move = await editor.moveWalkOut();
     if (move.kind !== "ready") throw new Error(move.reason);
     expect(move.walk.filename).toBe("tour-walk.zip");
-    expect(await namesIn(move.walk.blob)).toEqual(walkNames);
+    // The whole recording (the M4b milestone review #8): the frame the
+    // baked spot shows too, which the tour keeps for its visitors - and a
+    // note naming the tour it came from.
+    const recording = [...walkNames, "images/frame-000002.jpg"].sort();
+    expect(await namesIn(move.walk.blob)).toEqual(
+      [...recording, WALK_NOTE].sort(),
+    );
     const walkBytes = new Uint8Array(await move.walk.blob.arrayBuffer());
-    for (const name of walkNames) {
+    for (const name of recording) {
       // Read, never undefined on both sides: an equality of two misses
       // would prove nothing.
       expect(readStoredEntryBytes(walkBytes, name)).toBeDefined();
@@ -1430,5 +1446,134 @@ describe("moving the walk out (W2, D19)", () => {
     const nothing = await none.moveWalkOut();
     expect(nothing.kind === "refused" && nothing.reason).toMatch(/no walk/);
     await plain.session.close();
+  });
+
+  it("refuses to commit a move once another save landed after it was built", async () => {
+    // Why (the M4b milestone review #7): the move's tour was built from the
+    // bytes before that save; taking it as the newest would drop what the
+    // save wrote. The page says "move it again".
+    const { session, manifest } = await walkTour();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const move = await editor.moveWalkOut();
+    if (move.kind !== "ready") throw new Error(move.reason);
+    editor.editText("a", "Saved after the move was built");
+    await editor.save({ keepScan: true });
+    expect(() => {
+      move.commit();
+    }).toThrow(/another save landed/);
+    // Nothing of the move was taken: the newest bytes still carry the walk.
+    expect((await editor.walkEntries()).sort()).toEqual(walkNames);
+    await session.close();
+  });
+
+  it("names the tour the walk came from in a note inside the walk's zip", async () => {
+    // Why (the M4b milestone review #8): a walk file on its own says
+    // nothing of the tour it belongs to; the note does - the tour's file,
+    // its name and, for a listed tour, its series.
+    const fixture = await buildListedTourFixture(
+      {
+        "tour.json": serializeTourManifest({
+          ...createEmptyTourManifest(),
+          title: "Castle walk",
+          objects: [pin("a")],
+          captureSpots: WALK_SPOTS,
+        }),
+        "images/frame-000002.jpg": "the baked photo",
+        ...WALK_ENTRIES,
+      },
+      { seriesId: "Fx7qT2mK9pL4sV8bN1rW6a" },
+    );
+    const session = await openTourFile(
+      new File([fixture.zip], "castle.zip", { type: "application/zip" }),
+    );
+    const manifest = (await session.loadTourManifest())!;
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const move = await editor.moveWalkOut();
+    if (move.kind !== "ready") throw new Error(move.reason);
+    const note = readStoredEntryBytes(
+      new Uint8Array(await move.walk.blob.arrayBuffer()),
+      WALK_NOTE,
+    );
+    expect(note).toBeDefined();
+    const text = new TextDecoder().decode(note);
+    expect(text).toContain("castle.zip");
+    expect(text).toContain("Castle walk");
+    expect(text).toContain("Fx7qT2mK9pL4sV8bN1rW6a");
+    await session.close();
+  });
+
+  it("reads the opened file once for a move made before any save", async () => {
+    // Why (the M4b milestone review #11): the walk's zip and the tour are
+    // built from the same bytes; a listed tour's whole-file check ran twice.
+    const { session, manifest } = await walkTour();
+    let reads = 0;
+    const counted: TourSession = {
+      ...session,
+      readWholeArchive: () => {
+        reads += 1;
+        return session.readWholeArchive();
+      },
+    };
+    const editor = createEditorSession({
+      session: counted,
+      manifest,
+      levels: new Map(),
+    });
+    const move = await editor.moveWalkOut();
+    expect(move.kind).toBe("ready");
+    expect(reads).toBe(1);
+    await session.close();
+  });
+
+  it("moves out a walk that places nothing - one on which no photo of the tour was taken - and a lean save leaves it out too", async () => {
+    // Why (the M4b milestone review #3): such a walk was refused with "the
+    // recorded photos are placed by it" - photos the tour does not carry -
+    // so it could never leave a tour file a creator hosts.
+    const sample = new Blob([sampleRecordingBytes()]);
+    const zip = await rebuildZipWithEntries(
+      sample,
+      [
+        {
+          path: "tour.json",
+          data: serializeTourManifest({
+            ...createEmptyTourManifest(),
+            objects: [pin("a")],
+          }),
+        },
+      ],
+      { remove: [...SAMPLE_PHOTOS] },
+    );
+    const tour = async (): Promise<EditorSession> => {
+      const session = await openTourFile(
+        new File([zip], "walked.zip", { type: "application/zip" }),
+      );
+      return createEditorSession({
+        session,
+        manifest: (await session.loadTourManifest())!,
+        levels: new Map(),
+      });
+    };
+    const original = await namesIn(zip);
+    const walk = original.filter((n) => n !== "tour.json");
+    expect(walk).toEqual(expect.arrayContaining(["session.json"]));
+    const editor = await tour();
+    const move = await editor.moveWalkOut();
+    if (move.kind !== "ready") throw new Error(move.reason);
+    expect(await namesIn(move.walk.blob)).toEqual([...walk, WALK_NOTE].sort());
+    expect(await namesIn(move.save.blob)).toEqual(["tour.json"]);
+    // The lean save (the editor's download without "keep the walk") leaves
+    // it out as well, and says nothing about photos that do not exist.
+    const lean = await (await tour()).save({ keepScan: false });
+    expect(await namesIn(lean.blob)).toEqual(["tour.json"]);
+    expect(lean.notPlaced).toBeUndefined();
+    expect([...lean.scanLeftOut].sort()).toEqual(walk);
   });
 });
