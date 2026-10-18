@@ -294,6 +294,9 @@ export function wireCreatorFinish(deps: {
         // pre-finish manifest and silently drop this batch (PR #435
         // review). `tourManifest` is otherwise only written at tour open.
         ctx.tourManifest = written;
+        // The walk is decided for this open tour: baked into `written`, or
+        // declined and kept (PR #642 review). The creator's HUD reads it.
+        ctx.walkDecidedFor = current;
         // Only what this zip carries leaves the list - by CONTENT, not id:
         // a photo that landed while the zip was rebuilt is in neither, and
         // waits for the next Finish (M2c review #6). A photo that leaves

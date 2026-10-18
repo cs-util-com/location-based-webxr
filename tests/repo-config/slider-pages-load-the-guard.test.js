@@ -27,7 +27,11 @@
  *   None does today (2026-09-30);
  * - a call that runs only conditionally (`if (x) guardSlidersIn(document)`)
  *   or after an early `return` in its function;
- * - a page whose slider comes from HTML fetched or injected at runtime.
+ * - a page whose slider comes from HTML fetched or injected at runtime;
+ * - a slider built by an INLINE `<script type="module">`: only module
+ *   scripts with a file are scanned for RANGE_AT_RUNTIME
+ *   (`buildsSliderAtRuntime`), so a page that sets `type = 'range'` from
+ *   inline script is invisible to the check.
  * The scan is a small tokenizer, not a parser: a regex literal after an
  * unusual token could be misread, which fails loudly rather than passing.
  *
@@ -50,15 +54,28 @@ import { readTracked, repoRoot, trackedFiles } from './tracked-tree.js';
  *   by `shoot.mjs`, where the `/fw/` route does not exist. Its sliders set
  *   no app state: the compass specimen only updates its own label, so a
  *   swipe that moves one changes a number on a sheet no phone user opens.
- * - A design prototype in the Tour Viewer's inspiration gallery (root
- *   CLAUDE.md "Throwaway UX prototypes": kept, linked from nothing) is a
- *   standalone draft wired to nothing: its size slider changes a label in
- *   the draft.
+ * - The design prototypes in the Tour Viewer's inspiration gallery (root
+ *   CLAUDE.md "Throwaway UX prototypes": kept, linked from nothing) are
+ *   standalone drafts wired to nothing: their sliders (a landing draft's
+ *   size, the 3D editor drafts' station radius) change only the draft's own
+ *   labels and stations, and nothing outside the draft is touched.
  */
 const EXEMPT = new Map([
   ['GpsPlusSlamJs_DesignSystem/index.html', 'undeployed specimen sheet over file://'],
   [
     'GpsPlusSlamJs_TourViewer/public/prototypes/landing-5-map-path/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-2-walk-it/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-3-storyboard/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-4-map-tilt/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
 ]);

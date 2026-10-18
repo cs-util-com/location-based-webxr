@@ -81,9 +81,15 @@ activateM)` (each tick, each offered station with a distance: the
   that station early; the old hold covered this case.
 - **The HUD's arrival is the found radius (§8 D9):** each target's
   `distanceMin` / `distanceMax` are the station's found band at the
-  measured accuracy, and the target sits at the visitor's own height, so
+  accuracy of the position judged by, and the target sits at the visitor's own height, so
   the HUD's 3D distance is the horizontal distance the run judges. Only
-  offered stations not yet found are targets. The HUD is started once per
+  offered stations not yet found are targets.
+- **One accuracy rule for every band** (PR #642 review): the prefetch's
+  activation, the HUD's band and the breadcrumbs' stop read the same
+  `judgedAccuracy` as the line and the run. An aligned visitor takes the
+  HUD's own band (`alignedStationBands`), so a ±40 m raw fix beside a
+  code-placed position widens nothing; a raw fix alone keeps its own
+  accuracy's band, as before. The HUD is started once per
   AR session (retried while there is no camera) and disposed at the
   session's end and when the tour completes.
 - **The skip** is about the nearest offered, unfound station: on demand in
@@ -174,5 +180,7 @@ store.subscribe(() => guide.tick());
   2-10 s (M3); no position and weak GPS lines; the skip on demand and suggested,
   the completion and the HUD's disposal; a story's end; progress across
   AR entries and a new tour; the replay of a story cut short; nothing found
-  that is not offered.
+  that is not offered; an aligned visitor's prefetch, HUD band and
+  breadcrumb stop not widened by a raw fix of ±5-100 m or none, a raw fix
+  alone keeping its own band (swept, PR #642 review).
 - `playwright-tests/stations.spec.js` - the whole flow on the page.

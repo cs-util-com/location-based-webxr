@@ -57,6 +57,7 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import { objectPoseNue } from "./content-placement.js";
+import { walkPhotosPending } from "./creator-stations.js";
 import {
   buildListedTourFixture,
   buildSignedTourFixture,
@@ -993,6 +994,9 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     expect(spots?.captures).toHaveLength(5);
     // The in-memory manifest advances with it, as with objects.
     expect(ctx.tourManifest?.captureSpots).toEqual(spots);
+    // This page knows the walk is decided (the creator's HUD drops its
+    // hedge, PR #642 review).
+    expect(ctx.walkDecidedFor).toBe(ctx.session);
   });
 
   it("does not bake again when the tour already carries its spots", async () => {
@@ -1042,10 +1046,20 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
       placed: [pin("new-one")],
       sessionExtras: recording.extras,
     });
+    // Why (PR #642 review): a declined bake writes no spots, so the file
+    // alone reads as "the walk's photos may still be sorted in" forever.
+    // The Finish tells this page it decided: the creator's HUD drops its
+    // hedge for the rest of this open tour (a reopen hedges again).
+    const pending = () =>
+      walkPhotosPending(ctx.session, ctx.tourManifest, ctx.walkDecidedFor);
+    expect(pending()).toBe(true);
     dom.finishButton.click();
     await settle(ctx);
     expect(ctx.finishError).toBeNull();
     expect(await writtenManifest(ctx)).not.toHaveProperty("captureSpots");
+    expect(ctx.tourManifest?.captureSpots).toBeUndefined();
+    expect(ctx.walkDecidedFor).toBe(ctx.session);
+    expect(pending()).toBe(false);
   });
 
   it("finishes without the marker when reading the recording fails", async () => {

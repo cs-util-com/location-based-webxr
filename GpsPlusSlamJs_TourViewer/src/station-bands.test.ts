@@ -3,6 +3,7 @@ import fc from "fast-check";
 
 import {
   ACCURACY_CEILING_M,
+  alignedStationBands,
   BAND_ACCURACY_FACTOR,
   HUD_ARRIVAL_BAND_M,
   stationBands,
@@ -66,6 +67,24 @@ describe("stationBands", () => {
     // Above the ceiling it is clamped: a 500 m "fix" keeps the band finite.
     const wide = stationBands({ activateRadiusM: 10, foundRadiusM: 3 }, 500);
     expect(wide.foundExitM - wide.foundM).toBe(ACCURACY_CEILING_M);
+  });
+
+  // Why (PR #642 review): an alignment's position has no accuracy the raw
+  // fixes speak for, and `stationBands` reads an unknown one as its
+  // CEILING - so an aligned visitor's HUD band, breadcrumb stop and
+  // prefetch were widened to the widest there is. Its bands are the HUD's
+  // own band, whatever the fixes say.
+  it("gives an aligned position the HUD's own band, never the ceiling an unknown accuracy reads as", () => {
+    for (const radii of [
+      { activateRadiusM: 30, foundRadiusM: 10 },
+      { activateRadiusM: 6, foundRadiusM: 5 },
+      { activateRadiusM: 0, foundRadiusM: 2 },
+    ]) {
+      const b = alignedStationBands(radii);
+      expect(b.foundM).toBe(radii.foundRadiusM);
+      expect(b.foundExitM).toBe(radii.foundRadiusM + HUD_ARRIVAL_BAND_M);
+      expect(b.activateM).toBe(Math.max(radii.activateRadiusM, b.foundExitM));
+    }
   });
 
   it("orders the three distances for any radii and accuracy (property)", () => {

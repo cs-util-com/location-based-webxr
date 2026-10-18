@@ -23,6 +23,11 @@ where the prefetch starts. Plans:
   - `foundExitM = foundM + band`;
   - `activateM = max(activateRadiusM, foundExitM)`: where the prefetch
     starts (plus its lead); nothing toggles on it (K4 review R10).
+- `alignedStationBands(station): StationBands` - the bands of an ALIGNED
+  position (PR #642 review): band `= HUD_ARRIVAL_BAND_M`, whatever the raw
+  fixes say. The raw fixes' accuracy says nothing about an alignment, and
+  `stationBands` reads an unknown accuracy as the ceiling, so passing it
+  null would widen an aligned visitor's bands to the widest there is.
 - (module-internal) `clampAccuracy` - null, non-finite or non-positive read
   as `ACCURACY_CEILING_M`; above it clamped to it.
 - Constants: `BAND_ACCURACY_FACTOR` (1.0), `HUD_ARRIVAL_MIN_M` (1.5, the HUD's own
@@ -89,7 +94,10 @@ const b = stationBands({ activateRadiusM: 30, foundRadiusM: 3 }, 8);
 
 - `station-bands.test.ts` - the authored radius at every accuracy with no
   floor (D16), the HUD band floor, nonsense accuracies; properties:
-  ordering and finiteness for any input, the band monotone in the accuracy.
+  ordering and finiteness for any input, the band monotone in the accuracy;
+  `alignedStationBands` is the HUD's own band at several radii. Through
+  `station-guide.test.ts`: an aligned visitor's prefetch, HUD band and
+  breadcrumb stop are not widened by a raw fix of ±5-100 m or none.
 - `station-bands.sweep.test.ts` - the simulation above.
 - `tooWeakToGuide` through `station-run.test.ts` (the latch flips exactly at
   the ceiling, swept 10-500 m; null is judged) and `station-guide.test.ts`
