@@ -23,6 +23,7 @@ import {
 } from "@reduxjs/toolkit";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
+import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
   TourManifest,
   TourObject,
@@ -287,10 +288,64 @@ export function manifestToWrite(state: TourDocumentState): TourManifest | null {
   });
 }
 
-/** The entries whose content the written file does not carry yet. */
+/** The entries whose content the written file does not carry yet, read
+ *  through the document's frames (`contentAt`): a note the file holds at
+ *  its spot under a frame that moved since is pending. */
 export function unsavedEntries(state: TourDocumentState): EditEntry[] {
-  const hosted = hostedObjects(state.written);
+  if (state.written === null) return [];
+  const hosted = hostedObjects(withFrames(state.written, state.stations, []));
   return state.placed.filter((p) => !hosted.holds(p.object));
+}
+
+// --- the rules the reducers keep -----------------------------------------
+// A dispatch that breaks one changes nothing; a page says why in its own
+// words by asking the same guard first.
+
+/** Whether `geo` fits the frame of the station `stationId` names, as the
+ *  format bounds it (`TOUR_ITEM_MAX_OFFSET_M` per axis); true for a
+ *  station the document does not carry (a write recreates that one where
+ *  the object stands, `tour-content.ts`). */
+export function fitsStation(
+  geo: TourObject["geo"],
+  stationId: string | undefined,
+  stations: readonly StationFrame[],
+): boolean {
+  const station = stations.find((s) => s.id === stationId);
+  if (station === undefined) return true;
+  return localPoseOf(geo, station.geo).position.every(
+    (v) => Math.abs(v) <= TOUR_ITEM_MAX_OFFSET_M,
+  );
+}
+
+/** Whether `object` fits its station's frame - its own, or, without one,
+ *  the station the document's object of that id stands in. */
+export function objectFits(
+  state: TourDocumentState,
+  object: TourObject,
+): boolean {
+  const home =
+    object.station ??
+    documentObjects(state).find((o) => o.object.id === object.id)?.object
+      .station;
+  return fitsStation(object.geo, home, state.stations);
+}
+
+/** Whether `object` may be placed: an id the tour does not carry, at a
+ *  spot its station can carry. */
+export function canPlace(
+  state: TourDocumentState,
+  object: TourObject,
+): boolean {
+  return (
+    documentObjects(state).every((o) => o.object.id !== object.id) &&
+    objectFits(state, object)
+  );
+}
+
+/** Whether an undo or a redo may run: not while a rebuild is queued or
+ *  runs - the step is measured against the file it writes. */
+export function canStep(state: TourDocumentState): boolean {
+  return state.save.rebuilds === 0;
 }
 
 /** The same frame: every field but the items alike. */
@@ -477,10 +532,9 @@ function slotKept(save: TourSaveStatus): TourSaveStatus {
 
 /** A new version of an object (or a new one): one entry per id. */
 function putObject(
-  state: Draft<TourDocumentState>,
+  before: TourDocumentState,
   action: PayloadAction<{ object: TourObject; what: string }>,
 ): TourDocumentState {
-  const before = plain(state);
   if (before.written === null) return before;
   const { object, what } = action.payload;
   return edited(
@@ -508,12 +562,26 @@ const tourDocumentSlice = createSlice({
         details: detailsOf(manifest),
       };
     },
-    /** A new object (placed in AR, or on the map). */
-    placed: putObject,
-    /** A pin's text edited. */
-    edited: putObject,
-    /** An object moved (on the map, or in AR). */
-    moved: putObject,
+    /** A new object (placed in AR, or on the map): not for an id the
+     *  tour carries, nor beyond its station's reach (`canPlace`). */
+    placed(state, action: PayloadAction<{ object: TourObject; what: string }>) {
+      const before = plain(state);
+      if (!canPlace(before, action.payload.object)) return before;
+      return putObject(before, action);
+    },
+    /** A pin's text edited (`objectFits`, as a move). */
+    edited(state, action: PayloadAction<{ object: TourObject; what: string }>) {
+      const before = plain(state);
+      if (!objectFits(before, action.payload.object)) return before;
+      return putObject(before, action);
+    },
+    /** An object moved (on the map, or in AR): not beyond its station's
+     *  reach (`objectFits`). */
+    moved(state, action: PayloadAction<{ object: TourObject; what: string }>) {
+      const before = plain(state);
+      if (!objectFits(before, action.payload.object)) return before;
+      return putObject(before, action);
+    },
     /** An object deleted: its entry goes, a written one gets a tombstone. */
     deleted(state, action: PayloadAction<{ id: string; what: string }>) {
       const before = plain(state);
@@ -593,11 +661,14 @@ const tourDocumentSlice = createSlice({
         action.payload.what,
       );
     },
+    /** One step back - not while a save runs (`canStep`). */
     undone(state) {
-      return step(plain(state), "undo");
+      const before = plain(state);
+      return canStep(before) ? step(before, "undo") : before;
     },
     redone(state) {
-      return step(plain(state), "redo");
+      const before = plain(state);
+      return canStep(before) ? step(before, "redo") : before;
     },
     /** A draft's work put back: one step to undo. */
     restored(state, action: PayloadAction<TourRestore & { what: string }>) {
@@ -606,6 +677,9 @@ const tourDocumentSlice = createSlice({
       let placed = before.placed;
       let deleted = before.deleted;
       for (const object of work.objects) {
+        // A draft written before far moves were refused may offer one; it
+        // would make every save fail (the M5a milestone review L1).
+        if (!objectFits(before, object)) continue;
         placed = upsertPlaced(placed, { object });
       }
       for (const id of work.deleted) {

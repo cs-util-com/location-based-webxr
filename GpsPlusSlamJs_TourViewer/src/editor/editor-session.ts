@@ -16,7 +16,6 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
-import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   tourCoverEntry,
   tourImageIds,
@@ -45,11 +44,13 @@ import {
   type TourDetailFields,
 } from "../tour-details-form.js";
 import {
+  canStep,
   changeCount,
   documentObjects,
   effectiveDetails,
   isDocumentEdit,
   manifestNow,
+  objectFits,
   nextStep,
   picturesNeeded,
   selectTourDocument,
@@ -193,21 +194,6 @@ const NO_SUCH_STATION = "That station is no longer in this tour.";
  *  milestone review L1). A note stays in its station however far it is
  *  moved (`tour-content.ts`). */
 export const TOO_FAR_FROM_STATION = `It cannot go that far: a note must stay within ${String(TOUR_ITEM_MAX_OFFSET_M / 1000)} km of its station.`;
-
-/** Whether `geo` fits the frame of the station `stationId` names, as the
- *  format bounds it; true for a station the tour does not carry (a write
- *  recreates that one where the object stands, `tour-content.ts`). */
-function fitsStation(
-  geo: TourObject["geo"],
-  stationId: string | undefined,
-  stations: TourManifest["stations"],
-): boolean {
-  const station = stations.find((s) => s.id === stationId);
-  if (station === undefined) return true;
-  return localPoseOf(geo, station.geo).position.every(
-    (v) => Math.abs(v) <= TOUR_ITEM_MAX_OFFSET_M,
-  );
-}
 
 /** An edit, move or delete of an id the tour no longer carries, said in
  *  words (`NOT_IN_TOUR`) by all three alike (PR #622 bot finding C). */
@@ -477,9 +463,7 @@ export function createEditorSession(input: {
   function step(which: "undo" | "redo"): UndoOutcome {
     const state = mine();
     if (state === null) return notInTour;
-    if (state.save.rebuilds > 0) {
-      return { kind: "refused", reason: SAVE_RUNNING };
-    }
+    if (!canStep(state)) return { kind: "refused", reason: SAVE_RUNNING };
     const next = nextStep(state, which);
     if (next === undefined) return { kind: "nothing" };
     if (picturesNeeded(state, next.view).some((id) => !pictures.has(id))) {
@@ -602,7 +586,7 @@ export function createEditorSession(input: {
       const found = find(id);
       if (found === undefined) return notInTour;
       const after = moveObjectTo(found.object, lat, lon);
-      if (!fitsStation(after.geo, after.station, now().stations)) {
+      if (!objectFits(doc(), after)) {
         return { kind: "refused", reason: TOO_FAR_FROM_STATION };
       }
       store.dispatch(
@@ -614,11 +598,12 @@ export function createEditorSession(input: {
       return { kind: "moved" };
     },
     place(object) {
-      if (mine() === null) return notInTour;
+      const state = mine();
+      if (state === null) return notInTour;
       if (find(object.id) !== undefined) {
         return { kind: "refused", reason: ALREADY_IN_TOUR };
       }
-      if (!fitsStation(object.geo, object.station, now().stations)) {
+      if (!objectFits(state, object)) {
         return { kind: "refused", reason: TOO_FAR_FROM_STATION };
       }
       store.dispatch(
@@ -677,16 +662,15 @@ export function createEditorSession(input: {
         ...state.placed.map((p) => p.object.id),
         ...state.deleted,
       ]);
-      const stations = manifestNow(state)?.stations ?? [];
-      const objects = work.objects.filter((object) => {
-        if (live.has(object.id)) return false;
-        const found = find(object.id);
-        if (found === undefined) return false;
-        // A draft written before far moves were refused may offer one; it
-        // would make every save fail (the M5a milestone review L1).
-        const home = object.station ?? found.object.station;
-        return fitsStation(object.geo, home, stations);
-      });
+      // An object too far from its station (a draft written before far
+      // moves were refused) is skipped as the reducer skips it
+      // (`objectFits`, the M5a milestone review L1).
+      const objects = work.objects.filter(
+        (object) =>
+          !live.has(object.id) &&
+          find(object.id) !== undefined &&
+          objectFits(state, object),
+      );
       const deleted = work.deleted.filter(
         (id) => !live.has(id) && find(id) !== undefined,
       );

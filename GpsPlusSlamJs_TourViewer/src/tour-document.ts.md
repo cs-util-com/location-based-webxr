@@ -24,8 +24,10 @@ reducers' building blocks, so a page cannot apply them differently.
 - `stations: StationFrame[]` - every station without its items (`geo`,
   radii, title, steps): the frames as they stand, moved by `stationMoved`.
 - `placed: EditEntry[]` - objects placed, edited or moved, in the world,
-  one entry per id; pending while the written file does not hold them by
-  content (`unsavedEntries`).
+  one entry per id; pending while the written file, read through the
+  document's frames, does not hold them by content (`unsavedEntries`): a
+  station's rigid move leaves its items unchanged inside it, so only the
+  frame is pending.
 - `deleted: string[]` - ids of written objects deleted and not yet written.
 - `needsNoGps`, `details` (`TourDetailFields`) - the setting and the details
   as set; `touched` says which were changed here since the open (live work,
@@ -53,9 +55,11 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   Only who holds the page's save slot (`save.by`) is kept: the slot is
   the page's, and the save holding it lets it go once it sees its tour
   gone (as the page's own flag behaved).
-- `placed` / `edited` / `moved({ object, what })` - one case reducer
+- `placed` / `edited` / `moved({ object, what })` - one entry per id
   (`upsertPlaced`): a new object, a pin's text, a move on the map or in AR.
-  Three names so a log reads as what happened.
+  Three names so a log reads as what happened. `placed` changes nothing
+  for an id the tour carries (`canPlace`); none of the three for a spot
+  beyond its station's reach (`objectFits`).
 - `deleted({ id, what })` - `deleteObject`: the entry goes, a written
   object gets a tombstone; an unknown id changes nothing.
 - `stationMoved({ stationId, geo, what })` - D17: the frame moves, and every
@@ -64,7 +68,8 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   unknown station changes nothing.
 - `settingsChanged({ needsNoGps, what })`, `detailsChanged({ details, what })`
   - the details as checked by `checkDetailsForm`.
-- `undone()` / `redone()` - one step; the document goes to the step's view
+- `undone()` / `redone()` - one step (none while a save is queued or runs,
+  `canStep`); the document goes to the step's view
   MEASURED AGAINST THE WRITTEN FILE (`contentAt`): what the file holds as
   the view has it is not pending, the rest is. "Holds" is read through the
   VIEW's frames, as `documentObjects` reads the objects: an item the file
@@ -73,8 +78,9 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   found by the "undoing everything" property). A save that lands after a
   frame moved prunes the same way.
 - `restored({ objects, deleted, needsNoGps?, details?, what })` - a draft's
-  work, already filtered by the page's rules: one step to undo; not live
-  work (`touched` unchanged).
+  work, already filtered by the page's rules (an object beyond its
+  station's reach is skipped here too, `objectFits`): one step to undo;
+  not live work (`touched` unchanged).
 - `saveStarted({ generation })`, `saved({ generation, written,
 appliedDeletions, stationsAtStart })`, `saveEnded({ generation, error? })`
   - a rebuild queued, landed (the written file replaced; `pendingAfterRebuild` keeps what the
@@ -121,6 +127,13 @@ different times (a walk's move lands only after the page wrote both files).
   types `TourSaveStatus` and `TourSaveHolder` (the desktop page's save slot).
 - `isDocumentEdit(action)` - the actions a draft follows (not `saved`, not
   `opened`).
+- The rules the reducers keep, exported so a page asks first and says why
+  in its own words (`editor-session.ts`'s refusals): `fitsStation(geo,
+stationId, stations)` (the format's `TOUR_ITEM_MAX_OFFSET_M` per axis;
+  true for a station the document does not carry), `objectFits(state,
+object)` (its own station, or the one its id stands in), `canPlace(state,
+object)` (an id the tour does not carry, within reach) and
+  `canStep(state)` (no save queued or running).
 
 ## Invariants & assumptions
 
@@ -140,10 +153,19 @@ different times (a walk's move lands only after the page wrote both files).
   returns the next state; nothing reads a clock or a random source except
   the automatic station ids `withTourContent` mints inside
   `manifestToWrite` (selectors only, never stored).
-- Preconditions the page owns, checked before it dispatches: a photo's
-  picture for an undo (`picturesNeeded`), a move within a station's reach
-  (`TOO_FAR_FROM_STATION`), an id the tour carries. The reducers stay
-  defensive: an unknown id or station changes nothing.
+- **The reducers keep the document's rules** (the r875 milestone review
+  #3): a placement of an id the tour carries, a spot beyond its station's
+  reach, an undo or redo while a save runs - each changes nothing, so a
+  second page dispatching the same actions cannot break them. An unknown id
+  or station changes nothing either. The one precondition the page alone
+  owns is a photo's picture for an undo (`picturesNeeded`): Blobs are not
+  state.
+- **The history's cost** (review #9): each step copies the view - every
+  station frame and every object in the world - so the history holds up to
+  200 times the tour's objects. For the tours made today (tens of objects)
+  that is kilobytes; at thousands of objects it reaches tens of megabytes
+  and every edit pays an O(objects) copy. The threshold to revisit it
+  (steps storing only what changed) is a tour of about a thousand objects.
 
 ## Examples
 
@@ -167,7 +189,9 @@ store.dispatch(tourDocumentActions.undone());
   the emptied station coming back in its place), a station's frame moving
   its items rigidly, the setting and details, a cover following its photo,
   a restore as one step, the save status, an edit made during a save
-  staying pending, a late save of another open ignored.
+  staying pending, a late save of another open ignored, the rules the
+  reducers keep (each confirmed to fail with its guard turned off), a note
+  pending after its station moved and it moved back.
 - `tour-document.property.test.ts` - over random sequences of edits,
   moves, deletes, placements, station moves, settings, details, undos,
   redos and saves: undo then redo is identity; undoing everything gives the

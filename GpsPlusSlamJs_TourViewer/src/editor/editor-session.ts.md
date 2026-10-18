@@ -11,9 +11,10 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
 Redux store"): the open tour, its edits, the history and the save status
 are the store's `tourDocument` slice (`../tour-document.ts`), shared with
 the phone's creator in a later milestone. The session is the page's facade
-over it: it checks what only the page can (an id the tour carries, a
-photo's picture for an undo, a spot within a station's reach) and
-dispatches; its closure keeps imperative resources only - the newest
+over it: it asks the document's own guards first (`objectFits`,
+`canPlace`, `canStep` - the reducers keep the same rules, so a refusal
+here is only the page's words for one) and checks what only the page can
+(a photo's picture for an undo), then dispatches; its closure keeps imperative resources only - the newest
 bytes (`previous`), the photo spots' cache, the pictures' side table
 (Blobs are never state) and the save queue. Design:
 `GpsPlusSlamJs_Docs/docs/2026-10-13-0832-tour-desktop-editor-and-scan-data-design.md`

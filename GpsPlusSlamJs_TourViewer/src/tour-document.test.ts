@@ -15,7 +15,10 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import {
+  canPlace,
+  canStep,
   changeCount,
   documentObjects,
   effectiveDetails,
@@ -23,6 +26,7 @@ import {
   initialTourDocumentState,
   manifestNow,
   manifestToWrite,
+  objectFits,
   picturesNeeded,
   TOUR_HISTORY_LIMIT,
   tourDocumentActions as act,
@@ -209,7 +213,10 @@ describe("tour document: a station's frame (D17)", () => {
       }),
     );
     expect(objectOf(state, "a").geo.lat).toBeCloseTo(48.5201, 9);
-    expect(changeCount(state)).toBe(2); // the item and the frame
+    // The frame only: its item rides it unchanged inside its station (what
+    // is pending is read through the document's frames, review extra).
+    expect(changeCount(state)).toBe(1);
+    expect(unsavedEntries(state)).toEqual([]);
     const written = manifestToWrite(state)!;
     const moved = written.stations.find((s) => s.id === station)!;
     expect(moved.geo.lat).toBeCloseTo(was.geo.lat + 0.0001, 12);
@@ -475,5 +482,124 @@ describe("tour document: the save status", () => {
     expect(
       reduce(second, act.saveEnded({ generation: first.generation })),
     ).toEqual(second);
+  });
+});
+
+/**
+ * Why (the r875 milestone review #3, root rule "reducers enforce the
+ * rules"): the document's own rules held only in the desktop session, so
+ * a second page dispatching the same actions - the phone, next - could
+ * break them. The reducers now refuse by doing nothing; the session
+ * keeps its words by calling the same guards.
+ */
+describe("tour document: the rules its reducers keep", () => {
+  const far = (TOUR_ITEM_MAX_OFFSET_M * 2) / 111_320;
+
+  it("placing an id the tour carries, or a spot too far from its station, changes nothing", () => {
+    const state = open();
+    const a = objectOf(state, "a");
+    const again = reduce(
+      state,
+      act.placed({ object: { ...a, label: "twice" }, what: "p" }),
+    );
+    expect(again).toEqual(state);
+    expect(canPlace(state, a)).toBe(false);
+    const tooFar: TourObject = {
+      ...pin("n"),
+      station: stationIdOf("a"),
+      geo: { ...a.geo, lat: a.geo.lat + far },
+    };
+    expect(canPlace(state, tooFar)).toBe(false);
+    expect(reduce(state, act.placed({ object: tooFar, what: "p" }))).toEqual(
+      state,
+    );
+    const near: TourObject = { ...tooFar, geo: a.geo };
+    expect(canPlace(state, near)).toBe(true);
+    expect(
+      documentObjects(reduce(state, act.placed({ object: near, what: "p" })))
+        .map((o) => o.object.id)
+        .sort(),
+    ).toEqual(["a", "b", "f", "n"]);
+  });
+
+  it("a move or an edit to a spot too far from its station changes nothing", () => {
+    const state = open();
+    const a = objectOf(state, "a");
+    const moved = { ...a, geo: { ...a.geo, lat: a.geo.lat + far } };
+    expect(objectFits(state, moved)).toBe(false);
+    expect(reduce(state, act.moved({ object: moved, what: "m" }))).toEqual(
+      state,
+    );
+    expect(reduce(state, act.edited({ object: moved, what: "e" }))).toEqual(
+      state,
+    );
+  });
+
+  it("no undo or redo while a save is queued or runs", () => {
+    let state = open();
+    state = reduce(state, act.deleted({ id: "b", what: "d" }));
+    const running = reduce(
+      state,
+      act.saveStarted({ generation: state.generation }),
+    );
+    expect(canStep(running)).toBe(false);
+    expect(reduce(running, act.undone())).toEqual(running);
+    const ended = reduce(
+      running,
+      act.saveEnded({ generation: state.generation }),
+    );
+    expect(canStep(ended)).toBe(true);
+    const undone = reduce(ended, act.undone());
+    expect(undone.deleted).toEqual([]);
+    const again = reduce(
+      undone,
+      act.saveStarted({ generation: state.generation }),
+    );
+    expect(reduce(again, act.redone())).toEqual(again);
+  });
+
+  it("a restore skips an object whose spot its station cannot carry", () => {
+    const state = open();
+    const a = objectOf(state, "a");
+    const restored = reduce(
+      state,
+      act.restored({
+        objects: [
+          { ...a, geo: { ...a.geo, lat: a.geo.lat + far } },
+          { ...objectOf(state, "b"), label: "kept" },
+        ],
+        deleted: [],
+        what: "r",
+      }),
+    );
+    expect(restored.placed.map((p) => p.object.id)).toEqual(["b"]);
+  });
+
+  // Why (the a9368add class, the review's extra finding): what is pending
+  // is measured through the document's frames, as everything else is. A
+  // station moved and its note moved back to where the file has it: the
+  // note's local pose in its moved station changes, so it is pending.
+  it("counts a note pending after its station moved and it was moved back", () => {
+    let state = open();
+    const station = stationIdOf("b");
+    const was = OPENED.stations.find((s) => s.id === station)!;
+    state = reduce(
+      state,
+      act.stationMoved({
+        stationId: station,
+        geo: { ...was.geo, lat: was.geo.lat - 0.00002 },
+        what: "s",
+      }),
+    );
+    const b = objectOf(state, "b");
+    state = reduce(
+      state,
+      act.moved({
+        object: { ...b, geo: { ...b.geo, lat: b.geo.lat + 0.00002 } },
+        what: "m",
+      }),
+    );
+    expect(unsavedEntries(state).map((p) => p.object.id)).toEqual(["b"]);
+    expect(changeCount(state)).toBe(2); // the note and the frame
   });
 });
