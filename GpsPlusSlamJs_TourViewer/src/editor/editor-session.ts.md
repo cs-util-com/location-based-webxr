@@ -5,21 +5,38 @@
 The desktop editor's open tour and its edits (M6 E2a): the phone's object
 rules (`object-edits.ts`) over the opened tour, and a Save built by the
 phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
-`model()`, calls the edits and downloads what `save()` returns. Design:
+`model()`, calls the edits and downloads what `save()` returns.
+
+**The tour itself is not here** (D29-D31, root rule "App state lives in the
+Redux store"): the open tour, its edits, the history and the save status
+are the store's `tourDocument` slice (`../tour-document.ts`), shared with
+the phone's creator in a later milestone. The session is the page's facade
+over it: it checks what only the page can (an id the tour carries, a
+photo's picture for an undo, a spot within a station's reach) and
+dispatches; its closure keeps imperative resources only - the newest
+bytes (`previous`), the photo spots' cache, the pictures' side table
+(Blobs are never state) and the save queue. Design:
 `GpsPlusSlamJs_Docs/docs/2026-10-13-0832-tour-desktop-editor-and-scan-data-design.md`
 §9 ("E2 as revised").
 
 ## Public API
 
-- `createEditorSession({ session, manifest, levels, fileName?, draft?, loadPhoto? }): EditorSession`
+- `createEditorSession({ session, manifest, levels, fileName?, draft?, loadPhoto?, store? }): EditorSession`
+  - `store` - the page's `createTourViewerStore()`; a fresh one when
+    absent (tests). Creating the session dispatches `opened`: whatever
+    the store's document held is gone, and an older session on the same
+    store is disowned (`generation`) - its edits are refused with
+    `NOT_IN_TOUR`, its saves land nowhere.
   - `draft` (M6 E2c) - the `EditorSessionDraft` every edit, move,
     delete, undo and redo is backed up through (`editor-draft.ts`): the
     four `DraftObjectWrites`, whose delete sequence is `draft-actions.ts`'s
     as the phone runs it, plus `saveSettings` for the tour-level settings
-    (QR-first M1b-2). An undo or a redo writes, per id whose standing
-    against the saved file changed, the record, its tombstone, or their
-    removal (`backUpStep`), and the settings record when the setting or
-    the details moved.
+    (QR-first M1b-2). The draft follows the document's STATE, not the
+    gesture: a listener on the store's `listenToDocument` runs
+    `followDocument` (`../tour-document-draft.ts`) after each edit, undo,
+    redo or restore - per id whose standing against the saved file
+    changed, the record, its tombstone, or their removal, and the settings
+    record when it changed.
   - `loadPhoto` (W2) - reads a placed photo's picture by its image name
     (default: the opened zip's `loadContentEntry`); the page passes the
     copy last written, since a save replaces the file. When it fails, the
@@ -80,6 +97,15 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
     `EditorRefusal` as `editText` and `move`, so the page shows no
     "Deleted" toast and no Undo (finding C). The undo of a delete of an
     edited note writes the record to the draft again.
+  - `place(object)` - a new object (`placed`): refused for an id the
+    tour carries and for a spot further from its station than a tour can
+    carry. The desktop has no placing gesture yet; the parity contract
+    drives it, as the phone places in AR.
+  - `moveStation(stationId, geo)` - D17 (`stationMoved`): the frame moves
+    and every object of the station moves rigidly with it, each an edit at
+    its new spot (its local pose kept), as the phone's settle leaves its
+    lists. Refused for a station the tour does not carry. No gesture yet
+    either (the parity contract drives it).
   - `undo()` / `redo()` (W2 of the tour editor plan 2026-10-17-1816) - one
     step of the edit stack: `{ kind: "undone" | "redone", what }` (`what`
     names the step: `the text of "<label>"`, `the move of …`, `the delete
@@ -91,7 +117,10 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     (`PICTURE_GONE`; the step stays). Every edit kind is one step - a
     text, a move, a delete, the setting, the details (all at once), a
     restore (all of it); a new edit drops what could be redone; at most
-    200 steps are kept (`UNDO_LIMIT`).
+    200 steps are kept (`TOUR_HISTORY_LIMIT`). The history is the
+    document's, over all of it - the station frames included - so an undo
+    after a save that dropped an emptied station brings it back WHERE IT
+    STOOD in the order (the M5a review M2 deviation, settled).
   - `revision()` (W2) - counts every edit, undo and redo: the page's
     delete toast runs its Undo only while its delete is still the newest
     step.

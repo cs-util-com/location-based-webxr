@@ -8,6 +8,7 @@
  * @see editor-session.ts.md
  */
 
+import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
   TourManifest,
@@ -15,10 +16,7 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
-import {
-  localPoseOf,
-  tourObjects,
-} from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   tourCoverEntry,
   tourImageIds,
@@ -27,62 +25,57 @@ import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
 import {
   captureSpotsForRebuild,
   finishedFileName,
-  pendingAfterRebuild,
   rebuildFinishedTour,
   type FinishedTour,
   type RebuildPhotoSpots,
 } from "../finish-rebuild.js";
 import { recordingEntryNames, scanEntryNames } from "../tour-read-set.js";
-import { hostedObjects, objectContentKey } from "../authoring-draft.js";
-import { recordDelete, type DraftObjectWrites } from "../draft-actions.js";
+import { hostedObjects } from "../authoring-draft.js";
+import type { DraftObjectWrites } from "../draft-actions.js";
 import {
-  authoringObjects,
-  deleteObject,
   moveObjectTo,
   pinTextEdit,
-  upsertPlaced,
   type AuthoringObject,
 } from "../object-edits.js";
 import type { TourSession } from "../tour-session.js";
 import {
   checkDetailsForm,
   DETAIL_FIELDS,
-  detailsOf,
-  withDetails,
   type DetailsForm,
   type TourDetailFields,
 } from "../tour-details-form.js";
+import {
+  changeCount,
+  documentObjects,
+  effectiveDetails,
+  isDocumentEdit,
+  manifestNow,
+  nextStep,
+  picturesNeeded,
+  selectTourDocument,
+  tourDocumentActions,
+  tourDocumentReducer,
+  unsavedEntries,
+  type TourDocumentState,
+} from "../tour-document.js";
+import { followDocument } from "../tour-document-draft.js";
+import {
+  createTourViewerStore,
+  type TourViewerStore,
+} from "../tour-viewer-session.js";
 import type { DetailsOutcome } from "./details-dialog.js";
 import type { EditorTourSettings } from "./editor-draft.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
 
-/** An edited or moved object, or one an undo brought back after a save
- *  wrote its delete - a photo then with its picture's bytes, which the
- *  saved file no longer carries (W2). */
+/** An edited or moved object as a rebuild takes it, or one an undo
+ *  brought back after a save wrote its delete - a photo then with its
+ *  picture's bytes, which the saved file no longer carries (W2). */
 interface EditorEntry {
   readonly object: TourObject;
   readonly blob?: Blob;
 }
-
-/** The tour as an undo step finds it: the objects with the edits, the
- *  setting and the details. A step goes BACK to such a state, whatever was
- *  saved since: what differs from the saved file is pending again. */
-interface EditState {
-  readonly objects: readonly TourObject[];
-  readonly noGps: boolean;
-  readonly details: TourDetailFields;
-}
-
-interface UndoStep {
-  readonly state: EditState;
-  /** The edit in words: "the move of "Fountain"". */
-  readonly what: string;
-}
-
-/** How many steps are kept: enough for a working session, bounded. */
-const UNDO_LIMIT = 200;
 
 /** Said for an undo or a redo asked for while a save runs: the save's end
  *  decides what the file carries, so the step waits (W2). */
@@ -188,6 +181,12 @@ interface WalkMove {
  *  it away while its card was open, M6 E2c review #11). */
 export const NOT_IN_TOUR = "That note is no longer in this tour.";
 
+/** Said for a placement of an id the tour already carries. */
+const ALREADY_IN_TOUR = "That note is already in this tour.";
+
+/** Said for a move of a station the tour does not carry. */
+const NO_SUCH_STATION = "That station is no longer in this tour.";
+
 /** Said for a move further from the note's station than a tour can carry
  *  (`TOUR_ITEM_MAX_OFFSET_M` per axis): the format would refuse the tour,
  *  so every later save failed with the parser's own words (the M5a
@@ -230,15 +229,6 @@ interface EditorRestore {
  *  with its details (W2). */
 export interface EditorSessionDraft extends DraftObjectWrites {
   saveSettings(settings: EditorTourSettings): Promise<boolean>;
-}
-
-/** `manifest` with the "needs no GPS" flag set, or without the field:
- *  false is never written (`tour-manifest.ts`). */
-function withNeedsNoGps(manifest: TourManifest, on: boolean): TourManifest {
-  if (on) return { ...manifest, needsNoGps: true };
-  const off = { ...manifest };
-  delete off.needsNoGps;
-  return off;
 }
 
 /** One image a tour may show as its cover (W2): a placed photo, or an
@@ -292,6 +282,17 @@ export interface EditorSession {
    *  picture is kept for that). Refused, deleting nothing, for an id the
    *  tour no longer carries. */
   remove(id: string): { kind: "deleted" } | EditorRefusal;
+  /** Place a new object (the phone places in AR; the desktop has no
+   *  placing gesture yet - the parity contract drives it): refused for an
+   *  id the tour carries and for a spot further from its station than a
+   *  tour can carry. */
+  place(object: TourObject): { kind: "placed" } | EditorRefusal;
+  /** Move a station's frame (D17): its items move rigidly with it.
+   *  Refused for a station the tour does not carry. */
+  moveStation(
+    stationId: string,
+    geo: QrGeoPose,
+  ): { kind: "moved" } | EditorRefusal;
   /** Take back the newest edit (W2): the tour goes back to how it stood
    *  before it - an edit like any other, pending until saved and written
    *  to the draft. A note brought back after a save wrote its delete is
@@ -340,27 +341,21 @@ export function createEditorSession(input: {
    *  deleted, so an undo after a save can bring it back (default: the
    *  opened file's; the page reads its copy of what it last wrote). */
   readonly loadPhoto?: (image: string) => Promise<Blob>;
+  /** The store holding the tour document (D29): the page's own, so its
+   *  views read the same state; a fresh one when absent (tests). Opening
+   *  the session opens the document in it - whatever it held is gone. */
+  readonly store?: TourViewerStore;
 }): EditorSession {
   const { session, levels } = input;
-  let manifest = input.manifest;
-  /** The "needs no GPS" setting with the edits; pending while it differs
-   *  from `manifest` (the file as last saved). */
-  let noGps = manifest.needsNoGps === true;
-  /** The setting was changed here since the open: live work, which wins
-   *  over a draft's offer. */
-  let noGpsTouched = false;
-  const noGpsPending = (): boolean => noGps !== (manifest.needsNoGps === true);
-  /** The tour's details with the edits (W2); the cover as chosen, shown
-   *  and written only while its image is in the tour (`effectiveDetails`). */
-  let details: TourDetailFields = detailsOf(manifest);
-  /** The details were changed here since the open: live work, which wins
-   *  over a draft's offer. */
-  let detailsTouched = false;
-  /** The settings record carries the details: once they were set or
-   *  restored here (an untouched record keeps no opinion about them). */
-  let detailsRecorded = false;
-  let placed: EditorEntry[] = [];
-  let deleted: string[] = [];
+  const store = input.store ?? createTourViewerStore();
+  store.dispatch(tourDocumentActions.opened({ manifest: input.manifest }));
+  /** This session's open: a later one in the same store makes every edit
+   *  here refused and every save of it land nowhere. */
+  const generation = doc().generation;
+
+  // What follows is imperative resources only (root CLAUDE.md, "App state
+  // lives in the Redux store"): the newest bytes, the photo spots' cache,
+  // the pictures' side table, the save queue.
   let previous: { blob: Blob; signedManifest?: SignedTourManifest } | null =
     null;
   /** The photo spots, decided once per open (a decline is not re-baked on
@@ -370,137 +365,89 @@ export function createEditorSession(input: {
   const savedName = finishedFileName(session);
   /** The name the page shows when the tour has no title. */
   const shownName = input.fileName ?? savedName;
-
-  /** The edit stack (W2): the states to go back to, newest last, and the
-   *  undone ones to go to again. */
-  const undoSteps: UndoStep[] = [];
-  const redoSteps: UndoStep[] = [];
-  let revisionCount = 0;
-  /** Deleted photos' pictures, for an undo after a save took them out. */
+  /** Deleted photos' pictures, for an undo after a save took them out
+   *  (the side table: Blobs are never state). */
   const pictures = new Map<string, Blob>();
   /** Pictures being read: a save waits for them, so an undo right after
    *  the save that wrote a photo's delete finds its picture. */
   const pictureReads = new Set<Promise<void>>();
   const loadPhoto =
     input.loadPhoto ?? ((image: string) => session.loadContentEntry(image));
-  /** The saves started and not yet ended, and the end of the last. */
-  let inFlight = 0;
+  /** The end of the last save, for the next to start after. */
   let tail: Promise<unknown> = Promise.resolve();
 
-  /** The entries whose content the tour does not carry yet. */
-  function unsaved(): EditorEntry[] {
-    const hosted = hostedObjects(manifest);
-    return placed.filter((p) => !hosted.holds(p.object));
+  const draft = input.draft;
+  if (draft !== undefined) {
+    // The draft follows the document (`tour-document-draft.ts`), after
+    // each reducer - never from `store.subscribe`.
+    store.listenToDocument({
+      predicate: isDocumentEdit,
+      effect: (_action, api) => {
+        const after = selectTourDocument(api.getState());
+        if (after.generation !== generation) {
+          api.unsubscribe();
+          return;
+        }
+        followDocument(
+          draft,
+          selectTourDocument(api.getOriginalState()),
+          after,
+          (id) => pictures.get(id),
+        );
+      },
+    });
   }
 
-  function objects(): AuthoringObject<EditorEntry>[] {
-    return authoringObjects(tourObjects(manifest), placed, deleted);
+  function doc(): TourDocumentState {
+    return selectTourDocument(store.getState());
+  }
+
+  /** The document as this session opened it; null once another open
+   *  replaced it. */
+  function mine(): TourDocumentState | null {
+    const state = doc();
+    return state.generation === generation ? state : null;
+  }
+
+  /** The written tour (this session's). */
+  function written(): TourManifest {
+    return doc().written ?? input.manifest;
+  }
+
+  /** The tour as it stands, frames and settings applied. */
+  function now(): TourManifest {
+    return manifestNow(doc()) ?? input.manifest;
   }
 
   const notInTour: EditorRefusal = { kind: "refused", reason: NOT_IN_TOUR };
 
-  /** Undefined for an id the tour no longer carries: a page holding an
-   *  older card gets a refusal, never a throw (E2c plan review #11). */
-  function find(id: string): AuthoringObject<EditorEntry> | undefined {
-    return objects().find((o) => o.object.id === id);
+  /** Undefined for an id the tour no longer carries, or a tour no longer
+   *  open: a page holding an older card gets a refusal, never a throw (E2c
+   *  plan review #11). */
+  function find(id: string): AuthoringObject | undefined {
+    const state = mine();
+    if (state === null) return undefined;
+    return documentObjects(state).find((o) => o.object.id === id);
   }
 
   /** The tour's pins and photos as they stand with the edits, for what
    *  reads its images. */
   function current(): TourObject[] {
-    return objects().map((o) => o.object);
+    return documentObjects(doc()).map((o) => o.object);
   }
 
-  function coverIds(): Set<string> {
-    return tourImageIds({ objects: current(), assets: manifest.assets });
-  }
-
-  /** The details as shown and written: a cover whose image is gone (a
-   *  deleted photo) is none, and comes back with an undo of the delete. */
-  function effectiveDetails(): TourDetailFields {
-    if (details.cover === undefined || coverIds().has(details.cover)) {
-      return details;
-    }
-    const { cover: _gone, ...rest } = details;
-    return rest;
-  }
-
-  /** The details' fields that differ from the saved file. */
-  function detailChanges(): number {
-    const now = effectiveDetails();
-    return DETAIL_FIELDS.filter((f) => now[f] !== manifest[f]).length;
-  }
-
-  /** The whole settings record as it stands (THE SETTINGS of
-   *  `editor-draft.ts`). */
-  function record(): EditorTourSettings {
-    return detailsRecorded
-      ? { needsNoGps: noGps, details }
-      : { needsNoGps: noGps };
-  }
-
-  /** A draft's details put back by the dialog's own checks (a record
-   *  whose details the format would drop leaves them as they are); how
-   *  many fields changed. */
-  function restoreDetails(offered: TourDetailFields): number {
-    const checked = checkDetailsForm(
-      {
-        name: offered.title ?? "",
-        description: offered.description ?? "",
-        cover: offered.cover ?? null,
-        contact: offered.contact ?? "",
-      },
-      coverIds(),
-      effectiveDetails(),
-      "drop",
-    );
-    if (!checked.ok) return 0;
-    const now = effectiveDetails();
-    const fields = DETAIL_FIELDS.filter(
-      (f) => checked.details[f] !== now[f],
-    ).length;
-    if (fields > 0) {
-      details = checked.details;
-      detailsRecorded = true;
-    }
-    return fields;
-  }
-
-  /** The draft's copy of an edit (fire-and-forget: the draft says its own
-   *  failures, once). */
-  function backUp(object: TourObject): void {
-    void input.draft?.saveObject(object);
-  }
-
-  /** `object` as an entry, keeping the picture its entry carries. */
-  function entryOf(object: TourObject): EditorEntry {
-    const blob = placed.find((p) => p.object.id === object.id)?.blob;
-    return blob === undefined ? { object } : { object, blob };
-  }
-
-  function stateNow(): EditState {
-    return { objects: objects().map((o) => o.object), noGps, details };
-  }
-
-  /** An edit was made from `before`: one step to undo, and nothing left
-   *  to redo. */
-  function edited(what: string, before: EditState): void {
-    undoSteps.push({ state: before, what });
-    if (undoSteps.length > UNDO_LIMIT) undoSteps.shift();
-    redoSteps.length = 0;
-    revisionCount += 1;
+  function coverIds(state: TourDocumentState = doc()): Set<string> {
+    return tourImageIds({
+      objects: documentObjects(state).map((o) => o.object),
+      assets: state.written?.assets ?? [],
+    });
   }
 
   /** Keep a deleted photo's picture for an undo after a save. */
-  function keepPicture(found: AuthoringObject<EditorEntry>): void {
+  function keepPicture(found: AuthoringObject): void {
     const object = found.object;
     if (object.kind !== "photo") return;
     const id = object.id;
-    const carried = found.placed?.blob;
-    if (carried !== undefined) {
-      pictures.set(id, carried);
-      return;
-    }
     if (pictures.has(id)) return;
     // Read now, while the copy that carries it is at hand; failing that,
     // from this session's own last bytes - the page's copy may not read
@@ -525,296 +472,260 @@ export function createEditorSession(input: {
     pictureReads.add(read);
   }
 
-  /** Where an id stands against the saved file. */
-  function standing(
-    id: string,
-    entries: readonly EditorEntry[],
-    gone: readonly string[],
-  ): EditorEntry | "deleted" | null {
-    if (gone.includes(id)) return "deleted";
-    return entries.find((p) => p.object.id === id) ?? null;
-  }
-
-  /** The draft follows a step: each id whose standing changed is written
-   *  as the edits' own writes would (a record before its tombstone goes,
-   *  as `recordUndoDelete` does). */
-  function backUpStep(
-    entries: readonly EditorEntry[],
-    gone: readonly string[],
-  ): void {
-    const draft = input.draft;
-    if (draft === undefined) return;
-    const ids = new Set([
-      ...placed.map((p) => p.object.id),
-      ...deleted,
-      ...entries.map((p) => p.object.id),
-      ...gone,
-    ]);
-    for (const id of ids) {
-      backUpId(
-        draft,
-        id,
-        standing(id, placed, deleted),
-        standing(id, entries, gone),
-      );
+  /** One step of the history (undo or redo); refused while a save runs,
+   *  and when a photo it brings back has no picture. */
+  function step(which: "undo" | "redo"): UndoOutcome {
+    const state = mine();
+    if (state === null) return notInTour;
+    if (state.save.rebuilds > 0) {
+      return { kind: "refused", reason: SAVE_RUNNING };
     }
-  }
-
-  /** One id's draft writes for a step from `was` to `now`. */
-  function backUpId(
-    draft: EditorSessionDraft,
-    id: string,
-    was: EditorEntry | "deleted" | null,
-    now: EditorEntry | "deleted" | null,
-  ): void {
-    if (now === "deleted") {
-      if (was !== "deleted") void draft.saveDeletion(id);
-      return;
-    }
-    if (now === null) {
-      if (was === "deleted") void draft.forgetDeletion(id);
-      else if (was !== null) void draft.forgetObject(id);
-      return;
-    }
-    const same =
-      was !== null &&
-      was !== "deleted" &&
-      objectContentKey(was.object) === objectContentKey(now.object);
-    if (!same) void draft.saveObject(now.object, now.blob);
-    if (was === "deleted") void draft.forgetDeletion(id);
-  }
-
-  /** The tour back at `target`, measured against the file as saved now;
-   *  a refusal, changing nothing, when a photo it brings back has no
-   *  picture. */
-  function goTo(target: EditState): EditorRefusal | null {
-    const entries = entriesFor(target);
-    if (entries === null) return { kind: "refused", reason: PICTURE_GONE };
-    const kept = new Set(target.objects.map((o) => o.id));
-    const gone = tourObjects(manifest)
-      .filter((o) => !kept.has(o.id))
-      .map((o) => o.id);
-    backUpStep(entries, gone);
-    placed = entries;
-    deleted = gone;
-    settingsTo(target);
-    return null;
-  }
-
-  /** The entries that make the saved file look like `target`; null when a
-   *  photo it brings back has no picture. */
-  function entriesFor(target: EditState): EditorEntry[] | null {
-    const hosted = hostedObjects(manifest);
-    const entries: EditorEntry[] = [];
-    for (const object of target.objects) {
-      if (hosted.holds(object)) continue;
-      const host = hosted.key(object.id);
-      const blob =
-        placed.find((p) => p.object.id === object.id)?.blob ??
-        pictures.get(object.id);
-      if (host === undefined && object.kind === "photo" && blob === undefined) {
-        return null;
-      }
-      entries.push(blob === undefined ? { object } : { object, blob });
-    }
-    return entries;
-  }
-
-  /** The setting and the details at `target`'s, backed up when they move. */
-  function settingsTo(target: EditState): void {
-    const settingMoved = target.noGps !== noGps;
-    const detailsMoved = DETAIL_FIELDS.some(
-      (f) => target.details[f] !== details[f],
-    );
-    noGps = target.noGps;
-    details = target.details;
-    if (settingMoved) noGpsTouched = true;
-    if (detailsMoved) {
-      detailsTouched = true;
-      detailsRecorded = true;
-    }
-    if (settingMoved || detailsMoved) {
-      void input.draft?.saveSettings(record());
-    }
-  }
-
-  /** One step from `from` (undo or redo), the state left behind kept on
-   *  `to`. */
-  function step(
-    from: UndoStep[],
-    to: UndoStep[],
-    kind: "undone" | "redone",
-  ): UndoOutcome {
-    if (inFlight > 0) return { kind: "refused", reason: SAVE_RUNNING };
-    const next = from.at(-1);
+    const next = nextStep(state, which);
     if (next === undefined) return { kind: "nothing" };
-    const here = stateNow();
-    const refused = goTo(next.state);
-    if (refused !== null) return refused;
-    from.pop();
-    to.push({ state: here, what: next.what });
-    revisionCount += 1;
-    return { kind, what: next.what };
+    if (picturesNeeded(state, next.view).some((id) => !pictures.has(id))) {
+      return { kind: "refused", reason: PICTURE_GONE };
+    }
+    store.dispatch(
+      which === "undo"
+        ? tourDocumentActions.undone()
+        : tourDocumentActions.redone(),
+    );
+    return { kind: which === "undo" ? "undone" : "redone", what: next.what };
+  }
+
+  /** A draft's details put back by the dialog's own checks (a record
+   *  whose details the format would drop leaves them as they are), against
+   *  `state` (the draft's objects already put back: a cover may name one). */
+  function restoredDetails(
+    state: TourDocumentState,
+    offered: TourDetailFields,
+  ): TourDetailFields | null {
+    const was = effectiveDetails(state);
+    const checked = checkDetailsForm(
+      {
+        name: offered.title ?? "",
+        description: offered.description ?? "",
+        cover: offered.cover ?? null,
+        contact: offered.contact ?? "",
+      },
+      coverIds(state),
+      was,
+      "drop",
+    );
+    if (!checked.ok) return null;
+    return DETAIL_FIELDS.some((f) => checked.details[f] !== was[f])
+      ? checked.details
+      : null;
   }
 
   return {
     model() {
       return buildEditorModel({
-        manifest: withDetails(manifest, effectiveDetails()),
+        manifest: now(),
         objects: current(),
         levels,
         fileName: shownName,
       });
     },
     changeCount() {
-      return (
-        unsaved().length +
-        deleted.length +
-        (noGpsPending() ? 1 : 0) +
-        detailChanges()
-      );
+      return changeCount(doc());
     },
     pendingIds() {
-      return unsaved().map((p) => p.object.id);
+      return unsavedEntries(doc()).map((p) => p.object.id);
     },
     needsNoGps() {
-      return noGps;
+      return doc().needsNoGps;
     },
     setNeedsNoGps(on) {
-      if (on === noGps) return { kind: "unchanged" };
-      edited('the "needs no GPS" setting', stateNow());
-      noGps = on;
-      noGpsTouched = true;
-      void input.draft?.saveSettings(record());
+      const state = mine();
+      if (state === null || on === state.needsNoGps) {
+        return { kind: "unchanged" };
+      }
+      store.dispatch(
+        tourDocumentActions.settingsChanged({
+          needsNoGps: on,
+          what: 'the "needs no GPS" setting',
+        }),
+      );
       return { kind: "changed" };
     },
     details() {
-      const now = effectiveDetails();
+      const shown = effectiveDetails(doc());
       return {
-        name: now.title ?? "",
-        description: now.description ?? "",
-        cover: now.cover ?? null,
-        contact: now.contact ?? "",
+        name: shown.title ?? "",
+        description: shown.description ?? "",
+        cover: shown.cover ?? null,
+        contact: shown.contact ?? "",
       };
     },
     setDetails(next) {
-      const checked = checkDetailsForm(next, coverIds(), effectiveDetails());
+      const state = mine();
+      if (state === null) return notInTour;
+      const was = effectiveDetails(state);
+      const checked = checkDetailsForm(next, coverIds(state), was);
       if (!checked.ok) return { kind: "refused", reason: checked.reason };
-      const now = effectiveDetails();
-      if (DETAIL_FIELDS.every((f) => checked.details[f] === now[f])) {
+      if (DETAIL_FIELDS.every((f) => checked.details[f] === was[f])) {
         return { kind: "unchanged" };
       }
-      edited("the tour details", stateNow());
-      details = checked.details;
-      detailsTouched = true;
-      detailsRecorded = true;
-      void input.draft?.saveSettings(record());
+      store.dispatch(
+        tourDocumentActions.detailsChanged({
+          details: checked.details,
+          what: "the tour details",
+        }),
+      );
       return { kind: "changed" };
     },
     coverChoices() {
-      const tour = { objects: current(), assets: manifest.assets };
-      const ids = coverIds();
-      return [...ids].flatMap((id) => {
+      const tour = { objects: current(), assets: written().assets };
+      return [...coverIds()].flatMap((id) => {
         const image = tourCoverEntry({ ...tour, cover: id });
         return image === null ? [] : [{ id, image }];
       });
     },
     noGpsCheck() {
-      return checkNoGps({ stations: manifest.stations, levels });
+      return checkNoGps({ stations: now().stations, levels });
     },
     editText(id, text) {
       const found = find(id);
       if (found === undefined) return notInTour;
       const edit = pinTextEdit(found.object, text);
-      if (edit.kind === "edited") {
-        edited(`the text of ${objectName(edit.after)}`, stateNow());
-        placed = upsertPlaced(placed, entryOf(edit.after));
-        backUp(edit.after);
-        return { kind: "edited" };
-      }
-      return edit;
+      if (edit.kind !== "edited") return edit;
+      store.dispatch(
+        tourDocumentActions.edited({
+          object: edit.after,
+          what: `the text of ${objectName(edit.after)}`,
+        }),
+      );
+      return { kind: "edited" };
     },
     move(id, lat, lon) {
       const found = find(id);
       if (found === undefined) return notInTour;
       const after = moveObjectTo(found.object, lat, lon);
-      if (!fitsStation(after.geo, after.station, manifest.stations)) {
+      if (!fitsStation(after.geo, after.station, now().stations)) {
         return { kind: "refused", reason: TOO_FAR_FROM_STATION };
       }
-      edited(`the move of ${objectName(found.object)}`, stateNow());
-      placed = upsertPlaced(placed, entryOf(after));
-      backUp(after);
+      store.dispatch(
+        tourDocumentActions.moved({
+          object: after,
+          what: `the move of ${objectName(found.object)}`,
+        }),
+      );
+      return { kind: "moved" };
+    },
+    place(object) {
+      if (mine() === null) return notInTour;
+      if (find(object.id) !== undefined) {
+        return { kind: "refused", reason: ALREADY_IN_TOUR };
+      }
+      if (!fitsStation(object.geo, object.station, now().stations)) {
+        return { kind: "refused", reason: TOO_FAR_FROM_STATION };
+      }
+      store.dispatch(
+        tourDocumentActions.placed({
+          object,
+          what: `the placement of ${objectName(object)}`,
+        }),
+      );
+      return { kind: "placed" };
+    },
+    moveStation(stationId, geo) {
+      const state = mine();
+      const station = state?.stations.find((s) => s.id === stationId);
+      if (station === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STATION };
+      }
+      store.dispatch(
+        tourDocumentActions.stationMoved({
+          stationId,
+          geo,
+          what: `the move of ${station.title === undefined ? "a station" : `"${station.title}"`}`,
+        }),
+      );
       return { kind: "moved" };
     },
     remove(id) {
       const found = find(id);
       if (found === undefined) return notInTour;
-      edited(`the delete of ${objectName(found.object)}`, stateNow());
       keepPicture(found);
-      const gone = deleteObject({ placed, deleted }, found);
-      placed = gone.placed;
-      deleted = gone.deleted;
-      // The shared sequences (`draft-actions.ts`), as the phone runs them.
-      if (input.draft !== undefined) {
-        void recordDelete(input.draft, id, gone.record.hosted);
-      }
+      store.dispatch(
+        tourDocumentActions.deleted({
+          id,
+          what: `the delete of ${objectName(found.object)}`,
+        }),
+      );
       return { kind: "deleted" };
     },
     undo() {
-      return step(undoSteps, redoSteps, "undone");
+      return step("undo");
     },
     redo() {
-      return step(redoSteps, undoSteps, "redone");
+      return step("redo");
     },
     revision() {
-      return revisionCount;
+      return doc().revision;
     },
     pictureOf(id) {
-      return placed.find((p) => p.object.id === id)?.blob;
+      return unsavedEntries(doc()).some((p) => p.object.id === id)
+        ? pictures.get(id)
+        : undefined;
     },
     restore(work) {
-      const before = stateNow();
-      const live = new Set([...placed.map((p) => p.object.id), ...deleted]);
-      let changed = 0;
-      let gone = 0;
-      for (const object of work.objects) {
-        const found = live.has(object.id) ? undefined : find(object.id);
-        if (found === undefined) continue;
+      const state = mine();
+      if (state === null) return { changed: 0, deleted: 0 };
+      const live = new Set([
+        ...state.placed.map((p) => p.object.id),
+        ...state.deleted,
+      ]);
+      const stations = manifestNow(state)?.stations ?? [];
+      const objects = work.objects.filter((object) => {
+        if (live.has(object.id)) return false;
+        const found = find(object.id);
+        if (found === undefined) return false;
         // A draft written before far moves were refused may offer one; it
         // would make every save fail (the M5a milestone review L1).
         const home = object.station ?? found.object.station;
-        if (!fitsStation(object.geo, home, manifest.stations)) continue;
-        placed = upsertPlaced(placed, { object });
-        backUp(object);
-        changed += 1;
-      }
-      for (const id of work.deleted) {
-        const found = live.has(id) ? undefined : find(id);
-        if (found === undefined) continue;
-        const after = deleteObject({ placed, deleted }, found);
-        placed = after.placed;
-        deleted = after.deleted;
-        void input.draft?.saveDeletion(id);
-        gone += 1;
-      }
+        return fitsStation(object.geo, home, stations);
+      });
+      const deleted = work.deleted.filter(
+        (id) => !live.has(id) && find(id) !== undefined,
+      );
       const settings = work.settings;
-      let settingsChanged = 0;
-      if (
+      const needsNoGps =
         settings !== undefined &&
-        !noGpsTouched &&
-        settings.needsNoGps !== noGps
-      ) {
-        noGps = settings.needsNoGps;
-        settingsChanged += 1;
+        !state.touched.needsNoGps &&
+        settings.needsNoGps !== state.needsNoGps
+          ? settings.needsNoGps
+          : undefined;
+      // The details against the tour with the draft's objects back: a
+      // cover may name a photo they bring.
+      const withObjects = tourDocumentReducer(
+        state,
+        tourDocumentActions.restored({ objects, deleted, what: "" }),
+      );
+      const details =
+        settings?.details === undefined || state.touched.details
+          ? null
+          : restoredDetails(withObjects, settings.details);
+      const was = effectiveDetails(withObjects);
+      const detailFields =
+        details === null
+          ? 0
+          : DETAIL_FIELDS.filter((f) => details[f] !== was[f]).length;
+      const changed =
+        objects.length + (needsNoGps === undefined ? 0 : 1) + detailFields;
+      if (changed + deleted.length > 0) {
+        store.dispatch(
+          tourDocumentActions.restored({
+            objects,
+            deleted,
+            ...(needsNoGps === undefined ? {} : { needsNoGps }),
+            ...(details === null ? {} : { details }),
+            what: "the restored changes",
+          }),
+        );
       }
-      if (settings?.details !== undefined && !detailsTouched) {
-        settingsChanged += restoreDetails(settings.details);
-      }
-      if (settingsChanged > 0) void input.draft?.saveSettings(record());
-      if (changed + gone + settingsChanged > 0) {
-        edited("the restored changes", before);
-      }
-      return { changed: changed + settingsChanged, deleted: gone };
+      return { changed, deleted: deleted.length };
     },
     save(options) {
       return queued(() => runSave(options));
@@ -822,7 +733,7 @@ export function createEditorSession(input: {
     async walkEntries() {
       return scanEntryNames(
         await newestNames(),
-        manifest,
+        written(),
         session.manifestWrap,
       );
     },
@@ -832,15 +743,28 @@ export function createEditorSession(input: {
   };
 
   /** Saves (and moves of the walk) run one after another: one asked for
-   *  while another runs starts when it ends (E2a review #9). */
+   *  while another runs starts when it ends (E2a review #9). The document
+   *  counts them (`saveStarted` / `saveEnded`): an undo waits for them. */
   function queued<T>(start: () => Promise<T>): Promise<T> {
-    const run = inFlight === 0 ? start() : tail.then(start, start);
-    inFlight += 1;
-    // Counted down BEFORE the caller hears the end: an undo asked for
-    // right after an awaited save is not refused as "a save is running".
-    const next = run.finally(() => {
-      inFlight -= 1;
-    });
+    const run = doc().save.rebuilds === 0 ? start() : tail.then(start, start);
+    store.dispatch(tourDocumentActions.saveStarted({ generation }));
+    // Ended BEFORE the caller hears the end: an undo asked for right after
+    // an awaited save is not refused as "a save is running".
+    const next = run.then(
+      (value) => {
+        store.dispatch(tourDocumentActions.saveEnded({ generation }));
+        return value;
+      },
+      (err: unknown) => {
+        store.dispatch(
+          tourDocumentActions.saveEnded({
+            generation,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+        throw err;
+      },
+    );
     tail = next.catch(() => undefined);
     return next;
   }
@@ -859,25 +783,32 @@ export function createEditorSession(input: {
     placedNow: EditorEntry[];
     deletedNow: string[];
     manifestNow: TourManifest;
+    stationsAtStart: TourDocumentState["stations"];
   } {
+    const state = doc();
+    const hosted = hostedObjects(state.written);
     return {
-      placedNow: [...placed],
-      deletedNow: [...deleted],
-      manifestNow: withDetails(
-        withNeedsNoGps(manifest, noGps),
-        effectiveDetails(),
-      ),
+      // A photo the written file has no picture for carries the one this
+      // session kept (an undo brought it back after a save took it out).
+      placedNow: state.placed.map(({ object }) => {
+        const blob =
+          object.kind === "photo" && hosted.key(object.id) === undefined
+            ? pictures.get(object.id)
+            : undefined;
+        return blob === undefined ? { object } : { object, blob };
+      }),
+      deletedNow: [...state.deleted],
+      manifestNow: now(),
+      stationsAtStart: state.stations,
     };
   }
 
   /** The photo spots for a rebuild, decided once per open; a deleted
    *  photo's picture is read first, before the rebuild replaces the bytes
    *  it may be read from. */
-  async function photoSpots(
-    manifestNow: TourManifest,
-  ): Promise<RebuildPhotoSpots> {
+  async function photoSpots(tourNow: TourManifest): Promise<RebuildPhotoSpots> {
     await Promise.all(pictureReads);
-    spots ??= captureSpotsForRebuild(session, manifestNow);
+    spots ??= captureSpotsForRebuild(session, tourNow);
     return spots;
   }
 
@@ -916,21 +847,25 @@ export function createEditorSession(input: {
 
   /** `finished` becomes the newest bytes: what it carries is no longer
    *  pending. */
-  function landed(finished: FinishedTour, deletedNow: readonly string[]): void {
+  function landed(
+    finished: FinishedTour,
+    snap: ReturnType<typeof snapshot>,
+  ): void {
     previous = {
       blob: finished.blob,
       ...(finished.signedManifest === undefined
         ? {}
         : { signedManifest: finished.signedManifest }),
     };
-    manifest = finished.written;
-    const pending = pendingAfterRebuild(
-      { placed, deleted },
-      finished.written,
-      deletedNow,
+    // A save of a tour opened since lands nowhere (`generation`).
+    store.dispatch(
+      tourDocumentActions.saved({
+        generation,
+        written: finished.written,
+        appliedDeletions: snap.deletedNow,
+        stationsAtStart: snap.stationsAtStart,
+      }),
     );
-    placed = pending.placed;
-    deleted = pending.deleted;
   }
 
   function saveOf(
@@ -954,7 +889,7 @@ export function createEditorSession(input: {
     const snap = snapshot();
     const photos = await photoSpots(snap.manifestNow);
     const finished = await rebuild(snap, photos, options.keepScan);
-    landed(finished, snap.deletedNow);
+    landed(finished, snap);
     return saveOf(finished, photos);
   }
 
@@ -1019,7 +954,7 @@ export function createEditorSession(input: {
             "another save landed while the walk was moved out - move it again",
           );
         }
-        landed(finished, snap.deletedNow);
+        landed(finished, snap);
       },
     };
   }

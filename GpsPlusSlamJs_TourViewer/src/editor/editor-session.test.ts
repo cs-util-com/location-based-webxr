@@ -29,6 +29,7 @@ import {
   type TourSession,
 } from "../tour-session.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
+import { selectTourDocument } from "../tour-document.js";
 import {
   createEditorSession,
   NOT_IN_TOUR,
@@ -1212,9 +1213,11 @@ describe("createEditorSession, undo and redo (W2)", () => {
   // dropped the station it emptied; the undo must put the element back
   // into THAT station, under its id, not merge it into a neighbour within
   // R (all three stand on one spot here, so the old rule merged it into
-  // the first) or start a station with a new id. It comes back after the
-  // tour's own stations: where it stood in the order is not recovered.
-  it("an undo after a save that dropped the emptied station puts the element back into that station", async () => {
+  // the first) or start a station with a new id. And WHERE it stood: the
+  // tour document's history holds the station frames (D29-D31), so the
+  // undo brings the station back in its place in the order, not after the
+  // tour's own stations (the M5a review's recorded deviation, settled).
+  it("an undo after a save that dropped the emptied station puts the element back into that station, where it stood", async () => {
     const { session, manifest } = await opened([pin("a"), pin("b"), pin("c")]);
     const editor = createEditorSession({
       session,
@@ -1239,8 +1242,8 @@ describe("createEditorSession, undo and redo (W2)", () => {
       ),
     ).toEqual([
       [stationIdOf("a"), ["a"]],
-      [stationIdOf("c"), ["c"]],
       [stationIdOf("b"), ["b"]],
+      [stationIdOf("c"), ["c"]],
     ]);
     expect(editor.changeCount()).toBe(0);
     await session.close();
@@ -1685,5 +1688,123 @@ describe("moving the walk out (W2, D19)", () => {
     expect(await namesIn(lean.blob)).toEqual(["tour.json"]);
     expect(lean.notPlaced).toBeUndefined();
     expect([...lean.scanLeftOut].sort()).toEqual(walk);
+  });
+});
+
+/**
+ * Why these tests matter (D29-D31): the session no longer keeps a copy of
+ * the tour - it is the page's facade over the store's tour document. The
+ * page's views read the SAME state the session edits; a second session on
+ * the same store (another tour opened) disowns the first, whose late edits
+ * and saves must never reach the new tour; and the two operations the
+ * desktop had no gesture for - placing a note, moving a station with its
+ * items (D17) - go through the same document rules as the phone's.
+ */
+describe("createEditorSession, the tour document (D29-D31)", () => {
+  it("edits the store's document: the page reads what the session changed", async () => {
+    const { session, manifest } = await opened([pin("a"), pin("b")]);
+    const store = createTourViewerStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    editor.editText("a", "new");
+    const doc = selectTourDocument(store.getState());
+    expect(doc.placed.map((p) => p.object.id)).toEqual(["a"]);
+    expect(doc.past.map((s) => s.what)).toEqual(['the text of "new"']);
+    await editor.save({ keepScan: false });
+    expect(selectTourDocument(store.getState()).written?.title).toBe(
+      manifest.title,
+    );
+    expect(selectTourDocument(store.getState()).placed).toEqual([]);
+    await session.close();
+  });
+
+  it("a later open on the same store disowns the earlier session: its edits are refused, its save lands nowhere", async () => {
+    const first = await opened([pin("a")]);
+    const second = await opened([pin("z")]);
+    const store = createTourViewerStore();
+    const old = createEditorSession({
+      session: first.session,
+      manifest: first.manifest,
+      levels: new Map(),
+      store,
+    });
+    old.editText("a", "pending");
+    const late = old.save({ keepScan: false });
+    const now = createEditorSession({
+      session: second.session,
+      manifest: second.manifest,
+      levels: new Map(),
+      store,
+    });
+    await late;
+    expect(old.editText("a", "again")).toEqual({
+      kind: "refused",
+      reason: NOT_IN_TOUR,
+    });
+    expect(old.undo()).toEqual({ kind: "refused", reason: NOT_IN_TOUR });
+    expect(noteIds(now.model())).toEqual(["z"]);
+    expect(selectTourDocument(store.getState()).written).toEqual(
+      second.manifest,
+    );
+    expect(now.changeCount()).toBe(0);
+    await first.session.close();
+    await second.session.close();
+  });
+
+  it("places a new note into the tour by the automatic-station rule, refusing an id the tour carries", async () => {
+    const { session, manifest } = await opened([pin("a")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.place(pin("a"))).toMatchObject({ kind: "refused" });
+    expect(editor.place(pin("n", "New"))).toEqual({ kind: "placed" });
+    expect(editor.changeCount()).toBe(1);
+    const saved = await carried((await editor.save({ keepScan: false })).blob);
+    expect(saved.objects.map((o) => o.id)).toEqual(["a", "n"]);
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    const undone = await carried((await editor.save({ keepScan: false })).blob);
+    expect(undone.objects.map((o) => o.id)).toEqual(["a"]);
+    await session.close();
+  });
+
+  it("moves a station with its items (D17): the items keep their local poses, and an undo puts it back", async () => {
+    const { session, manifest } = await opened([pin("a"), pin("b")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const station = manifest.stations[0]!;
+    const geo = { ...station.geo, lat: station.geo.lat + 0.0002 };
+    expect(editor.moveStation("nowhere", geo)).toMatchObject({
+      kind: "refused",
+    });
+    expect(editor.moveStation(station.id, geo)).toEqual({ kind: "moved" });
+    const json = await writtenJson(
+      (await editor.save({ keepScan: false })).blob,
+    );
+    const written = (
+      json.stations as { id: string; geo: { lat: number }; items: unknown[] }[]
+    ).find((s) => s.id === station.id)!;
+    expect(written.geo.lat).toBeCloseTo(geo.lat, 12);
+    expect(written.items).toEqual(
+      JSON.parse(JSON.stringify(station.items)) as unknown[],
+    );
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    const back = await writtenJson(
+      (await editor.save({ keepScan: false })).blob,
+    );
+    expect(
+      (back.stations as { id: string; geo: { lat: number } }[]).find(
+        (s) => s.id === station.id,
+      )!.geo.lat,
+    ).toBeCloseTo(station.geo.lat, 12);
+    await session.close();
   });
 });

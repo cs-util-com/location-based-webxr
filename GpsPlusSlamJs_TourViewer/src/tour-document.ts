@@ -73,10 +73,10 @@ interface TourHistoryStep {
 
 /** Who holds a page's one save slot: an explicit Save, the autosave, or
  *  a step of the walk's move. */
-type TourSaveHolder = "explicit" | "auto" | "walk";
+export type TourSaveHolder = "explicit" | "auto" | "walk";
 
 /** The save status (what used to be a page's module-scope save flags). */
-interface TourSaveStatus {
+export interface TourSaveStatus {
   /** idle; saving (the page's save slot is held, or a rebuild is queued
    *  or runs); error (the last save failed, `error` says why). */
   readonly status: "idle" | "saving" | "error";
@@ -371,7 +371,7 @@ export function picturesNeeded(
 }
 
 /** The step an undo (or a redo) goes to; undefined when there is none. */
-function nextStep(
+export function nextStep(
   state: TourDocumentState,
   which: "undo" | "redo",
 ): TourHistoryStep | undefined {

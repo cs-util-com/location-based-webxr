@@ -243,13 +243,18 @@ async function desktopPage(
       editor.undo();
       return draft.idle();
     },
-    place: () => Promise.reject(new NoSuchOperation("desktop: place")),
+    place: (object) => {
+      editor.place(object);
+      return draft.idle();
+    },
     move: (id, lat, lon) => {
       editor.move(id, lat, lon);
       return draft.idle();
     },
-    moveStation: () =>
-      Promise.reject(new NoSuchOperation("desktop: move a station")),
+    moveStation: (stationId, geo) => {
+      editor.moveStation(stationId, geo);
+      return draft.idle();
+    },
     setNeedsNoGps: (on) => {
       editor.setNeedsNoGps(on);
       return draft.idle();
@@ -569,8 +574,6 @@ const ROWS: readonly Row[] = [
   {
     name: "place a new pin, save",
     records: false,
-    diverges:
-      "the desktop editor cannot place (step 4: the desktop adopts tourDocument, whose `placed` its session offers)",
     run: async (p) => {
       await p.place(pin("new", "A new pin", NORTH));
       return p;
@@ -579,8 +582,6 @@ const ROWS: readonly Row[] = [
   {
     name: "move a station with its items (D17), save",
     records: false,
-    diverges:
-      "the desktop editor cannot move a station (step 4: the desktop adopts tourDocument, whose `stationMoved` its session offers)",
     run: async (p) => {
       await p.moveStation("st-a", {
         lat: NORTH,
@@ -661,9 +662,25 @@ async function outcome(
   const written = await page.save();
   await flush();
   return {
-    written: JSON.parse(serializeTourManifest(written)) as unknown,
+    written: withStationsByOrder(written),
     records: row.records ? await page.records() : null,
   };
+}
+
+/** The written manifest as JSON, the ids of stations the opened tour
+ *  lacks named by their order: the automatic-station rule mints a random
+ *  id on each page, which says nothing about whether they agree. */
+function withStationsByOrder(written: TourManifest): unknown {
+  const known = new Set(tourOf(OPENED).stations.map((s) => s.id));
+  const names = new Map<string, string>();
+  for (const station of written.stations) {
+    if (!known.has(station.id)) {
+      names.set(station.id, `new-${String(names.size)}`);
+    }
+  }
+  return JSON.parse(serializeTourManifest(written), (_key, value: unknown) =>
+    typeof value === "string" ? (names.get(value) ?? value) : value,
+  ) as unknown;
 }
 
 /** Runs `row` on both pages and asserts they wrote the same. A marked

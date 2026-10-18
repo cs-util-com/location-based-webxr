@@ -241,8 +241,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   `savesSettled()`, which can never spin: a claim still set on an ended
   `saveEnd` stops the wait.
 - **Move the walk out (D19)** (`moveWalk`): each step holds the page's
-  one save slot (`claimSave()`, which a save takes too: `saving` set and a
-  new `saveEnd` for Done to wait on) and `walkMoving` (Done disabled), and
+  one save slot (`claimSave("walk")`, which a save takes too, as
+  `"explicit"` or `"auto"`: the save status names the holder and a new
+  `saveEnd` is made for Done to wait on; `walkMoving()` - the holder is
+  the walk - keeps Done disabled), and
   the dialog cannot be closed meanwhile (the M4b milestone review #1).
   **The walk's file is asked for IN the click** (`pickSaveFile`, before
   any await: Chromium opens its save dialog only within a few seconds of a
@@ -297,8 +299,24 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   from the bar's own box), 12 px from the window's edges. The rail starts folded below 760 px.
 - **Closing** a tour (another open) closes its session; the card revokes
   its photo's object URL.
-- Builds a store first: the library's geo maths (the distance lines) runs
-  only once one exists.
+- **The page's store** (`createTourViewerStore()`, built first: the
+  library's geo maths - the distance lines - runs only once one exists)
+  holds the tour document (`../tour-document.ts`, D29-D31): the session
+  is created on it (`createEditorSession({ store })`), and the page's save
+  workflow state is its `save` status, not module variables - who holds
+  the one save slot (`saveClaimed` / `saveReleased`; `saving()`,
+  `walkMoving()`, the autosave's `by === "auto"`), a Save queued behind
+  an autosave (`saveQueued`), a save built (`saveBuilt`), where the last
+  one arrived (`saveDelivered`, read by Done), and what the opened file
+  allows (`saveLimited`: `largeTour`, `cannotSave`). An open resets them
+  (`opened`), and so does a tour dropped for a late integrity failure
+  (`closed`); the slot itself is kept across both, since the save holding
+  it lets it go once it sees its tour gone. What stays in this module is
+  imperative: DOM nodes, the file target and its lock, the draft handle,
+  timers and toasts, the built file a browser did not deliver
+  (`undelivered`, a Blob), and transient UI (the selection, a marker being
+  dragged, the card's message, Done's own "Saving…") - those last are named
+  in the D30 report as a candidate for a view slice.
 
 - Once everything is wired the page sets `body[data-editor="ready"]`;
   the keyboard e2e waits for it (a press before the module ran went
