@@ -230,11 +230,62 @@ describe("withTourContent", () => {
     ]);
   });
 
-  it("an object naming a station the tour lacks is assigned as a new one", () => {
-    const next = withTourContent(tour([station("gate", 0, 0)]), {
-      objects: [{ ...pin("a", 1, 1), station: "gone" }],
+  // Why: an undo after a save that pruned an emptied station hands the
+  // write the object as it stood, naming the station the save dropped
+  // (the M5a milestone review M2). The automatic rule would merge it into
+  // a neighbour within R, or start a station with a fresh id: the undo
+  // would not put the element back into its station. The recreated
+  // station goes after the tour's own: a save hands the objects "saved,
+  // then changed", so their order cannot say where it stood.
+  it("an object naming a station the tour lacks recreates that station under its id, after the tour's own", () => {
+    const base = withTourContent(
+      tour([
+        station("gate", 0, 0),
+        station("mid", 0, 10),
+        station("well", 0, 200),
+      ]),
+      { objects: [pin("a", 0, 1), pin("m", 0, 11), pin("w", 0, 201)] },
+    );
+    expect(base.stations.map((s) => s.items.map((i) => i.id))).toEqual([
+      ["a"],
+      ["m"],
+      ["w"],
+    ]);
+    const before = tourObjects(base);
+    const pruned = withTourContent(base, {
+      objects: before.filter((o) => o.id !== "m"),
     });
-    expect(next.stations[0]!.items.map((i) => i.id)).toEqual(["a"]);
+    expect(pruned.stations.map((s) => s.id)).toEqual(["gate", "well"]);
+
+    // As a save hands them: the saved objects, then the changed ones.
+    const undone = withTourContent(pruned, {
+      objects: [...tourObjects(pruned), before[1]!, pin("near-m", 0, 12)],
+      newStationId: counter(),
+    });
+    expect(
+      undone.stations.map((s) => [s.id, s.items.map((i) => i.id)]),
+    ).toEqual([
+      ["gate", ["a"]],
+      ["well", ["w"]],
+      ["mid", ["m", "near-m"]],
+    ]);
+    const mid = undone.stations[2]!;
+    // Anchored where its element stands, as an automatic station is.
+    expect(mid).toMatchObject({
+      geo: {
+        lat: before[1]!.geo.lat,
+        lon: before[1]!.geo.lon,
+        alt: before[1]!.geo.alt,
+        rotation: [0, 0, 0, 1],
+      },
+      foundRadiusM: STATION_RADIUS_M,
+      activateRadiusM: AUTO_STATION_ACTIVATE_M,
+      steps: [],
+    });
+    const m = tourObjects(undone).find((o) => o.id === "m")!;
+    expect(m.station).toBe("mid");
+    expect(m.geo.lat).toBeCloseTo(before[1]!.geo.lat, 9);
+    expect(m.geo.lon).toBeCloseTo(before[1]!.geo.lon, 9);
   });
 
   it("recorded photos are assigned in capture order, before the objects; the tour's own spots are kept", () => {

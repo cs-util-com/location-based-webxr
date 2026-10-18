@@ -179,13 +179,22 @@ export function withTourContent(
   for (const capture of bake?.captures ?? []) {
     unplaced.push({ kind: "capture", image: capture.image, geo: capture.geo });
   }
+  /** The stations the objects go into, in order: the tour's, then any an
+   *  object names that the tour lacks, recreated. */
+  const seats = new Map(stationById);
   for (const object of content.objects) {
-    const stationId =
-      object.station !== undefined && stationById.has(object.station)
-        ? object.station
-        : stationOfItem.get(object.id);
-    const station =
-      stationId === undefined ? undefined : stationById.get(stationId);
+    if (object.station !== undefined && !seats.has(object.station)) {
+      // An object naming a station the tour lacks is one an undo brought
+      // back after a save dropped its emptied station (the M5a milestone
+      // review M2): that station comes back, under its own id, anchored
+      // where the object stands - never merged into a neighbour. It goes
+      // after the tour's own: the objects come "saved, then changed", so
+      // their order cannot tell where it stood.
+      seats.set(object.station, automaticStation(object.station, object.geo));
+      items.set(object.station, []);
+    }
+    const stationId = object.station ?? stationOfItem.get(object.id);
+    const station = stationId === undefined ? undefined : seats.get(stationId);
     if (station === undefined) {
       unplaced.push({ kind: "object", object });
       continue;
@@ -201,13 +210,13 @@ export function withTourContent(
     });
   }
   const assigned = assignToStations({
-    stations: manifest.stations.map((s) => ({ id: s.id, anchor: s.geo })),
+    stations: [...seats.values()].map((s) => ({ id: s.id, anchor: s.geo })),
     elements: unplaced,
     positionOf: (e) => (e.kind === "object" ? e.object.geo : e.geo),
     newStationId: content.newStationId ?? (() => newObjectId()),
     ...(content.radiusM === undefined ? {} : { radiusM: content.radiusM }),
   });
-  const stations = new Map(stationById);
+  const stations = new Map(seats);
   const captures: TourCapture[] = [];
   for (const [i, element] of unplaced.entries()) {
     const id = assigned.stationOf[i]!;

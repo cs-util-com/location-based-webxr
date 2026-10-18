@@ -1145,6 +1145,44 @@ describe("createEditorSession, undo and redo (W2)", () => {
     await session.close();
   });
 
+  // Why (the M5a milestone review M2): the save that wrote a delete also
+  // dropped the station it emptied; the undo must put the element back
+  // into THAT station, under its id, not merge it into a neighbour within
+  // R (all three stand on one spot here, so the old rule merged it into
+  // the first) or start a station with a new id. It comes back after the
+  // tour's own stations: where it stood in the order is not recovered.
+  it("an undo after a save that dropped the emptied station puts the element back into that station", async () => {
+    const { session, manifest } = await opened([pin("a"), pin("b"), pin("c")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    editor.remove("b");
+    const first = await writtenJson(
+      (await editor.save({ keepScan: false })).blob,
+    );
+    expect((first.stations as { id: string }[]).map((s) => s.id)).toEqual([
+      stationIdOf("a"),
+      stationIdOf("c"),
+    ]);
+    expect(editor.undo().kind).toBe("undone");
+    const second = await writtenJson(
+      (await editor.save({ keepScan: false })).blob,
+    );
+    expect(
+      (second.stations as { id: string; items: { id: string }[] }[]).map(
+        (s) => [s.id, s.items.map((i) => i.id)],
+      ),
+    ).toEqual([
+      [stationIdOf("a"), ["a"]],
+      [stationIdOf("c"), ["c"]],
+      [stationIdOf("b"), ["b"]],
+    ]);
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
   it("a delete a save already wrote comes back, a photo with its picture", async () => {
     const { session, manifest } = await opened([pin("a"), photo("f")]);
     const editor = createEditorSession({

@@ -55,7 +55,14 @@ radiusM? }) -> TourManifest`: the manifest with `objects` as its pins and
   hint, no steps and no title.
 - **The tour's own recorded photos are kept.** Baked spots are placed only
   when the manifest has none, so a second Finish never re-assigns them.
-- An object naming a station the tour lacks is treated as new.
+- **An object naming a station the tour lacks recreates that station** under
+  the same id, anchored where the object stands, as an automatic station
+  (the M5a milestone review M2). Such an object is one an undo brought back
+  after a save dropped its emptied station: the automatic rule would merge
+  it into a neighbour within R or start a station under a new id. The
+  recreated station goes after the tour's own, before any new one: a save
+  hands the objects "saved, then changed", so their order cannot say where
+  it stood, and its old position in the order is not recovered.
 - An object missing from `objects` leaves its station. A station this
   write EMPTIED (it held items and holds none now) goes when nothing else
   keeps it: no title, no steps, no recorded photo in it, and no other
@@ -86,8 +93,8 @@ const written = withTourContent(manifest, {
 - `tour-content.test.ts`: unmoved objects bit for bit; an edit keeps its
   pose; a move is re-expressed in its own station, even beyond R; new
   objects join or start stations; chains; removal; an emptied station
-  dropped unless titled, storied, photographed or routed to; an unknown
-  station; the
+  dropped unless titled, storied, photographed or routed to; a station
+  an object names but the tour lacks, recreated under its id; the
   capture order and the kept spots; a refused R; and the `asStored`
   property (it is what a written tour holds, by content key).
 - Through `finish-rebuild.test.ts` (the Finish's capture assignment, and a
