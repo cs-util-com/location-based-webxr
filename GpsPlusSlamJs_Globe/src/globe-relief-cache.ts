@@ -37,8 +37,17 @@ export const RELIEF_CACHE = Object.freeze({
    * with skirts (1,221 vertices of position, normal and uv; 6,912 indices).
    */
   otherBytesPerTile: 256 * 256 * 4 + 1_221 * 32 + 6_912 * 2,
-  /** How long after the last refusal the cache still counts as stalled (ms). */
+  /**
+   * Refusals less than this far apart (ms) are one run, and a run this
+   * old is still running...
+   */
   stallWindowMs: 2_000,
+  /**
+   * ...and a run of refusals this long (ms) reads stalled, full or not: a
+   * cache that thrashes (the library unloads to its floor, the update
+   * refills it and is refused again) has room at almost any moment.
+   */
+  sustainedMs: 1_000,
 });
 
 /** Bytes the library counts for one tile of `tileDimension` px heights. */
@@ -105,7 +114,12 @@ export interface ReliefCacheState {
   readonly refusedRequests: number;
   /** Tiles loaded, then dropped: the cache was full. */
   readonly refusedLoads: number;
-  /** Full, and a tile refused within the stall window. */
+  /**
+   * Full with a tile refused since the cache last had room (the library
+   * unloads unused tiles when full, so a cache that STAYS full holds only
+   * tiles in use, and the tiles it turned away are missing), or refusals
+   * running for `sustainedMs` and not stopped (a thrashing cache).
+   */
   readonly stalled: boolean;
 }
 
@@ -132,9 +146,13 @@ type CacheInternals = {
  * (`frameCount` moved; an update a plugin skips leaves the last count in
  * place), the library's `stats.refused`; and every `remove` of a tile
  * that has loaded, with no bytes counted, while the cache is full (the
- * library's "discard this tile" path). `state()` reports them; `dispose()`
+ * library's "discard this tile" path). It reads stalled when full after a
+ * refusal until it is seen with room again (after an update, a removal or
+ * a read: a cache stuck full of tiles in use), or while refusals less than
+ * `windowMs` apart have run for `RELIEF_CACHE.sustainedMs` (a thrashing
+ * cache). `state()` reports them; `dispose()`
  * restores the cache's `remove` and stops listening. `now` is injectable
- * for tests. RangeError for a stall window that is not finite and >= 0.
+ * for tests. RangeError for a window that is not finite and >= 0.
  */
 export function watchReliefCache(
   tiles: WatchedTiles,
@@ -154,7 +172,22 @@ export function watchReliefCache(
   const remove = cache.remove;
   let refusedRequests = 0;
   let refusedLoads = 0;
+  let refusedSinceRoom = false;
   let lastRefusalAt = Number.NEGATIVE_INFINITY;
+  let runStartAt = Number.NEGATIVE_INFINITY;
+  const refuse = () => {
+    const t = now();
+    refusedSinceRoom = true;
+    if (t - lastRefusalAt > windowMs) runStartAt = t;
+    lastRefusalAt = t;
+  };
+  const thrashing = () =>
+    now() - lastRefusalAt <= windowMs &&
+    lastRefusalAt - runStartAt >= RELIEF_CACHE.sustainedMs;
+  /** A cache seen with room has nothing turned away outstanding. */
+  const seeRoom = () => {
+    if (!cache.isFull()) refusedSinceRoom = false;
+  };
   let seenFrame = tiles.frameCount;
   const afterUpdate = () => {
     if (tiles.frameCount === seenFrame) return;
@@ -162,20 +195,24 @@ export function watchReliefCache(
     const refused = tiles.stats.refused;
     if (refused > 0) {
       refusedRequests += refused;
-      lastRefusalAt = now();
+      refuse();
     }
+    seeRoom();
   };
   tiles.addEventListener("update-after", afterUpdate);
   cache.remove = function (this: LRUCache, item: unknown) {
     const loaded = internals.loadedSet?.has(item) ?? false;
     if (loaded && cache.getMemoryUsage(item) === 0 && cache.isFull()) {
       refusedLoads++;
-      lastRefusalAt = now();
+      refuse();
     }
-    return remove.call(this, item);
+    const removed = remove.call(this, item);
+    seeRoom();
+    return removed;
   };
   return {
     state() {
+      seeRoom();
       const full = cache.isFull();
       return {
         usedBytes: internals.cachedBytes,
@@ -183,7 +220,7 @@ export function watchReliefCache(
         full,
         refusedRequests,
         refusedLoads,
-        stalled: full && now() - lastRefusalAt <= windowMs,
+        stalled: (full && refusedSinceRoom) || thrashing(),
       };
     },
     dispose() {

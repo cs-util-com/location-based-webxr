@@ -161,10 +161,12 @@ describe("watchReliefCache", () => {
   // renderer and cache: once full, the queue step turns the tiles an
   // update wants away (its `stats.refused`), and the load step drops a
   // tile that has just loaded (loaded, no bytes counted yet, cache full).
-  // Both must read as stalled, and the stall must clear when they stop.
-  it("reads stalled when a full cache turns tiles away, and clears after", () => {
-    const { tiles, cache, watch, update, resident, unloaded, advance } =
-      setup();
+  // Both must read as stalled, and the stall must last while the cache
+  // stays full (the globe lab, 2026-10-18: 128 MiB at a 3 km oblique view,
+  // 136 refusals, then none; still full, 6 of 103 visible tiles never
+  // loaded, and a stall that had cleared after 2 s said nothing).
+  it("reads stalled when a full cache turns tiles away, and while it stays full", () => {
+    const { tiles, cache, watch, update, resident, unloaded } = setup();
     resident(1_000);
     expect(cache.isFull()).toBe(true);
     update(() => {
@@ -192,15 +194,39 @@ describe("watchReliefCache", () => {
     tiles.dispatchEvent({ type: "update-after" } as never);
     expect(watch.state().refusedRequests).toBe(2);
 
-    // Refusals stop: the stall clears after its window, the counts stay.
-    advance(2_001);
+    // Refusals stop, the cache stays full: the tiles it turned away are
+    // still missing, so it still reads stalled.
+    update();
     update();
     expect(watch.state()).toMatchObject({
       full: true,
       refusedRequests: 2,
       refusedLoads: 1,
+      stalled: true,
+    });
+  });
+
+  // Why: the library unloads unused tiles when the cache is full; a tile
+  // refused just before that unload is asked for again on the next update
+  // and loads. A refusal the same update makes room for is not a stall.
+  it("does not read stalled when the update that refused also made room", () => {
+    const { tiles, cache, watch, update, resident, unloaded, advance } =
+      setup();
+    const old = resident(1_000);
+    update(() => {
+      tiles.queueTileForDownload(unloaded());
+      cache.remove(old);
+    });
+    expect(watch.state()).toMatchObject({
+      full: false,
+      refusedRequests: 1,
       stalled: false,
     });
+    // Full again later, without a refusal since: not stalled.
+    advance(2_001);
+    resident(1_000);
+    update();
+    expect(watch.state()).toMatchObject({ full: true, stalled: false });
   });
 
   // Why: "stalled" means the tree cannot refine NOW. Once the library has
@@ -249,13 +275,43 @@ describe("watchReliefCache", () => {
     expect(watch.state().refusedRequests).toBe(0);
   });
 
+  // Why: a cache far too small thrashes: the library unloads to its
+  // floor, the update refills it and is refused again, so it reads with
+  // room at almost any moment (the globe lab, 2026-10-18, 8 MiB: never
+  // "full" when polled). Refusals that keep coming for a second or more
+  // read as stalled, full or not; a single burst at the cap does not.
+  it("reads stalled while refusals keep coming, even with room between them", () => {
+    const { tiles, cache, watch, update, resident, unloaded, advance } =
+      setup();
+    const thrash = () => {
+      const a = resident(1_000);
+      update(() => tiles.queueTileForDownload(unloaded()));
+      cache.remove(a); // unloaded to the floor: room again
+    };
+    thrash();
+    expect(watch.state()).toMatchObject({ full: false, stalled: false });
+    advance(600);
+    thrash();
+    advance(600);
+    thrash();
+    expect(watch.state()).toMatchObject({ full: false, stalled: true });
+    // They stop: after the window, not stalled.
+    advance(2_001);
+    expect(watch.state()).toMatchObject({ full: false, stalled: false });
+    // A new single burst starts a new run: not stalled.
+    thrash();
+    expect(watch.state().stalled).toBe(false);
+  });
+
   it("refuses a negative or non-finite stall window", () => {
     for (const windowMs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(() =>
         watchReliefCache(new TilesRenderer() as DrivenTiles, { windowMs }),
       ).toThrow(RangeError);
     }
-    expect(RELIEF_CACHE.stallWindowMs).toBeGreaterThan(0);
+    expect(RELIEF_CACHE.stallWindowMs).toBeGreaterThan(
+      RELIEF_CACHE.sustainedMs,
+    );
   });
 });
 

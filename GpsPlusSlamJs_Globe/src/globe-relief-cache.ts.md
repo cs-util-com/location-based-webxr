@@ -14,7 +14,8 @@
     the globe's F1 budget unchanged; desktop 128 MiB), `floorShare` 0.75
     (the floor the library evicts down to, 48 of 64), `otherBytesPerTile`
     (the imagery's 256 x 256 RGBA and the 32 x 32 skirted mesh),
-    `stallWindowMs` 2,000.
+    `stallWindowMs` 2,000 (refusals closer than that are one run),
+    `sustainedMs` 1,000 (a run that long reads stalled).
   - `ReliefDeviceClass`: `"phone" | "desktop"`; the app picks it (a lab
     setting, a device probe), this module never guesses.
   - `reliefTileBytes(tileDimension)`: the bytes the library counts for one
@@ -29,8 +30,8 @@
     `0 <= minBytes <= maxBytes`, `maxBytes > 0`, all finite.
   - `ReliefCacheState`: `usedBytes`, `maxBytes`, `full`, `refusedRequests`
     (tiles updates wanted but could not queue), `refusedLoads` (tiles
-    loaded, then dropped), `stalled` (full, and a refusal within the stall
-    window).
+    loaded, then dropped), `stalled` (full with a refusal since the cache last
+    had room, or a run of refusals lasting `sustainedMs`).
   - `watchReliefCache(tiles, { now?, windowMs? })` -> `{ state(), dispose() }`:
     - after each update that traversed (`tiles.frameCount` moved) it adds
       the library's own `tiles.stats.refused` (reset by the library at the
@@ -38,8 +39,11 @@
     - it wraps the cache's `remove` to count the load step's discard: a
       tile in the cache's `loadedSet`, with no bytes counted yet, while
       the cache is full;
+    - stalled when full after a refusal, until the cache is seen with
+      room (after an update, a removal, or a `state()` read), or while
+      refusals less than `windowMs` apart have run for `sustainedMs`;
     - `dispose()` restores `remove` and stops listening;
-    - RangeError for a stall window that is not finite and >= 0.
+    - RangeError for a window that is not finite and >= 0.
 - Invariants & assumptions:
   - The refusals are the library's (0.5.3), never re-derived: a guard test
     reads `TilesRendererBase.js` for the reset, the queue's count, the
@@ -50,8 +54,21 @@
   - Ordinary removals (a queued tile nobody wants, an eviction with bytes
     counted, a failed load, which is never in `loadedSet`) are not
     refusals.
-  - `stalled` drops as soon as the cache has room again, even inside the
-    window: it means "cannot refine now".
+  - `stalled` covers two ways a cache fails, measured in the globe lab
+    (2026-10-18, a 3 km oblique view):
+    - STUCK: full of tiles in use, refusals stopped, tiles missing (128
+      MiB: 136 refusals, then none, 6 of 103 visible tiles never loaded).
+      The library unloads unused tiles when full, so a cache that STAYS
+      full holds only tiles in use: stalled until it has room. A first
+      version that cleared 2 s after the last refusal read "not stalled"
+      here.
+    - THRASHING: far too small, the library unloads and the update
+      refills and is refused again, with a moment of room every frame (8
+      MiB): a run of refusals lasting a second reads stalled, full or not
+      (polled, this cache was never "full"); a single burst at the cap,
+      resolved by the next unload, does not. The room-latch alone never
+      read stalled here.
+  - A cache with room never reads stalled.
   - The watch reads the cache's live `maxBytesSize`, so a cap changed later
     (the globe lab's `reliefCacheMiB`) is what `state()` reports.
 - Example:
@@ -69,7 +86,8 @@
 - Tests: `globe-relief-cache.test.ts` (the phone's 256 px budget pinned at
   64/48 MiB, the same tile count per format, desktop twice phone, room for
   the spike's 197 MiB eye-height use, the budget check; the stall driven
-  through the library's real renderer queue step and cache, cleared by
-  time and by room, not raised by ordinary removals or a skipped update;
+  through the library's real renderer queue step and cache, lasting
+  while the cache stays full, while refusals keep coming (thrashing),
+  cleared by room, not raised by a refusal the same update made room for, by ordinary removals or a skipped update;
   dispose; the library guard). `globe-terrain.test.ts` drives it through
   `createGlobeTerrain`'s `cache` option and `reliefCache()`.
