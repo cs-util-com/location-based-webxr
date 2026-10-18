@@ -66,7 +66,12 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   - the details as checked by `checkDetailsForm`.
 - `undone()` / `redone()` - one step; the document goes to the step's view
   MEASURED AGAINST THE WRITTEN FILE (`contentAt`): what the file holds as
-  the view has it is not pending, the rest is.
+  the view has it is not pending, the rest is. "Holds" is read through the
+  VIEW's frames, as `documentObjects` reads the objects: an item the file
+  keeps at a local pose under a frame the view moved stands elsewhere, so it
+  stays an entry (a save under a moved frame, then an undo of the move -
+  found by the "undoing everything" property). A save that lands after a
+  frame moved prunes the same way.
 - `restored({ objects, deleted, needsNoGps?, details?, what })` - a draft's
   work, already filtered by the page's rules: one step to undo; not live
   work (`touched` unchanged).

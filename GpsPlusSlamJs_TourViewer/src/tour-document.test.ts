@@ -219,6 +219,44 @@ describe("tour document: a station's frame (D17)", () => {
     expect(changeCount(state)).toBe(0);
   });
 
+  // Why (found by the "undoing everything" property, seed 1254187575): a
+  // save can write an item at a local offset under a MOVED frame - here
+  // the station moved down, its note back up to where it stood, then a
+  // save. Undoing both brings the frame back, and the note's world spot is
+  // then its opened one again - which the written file also gives it, but
+  // only under the written frame. Measured against the file read through
+  // the view's own frames, the note needs an entry; without it, it rides
+  // the restored frame up by the offset.
+  it("an undo that brings a frame back keeps its items where the view had them, though the written file holds them elsewhere in the frame", () => {
+    let state = open();
+    const station = stationIdOf("b");
+    const was = OPENED.stations.find((s) => s.id === station)!;
+    state = reduce(
+      state,
+      act.stationMoved({
+        stationId: station,
+        geo: { ...was.geo, lat: was.geo.lat - 0.00002 },
+        what: "the move of the station",
+      }),
+    );
+    const b = objectOf(state, "b");
+    state = reduce(
+      state,
+      act.moved({
+        object: { ...b, geo: { ...b.geo, lat: b.geo.lat + 0.00002 } },
+        what: "the move of b",
+      }),
+    );
+    state = save(state);
+    state = reduce(reduce(state, act.undone()), act.undone());
+    expect(objectOf(state, "b").geo.lat).toBeCloseTo(48.5202, 9);
+    expect(state.stations).toEqual(framesOf(OPENED));
+    const written = manifestToWrite(state)!;
+    expect(
+      written.stations.find((s) => s.id === station)!.items[0]!.pose,
+    ).toEqual(was.items[0]!.pose);
+  });
+
   it("refuses nothing for an unknown station, and changes nothing", () => {
     const state = open();
     const next = reduce(
@@ -381,6 +419,44 @@ describe("tour document: the save status", () => {
       }),
     );
     expect(unsavedEntries(state).map((p) => p.object.id)).toEqual(["a"]);
+  });
+
+  // Why: the same frame rule as an undo's, for a save that lands. While it
+  // ran, a station moved and its note was moved back to the spot the
+  // written file gives it. The written file "holds" that note only under
+  // its OWN frame; the document keeps the moved one, so the note's entry
+  // must stay, or the note rides the moved frame away.
+  it("a save that lands after a frame moved keeps the entries that frame needs", () => {
+    let state = open();
+    const start = state;
+    const station = stationIdOf("b");
+    const was = OPENED.stations.find((s) => s.id === station)!;
+    state = reduce(
+      state,
+      act.stationMoved({
+        stationId: station,
+        geo: { ...was.geo, lat: was.geo.lat - 0.00002 },
+        what: "s",
+      }),
+    );
+    const b = objectOf(state, "b");
+    state = reduce(
+      state,
+      act.moved({
+        object: { ...b, geo: { ...b.geo, lat: b.geo.lat + 0.00002 } },
+        what: "m",
+      }),
+    );
+    state = reduce(
+      state,
+      act.saved({
+        generation: start.generation,
+        written: manifestToWrite(start)!,
+        appliedDeletions: [],
+        stationsAtStart: start.stations,
+      }),
+    );
+    expect(objectOf(state, "b").geo.lat).toBeCloseTo(48.5202, 9);
   });
 
   it("a save of a tour opened since never lands in the new one", () => {

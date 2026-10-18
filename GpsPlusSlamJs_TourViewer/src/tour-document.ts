@@ -332,13 +332,17 @@ export function viewOf(state: TourDocumentState): TourDocumentView {
 /**
  * What the document holds at `view`, measured against the written file:
  * the objects the file does not hold as they are become entries, the
- * file's objects the view lacks become deletions.
+ * file's objects the view lacks become deletions. "As they are" is read
+ * through the VIEW's frames, as `documentObjects` reads it: an item the
+ * file holds at a local pose under a frame the view moves elsewhere
+ * stands elsewhere, so it needs an entry (a save under a moved frame,
+ * then an undo of the move).
  */
 function contentAt(
   written: TourManifest,
   view: TourDocumentView,
 ): { placed: EditEntry[]; deleted: string[] } {
-  const hosted = hostedObjects(written);
+  const hosted = hostedObjects(withFrames(written, view.stations, []));
   const kept = new Set(view.objects.map((o) => o.id));
   return {
     placed: view.objects
@@ -646,9 +650,15 @@ const tourDocumentSlice = createSlice({
       const { written, appliedDeletions, stationsAtStart, generation } =
         action.payload;
       if (generation !== before.generation) return before;
-      const pending = pendingAfterRebuild(before, written, appliedDeletions);
       const unmoved =
         JSON.stringify(before.stations) === JSON.stringify(stationsAtStart);
+      // A frame moved while the write ran stays the document's: what the
+      // file holds is read through it, as `documentObjects` will read it.
+      const pending = pendingAfterRebuild(
+        before,
+        unmoved ? written : withFrames(written, before.stations, before.placed),
+        appliedDeletions,
+      );
       return {
         ...before,
         written,
