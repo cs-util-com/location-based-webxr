@@ -21,7 +21,6 @@ import {
   downloadZip,
   writeFileOrAbort,
 } from "gps-plus-slam-app-framework/storage";
-import { finishedFileName } from "../finish-rebuild.js";
 import { FINISH_LABELS } from "../qr-author-mode.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import {
@@ -1914,15 +1913,14 @@ async function finishEditing(): Promise<void> {
  */
 function moveWalk(): Promise<WalkMoveOutcome> {
   const mine = editor;
-  const opened = session;
-  if (mine === null || opened === null) {
+  if (mine === null || session === null) {
     return Promise.resolve({ kind: "refused", reason: "No tour is open." });
   }
   if (saving()) return Promise.resolve(SAVE_RUNS);
   // First, before any await: the dialog needs the click.
   const pick = pickSaveFile(
     window as unknown as SavePickerWindow,
-    walkFileName(finishedFileName(opened)),
+    walkFileName(mine.savedName()),
   );
   return holdForMove(mine, () => buildMove(mine, pick));
 }

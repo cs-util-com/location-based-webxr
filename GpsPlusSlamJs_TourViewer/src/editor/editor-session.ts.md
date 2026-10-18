@@ -53,7 +53,10 @@ bytes (`previous`), the photo spots' cache, the pictures' side table
     content (a text edited back is no change), plus one while the "needs no
     GPS" setting differs from the saved file, plus one per detail that
     differs from it (W2); `pendingIds()` - the notes
-    with an edit or a move not yet saved.
+    with an edit or a move not yet saved; `savedName()` - the name every
+    save of this open is written under (`finishedFileName`), which the page
+    names the walk's file after before a save ran (the r875 milestone
+    review #6: the page no longer imports the Finish's rules).
   - `needsNoGps()` / `setNeedsNoGps(on)` (QR-first M1b-2, owner Q-QF-1) -
     the tour's "needs no GPS" setting as it stands with the edits, and its
     edit: `changed` (backed up through `draft.saveSettings`) or

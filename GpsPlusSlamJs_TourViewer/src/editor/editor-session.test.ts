@@ -219,7 +219,13 @@ describe("createEditorSession", () => {
       levels: new Map(),
     });
     editor.editText("a", "x");
-    expect((await editor.save({ keepScan: false })).filename).toBe("tour.zip");
+    // The page names the walk's file after it before any save ran (the
+    // r875 milestone review #6: the page reads the name here, not through
+    // the Finish's rule it may not import), so it must be the save's own.
+    expect(editor.savedName()).toBe("tour.zip");
+    expect((await editor.save({ keepScan: false })).filename).toBe(
+      editor.savedName(),
+    );
     await session.close();
   });
 });

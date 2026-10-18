@@ -108,7 +108,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   milestone review #3).
 - **Save** builds the tour (`keepScan` from the "Keep the walk recording"
   switch, shown only for a tour that carries a walk) and downloads it
-  through the framework's `downloadZip` under `finishedFileName`; the
+  through the framework's `downloadZip` under the session's `savedName()`
+  (the page imports none of the Finish's rules; the walk's file is named
+  after it too, `walkFileName`); the
   status reads "N changes not saved" / "Saving…" / "Saved as <name>" /
   the error, with the Finish's result sentences (the walk left out,
   photos not placed) in the toast. Save is on whenever a tour is open
@@ -313,10 +315,19 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`closed`); the slot itself is kept across both, since the save holding
   it lets it go once it sees its tour gone. What stays in this module is
   imperative: DOM nodes, the file target and its lock, the draft handle,
-  timers and toasts, the built file a browser did not deliver
-  (`undelivered`, a Blob), and transient UI (the selection, a marker being
-  dragged, the card's message, Done's own "Saving…") - those last are named
-  in the D30 report as a candidate for a view slice.
+  timers and toasts, and the built file a browser did not deliver
+  (`undelivered`, a Blob).
+- **A named deviation from the root rule "App state lives in the Redux
+  store"** (the r875 milestone review #5): four module variables are app
+  state and stay here for now - `selected` (the note the card and the map
+  show), `busy` (an open running), `doneBusy` (Done saving before its
+  dialog) and `keepsWalk` (the tour was opened to be saved in place). The
+  selection is not transient UI: with the 3D editor it is shared by more
+  than one view (the map, the rail, the 3D scene), and that is where it
+  belongs in a store. Follow-up: a view slice, built with G2 of the tour
+  editor 3D programme, takes these four (and the marker being dragged, the
+  card's message and Done's own "Saving…", which are this page's alone).
+  Until then a page that reads them reads this module.
 
 - Once everything is wired the page sets `body[data-editor="ready"]`;
   the keyboard e2e waits for it (a press before the module ran went

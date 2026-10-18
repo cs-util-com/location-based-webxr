@@ -237,6 +237,10 @@ export interface EditorSession {
   changeCount(): number;
   /** The ids of the notes with an edit or a move not yet saved. */
   pendingIds(): string[];
+  /** The name every save of this open is written under: the opened
+   *  file's, made safe (the Finish's rule). The page names the walk's
+   *  file after it before a save ran. */
+  savedName(): string;
   /** The tour's "needs no GPS" setting as it stands with the edits
    *  (QR-first M1b-2, owner Q-QF-1). */
   needsNoGps(): boolean;
@@ -531,6 +535,9 @@ export function createEditorSession(input: {
     },
     pendingIds() {
       return unsavedEntries(own()).map((p) => p.object.id);
+    },
+    savedName() {
+      return savedName;
     },
     needsNoGps() {
       return own().needsNoGps;
