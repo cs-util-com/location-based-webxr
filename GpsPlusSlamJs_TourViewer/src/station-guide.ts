@@ -11,8 +11,10 @@
  *   settle, K6a); the viewer only reads it. Since version 3 every station
  *   has one (D9: no code-only station).
  * - **Reached by its radius alone (D16):** the phone's current best
- *   position - the alignment's, fed by GPS and codes alike; before any
- *   alignment the latest device fix - inside the station's found radius.
+ *   position - the alignment's, fed by GPS and codes alike; only while
+ *   there is no alignment at all, the latest device fix if it is fresh
+ *   (`FIX_MAX_AGE_MS`; a tracking drop in an aligned session is no
+ *   position, M5a review M3) - inside the station's found radius.
  *   A code lock is no arrival: it only improves that position, and the
  *   guide re-judges at once. With no position nothing is reached. A moved
  *   poster cannot pull the position onto a station: the moved-code check
@@ -73,6 +75,9 @@ export interface StationGuideDeps {
    *  yet). The guide retries on the next tick. */
   startHud(getTargets: () => WayfindingTarget[]): { dispose(): void } | null;
   now(): number;
+  /** The oldest a device fix may be to stand in for the position before
+   *  any alignment (ms, on `now`'s clock); default `FIX_MAX_AGE_MS`. */
+  readonly fixMaxAgeMs?: number;
   /** A station was found: play its story. */
   onFound(station: TourStation): void;
   /** Each tick, for each offered station with a distance: how far it is,
@@ -128,6 +133,19 @@ export interface StationGuide {
  */
 export const SKIP_UNDO_MS = DEFAULT_TOAST_LINGER_MS;
 
+/**
+ * The oldest a device fix may be to stand in for the visitor's position
+ * before any alignment (M5a review M3), against the fix's own Geolocation
+ * time. Argued, not measured: Android delivers about one fix a second, so
+ * 5 s tolerates four missed fixes, and a visitor walking 1.4 m/s has moved
+ * about 7 m since - about a typical fix's own accuracy, and more than a
+ * small station's found radius, so an older fix says where the visitor WAS.
+ * 2-10 s are swept in the tests: below 2 s an ordinary gap between fixes
+ * would blank the position; above 10 s the drift (14 m) exceeds most found
+ * radii. Reversed by field data showing fix gaps over 5 s in normal walking.
+ */
+export const FIX_MAX_AGE_MS = 5_000;
+
 /** What a tap on the skip button does (its label says which). */
 interface SkipAction {
   readonly kind: "ask-skip" | "skip" | "ask-end" | "end" | "undo";
@@ -141,6 +159,7 @@ function distanceText(m: number): string {
 
 export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   const { dom } = deps;
+  const fixMaxAgeMs = deps.fixMaxAgeMs ?? FIX_MAX_AGE_MS;
   let run: StationRun | null = null;
   let runStations: readonly TourStation[] | null = null;
   let hud: { dispose(): void } | null = null;
@@ -164,6 +183,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  tick (K4 review R13). */
   let last: {
     visitor: VisitorPosition;
+    /** The best position this measurement judged by (`bestPosition`). */
+    best: readonly [number, number, number] | null;
     distances: Map<string, number>;
   } | null = null;
   /** Station poses at the last measurement's zero, computed once each per
@@ -196,7 +217,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     poseCache.clear();
     measuredZero = deps.zero();
     const visitor = deps.visitor();
-    last = { visitor, distances: horizontalDistances(bestPosition(visitor)) };
+    const best = bestPosition(visitor);
+    last = { visitor, best, distances: horizontalDistances(best) };
   }
 
   /** The run for the open tour, created once the tour may be placed. */
@@ -224,11 +246,18 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   /** The phone's current best position (D16): the alignment's, else -
-   *  before any alignment - the latest device fix; null with neither. */
+   *  only while there is no alignment at all - the latest device fix, if
+   *  it is fresh; null otherwise. An aligned session that lost tracking
+   *  has no position until it is back: its raw fix carries no accuracy
+   *  or age check and would latch "found" (M5a review M3). */
   function bestPosition(
     visitor: VisitorPosition,
   ): readonly [number, number, number] | null {
-    return visitor.nue ?? visitor.fixNue;
+    if (visitor.nue !== null) return visitor.nue;
+    if (visitor.aligned || visitor.fixNue === null) return null;
+    const at = visitor.fixAtMs;
+    if (at === null || !Number.isFinite(at)) return null;
+    return deps.now() - at <= fixMaxAgeMs ? visitor.fixNue : null;
   }
 
   function horizontalDistances(
@@ -351,7 +380,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       run.offered().length > 1
         ? `${String(run.offered().length)} stations to find - nearest: ${title}`
         : `Next: ${title}`;
-    if (visitor === undefined || bestPosition(visitor) === null) {
+    if (visitor === undefined || last?.best == null) {
       return `${lead}${waiting} - waiting for your position…`;
     }
     if (visitor.accuracyM !== null && visitor.accuracyM > ACCURACY_CEILING_M) {

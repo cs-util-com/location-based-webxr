@@ -19,6 +19,13 @@ the measured accuracy (the median of the latest device fixes). Plan:
     (`[north, up, east]` from the zero), or null without a zero or a device
     fix. Never moved by a code's votes, which pull `nue` onto the code's
     saved spot: the station guide judges a code lock by it (K4 review R1).
+  - `aligned` - the session has a usable alignment (16 finite numbers): a
+    null `nue` then means only a tracking drop (no AR pose), never "no
+    alignment yet". The station guide's raw fix stands in only without
+    one (M5a review M3).
+  - `fixAtMs` - the latest device fix's own time (its Geolocation
+    timestamp, epoch ms), or null exactly when `fixNue` is: the guide
+    ignores a fix older than `FIX_MAX_AGE_MS`.
 
 ## Invariants & assumptions
 
@@ -46,4 +53,6 @@ const p = visitorPosition({
 
 - `visitor-position.test.ts` - a real store aligned by a shifted walk puts
   the camera where the shift says; no position without each input; the
-  median of the latest ten device fixes, votes and older fixes ignored.
+  median of the latest ten device fixes, votes and older fixes ignored;
+  `aligned` with a dropped pose and without an alignment, and the latest
+  device fix's time (never a vote's).

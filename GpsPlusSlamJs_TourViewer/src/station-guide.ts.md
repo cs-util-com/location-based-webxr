@@ -25,7 +25,8 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
     stands its figure there).
 - Deps: `dom` (`line`, `skip`), `tour()` (stations, order),
   `placementAllowed()`, `zero()`, `visitor()` (`visitor-position.ts`),
-  `startHud(getTargets)`, `now()`,
+  `startHud(getTargets)`, `now()`, `fixMaxAgeMs?` (default
+  `FIX_MAX_AGE_MS`, 5 s),
   `onFound(station)`, `onEndStory?(stationId)` (R9), `onVisitor?(nue)`, `onApproach?(station, distanceM,
 activateM)` (each tick, each offered station with a distance: the
   prefetch), `onDone?(stationId)` (a story's end or a skip: the prefetch may
@@ -54,9 +55,16 @@ activateM)` (each tick, each offered station with a distance: the
   it.
 - **Reached by its radius alone (D16):** the distance is measured from the
   phone's current best position - the alignment's (`VisitorPosition.nue`,
-  fed by GPS and codes alike), else before any alignment the latest device
-  fix (`fixNue`) - and a station is found inside its authored found
-  radius, whatever the accuracy. With neither position nothing is reached.
+  fed by GPS and codes alike), else - only while there is no alignment at
+  all (`VisitorPosition.aligned`) - the latest device fix (`fixNue`) if it
+  is at most `FIX_MAX_AGE_MS` (5 s) old by its own timestamp against
+  `now()` - and a station is found inside its authored found radius,
+  whatever the accuracy. With neither position nothing is reached. An
+  aligned session whose tracking dropped (no AR pose) has no position
+  until it is back, and the line says "waiting for your position": its
+  raw fix carries no accuracy or age check and used to latch "found" (M5a
+  review M3). 5 s is argued, not measured (about four missed 1 Hz fixes,
+  7 m of walking); 2-10 s are swept in the tests.
   A code lock is no arrival: it only improves the position, and
   `codeLocked()` re-judges at once. This replaced the code-only station,
   the held code lock (`CODE_HOLD_MAX_MS`, `codeAgrees`) and the
@@ -148,13 +156,17 @@ store.subscribe(() => guide.tick());
 
 - `station-guide.property.test.ts` - stories that never end, stations
   nobody reaches, random orders and `next` links (cycles included): the
-  tour completes within two taps per station (R9).
+  tour completes within two taps per station (R9); and a raw fix finds a
+  station only without an alignment, only while fresh, only inside the
+  radius (M3).
 - `station-guide.test.ts` - the undo, the focus clock under `any` order and
   the tap acting on its label (R14); the gate wait, the line, the find; the HUD
   targets and their bands; arrival by the radius alone (D16): codes only (reached after a
   scan, by distance), poor GPS (found by distance, never widened), none
   before any position, the device fix before an alignment and the
-  alignment after it; no position and weak GPS lines; the skip on demand and suggested,
+  alignment after it, a tracking drop in an aligned session finding
+  nothing on the raw fix, a stale fix ignored, the age limit swept over
+  2-10 s (M3); no position and weak GPS lines; the skip on demand and suggested,
   the completion and the HUD's disposal; a story's end; progress across
   AR entries and a new tour; the replay of a story cut short; nothing found
   that is not offered.

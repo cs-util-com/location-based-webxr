@@ -8,10 +8,12 @@ import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization
 import { stationBands } from "./station-bands";
 import { skipSuggestAfterMs } from "./station-run";
 import {
+  FIX_MAX_AGE_MS,
   SKIP_UNDO_MS,
   wireStationGuide,
   type StationTour,
 } from "./station-guide";
+import type { VisitorPosition } from "./visitor-position";
 
 /**
  * Why these tests matter: this is where the visitor's real position, the
@@ -55,12 +57,17 @@ function station(
   };
 }
 
-function harness(tourValue: StationTour) {
+function harness(
+  tourValue: StationTour,
+  options: { fixMaxAgeMs?: number } = {},
+) {
   let now = 1_000;
-  let visitor = {
-    nue: [0, 401.5, 0] as [number, number, number] | null,
-    accuracyM: 4 as number | null,
-    fixNue: [0, 400, 0] as [number, number, number] | null,
+  let visitor: VisitorPosition = {
+    nue: [0, 401.5, 0],
+    accuracyM: 4,
+    fixNue: [0, 400, 0],
+    aligned: true,
+    fixAtMs: now,
   };
   let allowed = true;
   let zeroNow: typeof zero | null = zero;
@@ -107,6 +114,9 @@ function harness(tourValue: StationTour) {
       return { dispose: () => (h.disposed = true) };
     },
     now: () => now,
+    ...(options.fixMaxAgeMs === undefined
+      ? {}
+      : { fixMaxAgeMs: options.fixMaxAgeMs }),
     onFound: (s) => found.push(s.id),
     onApproach: (s, d, exit) => approaches.push([s.id, Math.round(d), exit]),
     onDone: (id) => dones.push(id),
@@ -139,6 +149,8 @@ function harness(tourValue: StationTour) {
         nue: [north, 401.5, east],
         accuracyM,
         fixNue: [north, 400, east],
+        aligned: true,
+        fixAtMs: now,
       };
       guide.tick();
     },
@@ -155,20 +167,57 @@ function harness(tourValue: StationTour) {
         nue: [north, 401.5, east],
         accuracyM,
         fixNue: [fixN, 400, fixE],
+        aligned: true,
+        fixAtMs: now,
       };
       guide.tick();
     },
     /** A device fix and no alignment yet (no code scanned, too few fixes). */
-    fixOnly: (north: number, east: number, accuracyM: number | null = 4) => {
-      visitor = { nue: null, accuracyM, fixNue: [north, 400, east] };
+    fixOnly: (
+      north: number,
+      east: number,
+      accuracyM: number | null = 4,
+      ageMs = 0,
+    ) => {
+      visitor = {
+        nue: null,
+        accuracyM,
+        fixNue: [north, 400, east],
+        aligned: false,
+        fixAtMs: now - ageMs,
+      };
+      guide.tick();
+    },
+    /** An aligned session whose tracking dropped (no AR pose this frame):
+     *  no camera position, and the latest raw fix somewhere else. */
+    trackingLost: (fixN: number, fixE: number) => {
+      visitor = {
+        nue: null,
+        accuracyM: 4,
+        fixNue: [fixN, 400, fixE],
+        aligned: true,
+        fixAtMs: now,
+      };
       guide.tick();
     },
     /** Placed by a code alone: an aligned position, no device fix at all. */
     byCodeOnly: (north: number, east: number) => {
-      visitor = { nue: [north, 401.5, east], accuracyM: null, fixNue: null };
+      visitor = {
+        nue: [north, 401.5, east],
+        accuracyM: null,
+        fixNue: null,
+        aligned: true,
+        fixAtMs: null,
+      };
     },
     lost: () => {
-      visitor = { nue: null, accuracyM: 4, fixNue: null };
+      visitor = {
+        nue: null,
+        accuracyM: 4,
+        fixNue: null,
+        aligned: false,
+        fixAtMs: null,
+      };
       guide.tick();
     },
     advance: (ms: number) => (now += ms),
@@ -633,4 +682,77 @@ describe("arrival by the station radius alone (D16)", () => {
     aligned.atFix(29, 0, 0, 0);
     expect(aligned.found).toEqual(["gate"]);
   });
+
+  // Why (M5a review M3): `nue` is null whenever the AR pose is, so an
+  // aligned session that lost tracking for a frame fell back to the raw
+  // latest fix - with no accuracy or age check - while the line might say
+  // the GPS is too weak, and "found" latches. The fix stands in only while
+  // there is no alignment at all.
+  it("a tracking drop in an aligned session does not find a station on the raw fix", () => {
+    const h = harness({
+      stations: [station("gate", 30, 0)],
+      order: "fixed",
+    });
+    h.at(0, 0);
+    expect(h.found).toEqual([]);
+    // Tracking lost; the latest raw fix happens to read the station.
+    h.trackingLost(30, 0);
+    expect(h.found).toEqual([]);
+    expect(h.dom.line.textContent).toBe(
+      "Next: GATE - waiting for your position…",
+    );
+    // Tracking back, still far: still not found; then at the station: found.
+    h.at(0, 0);
+    expect(h.found).toEqual([]);
+    h.at(29, 0);
+    expect(h.found).toEqual(["gate"]);
+  });
+
+  // Why (M5a review M3): before any alignment the fix is the only
+  // position, and a fix the GPS stopped renewing says where the visitor
+  // WAS. A run that starts later (a scan gate passed, a tour opened) must
+  // not find a station on it.
+  it("a stale fix is ignored before any alignment: no arrival, and the line waits", () => {
+    expect(FIX_MAX_AGE_MS).toBe(5_000);
+    const h = harness({
+      stations: [station("gate", 30, 0)],
+      order: "fixed",
+    });
+    h.fixOnly(29, 0, 4, FIX_MAX_AGE_MS + 1);
+    expect(h.found).toEqual([]);
+    expect(h.dom.line.textContent).toBe(
+      "Next: GATE - waiting for your position…",
+    );
+    // A fresh fix at the same spot finds it.
+    h.fixOnly(29, 0, 4, 0);
+    expect(h.found).toEqual(["gate"]);
+  });
+
+  // The age limit is a judgement (FIX_MAX_AGE_MS's comment), so the rule is
+  // checked across the plausible range, 2-10 s: the limit itself still
+  // counts, anything older does not, and a fix from a clock ahead of the
+  // page's (a negative age) is fresh.
+  it.each([2_000, 3_000, 5_000, 7_000, 10_000])(
+    "the fix's age decides at a limit of %i ms",
+    (limitMs) => {
+      const fresh = harness(
+        { stations: [station("gate", 30, 0)], order: "fixed" },
+        { fixMaxAgeMs: limitMs },
+      );
+      fresh.fixOnly(29, 0, 4, limitMs);
+      expect(fresh.found).toEqual(["gate"]);
+      const stale = harness(
+        { stations: [station("gate", 30, 0)], order: "fixed" },
+        { fixMaxAgeMs: limitMs },
+      );
+      stale.fixOnly(29, 0, 4, limitMs + 1);
+      expect(stale.found).toEqual([]);
+      const ahead = harness(
+        { stations: [station("gate", 30, 0)], order: "fixed" },
+        { fixMaxAgeMs: limitMs },
+      );
+      ahead.fixOnly(29, 0, 4, -500);
+      expect(ahead.found).toEqual(["gate"]);
+    },
+  );
 });

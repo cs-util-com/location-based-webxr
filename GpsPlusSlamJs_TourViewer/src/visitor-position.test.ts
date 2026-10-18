@@ -143,6 +143,59 @@ describe("visitorPosition", () => {
     ).toBeNull();
   });
 
+  // Why (M5a review M3): the station guide falls back to the raw fix only
+  // while there is no alignment at all, and only while that fix is fresh.
+  // A tracking drop in an aligned session has no camera position either,
+  // so the guide must tell the two apart, and needs the fix's own time.
+  it("says whether the session is aligned, and when its latest DEVICE fix was taken", () => {
+    const fix = (timestamp: number, source: string): GpsPoint =>
+      ({
+        latitude: 47.5,
+        longitude: 8.7,
+        altitude: 400,
+        latLongAccuracy: 4,
+        timestamp,
+        source,
+      }) as unknown as GpsPoint;
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    const points = [
+      fix(1_000, GPS_POINT_SOURCE_DEVICE),
+      fix(2_000, GPS_POINT_SOURCE_DEVICE),
+      fix(9_000, "synthetic-qr"),
+    ];
+    const dropped = visitorPosition({
+      alignment: identity,
+      arPose: null,
+      gpsPositions: points,
+      zero,
+    });
+    expect(dropped.nue).toBeNull();
+    expect(dropped.aligned).toBe(true);
+    // The device fix's own time, never a vote's.
+    expect(dropped.fixAtMs).toBe(2_000);
+    const early = visitorPosition({
+      alignment: null,
+      arPose: { position: { x: 0, y: 0, z: 0 } },
+      gpsPositions: points,
+      zero,
+    });
+    expect(early.aligned).toBe(false);
+    expect(early.fixAtMs).toBe(2_000);
+    // No device fix, or no zero: no fix, so no time either.
+    expect(
+      visitorPosition({
+        alignment: null,
+        arPose: null,
+        gpsPositions: points.slice(2),
+        zero,
+      }).fixAtMs,
+    ).toBeNull();
+    expect(
+      visitorPosition({ alignment: null, arPose: null, gpsPositions: points })
+        .fixAtMs,
+    ).toBeNull();
+  });
+
   it("reads the accuracy from the latest DEVICE fixes only, as their median", () => {
     const fix = (accuracy: number | undefined, source?: string): GpsPoint =>
       ({
