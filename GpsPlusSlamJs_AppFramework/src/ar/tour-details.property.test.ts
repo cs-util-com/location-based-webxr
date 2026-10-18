@@ -14,6 +14,7 @@ import {
   checkTourContact,
   checkTourCover,
   checkTourDescription,
+  checkTourTitle,
   parseTourDetails,
   tourContactHref,
 } from './tour-details';
@@ -82,6 +83,31 @@ describe('tour details (properties)', () => {
         }
       ),
       { numRuns: 300 }
+    );
+  });
+
+  it('keeps a name exactly when its trimmed text says something in at most 80 characters, and a kept name passes again unchanged', () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          fc.string({ unit: 'grapheme', maxLength: 90 }),
+          fc.string({ maxLength: 90 }),
+          fc.anything()
+        ),
+        (value) => {
+          const checked = checkTourTitle(value);
+          const trimmed = typeof value === 'string' ? value.trim() : null;
+          const fits =
+            trimmed !== null && trimmed !== '' && [...trimmed].length <= 80;
+          expect(checked.ok).toBe(fits);
+          expect(checked.ok ? checked.value : null).toBe(fits ? trimmed : null);
+          // A kept name passes again unchanged.
+          expect(checkTourTitle(checked.ok ? checked.value : value)).toEqual(
+            checked
+          );
+        }
+      ),
+      { numRuns: 500 }
     );
   });
 });

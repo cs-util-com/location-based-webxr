@@ -26,7 +26,7 @@ a pending change, saved by Save or autosave like any other edit.
   - `deps.onClose()` - the dialog closed either way (the page gives focus
     back to the name).
   - `open()`, `close()` (Cancel, Esc), `isOpen()`.
-- `DetailsForm` - `{ name, description, cover: string | null, contact }`;
+- `DetailsForm` (`../tour-details-form.ts`) - `{ name, description, cover: string | null, contact }`;
   an empty text is "none". Shared with `editor-session.ts`.
 - `DetailsOutcome` - `{ kind: "changed" | "unchanged" }` or
   `{ kind: "refused", reason }`.

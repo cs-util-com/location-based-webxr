@@ -20,12 +20,8 @@ import {
   tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
-  checkTourContact,
-  checkTourDescription,
   tourCoverEntry,
   tourImageIds,
-  TOUR_CONTACT_MAX_CHARS,
-  TOUR_DESCRIPTION_MAX_CHARS,
 } from "gps-plus-slam-app-framework/ar/tour-details";
 import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
 import {
@@ -48,12 +44,16 @@ import {
   type AuthoringObject,
 } from "../object-edits.js";
 import type { TourSession } from "../tour-session.js";
-import type { DetailsForm, DetailsOutcome } from "./details-dialog.js";
 import {
+  checkDetailsForm,
+  DETAIL_FIELDS,
   detailsOf,
-  type EditorTourDetails,
-  type EditorTourSettings,
-} from "./editor-draft.js";
+  withDetails,
+  type DetailsForm,
+  type TourDetailFields,
+} from "../tour-details-form.js";
+import type { DetailsOutcome } from "./details-dialog.js";
+import type { EditorTourSettings } from "./editor-draft.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
@@ -72,7 +72,7 @@ interface EditorEntry {
 interface EditState {
   readonly objects: readonly TourObject[];
   readonly noGps: boolean;
-  readonly details: EditorTourDetails;
+  readonly details: TourDetailFields;
 }
 
 interface UndoStep {
@@ -241,93 +241,12 @@ function withNeedsNoGps(manifest: TourManifest, on: boolean): TourManifest {
   return off;
 }
 
-/** The longest tour name the editor takes: the phone's poster title's
- *  (`index.html`, `maxlength`), so a name fits the poster either way. */
-export const TOUR_NAME_MAX_CHARS = 80;
-
 /** One image a tour may show as its cover (W2): a placed photo, or an
  *  image the tour carries as a content asset. */
 interface CoverChoice {
   readonly id: string;
   /** Its entry in the zip (`content/<id>.jpg`). */
   readonly image: string;
-}
-
-/** The details' fields, as the manifest names them. */
-const DETAIL_FIELDS = ["title", "description", "cover", "contact"] as const;
-
-/** `manifest` carrying `details` in place of its own. */
-function withDetails(
-  manifest: TourManifest,
-  details: EditorTourDetails,
-): TourManifest {
-  const next = { ...manifest };
-  for (const field of DETAIL_FIELDS) {
-    const value = details[field];
-    if (value === undefined) delete next[field];
-    else next[field] = value;
-  }
-  return next;
-}
-
-/** Text counted as a reader counts it: in characters, not UTF-16 units. */
-function charCount(text: string): number {
-  return [...text].length;
-}
-
-/** A form checked by the format's rules (`tour-details.ts`), in plain
- *  words: the details to keep, or why not. `was` is the details as they
- *  stand: a name kept as it is passes whatever its length (a tour named
- *  elsewhere, M4a review #10). A cover naming no image of the tour is
- *  refused, or - for a draft's record, whose photo may have gone since -
- *  dropped (`unknownCover`), as the format's reader drops it (review #1). */
-function checkForm(
-  form: DetailsForm,
-  covers: ReadonlySet<string>,
-  was: EditorTourDetails,
-  unknownCover: "refuse" | "drop" = "refuse",
-): { ok: true; details: EditorTourDetails } | { ok: false; reason: string } {
-  const details: { -readonly [K in keyof EditorTourDetails]: string } = {};
-  const name = form.name.trim();
-  if (charCount(name) > TOUR_NAME_MAX_CHARS && name !== was.title) {
-    return {
-      ok: false,
-      reason: `The name is longer than ${String(TOUR_NAME_MAX_CHARS)} characters.`,
-    };
-  }
-  if (name !== "") details.title = name;
-  if (form.description.trim() !== "") {
-    const checked = checkTourDescription(form.description);
-    if (!checked.ok) {
-      return {
-        ok: false,
-        reason: `The description is longer than ${String(TOUR_DESCRIPTION_MAX_CHARS)} characters.`,
-      };
-    }
-    details.description = checked.value;
-  }
-  if (form.cover !== null && covers.has(form.cover)) {
-    details.cover = form.cover;
-  } else if (form.cover !== null && unknownCover === "refuse") {
-    return {
-      ok: false,
-      reason: "That cover is not one of this tour's photos any more.",
-    };
-  }
-  if (form.contact.trim() !== "") {
-    const checked = checkTourContact(form.contact);
-    if (!checked.ok) {
-      return {
-        ok: false,
-        reason:
-          charCount(form.contact.trim()) > TOUR_CONTACT_MAX_CHARS
-            ? `The contact is longer than ${String(TOUR_CONTACT_MAX_CHARS)} characters.`
-            : "The contact must be an e-mail address or a web link starting with http:// or https://.",
-      };
-    }
-    details.contact = checked.value;
-  }
-  return { ok: true, details };
 }
 
 export interface EditorSession {
@@ -433,7 +352,7 @@ export function createEditorSession(input: {
   const noGpsPending = (): boolean => noGps !== (manifest.needsNoGps === true);
   /** The tour's details with the edits (W2); the cover as chosen, shown
    *  and written only while its image is in the tour (`effectiveDetails`). */
-  let details: EditorTourDetails = detailsOf(manifest);
+  let details: TourDetailFields = detailsOf(manifest);
   /** The details were changed here since the open: live work, which wins
    *  over a draft's offer. */
   let detailsTouched = false;
@@ -498,7 +417,7 @@ export function createEditorSession(input: {
 
   /** The details as shown and written: a cover whose image is gone (a
    *  deleted photo) is none, and comes back with an undo of the delete. */
-  function effectiveDetails(): EditorTourDetails {
+  function effectiveDetails(): TourDetailFields {
     if (details.cover === undefined || coverIds().has(details.cover)) {
       return details;
     }
@@ -523,8 +442,8 @@ export function createEditorSession(input: {
   /** A draft's details put back by the dialog's own checks (a record
    *  whose details the format would drop leaves them as they are); how
    *  many fields changed. */
-  function restoreDetails(offered: EditorTourDetails): number {
-    const checked = checkForm(
+  function restoreDetails(offered: TourDetailFields): number {
+    const checked = checkDetailsForm(
       {
         name: offered.title ?? "",
         description: offered.description ?? "",
@@ -779,7 +698,7 @@ export function createEditorSession(input: {
       };
     },
     setDetails(next) {
-      const checked = checkForm(next, coverIds(), effectiveDetails());
+      const checked = checkDetailsForm(next, coverIds(), effectiveDetails());
       if (!checked.ok) return { kind: "refused", reason: checked.reason };
       const now = effectiveDetails();
       if (DETAIL_FIELDS.every((f) => checked.details[f] === now[f])) {

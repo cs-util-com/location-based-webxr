@@ -10,13 +10,7 @@
  * @see details-dialog.ts.md
  */
 
-/** The form's values; an empty text (or a null cover) is "none". */
-export interface DetailsForm {
-  readonly name: string;
-  readonly description: string;
-  readonly cover: string | null;
-  readonly contact: string;
-}
+import type { DetailsForm } from "../tour-details-form.js";
 
 export type DetailsOutcome =
   | { readonly kind: "changed" | "unchanged" }

@@ -41,9 +41,12 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
     written). The phone's Finish keeps the flag the same way: the rebuild
     spreads the opened manifest (`finish-rebuild.ts`).
   - `details()` / `setDetails(form)` / `coverChoices()` (W2 of the tour
-    x (`details-dialog.ts`), with the edits; their
-    edit, all at once: checked by the format's rules (`tour-details.ts` in
-    the framework; the name trimmed, at most `TOUR_NAME_MAX_CHARS` = 80 -
+    editor plan 2026-10-17-1816) - the tour's name, description, cover and
+    contact as a `DetailsForm` (`../tour-details-form.ts`), with the edits;
+    their edit, all at once: checked by `checkDetailsForm`
+    (`../tour-details-form.ts`: the format's rules, `tour-details.ts` in
+    the framework; the name by `checkTourTitle`, trimmed, at most
+    `TOUR_TITLE_MAX_CHARS` = 80 characters counted as code points -
     a name kept as it stands passes whatever its length, so a tour named
     longer elsewhere can still have its other details edited, M4a review
     #10),
@@ -142,7 +145,7 @@ scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
     while a move runs). Bringing a moved-out walk back into a tour is a
     later feature; nothing reads the walk's zip yet.
 - `walkFileName`, `WALK_NOTE`; the module-private `WalkMove` and `NO_WALK` are read through `moveWalkOut()`.
-- `EditorSession`, `EditorSave`, `EditorSessionDraft`, `TOUR_NAME_MAX_CHARS`, `TOO_FAR_FROM_STATION`; the module-private `CoverChoice` (an image id and its zip entry) and `UndoOutcome` (`undo()` / `redo()`'s result) are read through the session's methods.
+- `EditorSession`, `EditorSave`, `EditorSessionDraft`, `TOO_FAR_FROM_STATION`; the module-private `CoverChoice` (an image id and its zip entry) and `UndoOutcome` (`undo()` / `redo()`'s result) are read through the session's methods.
 
 ## Invariants & assumptions
 

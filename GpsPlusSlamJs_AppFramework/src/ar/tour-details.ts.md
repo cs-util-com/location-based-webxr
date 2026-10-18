@@ -13,6 +13,14 @@ unchanged (plan review 2 #10).
 
 - `TourDetails` - `{ description?, cover?, contact? }`; `TourManifest`
   extends it.
+- `checkTourTitle(value): TourDetailCheck` - a tour's name as an EDITOR
+  takes it: text, trimmed, non-empty, at most `TOUR_TITLE_MAX_CHARS` (80)
+  characters counted as code points (the phone's poster title's length).
+  Both Tour Viewer pages' name fields check with it, so the phone and the
+  desktop count alike (the tour editor's parity contract, D30). The
+  manifest's reader does NOT apply it: a longer title (a tour named by
+  hand) is kept, trimmed, and an editor keeps such a name while it is left
+  as it is.
 - `checkTourDescription(value): TourDetailCheck` - text, trimmed,
   non-empty, at most `TOUR_DESCRIPTION_MAX_CHARS` (2000) characters
   counted as code points (an emoji is one); line breaks kept.
@@ -85,10 +93,13 @@ parseTourDetails({ cover: 'gone' }, { imageIds: new Set(['f1']) });
   character count by code point, the href forms and the escaping of `&`
   and `?`, a document without details, and a failing value dropped with
   its reason beside the kept ones; the image ids (photos and image assets,
-  never a pin or an audio asset) and the cover's entry.
+  never a pin or an audio asset) and the cover's entry; the title's 80
+  characters by code point (80 emoji kept, 81 refused).
 - `tour-details.property.test.ts` - over any input: never throws, every
   given field is kept or dropped, a kept value passes its check unchanged;
   a kept contact leads only to `mailto:` or http(s); every generated e-mail
-  address and https link within the cap is kept.
+  address and https link within the cap is kept; a name is kept exactly
+  when its trimmed text is non-empty and at most 80 characters, and a kept
+  name passes again unchanged.
 - `tour-manifest.test.ts` / `tour-manifest.property.test.ts` - the fields
   in `tour.json` (minor 3).

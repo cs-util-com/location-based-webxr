@@ -20,6 +20,11 @@
 
 import { TOUR_ID_PATTERN } from './tour-archive.js';
 
+/** The longest tour name an editor takes, in characters (code points):
+ *  the phone's poster title's, so a name fits the poster either way. A
+ *  READER keeps a longer one (a tour named by hand or elsewhere). */
+export const TOUR_TITLE_MAX_CHARS = 80;
+
 /** The longest description kept, in characters (code points). */
 export const TOUR_DESCRIPTION_MAX_CHARS = 2000;
 
@@ -98,6 +103,14 @@ function trimmedText(
     };
   }
   return { ok: true, value: text };
+}
+
+/** A tour's name as an editor takes it: trimmed, non-empty, at most
+ *  {@link TOUR_TITLE_MAX_CHARS}. Both apps' name fields use it (the tour
+ *  editor's D30 parity), so the phone and the desktop count alike; the
+ *  manifest's reader does not (a longer title is kept, trimmed). */
+export function checkTourTitle(value: unknown): TourDetailCheck {
+  return trimmedText(value, 'title', TOUR_TITLE_MAX_CHARS);
 }
 
 /** The description as kept: trimmed, non-empty, at most

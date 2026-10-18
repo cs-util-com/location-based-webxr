@@ -76,6 +76,11 @@ import {
 } from "../authoring-draft.js";
 import type { DraftObjectWrites } from "../draft-actions.js";
 import {
+  DETAIL_FIELDS,
+  detailsOf,
+  type TourDetailFields,
+} from "../tour-details-form.js";
+import {
   addDraftBaseKey,
   META_KEY,
   readDraft,
@@ -89,16 +94,6 @@ import {
 import { createKeyedChain } from "../keyed-chain.js";
 import type { EditorLock } from "./save-target.js";
 
-/** The tour's details as the settings record holds them (tour editor
- *  plan 2026-10-17-1816, W2): the manifest's own fields, each present only
- *  when the tour carries it. */
-export interface EditorTourDetails {
-  readonly title?: string;
-  readonly description?: string;
-  readonly cover?: string;
-  readonly contact?: string;
-}
-
 /** The tour-level settings the editor changes (QR-first M1b-2): what the
  *  draft's settings record holds. */
 export interface EditorTourSettings {
@@ -106,11 +101,11 @@ export interface EditorTourSettings {
   /** The tour's details as they stand (W2). Absent in a record written
    *  before the details existed, or before any was changed: no opinion
    *  about them, so it never offers to change (or blank) them. */
-  readonly details?: EditorTourDetails;
+  readonly details?: TourDetailFields;
 }
 
-/** The details' fields, in the order the offer names them. */
-const DETAIL_FIELDS = ["title", "description", "cover", "contact"] as const;
+/** One of the details' fields (`tour-details-form.ts`), in the order the
+ *  offer names them. */
 type DetailField = (typeof DETAIL_FIELDS)[number];
 
 /** Each field as the page names it (`edit.html`'s "Tour details"). */
@@ -121,21 +116,11 @@ const DETAIL_NAMES: Readonly<Record<DetailField, string>> = {
   contact: "contact",
 };
 
-/** The details a manifest carries. */
-export function detailsOf(manifest: TourManifest): EditorTourDetails {
-  const details: Partial<Record<DetailField, string>> = {};
-  for (const field of DETAIL_FIELDS) {
-    const value = manifest[field];
-    if (value !== undefined) details[field] = value;
-  }
-  return details;
-}
-
 /** The fields `wanted` changes against `against`; none for a record
  *  without details (no opinion). */
 function changedDetails(
-  wanted: EditorTourDetails | undefined,
-  against: EditorTourDetails | undefined,
+  wanted: TourDetailFields | undefined,
+  against: TourDetailFields | undefined,
 ): DetailField[] {
   if (wanted === undefined) return [];
   return DETAIL_FIELDS.filter((f) => wanted[f] !== against?.[f]);
@@ -304,7 +289,7 @@ function settingsOf(manifest: TourManifest): EditorTourSettings {
 
 /** A stored record's details: undefined when absent, null when they do
  *  not read (a known field that is not a string). */
-function parseDetails(value: unknown): EditorTourDetails | undefined | null {
+function parseDetails(value: unknown): TourDetailFields | undefined | null {
   if (value === undefined) return undefined;
   if (value === null || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;

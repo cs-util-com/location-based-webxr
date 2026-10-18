@@ -33,7 +33,6 @@ import {
   createEditorSession,
   NOT_IN_TOUR,
   TOO_FAR_FROM_STATION,
-  TOUR_NAME_MAX_CHARS,
   WALK_NOTE,
   walkFileName,
   type EditorSession,
@@ -45,7 +44,8 @@ import {
   sampleRecordingBytes,
 } from "../test-support/sample-recording.js";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
-import type { DetailsForm } from "./details-dialog.js";
+import type { DetailsForm } from "../tour-details-form.js";
+import { TOUR_TITLE_MAX_CHARS } from "gps-plus-slam-app-framework/ar/tour-details";
 import { createEditorDraft, type EditorTourSettings } from "./editor-draft.js";
 import type { EditorLock } from "./save-target.js";
 import {
@@ -899,7 +899,7 @@ describe("createEditorSession, the tour details (W2)", () => {
       form({ contact: "call me" }),
       form({ contact: "javascript:alert(1)" }),
       form({ description: "x".repeat(2001) }),
-      form({ name: "x".repeat(TOUR_NAME_MAX_CHARS + 1) }),
+      form({ name: "x".repeat(TOUR_TITLE_MAX_CHARS + 1) }),
       form({ cover: "a" }),
       form({ cover: "gone" }),
     ];
@@ -1014,7 +1014,7 @@ describe("createEditorSession, the tour details (W2)", () => {
     // Why (M4a review #10): a tour named elsewhere with more than 80
     // characters could not have its description or contact changed at
     // all - the unchanged name failed the form's check.
-    const long = "x".repeat(TOUR_NAME_MAX_CHARS + 10);
+    const long = "x".repeat(TOUR_TITLE_MAX_CHARS + 10);
     const { session, manifest } = await opened([pin("a")], { title: long });
     const editor = createEditorSession({
       session,

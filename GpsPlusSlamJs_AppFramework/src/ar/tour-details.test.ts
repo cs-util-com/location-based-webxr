@@ -14,15 +14,47 @@ import {
   checkTourContact,
   checkTourCover,
   checkTourDescription,
+  checkTourTitle,
   parseTourDetails,
   TOUR_CONTACT_MAX_CHARS,
   TOUR_DESCRIPTION_MAX_CHARS,
+  TOUR_TITLE_MAX_CHARS,
   tourContactHref,
   tourCoverEntry,
   tourImageIds,
 } from './tour-details';
 
 const IMAGES = new Set(['f1', 'cover-art']);
+
+describe('checkTourTitle', () => {
+  // Both pages take a tour name with this one rule (D30): the desktop
+  // counted code points and refused a long name, the phone wrote any.
+  it('keeps a name trimmed, up to 80 characters counted as a reader counts them', () => {
+    expect(TOUR_TITLE_MAX_CHARS).toBe(80);
+    expect(checkTourTitle('  Old town  ')).toEqual({
+      ok: true,
+      value: 'Old town',
+    });
+    // 80 emoji are 160 UTF-16 units: a cap in units would refuse them.
+    expect(checkTourTitle('🙂'.repeat(80))).toMatchObject({ ok: true });
+    expect(checkTourTitle(` ${'x'.repeat(80)} `)).toMatchObject({ ok: true });
+  });
+
+  it('refuses a blank, a non-string and a name longer than 80 characters, saying why', () => {
+    expect(checkTourTitle(' ')).toEqual({
+      ok: false,
+      reason: '"title" is empty',
+    });
+    expect(checkTourTitle(7)).toEqual({
+      ok: false,
+      reason: '"title" must be text',
+    });
+    expect(checkTourTitle('🙂'.repeat(81))).toEqual({
+      ok: false,
+      reason: '"title" is longer than 80 characters',
+    });
+  });
+});
 
 describe('checkTourDescription', () => {
   it('keeps text trimmed, with its line breaks', () => {

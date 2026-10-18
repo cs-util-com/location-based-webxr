@@ -9,10 +9,10 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+import type { DetailsForm } from "../tour-details-form.js";
 import {
   wireDetailsDialog,
   type DetailsDialogDom,
-  type DetailsForm,
   type DetailsOutcome,
 } from "./details-dialog.js";
 
