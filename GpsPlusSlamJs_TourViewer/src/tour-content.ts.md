@@ -56,8 +56,14 @@ radiusM? }) -> TourManifest`: the manifest with `objects` as its pins and
 - **The tour's own recorded photos are kept.** Baked spots are placed only
   when the manifest has none, so a second Finish never re-assigns them.
 - An object naming a station the tour lacks is treated as new.
-- An object missing from `objects` leaves its station. The station stays,
-  even when it is empty: removing a station is the editor's decision.
+- An object missing from `objects` leaves its station. A station this
+  write EMPTIED (it held items and holds none now) goes when nothing else
+  keeps it: no title, no steps, no recorded photo in it, and no other
+  station routing to it (`next`, a quiz route). It existed for its
+  elements (D20); left behind, it was an untitled spot the visitor's
+  guide still led to, and no editor of M5a can remove a station. A titled
+  or storied station stays, and so does an empty station the tour already
+  had (a later editor may add a station before filling it).
 - The order is the stations' order, then the items' order within each
   station. A world view read back is therefore in station order, which can
   differ from the order the objects were placed in.
@@ -79,7 +85,9 @@ const written = withTourContent(manifest, {
 
 - `tour-content.test.ts`: unmoved objects bit for bit; an edit keeps its
   pose; a move is re-expressed in its own station, even beyond R; new
-  objects join or start stations; chains; removal; an unknown station; the
+  objects join or start stations; chains; removal; an emptied station
+  dropped unless titled, storied, photographed or routed to; an unknown
+  station; the
   capture order and the kept spots; a refused R; and the `asStored`
   property (it is what a written tour holds, by content key).
 - Through `finish-rebuild.test.ts` (the Finish's capture assignment, and a

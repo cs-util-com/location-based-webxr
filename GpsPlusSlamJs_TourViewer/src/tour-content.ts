@@ -18,6 +18,11 @@
  *   (the walk came before the tour was edited), then the objects in the
  *   caller's order. A new station is anchored where its first element
  *   stands, turned like north, with no story.
+ * - A station this write EMPTIED (it held items, it holds none) goes when
+ *   nothing else keeps it: no title, no story steps, no recorded photo,
+ *   and no other station routing to it. It existed for its elements
+ *   (D20); left behind, the visitor's guide would still lead to it. An
+ *   empty station the tour already had is left alone.
  *
  * Pure.
  *
@@ -235,15 +240,51 @@ export function withTourContent(
           gpsAccuracyMedianM: bake.gpsAccuracyMedianM,
           captures,
         });
+  const filled = assigned.stations.map((seat) => ({
+    ...stations.get(seat.id)!,
+    items: items.get(seat.id) ?? [],
+  }));
+  const kept = new Set([
+    ...(spots?.captures ?? []).map((c) => c.station),
+    ...filled.flatMap(routedTo),
+  ]);
   const written: TourManifest = {
     ...manifest,
-    stations: assigned.stations.map((seat) => ({
-      ...stations.get(seat.id)!,
-      items: items.get(seat.id) ?? [],
-    })),
+    stations: filled.filter(
+      (s) => !emptiedAndBare(s, stationById.get(s.id), kept),
+    ),
   };
   if (spots === undefined) return written;
   return { ...written, captureSpots: spots };
+}
+
+/** Whether this write emptied `station` (`before` held items) and
+ *  nothing else keeps it: no title, no steps, not in `kept`. */
+function emptiedAndBare(
+  station: TourStation,
+  before: TourStation | undefined,
+  kept: ReadonlySet<string>,
+): boolean {
+  return (
+    station.items.length === 0 &&
+    (before?.items.length ?? 0) > 0 &&
+    (station.title ?? "").trim() === "" &&
+    station.steps.length === 0 &&
+    !kept.has(station.id)
+  );
+}
+
+/** The stations `station` routes to: its `next` and its quizzes' routes. */
+function routedTo(station: TourStation): string[] {
+  const ids = station.next === undefined ? [] : [station.next];
+  for (const { block } of station.steps) {
+    if (block.kind !== "quiz" || block.route === undefined) continue;
+    const { correct, wrong, byOption } = block.route;
+    if (correct !== undefined) ids.push(correct);
+    if (wrong !== undefined) ids.push(wrong);
+    ids.push(...Object.values(byOption ?? {}));
+  }
+  return ids;
 }
 
 /** The tour's pins and photos in the world, in station order; none

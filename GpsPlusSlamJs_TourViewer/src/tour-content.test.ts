@@ -175,6 +175,61 @@ describe("withTourContent", () => {
     expect(next.stations.map((s) => s.items.map((i) => i.id))).toEqual([["b"]]);
   });
 
+  it("a station emptied by this write goes when it carries nothing else; a titled, storied or photographed one stays", () => {
+    // Why this test matters (tour editor plan D20): an automatic station
+    // exists for the elements it holds. Deleting its last pin used to
+    // leave an untitled, empty station behind, which the visitor's guide
+    // still offered ("Next: Station 2, 30 m") - a walk to nothing. A
+    // station with its own title, story steps or recorded photos is the
+    // creator's, one another station routes to stays so the route still
+    // resolves, and an empty station the tour already had is left alone.
+    const titled = { ...station("titled", 100, 0), title: "Old well" };
+    const storied: TourStation = {
+      ...station("storied", 200, 0),
+      steps: [
+        {
+          id: "t",
+          block: { kind: "text", text: "Hi" },
+          advance: { mode: "tap" },
+        },
+      ],
+      next: "routed",
+    };
+    const base = withTourContent(
+      tour([
+        station("auto", 0, 0),
+        titled,
+        storied,
+        station("photographed", 300, 0),
+        station("was-empty", 400, 0),
+        station("routed", 500, 0),
+      ]),
+      {
+        objects: [
+          pin("a", 1, 0),
+          pin("b", 101, 0),
+          pin("c", 201, 0),
+          pin("d", 301, 0),
+          pin("e", 501, 0),
+        ],
+        captureSpots: {
+          fixes: 3,
+          gpsAccuracyMedianM: 4,
+          captures: [{ image: "images/frame-1.jpg", geo: geo(302, 0, 521) }],
+        },
+      },
+    );
+    expect(base.captureSpots?.captures[0]?.station).toBe("photographed");
+    const next = withTourContent(base, { objects: [] });
+    expect(next.stations.map((s) => s.id)).toEqual([
+      "titled",
+      "storied",
+      "photographed",
+      "was-empty",
+      "routed",
+    ]);
+  });
+
   it("an object naming a station the tour lacks is assigned as a new one", () => {
     const next = withTourContent(tour([station("gate", 0, 0)]), {
       objects: [{ ...pin("a", 1, 1), station: "gone" }],
