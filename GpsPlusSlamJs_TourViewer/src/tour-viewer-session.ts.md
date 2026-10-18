@@ -46,7 +46,10 @@ lives here.
     sighting of it are private to `creator-codes.ts` since code book plan
     M5d-2),
     `finishing`, `rebuiltZip` (with the `manifest.json` list it carries,
-    for the next Finish, K1 milestone review R7), `tourLabel` (set by
+    for the next Finish, K1 milestone review R7), `walkDecidedFor` (the
+    open tour whose Finish in this page decided about the walk's photos; a
+    per-page view hint for the creator's station HUD, cleared at tour
+    teardown, PR #642 review), `tourLabel` (set by
     archive-open); the open
     tour's `tourManifest` (archive-open.ts) and `scanEntries` (the creator's
     walk, from `tour-read-set.ts`; empty without a manifest); the placement layer (M4):

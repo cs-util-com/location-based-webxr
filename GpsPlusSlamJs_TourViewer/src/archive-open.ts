@@ -163,6 +163,9 @@ export function wireArchiveOpen(deps: {
     ctx.currentLevelTexts = null;
     ctx.levelsUnreadable = false;
     ctx.tourManifest = null;
+    // A reopened tour hedges its stations again (PR #642 review); and the
+    // closing session is not kept alive by the hint.
+    ctx.walkDecidedFor = null;
     hooks.presentTourInfo(null, () =>
       Promise.reject(new Error("no tour is open")),
     );

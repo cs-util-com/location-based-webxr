@@ -16,7 +16,7 @@ import {
   reticleNueOf,
   stationChipText,
   stationsAsFinished,
-  WALK_PENDING_TEXT,
+  WALK_HEDGE,
   walkPhotosPending,
   wireCreatorStations,
   type ArStation,
@@ -216,19 +216,29 @@ describe("the words", () => {
 });
 
 describe("walkPhotosPending", () => {
-  // Why (M5c review #2): the HUD says less exactly while a Finish would
-  // still sort the walk's photos in - a recording and no baked spots.
-  it("is true only for a tour with a recording and no photo spots yet", () => {
+  // Why (M5c review #2, PR #642 review): the HUD hedges exactly while a
+  // Finish might still sort the walk's photos in - a recording and no baked
+  // spots - unless a Finish in THIS page already decided about the walk. A
+  // declined bake writes no spots, and the file cannot say it declined, so
+  // a tour reopened after one reads as pending again: hedged, never silent.
+  it("is true for a recording without photo spots, until a Finish in this page decided", () => {
     const tour = tourOf([pin("gate", 0, 0)]);
     const spots = {
       ...tour,
       captureSpots: { fixes: 4, gpsAccuracyMedianM: null, captures: [] },
     } as TourManifest;
-    expect(walkPhotosPending({ hasRecording: true }, tour)).toBe(true);
-    expect(walkPhotosPending({ hasRecording: true }, spots)).toBe(false);
+    const session = { hasRecording: true };
+    // Never finished, or reopened after a declined bake (a new session):
+    // pending.
+    expect(walkPhotosPending(session, tour)).toBe(true);
+    expect(walkPhotosPending(session, tour, { hasRecording: true })).toBe(true);
+    // Baked: the spots are in the tour.
+    expect(walkPhotosPending(session, spots)).toBe(false);
+    // A Finish of this open tour, in this page, decided (baked or declined).
+    expect(walkPhotosPending(session, tour, session)).toBe(false);
     expect(walkPhotosPending({ hasRecording: false }, tour)).toBe(false);
     expect(walkPhotosPending(null, tour)).toBe(false);
-    expect(walkPhotosPending({ hasRecording: true }, null)).toBe(false);
+    expect(walkPhotosPending(session, null)).toBe(false);
   });
 });
 
@@ -496,18 +506,28 @@ describe("wireCreatorStations", () => {
     );
   });
 
-  // Why (M5c review #2): a tour's first Finish sorts the walk's recorded
-  // photos in BEFORE the objects, and the HUD cannot see them (they are
-  // baked at the Finish). Until then its station names and numbers can be
-  // wrong, so it names none and says why.
-  it("says less while the walk's photos are not sorted in yet: no station names, and why", () => {
+  // Why (M5c review #2, PR #642 review): a tour's first Finish sorts the
+  // walk's recorded photos in BEFORE the objects, and the HUD cannot see
+  // them (they are baked at the Finish), so its station names and numbers
+  // may change. Naming none left a tour reopened after a declined bake -
+  // which reads as pending for good - with a dead HUD. It names them,
+  // hedged, and drops the hedge once nothing is pending.
+  it("names the stations with a hedge while the walk's photos may still be sorted in", () => {
     let pending = true;
     const h = harness({ walkPhotosPending: () => pending });
     h.stand(5, 0);
-    expect(h.chip.textContent).toBe(WALK_PENDING_TEXT);
-    expect(h.chip.textContent).not.toMatch(/Station \d/);
+    expect(h.chip.textContent).toBe(
+      "In Station 1 - what you place here joins it. " + WALK_HEDGE,
+    );
+    h.stand(60, 0);
+    expect(h.chip.textContent).toBe(
+      "You left Station 1 - what you place next starts a new station. " +
+        WALK_HEDGE,
+    );
     h.ctx.placedObjects.push({ object: pin("near", 5, 0) });
-    expect(h.stations.placedIn("near")).toBeNull();
+    expect(h.stations.placedIn("near")).toBe(
+      "in Station 1 (may change at Finish, when the walk's photos are sorted in)",
+    );
     pending = false;
     h.stand(5, 0);
     expect(h.chip.textContent).toBe(

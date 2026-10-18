@@ -134,7 +134,9 @@ DOM glue, its own module since the flows plan M6.
   `placement`) and the QR controller's level cache (the compass wait it
   also ended, r857 review #9, is gone since r863), `levelsUnreadable`,
   and a failed
-  finish (`finishError`, which keeps Save off - scan-to-open plan §9 #8).
+  finish (`finishError`, which keeps Save off - scan-to-open plan §9 #8),
+  and `walkDecidedFor` (a reopened tour hedges its stations again, PR #642
+  review).
   The measured level goes with the tour, and so does its measurement (the
   settle's raw inputs, authoring plan 2026-09-28-0953 M2c) - a closing
   tour's measurement must never be re-minted into the next tour's level:

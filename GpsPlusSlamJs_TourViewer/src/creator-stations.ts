@@ -22,7 +22,8 @@
  * - **The walk's photos:** the FIRST Finish of a tour with a recording and
  *   no photo spots places the recorded photos before the objects; the HUD
  *   cannot see them (they are baked at the Finish), so until then it names
- *   no station and says why (`walkPhotosPending`, M5c review #2).
+ *   the stations with a hedge (`walkPhotosPending`, M5c review #2, PR
+ *   #642 review).
  *
  * @see creator-stations.ts.md
  */
@@ -151,25 +152,34 @@ export function placedInText(
     : `in ${station.name}`;
 }
 
-/** The line while the walk's recorded photos are not sorted in yet (M5c
- *  review #2): no station names, since they may change. */
-export const WALK_PENDING_TEXT =
-  "Stations are set at Finish, once the walk's photos are sorted in.";
+/** Why the names may change, while the walk's recorded photos may still
+ *  be sorted in (M5c review #2, PR #642 review). */
+const HEDGE = "may change at Finish, when the walk's photos are sorted in";
+
+/** The hedge the station line ends with while the walk is pending. */
+export const WALK_HEDGE = `${HEDGE[0]!.toUpperCase()}${HEDGE.slice(1)}.`;
 
 /**
- * Whether the next Finish still sorts the walk's recorded photos in: the
- * tour carries a recording and no baked photo spots (`withTourContent`
- * places them BEFORE the objects, `finish-rebuild.ts`). The HUD cannot
- * see them until then, so its station names and numbers may be wrong.
- * Conservative: a recording that took no photos also reads as pending
- * until its first Finish.
+ * Whether a Finish may still sort the walk's recorded photos in: the tour
+ * carries a recording and no baked photo spots (`withTourContent` places
+ * them BEFORE the objects, `finish-rebuild.ts`), and no Finish of this
+ * open tour in this page has decided about the walk yet (`decidedFor`,
+ * the page's `walkDecidedFor`). The HUD cannot see the photos, so its
+ * station names and numbers may change: it hedges them.
+ *
+ * A declined bake writes no spots, and the file has no way to say it
+ * declined, so a tour reopened after one reads as pending again - the
+ * hedge comes back, the names stay. Conservative: a recording that took
+ * no photos also reads as pending until a Finish in this page.
  */
-export function walkPhotosPending(
-  session: { readonly hasRecording: boolean } | null,
+export function walkPhotosPending<S extends { readonly hasRecording: boolean }>(
+  session: S | null,
   manifest: TourManifest | null,
+  decidedFor: S | null = null,
 ): boolean {
   return (
     session !== null &&
+    session !== decidedFor &&
     session.hasRecording &&
     manifest !== null &&
     manifest.captureSpots === undefined
@@ -258,9 +268,9 @@ export function wireCreatorStations(deps: {
    *  there, else at the creator (M5c review #3); the ring always at the
    *  creator (PR #642 review). Absent: always at the creator. */
   reticleNue?(): readonly [number, number, number] | null;
-  /** The walk's photos are not sorted in yet (`walkPhotosPending`): the
-   *  line names no station and a placement's note says nothing about
-   *  stations. Absent: never. */
+  /** The walk's photos may still be sorted in (`walkPhotosPending`): the
+   *  line and a placement's note name the station with a hedge. Absent:
+   *  never. */
   walkPhotosPending?(): boolean;
   zero(): LatLong | null;
   /** The scene root (GPS-world NUE), or null outside a session. */
@@ -351,10 +361,9 @@ export function wireCreatorStations(deps: {
       const left =
         open === null && lastOpen !== null ? findMarked(list, lastOpen) : null;
       if (open !== null) lastOpen = markOf(open);
+      const line = stationChipText(open, left);
       show(
-        deps.walkPhotosPending?.() === true
-          ? WALK_PENDING_TEXT
-          : stationChipText(open, left),
+        deps.walkPhotosPending?.() === true ? `${line} ${WALK_HEDGE}` : line,
       );
       if (standing === null) {
         ring.hide();
@@ -367,8 +376,10 @@ export function wireCreatorStations(deps: {
       ring.show(scene, [centre[0], nue[1] - EYE_HEIGHT_M, centre[2]], radiusM);
     },
     placedIn(id) {
-      if (deps.walkPhotosPending?.() === true) return null;
-      return placedInText(stations(), id);
+      const where = placedInText(stations(), id);
+      return where !== null && deps.walkPhotosPending?.() === true
+        ? `${where} (${HEDGE})`
+        : where;
     },
     endVisit() {
       show("");

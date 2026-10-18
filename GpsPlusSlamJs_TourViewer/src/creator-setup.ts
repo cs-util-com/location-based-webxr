@@ -648,7 +648,8 @@ export function wireCreatorSetup(deps: {
         gpsPositions: [],
       }).nue,
     reticleNue: () => reticleNueOf(ctx.reticle),
-    walkPhotosPending: () => walkPhotosPending(ctx.session, ctx.tourManifest),
+    walkPhotosPending: () =>
+      walkPhotosPending(ctx.session, ctx.tourManifest, ctx.walkDecidedFor),
     zero: () => selectZeroReference(arStore.getState()),
     scene: () => (creator && sessionLive() ? seams.getScene() : null),
   });

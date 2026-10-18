@@ -28,8 +28,11 @@ placement went ("it starts Station 3" / "in Station 2") for its note.
 - `placedInText(stations, objectId) -> string | null` - "it starts
   Station 3" for the first element of a station the next Finish starts,
   else "in Station 2"; null when the object is in none.
-- `walkPhotosPending(session, manifest) -> boolean` - the tour has a
-  recording and no baked photo spots; `WALK_PENDING_TEXT` is the line then.
+- `walkPhotosPending(session, manifest, decidedFor?) -> boolean` - the
+  tour has a recording and no baked photo spots, and `session` is not
+  `decidedFor` (the page's `walkDecidedFor`: a Finish of this open tour,
+  in this page, already decided about the walk). `WALK_HEDGE` ("May change
+  at Finish, when the walk's photos are sorted in.") ends the line then.
 - `reticleNueOf(reticle) -> [n, u, e] | null` - a visible reticle's hit
   point in GPS-world NUE; null when hidden, absent or not finite.
 - `wireCreatorStations({ ctx, dom: { chip }, creatorNue, reticleNue?, zero, scene,
@@ -75,14 +78,26 @@ radiusM? }) -> { tick, placedIn, endVisit }` - `tick()` every camera
 - **The walk's photos:** a tour's FIRST Finish with a recording and no
   photo spots places the walk's recorded photos before the objects
   (`withTourContent`); they are baked at the Finish, so the HUD cannot see
-  them and its names and numbers may be wrong until then. While that holds
-  (`walkPhotosPending(session, manifest)`) the line says "Stations are set
-  at Finish, once the walk's photos are sorted in." and a placement's note
-  names no station; the ring still shows the radius of the station the
-  creator stands in (M5c
-  review #2). Conservative: a recording that took no photos reads as
-  pending until its first Finish. Feeding the live join's spots in instead
-  was not chosen: the bake is an async replay of the whole recording.
+  them and its names and numbers may change until then. While that holds
+  (`walkPhotosPending`) the line names the station as usual and ends with
+  `WALK_HEDGE`, and a placement's note names it with the same hedge ("in
+  Station 1 (may change at Finish, when the walk's photos are sorted
+  in)"); the ring is unchanged (M5c review #2, PR #642 review). Naming no
+  station, as first built, left a dead HUD for good on a tour whose bake
+  DECLINED: a decline writes no spots, so the file reads as pending on
+  every reopen. Conservative: a recording that took no photos reads as
+  pending until a Finish. Feeding the live join's spots in instead was not
+  chosen: the bake is an async replay of the whole recording.
+- **The hedge drops after a Finish in this page** decided about the walk,
+  baked or declined (`ctx.walkDecidedFor`, set by `creator-finish.ts`,
+  cleared at tour teardown). It is a **per-page view hint, not document
+  state**: a declined bake has no field in tour.json (an empty
+  `captureSpots` is refused by the parser, and its presence would switch
+  off the visitor's live join), and adding one was declined as a format
+  change for a hint. So a reopened tour hedges again until its next
+  Finish. A decline from a transient read failure also drops the hedge,
+  though the next Finish may bake: accepted, the names are still the
+  next Finish's own.
 - **Cost:** the stations are recomputed only when the manifest, any
   placed object or the deletions change. Placed objects are compared entry
   by entry, because the settle re-poses them by replacing entries IN the
@@ -116,8 +131,9 @@ note(`Pin placed - ${stations.placedIn(pin.id) ?? ""}`);
   station the HUD called open, or starts one when it called none (R swept
   15-40 m); the same promise through the composed HUD with the reticle
   up to 10 m ahead or hidden (property, R swept); `reticleNueOf`; the
-  words; the line and the note saying less while the walk's photos are
-  pending, and `walkPhotosPending`; the station left, remembered across a
+  words; the line and the note hedged (stations still named) while the
+  walk's photos are pending, and `walkPhotosPending` (never finished or
+  reopened after a decline: pending; baked or decided in this page: not); the station left, remembered across a
   deletion that renumbers it and across the Finish that writes it; the
   wiring: the line, the ring at the anchor on
   the ground, leaving and re-entering, the ring kept at the creator's
