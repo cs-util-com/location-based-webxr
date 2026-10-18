@@ -189,6 +189,30 @@ export function reticleNueOf(
   return [p.x, p.y, p.z];
 }
 
+/** How the HUD remembers the station the creator was last in: a written
+ *  station by its id; one the next Finish starts by its first element,
+ *  since its order-numbered id shifts when an earlier one is deleted and
+ *  the Finish mints a real one (M5c review #4). */
+type StationMark = { readonly id: string } | { readonly firstItemId: string };
+
+function markOf(station: ArStation): StationMark {
+  const first = station.itemIds[0];
+  return station.started && first !== undefined
+    ? { firstItemId: first }
+    : { id: station.id };
+}
+
+function findMarked(
+  stations: readonly ArStation[],
+  mark: StationMark,
+): ArStation | null {
+  const found =
+    "id" in mark
+      ? stations.find((s) => s.id === mark.id)
+      : stations.find((s) => s.itemIds[0] === mark.firstItemId);
+  return found ?? null;
+}
+
 export interface CreatorStationsDom {
   /** The line above the action strip. */
   readonly chip: Pick<HTMLElement, "textContent" | "hidden">;
@@ -253,7 +277,7 @@ export function wireCreatorStations(deps: {
     stations: ArStation[];
   } | null = null;
   /** The station the creator was in at the last frame inside one. */
-  let lastOpenId: string | null = null;
+  let lastOpen: StationMark | null = null;
 
   function stations(): ArStation[] {
     const { ctx } = deps;
@@ -308,10 +332,8 @@ export function wireCreatorStations(deps: {
       const at = calcGpsCoords(zero, [judged[0], judged[1], judged[2]]);
       const open = openStationAt(list, at, radiusM);
       const left =
-        open === null && lastOpenId !== null
-          ? (list.find((s) => s.id === lastOpenId) ?? null)
-          : null;
-      if (open !== null) lastOpenId = open.id;
+        open === null && lastOpen !== null ? findMarked(list, lastOpen) : null;
+      if (open !== null) lastOpen = markOf(open);
       show(
         deps.walkPhotosPending?.() === true
           ? WALK_PENDING_TEXT
@@ -334,7 +356,7 @@ export function wireCreatorStations(deps: {
     endVisit() {
       show("");
       ring.hide();
-      lastOpenId = null;
+      lastOpen = null;
     },
   };
 }

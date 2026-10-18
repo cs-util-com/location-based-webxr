@@ -7,7 +7,9 @@ import type {
 import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 import { Group, Mesh, type RingGeometry, type Vector3 } from "three";
 
+import { applyObjectChanges } from "./authoring-draft.js";
 import { tourOf } from "./test-support/v3-tour.js";
+import { tourObjectsOf, withTourContent } from "./tour-content.js";
 import {
   openStationAt,
   placedInText,
@@ -478,6 +480,54 @@ describe("wireCreatorStations", () => {
       "In Station 1 - what you place here joins it.",
     );
     expect(h.stations.placedIn("near")).toBe("in Station 1");
+  });
+
+  // Why (M5c review #4): a station the next Finish starts has an
+  // order-numbered id ("unwritten-2") that shifts when an earlier one is
+  // deleted and is replaced by a minted one at the Finish. Remembered by
+  // that id, the station the creator left was forgotten, and the line said
+  // "No station here" instead of "You left ...".
+  it("still names the station the creator left after an earlier unwritten station is deleted", () => {
+    const h = harness();
+    h.ctx.placedObjects.push(
+      { object: pin("a", 60, 0) },
+      { object: pin("b", 200, 0) },
+    );
+    h.stand(200, 0);
+    expect(h.chip.textContent).toBe(
+      "In Station 3 - what you place here joins it.",
+    );
+    h.ctx.placedObjects = h.ctx.placedObjects.filter(
+      (p) => p.object.id !== "a",
+    );
+    h.stand(300, 0);
+    expect(h.chip.textContent).toBe(
+      "You left Station 2 - what you place next starts a new station.",
+    );
+  });
+
+  it("still names the station the creator left after a Finish wrote it", () => {
+    const h = harness();
+    h.ctx.placedObjects.push({ object: pin("far", 60, 0) });
+    h.stand(60, 0);
+    expect(h.chip.textContent).toBe(
+      "In Station 2 - what you place here joins it.",
+    );
+    // The Finish writes the station under an id it mints, and the working
+    // copy starts again from the written tour.
+    const manifest = h.ctx.tourManifest!;
+    h.ctx.tourManifest = withTourContent(manifest, {
+      objects: applyObjectChanges(
+        tourObjectsOf(manifest),
+        h.ctx.placedObjects.map((p) => p.object),
+        [],
+      ),
+    });
+    h.ctx.placedObjects = [];
+    h.stand(120, 0);
+    expect(h.chip.textContent).toBe(
+      "You left Station 2 - what you place next starts a new station.",
+    );
   });
 
   it("a creator who never stood in a station is told none is here", () => {

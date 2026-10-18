@@ -58,6 +58,10 @@ radiusM? }) -> { tick, placedIn, endVisit }` - `tick()` every camera
   the creator stands, so with the reticle hidden the creator's spot is
   the right one to judge; with it visible a photo is judged at the
   reticle, a few metres off, and its note says where it went.
+- **The station left** is remembered by its id when written, and by its
+  first element when the next Finish starts it: its `unwritten-N` id
+  shifts when an earlier one is deleted and is replaced by a minted one
+  at the Finish (M5c review #4).
 - **R** is `STATION_RADIUS_M` (25 m, provisional until the sweep over
   recorded walks).
 - **The walk's photos:** a tour's FIRST Finish with a recording and no
@@ -103,7 +107,9 @@ note(`Pin placed - ${stations.placedIn(pin.id) ?? ""}`);
   15-40 m); the same promise through the composed HUD with the reticle
   up to 10 m ahead or hidden (property, R swept); `reticleNueOf`; the
   words; the line and the note saying less while the walk's photos are
-  pending, and `walkPhotosPending`; the wiring: the line, the ring at the anchor on
+  pending, and `walkPhotosPending`; the station left, remembered across a
+  deletion that renumbers it and across the Finish that writes it; the
+  wiring: the line, the ring at the anchor on
   the ground, leaving and re-entering, a placement's note, and nothing
   without a position, a scene, a tour or after the visit.
 - `playwright-tests/creator-stations.spec.js` - the composed page: the
