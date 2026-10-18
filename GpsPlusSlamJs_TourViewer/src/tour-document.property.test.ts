@@ -17,6 +17,7 @@ import {
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { rebuildFinishedTour } from "./finish-rebuild.js";
+import type { CaptureSpotsInWorld } from "./tour-content.js";
 import { stationIdOf, tourOf } from "./test-support/v3-tour.js";
 import { openTourFile } from "./tour-session.js";
 import {
@@ -52,6 +53,24 @@ function photo(id: string, lat: number): TourObject {
     geo: { lat, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
   };
 }
+
+/** The walk's photo spots a save is given: one beside the tour's photo,
+ *  one a kilometre away, which the save puts into a station of its own
+ *  (an automatic id, minted by the write). */
+const SPOTS: CaptureSpotsInWorld = {
+  fixes: 3,
+  gpsAccuracyMedianM: 4,
+  captures: [
+    {
+      image: "content/f.jpg",
+      geo: { lat: 48.5204, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+    },
+    {
+      image: "content/far.jpg",
+      geo: { lat: 48.53, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+    },
+  ],
+};
 
 const IDS = ["a", "b", "f"] as const;
 const OPENED: TourManifest = tourOf([
@@ -268,7 +287,12 @@ describe("tour document (properties)", () => {
     );
   });
 
-  it("the manifest the state would write is the one the Finish rebuild writes", async () => {
+  it("the manifest the state would write is the one the Finish rebuild writes, with photo spots and across a second save", async () => {
+    // The r875 milestone review #7: the selector takes the save's own
+    // inputs (the photo spots, decided once per open), so it is checked
+    // with them and without, and once more after a save landed in the
+    // middle - the second write starts from the first one's file, whose
+    // automatic stations the spots minted.
     const zip = await packFilesAsZip([
       { path: "tour.json", data: serializeTourManifest(OPENED) },
       { path: "content/f.jpg", data: "f" },
@@ -276,15 +300,17 @@ describe("tour document (properties)", () => {
     const tour = await openTourFile(
       new File([zip], "t.zip", { type: "application/zip" }),
     );
+    const noSave = opArb.filter((op) => op.kind !== "save");
     await fc.assert(
       fc.asyncProperty(
-        fc.array(
-          opArb.filter((op) => op.kind !== "save"),
-          { maxLength: 15 },
-        ),
-        async (ops) => {
-          const state = ops.reduce(apply, opened);
-          const finished = await rebuildFinishedTour({
+        fc.array(noSave, { maxLength: 12 }),
+        fc.array(noSave, { maxLength: 8 }),
+        fc.boolean(),
+        async (first, second, withSpots) => {
+          const spots = withSpots ? SPOTS : undefined;
+          const extra = spots === undefined ? {} : { captureSpots: spots };
+          let state = first.reduce(apply, opened);
+          const one = await rebuildFinishedTour({
             tour,
             manifest: manifestNow(state)!,
             placed: state.placed,
@@ -292,11 +318,38 @@ describe("tour document (properties)", () => {
             levels: [],
             keepScan: false,
             previous: null,
+            ...extra,
           });
           expect(
             difference(
-              renamed(finished!.written),
-              renamed(manifestToWrite(state)!),
+              renamed(one!.written),
+              renamed(manifestToWrite(state, spots)!),
+            ),
+          ).toBeNull();
+          state = reduce(
+            state,
+            act.saved({
+              generation: state.generation,
+              written: one!.written,
+              appliedDeletions: [...state.deleted],
+              stationsAtStart: state.stations,
+            }),
+          );
+          state = second.reduce(apply, state);
+          const two = await rebuildFinishedTour({
+            tour,
+            manifest: manifestNow(state)!,
+            placed: state.placed,
+            deleted: state.deleted,
+            levels: [],
+            keepScan: false,
+            previous: { blob: one!.blob },
+            ...extra,
+          });
+          expect(
+            difference(
+              renamed(two!.written),
+              renamed(manifestToWrite(state, spots)!),
             ),
           ).toBeNull();
         },

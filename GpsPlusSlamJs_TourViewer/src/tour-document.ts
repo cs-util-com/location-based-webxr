@@ -49,6 +49,7 @@ import {
   withDetails,
   type TourDetailFields,
 } from "./tour-details-form.js";
+import type { CaptureSpotsInWorld } from "./tour-content.js";
 
 /** A station without its items: what the document edits of a station
  *  (its pose, D17); the items stay with the written tour. */
@@ -291,14 +292,21 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
 }
 
 /** The manifest a write carries now (the Finish's rule,
- *  `finishedManifest`): what a save would write, without the zip. */
-export function manifestToWrite(state: TourDocumentState): TourManifest | null {
+ *  `finishedManifest`): what a save would write, without the zip.
+ *  `captureSpots` is the save's own input (the walk's photo spots, which
+ *  a page decides once per open, `captureSpotsForRebuild`): given the same,
+ *  this is the manifest the save writes (the r875 milestone review #7). */
+export function manifestToWrite(
+  state: TourDocumentState,
+  captureSpots?: CaptureSpotsInWorld,
+): TourManifest | null {
   const base = manifestNow(state);
   if (base === null) return null;
   return finishedManifest({
     manifest: base,
     placed: state.placed,
     deleted: state.deleted,
+    ...(captureSpots === undefined ? {} : { captureSpots }),
   });
 }
 

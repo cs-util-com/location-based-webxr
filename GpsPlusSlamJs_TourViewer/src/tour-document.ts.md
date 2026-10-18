@@ -115,8 +115,10 @@ different times (a walk's move lands only after the page wrote both files).
 - `manifestNow(state)` - the manifest the next write starts from: the
   written tour with the frames (`withFrames`), the setting
   (`withNeedsNoGps`) and the details (`effectiveDetails`).
-- `manifestToWrite(state)` - what a write would carry: `finishedManifest`
-  (the Finish's own rule) over `manifestNow`, `placed` and `deleted`.
+- `manifestToWrite(state, captureSpots?)` - what a write would carry:
+  `finishedManifest` (the Finish's own rule) over `manifestNow`, `placed`,
+  `deleted` and the save's photo spots (the walk's recorded photos, which
+  a page decides once per open; the r875 milestone review #7).
 - `changeCount(state)` - each pending entry, deletion, moved frame, the
   setting and each detail field differing from the written file.
 - `effectiveDetails(state)` - the cover only while its image is in the tour.
@@ -154,8 +156,11 @@ object)` (an id the tour does not carry, within reach) and
   M5a review M2 order deviation for the desktop: the frames in the history
   bring an emptied, pruned station back where it stood).
 - **What the state writes is what the rebuild writes**: `manifestToWrite`
-  is `finishedManifest`, the function `rebuildFinishedTour` itself calls
-  (property-tested against real zips).
+  is `finishedManifest`, the function `rebuildFinishedTour` itself calls,
+  over the same inputs, the photo spots included (property-tested against
+  real zips, with spots and without, and across a second save). It is the
+  same rule computed twice, not one call: the save does not read the
+  selector, so the property is what holds the two together.
 - Reducers are pure: each computes from a plain snapshot (`current`) and
   returns the next state; nothing reads a clock or a random source except
   the automatic station ids `withTourContent` mints inside
@@ -203,6 +208,7 @@ store.dispatch(tourDocumentActions.undone());
   moves, deletes, placements, station moves, settings, details, undos,
   redos and saves: undo then redo is identity; undoing everything gives the
   opened tour; `manifestToWrite` equals `rebuildFinishedTour`'s written
-  manifest on a real zip.
+  manifest on a real zip, with the walk's photo spots and without, and
+  again for a second save after the first landed.
 - `tour-document-parity.test.ts` - the phone's and the desktop's paths
   write the same tour and draft (D30).
