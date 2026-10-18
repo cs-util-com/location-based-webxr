@@ -17,10 +17,12 @@
  *   position, M5a review M3) - inside the station's found radius.
  *   A code lock is no arrival: it only improves that position, and the
  *   guide re-judges at once. With no position nothing is reached. A moved
- *   poster cannot pull the position onto a station: the moved-code check
+ *   poster can pull the position onto a station until the moved-code
+ *   check has judged it (its evidence window); from then on the check
  *   ignores its code and takes its votes back (`isIgnored` of the
  *   viewer pipeline, `qr-viewer-mode.ts`, D20), the one guard left since
- *   the lock-hold went (review 2 #5).
+ *   the lock-hold went (review 2 #5). Inside that window a visitor who
+ *   scans a moved poster near another station may find it early.
  * - **The HUD's arrival is the found radius** (`station-bands.ts`, §8 D9):
  *   each target's `distanceMin`/`distanceMax` are the station's found band at
  *   the measured accuracy, and the target sits at the visitor's own height so
