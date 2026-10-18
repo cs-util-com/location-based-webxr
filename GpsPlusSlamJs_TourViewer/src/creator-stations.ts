@@ -4,12 +4,10 @@
  * ring of its radius, and the words for both.
  *
  * - **The stations are the next Finish's.** They are read from the page's
- *   working copy through the very function the Finish writes with
- *   (`withTourContent` over the hosted objects with this page's changes,
- *   `applyObjectChanges`), so a pin the HUD says "starts Station 3" is in
- *   Station 3 once written. Nothing is stored: no station exists in the
- *   working copy before the Finish writes it (the coming tour-document
- *   step decides where AR-made stations live).
+ *   tour document through the very rule the Finish writes with (the
+ *   document's `manifestToWrite`), so a pin the HUD says "starts Station
+ *   3" is in Station 3 once written. Nothing is stored: no station exists
+ *   in the document before the Finish writes it.
  * - **The open station** is the nearest whose anchor is within R of where
  *   the next pin would land: the reticle's hit point while it is visible,
  *   else where the creator stands (M5c review #3; `station-assign.ts`
@@ -28,14 +26,10 @@
  * @see creator-stations.ts.md
  */
 
-import type {
-  TourManifest,
-  TourObject,
-} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { calcGpsCoords, type LatLong } from "gps-plus-slam-app-framework/core";
 import { Vector3, type Object3D } from "three";
 
-import { applyObjectChanges } from "./authoring-draft.js";
 import { EYE_HEIGHT_M } from "./breadcrumbs.js";
 import { objectPoseNue } from "./content-placement.js";
 import {
@@ -45,8 +39,8 @@ import {
 } from "./station-assign.js";
 import { createStationRing, type StationRing } from "./station-ring.js";
 import { stationTitle } from "./station-run.js";
-import { tourObjectsOf, withTourContent } from "./tour-content.js";
 import type { CreatorDocument } from "./creator-document.js";
+import { manifestToWrite, type TourDocumentState } from "./tour-document.js";
 
 /** A station as the creator's HUD reads it. */
 export interface ArStation {
@@ -67,27 +61,19 @@ export interface ArStation {
 const UNWRITTEN_PREFIX = "unwritten-";
 
 /**
- * The tour's stations as the next Finish would write them: the hosted
- * stations and the ones this page's placements start, each named. None
- * without a tour.
+ * The tour's stations as the next Finish would write them
+ * (`manifestToWrite`): the written stations and the ones this page's
+ * placements start, each named. None without a tour (`state` null).
  */
 export function stationsAsFinished(input: {
-  readonly manifest: TourManifest | null;
-  /** This page's new and changed objects, in the order they were made. */
-  readonly placed: readonly TourObject[];
-  readonly deleted: readonly string[];
+  readonly state: TourDocumentState | null;
   readonly radiusM?: number;
 }): ArStation[] {
-  const { manifest } = input;
-  if (manifest === null) return [];
-  const hosted = new Set(manifest.stations.map((s) => s.id));
+  const { state } = input;
+  if (state === null) return [];
+  const hosted = new Set(state.stations.map((s) => s.id));
   let next = 0;
-  const written = withTourContent(manifest, {
-    objects: applyObjectChanges(
-      tourObjectsOf(manifest),
-      input.placed,
-      input.deleted,
-    ),
+  const written = manifestToWrite(state, undefined, {
     newStationId: () => {
       let id: string;
       do {
@@ -98,6 +84,7 @@ export function stationsAsFinished(input: {
     },
     ...(input.radiusM === undefined ? {} : { radiusM: input.radiusM }),
   });
+  if (written === null) return [];
   return written.stations.map((station, index) => ({
     id: station.id,
     anchor: {
@@ -241,22 +228,8 @@ export interface CreatorStations {
 }
 
 /** The working copy the stations are read from: the page's tour
- *  document (`creator-document.ts`). */
-type CreatorStationsSource = Pick<
-  CreatorDocument,
-  "manifest" | "entries" | "deleted"
->;
-
-/** The same placed objects, entry by entry (by reference). */
-function sameObjects(
-  kept: readonly TourObject[],
-  placed: readonly { readonly object: TourObject }[],
-): boolean {
-  return (
-    kept.length === placed.length &&
-    placed.every((entry, i) => entry.object === kept[i])
-  );
-}
+ *  document (`creator-document.ts`; `manifest()` null is no tour). */
+type CreatorStationsSource = Pick<CreatorDocument, "manifest" | "state">;
 
 export function wireCreatorStations(deps: {
   readonly tour: CreatorStationsSource;
@@ -280,14 +253,11 @@ export function wireCreatorStations(deps: {
 }): CreatorStations {
   const radiusM = deps.radiusM ?? STATION_RADIUS_M;
   const ring: StationRing = createStationRing();
-  /** The stations, kept until the working copy changes: the manifest, any
-   *  placed object (an edit replaces the array, a placement grows it, the
-   *  settle replaces entries in place - so each object is compared) or the
-   *  deletions. Read every frame, so never recomputed per frame. */
+  /** The stations, kept until the document's parts they are made of
+   *  change (each replaced, never mutated, by the slice): read every
+   *  frame, so never recomputed per frame. */
   let memo: {
-    manifest: TourManifest | null;
-    objects: readonly TourObject[];
-    deleted: readonly string[];
+    key: readonly unknown[];
     stations: ArStation[];
   } | null = null;
   /** The station the creator was in at the last frame inside one. */
@@ -295,25 +265,20 @@ export function wireCreatorStations(deps: {
 
   function stations(): ArStation[] {
     const { tour } = deps;
-    const manifest = tour.manifest();
-    const entries = tour.entries();
-    const deleted = tour.deleted();
+    const state = tour.manifest() === null ? null : tour.state();
+    const key =
+      state === null
+        ? [null]
+        : [state.written, state.stations, state.placed, state.deleted];
     if (
       memo !== null &&
-      memo.manifest === manifest &&
-      memo.deleted === deleted &&
-      sameObjects(memo.objects, entries)
+      memo.key.length === key.length &&
+      memo.key.every((k, i) => k === key[i])
     ) {
       return memo.stations;
     }
-    const objects = entries.map((p) => p.object);
-    const list = stationsAsFinished({
-      manifest,
-      placed: objects,
-      deleted,
-      radiusM,
-    });
-    memo = { manifest, objects, deleted, stations: list };
+    const list = stationsAsFinished({ state, radiusM });
+    memo = { key, stations: list };
     return list;
   }
 

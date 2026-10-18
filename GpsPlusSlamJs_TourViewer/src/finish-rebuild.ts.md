@@ -51,7 +51,9 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
     the rebuild throw (`ArchiveLimitError`, `TourIntegrityError`); the
     caller shows it.
 
-- `finishedManifest({ manifest, placed, deleted, title?, captureSpots? })`
+- `finishedManifest({ manifest, placed, deleted, title?, captureSpots?,
+newStationId?, radiusM? })` (the last two: the automatic-station rule's
+  id and radius, `withTourContent`, for a preview of the write)
   - the manifest a Finish writes, without the zip: the rule
     `rebuildFinishedTour` applies (records replacing theirs by id, new ones
     appended, deleted ones out, every object in a station by

@@ -333,6 +333,12 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
 export function manifestToWrite(
   state: TourDocumentState,
   captureSpots?: CaptureSpotsInWorld,
+  stationRule?: {
+    /** The id a new automatic station gets (a preview's own names). */
+    readonly newStationId?: () => string;
+    /** The automatic stations' radius. */
+    readonly radiusM?: number;
+  },
 ): TourManifest | null {
   const base = manifestNow(state);
   if (base === null) return null;
@@ -341,6 +347,12 @@ export function manifestToWrite(
     placed: state.placed,
     deleted: state.deleted,
     ...(captureSpots === undefined ? {} : { captureSpots }),
+    ...(stationRule?.newStationId === undefined
+      ? {}
+      : { newStationId: stationRule.newStationId }),
+    ...(stationRule?.radiusM === undefined
+      ? {}
+      : { radiusM: stationRule.radiusM }),
   });
 }
 

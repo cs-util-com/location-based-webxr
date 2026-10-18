@@ -140,6 +140,11 @@ export interface FinishedManifestInput {
   readonly title?: string | null;
   /** The recorded photos' spots, when the tour has them. */
   readonly captureSpots?: CaptureSpotsInWorld;
+  /** The automatic-station rule's id for a new station and its radius
+   *  (`withTourContent`): a reader that only previews the write (the
+   *  creator's station HUD) names the new ones its own way. */
+  readonly newStationId?: () => string;
+  readonly radiusM?: number;
 }
 
 /**
@@ -174,6 +179,10 @@ export function finishedManifest(input: FinishedManifestInput): TourManifest {
       ...(input.captureSpots === undefined
         ? {}
         : { captureSpots: input.captureSpots }),
+      ...(input.newStationId === undefined
+        ? {}
+        : { newStationId: input.newStationId }),
+      ...(input.radiusM === undefined ? {} : { radiusM: input.radiusM }),
     },
   );
 }

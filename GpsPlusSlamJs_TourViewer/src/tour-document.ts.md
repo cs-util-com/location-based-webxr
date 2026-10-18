@@ -115,10 +115,13 @@ different times (a walk's move lands only after the page wrote both files).
 - `manifestNow(state)` - the manifest the next write starts from: the
   written tour with the frames (`withFrames`), the setting
   (`withNeedsNoGps`) and the details (`effectiveDetails`).
-- `manifestToWrite(state, captureSpots?)` - what a write would carry:
-  `finishedManifest` (the Finish's own rule) over `manifestNow`, `placed`,
-  `deleted` and the save's photo spots (the walk's recorded photos, which
-  a page decides once per open; the r875 milestone review #7).
+- `manifestToWrite(state, captureSpots?, stationRule?)` - what a write
+  would carry: `finishedManifest` (the Finish's own rule) over
+  `manifestNow`, `placed`, `deleted` and the save's photo spots (the
+  walk's recorded photos, which a page decides once per open; the r875
+  milestone review #7). `stationRule` (`newStationId`, `radiusM`) is for
+  a reader that previews the write: the creator's station HUD
+  (`creator-stations.ts`) names the stations it would start its own way.
 - `changeCount(state)` - each pending entry, deletion, moved frame, the
   setting and each detail field differing from the written file.
 - `effectiveDetails(state)` - the cover only while its image is in the tour.

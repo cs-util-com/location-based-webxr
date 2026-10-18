@@ -7,9 +7,14 @@ import type {
 import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 import { Group, Mesh, type RingGeometry, type Vector3 } from "three";
 
-import { applyObjectChanges } from "./authoring-draft.js";
+import { createCreatorDocument } from "./creator-document.js";
 import { tourOf } from "./test-support/v3-tour.js";
-import { tourObjectsOf, withTourContent } from "./tour-content.js";
+import {
+  manifestToWrite,
+  tourDocumentActions,
+  tourDocumentReducer,
+} from "./tour-document.js";
+import { createTourViewerStore } from "./tour-viewer-session.js";
 import {
   openStationAt,
   placedInText,
@@ -60,10 +65,39 @@ function stationOf(
   return stations.find((s) => s.itemIds.includes(id));
 }
 
+/** The stations of a tour document holding `manifest` with this page's
+ *  placements and deletions (null: no tour). */
+function finishedOf(input: {
+  readonly manifest: TourManifest | null;
+  readonly placed: readonly TourObject[];
+  readonly deleted: readonly string[];
+  readonly radiusM?: number;
+}): ArStation[] {
+  const radius = input.radiusM === undefined ? {} : { radiusM: input.radiusM };
+  if (input.manifest === null) return stationsAsFinished({ state: null });
+  let state = tourDocumentReducer(
+    undefined,
+    tourDocumentActions.opened({ manifest: input.manifest }),
+  );
+  for (const id of input.deleted) {
+    state = tourDocumentReducer(
+      state,
+      tourDocumentActions.deleted({ id, what: "a deletion" }),
+    );
+  }
+  for (const object of input.placed) {
+    state = tourDocumentReducer(
+      state,
+      tourDocumentActions.placed({ object, what: "a pin" }),
+    );
+  }
+  return stationsAsFinished({ state, ...radius });
+}
+
 describe("stationsAsFinished", () => {
   it("is the Finish's assignment: a pin within R joins the station, one beyond starts a new one, named by its place", () => {
     const manifest = tourOf([pin("gate", 0, 0)]);
-    const stations = stationsAsFinished({
+    const stations = finishedOf({
       manifest,
       placed: [pin("near", 10, 0), pin("far", 60, 0), pin("farther", 70, 0)],
       deleted: [],
@@ -84,16 +118,14 @@ describe("stationsAsFinished", () => {
       ...base,
       stations: base.stations.map((s) => ({ ...s, title: "The gate" })),
     };
-    const stations = stationsAsFinished({
+    const stations = finishedOf({
       manifest,
       placed: [pin("near", 5, 0)],
       deleted: ["gate"],
     });
     expect(stations.map((s) => s.name)).toEqual(["The gate"]);
     expect(stations[0]!.itemIds).toEqual(["near"]);
-    expect(
-      stationsAsFinished({ manifest: null, placed: [], deleted: [] }),
-    ).toEqual([]);
+    expect(finishedOf({ manifest: null, placed: [], deleted: [] })).toEqual([]);
   });
 
   it("never names an unwritten station like a hosted one", () => {
@@ -104,7 +136,7 @@ describe("stationsAsFinished", () => {
       ...hosted,
       stations: hosted.stations.map((s) => ({ ...s, id: "unwritten-1" })),
     };
-    const stations = stationsAsFinished({
+    const stations = finishedOf({
       manifest,
       placed: [pin("far", 60, 0)],
       deleted: [],
@@ -116,7 +148,7 @@ describe("stationsAsFinished", () => {
 
 describe("openStationAt", () => {
   it("is the nearest station within R, R itself inside, none beyond", () => {
-    const stations = stationsAsFinished({
+    const stations = finishedOf({
       manifest: tourOf([pin("a", 0, 0), pin("b", 40, 0)]),
       placed: [],
       deleted: [],
@@ -146,7 +178,7 @@ describe("openStationAt", () => {
           const manifest = tourOf([pin("hosted", 0, 0)]);
           const placed: TourObject[] = [];
           for (const [i, [north, east]] of walk.entries()) {
-            const before = stationsAsFinished({
+            const before = finishedOf({
               manifest,
               placed,
               deleted: [],
@@ -155,7 +187,7 @@ describe("openStationAt", () => {
             const open = openStationAt(before, at(north, east), radiusM);
             const id = `p${String(i)}`;
             placed.push(pin(id, north, east));
-            const after = stationsAsFinished({
+            const after = finishedOf({
               manifest,
               placed,
               deleted: [],
@@ -263,29 +295,16 @@ describe("wireCreatorStations", () => {
     options: { radiusM?: number; walkPhotosPending?: () => boolean } = {},
   ) {
     const scene = new Group();
-    // The tour as the page's document would hand it over, kept mutable so
-    // a test changes it as the creator would (a placement grows the list,
-    // a settle replaces an entry, a Finish takes the work into the
-    // manifest).
-    const ctx: {
-      tourManifest: TourManifest | null;
-      placedObjects: { object: TourObject }[];
-      deletedObjectIds: string[];
-    } = {
-      tourManifest: tourOf([pin("gate", 0, 0)]),
-      placedObjects: [],
-      deletedObjectIds: [],
-    };
+    // The page's tour document, changed as the creator changes it (a
+    // placement, a settle's re-pose, a delete, a Finish's write).
+    const tour = createCreatorDocument(createTourViewerStore());
+    tour.open(tourOf([pin("gate", 0, 0)]));
     const chip = { textContent: "", hidden: true };
     let creator: [number, number, number] | null = [5, 401.5, 0];
     let reticle: [number, number, number] | null = null;
     let sceneNow: Group | null = scene;
     const stations = wireCreatorStations({
-      tour: {
-        manifest: () => ctx.tourManifest,
-        entries: () => ctx.placedObjects,
-        deleted: () => ctx.deletedObjectIds,
-      },
+      tour,
       dom: { chip },
       creatorNue: () => creator,
       reticleNue: () => reticle,
@@ -300,7 +319,7 @@ describe("wireCreatorStations", () => {
       scene.children.find((c) => c.name === STATION_RING_NAME) as
         Mesh | undefined;
     return {
-      ctx,
+      tour,
       chip,
       stations,
       ring,
@@ -361,13 +380,13 @@ describe("wireCreatorStations", () => {
     expect(h.chip.textContent).toBe(
       "You left Station 1 - what you place next starts a new station.",
     );
-    h.ctx.placedObjects.push({ object: pin("far", 60, 0) });
+    h.tour.place(pin("far", 60, 0), {}, "a pin");
     expect(h.stations.placedIn("far")).toBe("it starts Station 2");
     h.stand(60, 0);
     expect(h.chip.textContent).toBe(
       "In Station 2 - what you place here joins it.",
     );
-    h.ctx.placedObjects.push({ object: pin("next", 62, 0) });
+    h.tour.place(pin("next", 62, 0), {}, "a pin");
     expect(h.stations.placedIn("next")).toBe("in Station 2");
   });
 
@@ -381,7 +400,7 @@ describe("wireCreatorStations", () => {
     h.stations.endVisit();
     expect(h.chip.hidden).toBe(true);
     expect(h.ring()).toBeUndefined();
-    h.ctx.tourManifest = null;
+    h.tour.close();
     h.stand(5, 0);
     expect(h.chip.hidden).toBe(true);
     const g = harness();
@@ -396,12 +415,12 @@ describe("wireCreatorStations", () => {
   // stations, and its line and ring disagreed with the Finish.
   it("follows a settle that re-poses a placement in place", () => {
     const h = harness();
-    h.ctx.placedObjects.push({ object: pin("far", 60, 0) });
+    h.tour.place(pin("far", 60, 0), {}, "a pin");
     h.stand(60, 0);
     expect(h.chip.textContent).toBe(
       "In Station 2 - what you place here joins it.",
     );
-    h.ctx.placedObjects[0] = { object: pin("far", 100, 0) };
+    h.tour.move(pin("far", 100, 0), "a settle's re-pose");
     h.stand(60, 0);
     expect(h.chip.textContent).toBe(
       "You left Station 2 - what you place next starts a new station.",
@@ -418,7 +437,7 @@ describe("wireCreatorStations", () => {
     expect(h.chip.textContent).toBe(
       "No station here - what you place next starts a new one.",
     );
-    h.ctx.placedObjects.push({ object: pin("aimed", 30, 0) });
+    h.tour.place(pin("aimed", 30, 0), {}, "a pin");
     expect(h.stations.placedIn("aimed")).toBe("it starts Station 2");
     // The reticle hidden: the creator's own spot decides.
     h.aim(null);
@@ -443,10 +462,10 @@ describe("wireCreatorStations", () => {
     expect(ring).toBeDefined();
     expect(ring!.position.x).toBeCloseTo(0, 6);
     expect(ring!.position.z).toBeCloseTo(0, 6);
-    h.ctx.placedObjects.push({ object: pin("probe", 27, 0) });
+    h.tour.place(pin("probe", 27, 0), {}, "a pin");
     expect(h.stations.placedIn("probe")).toBe("it starts Station 2");
     // The reticle back inside: the words follow it, the ring stays.
-    h.ctx.placedObjects.length = 0;
+    h.tour.remove("probe", "the probe");
     h.aim([10, 0]);
     h.stand(22, 0);
     expect(h.chip.textContent).toBe(
@@ -502,7 +521,7 @@ describe("wireCreatorStations", () => {
             h.stand(step.north, step.east);
             const said = joins.exec(h.chip.textContent)?.[1] ?? null;
             const id = "p" + String(i);
-            h.ctx.placedObjects.push({ object: pin(id, lands[0], lands[1]) });
+            h.tour.place(pin(id, lands[0], lands[1]), {}, "a pin");
             const where = h.stations.placedIn(id);
             const got =
               where?.startsWith("it starts ") === true ? "starts" : where;
@@ -532,7 +551,7 @@ describe("wireCreatorStations", () => {
       "You left Station 1 - what you place next starts a new station. " +
         WALK_HEDGE,
     );
-    h.ctx.placedObjects.push({ object: pin("near", 5, 0) });
+    h.tour.place(pin("near", 5, 0), {}, "a pin");
     expect(h.stations.placedIn("near")).toBe(
       "in Station 1 (may change at Finish, when the walk's photos are sorted in)",
     );
@@ -551,17 +570,13 @@ describe("wireCreatorStations", () => {
   // "No station here" instead of "You left ...".
   it("still names the station the creator left after an earlier unwritten station is deleted", () => {
     const h = harness();
-    h.ctx.placedObjects.push(
-      { object: pin("a", 60, 0) },
-      { object: pin("b", 200, 0) },
-    );
+    h.tour.place(pin("a", 60, 0), {}, "a pin");
+    h.tour.place(pin("b", 200, 0), {}, "a pin");
     h.stand(200, 0);
     expect(h.chip.textContent).toBe(
       "In Station 3 - what you place here joins it.",
     );
-    h.ctx.placedObjects = h.ctx.placedObjects.filter(
-      (p) => p.object.id !== "a",
-    );
+    h.tour.remove("a", "a pin");
     h.stand(300, 0);
     expect(h.chip.textContent).toBe(
       "You left Station 2 - what you place next starts a new station.",
@@ -570,22 +585,21 @@ describe("wireCreatorStations", () => {
 
   it("still names the station the creator left after a Finish wrote it", () => {
     const h = harness();
-    h.ctx.placedObjects.push({ object: pin("far", 60, 0) });
+    h.tour.place(pin("far", 60, 0), {}, "a pin");
     h.stand(60, 0);
     expect(h.chip.textContent).toBe(
       "In Station 2 - what you place here joins it.",
     );
     // The Finish writes the station under an id it mints, and the working
     // copy starts again from the written tour.
-    const manifest = h.ctx.tourManifest!;
-    h.ctx.tourManifest = withTourContent(manifest, {
-      objects: applyObjectChanges(
-        tourObjectsOf(manifest),
-        h.ctx.placedObjects.map((p) => p.object),
-        [],
-      ),
+    const generation = h.tour.saveStarted();
+    h.tour.saved({
+      generation,
+      written: manifestToWrite(h.tour.state())!,
+      appliedDeletions: [],
+      stationsAtStart: h.tour.state().stations,
     });
-    h.ctx.placedObjects = [];
+    h.tour.saveEnded(generation);
     h.stand(120, 0);
     expect(h.chip.textContent).toBe(
       "You left Station 2 - what you place next starts a new station.",

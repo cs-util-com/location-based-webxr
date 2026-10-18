@@ -67,6 +67,9 @@ module.exports = {
           // rules, and `hostedObjects` to tell what the opened file holds).
           "^src/draft-persistence\\.ts$",
           "^src/editor/editor-draft\\.ts$",
+          // ...and the phone's draft store, its peer (the offer rules,
+          // `hostedObjects`); it reads the tour only through the document.
+          "^src/creator-draft\\.ts$",
           // TEMPORARY - the desktop session's save: the rebuild's I/O
           // (`rebuildFinishedTour`, `captureSpotsForRebuild`), the saved
           // file's name (`finishedFileName`; the page reads it through the
@@ -76,12 +79,14 @@ module.exports = {
           // `AuthoringObject` type - until the save moves into a
           // tour-document thunk (follow-up of D30).
           "^src/editor/editor-session\\.ts$",
-          // TEMPORARY - the phone, until it adopts the tour document (the
-          // phone adoption milestone of D30): its object list, draft,
-          // settle and Finish still keep their own copy, and its station
-          // guidance (M5c) reads the stations' content itself
-          // (`applyObjectChanges` among it).
-          "^src/(object-editing|creator-draft|creator-settle|creator-finish|creator-stations)\\.ts$",
+          // TEMPORARY - the phone's side of the same follow-up as the
+          // desktop session's: its Finish's rebuild I/O
+          // (`rebuildFinishedTour`, `captureSpotsForRebuild`,
+          // `finishedFileName`) and its object list's pin-text validator
+          // (`pinTextEdit`) - until the save moves into a tour-document
+          // thunk. The phone's tour itself is the document since its
+          // adoption (`creator-document.ts`).
+          "^src/(object-editing|creator-finish)\\.ts$",
         ],
       },
       to: {

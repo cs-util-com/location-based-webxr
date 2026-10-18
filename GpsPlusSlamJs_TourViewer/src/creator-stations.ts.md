@@ -10,15 +10,15 @@ placement went ("it starts Station 3" / "in Station 2") for its note.
 
 ## Public API
 
-- `stationsAsFinished({ manifest, placed, deleted, radiusM? }) -> ArStation[]`
-  - the tour's stations as the next Finish would write them: the page's
-    working copy (the hosted objects with this page's changes,
-    `applyObjectChanges` of `authoring-draft.ts`) through the Finish's
-    own writer (`withTourContent` of `tour-content.ts`). Each station:
+- `stationsAsFinished({ state, radiusM? }) -> ArStation[]`
+  - the tour's stations as the next Finish would write them: the tour
+    document's `state` through the document's own rule for what a write
+    carries (`manifestToWrite` of `tour-document.ts`, with this module's
+    `unwritten-N` ids for the stations it would start). Each station:
     `id`, `anchor` (`{ lat, lon, alt }`), `name` (its title, else
     "Station N" by its place, `stationTitle`), `started` (not in the
     tour file yet: this page's placements start it) and `itemIds`. None
-    without a tour.
+    without a tour (`state` null).
 - `openStationAt(stations, at, radiusM?) -> ArStation | null` - the
   nearest station whose anchor is within R of `at` (`nearestStationWithin`
   of `station-assign.ts`, R itself inside), else null.
@@ -44,14 +44,14 @@ radiusM? }) -> { tick, placedIn, endVisit }` - `tick()` every camera
 ## Invariants & assumptions
 
 - **No document state.** Nothing here is stored: the stations are
-  derived from the tour document (`deps.tour`: its `manifest()`,
-  `entries()` and `deleted()`) each time it changes, through the Finish's own
-  writer, so the HUD and the written tour cannot disagree. A station the
-  creator's placements start exists only in that derivation until a
-  Finish writes it (with an id the Finish mints; the HUD's `unwritten-N`
-  ids never leave this module). The tour-document Redux slice (owner
-  round 5) decides where AR-made stations live; this module then reads
-  them from the store instead.
+  derived from the tour document (`deps.tour`: its `state()`, and
+  `manifest()` null for no tour) each time the parts they are made of
+  change (the written file, the frames, the placed objects, the
+  deletions - by identity, the slice replaces them), through the
+  document's rule for a write, so the HUD and the written tour cannot
+  disagree. A station the creator's placements start exists only in that
+  derivation until a Finish writes it (with an id the Finish mints; the
+  HUD's `unwritten-N` ids never leave this module).
 - **The open station is the rule's:** the nearest anchor within R of
   where the next pin would land - the reticle's hit point while it is
   visible, else where the creator stands (M5c review #3). Leaving R closes it ("You left ..." until the
@@ -137,7 +137,8 @@ note(`Pin placed - ${stations.placedIn(pin.id) ?? ""}`);
   words; the line and the note hedged (stations still named) while the
   walk's photos are pending, and `walkPhotosPending` (never finished or
   reopened after a decline: pending; baked or decided in this page: not); the station left, remembered across a
-  deletion that renumbers it and across the Finish that writes it; the
+  deletion that renumbers it and across the Finish that writes it (a real
+  tour document, changed as the creator changes it); the
   wiring: the line, the ring at the anchor on
   the ground, leaving and re-entering, the ring kept at the creator's
   station while the reticle aims past its edge, a placement's note, and
