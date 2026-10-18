@@ -252,6 +252,17 @@ test("the Mapterhorn relief draws, fills a 404 from its own ancestor, and credit
   expect(out.relief.cache.stalled).toBe(false);
 });
 
+/**
+ * How long a first-person view may take to settle. Measured 2026-10-18
+ * (G1 re-review, this page, synthetic heights parsed in the page): the
+ * desktop budget (256 MiB, what the lab picks without `reliefDevice` in
+ * headless Chromium) settles the whole tree, about 127 MiB, after 352 s.
+ * The phone's 64 MiB "settled" after 170 s only because the cache filled
+ * and stalled with 22 of the view's tiles drawn: these tests used to pass
+ * on a stalled relief, which they now refuse.
+ */
+const EYE_SETTLE_MS = 540_000;
+
 /** An eye-height view: 1 m over the ellipsoid, under the synthetic ground, so the clearance lifts it. */
 const EYE_VIEW = "46.5,9.0,0.001,0,-20";
 
@@ -271,7 +282,7 @@ const FLICKER_LEVELS = 16;
 test("first person stands at eye height, draws the ground at its feet and a near item, in standard and reversed depth", async ({
   context,
 }) => {
-  test.setTimeout(600_000);
+  test.setTimeout(1_500_000);
   const results = [];
   for (const depth of ["standard", "reversed"]) {
     const page = await context.newPage();
@@ -288,8 +299,12 @@ test("first person stands at eye height, draws the ground at its feet and a near
         );
       },
       null,
-      { timeout: 240_000 },
+      { timeout: EYE_SETTLE_MS },
     );
+    // Settled because the tree is complete, not because the cache gave up.
+    expect(
+      await page.evaluate(() => window.__globeLab.state().relief.cache.stalled),
+    ).toBe(false);
     await page.evaluate(() => window.__globeLab.timeFrames(3));
     const out = await page.evaluate((levels) => {
       const lab = window.__globeLab;
@@ -442,8 +457,11 @@ async function eyePage(context, extra, { settle = true } = {}) {
       return Boolean(r?.settled && r.visibleTiles > 0);
     },
     null,
-    { timeout: 240_000 },
+    { timeout: EYE_SETTLE_MS },
   );
+  expect(
+    await page.evaluate(() => window.__globeLab.state().relief.cache.stalled),
+  ).toBe(false);
   return { page, seen, errors };
 }
 
@@ -459,7 +477,7 @@ async function eyePage(context, extra, { settle = true } = {}) {
 test("OSM tiles: none by default; near the camera only, z15 and finer, under the ceiling, credited; none from 400 m up", async ({
   context,
 }) => {
-  test.setTimeout(1_800_000);
+  test.setTimeout(2_700_000);
   const out = {};
   {
     // Off by default: the same view, no setting.
