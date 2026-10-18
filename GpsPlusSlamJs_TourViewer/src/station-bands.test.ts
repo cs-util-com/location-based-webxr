@@ -4,34 +4,33 @@ import fc from "fast-check";
 import {
   ACCURACY_CEILING_M,
   BAND_ACCURACY_FACTOR,
-  FOUND_ACCURACY_FACTOR,
   HUD_ARRIVAL_BAND_M,
-  STATION_POSE_FLOOR_M,
   stationBands,
 } from "./station-bands";
 
 /**
  * Why these tests matter: the bands decide when a visitor has "found" a
- * station and when the HUD stops pointing at it. An authored radius below
- * what the phone's GPS can resolve would never fire for a visitor standing
- * on the spot (tour kit plan §6: "a found radius below about twice the
- * phone's accuracy flickers"), and a band without hysteresis toggles the
- * station's figure on and off while the visitor stands at the edge. The
- * numbers come from `station-bands.sweep.test.ts`; these tests pin the
- * rule's shape so a later tweak of a constant cannot break it silently.
+ * station and when the HUD stops pointing at it. Since D16 (tour editor
+ * plan 2026-10-17-1816) a station is reached by the radius the tour gives
+ * it and nothing else - an accuracy that widened it found a station 15 m
+ * early beside a code that had just placed the visitor to a metre - while
+ * the HUD keeps a hysteresis band so its arrow does not flicker at the
+ * edge. These tests pin the rule's shape so a later tweak of a constant
+ * cannot break it silently.
  */
 
 describe("stationBands", () => {
-  it("keeps an authored found radius the GPS can resolve, and widens one it cannot", () => {
-    // 10 m authored, 4 m accuracy: the creator's radius stands.
-    expect(
-      stationBands({ activateRadiusM: 30, foundRadiusM: 10 }, 4).foundM,
-    ).toBe(10);
-    // 3 m authored at 12 m accuracy: a visitor on the spot is often 10 m
-    // "away"; the radius grows to the accuracy.
-    expect(
-      stationBands({ activateRadiusM: 30, foundRadiusM: 3 }, 12).foundM,
-    ).toBe(12 * FOUND_ACCURACY_FACTOR);
+  it("is the authored found radius at every accuracy, with no floor (D16)", () => {
+    for (const accuracy of [null, 0.5, 4, 12, 24, 60, 500]) {
+      expect(
+        stationBands({ activateRadiusM: 30, foundRadiusM: 10 }, accuracy)
+          .foundM,
+      ).toBe(10);
+      // A 2 m radius stays 2 m: the old 5 m pose floor is gone.
+      expect(
+        stationBands({ activateRadiusM: 30, foundRadiusM: 2 }, accuracy).foundM,
+      ).toBe(2);
+    }
   });
 
   it("is the HUD's arrival deadband: the arrow hides at foundM and comes back at foundExitM", () => {
@@ -42,22 +41,10 @@ describe("stationBands", () => {
     expect(tiny.foundExitM - tiny.foundM).toBe(HUD_ARRIVAL_BAND_M);
   });
 
-  it("never finds a station tighter than its own pose is known (K4 review R7)", () => {
-    // Why this test matters (K4 review R7): station poses are off by up to
-    // 3.6 m at p90 (D34), so a 1.5 m found radius could leave a visitor on
-    // the real spot unfound for minutes.
-    expect(STATION_POSE_FLOOR_M).toBe(5);
-    const tiny = stationBands({ activateRadiusM: 0.5, foundRadiusM: 0.2 }, 0.5);
-    expect(tiny.foundM).toBe(STATION_POSE_FLOOR_M);
-    expect(
-      stationBands({ activateRadiusM: 30, foundRadiusM: 3 }, 3).foundM,
-    ).toBe(STATION_POSE_FLOOR_M);
-  });
-
   it("puts the activation radius no closer than one band outside the found radius, and has no exit radius of its own (R10)", () => {
-    // Authored 6 m activation inside a widened 12 m found radius: the
-    // prefetch that starts from it starts before the station is found.
-    const b = stationBands({ activateRadiusM: 6, foundRadiusM: 3 }, 12);
+    // Authored 6 m activation inside a 5 m found radius at 12 m accuracy:
+    // the prefetch that starts from it starts before the station is found.
+    const b = stationBands({ activateRadiusM: 6, foundRadiusM: 5 }, 12);
     expect(b.activateM).toBe(b.foundExitM);
     // Nothing toggles on the activation radius any more (K4 review R10).
     expect(Object.keys(b).sort()).toEqual([
@@ -71,17 +58,14 @@ describe("stationBands", () => {
     ).toBe(80);
   });
 
-  it("treats a missing or nonsense accuracy as the ceiling, so a garbage reading never shrinks a radius", () => {
+  it("treats a missing or nonsense accuracy as the ceiling for the band, so a garbage reading never shrinks it", () => {
     for (const bad of [null, Number.NaN, -1, 0, Number.POSITIVE_INFINITY]) {
-      expect(
-        stationBands({ activateRadiusM: 10, foundRadiusM: 3 }, bad).foundM,
-      ).toBe(ACCURACY_CEILING_M * FOUND_ACCURACY_FACTOR);
+      const b = stationBands({ activateRadiusM: 10, foundRadiusM: 3 }, bad);
+      expect(b.foundExitM - b.foundM).toBe(ACCURACY_CEILING_M);
     }
-    // Above the ceiling it is clamped: a 500 m "fix" does not make every
-    // station of the tour found at once.
-    expect(
-      stationBands({ activateRadiusM: 10, foundRadiusM: 3 }, 500).foundM,
-    ).toBe(ACCURACY_CEILING_M * FOUND_ACCURACY_FACTOR);
+    // Above the ceiling it is clamped: a 500 m "fix" keeps the band finite.
+    const wide = stationBands({ activateRadiusM: 10, foundRadiusM: 3 }, 500);
+    expect(wide.foundExitM - wide.foundM).toBe(ACCURACY_CEILING_M);
   });
 
   it("orders the three distances for any radii and accuracy (property)", () => {
@@ -99,8 +83,7 @@ describe("stationBands", () => {
             { activateRadiusM: activate, foundRadiusM: found },
             accuracy,
           );
-          expect(b.foundM).toBeGreaterThanOrEqual(found);
-          expect(b.foundM).toBeGreaterThanOrEqual(STATION_POSE_FLOOR_M);
+          expect(b.foundM).toBe(found);
           expect(b.foundExitM).toBeGreaterThan(b.foundM);
           expect(b.activateM).toBeGreaterThanOrEqual(b.foundExitM);
           expect(b.activateM).toBeGreaterThanOrEqual(activate);
@@ -126,7 +109,7 @@ describe("stationBands", () => {
             { activateRadiusM: found * 2, foundRadiusM: found },
             acc + worse,
           );
-          expect(b.foundM).toBeGreaterThanOrEqual(a.foundM);
+          expect(b.foundExitM).toBeGreaterThanOrEqual(a.foundExitM);
           expect(b.activateM).toBeGreaterThanOrEqual(a.activateM);
         },
       ),

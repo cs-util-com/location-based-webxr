@@ -19,7 +19,6 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 import type { ViewerMode } from "./mode.js";
 import { pictureProblem } from "./image-cap.js";
 import { createKeyedChain } from "./keyed-chain.js";
-import { checkHadItsWindow } from "./moved-code-check.js";
 import { createBreadcrumbTrail } from "./breadcrumbs.js";
 import { gateAllowsPlacement } from "./scan-gate.js";
 import { createSceneAudio } from "./scene-audio.js";
@@ -194,16 +193,9 @@ export function wireVisitorStations(deps: {
       }
       const stations = relocator(manifest.stations, firstFix());
       if (stations === null) return null;
-      return {
-        stations,
-        order: manifest.order,
-        levels: ctx.currentLevels,
-      };
+      return { stations, order: manifest.order };
     },
     placementAllowed: () => stationPlacementAllowed(ctx, deps.mode),
-    // Without location a station without a code is reached by the
-    // visitor's own "I'm here" (owner decision after the M1b-1 review).
-    codesOnly: () => ctx.codesOnly,
     zero: () => selectZeroReference(arStore.getState()),
     visitor: () => {
       const state = arStore.getState();
@@ -213,14 +205,6 @@ export function wireVisitorStations(deps: {
         gpsPositions: selectGpsPositions(state),
         zero: selectZeroReference(state),
       });
-    },
-    isIgnoredCode: (levelId) => ctx.ignoredCodes.has(levelId),
-    // The moved-code check's evidence for a held code lock (K4 review R1).
-    codeCheck: (levelId) => {
-      const check = ctx.movedCodeChecks
-        ?.snapshot()
-        .find((v) => v.levelId === levelId);
-      return check === undefined ? null : { judged: checkHadItsWindow(check) };
     },
     startHud: (getTargets) => seams.createWayfindingHud({ getTargets }),
     now: deps.now,
@@ -262,8 +246,9 @@ export function wireVisitorStations(deps: {
     tick: () => {
       guide.tick();
     },
-    codeLocked: (levelId) => {
-      guide.codeLocked(levelId);
+    // A lock only improved the position (D16): the guide re-judges now.
+    codeLocked: () => {
+      guide.codeLocked();
     },
     unlockAudio: () => {
       audio.unlock();

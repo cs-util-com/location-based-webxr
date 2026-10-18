@@ -159,7 +159,7 @@ describe("relocateStations", () => {
     expect(moved[1]!.anchor.geo!.headingDeg).toBe(90);
   });
 
-  it("leaves a station anchored only to a printed code untouched", () => {
+  it("leaves a station without a spot of its own (an old code-only one, D9) untouched", () => {
     const codeOnly: TourStation = {
       id: "gate",
       anchor: { code: "qr-level-1" },

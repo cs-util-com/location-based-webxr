@@ -731,9 +731,9 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
         ],
       ]),
     });
+    // The station stands on the code: near enough (review 2 #3).
     expect(editor.noGpsCheck()).toEqual({
-      codeless: ["The column"],
-      unlockable: [],
+      farFromCodes: [],
       codesPlace: true,
     });
     await session.close();

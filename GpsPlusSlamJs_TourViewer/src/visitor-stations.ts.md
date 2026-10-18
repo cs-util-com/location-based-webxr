@@ -22,11 +22,11 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
 ## Invariants & assumptions
 
 - The tour is read from the session object each time: `ctx.tourManifest`
-  (settled) for the stations, the order and the assets, `ctx.currentLevels`
-  for a code-only station's spot, `ctx.ignoredCodes` for the D20 veto,
-  `ctx.movedCodeChecks` (its `snapshot()` through `checkHadItsWindow`) for
-  the guide's hold of a code lock (K4 review R1), and the store's zero for
-  the visitor's raw fix position.
+  (settled) for the stations, the order and the assets, and the store's
+  zero for the visitor's raw fix position. A code lock only re-judges the
+  guide (tour editor plan D16: a lock is no arrival; the moved-code check's
+  veto acts on the alignment, never here), so the code-only station's spot,
+  the D20 veto and the lock hold (K4 review R1) are no longer read.
 - Placement is allowed for a visitor with a live session
   (`ctx.placementUnsubscribe`) and a gate that allows it
   (`gateAllowsPlacement`, DEC-N3): the stations wait behind the scan gate
@@ -35,7 +35,8 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   swing the wait hid, r857 milestone review #1); since r863 a code's
   rotation stands from its first lock (`viewer-vote-sink.ts`
   `VIEWER_SOFT_TRIM`), so a station on the scanned code is found on that
-  lock.
+  lock: the lock places the visitor, and a station at the code is inside
+  its radius (D16).
 - Media are read through `ctx.session.loadContentEntry` (K0's allowlist and
   `.glb` check, K1's per-entry hash check), ahead of time as the visitor
   approaches (`station-prefetch.ts`; the story's own reads go through the

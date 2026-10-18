@@ -94,11 +94,10 @@ describe("wireStationGuide (properties)", () => {
         };
         const guide = wireStationGuide({
           dom,
-          tour: () => ({ stations, order, levels: null }),
+          tour: () => ({ stations, order }),
           placementAllowed: () => true,
           zero: () => zero,
           visitor: () => visitor,
-          isIgnoredCode: () => false,
           startHud: () => ({ dispose: () => undefined }),
           now: () => now,
           // A found station's story starts, and never ends by itself.

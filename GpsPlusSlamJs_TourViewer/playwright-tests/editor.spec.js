@@ -71,10 +71,10 @@ async function zip(entries) {
 }
 
 /**
- * @param {{ station?: boolean, codeless?: boolean }} [options] - a story
- *   station at the first code; two stations without a printed code
+ * @param {{ station?: boolean, farStation?: boolean }} [options] - a story
+ *   station at the first code; two more stations, one far from every code
  */
-async function editorTour({ station = false, codeless = false } = {}) {
+async function editorTour({ station = false, farStation = false } = {}) {
   const codes = [];
   /** @type {string[]} */
   const codeIds = [];
@@ -102,7 +102,12 @@ async function editorTour({ station = false, codeless = false } = {}) {
             {
               id: "gate",
               title: "At the gate",
-              anchor: { code: codeIds[0] },
+              // At the first code's point; the code link goes with
+              // format 3 (tour editor plan D9).
+              anchor: {
+                code: codeIds[0],
+                geo: { ...geo(0, 0), headingDeg: 0 },
+              },
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
@@ -110,14 +115,15 @@ async function editorTour({ station = false, codeless = false } = {}) {
             },
           ]
         : []),
-      // Two stations without a printed code (QR-first M1b-2): one named,
-      // one the rail calls by its number.
-      ...(codeless
+      // Two more stations (tour editor plan review 2 #3): one named, 98 m
+      // from the nearest code, and one the rail calls by its number, 7 m
+      // from the first code.
+      ...(farStation
         ? [
             {
               id: "well",
               title: "Old well",
-              anchor: { geo: { ...geo(5, 5), headingDeg: 0 } },
+              anchor: { geo: { ...geo(120, 0), headingDeg: 0 } },
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
@@ -2391,12 +2397,13 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   // It is an edit like a note's: pending until saved, written as
   // `needsNoGps: true` at minor 2 (the framework's writer), read back on
   // the next open - and turned off, the field is gone, never `false`.
-  // While it is on, the stations without a printed code are named.
+  // While it is on, the stations farther than 40 m from every code are
+  // named (tour editor plan review 2 #3).
   await autosaveOutOfTheWay(page);
   await page.goto("/edit.html");
   await offerOpfsFile(
     page,
-    await editorTour({ station: true, codeless: true }),
+    await editorTour({ station: true, farStation: true }),
     "nogps.zip",
   );
   await page.locator("#choose-btn").click();
@@ -2411,7 +2418,7 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   await setting.check();
   await expect(page.locator("#save-status")).toHaveText("1 change not saved");
   await expect(warnings).toHaveText(
-    '2 stations have no printed code: "Old well" and "Station 3". Without location, visitors reach them only by tapping "I\'m here - play the story" once they stand there.',
+    '1 station is farther than 40 m from every printed code: "Old well". Without location, the position drifts with every metre walked from the last code, so visitors may not reach it. A code near it, or asking for location, fixes this.',
   );
   const line = await warnings.locator("p").first().elementHandle();
   await page.locator("#save-btn").click();
@@ -2435,7 +2442,7 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   await expect(next.locator("#tour-name")).toHaveText("Editor fixture");
   await expect(next.locator("#no-gps-input")).toBeChecked();
   await expect(next.locator("#no-gps-warnings")).toContainText(
-    "2 stations have no printed code",
+    "1 station is farther than 40 m from every printed code",
   );
   await backedUp(next);
   await expect(next.locator(".toast.draft-offer")).toHaveCount(0);

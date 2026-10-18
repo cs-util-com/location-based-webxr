@@ -5,28 +5,23 @@
 The visitor's station run (tour kit plan K4, §4.2, §8 D5): each station's
 state, which stations the order preset offers, the labelled "skip, I can't
 get there", and when to suggest it. Pure; the caller supplies the clock,
-the distances, the code locks and the scene ends. Plan:
-`GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`.
+the distances and the scene ends. Plans:
+`GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`,
+`GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md` (D16: arrival
+by the radius alone).
 
 ## Public API
 
 - `createStationRun({ stations, order, nowMs }): StationRun`
   - `offered()` - the offered station ids, in list order; empty once
     complete.
-  - `status(id)` / `statuses()` - `{ id, state, skipped, foundVia,
-focusedAtMs, focusDistanceM }`.
+  - `status(id)` / `statuses()` - `{ id, state, skipped, focusedAtMs,
+focusDistanceM }`.
   - `isComplete()`.
-  - `observe({ distances, accuracyM, nowMs }): StationEvent[]` - horizontal
-    distances to the stations the caller can place; no judgement at all on
-    a missing accuracy or one above `ACCURACY_CEILING_M`.
-  - `codeLocked(levelId, nowMs, admit?)` - a lock of a code the viewer
-    trusts; `admit(stationId)` picks which of its stations it may find (the
-    guide holds one back for the moved-code check, K4 review R1) (the
-    caller filters the moved-code check's ignored codes, D20).
-  - `arrive(id, nowMs)` - the visitor's own "I'm here" (an offered
-    station still waiting): found with `via: "visitor"`. The caller decides
-    when to offer it (the guide: without a usable device accuracy, for a
-    station without a printed code inside its found band).
+  - `observe({ distances, nowMs }): StationEvent[]` - horizontal distances
+    from the phone's best position to the stations the caller can place
+    (D16). A non-finite distance is not judged; the caller passes none
+    without a position.
   - `finish(id, nowMs)` - the scene ended (found stations only).
   - `skip(id, nowMs)` - any offered station not done.
   - `skipSuggested(id, nowMs)` - an offered, unfound station whose clock ran
@@ -41,8 +36,7 @@ focusedAtMs, focusDistanceM }`.
   - `upcoming()` - under `fixed` or `branch` order, while the one offered
     station is found: the station offered once it is done (the prefetch
     reads it ahead, K4 review R5); null otherwise and always under `any`.
-- `StationEvent`: `found` (`via: gps | code | visitor`),
-  `done` (`skipped`), `offered` (the full new set), `complete`.
+- `StationEvent`: `found`, `done` (`skipped`), `offered` (the full new set), `complete`.
 - `stationTitle(station, number?)` - a station's name, the package's ONE
   rule for it (plan 2026-10-15-0348 M0; the editor had its own until
   then, with another fallback): the trimmed title; an untitled or blank
@@ -54,14 +48,15 @@ focusedAtMs, focusDistanceM }`.
 
 ## Invariants & assumptions
 
-- **States:** waiting -> found (inside `foundM`, or the station's own code
-  locked from any distance) -> done (`finish` or `skip`); found and done
+- **States:** waiting -> found (the distance at most the authored found
+  radius, D16; a code lock is no arrival - it only improves the position
+  the caller measures from; no "I'm here" either) -> done (`finish` or `skip`); found and done
   never revert. There is no "active" state (K4 review R10): the K4 build's
   one, with its own hysteresis on the activation radius, drove nothing a
   visitor sees; the activation radius now only sets where the prefetch
   starts.
 - **Only offered stations change.** Under `fixed` order a later station is
-  not found by walking past it, nor by its code.
+  not found by walking past it.
 - **Order presets:**
   - `fixed` - the first station not done, in list order;
   - `any` - every station not done;
@@ -87,15 +82,15 @@ focusedAtMs, focusDistanceM }`.
 
 ```ts
 const run = createStationRun({ stations, order: "fixed", nowMs: Date.now() });
-run.observe({ distances: new Map([["gate", 4]]), accuracyM: 5, nowMs });
-// [{ kind: "activated", id: "gate" }, { kind: "found", id: "gate", via: "gps" }]
+run.observe({ distances: new Map([["gate", 4]]), nowMs });
+// [{ kind: "found", id: "gate" }] for a found radius of 4 m or more
 run.finish("gate", nowMs); // done, the next station offered
 ```
 
 ## Tests
 
-- `station-run.test.ts` - each transition, the hysteresis, the accuracy
-  ceiling, the code lock, the empty station, each order preset, the skip,
+- `station-run.test.ts` - each transition, the radius alone (at the radius
+  yes, a centimetre beyond no), non-finite distances, the empty station, each order preset, the skip,
   the suggestion clock; properties: no deadlock and completion within one
   action per station for every preset, a done station never offered and
   never changed; `stationTitle`: the trimmed title, "Station N" by its

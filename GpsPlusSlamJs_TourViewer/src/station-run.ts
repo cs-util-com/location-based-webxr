@@ -3,16 +3,17 @@
  * (waiting -> found -> done), which stations the order preset
  * offers, the labelled skip of §8 D5, and when to suggest it. Pure: no
  * clock of its own (every call carries the page time), no DOM, no AR. The
- * wiring (`station-guide.ts`) feeds it distances, code locks and the scene
- * player's ends.
+ * wiring (`station-guide.ts`) feeds it distances and the scene player's
+ * ends.
  *
  * - Only OFFERED stations change state: under `fixed` order a station later
- *   in the list is not found by walking past it, nor by scanning its code.
+ *   in the list is not found by walking past it.
  * - FOUND is a latch: a noisy estimate never un-finds a station. Found by
- *   GPS inside the effective found radius (`station-bands.ts`), by a
- *   lock of the station's own code from any distance (the caller drops a
- *   code the moved-code check ignores, D20), or by the visitor's own "I'm
- *   here" (`arrive`: without location, where no fix can find it).
+ *   its radius alone (tour editor plan 2026-10-17-1816 D16): the caller's
+ *   distance from the phone's current best position is inside the
+ *   station's found radius (`station-bands.ts`). No accuracy is read, a
+ *   code lock is no arrival (D9: a scan only improves the position), and
+ *   there is no "I'm here" (W7, 0348 M2).
  * - DONE when the station's steps finish (`finish`), or skipped (`skip`).
  *   A station with no steps (a newer minor's steps all left out, K1 review
  *   R4) is done the moment it is found.
@@ -25,7 +26,7 @@ import type {
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-stations";
 
-import { ACCURACY_CEILING_M, stationBands } from "./station-bands.js";
+import { stationBands } from "./station-bands.js";
 
 /** No state between waiting and found (K4 review R10): an "active" state
  *  with its own hysteresis drove nothing a visitor sees. */
@@ -36,7 +37,6 @@ interface StationStatus {
   readonly state: StationState;
   /** Done by the visitor's "skip, I can't get there". */
   readonly skipped: boolean;
-  readonly foundVia: "gps" | "code" | "visitor" | null;
   /** When it first became the focus (the skip clock's start, K4 review
    *  R14), on the caller's clock; null until then. */
   readonly focusedAtMs: number | null;
@@ -46,11 +46,7 @@ interface StationStatus {
 }
 
 export type StationEvent =
-  | {
-      readonly kind: "found";
-      readonly id: string;
-      readonly via: "gps" | "code" | "visitor";
-    }
+  | { readonly kind: "found"; readonly id: string }
   | { readonly kind: "done"; readonly id: string; readonly skipped: boolean }
   /** The offered set changed; the full new set. */
   | { readonly kind: "offered"; readonly ids: readonly string[] }
@@ -97,16 +93,6 @@ export function skipSuggestAfterMs(focusDistanceM: number | null): number {
   return SKIP_SUGGEST_BASE_MS + (d / SKIP_SUGGEST_SLOW_MPS) * 1000;
 }
 
-/** A fix good enough to judge a distance by. */
-function usableAccuracy(accuracyM: number | null): accuracyM is number {
-  return (
-    accuracyM !== null &&
-    Number.isFinite(accuracyM) &&
-    accuracyM > 0 &&
-    accuracyM <= ACCURACY_CEILING_M
-  );
-}
-
 export interface StationRun {
   /** The stations offered now, in list order. Empty once complete. */
   offered(): readonly string[];
@@ -114,27 +100,14 @@ export interface StationRun {
   statuses(): readonly StationStatus[];
   isComplete(): boolean;
   /**
-   * Horizontal distances (m) to the stations the caller can place, at the
-   * measured accuracy. A missing accuracy, or one above the ceiling, judges
-   * nothing: such a fix cannot tell 10 m from 40 m.
+   * Horizontal distances (m) from the phone's current best position to the
+   * stations the caller can place (D16). A station without a finite
+   * distance is not judged: with no position, nothing is reached.
    */
   observe(input: {
     readonly distances: ReadonlyMap<string, number>;
-    readonly accuracyM: number | null;
     readonly nowMs: number;
   }): StationEvent[];
-  /** A lock of a printed code (its level id) the viewer trusts; `admit`
-   *  (default: all) picks which of the stations it anchors it may find - the
-   *  guide holds back one the moved-code check has not had its say on yet
-   *  (K4 review R1). */
-  codeLocked(
-    levelId: string,
-    nowMs: number,
-    admit?: (stationId: string) => boolean,
-  ): StationEvent[];
-  /** The visitor's own "I'm here" (an offered station still waiting):
-   *  found as the visitor's. The caller decides when to offer it. */
-  arrive(id: string, nowMs: number): StationEvent[];
   /** The station's steps finished (a found station only). */
   finish(id: string, nowMs: number): StationEvent[];
   /** "Skip, I can't get there" (an offered station not yet done). */
@@ -163,7 +136,6 @@ export interface StationRun {
 interface Mutable {
   state: StationState;
   skipped: boolean;
-  foundVia: "gps" | "code" | "visitor" | null;
   focusedAtMs: number | null;
   focusDistanceM: number | null;
 }
@@ -181,7 +153,6 @@ export function createStationRun(input: {
       {
         state: "waiting",
         skipped: false,
-        foundVia: null,
         focusedAtMs: null,
         focusDistanceM: null,
       },
@@ -253,25 +224,25 @@ export function createStationRun(input: {
     return events;
   }
 
-  function found(id: string, via: "gps" | "code" | "visitor"): StationEvent[] {
+  function found(id: string): StationEvent[] {
     const s = states.get(id)!;
     s.state = "found";
-    s.foundVia = via;
-    const events: StationEvent[] = [{ kind: "found", id, via }];
+    const events: StationEvent[] = [{ kind: "found", id }];
     const station = stations[index.get(id)!]!;
     if (station.steps.length === 0) events.push(...complete(id, false));
     return events;
   }
 
-  /** One offered station at one distance: found inside the found radius. */
-  function judge(id: string, d: number, accuracyM: number): StationEvent[] {
+  /** One offered station at one distance: found inside its found radius. */
+  function judge(id: string, d: number): StationEvent[] {
     const s = states.get(id)!;
     if (s.state === "found" || s.state === "done") return [];
     if (s.focusedAtMs !== null && s.focusDistanceM === null) {
       s.focusDistanceM = d;
     }
-    const { foundM } = stationBands(stations[index.get(id)!]!, accuracyM);
-    return d <= foundM ? found(id, "gps") : [];
+    // The bands' found radius reads no accuracy (D16); null is any value.
+    const { foundM } = stationBands(stations[index.get(id)!]!, null);
+    return d <= foundM ? found(id) : [];
   }
 
   return {
@@ -283,32 +254,14 @@ export function createStationRun(input: {
     statuses: () => stations.map((st) => snapshot(st.id, states.get(st.id)!)),
     isComplete: () => offeredIds.length === 0,
 
-    observe({ distances, accuracyM }) {
-      if (!usableAccuracy(accuracyM)) return [];
+    observe({ distances }) {
       const events: StationEvent[] = [];
       for (const id of [...offeredIds]) {
         const d = distances.get(id);
         if (d === undefined || !Number.isFinite(d) || !isOffered(id)) continue;
-        events.push(...judge(id, d, accuracyM));
+        events.push(...judge(id, d));
       }
       return events;
-    },
-
-    codeLocked(levelId, _nowMs, admit) {
-      const events: StationEvent[] = [];
-      for (const station of stations) {
-        if (station.anchor.code !== levelId || !isOffered(station.id)) continue;
-        const s = states.get(station.id)!;
-        if (s.state === "found" || s.state === "done") continue;
-        if (admit !== undefined && !admit(station.id)) continue;
-        events.push(...found(station.id, "code"));
-      }
-      return events;
-    },
-
-    arrive(id) {
-      if (states.get(id)?.state !== "waiting" || !isOffered(id)) return [];
-      return found(id, "visitor");
     },
 
     finish(id) {

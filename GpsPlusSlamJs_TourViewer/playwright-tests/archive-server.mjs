@@ -163,10 +163,11 @@ const DEG_PER_M_LAT = 8.9832e-6;
 const DEG_PER_M_LON = 1.32966e-5;
 
 /**
- * The stations tour (tour kit plan K4): fixed order; "The gate" anchored to
- * the fixture's printed code (so the lock that passes the scan gate finds
- * it), "The well" 30 m north (found by walking), "The tower" 300 m east
- * (skipped).
+ * The stations tour (tour kit plan K4): fixed order; "The gate" at the
+ * fixture's printed code (2 m north, 1 m east: the lock that passes the
+ * scan gate places the visitor inside its radius - a lock is no arrival of
+ * its own, tour editor plan D16), "The well" 30 m north (found by
+ * walking), "The tower" 300 m east (skipped).
  */
 async function buildStationsZip() {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
@@ -223,7 +224,10 @@ async function buildStationsZip() {
           {
             id: "gate",
             title: "The gate",
-            anchor: { code: await qrCodeId(E2E_QR_TEXT) },
+            anchor: {
+              code: await qrCodeId(E2E_QR_TEXT),
+              geo: geo(2, 1),
+            },
             activateRadiusM: 30,
             foundRadiusM: 5,
             steps: [

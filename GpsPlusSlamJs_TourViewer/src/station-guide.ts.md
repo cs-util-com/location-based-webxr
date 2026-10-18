@@ -5,14 +5,16 @@
 The visitor's stations in AR (tour kit plan K4, §4.2, K-D6, K-D9): runs the
 station run from the visitor's position, points the wayfinding HUD at the
 offered stations, writes the station line, offers the labelled "skip, I
-can't get there" (§8 D5), and hands a found station to its story. Plan:
-`GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`.
+can't get there" (§8 D5), and hands a found station to its story. Plans:
+`GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`,
+`GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md` (D9, D16).
 
 ## Public API
 
 - `wireStationGuide(deps): StationGuide`
   - `tick()` - re-judge (a store change, a camera frame);
-  - `codeLocked(levelId)` - a lock of a printed code;
+  - `codeLocked()` - a printed code locked: no arrival of its own (D16),
+    only a re-judge now, since the lock improved the position;
   - `storyEnded(stationId)` - the story played to its end: the station is
     done;
   - `skipTapped()`;
@@ -21,10 +23,9 @@ can't get there" (§8 D5), and hands a found station to its story. Plan:
     with a position and the GPS zero;
   - `poseOf(stationId)` - the station's pose at the scene root (the stage
     stands its figure there).
-- Deps: `dom` (`line`, `skip`), `tour()` (stations, order, levels),
+- Deps: `dom` (`line`, `skip`), `tour()` (stations, order),
   `placementAllowed()`, `zero()`, `visitor()` (`visitor-position.ts`),
-  `isIgnoredCode(levelId)`, `codeCheck?(levelId)` (the moved-code check's
-  evidence, `{ judged }` or null; R1), `startHud(getTargets)`, `now()`,
+  `startHud(getTargets)`, `now()`,
   `onFound(station)`, `onEndStory?(stationId)` (R9), `onVisitor?(nue)`, `onApproach?(station, distanceM,
 activateM)` (each tick, each offered station with a distance: the
   prefetch), `onDone?(stationId)` (a story's end or a skip: the prefetch may
@@ -47,52 +48,27 @@ activateM)` (each tick, each offered station with a distance: the
 - **A replay waits (R8):** a found station's story cut short by the
   session's end plays again on the first tick that has a position and the
   GPS zero (before them its figure had no pose).
-- **Where a station is (D19, §8 D8):** its own geo pose; a code-only
-  station stands where its code's level was saved, but on the estimated
-  ground below the code - the visitor's height less `EYE_HEIGHT_M` (1.5 m,
-  the breadcrumbs' rule; the framework's floor estimator needs a depth
-  grid the Tour Viewer does not build) - and turned about the vertical
-  only (the code's compat heading, else the bearing of its local +x): K4
-  review R6, so a figure does not float at a wall poster's centre and a
-  model does not take its tilt. Such a pose needs a visitor position (the
-  stage waits for one). With neither, a station has no distance (found by
-  its code only; the line asks for the printed code).
-  The pose was fixed at authoring (D33's settle, K6a); the viewer reads it.
-- **Found by code:** only codes the moved-code check does not ignore (D20,
-  §8 D8), checked again here although an ignored lock never reaches
-  `onLocked`.
-- **A code lock is held until the moved-code check could have spoken (K4
-  review R1; B-12 revised).** Every locked frame reports the code, while
-  D20 judges it only later over GPS fixes, and its votes pull the fused
-  position onto the code's saved spot - so with "found is a latch" a moved
-  poster always found its station, by its lock or by the pull. Now:
-  - a lock finds its station at once when the latest RAW device fix
-    (`VisitorPosition.fixNue`, never moved by a vote) lies inside the
-    station's activation radius at the measured accuracy, or when there is
-    nothing independent to judge by (no usable fix, no spot) - as for D20
-    itself;
-  - otherwise the station is held (the line: "... - checking its code…")
-    and not found by GPS either, until the check has had its evidence
-    (`codeCheck(levelId).judged`, `checkHadItsWindow`), the raw fix
-    agrees, or `CODE_HOLD_MAX_MS` (75 s) passed - then the lock counts; a
-    veto drops the hold (its votes are taken back, so the station is found
-    by walking to it as any other);
-  - a hold ends with its AR session (the moved-code checks are per AR
-    entry); the code must lock again in the next;
-  - which of the reviewer's two rules: the hybrid. Rule (b) alone (the
-    visitor's FUSED position inside the activation radius) is defeated by
-    the code's own votes, which put the fused visitor on the saved spot
-    within a frame; a raw fix is the only vote-free position. Rule (a)
-    alone (hold every code lock for the check's window) holds every first
-    station of a tour up to 60 s. The raw fix lets an agreeing lock count
-    at once (a correct poster is held in at most 0.6 % of scans,
-    `station-code-hold.sweep.test.ts`), and only a disagreeing one waits
-    for (a);
-  - what is left: a moved poster within the activation radius of its
-    station finds it (the visitor is near the station anyway), and a
-    visitor who stands still at a moved poster (under 2 m of spread)
-    gives D20 no evidence, so the lock counts at 75 s; with no usable GPS
-    nothing can judge the code, as before.
+- **Where a station is (D19, §8 D8; tour editor plan D9):** its own geo
+  pose, as a pin's. A station without one (an old code-only station) has
+  no pose, no distance and no HUD target, and is never reached: the line
+  says "... - it has no spot to guide you to." The pose was fixed at
+  authoring (D33's settle, K6a); the viewer reads it.
+- **Reached by its radius alone (D16):** the distance is measured from the
+  phone's current best position - the alignment's (`VisitorPosition.nue`,
+  fed by GPS and codes alike), else before any alignment the latest device
+  fix (`fixNue`) - and a station is found inside its authored found
+  radius, whatever the accuracy. With neither position nothing is reached.
+  A code lock is no arrival: it only improves the position, and
+  `codeLocked()` re-judges at once. This replaced the code-only station,
+  the held code lock (`CODE_HOLD_MAX_MS`, `codeAgrees`) and the
+  visitor's own "I'm here" (review 2 #5).
+- **A moved poster cannot pull the position onto a station:** the
+  moved-code check ignores its code and takes its votes back
+  (`isIgnoredCode` in the viewer's alignment, D20), the one guard left
+  since the lock-hold went. What is left: a moved poster's votes count
+  until the check has judged it (its evidence window), so a visitor who
+  scans a moved poster near another station inside that window may find
+  that station early; the old hold covered this case.
 - **The HUD's arrival is the found radius (§8 D9):** each target's
   `distanceMin` / `distanceMax` are the station's found band at the
   measured accuracy, and the target sits at the visitor's own height, so
@@ -130,7 +106,7 @@ activateM)` (each tick, each offered station with a distance: the
 - **The line:** "Next: <title>, N m", "N stations to find - nearest:
   <title>, N m", "... - waiting for your position…", "... - GPS too weak to
   guide you (±N m); step into the open." (above the accuracy ceiling),
-  "... - find its printed code." (no spot), "Station found - its story is
+  "... - it has no spot to guide you to." (no spot), "Station found - its story is
   playing.", "Tour complete - every station visited." or "- N skipped.";
   under branch order "Tour complete - you reached the end of your path."
   (with ", N skipped."), since the other branches were never offered.
@@ -141,41 +117,17 @@ activateM)` (each tick, each offered station with a distance: the
   next measurement; the stage and the HUD read the cache) and every
   placeable station's horizontal distance, so an offer that changes
   between ticks (a skip, a story's end) has its distance at once. A code
-  lock before any tick measures first.
+  lock re-judges through `tick()`, so it measures first.
 
-- **With no device fix ever (QR-first M1b-1, codes only; M1 review's list
-  of device-GPS readers):** the visitor's position (`visitor-position.ts`)
-  is the camera through the code-placed alignment - null before a scan,
-  odometry from the code after it - with `accuracyM` and `fixNue` null. So:
-  arrivals by position never fire (`station-run` needs a usable accuracy);
-  a station with a printed code is found by locking that code; the line
-  says "waiting for your position..." before a scan and the distance from
-  the code-placed position after it - never "GPS too weak", which needs an
-  accuracy; a station's code lock finds it at once (`codeAgrees`: no
-  independent fix to judge by, as for the moved-code check, which with no
-  device fix never decides). Under `?relocate=here` the stations stay held
-  back (the relocation waits for a first device fix that never comes).
-  Position arrivals do not fire on the code-placed position (no fix
-  measures its accuracy). Instead (owner decision after the M1b-1 review,
-  "both"): **a station without a printed code offers "I'm here - play the
-  story"** in place of the skip while the code-placed position is inside
-  its found band (`hereOffered`: dep `codesOnly()`, or, with location on,
-  no device fix carrying an accuracy - a granted permission indoors, where
-  the run finds nothing by position either, PR #623 review); the tap finds it
-  (`run.arrive`), nothing finds it on its own. The band is the found
-  radius at the station pose floor (`STATION_POSE_FLOOR_M`, 5 m) - the
-  code-placed position is assumed no worse than the stored spots
-  themselves (up to 3.6 m at p90) - or the creator's wider found radius.
-  Outside it the skip reads as before ("Can't get there?"). **"I'm here"
-  supersedes the skip, it does not sit beside it** (the owner's decision
-  says "in place of"; kept after the PR #624 review): the one button
-  offers it while `hereOffered` holds, so a visitor inside the band who
-  cannot reach the station (a locked door) has no skip there; the way past
-  is "I'm here", which marks it found by the visitor. Since the PR #623
-  fix this holds in a session with location granted but no usable fix
-  too, not only without location. An undoable skip still comes first
-  (`undo` is checked before it). Put to the owner as a candidate, should
-  field use show a need for both.
+- **With no device fix ever (QR-first M1b-1, codes only):** the visitor's
+  position (`visitor-position.ts`) is the camera through the code-placed
+  alignment - null before a scan, odometry from the code after it - with
+  `accuracyM` and `fixNue` null. So nothing is reached before a scan,
+  and after it every station by the distance from the code-placed
+  position (D16), as with GPS; the line says "waiting for your
+  position..." before a scan and the distance after it - never "GPS too
+  weak", which needs an accuracy. Under `?relocate=here` the stations stay
+  held back (the relocation waits for a first device fix that never comes).
 
 ## Examples
 
@@ -186,7 +138,6 @@ const guide = wireStationGuide({
   placementAllowed,
   zero,
   visitor,
-  isIgnoredCode,
   startHud,
   now: Date.now,
   onFound: (station) => view.offer(station),
@@ -196,17 +147,16 @@ store.subscribe(() => guide.tick());
 
 ## Tests
 
-- `station-code-hold.sweep.test.ts` - the hold's maximum against the real
-  moved-code check's timing, and how often a correct poster is held (R1).
 - `station-guide.property.test.ts` - stories that never end, stations
   nobody reaches, random orders and `next` links (cycles included): the
   tour completes within two taps per station (R9).
 - `station-guide.test.ts` - the undo, the focus clock under `any` order and
   the tap acting on its label (R14); the gate wait, the line, the find; the HUD
-  targets and their bands; a code-only station; the D20 veto arriving
-  after the lock, an agreeing lock at once, a held lock released by the
-  check's window and at the latest after 75 s, no usable GPS (R1); a station
-  with no spot; no position and weak GPS; the skip on demand and suggested,
+  targets and their bands; a station with no spot (never reached, even at
+  its code); arrival by the radius alone (D16): codes only (reached after a
+  scan, by distance), poor GPS (found by distance, never widened), none
+  before any position, the device fix before an alignment and the
+  alignment after it; no position and weak GPS lines; the skip on demand and suggested,
   the completion and the HUD's disposal; a story's end; progress across
   AR entries and a new tour; the replay of a story cut short; nothing found
   that is not offered.

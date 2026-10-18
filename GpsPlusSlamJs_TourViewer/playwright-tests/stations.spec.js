@@ -14,7 +14,7 @@ import { E2E_QR_TEXT } from "./qr-fixture.mjs";
  * character, voice, choice and 3D model, the walk that finds a station by
  * GPS, and the labelled skip. The fixture tour (`archive-server.mjs`,
  * `/ranges-ok/stations-tour.zip`) has three stations in fixed order: "The
- * gate" on the printed code, "The well" 30 m north, "The tower" 300 m east.
+ * gate" at the printed code, "The well" 30 m north, "The tower" 300 m east.
  */
 
 const STATIONS_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/stations-tour.zip";
@@ -61,7 +61,7 @@ async function lockTheCode(page) {
     .toBe("passed-code");
 }
 
-test("a station tour: the code finds the first station, its knight speaks and asks, a walk finds the next, the last is skipped", async ({
+test("a station tour: the visitor at the code finds the first station, its knight speaks and asks, a walk finds the next, the last is skipped", async ({
   page,
 }) => {
   // Why this test matters (tour kit plan K4): it is the castle example in
@@ -73,7 +73,9 @@ test("a station tour: the code finds the first station, its knight speaks and as
   await standAt(page, 0, 0, 0);
   await lockTheCode(page);
 
-  // The lock that passed the gate found "The gate": its story plays.
+  // The lock passed the gate; the visitor stands inside "The gate"'s
+  // radius, so it is found (D16: by the radius, never by the lock): its
+  // story plays.
   const panel = page.getByTestId("scene-panel");
   await expect(panel).toBeVisible();
   await expect(page.getByTestId("scene-title")).toHaveText("The gate");
@@ -90,25 +92,16 @@ test("a station tour: the code finds the first station, its knight speaks and as
       ),
     )
     .toContain("station-stage:gate");
-  // "The gate" is anchored by its code alone: the knight stands on the
-  // estimated ground below the code - the phone's height in the GPS world
-  // less 1.5 m - not at the poster's centre (K4 review R6; the code is
-  // saved at 400 m, where the K4 build stood it).
-  const heights = await page.evaluate(() => {
-    const t = /** @type {any} */ (window).__tourViewerTest;
-    const m = t.alignmentStore.getState().gpsData.gpsEvents.alignmentMatrix;
-    const { x, y, z } = t.arPose.position;
-    // Raw WebXR (x East, y Up, z South) to odometry NUE, then up through
-    // the alignment (column-major).
-    const [n, u, e] = [-z, y, x];
-    return {
-      feet: t.fakeScene.children.find((c) => c.name === "station-stage:gate")
-        .position.y,
-      camera: m[1] * n + m[5] * u + m[9] * e + m[13],
-    };
-  });
-  expect(heights.feet).toBeCloseTo(heights.camera - 1.5, 0);
-  expect(Math.abs(heights.feet - 400)).toBeGreaterThan(1);
+  // A station is a pin (tour editor plan D9): the knight stands at the
+  // station's own spot and altitude (400 m), no longer on a ground guessed
+  // below a code (the code-only station is gone).
+  const feet = await page.evaluate(
+    () =>
+      /** @type {any} */ (window).__tourViewerTest.fakeScene.children.find(
+        (c) => c.name === "station-stage:gate",
+      ).position.y,
+  );
+  expect(feet).toBeCloseTo(400, 1);
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -270,13 +263,14 @@ async function walkWithoutGps(page, north, east) {
   );
 }
 
-test("without location, a station with no printed code is reached by the visitor's own I'm here (owner decision after the M1b-1 review)", async ({
+test("without location, a station is reached by its radius on the code-placed position (tour editor plan D16)", async ({
   page,
 }) => {
-  // Why this test matters: a visitor who declined location has no fix, so
-  // nothing can find "The well" (no code) by position - its only button was
-  // the skip. Walking there on the code-placed position must offer "I'm
-  // here - play the story", and the tap must play it.
+  // Why this test matters: a visitor who declined location has no fix; the
+  // code scan places them, and from then on the code-placed position is
+  // the phone's best position. A station is reached by its radius on it,
+  // like with GPS - no "I'm here" tap (removed with D16), no code of the
+  // station's own.
   await page.addInitScript(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;
     if (t) t.locationPermission = "denied";
@@ -291,8 +285,8 @@ test("without location, a station with no printed code is reached by the visitor
   await expect(button).toHaveText("Start the tour", { timeout: 10000 });
   await button.click();
   await expect(button).toHaveText("Exit AR");
-  // The phone stands at the poster; the code places the tour and finds
-  // "The gate" (no device fix at any point).
+  // The phone stands at the poster; the code places the tour, and the
+  // gate 2 m away is found (no device fix at any point).
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.arPose = {
       position: { x: 0, y: 1.4, z: 0 },
@@ -318,10 +312,10 @@ test("without location, a station with no printed code is reached by the visitor
     return { north: t.position.x, east: t.position.z };
   });
   await walkWithoutGps(page, well.north - 20, well.east);
-  await expect(skip).toHaveText("Can't get there?");
+  await expect(line).toHaveText(/^Next: The well, (19|20|21) m$/);
+  await expect(page.getByTestId("scene-panel")).toBeHidden();
+  // Inside the well's 5 m radius: found on its own, no tap.
   await walkWithoutGps(page, well.north - 2, well.east);
-  await expect(skip).toHaveText("I'm here - play the story");
-  await skip.click();
   await expect(page.getByTestId("scene-title")).toHaveText("The well");
   expect(
     await page.evaluate(

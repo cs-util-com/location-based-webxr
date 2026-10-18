@@ -1,19 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-stations";
 import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 
-import { Quaternion, Vector3 } from "three";
-
-import { EYE_HEIGHT_M } from "./breadcrumbs";
-import { rotationFromHeading } from "./content-placement";
 import { stationBands } from "./station-bands";
 import { skipSuggestAfterMs } from "./station-run";
 import {
-  CODE_HOLD_MAX_MS,
   SKIP_UNDO_MS,
   wireStationGuide,
   type StationTour,
@@ -21,11 +15,13 @@ import {
 
 /**
  * Why these tests matter: this is where the visitor's real position, the
- * tour's stations and the HUD meet. The HUD must say "arrived" exactly where
- * a station is found, a code the moved-code check ignores must not count as
- * found, a code-only station must still be pointed at, the skip must be
- * there on demand and suggested after its clock, and the progress must
- * survive leaving AR and coming back.
+ * tour's stations and the HUD meet. A station is reached by its radius alone
+ * (tour editor plan D16): the phone's best position - the alignment's, else
+ * before any alignment the device fix - inside the authored found radius; a
+ * code lock only improves that position, and with no position nothing is
+ * reached. The HUD must say "arrived" exactly there, the skip must be there
+ * on demand and suggested after its clock, and the progress must survive
+ * leaving AR and coming back.
  */
 
 // The core's geodesy needs an activated store (the framework's factory).
@@ -65,12 +61,8 @@ function harness(tourValue: StationTour) {
     accuracyM: 4 as number | null,
     fixNue: [0, 400, 0] as [number, number, number] | null,
   };
-  /** The moved-code check's evidence per level id (absent: no check). */
-  const checks = new Map<string, { judged: boolean }>();
   let allowed = true;
-  let codesOnlyNow = false;
   let zeroNow: typeof zero | null = zero;
-  const ignored = new Set<string>();
   const found: string[] = [];
   const approaches: [string, number, number][] = [];
   const dones: string[] = [];
@@ -100,7 +92,6 @@ function harness(tourValue: StationTour) {
     dom,
     tour: () => tour,
     placementAllowed: () => allowed,
-    codesOnly: () => codesOnlyNow,
     zero: () => {
       calls.zero += 1;
       return zeroNow;
@@ -109,8 +100,6 @@ function harness(tourValue: StationTour) {
       calls.visitor += 1;
       return visitor;
     },
-    isIgnoredCode: (id) => ignored.has(id),
-    codeCheck: (id) => checks.get(id) ?? null,
     startHud: (getTargets) => {
       const h = { getTargets, disposed: false };
       huds.push(h);
@@ -144,8 +133,6 @@ function harness(tourValue: StationTour) {
     calls,
     guides,
     huds,
-    ignored,
-    checks,
     at: (north: number, east: number, accuracyM: number | null = 4) => {
       visitor = {
         nue: [north, 401.5, east],
@@ -154,15 +141,30 @@ function harness(tourValue: StationTour) {
       };
       guide.tick();
     },
-    /** The fused position (moved by a code's votes) and the latest raw
-     *  device fix apart. */
-    atFix: (north: number, east: number, fixN: number, fixE: number) => {
+    /** The aligned position (where codes and GPS put the phone) and the
+     *  latest raw device fix apart. */
+    atFix: (
+      north: number,
+      east: number,
+      fixN: number,
+      fixE: number,
+      accuracyM: number | null = 4,
+    ) => {
       visitor = {
         nue: [north, 401.5, east],
-        accuracyM: 4,
+        accuracyM,
         fixNue: [fixN, 400, fixE],
       };
       guide.tick();
+    },
+    /** A device fix and no alignment yet (no code scanned, too few fixes). */
+    fixOnly: (north: number, east: number, accuracyM: number | null = 4) => {
+      visitor = { nue: null, accuracyM, fixNue: [north, 400, east] };
+      guide.tick();
+    },
+    /** Placed by a code alone: an aligned position, no device fix at all. */
+    byCodeOnly: (north: number, east: number) => {
+      visitor = { nue: [north, 401.5, east], accuracyM: null, fixNue: null };
     },
     lost: () => {
       visitor = { nue: null, accuracyM: 4, fixNue: null };
@@ -170,7 +172,6 @@ function harness(tourValue: StationTour) {
     },
     advance: (ms: number) => (now += ms),
     allow: (v: boolean) => (allowed = v),
-    setCodesOnly: (v: boolean) => (codesOnlyNow = v),
     setZero: (z: typeof zero | null) => (zeroNow = z),
     setTour: (t: StationTour | null) => (tour = t),
   };
@@ -181,7 +182,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [station("gate", 50, 0)],
       order: "fixed",
-      levels: null,
     });
     h.allow(false);
     h.at(0, 0);
@@ -201,7 +201,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [s, station("well", -30, 0)],
       order: "any",
-      levels: null,
     });
     h.at(0, 0, 6);
     const targets = h.huds[0]!.getTargets();
@@ -220,194 +219,19 @@ describe("wireStationGuide", () => {
     );
   });
 
-  it("a code-only station stands where its code was saved, and is found by a lock of that code", () => {
-    const geo = calcGpsCoords(zero, [0, 0, 40]);
-    const levels = new Map<string, QrLevel>([
-      [
-        "lvl-a",
-        {
-          version: 1,
-          qr: {
-            physicalSizeM: 0.2,
-            geo: { lat: geo.lat, lon: geo.lon, alt: 400, headingDeg: 0 },
-          },
-        },
-      ],
-    ]);
-    const s: TourStation = {
-      ...station("tower", 0, 0),
-      anchor: { code: "lvl-a" },
-    };
-    const h = harness({ stations: [s], order: "fixed", levels });
-    h.at(0, 0);
-    expect(h.dom.line.textContent).toBe("Next: TOWER, 40 m");
-    // Scanned standing at the poster (R1: a lock 40 m from where the GPS
-    // puts the code would be held for the moved-code check).
-    h.at(0, 38);
-    h.guide.codeLocked("lvl-a");
-    expect(h.found).toEqual(["tower"]);
-  });
-
-  it("a code-only station stands on the estimated ground below its code, turned about the vertical only (R6)", () => {
-    // Why this test matters (K4 review R6): a code-only station stood at
-    // the poster's centre, so a figure floated 1-2 m up at a wall poster
-    // and a model took the poster's tilt.
-    const geo = calcGpsCoords(zero, [0, 0, 40]);
-    // A poster facing heading 90, tilted 30 degrees back (no compat
-    // heading: the mint omits one for a tilted code).
-    const tilted = new Quaternion(...rotationFromHeading(90)).multiply(
-      new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 6),
-    );
-    const levels = new Map<string, QrLevel>([
-      [
-        "lvl-a",
-        {
-          version: 1,
-          qr: {
-            physicalSizeM: 0.2,
-            geo: {
-              lat: geo.lat,
-              lon: geo.lon,
-              alt: 403.2,
-              rotation: [tilted.x, tilted.y, tilted.z, tilted.w],
-            },
-          },
-        },
-      ],
-    ]);
-    const s: TourStation = {
-      ...station("tower", 0, 0),
-      anchor: { code: "lvl-a" },
-    };
-    const h = harness({ stations: [s], order: "fixed", levels });
-    h.at(0, 38);
-    const pose = h.guide.poseOf("tower")!;
-    expect(pose.positionNue[0]).toBeCloseTo(0, 1);
-    expect(pose.positionNue[2]).toBeCloseTo(40, 1);
-    // The ground below the visitor's phone, not the poster's 403.2 m.
-    expect(pose.positionNue[1]).toBeCloseTo(401.5 - EYE_HEIGHT_M, 6);
-    const yaw = rotationFromHeading(90);
-    for (let i = 0; i < 4; i += 1) {
-      expect(Math.abs(pose.rotationNue[i]!)).toBeCloseTo(Math.abs(yaw[i]!), 6);
-    }
-    // A station with a spot of its own keeps its own altitude.
-    const own = harness({
-      stations: [station("gate", 10, 0)],
-      order: "fixed",
-      levels: null,
-    });
-    own.at(0, 0);
-    expect(own.guide.poseOf("gate")!.positionNue[1]).toBeCloseTo(400, 6);
-  });
-
-  it("a moved code finds nothing when its veto arrives AFTER the lock: not by the lock, not by its votes' pull (R1, R17)", () => {
-    // Why this test matters (K4 review R1, R17): every locked frame reports
-    // the code, while the moved-code check (D20) only judges it later, over
-    // GPS fixes; a find on the lock, latched, meant a moved poster always
-    // found its station. The K4 test seeded the veto BEFORE the lock, which
-    // never happens on the page.
-    const s: TourStation = {
-      ...station("tower", 100, 0),
-      anchor: { code: "lvl-a", geo: station("x", 100, 0).anchor.geo! },
-    };
-    const h = harness({ stations: [s], order: "fixed", levels: null });
-    h.checks.set("lvl-a", { judged: false });
-    // The visitor scans the poster where it hangs now, 100 m from the
-    // station by GPS.
-    h.at(0, 0);
-    h.guide.codeLocked("lvl-a");
-    expect(h.found).toEqual([]);
-    expect(h.dom.line.textContent).toBe("Next: TOWER - checking its code…");
-    // Its votes pull the fused position onto the station; the raw fix stays.
-    h.atFix(100, 0, 0, 0);
-    h.guide.codeLocked("lvl-a");
-    expect(h.found).toEqual([]);
-    // The veto arrives: the votes are taken back, nothing is found, ever.
-    h.ignored.add("lvl-a");
-    h.checks.delete("lvl-a");
-    h.at(0, 0);
-    h.advance(CODE_HOLD_MAX_MS + 1);
-    h.at(0, 0);
-    h.guide.codeLocked("lvl-a");
-    expect(h.found).toEqual([]);
-    // Walking to the station by GPS still finds it.
-    h.at(99, 0);
-    expect(h.found).toEqual(["tower"]);
-  });
-
-  it("a code lock the visitor's own GPS agrees with finds its station at once; one it does not is held until the check has had its evidence (R1)", () => {
-    const s: TourStation = {
-      ...station("tower", 100, 0),
-      anchor: { code: "lvl-a", geo: station("x", 100, 0).anchor.geo! },
-    };
-    const near = harness({ stations: [s], order: "fixed", levels: null });
-    near.checks.set("lvl-a", { judged: false });
-    near.at(80, 0); // 20 m: inside the 30 m activation radius
-    near.guide.codeLocked("lvl-a");
-    expect(near.found).toEqual(["tower"]);
-    const far = harness({ stations: [s], order: "fixed", levels: null });
-    far.checks.set("lvl-a", { judged: false });
-    far.at(0, 0);
-    far.guide.codeLocked("lvl-a");
-    expect(far.found).toEqual([]);
-    far.at(0, 0);
-    expect(far.found).toEqual([]);
-    // The check has had its window and kept the code: the lock counts.
-    far.checks.set("lvl-a", { judged: true });
-    far.at(0, 0);
-    expect(far.found).toEqual(["tower"]);
-  });
-
-  it("a held code lock ends with its AR session: the next session's check starts afresh, so the old hold cannot count (R1)", () => {
-    // Why this test matters: the moved-code checks are per AR entry. A
-    // hold carried into the next session would only ever be released by
-    // its clock - a moved poster never vetoed in the first session would
-    // then find its station in the second.
-    const s: TourStation = {
-      ...station("tower", 100, 0),
-      anchor: { code: "lvl-a", geo: station("x", 100, 0).anchor.geo! },
-    };
-    const h = harness({ stations: [s], order: "fixed", levels: null });
-    h.at(0, 0);
-    h.guide.codeLocked("lvl-a");
-    h.guide.endSession();
-    h.advance(CODE_HOLD_MAX_MS + 1);
-    h.at(0, 0);
-    expect(h.found).toEqual([]);
-    expect(h.dom.line.textContent).toBe("Next: TOWER, 100 m");
-  });
-
-  it("a held code lock counts at the latest after CODE_HOLD_MAX_MS, and at once without a usable GPS fix (R1)", () => {
-    const s: TourStation = {
-      ...station("tower", 100, 0),
-      anchor: { code: "lvl-a", geo: station("x", 100, 0).anchor.geo! },
-    };
-    const h = harness({ stations: [s], order: "fixed", levels: null });
-    h.at(0, 0);
-    h.guide.codeLocked("lvl-a");
-    h.advance(CODE_HOLD_MAX_MS - 1);
-    h.at(0, 0);
-    expect(h.found).toEqual([]);
-    h.advance(1);
-    h.at(0, 0);
-    expect(h.found).toEqual(["tower"]);
-    // Indoors (no usable accuracy): nothing independent to judge by - as
-    // for the moved-code check itself - so the lock counts at once.
-    const indoor = harness({ stations: [s], order: "fixed", levels: null });
-    indoor.at(0, 0, null);
-    indoor.guide.codeLocked("lvl-a");
-    expect(indoor.found).toEqual(["tower"]);
-  });
-
-  it("a station with neither a spot nor a known code asks for its printed code", () => {
+  it("a station without a spot of its own is never pointed at nor reached, even standing at its code (D9)", () => {
+    // Why this test matters (tour editor plan D9): a station is a pin with
+    // a pose; a code-only station is gone, and a code lock is no arrival.
     const s: TourStation = {
       ...station("cellar", 0, 0),
-      anchor: { code: "unknown" },
+      anchor: { code: "lvl-a" },
     };
-    const h = harness({ stations: [s], order: "fixed", levels: null });
+    const h = harness({ stations: [s], order: "fixed" });
     h.at(0, 0);
+    h.guide.codeLocked();
+    expect(h.found).toEqual([]);
     expect(h.dom.line.textContent).toBe(
-      "Next: CELLAR - find its printed code.",
+      "Next: CELLAR - it has no spot to guide you to.",
     );
     expect(h.huds[0]!.getTargets()).toEqual([]);
   });
@@ -416,7 +240,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [station("gate", 50, 0)],
       order: "fixed",
-      levels: null,
     });
     h.lost();
     expect(h.dom.line.textContent).toBe(
@@ -426,16 +249,12 @@ describe("wireStationGuide", () => {
     expect(h.dom.line.textContent).toMatch(
       /GPS too weak to guide you \(±60 m\)/,
     );
-    // ... and a weak fix finds nothing, even standing on it.
-    h.at(50, 0, 60);
-    expect(h.found).toEqual([]);
   });
 
   it("skip: on demand in two taps, suggested in one after its clock, and the order moves on", () => {
     const h = harness({
       stations: [station("gate", 100, 0), station("well", 0, 100)],
       order: "fixed",
-      levels: null,
     });
     h.at(0, 0);
     expect(h.dom.skip).toEqual({
@@ -467,7 +286,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [station("gate", 100, 0), station("well", 0, 100)],
       order: "fixed",
-      levels: null,
     });
     h.at(0, 0);
     h.guide.skipTapped();
@@ -499,7 +317,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [station("gate", 30, 0), station("well", -40, 0)],
       order: "any",
-      levels: null,
     });
     h.at(0, 0);
     h.advance(skipSuggestAfterMs(40) + 1);
@@ -517,7 +334,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [station("gate", 100, 0), station("well", 0, 100)],
       order: "fixed",
-      levels: null,
     });
     h.at(0, 0);
     expect(h.dom.skip.textContent).toBe("Can't get there?");
@@ -539,7 +355,6 @@ describe("wireStationGuide", () => {
         station("tower", 0, 0),
       ],
       order: "branch",
-      levels: null,
     });
     h.at(0, 0);
     h.guide.storyEnded("gate");
@@ -557,7 +372,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [station("gate", 0, 0), station("well", 0, 80)],
       order: "fixed",
-      levels: null,
     });
     h.at(0, 0);
     expect(h.found).toEqual(["gate"]);
@@ -576,7 +390,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [station("gate", 0, 0), station("well", 0, 80)],
       order: "fixed",
-      levels: null,
     });
     h.at(0, 0);
     expect(h.found).toEqual(["gate"]);
@@ -588,7 +401,6 @@ describe("wireStationGuide", () => {
     const tour = {
       stations: [station("gate", 0, 0), station("well", 0, 80)],
       order: "fixed" as const,
-      levels: null,
     };
     const h = harness(tour);
     h.at(0, 0);
@@ -614,7 +426,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [station("gate", 0, 0), station("well", 0, 80)],
       order: "fixed",
-      levels: null,
     });
     h.at(0, 0);
     expect(h.found).toEqual(["gate"]);
@@ -632,7 +443,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [station("gate", 50, 0), station("well", 0, 0)],
       order: "fixed",
-      levels: null,
     });
     h.at(0, 0);
     expect(h.dom.line.textContent).toBe("Next: GATE, 50 m");
@@ -656,7 +466,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [station("gate", 0, 0), station("well", 0, 80)],
       order: "fixed",
-      levels: null,
     });
     h.at(0, 0);
     expect(h.found).toEqual(["gate"]);
@@ -674,28 +483,15 @@ describe("wireStationGuide", () => {
   });
 
   it("measures from where the visitor is NOW when a code lock and its story come before any tick", () => {
-    // On the page the lock that passes the scan gate can find the first
-    // station before the guide has ticked once; the line after its story
-    // must still give the next station's distance, not "waiting".
-    const levels = new Map<string, QrLevel>([
-      [
-        "lvl-a",
-        {
-          version: 1,
-          qr: { physicalSizeM: 0.2, geo: station("x", 0, 0).anchor.geo! },
-        },
-      ],
-    ]);
-    const first: TourStation = {
-      ...station("gate", 0, 0),
-      anchor: { code: "lvl-a" },
-    };
+    // On the page the lock that passes the scan gate can re-judge before
+    // the guide has ticked once (D16: the lock improved the position); the
+    // line after the story must still give the next station's distance,
+    // not "waiting".
     const h = harness({
-      stations: [first, station("well", 0, 80)],
+      stations: [station("gate", 0, 0), station("well", 0, 80)],
       order: "fixed",
-      levels,
     });
-    h.guide.codeLocked("lvl-a");
+    h.guide.codeLocked();
     expect(h.found).toEqual(["gate"]);
     h.guide.storyEnded("gate");
     expect(h.dom.line.textContent).toBe("Next: WELL, 80 m");
@@ -709,7 +505,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [s, station("well", 0, 80), station("tower", 0, 300)],
       order: "fixed",
-      levels: null,
     });
     h.at(0, 0);
     expect(h.approaches).toEqual([["gate", 0, stationBands(s, 4).activateM]]);
@@ -728,7 +523,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [station("gate", 0, 0), station("well", 0, 30)],
       order: "fixed",
-      levels: null,
     });
     h.at(0, 0);
     expect(h.found).toEqual(["gate"]);
@@ -740,7 +534,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [s, station("tower", 0, 300)],
       order: "fixed",
-      levels: null,
     });
     h.at(0, 0);
     expect(h.guides.at(-1)).toBe(`well@0,80/${stationBands(s, 4).foundExitM}`);
@@ -758,7 +551,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [station("gate", 50, 0), station("well", -30, 0)],
       order: "any",
-      levels: null,
     });
     h.at(0, 0);
     const before = { ...h.calls };
@@ -774,7 +566,6 @@ describe("wireStationGuide", () => {
     const h = harness({
       stations: [station("gate", 100, 0), station("well", 0, 0)],
       order: "fixed",
-      levels: null,
     });
     vi.useFakeTimers();
     h.at(0, 0);
@@ -787,106 +578,75 @@ describe("wireStationGuide", () => {
   });
 });
 
-// Why (owner decision 2026-10-14 after the M1b-1 review, "both"): without
-// location a station without a printed code was unreachable - no fix
-// carries an accuracy, so nothing finds it by position, and its only button
-// was "Skip X - I can't get there". When the phone's own estimate (the
-// code-placed position) is inside the station's found band, the guide
-// offers "I'm here - play the story" instead; the visitor confirms with the
-// tap, nothing is found on its own. The band is the found radius at the
-// station pose floor (5 m), or the creator's larger radius.
-describe("a station without a printed code, without location (codes only)", () => {
-  const HERE = "I'm here - play the story";
-
-  it("offers I'm here inside the found band, and the tap finds the station", () => {
+// Why (tour editor plan D16): a station is reached by its radius alone, on
+// the phone's current best position - the alignment's, fed by GPS and codes
+// alike; before any alignment the device fix. A code scan is no arrival of
+// its own, only a better position; with no position nothing is reached. The
+// rule replaced the code-only station, the held code lock and the visitor's
+// own "I'm here", which the codes-only case used to need.
+describe("arrival by the station radius alone (D16)", () => {
+  it("codes only: reached after a scan, by the distance the scan gives", () => {
     const h = harness({
       stations: [station("well", 30, 0)],
       order: "fixed",
-      levels: null,
     });
-    h.setCodesOnly(true);
-    h.at(0, 0, null);
-    expect(h.dom.skip.textContent).toBe("Can't get there?");
-    h.at(26, 0, null);
-    expect(h.dom.line.textContent).toBe("Next: WELL, 4 m");
+    h.lost();
     expect(h.found).toEqual([]);
-    expect(h.dom.skip.textContent).toBe(HERE);
-    h.guide.skipTapped();
+    // A scan 10 m from the station: placed, but outside its 5 m radius.
+    h.byCodeOnly(20, 0);
+    h.guide.codeLocked();
+    expect(h.found).toEqual([]);
+    expect(h.dom.line.textContent).toBe("Next: WELL, 10 m");
+    // A scan 3 m from it: the lock re-judges at once and the station is
+    // found, without a device fix and without any tap.
+    h.byCodeOnly(27, 0);
+    h.guide.codeLocked();
     expect(h.found).toEqual(["well"]);
   });
 
-  it("uses the creator's found radius where it is wider than the 5 m floor", () => {
-    const h = harness({
-      stations: [station("well", 30, 0, { foundRadiusM: 12 })],
+  it("poor GPS: found by distance however weak the fix, and a weak fix never widens the radius", () => {
+    const weak = harness({
+      stations: [station("well", 30, 0)],
       order: "fixed",
-      levels: null,
     });
-    h.setCodesOnly(true);
-    h.at(17, 0, null);
-    expect(h.dom.skip.textContent).not.toBe(HERE);
-    h.at(19, 0, null);
-    expect(h.dom.skip.textContent).toBe(HERE);
+    // 15 m accuracy, 10 m away: the old rule found the station here.
+    weak.at(20, 0, 15);
+    expect(weak.found).toEqual([]);
+    // 60 m accuracy, 2 m away: found (the line still says the GPS is weak).
+    weak.at(28, 0, 60);
+    expect(weak.found).toEqual(["well"]);
   });
 
-  it("is not offered with location (GPS finds the station), nor for a station with a code", () => {
-    const withGps = harness({
-      stations: [station("well", 30, 0)],
-      order: "fixed",
-      levels: null,
-    });
-    // A usable fix: GPS finds the station on its own. (This case used to
-    // pass no accuracy - the no-fix shape, which is offered: below.)
-    withGps.at(26, 0);
-    expect(withGps.found).toEqual(["well"]);
-    expect(withGps.dom.skip.textContent).not.toBe(HERE);
-    // A usable fix outside the found band: neither found nor offered.
-    const outside = harness({
-      stations: [station("well", 30, 0)],
-      order: "fixed",
-      levels: null,
-    });
-    outside.at(10, 0);
-    expect(outside.found).toEqual([]);
-    expect(outside.dom.skip.textContent).not.toBe(HERE);
-
-    const geo = calcGpsCoords(zero, [30, 0, 0]);
-    const levels = new Map<string, QrLevel>([
-      [
-        "lvl-a",
-        {
-          version: 1,
-          qr: {
-            physicalSizeM: 0.2,
-            geo: { lat: geo.lat, lon: geo.lon, alt: 400, headingDeg: 0 },
-          },
-        },
-      ],
-    ]);
-    const coded = harness({
-      stations: [{ ...station("gate", 0, 0), anchor: { code: "lvl-a" } }],
-      order: "fixed",
-      levels,
-    });
-    coded.setCodesOnly(true);
-    coded.at(28, 0, null);
-    expect(coded.dom.skip.textContent).not.toBe(HERE);
-  });
-
-  // Why (PR #623 bot review): what makes such a station unreachable is no
-  // usable device accuracy, not the session's mode. A visitor whose
-  // permission is granted but who gets no fix (indoors) runs with GPS on,
-  // so codes-only is off - yet nothing finds the station by position, and
-  // the line guided them to the spot with only the skip to tap there.
-  it("is offered with location on but no device fix (granted, indoors)", () => {
+  it("none before any position: no fix, no alignment, nothing is reached, a code lock included", () => {
     const h = harness({
-      stations: [station("well", 30, 0)],
+      stations: [station("gate", 0, 0)],
       order: "fixed",
-      levels: null,
     });
-    h.at(26, 0, null);
+    h.lost();
+    h.guide.codeLocked();
+    h.lost();
     expect(h.found).toEqual([]);
-    expect(h.dom.skip.textContent).toBe(HERE);
-    h.guide.skipTapped();
-    expect(h.found).toEqual(["well"]);
+    expect(h.dom.line.textContent).toBe(
+      "Next: GATE - waiting for your position…",
+    );
+  });
+
+  it("before any alignment the device fix decides; once aligned, the alignment's position does", () => {
+    const early = harness({
+      stations: [station("gate", 30, 0)],
+      order: "fixed",
+    });
+    early.fixOnly(28, 0);
+    expect(early.found).toEqual(["gate"]);
+    // Aligned 30 m away while the raw fix stands on the station: the
+    // aligned position is the better one, and it is not there.
+    const aligned = harness({
+      stations: [station("gate", 30, 0)],
+      order: "fixed",
+    });
+    aligned.atFix(0, 0, 30, 0);
+    expect(aligned.found).toEqual([]);
+    aligned.atFix(29, 0, 0, 0);
+    expect(aligned.found).toEqual(["gate"]);
   });
 });

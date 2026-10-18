@@ -61,6 +61,7 @@ import {
   VIEWER_VOTE_COUNT,
 } from "./qr-viewer-mode.js";
 import type { TourViewerSeams } from "./seams.js";
+import { objectPoseNue } from "./content-placement.js";
 import { wireStationGuide } from "./station-guide.js";
 import type { TourSession } from "./tour-session.js";
 import {
@@ -535,16 +536,18 @@ describe("after a code-set zero the content shows on the first voted lock (no co
   }, 60_000);
 
   // Why (r857 milestone review #1, now the other way round): the stations
-  // waited with the content; with no wait, a station on the scanned code is
-  // found on the very lock that places the tour.
-  it("finds the station on the scanned code on the first voted lock", async () => {
+  // waited with the content; with no wait, a station at the scanned code is
+  // found on the very lock that places the tour. Since D16 (tour editor
+  // plan 2026-10-17-1816) by its radius on the code-placed position, which
+  // the lock's re-judge reads - never by the lock itself.
+  it("finds the station at the scanned code on the first voted lock, by its radius", async () => {
     const s = await visitorSession(8, false);
-    const levelId = [...s.ctx.currentLevels!.keys()][0]!;
+    const levelGeo = [...s.ctx.currentLevels!.values()][0]!.qr.geo!;
     const stations: readonly TourStation[] = [
       {
         id: "tower",
         title: "TOWER",
-        anchor: { code: levelId },
+        anchor: { geo: levelGeo },
         activateRadiusM: 30,
         foundRadiusM: 5,
         hint: "arrow",
@@ -563,24 +566,30 @@ describe("after a code-set zero the content shows on the first voted lock (no co
         line: { textContent: "", hidden: true },
         skip: { textContent: "", hidden: true },
       },
-      tour: () => ({
-        stations,
-        order: "fixed",
-        levels: s.ctx.currentLevels,
-      }),
+      tour: () => ({ stations, order: "fixed" }),
       // The page's own gate (`visitor-stations.ts`).
       placementAllowed: () => stationPlacementAllowed(s.ctx, "visitor"),
       zero: () => selectZeroReference(s.arStore.getState()),
-      visitor: () => ({ nue: null, accuracyM: null, fixNue: null }),
-      isIgnoredCode: () => false,
+      // The phone at the code, once the code has placed it (an alignment
+      // and a zero); no device fix at any point.
+      visitor: () => {
+        const state = s.arStore.getState();
+        const zero = selectZeroReference(state);
+        const placed = selectAlignmentMatrix(state) !== null && zero !== null;
+        return {
+          nue: placed ? objectPoseNue(levelGeo, zero).positionNue : null,
+          accuracyM: null,
+          fixNue: null,
+        };
+      },
       startHud: () => null,
       now: () => s.clock.nowMs,
       onFound: (station) => {
         found.push({ id: station.id, locks: s.ctx.viewerVotedLocks });
       },
     });
-    s.hooks.stationCodeLocked = (id) => {
-      guide.codeLocked(id);
+    s.hooks.stationCodeLocked = () => {
+      guide.codeLocked();
     };
     s.clock.nowMs = T0 + 500;
     expect(await firstVotedLock(s)).toBe(1);
