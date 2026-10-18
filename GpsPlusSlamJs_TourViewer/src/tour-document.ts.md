@@ -137,12 +137,12 @@ different times (a walk's move lands only after the page wrote both files).
 - `isDocumentEdit(action)` - the actions a draft follows (not `saved`, not
   `opened`).
 - The rules the reducers keep, exported so a page asks first and says why
-  in its own words (`editor-session.ts`'s refusals): `fitsStation(geo,
-stationId, stations)` (the format's `TOUR_ITEM_MAX_OFFSET_M` per axis;
-  true for a station the document does not carry), `objectFits(state,
-object)` (its own station, or the one its id stands in), `canPlace(state,
-object)` (an id the tour does not carry, within reach) and
-  `canStep(state)` (no save queued or running).
+  in its own words (`editor-session.ts`'s refusals): `objectFits(state,
+object)` (within the format's `TOUR_ITEM_MAX_OFFSET_M` per axis of its
+  own station, or of the one its id stands in; true for a station the
+  document does not carry), `canPlace(state, object)` (an id the tour does
+  not carry, within reach) and `canStep(state)` (no save queued or
+  running). The per-station test under `objectFits` is module-private.
 
 ## Invariants & assumptions
 

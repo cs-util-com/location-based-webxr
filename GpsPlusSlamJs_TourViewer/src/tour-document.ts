@@ -326,8 +326,9 @@ export function unsavedEntries(state: TourDocumentState): EditEntry[] {
 /** Whether `geo` fits the frame of the station `stationId` names, as the
  *  format bounds it (`TOUR_ITEM_MAX_OFFSET_M` per axis); true for a
  *  station the document does not carry (a write recreates that one where
- *  the object stands, `tour-content.ts`). */
-export function fitsStation(
+ *  the object stands, `tour-content.ts`). Module-private: a page asks
+ *  `objectFits` or `canPlace`. */
+function fitsStation(
   geo: TourObject["geo"],
   stationId: string | undefined,
   stations: readonly StationFrame[],
