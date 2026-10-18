@@ -213,11 +213,11 @@ M4 settles every code of the book, not only the one in hand.
       distance. Only objects not yet in a station (placed on this device,
       not yet written) are judged one by one. Claims are per object id
       and per `station:<id>`.
-    - **Known gap (filed):** the draft keeps the items' moved world poses
-      but not the station's move. After a crash before the Finish, a
-      restored draft therefore re-expresses those items in their unmoved
-      station: they stand in the right place, but their local poses
-      change.
+    - **The draft keeps the station's move** (tour editor plan §19 #1):
+      the document's listener writes the moved poses into the draft's
+      settings record (`creator-draft.ts`), and a restore moves the frame
+      before its items' records land in it - the items keep their local
+      poses across a crash.
     - A settle redone after a failed Finish re-applies the decision it
       already made (`appliedCode`): the objects are not moved twice and the
       visit log keeps the saved pose.

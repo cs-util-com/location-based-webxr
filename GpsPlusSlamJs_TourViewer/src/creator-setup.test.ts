@@ -41,7 +41,8 @@ import {
 } from "./draft-persistence.js";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { ObjectListHandlers } from "./object-list.js";
-import { asHosted, tourOf } from "./test-support/v3-tour.js";
+import { asHosted, stationIdOf, tourOf } from "./test-support/v3-tour.js";
+import { SETTINGS_KEY } from "./tour-document-draft.js";
 
 /** One fake element: the properties this module writes, and a click it can
  *  be told to fire. Not a DOM stand-in - only what `creator-setup` uses. */
@@ -1726,5 +1727,137 @@ describe("a draft with several codes (code book plan M4c-1)", () => {
     };
     expect(meta.level).toEqual(b);
     expect(meta.levels).toEqual([a, b]);
+  });
+});
+
+describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", () => {
+  // Why these tests matter: a station moved with its re-measured code
+  // moves rigidly with its items (D17). The draft used to keep only the
+  // items' records, so a reload put them back at their moved spots inside
+  // the UNMOVED station - a tour that no longer matched what the creator
+  // saw. The pose now lives in the draft's settings record, as on the
+  // desktop, and a restore moves the frame before its items land in it.
+  const HOSTED = pin("hosted");
+  const STATION = stationIdOf("hosted");
+  const MOVED = {
+    lat: 47.5001,
+    lon: 8.7001,
+    alt: 401,
+    rotation: [0, 0, 0, 1] as [number, number, number, number],
+  };
+  const PUBLISHED = tourOf([HOSTED]);
+  const openedPoses = PUBLISHED.stations.map(({ id, geo }) => ({ id, geo }));
+  const record = (stations: readonly { id: string; geo: unknown }[]) =>
+    JSON.stringify({ needsNoGps: false, stations });
+  const metaOnly = () => ({
+    [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+  });
+
+  /** The tour opened on `store` in a fresh page, its draft read. */
+  async function opened(store: DraftFileStore) {
+    const page = wire(store);
+    page.ctx.tourDocument.open(PUBLISHED);
+    page.dom.draftOffer.hidden = true;
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    return page;
+  }
+
+  const stationGeo = (page: ReturnType<typeof wire>) =>
+    page.ctx.tourDocument.state().stations.find((s) => s.id === STATION)?.geo;
+
+  it("writes the moved station's pose into the draft's settings record", async () => {
+    const { store, files } = memoryStore(metaOnly());
+    const page = await opened(store);
+    page.ctx.tourDocument.moveStation(STATION, MOVED, "a station");
+    await settle();
+
+    const stored = JSON.parse(String(files.get(SETTINGS_KEY))) as {
+      stations?: { id: string; geo: unknown }[];
+    };
+    expect(stored.stations?.find((s) => s.id === STATION)?.geo).toEqual(MOVED);
+  });
+
+  it("puts the moved station back on a reload, its item inside it", async () => {
+    const { store } = memoryStore(metaOnly());
+    const first = await opened(store);
+    first.ctx.tourDocument.moveStation(STATION, MOVED, "a station");
+    await settle();
+    const movedItem = first.ctx.tourDocument
+      .objects()
+      .find((o) => o.object.id === "hosted")?.object;
+
+    const later = await opened(store);
+    expect(later.dom.draftOffer.hidden, "the move is offered").toBe(false);
+    later.dom.draftRestore.click();
+
+    expect(stationGeo(later), "the frame moved back").toEqual(MOVED);
+    expect(
+      later.ctx.tourDocument.objects().find((o) => o.object.id === "hosted")
+        ?.object.geo,
+      "the item stands where the moved station put it",
+    ).toEqual(movedItem?.geo);
+  });
+
+  it("offers a record whose only change is a station's pose, and keeps it", async () => {
+    const { store, files } = memoryStore({
+      ...metaOnly(),
+      [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]),
+    });
+    const page = await opened(store);
+
+    expect(page.dom.draftOffer.hidden, "a moved station is work").toBe(false);
+    expect(page.dom.draftOfferText.textContent).toContain("1 change");
+    expect(files.has(SETTINGS_KEY), "and it is not swept").toBe(true);
+    page.dom.draftRestore.click();
+    expect(stationGeo(page)).toEqual(MOVED);
+  });
+
+  it("removes a record the opened tour already carries, as spent", async () => {
+    const { store, files } = memoryStore({
+      ...metaOnly(),
+      [SETTINGS_KEY]: record(openedPoses),
+    });
+    const page = await opened(store);
+
+    expect(page.dom.draftOffer.hidden).toBe(true);
+    expect(files.has(SETTINGS_KEY)).toBe(false);
+  });
+
+  it("removes the record with the draft on Delete it", async () => {
+    const { store, files } = memoryStore({
+      ...metaOnly(),
+      [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]),
+    });
+    const page = await opened(store);
+    page.dom.draftDiscard.click();
+    await settle();
+
+    expect(files.has(SETTINGS_KEY)).toBe(false);
+    expect(stationGeo(page), "nothing moved").toEqual(
+      PUBLISHED.stations[0]?.geo,
+    );
+  });
+
+  it("keeps a station this page moved over the draft's older pose", async () => {
+    // Live work is newer than any draft (as for objects, M4 review #2):
+    // a station moved before the draft opened is written over the stored
+    // record, and a restore does not move it back.
+    const OLDER = { ...MOVED, lat: 47.5002 };
+    const { store, files } = memoryStore({
+      ...metaOnly(),
+      [SETTINGS_KEY]: record([{ id: STATION, geo: OLDER }]),
+    });
+    const page = wire(store);
+    page.ctx.tourDocument.open(PUBLISHED);
+    page.ctx.tourDocument.moveStation(STATION, MOVED, "a station");
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+
+    const stored = JSON.parse(String(files.get(SETTINGS_KEY))) as {
+      stations?: { id: string; geo: unknown }[];
+    };
+    expect(stored.stations?.find((s) => s.id === STATION)?.geo).toEqual(MOVED);
+    expect(stationGeo(page)).toEqual(MOVED);
   });
 });

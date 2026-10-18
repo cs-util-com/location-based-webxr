@@ -42,7 +42,14 @@ import {
 } from "./draft-persistence.js";
 import type { CreatorCodes } from "./creator-codes.js";
 import { createKeyedChain } from "./keyed-chain.js";
-import type { TourSettingsRecord } from "./tour-document-draft.js";
+import type { StationPose } from "./tour-document.js";
+import {
+  changedStations,
+  parseSettingsRecord,
+  settingsRecord,
+  SETTINGS_KEY,
+  type TourSettingsRecord,
+} from "./tour-document-draft.js";
 import type { TourSession } from "./tour-session.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
 import type { VisitLog, VisitLogEntry } from "./visit-log.js";
@@ -96,8 +103,9 @@ export interface CreatorDraft {
   ): Promise<boolean>;
   /** Remove object `id`'s draft files, after any write queued for it. */
   forgetObject(id: string): Promise<void>;
-  /** The tour document's settings record (`tour-document-draft.ts`):
-   *  not kept on this page yet - true, nothing written. */
+  /** Write the tour document's settings record (`tour-document-draft.ts`:
+   *  the moved stations' poses, the details once set), in its own queue.
+   *  True with no tour's draft open yet (`present` writes it then). */
   saveSettings(settings: TourSettingsRecord): Promise<boolean>;
   /** Say, once, that this device keeps no backup copy. */
   warnNoBackup(): void;
@@ -219,6 +227,11 @@ export function wireCreatorDraft(deps: {
   function objectChainKey(tourUrl: string, id: string): string {
     return JSON.stringify(["object", draftKeyForTour(tourUrl), id]);
   }
+  /** The settings record's queue: one file, written whole each time, so a
+   *  later write must land after an earlier one. */
+  function settingsChainKey(tourUrl: string): string {
+    return JSON.stringify(["settings", draftKeyForTour(tourUrl)]);
+  }
 
   /** The creator-facing url of the open tour, for later draft writes. */
   let draftTourUrl: string | null = null;
@@ -247,6 +260,10 @@ export function wireCreatorDraft(deps: {
     counts: { placed: number; changed: number };
     /** The draft's AR visits (M3b), for the summary after Finish. */
     visits: readonly VisitLogEntry[];
+    /** The station poses the settings record holds that differ from the
+     *  opened tour's (D17): a restore moves those frames first, so their
+     *  items' records land inside them. */
+    stations: readonly StationPose[];
   } | null = null;
   /**
    * The stored draft's codes while they are not this page's (M6 E2c review
@@ -331,6 +348,30 @@ export function wireCreatorDraft(deps: {
       return;
     }
     writeVisit(store, tourUrl, entry);
+  }
+
+  /** The settings record's write in its queue: the whole record, or its
+   *  removal (`null`). */
+  function writeSettings(
+    store: DraftFileStore,
+    tourUrl: string,
+    record: TourSettingsRecord | null,
+  ): Promise<boolean> {
+    return draftWrites
+      .run(settingsChainKey(tourUrl), () =>
+        record === null
+          ? store.remove(SETTINGS_KEY).then(() => true)
+          : store.put(SETTINGS_KEY, JSON.stringify(record)),
+      )
+      .catch(() => false);
+  }
+
+  /** This page changed the tour's settings since the open (a station
+   *  moved, the details set): its record is live work, newer than any
+   *  draft's. */
+  function settingsLive(): boolean {
+    const { touched } = ctx.tourDocument.state();
+    return touched.stations || touched.details || touched.needsNoGps;
   }
 
   function writeVisit(
@@ -509,8 +550,14 @@ export function wireCreatorDraft(deps: {
       ...ctx.tourDocument.deleted(),
     ]);
     const objects = waiting.objects.filter((o) => !live.has(o.id));
+    // The frames before the objects, whose records stand in them - unless
+    // a frame was moved here meanwhile: live work wins (as on the desktop).
+    const stations = ctx.tourDocument.state().touched.stations
+      ? []
+      : waiting.stations;
     ctx.tourDocument.restore(
       {
+        ...(stations.length === 0 ? {} : { stations }),
         objects,
         // The deletions come back as the tombstones they are (plan §3.4).
         deleted: waiting.deleted.filter((id) => !live.has(id)),
@@ -675,6 +722,9 @@ export function wireCreatorDraft(deps: {
         return;
       }
       for (const id of rejectedIds) sweepRejected(store, tourUrl, id);
+      // The record goes with the draft - unless this page changed the
+      // settings since the open: then the file is that live work's.
+      if (!settingsLive()) void writeSettings(store, tourUrl, null);
     })();
   });
 
@@ -747,6 +797,18 @@ export function wireCreatorDraft(deps: {
           if (!ok) noteNoPersistence();
         });
       }
+      // And the settings this page changed (a station moved before the
+      // draft opened), for the same reason.
+      const live = settingsLive();
+      if (live) {
+        void writeSettings(
+          store,
+          tourUrl,
+          settingsRecord(ctx.tourDocument.state()),
+        ).then((ok) => {
+          if (!ok) noteNoPersistence();
+        });
+      }
       if (stored === undefined) {
         // No draft yet, but there will be: record what is already known,
         // so a crash before the first placement still leaves the tour and
@@ -773,6 +835,23 @@ export function wireCreatorDraft(deps: {
       }
       const waiting = draftObjectsNotYetHosted(stored.draft, opened);
       const waitingDeletions = draftDeletionsNotYetHosted(stored.draft, opened);
+      // The station poses the record holds that the opened tour does not
+      // (D17): work like any other, so the draft is not spent while one
+      // is waiting. Live work outranks the record (it rewrote it above).
+      const settings = live
+        ? undefined
+        : parseSettingsRecord(await store.getText(SETTINGS_KEY));
+      if (stale()) return;
+      const openedStations = (opened?.stations ?? []).map(({ id, geo }) => ({
+        id,
+        geo,
+      }));
+      const moved = new Set(
+        changedStations(settings?.stations, openedStations),
+      );
+      const waitingStations = (settings?.stations ?? []).filter((p) =>
+        moved.has(p.id),
+      );
       // What the hosted zip stores for each of the draft's codes (M4c-1):
       // the content, read one by one like the one level was.
       const hostedTexts = new Map<string, string | null>();
@@ -783,6 +862,7 @@ export function wireCreatorDraft(deps: {
         hostedTexts.get(id) ?? null;
       if (stale()) return;
       if (
+        waitingStations.length === 0 &&
         draftIsSpent(stored.draft, opened, hostedLevel, stored.visits.length)
       ) {
         // SPENT: the hosted zip carries every object AND the measurement,
@@ -826,6 +906,10 @@ export function wireCreatorDraft(deps: {
         }
         if (stale()) return;
         for (const id of sweep) sweepRejected(store, tourUrl, id);
+        // The record is spent too: the opened tour carries its poses. Not
+        // when this page wrote its own (live) - and `settingsLive` asked
+        // again, a station may have moved during the awaits.
+        if (!live && !settingsLive()) void writeSettings(store, tourUrl, null);
         return;
       }
       // The draft stays: records the hosted zip already carries get their
@@ -844,10 +928,14 @@ export function wireCreatorDraft(deps: {
       const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
       // New placements, and changes of objects the hosted zip carries.
       const hosted = hostedObjects(opened);
-      const changed = waiting.filter(
+      const edits = waiting.filter(
         (o) => hosted.key(o.id) !== undefined,
       ).length;
-      const counts = { placed: waiting.length - changed, changed };
+      // A moved station is one change, as on the desktop.
+      const counts = {
+        placed: waiting.length - edits,
+        changed: edits + waitingStations.length,
+      };
       // A level measured before this open is newer than the offered
       // draft's and would otherwise live only in memory; a mint after the
       // open would write it the same way.
@@ -868,6 +956,7 @@ export function wireCreatorDraft(deps: {
         deleted: waitingDeletions,
         counts,
         visits: stored.visits,
+        stations: waitingStations,
       };
       dom.draftOfferText.textContent = restoreOfferText(
         counts.placed,
@@ -969,9 +1058,20 @@ export function wireCreatorDraft(deps: {
     },
     warnNoBackup: noteNoPersistence,
     persists: () => !warnedAboutPersistence,
-    // The station poses' record arrives with their restore (the phone
-    // adoption's next step); until then a station move is kept as its
-    // items' records, as before.
-    saveSettings: () => Promise.resolve(true),
+    saveSettings: (settings) => {
+      const store = draftStore;
+      const tourUrl = draftTourUrl;
+      // No draft namespace yet: `present` writes the record when it
+      // opens, as it does the objects - nothing failed.
+      if (tourUrl === null) return Promise.resolve(true);
+      if (store === undefined) {
+        noteNoPersistence();
+        return Promise.resolve(false);
+      }
+      return writeSettings(store, tourUrl, settings).then((ok) => {
+        if (!ok) noteNoPersistence();
+        return ok;
+      });
+    },
   };
 }

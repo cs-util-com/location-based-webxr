@@ -15,6 +15,14 @@ after the reducer, never from `store.subscribe`.
   shape).
 - `TourDocumentDraft` - `DraftObjectWrites` (`draft-actions.ts`) plus
   `saveSettings(record)`.
+- `SETTINGS_KEY` (`"settings"`) - the record's file in a draft
+  namespace, on both pages; `readDraft` skips it.
+- `parseSettingsRecord(text)` - a stored record, or undefined when it does
+  not read (a bad station pose or detail costs the record, never the
+  objects beside it).
+- `changedStations(wanted, against)` - the ids of `wanted`'s stations
+  whose pose differs from `against`'s; none without an opinion, none for a
+  station `against` does not carry.
 - `settingsRecord(state)` - the record as the document holds it: the
   details only once `detailsRecorded`, the station poses (every station's,
   in the document's order) only once `stationsRecorded`.
@@ -62,5 +70,8 @@ const stop = store.listenToDocument({
   the settings record with and without details, the station poses once a
   station moved (review #1), nothing for a save landing
   or across an open.
+- The record's reading and comparing, through both drafts:
+  `editor/editor-draft.test.ts` and `creator-setup.test.ts` "the draft
+  keeps a moved station's pose".
 - Through the editor: `editor/editor-session.test.ts` and the parity
   contract `tour-document-parity.test.ts` (the draft records compared).

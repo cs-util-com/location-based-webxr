@@ -56,8 +56,6 @@
  */
 
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
-import { parseGeoPose } from "gps-plus-slam-app-framework/ar/qr/geo-pose";
-import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import {
   tourItems,
   type TourManifest,
@@ -96,6 +94,11 @@ import {
 import { createKeyedChain } from "../keyed-chain.js";
 import type { EditorLock } from "./save-target.js";
 import type { StationPose } from "../tour-document.js";
+import {
+  changedStations,
+  parseSettingsRecord,
+  SETTINGS_KEY,
+} from "../tour-document-draft.js";
 
 /** The tour-level settings the editor changes (QR-first M1b-2): what the
  *  draft's settings record holds. */
@@ -110,27 +113,6 @@ export interface EditorTourSettings {
    *  Absent: no opinion about them. A pose for a station the file does not
    *  carry is no change. */
   readonly stations?: readonly StationPose[];
-}
-
-/** The ids of `wanted`'s stations whose pose differs from the one
- *  `against` gives them; none without an opinion, and none for a station
- *  `against` does not carry (nothing a restore could move). */
-function changedStations(
-  wanted: readonly StationPose[] | undefined,
-  against: readonly StationPose[] | undefined,
-): string[] {
-  if (wanted === undefined) return [];
-  const poses = new Map((against ?? []).map((p) => [p.id, p.geo]));
-  return wanted
-    .filter((p) => {
-      const there = poses.get(p.id);
-      return there !== undefined && !sameGeo(there, p.geo);
-    })
-    .map((p) => p.id);
-}
-
-function sameGeo(a: QrGeoPose, b: QrGeoPose): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /** One of the details' fields (`tour-details-form.ts`), in the order the
@@ -178,10 +160,6 @@ function sameRecord(
   if (JSON.stringify(a.stations) !== JSON.stringify(b.stations)) return false;
   return changedDetails(a.details, b.details).length === 0;
 }
-
-/** The settings record's file in a namespace. Not a prefix the phone's
- *  `readDraft` reads, so the shared reader skips it. */
-const SETTINGS_KEY = "settings";
 
 /** The setting's name as the page shows it (`edit.html`). */
 const NO_GPS_LABEL = '"This tour needs no GPS"';
@@ -355,74 +333,6 @@ function settingsOf(manifest: TourManifest): EditorTourSettings {
     details: detailsOf(manifest),
     stations: manifest.stations.map(({ id, geo }) => ({ id, geo })),
   };
-}
-
-/** A stored record's station poses: undefined when absent, null when they
- *  do not read (each an id and a geo pose the format accepts). */
-function parseStations(value: unknown): StationPose[] | undefined | null {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value)) return null;
-  const poses: StationPose[] = [];
-  for (const item of value as unknown[]) {
-    if (item === null || typeof item !== "object") return null;
-    const { id, geo } = item as Record<string, unknown>;
-    if (typeof id !== "string") return null;
-    try {
-      poses.push({
-        id,
-        geo: parseGeoPose(geo, {
-          path: "stations.geo",
-          fail: (message) => {
-            throw new Error(message);
-          },
-        }),
-      });
-    } catch {
-      return null;
-    }
-  }
-  return poses;
-}
-
-/** A stored record's details: undefined when absent, null when they do
- *  not read (a known field that is not a string). */
-function parseDetails(value: unknown): TourDetailFields | undefined | null {
-  if (value === undefined) return undefined;
-  if (value === null || typeof value !== "object") return null;
-  const record = value as Record<string, unknown>;
-  const details: Partial<Record<DetailField, string>> = {};
-  for (const field of DETAIL_FIELDS) {
-    const text = record[field];
-    if (text === undefined) continue;
-    if (typeof text !== "string") return null;
-    details[field] = text;
-  }
-  return details;
-}
-
-/** A stored settings record; undefined for anything that does not read
- *  (a record that does not read costs itself). */
-function parseSettings(
-  text: string | undefined,
-): EditorTourSettings | undefined {
-  if (text === undefined) return undefined;
-  try {
-    const value: unknown = JSON.parse(text);
-    if (value === null || typeof value !== "object") return undefined;
-    const record = value as Record<string, unknown>;
-    const { needsNoGps } = record;
-    const details = parseDetails(record["details"]);
-    const stations = parseStations(record["stations"]);
-    if (typeof needsNoGps !== "boolean" || details === null) return undefined;
-    if (stations === null) return undefined;
-    return {
-      needsNoGps,
-      ...(details === undefined ? {} : { details }),
-      ...(stations === undefined ? {} : { stations }),
-    };
-  } catch {
-    return undefined;
-  }
 }
 
 /** Every editor draft's namespace starts with this; the phone's never do
@@ -909,7 +819,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // file does not carry it; spent or unreadable, it goes.
       const settingsText = await store.getText(SETTINGS_KEY);
       if (mine !== generation) return none;
-      const readSettings = parseSettings(settingsText);
+      const readSettings = parseSettingsRecord(settingsText);
       const storedSettings =
         readSettings === undefined
           ? undefined

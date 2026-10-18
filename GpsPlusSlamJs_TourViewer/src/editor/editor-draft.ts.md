@@ -149,8 +149,9 @@ editor's own namespace, one tab at a time. Design:
   that did not land - no longer hides the next edit of such an id (PR #622
   bot finding A).
 - **The settings record (QR-first M1b-2, the draft gap).** One file,
-  `settings`, in the editor's namespace (not a prefix the phone's
-  `readDraft` reads, so the shared reader skips it), in its own queue. The
+  `settings`, in the editor's namespace (`SETTINGS_KEY` and its reader
+  `parseSettingsRecord` are `tour-document-draft.ts`'s, shared with the
+  phone's draft; not a prefix `readDraft` reads), in its own queue. The
   objects' rules, for a boolean: kept while the file on disk differs, or a
   build wrote the other value (a build never put in place); offered by a
   later open whose file does not carry it - read whether or not a meta

@@ -354,8 +354,6 @@ async function phonePage(
   ctx.tourDocument.open(tourOf(OPENED));
   let typedName: string | null = null;
   let draftKey: string | null = null;
-  /** A station moved through the lists: no draft write followed. */
-  let stationMoved = false;
   const setup = wireCreatorSetup({
     ctx,
     mode: "creator",
@@ -435,7 +433,6 @@ async function phonePage(
     moveStation: async (stationId, geo) => {
       // As `creator-settle.ts`'s `moveStationsAlong` moves it once its
       // code was re-measured in AR (the geo is what the AR path computed).
-      stationMoved = true;
       ctx.tourDocument.moveStation(stationId, geo, "a station");
       await flush();
     },
@@ -466,14 +463,7 @@ async function phonePage(
       if (draftKey === null) throw new Error("the phone opened no draft");
       return readRecords(await stores(draftKey), true);
     },
-    reopenRestored: () =>
-      stationMoved
-        ? Promise.reject(
-            new NoSuchOperation(
-              "phone: a station move's draft writes run in its AR path (creator-settle), which this contract does not drive",
-            ),
-          )
-        : phonePage(file, stores, true),
+    reopenRestored: () => phonePage(file, stores, true),
   };
 }
 
@@ -603,8 +593,6 @@ const ROWS: readonly Row[] = [
     // moved spots inside the unmoved station.
     name: "move a station, reload and restore the draft, save",
     records: false,
-    diverges:
-      "the phone's station move writes its draft only in AR (creator-settle), which this contract cannot drive, and that draft keeps no station pose (the phone adoption: the tour document's settings record)",
     run: async (p) => {
       await p.moveStation("st-a", {
         lat: NORTH,

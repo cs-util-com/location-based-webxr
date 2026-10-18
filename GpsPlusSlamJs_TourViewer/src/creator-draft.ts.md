@@ -37,9 +37,11 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     seen version: the tour document's listener writes every change through
     it (`creator-setup.ts` hands `draftObjectWrites(draft)` to
     `ctx.tourDocument.follow`).
-  - `saveSettings(record)` - the document's settings record (the tour's
-    setting, details and moved stations); the phone keeps none yet, so it
-    reports success without a write.
+  - `saveSettings(record)` - writes the document's settings record (the
+    tour's setting, details and moved stations; `SETTINGS_KEY`, the
+    desktop's file name and shape, `tour-document-draft.ts`) whole, in its
+    own queue; true before the namespace opens (`present` writes this
+    page's then), false where the tour has no store.
   - `finished(ids, written)` - `creator-finish.ts` after a Finish wrote
     these objects: their versions in `written` are this device's own work.
     The ids (all of this load's Finishes) are kept for `uploaded`.
@@ -194,6 +196,33 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   resolves true the moment a download starts, and the creator still has to
   upload the file by hand afterwards.
 
+## The settings record (tour editor plan §19 #1)
+
+The tour document's settings record (`tour-document-draft.ts`: the
+setting, the details once set, every station's pose once one moved) is
+one file, `settings` (`SETTINGS_KEY`), in the tour's namespace - the
+desktop's name and shape (`editor/editor-draft.ts`), read by the same
+`parseSettingsRecord`. The document's listener writes it whole on each
+change, in its own queue. The phone reads only its STATION POSES back:
+
+- **Offered**: the poses that differ from the opened tour's
+  (`changedStations`) are work like any object - the draft is not spent
+  while one waits, and each moved station counts as one change in the
+  offer.
+- **Restored** frames first (the slice's `restored` moves them before the
+  objects), so the moved items' records land inside their moved stations -
+  unless a station was moved here meanwhile: live work wins.
+- **Live work outranks it**: settings changed on this page before the
+  draft opened (`touched`) are written after the read, and the stored
+  record is then neither offered nor removed.
+- **Removed** with a spent draft (after its meta commit) and by "Delete
+  it" (after the rejection lands), unless this page changed the settings
+  since the open. An interrupted removal is safe: a record the opened tour
+  carries is spent again at the next open.
+- The record's details and setting are not offered on the phone (it edits
+  only the tour's name, plan W2; its "needs no GPS" is the editor's,
+  Q-QF-1).
+
 ## Visits in the draft (authoring plan 2026-09-28-0953 M3b)
 
 - Each entry is written to the draft as its own file (`writeDraftVisit`,
@@ -214,7 +243,8 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
 
 Composed, through `wireCreatorSetup` and unchanged by the split:
 `creator-setup.test.ts` (the offer, its three answers, the ordered writes,
-the claims and sweeps), `creator-finish.test.ts` and
+the claims and sweeps; "the draft keeps a moved station's pose" for the
+settings record), `creator-finish.test.ts` and
 `authoring-settle.test.ts` (the meta a mint or settle writes, the backup
 notice), plus the draft e2e specs. The pure rules are in
 `authoring-draft.test.ts` and the on-disk shape in

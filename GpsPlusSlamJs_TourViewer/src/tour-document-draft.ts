@@ -10,10 +10,12 @@
  * @see tour-document-draft.ts.md
  */
 
+import { parseGeoPose } from "gps-plus-slam-app-framework/ar/qr/geo-pose";
+import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import { objectContentKey } from "./authoring-draft.js";
 import type { DraftObjectWrites } from "./draft-actions.js";
 import type { EditEntry } from "./object-edits.js";
-import type { TourDetailFields } from "./tour-details-form.js";
+import { DETAIL_FIELDS, type TourDetailFields } from "./tour-details-form.js";
 import type { StationPose, TourDocumentState } from "./tour-document.js";
 
 /** The tour-level settings a draft keeps: the setting, and the details
@@ -27,6 +29,101 @@ export interface TourSettingsRecord {
    *  milestone review #1 - the objects alone came back at the moved spots
    *  inside unmoved stations). */
   readonly stations?: readonly StationPose[];
+}
+
+/** The settings record's file in a draft namespace, on both pages. Not a
+ *  prefix `readDraft` (`draft-persistence.ts`) reads, so the objects'
+ *  reader skips it. */
+export const SETTINGS_KEY = "settings";
+
+/** The ids of `wanted`'s stations whose pose differs from the one
+ *  `against` gives them; none without an opinion, and none for a station
+ *  `against` does not carry (nothing a restore could move). */
+export function changedStations(
+  wanted: readonly StationPose[] | undefined,
+  against: readonly StationPose[] | undefined,
+): string[] {
+  if (wanted === undefined) return [];
+  const poses = new Map((against ?? []).map((p) => [p.id, p.geo]));
+  return wanted
+    .filter((p) => {
+      const there = poses.get(p.id);
+      return there !== undefined && !sameGeo(there, p.geo);
+    })
+    .map((p) => p.id);
+}
+
+function sameGeo(a: QrGeoPose, b: QrGeoPose): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** A stored record's station poses: undefined when absent, null when they
+ *  do not read (each an id and a geo pose the format accepts). */
+function parseStations(value: unknown): StationPose[] | undefined | null {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return null;
+  const poses: StationPose[] = [];
+  for (const item of value as unknown[]) {
+    if (item === null || typeof item !== "object") return null;
+    const { id, geo } = item as Record<string, unknown>;
+    if (typeof id !== "string") return null;
+    try {
+      poses.push({
+        id,
+        geo: parseGeoPose(geo, {
+          path: "stations.geo",
+          fail: (message) => {
+            throw new Error(message);
+          },
+        }),
+      });
+    } catch {
+      return null;
+    }
+  }
+  return poses;
+}
+
+/** A stored record's details: undefined when absent, null when they do
+ *  not read (a known field that is not a string). */
+function parseDetails(value: unknown): TourDetailFields | undefined | null {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const details: Partial<Record<(typeof DETAIL_FIELDS)[number], string>> = {};
+  for (const field of DETAIL_FIELDS) {
+    const text = record[field];
+    if (text === undefined) continue;
+    if (typeof text !== "string") return null;
+    details[field] = text;
+  }
+  return details;
+}
+
+/** A stored settings record (`SETTINGS_KEY`'s text); undefined for
+ *  anything that does not read (a record that does not read costs
+ *  itself, never the objects beside it). */
+export function parseSettingsRecord(
+  text: string | undefined,
+): TourSettingsRecord | undefined {
+  if (text === undefined) return undefined;
+  try {
+    const value: unknown = JSON.parse(text);
+    if (value === null || typeof value !== "object") return undefined;
+    const record = value as Record<string, unknown>;
+    const { needsNoGps } = record;
+    const details = parseDetails(record["details"]);
+    const stations = parseStations(record["stations"]);
+    if (typeof needsNoGps !== "boolean" || details === null) return undefined;
+    if (stations === null) return undefined;
+    return {
+      needsNoGps,
+      ...(details === undefined ? {} : { details }),
+      ...(stations === undefined ? {} : { stations }),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 /** Where a page backs its edits up: the objects' writes the pages share
