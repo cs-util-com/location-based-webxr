@@ -10,7 +10,7 @@ troubleshooting recording's record of each placement. Split out of
 
 ## Public API
 
-- `wireCreatorPlacement({ ctx, arStore, arController, seams, dom, alignmentPicks, draft, previews, alignmentInfo, sizeOf, settledVisit, lateArrival, render }): CreatorPlacement`
+- `wireCreatorPlacement({ ctx, arStore, arController, seams, dom, alignmentPicks, draft, previews, alignmentInfo, sizeOf, settledVisit, lateArrival, stationOf?, render }): CreatorPlacement`
   - `dom` (`CreatorPlacementDom`): `pinButton`, `pinLabel`, `pinSave`,
     `pinCancel`, `photoButton`, whose clicks this module handles.
   - `seams`: `getArWorldGroup` (the odometry frame a placement is kept
@@ -18,6 +18,12 @@ troubleshooting recording's record of each placement. Split out of
   - `settledVisit(visit)` - the settle record of a visit that already
     settled; `lateArrival(visit, photo)` logs a photo minted through it as
     that settle's late arrival (`creator-settle.ts` owns the settle).
+  - `stationOf(id)` (optional, tour editor plan 2026-10-17-1816 W3 "AR
+    authoring") - where the just-placed object went among the stations,
+    as `creator-stations.ts` words it ("it starts Station 2", "in
+    Station 1"), or null. The pin's and the photo's note carry it after
+    "placed" (`Pin "Gate" placed - in Station 1 · ...`); absent or null,
+    the note names no station.
 - `CreatorPlacement`:
   - `allowed()` - the gate below, re-checked at every tap; the object
     list asks it too.

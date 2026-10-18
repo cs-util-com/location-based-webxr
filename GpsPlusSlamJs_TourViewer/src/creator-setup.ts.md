@@ -73,10 +73,13 @@ were here. What stays is the Finish's side:
     `draft-store-root.ts`'s `openDraftStore(navigator, key)`. The object
     list's four draft writes are `draft-actions.ts`'s `draftObjectWrites`
     over the creator draft (M6 E2c).
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; stationChip?; }`
     - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
       `object-list.ts` view (`bind`, `render`); `main.ts` builds it over
       `#object-list` inside the panel.
+    - `stationChip` (optional; tour editor plan 2026-10-17-1816, W3 "AR
+      authoring") - the open station's line, `#creator-station` just
+      above the chips; absent (node tests), a detached stand-in.
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not
@@ -92,7 +95,11 @@ were here. What stays is the Finish's side:
     so nothing reset after it reads the closing tour's codes), `presentDraftForTour` (a tour
     opened AND its manifest settled - "spent" is a question about that
     manifest, so it cannot be asked earlier), `beginAuthorVisit`,
-    `endAuthorVisit`, `finishNow` (polish round M3, Q-Done: the creator's
+    `endAuthorVisit` (it also ends the stations' line and ring),
+    `tickStations` (every camera frame in a creator's session: the open
+    station's line and ring through `creator-stations.ts`, which reads the
+    working copy through the Finish's own writer and keeps no state of its
+    own; a visitor's page does nothing), `finishNow` (polish round M3, Q-Done: the creator's
     Done in AR starts a Finish through `CreatorFinish.start`, or, while a
     code is being measured, keeps the session, LEADS the status with "the
     tour saves as soon as it is measured" (first, so AR's two-line clamp

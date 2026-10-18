@@ -1748,6 +1748,22 @@
       body[data-mode="creator"][data-ar-active="true"] #setup-controls[hidden] {
         display: none;
       }
+      /* The open station (tour editor plan 2026-10-17-1816, W3 "AR
+         authoring"): one line just above the chips, in H1's dark card
+         look, saying which station the creator is in. */
+      body[data-mode="creator"][data-ar-active="true"] #creator-station {
+        order: 5;
+        align-self: center;
+        max-width: 100%;
+        margin: 0;
+        padding: 6px 14px;
+        border-radius: 999px;
+        background: rgb(20 22 26 / 66%);
+        color: #fff;
+        font-size: 14px;
+        line-height: 1.35;
+        text-align: center;
+      }
       body[data-mode="creator"][data-ar-active="true"] #setup-pin,
       body[data-mode="creator"][data-ar-active="true"] #setup-photo {
         display: inline-flex;
@@ -3618,6 +3634,15 @@
                   ></button>
                 </div>
                 <div id="setup-status" data-testid="setup-status"></div>
+                <!-- The open station in AR (tour editor plan 2026-10-17-1816,
+                 W3 "AR authoring"): which station the creator stands in,
+                 written by creator-stations.ts on each camera frame. -->
+                <p
+                  id="creator-station"
+                  data-testid="creator-station"
+                  role="status"
+                  hidden
+                ></p>
                 <div id="setup-controls" data-testid="setup-controls" hidden>
                   <!-- Placement (M4): a pin at the reticle with a typed label
                    (the input is an overlay control: window.prompt is

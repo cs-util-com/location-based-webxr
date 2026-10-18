@@ -53,6 +53,8 @@ import { wireCreatorPlacement } from "./creator-placement.js";
 import { wireCreatorMeasuring } from "./creator-measuring.js";
 import { wireCreatorSettle } from "./creator-settle.js";
 import { wireCreatorFinish } from "./creator-finish.js";
+import { wireCreatorStations } from "./creator-stations.js";
+import { visitorPosition } from "./visitor-position.js";
 
 import { newObjectId } from "./content-placement.js";
 
@@ -169,6 +171,10 @@ export interface CreatorSetupDom {
   /** The placed objects' list with Edit text, Move and Delete (authoring
    *  plan 2026-09-28-0953 §3.4, M4): `object-list.ts`'s view. */
   objectList: ObjectListView;
+  /** The open station's line above the action strip (tour editor plan
+   *  W3 "AR authoring", `creator-stations.ts`). Absent in the node tests
+   *  that do not need it: a detached stand-in. */
+  stationChip?: Pick<HTMLElement, "textContent" | "hidden">;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -205,6 +211,9 @@ export interface CreatorSetup {
    *  (polish round M3, Q-Done). True when the session stays: a finish
    *  started, or one waits a moment for a code being measured. */
   finishNow: () => boolean;
+  /** Every camera frame of a creator's session: the open station's line
+   *  and ring (`creator-stations.ts`). */
+  tickStations: () => void;
 }
 
 export function wireCreatorSetup(deps: {
@@ -622,6 +631,22 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout();
   }
 
+  /** The creator's stations in AR (tour editor plan W3 "AR authoring"):
+   *  the open one's line and ring, read from the working copy through the
+   *  Finish's own writer - no state of their own. */
+  const stations = wireCreatorStations({
+    ctx,
+    dom: { chip: dom.stationChip ?? { textContent: "", hidden: true } },
+    creatorNue: () =>
+      visitorPosition({
+        alignment: selectAlignmentMatrix(arStore.getState()),
+        arPose: seams.getArPose(),
+        gpsPositions: [],
+      }).nue,
+    zero: () => selectZeroReference(arStore.getState()),
+    scene: () => (creator && sessionLive() ? seams.getScene() : null),
+  });
+
   /** Placing a pin or a photo in AR (`creator-placement.ts`). */
   const placement = wireCreatorPlacement({
     objectSelected: () => editing.selected() !== null,
@@ -639,6 +664,7 @@ export function wireCreatorSetup(deps: {
     lateArrival: (visit, photo) => {
       settle.lateArrival(visit, photo);
     },
+    stationOf: (id) => stations.placedIn(id),
     render: () => {
       renderAuthorReadout();
     },
@@ -756,6 +782,9 @@ export function wireCreatorSetup(deps: {
     },
     codes,
     renderAuthorReadout,
+    tickStations: () => {
+      if (creator) stations.tick();
+    },
     measuredCodeIds: () => codes.ids(),
     leaveNeedsConfirm: () => leaveNeedsConfirm(guardInput()),
     leaveQuestion: () => leaveQuestion(guardInput()),
@@ -788,6 +817,8 @@ export function wireCreatorSetup(deps: {
       doneWaits = false;
       // What the previews were made from, and the earlier visits' frame.
       previews.endVisit();
+      // The open station's line and ring belong to the session.
+      stations.endVisit();
       // An AR selection means nothing on the page.
       editing.reset();
     },
