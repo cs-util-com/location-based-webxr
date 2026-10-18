@@ -141,8 +141,11 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
 - **The setup page's foot** (`#setup-foot`, creator-only, W6, D13): the
   legal notice and the privacy page (`legal.html#notice`,
   `legal.html#privacy`; `legal.html.md`). The intro's "Runs offline once
-  opened" became "Works offline once the tour is loaded": the tour is
-  cached, the page is not (no service worker).
+  opened" became "Works offline once the tour is loaded", and then (the M4b
+  fix re-review #3) "Keeps working without signal once a tour has loaded":
+  the tour is cached, the page is not (no service worker), so nothing on
+  the page promises an offline revisit - the host step says the same, and
+  "Other settings" says the kept tours open faster (`legal.spec.js`).
 - **Step 5 on a computer** (W1, plan review #9): `#measure-desktop` says
   the step runs on site on an Android phone with Chrome and links the
   editor; the same AR check shows it, and on the creator page an

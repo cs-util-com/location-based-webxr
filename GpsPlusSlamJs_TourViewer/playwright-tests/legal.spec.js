@@ -96,11 +96,24 @@ test("the setup page's footer links the legal notice and the privacy page, and i
   await expect(foot.locator('a[href="legal.html#privacy"]')).toHaveText(
     "Privacy",
   );
+  // No service worker: the page itself needs a connection, so only an
+  // open tour keeps working without one (the M4b fix re-review #3, as the
+  // privacy page says). Hidden steps and settings are read as text.
   await expect(page.getByTestId("setup-intro")).toContainText(
-    "Works offline once the tour is loaded",
+    "Keeps working without signal once a tour has loaded",
   );
-  await expect(page.getByTestId("setup-intro")).not.toContainText(
-    "Runs offline once opened",
+  for (const said of [
+    page.getByTestId("setup-intro"),
+    page.getByTestId("step-host"),
+    page.getByTestId("storage-panel"),
+  ]) {
+    await expect(said).not.toContainText(/offline/i);
+  }
+  await expect(page.getByTestId("step-host")).toContainText(
+    "once it has loaded, it keeps working without signal",
+  );
+  await expect(page.getByTestId("storage-panel")).toContainText(
+    "so a revisit opens faster",
   );
   await foot.locator('a[href="legal.html#notice"]').click();
   await expect(page).toHaveURL(/legal\.html#notice$/);
