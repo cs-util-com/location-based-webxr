@@ -127,7 +127,7 @@ scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
     another save landed since the move was built (the page holds saves
     while a move runs). Bringing a moved-out walk back into a tour is a
     later feature; nothing reads the walk's zip yet.
-- `walkFileName`, `NO_WALK`, `WalkMove`.
+- `walkFileName`; the module-private `WalkMove` and `NO_WALK` are read through `moveWalkOut()`.
 - `EditorSession`, `EditorSave`, `EditorSessionDraft`, `TOUR_NAME_MAX_CHARS`; the module-private `CoverChoice` (an image id and its zip entry) and `UndoOutcome` (`undo()` / `redo()`'s result) are read through the session's methods.
 
 ## Invariants & assumptions

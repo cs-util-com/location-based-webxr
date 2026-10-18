@@ -127,7 +127,7 @@ export function walkFileName(tourName: string): string {
 }
 
 /** Said when "Move the walk out" finds no walk in the newest bytes. */
-export const NO_WALK = "This tour carries no walk recording to move out.";
+const NO_WALK = "This tour carries no walk recording to move out.";
 
 /** Said when the recorded photos are still placed by the walk: moving it
  *  out would leave them nowhere (`finish-rebuild.ts`, S1 milestone review
@@ -145,7 +145,7 @@ function walkStaysReason(notPlaced: string | undefined): string {
  * would let the next save rebuild from walk-free bytes the creator never
  * received. The page holds every save while a move runs.
  */
-export interface WalkMove {
+interface WalkMove {
   readonly kind: "ready";
   readonly walk: { readonly blob: Blob; readonly filename: string };
   readonly save: EditorSave;
