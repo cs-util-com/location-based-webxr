@@ -34,7 +34,7 @@ export function stationIdOf(objectId: string): string {
 }
 
 /** A station anchored exactly at `object`, holding it alone. */
-export function stationFor(object: TourObject): TourStation {
+function stationFor(object: TourObject): TourStation {
   const geo = {
     lat: object.geo.lat,
     lon: object.geo.lon,

@@ -43,7 +43,7 @@ export type TourDetailsField = keyof TourDetails;
 /** Why a detail was left out when the value itself is well formed:
  *  `image-gone` - a cover naming no image of the tour (a deleted photo),
  *  the one drop a writer accepts quietly. Absent: the value is malformed. */
-export type TourDetailsDropCause = 'image-gone';
+type TourDetailsDropCause = 'image-gone';
 
 /** A detail a reader left out, and why. */
 export interface TourDetailsDrop {

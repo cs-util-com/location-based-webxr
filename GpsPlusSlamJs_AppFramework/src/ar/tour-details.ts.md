@@ -44,7 +44,7 @@ unchanged (plan review 2 #10).
   absent, a failing one is dropped as `TourDetailsDrop { field, reason,
 cause? }`. Never throws.
 - `TourDetailCheck` (`{ ok: true, value } | { ok: false, reason, cause? }`),
-  `TourDetailsDrop`, `TourDetailsDropCause`, `TourDetailsField`.
+  `TourDetailsDrop`, `TourDetailsField`.
   - `cause: 'image-gone'` marks a cover that is a well-formed id naming no
     image of the tour (a deleted photo). It is the one drop the writer
     (`serializeTourManifest`) accepts quietly. A drop without a cause is a
