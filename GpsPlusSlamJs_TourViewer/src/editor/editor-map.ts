@@ -17,6 +17,8 @@ import type { EditorItem, EditorModel } from "./editor-model.js";
 /** Codes stay above notes where they overlap (the owner's default for
  *  marker stacking); the selected marker above both. */
 const CODE_Z = 500;
+/** A station beside its code is drawn over the code's edge. */
+const STATION_ON_CODE_Z = 600;
 const SELECTED_Z = 1000;
 
 /** Where a whole tour is framed when it has nothing with a position:
@@ -77,7 +79,9 @@ function iconFor(item: EditorItem): L.DivIcon {
         className: "mk-wrap",
         html: markerElement(item),
         iconSize: [30, 30],
-        iconAnchor: [15, 15],
+        // A station at its code's point sits beside the code, to the upper
+        // right, overlapping its edge (PR #609 review): both stay clickable.
+        iconAnchor: item.onCode === true ? [-9, 33] : [15, 15],
       })
     : L.divIcon({
         className: "mk-wrap",
@@ -104,6 +108,7 @@ export function createEditorMap(
   let selected: string | null = null;
 
   function baseZ(item: EditorItem): number {
+    if (item.onCode === true) return STATION_ON_CODE_Z;
     return item.kind === "code" ? CODE_Z : 0;
   }
 

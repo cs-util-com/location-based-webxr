@@ -18,6 +18,7 @@ import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import {
   buildEditorModel,
   filterItems,
+  ON_CODE_M,
   photoSource,
   type EditorModel,
 } from "./editor-model.js";
@@ -242,6 +243,38 @@ describe("buildEditorModel", () => {
     ]);
     expect(stations[1]?.at).toEqual({ lat: north.lat, lng: north.lon });
     expect(m.counts.station).toBe(2);
+  });
+
+  it("marks a station standing at a code's point, so the map draws it beside the code (PR #609 review)", () => {
+    // Why: a station and a code drawn at the same point with the same size
+    // hide one under the other, and only the rail could reach the station.
+    // Version 3 has no code link (D9), but a creator still puts stations
+    // at codes; within ON_CODE_M of a code's measured point is "at it".
+    const atCode = { ...AT, lat: AT.lat + 4 / 111_320, headingDeg: 0 };
+    const near = { ...atCode, lat: atCode.lat + 0.9 * (ON_CODE_M / 111_320) };
+    const apart = { ...atCode, lat: atCode.lat + 1.1 * (ON_CODE_M / 111_320) };
+    const m = buildEditorModel({
+      manifest: manifest({
+        stations: [
+          stationAt("at", atCode),
+          stationAt("near", near),
+          stationAt("apart", apart),
+          stationAt("alone", { ...AT, headingDeg: 0 }),
+        ],
+      }),
+      objects: [],
+      levels: new Map([["c", level(4)]]),
+      fileName: "tour.zip",
+    });
+    const stations = m.items.filter((i) => i.kind === "station");
+    expect(stations.map((x) => [x.id, x.onCode])).toEqual([
+      ["station:at", true],
+      ["station:near", true],
+      ["station:apart", undefined],
+      ["station:alone", undefined],
+    ]);
+    // It keeps its own point: only the drawing moves beside the code.
+    expect(stations[1]?.at).toEqual({ lat: near.lat, lng: near.lon });
   });
 
   it("keeps a note whose position cannot be drawn in the list, off the map (E1 review #9)", () => {

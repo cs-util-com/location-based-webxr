@@ -31,7 +31,11 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
   "Station N" by `station-run.ts` `stationTitle`, meta "Station N"), at
   their own geo pose (version 3: every station has one, D9). Every
   station is listed, the automatic ones that hold the pins and photos
-  included.
+  included. A station standing within `ON_CODE_M` (1 m) of a code's
+  measured point carries `onCode: true`: version 3 has no code link,
+  but a creator still puts stations at codes, and the map draws such a
+  station beside the code, never under it (PR #609 review). Its `at`
+  stays its own point.
 - `photoSource(item)` - where a photo item's bytes are: `{ kind:
 "content", path }` for a placed photo (`loadContentEntry`), `{ kind:
 "entry", path }` for a recorded one (its image is the archive's entry
@@ -68,5 +72,7 @@ const rows = filterItems(model.items, searchBox.value);
 
 `editor-model.test.ts`: the phone's numbering and a code without a
 position, "The code" alone, the notes' titles and distance lines, the
-recorded photos, the stations, an undrawable note kept off the map, the
+recorded photos, the stations, a station at a code's point (`onCode`,
+just inside and just outside `ON_CODE_M`), an undrawable note kept off the
+map, the
 title fallback, the filter and `photoSource`.

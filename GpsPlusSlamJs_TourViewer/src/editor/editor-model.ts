@@ -15,6 +15,7 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourCaptureGeos } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { horizontalM } from "../move-with-code.js";
 import { codeDistanceLine, objectTitle } from "../object-describe.js";
 import { stationTitle } from "../station-run.js";
 import {
@@ -44,7 +45,15 @@ export interface EditorItem {
   /** A recorded photo (`captureSpots`), placed for visitors at the Finish
    *  and not editable as a note. */
   readonly recorded?: boolean;
+  /** A station standing at a code's point (within {@link ON_CODE_M}): the
+   *  map draws it beside the code, never under it (PR #609 review). */
+  readonly onCode?: true;
 }
+
+/** How near a code's measured point a station counts as standing at it:
+ *  the map would draw the two over each other. A station placed at a
+ *  poster stands where the phone was, a metre or so off. */
+export const ON_CODE_M = 1;
 
 export interface EditorModel {
   /** The tour's title, else the file's name. */
@@ -149,13 +158,18 @@ export function buildEditorModel(input: {
     (station, index): EditorItem => {
       const number = index + 1;
       const own = { lat: station.geo.lat, lng: station.geo.lon };
+      const drawn = readablePoint(own);
+      const onCode =
+        drawn &&
+        stored.some((code) => horizontalM(code, station.geo) <= ON_CODE_M);
       return {
         id: `${STATION_PREFIX}${station.id}`,
         kind: "station",
         title: stationTitle(station, number),
         meta: `Station ${String(number)}`,
-        at: readablePoint(own) ? own : null,
+        at: drawn ? own : null,
         number,
+        ...(onCode ? { onCode: true as const } : {}),
       };
     },
   );

@@ -762,7 +762,9 @@ test("a station at its code's point and the code are both reachable on the map",
     await editorTour({ station: true }),
     "editor-fixture.zip",
   );
-  await page.locator(".mk-station").click();
+  // The gate is the first station; the fixture's notes each sit in a
+  // station of their own (version 3 has no loose pins, plan W3).
+  await page.locator(".mk-station", { hasText: /^1$/ }).click();
   await expect(page.locator("#card")).toContainText("At the gate");
   await page.keyboard.press("Escape");
   await page.locator(".mk-code", { hasText: "1" }).click();
