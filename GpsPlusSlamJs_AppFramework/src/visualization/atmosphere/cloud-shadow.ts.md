@@ -37,7 +37,10 @@ shadows drift with the clouds and fall where the sky draws them.
   to its program key. Idempotent (ownership in a WeakMap). `TypeError` for
   a material without three's light loop; `Error` for one another
   `CloudShadow` owns; `CloudShadowAnchorError` at compile time when three's
-  `#include <lights_pars_begin>` or `void main() {` is gone.
+  `#include <lights_pars_begin>` or the fragment's main is gone. The main
+  is found however an earlier hook spaced it (`void main(` and `) {` on two lines, as
+  3d-tiles-renderer's overlay wrapper leaves it): an anchor error thrown
+  in the render loop stops three's animation loop for good.
 - `applyToObject(root)`: patches every lit material under `root` not yet
   patched; returns how many.
 
@@ -118,7 +121,9 @@ cloudShadow.sync(atmosphere);
   before the light loop, three's function called by its real name, each
   light's own direction, the world point); the chained hook and the program
   key; the haze chained in either order with each text once; the refusals;
-  the missing anchor; `applyToObject`; the shared texture and offset, the
+  the missing anchor; a main re-spaced by an earlier hook (the overlay
+  wrapper's, a space, a line break), patched once before it;
+  `applyToObject`; the shared texture and offset, the
   copied threshold, one switch for every material.
 - `GpsPlusSlamJs_DesignSystem/3d/sun-clouds.smoke.spec.mjs`: on the GPU,
   ground under a cloud darker than with the patch off where the CPU twin

@@ -164,6 +164,37 @@ describe('CloudShadow.apply', () => {
     expect(() => new CloudShadow().apply(material)).toThrow(/another/);
   });
 
+  // WHY (globe G1, 2026-10-18): an earlier hook may legally re-space the
+  // fragment's main. 3d-tiles-renderer 0.5.3's overlay wrapper
+  // (`wrapOverlaysMaterial`) replaces `void main(` with its declarations
+  // followed by `void main(` and a line break, leaving `void main(\n ) {`.
+  // The shadow, chained after it on a tile loaded with an overlay, threw
+  // CloudShadowAnchorError in the render loop, which stops three's
+  // animation loop for good: the globe lab froze with the OSM map on.
+  it.each([
+    ['the overlay wrapper', 'void main(\n\n\t\t\t) {'],
+    ['a space before the brace', 'void main()  {'],
+    ['a line break before the brace', 'void main()\n{'],
+  ])('patches a main re-spaced by %s, once, before it', (_, respaced) => {
+    const material = new THREE.MeshStandardMaterial();
+    material.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        'void main() {',
+        `uniform float earlierHook;\n${respaced}`
+      );
+    };
+    new CloudShadow().apply(material);
+    const f = compileWith(material, 'standard').fragmentShader;
+    expect(count(f, 'uniform float atmShadowCloudOn;')).toBe(1);
+    expect(f.indexOf('uniform float earlierHook;')).toBeLessThan(
+      f.indexOf('uniform float atmShadowCloudOn;')
+    );
+    expect(f.indexOf('uniform float atmShadowCloudOn;')).toBeLessThan(
+      f.indexOf('void main()')
+    );
+    expect(count(f.replace(/\s+/g, ''), 'voidmain(){')).toBe(1);
+  });
+
   // A three upgrade that renames the anchor must fail loudly, not leave a
   // scene quietly without cloud shadows.
   it('throws CloudShadowAnchorError when three’s anchor is gone', () => {

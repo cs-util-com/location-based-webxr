@@ -71,6 +71,11 @@ export class CloudShadowAnchorError extends Error {
 const LIT = '#include <lights_pars_begin>';
 /** The patch goes just before the fragment's main, after every declaration. */
 const MAIN = 'void main() {';
+/**
+ * The fragment's main however an earlier hook spaced it: 3d-tiles-renderer's
+ * overlay wrapper leaves `void main(` and `) {` on separate lines.
+ */
+const MAIN_SPACED = /void\s+main\s*\(\s*\)\s*\{/;
 /** A line the patch always adds: its presence means "already patched". */
 const MARKER = 'uniform float atmShadowCloudOn;';
 
@@ -404,12 +409,16 @@ export class CloudShadow {
     material.onBeforeCompile = function (shader, renderer) {
       previousHook(shader, renderer);
       if (shader.fragmentShader.includes(MARKER)) return;
-      for (const anchor of [LIT, MAIN]) {
-        if (!shader.fragmentShader.includes(anchor)) {
-          throw new CloudShadowAnchorError(anchor);
-        }
+      if (!shader.fragmentShader.includes(LIT)) {
+        throw new CloudShadowAnchorError(LIT);
       }
-      shader.fragmentShader = shader.fragmentShader.replace(MAIN, fragment);
+      if (!MAIN_SPACED.test(shader.fragmentShader)) {
+        throw new CloudShadowAnchorError(MAIN);
+      }
+      shader.fragmentShader = shader.fragmentShader.replace(
+        MAIN_SPACED,
+        () => fragment
+      );
       Object.assign(shader.uniforms, uniforms);
     };
     material.customProgramCacheKey = () =>
