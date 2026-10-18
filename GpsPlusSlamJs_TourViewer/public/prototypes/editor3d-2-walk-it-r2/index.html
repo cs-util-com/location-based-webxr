@@ -1,0 +1,2228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Walk It Editor</title>
+<!--
+  Prototype round 2: "Walk it" - a first-person-first desktop editor for GPS-anchored AR tours.
+  The editor opens standing at eye height at the first station; the creator edits the tour by walking it
+  and picking things up. A bird's-eye view and a straight-down top view are one key away.
+
+  Round 2 keeps the shared shell of the gallery: the story-card tree docked left, the inspector with
+  suggested actions docked right, a ring with four white dots and a rotation knob as the transform handles,
+  moving along the ground, and a two-finger guard so a pinch never drags a handle.
+
+  Inspired by (techniques only, all code here is original):
+  - first-person game controls (WASD + mouse-drag look, Shift to run),
+  - "pick up and carry" object handling from sandbox building games (grab, carry, wheel to turn),
+  - the "G to grab" shortcut of 3D modelling tools,
+  - the ring-and-dots transform handles and the ground-plane dragging of the sibling prototypes in this gallery,
+  - story-card lists of slideshow and storytelling tools,
+  - the north-up top view of web maps.
+  Rendering: three.js (MIT). The street map, photos, card images and codes are drawn procedurally on canvases.
+  Icons are plain Unicode characters and canvas drawings made here; no icon set is used.
+-->
+<style>
+  :root {
+    --ink: #24303c;
+    --muted: #6a7684;
+    --faint: #98a3af;
+    --glass: rgba(255, 255, 255, 0.82);
+    --line: rgba(36, 56, 76, 0.12);
+    --accent: #2f8fd8;
+    --accent-soft: rgba(47, 143, 216, 0.14);
+    --danger: #d4574a;
+    --code: #4f5bd5;
+    --shadow: 0 8px 28px rgba(40, 60, 90, 0.16), 0 1px 3px rgba(40, 60, 90, 0.1);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #eef3f6; color: var(--ink);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
+  button { font: inherit; color: inherit; }
+  .glass { background: var(--glass); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    box-shadow: var(--shadow); }
+  .iconbtn { border: 0; background: transparent; width: 26px; height: 26px; border-radius: 8px; cursor: pointer; color: var(--muted); flex: none;
+    display: inline-flex; align-items: center; justify-content: center; }
+  .iconbtn:hover { background: rgba(0,0,0,0.06); color: var(--ink); }
+  .sect { display: flex; align-items: center; gap: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--faint); padding: 10px 2px 5px; }
+  .sect .note { text-transform: none; letter-spacing: 0; font-size: 11px; }
+  .sect .plus { margin-left: auto; width: 24px; height: 24px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255,255,255,0.8);
+    color: var(--accent); font-size: 16px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .sect .plus:hover { background: #fff; border-color: rgba(47,143,216,0.45); }
+
+  /* ---------- left: the tour, docked to the left edge, only as tall as its content ---------- */
+  #panel { position: fixed; left: 0; top: 0; width: 284px; max-height: 100vh; display: flex; flex-direction: column; z-index: 5;
+    user-select: none; border-radius: 0 0 14px 0; border-right: 1px solid rgba(255,255,255,0.7); border-bottom: 1px solid rgba(255,255,255,0.7); }
+  #panel .ph { display: flex; align-items: center; gap: 8px; padding: 10px 8px 8px 14px; }
+  #panel .ph b { font-size: 14px; }
+  #panel .ph .sub { color: var(--muted); font-size: 11px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #panel .pbody { overflow-y: auto; padding: 0 10px 10px; min-height: 0; flex: 1; }
+  #panel.collapsed { width: 220px; }
+  #panel.collapsed .pbody { display: none; }
+
+  /* story cards */
+  .card { border-radius: 11px; margin: 0 0 7px; background: rgba(255,255,255,0.7); box-shadow: 0 1px 2px rgba(30,50,70,0.08), inset 0 0 0 1px var(--line);
+    overflow: hidden; cursor: pointer; }
+  .card.sel { box-shadow: 0 0 0 2px var(--accent), 0 4px 14px rgba(47,143,216,0.22); }
+  .card .cimg { position: relative; height: 66px; }
+  .card .cimg canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .card .cimg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(18,24,32,0.62), rgba(18,24,32,0.18) 70%, rgba(18,24,32,0.05)); pointer-events: none; }
+  .card .num { position: absolute; left: 9px; top: 9px; z-index: 1; width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px rgba(255,255,255,0.85); }
+  .card .cap { position: absolute; left: 38px; right: 34px; top: 8px; z-index: 1; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.45); pointer-events: none; }
+  .card .cap b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .cap small { display: block; font-size: 11.5px; opacity: 0.92; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .meta { position: absolute; left: 38px; bottom: 6px; z-index: 1; color: rgba(255,255,255,0.86); font-size: 10.5px; pointer-events: none; }
+  .card .here { position: absolute; right: 8px; bottom: 6px; z-index: 1; font-size: 10px; color: #fff; background: var(--accent); border-radius: 999px; padding: 1px 7px; }
+  .card .caret { position: absolute; right: 5px; top: 6px; z-index: 2; width: 24px; height: 24px; border: 0; border-radius: 7px; background: rgba(255,255,255,0.18);
+    color: #fff; cursor: pointer; font-size: 11px; }
+  .card .caret:hover { background: rgba(255,255,255,0.34); }
+  .card .kids { padding: 4px 4px 5px; }
+  .row { display: flex; align-items: center; gap: 7px; padding: 4px 8px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+  .row:hover { background: rgba(0,0,0,0.045); }
+  .row.sel { background: var(--accent-soft); box-shadow: inset 0 0 0 1px rgba(47,143,216,0.35); }
+  .row .t { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  .row .n { color: var(--faint); font-size: 11px; }
+  .row .warn { color: #c07a12; font-size: 11px; }
+  .g { width: 12px; height: 12px; flex: none; display: inline-block; }
+  .g.pin { border-radius: 50%; background: currentColor; transform: scale(0.7); }
+  .g.photo { border: 2px solid currentColor; border-radius: 2px; }
+  .g.model { background: currentColor; transform: rotate(45deg) scale(0.7); border-radius: 2px; }
+  .g.code { background:
+      linear-gradient(currentColor, currentColor) 0 0 / 5px 5px no-repeat,
+      linear-gradient(currentColor, currentColor) 100% 0 / 5px 5px no-repeat,
+      linear-gradient(currentColor, currentColor) 0 100% / 5px 5px no-repeat,
+      linear-gradient(currentColor, currentColor) 7px 7px / 3px 3px no-repeat; color: var(--code); }
+  .layers { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 0 2px; }
+  .chip { border: 1px solid var(--line); background: rgba(255,255,255,0.6); border-radius: 999px; padding: 3px 10px 3px 8px;
+    cursor: pointer; font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; background: #c5ccd4; display: inline-block; }
+  .chip.on { color: var(--ink); border-color: rgba(47,143,216,0.35); background: var(--accent-soft); }
+  .chip.on i { background: var(--accent); }
+
+  /* ---------- right: the inspector, docked to the right edge, only while something is selected ---------- */
+  #insp { position: fixed; right: 0; top: 0; width: 272px; max-height: 100vh; display: none; flex-direction: column; z-index: 6;
+    border-radius: 0 0 0 14px; border-left: 1px solid rgba(255,255,255,0.7); border-bottom: 1px solid rgba(255,255,255,0.7); }
+  #insp.open { display: flex; }
+  #insp .ih { display: flex; align-items: center; gap: 6px; padding: 9px 8px 7px 12px; }
+  #insp .kind { font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; color: #fff; flex: none; }
+  #insp .crumb { color: var(--muted); font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #insp .ib { overflow-y: auto; padding: 0 12px 12px; min-height: 0; }
+  #insp.collapsed .ib { display: none; }
+  #insp input[type=text], #insp input[type=number], #insp textarea { width: 100%; border: 1px solid var(--line); background: rgba(255,255,255,0.85); border-radius: 8px;
+    padding: 6px 8px; font: inherit; color: inherit; outline: none; }
+  #insp input.title { font-size: 15px; font-weight: 600; }
+  #insp textarea { resize: vertical; min-height: 44px; }
+  #insp input:focus, #insp textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  #insp .sect { padding-top: 11px; }
+  .acts { display: flex; flex-direction: column; gap: 1px; }
+  .act { display: flex; align-items: center; gap: 9px; border: 0; background: transparent; border-radius: 8px; padding: 5px 7px; cursor: pointer; text-align: left; }
+  .act:hover { background: var(--accent-soft); }
+  .act .ic { width: 18px; text-align: center; color: var(--accent); flex: none; }
+  .act .lb { flex: 1; }
+  .act kbd { margin-left: 0; }
+  .act.danger, .act.danger .ic { color: var(--danger); }
+  .act.danger:hover { background: rgba(212,87,74,0.1); }
+  .act.hot .lb::after { content: attr(data-badge); margin-left: 6px; font-size: 10.5px; color: #fff; background: #d98f1c; border-radius: 999px; padding: 0 6px; }
+  .field { margin-top: 7px; }
+  .rad { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+  .rad input[type=number] { width: 74px !important; }
+  .rad span { color: var(--muted); }
+  .explain { color: var(--muted); font-size: 11.5px; margin: 5px 0 0; }
+  .imgrow { display: flex; align-items: center; gap: 8px; }
+  .imgrow canvas { width: 64px; height: 34px; border-radius: 6px; flex: none; box-shadow: inset 0 0 0 1px var(--line); }
+  .imgrow .il { flex: 1; color: var(--muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .btn { border: 1px solid var(--line); background: rgba(255,255,255,0.75); border-radius: 8px; padding: 4px 8px; cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: #fff; border-color: rgba(47,143,216,0.4); }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  .picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 7px; }
+  .picker button { border: 0; padding: 0; background: transparent; cursor: pointer; border-radius: 7px; overflow: hidden; position: relative; box-shadow: inset 0 0 0 1px var(--line); }
+  .picker button.on { box-shadow: 0 0 0 2px var(--accent); }
+  .picker canvas { width: 100%; height: 40px; display: block; }
+  .picker small { display: block; font-size: 10px; color: var(--muted); padding: 2px 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+  .order { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  details.pos { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 6px; }
+  details.pos summary { cursor: pointer; color: var(--muted); font-size: 12px; list-style: none; display: flex; align-items: center; gap: 6px; }
+  details.pos summary::-webkit-details-marker { display: none; }
+  details.pos summary::before { content: "\25B8"; font-size: 10px; }
+  details.pos[open] summary::before { content: "\25BE"; }
+  details.pos summary .sum { margin-left: auto; color: var(--faint); font-size: 11px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  details.pos summary:focus:not(:focus-visible) { outline: none; }
+  .grid { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 5px 7px; align-items: center; margin-top: 7px; font-size: 12px; color: var(--muted); }
+  .grid input { padding: 4px 6px !important; }
+  .keys { color: var(--faint); font-size: 11px; margin-top: 9px; }
+
+  /* ---------- dock (bottom) ---------- */
+  #dock { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 3px;
+    padding: 6px; z-index: 5; user-select: none; border-radius: 14px; border: 1px solid rgba(255,255,255,0.7); }
+  #dock .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+  #dock button { border: 0; background: transparent; border-radius: 10px; padding: 7px 10px; cursor: pointer; white-space: nowrap; }
+  #dock button:hover { background: rgba(0,0,0,0.05); }
+  #dock button:disabled { opacity: 0.35; cursor: default; background: transparent; }
+  #dock button.on { background: var(--accent-soft); color: #1f6fae; }
+  #dock .stchip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; min-width: 180px; justify-content: center; }
+  #dock .stchip .num { width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; }
+  #dock .stchip small { color: var(--muted); }
+  kbd { font: 10px/1 system-ui, sans-serif; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 2px 4px;
+    color: var(--muted); background: rgba(255,255,255,0.7); margin-left: 4px; }
+
+  /* ---------- misc ---------- */
+  #compass { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); width: 240px; height: 26px; overflow: hidden; z-index: 3;
+    border-radius: 999px; pointer-events: none; mask-image: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent);
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent); }
+  #compass .strip { position: absolute; top: 0; height: 26px; white-space: nowrap; }
+  #compass span { position: absolute; top: 5px; transform: translateX(-50%); font-size: 11px; color: var(--muted); font-weight: 600; }
+  #compass span.n { color: var(--danger); }
+  #compass span.tick { color: var(--faint); font-weight: 400; }
+  #compass::after { content: ""; position: absolute; left: 50%; top: 0; width: 2px; height: 6px; background: var(--ink); transform: translateX(-50%); border-radius: 1px; }
+  #modeTag { position: fixed; top: 42px; left: 50%; transform: translateX(-50%); font-size: 11px; color: var(--muted); z-index: 3; pointer-events: none;
+    white-space: nowrap; text-shadow: 0 1px 0 rgba(255,255,255,0.8); }
+  #tip { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 8; padding: 4px 9px; border-radius: 8px; background: rgba(36,48,60,0.86); color: #fff;
+    font-size: 12px; display: none; white-space: nowrap; }
+  #toast { position: fixed; left: 50%; bottom: 72px; transform: translate(-50%, 8px); padding: 7px 14px; border-radius: 999px; z-index: 7;
+    opacity: 0; transition: opacity 0.25s, transform 0.25s; pointer-events: none; white-space: nowrap; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #hint { position: fixed; left: 50%; bottom: 110px; transform: translateX(-50%); color: var(--muted); font-size: 12px; z-index: 3;
+    pointer-events: none; transition: opacity 0.8s; text-shadow: 0 1px 0 rgba(255,255,255,0.8); white-space: nowrap; }
+  #help { position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%); width: 360px; padding: 14px 16px; z-index: 9; display: none; border-radius: 14px; }
+  #help h3 { margin: 0 0 8px; font-size: 14px; }
+  #help dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 12px; }
+  #help dt { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  #help dd { margin: 0; color: var(--muted); }
+  #proto { position: fixed; left: 12px; bottom: 10px; font-size: 11px; color: var(--faint); z-index: 2; pointer-events: none; }
+</style>
+<script type="importmap">
+  { "imports": {
+      "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+  } }
+</script>
+</head>
+<body>
+<canvas id="c" tabindex="0"></canvas>
+
+<aside id="panel" class="glass">
+  <div class="ph"><b id="tourTitle">Old Town Walk</b><span class="sub" id="tourMeta"></span>
+    <button class="iconbtn" id="collapse" title="Show or hide the tour">&#9662;</button></div>
+  <div class="pbody">
+    <div class="sect">Stations <span class="note">in walking order</span><button class="plus" id="addSt" title="Add a station">+</button></div>
+    <div id="cards"></div>
+    <div class="sect">Codes <span class="note">never move with a station</span></div>
+    <div id="codes"></div>
+    <div class="sect">Visible layers</div>
+    <div class="layers">
+      <button class="chip on" data-layer="walk"><i></i>Walk</button>
+      <button class="chip" data-layer="depth"><i></i>Depth points</button>
+      <button class="chip on" data-layer="codes"><i></i>Codes</button>
+      <button class="chip on" data-layer="buildings"><i></i>Buildings</button>
+    </div>
+  </div>
+</aside>
+
+<aside id="insp" class="glass">
+  <div class="ih"><span class="kind" id="iKind"></span><span class="crumb" id="iCrumb"></span>
+    <button class="iconbtn" id="iCollapse" title="Fold the inspector">&#9662;</button>
+    <button class="iconbtn" id="iClose" title="Deselect (Esc)">&times;</button></div>
+  <div class="ib" id="iBody"></div>
+</aside>
+
+<div id="compass" class="glass"><div class="strip" id="cstrip"></div></div>
+<div id="modeTag"></div>
+
+<div id="tip"></div>
+<div id="toast" class="glass"></div>
+<div id="hint">WASD to walk, drag to look, <b>N</b> next station, <b>Tab</b> bird's-eye, <b>T</b> top view. Drag anything to move it.</div>
+
+<div id="dock" class="glass">
+  <button id="bPrev" title="Glide back along the walk (P)">&#9664;</button>
+  <span class="stchip" id="stChip"></span>
+  <button id="bNext" title="Glide on along the walk (N)">&#9654;</button>
+  <span class="sep"></span>
+  <button id="bOver" title="Lift up to the bird's-eye view and back (Tab)">Bird's-eye<kbd>Tab</kbd></button>
+  <button id="bTop" title="Look straight down; pins and photos lie flat (T)">Top view<kbd>T</kbd></button>
+  <span class="sep"></span>
+  <button id="bUndo" title="Undo (Ctrl+Z)">&#8630;</button>
+  <button id="bRedo" title="Redo (Ctrl+Shift+Z)">&#8631;</button>
+  <button id="bHelp" title="Keys and mouse (H)">?</button>
+</div>
+
+<div id="help" class="glass">
+  <h3>Walk it - keys, mouse and touch</h3>
+  <dl>
+    <dt>W A S D</dt><dd>walk (hold Shift to run); arrows too while nothing is selected</dd>
+    <dt>Drag empty space</dt><dd>look around (bird's-eye and top view: pan)</dd>
+    <dt>Right-drag</dt><dd>look / orbit</dd>
+    <dt>Double-click ground</dt><dd>walk there (from above: go down there)</dd>
+    <dt>N / P</dt><dd>glide to the next / previous station along the walk</dd>
+    <dt>Tab / T</dt><dd>bird's-eye / top view, and back</dd>
+    <dt>Click</dt><dd>select a thing, a station ring or badge</dd>
+    <dt>Drag the middle</dt><dd>move it along the ground</dd>
+    <dt>Drag the round arrow</dt><dd>turn it (Shift: 15 degree steps)</dd>
+    <dt>Drag a white dot</dt><dd>station: arrival radius; 3D model: size</dd>
+    <dt>Wheel while dragging</dt><dd>turn it 15 degrees (Shift: 1 degree)</dd>
+    <dt>G</dt><dd>pick the selection up and carry it while you walk; click sets it down, Esc cancels</dd>
+    <dt>Arrows</dt><dd>with a selection: nudge 0.5 m (Shift: 5 cm), relative to your view</dd>
+    <dt>Ctrl + Left/Right</dt><dd>turn 5 degrees (Shift: 1 degree)</dd>
+    <dt>Ctrl + Up/Down</dt><dd>raise / lower 10 cm</dd>
+    <dt>F / Delete</dt><dd>stand at the selection / delete it</dd>
+    <dt>Ctrl+Z / Ctrl+Shift+Z</dt><dd>undo / redo</dd>
+    <dt>Two fingers</dt><dd>only move the camera; a handle drag in progress is undone</dd>
+  </dl>
+</div>
+<div id="proto">Prototype round 2: Walk it</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+// =====================================================================
+// small helpers
+// =====================================================================
+const $ = (s) => document.querySelector(s);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const TAU = Math.PI * 2;
+function angDiff(a, b) { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; }
+const lerpAng = (a, b, t) => a + angDiff(a, b) * t;
+function rng(seed) { let s = (seed >>> 0) || 1; return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296); }
+function hash(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+const DEG = Math.PI / 180;
+const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+const compassName = (deg) => COMPASS[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+
+// =====================================================================
+// the fake world: 400 x 400 m, 1 unit = 1 m, +y up, north = -z
+// =====================================================================
+const HALF = 200;
+const EYE = 1.6;
+const WATER = -1.15;
+const riverX = (z) => 80 + 12 * Math.sin((z + 40) / 70);
+const BRIDGE = { x0: 50, x1: 106, z0: -66, z1: -58, y: 0.6 };
+function terrain(x, z) {
+  const fall = smooth(HALF, HALF - 30, Math.abs(x)) * smooth(HALF, HALF - 30, Math.abs(z));
+  let h = 7 * Math.exp(-((x + 62) ** 2 + (z - 62) ** 2) / (2 * 20 * 20)) // park hill
+        + 9 * Math.exp(-((x + 60) ** 2 + (z + 125) ** 2) / (2 * 45 * 45)) // north rise
+        + 4 * Math.exp(-((x - 140) ** 2 + (z - 110) ** 2) / (2 * 30 * 30));
+  h *= fall;
+  const d = x - riverX(z);
+  h -= 3.6 * Math.exp(-(d * d) / (16 * 16));
+  return h;
+}
+const onBridge = (x, z) => x >= BRIDGE.x0 && x <= BRIDGE.x1 && z >= BRIDGE.z0 && z <= BRIDGE.z1;
+function groundY(x, z) {
+  let y = Math.max(terrain(x, z), WATER + 0.02);
+  if (onBridge(x, z)) y = Math.max(y, BRIDGE.y);
+  return y;
+}
+
+// the recorded walk (x, z), smoothed and sampled every ~1 m
+const WALK_PTS = [[-150, 58], [-136, 50], [-124, 45], [-108, 32], [-92, 24], [-70, 20], [-52, 15], [-40, 12], [-25, 10],
+  [-5, 6], [15, 0], [35, -9], [50, -15], [59, -21], [63, -32], [60, -45], [57, -56], [62, -62], [80, -62], [100, -62]];
+const WALK = (() => {
+  const curve = new THREE.CatmullRomCurve3(WALK_PTS.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal');
+  const L = curve.getLength();
+  const n = Math.round(L);
+  const pts = curve.getSpacedPoints(n).map((p) => ({ x: p.x, z: p.z }));
+  return { pts, L, step: L / n, s: pts.map((_, i) => (i * L) / n) };
+})();
+function pathAt(s) {
+  s = clamp(s, 0, WALK.L);
+  const f = s / WALK.step;
+  const i = Math.min(Math.floor(f), WALK.pts.length - 2);
+  const t = f - i, a = WALK.pts[i], b = WALK.pts[i + 1];
+  return { x: lerp(a.x, b.x, t), z: lerp(a.z, b.z, t) };
+}
+function nearestS(x, z) {
+  let best = Infinity, bs = 0;
+  for (let i = 0; i < WALK.pts.length; i++) {
+    const p = WALK.pts[i], d = (p.x - x) ** 2 + (p.z - z) ** 2;
+    if (d < best) { best = d; bs = WALK.s[i]; }
+  }
+  return bs;
+}
+
+
+// =====================================================================
+// tour data (hard-coded sample)
+// A station's anchor sits on the ground (st.y). Its items keep LOCAL poses: x/z in the station's frame and
+// y relative to the anchor, so moving a station moves them rigidly. it.lift is the height above the ground
+// the item was placed at; "Put on the ground" re-grounds an item to it.
+// =====================================================================
+const PALETTE = ['#ee7d5e', '#22a196', '#e2a21f', '#8a6cd6', '#d65f8e', '#3d8fd6'];
+let uid = 100;
+const nid = (p) => p + (uid++);
+
+function worldToLocal(st, wx, wz) {
+  const dx = wx - st.x, dz = wz - st.z, c = Math.cos(st.yaw), s = Math.sin(st.yaw);
+  return { x: dx * c - dz * s, z: dx * s + dz * c };
+}
+function itemWorld(st, it) {
+  const c = Math.cos(st.yaw), s = Math.sin(st.yaw);
+  return { x: st.x + it.x * c + it.z * s, z: st.z - it.x * s + it.z * c, y: st.y + it.y, yaw: st.yaw + it.yaw };
+}
+function heightAbove(st, it) { const w = itemWorld(st, it); return w.y - groundY(w.x, w.z); }
+// where a visitor arrives: on the walk, a little before the anchor, facing it
+function arrivalPose(st) {
+  const s = nearestS(st.x, st.z), p0 = pathAt(s);
+  let p;
+  if (Math.hypot(p0.x - st.x, p0.z - st.z) < st.radius * 0.8 && s > 6) {
+    p = pathAt(Math.max(0, s - Math.min(10, st.radius * 0.4)));
+  } else {
+    let dx = p0.x - st.x, dz = p0.z - st.z; const l = Math.hypot(dx, dz) || 1;
+    if (l < 0.5) { dx = 0; dz = 1; }
+    const d = Math.min(10, st.radius * 0.5);
+    p = { x: st.x + (dx / l) * d, z: st.z + (dz / l) * d };
+  }
+  // face the middle of what there is to see: the items' centroid (or the anchor when empty)
+  let cx = st.x, cz = st.z;
+  if (st.items.length) {
+    cx = 0; cz = 0;
+    for (const it of st.items) { const w = itemWorld(st, it); cx += w.x / st.items.length; cz += w.z / st.items.length; }
+  }
+  return { x: p.x, z: p.z, yaw: Math.atan2(-(cx - p.x), -(cz - p.z)), pitch: -0.06 };
+}
+
+function makeTour() {
+  const stations = [];
+  const S = (title, desc, x, z, radius) => {
+    const st = { id: nid('s'), title, desc, x, z, y: groundY(x, z), yaw: 0, radius, color: PALETTE[stations.length], image: null, items: [] };
+    stations.push(st); return st;
+  };
+  const add = (st, type, title, text, wx, wz, opts = {}) => {
+    let yawW;
+    if (opts.yaw !== undefined) yawW = opts.yaw;
+    else { const ap = arrivalPose(st); yawW = Math.atan2(ap.x - wx, ap.z - wz); }
+    const l = worldToLocal(st, wx, wz), lift = opts.h || 0;
+    st.items.push({ id: nid('i'), type, title, text, x: l.x, z: l.z, y: groundY(wx, wz) + lift - st.y, lift, yaw: yawW - st.yaw, scale: 1, stand: opts.stand !== false });
+  };
+  const s1 = S('Market Square', 'Where the town began, around the old fountain.', -122, 42, 25);
+  add(s1, 'pin', 'Fountain, 1612', 'Built when the market got its charter. Walk once around it.', -120, 39);
+  add(s1, 'photo', 'The square in 1900', 'Hold the photo up and compare the rooflines.', -114, 45);
+  add(s1, 'model', 'Bronze horse', 'Placeholder for the 3D statue.', -117, 35);
+  const s2 = S('Town Hall', '', -40, 12, 25);
+  add(s2, 'photo', 'The facade in 1890', 'The clock was added twenty years later.', -46, 0.25, { yaw: 0, h: 3.2, stand: false });
+  add(s2, 'pin', 'Main door', 'Look up at the carved lintel.', -34, 3);
+  const s3 = S('River Steps', 'Flood marks and the old ferry landing.', 60, -20, 25);
+  add(s3, 'pin', 'Flood mark, 1784', 'The water reached this line.', 66, -15);
+  add(s3, 'pin', 'Ferry landing', 'Before the bridge, boats crossed here.', 69, -25);
+  const s4 = S('Old Bridge', 'Five arches across the river.', 58, -62, 35);
+  add(s4, 'photo', 'The bridge in 1910', 'Same spot, a hundred years ago.', 53, -55);
+  add(s4, 'pin', 'Keystone, 1530', 'Find the date carved into the arch.', 78, -62);
+  const codes = [
+    { id: nid('c'), title: 'Town Hall wall', x: -26, z: 0.06, yaw: 0, h: 1.5, mount: 'wall' },
+    { id: nid('c'), title: 'Bridge post', x: 48, z: -68, yaw: Math.atan2(-6, 10), h: 1.35, mount: 'post' },
+  ];
+  return { title: 'Old Town Walk', stations, codes };
+}
+let tour = makeTour();
+
+// =====================================================================
+// renderer, scene, camera
+// =====================================================================
+const canvas = $('#c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+renderer.setSize(innerWidth, innerHeight, false);
+const scene = new THREE.Scene();
+const FOG = new THREE.Color('#edf2f5');
+scene.fog = new THREE.Fog(FOG, 90, 520);
+const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 3000);
+camera.rotation.order = 'YXZ';
+const maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0xd8cfbd, 1.9));
+const sun = new THREE.DirectionalLight(0xfff4e6, 1.25);
+sun.position.set(-120, 200, 90);
+scene.add(sun);
+
+// sky dome: a soft vertical gradient that follows the camera
+const sky = new THREE.Mesh(new THREE.SphereGeometry(2000, 32, 16), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { top: { value: new THREE.Color('#bcd8ee') }, mid: { value: FOG.clone() }, bot: { value: new THREE.Color('#efe9dd') } },
+  vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: 'uniform vec3 top; uniform vec3 mid; uniform vec3 bot; varying vec3 vP; void main(){ float h = vP.y; vec3 c = h > 0.0 ? mix(mid, top, smoothstep(0.0, 0.5, h)) : mix(mid, bot, smoothstep(0.0, 0.15, -h)); gl_FragColor = vec4(c, 1.0);\n#include <colorspace_fragment>\n}',
+}));
+sky.renderOrder = -10;
+scene.add(sky);
+
+// =====================================================================
+// ground: a procedural street map on a gently hilly plane
+// =====================================================================
+const STREETS = [
+  { w: 9, pts: [[-200, 24], [-95, 24], [-40, 12], [15, 0], [52, -16], [62, -20]] },
+  { w: 8, pts: [[-95, -200], [-95, 200]] },
+  { w: 7, pts: [[-10, -200], [-10, 200]] },
+  { w: 7, pts: [[-200, 110], [58, 110]] },
+  { w: 7, pts: [[-200, -130], [52, -130]] },
+  { w: 8, pts: [[-200, -62], [52, -62]] },
+  { w: 8, pts: [[104, -62], [200, -62]] },
+  { w: 7, pts: [[150, -200], [150, 200]] },
+  { w: 6, pts: [[104, 30], [200, 30]] },
+  { w: 5, pts: Array.from({ length: 41 }, (_, i) => { const z = -200 + i * 10; return [riverX(z) - 21, z]; }) },
+  { w: 5, pts: Array.from({ length: 41 }, (_, i) => { const z = -200 + i * 10; return [riverX(z) + 21, z]; }) },
+];
+const PARK = { x: -60, z: 64, rx: 30, rz: 30 };
+const SQUARE = { x0: -150, x1: -96, z0: 20, z1: 64 };
+
+const groundCanvas = (() => {
+  const S = 2048, k = S / 400, cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const g = cv.getContext('2d');
+  g.setTransform(k, 0, 0, k, S / 2, S / 2);
+  const r = rng(7);
+  g.fillStyle = '#e2d9c5'; g.fillRect(-200, -200, 400, 400);
+  const parcel = ['#ddd3be', '#e6dfcf', '#d9cfb9', '#e3dac8'];
+  for (let i = 0; i < 900; i++) { g.fillStyle = parcel[(r() * 4) | 0]; g.fillRect(-200 + r() * 400, -200 + r() * 400, 5 + r() * 12, 5 + r() * 12); }
+  // park
+  g.fillStyle = '#d3e6c1'; g.beginPath(); g.ellipse(PARK.x, PARK.z, PARK.rx, PARK.rz, 0, 0, TAU); g.fill();
+  g.strokeStyle = '#c4dcae'; g.lineWidth = 1.2; g.stroke();
+  g.strokeStyle = '#efe8d6'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(-88, 58); g.quadraticCurveTo(-60, 40, -34, 70); g.stroke();
+  // river banks + river
+  const riverLine = (w, col) => { g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'butt'; g.beginPath();
+    for (let z = -205; z <= 205; z += 4) { const x = riverX(z); z === -205 ? g.moveTo(x, z) : g.lineTo(x, z); } g.stroke(); };
+  riverLine(46, '#d9e8c9'); riverLine(33, '#a9cde3'); riverLine(29, '#b8d8ea');
+  // streets: edge pass, then fill pass so crossings merge
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  for (const pass of [0, 1]) {
+    for (const s of STREETS) {
+      g.strokeStyle = pass ? '#fdfcf8' : '#c6b99f'; g.lineWidth = s.w + (pass ? 0 : 1.4);
+      g.beginPath(); s.pts.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z))); g.stroke();
+    }
+  }
+  // the square: paving with a light grid and a basin
+  g.fillStyle = '#f4ecdc'; g.fillRect(SQUARE.x0, SQUARE.z0, SQUARE.x1 - SQUARE.x0, SQUARE.z1 - SQUARE.z0);
+  g.strokeStyle = '#e8dcc5'; g.lineWidth = 0.15;
+  for (let x = SQUARE.x0; x <= SQUARE.x1; x += 3) { g.beginPath(); g.moveTo(x, SQUARE.z0); g.lineTo(x, SQUARE.z1); g.stroke(); }
+  for (let z = SQUARE.z0; z <= SQUARE.z1; z += 3) { g.beginPath(); g.moveTo(SQUARE.x0, z); g.lineTo(SQUARE.x1, z); g.stroke(); }
+  g.strokeStyle = '#d7c9ad'; g.lineWidth = 0.6; g.strokeRect(SQUARE.x0, SQUARE.z0, SQUARE.x1 - SQUARE.x0, SQUARE.z1 - SQUARE.z0);
+  g.fillStyle = '#bcd9ea'; g.strokeStyle = '#cdbf9f'; g.lineWidth = 0.8; g.beginPath(); g.arc(-120, 39, 3.2, 0, TAU); g.fill(); g.stroke();
+  // bridge
+  g.fillStyle = '#ddd3c1'; g.fillRect(BRIDGE.x0, BRIDGE.z0, BRIDGE.x1 - BRIDGE.x0, BRIDGE.z1 - BRIDGE.z0);
+  g.strokeStyle = '#c8bca5'; g.lineWidth = 0.5; g.strokeRect(BRIDGE.x0, BRIDGE.z0, BRIDGE.x1 - BRIDGE.x0, BRIDGE.z1 - BRIDGE.z0);
+  // river steps
+  g.fillStyle = '#e2d7c3'; g.fillRect(63, -27, 8, 14);
+  g.strokeStyle = '#cfc2aa'; g.lineWidth = 0.25; for (let x = 63; x <= 71; x += 1.2) { g.beginPath(); g.moveTo(x, -27); g.lineTo(x, -13); g.stroke(); }
+  return cv;
+})();
+const groundTex = new THREE.CanvasTexture(groundCanvas);
+groundTex.colorSpace = THREE.SRGBColorSpace;
+groundTex.anisotropy = maxAniso;
+
+const ground = (() => {
+  const geo = new THREE.PlaneGeometry(400, 400, 160, 160);
+  geo.rotateX(-Math.PI / 2);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) p.setY(i, terrain(p.getX(i), p.getZ(i)));
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: groundTex }));
+  scene.add(m);
+  // the land beyond the map: a big frame with a hole where the detailed ground is
+  const frame = new THREE.Shape([new THREE.Vector2(-1500, -1500), new THREE.Vector2(1500, -1500), new THREE.Vector2(1500, 1500), new THREE.Vector2(-1500, 1500)]);
+  frame.holes.push(new THREE.Path([new THREE.Vector2(-199, -199), new THREE.Vector2(-199, 199), new THREE.Vector2(199, 199), new THREE.Vector2(199, -199)]));
+  const outer = new THREE.Mesh(new THREE.ShapeGeometry(frame).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: '#e2d9c5', side: THREE.DoubleSide }));
+  outer.position.y = -0.05; scene.add(outer);
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: '#b5d6ea' }));
+  water.position.y = WATER; scene.add(water);
+  return m;
+})();
+
+// buildings: one instanced mesh + one merged edge-line geometry (an airy "white model" look)
+const BUILDINGS = [
+  [-40, -14, 44, 28, 14, '#f7efe0'], [-40, -20, 9, 9, 27, '#f3e6cf'], // town hall + tower
+  [-78, -10, 22, 24, 10], [-75, -45, 28, 22, 12], [-30, -46, 30, 22, 9], [-70, -95, 30, 40, 11], [-30, -100, 26, 34, 8],
+  [-125, -20, 40, 26, 12], [-175, -20, 34, 30, 9], [-140, -44, 26, 16, 8], [-150, -100, 50, 40, 10],
+  [-170, 85, 36, 30, 9], [-125, 90, 30, 20, 11], [-150, 150, 40, 40, 8], [-50, 155, 44, 36, 10],
+  [-175, 46, 30, 32, 10], [18, -38, 26, 26, 10], [20, -95, 30, 40, 13], [128, -20, 26, 40, 11], [128, -100, 26, 30, 9],
+  [178, 10, 26, 26, 8], [178, -100, 24, 40, 10], [176, -160, 30, 30, 12],
+];
+const buildingsGroup = new THREE.Group();
+scene.add(buildingsGroup);
+(() => {
+  const tones = ['#fbfaf7', '#f4ece0', '#e9f0f6', '#f6e9e4', '#f1f3ea'];
+  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff }), BUILDINGS.length);
+  const edges = [];
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
+  BUILDINGS.forEach(([cx, cz, w, d, h, c], i) => {
+    const xs = [cx - w / 2, cx + w / 2], zs = [cz - d / 2, cz + d / 2];
+    let lo = Infinity, hi = -Infinity;
+    for (const x of xs) for (const z of zs) { const y = groundY(x, z); lo = Math.min(lo, y); hi = Math.max(hi, y); }
+    const base = lo - 3, top = hi + h;
+    m4.compose(new THREE.Vector3(cx, (base + top) / 2, cz), q, new THREE.Vector3(w, top - base, d));
+    mesh.setMatrixAt(i, m4);
+    mesh.setColorAt(i, col.set(c || tones[i % tones.length]));
+    const C = (x, y, z) => [x, y, z];
+    const b = [C(xs[0], lo, zs[0]), C(xs[1], lo, zs[0]), C(xs[1], lo, zs[1]), C(xs[0], lo, zs[1])];
+    const t = b.map(([x, , z]) => C(x, top, z));
+    for (let k = 0; k < 4; k++) { edges.push(...t[k], ...t[(k + 1) % 4], ...b[k], ...t[k]); }
+  });
+  buildingsGroup.add(mesh);
+  const eg = new THREE.BufferGeometry(); eg.setAttribute('position', new THREE.Float32BufferAttribute(edges, 3));
+  buildingsGroup.add(new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color: '#b9b2a4', transparent: true, opacity: 0.55 })));
+  // bridge deck, parapets and river steps, merged
+  const parts = [];
+  const box = (w, h, d, x, y, z) => parts.push(new THREE.BoxGeometry(w, h, d).translate(x, y, z));
+  const bx = (BRIDGE.x0 + BRIDGE.x1) / 2, bw = BRIDGE.x1 - BRIDGE.x0, bz = (BRIDGE.z0 + BRIDGE.z1) / 2;
+  box(bw, 1.4, 8, bx, BRIDGE.y - 0.7, bz);
+  box(bw, 0.9, 0.4, bx, BRIDGE.y + 0.45, BRIDGE.z0 + 0.2);
+  box(bw, 0.9, 0.4, bx, BRIDGE.y + 0.45, BRIDGE.z1 - 0.2);
+  for (let k = 0; k < 7; k++) { const x = 63.6 + k * 1.2; const y = groundY(x, -20); box(1.2, 1.2, 14, x, y - 0.55, -20); }
+  scene.add(new THREE.Mesh(mergeGeometries(parts), new THREE.MeshLambertMaterial({ color: '#ddd3c2' })));
+  // trees: the park and the river promenade
+  const tr = rng(11), spots = [];
+  for (let i = 0; i < 34; i++) { const a = tr() * TAU, rr = Math.sqrt(tr()) * 0.92; spots.push([PARK.x + Math.cos(a) * PARK.rx * rr, PARK.z + Math.sin(a) * PARK.rz * rr]); }
+  for (let z = -190; z <= 190; z += 15) { if (Math.abs(z + 62) < 10 || Math.abs(z + 20) < 12) continue; spots.push([riverX(z) - 27, z], [riverX(z) + 27, z + 7]); }
+  const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.3, 1), new THREE.MeshLambertMaterial({ color: '#a7cf95' }), spots.length);
+  const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.24, 2.6, 6), new THREE.MeshLambertMaterial({ color: '#a38a6e' }), spots.length);
+  spots.forEach(([x, z], i) => {
+    const y = groundY(x, z), s = 0.75 + tr() * 0.5;
+    m4.compose(new THREE.Vector3(x, y + 1.3, z), q, new THREE.Vector3(1, 1, 1)); trunk.setMatrixAt(i, m4);
+    m4.compose(new THREE.Vector3(x, y + 3.2 * s + 0.8, z), q, new THREE.Vector3(s, s * 1.1, s)); crown.setMatrixAt(i, m4);
+  });
+  scene.add(crown, trunk);
+})();
+
+// =====================================================================
+// the walk: ribbon, dashed line, direction chevrons, depth points
+// =====================================================================
+const walkGroup = new THREE.Group();
+const depthPoints = (() => {
+  const n = WALK.pts.length;
+  const pos = [], idx = [], line = [];
+  for (let i = 0; i < n; i++) {
+    const p = WALK.pts[i], q2 = WALK.pts[Math.min(i + 1, n - 1)], q1 = WALK.pts[Math.max(i - 1, 0)];
+    let tx = q2.x - q1.x, tz = q2.z - q1.z; const l = Math.hypot(tx, tz) || 1; tx /= l; tz /= l;
+    const nx = -tz, nz = tx, w = 0.6;
+    for (const sgn of [-1, 1]) { const x = p.x + nx * w * sgn, z = p.z + nz * w * sgn; pos.push(x, groundY(x, z) + 0.05, z); }
+    line.push(p.x, groundY(p.x, p.z) + 0.09, p.z);
+    if (i < n - 1) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  }
+  const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); rg.setIndex(idx);
+  const ribbon = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ color: '#4d9fe0', transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  ribbon.renderOrder = 1;
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(line, 3));
+  const dashed = new THREE.Line(lg, new THREE.LineDashedMaterial({ color: '#2f86cf', dashSize: 1.6, gapSize: 1.2, transparent: true, opacity: 0.75 }));
+  dashed.computeLineDistances();
+  // chevrons every 18 m showing the walking direction
+  const chev = [];
+  for (let s = 9; s < WALK.L - 4; s += 18) {
+    const a = pathAt(s), b = pathAt(s + 1), yaw = Math.atan2(b.x - a.x, b.z - a.z);
+    const shape = new THREE.Shape([new THREE.Vector2(0, 0.35), new THREE.Vector2(-0.3, -0.15), new THREE.Vector2(0, 0.02), new THREE.Vector2(0.3, -0.15)]);
+    const g = new THREE.ShapeGeometry(shape).rotateX(Math.PI / 2).rotateY(yaw).translate(a.x, groundY(a.x, a.z) + 0.1, a.z);
+    g.deleteAttribute('uv'); g.deleteAttribute('normal'); chev.push(g);
+  }
+  const chevrons = new THREE.Mesh(mergeGeometries(chev), new THREE.MeshBasicMaterial({ color: '#2f86cf', transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }));
+  chevrons.renderOrder = 2;
+  walkGroup.add(ribbon, dashed, chevrons);
+  scene.add(walkGroup);
+  // depth points: sparse, mostly beside the walk at facade-like heights
+  const pr = rng(23), pp = [], pc = [], col = new THREE.Color();
+  for (let i = 0; i < 420; i++) {
+    const s = pr() * WALK.L, a = pathAt(s), b = pathAt(s + 1);
+    let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; tx /= l; tz /= l;
+    const side = pr() < 0.5 ? -1 : 1, off = 3 + pr() * 9 + (pr() < 0.3 ? pr() * 6 : 0);
+    const x = a.x - tz * off * side, z = a.z + tx * off * side;
+    const y = groundY(x, z) + (pr() < 0.35 ? pr() * 0.3 : 0.4 + pr() * 6);
+    pp.push(x, y, z);
+    col.setHSL(0.58 + pr() * 0.06, 0.35, 0.42 + pr() * 0.2); pc.push(col.r, col.g, col.b);
+  }
+  const pg = new THREE.BufferGeometry();
+  pg.setAttribute('position', new THREE.Float32BufferAttribute(pp, 3)); pg.setAttribute('color', new THREE.Float32BufferAttribute(pc, 3));
+  const pts = new THREE.Points(pg, new THREE.PointsMaterial({ size: 3.2, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false }));
+  pts.visible = false;
+  scene.add(pts);
+  return pts;
+})();
+
+// =====================================================================
+// canvas textures: signs, badges, markers, sepia photos, codes
+// =====================================================================
+const texCache = new Map();
+function canvasTex(key, draw) {
+  if (texCache.has(key)) return texCache.get(key);
+  const cv = document.createElement('canvas');
+  draw(cv);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = maxAniso;
+  t.userData.w = cv.width; t.userData.h = cv.height;
+  texCache.set(key, t);
+  return t;
+}
+function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+function fitText(g, text, maxW, size, weight) {
+  let s = size; g.font = `${weight} ${s}px ${FONT}`;
+  while (g.measureText(text).width > maxW && s > 26) { s -= 2; g.font = `${weight} ${s}px ${FONT}`; }
+  let t = text;
+  while (g.measureText(t).width > maxW && t.length > 1) t = t.slice(0, -2) + '…';
+  return t;
+}
+const signTex = (title, color) => canvasTex(`sign|${title}|${color}`, (cv) => {
+  cv.width = 512; cv.height = 168; const g = cv.getContext('2d');
+  g.fillStyle = 'rgba(255,255,255,0.97)'; roundRect(g, 6, 6, 500, 156, 28); g.fill();
+  g.strokeStyle = 'rgba(30,50,70,0.14)'; g.lineWidth = 4; g.stroke();
+  g.fillStyle = color; roundRect(g, 22, 30, 14, 108, 7); g.fill();
+  const t = fitText(g, title || 'Untitled', 430, 50, 650);
+  g.fillStyle = '#25303c'; g.textBaseline = 'middle'; g.fillText(t, 56, 86);
+});
+const captionTex = (title) => canvasTex(`cap|${title}`, (cv) => {
+  cv.width = 512; cv.height = 72; const g = cv.getContext('2d');
+  g.fillStyle = '#fbf7ee'; g.fillRect(0, 0, 512, 72);
+  const t = fitText(g, title || 'Untitled', 480, 34, 600);
+  g.fillStyle = '#5a4630'; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText(t, 256, 38);
+});
+const badgeTex = (num, title, color, selected) => canvasTex(`badge|${num}|${title}|${color}|${selected}`, (cv) => {
+  const g0 = document.createElement('canvas').getContext('2d'); g0.font = `600 32px ${FONT}`;
+  const tw = Math.min(360, g0.measureText(title || 'Untitled').width);
+  cv.width = Math.ceil(tw + 104); cv.height = 76; const g = cv.getContext('2d');
+  const W = cv.width;
+  g.fillStyle = selected ? '#ffffff' : 'rgba(255,255,255,0.92)'; roundRect(g, 4, 4, W - 8, 60, 30); g.fill();
+  g.lineWidth = selected ? 5 : 2; g.strokeStyle = selected ? '#2f8fd8' : 'rgba(30,50,70,0.15)'; g.stroke();
+  g.beginPath(); g.moveTo(W / 2 - 8, 63); g.lineTo(W / 2, 74); g.lineTo(W / 2 + 8, 63); g.fillStyle = selected ? '#2f8fd8' : 'rgba(255,255,255,0.92)'; g.fill();
+  g.fillStyle = color; g.beginPath(); g.arc(36, 34, 22, 0, TAU); g.fill();
+  g.fillStyle = '#fff'; g.font = `700 26px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(num), 36, 35);
+  g.textAlign = 'left'; g.fillStyle = '#25303c';
+  const t = fitText(g, title || 'Untitled', 360, 32, 600); g.fillText(t, 70, 35);
+});
+const markerTex = (type, color, selected) => canvasTex(`mk|${type}|${color}|${selected}`, (cv) => {
+  cv.width = cv.height = 64; const g = cv.getContext('2d');
+  g.fillStyle = '#fff'; g.beginPath(); g.arc(32, 32, 28, 0, TAU); g.fill();
+  g.fillStyle = color; g.beginPath(); g.arc(32, 32, 23, 0, TAU); g.fill();
+  if (selected) { g.strokeStyle = '#2f8fd8'; g.lineWidth = 5; g.beginPath(); g.arc(32, 32, 29, 0, TAU); g.stroke(); }
+  g.fillStyle = '#fff'; g.strokeStyle = '#fff'; g.lineWidth = 3;
+  if (type === 'pin') { g.beginPath(); g.arc(32, 32, 8, 0, TAU); g.fill(); }
+  else if (type === 'photo') { g.strokeRect(21, 24, 22, 16); }
+  else if (type === 'model') { g.save(); g.translate(32, 32); g.rotate(Math.PI / 4); g.fillRect(-7, -7, 14, 14); g.restore(); }
+  else if (type === 'code') { g.fillRect(20, 20, 9, 9); g.fillRect(35, 20, 9, 9); g.fillRect(20, 35, 9, 9); g.fillRect(36, 36, 5, 5); }
+});
+const blobTex = canvasTex('blob', (cv) => {
+  cv.width = cv.height = 64; const g = cv.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 2, 32, 32, 31); gr.addColorStop(0, 'rgba(40,40,30,0.32)'); gr.addColorStop(1, 'rgba(40,40,30,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+});
+const photoTex = (seed) => canvasTex(`photo|${seed}`, (cv) => {
+  cv.width = 512; cv.height = 344; const g = cv.getContext('2d'), r = rng(seed), W = 512, H = 344;
+  const skyG = g.createLinearGradient(0, 0, 0, H); skyG.addColorStop(0, '#f0e3c6'); skyG.addColorStop(1, '#d6bf96');
+  g.fillStyle = skyG; g.fillRect(0, 0, W, H);
+  const hz = H * (0.58 + r() * 0.08);
+  for (let x = -10; x < W;) {
+    const w = 34 + r() * 70, h = 70 + r() * 120, tone = 95 + r() * 40;
+    g.fillStyle = `rgb(${tone + 20},${tone},${tone - 30})`; g.fillRect(x, hz - h, w, h);
+    if (r() < 0.55) { g.beginPath(); g.moveTo(x - 2, hz - h); g.lineTo(x + w / 2, hz - h - 18 - r() * 22); g.lineTo(x + w + 2, hz - h); g.fill(); }
+    g.fillStyle = 'rgba(60,44,28,0.45)';
+    for (let yy = hz - h + 14; yy < hz - 18; yy += 22) for (let xx = x + 7; xx < x + w - 10; xx += 14) g.fillRect(xx, yy, 6, 10);
+    x += w + r() * 5;
+  }
+  g.fillStyle = '#b39871'; g.fillRect(0, hz, W, H - hz);
+  g.strokeStyle = 'rgba(90,70,45,0.25)'; g.lineWidth = 1;
+  for (let k = 0; k < 9; k++) { g.beginPath(); g.moveTo(W / 2, hz); g.lineTo(-200 + k * 115, H); g.stroke(); }
+  for (let k = 0; k < 9; k++) {
+    const y = hz + 10 + r() * (H - hz - 30), s = 0.4 + ((y - hz) / (H - hz)) * 1.2, x = r() * W;
+    g.fillStyle = 'rgba(55,40,26,0.85)'; g.fillRect(x - 4 * s, y - 26 * s, 8 * s, 22 * s);
+    g.beginPath(); g.arc(x, y - 30 * s, 4.5 * s, 0, TAU); g.fill();
+  }
+  const vg = g.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, W * 0.62);
+  vg.addColorStop(0, 'rgba(70,45,20,0)'); vg.addColorStop(1, 'rgba(70,45,20,0.6)'); g.fillStyle = vg; g.fillRect(0, 0, W, H);
+  for (let k = 0; k < 2600; k++) { g.fillStyle = r() < 0.5 ? 'rgba(255,245,220,0.10)' : 'rgba(40,25,10,0.10)'; g.fillRect(r() * W, r() * H, 1.5, 1.5); }
+  g.strokeStyle = '#f7f0e0'; g.lineWidth = 14; g.strokeRect(0, 0, W, H);
+});
+const qrTex = (seed) => canvasTex(`qr|${seed}`, (cv) => {
+  const n = 25, px = 9, q = 2; cv.width = cv.height = (n + 2 * q) * px; const g = cv.getContext('2d'), r = rng(seed);
+  g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.fillStyle = '#1d2330';
+  const finder = (cx, cy) => { for (let y = 0; y < 7; y++) for (let x = 0; x < 7; x++) { const e = x === 0 || y === 0 || x === 6 || y === 6, c = x >= 2 && x <= 4 && y >= 2 && y <= 4; if (e || c) g.fillRect((cx + x + q) * px, (cy + y + q) * px, px, px); } };
+  const inF = (x, y) => (x < 8 && y < 8) || (x > n - 9 && y < 8) || (x < 8 && y > n - 9);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (!inF(x, y) && r() < 0.48) g.fillRect((x + q) * px, (y + q) * px, px, px);
+  finder(0, 0); finder(n - 7, 0); finder(0, n - 7);
+});
+
+// =====================================================================
+// shared geometries for tour objects
+// =====================================================================
+const GEO = {
+  post: new THREE.CylinderGeometry(0.035, 0.035, 1.75, 8).translate(0, 0.875, 0),
+  head: new THREE.SphereGeometry(0.08, 12, 8).translate(0, 1.75, 0),
+  sign: new THREE.PlaneGeometry(1.3, 0.426),
+  frame: new THREE.BoxGeometry(1.62, 1.14, 0.07),
+  pic: new THREE.PlaneGeometry(1.48, 0.995),
+  caption: new THREE.PlaneGeometry(1.2, 0.17),
+  leg: new THREE.BoxGeometry(0.05, 1.1, 0.05),
+  blob: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+  stake: new THREE.CylinderGeometry(0.025, 0.025, 3.3, 6).translate(0, 1.65, 0),
+  plaque: new THREE.BoxGeometry(0.62, 0.62, 0.04),
+  qr: new THREE.PlaneGeometry(0.54, 0.54),
+  codePost: new THREE.CylinderGeometry(0.045, 0.045, 1, 8).translate(0, 0.5, 0),
+  horse: (() => {
+    const p = [];
+    const b = (w, h, d, x, y, z, rx = 0) => p.push(new THREE.BoxGeometry(w, h, d).rotateX(rx).translate(x, y, z));
+    const y0 = 0.9;
+    b(0.55, 0.62, 1.55, 0, y0 + 1.25, 0); // body
+    b(0.3, 0.75, 0.36, 0, y0 + 1.75, 0.7, -0.55); // neck
+    b(0.26, 0.3, 0.62, 0, y0 + 2.08, 1.02, 0.25); // head
+    for (const [x, z] of [[-0.17, 0.55], [0.17, 0.55], [-0.17, -0.55], [0.17, -0.55]]) b(0.15, 0.95, 0.15, x, y0 + 0.47, z);
+    b(0.09, 0.6, 0.09, 0, y0 + 1.15, -0.85, 0.4); // tail
+    return mergeGeometries(p);
+  })(),
+  pedestal: new THREE.BoxGeometry(1.1, 0.9, 2.3).translate(0, 0.45, 0),
+  decal: (() => {
+    const ring = new THREE.RingGeometry(0.85, 1.1, 40);
+    const arrow = new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(0, 2.1), new THREE.Vector2(-0.45, 1.3), new THREE.Vector2(0.45, 1.3)]));
+    return mergeGeometries([ring, arrow]).rotateX(-Math.PI / 2);
+  })(),
+};
+
+// =====================================================================
+// tour visuals (rebuilt on structural change, updated in place while dragging)
+// =====================================================================
+const tourRoot = new THREE.Group();
+scene.add(tourRoot);
+const vis = { st: new Map(), it: new Map(), code: new Map() };
+const layers = { walk: true, depth: false, codes: true, buildings: true };
+let pickables = [];
+let sel = null; // { kind: 'station' | 'item' | 'code', id }
+let hover = null;
+let mode = 'eye'; // 'eye' | 'over' (bird's-eye) | 'top' (straight down)
+let flatF = 0; // 0 = pins and photos stand, 1 = they lie flat (top view)
+const ACC = '#2f8fd8';
+const flatMat = (color, opacity) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+const noRay = () => {};
+const blobSize = { pin: 1.1, photo: 2.2, model: 3.2 };
+
+function ringGeometry(cx, cz, r, width, dashed) {
+  const N = 160, r0 = Math.max(0.1, r - width / 2), r1 = r + width / 2;
+  const pos = new Float32Array((N + 1) * 6), idx = [];
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * TAU, c = Math.cos(a), s = Math.sin(a);
+    [r0, r1].forEach((rr, k) => { const x = cx + c * rr, z = cz + s * rr; pos.set([x, groundY(x, z) + 0.08, z], (i * 2 + k) * 3); });
+    if (i < N && (!dashed || i % 4 < 2)) { const a0 = i * 2; idx.push(a0, a0 + 2, a0 + 1, a0 + 1, a0 + 2, a0 + 3); }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(idx);
+  return g;
+}
+function fillGeometry(st) {
+  const N = 64, K = 8, pos = [st.x, groundY(st.x, st.z) + 0.05, st.z], idx = [];
+  for (let k = 1; k <= K; k++) for (let i = 0; i < N; i++) {
+    const a = (i / N) * TAU, r = (st.radius * k) / K, x = st.x + Math.cos(a) * r, z = st.z + Math.sin(a) * r;
+    pos.push(x, groundY(x, z) + 0.05, z);
+  }
+  for (let i = 0; i < N; i++) idx.push(0, 1 + i, 1 + ((i + 1) % N));
+  for (let k = 1; k < K; k++) for (let i = 0; i < N; i++) {
+    const a = 1 + (k - 1) * N + i, b = 1 + (k - 1) * N + ((i + 1) % N), c = a + N, d = b + N;
+    idx.push(a, c, b, b, c, d);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+  return g;
+}
+// rings keep a steady on-screen width from above; at eye height a fixed 30 cm band reads best
+const ringWidth = (selected, st) => (mode === 'eye' ? 0.3 * (selected ? 1.5 : 1) : wppAt(st.x, st.y, st.z) * (selected ? 6 : 3.5));
+const isSel = (kind, id) => !!sel && sel.kind === kind && sel.id === id;
+// in the top view the flat pins and photos grow with the zoom so they stay readable and pickable (about 60 px)
+const FLAT_SIZE = { pin: 2.2, photo: 1.7 };
+
+function buildStation(st, idx) {
+  const color = new THREE.Color(st.color);
+  const ring = new THREE.Mesh(new THREE.BufferGeometry(), flatMat(color, 0.85)); ring.renderOrder = 3; ring.raycast = noRay;
+  const fill = new THREE.Mesh(new THREE.BufferGeometry(), flatMat(color, 0.07)); fill.renderOrder = 2; fill.raycast = noRay;
+  const pre = new THREE.Mesh(new THREE.BufferGeometry(), flatMat(new THREE.Color(ACC), 0.5)); pre.renderOrder = 3; pre.raycast = noRay;
+  const decal = new THREE.Mesh(GEO.decal, flatMat(color, 0.9)); decal.renderOrder = 3;
+  const stake = new THREE.Mesh(GEO.stake, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45 }));
+  const badge = new THREE.Sprite(new THREE.SpriteMaterial({ map: badgeTex(idx + 1, st.title, st.color, false), depthTest: false, transparent: true, sizeAttenuation: false }));
+  badge.center.set(0.5, 0); badge.renderOrder = 20;
+  for (const o of [decal, stake, badge]) { o.userData.pick = { kind: 'station', id: st.id }; pickables.push(o); }
+  tourRoot.add(ring, fill, pre, decal, stake, badge);
+  vis.st.set(st.id, { ring, fill, pre, decal, stake, badge, idx });
+  updateStationVis(st, true);
+  st.items.forEach((it) => buildItem(st, it));
+}
+function updateStationVis(st, geometryToo = true) {
+  const v = vis.st.get(st.id); if (!v) return;
+  const y = groundY(st.x, st.z), selected = isSel('station', st.id);
+  if (geometryToo) {
+    v.ring.geometry.dispose(); v.ring.geometry = ringGeometry(st.x, st.z, st.radius, ringWidth(selected, st));
+    v.wb = mode === 'eye' ? 0 : wppAt(st.x, st.y, st.z);
+    v.fill.geometry.dispose(); v.fill.geometry = fillGeometry(st);
+    // the preload ring: twice the radius, faint and dashed, not editable
+    if (selected) { v.pre.geometry.dispose(); v.pre.geometry = ringGeometry(st.x, st.z, st.radius * 2, ringWidth(false, st) * 0.8, true); }
+  }
+  v.pre.visible = selected;
+  v.pre.material.opacity = mode === 'eye' ? 0.4 : 0.5;
+  v.ring.material.color.set(selected ? ACC : st.color);
+  v.ring.material.opacity = selected ? 1 : 0.8;
+  // standing inside a station, a strong fill would tint the whole view; keep it a whisper at eye height
+  v.fill.material.opacity = mode !== 'eye' ? (selected ? 0.14 : 0.07) : (selected ? 0.05 : 0.025);
+  v.decal.position.set(st.x, y + 0.07, st.z); v.decal.rotation.y = st.yaw;
+  v.stake.position.set(st.x, y, st.z);
+  // from straight above the badge would hide the anchor: it hangs below the circle instead
+  if (mode === 'top') { v.badge.position.set(st.x, y + 0.5, st.z + st.radius); v.badge.center.set(0.5, 1.15); }
+  else { v.badge.position.set(st.x, y + 3.3, st.z); v.badge.center.set(0.5, 0); }
+  v.badge.material.map = badgeTex(v.idx + 1, st.title, st.color, selected);
+  for (const it of st.items) updateItemVis(st, it);
+}
+
+function buildItem(st, it) {
+  const g = new THREE.Group(), pivot = new THREE.Group();
+  g.add(pivot);
+  g.userData.pick = { kind: 'item', id: it.id };
+  const lit = []; // lit materials that take the selection tint
+  const L = (color) => { const m = new THREE.MeshLambertMaterial({ color }); lit.push(m); return m; };
+  let flatT = 0, textMat = null;
+  if (it.type === 'pin') {
+    const m = L(st.color);
+    pivot.add(new THREE.Mesh(GEO.post, m), new THREE.Mesh(GEO.head, m));
+    const sm = new THREE.MeshBasicMaterial({ map: signTex(it.title, st.color), transparent: true });
+    const front = new THREE.Mesh(GEO.sign, sm); front.position.y = 2.02;
+    const back = new THREE.Mesh(GEO.sign, sm); back.position.y = 2.02; back.rotation.y = Math.PI;
+    pivot.add(front, back);
+    textMat = sm; flatT = 1.6;
+  } else if (it.type === 'photo') {
+    const y = it.stand ? 1.6 : 0;
+    const frame = new THREE.Mesh(GEO.frame, L('#e3cda6')); frame.position.y = y;
+    const pic = new THREE.Mesh(GEO.pic, new THREE.MeshBasicMaterial({ map: photoTex(hash(it.id)) })); pic.position.set(0, y, 0.037);
+    const cap = new THREE.Mesh(GEO.caption, new THREE.MeshBasicMaterial({ map: captionTex(it.title) })); cap.position.set(0, y - 0.68, 0.02);
+    pivot.add(frame, pic, cap);
+    if (it.stand) for (const x of [-0.5, 0.5]) { const leg = new THREE.Mesh(GEO.leg, L('#c4ab83')); leg.position.set(x, 0.55, -0.05); pivot.add(leg); }
+    textMat = cap.material;
+    // lying flat, a wall photo slides forward so it is not hidden under the eaves
+    flatT = it.stand ? 1.6 : 0.8;
+  } else {
+    pivot.add(new THREE.Mesh(GEO.pedestal, L('#d9d2c4')), new THREE.Mesh(GEO.horse, L('#a7743d')));
+  }
+  const blob = new THREE.Mesh(GEO.blob, new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false }));
+  blob.raycast = noRay; blob.renderOrder = 1;
+  g.add(blob);
+  const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: markerTex(it.type, st.color, false), depthTest: false, transparent: true, sizeAttenuation: false }));
+  marker.renderOrder = 15; marker.userData.pick = { kind: 'item', id: it.id };
+  tourRoot.add(g, marker);
+  pickables.push(g, marker);
+  vis.it.set(it.id, { g, pivot, marker, lit, blob, type: it.type, flatT, textMat });
+  updateItemVis(st, it);
+}
+function updateItemVis(st, it) {
+  const v = vis.it.get(it.id); if (!v) return;
+  const w = itemWorld(st, it), hA = w.y - groundY(w.x, w.z);
+  v.g.position.set(w.x, w.y, w.z); v.g.rotation.y = w.yaw;
+  const sc = it.type === 'model' ? it.scale || 1 : 1;
+  // top view: pins and photos tip over backwards and lie on the ground facing up; 3D models stay as they are
+  const f = it.type === 'model' ? 0 : flatF;
+  const b = f > 0 ? clamp((60 * wppAt(w.x, w.y, w.z)) / FLAT_SIZE[it.type], 1, 7) : 1, boost = 1 + (b - 1) * f;
+  v.boost = boost;
+  v.pivot.scale.setScalar(sc * boost);
+  v.pivot.rotation.x = -f * Math.PI / 2;
+  v.pivot.position.set(0, (-hA + 0.22) * f, v.flatT * boost * f);
+  v.blob.position.y = -hA + 0.04;
+  v.blob.scale.setScalar(blobSize[it.type] * sc);
+  v.blob.visible = hA > -0.3 && hA < 0.6 && f < 0.5;
+  v.marker.position.set(w.x, w.y + (f > 0.5 ? 0.8 : itemTop(it) * sc + 0.6), w.z);
+}
+const itemTop = (it) => (it.type === 'pin' ? 2.3 : it.type === 'photo' ? (it.stand ? 2.2 : 0.6) : 3.1);
+
+function buildCode(c) {
+  const g = new THREE.Group(); g.userData.pick = { kind: 'code', id: c.id };
+  const plaqueMat = new THREE.MeshLambertMaterial({ color: '#4f5bd5' });
+  const plaque = new THREE.Mesh(GEO.plaque, plaqueMat);
+  const qr = new THREE.Mesh(GEO.qr, new THREE.MeshBasicMaterial({ map: qrTex(hash(c.id)) })); qr.position.z = 0.021;
+  g.add(plaque, qr);
+  const lit = [plaqueMat];
+  if (c.mount === 'post') {
+    const pm = new THREE.MeshLambertMaterial({ color: '#9aa3ad' }); lit.push(pm);
+    const post = new THREE.Mesh(GEO.codePost, pm); post.scale.y = c.h + 0.3; post.position.set(0, -c.h, -0.06); g.add(post);
+  }
+  g.visible = layers.codes;
+  const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: markerTex('code', '#4f5bd5', false), depthTest: false, transparent: true, sizeAttenuation: false }));
+  marker.renderOrder = 15; marker.userData.pick = { kind: 'code', id: c.id };
+  tourRoot.add(g, marker); pickables.push(g, marker);
+  vis.code.set(c.id, { g, marker, lit });
+  updateCodeVis(c);
+}
+function updateCodeVis(c) {
+  const v = vis.code.get(c.id); if (!v) return;
+  const y = groundY(c.x, c.z);
+  v.g.position.set(c.x, y + c.h, c.z); v.g.rotation.y = c.yaw;
+  v.marker.position.set(c.x, y + c.h + 1.0, c.z);
+}
+
+function rebuildTour() {
+  tourRoot.traverse((o) => {
+    if (o.material) { (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose()); }
+  });
+  for (const v of vis.st.values()) { v.ring.geometry.dispose(); v.fill.geometry.dispose(); v.pre.geometry.dispose(); }
+  tourRoot.clear(); vis.st.clear(); vis.it.clear(); vis.code.clear(); pickables = [];
+  hover = null; lastHoverKey = ''; hideTip();
+  tour.stations.forEach((st, i) => buildStation(st, i));
+  tour.codes.forEach(buildCode);
+  applyLook();
+}
+// selection and hover tint
+function applyLook() {
+  for (const st of tour.stations) {
+    if (!vis.st.get(st.id)) continue;
+    updateStationVis(st, true);
+    for (const it of st.items) {
+      const iv = vis.it.get(it.id); if (!iv) continue;
+      const s = isSel('item', it.id), h = hover && hover.kind === 'item' && hover.id === it.id;
+      iv.lit.forEach((m) => m.emissive.set(s ? '#1d5f96' : h ? '#3a4652' : '#000000'));
+      iv.marker.material.map = markerTex(it.type, st.color, s);
+    }
+  }
+  for (const c of tour.codes) {
+    const v = vis.code.get(c.id); if (!v) continue;
+    const s = isSel('code', c.id), h = hover && hover.kind === 'code' && hover.id === c.id;
+    v.lit.forEach((m) => m.emissive.set(s ? '#1d5f96' : h ? '#3a4652' : '#000000'));
+    v.marker.material.map = markerTex('code', '#4f5bd5', s);
+  }
+  if (hover && hover.kind === 'station' && !isSel('station', hover.id)) {
+    const v = vis.st.get(hover.id); if (v) v.ring.material.opacity = 1;
+  }
+}
+
+// =====================================================================
+// transform handles: a blue ring with four white dots and a rotation knob
+// (stations: the station circle itself carries the dots, which set the arrival radius;
+//  3D models: the dots scale; pins, photos and codes get the ring and the knob, no dots)
+// =====================================================================
+const knobTex = canvasTex('knob', (cv) => {
+  cv.width = cv.height = 96; const g = cv.getContext('2d');
+  g.beginPath(); g.arc(48, 48, 42, 0, TAU); g.fillStyle = '#fff'; g.fill(); g.lineWidth = 6; g.strokeStyle = ACC; g.stroke();
+  g.lineWidth = 6.5; g.lineCap = 'round'; g.beginPath(); g.arc(48, 48, 21, -2.5, 1.25); g.stroke();
+  const a = 1.25, ex = 48 + 21 * Math.cos(a), ey = 48 + 21 * Math.sin(a);
+  g.fillStyle = ACC; g.beginPath(); g.moveTo(ex + 12, ey - 3); g.lineTo(ex - 9, ey + 10); g.lineTo(ex - 5, ey - 12); g.closePath(); g.fill();
+});
+const gripTex = canvasTex('grip', (cv) => {
+  cv.width = cv.height = 48; const g = cv.getContext('2d');
+  g.beginPath(); g.arc(24, 24, 19, 0, TAU); g.fillStyle = '#fff'; g.fill(); g.lineWidth = 5; g.strokeStyle = ACC; g.stroke();
+});
+const gizmoMat = new THREE.MeshBasicMaterial({ color: ACC, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false });
+const selRing = new THREE.Mesh(new THREE.RingGeometry(0.92, 1, 72).rotateX(-Math.PI / 2), gizmoMat);
+selRing.renderOrder = 20; selRing.raycast = noRay;
+const selBar = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0, 0, -0.5), gizmoMat);
+selBar.renderOrder = 20; selBar.raycast = noRay;
+const knob = new THREE.Sprite(new THREE.SpriteMaterial({ map: knobTex, depthTest: false, transparent: true, sizeAttenuation: false }));
+knob.renderOrder = 25;
+const grips = [0, 1, 2, 3].map(() => {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: gripTex, depthTest: false, transparent: true, sizeAttenuation: false }));
+  s.renderOrder = 25; scene.add(s); return s;
+});
+scene.add(selRing, selBar, knob);
+const _v = new THREE.Vector3();
+const pxK = () => (2 * Math.tan((camera.fov * DEG) / 2)) / innerHeight;
+const wppAt = (x, y, z) => camera.position.distanceTo(_v.set(x, y, z)) * pxK();
+let gizmo = null; // what the handles currently describe, for picking the middle
+function updateGizmo() {
+  selRing.visible = selBar.visible = knob.visible = false;
+  for (const g of grips) g.visible = false;
+  gizmo = null;
+  const r = resolve(sel);
+  if (!r || carry || (r.code && !layers.codes)) return;
+  const k = pxK();
+  let cx, cz, gy, L, dir;
+  if (sel.kind === 'station') {
+    const st = r.st;
+    cx = st.x; cz = st.z; gy = groundY(cx, cz); dir = fwd(st.yaw);
+    grips.forEach((g, i) => {
+      const d = fwd(st.yaw + Math.PI / 4 + (i * Math.PI) / 2), x = cx + d.x * st.radius, z = cz + d.z * st.radius;
+      g.visible = true; g.position.set(x, groundY(x, z) + 0.3, z); g.scale.set(15 * k, 15 * k, 1);
+    });
+    const kx = cx + dir.x * st.radius, kz = cz + dir.z * st.radius;
+    L = st.radius + 30 * wppAt(kx, groundY(kx, kz), kz);
+    gizmo = { kind: 'station', cx, cz, R: st.radius };
+  } else {
+    const p = worldPose(sel), isModel = !!(r.it && r.it.type === 'model'), sc = isModel ? r.it.scale : 1;
+    cx = p.x; cz = p.z; gy = groundY(cx, cz); dir = { x: Math.sin(p.yaw), z: Math.cos(p.yaw) };
+    const wpp = wppAt(cx, gy, cz), base = isModel ? 2.1 * sc : sel.kind === 'code' ? 0.8 : 1.15 * ((vis.it.get(sel.id) || {}).boost || 1);
+    const R = Math.max(base, 18 * wpp);
+    selRing.visible = true; selRing.position.set(cx, gy + 0.06, cz); selRing.scale.set(R, 1, R);
+    if (isModel) grips.forEach((g, i) => {
+      const a = p.yaw + Math.PI / 4 + (i * Math.PI) / 2, x = cx + Math.sin(a) * R, z = cz + Math.cos(a) * R;
+      g.visible = true; g.position.set(x, gy + 0.08, z); g.scale.set(15 * k, 15 * k, 1);
+    });
+    L = R + 16 * wpp;
+    gizmo = { kind: 'item', cx, cz, R };
+  }
+  selBar.visible = true; selBar.position.set(cx, gy + 0.06, cz); selBar.rotation.y = Math.atan2(-dir.x, -dir.z);
+  selBar.scale.set(Math.max(0.03, 2 * wppAt(cx, gy, cz)), 1, L);
+  knob.visible = true; knob.position.set(cx + dir.x * L, gy + 0.12, cz + dir.z * L); knob.scale.set(28 * k, 28 * k, 1);
+}
+
+// =====================================================================
+// selection model helpers
+// =====================================================================
+function resolve(s) {
+  if (!s) return null;
+  if (s.kind === 'station') { const st = tour.stations.find((x) => x.id === s.id); return st ? { st } : null; }
+  if (s.kind === 'item') { for (const st of tour.stations) { const it = st.items.find((x) => x.id === s.id); if (it) return { st, it }; } return null; }
+  const code = tour.codes.find((x) => x.id === s.id); return code ? { code } : null;
+}
+function worldPose(s) {
+  const r = resolve(s); if (!r) return null;
+  if (r.it) { const w = itemWorld(r.st, r.it); return { ...w, h: w.y - groundY(w.x, w.z), top: itemTop(r.it) }; }
+  if (r.st) return { x: r.st.x, z: r.st.z, y: r.st.y, yaw: r.st.yaw, h: 0, top: 3.3 };
+  return { x: r.code.x, z: r.code.z, y: groundY(r.code.x, r.code.z) + r.code.h, yaw: r.code.yaw, h: r.code.h, top: 0.5 };
+}
+function titleOf(s) { const r = resolve(s); return r ? (r.it || r.st || r.code).title : ''; }
+// Moving: a single item keeps its height above the ground; a station's anchor stays on the ground and its
+// items move rigidly with it (they may float above or sink into a slope until "Put items on the ground").
+function setWorldXZ(s, x, z) {
+  x = clamp(x, -HALF + 3, HALF - 3); z = clamp(z, -HALF + 3, HALF - 3);
+  const r = resolve(s); if (!r) return;
+  if (r.it) {
+    const hA = heightAbove(r.st, r.it), l = worldToLocal(r.st, x, z);
+    r.it.x = l.x; r.it.z = l.z; r.it.y = groundY(x, z) + hA - r.st.y; updateItemVis(r.st, r.it);
+  } else if (r.st) { r.st.x = x; r.st.z = z; r.st.y = groundY(x, z); updateStationVis(r.st, true); }
+  else { r.code.x = x; r.code.z = z; updateCodeVis(r.code); }
+}
+function yawOf(s) { const r = resolve(s); if (!r) return 0; return r.it ? r.st.yaw + r.it.yaw : r.st ? r.st.yaw : r.code.yaw; }
+function setYaw(s, yaw) {
+  const r = resolve(s); if (!r) return;
+  if (r.it) { r.it.yaw = yaw - r.st.yaw; updateItemVis(r.st, r.it); }
+  else if (r.st) { r.st.yaw = yaw; updateStationVis(r.st, false); }
+  else { r.code.yaw = yaw; updateCodeVis(r.code); }
+}
+const rotateSel = (s, d) => setYaw(s, yawOf(s) + d);
+// heading in compass degrees: items and codes report the way their face looks, stations their north arrow
+function headingOf(s) {
+  const p = worldPose(s); if (!p) return 0;
+  const deg = s.kind === 'station' ? -p.yaw / DEG : Math.atan2(Math.sin(p.yaw), -Math.cos(p.yaw)) / DEG;
+  return ((Math.round(deg) % 360) + 360) % 360;
+}
+function setHeading(s, deg) { setYaw(s, s.kind === 'station' ? -deg * DEG : Math.PI - deg * DEG); }
+function setHeight(s, h) {
+  const r = resolve(s); if (!r) return;
+  if (r.it) { h = clamp(Math.round(h * 100) / 100, -5, 30); const w = itemWorld(r.st, r.it); r.it.lift = h; r.it.y = groundY(w.x, w.z) + h - r.st.y; updateItemVis(r.st, r.it); }
+  else if (r.code) { r.code.h = clamp(Math.round(h * 100) / 100, 0, 30); rebuildTour(); }
+}
+const offGround = (st, it) => Math.abs(heightAbove(st, it) - it.lift) > 0.15;
+
+// =====================================================================
+// undo / redo: snapshots of the whole (small) tour
+// =====================================================================
+const undoStack = [], redoStack = [];
+const snapshot = () => ({ json: JSON.stringify(tour), sel: sel ? { ...sel } : null });
+let lastCoalesce = null;
+function commit(before, label, coalesceKey) {
+  const now = performance.now();
+  if (coalesceKey && lastCoalesce && lastCoalesce.key === coalesceKey && now - lastCoalesce.t < 1200 && undoStack.length) {
+    lastCoalesce.t = now; refreshDock(); return;
+  }
+  undoStack.push({ ...before, label }); redoStack.length = 0;
+  lastCoalesce = coalesceKey ? { key: coalesceKey, t: now } : null;
+  if (undoStack.length > 200) undoStack.shift();
+  refreshDock();
+}
+function restore(snap) {
+  tour = JSON.parse(snap.json);
+  sel = snap.sel && resolve(snap.sel) ? snap.sel : null;
+  hover = null;
+  rebuildTour(); refreshTree(); refreshInsp(true); refreshDock(); refreshMeta();
+}
+function undo() {
+  if (carry) { cancelCarry(); return; }
+  const e = undoStack.pop(); if (!e) return;
+  redoStack.push({ ...snapshot(), label: e.label }); lastCoalesce = null;
+  restore(e); toast(`Undid: ${e.label}`);
+}
+function redo() {
+  const e = redoStack.pop(); if (!e) return;
+  undoStack.push({ ...snapshot(), label: e.label }); lastCoalesce = null;
+  restore(e); toast(`Redid: ${e.label}`);
+}
+
+// =====================================================================
+// camera: eye height (first person) is home; bird's-eye lifts up and tilts; the top view looks straight down
+// =====================================================================
+const eye = { x: 0, z: 0, y: 0, yaw: 0, pitch: 0 };
+const ov = { tx: 0, tz: 0, dist: 300, yaw: 0, pitch: -1.0 };
+const tvs = { tx: 0, tz: 0, dist: 130, yaw: 0, pitch: -Math.PI / 2 + 0.001 };
+const cs = () => (mode === 'top' ? tvs : ov);
+let tween = null, glide = null, look = null, prevView = null;
+{
+  const ap = arrivalPose(tour.stations[0]);
+  Object.assign(eye, { x: ap.x, z: ap.z, yaw: ap.yaw, pitch: ap.pitch, y: groundY(ap.x, ap.z) + EYE });
+}
+const fwd = (yaw) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
+const rightOf = (yaw) => ({ x: Math.cos(yaw), z: -Math.sin(yaw) });
+function eyePose(e = eye) {
+  const pos = new THREE.Vector3(e.x, e.y, e.z);
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(e.pitch, e.yaw, 0, 'YXZ'));
+  return { pos, q };
+}
+function ovPose(o = ov) {
+  const cp = Math.cos(o.pitch), f = new THREE.Vector3(-Math.sin(o.yaw) * cp, Math.sin(o.pitch), -Math.cos(o.yaw) * cp);
+  const pos = new THREE.Vector3(o.tx, 0, o.tz).addScaledVector(f, -o.dist);
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(o.pitch, o.yaw, 0, 'YXZ'));
+  return { pos, q };
+}
+function startTween(to, dur, up, onDone) {
+  tween = { fromPos: camera.position.clone(), fromQ: camera.quaternion.clone(), to, t: 0, dur, up, onDone };
+}
+function tourBounds() {
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const st of tour.stations) { x0 = Math.min(x0, st.x - st.radius); x1 = Math.max(x1, st.x + st.radius); z0 = Math.min(z0, st.z - st.radius); z1 = Math.max(z1, st.z + st.radius); }
+  if (!isFinite(x0)) { x0 = -100; x1 = 100; z0 = -100; z1 = 100; }
+  return { x0, x1, z0, z1 };
+}
+function toOverview() {
+  if (tween) return;
+  glide = null; look = null; prevView = null;
+  const b = tourBounds(), span = Math.max(b.x1 - b.x0, (b.z1 - b.z0) * 1.4);
+  Object.assign(ov, { tx: (b.x0 + b.x1) / 2, tz: (b.z0 + b.z1) / 2, dist: clamp(span * 1.05 + 40, 140, 700), yaw: mode === 'eye' ? eye.yaw : 0, pitch: -1.02 });
+  mode = 'over'; applyLook(); setModeUI();
+  startTween(ovPose(), 1.4, true);
+}
+function toEye(target) {
+  if (tween) return;
+  prevView = null;
+  if (target) Object.assign(eye, target);
+  eye.y = groundY(eye.x, eye.z) + EYE;
+  mode = 'eye'; applyLook(); setModeUI();
+  startTween(eyePose(), 1.4, false);
+}
+function toggleOverview() { mode === 'over' ? toEye() : toOverview(); }
+// the top view remembers where you came from and goes back there
+function toggleTop() { if (tween) return; mode === 'top' ? leaveTop() : toTop(); }
+function toTop() {
+  glide = null; look = null;
+  prevView = { mode, ov: { ...ov } };
+  const p = sel ? worldPose(sel) : null;
+  let tx, tz, dist;
+  if (mode === 'eye') { const f = fwd(eye.yaw); tx = eye.x + f.x * 14; tz = eye.z + f.z * 14; dist = 130; }
+  else { tx = ov.tx; tz = ov.tz; dist = clamp(ov.dist * 0.85, 60, 700); }
+  if (p) { tx = p.x; tz = p.z; }
+  Object.assign(tvs, { tx, tz, dist, yaw: 0 });
+  mode = 'top'; applyLook(); setModeUI();
+  startTween(ovPose(tvs), 1.2, true);
+}
+function leaveTop() {
+  const pv = prevView || { mode: 'eye' };
+  prevView = null;
+  if (pv.mode === 'over') { Object.assign(ov, pv.ov); mode = 'over'; applyLook(); setModeUI(); startTween(ovPose(ov), 1.2, false); }
+  else toEye();
+}
+
+// glide along a curve (the recorded walk for next/previous station)
+function glideAlong(points, endYaw, endPitch, label) {
+  if (mode !== 'eye') { const last = points[points.length - 1]; toEye({ x: last.x, z: last.z, yaw: endYaw, pitch: endPitch }); return; }
+  const pts = points.map((p) => new THREE.Vector3(p.x, 0, p.z));
+  if (pts.length === 2) pts.splice(1, 0, pts[0].clone().lerp(pts[1], 0.5));
+  const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+  const len = curve.getLength();
+  if (len < 0.5) { lookTo(endYaw, endPitch); return; }
+  look = null;
+  glide = { curve, t: 0, dur: clamp(len / 15, 0.9, 5), startYaw: eye.yaw, startPitch: eye.pitch, endYaw, endPitch };
+  if (label) toast(label);
+}
+function glideToStation(st) {
+  const ap = arrivalPose(st);
+  const s0 = nearestS(eye.x, eye.z), s1 = nearestS(ap.x, ap.z), dir = Math.sign(s1 - s0) || 1;
+  const pts = [{ x: eye.x, z: eye.z }];
+  const far = Math.hypot(ap.x - eye.x, ap.z - eye.z);
+  if (far > 15) for (let s = s0 + dir * 8; dir * (s1 - s) > 8; s += dir * 10) pts.push(pathAt(s));
+  pts.push({ x: ap.x, z: ap.z });
+  glideAlong(pts, ap.yaw, ap.pitch, `Walking to ${st.title}`);
+}
+function lookTo(yaw, pitch) { look = { t: 0, dur: 0.5, y0: eye.yaw, p0: eye.pitch, y1: yaw, p1: pitch }; }
+function lookAtPoint(x, y, z) {
+  const dx = x - eye.x, dz = z - eye.z, dy = y - eye.y;
+  lookTo(Math.atan2(-dx, -dz), clamp(Math.atan2(dy, Math.hypot(dx, dz)), -1.2, 1.2));
+}
+// stand at the selection: in front of its face, or at a station's arrival point
+function standAt(s) {
+  const r = resolve(s); if (!r) return;
+  if (mode !== 'eye') { descendTo(s); return; }
+  if (r.st && !r.it) { glideToStation(r.st); return; }
+  const p = worldPose(s), d = s.kind === 'code' ? 2.6 : r.it && r.it.type === 'model' ? 6 * r.it.scale : 4.5;
+  const tx = p.x + Math.sin(p.yaw) * d, tz = p.z + Math.cos(p.yaw) * d;
+  const yaw = Math.atan2(-(p.x - tx), -(p.z - tz));
+  const pitch = clamp(Math.atan2(p.y + Math.min(p.top, 2) * 0.6 - (groundY(tx, tz) + EYE), d), -0.6, 0.6);
+  glideAlong([{ x: eye.x, z: eye.z }, { x: tx, z: tz }], yaw, pitch, `Walking to ${titleOf(s)}`);
+}
+function descendTo(s) {
+  const r = resolve(s); if (!r) return;
+  if (r.st && !r.it) { const ap = arrivalPose(r.st); toEye({ x: ap.x, z: ap.z, yaw: ap.yaw, pitch: ap.pitch }); return; }
+  const p = worldPose(s), d = 4.5, tx = p.x + Math.sin(p.yaw) * d, tz = p.z + Math.cos(p.yaw) * d;
+  toEye({ x: tx, z: tz, yaw: Math.atan2(-(p.x - tx), -(p.z - tz)), pitch: -0.05 });
+}
+function currentStationIndex() {
+  let best = -1, bd = Infinity;
+  tour.stations.forEach((st, i) => { const d = Math.hypot(st.x - eye.x, st.z - eye.z) / st.radius; if (d < bd) { bd = d; best = i; } });
+  return { idx: best, inside: bd <= 1 };
+}
+function stepStation(d) {
+  if (!tour.stations.length) return;
+  const cur = currentStationIndex();
+  let i = cur.idx + d;
+  // standing before the first station counts as "before 1"
+  if (!cur.inside && d > 0 && cur.idx >= 0) { const s = nearestS(eye.x, eye.z), ss = nearestS(tour.stations[cur.idx].x, tour.stations[cur.idx].z); if (s < ss) i = cur.idx; }
+  i = clamp(i, 0, tour.stations.length - 1);
+  const st = tour.stations[i];
+  if (mode !== 'eye') { const ap = arrivalPose(st); toEye({ x: ap.x, z: ap.z, yaw: ap.yaw, pitch: ap.pitch }); return; }
+  glideToStation(st);
+}
+
+// =====================================================================
+// picking and the ground under the cursor
+// =====================================================================
+const raycaster = new THREE.Raycaster();
+const mouse = { x: 0, y: 0, ndc: new THREE.Vector2(), inside: false };
+function setMouse(e) {
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  mouse.ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+}
+// ray-march the height field (plus bridge and water) - robust for grazing first-person rays
+function rayGround(ray) {
+  const o = ray.origin, d = ray.direction;
+  let t = 0;
+  if (o.y - groundY(o.x, o.z) < 0) return null;
+  for (let k = 0; k < 900 && t < 2500; k++) {
+    const step = 0.25 + t * 0.012, t2 = t + step;
+    const x = o.x + d.x * t2, y = o.y + d.y * t2, z = o.z + d.z * t2;
+    if (y - groundY(x, z) <= 0) {
+      let a = t, b = t2;
+      for (let i = 0; i < 14; i++) { const m = (a + b) / 2; const yy = o.y + d.y * m, xx = o.x + d.x * m, zz = o.z + d.z * m; if (yy - groundY(xx, zz) > 0) a = m; else b = m; }
+      const m = (a + b) / 2;
+      return { x: o.x + d.x * m, y: o.y + d.y * m, z: o.z + d.z * m, t: m };
+    }
+    if (y > 400 && d.y > 0) return null;
+    t = t2;
+  }
+  return null;
+}
+function groundAtMouse() { raycaster.setFromCamera(mouse.ndc, camera); return rayGround(raycaster.ray); }
+function rayPlane(planeY) {
+  raycaster.setFromCamera(mouse.ndc, camera);
+  const o = raycaster.ray.origin, d = raycaster.ray.direction;
+  if (Math.abs(d.y) < 1e-4) return null;
+  const t = (planeY - o.y) / d.y;
+  if (t <= 0 || t > (mode === 'eye' ? 220 : 2500)) return null;
+  return { x: o.x + d.x * t, z: o.z + d.z * t };
+}
+function visibleChain(o) { for (let p = o; p; p = p.parent) if (!p.visible) return false; return true; }
+// returns { sel, via, point, handle? }: handle is 'rotate' | 'radius' | 'scale' | 'move' when a handle of the selection is hit
+function pickAt() {
+  raycaster.setFromCamera(mouse.ndc, camera);
+  if (sel && knob.visible && raycaster.intersectObject(knob, false).length) return { sel: { ...sel }, via: 'handle', handle: 'rotate' };
+  const gv = grips.filter((g) => g.visible);
+  if (sel && gv.length && raycaster.intersectObjects(gv, false).length) return { sel: { ...sel }, via: 'handle', handle: sel.kind === 'station' ? 'radius' : 'scale' };
+  const hits = raycaster.intersectObjects(pickables, true);
+  let objHit = null;
+  for (const h of hits) {
+    if (!visibleChain(h.object)) continue;
+    let o = h.object; while (o && !o.userData.pick) o = o.parent;
+    if (o) { objHit = { sel: o.userData.pick, dist: h.distance, via: o.isSprite ? 'marker' : 'object', point: h.point.clone() }; break; }
+  }
+  if (objHit) { if (sel && objHit.sel.id === sel.id) objHit.handle = 'move'; return objHit; }
+  const G = rayGround(raycaster.ray);
+  if (!G) return null;
+  const pt = new THREE.Vector3(G.x, G.y, G.z);
+  // the middle of the handles: inside the ring around an item, inside a selected station's circle from above
+  if (gizmo) {
+    const d = Math.hypot(G.x - gizmo.cx, G.z - gizmo.cz);
+    if (gizmo.kind === 'item' && d < gizmo.R) return { sel: { ...sel }, via: 'ring', handle: 'move', point: pt };
+    if (gizmo.kind === 'station' && mode !== 'eye' && d < gizmo.R * 0.94) return { sel: { ...sel }, via: 'ring', handle: 'move', point: pt };
+  }
+  // station rings are picked analytically on the ground (tolerance grows with distance)
+  const tol = Math.max(0.55, G.t * (mode !== 'eye' ? 0.014 : 0.012));
+  let best = null, bd = Infinity;
+  for (const st of tour.stations) {
+    const d = Math.abs(Math.hypot(G.x - st.x, G.z - st.z) - st.radius);
+    if (d < tol && d < bd) { bd = d; best = st; }
+  }
+  if (best) return { sel: { kind: 'station', id: best.id }, via: 'ring', point: pt };
+  // from above, a click inside a circle selects that station (a drag there still pans)
+  if (mode !== 'eye') {
+    let inside = null, ir = Infinity;
+    for (const st of tour.stations) { const q = Math.hypot(G.x - st.x, G.z - st.z) / st.radius; if (q < 1 && q < ir) { ir = q; inside = st; } }
+    if (inside) return { sel: { kind: 'station', id: inside.id }, via: 'circle', point: pt };
+  }
+  return null;
+}
+
+// =====================================================================
+// direct manipulation: handle drags, grab (press and drag), carry (G / new things)
+// =====================================================================
+let press = null, grab = null, carry = null;
+const _nd = new THREE.Vector2();
+function startGrab(p) {
+  const s = p.sel, wp = worldPose(s); if (!wp) return false;
+  const kind = p.handle === 'rotate' ? 'rotate' : p.handle === 'radius' ? 'radius' : p.handle === 'scale' ? 'scale' : 'move';
+  const gy = groundY(wp.x, wp.z);
+  grab = { sel: s, before: snapshot(), kind, moved: false, c: wp, planeY: gy, off: { x: 0, z: 0 } };
+  if (kind === 'move') {
+    if (mode === 'eye') {
+      // at eye height the grabbed point may be above the horizon: the thing's foot keeps its on-screen offset
+      // from the cursor and follows the ground under that point
+      const f = new THREE.Vector3(wp.x, gy, wp.z).project(camera);
+      grab.px = f.z < 1 ? { x: ((f.x + 1) / 2) * innerWidth - mouse.x, y: ((1 - f.y) / 2) * innerHeight - mouse.y } : { x: 0, y: 0 };
+    } else {
+      // from above: the ground point under the cursor carries the thing (it stays under the finger)
+      grab.ground = true;
+      const G = groundAtMouse(); if (G) grab.off = { x: wp.x - G.x, z: wp.z - G.z };
+    }
+  } else if (kind === 'rotate') {
+    const P = rayPlane(gy); grab.a0 = P ? Math.atan2(P.x - wp.x, P.z - wp.z) : 0; grab.y0 = yawOf(s);
+  } else if (kind === 'scale') {
+    const P = rayPlane(gy); grab.d0 = P ? Math.max(0.3, Math.hypot(P.x - wp.x, P.z - wp.z)) : 1; grab.s0 = resolve(s).it.scale || 1;
+  }
+  canvas.style.cursor = 'grabbing';
+  hideTip();
+  return true;
+}
+function moveGrab() {
+  if (!grab) return;
+  const r = resolve(grab.sel); if (!r) return;
+  const c = grab.c;
+  if (grab.kind === 'move') {
+    let P = null;
+    if (grab.ground) { const G = groundAtMouse(); P = G || rayPlane(grab.planeY); }
+    else {
+      raycaster.setFromCamera(_nd.set(((mouse.x + grab.px.x) / innerWidth) * 2 - 1, -((mouse.y + grab.px.y) / innerHeight) * 2 + 1), camera);
+      const G = rayGround(raycaster.ray); if (G && G.t < 160) P = G;
+    }
+    if (!P) return;
+    setWorldXZ(grab.sel, P.x + grab.off.x, P.z + grab.off.z);
+    if (r.st && !r.it) showTip(`${r.st.title}: ${r.st.items.length} items move with it`);
+  } else if (grab.kind === 'rotate') {
+    const P = rayPlane(grab.planeY); if (!P) return;
+    let d = angDiff(grab.a0, Math.atan2(P.x - c.x, P.z - c.z));
+    if (window.__shift) d = Math.round(d / (15 * DEG)) * 15 * DEG;
+    setYaw(grab.sel, grab.y0 + d);
+    const hd = headingOf(grab.sel); showTip(`${grab.sel.kind === 'station' ? 'North arrow' : 'Faces'} ${hd}° ${compassName(hd)}`);
+  } else if (grab.kind === 'radius') {
+    const G = groundAtMouse() || rayPlane(grab.planeY); if (!G) return;
+    r.st.radius = clamp(Math.round(Math.hypot(G.x - r.st.x, G.z - r.st.z) * 2) / 2, 3, 150);
+    updateStationVis(r.st, true);
+    showTip(`Arrival radius ${r.st.radius} m, loading from ${r.st.radius * 2} m`);
+  } else if (grab.kind === 'scale') {
+    const P = rayPlane(grab.planeY); if (!P) return;
+    r.it.scale = clamp(Math.round(((grab.s0 * Math.hypot(P.x - c.x, P.z - c.z)) / grab.d0) * 20) / 20, 0.25, 5);
+    updateItemVis(r.st, r.it);
+    showTip(`Size ${r.it.scale.toFixed(2)}x`);
+  }
+  grab.moved = true;
+}
+const GRAB_LABEL = { move: 'Move', rotate: 'Turn', radius: 'Radius of', scale: 'Resize' };
+function endGrab() {
+  if (!grab) return;
+  if (grab.moved) { commit(grab.before, `${GRAB_LABEL[grab.kind]} ${titleOf(grab.sel)}`); refreshTree(); }
+  grab = null; canvas.style.cursor = ''; hideTip();
+  refreshInsp();
+}
+// a second finger cancels any handle drag: the object goes back to where the drag started, no undo entry
+function cancelManipulation() {
+  let undone = false;
+  if (grab) {
+    const b = grab.before, moved = grab.moved; grab = null;
+    if (moved) { silentRestore(b); undone = true; }
+  }
+  if (carry) { cancelCarry(); undone = true; }
+  press = null; canvas.style.cursor = ''; hideTip();
+  if (undone) toast('Two fingers move the camera - the drag was undone');
+}
+function silentRestore(snap) {
+  tour = JSON.parse(snap.json);
+  sel = snap.sel && resolve(snap.sel) ? snap.sel : null;
+  rebuildTour(); refreshTree(); refreshInsp(true);
+}
+function startCarry(s, isNew, label) {
+  const before = isNew ? isNew : snapshot();
+  if (!worldPose(s)) return;
+  carry = { sel: s, before, isNew: !!isNew, label };
+  moveCarry();
+  canvas.style.cursor = 'grabbing';
+  toast(`Carrying ${titleOf(s)}: click to set it down, wheel turns it, Esc cancels`, 3200);
+}
+function moveCarry() {
+  if (!carry || !mouse.inside) return;
+  const G = groundAtMouse(); if (!G) return;
+  setWorldXZ(carry.sel, G.x, G.z);
+}
+function dropCarry() {
+  if (!carry) return;
+  commit(carry.before, carry.label);
+  const s = carry.sel; carry = null;
+  canvas.style.cursor = '';
+  refreshTree(); refreshInsp(true); refreshMeta();
+  toast(`Placed ${titleOf(s)}`);
+}
+function cancelCarry() {
+  if (!carry) return;
+  const b = carry.before; carry = null;
+  canvas.style.cursor = '';
+  restore(b); toast('Cancelled');
+}
+
+// =====================================================================
+// left: the tour as story cards (docked, collapsible, only as tall as its content)
+// =====================================================================
+const expanded = new Set(); // all stations collapsed by default
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const typeLabel = (t) => (t === 'model' ? '3D' : t);
+const phCache = new Map();
+// drawn placeholder images for stations without a photo (or by choice)
+function placeholderCanvas(kind, color) {
+  const key = `${kind}|${color}`;
+  if (phCache.has(key)) return phCache.get(key);
+  const cv = document.createElement('canvas'); cv.width = 320; cv.height = 140;
+  const g = cv.getContext('2d'), r = rng(hash(key)), W = 320, H = 140, hz = 104;
+  if (kind === 'dusk') {
+    const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, color); gr.addColorStop(1, '#2b2f3c');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(255,240,210,0.85)'; g.beginPath(); g.arc(230, 70, 16, 0, TAU); g.fill();
+    g.fillStyle = '#262a35';
+    for (let x = -6; x < W;) { const w = 18 + r() * 34, h = 22 + r() * 46; g.fillRect(x, hz - h, w, h + 40); if (r() < 0.5) { g.beginPath(); g.moveTo(x, hz - h); g.lineTo(x + w / 2, hz - h - 12 - r() * 10); g.lineTo(x + w, hz - h); g.fill(); } x += w + r() * 4; }
+    g.fillStyle = 'rgba(255,214,140,0.8)';
+    for (let k = 0; k < 26; k++) g.fillRect(r() * W, hz - 10 - r() * 50, 2.5, 3.5);
+  } else {
+    g.fillStyle = '#f4ecdc'; g.fillRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(120,100,70,0.08)'; g.lineWidth = 1;
+    for (let y = 8; y < H; y += 9) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+    g.strokeStyle = color; g.lineWidth = 2.2; g.lineJoin = 'round';
+    g.beginPath(); g.arc(250, 38, 13, 0, TAU); g.stroke();
+    for (let x = 4; x < W - 10;) {
+      const w = 22 + r() * 36, h = 24 + r() * 44;
+      g.beginPath(); g.moveTo(x, hz); g.lineTo(x, hz - h);
+      if (r() < 0.55) g.lineTo(x + w / 2, hz - h - 10 - r() * 12);
+      g.lineTo(x + w, hz - h); g.lineTo(x + w, hz); g.stroke();
+      g.lineWidth = 1.2;
+      for (let yy = hz - h + 9; yy < hz - 8; yy += 11) for (let xx = x + 5; xx < x + w - 6; xx += 9) g.strokeRect(xx, yy, 3.5, 5);
+      g.lineWidth = 2.2; x += w + 6 + r() * 8;
+    }
+    g.beginPath(); g.moveTo(0, hz); g.lineTo(W, hz); g.stroke();
+  }
+  phCache.set(key, cv);
+  return cv;
+}
+// the station's card image: the chosen photo or drawing, else its first photo, else a drawing
+function stationImage(st) {
+  const photos = st.items.filter((i) => i.type === 'photo');
+  if (st.image && st.image.photo) {
+    const it = photos.find((p) => p.id === st.image.photo);
+    if (it) return { key: `p:${it.id}`, src: photoTex(hash(it.id)).image, label: `Photo: ${it.title}` };
+  }
+  if (st.image && st.image.ph) return { key: `ph:${st.image.ph}`, src: placeholderCanvas(st.image.ph, st.color), label: st.image.ph === 'dusk' ? 'Drawing: dusk' : 'Drawing: sketch' };
+  if (photos.length) return { key: `p:${photos[0].id}`, src: photoTex(hash(photos[0].id)).image, label: 'First photo (auto)' };
+  return { key: 'ph:sketch', src: placeholderCanvas('sketch', st.color), label: 'Drawing (no photo)' };
+}
+function drawCover(cv, src) {
+  const g = cv.getContext('2d'), sw = src.width, sh = src.height, s = Math.max(cv.width / sw, cv.height / sh);
+  const w = cv.width / s, h = cv.height / s;
+  g.drawImage(src, (sw - w) / 2, (sh - h) / 2, w, h, 0, 0, cv.width, cv.height);
+}
+const cardCanvases = new Map();
+function cardCanvas(st) {
+  const img = stationImage(st), key = `${st.id}|${img.key}|${st.color}`;
+  let cv = cardCanvases.get(key);
+  if (!cv) { cv = document.createElement('canvas'); cv.width = 528; cv.height = 132; drawCover(cv, img.src); cardCanvases.set(key, cv); }
+  return cv;
+}
+function smallCanvas(src, w = 128, h = 68) { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; drawCover(cv, src); return cv; }
+
+function refreshTree() {
+  const here = mode === 'eye' ? currentStationIndex() : { idx: -1 };
+  let h = '';
+  tour.stations.forEach((st, i) => {
+    const open = expanded.has(st.id), n = st.items.length;
+    h += `<div class="card${isSel('station', st.id) ? ' sel' : ''}" data-k="station" data-id="${st.id}">
+      <div class="cimg" data-img="${st.id}"><span class="num" style="background:${st.color}">${i + 1}</span>
+        <div class="cap"><b>${esc(st.title || 'Untitled')}</b>${st.desc ? `<small>${esc(st.desc)}</small>` : ''}</div>
+        <span class="meta">${n} item${n === 1 ? '' : 's'} &middot; ${st.radius} m</span>
+        ${here.inside && here.idx === i ? '<span class="here">you are here</span>' : ''}
+        ${n ? `<button class="caret" data-caret="${st.id}" title="${open ? 'Fold' : 'Show its pins, photos and models'}">${open ? '&#9662;' : '&#9656;'}</button>` : ''}
+      </div>`;
+    if (open && n) {
+      h += '<div class="kids">';
+      for (const it of st.items) {
+        h += `<div class="row it${isSel('item', it.id) ? ' sel' : ''}" data-k="item" data-id="${it.id}" style="color:${st.color}">
+          <span class="g ${it.type}"></span><span class="t" style="color:var(--ink)">${esc(it.title)}</span>
+          ${offGround(st, it) ? '<span class="warn" title="Moved with its station; Put on the ground fixes it">off the ground</span>' : `<span class="n">${typeLabel(it.type)}</span>`}</div>`;
+      }
+      h += '</div>';
+    }
+    h += '</div>';
+  });
+  $('#cards').innerHTML = h;
+  for (const el of document.querySelectorAll('#cards [data-img]')) {
+    const st = tour.stations.find((s) => s.id === el.dataset.img); if (st) el.prepend(cardCanvas(st));
+  }
+  let c = '';
+  for (const k of tour.codes) c += `<div class="row code${isSel('code', k.id) ? ' sel' : ''}" data-k="code" data-id="${k.id}"><span class="g code"></span><span class="t">${esc(k.title)}</span><span class="n">${k.mount}</span></div>`;
+  $('#codes').innerHTML = c || '<div class="row"><span class="n">No codes</span></div>';
+  const sr = document.querySelector('#panel .row.sel, #panel .card.sel');
+  if (sr) sr.scrollIntoView({ block: 'nearest' });
+}
+function rowTarget(e) {
+  const row = e.target.closest('.row[data-k]') || e.target.closest('.card');
+  return row ? { kind: row.dataset.k, id: row.dataset.id } : null;
+}
+$('#panel').addEventListener('click', (e) => {
+  const caret = e.target.closest('[data-caret]');
+  if (caret) { const id = caret.dataset.caret; expanded.has(id) ? expanded.delete(id) : expanded.add(id); refreshTree(); return; }
+  const lay = e.target.closest('[data-layer]');
+  if (lay) { setLayer(lay.dataset.layer, !layers[lay.dataset.layer]); return; }
+  const t = rowTarget(e); if (t) select(t, true);
+});
+$('#panel').addEventListener('dblclick', (e) => { const t = rowTarget(e); if (t) standAt(t); });
+$('#addSt').onclick = () => addStation();
+$('#collapse').onclick = () => {
+  const p = $('#panel'); p.classList.toggle('collapsed');
+  $('#collapse').innerHTML = p.classList.contains('collapsed') ? '&#9656;' : '&#9662;';
+};
+function setLayer(name, on) {
+  layers[name] = on;
+  for (const b of document.querySelectorAll(`[data-layer="${name}"]`)) b.classList.toggle('on', on);
+  if (name === 'walk') walkGroup.visible = on;
+  else if (name === 'depth') depthPoints.visible = on;
+  else if (name === 'buildings') buildingsGroup.visible = on;
+  else if (name === 'codes') { if (!on && sel && sel.kind === 'code') select(null); rebuildTour(); }
+}
+
+function select(s, fromList) {
+  if (s && !resolve(s)) s = null;
+  const changed = JSON.stringify(s) !== JSON.stringify(sel);
+  sel = s;
+  if (s && s.kind === 'item') { const r = resolve(s); if (r && !expanded.has(r.st.id)) expanded.add(r.st.id); }
+  if (changed) { pickerOpen = false; applyLook(); refreshTree(); refreshInsp(true); }
+  if (!s || !fromList || tween) return;
+  const p = worldPose(s), y = p.y + Math.min(p.top, 2.5) * 0.5;
+  const v = new THREE.Vector3(p.x, y, p.z).project(camera);
+  const off = Math.abs(v.x) > 0.65 || Math.abs(v.y) > 0.7 || v.z > 1;
+  if (mode === 'eye') {
+    // picking from the list turns your head toward it when it is out of sight
+    const behind = new THREE.Vector3(p.x - camera.position.x, 0, p.z - camera.position.z).dot(camera.getWorldDirection(new THREE.Vector3())) < 0;
+    if (behind || off) lookAtPoint(p.x, y, p.z);
+  } else { const o = cs(); o.tx = p.x; o.tz = p.z; } // from above, a pick in the list brings it to the middle
+}
+
+// =====================================================================
+// right: the inspector (docked, collapsible, only while something is selected)
+// =====================================================================
+const insp = $('#insp'), ib = $('#iBody');
+let editBefore = null, pickerOpen = false, posOpen = false;
+const act = (a, ic, label, key, cls = '') => `<button class="act${cls}" data-act="${a}"><span class="ic">${ic}</span><span class="lb">${label}</span>${key ? `<kbd>${key}</kbd>` : ''}</button>`;
+function refreshInsp(rebuild) {
+  const r = resolve(sel);
+  if (!r) { insp.classList.remove('open'); ib.dataset.for = ''; return; }
+  insp.classList.add('open');
+  if (!rebuild && ib.dataset.for === sel.id) { updateReadouts(); return; }
+  ib.dataset.for = sel.id;
+  const isSt = sel.kind === 'station', isCode = sel.kind === 'code', isModel = !!(r.it && r.it.type === 'model');
+  const color = isCode ? '#4f5bd5' : r.st.color;
+  $('#iKind').textContent = isSt ? 'Station' : isCode ? 'Code' : r.it.type === 'model' ? '3D model' : r.it.type;
+  $('#iKind').style.background = color;
+  $('#iCrumb').textContent = isSt ? `stop ${tour.stations.indexOf(r.st) + 1} of ${tour.stations.length}` : isCode ? 'not part of any station' : `in ${r.st.title}`;
+  const obj = r.it || r.st || r.code;
+  let acts;
+  if (isSt) {
+    acts = act('addpin', '+', 'Add pin') + act('addphoto', '+', 'Add photo') + act('stand', '&#9673;', 'Stand here', 'F')
+      + act('ground', '&#8615;', 'Put items on the ground', '', ' groundAct') + act('carry', '&#10021;', 'Pick up and carry', 'G')
+      + act('del', '&times;', 'Delete station', 'Del', ' danger');
+  } else if (isCode) {
+    acts = act('stand', '&#9673;', 'Stand here', 'F') + act('carry', '&#10021;', 'Pick up and carry', 'G') + act('del', '&times;', 'Delete code', 'Del', ' danger');
+  } else {
+    acts = act('newst', '&#10022;', 'Move to a new station') + act('ground', '&#8615;', 'Put on the ground', '', ' groundAct')
+      + act('stand', '&#9673;', 'Stand here', 'F') + act('carry', '&#10021;', 'Pick up and carry', 'G') + act('del', '&times;', 'Delete', 'Del', ' danger');
+  }
+  let h = `<input type="text" class="title" data-f="title" value="${esc(obj.title)}" spellcheck="false" aria-label="Name">
+    <div class="sect">Suggested</div><div class="acts">${acts}</div>`;
+  if (isSt) {
+    const order = tour.stations.indexOf(r.st), img = stationImage(r.st);
+    h += `<div class="sect">Arrival radius</div>
+      <div class="rad"><input type="number" min="3" max="150" step="0.5" data-f="radius" value="${r.st.radius}"><span>m</span></div>
+      <p class="explain">Visitors who step inside this circle see the station's content; it starts loading at the dashed ring.</p>
+      <div class="sect">Card</div>
+      <input type="text" data-f="desc" value="${esc(r.st.desc || '')}" placeholder="One-line description (optional)" spellcheck="false">
+      <div class="imgrow field"><span data-slot="img"></span><span class="il">${esc(img.label)}</span><button class="btn" data-act="pickimg">${pickerOpen ? 'Close' : 'Choose image'}</button></div>`;
+    if (pickerOpen) {
+      const opts = [{ k: 'auto', label: 'Automatic' }];
+      for (const it of r.st.items) if (it.type === 'photo') opts.push({ k: `p:${it.id}`, label: it.title });
+      opts.push({ k: 'ph:sketch', label: 'Sketch' }, { k: 'ph:dusk', label: 'Dusk' });
+      const cur = !r.st.image ? 'auto' : r.st.image.photo ? `p:${r.st.image.photo}` : `ph:${r.st.image.ph}`;
+      h += `<div class="picker">${opts.map((o) => `<button data-img="${o.k}" class="${o.k === cur ? 'on' : ''}" title="${esc(o.label)}"><span data-slot="o|${o.k}"></span><small>${esc(o.label)}</small></button>`).join('')}</div>`;
+    }
+    h += `<div class="order">Order <button class="btn" data-act="earlier" ${order <= 0 ? 'disabled' : ''}>&#9664; Earlier</button><button class="btn" data-act="later" ${order >= tour.stations.length - 1 ? 'disabled' : ''}>Later &#9654;</button></div>`;
+  } else if (r.it) {
+    h += `<div class="sect">Step text</div><textarea data-f="text" rows="2" placeholder="What the visitor reads here (optional)">${esc(r.it.text || '')}</textarea>`;
+  }
+  h += `<details class="pos"${posOpen ? ' open' : ''}><summary>Position <span class="sum" data-ro="sum"></span></summary><div class="grid">
+      <label>East</label><input type="number" step="0.1" data-f="e"><label>North</label><input type="number" step="0.1" data-f="n">
+      <label>Up</label><input type="number" step="0.1" data-f="u"${isSt ? ' disabled title="A station anchor sits on the ground"' : ''}><label>Heading</label><input type="number" step="1" data-f="hd">
+      ${isModel ? '<label>Size</label><input type="number" step="0.05" min="0.25" max="5" data-f="sc"><span></span><span></span>' : ''}
+    </div></details>
+    <div class="keys">${isSt ? 'Drag the middle to move, the white dots for the radius, the round arrow to turn.' : isModel ? 'Drag to move, the white dots to resize, the round arrow to turn.' : 'Drag to move, the round arrow to turn.'} Arrows nudge, Ctrl+arrows turn${isSt ? '' : ' or raise'}.</div>`;
+  ib.innerHTML = h;
+  if (isSt) {
+    const slot = ib.querySelector('[data-slot="img"]'); if (slot) slot.replaceWith(smallCanvas(stationImage(r.st).src));
+    for (const s of ib.querySelectorAll('[data-slot^="o|"]')) {
+      const k = s.dataset.slot.slice(2);
+      const src = k === 'auto' ? stationImage({ ...r.st, image: null }).src : k.startsWith('p:') ? photoTex(hash(k.slice(2))).image : placeholderCanvas(k.slice(3), r.st.color);
+      s.replaceWith(smallCanvas(src, 120, 60));
+    }
+  }
+  ib.querySelector('details.pos').addEventListener('toggle', (e) => { posOpen = e.currentTarget.open; });
+  updateReadouts();
+}
+function updateReadouts() {
+  const r = resolve(sel); if (!r || !insp.classList.contains('open')) return;
+  const p = worldPose(sel), hd = headingOf(sel);
+  const setV = (f, v) => { const el = ib.querySelector(`[data-f="${f}"]`); if (el && document.activeElement !== el && el.value !== String(v)) el.value = v; };
+  setV('e', p.x.toFixed(1)); setV('n', (-p.z).toFixed(1)); setV('u', (p.h || 0).toFixed(2)); setV('hd', hd);
+  if (r.it && r.it.type === 'model') setV('sc', r.it.scale.toFixed(2));
+  if (r.st && !r.it) setV('radius', r.st.radius);
+  const sum = ib.querySelector('[data-ro="sum"]');
+  if (sum) { const t = `${Math.round(p.x)}, ${Math.round(-p.z)} m, ${hd}°`; if (sum.textContent !== t) sum.textContent = t; }
+  // "put on the ground" lights up when something floats or sinks after a station move
+  const g = ib.querySelector('.groundAct');
+  if (g) {
+    const n = r.it ? (offGround(r.st, r.it) ? 1 : 0) : r.st ? r.st.items.filter((it) => offGround(r.st, it)).length : 0;
+    g.classList.toggle('hot', n > 0); g.querySelector('.lb').dataset.badge = r.it ? `${heightAbove(r.st, r.it) - r.it.lift > 0 ? 'floats' : 'sinks'} ${Math.abs(heightAbove(r.st, r.it) - r.it.lift).toFixed(1)} m` : `${n} off`;
+  }
+}
+ib.addEventListener('focusin', (e) => { if (e.target.dataset.f) editBefore = snapshot(); });
+ib.addEventListener('input', (e) => {
+  const f = e.target.dataset.f, r = resolve(sel); if (!f || !r) return;
+  const obj = r.it || r.st || r.code;
+  if (f === 'title') {
+    obj.title = e.target.value;
+    if (r.it && r.it.type === 'pin') vis.it.get(r.it.id).textMat.map = signTex(obj.title, r.st.color);
+    if (r.it && r.it.type === 'photo') vis.it.get(r.it.id).textMat.map = captionTex(obj.title);
+    if (!r.it && r.st) { updateStationVis(r.st, false); $('#iCrumb').textContent = `stop ${tour.stations.indexOf(r.st) + 1} of ${tour.stations.length}`; }
+    refreshTree();
+  } else if (f === 'desc') { r.st.desc = e.target.value; refreshTree(); }
+  else if (f === 'text') obj.text = e.target.value;
+  else if (f === 'radius') { const v = parseFloat(e.target.value); if (isFinite(v)) { r.st.radius = clamp(v, 3, 150); updateStationVis(r.st, true); } }
+});
+ib.addEventListener('change', (e) => {
+  const f = e.target.dataset.f, r = resolve(sel); if (!f || !r) return;
+  if (['e', 'n', 'u', 'hd', 'sc'].includes(f)) {
+    const v = parseFloat(e.target.value); if (!isFinite(v)) { updateReadouts(); return; }
+    const before = editBefore || snapshot(), p = worldPose(sel);
+    if (f === 'e') setWorldXZ(sel, v, p.z);
+    else if (f === 'n') setWorldXZ(sel, p.x, -v);
+    else if (f === 'u') setHeight(sel, v);
+    else if (f === 'hd') setHeading(sel, v);
+    else if (f === 'sc' && r.it) { r.it.scale = clamp(v, 0.25, 5); updateItemVis(r.st, r.it); }
+    commit(before, `Position of ${titleOf(sel)}`); refreshTree(); updateReadouts();
+    editBefore = snapshot(); return;
+  }
+  if (!editBefore) return;
+  if (editBefore.json !== JSON.stringify(tour)) {
+    commit(editBefore, { radius: `Radius of ${titleOf(sel)}`, title: `Rename to ${titleOf(sel)}`, desc: `Description of ${titleOf(sel)}`, text: `Step text of ${titleOf(sel)}` }[f] || 'Edit');
+    refreshTree(); updateReadouts();
+  }
+  editBefore = snapshot();
+});
+ib.addEventListener('keydown', (e) => {
+  if (!isTyping(e)) return;
+  if (e.key === 'Escape' || (e.key === 'Enter' && e.target.tagName === 'INPUT')) e.target.blur();
+});
+ib.addEventListener('click', (e) => {
+  const imgB = e.target.closest('[data-img]');
+  const r = resolve(sel); if (!r) return;
+  if (imgB && r.st && !r.it) {
+    const k = imgB.dataset.img, before = snapshot();
+    r.st.image = k === 'auto' ? null : k.startsWith('p:') ? { photo: k.slice(2) } : { ph: k.slice(3) };
+    commit(before, `Card image of ${r.st.title}`);
+    pickerOpen = false; refreshTree(); refreshInsp(true); return;
+  }
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const a = b.dataset.act;
+  if (a === 'stand') standAt(sel);
+  else if (a === 'carry') startCarry(sel, null, `Move ${titleOf(sel)}`);
+  else if (a === 'del') deleteSel();
+  else if (a === 'addpin') addItem('pin', r.st);
+  else if (a === 'addphoto') addItem('photo', r.st);
+  else if (a === 'ground') groundSel();
+  else if (a === 'newst') moveToNewStation();
+  else if (a === 'pickimg') { pickerOpen = !pickerOpen; refreshInsp(true); }
+  else if (a === 'earlier' || a === 'later') {
+    const i = tour.stations.indexOf(r.st), j = i + (a === 'earlier' ? -1 : 1);
+    if (j < 0 || j >= tour.stations.length) return;
+    const before = snapshot();
+    [tour.stations[i], tour.stations[j]] = [tour.stations[j], tour.stations[i]];
+    commit(before, `Reorder ${r.st.title}`);
+    rebuildTour(); refreshTree(); refreshInsp(true);
+  }
+});
+$('#iClose').onclick = () => select(null);
+$('#iCollapse').onclick = () => { insp.classList.toggle('collapsed'); $('#iCollapse').innerHTML = insp.classList.contains('collapsed') ? '&#9666;' : '&#9662;'; };
+
+// --- dock
+function refreshDock() {
+  $('#bUndo').disabled = !undoStack.length; $('#bRedo').disabled = !redoStack.length;
+  $('#bUndo').title = undoStack.length ? `Undo: ${undoStack[undoStack.length - 1].label} (Ctrl+Z)` : 'Nothing to undo';
+  $('#bRedo').title = redoStack.length ? `Redo: ${redoStack[redoStack.length - 1].label} (Ctrl+Shift+Z)` : 'Nothing to redo';
+}
+let lastChip = '';
+function refreshChip() {
+  const cur = currentStationIndex(), st = tour.stations[cur.idx];
+  let h;
+  if (!st) h = '<small>No stations yet</small>';
+  else if (mode !== 'eye') h = `<small>${mode === 'top' ? 'Top view' : "Bird's-eye"} of ${tour.stations.length} stations</small>`;
+  else {
+    const d = Math.round(Math.max(0, Math.hypot(st.x - eye.x, st.z - eye.z) - st.radius));
+    h = `<span class="num" style="background:${st.color}">${cur.idx + 1}</span><span>${esc(st.title)}</span><small>${cur.inside ? 'you are here' : `${d} m away`}</small>`;
+  }
+  if (h !== lastChip) { $('#stChip').innerHTML = h; lastChip = h; }
+}
+function setModeUI() {
+  refreshTree();
+  $('#bOver').classList.toggle('on', mode === 'over');
+  $('#bTop').classList.toggle('on', mode === 'top');
+  $('#modeTag').textContent = mode === 'over' ? "Bird's-eye: drag to pan, right-drag to orbit, wheel to zoom"
+    : mode === 'top' ? 'Top view: pins and photos lie flat. T goes back' : 'Eye height 1.6 m, as a visitor sees it';
+}
+function refreshMeta() {
+  const n = tour.stations.reduce((a, s) => a + s.items.length, 0);
+  $('#tourMeta').textContent = `${tour.stations.length} stations, ${n} items`;
+}
+
+// =====================================================================
+// editing commands
+// =====================================================================
+function targetStation() {
+  const r = resolve(sel);
+  if (r && r.st) return r.st;
+  const cur = currentStationIndex();
+  return tour.stations[cur.idx] || null;
+}
+function spawnPoint(ahead, near) {
+  const G = mouse.inside ? groundAtMouse() : null;
+  if (G) return G;
+  if (mode === 'eye') { const f = fwd(eye.yaw); return { x: eye.x + f.x * ahead, z: eye.z + f.z * ahead }; }
+  if (near) return { x: near.x + 4, z: near.z + 4 };
+  const o = cs(); return { x: o.tx, z: o.tz };
+}
+function addItem(type, st) {
+  st = st || targetStation();
+  if (!st) { toast('Add a station first'); return; }
+  const before = snapshot();
+  const p = spawnPoint(6, st), l = worldToLocal(st, p.x, p.z);
+  const from = mode === 'eye' ? eye : { x: st.x, z: st.z + 20 };
+  const yawW = Math.atan2(from.x - p.x, from.z - p.z);
+  const n = st.items.filter((i) => i.type === type).length + 1;
+  const it = { id: nid('i'), type, title: type === 'pin' ? `New pin ${n}` : `New photo ${n}`, text: '', x: l.x, z: l.z, y: groundY(p.x, p.z) - st.y, lift: 0, yaw: yawW - st.yaw, scale: 1, stand: true };
+  st.items.push(it);
+  expanded.add(st.id);
+  sel = { kind: 'item', id: it.id };
+  rebuildTour(); refreshTree(); refreshInsp(true); refreshMeta();
+  startCarry(sel, before, `Add ${it.title} to ${st.title}`);
+}
+function addStation() {
+  const before = snapshot();
+  const p = spawnPoint(16);
+  const st = { id: nid('s'), title: `Station ${tour.stations.length + 1}`, desc: '', x: p.x, z: p.z, y: groundY(p.x, p.z), yaw: 0, radius: 25, color: PALETTE[tour.stations.length % PALETTE.length], image: null, items: [] };
+  tour.stations.push(st);
+  sel = { kind: 'station', id: st.id };
+  rebuildTour(); refreshTree(); refreshInsp(true); refreshMeta();
+  startCarry(sel, before, `Add ${st.title}`);
+}
+function deleteSel() {
+  const r = resolve(sel); if (!r) return;
+  const before = snapshot(), label = `Delete ${titleOf(sel)}`;
+  if (r.it) { r.st.items.splice(r.st.items.indexOf(r.it), 1); if (r.st.image && r.st.image.photo === r.it.id) r.st.image = null; }
+  else if (r.st) tour.stations.splice(tour.stations.indexOf(r.st), 1);
+  else tour.codes.splice(tour.codes.indexOf(r.code), 1);
+  sel = null;
+  commit(before, label);
+  rebuildTour(); refreshTree(); refreshInsp(true); refreshMeta();
+  toast(`${label}. Ctrl+Z brings it back.`);
+}
+// an item gets its own station, anchored where it stands (places too close for any automatic radius)
+function moveToNewStation() {
+  const r = resolve(sel); if (!r || !r.it) return;
+  const before = snapshot(), it = r.it, old = r.st, w = itemWorld(old, it);
+  const d = Math.hypot(w.x - old.x, w.z - old.z);
+  const st = { id: nid('s'), title: it.title, desc: '', x: w.x, z: w.z, y: groundY(w.x, w.z), yaw: old.yaw,
+    radius: clamp(Math.round(d * 0.6), 5, 25), color: PALETTE[tour.stations.length % PALETTE.length], image: null, items: [] };
+  old.items.splice(old.items.indexOf(it), 1);
+  if (old.image && old.image.photo === it.id) old.image = null;
+  Object.assign(it, { x: 0, z: 0, y: w.y - st.y, yaw: w.yaw - st.yaw });
+  st.items.push(it);
+  const idx = tour.stations.indexOf(old) + 1;
+  tour.stations.splice(idx, 0, st);
+  expanded.add(st.id);
+  commit(before, `Move ${it.title} to a new station`);
+  rebuildTour(); refreshTree(); refreshInsp(true); refreshMeta();
+  toast(`"${it.title}" now has its own station, stop ${idx + 1}. Its dots set the radius.`, 3200);
+}
+function groundSel() {
+  const r = resolve(sel); if (!r || !r.st) return;
+  const list = r.it ? [r.it] : r.st.items, before = snapshot();
+  let n = 0;
+  for (const it of list) {
+    if (!offGround(r.st, it)) continue;
+    const w = itemWorld(r.st, it); it.y = groundY(w.x, w.z) + it.lift - r.st.y; updateItemVis(r.st, it); n++;
+  }
+  if (!n) { toast(r.it ? 'Already on the ground' : 'All items already stand on the ground'); return; }
+  commit(before, r.it ? `Put ${r.it.title} on the ground` : `Put ${n} items of ${r.st.title} on the ground`);
+  refreshTree(); updateReadouts();
+  toast(r.it ? `Put ${r.it.title} on the ground` : `Put ${n} item${n === 1 ? '' : 's'} on the ground`);
+}
+function nudge(df, dr, step) {
+  if (!sel) return;
+  const p = worldPose(sel), yaw = mode === 'eye' ? eye.yaw : cs().yaw, f = fwd(yaw), rt = rightOf(yaw);
+  const before = snapshot();
+  setWorldXZ(sel, p.x + (f.x * df + rt.x * dr) * step, p.z + (f.z * df + rt.z * dr) * step);
+  commit(before, `Nudge ${titleOf(sel)}`, `nudge|${sel.id}`);
+  updateReadouts();
+}
+function raise(dh) {
+  const r = resolve(sel); if (!r || !(r.it || r.code)) return;
+  const before = snapshot(), p = worldPose(sel);
+  setHeight(sel, Math.round((p.h + dh) * 10) / 10);
+  commit(before, `Height of ${titleOf(sel)}`, `h|${sel.id}`);
+  updateReadouts();
+}
+
+// =====================================================================
+// input: keyboard
+// =====================================================================
+const keys = new Set();
+const isTyping = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Shift') window.__shift = true;
+  if (isTyping(e)) return;
+  hideHint();
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (mod && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
+  // Tab toggles the bird's-eye view only while nothing focusable has focus,
+  // so keyboard users can still tab through the panels' buttons.
+  if (e.key === 'Tab' && (document.activeElement === document.body || document.activeElement === renderer.domElement)) { e.preventDefault(); toggleOverview(); return; }
+  // with a selection the arrows nudge it; without one they walk
+  if (e.key.startsWith('Arrow') && sel) {
+    e.preventDefault();
+    const dirs = { ArrowUp: [1, 0], ArrowDown: [-1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
+    if (mod && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      const before = snapshot(); rotateSel(sel, (e.key === 'ArrowLeft' ? 1 : -1) * (e.shiftKey ? 1 : 5) * DEG);
+      commit(before, `Turn ${titleOf(sel)}`, `rot|${sel.id}`); updateReadouts();
+    } else if (mod) raise(e.key === 'ArrowUp' ? 0.1 : -0.1);
+    else nudge(dirs[0], dirs[1], e.shiftKey ? 0.05 : 0.5);
+    return;
+  }
+  if (mod || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'n') { stepStation(1); return; }
+  if (k === 'p') { stepStation(-1); return; }
+  if (k === 't') { toggleTop(); return; }
+  if (k === 'g' && sel && !carry) { startCarry(sel, null, `Move ${titleOf(sel)}`); return; }
+  if (k === 'f' && sel) { standAt(sel); return; }
+  if (k === 'h' || e.key === '?') { toggleHelp(); return; }
+  if (e.key === 'Escape') { if (carry) cancelCarry(); else if ($('#help').style.display === 'block') toggleHelp(false); else select(null); return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSel(); return; }
+  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+    e.preventDefault(); keys.add(e.code); glide = null;
+  }
+});
+window.addEventListener('keyup', (e) => { keys.delete(e.code); if (e.key === 'Shift') window.__shift = false; });
+window.addEventListener('blur', () => { keys.clear(); window.__shift = false; });
+
+// =====================================================================
+// input: pointer (mouse, pen and touch). Two fingers only ever move the camera.
+// =====================================================================
+const touches = new Map();
+let touchLock = false, pinch = null;
+function pinchState() {
+  const [a, b] = [...touches.values()];
+  return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) };
+}
+function panBy(o, dx, dy) {
+  const k = (o.dist * 2 * Math.tan((camera.fov * DEG) / 2)) / innerHeight, f = fwd(o.yaw), rt = rightOf(o.yaw);
+  const kz = k / Math.max(0.4, Math.sin(-o.pitch));
+  o.tx += -dx * k * rt.x + dy * kz * f.x; o.tz += -dx * k * rt.z + dy * kz * f.z;
+  o.tx = clamp(o.tx, -HALF, HALF); o.tz = clamp(o.tz, -HALF, HALF);
+}
+function movePinch() {
+  const s = pinchState(), o = pinch; pinch = s;
+  if (tween) return;
+  const dx = s.cx - o.cx, dy = s.cy - o.cy;
+  if (mode === 'eye') {
+    eye.yaw += dx * 0.004; eye.pitch = clamp(eye.pitch + dy * 0.004, -1.45, 1.45);
+    // the same gain as the wheel (0.02 m per unit): a pinch must not stride through what you are editing
+    const f = fwd(eye.yaw), m = (s.d - o.d) * 0.02; eye.x += f.x * m; eye.z += f.z * m; clampEye();
+  } else { const c = cs(); c.dist = clamp(c.dist / (s.d / Math.max(1, o.d)), 15, 800); panBy(c, dx, dy); }
+}
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('pointerenter', () => { mouse.inside = true; });
+canvas.addEventListener('pointerleave', () => { mouse.inside = false; hideTip(); });
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'touch') {
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* the pointer may already be gone */ }
+    if (touches.size >= 2) { cancelManipulation(); touchLock = true; pinch = pinchState(); glide = null; look = null; return; }
+    if (touchLock) return;
+  }
+  setMouse(e); mouse.inside = true; hideHint();
+  if (tween) return;
+  if (document.activeElement && document.activeElement !== canvas) document.activeElement.blur();
+  if (carry) { if (e.button === 0) dropCarry(); else cancelCarry(); return; }
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  glide = null; look = null;
+  if (e.button === 0) {
+    const p = pickAt();
+    if (p && p.handle) { press = { kind: 'obj', p, x0: e.clientX, y0: e.clientY }; return; }
+    if (p && p.via !== 'circle') { select(p.sel); press = { kind: 'obj', p, x0: e.clientX, y0: e.clientY }; return; }
+    press = { kind: 'look', button: 0, x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, clickSel: p ? p.sel : null };
+    return;
+  }
+  press = { kind: 'look', button: e.button, x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, moved: false };
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touches.size >= 2) { if (pinch) movePinch(); return; }
+    if (touchLock) return;
+  }
+  setMouse(e); mouse.inside = true;
+  if (carry) { moveCarry(); return; }
+  if (press && press.kind === 'obj') {
+    if (!grab && Math.hypot(e.clientX - press.x0, e.clientY - press.y0) > 4) startGrab(press.p);
+    if (grab) moveGrab();
+    return;
+  }
+  if (press && press.kind === 'look') {
+    const dx = e.clientX - press.lx, dy = e.clientY - press.ly; press.lx = e.clientX; press.ly = e.clientY;
+    if (Math.hypot(e.clientX - press.x0, e.clientY - press.y0) > 3) press.moved = true;
+    if (tween) return;
+    if (mode === 'eye') { eye.yaw += dx * 0.0042; eye.pitch = clamp(eye.pitch + dy * 0.0042, -1.45, 1.45); canvas.style.cursor = 'move'; }
+    else if (press.button === 0) { panBy(cs(), dx, dy); canvas.style.cursor = 'move'; }
+    else if (mode === 'top') tvs.yaw += dx * 0.005;
+    else { ov.yaw += dx * 0.005; ov.pitch = clamp(ov.pitch - dy * 0.004, -1.5, -0.25); }
+    return;
+  }
+  if (e.pointerType !== 'touch') hoverAt();
+});
+function onUp(e) {
+  if (e.pointerType === 'touch') {
+    touches.delete(e.pointerId);
+    if (touches.size < 2) pinch = null;
+    if (touchLock) { if (touches.size === 0) touchLock = false; return; }
+  }
+  setMouse(e);
+  if (grab) endGrab();
+  else if (press && press.kind === 'look' && !press.moved && press.button === 0) select(press.clickSel || null, false);
+  press = null; canvas.style.cursor = '';
+  if (e.pointerType !== 'touch') hoverAt();
+}
+canvas.addEventListener('pointerup', onUp);
+canvas.addEventListener('pointercancel', onUp);
+canvas.addEventListener('dblclick', (e) => {
+  setMouse(e);
+  if (tween || carry || touches.size) return;
+  const p = pickAt();
+  if (p && p.via !== 'circle' && p.via !== 'handle') { startCarry(p.sel, null, `Move ${titleOf(p.sel)}`); return; }
+  const G = groundAtMouse(); if (!G) return;
+  if (mode === 'eye') {
+    const yaw = Math.atan2(-(G.x - eye.x), -(G.z - eye.z));
+    glideAlong([{ x: eye.x, z: eye.z }, { x: G.x, z: G.z }], yaw, eye.pitch);
+  } else toEye({ x: G.x, z: G.z, yaw: mode === 'top' ? 0 : ov.yaw, pitch: -0.08 });
+});
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const d = e.deltaY || e.deltaX;
+  const active = grab || carry;
+  if (active) {
+    const step = (e.shiftKey ? 1 : 15) * DEG * -Math.sign(d);
+    rotateSel(active.sel, step); active.moved = true; updateReadouts();
+    return;
+  }
+  if (tween) return;
+  if (mode === 'eye') { glide = null; const f = fwd(eye.yaw), m = clamp(-d * 0.02, -3, 3); eye.x += f.x * m; eye.z += f.z * m; clampEye(); }
+  else { const o = cs(); o.dist = clamp(o.dist * (1 + clamp(d, -200, 200) * 0.0012), 15, 800); }
+}, { passive: false });
+function clampEye() { eye.x = clamp(eye.x, -HALF + 2, HALF - 2); eye.z = clamp(eye.z, -HALF + 2, HALF - 2); }
+
+// hover: cursor, tint and a tiny tooltip
+const tip = $('#tip');
+function hideTip() { tip.style.display = 'none'; }
+function showTip(text) { tip.textContent = text; tip.style.display = 'block'; tip.style.transform = `translate(${mouse.x + 14}px, ${mouse.y + 16}px)`; }
+let lastHoverKey = '';
+function hoverAt() {
+  if (tween || press || grab || carry || !mouse.inside) return;
+  const p = pickAt();
+  const key = p ? `${p.sel.kind}|${p.sel.id}|${p.via}|${p.handle || ''}` : '';
+  if (key !== lastHoverKey) {
+    lastHoverKey = key;
+    hover = p && !p.handle ? p.sel : null; applyLook();
+    canvas.style.cursor = !p ? '' : p.handle === 'radius' ? 'ew-resize' : p.handle === 'scale' ? 'nwse-resize' : p.via === 'circle' ? 'pointer' : 'grab';
+  }
+  if (!p) { hideTip(); return; }
+  const t = titleOf(p.sel);
+  showTip(p.handle === 'rotate' ? `Drag to turn ${t}` : p.handle === 'radius' ? 'Drag to change the arrival radius'
+    : p.handle === 'scale' ? 'Drag to change the size' : p.via === 'circle' ? `${t}: click to select`
+    : p.sel.kind === 'station' ? `${t}: drag to move the station with all its items` : `${t}: drag to move along the ground`);
+}
+
+// dock buttons
+$('#bPrev').onclick = () => stepStation(-1);
+$('#bNext').onclick = () => stepStation(1);
+$('#bOver').onclick = () => toggleOverview();
+$('#bTop').onclick = () => toggleTop();
+$('#bUndo').onclick = () => undo();
+$('#bRedo').onclick = () => redo();
+$('#bHelp').onclick = () => toggleHelp();
+function toggleHelp(force) { const h = $('#help'), show = force ?? h.style.display !== 'block'; h.style.display = show ? 'block' : 'none'; $('#bHelp').classList.toggle('on', show); }
+$('#help').onclick = () => toggleHelp(false);
+for (const b of document.querySelectorAll('#dock button, .chip')) b.addEventListener('mouseup', () => b.blur());
+
+// toast + start hint
+let toastTimer = 0;
+function toast(msg, ms = 2000) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms); }
+let hintHidden = false;
+function hideHint() { if (!hintHidden) { hintHidden = true; $('#hint').style.opacity = 0; } }
+setTimeout(hideHint, 12000);
+
+// compass strip
+(() => {
+  let h = '';
+  for (let rep = -1; rep <= 1; rep++) for (let d = 0; d < 360; d += 15) {
+    const x = (rep * 360 + d) * 3;
+    h += d % 45 === 0 ? `<span class="${d === 0 ? 'n' : ''}" style="left:${x}px">${COMPASS[d / 45]}</span>` : `<span class="tick" style="left:${x}px">|</span>`;
+  }
+  $('#cstrip').innerHTML = h;
+})();
+const _f = new THREE.Vector3();
+function updateCompass() {
+  // straight down the forward vector has no heading; the screen's up direction has
+  camera.getWorldDirection(_f);
+  if (Math.abs(_f.y) > 0.95) _f.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  const deg = ((Math.atan2(_f.x, -_f.z) / DEG) % 360 + 360) % 360;
+  $('#cstrip').style.transform = `translateX(${120 - deg * 3}px)`;
+}
+
+// =====================================================================
+// frame loop
+// =====================================================================
+let lastT = performance.now();
+let frame = 0, lastInside = undefined;
+function sizeSprites() {
+  const k = pxK();
+  for (const v of vis.st.values()) {
+    // far badges shrink a little so the next stops read as a quiet row on the horizon
+    const d = v.badge.position.distanceTo(camera.position), f = mode === 'eye' ? clamp(1 - (d - 40) / 260, 0.62, 1) : 1;
+    const t = v.badge.material.map; v.badge.scale.set((t.userData.w / 2.3) * k * f, (t.userData.h / 2.3) * k * f, 1);
+  }
+  // in the top view the flat things themselves are readable until far out; elsewhere markers take over at 45 m
+  const far = (o) => (mode === 'top' ? tvs.dist > 170 : o.position.distanceTo(camera.position) > 45);
+  for (const v of vis.it.values()) { v.marker.scale.set(20 * k, 20 * k, 1); v.marker.visible = far(v.marker); }
+  for (const v of vis.code.values()) { v.marker.scale.set(18 * k, 18 * k, 1); v.marker.visible = layers.codes && far(v.marker); }
+}
+function arrivalCheck() {
+  if (mode !== 'eye' || tween) return;
+  const cur = currentStationIndex(), id = cur.inside ? tour.stations[cur.idx].id : null;
+  if (lastInside === undefined) { lastInside = id; return; }
+  if (id !== lastInside) {
+    lastInside = id;
+    if (id) toast(`Arrived at "${tour.stations[cur.idx].title}" - a visitor's phone would show this stop now`, 2600);
+    refreshTree();
+  }
+}
+function updateFlat(dt) {
+  const target = mode === 'top' ? 1 : 0;
+  const was = flatF;
+  if (flatF !== target) flatF = target > flatF ? Math.min(1, flatF + dt * 2.2) : Math.max(0, flatF - dt * 2.2);
+  if (flatF !== was || flatF > 0) for (const st of tour.stations) for (const it of st.items) updateItemVis(st, it);
+}
+function tick() {
+  const now = performance.now(), dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
+  if (tween) {
+    tween.t += dt;
+    const u = clamp(tween.t / tween.dur, 0, 1), e = ease(u);
+    const to = tween.to;
+    const ey = tween.up ? easeOut(u) : ease(Math.max(0, (u - 0.15) / 0.85));
+    const exz = tween.up ? ease(u) : easeOut(u);
+    camera.position.set(lerp(tween.fromPos.x, to.pos.x, exz), lerp(tween.fromPos.y, to.pos.y, ey), lerp(tween.fromPos.z, to.pos.z, exz));
+    camera.quaternion.slerpQuaternions(tween.fromQ, to.q, e);
+    if (u >= 1) { const done = tween.onDone; tween = null; done && done(); }
+  } else if (mode === 'eye') {
+    if (glide) {
+      glide.t += dt;
+      const u = clamp(glide.t / glide.dur, 0, 1), e = ease(u);
+      const p = glide.curve.getPointAt(e), tg = glide.curve.getTangentAt(Math.min(0.999, e + 0.02));
+      eye.x = p.x; eye.z = p.z;
+      const pathYaw = Math.atan2(-tg.x, -tg.z);
+      let yaw = lerpAng(glide.startYaw, pathYaw, smooth(0, 0.25, u));
+      yaw = lerpAng(yaw, glide.endYaw, smooth(0.6, 1, u));
+      eye.yaw = yaw;
+      eye.pitch = lerp(lerp(glide.startPitch, -0.04, smooth(0, 0.25, u)), glide.endPitch, smooth(0.6, 1, u));
+      if (u >= 1) glide = null;
+    } else if (look) {
+      look.t += dt; const u = ease(clamp(look.t / look.dur, 0, 1));
+      eye.yaw = lerpAng(look.y0, look.y1, u); eye.pitch = lerp(look.p0, look.p1, u);
+      if (u >= 1) look = null;
+    }
+    const fwdIn = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
+    const strafe = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+    const turn = (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0);
+    if (fwdIn || strafe || turn) {
+      const run = window.__shift ? 3 : 1;
+      const sp = 4.5 * run * dt, f = fwd(eye.yaw), r = rightOf(eye.yaw);
+      eye.x += (f.x * fwdIn + r.x * strafe) * sp; eye.z += (f.z * fwdIn + r.z * strafe) * sp;
+      eye.yaw -= turn * 1.9 * dt;
+      clampEye();
+    }
+    const gy = groundY(eye.x, eye.z) + EYE;
+    eye.y = lerp(eye.y, gy, Math.min(1, dt * 10));
+    camera.position.set(eye.x, eye.y, eye.z);
+    camera.rotation.set(eye.pitch, eye.yaw, 0);
+  } else {
+    const o = cs();
+    const fin = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
+    const str = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+    if (fin || str) { const sp = o.dist * 0.7 * dt, f = fwd(o.yaw), r = rightOf(o.yaw); o.tx = clamp(o.tx + (f.x * fin + r.x * str) * sp, -HALF, HALF); o.tz = clamp(o.tz + (f.z * fin + r.z * str) * sp, -HALF, HALF); }
+    const p = ovPose(o);
+    camera.position.lerp(p.pos, Math.min(1, dt * 12)); camera.quaternion.slerp(p.q, Math.min(1, dt * 12));
+  }
+  camera.updateMatrixWorld();
+  // things in hand follow the cursor even while you walk
+  if (carry) moveCarry();
+  else if (grab && (keys.size || glide)) moveGrab();
+
+  sky.position.copy(camera.position);
+  const hgt = Math.max(0, camera.position.y);
+  scene.fog.near = 90 + hgt * 1.6; scene.fog.far = 520 + hgt * 3.2;
+  // keep the rings' on-screen width steady while zooming from above
+  if (frame % 8 === 0 && mode !== 'eye') for (const st of tour.stations) {
+    const v = vis.st.get(st.id), w = wppAt(st.x, st.y, st.z);
+    if (v && (!v.wb || w / v.wb > 1.25 || v.wb / w > 1.25)) updateStationVis(st, true);
+  }
+  updateFlat(dt); sizeSprites(); updateGizmo(); updateCompass(); arrivalCheck();
+  if (frame % 10 === 0) refreshChip();
+  if (frame % 6 === 0) updateReadouts();
+  renderer.render(scene, camera);
+  frame++;
+  if (frame === 2) window.__proto = { ready: true };
+  requestAnimationFrame(tick);
+}
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight, false);
+});
+
+// boot
+rebuildTour(); refreshTree(); refreshInsp(true); refreshDock(); refreshMeta(); setModeUI();
+camera.position.set(eye.x, eye.y, eye.z); camera.rotation.set(eye.pitch, eye.yaw, 0);
+// small hooks for a smoke test (not part of the editor)
+const toScreen = (x, y, z) => { const v = new THREE.Vector3(x, y, z).project(camera); return { x: ((v.x + 1) / 2) * innerWidth, y: ((1 - v.y) / 2) * innerHeight }; };
+window.__walk = {
+  busy: () => !!(tween || glide || look), mode: () => mode, tour: () => tour, undoCount: () => undoStack.length,
+  select: (k, id) => select({ kind: k, id }, true), toggleOverview, toggleTop, stepStation,
+  find: (title) => { for (const st of tour.stations) { if (st.title === title) return { kind: 'station', id: st.id }; const it = st.items.find((i) => i.title === title); if (it) return { kind: 'item', id: it.id }; } return null; },
+  pose: (k, id) => worldPose({ kind: k, id }),
+  screenOf: (k, id) => { const p = worldPose({ kind: k, id }); return toScreen(p.x, p.y + Math.min(p.top, 2) * 0.5, p.z); },
+  screenAt: (k, id, dy) => { const p = worldPose({ kind: k, id }); return toScreen(p.x, p.y + dy, p.z); },
+  worldScreen: (x, z) => toScreen(x, groundY(x, z), z),
+  groundScreenOf: (k, id) => { const p = worldPose({ kind: k, id }); return toScreen(p.x, groundY(p.x, p.z), p.z); },
+  pick: (x, y) => { setMouse({ clientX: x, clientY: y }); const p = pickAt(); return p && { sel: p.sel, via: p.via, handle: p.handle, point: p.point && p.point.toArray() }; },
+  dbg: () => ({ grab: grab && { kind: grab.kind, planeY: grab.planeY, off: grab.off, ground: grab.ground }, press: press && press.kind, cam: camera.position.toArray() }),
+  knobScreen: () => (knob.visible ? toScreen(knob.position.x, knob.position.y, knob.position.z) : null),
+  gripScreen: (i) => (grips[i].visible ? toScreen(grips[i].position.x, grips[i].position.y, grips[i].position.z) : null),
+};
+tick();
+</script>
+</body>
+</html>

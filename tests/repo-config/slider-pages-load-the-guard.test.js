@@ -73,6 +73,10 @@ const EXEMPT = new Map([
     'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-4-map-tilt/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-4-map-tilt-r2/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
 ]);
 
 const RANGE_IN_HTML = /<input\b[^>]*\btype\s*=\s*["']?range\b/is;
