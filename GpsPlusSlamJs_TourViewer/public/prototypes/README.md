@@ -23,7 +23,10 @@ wired into its logic: every interaction is faked.
   `editor3d-4-map-tilt/` - the 3D editor on the globe (stations as groups
   of items, codes apart), four directions on a faked town; made
   2026-10-18, before the build. They load three.js from unpkg by an import
-  map.
+  map. When a station moves, the four drafts re-ground its items on the
+  fake terrain (an item keeps its height above the ground), while tour.json
+  version 3 keeps an item's local pose rigid with its station: the real
+  editor must choose between the two deliberately.
 
 **Kept, the chosen and the unchosen** (owner, 2026-10-11 evening): another
 developer may prefer a variant the owner did not choose and ask their own
