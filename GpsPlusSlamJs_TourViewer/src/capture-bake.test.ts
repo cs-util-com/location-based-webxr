@@ -274,6 +274,35 @@ describe("bakeCaptureSpots declines where the live join declines", () => {
     expect(bake.kind).toBe("declined");
   });
 
+  // Why (PR #640 review): "places nothing" lets a lean Finish drop the walk
+  // for good, so only a recording of a KNOWN era may say it. A session.json
+  // is hand-editable: an absent version, or a string one ("3" <= 5 is true
+  // in JavaScript), must decline and keep the walk, never read as known.
+  it.each([
+    ["absent", {}],
+    ["a string", { odomCoordVersion: "3" }],
+    ["a numeric string of the current era", { odomCoordVersion: "5" }],
+  ])(
+    "a recording whose era is %s declines and keeps the walk",
+    async (_label, meta) => {
+      const source = await sampleSource();
+      const actions = (await source.loadRecordingActions())!;
+      // No photo this build recognises: the "places nothing" branch.
+      const renamed = actions.map((a) =>
+        a.type === "gpsData/add2dImage"
+          ? { ...a, type: "gpsData/addPhotoV6" }
+          : a,
+      );
+      const bake = await bakeCaptureSpots({
+        ...source,
+        loadSessionMeta: () => Promise.resolve(meta),
+        loadRecordingActions: () => Promise.resolve(renamed),
+      });
+      expect(bake.kind).toBe("declined");
+      expect(bake).not.toHaveProperty("placesNothing");
+    },
+  );
+
   it("a replay the caller stopped", async () => {
     const bake = await bakeCaptureSpots(await sampleSource(), {
       shouldContinue: () => false,
