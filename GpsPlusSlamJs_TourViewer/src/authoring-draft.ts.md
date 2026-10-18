@@ -46,7 +46,11 @@ where)`, owner question Q-E2-2's default; `where` is the phone's "on this
   copy has this object's content, either exactly or as its station
   stores it (`asStored` of `tour-content.ts`). A placement saved into a
   station reads back a few micrometres off, and comparing it raw would
-  offer it again in every later draft and save. Every module that asks
+  offer it again in every later draft and save. An object that names
+  another station of the hosted file is never held, however close it
+  stands: that is a re-assignment, compared before the round trip (which
+  writes the hosted station in; M5a review L2). A station the file does
+  not have is no move, as the writer (`withTourContent`) reads it. Every module that asks
   "does the hosted file already have this?" goes through it
   (`creator-draft.ts`, `editor/editor-draft.ts`,
   `editor/editor-session.ts`, `finish-rebuild.ts`).
@@ -146,7 +150,8 @@ where)`, owner question Q-E2-2's default; `where` is the phone's "on this
 `authoring-draft.test.ts`. The property that carries it is "never returns
 anything the manifest already has", because that failure is permanent and
 silent. Plus: an absent manifest restoring everything, an edit of a hosted
-object counted as not hosted and field order ignored, pending deletions
+object counted as not hosted and field order ignored, a re-assignment to
+another station at the same spot counted as not hosted (L2), pending deletions
 and the spent rule, `applyObjectChanges` (replace, append, filter) with a
 property that no deleted id comes back and no id is written twice,
 `contentEntriesToRemove`, the key's identity, and the counts in the copy

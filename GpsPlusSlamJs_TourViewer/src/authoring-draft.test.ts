@@ -148,6 +148,31 @@ describe("draftObjectsNotYetHosted", () => {
     expect(draftObjectsNotYetHosted(draft, manifestOf([]))).toHaveLength(2);
   });
 
+  // Why (M5a review L2): the hosted comparison re-expresses a draft object
+  // in its HOSTED station's frame to absorb the round trip's micrometres,
+  // and that step overwrote the object's own `station` - so an object moved
+  // into another station at the same spot read as already saved, was never
+  // offered back, and a spent draft would have deleted the re-assignment.
+  it("counts a re-assignment to another station as not yet hosted, at the same spot", () => {
+    const hosted = manifestOf([pin("a"), pin("b")]);
+    const inA = asHosted(pin("a"));
+    const movedToB: TourObject = { ...inA, station: "st-b" };
+    const draft = draftOf([movedToB]);
+    expect(draftObjectsNotYetHosted(draft, hosted).map((o) => o.id)).toEqual([
+      "a",
+    ]);
+    expect(draftIsSpent({ ...draft, level: null }, hosted)).toBe(false);
+    // The same object in its own station is still held, round trip and all.
+    expect(draftObjectsNotYetHosted(draftOf([inA]), hosted)).toEqual([]);
+    // A station the file does not have is no move: the writer keeps the
+    // object where it is (`withTourContent`), so it is held.
+    expect(
+      draftObjectsNotYetHosted(draftOf([{ ...inA, station: "gone" }]), hosted),
+    ).toEqual([]);
+    // And one that names no station is judged by its spot alone, as before.
+    expect(draftObjectsNotYetHosted(draftOf([pin("a")]), hosted)).toEqual([]);
+  });
+
   it("never returns anything the manifest already has (property)", () => {
     // Stated as a property because the failure is permanent and silent:
     // the finish's own validation rejects duplicate ids, so ONE leak here
