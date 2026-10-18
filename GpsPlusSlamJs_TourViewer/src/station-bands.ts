@@ -91,7 +91,29 @@ export function stationBands(
   accuracyM: number | null,
 ): StationBands {
   const accuracy = clampAccuracy(accuracyM);
-  const band = Math.max(BAND_ACCURACY_FACTOR * accuracy, HUD_ARRIVAL_BAND_M);
+  return bandsWith(
+    station,
+    Math.max(BAND_ACCURACY_FACTOR * accuracy, HUD_ARRIVAL_BAND_M),
+  );
+}
+
+/**
+ * The bands of an ALIGNED position (PR #642 review): the raw fixes'
+ * accuracy says nothing about it (`station-guide.ts` `judgedAccuracy`), and
+ * `stationBands` would read that unknown accuracy as the ceiling, the
+ * widest band there is. Its band is the HUD's own, whatever the fixes say.
+ */
+export function alignedStationBands(station: {
+  readonly activateRadiusM: number;
+  readonly foundRadiusM: number;
+}): StationBands {
+  return bandsWith(station, HUD_ARRIVAL_BAND_M);
+}
+
+function bandsWith(
+  station: { readonly activateRadiusM: number; readonly foundRadiusM: number },
+  band: number,
+): StationBands {
   const foundM = finiteOr(station.foundRadiusM, 0);
   const foundExitM = foundM + band;
   const activateM = Math.max(finiteOr(station.activateRadiusM, 0), foundExitM);

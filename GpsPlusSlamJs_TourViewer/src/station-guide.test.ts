@@ -5,7 +5,7 @@ import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 
-import { stationBands } from "./station-bands";
+import { alignedStationBands, stationBands } from "./station-bands";
 import { skipSuggestAfterMs } from "./station-run";
 import {
   FIX_MAX_AGE_MS,
@@ -259,7 +259,7 @@ describe("wireStationGuide", () => {
     expect(gate.position.x).toBeCloseTo(50, 1);
     expect(gate.position.y).toBe(401.5);
     expect(gate.position.z).toBeCloseTo(20, 1);
-    const bands = stationBands(s, 6);
+    const bands = alignedStationBands(s);
     expect([gate.distanceMin, gate.distanceMax]).toEqual([
       bands.foundM,
       bands.foundExitM,
@@ -545,7 +545,9 @@ describe("wireStationGuide", () => {
       order: "fixed",
     });
     h.at(0, 0);
-    expect(h.approaches).toEqual([["gate", 0, stationBands(s, 4).activateM]]);
+    expect(h.approaches).toEqual([
+      ["gate", 0, alignedStationBands(s).activateM],
+    ]);
     h.guide.storyEnded("gate");
     h.at(0, 0);
     expect(h.approaches.at(-1)?.slice(0, 2)).toEqual(["well", 80]);
@@ -574,7 +576,9 @@ describe("wireStationGuide", () => {
       order: "fixed",
     });
     h.at(0, 0);
-    expect(h.guides.at(-1)).toBe(`well@0,80/${stationBands(s, 4).foundExitM}`);
+    expect(h.guides.at(-1)).toBe(
+      `well@0,80/${alignedStationBands(s).foundExitM}`,
+    );
     h.at(0, 79);
     expect(h.guides.at(-1)).toBeNull();
     h.guide.endSession();
@@ -672,6 +676,38 @@ describe("arrival by the station radius alone (D16)", () => {
     h.at(28, 0, 60);
     expect(h.found).toEqual(["well"]);
     expect(h.dom.line.textContent).not.toMatch(/too weak/);
+  });
+
+  // Why (PR #642 review): the run and the line judged an aligned visitor
+  // without the raw fixes' accuracy, but the prefetch, the HUD's band and
+  // the breadcrumbs' stop still read it - so a ±40 m Wi-Fi fix beside a
+  // code-placed position moved where the arrow came back and the crumbs
+  // stopped. One rule decides all of them. Swept over the raw accuracy
+  // (and none at all), aligned and not.
+  it("widens nothing for an aligned visitor however weak the raw fix; a raw fix alone keeps its own band", () => {
+    // An activation radius inside the widest band, so the prefetch shows it.
+    const s = station("gate", 50, 0, { activateRadiusM: 6, foundRadiusM: 5 });
+    const tour: StationTour = { stations: [s], order: "fixed" };
+    const aligned = alignedStationBands(s);
+    for (const accuracyM of [5, 25, 40, 100, null]) {
+      const h = harness(tour);
+      h.at(0, 0, accuracyM);
+      expect(h.approaches.at(-1)).toEqual(["gate", 50, aligned.activateM]);
+      expect(h.guides.at(-1)).toBe(`gate@50,0/${aligned.foundExitM}`);
+      const [target] = h.huds[0]!.getTargets();
+      expect([target!.distanceMin, target!.distanceMax]).toEqual([
+        aligned.foundM,
+        aligned.foundExitM,
+      ]);
+      // No alignment: the raw fix IS the position, and its accuracy its band.
+      const raw = harness(tour);
+      raw.fixOnly(0, 0, accuracyM);
+      const own = stationBands(s, accuracyM);
+      expect(raw.approaches.at(-1)).toEqual(["gate", 50, own.activateM]);
+      expect(raw.guides.at(-1)).toBe(`gate@50,0/${own.foundExitM}`);
+      // The HUD needs a camera position: none from a raw fix alone.
+      expect(raw.huds[0]?.getTargets() ?? []).toEqual([]);
+    }
   });
 
   it("none before any position: no fix, no alignment, nothing is reached, a code lock included", () => {

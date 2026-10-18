@@ -43,7 +43,12 @@ import { Vector3 } from "three";
 
 import { objectPoseNue } from "./content-placement.js";
 import type { StagePose } from "./scene-stage.js";
-import { stationBands, tooWeakToGuide } from "./station-bands.js";
+import {
+  alignedStationBands,
+  stationBands,
+  tooWeakToGuide,
+  type StationBands,
+} from "./station-bands.js";
 import {
   createStationRun,
   stationTitle,
@@ -271,6 +276,20 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     return visitor.nue === null ? visitor.accuracyM : null;
   }
 
+  /** A station's bands at the position judged by (PR #642 review): the
+   *  raw fix's accuracy only when the raw fix is that position; an
+   *  alignment's takes the HUD's own band (`alignedStationBands`), since
+   *  `stationBands` reads an unknown accuracy as its ceiling. Read by the
+   *  prefetch, the HUD's targets and the breadcrumbs' stop alike. */
+  function bandsOf(
+    station: TourStation,
+    visitor: VisitorPosition,
+  ): StationBands {
+    return visitor.nue === null
+      ? stationBands(station, judgedAccuracy(visitor))
+      : alignedStationBands(station);
+  }
+
   function horizontalDistances(
     nue: readonly [number, number, number] | null,
   ): Map<string, number> {
@@ -314,14 +333,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** The prefetch's view of the offer: each offered station's distance. */
   function approach(
     distances: ReadonlyMap<string, number>,
-    accuracyM: number | null,
+    visitor: VisitorPosition,
   ): void {
     if (deps.onApproach === undefined || run === null) return;
     for (const id of run.offered()) {
       const d = distances.get(id);
       const station = stationById(id);
       if (d === undefined || station === undefined) continue;
-      deps.onApproach(station, d, stationBands(station, accuracyM).activateM);
+      deps.onApproach(station, d, bandsOf(station, visitor).activateM);
     }
   }
 
@@ -350,7 +369,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       if (status?.state === "found" || station === undefined || pose === null) {
         continue;
       }
-      const bands = stationBands(station, last.visitor.accuracyM);
+      const bands = bandsOf(station, last.visitor);
       targets.push({
         id,
         position: new Vector3(
@@ -506,7 +525,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     return {
       id: focus,
       to: pose.positionNue,
-      stopM: stationBands(station, last.visitor.accuracyM).foundExitM,
+      stopM: bandsOf(station, last.visitor).foundExitM,
     };
   }
 
@@ -541,7 +560,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         }
       }
       if (visitor.nue !== null) deps.onVisitor?.(visitor.nue);
-      approach(distances, visitor.accuracyM);
+      approach(distances, visitor);
       handle(
         current.observe({
           distances,
