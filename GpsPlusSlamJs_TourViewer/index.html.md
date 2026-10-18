@@ -97,7 +97,8 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   `#enter-ar` with its ring and `data-step` marker, `#ar-hint` as the
   one line under it, by flex `order`), then `#visitor-more` after the
   stage ("What happens?" `#visitor-what`, whose "Stays on your phone"
-  says the app sends nothing anywhere and links the privacy page,
+  says the app sends none of your data - no camera image, no location -
+  and links the privacy page,
   `visitor-privacy`; and `make-your-own`). The safety line
   `#visitor-safety` stands before the round button (W6, D13: "Watch where
   you walk..."), shown on the visitor's start page only. All of it

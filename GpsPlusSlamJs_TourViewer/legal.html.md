@@ -29,7 +29,15 @@ placeholders stay visible until the owner fills them in, and the page says
 ## Invariants & assumptions
 
 - Nothing on the page claims more than the code does; the facts it rests
-  on are listed in the design doc's §1. A change of what the app sends or
+  on are listed in the design doc's §1. Corrected after the M4b milestone
+  review (#5): no offline copy of the app (no service worker) and a tour
+  still carrying its walk only partly kept (`stopsVisitorDownload`); the
+  clear control's real name ("Other settings"); every local item
+  (`tour-viewer.wizard.*`, `tour-viewer.poster.*`, `tour-viewer.tour-name.*`,
+  `tour-viewer.hud.folded.*`); the trust records (`tour-viewer.trust.v1`:
+  signer and first/last seen per link, code and series) said to be a local
+  visit history; "sets no cookies" (a server in the path may); the walk
+  kept by the phone only when the photos need it (`creator-finish.ts`). A change of what the app sends or
   stores changes this page in the same commit.
 - `wrangler.toml` logging and the referrer policy are the owner's open
   questions (design doc §5 Q2, Q3); the page states the logging as it is.

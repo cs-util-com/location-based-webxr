@@ -29,6 +29,15 @@ test("the legal page says it is a draft and carries both sections with their pla
     "[Full name or company name, legal form]",
   );
   await expect(page.locator("#privacy")).toContainText("[N] days");
+  // Claims held to the code (the M4b milestone review #5): no offline copy
+  // of the app, the clear control by its real name, the trust records said
+  // to be a visit history, and only the cookies the APP sets.
+  const privacy = page.locator("#privacy");
+  await expect(privacy).toContainText("sets no cookies");
+  await expect(privacy).toContainText("keeps no offline copy of itself");
+  await expect(privacy).toContainText('under "Other settings"');
+  await expect(privacy).toContainText("a history of the tours opened");
+  await expect(privacy).not.toContainText("work without a connection");
   // Nothing scrolls sideways on a phone.
   await page.setViewportSize({ width: 360, height: 640 });
   expect(
@@ -62,9 +71,12 @@ test("the visitor's What happens? links the privacy page, says what stays on the
   );
   await page.locator("#visitor-what summary").click();
   const what = page.locator("#visitor-what");
+  // The tour's own download is a request the servers see, so "sends
+  // nothing anywhere" overclaimed (the M4b milestone review #4).
   await expect(what).toContainText(
-    "The app sends nothing anywhere. No sign-up, no account.",
+    "The app sends none of your data: no camera image, no location. No sign-up, no account.",
   );
+  await expect(what).not.toContainText("sends nothing anywhere");
   await expect(what).not.toContainText("Nothing is uploaded");
   await expect(page.getByTestId("visitor-privacy")).toHaveAttribute(
     "href",
