@@ -51,6 +51,15 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
     the rebuild throw (`ArchiveLimitError`, `TourIntegrityError`); the
     caller shows it.
 
+- `finishedManifest({ manifest, placed, deleted, title?, captureSpots? })`
+  - the manifest a Finish writes, without the zip: the rule
+    `rebuildFinishedTour` applies (records replacing theirs by id, new ones
+    appended, deleted ones out, every object in a station by
+    `withTourContent`), exported pure so the tour document's
+    `manifestToWrite` (`tour-document.ts`) and the rebuild cannot disagree
+    (property-tested there against real zips). New automatic stations get
+    fresh ids on each call.
+
 - `pendingAfterRebuild({ placed, deleted }, written, appliedDeletions)`
   (M6 E0b) - what is still to save after a write, from the page's lists
   as they are AFTER it: `placed` (content the zip does not carry, by

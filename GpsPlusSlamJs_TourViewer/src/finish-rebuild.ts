@@ -128,6 +128,56 @@ function finishTitle(
   return name === "" ? undefined : name;
 }
 
+/** What a Finish writes into the manifest, without the zip. */
+export interface FinishedManifestInput {
+  /** The manifest the tour carries now (after any earlier rebuild). */
+  readonly manifest: TourManifest;
+  /** Objects placed or edited, each replacing its id's record. */
+  readonly placed: readonly { readonly object: TourObject }[];
+  /** Ids to delete. */
+  readonly deleted: readonly string[];
+  /** The tour's name as typed (`FinishInput.title`). */
+  readonly title?: string | null;
+  /** The recorded photos' spots, when the tour has them. */
+  readonly captureSpots?: CaptureSpotsInWorld;
+}
+
+/**
+ * The manifest a Finish writes (the rule `rebuildFinishedTour` applies,
+ * pure, so the tour document's selector and the rebuild share it): what
+ * the zip carried, with this device's records REPLACING theirs by id (an
+ * edit or a move of a hosted object), the new ones appended and the
+ * deleted ones filtered out (plan §3.4, M4), every pin and photo in a
+ * station (tour editor plan W3, D20). New automatic stations get fresh
+ * ids, so two calls agree up to those.
+ */
+export function finishedManifest(input: FinishedManifestInput): TourManifest {
+  const { manifest } = input;
+  const title = finishTitle(manifest.title, input.title ?? null);
+  const untitled = { ...manifest };
+  delete untitled.title;
+  // The unmoved ones keep their local poses, the new ones and the
+  // recorded photos are assigned by the automatic-station rule
+  // (`tour-content.ts`).
+  return withTourContent(
+    { ...untitled, ...(title === undefined ? {} : { title }) },
+    {
+      // Never an id twice, and not for tidiness: the serializer REJECTS
+      // duplicates, so one restored object that is already in the
+      // manifest would make every finish throw - for as long as the
+      // draft is restored, with no escape inside the app (M5 review #4).
+      objects: applyObjectChanges(
+        tourObjects(manifest),
+        input.placed.map((p) => p.object),
+        input.deleted,
+      ),
+      ...(input.captureSpots === undefined
+        ? {}
+        : { captureSpots: input.captureSpots }),
+    },
+  );
+}
+
 /** A written entry's record for `manifest.json`: the SHA-256 and size of
  *  the bytes the zip will hold (a string is written as UTF-8). */
 async function fileRecordOf(
@@ -160,35 +210,11 @@ export async function rebuildFinishedTour(
   // apart in the first place (PR #435 review).
   const wrap = tour.manifestWrap;
   const manifestPath = `${wrap}${TOUR_MANIFEST_ENTRY}`;
-  // The manifest: what the zip carried, with this device's records
-  // REPLACING theirs by id (an edit or a move of a hosted object),
-  // the new ones appended and the deleted ones filtered out (plan
-  // §3.4, M4); the photos' bytes become content entries next to it.
+  // The manifest (`finishedManifest`); the photos' bytes become content
+  // entries next to it.
   const deleted = [...input.deleted];
-  const title = finishTitle(manifest.title, input.title ?? null);
-  const untitled = { ...manifest };
-  delete untitled.title;
   const hosted = tourObjects(manifest);
-  // Every pin and photo in a station (tour editor plan W3, D20): the
-  // unmoved ones keep their local poses, the new ones and the recorded
-  // photos are assigned by the automatic-station rule (`tour-content.ts`).
-  const written: TourManifest = withTourContent(
-    { ...untitled, ...(title === undefined ? {} : { title }) },
-    {
-      // Never an id twice, and not for tidiness: the serializer REJECTS
-      // duplicates, so one restored object that is already in the
-      // manifest would make every finish throw - for as long as the
-      // draft is restored, with no escape inside the app (M5 review #4).
-      objects: applyObjectChanges(
-        hosted,
-        input.placed.map((p) => p.object),
-        deleted,
-      ),
-      ...(input.captureSpots === undefined
-        ? {}
-        : { captureSpots: input.captureSpots }),
-    },
-  );
+  const written: TourManifest = finishedManifest({ ...input, deleted });
   // A deleted photo takes its content file with it. A signature over
   // the old list cannot cover the files this Finish rewrites, so it
   // goes - the output is unsigned until K2 signs on export. The list

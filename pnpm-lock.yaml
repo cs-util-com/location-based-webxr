@@ -805,6 +805,9 @@ importers:
 
   GpsPlusSlamJs_TourViewer:
     dependencies:
+      '@reduxjs/toolkit':
+        specifier: ^2.12.0
+        version: 2.12.0
       '@zip.js/zip.js':
         specifier: ^2.11.2
         version: 2.11.2

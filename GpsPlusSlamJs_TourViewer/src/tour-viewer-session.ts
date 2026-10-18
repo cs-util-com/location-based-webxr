@@ -17,6 +17,7 @@ import type { QrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-bud
 import type { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
+import { createListenerMiddleware } from "@reduxjs/toolkit";
 import {
   createSlamAppStore,
   qrDetectedReducer,
@@ -30,6 +31,10 @@ import {
 
 import { objectPlaced } from "./tour-authoring-actions.js";
 import { codeLocked } from "./tour-viewing-actions.js";
+import {
+  tourDocumentReducer,
+  type TourDocumentState,
+} from "./tour-document.js";
 
 import type {
   HitTestReticleHandle,
@@ -84,17 +89,32 @@ interface VisitPlacement {
  * done on the page outside AR would never be written. The numbering runs
  * across those sessions for the same reason. Without it (tests) the store
  * writes into a `NullStorageBackend` as before.
+ *
+ * It also holds the tour a creator edits (`tourDocument`,
+ * `tour-document.ts`, D29-D31) - not written into the recording - and
+ * `listenToDocument`, its own listener middleware's `startListening`: a
+ * page's side effects of the document (its draft's writes) run there,
+ * after the reducer, never from `store.subscribe`. Its own middleware,
+ * not an `addListener` dispatch: that would land in whichever of the
+ * framework's listener middlewares comes first.
  */
 export function createTourViewerStore(recording?: {
   storageBackend: StorageBackend;
   persistWhile: () => boolean;
 }) {
-  return createSlamAppStore({
+  const documentListener = createListenerMiddleware<{
+    tourDocument: TourDocumentState;
+  }>();
+  const store = createSlamAppStore({
     storageBackend: recording?.storageBackend ?? new NullStorageBackend(),
     ...(recording === undefined
       ? {}
       : { persistWhile: recording.persistWhile, continuousActionIndex: true }),
-    extraReducers: { qrDetected: qrDetectedReducer },
+    extraReducers: {
+      qrDetected: qrDetectedReducer,
+      tourDocument: tourDocumentReducer,
+    },
+    extraMiddleware: [documentListener.middleware],
     // Beyond the framework's built-ins (GPS with its paired poses, the
     // recording lifecycle, diagnostics): the QR detections the votes and
     // the mint were computed from, the creator's own log actions, and a
@@ -105,6 +125,9 @@ export function createTourViewerStore(recording?: {
       slicePrefixOf(objectPlaced.type),
       slicePrefixOf(codeLocked.type),
     ],
+  });
+  return Object.assign(store, {
+    listenToDocument: documentListener.startListening,
   });
 }
 export type TourViewerStore = ReturnType<typeof createTourViewerStore>;
