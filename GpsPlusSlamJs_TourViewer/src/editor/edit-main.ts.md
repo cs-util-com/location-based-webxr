@@ -233,17 +233,36 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   downloaded; "unchanged" when nothing was saved), the host (the link's the
   tour was fetched from, else the setup's stored choice, else Google
   Drive; a picker of `TOUR_HOSTS`), whether the newest bytes carry the
-  walk (`walkEntries()`), and the Drive-mount tip's switch
-  (`DRIVE_MOUNT_TIP_SHOWN`, off). The rest of the page is `inert` while
-  it shows; Esc and Close close it, focus goes back to Done.
-- **Move the walk out (D19)** (`moveWalk`): holds every save
-  (`saving`), checks the in-place file is unchanged, builds the move
-  (`moveWalkOut`), writes the walk's zip first (`downloadZip`: the save
-  dialog where the browser has one, else a download; dismissed - nothing
-  moved), then the tour (`deliver`: in place, or downloaded), and only
-  when both landed commits the move - so a failed write of either leaves
-  the tour file, and the session's next save, carrying the walk. Its
-  outcome is said in the dialog.
+  walk (`walkEntries()`; a check that fails is `unknown`, said as "may
+  carry", never as "carries none" - the M4b milestone review #9), and the
+  Drive-mount tip's switch (`DRIVE_MOUNT_TIP_SHOWN`, off). The rest of the
+  page is `inert` while it shows; Esc and Close close it - but not while a
+  move runs - and focus goes back to Done. Done waits for saves with
+  `savesSettled()`, which can never spin: a claim still set on an ended
+  `saveEnd` stops the wait.
+- **Move the walk out (D19)** (`moveWalk`): each step holds the page's
+  one save slot (`claimSave()`, which a save takes too: `saving` set and a
+  new `saveEnd` for Done to wait on) and `walkMoving` (Done disabled), and
+  the dialog cannot be closed meanwhile (the M4b milestone review #1).
+  **The walk's file is asked for IN the click** (`pickSaveFile`, before
+  any await: Chromium opens its save dialog only within a few seconds of a
+  click, and the build takes longer - review #2). Then it checks the
+  in-place file is unchanged, builds the move (`moveWalkOut`), and:
+  - with a chosen file: writes the walk's zip into it
+    (`writeFileOrAbort`), then the tour;
+  - dismissed: nothing moved;
+  - without a save dialog (or one the browser refused): downloads the
+    walk and returns `downloaded` - the tour is rewritten only on a
+    SECOND click ("Take the walk out of the tour"), since a started
+    download is not one that landed;
+  - the tour (`deliver` with `offerDownload: false`, in place or
+    downloaded) is written only while the move is `current()` (no save
+    landed between the clicks), and the move is committed only once both
+    landed - so a failed write of either leaves the tour file, and the
+    session's next save, carrying the walk. A failed tour write offers no
+    "Download instead" (review #6): the refusal is said in the dialog.
+    The outcome carries where the changes are now (`doneSaved()`), so the
+    dialog's first line and steps follow (review #10).
 - **Undo and redo (W2 of the tour editor plan 2026-10-17-1816).** Ctrl+Z
   undoes, Ctrl+Shift+Z and Ctrl+Y redo (Cmd on a Mac; by the key's letter,
   as Ctrl+S): one step of the session's edit stack (`editor.undo()` /
@@ -280,5 +299,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 The modules it wires have their own unit tests; the page is pinned by
 `playwright-tests/editor.spec.js` (the details dialog, the fine print,
 the undo keys, a delete's Undo after its autosave, and Done with the
-walk's move - its success and both failed writes - among them) and `editor-entry.spec.js` (the
+walk's move - the save dialog asked for on the click and the walk in the
+chosen file, the dialog held open and Done disabled while it runs, the
+download's second click, a dismissed walk save and a failed tour write
+each followed by a save that still carries the walk - among them) and `editor-entry.spec.js` (the
 "Nothing to save" toast, the open from a link); `way-in.spec.js` checks its first paint.

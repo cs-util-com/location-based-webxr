@@ -114,6 +114,57 @@ export async function pickTourFile(win: PickerWindow): Promise<PickOutcome> {
   }
 }
 
+/** The part of `window` the save dialog needs. */
+export interface SavePickerWindow {
+  showSaveFilePicker?: (options: {
+    suggestedName: string;
+    types: { description: string; accept: Record<string, string[]> }[];
+  }) => Promise<FileSystemFileHandle>;
+}
+
+export type SaveFilePick =
+  | { readonly kind: "picked"; readonly handle: FileSystemFileHandle }
+  /** The creator dismissed the dialog: nothing is to be written. */
+  | { readonly kind: "cancelled" }
+  /** No save dialog here, or the browser refused one (no click to open it
+   *  on, an iframe): the caller downloads instead. */
+  | { readonly kind: "unavailable" };
+
+/**
+ * Ask where a new zip goes with the browser's save dialog. Call it IN the
+ * click, before any await: Chromium opens the dialog only within a few
+ * seconds of a click, and a dialog asked for after a long build is refused
+ * - which a plain download used to paper over (the M4b milestone review
+ * #2). The dialog's own call happens before this returns.
+ */
+export function pickSaveFile(
+  win: SavePickerWindow,
+  suggestedName: string,
+): Promise<SaveFilePick> {
+  const picker = win.showSaveFilePicker;
+  if (typeof picker !== "function") {
+    return Promise.resolve({ kind: "unavailable" });
+  }
+  let asked: Promise<FileSystemFileHandle>;
+  try {
+    asked = picker.call(win, {
+      suggestedName,
+      types: [
+        { description: "ZIP Archive", accept: { "application/zip": [".zip"] } },
+      ],
+    });
+  } catch {
+    return Promise.resolve({ kind: "unavailable" });
+  }
+  return asked.then(
+    (handle): SaveFilePick => ({ kind: "picked", handle }),
+    (err: unknown): SaveFilePick =>
+      err instanceof DOMException && err.name === "AbortError"
+        ? { kind: "cancelled" }
+        : { kind: "unavailable" },
+  );
+}
+
 async function askToWrite(handle: WritableFileHandle): Promise<boolean> {
   if (typeof handle.requestPermission !== "function") return false;
   try {

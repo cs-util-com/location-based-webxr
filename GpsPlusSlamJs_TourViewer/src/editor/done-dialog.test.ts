@@ -80,6 +80,15 @@ describe("doneWords", () => {
     expect(doneWords({ ...IN_PLACE, carriesWalk: false }).walk).toBeNull();
   });
 
+  it("says a file whose walk could not be checked may carry it, and offers the move", () => {
+    // Why (the M4b milestone review #9): a failed check said nothing, as
+    // if the file carried no walk; it fails toward the walk.
+    const walk = doneWords({ ...IN_PLACE, carriesWalk: "unknown" }).walk;
+    expect(walk).toMatch(/could not be checked/);
+    expect(walk).toMatch(/GPS track/);
+    expect(walk).toMatch(/Move the walk out/);
+  });
+
   it("keeps the Drive-mount tip hidden by default, and the switch shows it for a Drive tour saved in place only", () => {
     // Review #10: the tip waits for the owner's check that a write through
     // the mount keeps the Drive file id. The switch is off in the module.
@@ -181,6 +190,7 @@ describe("wireDoneDialog", () => {
       kind: "moved",
       walkName: "castle-walk.zip",
       tourName: "castle.zip",
+      saved: { kind: "in-place", name: "castle.zip" },
     });
     await vi.waitFor(() => {
       expect(dom.moveStatus.textContent).toMatch(/castle-walk\.zip/);
@@ -222,6 +232,120 @@ describe("wireDoneDialog", () => {
     });
     expect(thrown.dom.moveButton.disabled).toBe(false);
     expect(thrown.dom.moveButton.textContent).toBe(MOVE_LABELS.idle);
+  });
+
+  it("stays open while a move runs: Close is disabled and neither it nor close() shuts it, until the move ends; a forced close does", async () => {
+    // Why (the M4b milestone review #1): a dialog closed mid-move let Done
+    // start while the move still held the page's save, and the page froze
+    // waiting on it. The move's files are being written: nothing of the
+    // page may change under it.
+    let finish!: (outcome: WalkMoveOutcome) => void;
+    const { dom, deps, dialog } = wire(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    dialog.open(IN_PLACE);
+    dom.moveButton.fire("click");
+    expect(dom.close.disabled).toBe(true);
+    dom.close.fire("click");
+    dialog.close();
+    expect(dialog.isOpen()).toBe(true);
+    expect(deps.onClose).not.toHaveBeenCalled();
+    finish({ kind: "cancelled" });
+    await vi.waitFor(() => {
+      expect(dom.close.disabled).toBe(false);
+    });
+    dialog.close();
+    expect(dialog.isOpen()).toBe(false);
+    // A tour that is gone closes it, move or not.
+    const held = wire(() => new Promise<WalkMoveOutcome>(() => undefined));
+    held.dialog.open(IN_PLACE);
+    held.dom.moveButton.fire("click");
+    held.dialog.close(true);
+    expect(held.dialog.isOpen()).toBe(false);
+    expect(held.deps.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for a second click after the walk was downloaded, and that click takes it out - never a second download", async () => {
+    // Why (the M4b milestone review #2): without a save dialog the walk's
+    // download is only started, never known to have landed; the tour is
+    // rewritten without the walk only once the creator says so.
+    const confirm = vi.fn(() =>
+      Promise.resolve<WalkMoveOutcome>({
+        kind: "moved",
+        walkName: "castle-walk.zip",
+        tourName: "castle.zip",
+        saved: { kind: "in-place", name: "castle.zip" },
+      }),
+    );
+    const { dom, deps, dialog } = wire(() =>
+      Promise.resolve({
+        kind: "downloaded",
+        walkName: "castle-walk.zip",
+        confirm,
+      }),
+    );
+    dialog.open(IN_PLACE);
+    dom.moveButton.fire("click");
+    await vi.waitFor(() => {
+      expect(dom.moveButton.textContent).toBe(MOVE_LABELS.confirm);
+    });
+    expect(dom.moveStatus.textContent).toMatch(
+      /downloaded as castle-walk\.zip/,
+    );
+    expect(dom.moveStatus.textContent).toMatch(/the tour file keeps it/);
+    expect(dom.moveButton.disabled).toBe(false);
+    expect(dom.walkText.hidden).toBe(false);
+    dom.moveButton.fire("click");
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(deps.moveWalk).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(dom.moveStatus.textContent).toMatch(/no longer carries it/);
+    });
+    // Closed before the second click, the next open starts over.
+    const again = wire(() =>
+      Promise.resolve({ kind: "downloaded", walkName: "w.zip", confirm }),
+    );
+    again.dialog.open(IN_PLACE);
+    again.dom.moveButton.fire("click");
+    await vi.waitFor(() => {
+      expect(again.dom.moveButton.textContent).toBe(MOVE_LABELS.confirm);
+    });
+    again.dialog.close();
+    again.dialog.open(IN_PLACE);
+    expect(again.dom.moveButton.textContent).toBe(MOVE_LABELS.idle);
+    again.dom.moveButton.fire("click");
+    expect(again.deps.moveWalk).toHaveBeenCalledTimes(2);
+  });
+
+  it("after a move, its first line and steps follow where the changes are now", async () => {
+    // Why (the M4b milestone review #10): a tour unchanged before the move
+    // is written by it; the dialog said "Nothing was changed" over a file
+    // it had just rewritten.
+    const { dom, dialog } = wire(() =>
+      Promise.resolve({
+        kind: "moved",
+        walkName: "castle-walk.zip",
+        tourName: "castle.zip",
+        saved: { kind: "downloaded", name: "castle (1).zip" },
+      }),
+    );
+    dialog.open({
+      ...IN_PLACE,
+      saved: { kind: "unchanged", name: "castle.zip" },
+    });
+    expect(dom.where.textContent).toMatch(/Nothing was changed/);
+    dom.moveButton.fire("click");
+    await vi.waitFor(() => {
+      expect(dom.where.textContent).toMatch(/downloaded as castle \(1\)\.zip/);
+    });
+    expect(dom.update.textContent).toContain("castle (1).zip");
+    // The walk's words go; its section stays to say where the walk went.
+    expect(dom.walkText.hidden).toBe(true);
+    expect(dom.walk.hidden).toBe(false);
+    expect(dom.moveStatus.textContent).toMatch(/castle-walk\.zip/);
   });
 
   it("closes from its button and tells the page; an open clears the last move's line", () => {

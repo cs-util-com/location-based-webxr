@@ -11,6 +11,7 @@ import {
   createSaveTarget,
   holdEditorDraftLock,
   holdEditorLock,
+  pickSaveFile,
   pickTourFile,
   saveFinePrint,
   InPlaceRefusal,
@@ -304,5 +305,73 @@ describe("saveFinePrint", () => {
     expect(text).not.toContain("nothing is uploaded");
     expect(text).toContain("Save gives you a new copy");
     expect(text).not.toContain("saved into that file");
+  });
+});
+
+/**
+ * Why (the M4b milestone review #2): the walk's file was asked for with
+ * the framework's download, after the move's build - by then Chromium's
+ * click window had passed, the save dialog was refused, and the download
+ * it fell back to counted as saved before the tour was rewritten without
+ * the walk. The dialog must be opened IN the click, and only a dismissal
+ * means "nothing to write"; anything else lets the page download instead.
+ */
+describe("pickSaveFile", () => {
+  const handle = { kind: "file", name: "castle-walk.zip" };
+
+  it("opens the save dialog before it returns, with the suggested name", async () => {
+    const calls: string[] = [];
+    const picked = pickSaveFile(
+      {
+        showSaveFilePicker: (options) => {
+          calls.push(options.suggestedName);
+          return Promise.resolve(handle as unknown as FileSystemFileHandle);
+        },
+      },
+      "castle-walk.zip",
+    );
+    // Called synchronously: no await came between the click and the dialog.
+    expect(calls).toEqual(["castle-walk.zip"]);
+    await expect(picked).resolves.toEqual({ kind: "picked", handle });
+  });
+
+  it("is cancelled only when the creator dismissed the dialog", async () => {
+    await expect(
+      pickSaveFile(
+        {
+          showSaveFilePicker: () =>
+            Promise.reject(new DOMException("dismissed", "AbortError")),
+        },
+        "w.zip",
+      ),
+    ).resolves.toEqual({ kind: "cancelled" });
+  });
+
+  it("is unavailable without a dialog, or when the browser refuses one", async () => {
+    await expect(pickSaveFile({}, "w.zip")).resolves.toEqual({
+      kind: "unavailable",
+    });
+    for (const refusal of [
+      new DOMException("no click", "SecurityError"),
+      new DOMException("busy", "NotAllowedError"),
+      new TypeError("not here"),
+    ]) {
+      await expect(
+        pickSaveFile(
+          { showSaveFilePicker: () => Promise.reject(refusal) },
+          "w.zip",
+        ),
+      ).resolves.toEqual({ kind: "unavailable" });
+    }
+    await expect(
+      pickSaveFile(
+        {
+          showSaveFilePicker: () => {
+            throw new TypeError("thrown, not rejected");
+          },
+        },
+        "w.zip",
+      ),
+    ).resolves.toEqual({ kind: "unavailable" });
   });
 });

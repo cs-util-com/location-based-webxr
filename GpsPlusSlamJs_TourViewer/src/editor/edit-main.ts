@@ -17,7 +17,11 @@
  * @see edit-main.ts.md
  */
 
-import { downloadZip } from "gps-plus-slam-app-framework/storage";
+import {
+  downloadZip,
+  writeFileOrAbort,
+} from "gps-plus-slam-app-framework/storage";
+import { finishedFileName } from "../finish-rebuild.js";
 import { FINISH_LABELS } from "../qr-author-mode.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import { describeIntegrityError } from "../open-errors.js";
@@ -74,6 +78,7 @@ import {
 } from "./autosave.js";
 import {
   createEditorSession,
+  walkFileName,
   type EditorSave,
   type EditorSession,
 } from "./editor-session.js";
@@ -84,11 +89,14 @@ import {
   createSaveTarget,
   holdEditorDraftLock,
   holdEditorLock,
+  pickSaveFile,
   pickTourFile,
   saveFinePrint,
   InPlaceRefusal,
   type EditorLock,
   type PickerWindow,
+  type SaveFilePick,
+  type SavePickerWindow,
   type SaveTarget,
   type WritableFileHandle,
 } from "./save-target.js";
@@ -277,6 +285,41 @@ let linkHost: TourHost | null = null;
 let doneBusy = false;
 /** The end of the save that runs, for Done to wait on. */
 let saveEnd: Promise<void> = Promise.resolve();
+/** The walk is being moved out (a step of the move holds the save): Done
+ *  stays disabled (the M4b milestone review #1). */
+let walkMoving = false;
+
+/** A move of the walk, as the session builds it. */
+type WalkMove = Extract<
+  Awaited<ReturnType<EditorSession["moveWalkOut"]>>,
+  { kind: "ready" }
+>;
+
+/**
+ * Claim the page's one save slot - a save, or a step of a walk's move:
+ * `saving` set, and a new `saveEnd` for Done to wait on; the returned
+ * function ends it. Every claimant replaces `saveEnd` (the M4b milestone
+ * review #1: a move that did not left Done waiting, in a loop, on a
+ * promise long settled - the tab froze).
+ */
+function claimSave(): () => void {
+  saving = true;
+  let ended = (): void => undefined;
+  saveEnd = new Promise((resolve) => {
+    ended = resolve;
+  });
+  return ended;
+}
+
+/** Wait until no save runs. A claim still set on an ended promise is a
+ *  bug, not a wait: it never spins the tab. */
+async function savesSettled(): Promise<void> {
+  while (saving) {
+    const end = saveEnd;
+    await end;
+    if (saving && saveEnd === end) return;
+  }
+}
 
 /** Edits being made that a save must not cut into (M6 E2b-2, the E2b plan
  *  review #3, #7): a delete's undo while its toast offers it, typing not
@@ -476,7 +519,7 @@ function select(id: string | null, pan = false): void {
 
 function renderSaveState(): void {
   const count = editor?.changeCount() ?? 0;
-  if (!doneBusy) doneButton.disabled = editor === null;
+  if (!doneBusy) doneButton.disabled = editor === null || walkMoving;
   if (saving) {
     saveStatus.dataset["state"] = "saving";
     saveStatus.textContent = "Saving…";
@@ -1043,7 +1086,8 @@ function resetEditing(): void {
  *  screen, and the dialog says why. */
 function dropTour(reason: string): void {
   details.close();
-  done.close();
+  // Closed even while a move runs: its tour is gone.
+  done.close(true);
   select(null);
   const open = session;
   session = null;
@@ -1164,7 +1208,7 @@ async function openFile(
   );
   setBusy(false, "");
   details.close();
-  done.close();
+  done.close(true);
   linkHost = null;
   select(null);
   const previous = session;
@@ -1388,14 +1432,18 @@ async function download(file: {
  * Deliver `save`: written over the opened file where the page may (the
  * file then backs the next rebuild and the photos), else downloaded. A
  * refused or failed in-place write keeps the save for "Save again" and
- * offers the download.
+ * offers the download - unless `offerDownload` is false (the walk's move,
+ * whose dialog says the refusal: the M4b milestone review #6 - its
+ * "Download instead" downloaded nothing and detached the file); the
+ * refusal's words come back as `refusal`.
  */
 async function deliver(
   mine: EditorSession,
   save: EditorSave,
   into: SaveTarget | null,
   writes: EditorTourDraft | null,
-): Promise<{ arrived: boolean; inPlace: boolean }> {
+  offerDownload = true,
+): Promise<{ arrived: boolean; inPlace: boolean; refusal?: string }> {
   if (into === null) {
     const arrived = await download(save);
     if (arrived) {
@@ -1430,15 +1478,12 @@ async function deliver(
     );
     return { arrived: true, inPlace: true };
   } catch (err) {
-    refuseInPlace(
-      mine,
-      into.name,
+    const refusal =
       err instanceof InPlaceRefusal
         ? err.message
-        : `It could not be written: ${err instanceof Error ? err.message : String(err)}.`,
-      true,
-    );
-    return { arrived: false, inPlace: true };
+        : `It could not be written: ${err instanceof Error ? err.message : String(err)}.`;
+    if (offerDownload) refuseInPlace(mine, into.name, refusal, true);
+    return { arrived: false, inPlace: true, refusal };
   }
 }
 
@@ -1490,12 +1535,8 @@ async function saveTour(mode: "explicit" | "auto"): Promise<AutosaveOutcome> {
   // receive it (E2a review #5). Claimed FIRST: the commit and the undo's
   // end below poke the autosave, which must find this save running.
   const mine = editor;
-  saving = true;
+  const ended = claimSave();
   autoRunning = mode === "auto";
-  let ended = (): void => undefined;
-  saveEnd = new Promise((resolve) => {
-    ended = resolve;
-  });
   try {
     if (mode === "explicit") {
       card.commit();
@@ -1802,7 +1843,9 @@ function doneSaved(): DoneSaved {
  *  it runs (the async-UI rule) - then the dialog opens; a save that did not
  *  land keeps it shut and says why. */
 async function finishEditing(): Promise<void> {
-  if (editor === null || busy || doneBusy || dialogOpen()) return;
+  if (editor === null || busy || doneBusy || walkMoving || dialogOpen()) {
+    return;
+  }
   const mine = editor;
   card.commit();
   if (moving !== null) finishMove();
@@ -1812,9 +1855,9 @@ async function finishEditing(): Promise<void> {
     doneButton.textContent = "Saving…";
     try {
       // An autosave that runs ends first (and one queued behind it).
-      while (saving) await saveEnd;
+      await savesSettled();
       if (editor === mine && unsavedWork()) await runSave();
-      while (saving) await saveEnd;
+      await savesSettled();
     } finally {
       doneBusy = false;
       doneButton.textContent = "Done";
@@ -1826,12 +1869,14 @@ async function finishEditing(): Promise<void> {
       return;
     }
   }
-  const walk = await mine.walkEntries().catch(() => []);
+  // A check that fails says the file may carry the walk, never that it
+  // does not (the M4b milestone review #9).
+  const walk = await mine.walkEntries().catch(() => null);
   if (editor !== mine || dialogOpen()) return;
   done.open({
     saved: doneSaved(),
     host: doneHost(),
-    carriesWalk: walk.length > 0,
+    carriesWalk: walk === null ? "unknown" : walk.length > 0,
     driveMountTip: DRIVE_MOUNT_TIP_SHOWN,
   });
   releaseOutside = holdOutside(element("done-modal"));
@@ -1841,58 +1886,47 @@ async function finishEditing(): Promise<void> {
  * "Move the walk out" (W2, D19): the walk's own zip is written first, then
  * the tour without it - in place, or downloaded - and only once both
  * landed does the session take the walk-free bytes as its newest; a failed
- * write of either leaves the tour file as it was. Every save waits while
- * it runs (`saving`).
+ * write of either leaves the tour file as it was. The move holds the
+ * page's save (`claimSave`): every save waits, and Done with it.
+ *
+ * The walk's file is asked for with the browser's save dialog IN the
+ * click, before anything is awaited: Chromium opens it only within a few
+ * seconds of a click, and the build takes longer (the M4b milestone review
+ * #2). Where there is no such dialog the walk is downloaded, and the tour
+ * is rewritten only on a second click - a download that started is not one
+ * that landed.
  */
-async function moveWalk(): Promise<WalkMoveOutcome> {
+function moveWalk(): Promise<WalkMoveOutcome> {
   const mine = editor;
-  if (mine === null) return { kind: "refused", reason: "No tour is open." };
-  if (saving) {
-    return {
-      kind: "refused",
-      reason: "A save is running - move the walk once it has finished.",
-    };
+  const opened = session;
+  if (mine === null || opened === null) {
+    return Promise.resolve({ kind: "refused", reason: "No tour is open." });
   }
-  saving = true;
+  if (saving) return Promise.resolve(SAVE_RUNS);
+  // First, before any await: the dialog needs the click.
+  const pick = pickSaveFile(
+    window as unknown as SavePickerWindow,
+    walkFileName(finishedFileName(opened)),
+  );
+  return holdForMove(mine, () => buildMove(mine, pick));
+}
+
+const SAVE_RUNS: WalkMoveOutcome = {
+  kind: "refused",
+  reason: "A save is running - move the walk once it has finished.",
+};
+
+/** Run one step of a move holding the page's save (review #1): Done is
+ *  disabled meanwhile, and its wait ends with it. */
+async function holdForMove(
+  mine: EditorSession,
+  step: () => Promise<WalkMoveOutcome>,
+): Promise<WalkMoveOutcome> {
+  const ended = claimSave();
+  walkMoving = true;
   renderSaveState();
   try {
-    const into = target;
-    if (into !== null) {
-      const state = await into.check().catch(() => "same" as const);
-      if (editor !== mine) return { kind: "cancelled" };
-      if (state !== "same") {
-        return {
-          kind: "refused",
-          reason: `${new InPlaceRefusal(state).message} The tour keeps its walk.`,
-        };
-      }
-    }
-    const move = await mine.moveWalkOut();
-    if (editor !== mine) return { kind: "cancelled" };
-    if (move.kind === "refused") return move;
-    if (!(await download(move.walk))) return { kind: "cancelled" };
-    if (editor !== mine) return { kind: "cancelled" };
-    tourDraft?.built(move.save.written);
-    const { arrived, inPlace } = await deliver(
-      mine,
-      move.save,
-      into,
-      tourDraft,
-    );
-    if (editor !== mine) return { kind: "cancelled" };
-    const name = into?.name ?? move.save.filename;
-    if (!arrived) {
-      return {
-        kind: "refused",
-        reason: `${move.walk.filename} was saved, but ${name} could not be written, so the tour keeps its walk.`,
-      };
-    }
-    move.commit();
-    built = true;
-    keepWalk.hidden = true;
-    undelivered = null;
-    noteDelivered(inPlace, into, move.save);
-    return { kind: "moved", walkName: move.walk.filename, tourName: name };
+    return await step();
   } catch (err) {
     if (editor !== mine) return { kind: "cancelled" };
     return {
@@ -1900,12 +1934,116 @@ async function moveWalk(): Promise<WalkMoveOutcome> {
       reason: `The walk was not moved: ${err instanceof Error ? err.message : String(err)}`,
     };
   } finally {
+    // Let go whatever happened to the tour: a claim left set would hold
+    // every later save.
+    saving = false;
+    walkMoving = false;
+    ended();
     if (editor === mine) {
-      saving = false;
       refresh();
       autosave.poke();
+    } else {
+      renderSaveState();
     }
   }
+}
+
+async function buildMove(
+  mine: EditorSession,
+  pick: Promise<SaveFilePick>,
+): Promise<WalkMoveOutcome> {
+  const picked = await pick;
+  if (editor !== mine || picked.kind === "cancelled") {
+    return { kind: "cancelled" };
+  }
+  /** Said after the dialog gave a file and nothing was written into it. */
+  const unused =
+    picked.kind === "picked"
+      ? ` Nothing was written into ${picked.handle.name}.`
+      : "";
+  const into = target;
+  if (into !== null) {
+    const state = await into.check().catch(() => "same" as const);
+    if (editor !== mine) return { kind: "cancelled" };
+    if (state !== "same") {
+      return {
+        kind: "refused",
+        reason: `${new InPlaceRefusal(state).message} The tour keeps its walk.${unused}`,
+      };
+    }
+  }
+  const move = await mine.moveWalkOut();
+  if (editor !== mine) return { kind: "cancelled" };
+  if (move.kind === "refused") {
+    return { kind: "refused", reason: `${move.reason}${unused}` };
+  }
+  if (picked.kind === "picked") {
+    try {
+      await writeFileOrAbort(picked.handle, move.walk.blob);
+    } catch (err) {
+      return {
+        kind: "refused",
+        reason: `The walk could not be written into ${picked.handle.name} (${err instanceof Error ? err.message : String(err)}), so the tour keeps its walk.`,
+      };
+    }
+    if (editor !== mine) return { kind: "cancelled" };
+    return writeMovedTour(mine, move, into, picked.handle.name);
+  }
+  if (!(await download(move.walk))) return { kind: "cancelled" };
+  if (editor !== mine) return { kind: "cancelled" };
+  const walkName = move.walk.filename;
+  return {
+    kind: "downloaded",
+    walkName,
+    // The second click: a fresh one, which a download of the tour needs
+    // too.
+    confirm: () => {
+      if (editor !== mine) return Promise.resolve({ kind: "cancelled" });
+      if (saving) return Promise.resolve(SAVE_RUNS);
+      return holdForMove(mine, () =>
+        writeMovedTour(mine, move, into, walkName),
+      );
+    },
+  };
+}
+
+/** The walk is in its own file: write the tour without it, then make that
+ *  the session's newest bytes. */
+async function writeMovedTour(
+  mine: EditorSession,
+  move: WalkMove,
+  into: SaveTarget | null,
+  walkName: string,
+): Promise<WalkMoveOutcome> {
+  const name = into?.name ?? move.save.filename;
+  // A save landed between the two clicks: this move's tour would drop it.
+  if (!move.current()) {
+    return {
+      kind: "refused",
+      reason: `${name} was saved meanwhile, so the walk was not taken out of it - move the walk again.`,
+    };
+  }
+  tourDraft?.built(move.save.written);
+  const { arrived, inPlace, refusal } = await deliver(
+    mine,
+    move.save,
+    into,
+    tourDraft,
+    false,
+  );
+  if (editor !== mine) return { kind: "cancelled" };
+  if (!arrived) {
+    return {
+      kind: "refused",
+      reason: `${walkName} was saved, but ${name} could not be written${refusal === undefined ? "" : ` (${refusal})`}, so the tour keeps its walk.`,
+    };
+  }
+  move.commit();
+  built = true;
+  keepWalk.hidden = true;
+  undelivered = null;
+  noteDelivered(inPlace, into, move.save);
+  return { kind: "moved", walkName, tourName: name, saved: doneSaved() };
 }
 
 const doneHostSelect = element<HTMLSelectElement>("done-host");

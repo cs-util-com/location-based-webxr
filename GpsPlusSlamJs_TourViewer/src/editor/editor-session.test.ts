@@ -1460,8 +1460,11 @@ describe("moving the walk out (W2, D19)", () => {
     });
     const move = await editor.moveWalkOut();
     if (move.kind !== "ready") throw new Error(move.reason);
+    expect(move.current()).toBe(true);
     editor.editText("a", "Saved after the move was built");
     await editor.save({ keepScan: true });
+    // Asked before the tour is written, so a stale move writes nothing.
+    expect(move.current()).toBe(false);
     expect(() => {
       move.commit();
     }).toThrow(/another save landed/);

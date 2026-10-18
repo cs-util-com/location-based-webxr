@@ -126,7 +126,9 @@ scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
     they would be left nowhere, `finish-rebuild.ts`). A walk that places
     nothing (`placesNothing`) moves out (review #3). **Nothing changes until
     `commit()`**: the page writes the walk's zip first, then the tour,
-    and commits only when both landed; `commit()` then makes the
+    and commits only when both landed; `current()` says no other save
+    landed since the build (asked before the tour is written, so a stale
+    move writes nothing); `commit()` then makes the
     walk-free bytes `previous` (the series version advances as in any
     save), so no later save - an in-place autosave keeps "the walk" of the
     bytes it rebuilds from - can bring the walk back. It throws when

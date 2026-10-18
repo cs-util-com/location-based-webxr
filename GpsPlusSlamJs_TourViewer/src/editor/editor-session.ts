@@ -170,6 +170,10 @@ interface WalkMove {
   readonly kind: "ready";
   readonly walk: { readonly blob: Blob; readonly filename: string };
   readonly save: EditorSave;
+  /** No other save landed since the move was built: asked before the
+   *  tour is written, so a stale move writes nothing (the M4b milestone
+   *  review #2: the page's second click may come after an autosave). */
+  current(): boolean;
   /** Make the walk-free tour the session's newest bytes, as a landed save
    *  does; throws when another save landed since the move was built. */
   commit(): void;
@@ -1061,6 +1065,7 @@ export function createEditorSession(input: {
       kind: "ready",
       walk: { blob: walkBlob, filename: walkFileName(savedName) },
       save: saveOf(finished, photos),
+      current: () => previous === base,
       commit() {
         if (previous !== base) {
           throw new Error(

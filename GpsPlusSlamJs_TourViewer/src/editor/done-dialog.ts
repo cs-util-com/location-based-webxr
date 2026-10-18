@@ -37,8 +37,9 @@ export interface DoneFacts {
   readonly saved: DoneSaved;
   /** The host the update steps are for (the dialog's picker starts here). */
   readonly host: TourHost;
-  /** The newest bytes still carry the walk recording. */
-  readonly carriesWalk: boolean;
+  /** The newest bytes still carry the walk recording; `unknown` when that
+   *  could not be checked (the M4b milestone review #9: said as "may"). */
+  readonly carriesWalk: boolean | "unknown";
   /** The Drive-mount tip's switch (`DRIVE_MOUNT_TIP_SHOWN`). */
   readonly driveMountTip: boolean;
 }
@@ -71,6 +72,14 @@ function whereLine(saved: DoneSaved): string {
   }
 }
 
+function walkLine(name: string, carries: boolean | "unknown"): string | null {
+  if (carries === false) return null;
+  const moveOut = `Move the walk out to keep it to yourself: it goes into a separate file you keep, and ${name} keeps what visitors need.`;
+  return carries === "unknown"
+    ? `Whether ${name} also carries your walk recording (the GPS track of your walk and the depth your phone measured) could not be checked. If it does and it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`
+    : `${name} also carries your walk recording: the GPS track of your walk and the depth your phone measured. If it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`;
+}
+
 /** The dialog's words for `facts`. */
 export function doneWords(facts: DoneFacts): DoneWords {
   const name = facts.saved.name;
@@ -78,9 +87,7 @@ export function doneWords(facts: DoneFacts): DoneWords {
     where: whereLine(facts.saved),
     update: hostReplaceOnComputer(facts.host, name),
     publicLine: PUBLIC_LINE,
-    walk: facts.carriesWalk
-      ? `${name} also carries your walk recording: the GPS track of your walk and the depth your phone measured. If it is the file at your tour's link, anyone with the link can download them too. Move the walk out to keep it to yourself: it goes into a separate file you keep, and ${name} keeps what visitors need.`
-      : null,
+    walk: walkLine(name, facts.carriesWalk),
     driveTip:
       facts.driveMountTip &&
       facts.host === "drive" &&
@@ -90,19 +97,32 @@ export function doneWords(facts: DoneFacts): DoneWords {
   };
 }
 
-/** The move's button, idle and while it runs. */
+/** The move's button: idle, while it runs, and waiting for the second
+ *  click that takes a downloaded walk out of the tour. */
 export const MOVE_LABELS = {
   idle: "Move the walk out",
   moving: "Moving the walk out…",
+  confirm: "Take the walk out of the tour",
 } as const;
 
-/** What the page's move came to: done, refused in words, or nothing moved
- *  because the walk's file was not saved (a dismissed save dialog). */
+/** What the page's move came to: done (with where the changes are now),
+ *  refused in words, nothing moved because the walk's file was not saved
+ *  (a dismissed save dialog), or - where the browser has no save dialog -
+ *  the walk downloaded and the tour unchanged until `confirm` (a second
+ *  click) takes it out: a download that started is not one that landed
+ *  (the M4b milestone review #2). */
 export type WalkMoveOutcome =
   | {
       readonly kind: "moved";
       readonly walkName: string;
       readonly tourName: string;
+      /** Where the changes are now: the dialog's first line follows. */
+      readonly saved: DoneSaved;
+    }
+  | {
+      readonly kind: "downloaded";
+      readonly walkName: string;
+      readonly confirm: () => Promise<WalkMoveOutcome>;
     }
   | { readonly kind: "refused"; readonly reason: string }
   | { readonly kind: "cancelled" };
@@ -131,12 +151,14 @@ export interface DoneDialogDom {
     Listening;
   moveStatus: Text;
   driveTip: Text & Shown;
-  close: Pick<HTMLButtonElement, "focus"> & Listening;
+  close: Pick<HTMLButtonElement, "focus" | "disabled"> & Listening;
 }
 
 export interface DoneDialogDeps {
   dom: DoneDialogDom;
-  /** Move the walk out (the page delivers both files, then commits). */
+  /** Move the walk out (the page delivers both files, then commits).
+   *  Called synchronously in the button's click: the page opens the
+   *  browser's save dialog before its first await. */
   moveWalk: () => Promise<WalkMoveOutcome>;
   /** The dialog closed: the page gives focus back. */
   onClose: () => void;
@@ -144,7 +166,10 @@ export interface DoneDialogDeps {
 
 export interface DoneDialog {
   open(facts: DoneFacts): void;
-  close(): void;
+  /** Close, unless a move runs (its files are being written: the page
+   *  must not change under it, the M4b milestone review #1); `force`
+   *  closes anyway, for a tour that is gone. */
+  close(force?: boolean): void;
   isOpen(): boolean;
 }
 
@@ -152,6 +177,10 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
   const { dom } = deps;
   let facts: DoneFacts | null = null;
   let moving = false;
+  /** The second step of a move whose walk was downloaded. */
+  let pending: (() => Promise<WalkMoveOutcome>) | null = null;
+  /** The walk was moved out: its section stays to say where it went. */
+  let moved = false;
 
   function render(): void {
     if (facts === null) return;
@@ -160,23 +189,50 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
     dom.host.value = facts.host;
     dom.update.textContent = words.update;
     dom.publicLine.textContent = words.publicLine;
-    dom.walk.hidden = words.walk === null;
-    dom.walkText.hidden = false;
+    dom.walk.hidden = words.walk === null && !moved;
+    dom.walkText.hidden = words.walk === null;
     dom.walkText.textContent = words.walk ?? "";
     dom.driveTip.hidden = words.driveTip === null;
     dom.driveTip.textContent = words.driveTip ?? "";
   }
 
-  function idleButton(): void {
+  function button(label: string): void {
     dom.moveButton.disabled = false;
     dom.moveButton.hidden = false;
-    dom.moveButton.textContent = MOVE_LABELS.idle;
+    dom.moveButton.textContent = label;
   }
 
-  function close(): void {
-    if (dom.backdrop.hidden) return;
+  function close(force = false): void {
+    if (dom.backdrop.hidden || (moving && !force)) return;
     dom.backdrop.hidden = true;
+    pending = null;
     deps.onClose();
+  }
+
+  function settle(outcome: WalkMoveOutcome): void {
+    switch (outcome.kind) {
+      case "moved":
+        moved = true;
+        dom.moveStatus.textContent = `The walk is in ${outcome.walkName} - keep that file. ${outcome.tourName} no longer carries it.`;
+        dom.moveButton.hidden = true;
+        if (facts !== null) {
+          facts = { ...facts, saved: outcome.saved, carriesWalk: false };
+        }
+        render();
+        return;
+      case "downloaded":
+        pending = outcome.confirm;
+        dom.moveStatus.textContent = `The walk was downloaded as ${outcome.walkName}. Check that it is in your downloads, then take it out of the tour - until then the tour file keeps it.`;
+        button(MOVE_LABELS.confirm);
+        return;
+      case "refused":
+        dom.moveStatus.textContent = outcome.reason;
+        button(MOVE_LABELS.idle);
+        return;
+      case "cancelled":
+        dom.moveStatus.textContent = NOTHING_MOVED;
+        button(MOVE_LABELS.idle);
+    }
   }
 
   dom.host.addEventListener("change", () => {
@@ -186,46 +242,49 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
   });
   dom.moveButton.addEventListener("click", () => {
     if (moving || facts === null) return;
+    const run = pending ?? deps.moveWalk;
+    pending = null;
     moving = true;
-    // The async-UI rule: in progress while both files are written, then
-    // the durable end state - the move's result, or the button back.
+    // The async-UI rule: in progress while the files are written, then
+    // the durable end state - the move's result, or the button back. The
+    // dialog stays open meanwhile (review #1).
     dom.moveButton.disabled = true;
     dom.moveButton.textContent = MOVE_LABELS.moving;
+    dom.close.disabled = true;
     dom.moveStatus.textContent = "";
-    void deps
-      .moveWalk()
-      .then(
-        (outcome) => {
-          if (outcome.kind === "moved") {
-            dom.moveStatus.textContent = `The walk is in ${outcome.walkName} - keep that file. ${outcome.tourName} no longer carries it.`;
-            dom.moveButton.hidden = true;
-            dom.walkText.hidden = true;
-            if (facts !== null) facts = { ...facts, carriesWalk: false };
-            return;
-          }
-          dom.moveStatus.textContent =
-            outcome.kind === "refused" ? outcome.reason : NOTHING_MOVED;
-          idleButton();
-        },
-        (err: unknown) => {
-          dom.moveStatus.textContent = `The walk was not moved: ${err instanceof Error ? err.message : String(err)}`;
-          idleButton();
-        },
-      )
+    // Called here, in the click: the page's save dialog needs it (#2).
+    let started: Promise<WalkMoveOutcome>;
+    try {
+      started = run();
+    } catch (err) {
+      started = Promise.reject(
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+    void started
+      .then(settle, (err: unknown) => {
+        dom.moveStatus.textContent = `The walk was not moved: ${err instanceof Error ? err.message : String(err)}`;
+        button(MOVE_LABELS.idle);
+      })
       .finally(() => {
         moving = false;
+        dom.close.disabled = false;
       });
   });
-  dom.close.addEventListener("click", close);
+  dom.close.addEventListener("click", () => {
+    close();
+  });
 
   return {
     open(next) {
       facts = next;
-      render();
       if (!moving) {
-        idleButton();
+        moved = false;
+        pending = null;
+        button(MOVE_LABELS.idle);
         dom.moveStatus.textContent = "";
       }
+      render();
       dom.backdrop.hidden = false;
       dom.close.focus();
     },

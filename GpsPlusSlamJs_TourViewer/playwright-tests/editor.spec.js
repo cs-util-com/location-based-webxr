@@ -2663,8 +2663,12 @@ test("Done saves what is pending, says where it is and how to update the tour, a
   await expect(page.locator("#done-walk-text")).toContainText("GPS track");
   await expect(page.locator("#done-drive-tip")).toBeHidden();
   await expect(done.locator('a[href="legal.html#privacy"]')).toBeVisible();
+  // No save dialog in this browser: the walk is downloaded, and the tour
+  // keeps it until a second click says the download arrived (the M4b
+  // milestone review #2: a started download is not a landed one).
   const download = page.waitForEvent("download");
-  await page.locator("#done-move").click();
+  const move = page.locator("#done-move");
+  await move.click();
   const walkFile = await download;
   expect(walkFile.suggestedFilename()).toBe("wrapped-walk.zip");
   // The whole recording - the frame the tour keeps for its visitors too -
@@ -2676,7 +2680,18 @@ test("Done saves what is pending, says where it is and how to update the tour, a
     "mytour/session.json",
   ]);
   await expect(page.locator("#done-move-status")).toContainText(
+    "The walk was downloaded as wrapped-walk.zip",
+  );
+  await expect(move).toHaveText("Take the walk out of the tour");
+  expect(Object.keys(await readOpfsTour(page, "wrapped.zip"))).toContain(
+    "mytour/actions/000001.json",
+  );
+  await move.click();
+  await expect(page.locator("#done-move-status")).toContainText(
     "The walk is in wrapped-walk.zip",
+  );
+  await expect(page.locator("#done-where")).toHaveText(
+    "Your changes are saved in wrapped.zip, the file you opened on this computer.",
   );
   await expect(page.locator("#done-move")).toBeHidden();
   const tour = Object.keys(await readOpfsTour(page, "wrapped.zip"));
@@ -2737,6 +2752,11 @@ test("Done shows its save in progress and stays shut when the save fails, and a 
   await expect(doneButton).toHaveText("Done");
   await expect(doneButton).toBeEnabled();
   await expect(page.locator("#done-modal")).toBeHidden();
+  // That failed save rightly offers "Download instead"; dismissed here, so
+  // the check after the failed move below sees only what the move offers.
+  const offer = page.locator(".toast", { hasText: "Download instead" });
+  await offer.getByRole("button", { name: "Close" }).click();
+  await expect(offer).toHaveCount(0);
   await page.evaluate(() => {
     // @ts-expect-error - read by the counted picker.
     window.__failWrites = false;
@@ -2760,6 +2780,18 @@ test("Done shows its save in progress and stays shut when the save fails, and a 
   await expect(move).toBeEnabled();
   await expect(move).toHaveText("Move the walk out");
   expect(await readOpfsTour(page, "wrapped.zip")).toEqual(before);
+  // ... and the next save still carries the walk (the M4b milestone
+  // review #7: a failed move must leave nothing behind that drops it).
+  await page.locator("#done-close").click();
+  await editPin(page, "Held, then failed", "Saved after a dismissed move");
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText("Saved to wrapped.zip");
+  expect(Object.keys(await readOpfsTour(page, "wrapped.zip"))).toContain(
+    "mytour/actions/000001.json",
+  );
+  await doneButton.click();
+  await expect(page.locator("#done-modal")).toBeVisible();
+  const before2 = await readOpfsTour(page, "wrapped.zip");
   // The walk's file is saved, and the tour's write fails: the tour keeps
   // its walk.
   await page.evaluate(() => {
@@ -2771,9 +2803,157 @@ test("Done shows its save in progress and stays shut when the save fails, and a 
   const download = page.waitForEvent("download");
   await move.click();
   expect((await download).suggestedFilename()).toBe("wrapped-walk.zip");
+  await expect(move).toHaveText("Take the walk out of the tour");
+  await move.click();
   await expect(page.locator("#done-move-status")).toContainText(
     "keeps its walk",
   );
   await expect(move).toBeEnabled();
-  expect(await readOpfsTour(page, "wrapped.zip")).toEqual(before);
+  expect(await readOpfsTour(page, "wrapped.zip")).toEqual(before2);
+  // A failed move write offers no "Download instead": there was nothing
+  // to download, and it would have detached the file (review #6).
+  await expect(
+    page.locator(".toast", { hasText: "Download instead" }),
+  ).toHaveCount(0);
+  // ... and the next save, once the disk writes again, still carries it.
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the counted picker.
+    window.__failWrites = false;
+  });
+  await page.locator("#done-close").click();
+  await editPin(
+    page,
+    "Saved after a dismissed move",
+    "Saved after a failed move",
+  );
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText("Saved to wrapped.zip");
+  const after = await readOpfsTour(page, "wrapped.zip");
+  expect(after["mytour/tour.json"]).toContain("Saved after a failed move");
+  expect(Object.keys(after)).toContain("mytour/actions/000001.json");
+});
+
+/**
+ * A stand-in for the browser's save dialog that behaves as Chromium's
+ * does: it opens only during the click that asked for it (a call after an
+ * await of seconds is refused with a SecurityError), and it hands back a
+ * real file of the origin-private file system, `name`. `hold` keeps the
+ * dialog open until `window.__releaseWalkPick()`.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} name
+ * @param {{ hold?: boolean }} [options]
+ */
+async function clickBoundSavePicker(page, name, options = {}) {
+  await page.evaluate(
+    async ({ fileName, hold }) => {
+      const root = await navigator.storage.getDirectory();
+      const handle = await root.getFileHandle(fileName, { create: true });
+      let inClick = false;
+      document.addEventListener(
+        "click",
+        () => {
+          inClick = true;
+          setTimeout(() => {
+            inClick = false;
+          }, 0);
+        },
+        true,
+      );
+      // @ts-expect-error - read by the test.
+      window.__walkPicks = 0;
+      // @ts-expect-error - the e2e's own save dialog.
+      window.showSaveFilePicker = () => {
+        // @ts-expect-error - counted for the test.
+        window.__walkPicks += 1;
+        if (!inClick) {
+          return Promise.reject(
+            new DOMException(
+              "Must be handling a user gesture",
+              "SecurityError",
+            ),
+          );
+        }
+        if (!hold) return Promise.resolve(handle);
+        return new Promise((resolve) => {
+          // @ts-expect-error - called by the test.
+          window.__releaseWalkPick = () => resolve(handle);
+        });
+      };
+    },
+    { fileName: name, hold: options.hold === true },
+  );
+}
+
+/**
+ * Open the wrapped tour in place, edit its pin, and press Done.
+ * @param {import("@playwright/test").Page} page
+ */
+async function doneWithWrappedTour(page) {
+  await page.goto("/edit.html");
+  await offerOpfsFile(page, await wrappedTour({ pin: true }), "wrapped.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
+  await editPin(page, "Wrapped pin", "Before the move");
+  await page.locator("#done-btn").click();
+  await expect(page.locator("#done-modal")).toBeVisible();
+}
+
+test("the walk's file is asked for on the click, so a long build cannot cost the save dialog, and the walk lands in the chosen file", async ({
+  page,
+}) => {
+  // Why (the M4b milestone review #2): the dialog used to be opened after
+  // the move's build; Chromium refuses it then, the framework fell back to
+  // a download it could not check, and the tour was rewritten without the
+  // walk - which then existed nowhere if that download was cancelled.
+  await autosaveOutOfTheWay(page);
+  await doneWithWrappedTour(page);
+  await clickBoundSavePicker(page, "wrapped-walk.zip");
+  await page.locator("#done-move").click();
+  await expect(page.locator("#done-move-status")).toContainText(
+    "The walk is in wrapped-walk.zip",
+  );
+  // @ts-expect-error - counted by the stand-in.
+  expect(await page.evaluate(() => window.__walkPicks)).toBe(1);
+  const walk = await readOpfsTour(page, "wrapped-walk.zip");
+  expect(Object.keys(walk).sort()).toEqual([
+    "about-this-walk.txt",
+    "mytour/actions/000001.json",
+    "mytour/images/frame-000002.png",
+    "mytour/session.json",
+  ]);
+  expect(walk["about-this-walk.txt"]).toContain("wrapped.zip");
+  const tour = Object.keys(await readOpfsTour(page, "wrapped.zip"));
+  expect(tour).not.toContain("mytour/actions/000001.json");
+  expect(tour).toContain("mytour/images/frame-000002.png");
+});
+
+test("Done stays shut and the dialog stays open while the walk is moved out", async ({
+  page,
+}) => {
+  // Why (the M4b milestone review #1): closed mid-move (Escape, Close), the
+  // dialog let Done start while the move held the page's save; Done then
+  // waited on a promise that had long settled, and the tab froze.
+  await autosaveOutOfTheWay(page);
+  await doneWithWrappedTour(page);
+  await clickBoundSavePicker(page, "wrapped-walk.zip", { hold: true });
+  await page.locator("#done-move").click();
+  await expect(page.locator("#done-move")).toHaveText("Moving the walk out…");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#done-modal")).toBeVisible();
+  await expect(page.locator("#done-close")).toBeDisabled();
+  await expect(page.locator("#done-btn")).toBeDisabled();
+  await page.evaluate(() => {
+    // @ts-expect-error - set by the stand-in.
+    window.__releaseWalkPick();
+  });
+  await expect(page.locator("#done-move-status")).toContainText(
+    "The walk is in wrapped-walk.zip",
+  );
+  await expect(page.locator("#done-close")).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#done-modal")).toBeHidden();
+  // Done works again, and its dialog knows the walk is gone.
+  await page.locator("#done-btn").click();
+  await expect(page.locator("#done-modal")).toBeVisible();
+  await expect(page.locator("#done-walk")).toBeHidden();
 });
