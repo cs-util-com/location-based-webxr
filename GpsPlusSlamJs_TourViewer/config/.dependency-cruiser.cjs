@@ -67,8 +67,9 @@ module.exports = {
           "^src/editor/editor-session\\.ts$",
           // TEMPORARY - the phone, until it adopts the tour document (the
           // phone adoption milestone of D30): its object list, draft,
-          // settle and Finish still keep their own copy.
-          "^src/(object-editing|creator-draft|creator-settle|creator-finish)\\.ts$",
+          // settle and Finish still keep their own copy, and its station
+          // guidance (M5c) reads the stations' content itself.
+          "^src/(object-editing|creator-draft|creator-settle|creator-finish|creator-stations)\\.ts$",
         ],
       },
       to: { path: "^src/(object-edits|finish-rebuild|tour-content)\\.ts$" },
