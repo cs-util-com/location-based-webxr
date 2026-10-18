@@ -503,6 +503,31 @@ describe("tour document: the save status", () => {
 describe("tour document: the rules its reducers keep", () => {
   const far = (TOUR_ITEM_MAX_OFFSET_M * 2) / 111_320;
 
+  // Why (PR #644 review): every other edit refuses before an open, but the
+  // setting and the details recorded a history step there - one no undo
+  // can take back (a step needs a written file) - counted by `revision`
+  // and followed by a page's draft as an edit.
+  it("the setting and the details change nothing before a tour is open", () => {
+    const setting = reduce(
+      initialTourDocumentState,
+      act.settingsChanged({ needsNoGps: true, what: "s" }),
+    );
+    expect(setting).toEqual(initialTourDocumentState);
+    const details = reduce(
+      initialTourDocumentState,
+      act.detailsChanged({ details: { title: "Early" }, what: "d" }),
+    );
+    expect(details).toEqual(initialTourDocumentState);
+    // ... and the same after a close.
+    const closed = reduce(open(), act.closed());
+    expect(
+      reduce(
+        closed,
+        act.detailsChanged({ details: { title: "x" }, what: "d" }),
+      ),
+    ).toEqual(closed);
+  });
+
   it("placing an id the tour carries, or a spot too far from its station, changes nothing", () => {
     const state = open();
     const a = objectOf(state, "a");

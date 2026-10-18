@@ -294,9 +294,12 @@ export function wireCreatorFinish(deps: {
         // pre-finish manifest and silently drop this batch (PR #435
         // review). `tourManifest` is otherwise only written at tour open.
         ctx.tourManifest = written;
-        // The walk is decided for this open tour: baked into `written`, or
-        // declined and kept (PR #642 review). The creator's HUD reads it.
-        ctx.walkDecidedFor = current;
+        // The walk is decided for this open tour once its photos stand in
+        // `written` (or it places none): the creator's HUD drops its hedge
+        // (PR #642 review). Not after a declined bake: nothing was written,
+        // so the next Finish bakes again and may still re-sort the stations
+        // (PR #643 review).
+        if (photos.notPlaced === undefined) ctx.walkDecidedFor = current;
         // Only what this zip carries leaves the list - by CONTENT, not id:
         // a photo that landed while the zip was rebuilt is in neither, and
         // waits for the next Finish (M2c review #6). A photo that leaves

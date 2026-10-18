@@ -100,9 +100,11 @@ module's sidecar states them as its contract.
   sentence; a previous Finish's zip is this page's own stored output and
   gets the rebuild's default budget. On success `ctx.rebuiltZip` is set,
   `ctx.tourManifest` **advances to what was just written**,
-  `ctx.walkDecidedFor` is set to the open session (the walk is decided,
-  baked or declined: the creator's station HUD drops its hedge, PR #642
-  review) and
+  `ctx.walkDecidedFor` is set to the open session when the walk is
+  settled - its spots written, or no photo to place - so the creator's
+  station HUD drops its hedge (PR #642 review); NOT after a declined bake
+  (`notPlaced`), which writes nothing, so the next Finish bakes again
+  (PR #643 review) - and
   `ctx.placedObjects` is cleared, the AR session is ended through the
   controller (the framework's session-end path runs the app teardown) and
   the wizard opens step 6, "done" (polish round M2, B9: a completion step

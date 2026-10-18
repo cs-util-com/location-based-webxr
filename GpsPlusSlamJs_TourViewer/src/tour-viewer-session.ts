@@ -373,12 +373,12 @@ export interface TourViewerSession {
     /** A save delivered it (UI round 1, U2: the leave guard). */
     delivered?: boolean;
   } | null;
-  /** The open tour whose Finish, in THIS page, already decided about the
-   *  walk's recorded photos (baked or declined): the creator's station HUD
-   *  drops its hedge for it (`creator-stations.ts` `walkPhotosPending`,
-   *  PR #642 review). A per-page view hint, not document state: a declined
-   *  bake leaves nothing in tour.json, and a reopened tour (a new session)
-   *  hedges again. */
+  /** The open tour whose Finish, in THIS page, settled the walk's recorded
+   *  photos (their spots written, or none to place - not a declined bake,
+   *  which the next Finish tries again, PR #643 review): the creator's
+   *  station HUD drops its hedge for it (`creator-stations.ts`
+   *  `walkPhotosPending`, PR #642 review). A per-page view hint, not
+   *  document state: a reopened tour (a new session) hedges again. */
   walkDecidedFor: TourSession | null;
   /** What the panel calls the open tour (`tourLabel`); null with none. */
   tourLabel: string | null;

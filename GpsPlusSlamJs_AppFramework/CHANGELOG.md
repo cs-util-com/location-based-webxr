@@ -2,16 +2,43 @@
 
 ## [Unreleased]
 
+### ⚠️ Breaking changes
+
+- **`tour.json` format version 3** (`ar/tour-manifest`): every pin and
+  photo is now an item of a station. `TOUR_MANIFEST_VERSION` is 3 and
+  `TOUR_MANIFEST_MINOR` starts again at 0. Version 1 and 2 files are not
+  migrated: the reader refuses them with words ("this tour is in an older
+  format ... it has to be made again"), and a version 2 reader refuses a
+  version 3 file the same way ("update the app"), so neither opens the
+  other's tour as an empty one. The details below, first written as
+  version 2 minor 3, are part of version 3 minor 0.
+
 ### Added
 
-- **Tour details in `tour.json`** (`ar/tour-manifest`, format version 2,
-  minor 3; the checks in the new `ar/tour-details`): an optional
+- **Stations own their items at local poses** (`ar/tour-manifest`):
+  `TourStation.items` holds the station's pins and photos (`TourItem`:
+  `TourPinItem` or `TourPhotoItem`), each with a `TourLocalPose` relative
+  to the station's geo pose, so a station moves rigidly with all it holds.
+  `tourItems(tour)` lists every item in station order.
+- **`ar/tour-items`** (deep import): the item types and their parsers
+  (`parseTourItems`, `parseTourLocalPose`, `parseTourContentFields`), and
+  `TOUR_ITEM_MAX_OFFSET_M`, how far an item may stand from its station per
+  axis (10 km, a sanity bound).
+- **`ar/tour-station-pose`** (deep import): the conversions between a
+  station's frame and the world - `localPoseOf`, `itemGeoPose`,
+  `geoPoseRotation` - and the world view a viewer places (`tourObjects`,
+  `tourCaptureGeos`).
+- **`checkTourTitle` and `TOUR_TITLE_MAX_CHARS`** (`ar/tour-details`): a
+  tour's name as an editor takes it - trimmed, non-empty, at most 80
+  characters, counted in code points - so every app's name field counts
+  alike. The manifest's reader does not apply it (a longer title is kept,
+  trimmed).
+- **Tour details in `tour.json`** (`ar/tour-manifest`, part of format
+  version 3; the checks in the new `ar/tour-details`): an optional
   `description` (at most 2000 characters), `cover` (the id of one of the
   tour's images: a placed photo or an image asset) and `contact` (an
   e-mail address, bare or `mailto:`, or an http(s) link without a user
-  name). `TOUR_MANIFEST_MINOR` is now 3: a tour carrying any of them is
-  written at minor 3, so an older writer refuses to save it rather than
-  drop them, while an older reader opens it and ignores them. The details
+  name). The details
   are cosmetic, so a reader DROPS a value that fails its check instead of
   failing the tour, and reports it through the new optional
   `parseTourManifest(data, { onDropped })`; the writer leaves out a cover

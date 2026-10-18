@@ -297,12 +297,15 @@ export {
   tourObjects,
   type TourCaptureGeo,
 } from './tour-station-pose.js';
+export { TOUR_ITEM_MAX_OFFSET_M } from './tour-items.js';
 export {
   TOUR_CONTACT_MAX_CHARS,
   TOUR_DESCRIPTION_MAX_CHARS,
+  TOUR_TITLE_MAX_CHARS,
   checkTourContact,
   checkTourCover,
   checkTourDescription,
+  checkTourTitle,
   parseTourDetails,
   tourContactHref,
   tourCoverEntry,

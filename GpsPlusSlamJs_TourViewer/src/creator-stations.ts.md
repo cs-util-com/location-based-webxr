@@ -31,7 +31,8 @@ placement went ("it starts Station 3" / "in Station 2") for its note.
 - `walkPhotosPending(session, manifest, decidedFor?) -> boolean` - the
   tour has a recording and no baked photo spots, and `session` is not
   `decidedFor` (the page's `walkDecidedFor`: a Finish of this open tour,
-  in this page, already decided about the walk). `WALK_HEDGE` ("May change
+  in this page, already settled the walk: its spots written, or none to
+  place; a declined bake settles nothing). `WALK_HEDGE` ("May change
   at Finish, when the walk's photos are sorted in.") ends the line then.
 - `reticleNueOf(reticle) -> [n, u, e] | null` - a visible reticle's hit
   point in GPS-world NUE; null when hidden, absent or not finite.
@@ -88,16 +89,18 @@ radiusM? }) -> { tick, placedIn, endVisit }` - `tick()` every camera
   every reopen. Conservative: a recording that took no photos reads as
   pending until a Finish. Feeding the live join's spots in instead was not
   chosen: the bake is an async replay of the whole recording.
-- **The hedge drops after a Finish in this page** decided about the walk,
-  baked or declined (`ctx.walkDecidedFor`, set by `creator-finish.ts`,
-  cleared at tour teardown). It is a **per-page view hint, not document
-  state**: a declined bake has no field in tour.json (an empty
-  `captureSpots` is refused by the parser, and its presence would switch
-  off the visitor's live join), and adding one was declined as a format
-  change for a hint. So a reopened tour hedges again until its next
-  Finish. A decline from a transient read failure also drops the hedge,
-  though the next Finish may bake: accepted, the names are still the
-  next Finish's own.
+- **The hedge drops after a Finish in this page settled the walk**: its
+  photos' spots written, or a walk that places no photo
+  (`ctx.walkDecidedFor`, set by `creator-finish.ts` only when the bake
+  gave no `notPlaced` reason, cleared at tour teardown). A DECLINED bake
+  keeps the hedge (PR #643 review, replacing the PR #642 choice): it
+  writes nothing, so the next Finish bakes again and may still re-sort the
+  stations - a decline from a transient read failure included. It is a
+  **per-page view hint, not document state**: a declined bake has no field
+  in tour.json (an empty `captureSpots` is refused by the parser, and its
+  presence would switch off the visitor's live join), and adding one was
+  declined as a format change for a hint. So a reopened tour hedges again
+  until a Finish settles its walk.
 - **Cost:** the stations are recomputed only when the manifest, any
   placed object or the deletions change. Placed objects are compared entry
   by entry, because the settle re-poses them by replacing entries IN the

@@ -1046,10 +1046,11 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
       placed: [pin("new-one")],
       sessionExtras: recording.extras,
     });
-    // Why (PR #642 review): a declined bake writes no spots, so the file
-    // alone reads as "the walk's photos may still be sorted in" forever.
-    // The Finish tells this page it decided: the creator's HUD drops its
-    // hedge for the rest of this open tour (a reopen hedges again).
+    // Why (PR #643 review, replacing the PR #642 choice): a declined bake
+    // writes no spots, and the phone's next Finish bakes again - so its
+    // station names may still change, and the HUD keeps its hedge. Only a
+    // Finish that settled the walk (spots written, or a walk that places
+    // nothing) drops it.
     const pending = () =>
       walkPhotosPending(ctx.session, ctx.tourManifest, ctx.walkDecidedFor);
     expect(pending()).toBe(true);
@@ -1058,8 +1059,8 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     expect(ctx.finishError).toBeNull();
     expect(await writtenManifest(ctx)).not.toHaveProperty("captureSpots");
     expect(ctx.tourManifest?.captureSpots).toBeUndefined();
-    expect(ctx.walkDecidedFor).toBe(ctx.session);
-    expect(pending()).toBe(false);
+    expect(ctx.walkDecidedFor).toBeNull();
+    expect(pending()).toBe(true);
   });
 
   it("finishes without the marker when reading the recording fails", async () => {

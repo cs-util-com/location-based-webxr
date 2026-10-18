@@ -169,7 +169,10 @@ object)` (within the format's `TOUR_ITEM_MAX_OFFSET_M` per axis of its
   #3): a placement of an id the tour carries, a spot beyond its station's
   reach, an undo or redo while a save runs - each changes nothing, so a
   second page dispatching the same actions cannot break them. An unknown id
-  or station changes nothing either. The one precondition the page alone
+  or station changes nothing either, and NO edit changes anything before a
+  tour is open (`written === null`): the setting and the details included
+  (PR #644 review), since a history step recorded there is one no undo can
+  take back - a step is measured against a written file. The one precondition the page alone
   owns is a photo's picture for an undo (`picturesNeeded`): Blobs are not
   state.
 - **The history's cost** (review #9): each step copies the view - every

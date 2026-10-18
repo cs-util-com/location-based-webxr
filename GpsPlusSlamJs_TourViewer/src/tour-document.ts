@@ -662,11 +662,14 @@ const tourDocumentSlice = createSlice({
         what,
       );
     },
+    /** The setting turned on or off; nothing before an open (an undo
+     *  could never take the step back: a step needs a written file). */
     settingsChanged(
       state,
       action: PayloadAction<{ needsNoGps: boolean; what: string }>,
     ) {
       const before = plain(state);
+      if (before.written === null) return before;
       if (action.payload.needsNoGps === before.needsNoGps) return before;
       return edited(
         before,
@@ -677,12 +680,14 @@ const tourDocumentSlice = createSlice({
         action.payload.what,
       );
     },
-    /** The details replaced, as checked (`checkDetailsForm`). */
+    /** The details replaced, as checked (`checkDetailsForm`); nothing
+     *  before an open, as for the setting. */
     detailsChanged(
       state,
       action: PayloadAction<{ details: TourDetailFields; what: string }>,
     ) {
       const before = plain(state);
+      if (before.written === null) return before;
       return edited(
         before,
         {
