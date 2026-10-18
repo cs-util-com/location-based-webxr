@@ -11,8 +11,9 @@
  *   working copy before the Finish writes it (the coming tour-document
  *   step decides where AR-made stations live).
  * - **The open station** is the nearest whose anchor is within R of where
- *   the creator stands (`station-assign.ts` `nearestStationWithin`, the
- *   rule the Finish assigns by). Leaving R closes it: the next element
+ *   the next pin would land: the reticle's hit point while it is visible,
+ *   else where the creator stands (M5c review #3; `station-assign.ts`
+ *   `nearestStationWithin`, the rule the Finish assigns by). Leaving R closes it: the next element
  *   placed outside every station's R starts a new one there, inside one
  *   joins the nearest. "Place a pin" with no station open therefore
  *   creates a station holding it (D21).
@@ -29,7 +30,7 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { calcGpsCoords, type LatLong } from "gps-plus-slam-app-framework/core";
-import type { Object3D } from "three";
+import { Vector3, type Object3D } from "three";
 
 import { applyObjectChanges } from "./authoring-draft.js";
 import { EYE_HEIGHT_M } from "./breadcrumbs.js";
@@ -148,6 +149,21 @@ export function placedInText(
     : `in ${station.name}`;
 }
 
+/** A visible reticle's hit point in the scene's GPS-world NUE, else null.
+ *  One scratch vector: read every frame. */
+const reticleScratch = new Vector3();
+export function reticleNueOf(
+  reticle: {
+    isVisible(): boolean;
+    getWorldPosition(out: Vector3): Vector3;
+  } | null,
+): readonly [number, number, number] | null {
+  if (reticle === null || !reticle.isVisible()) return null;
+  const p = reticle.getWorldPosition(reticleScratch);
+  if (![p.x, p.y, p.z].every(Number.isFinite)) return null;
+  return [p.x, p.y, p.z];
+}
+
 export interface CreatorStationsDom {
   /** The line above the action strip. */
   readonly chip: Pick<HTMLElement, "textContent" | "hidden">;
@@ -186,6 +202,10 @@ export function wireCreatorStations(deps: {
   /** The creator's camera in GPS-world NUE, or null (no alignment, no AR
    *  pose). */
   creatorNue(): readonly [number, number, number] | null;
+  /** Where the next pin would land (the visible reticle's hit point,
+   *  GPS-world NUE), or null: the open station is judged there, else at
+   *  the creator (M5c review #3). Absent: always at the creator. */
+  reticleNue?(): readonly [number, number, number] | null;
   zero(): LatLong | null;
   /** The scene root (GPS-world NUE), or null outside a session. */
   scene(): Object3D | null;
@@ -255,7 +275,8 @@ export function wireCreatorStations(deps: {
         ring.hide();
         return;
       }
-      const at = calcGpsCoords(zero, [nue[0], nue[1], nue[2]]);
+      const judged = deps.reticleNue?.() ?? nue;
+      const at = calcGpsCoords(zero, [judged[0], judged[1], judged[2]]);
       const open = openStationAt(list, at, radiusM);
       const left =
         open === null && lastOpenId !== null

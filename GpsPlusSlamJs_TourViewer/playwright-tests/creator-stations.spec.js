@@ -31,15 +31,22 @@ let clock = 0;
 /**
  * Stand the creator `north`/`east` m from the zero (the shared
  * `standAt`: a fix there, the camera taken back through the CURRENT
- * alignment) and let a camera frame tick the HUD.
+ * alignment), aim the reticle at the ground there (the HUD judges the
+ * open station where a pin would land, M5c review #3) and let a camera
+ * frame tick the HUD.
  * @param {import("@playwright/test").Page} page
  */
 async function stand(page, north, east) {
   clock += 1;
   await standAt(page, north, east, clock);
-  await page.evaluate((key) => {
-    /** @type {any} */ (window)[key].emitFrames(1);
-  }, TEST_KEY);
+  await page.evaluate(
+    ({ key, north, east }) => {
+      const test = /** @type {any} */ (window)[key];
+      test.reticlePosition = [north, 400.5, east];
+      test.emitFrames(1);
+    },
+    { key: TEST_KEY, north, east },
+  );
 }
 
 /** The ring in the fakes' scene, as `{ x, z }` and its radius, or null. */

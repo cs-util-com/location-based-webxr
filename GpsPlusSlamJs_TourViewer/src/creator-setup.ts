@@ -53,7 +53,7 @@ import { wireCreatorPlacement } from "./creator-placement.js";
 import { wireCreatorMeasuring } from "./creator-measuring.js";
 import { wireCreatorSettle } from "./creator-settle.js";
 import { wireCreatorFinish } from "./creator-finish.js";
-import { wireCreatorStations } from "./creator-stations.js";
+import { reticleNueOf, wireCreatorStations } from "./creator-stations.js";
 import { visitorPosition } from "./visitor-position.js";
 
 import { newObjectId } from "./content-placement.js";
@@ -643,6 +643,7 @@ export function wireCreatorSetup(deps: {
         arPose: seams.getArPose(),
         gpsPositions: [],
       }).nue,
+    reticleNue: () => reticleNueOf(ctx.reticle),
     zero: () => selectZeroReference(arStore.getState()),
     scene: () => (creator && sessionLive() ? seams.getScene() : null),
   });

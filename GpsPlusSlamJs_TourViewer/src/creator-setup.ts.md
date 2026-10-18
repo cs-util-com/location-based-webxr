@@ -97,7 +97,8 @@ were here. What stays is the Finish's side:
     manifest, so it cannot be asked earlier), `beginAuthorVisit`,
     `endAuthorVisit` (it also ends the stations' line and ring),
     `tickStations` (every camera frame in a creator's session: the open
-    station's line and ring through `creator-stations.ts`, which reads the
+    station's line and ring through `creator-stations.ts` (judged where
+    the reticle points while it is visible, else at the creator), which reads the
     working copy through the Finish's own writer and keeps no state of its
     own; a visitor's page does nothing), `finishNow` (polish round M3, Q-Done: the creator's
     Done in AR starts a Finish through `CreatorFinish.start`, or, while a

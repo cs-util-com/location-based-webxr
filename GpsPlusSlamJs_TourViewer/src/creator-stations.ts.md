@@ -28,7 +28,9 @@ placement went ("it starts Station 3" / "in Station 2") for its note.
 - `placedInText(stations, objectId) -> string | null` - "it starts
   Station 3" for the first element of a station the next Finish starts,
   else "in Station 2"; null when the object is in none.
-- `wireCreatorStations({ ctx, dom: { chip }, creatorNue, zero, scene,
+- `reticleNueOf(reticle) -> [n, u, e] | null` - a visible reticle's hit
+  point in GPS-world NUE; null when hidden, absent or not finite.
+- `wireCreatorStations({ ctx, dom: { chip }, creatorNue, reticleNue?, zero, scene,
 radiusM? }) -> { tick, placedIn, endVisit }` - `tick()` every camera
   frame of a creator's session: the line and the ring; `placedIn(id)` for
   a placement's note; `endVisit()` hides both.
@@ -45,14 +47,15 @@ radiusM? }) -> { tick, placedIn, endVisit }` - `tick()` every camera
   round 5) decides where AR-made stations live; this module then reads
   them from the store instead.
 - **The open station is the rule's:** the nearest anchor within R of
-  where the creator stands. Leaving R closes it ("You left ..." until the
+  where the next pin would land - the reticle's hit point while it is
+  visible, else where the creator stands (M5c review #3). Leaving R closes it ("You left ..." until the
   creator enters a station again); the next element placed outside every
   station's R starts a new one there, inside joins the nearest - which is
   what the Finish's assignment does, so "Place a pin" with no station
-  open creates a station holding it (D21). Note the HUD judges the
-  creator's position and the rule the element's: a pin placed a few
-  metres ahead of a creator near the edge can land on the other side,
-  and its note says where it went.
+  open creates a station holding it (D21). A photo lands about where
+  the creator stands, so with the reticle hidden the creator's spot is
+  the right one to judge; with it visible a photo is judged at the
+  reticle, a few metres off, and its note says where it went.
 - **R** is `STATION_RADIUS_M` (25 m, provisional until the sweep over
   recorded walks).
 - **Not covered:** a tour's FIRST Finish without photo spots places the
@@ -89,7 +92,9 @@ note(`Pin placed - ${stations.placedIn(pin.id) ?? ""}`);
   no id clash with a hosted station; the open station at R and beyond;
   the property that a pin placed where the creator stands lands in the
   station the HUD called open, or starts one when it called none (R swept
-  15-40 m); the words; the wiring: the line, the ring at the anchor on
+  15-40 m); the same promise through the composed HUD with the reticle
+  up to 10 m ahead or hidden (property, R swept); `reticleNueOf`; the
+  words; the wiring: the line, the ring at the anchor on
   the ground, leaving and re-entering, a placement's note, and nothing
   without a position, a scene, a tour or after the visit.
 - `playwright-tests/creator-stations.spec.js` - the composed page: the

@@ -5,12 +5,13 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
-import { Group, Mesh, type RingGeometry } from "three";
+import { Group, Mesh, type RingGeometry, type Vector3 } from "three";
 
 import { tourOf } from "./test-support/v3-tour.js";
 import {
   openStationAt,
   placedInText,
+  reticleNueOf,
   stationChipText,
   stationsAsFinished,
   wireCreatorStations,
@@ -210,8 +211,24 @@ describe("the words", () => {
   });
 });
 
+describe("reticleNueOf", () => {
+  // Why: the open station is judged where the reticle points only while it
+  // is visible; a hidden or broken reticle must fall back to the creator.
+  const reticle = (visible: boolean, at: [number, number, number]) => ({
+    isVisible: () => visible,
+    getWorldPosition: (out: Vector3) => out.set(...at),
+  });
+
+  it("is the visible reticle's hit point, and null when hidden, absent or not finite", () => {
+    expect(reticleNueOf(reticle(true, [3, 400.5, -2]))).toEqual([3, 400.5, -2]);
+    expect(reticleNueOf(reticle(false, [3, 400.5, -2]))).toBeNull();
+    expect(reticleNueOf(null)).toBeNull();
+    expect(reticleNueOf(reticle(true, [Number.NaN, 0, 0]))).toBeNull();
+  });
+});
+
 describe("wireCreatorStations", () => {
-  function harness() {
+  function harness(options: { radiusM?: number } = {}) {
     const scene = new Group();
     const ctx: {
       tourManifest: TourManifest | null;
@@ -224,13 +241,16 @@ describe("wireCreatorStations", () => {
     };
     const chip = { textContent: "", hidden: true };
     let creator: [number, number, number] | null = [5, 401.5, 0];
+    let reticle: [number, number, number] | null = null;
     let sceneNow: Group | null = scene;
     const stations = wireCreatorStations({
       ctx,
       dom: { chip },
       creatorNue: () => creator,
+      reticleNue: () => reticle,
       zero: () => zero,
       scene: () => sceneNow,
+      ...(options.radiusM === undefined ? {} : { radiusM: options.radiusM }),
     });
     const ring = () =>
       scene.children.find((c) => c.name === STATION_RING_NAME) as
@@ -247,6 +267,10 @@ describe("wireCreatorStations", () => {
       lose: () => {
         creator = null;
         stations.tick();
+      },
+      /** The reticle on the ground at north/east, or hidden (null). */
+      aim: (at: readonly [number, number] | null) => {
+        reticle = at === null ? null : [at[0], 400, at[1]];
       },
       noScene: () => {
         sceneNow = null;
@@ -337,6 +361,78 @@ describe("wireCreatorStations", () => {
     h.stand(60, 0);
     expect(h.chip.textContent).toBe(
       "You left Station 2 - what you place next starts a new station.",
+    );
+  });
+
+  // Why (M5c review #3): a pin lands at the reticle, not at the phone. A
+  // creator standing inside a station's radius and aiming 10 m past its
+  // edge was told "joins it" and got a new station.
+  it("judges the open station where the reticle points while it is visible, else where the creator stands", () => {
+    const h = harness();
+    h.aim([30, 0]);
+    h.stand(20, 0);
+    expect(h.chip.textContent).toBe(
+      "No station here - what you place next starts a new one.",
+    );
+    expect(h.ring()).toBeUndefined();
+    h.ctx.placedObjects.push({ object: pin("aimed", 30, 0) });
+    expect(h.stations.placedIn("aimed")).toBe("it starts Station 2");
+    // The reticle hidden: the creator's own spot decides.
+    h.aim(null);
+    h.stand(5, 0);
+    expect(h.chip.textContent).toBe(
+      "In Station 1 - what you place here joins it.",
+    );
+  });
+
+  it("keeps the line's promise wherever the pin lands, the reticle up to 10 m ahead or hidden (property)", () => {
+    // D21 through the composed HUD: the line read just before a placement
+    // names the station the placement joins, or says none is open and the
+    // placement starts one. R swept 15-40 m.
+    const joins = /^In (.+) - what you place here joins it.$/;
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            // Near the hosted station, so the reticle often crosses an edge.
+            north: fc.integer({ min: -50, max: 50 }),
+            east: fc.integer({ min: -50, max: 50 }),
+            ahead: fc.option(
+              fc.record({
+                metres: fc.double({ min: 0, max: 10, noNaN: true }),
+                bearing: fc.double({ min: 0, max: 2 * Math.PI, noNaN: true }),
+              }),
+              { nil: null },
+            ),
+          }),
+          { minLength: 1, maxLength: 10 },
+        ),
+        fc.integer({ min: 15, max: 40 }),
+        (walk, radiusM) => {
+          const h = harness({ radiusM });
+          for (const [i, step] of walk.entries()) {
+            const lands: [number, number] =
+              step.ahead === null
+                ? [step.north, step.east]
+                : [
+                    step.north +
+                      step.ahead.metres * Math.cos(step.ahead.bearing),
+                    step.east +
+                      step.ahead.metres * Math.sin(step.ahead.bearing),
+                  ];
+            h.aim(step.ahead === null ? null : lands);
+            h.stand(step.north, step.east);
+            const said = joins.exec(h.chip.textContent)?.[1] ?? null;
+            const id = "p" + String(i);
+            h.ctx.placedObjects.push({ object: pin(id, lands[0], lands[1]) });
+            const where = h.stations.placedIn(id);
+            const got =
+              where?.startsWith("it starts ") === true ? "starts" : where;
+            expect(got).toBe(said === null ? "starts" : "in " + said);
+          }
+        },
+      ),
+      { numRuns: 200 },
     );
   });
 
