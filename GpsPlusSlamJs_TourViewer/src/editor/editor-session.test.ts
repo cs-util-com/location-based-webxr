@@ -1722,7 +1722,12 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
     await session.close();
   });
 
-  it("a later open on the same store disowns the earlier session: its edits are refused, its save lands nowhere", async () => {
+  // Why (the r875 milestone review #4): the session read the STORE's
+  // document, so once another open replaced it, the old session's model,
+  // counts and details were the new tour's - and a save of it could build
+  // the old file's bytes around the new tour's manifest. It reads only its
+  // own open now, and a save it was asked for after another open refuses.
+  it("a later open on the same store disowns the earlier session: its edits are refused, its save refused, it reads only its own tour", async () => {
     const first = await opened([pin("a")]);
     const second = await opened([pin("z")]);
     const store = createTourViewerStore();
@@ -1740,12 +1745,24 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
       levels: new Map(),
       store,
     });
-    await late;
+    // Started before the other open: its own tour throughout, bytes and
+    // manifest alike, and it lands nowhere.
+    expect(noteIds(old.model())).toEqual(["a"]);
+    expect((await carried((await late).blob)).objects).toMatchObject([
+      { id: "a", label: "pending" },
+    ]);
+    await expect(old.save({ keepScan: false })).rejects.toThrow(
+      /another tour was opened/i,
+    );
     expect(old.editText("a", "again")).toEqual({
       kind: "refused",
       reason: NOT_IN_TOUR,
     });
     expect(old.undo()).toEqual({ kind: "refused", reason: NOT_IN_TOUR });
+    expect(noteIds(old.model())).toEqual(["a"]);
+    expect(old.changeCount()).toBe(1);
+    expect(old.pendingIds()).toEqual(["a"]);
+    expect(old.details().name).toBe(first.manifest.title ?? "");
     expect(noteIds(now.model())).toEqual(["z"]);
     expect(selectTourDocument(store.getState()).written).toEqual(
       second.manifest,

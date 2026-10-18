@@ -27,7 +27,11 @@ bytes (`previous`), the photo spots' cache, the pictures' side table
     absent (tests). Creating the session dispatches `opened`: whatever
     the store's document held is gone, and an older session on the same
     store is disowned (`generation`) - its edits are refused with
-    `NOT_IN_TOUR`, its saves land nowhere.
+    `NOT_IN_TOUR`, a save it started before lands nowhere, a save or a
+    move of the walk asked of it after refuses ("Another tour was
+    opened since"), and everything it reads (`model`, the counts, the
+    details) is its own tour as it stood when replaced - never the new
+    one's (the r875 milestone review #4).
   - `draft` (M6 E2c) - the `EditorSessionDraft` every edit, move,
     delete, undo and redo is backed up through (`editor-draft.ts`): the
     four `DraftObjectWrites`, whose delete sequence is `draft-actions.ts`'s

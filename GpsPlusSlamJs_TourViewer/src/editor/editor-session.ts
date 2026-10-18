@@ -185,6 +185,10 @@ export const NOT_IN_TOUR = "That note is no longer in this tour.";
 /** Said for a placement of an id the tour already carries. */
 const ALREADY_IN_TOUR = "That note is already in this tour.";
 
+/** A save or a move of the walk asked of a session another open replaced. */
+const TOUR_REPLACED =
+  "Another tour was opened since: this one is no longer open here.";
+
 /** Said for a move of a station the tour does not carry. */
 const NO_SUCH_STATION = "That station is no longer in this tour.";
 
@@ -395,14 +399,25 @@ export function createEditorSession(input: {
     return state.generation === generation ? state : null;
   }
 
+  /** The document as this session reads it: the store's while this open
+   *  is the newest, else as it stood when another open replaced it - a
+   *  replaced session never reads another tour (the r875 milestone review
+   *  #4). */
+  let last = doc();
+  function own(): TourDocumentState {
+    const state = mine();
+    if (state !== null) last = state;
+    return last;
+  }
+
   /** The written tour (this session's). */
   function written(): TourManifest {
-    return doc().written ?? input.manifest;
+    return own().written ?? input.manifest;
   }
 
   /** The tour as it stands, frames and settings applied. */
   function now(): TourManifest {
-    return manifestNow(doc()) ?? input.manifest;
+    return manifestNow(own()) ?? input.manifest;
   }
 
   const notInTour: EditorRefusal = { kind: "refused", reason: NOT_IN_TOUR };
@@ -419,10 +434,10 @@ export function createEditorSession(input: {
   /** The tour's pins and photos as they stand with the edits, for what
    *  reads its images. */
   function current(): TourObject[] {
-    return documentObjects(doc()).map((o) => o.object);
+    return documentObjects(own()).map((o) => o.object);
   }
 
-  function coverIds(state: TourDocumentState = doc()): Set<string> {
+  function coverIds(state: TourDocumentState = own()): Set<string> {
     return tourImageIds({
       objects: documentObjects(state).map((o) => o.object),
       assets: state.written?.assets ?? [],
@@ -512,13 +527,13 @@ export function createEditorSession(input: {
       });
     },
     changeCount() {
-      return changeCount(doc());
+      return changeCount(own());
     },
     pendingIds() {
-      return unsavedEntries(doc()).map((p) => p.object.id);
+      return unsavedEntries(own()).map((p) => p.object.id);
     },
     needsNoGps() {
-      return doc().needsNoGps;
+      return own().needsNoGps;
     },
     setNeedsNoGps(on) {
       const state = mine();
@@ -534,7 +549,7 @@ export function createEditorSession(input: {
       return { kind: "changed" };
     },
     details() {
-      const shown = effectiveDetails(doc());
+      const shown = effectiveDetails(own());
       return {
         name: shown.title ?? "",
         description: shown.description ?? "",
@@ -586,7 +601,7 @@ export function createEditorSession(input: {
       const found = find(id);
       if (found === undefined) return notInTour;
       const after = moveObjectTo(found.object, lat, lon);
-      if (!objectFits(doc(), after)) {
+      if (!objectFits(own(), after)) {
         return { kind: "refused", reason: TOO_FAR_FROM_STATION };
       }
       store.dispatch(
@@ -648,10 +663,10 @@ export function createEditorSession(input: {
       return step("redo");
     },
     revision() {
-      return doc().revision;
+      return own().revision;
     },
     pictureOf(id) {
-      return unsavedEntries(doc()).some((p) => p.object.id === id)
+      return unsavedEntries(own()).some((p) => p.object.id === id)
         ? pictures.get(id)
         : undefined;
     },
@@ -730,7 +745,7 @@ export function createEditorSession(input: {
    *  while another runs starts when it ends (E2a review #9). The document
    *  counts them (`saveStarted` / `saveEnded`): an undo waits for them. */
   function queued<T>(start: () => Promise<T>): Promise<T> {
-    const run = doc().save.rebuilds === 0 ? start() : tail.then(start, start);
+    const run = own().save.rebuilds === 0 ? start() : tail.then(start, start);
     store.dispatch(tourDocumentActions.saveStarted({ generation }));
     // Ended BEFORE the caller hears the end: an undo asked for right after
     // an awaited save is not refused as "a save is running".
@@ -769,7 +784,7 @@ export function createEditorSession(input: {
     manifestNow: TourManifest;
     stationsAtStart: TourDocumentState["stations"];
   } {
-    const state = doc();
+    const state = own();
     const hosted = hostedObjects(state.written);
     return {
       // A photo the written file has no picture for carries the one this
@@ -870,6 +885,10 @@ export function createEditorSession(input: {
   async function runSave(options: {
     readonly keepScan: boolean;
   }): Promise<EditorSave> {
+    // Asked for once another open replaced this one: its bytes would be
+    // built for a tour no page shows (a save started before keeps its own
+    // snapshot, and lands nowhere).
+    if (mine() === null) throw new Error(TOUR_REPLACED);
     const snap = snapshot();
     const photos = await photoSpots(snap.manifestNow);
     const finished = await rebuild(snap, photos, options.keepScan);
@@ -879,6 +898,7 @@ export function createEditorSession(input: {
 
   /** The move of the walk out (D19), built from the newest bytes. */
   async function buildWalkMove(): Promise<WalkMove | EditorRefusal> {
+    if (mine() === null) return { kind: "refused", reason: TOUR_REPLACED };
     const snap = snapshot();
     const base = previous;
     const wrap = session.manifestWrap;
