@@ -791,6 +791,33 @@ kbd {
   color: var(--ink-dim);
 }
 
+.link-open {
+  margin-top: 14px;
+}
+
+.link-label {
+  display: block;
+  margin: 0 4px 6px;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+.link-row {
+  display: flex;
+  gap: 10px;
+}
+
+.link-row input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--hairline);
+  background: #fff;
+  font: inherit;
+}
+
 #open-status {
   min-height: 20px;
   margin: 12px 4px 0;

@@ -15,6 +15,22 @@ export const GLOBE_READOUT = {
    * slow enough that a digit holds still long enough to be read.
    */
   intervalMs: 250,
+  /**
+   * Below this altitude the line also names the height above the ground
+   * (round-4 plan 2026-10-11-0122 DEC-R4-1): there the two differ visibly
+   * (by 4 % over a 4 km mountain at 100 km); above it the extra words only
+   * crowd a phone's bottom line.
+   */
+  groundBelowM: 100_000,
+  /**
+   * How long the landed line waits for the relief's height under the
+   * camera before it says the altitude above sea level instead, ms (r816's
+   * city flight: the height never came, and the line said a bare
+   * "Arrived." forever). The relief's tile under a landed camera arrives
+   * within a few frames when it comes at all; 8 s is several frames even
+   * on SwiftShader's frame a second.
+   */
+  landedWaitMs: 8_000,
 } as const;
 
 const km = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -34,20 +50,62 @@ export function formatDistance(metres: number): string {
 }
 
 /**
- * The readout's line: "Altitude 1,234 km", and while a target is being
- * flown to, " · 1,300 km to the target" after it.
+ * The readout's line: "Altitude 1,234 km"; below `groundBelowM`, where the
+ * ground under the camera is known (`groundM`, m above the ellipsoid),
+ * " · 150 m above ground" after it (DEC-R4-1); and while a target is being
+ * flown to, " · 1,300 km to the target".
  */
 export function globeReadoutText({
   altitudeM,
   targetDistanceM,
+  groundM = null,
 }: {
   altitudeM: number;
   targetDistanceM: number | null;
+  groundM?: number | null;
 }): string {
-  const altitude = `Altitude ${formatDistance(altitudeM)}`;
-  return targetDistanceM === null
-    ? altitude
-    : `${altitude} · ${formatDistance(targetDistanceM)} to the target`;
+  const parts = [`Altitude ${formatDistance(altitudeM)}`];
+  if (
+    groundM !== null &&
+    Number.isFinite(groundM) &&
+    altitudeM < GLOBE_READOUT.groundBelowM
+  ) {
+    // The sea is drawn at 0 (as the clearance takes it): never a depth.
+    parts.push(
+      `${formatDistance(altitudeM - Math.max(0, groundM))} above ground`,
+    );
+  }
+  if (targetDistanceM !== null) {
+    parts.push(`${formatDistance(targetDistanceM)} to the target`);
+  }
+  return parts.join(" · ");
+}
+
+/**
+ * The continuous flight's landed line (round-4 plan DEC-R4-1; the R4b
+ * milestone review, finding 2): "Arrived, 158 m above the ground." from
+ * the camera's height above the drawn ground under it (`aboveGroundM`,
+ * the readout's number); "Arrived, 150 m above sea level." from its
+ * `altitudeM` without a relief (`aboveGroundM` null), or once
+ * `landedWaitMs` has passed without a relief height (`undefined`); null
+ * while it still waits for one.
+ */
+export function landedLineText({
+  aboveGroundM,
+  altitudeM,
+  waitedMs,
+}: {
+  aboveGroundM: number | null | undefined;
+  altitudeM: number;
+  waitedMs: number;
+}): string | null {
+  if (typeof aboveGroundM === "number") {
+    return `Arrived, ${formatDistance(aboveGroundM)} above the ground.`;
+  }
+  if (aboveGroundM === undefined && waitedMs < GLOBE_READOUT.landedWaitMs) {
+    return null;
+  }
+  return `Arrived, ${formatDistance(altitudeM)} above sea level.`;
 }
 
 /**

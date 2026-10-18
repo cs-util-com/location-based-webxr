@@ -111,8 +111,8 @@ importers:
         specifier: 3.4.4
         version: 3.4.4
       gps-plus-slam-js:
-        specifier: ^1.26.0
-        version: 1.26.0
+        specifier: ^1.26.2
+        version: 1.26.2
       redux:
         specifier: ^5.0.1
         version: 5.0.1
@@ -390,6 +390,9 @@ importers:
       '@types/node':
         specifier: ^25.9.5
         version: 25.9.5
+      '@types/three':
+        specifier: ^0.185.4
+        version: 0.185.4
       '@vitest/coverage-v8':
         specifier: ^5.0.0
         version: 5.0.0(vitest@5.0.0)
@@ -426,6 +429,9 @@ importers:
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
+      three:
+        specifier: ^0.185.1
+        version: 0.185.1
       tsdown:
         specifier: ^0.22.0
         version: 0.22.0(oxc-resolver@11.24.2)(typescript@6.0.3)(unrun@0.2.37)
@@ -3449,8 +3455,8 @@ packages:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
 
-  gps-plus-slam-js@1.26.0:
-    resolution: {integrity: sha512-SDQWp6I0cafHRFyceazRFiXJYy9vgtCFnnne/XdD2mn+IrE3FPHWHC+oSiOohW6ldn535GQGwNnXs6qTlOHNjw==}
+  gps-plus-slam-js@1.26.2:
+    resolution: {integrity: sha512-GLUd/Du+n60kYSnfDSqKife5sCa1oHi+iIWwvPSmbIsEa3KX5X1Je8g8LqN1Q3RHGPew6/j1JZmTN8FvNVOOyA==}
     engines: {node: '>=26.0.0'}
 
   graceful-fs@4.2.11:
@@ -7172,7 +7178,7 @@ snapshots:
 
   gopd@1.2.0: {}
 
-  gps-plus-slam-js@1.26.0:
+  gps-plus-slam-js@1.26.2:
     dependencies:
       '@noble/curves': 2.4.0
       '@reduxjs/toolkit': 2.12.0

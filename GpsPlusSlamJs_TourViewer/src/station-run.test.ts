@@ -10,6 +10,7 @@ import {
   SKIP_SUGGEST_BASE_MS,
   SKIP_SUGGEST_SLOW_MPS,
   skipSuggestAfterMs,
+  stationTitle,
 } from "./station-run";
 import { ACCURACY_CEILING_M } from "./station-bands";
 
@@ -446,5 +447,28 @@ describe("createStationRun: the visitor's own arrival (codes only)", () => {
     expect(run.arrive("a", 3)).toEqual([]);
     run.finish("a", 4);
     expect(run.arrive("a", 5)).toEqual([]);
+  });
+});
+
+describe("stationTitle (plan 2026-10-15-0348 M0: one rule for the visitor and the editor)", () => {
+  // Why: the package had two exported stationTitle functions with different
+  // fallbacks (the visitor's "the next station", the editor's "Station N"),
+  // and the visitor's kept a blank title, so a station named "  " showed an
+  // empty heading and "Play: " with nothing after it. One function now: the
+  // trimmed title, else the place in the story where the caller knows it.
+  it("is the trimmed title when there is one", () => {
+    expect(stationTitle({ title: "  The gate " })).toBe("The gate");
+    expect(stationTitle({ title: "The gate" }, 2)).toBe("The gate");
+  });
+
+  it("names an untitled station by its place when the caller knows it", () => {
+    expect(stationTitle({}, 3)).toBe("Station 3");
+    expect(stationTitle({ title: "   " }, 1)).toBe("Station 1");
+  });
+
+  it("is 'the next station' for an untitled one in the visitor's lines", () => {
+    expect(stationTitle({})).toBe("the next station");
+    expect(stationTitle({ title: "" })).toBe("the next station");
+    expect(stationTitle({ title: " 	 " })).toBe("the next station");
   });
 });

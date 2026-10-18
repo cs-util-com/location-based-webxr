@@ -2018,7 +2018,7 @@ describe("the entry hint (§3.2a, D5)", { timeout: SLOW_MS }, () => {
     a.beginVisit();
     a.setup.renderAuthorReadout();
     expect(a.dom.status.textContent).toMatch(
-      /^First, point the camera at the code you scanned to open this tour\./,
+      /^First, point the camera at this tour's printed code:/,
     );
     // Placing is not blocked while the hint shows (D5).
     expect(a.dom.pinButton.disabled).toBe(false);

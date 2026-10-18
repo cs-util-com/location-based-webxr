@@ -28,8 +28,27 @@
 
 import type { LatLng } from "../model/osm-feature.js";
 
-/** Metres per degree of latitude. Constant to well within our tolerance. */
-const METRES_PER_DEG_LAT = 111_320;
+/**
+ * Metres per degree of latitude: the polar circumference over 360.
+ *
+ * ONE RULER WITH THE AR CORE (globe city plan 2026-10-05-0040 §14, the
+ * owner's D-K7). AR places the phone with `gps-plus-slam-js`'s
+ * `calcRelativeCoordsInMeters`, which uses exactly these two numbers, and
+ * the city with this frame; they must agree or every building stands off
+ * the phone's position by the difference. This was 111,320 for both axes
+ * until 2026-10-06: 0.34 % longer north-south than the core's, 3.4 m at
+ * 1 km. Neither is the true ellipsoid (about 111,170 m at 47 N), which is
+ * well inside this file's tolerance; agreement with the core is what
+ * matters. OsmDemo's `one-ruler.test.ts` compares the two conversions.
+ */
+export const ENU_METRES_PER_DEG_LAT = 39_940_652.7422 / 360;
+
+/**
+ * Metres per degree of longitude at the equator: the equatorial
+ * circumference over 360, times `cos(originLat)` in a frame (the AR core's
+ * numbers, as above).
+ */
+export const ENU_METRES_PER_DEG_LNG_EQUATOR = 40_075_016.6856 / 360;
 
 /** A point in the local East–North–Up frame, metres from the origin. */
 export interface EnuPoint {
@@ -66,14 +85,14 @@ export interface EnuFrame {
  */
 export function enuFrameAt(origin: LatLng): EnuFrame {
   const metresPerDegLng =
-    METRES_PER_DEG_LAT * Math.cos((origin.lat * Math.PI) / 180);
+    ENU_METRES_PER_DEG_LNG_EQUATOR * Math.cos((origin.lat * Math.PI) / 180);
 
   return {
     origin,
     toEnu(position) {
       return {
         x: (position.lng - origin.lng) * metresPerDegLng,
-        y: (position.lat - origin.lat) * METRES_PER_DEG_LAT,
+        y: (position.lat - origin.lat) * ENU_METRES_PER_DEG_LAT,
       };
     },
     toLatLng(point) {
@@ -84,7 +103,7 @@ export function enuFrameAt(origin: LatLng): EnuFrame {
           metresPerDegLng === 0
             ? origin.lng
             : origin.lng + point.x / metresPerDegLng,
-        lat: origin.lat + point.y / METRES_PER_DEG_LAT,
+        lat: origin.lat + point.y / ENU_METRES_PER_DEG_LAT,
       };
     },
   };
