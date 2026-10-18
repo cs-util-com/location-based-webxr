@@ -111,8 +111,11 @@ export async function bakeCaptureSpots(
   // zero) are a decline that keeps the walk (PR #638 review).
   const taken = state.gpsData?.odometryPath.points;
   if (taken !== undefined && !taken.some((p) => images.has(p.imageFile))) {
+    // Narrowed, never cast (PR #640 review): a hand-edited string version
+    // compares as a number in JavaScript ("3" <= 5).
     const knownEra =
-      (meta?.odomCoordVersion as number) <= NEWEST_KNOWN_ODOM_COORD_VERSION;
+      typeof meta?.odomCoordVersion === "number" &&
+      meta.odomCoordVersion <= NEWEST_KNOWN_ODOM_COORD_VERSION;
     const tookPhotos = actions.some((a) => a.type === CAPTURE_ACTION);
     if (!knownEra || (taken.length === 0 && tookPhotos)) {
       return {

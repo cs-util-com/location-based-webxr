@@ -12,6 +12,7 @@ import {
   skipSuggestAfterMs,
   stationTitle,
 } from "./station-run";
+import { ACCURACY_CEILING_M } from "./station-bands";
 
 /**
  * Why these tests matter: the station run is the tour's whole game state on
@@ -99,6 +100,52 @@ describe("createStationRun: states", () => {
       { kind: "found", id: "a" },
       { kind: "found", id: "b" },
     ]);
+  });
+
+  // Why (PR #640 review): D16 forbids WIDENING the radius by the accuracy,
+  // not judging on a fix the guide itself calls too weak. A ±500 m
+  // cold-start fix inside a 10 m station latched "found" while the line
+  // said "GPS too weak to guide you". The run refuses to judge above the
+  // ceiling the line uses, so the line and the latch agree.
+  it("does not judge on a fix too weak to guide by: ±500 m inside a 10 m station is no arrival, ±5 m is", () => {
+    const run = createStationRun({
+      stations: [station("a", { foundRadiusM: 10 })],
+      order: "fixed",
+      nowMs: 0,
+    });
+    expect(
+      run.observe({ distances: at({ a: 3 }), nowMs: 1, accuracyM: 500 }),
+    ).toEqual([]);
+    expect(run.status("a")?.state).toBe("waiting");
+    expect(
+      run.observe({ distances: at({ a: 3 }), nowMs: 2, accuracyM: 5 }),
+    ).toEqual([{ kind: "found", id: "a" }]);
+  });
+
+  it.each([10, 24, 25, 26, 60, 500])(
+    "at ±%d m a position inside the radius finds the station exactly while the accuracy is within the ceiling",
+    (accuracyM) => {
+      const run = createStationRun({
+        stations: [station("a", { foundRadiusM: 10 })],
+        order: "fixed",
+        nowMs: 0,
+      });
+      run.observe({ distances: at({ a: 3 }), nowMs: 1, accuracyM });
+      expect(run.status("a")?.state).toBe(
+        accuracyM <= ACCURACY_CEILING_M ? "found" : "waiting",
+      );
+    },
+  );
+
+  it("judges an unknown accuracy (a position by a code alone) by the radius alone (D16)", () => {
+    const run = createStationRun({
+      stations: [station("a")],
+      order: "fixed",
+      nowMs: 0,
+    });
+    expect(
+      run.observe({ distances: at({ a: 4 }), nowMs: 1, accuracyM: null }),
+    ).toEqual([{ kind: "found", id: "a" }]);
   });
 
   it("judges nothing it has no distance for, and no non-finite distance", () => {

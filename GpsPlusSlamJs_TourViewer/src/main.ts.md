@@ -43,8 +43,10 @@ listed in `index.html.md`. The concerns and their modules:
   renderer (`wireArEntry`).
 - `visitor-stations.ts` - the visitor's stations and their stories (tour
   kit plan K4, `wireVisitorStations`), wired after the viewer placement;
-  `main.ts` binds `hooks.tickStations`, `stationCodeLocked`,
-  `unlockStationAudio` and `stopStations`.
+  `main.ts` binds `hooks.tickStations` (the visitor's stations, then the
+  creator's open station, `CreatorSetup.tickStations`; each does nothing in
+  the other mode), `stationCodeLocked`, `unlockStationAudio` and
+  `stopStations`.
 - `archive-open.ts` - the open path, the gallery, the stats, the Storage
   section, the `?qr=` boot (`wireArchiveOpen`), and step 4's scan-to-open,
   which the setup panel reaches through a local late binding (the panel is

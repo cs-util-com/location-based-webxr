@@ -77,6 +77,10 @@ export function wireCreatorPlacement(deps: {
   /** A photo minted through a settled visit's record: log it as that
    *  settle's late arrival. */
   lateArrival: (visit: number, photo: TourPhoto) => void;
+  /** Where object `id` went among the stations, for its note ("it starts
+   *  Station 3", "in Station 2"; `creator-stations.ts`), or null. Absent:
+   *  the note names no station. */
+  stationOf?: (id: string) => string | null;
   render: () => void;
 }): CreatorPlacement {
   const { ctx, arStore, arController, seams, dom } = deps;
@@ -131,6 +135,13 @@ export function wireCreatorPlacement(deps: {
   function note(text: string): void {
     ctx.placementNote = text;
     deps.render();
+  }
+
+  /** " - it starts Station 3" / " - in Station 2" for a placement's note
+   *  (tour editor plan W3, D20, D21), or "". */
+  function stationPart(id: string): string {
+    const where = deps.stationOf?.(id) ?? null;
+    return where === null ? "" : ` - ${where}`;
   }
 
   /** The code in view as its last fused evaluation stood - read, never
@@ -267,7 +278,9 @@ export function wireCreatorPlacement(deps: {
     dom.pinLabel.value = "";
     hideLabelInput();
     deps.previews.sync();
-    note(`Pin "${label}" placed · ${placed(newlyPlaced())}.`);
+    note(
+      `Pin "${label}" placed${stationPart(pin.id)} · ${placed(newlyPlaced())}.`,
+    );
   });
 
   dom.photoButton.addEventListener("click", () => {
@@ -331,7 +344,7 @@ export function wireCreatorPlacement(deps: {
         // The plane sits at the capture spot, facing back at it: the
         // creator is standing on it and sees it once they step back.
         note(
-          `Photo placed - step back a metre to see it · ${placed(newlyPlaced())}.`,
+          `Photo placed${stationPart(photo.id)}. Step back a metre to see it · ${placed(newlyPlaced())}.`,
         );
       },
       (err: unknown) => {

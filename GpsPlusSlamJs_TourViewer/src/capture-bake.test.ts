@@ -274,6 +274,41 @@ describe("bakeCaptureSpots declines where the live join declines", () => {
     expect(bake.kind).toBe("declined");
   });
 
+  // Why (PR #640 review): "places nothing" lets a lean Finish drop the walk
+  // for good, so only a recording of a KNOWN era may say it. A session.json
+  // is hand-editable: an absent version, or a string one ("3" <= 5 is true
+  // in JavaScript), must decline and keep the walk, never read as known.
+  // The guard that catches them today is the preflight, BEFORE the replay
+  // (its reason is asserted, M5c review #5); the narrowing in the
+  // "places nothing" branch keeps that branch safe on its own and satisfies
+  // the type checker, and is not reached by these inputs.
+  it.each([
+    ["absent", {}],
+    ["a string", { odomCoordVersion: "3" }],
+    ["a numeric string of the current era", { odomCoordVersion: "5" }],
+  ])(
+    "a recording whose era is %s declines and keeps the walk",
+    async (_label, meta) => {
+      const source = await sampleSource();
+      const actions = (await source.loadRecordingActions())!;
+      // No photo this build recognises: the "places nothing" branch.
+      const renamed = actions.map((a) =>
+        a.type === "gpsData/add2dImage"
+          ? { ...a, type: "gpsData/addPhotoV6" }
+          : a,
+      );
+      const bake = await bakeCaptureSpots({
+        ...source,
+        loadSessionMeta: () => Promise.resolve(meta),
+        loadRecordingActions: () => Promise.resolve(renamed),
+      });
+      expect(bake).toEqual({
+        kind: "declined",
+        reason: "the recording predates the current format (no migration here)",
+      });
+    },
+  );
+
   it("a replay the caller stopped", async () => {
     const bake = await bakeCaptureSpots(await sampleSource(), {
       shouldContinue: () => false,

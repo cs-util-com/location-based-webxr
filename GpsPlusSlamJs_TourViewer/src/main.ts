@@ -619,6 +619,7 @@ const setup = wireCreatorSetup({
     sizeOfferKeep: element("size-offer-keep"),
     // Editing placed objects (authoring plan 2026-09-28-0953 M4).
     objectList: createObjectListView(element("object-list"), document),
+    stationChip: element("creator-station"),
   },
   // Crash-safe authoring (F13), in this origin's private file system - the
   // desktop editor's draft opens through the same wrapper (M6 E2c).
@@ -835,7 +836,12 @@ const stations = wireVisitorStations({
       }
     : {}),
 });
-hooks.tickStations = stations.tick;
+// Every camera frame: the visitor's stations, and the creator's open
+// station (each does nothing in the other mode).
+hooks.tickStations = () => {
+  stations.tick();
+  setup.tickStations();
+};
 hooks.stationCodeLocked = stations.codeLocked;
 hooks.unlockStationAudio = stations.unlockAudio;
 hooks.stopStations = stations.stop;

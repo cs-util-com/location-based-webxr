@@ -12,6 +12,9 @@ where the prefetch starts. Plans:
 
 ## Public API
 
+- `tooWeakToGuide(accuracyM): boolean` - a known accuracy above
+  `ACCURACY_CEILING_M` (25 m): the guide's line and the run's arrival both
+  read it.
 - `stationBands(station, accuracyM): StationBands` -
   `{ activateM, foundM, foundExitM }` in horizontal metres:
   - `foundM = foundRadiusM`, at every accuracy (D16; no accuracy
@@ -45,9 +48,15 @@ where the prefetch starts. Plans:
 - Never throws: the authored radii are already validated by
   `tour-stations.ts` (positive, found <= activate); a non-finite one reads
   as 0 here anyway.
-- The ceiling only keeps the band finite. Since D16 the run judges every
-  distance whatever the accuracy; the guide still says "GPS too weak to
-  guide you" above the ceiling.
+- The ceiling keeps the band finite, and it is the one line between a
+  usable and an unusable position: `tooWeakToGuide(accuracyM)` (a known
+  accuracy above it) makes the guide say "GPS too weak to guide you" AND
+  the run judge no arrival, so the two never disagree (PR #640 review: a
+  ±500 m cold-start fix inside a 10 m station latched "found" while the
+  line said the GPS was too weak). D16 still holds below the ceiling: the
+  accuracy never widens the radius. Unknown (null) is not too weak, and
+  the guide passes null for an alignment's position: the accuracy is the
+  raw fixes' and speaks only for the raw fix (M5c review #1).
 
 ## Evidence (`station-bands.sweep.test.ts`)
 
@@ -82,3 +91,6 @@ const b = stationBands({ activateRadiusM: 30, foundRadiusM: 3 }, 8);
   floor (D16), the HUD band floor, nonsense accuracies; properties:
   ordering and finiteness for any input, the band monotone in the accuracy.
 - `station-bands.sweep.test.ts` - the simulation above.
+- `tooWeakToGuide` through `station-run.test.ts` (the latch flips exactly at
+  the ceiling, swept 10-500 m; null is judged) and `station-guide.test.ts`
+  (the line and the latch agree on a ±500 m and a ±60 m fix).

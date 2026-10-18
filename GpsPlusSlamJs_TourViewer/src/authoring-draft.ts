@@ -162,6 +162,9 @@ export interface HostedObjects {
    * differ by the micrometres of the round trip through the station's
    * frame (tour editor plan W3; `tour-content.ts` `asStored`), and must
    * still compare equal - else a saved placement read as unsaved forever.
+   * An object naming ANOTHER station of the file is never held, however
+   * close it stands: that is a re-assignment. A station the file does not
+   * have is no move (the writer keeps such an object where it is).
    */
   holds(object: TourObject): boolean;
 }
@@ -180,6 +183,17 @@ export function hostedObjects(manifest: TourManifest | null): HostedObjects {
       if (key === undefined) return false;
       if (key === objectContentKey(object)) return true;
       const home = byId.get(object.id)?.station;
+      // Compared BEFORE the round trip, which writes the hosted station
+      // into the object and would hide a re-assignment (M5a review L2).
+      // Only to a station the file has, as the writer reads it
+      // (`withTourContent`): a station it does not have is no move.
+      if (
+        object.station !== undefined &&
+        object.station !== home &&
+        stations.has(object.station)
+      ) {
+        return false;
+      }
       const station = home === undefined ? undefined : stations.get(home);
       return (
         station !== undefined &&

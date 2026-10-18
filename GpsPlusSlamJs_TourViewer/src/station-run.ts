@@ -11,8 +11,10 @@
  * - FOUND is a latch: a noisy estimate never un-finds a station. Found by
  *   its radius alone (tour editor plan 2026-10-17-1816 D16): the caller's
  *   distance from the phone's current best position is inside the
- *   station's found radius (`station-bands.ts`). No accuracy is read, a
- *   code lock is no arrival (D9: a scan only improves the position), and
+ *   station's found radius (`station-bands.ts`). The accuracy never widens
+ *   it; a position too weak to guide by (`tooWeakToGuide`) judges nothing,
+ *   so the latch agrees with the guide's line (PR #640 review). A code lock
+ *   is no arrival (D9: a scan only improves the position), and
  *   there is no "I'm here" (W7, 0348 M2).
  * - DONE when the station's steps finish (`finish`), or skipped (`skip`).
  *   A station with no steps (a newer minor's steps all left out, K1 review
@@ -26,7 +28,7 @@ import type {
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-stations";
 
-import { stationBands } from "./station-bands.js";
+import { stationBands, tooWeakToGuide } from "./station-bands.js";
 
 /** No state between waiting and found (K4 review R10): an "active" state
  *  with its own hysteresis drove nothing a visitor sees. */
@@ -103,10 +105,17 @@ export interface StationRun {
    * Horizontal distances (m) from the phone's current best position to the
    * stations the caller can place (D16). A station without a finite
    * distance is not judged: with no position, nothing is reached.
+   * `accuracyM` is that position's accuracy (m); above the ceiling the
+   * guide's line says the GPS is too weak, and nothing is judged
+   * (`tooWeakToGuide`, PR #640 review). Absent or null: unknown, judged
+   * by the radius alone - the guide passes null for an alignment's
+   * position, which the raw fixes' accuracy says nothing about (M5c
+   * review #1).
    */
   observe(input: {
     readonly distances: ReadonlyMap<string, number>;
     readonly nowMs: number;
+    readonly accuracyM?: number | null;
   }): StationEvent[];
   /** The station's steps finished (a found station only). */
   finish(id: string, nowMs: number): StationEvent[];
@@ -254,7 +263,9 @@ export function createStationRun(input: {
     statuses: () => stations.map((st) => snapshot(st.id, states.get(st.id)!)),
     isComplete: () => offeredIds.length === 0,
 
-    observe({ distances }) {
+    observe({ distances, accuracyM }) {
+      // No arrival on a fix the guide calls too weak to guide by.
+      if (tooWeakToGuide(accuracyM ?? null)) return [];
       const events: StationEvent[] = [];
       for (const id of [...offeredIds]) {
         const d = distances.get(id);

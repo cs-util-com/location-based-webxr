@@ -18,10 +18,16 @@ by the radius alone).
   - `status(id)` / `statuses()` - `{ id, state, skipped, focusedAtMs,
 focusDistanceM }`.
   - `isComplete()`.
-  - `observe({ distances, nowMs }): StationEvent[]` - horizontal distances
-    from the phone's best position to the stations the caller can place
-    (D16). A non-finite distance is not judged; the caller passes none
-    without a position.
+  - `observe({ distances, nowMs, accuracyM? }): StationEvent[]` -
+    horizontal distances from the phone's best position to the stations
+    the caller can place (D16). A non-finite distance is not judged; the
+    caller passes none without a position. `accuracyM` is that position's
+    accuracy: above `ACCURACY_CEILING_M` (`tooWeakToGuide`,
+    `station-bands.ts`) nothing is judged, so the latch agrees with the
+    guide's "GPS too weak to guide you" (PR #640 review); absent or null
+    is judged by the radius alone. The guide passes the raw fix's accuracy
+    only when the raw fix IS the position, null for an alignment's (M5c
+    review #1).
   - `finish(id, nowMs)` - the scene ended (found stations only).
   - `skip(id, nowMs)` - any offered station not done.
   - `skipSuggested(id, nowMs)` - an offered, unfound station whose clock ran
@@ -49,7 +55,9 @@ focusDistanceM }`.
 ## Invariants & assumptions
 
 - **States:** waiting -> found (the distance at most the authored found
-  radius, D16; a code lock is no arrival - it only improves the position
+  radius, D16, which no accuracy widens; never on a position too weak to
+  guide by - D16 forbids widening the radius, not refusing a fix the guide
+  itself calls unusable; a code lock is no arrival - it only improves the position
   the caller measures from; no "I'm here" either) -> done (`finish` or `skip`); found and done
   never revert. There is no "active" state (K4 review R10): the K4 build's
   one, with its own hysteresis on the activation radius, drove nothing a

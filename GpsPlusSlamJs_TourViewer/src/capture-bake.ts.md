@@ -33,7 +33,11 @@ placesNothing? }`. `placesNothing: true` when the replayed walk names
     era (`NEWEST_KNOWN_ODOM_COORD_VERSION`) may say so, and "no photo was
     taken" means no `CAPTURE_ACTION` at all: a newer era, or photos the
     replay turned into no spot (taken before the GPS zero), decline WITHOUT
-    `placesNothing` and keep the walk (PR #638 review). Absent for a decline before
+    `placesNothing` and keep the walk (PR #638 review). The era is NARROWED
+    (a number at most the newest known), never cast: a hand-edited string
+    version compares as a number in JavaScript ("3" <= 5; PR #640 review).
+    Today the preflight already declines such a version before the replay;
+    the narrowing keeps this branch safe on its own. Absent for a decline before
     the replay (unknown) and for photos the tour carries that the solve
     could not place.
 - `posesOfCaptureSpots(spots: CaptureSpotsInWorld) -> CaptureWorldPose[]`: the spots as the
@@ -88,7 +92,8 @@ apart); a missing photo file dropped and none left declined as placing
 nothing, also when the only file left is the photo the recording never
 placed; a walk with no photo taken placing nothing, with GPS that solves
 and with no fix at all; the live
-join's declines (no recording, an old era, a stopped replay); and the pose
+join's declines (no recording, an old era, a stopped replay); an absent or
+string era declining and keeping the walk (PR #640 review); and the pose
 conversion. The Finish's use is pinned in `creator-finish.test.ts`, the
 viewer's in `playwright-tests/ar-mode.spec.js` (a baked tour without a
 recording) and `replay-abort-wiring.test.ts`.
