@@ -320,6 +320,43 @@ describe("wireDoneDialog", () => {
     expect(again.deps.moveWalk).toHaveBeenCalledTimes(2);
   });
 
+  it("asks for a second click when the walk is saved but the tour must be downloaded, and says the walk is safe", async () => {
+    // Why (the M4b fix re-review #2): a tour with no file to write into
+    // (a sample, a link, a file input) is downloaded; done after the walk's
+    // write, the click's window had passed and the download fell back
+    // unseen. The tour's download now waits for a fresh click.
+    const confirm = vi.fn(() =>
+      Promise.resolve<WalkMoveOutcome>({
+        kind: "moved",
+        walkName: "castle-walk.zip",
+        tourName: "castle.zip",
+        saved: { kind: "downloaded", name: "castle.zip" },
+      }),
+    );
+    const { dom, deps, dialog } = wire(() =>
+      Promise.resolve({
+        kind: "walk-saved",
+        walkName: "castle-walk.zip",
+        confirm,
+      }),
+    );
+    dialog.open(IN_PLACE);
+    dom.moveButton.fire("click");
+    await vi.waitFor(() => {
+      expect(dom.moveButton.textContent).toBe(MOVE_LABELS.download);
+    });
+    expect(dom.moveStatus.textContent).toMatch(/castle-walk\.zip/);
+    expect(dom.moveStatus.textContent).toMatch(/keep that file/);
+    expect(dom.moveStatus.textContent).toMatch(/still carries it/);
+    expect(dom.walkText.hidden).toBe(false);
+    dom.moveButton.fire("click");
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(deps.moveWalk).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(dom.moveStatus.textContent).toMatch(/no longer carries it/);
+    });
+  });
+
   it("after a move, its first line and steps follow where the changes are now", async () => {
     // Why (the M4b milestone review #10): a tour unchanged before the move
     // is written by it; the dialog said "Nothing was changed" over a file

@@ -27,11 +27,15 @@ is moved out. "Move the walk out" is offered here; the page does the move
   `publicLine`, `walk` (null without a walk) and `driveTip` (null unless
   the switch is on, the host is Drive and the file was written in place).
 - `MOVE_LABELS` - the move button's idle, in-progress and second-step
-  (`confirm`) labels.
+  labels (`confirm`: take a downloaded walk out; `download`: download the
+  tour without a walk already saved).
 - `WalkMoveOutcome` - what the page's move came to: `moved` (the walk's
   and the tour's file names, and where the changes are now, `saved`),
   `downloaded` (the walk's zip was downloaded, the tour not yet rewritten;
-  `confirm` is the second click's step), `refused` (a reason in words) or
+  `confirm` is the second click's step), `walk-saved` (the walk is in the
+  chosen file, and the tour, which has no file to write into, is
+  downloaded on the second click - the M4b fix re-review #2), `refused`
+  (a reason in words) or
   `cancelled` (the walk's file was not saved).
 - `wireDoneDialog({ dom, moveWalk, onClose })` - `open(facts)`,
   `close(force?)`, `isOpen()`. The host picker re-renders the update steps; the move button
@@ -79,6 +83,7 @@ done.open({
 - `done-dialog.test.ts` - the words per case and host (the unknown walk
   among them), the hidden tip and its switch, and the move's in-progress,
   moved (with the first line following), downloaded-then-confirmed,
+  walk-saved-then-downloaded,
   refused, cancelled and thrown states; the dialog held open while a move
   runs and closed by force.
 - `playwright-tests/editor.spec.js` - Done saves first and opens the

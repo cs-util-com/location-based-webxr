@@ -98,11 +98,13 @@ export function doneWords(facts: DoneFacts): DoneWords {
 }
 
 /** The move's button: idle, while it runs, and waiting for the second
- *  click that takes a downloaded walk out of the tour. */
+ *  click - which takes a downloaded walk out of the tour (`confirm`), or
+ *  downloads the tour without a walk already saved (`download`). */
 export const MOVE_LABELS = {
   idle: "Move the walk out",
   moving: "Moving the walk out…",
   confirm: "Take the walk out of the tour",
+  download: "Download the tour without the walk",
 } as const;
 
 /** What the page's move came to: done (with where the changes are now),
@@ -110,7 +112,10 @@ export const MOVE_LABELS = {
  *  (a dismissed save dialog), or - where the browser has no save dialog -
  *  the walk downloaded and the tour unchanged until `confirm` (a second
  *  click) takes it out: a download that started is not one that landed
- *  (the M4b milestone review #2). */
+ *  (the M4b milestone review #2); or the walk saved into the chosen file
+ *  and the tour, which has no file to write into, downloaded only on a
+ *  second click - a download needs a fresh click (the M4b fix re-review
+ *  #2). */
 export type WalkMoveOutcome =
   | {
       readonly kind: "moved";
@@ -121,6 +126,11 @@ export type WalkMoveOutcome =
     }
   | {
       readonly kind: "downloaded";
+      readonly walkName: string;
+      readonly confirm: () => Promise<WalkMoveOutcome>;
+    }
+  | {
+      readonly kind: "walk-saved";
       readonly walkName: string;
       readonly confirm: () => Promise<WalkMoveOutcome>;
     }
@@ -224,6 +234,11 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
         pending = outcome.confirm;
         dom.moveStatus.textContent = `The walk was downloaded as ${outcome.walkName}. Check that it is in your downloads, then take it out of the tour - until then the tour file keeps it.`;
         button(MOVE_LABELS.confirm);
+        return;
+      case "walk-saved":
+        pending = outcome.confirm;
+        dom.moveStatus.textContent = `The walk is in ${outcome.walkName} - keep that file. Now download the tour without it - until then the tour still carries it.`;
+        button(MOVE_LABELS.download);
         return;
       case "refused":
         dom.moveStatus.textContent = outcome.reason;

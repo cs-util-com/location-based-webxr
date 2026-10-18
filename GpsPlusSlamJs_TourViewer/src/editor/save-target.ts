@@ -202,6 +202,13 @@ export interface SaveTarget {
    * Resolves once the write landed.
    */
   write(blob: Blob): Promise<void>;
+  /**
+   * Whether `other` is this very file (`isSameEntry`) - asked before the
+   * walk's zip is written into a file the save dialog gave (the M4b fix
+   * re-review #1: written over the tour, it left the tour nowhere). Where
+   * the browser cannot tell, the same name counts as the same file.
+   */
+  isSame(other: FileSystemHandle): Promise<boolean>;
 }
 
 interface Baseline {
@@ -262,6 +269,16 @@ export async function createSaveTarget(
   return {
     name: handle.name,
     check,
+    async isSame(other) {
+      try {
+        if (typeof handle.isSameEntry === "function") {
+          return await handle.isSameEntry(other);
+        }
+      } catch {
+        // Unknown: decided by the name below.
+      }
+      return other.name === handle.name;
+    },
     async write(blob) {
       // The rebuild stores entries uncompressed, so a deflated tour grows.
       if (blob.size > maxBytes) throw new InPlaceRefusal("too-large");

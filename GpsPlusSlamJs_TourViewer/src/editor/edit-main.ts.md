@@ -248,8 +248,16 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   any await: Chromium opens its save dialog only within a few seconds of a
   click, and the build takes longer - review #2). Then it checks the
   in-place file is unchanged, builds the move (`moveWalkOut`), and:
+  - the opened tour file itself chosen for the walk: refused before
+    anything is written (`SaveTarget.isSame`; the M4b fix re-review #1 -
+    the walk's zip over the tour left the tour nowhere);
   - with a chosen file: writes the walk's zip into it
-    (`writeFileOrAbort`), then the tour;
+    (`writeFileOrAbort`), then the tour - in place; a tour with no file
+    to write into (a sample, a link, a file it may not write) returns
+    `walk-saved`, and its download waits for a second click (re-review
+    #2: after the walk's write the click's window has passed);
+  - a refusal after the dialog gave a file says nothing was written into
+    it and to delete it if the dialog created it empty (re-review #5);
   - dismissed: nothing moved;
   - without a save dialog (or one the browser refused): downloads the
     walk and returns `downloaded` - the tour is rewritten only on a
@@ -261,6 +269,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     landed - so a failed write of either leaves the tour file, and the
     session's next save, carrying the walk. A failed tour write offers no
     "Download instead" (review #6): the refusal is said in the dialog.
+    `deliver` counts a write that landed as arrived, whatever follows it
+    (the photos' copy; re-review #4).
     The outcome carries where the changes are now (`doneSaved()`), so the
     dialog's first line and steps follow (review #10).
 - **Undo and redo (W2 of the tour editor plan 2026-10-17-1816).** Ctrl+Z
@@ -301,6 +311,8 @@ The modules it wires have their own unit tests; the page is pinned by
 the undo keys, a delete's Undo after its autosave, and Done with the
 walk's move - the save dialog asked for on the click and the walk in the
 chosen file, the dialog held open and Done disabled while it runs, the
-download's second click, a dismissed walk save and a failed tour write
+download's second click, the tour file itself refused as the walk's, a
+tour with no file downloaded on a second click, a dismissed walk save and
+a failed tour write
 each followed by a save that still carries the walk - among them) and `editor-entry.spec.js` (the
 "Nothing to save" toast, the open from a link); `way-in.spec.js` checks its first paint.

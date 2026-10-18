@@ -205,6 +205,63 @@ describe("createSaveTarget", () => {
   });
 });
 
+/**
+ * Why (the M4b fix re-review #1): the walk's save dialog can be pointed at
+ * the opened tour file itself. The walk's zip then lands over the tour,
+ * the tour's own write is refused as "changed", and the tour's content
+ * exists nowhere. The page asks the target first, before anything is
+ * written; where the browser cannot tell, the same name counts as the same
+ * file - refusing a move costs a retry, writing over the tour costs it.
+ */
+describe("SaveTarget.isSame", () => {
+  function withSameEntry(
+    handle: WritableFileHandle,
+    same: (other: FileSystemHandle) => Promise<boolean>,
+  ): WritableFileHandle {
+    return Object.assign(handle, { isSameEntry: same });
+  }
+
+  it("is the browser's answer where it has one", async () => {
+    const { handle } = fakeHandle("version one", "castle.zip");
+    const other = { kind: "file", name: "castle.zip" } as FileSystemHandle;
+    const seen: FileSystemHandle[] = [];
+    const target = await createSaveTarget(
+      withSameEntry(handle, (h) => {
+        seen.push(h);
+        return Promise.resolve(false);
+      }),
+      await handle.getFile(),
+    );
+    // Same name, another folder: not the tour.
+    expect(await target.isSame(other)).toBe(false);
+    expect(seen).toEqual([other]);
+    const same = await createSaveTarget(
+      withSameEntry(fakeHandle("v", "castle.zip").handle, () =>
+        Promise.resolve(true),
+      ),
+      new File(["v"], "castle.zip"),
+    );
+    expect(await same.isSame(other)).toBe(true);
+  });
+
+  it("counts the same name as the same file where the browser cannot tell", async () => {
+    const { handle } = fakeHandle("version one", "castle.zip");
+    const target = await createSaveTarget(handle, await handle.getFile());
+    const named = (name: string) =>
+      ({ kind: "file", name }) as FileSystemHandle;
+    expect(await target.isSame(named("castle.zip"))).toBe(true);
+    expect(await target.isSame(named("castle-walk.zip"))).toBe(false);
+    const throwing = await createSaveTarget(
+      withSameEntry(fakeHandle("v", "castle.zip").handle, () =>
+        Promise.reject(new DOMException("no", "SecurityError")),
+      ),
+      new File(["v"], "castle.zip"),
+    );
+    expect(await throwing.isSame(named("castle.zip"))).toBe(true);
+    expect(await throwing.isSame(named("castle-walk.zip"))).toBe(false);
+  });
+});
+
 describe("holdEditorLock", () => {
   /** A Web Locks stand-in: exclusive, `ifAvailable`, released on demand. */
   function fakeLocks() {

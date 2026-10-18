@@ -1463,20 +1463,6 @@ async function deliver(
   ).catch(() => fileKey);
   try {
     await into.write(save.blob);
-    if (editor === mine && writtenKey !== null) {
-      // A no-op once another tour's draft began to open (review #1).
-      writes?.landed(save.written, writtenKey);
-      fileKey = writtenKey;
-    }
-    // The photos read from this page's copy of what it wrote, never from
-    // the file on disk: once something else rewrites that file, a File
-    // read from it no longer reads. The copy is the one the next rebuild
-    // starts from anyway (the download path holds the same).
-    await readPhotosFrom(
-      mine,
-      new File([save.blob], save.filename, { type: "application/zip" }),
-    );
-    return { arrived: true, inPlace: true };
   } catch (err) {
     const refusal =
       err instanceof InPlaceRefusal
@@ -1485,6 +1471,22 @@ async function deliver(
     if (offerDownload) refuseInPlace(mine, into.name, refusal, true);
     return { arrived: false, inPlace: true, refusal };
   }
+  // The write landed: what follows can no longer make it "not written"
+  // (the M4b fix re-review #4).
+  if (editor === mine && writtenKey !== null) {
+    // A no-op once another tour's draft began to open (review #1).
+    writes?.landed(save.written, writtenKey);
+    fileKey = writtenKey;
+  }
+  // The photos read from this page's copy of what it wrote, never from
+  // the file on disk: once something else rewrites that file, a File
+  // read from it no longer reads. The copy is the one the next rebuild
+  // starts from anyway (the download path holds the same).
+  await readPhotosFrom(
+    mine,
+    new File([save.blob], save.filename, { type: "application/zip" }),
+  ).catch(() => undefined);
+  return { arrived: true, inPlace: true };
 }
 
 /** A save whose tour was closed meanwhile ends quietly; the open tour's
@@ -1956,12 +1958,27 @@ async function buildMove(
   if (editor !== mine || picked.kind === "cancelled") {
     return { kind: "cancelled" };
   }
-  /** Said after the dialog gave a file and nothing was written into it. */
+  const into = target;
+  // The tour file itself chosen for the walk: the walk's zip would land
+  // over the tour, whose own write is then refused - leaving the tour's
+  // content nowhere (the M4b fix re-review #1). Refused before any write.
+  if (
+    picked.kind === "picked" &&
+    into !== null &&
+    (await into.isSame(picked.handle))
+  ) {
+    return {
+      kind: "refused",
+      reason: `${into.name} is the tour itself - save the walk under another name. Nothing was written, so the tour keeps its walk.`,
+    };
+  }
+  if (editor !== mine) return { kind: "cancelled" };
+  /** Said after the dialog gave a file and nothing was written into it:
+   *  the browser may have created it empty (the re-review #5). */
   const unused =
     picked.kind === "picked"
-      ? ` Nothing was written into ${picked.handle.name}.`
+      ? ` Nothing was written into ${picked.handle.name}; if the save dialog created it as a new, empty file, delete it.`
       : "";
-  const into = target;
   if (into !== null) {
     const state = await into.check().catch(() => "same" as const);
     if (editor !== mine) return { kind: "cancelled" };
@@ -1987,7 +2004,19 @@ async function buildMove(
       };
     }
     if (editor !== mine) return { kind: "cancelled" };
-    return writeMovedTour(mine, move, into, picked.handle.name);
+    const walkName = picked.handle.name;
+    // No file to write the tour into (a sample, a link, a file input): its
+    // download waits for a fresh click - the walk's write has used up the
+    // click's window, and a download after it falls back unseen (the M4b
+    // fix re-review #2).
+    if (into === null) {
+      return {
+        kind: "walk-saved",
+        walkName,
+        confirm: secondClick(mine, move, into, walkName),
+      };
+    }
+    return writeMovedTour(mine, move, into, walkName);
   }
   if (!(await download(move.walk))) return { kind: "cancelled" };
   if (editor !== mine) return { kind: "cancelled" };
@@ -1995,15 +2024,22 @@ async function buildMove(
   return {
     kind: "downloaded",
     walkName,
-    // The second click: a fresh one, which a download of the tour needs
-    // too.
-    confirm: () => {
-      if (editor !== mine) return Promise.resolve({ kind: "cancelled" });
-      if (saving) return Promise.resolve(SAVE_RUNS);
-      return holdForMove(mine, () =>
-        writeMovedTour(mine, move, into, walkName),
-      );
-    },
+    confirm: secondClick(mine, move, into, walkName),
+  };
+}
+
+/** The move's second click: a fresh one, which a download of the tour
+ *  needs too. */
+function secondClick(
+  mine: EditorSession,
+  move: WalkMove,
+  into: SaveTarget | null,
+  walkName: string,
+): () => Promise<WalkMoveOutcome> {
+  return () => {
+    if (editor !== mine) return Promise.resolve({ kind: "cancelled" });
+    if (saving) return Promise.resolve(SAVE_RUNS);
+    return holdForMove(mine, () => writeMovedTour(mine, move, into, walkName));
   };
 }
 

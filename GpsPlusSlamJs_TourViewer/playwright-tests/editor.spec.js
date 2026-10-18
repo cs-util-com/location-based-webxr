@@ -2957,3 +2957,69 @@ test("Done stays shut and the dialog stays open while the walk is moved out", as
   await expect(page.locator("#done-modal")).toBeVisible();
   await expect(page.locator("#done-walk")).toBeHidden();
 });
+
+test("the tour file itself is refused as the walk's file, before anything is written", async ({
+  page,
+}) => {
+  // Why (the M4b fix re-review #1): pointed at the opened tour, the save
+  // dialog let the walk's zip land over the tour; the tour's own write was
+  // then refused as "changed", and the tour's content existed nowhere.
+  await autosaveOutOfTheWay(page);
+  await doneWithWrappedTour(page);
+  const before = await readOpfsTour(page, "wrapped.zip");
+  await clickBoundSavePicker(page, "wrapped.zip");
+  await page.locator("#done-move").click();
+  await expect(page.locator("#done-move-status")).toContainText(
+    "wrapped.zip is the tour itself",
+  );
+  await expect(page.locator("#done-move")).toHaveText("Move the walk out");
+  expect(await readOpfsTour(page, "wrapped.zip")).toEqual(before);
+  expect(Object.keys(before)).toContain("mytour/actions/000001.json");
+});
+
+test("a tour with no file to write into is downloaded without the walk on a second click, once the walk is in its file", async ({
+  page,
+}) => {
+  // Why (the M4b fix re-review #2): such a tour (a sample, a link, a file
+  // it may not write) is downloaded; done right after the walk's write,
+  // the click's window had passed, the save dialog was refused and the
+  // download fell back unseen - while the dialog said the tour no longer
+  // carried the walk. Its download now waits for a fresh click.
+  await autosaveOutOfTheWay(page);
+  await page.goto("/edit.html");
+  await offerOpfsFile(page, await wrappedTour({ pin: true }), "wrapped.zip", {
+    permission: "denied",
+  });
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
+  // Nothing edited: Done opens without a save.
+  await page.locator("#done-btn").click();
+  await expect(page.locator("#done-modal")).toBeVisible();
+  await clickBoundSavePicker(page, "wrapped-walk.zip");
+  const move = page.locator("#done-move");
+  await move.click();
+  await expect(page.locator("#done-move-status")).toContainText(
+    "The walk is in wrapped-walk.zip - keep that file.",
+  );
+  await expect(move).toHaveText("Download the tour without the walk");
+  expect(Object.keys(await readOpfsTour(page, "wrapped-walk.zip"))).toContain(
+    "mytour/actions/000001.json",
+  );
+  // The second click downloads the tour: the stand-in dialog goes, so the
+  // download is the browser's own.
+  await page.evaluate(() => {
+    // @ts-expect-error - the e2e's own save dialog.
+    delete window.showSaveFilePicker;
+  });
+  const download = page.waitForEvent("download");
+  await move.click();
+  const tour = readFileSync(await (await download).path());
+  await expect(page.locator("#done-move-status")).toContainText(
+    "no longer carries it",
+  );
+  const reader = new ZipReader(new Uint8ArrayReader(new Uint8Array(tour)));
+  const names = (await reader.getEntries()).map((e) => e.filename);
+  await reader.close();
+  expect(names).not.toContain("mytour/actions/000001.json");
+  expect(names).toContain("mytour/images/frame-000002.png");
+});

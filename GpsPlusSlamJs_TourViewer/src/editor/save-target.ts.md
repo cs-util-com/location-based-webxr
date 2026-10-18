@@ -23,6 +23,11 @@ build plan, re-cut" and its cold review
   - `picked` - `{ file, handle, writable }`; `writable` is false for a
     refused, dismissed or failing permission request, or a handle without
     one: the tour opens all the same and saves as a download.
+- `SaveTarget.isSame(other)` - whether `other` is this very file
+  (`isSameEntry`); where the browser cannot tell (no `isSameEntry`, or it
+  throws), the same name counts as the same file: refusing a move costs a
+  retry, writing the walk over the tour costs the tour (the M4b fix
+  re-review #1).
 - `pickSaveFile(win, suggestedName): Promise<SaveFilePick>` - the
   browser's save dialog (`showSaveFilePicker`) for a new `.zip`, opened
   BEFORE the call returns: the caller calls it in the click, before any
@@ -101,5 +106,5 @@ refused and not written, a touched file accepted, a gone file, a failed
 write keeping the baseline, and the lock (granted, refused, released,
 without Web Locks); the save dialog opened before `pickSaveFile` returns,
 cancelled only by a dismissal, unavailable without one or on any other
-refusal. The page's e2e (`playwright-tests/editor.spec.js`)
+refusal; `isSame` by the browser's answer, else by the name. The page's e2e (`playwright-tests/editor.spec.js`)
 writes a real origin-private file through it.
