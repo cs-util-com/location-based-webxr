@@ -58,8 +58,11 @@ activateM)` (each tick, each offered station with a distance: the
   fed by GPS and codes alike), else - only while there is no alignment at
   all (`VisitorPosition.aligned`) - the latest device fix (`fixNue`) if it
   is at most `FIX_MAX_AGE_MS` (5 s) old by its own timestamp against
-  `now()` - and a station is found inside its authored found radius,
-  whatever the accuracy. With neither position nothing is reached. An
+  `now()` - and a station is found inside its authored found radius:
+  whatever the accuracy when aligned (the accuracy is the raw fixes' and
+  says nothing about an alignment, M5c review #1), and on the raw fix only
+  while its own accuracy is within the ceiling (`tooWeakToGuide`, PR #640
+  review). The accuracy never widens the radius. With neither position nothing is reached. An
   aligned session whose tracking dropped (no AR pose) has no position
   until it is back, and the line says "waiting for your position": its
   raw fix carries no accuracy or age check and used to latch "found" (M5a
@@ -112,8 +115,9 @@ activateM)` (each tick, each offered station with a distance: the
   format, and the button now covers it.
 - **The line:** "Next: <title>, N m", "N stations to find - nearest:
   <title>, N m", "... - waiting for your position…", "... - GPS too weak to
-  guide you (±N m); step into the open." (above the accuracy ceiling,
-  `tooWeakToGuide`; the run then judges no arrival either, PR #640 review),
+  guide you (±N m); step into the open." (only when the raw fix is the
+  position and its accuracy is above the ceiling, `tooWeakToGuide`; the run
+  then judges no arrival either, PR #640 review, M5c review #1),
   "Station found - its story is
   playing.", "Tour complete - every station visited." or "- N skipped.";
   under branch order "Tour complete - you reached the end of your path."

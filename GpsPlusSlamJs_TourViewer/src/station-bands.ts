@@ -62,8 +62,8 @@ export const ACCURACY_CEILING_M = 25;
  * above the ceiling. The station line says so and the run judges no
  * arrival on it - one rule, so the two agree (PR #640 review). D16 forbids
  * WIDENING the found radius by the accuracy, not refusing a fix the guide
- * itself calls unusable. Unknown (null, a position by a code alone) is not
- * too weak.
+ * itself calls unusable. Unknown (null) is not too weak; the guide passes
+ * null for an alignment's position (M5c review #1).
  */
 export function tooWeakToGuide(accuracyM: number | null): boolean {
   return accuracyM !== null && accuracyM > ACCURACY_CEILING_M;

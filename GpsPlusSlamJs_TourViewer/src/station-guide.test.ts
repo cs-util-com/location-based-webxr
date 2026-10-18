@@ -278,10 +278,15 @@ describe("wireStationGuide", () => {
     expect(h.dom.line.textContent).toBe(
       "Next: GATE - waiting for your position…",
     );
-    h.at(0, 0, 60);
+    // The raw fix is the position: its own accuracy speaks for it.
+    h.fixOnly(0, 0, 60);
     expect(h.dom.line.textContent).toMatch(
       /GPS too weak to guide you \(±60 m\)/,
     );
+    // Aligned (M5c review #1): the accuracy is the raw fixes' and says
+    // nothing about the alignment's position, which guides as usual.
+    h.at(0, 0, 60);
+    expect(h.dom.line.textContent).toBe("Next: GATE, 50 m");
   });
 
   it("skip: on demand in two taps, suggested in one after its clock, and the order moves on", () => {
@@ -637,7 +642,7 @@ describe("arrival by the station radius alone (D16)", () => {
     expect(h.found).toEqual(["well"]);
   });
 
-  it("poor GPS: a weak fix never widens the radius, and one too weak to guide by finds nothing until the GPS recovers", () => {
+  it("poor GPS: a weak fix never widens the radius, and a RAW fix too weak to guide by finds nothing until the GPS recovers", () => {
     const weak = harness({
       stations: [station("well", 30, 0)],
       order: "fixed",
@@ -645,14 +650,28 @@ describe("arrival by the station radius alone (D16)", () => {
     // 15 m accuracy, 10 m away: the old rule found the station here.
     weak.at(20, 0, 15);
     expect(weak.found).toEqual([]);
-    // 60 m accuracy, 2 m away: the line says the GPS is too weak, and the
-    // run agrees - no arrival (PR #640 review; this used to latch).
-    weak.at(28, 0, 60);
+    // No alignment, the raw fix ±60 m, 2 m away: the line says the GPS is
+    // too weak, and the run agrees - no arrival (PR #640 review).
+    weak.fixOnly(28, 0, 60);
     expect(weak.dom.line.textContent).toMatch(/GPS too weak to guide you/);
     expect(weak.found).toEqual([]);
     // The GPS recovers at the same spot: found.
-    weak.at(28, 0, 5);
+    weak.fixOnly(28, 0, 5);
     expect(weak.found).toEqual(["well"]);
+  });
+
+  // Why (M5c review #1): `accuracyM` is the raw fixes' median and says
+  // nothing about an alignment. An indoor or courtyard tour placed by one
+  // code with a ±40-60 m Wi-Fi fix was never found and was told to step
+  // into the open, though its position was the code's.
+  it("an aligned visitor is found inside the radius however weak the raw fix", () => {
+    const h = harness({
+      stations: [station("well", 30, 0)],
+      order: "fixed",
+    });
+    h.at(28, 0, 60);
+    expect(h.found).toEqual(["well"]);
+    expect(h.dom.line.textContent).not.toMatch(/too weak/);
   });
 
   it("none before any position: no fix, no alignment, nothing is reached, a code lock included", () => {

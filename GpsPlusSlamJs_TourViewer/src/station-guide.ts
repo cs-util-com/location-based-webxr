@@ -262,6 +262,15 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     return deps.now() - at <= fixMaxAgeMs ? visitor.fixNue : null;
   }
 
+  /** The accuracy that speaks for the position judged by: the raw fix's
+   *  own when the raw fix IS that position; null for the alignment's,
+   *  since `accuracyM` is the raw fixes' median and says nothing about an
+   *  alignment (M5c review #1: a code-placed indoor tour with a ±40 m
+   *  Wi-Fi fix was never found). Read by the line and the run alike. */
+  function judgedAccuracy(visitor: VisitorPosition): number | null {
+    return visitor.nue === null ? visitor.accuracyM : null;
+  }
+
   function horizontalDistances(
     nue: readonly [number, number, number] | null,
   ): Map<string, number> {
@@ -385,7 +394,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (visitor === undefined || last?.best == null) {
       return `${lead}${waiting} - waiting for your position…`;
     }
-    const accuracyM = visitor.accuracyM;
+    const accuracyM = judgedAccuracy(visitor);
     if (accuracyM !== null && tooWeakToGuide(accuracyM)) {
       return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(accuracyM)}); step into the open.`;
     }
@@ -537,7 +546,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         current.observe({
           distances,
           nowMs: deps.now(),
-          accuracyM: visitor.accuracyM,
+          accuracyM: judgedAccuracy(visitor),
         }),
       );
       render();

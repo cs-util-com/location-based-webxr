@@ -54,7 +54,9 @@ where the prefetch starts. Plans:
   the run judge no arrival, so the two never disagree (PR #640 review: a
   ±500 m cold-start fix inside a 10 m station latched "found" while the
   line said the GPS was too weak). D16 still holds below the ceiling: the
-  accuracy never widens the radius. Unknown (null) is not too weak.
+  accuracy never widens the radius. Unknown (null) is not too weak, and
+  the guide passes null for an alignment's position: the accuracy is the
+  raw fixes' and speaks only for the raw fix (M5c review #1).
 
 ## Evidence (`station-bands.sweep.test.ts`)
 

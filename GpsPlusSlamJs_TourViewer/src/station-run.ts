@@ -108,7 +108,9 @@ export interface StationRun {
    * `accuracyM` is that position's accuracy (m); above the ceiling the
    * guide's line says the GPS is too weak, and nothing is judged
    * (`tooWeakToGuide`, PR #640 review). Absent or null: unknown, judged
-   * by the radius alone.
+   * by the radius alone - the guide passes null for an alignment's
+   * position, which the raw fixes' accuracy says nothing about (M5c
+   * review #1).
    */
   observe(input: {
     readonly distances: ReadonlyMap<string, number>;
