@@ -32,6 +32,7 @@ import { createTourViewerStore } from "../tour-viewer-session.js";
 import {
   createEditorSession,
   NOT_IN_TOUR,
+  TOO_FAR_FROM_STATION,
   TOUR_NAME_MAX_CHARS,
   WALK_NOTE,
   walkFileName,
@@ -48,6 +49,7 @@ import type { DetailsForm } from "./details-dialog.js";
 import { createEditorDraft, type EditorTourSettings } from "./editor-draft.js";
 import type { EditorLock } from "./save-target.js";
 import {
+  inOwnStation,
   stationIdOf,
   tourOf,
   withWorldObjects,
@@ -551,6 +553,67 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     });
     expect(editor.changeCount()).toBe(0);
     expect(draft.calls).toEqual([]);
+    await session.close();
+  });
+
+  // Why (the M5a milestone review L1): a note stays in its station however
+  // far it is moved, and the format refuses an item more than 10 km from
+  // its station. A far drag on the 2D map was taken, and from then on
+  // every save failed with the parser's technical message. The move is
+  // refused in words instead, changing nothing, and saving still works.
+  it("refuses a move further from the note's station than a tour can carry, in words", async () => {
+    const { session, manifest } = await opened([pin("a"), pin("b")]);
+    const draft = loggedDraft();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft,
+    });
+    // About 22 km north of its station.
+    expect(editor.move("a", 48.72, 9.05)).toEqual({
+      kind: "refused",
+      reason: TOO_FAR_FROM_STATION,
+    });
+    expect(TOO_FAR_FROM_STATION).toContain("10 km");
+    expect(editor.changeCount()).toBe(0);
+    expect(editor.undo()).toEqual({ kind: "nothing" });
+    expect(draft.calls).toEqual([]);
+    // About 5.5 km is far, but a tour can carry it.
+    expect(editor.move("b", 48.57, 9.05)).toEqual({ kind: "moved" });
+    const saved = await carried((await editor.save({ keepScan: false })).blob);
+    expect(saved.objects.find((o) => o.id === "b")?.geo.lat).toBeCloseTo(
+      48.57,
+      6,
+    );
+    await session.close();
+  });
+
+  // Why (L1, the same bound): a draft written before the move was refused
+  // can still offer such a move; restoring it would make every save fail.
+  it("skips a draft's object that stands further from its station than a tour can carry", async () => {
+    const { session, manifest } = await opened([pin("a"), pin("b")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const far = {
+      ...inOwnStation(pin("a", "far")),
+      geo: { ...pin("a").geo, lat: 48.72 },
+    };
+    const near = inOwnStation(pin("b", "near"));
+    expect(editor.restore({ objects: [far, near], deleted: [] })).toEqual({
+      changed: 1,
+      deleted: 0,
+    });
+    const saved = await carried((await editor.save({ keepScan: false })).blob);
+    expect(
+      saved.objects.map((o) => [o.id, "label" in o ? o.label : ""]),
+    ).toEqual([
+      ["a", "pin a"],
+      ["b", "near"],
+    ]);
     await session.close();
   });
 });

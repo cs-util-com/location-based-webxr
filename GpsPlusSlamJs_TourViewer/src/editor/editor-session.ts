@@ -14,7 +14,11 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
-import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
+import {
+  localPoseOf,
+  tourObjects,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   checkTourContact,
   checkTourDescription,
@@ -184,6 +188,28 @@ interface WalkMove {
  *  it away while its card was open, M6 E2c review #11). */
 export const NOT_IN_TOUR = "That note is no longer in this tour.";
 
+/** Said for a move further from the note's station than a tour can carry
+ *  (`TOUR_ITEM_MAX_OFFSET_M` per axis): the format would refuse the tour,
+ *  so every later save failed with the parser's own words (the M5a
+ *  milestone review L1). A note stays in its station however far it is
+ *  moved (`tour-content.ts`). */
+export const TOO_FAR_FROM_STATION = `It cannot go that far: a note must stay within ${String(TOUR_ITEM_MAX_OFFSET_M / 1000)} km of its station.`;
+
+/** Whether `geo` fits the frame of the station `stationId` names, as the
+ *  format bounds it; true for a station the tour does not carry (a write
+ *  recreates that one where the object stands, `tour-content.ts`). */
+function fitsStation(
+  geo: TourObject["geo"],
+  stationId: string | undefined,
+  stations: TourManifest["stations"],
+): boolean {
+  const station = stations.find((s) => s.id === stationId);
+  if (station === undefined) return true;
+  return localPoseOf(geo, station.geo).position.every(
+    (v) => Math.abs(v) <= TOUR_ITEM_MAX_OFFSET_M,
+  );
+}
+
 /** An edit, move or delete of an id the tour no longer carries, said in
  *  words (`NOT_IN_TOUR`) by all three alike (PR #622 bot finding C). */
 interface EditorRefusal {
@@ -339,8 +365,9 @@ export interface EditorSession {
     text: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
   /** Move a note on the map (its height and facing kept); refused for an
-   *  id the tour no longer carries. Throws for a position the tour
-   *  cannot hold (`moveObjectTo`). */
+   *  id the tour no longer carries, and for a spot further from its
+   *  station than a tour can carry (`TOO_FAR_FROM_STATION`). Throws for a
+   *  position nobody can draw (`moveObjectTo`). */
   move(id: string, lat: number, lon: number): { kind: "moved" } | EditorRefusal;
   /** Delete (undone by `undo`, also after a save wrote it: a photo's
    *  picture is kept for that). Refused, deleting nothing, for an id the
@@ -792,6 +819,9 @@ export function createEditorSession(input: {
       const found = find(id);
       if (found === undefined) return notInTour;
       const after = moveObjectTo(found.object, lat, lon);
+      if (!fitsStation(after.geo, after.station, manifest.stations)) {
+        return { kind: "refused", reason: TOO_FAR_FROM_STATION };
+      }
       edited(`the move of ${objectName(found.object)}`, stateNow());
       placed = upsertPlaced(placed, entryOf(after));
       backUp(after);
@@ -829,7 +859,12 @@ export function createEditorSession(input: {
       let changed = 0;
       let gone = 0;
       for (const object of work.objects) {
-        if (live.has(object.id) || find(object.id) === undefined) continue;
+        const found = live.has(object.id) ? undefined : find(object.id);
+        if (found === undefined) continue;
+        // A draft written before far moves were refused may offer one; it
+        // would make every save fail (the M5a milestone review L1).
+        const home = object.station ?? found.object.station;
+        if (!fitsStation(object.geo, home, manifest.stations)) continue;
         placed = upsertPlaced(placed, { object });
         backUp(object);
         changed += 1;

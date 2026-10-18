@@ -63,8 +63,12 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
     id the tour no longer carries).
   - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept):
     `{ kind: "moved" }`, or `EditorRefusal` (module-private: `refused` with `NOT_IN_TOUR`)
-    for an id the tour no longer carries (PR #622 bot finding C); throws
-    for a position the tour cannot hold.
+    for an id the tour no longer carries (PR #622 bot finding C), and
+    `refused` with `TOO_FAR_FROM_STATION` for a spot further from the
+    note's station than a tour can carry (`TOUR_ITEM_MAX_OFFSET_M`, 10 km per
+    axis of the station's frame; the M5a milestone review L1: the format
+    refused the tour, so every later save failed with the parser's words);
+    throws for a position nobody can draw.
   - `remove(id)` - `deleteObject`; `{ kind: "deleted" }`, undone like any
     edit (`undo()`). A deleted photo's picture is kept for that undo - the
     one its entry carries, else read once through `loadPhoto` - since a
@@ -95,7 +99,9 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     put back by the session's own rules: an object the tour carries takes
     the draft's version (`upsertPlaced`), a deletion its tombstone
     (`deleteObject`); live work on an id wins; an id the tour no longer
-    carries is skipped; the settings are applied unless the setting was
+    carries is skipped, and so is an object further from its station than a
+    tour can carry (a draft written before such moves were refused, L1);
+    the settings are applied unless the setting was
     changed here since the open (counted among `changed`), and the
     record's details likewise unless they were (each changed field counted;
     a cover naming no image of the tour - a photo deleted since - is
@@ -136,7 +142,7 @@ scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
     while a move runs). Bringing a moved-out walk back into a tour is a
     later feature; nothing reads the walk's zip yet.
 - `walkFileName`, `WALK_NOTE`; the module-private `WalkMove` and `NO_WALK` are read through `moveWalkOut()`.
-- `EditorSession`, `EditorSave`, `EditorSessionDraft`, `TOUR_NAME_MAX_CHARS`; the module-private `CoverChoice` (an image id and its zip entry) and `UndoOutcome` (`undo()` / `redo()`'s result) are read through the session's methods.
+- `EditorSession`, `EditorSave`, `EditorSessionDraft`, `TOUR_NAME_MAX_CHARS`, `TOO_FAR_FROM_STATION`; the module-private `CoverChoice` (an image id and its zip entry) and `UndoOutcome` (`undo()` / `redo()`'s result) are read through the session's methods.
 
 ## Invariants & assumptions
 
@@ -180,6 +186,8 @@ the saved `tour.json`; an empty pin refused; a delete undone in place; an
 edit made during a save kept for the next; the saved file's name; the
 draft's calls (an edited note's delete undone writes its record again),
 a restore (live work winning, unknown ids skipped), an unknown id refused,
+a move too far from its station refused in words and a draft offering one
+skipped (L1),
 and a saved zip keyed as opening it would (`tourFileKeyOfFile`). The
 "needs no GPS" setting (QR-first M1b-2): written at minor 2 when on and
 left out when off (the raw `tour.json`), a toggle back being no change, a
@@ -208,4 +216,6 @@ undo after a save being a change the next save writes; a saved photo
 delete coming back with its picture, and refused in words (the step kept)
 when the picture could not be read; refused while a save runs; every step
 backed up in the draft; a cover coming back with its photo; a restore as
-one step.
+one step; an undo after a save that dropped the emptied station putting the
+note back into that station (the M5a milestone review M2,
+`tour-content.ts`).
