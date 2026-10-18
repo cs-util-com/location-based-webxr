@@ -32,7 +32,7 @@ coding agent to build that one. The verdicts are in the polish-round plan
 
 **What goes with them:** the `public/prototypes/` lines in the package's
 `.prettierignore` and `.stylelintignore`, and the `landing-5-map-path`
-entry of `tests/repo-config/slider-pages-load-the-guard.test.js` (`EXEMPT`).
+and three `editor3d-*` entries of `tests/repo-config/slider-pages-load-the-guard.test.js` (`EXEMPT`).
 The drafts are not held to the app's lint and format rules.
 
 **Owner rule applied after the build:** the three HUD drafts first blocked
