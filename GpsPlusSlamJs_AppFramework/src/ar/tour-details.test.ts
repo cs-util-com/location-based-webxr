@@ -126,6 +126,27 @@ describe('tourContactHref', () => {
     );
   });
 
+  it('leads a web link to the link as parsed, so a page never resolves it against itself', () => {
+    // Why (M4a review #4): "https:example.org" passes the check (the URL
+    // parser reads it as https://example.org/), but as an <a href> on the
+    // visitor's https page it resolved RELATIVE to that page and led to the
+    // viewer itself.
+    expect(tourContactHref('https:example.org')).toBe('https://example.org/');
+    expect(tourContactHref('HTTP://Example.org/a b')).toBe(
+      'http://example.org/a%20b'
+    );
+  });
+
+  it('says http(s) in its refusal, as the rule does', () => {
+    // Why (M4a review #7): http links are accepted, so a refusal saying
+    // "starting with https://" sent the creator after the wrong rule.
+    expect(checkTourContact('call me')).toEqual({
+      ok: false,
+      reason:
+        '"contact" must be an e-mail address or a web link starting with http:// or https://',
+    });
+  });
+
   it('leads nowhere for a value the check refuses', () => {
     expect(tourContactHref('javascript:alert(1)')).toBeNull();
     expect(tourContactHref('')).toBeNull();

@@ -22,8 +22,10 @@ export const TOUR_MANIFEST_ENTRY = 'tour.json';
 /** Folder inside the archive that holds placed content files. */
 export const TOUR_CONTENT_FOLDER = 'content';
 
-/** Same guard as the manifest's object id: one path-safe segment. */
-const CONTENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+/** A tour's ids - an object's, an asset's, a content file's stem - are
+ *  short and path-safe, one segment (they become file stems). The ONE
+ *  pattern: the manifest's ids and the details' cover use it too. */
+export const TOUR_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * `…/tour.json` → true. A WRAPPING folder is allowed (`mytour/tour.json`,
@@ -42,7 +44,7 @@ const MANIFEST_ENTRY = /(?:^|\/)tour\.json$/;
  *   somewhere unintended.
  */
 export function tourContentEntryName(id: string, extension: string): string {
-  if (typeof id !== 'string' || !CONTENT_ID.test(id)) {
+  if (typeof id !== 'string' || !TOUR_ID_PATTERN.test(id)) {
     throw new TypeError(
       `tourContentEntryName: unsafe content id ${JSON.stringify(id)}`
     );

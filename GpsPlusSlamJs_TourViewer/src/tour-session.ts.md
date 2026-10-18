@@ -74,9 +74,12 @@ not-checked`): a link's complete copies are checked through
   swap serves reads locally (the archive's own `origin` field is only the
   initial state).
 
-- `loadTourManifest(): Promise<TourManifest | null>` (guided-setup plan M3)
+- `loadTourManifest(options?): Promise<TourManifest | null>` (guided-setup plan M3)
   - null without `tour.json`; a broken manifest REJECTS (the framework's
     rule for this file: it is the whole placement, not one bad level).
+  - `options` is the framework's `TourManifestReadOptions`: `onDropped`
+    hears each tour detail the reader left out (the desktop editor says
+    them, M4a review #6).
 - `manifestWrap: string` and `loadContentEntry(image)` (PR #435 review) -
   the folder `tour.json` was found under, with its trailing slash (`""`
   for a flat zip, `"mytour/"` for one made by re-zipping a folder), and

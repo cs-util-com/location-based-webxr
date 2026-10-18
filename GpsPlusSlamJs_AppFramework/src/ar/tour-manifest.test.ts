@@ -247,6 +247,15 @@ describe('the version policy (tour kit plan K1, §8 D7)', () => {
     expect(JSON.parse(text)).toMatchObject({ version: 2, minor: 0 });
   });
 
+  it("reads the title trimmed, as the editor's name field writes it", () => {
+    // Why (M4a review #10): the editor trims the name it writes, so a title
+    // read untrimmed differed from its own field and counted as a change.
+    expect(
+      parseTourManifest({ version: 2, title: '  Castle walk \n', objects: [] })
+        .title
+    ).toBe('Castle walk');
+  });
+
   it('reads a full v2 tour: title, order, assets and stations', () => {
     const manifest = parseTourManifest({
       version: 2,
@@ -755,10 +764,12 @@ describe('tour details (minor 3, tour editor plan 2026-10-17-1816, W2, D15)', ()
     ).toThrow(/"description" is empty/);
   });
 
-  it('a minor-2 reader meets the details as unknown fields: the same tour without them', () => {
-    // What an older reader does with the new fields is what this reader
-    // does with any unknown field: ignore it. So the minor-3 document,
-    // details removed, is exactly the tour an older reader shows.
+  it('the details are fields of their own: without them, the tour reads as the same document with an unknown field in their place', () => {
+    // Not a minor-2 reader (none runs here, M4a review #11): what this
+    // checks is that the details touch nothing else of the tour, so the
+    // minor-3 document with its details removed reads like any document
+    // carrying a field this reader ignores - which is what an older
+    // reader's rule for unknown fields then shows.
     const withDetails = parseTourManifest({
       version: 2,
       minor: 3,

@@ -48,6 +48,7 @@ import {
 } from "./editor-draft.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
+import { readZipBlobEntry } from "../zip-blob.js";
 
 /** An edited or moved object, or one an undo brought back after a save
  *  wrote its delete - a photo then with its picture's bytes, which the
@@ -186,14 +187,20 @@ function charCount(text: string): number {
 }
 
 /** A form checked by the format's rules (`tour-details.ts`), in plain
- *  words: the details to keep, or why not. */
+ *  words: the details to keep, or why not. `was` is the details as they
+ *  stand: a name kept as it is passes whatever its length (a tour named
+ *  elsewhere, M4a review #10). A cover naming no image of the tour is
+ *  refused, or - for a draft's record, whose photo may have gone since -
+ *  dropped (`unknownCover`), as the format's reader drops it (review #1). */
 function checkForm(
   form: DetailsForm,
   covers: ReadonlySet<string>,
+  was: EditorTourDetails,
+  unknownCover: "refuse" | "drop" = "refuse",
 ): { ok: true; details: EditorTourDetails } | { ok: false; reason: string } {
   const details: { -readonly [K in keyof EditorTourDetails]: string } = {};
   const name = form.name.trim();
-  if (charCount(name) > TOUR_NAME_MAX_CHARS) {
+  if (charCount(name) > TOUR_NAME_MAX_CHARS && name !== was.title) {
     return {
       ok: false,
       reason: `The name is longer than ${String(TOUR_NAME_MAX_CHARS)} characters.`,
@@ -210,14 +217,13 @@ function checkForm(
     }
     details.description = checked.value;
   }
-  if (form.cover !== null) {
-    if (!covers.has(form.cover)) {
-      return {
-        ok: false,
-        reason: "That cover is not one of this tour's photos any more.",
-      };
-    }
+  if (form.cover !== null && covers.has(form.cover)) {
     details.cover = form.cover;
+  } else if (form.cover !== null && unknownCover === "refuse") {
+    return {
+      ok: false,
+      reason: "That cover is not one of this tour's photos any more.",
+    };
   }
   if (form.contact.trim() !== "") {
     const checked = checkTourContact(form.contact);
@@ -227,7 +233,7 @@ function checkForm(
         reason:
           charCount(form.contact.trim()) > TOUR_CONTACT_MAX_CHARS
             ? `The contact is longer than ${String(TOUR_CONTACT_MAX_CHARS)} characters.`
-            : "The contact must be an e-mail address or a web link starting with https://.",
+            : "The contact must be an e-mail address or a web link starting with http:// or https://.",
       };
     }
     details.contact = checked.value;
@@ -278,8 +284,10 @@ export interface EditorSession {
    *  tour no longer carries. */
   remove(id: string): { kind: "deleted" } | EditorRefusal;
   /** Take back the newest edit (W2): the tour goes back to how it stood
-   *  before it - an edit like any other, pending until saved and backed up
-   *  by the draft. Refused while a save runs. */
+   *  before it - an edit like any other, pending until saved and written
+   *  to the draft. A note brought back after a save wrote its delete is
+   *  not offered by a later open's draft, though (it places nothing new):
+   *  that undo lasts this tab (M4a review #2). Refused while a save runs. */
   undo(): UndoOutcome;
   /** Take an undone edit again; a new edit drops what could be redone. */
   redo(): UndoOutcome;
@@ -354,6 +362,9 @@ export function createEditorSession(input: {
   let revisionCount = 0;
   /** Deleted photos' pictures, for an undo after a save took them out. */
   const pictures = new Map<string, Blob>();
+  /** Pictures being read: a save waits for them, so an undo right after
+   *  the save that wrote a photo's delete finds its picture. */
+  const pictureReads = new Set<Promise<void>>();
   const loadPhoto =
     input.loadPhoto ?? ((image: string) => session.loadContentEntry(image));
   /** The saves started and not yet ended, and the end of the last. */
@@ -428,6 +439,8 @@ export function createEditorSession(input: {
         contact: offered.contact ?? "",
       },
       coverIds(),
+      effectiveDetails(),
+      "drop",
     );
     if (!checked.ok) return 0;
     const now = effectiveDetails();
@@ -477,14 +490,27 @@ export function createEditorSession(input: {
       return;
     }
     if (pictures.has(id)) return;
-    // Read now, while the copy that carries it is at hand; a read that
-    // fails leaves an undo after a save refused, in words.
-    loadPhoto(object.image).then(
-      (blob) => {
-        pictures.set(id, blob);
-      },
-      () => undefined,
-    );
+    // Read now, while the copy that carries it is at hand; failing that,
+    // from this session's own last bytes - the page's copy may not read
+    // right after an in-place write (M4a review #5). A read that fails
+    // both ways leaves an undo after a save refused, in words.
+    const newest = previous?.blob;
+    const read = loadPhoto(object.image)
+      .catch((err: unknown) =>
+        newest === undefined
+          ? Promise.reject(err instanceof Error ? err : new Error(String(err)))
+          : readZipBlobEntry(newest, `${session.manifestWrap}${object.image}`),
+      )
+      .then(
+        (blob) => {
+          pictures.set(id, blob);
+        },
+        () => undefined,
+      )
+      .finally(() => {
+        pictureReads.delete(read);
+      });
+    pictureReads.add(read);
   }
 
   /** Where an id stands against the saved file. */
@@ -664,7 +690,7 @@ export function createEditorSession(input: {
       };
     },
     setDetails(next) {
-      const checked = checkForm(next, coverIds());
+      const checked = checkForm(next, coverIds(), effectiveDetails());
       if (!checked.ok) return { kind: "refused", reason: checked.reason };
       const now = effectiveDetails();
       if (DETAIL_FIELDS.every((f) => checked.details[f] === now[f])) {
@@ -799,6 +825,9 @@ export function createEditorSession(input: {
       withNeedsNoGps(manifest, noGps),
       effectiveDetails(),
     );
+    // After the snapshots: a deleted photo's picture is read before this
+    // save replaces the bytes it may be read from.
+    await Promise.all(pictureReads);
     spots ??= captureSpotsForRebuild(session, manifestNow);
     const photos = await spots;
     const finished = await rebuildFinishedTour({

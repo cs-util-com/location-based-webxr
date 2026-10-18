@@ -14,6 +14,10 @@ import {
   createEmptyTourManifest,
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourDetailsDrop,
+  TourDetailsField,
+} from "gps-plus-slam-app-framework/ar/tour-details";
 import type { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import { describeOpenError } from "../open-errors.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
@@ -25,6 +29,9 @@ export type EditorOpen =
       readonly manifest: TourManifest;
       readonly levels: ReadonlyMap<string, QrLevel>;
       readonly fileName: string;
+      /** The details the reader left out (a hand-edited file): the next
+       *  save writes the tour without them (`droppedDetailsLine`). */
+      readonly dropped: readonly TourDetailsDrop[];
     }
   | { readonly kind: "refused"; readonly reason: string };
 
@@ -34,6 +41,31 @@ export const NOT_A_TOUR =
 
 /** Said for a file that is not a zip at all. */
 export const NOT_A_ZIP = "This file is not a .zip file.";
+
+/** Each detail as the page names it (`edit.html`'s "Tour details"). */
+const DETAIL_WORDS: Readonly<Record<TourDetailsField, string>> = {
+  description: "description",
+  cover: "cover",
+  contact: "contact",
+};
+
+/**
+ * Said once a tour opened with details its reader dropped (M4a review #6):
+ * which ones, and that the next save writes the tour without them - never
+ * a silent loss. Null when none was dropped.
+ */
+export function droppedDetailsLine(
+  dropped: readonly TourDetailsDrop[],
+): string | null {
+  const names = [...new Set(dropped.map((d) => DETAIL_WORDS[d.field]))];
+  if (names.length === 0) return null;
+  const listed =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(", ")} and ${String(names.at(-1))}`;
+  const it = names.length === 1 ? "it" : "them";
+  return `This tour's ${String(listed)} could not be read, so the editor left ${it} out: the next save writes the tour without ${it}. Set ${it} again in the tour's details.`;
+}
 
 export async function openTourForEditing(
   file: File,
@@ -63,8 +95,13 @@ export async function openTourForEditing(
     return { kind: "refused", reason: describeOpenError(err) };
   }
   try {
+    const dropped: TourDetailsDrop[] = [];
     const [manifest, levels] = await Promise.all([
-      session.loadTourManifest(),
+      session.loadTourManifest({
+        onDropped: (drop) => {
+          dropped.push(drop);
+        },
+      }),
       session.loadQrLevels(),
     ]);
     if (manifest === null && levels.size === 0) {
@@ -77,6 +114,7 @@ export async function openTourForEditing(
       manifest: manifest ?? createEmptyTourManifest(),
       levels,
       fileName: file.name,
+      dropped,
     };
   } catch (err) {
     // A broken tour.json or level file rejects after the open succeeded.

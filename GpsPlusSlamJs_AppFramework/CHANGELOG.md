@@ -20,6 +20,11 @@
   `checkTourCover`, `tourContactHref`, `tourImageIds`, `tourCoverEntry`
   and `parseTourDetails` are the
   same checks for an app's own fields and for a later format version.
+  `tourContactHref` gives a web link as the URL parser reads it
+  (`https:example.org` leads to `https://example.org/`, never relative to
+  the page). The manifest's `title` is read trimmed. `ar/tour-archive`
+  exports `TOUR_ID_PATTERN`, the one id rule of the manifest's ids, its
+  content files and the cover.
 
 ### Changed
 

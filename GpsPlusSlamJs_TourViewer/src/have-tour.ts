@@ -9,6 +9,7 @@
  * @see have-tour.ts.md
  */
 
+import { hasFilePicker } from "./file-picker.js";
 import { HOST_REFUSED_TEXT, describeOpenCause } from "./open-errors.js";
 import type { OpenOutcome } from "./scan-open.js";
 
@@ -38,15 +39,13 @@ export const FILE_OPENED_ASK =
 /**
  * The computer's line about the editor, true for this browser (PR #637
  * review): the editor saves a chosen file into itself where the file
- * picker exists - the test `editor/save-target.ts` makes for its own fine
- * print, repeated here because this page must not import the editor's
- * modules (`config/.dependency-cruiser.cjs`, viewer-not-to-editor) - and
- * gives a new copy elsewhere.
+ * picker exists (`file-picker.ts`, the check the editor's own fine print
+ * uses too) and gives a new copy elsewhere.
  */
 export function editorPitch(win: object): string {
   const does =
     "The editor shows your tour on a map: fix a text, move a pin or remove a photo,";
-  return typeof Reflect.get(win, "showOpenFilePicker") === "function"
+  return hasFilePicker(win)
     ? `${does} and save it back into the tour file.`
     : `${does} and save a new copy of the tour file to put in place of the old one.`;
 }

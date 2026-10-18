@@ -61,6 +61,7 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
+import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
 import {
   draftDeletionsNotYetHosted,
   draftObjectsNotYetHosted,
@@ -266,6 +267,33 @@ export function restoredLine(
   return `Nothing was restored: the notes and ${part} those changes were for are changed here already.`;
 }
 
+/**
+ * `settings` as measured against `manifest`: a cover naming no image of
+ * that file (a deleted photo) is no opinion about the cover - the file's
+ * own stands - since no save could write it (M4a review #1: the record
+ * kept the deleted photo's cover, and every later open offered a cover
+ * change that Restore could not make).
+ */
+function heldAgainst(
+  settings: EditorTourSettings,
+  manifest: TourManifest,
+): EditorTourSettings {
+  const details = settings.details;
+  const cover = details?.cover;
+  if (details === undefined || cover === undefined) return settings;
+  const images = tourImageIds({
+    objects: manifest.objects,
+    assets: manifest.assets,
+  });
+  if (images.has(cover)) return settings;
+  const { cover: _gone, ...rest } = details;
+  return {
+    ...settings,
+    details:
+      manifest.cover === undefined ? rest : { ...rest, cover: manifest.cover },
+  };
+}
+
 function settingsOf(manifest: TourManifest): EditorTourSettings {
   return {
     needsNoGps: manifest.needsNoGps === true,
@@ -453,18 +481,19 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
    *  whether or not its record is, so a build or a landed write can decide
    *  the keep again (M1b-2 milestone review #1). */
   let settingsWanted: EditorTourSettings | null = null;
-  /** The settings builds wrote since the open: a change back to the
+  /** The manifests builds wrote since the open (their settings, and the
+   *  images a recorded cover is measured against): a change back to the
    *  file's value still differs from a built copy that may be put in
    *  place, so its record is kept (review #1's walk, for the settings). */
-  const built: EditorTourSettings[] = [];
+  const built: TourManifest[] = [];
 
   /** Whether `settings` must be kept: the file on disk differs, or a
    *  build wrote other values (THE SETTINGS). */
   function keepSettings(settings: EditorTourSettings): boolean {
     return (
       opened === null ||
-      differs(settings, settingsOf(opened)) ||
-      built.some((b) => differs(settings, b))
+      differs(heldAgainst(settings, opened), settingsOf(opened)) ||
+      built.some((b) => differs(heldAgainst(settings, b), settingsOf(b)))
     );
   }
 
@@ -792,7 +821,11 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // file does not carry it; spent or unreadable, it goes.
       const settingsText = await store.getText(SETTINGS_KEY);
       if (mine !== generation) return none;
-      const storedSettings = parseSettings(settingsText);
+      const readSettings = parseSettings(settingsText);
+      const storedSettings =
+        readSettings === undefined
+          ? undefined
+          : heldAgainst(readSettings, manifest);
       const settings =
         storedSettings !== undefined &&
         differs(storedSettings, settingsOf(manifest))
@@ -971,7 +1004,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       if (s === null) return;
       // As a reader of the written file sees it (the E2p third review #5).
       const read = manifestAsRead(written);
-      built.push(settingsOf(read));
+      built.push(read);
       // A setting turned back while this save built is measured against
       // the build now (M1b-2 milestone review #1).
       if (redecideSettings()) void writeSettingsIn(s, settingsPending);

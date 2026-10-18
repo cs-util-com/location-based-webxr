@@ -51,7 +51,7 @@ import { assertSafeZipEntryPaths } from '../storage/zip-entry-path.js';
 import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
 import { parseGeoPose } from './qr/geo-pose.js';
 import type { QrGeoPose } from './qr/qr-gps-vote.js';
-import { tourContentEntryName } from './tour-archive.js';
+import { tourContentEntryName, TOUR_ID_PATTERN } from './tour-archive.js';
 import { tourMediaTypeOf, tourMediaTypeOfEntry } from './tour-media.js';
 import {
   parseTourDetails,
@@ -191,7 +191,7 @@ export class TourManifestValidationError extends Error {
 }
 
 /** Ids: short, path-safe, one segment (they become file stems). */
-const OBJECT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const OBJECT_ID = TOUR_ID_PATTERN;
 
 /** The content path's extension, after `content/<id>.`. */
 const IMAGE_ENTRY = /^content\/[A-Za-z0-9_-]+\.([a-z0-9]{1,5})$/;
@@ -440,7 +440,9 @@ function parseV2Parts(
     fail,
     lenient,
   });
-  const title = nonEmptyLabel(data.title);
+  // Trimmed, as the editor's name field writes it (M4a review #10): an
+  // untrimmed title differed from its own field and read as a change.
+  const title = nonEmptyLabel(data.title)?.trim();
   const needsNoGps = needsNoGpsOf(data.needsNoGps, lenient);
   const captureSpots = lenient
     ? captureSpotsOrNone(data.captureSpots)

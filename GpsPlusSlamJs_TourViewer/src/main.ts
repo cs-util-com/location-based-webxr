@@ -532,14 +532,21 @@ if (mode === "creator") {
 }
 
 /** The tour's own name in step 3 (tour editor plan 2026-10-17-1816, W2):
- *  it shows the open tour's title and tells the Finish what the creator
- *  did with it (`tour-name-field.ts`). */
+ *  it shows the open tour's title (or the name typed for it before a
+ *  reload) and tells the Finish what the creator did with it
+ *  (`tour-name-field.ts`). */
 const tourNameField = wireTourNameField(
   element<HTMLInputElement>("tour-name-input"),
+  // A typed name outlives a reload, as the poster text does (M4a review
+  // #12), keyed by the tour's file.
+  stepStore,
 );
 if (mode === "creator") {
   hooks.presentTourInfo = (manifest) => {
-    tourNameField.present(manifest?.title ?? null);
+    tourNameField.present(
+      manifest?.title ?? null,
+      manifest === null ? null : (ctx.session?.archive.url ?? null),
+    );
   };
 }
 

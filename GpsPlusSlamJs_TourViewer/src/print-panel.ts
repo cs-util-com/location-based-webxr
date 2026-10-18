@@ -563,10 +563,11 @@ export function wirePrintPanel(deps: {
       releaseInfoHeight();
       showLink(null);
       clearTiles();
-      // Its poster text went with it: the Finish writes the title as the
-      // tour's name, so a left-over title would rename the next tour,
-      // which may come from a file with no link to load its own by (M4
-      // review #2). The next tour's name fills it (`presentCodes`).
+      // Its poster text went with it: a left-over title would print the
+      // last tour's name on the next tour's posters, which may come from a
+      // file with no link to load its own text by (M4 review #2). The next
+      // tour's name fills it (`presentCodes`). The tour's own name is a
+      // field of its own since W2 (`tour-name-field.ts`).
       posterTyped = false;
       showPosterFields(defaultPosterFields(null));
     },

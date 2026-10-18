@@ -52,7 +52,8 @@ build plan, re-cut" and its cold review
 
 - `saveFinePrint(win)` (W2 of the tour editor plan 2026-10-17-1816) - the
   open dialog's fine print about Save, true for this browser: where
-  `showOpenFilePicker` exists, a chosen file is saved into itself (and by
+  `showOpenFilePicker` exists (`../file-picker.ts`, the check the setup
+  page's line about the editor uses too), a chosen file is saved into itself (and by
   itself after a change) while a tour from a link or the sample is saved as
   a new copy; elsewhere Save gives a new copy.
 

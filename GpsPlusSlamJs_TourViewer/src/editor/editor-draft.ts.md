@@ -75,6 +75,15 @@ editor's own namespace, one tab at a time. Design:
 
 ## Invariants & assumptions
 
+- **A recorded cover is measured against the file** (M4a review #1): a
+  settings record whose cover names no image of the file it is compared
+  with (a deleted photo) has no opinion about the cover - the file's own
+  stands (`heldAgainst`) - at the open's offer, and when a build or a
+  landed write decides the keep. Before, the record kept the deleted
+  photo's cover, so the file written without it never spent the record and
+  every later open offered "the tour's details (cover)", whose Restore then
+  restored nothing.
+
 - **Scope: since the OPENED FILE, not since the last save** (review #2).
   Only an in-place write that landed clears a record (and only one whose
   content it wrote: an edit made while the save ran stays), or a later
@@ -221,7 +230,8 @@ while a save builds, in place, on a key move and as a download; the offer
 naming the setting and its value, alone and beside notes; the details
 (W2: offered and named by field, put back to the file's leaving nothing,
 spent by a file that carries them, an old record offering only its
-setting, both named together, an unreadable details part); "Delete it"
+setting, both named together, an unreadable details part, a cover naming
+a photo the file lacks spent and never offered, M4a review #1); "Delete it"
 done only once the record went, failing when its removal does not land,
 and re-arming the offer so a key move still carries it); `restoredLine`'s
 words for notes, the setting, and both; the same tour

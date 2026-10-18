@@ -171,7 +171,8 @@ order: "fixed", objects: [], assets: [], stations: [] }`, the starter
   the error is the manifest's own) and positive integer `imageWidth`/
   `imageHeight` (the plane's aspect without decoding), and may carry a
   label. `createdAtIso` must parse as a date.
-- `title` is optional and non-blank; `order` is `fixed | any | branch`.
+- `title` is optional and non-blank, read trimmed (the editor's name
+  field writes it trimmed, M4a review #10); `order` is `fixed | any | branch`.
 - `cover`, when kept, names a placed photo or an image asset of this
   manifest.
 - Assets and stations are validated by `tour-stations.ts`, with the

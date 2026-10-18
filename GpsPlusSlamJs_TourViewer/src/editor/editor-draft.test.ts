@@ -1359,6 +1359,49 @@ describe("createEditorDraft, the tour's details (W2)", () => {
     expect(offer?.settingsWhat).toBe("this tour's settings");
   });
 
+  it("a record's cover naming a photo the file no longer has is no opinion: spent by that file, and never offered", async () => {
+    // Why (M4a review #1): the record kept the cover of a deleted photo,
+    // so the file written without it never spent the record, and every
+    // later open offered "the tour's details (cover)" - a change no save
+    // can make, whose Restore then said nothing was restored.
+    const b = browser();
+    const first = draftIn(b);
+    const withPhoto: TourManifest = {
+      ...named("Old", photo("f"), photo("g")),
+      description: "Up.",
+      cover: "f",
+    };
+    await first.open(K1, withPhoto);
+    void first.saveSettings({
+      needsNoGps: false,
+      details: { title: "Old", description: "Up.", cover: "f" },
+    });
+    const without: TourManifest = {
+      ...named("Old", photo("g")),
+      description: "Up.",
+    };
+    first.writes().built(without);
+    first.writes().landed(without, K1);
+    await first.idle();
+    first.close();
+    expect((await draftIn(b).open(K1, without)).offer).toBeNull();
+    // A record whose other details still differ is offered for them alone.
+    const second = draftIn(b);
+    await second.open(K1, without);
+    void second.saveSettings({
+      needsNoGps: false,
+      details: { title: "New", description: "Up.", cover: "f" },
+    });
+    await second.idle();
+    second.close();
+    const { offer } = await draftIn(b).open(K1, without);
+    expect(offer?.text).toContain("the tour's details (name)");
+    expect(offer?.settings?.details).toEqual({
+      title: "New",
+      description: "Up.",
+    });
+  });
+
   it("an unreadable details part makes the record unreadable: no offer", async () => {
     const b = browser();
     const first = draftIn(b);

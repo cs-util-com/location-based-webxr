@@ -49,6 +49,7 @@ import {
 import {
   parseTourManifest,
   type TourManifest,
+  type TourManifestReadOptions,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   checkGlbInert,
@@ -202,8 +203,12 @@ export interface TourSession {
    * content. NULL when the archive has none (every recorder zip); a
    * manifest that exists but is broken REJECTS, the framework's rule for
    * this file (unlike a single bad level, it is the whole placement).
+   * `options.onDropped` hears each detail the reader left out (the
+   * desktop editor says them, M4a review #6).
    */
-  loadTourManifest(): Promise<TourManifest | null>;
+  loadTourManifest(
+    options?: TourManifestReadOptions,
+  ): Promise<TourManifest | null>;
   /**
    * The WHOLE archive as one Blob - the rebuild's input (DEC-N6). The
    * warmed local copy when the cache has it (keyed by the NORMALISED url
@@ -772,7 +777,7 @@ async function buildSession(
       }
       return blob;
     },
-    loadTourManifest: () =>
+    loadTourManifest: (options) =>
       readTourManifestFromEntries(
         [...byName.keys()],
         async (name) => {
@@ -780,7 +785,7 @@ async function buildSession(
           if (entry === undefined) throw new Error(`missing entry: ${name}`);
           return readText(entry);
         },
-        parseTourManifest,
+        (data) => parseTourManifest(data, options),
       ),
     readWholeArchive: async () => {
       guard.assertIntact();

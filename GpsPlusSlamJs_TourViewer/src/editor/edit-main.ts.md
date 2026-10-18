@@ -37,6 +37,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - **Open another tour** shows the dialog with Cancel (and Esc) back to
   the open tour; the open tour stays until the new file has opened, so a
   refused file costs nothing (E1 review #4).
+- **Details the reader dropped** (a hand-edited description, contact or
+  cover; M4a review #6) are said in a toast that stays until closed
+  (`droppedDetailsLine`): which ones, and that the next save writes the
+  tour without them.
 - **A failure latched during the open** (`integrityFailure()` right after
   it) refuses the tour (E1 review #6).
 - **A late integrity failure** (`onIntegrityFailure`, the background
@@ -50,7 +54,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   on blur or Ctrl+Enter; an empty pin is refused in the phone's words),
   Move (the marker made draggable, Done applies the drop, Cancel or Esc
   puts it back; the card then says the height was kept), Delete with an
-  Undo toast for 8 s (the phone's hold). Codes, stations and the
+  Undo toast for 8 s (the phone's hold, which holds autosave too). Codes, stations and the
   walk's recorded photos stay read-only.
   The toast's Undo is the edit stack's (below): it runs while its delete
   is still the newest step (`editor.revision()` unchanged), also after a
@@ -139,8 +143,12 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     outcome reaches the autosave first, so a failed Save pauses it rather
     than starting a second write at once (milestone review #5). An autosave commits nothing;
     an edit begun while it checked the file (an await before the session's
-    snapshot) gives it back as `held`. A delete's Undo no longer holds it
-    (W2): the Undo works after the save that wrote the delete.
+    snapshot) gives it back as `held`. A delete's Undo toast holds it for
+    its 8 s again (M4a review #2): W2 had dropped the hold, but a note an
+    undo brings back after the save that wrote its delete is not offered by
+    a later open's draft, so that undo did not survive a closed tab; the
+    delete now reaches the file only once its Undo lapsed. Ctrl+Z still
+    undoes it after that, in the live tab.
   - **Quiet:** the status line says "Saving…" and then "Saved to <name>",
     with no toast - except, once per tour, the photos a save could not
     place (`FINISH_LABELS.photosNotPlaced`), which an explicit Save's toast
@@ -213,8 +221,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   not saved yet." and tells autosave (an edit like any other); no change
   says so too; a refusal stays in the dialog. Esc closes it; focus goes
   back to the name. The dialog sits above the toasts (a save's result toast
-  stays until closed and covered its buttons). Opening another tour or
-  losing this one closes it.
+  stays until closed and covered its buttons). While it shows, the rest of
+  the page is `inert` (`page-inert.ts`, M4a review #12): Tab stays in the
+  dialog. Opening another tour or losing this one closes it.
 - **Undo and redo (W2 of the tour editor plan 2026-10-17-1816).** Ctrl+Z
   undoes, Ctrl+Shift+Z and Ctrl+Y redo (Cmd on a Mac; by the key's letter,
   as Ctrl+S): one step of the session's edit stack (`editor.undo()` /

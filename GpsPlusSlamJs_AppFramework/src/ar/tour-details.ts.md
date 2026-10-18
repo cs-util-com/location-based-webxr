@@ -22,10 +22,15 @@ unchanged (plan review 2 #10).
   name or password (a link carrying a user name reads as one host and
   opens another). Kept as typed (trimmed).
 - `checkTourCover(value, imageIds): TourDetailCheck` - a path-safe id
-  (`[A-Za-z0-9_-]{1,64}`) that is one of `imageIds`.
+  (`tour-archive.ts`'s `TOUR_ID_PATTERN`, the manifest's own id rule)
+  that is one of `imageIds`. A refused contact's reason names the rule:
+  an e-mail address or a link starting with http:// or https://.
 - `tourContactHref(contact): string | null` - where a contact leads:
-  `mailto:<address>` (with `% ? # &` in the address percent-escaped, RFC 6068) for an e-mail address, the link itself otherwise, null for a value
-  the check refuses.
+  `mailto:<address>` (with `% ? # &` in the address percent-escaped, RFC 6068) for an e-mail address, the link as the URL parser reads it otherwise
+  (`new URL(text).href`: `https:example.org` passes the check, and as
+  typed an `<a href>` resolved it against the page itself, M4a review
+  #4), null for a value the check refuses. A page shows the same value as
+  the link's text.
 - `tourImageIds(tour): Set<string>` - the ids a cover may name: the
   placed photos' (`kind: 'photo'`) and the image assets' (`kind:
 'image'`). `tour` is structural (`TourImages`: `objects`, `assets`), so a

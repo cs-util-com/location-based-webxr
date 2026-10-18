@@ -1946,14 +1946,15 @@ test("saves by itself a few seconds after a change, quietly, and the next open f
   await expect(next.locator(".toast.draft-offer")).toHaveCount(0);
 });
 
-test("a delete is saved by itself, and its Undo still brings the photo back as a change of its own", async ({
+test("a delete is not written while its Undo is offered, and Ctrl+Z still brings the photo back after the save", async ({
   page,
 }) => {
-  // Why (tour editor plan 2026-10-17-1816, W2): autosave used to wait out
-  // the delete's 8 s Undo, because a save that wrote the delete ended it.
-  // The Undo is now the session's edit stack: the delete is saved at once,
-  // and the Undo brings the photo back - its picture too, which the saved
-  // file no longer carried - as a change the next save writes.
+  // Why (M4a review #2): without the hold, a delete reached the file 3 s
+  // later, and an undo after that save did not survive a closed tab (the
+  // draft places nothing new). So autosave waits out the toast's 8 s
+  // again; after it, the edit stack's Ctrl+Z still brings the photo back -
+  // its picture too, which the saved file no longer carries - as a change
+  // the next save writes.
   await page.clock.install();
   await page.goto("/edit.html");
   await offerOpfsFile(page, await editorTour(), "editor-fixture.zip");
@@ -1962,14 +1963,24 @@ test("a delete is saved by itself, and its Undo still brings the photo back as a
   await page.locator("#rail .row", { hasText: "Fountain" }).click();
   await page.locator("#card button", { hasText: "Delete" }).click();
   await expect(page.locator("#save-status")).toHaveText("1 change not saved");
-  await page.clock.runFor(3_500);
+  // Past the delay, inside the 8 s window: due, and held.
+  await page.clock.runFor(4_000);
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "held");
+  expect(
+    (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"],
+  ).toContain("photo-ok");
+  await expect(
+    page.locator(".toast button", { hasText: "Undo" }),
+  ).toBeVisible();
+  // The window closes: the delete is saved by itself.
+  await page.clock.runFor(5_000);
   await expect(page.locator("#save-status")).toHaveText(
     "Saved to editor-fixture.zip",
   );
   const without = await readOpfsTour(page, "editor-fixture.zip");
   expect(without["tour.json"]).not.toContain("photo-ok");
   expect(Object.keys(without)).not.toContain("content/photo-ok.png");
-  await page.locator(".toast button", { hasText: "Undo" }).click();
+  await page.keyboard.press("Control+z");
   await expect(page.locator(".toast").last()).toHaveText(
     'Undone: the delete of "Fountain".',
   );
@@ -2545,9 +2556,22 @@ test("a contact the format refuses stays in the dialog with the reason; Esc clos
   await page.locator("#details-apply").click();
   await expect(page.locator("#details-modal")).toBeVisible();
   await expect(page.locator("#details-error")).toHaveText(
-    "The contact must be an e-mail address or a web link starting with https://.",
+    "The contact must be an e-mail address or a web link starting with http:// or https://.",
   );
   await expect(contact).toHaveValue("call me at the gate");
+  // The focus stays in the dialog (M4a review #12): Tab never reaches the
+  // map, the rail or the top bar behind it.
+  for (let i = 0; i < 14; i += 1) {
+    await page.keyboard.press("Tab");
+    expect(
+      await page.evaluate(
+        () =>
+          document.activeElement?.closest("#topbar, #rail, #map, #card") !==
+            null && document.activeElement !== null,
+      ),
+    ).toBe(false);
+  }
+  await contact.focus();
   await page.keyboard.press("Escape");
   await expect(page.locator("#details-modal")).toBeHidden();
   await expect(page.locator("#tour-name")).toBeFocused();

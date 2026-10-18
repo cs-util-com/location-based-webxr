@@ -36,9 +36,10 @@ plain markup in `index.html` and has no behaviour here.
   exists, else "save a new copy of the tour file to put in place of the old
   one". Both fixed wordings were wrong somewhere (the line said "back into"
   everywhere; the review asked for "a new copy" everywhere). The test is
-  the one `editor/save-target.ts`'s `saveFinePrint` makes, repeated here:
-  the setup page may not import the editor's modules
-  (`viewer-not-to-editor`, which keeps Leaflet off the visitor's page).
+  `file-picker.ts`'s `hasFilePicker`, shared with `editor/save-target.ts`'s
+  `saveFinePrint` from outside `editor/`: the setup page may not import
+  the editor's modules (`viewer-not-to-editor`, which keeps Leaflet off the
+  visitor's page; M4a review #8 removed the second copy).
 - **"Continue setting it up" lands where the creator got to**: the link
   open goes through the page's open path, whose `presentTourForPrint`
   (the wizard's `presentTour`) opens the step

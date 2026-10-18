@@ -12,9 +12,11 @@ visitor knows who to ask.
 
 - `contactLink(contact): ContactLink | null` - `{ href, label }` for a
   contact a visitor may follow: `mailto:<address>` (reserved characters
-  escaped) for an e-mail address, the link itself for a web link (the
-  framework's `tourContactHref`); `label` is the address or link without
-  `mailto:`. Null for no contact or one the framework's check refuses.
+  escaped) for an e-mail address, the link as the URL parser reads it for
+  a web link (the framework's `tourContactHref`: `https:example.org`
+  leads to `https://example.org/`, M4a review #4); `label` is the address
+  without `mailto:`, or for a web link the same value as `href`, so the
+  visitor reads the address they open. Null for no contact or one the framework's check refuses.
 - `renderTourContact(dom, error, contact)` - shows the line (`dom.line`)
   with the link (`dom.link`) while `error` (the error box's text) says
   something and the contact is followable; hides it otherwise.
@@ -42,7 +44,8 @@ renderTourContact(
 
 ## Tests
 
-- `tour-contact.test.ts` - e-mail and web links, refused and absent
+- `tour-contact.test.ts` - e-mail and web links (a link shown as
+  parsed), refused and absent
   contacts, shown only while an error shows.
 - `playwright-tests/visitor-start.spec.js` - the details tour: the line
   appears under an error with a `mailto:` link and goes with the error.

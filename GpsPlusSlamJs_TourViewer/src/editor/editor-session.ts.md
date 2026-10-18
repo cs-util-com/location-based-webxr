@@ -22,7 +22,10 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
     the details moved.
   - `loadPhoto` (W2) - reads a placed photo's picture by its image name
     (default: the opened zip's `loadContentEntry`); the page passes the
-    copy last written, since a save replaces the file.
+    copy last written, since a save replaces the file. When it fails, the
+    picture is read from the session's own last saved bytes
+    (`zip-blob.ts`; right after an in-place write the page's copy may not
+    read yet, M4a review #5). A save waits for the pictures being read.
   - `model()` - the `EditorModel` of the tour with the edits applied.
   - `changeCount()` - edits and deletions not yet in a saved file, by
     content (a text edited back is no change), plus one while the "needs no
@@ -38,10 +41,12 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
     written). The phone's Finish keeps the flag the same way: the rebuild
     spreads the opened manifest (`finish-rebuild.ts`).
   - `details()` / `setDetails(form)` / `coverChoices()` (W2 of the tour
-    editor plan 2026-10-17-1816) - the tour's name, description, cover and
-    contact as a `DetailsForm` (`details-dialog.ts`), with the edits; their
+    x (`details-dialog.ts`), with the edits; their
     edit, all at once: checked by the format's rules (`tour-details.ts` in
-    the framework; the name trimmed, at most `TOUR_NAME_MAX_CHARS` = 80),
+    the framework; the name trimmed, at most `TOUR_NAME_MAX_CHARS` = 80 -
+    a name kept as it stands passes whatever its length, so a tour named
+    longer elsewhere can still have its other details edited, M4a review
+    #10),
     refused in plain words for what the format would drop (never its field
     names in quotes), `unchanged` for the same values, else `changed` and
     backed up through `draft.saveSettings` with the whole record. An
@@ -93,7 +98,9 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     carries is skipped; the settings are applied unless the setting was
     changed here since the open (counted among `changed`), and the
     record's details likewise unless they were (each changed field counted;
-    details the format would drop are left as they are); what was applied
+    a cover naming no image of the tour - a photo deleted since - is
+    dropped and the rest restored, M4a review #1; other details the format
+    would drop leave them as they are); what was applied
     is written to the draft again. Returns the counts.
   - `save({ keepScan })` - `rebuildFinishedTour` with `levels: []`, the
     photo spots decided once per open (`captureSpotsForRebuild`, its result
@@ -112,7 +119,11 @@ scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
   (the objects as they stand, the setting, the details), and going back
   to it is measured against the file as saved NOW - so an undo after the
   save that wrote its step is a change of its own, pending until the next
-  save writes it, and autosave never has to wait for an Undo.
+  save writes it. Written to the draft too - but a note an undo brings
+  back after a save wrote its delete is not offered by a later open (the
+  draft places nothing new), so such an undo lasts this tab; the page
+  therefore holds autosave while a delete's Undo toast is offered (M4a
+  review #2, correcting W2's "backed up by the draft").
 - Undo and redo are refused while a save runs: the save's end moves the
   saved file the step is measured against.
 
@@ -151,7 +162,11 @@ at minor 3, each a change until saved; an emptied field removing the
 detail and the same values no change; plain-words refusals changing
 nothing; the cover choices (photos only, never a pin); the cover going with
 its photo; the whole record backed up once per change; a draft's details
-restored unless changed here. Undo and redo (W2): every edit kind undone
+restored unless changed here; a draft naming a deleted cover restoring
+the rest; a long stored name not blocking other edits; the walk-through
+with the real draft (cover chosen, saved, its photo deleted, saved,
+reopened: no offer, M4a review #1); a deleted photo's picture read from
+the session's last bytes when the page's copy does not read (#5). Undo and redo (W2): every edit kind undone
 newest first and redone; a new edit dropping the redo; the revision; an
 undo after a save being a change the next save writes; a saved photo
 delete coming back with its picture, and refused in words (the step kept)

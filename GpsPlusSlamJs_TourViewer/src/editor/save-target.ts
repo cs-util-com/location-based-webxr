@@ -10,6 +10,7 @@ import {
   DEFAULT_ARCHIVE_LIMITS,
   writeFileOrAbort,
 } from "gps-plus-slam-app-framework/storage";
+import { hasFilePicker } from "../file-picker.js";
 
 /** The tail of the file a sync client's touch leaves alone: compared when
  *  only the modified time differs, so a touched file is not "changed". */
@@ -57,7 +58,7 @@ export type PickOutcome =
  */
 export function saveFinePrint(win: PickerWindow): string {
   const stays = "The file stays on this computer: nothing is uploaded.";
-  return typeof win.showOpenFilePicker === "function"
+  return hasFilePicker(win)
     ? `${stays} A file you choose is saved into that file, where the browser allows it, and by itself a few seconds after each change. A tour opened from a link, or the sample, is saved as a new copy to put in place of the old one.`
     : `${stays} Save gives you a new copy of the tour to put in place of the old one.`;
 }

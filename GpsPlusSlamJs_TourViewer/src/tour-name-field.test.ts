@@ -54,4 +54,66 @@ describe("wireTourNameField", () => {
     field.present(null);
     expect(el.value).toBe("");
   });
+
+  /** A localStorage slice in memory. */
+  function store() {
+    const items = new Map<string, string>();
+    return {
+      items,
+      getItem: (k: string) => items.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        items.set(k, v);
+      },
+      removeItem: (k: string) => {
+        items.delete(k);
+      },
+    };
+  }
+
+  it("a typed name outlives a reload of the page, for the same tour while its file still has the title it was typed over", () => {
+    // Why (M4a review #12): the poster text survived a reload, the name
+    // typed beside it did not - the next Finish then kept the old title.
+    const kept = store();
+    const first = input();
+    wireTourNameField(first, kept).present("The castle", "tour-a");
+    first.type("The old castle");
+    const again = input();
+    const field = wireTourNameField(again, kept);
+    field.present("The castle", "tour-a");
+    expect(again.value).toBe("The old castle");
+    expect(field.typed()).toBe("The old castle");
+    // Another tour has its own.
+    field.present("The bridge", "tour-b");
+    expect(again.value).toBe("The bridge");
+    expect(field.typed()).toBeNull();
+  });
+
+  it("a kept name is spent once the file carries another title (a Finish wrote it, or it was renamed elsewhere)", () => {
+    // Why: a name kept forever would overwrite a title changed since -
+    // in the desktop editor, say - at the next Finish.
+    const kept = store();
+    const first = input();
+    wireTourNameField(first, kept).present("The castle", "tour-a");
+    first.type("The old castle");
+    const again = input();
+    const field = wireTourNameField(again, kept);
+    field.present("The old castle", "tour-a");
+    expect(field.typed()).toBeNull();
+    expect(kept.items.size).toBe(0);
+  });
+
+  it("works without a store, and with one that throws", () => {
+    const el = input();
+    const field = wireTourNameField(el, {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    });
+    field.present("The castle", "tour-a");
+    el.type("Typed");
+    expect(field.typed()).toBe("Typed");
+  });
 });

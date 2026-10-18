@@ -18,6 +18,8 @@
  * @see tour-details.ts.md
  */
 
+import { TOUR_ID_PATTERN } from './tour-archive.js';
+
 /** The longest description kept, in characters (code points). */
 export const TOUR_DESCRIPTION_MAX_CHARS = 2000;
 
@@ -50,7 +52,7 @@ export type TourDetailCheck =
   | { readonly ok: false; readonly reason: string };
 
 /** Ids: the manifest's own rule (short, path-safe, one segment). */
-const IMAGE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const IMAGE_ID = TOUR_ID_PATTERN;
 
 /** One address: the part before the `@` without spaces or the characters
  *  RFC 5322 reserves (a quoted local part is not accepted); a dotted
@@ -124,7 +126,7 @@ export function checkTourContact(value: unknown): TourDetailCheck {
   return {
     ok: false,
     reason:
-      '"contact" must be an e-mail address or a web link starting with https://',
+      '"contact" must be an e-mail address or a web link starting with http:// or https://',
   };
 }
 
@@ -142,15 +144,18 @@ export function checkTourCover(
   return { ok: true, value };
 }
 
-/** Where a contact leads: `mailto:` for an e-mail address, the link
- *  itself otherwise; null for a value {@link checkTourContact} refuses. */
+/** Where a contact leads: `mailto:` for an e-mail address, the link as
+ *  the URL parser reads it otherwise (`https:example.org` is
+ *  `https://example.org/`: given as it was typed, a page resolved it
+ *  against itself, M4a review #4); null for a value
+ *  {@link checkTourContact} refuses. */
 export function tourContactHref(contact: string): string | null {
   const checked = checkTourContact(contact);
   if (!checked.ok) return null;
   const address = checked.value.replace(MAILTO, '');
   return isEmail(address)
     ? `mailto:${address.replace(MAILTO_RESERVED, encodeURIComponent)}`
-    : checked.value;
+    : new URL(checked.value).href;
 }
 
 /**

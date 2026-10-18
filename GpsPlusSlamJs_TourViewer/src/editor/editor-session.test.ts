@@ -32,8 +32,10 @@ import {
   TOUR_NAME_MAX_CHARS,
   type EditorSessionDraft,
 } from "./editor-session.js";
+import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import type { DetailsForm } from "./details-dialog.js";
-import type { EditorTourSettings } from "./editor-draft.js";
+import { createEditorDraft, type EditorTourSettings } from "./editor-draft.js";
+import type { EditorLock } from "./save-target.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -355,6 +357,64 @@ function loggedDraft(): EditorSessionDraft & { calls: string[] } {
     },
   };
 }
+
+/** One browser's draft directories, in memory, with the OPFS store's
+ *  contract (`editor-draft.test.ts` has the fuller one, with faults). */
+function memoryDraftStores(): {
+  open: (key: string) => Promise<DraftFileStore | undefined>;
+} {
+  const spaces = new Map<string, Map<string, Blob | string>>();
+  return {
+    open: (key) => {
+      const files = spaces.get(key) ?? new Map<string, Blob | string>();
+      spaces.set(key, files);
+      return Promise.resolve({
+        put: (k, data) => {
+          files.set(k, data as Blob | string);
+          return Promise.resolve(true);
+        },
+        remove: (k) => {
+          files.delete(k);
+          return Promise.resolve();
+        },
+        getText: async (k) => {
+          const v = files.get(k);
+          return v === undefined
+            ? undefined
+            : typeof v === "string"
+              ? v
+              : v.text();
+        },
+        getBlob: (k) => {
+          const v = files.get(k);
+          return Promise.resolve(
+            v === undefined
+              ? undefined
+              : typeof v === "string"
+                ? new Blob([v])
+                : v,
+          );
+        },
+        keys: () => Promise.resolve([...files.keys()]),
+        clear: () => {
+          files.clear();
+          return Promise.resolve();
+        },
+      });
+    },
+  };
+}
+
+/** Every lock granted: one tab. */
+function freeLocks(): Promise<EditorLock> {
+  return Promise.resolve({
+    granted: true,
+    release: () => undefined,
+    released: Promise.resolve(),
+  });
+}
+
+const K = "local-file:00000000000000000000000000000001";
 
 describe("createEditorSession, the draft (M6 E2c)", () => {
   // Why: the draft is only as good as the session's calls into it - an
@@ -837,6 +897,103 @@ describe("createEditorSession, the tour details (W2)", () => {
     await session.close();
   });
 
+  it("a draft's details naming a photo the tour no longer has restore without that cover, the rest kept", async () => {
+    // Why (M4a review #1): such a record was refused WHOLE - the
+    // description and the contact were lost, and the page said nothing
+    // was restored. A cover is cosmetic, as the format's reader treats it.
+    const { session, manifest } = await opened([pin("a"), photo("f")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(
+      editor.restore({
+        objects: [],
+        deleted: [],
+        settings: {
+          needsNoGps: false,
+          details: {
+            description: "Up and back.",
+            contact: "guide@example.org",
+            cover: "gone",
+          },
+        },
+      }),
+    ).toEqual({ changed: 2, deleted: 0 });
+    expect(editor.details()).toEqual(
+      form({ description: "Up and back.", contact: "guide@example.org" }),
+    );
+    await session.close();
+  });
+
+  it("a stored name longer than the field's limit does not block another detail's edit; a new long name is refused", async () => {
+    // Why (M4a review #10): a tour named elsewhere with more than 80
+    // characters could not have its description or contact changed at
+    // all - the unchanged name failed the form's check.
+    const long = "x".repeat(TOUR_NAME_MAX_CHARS + 10);
+    const { session, manifest } = await opened([pin("a")], { title: long });
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(
+      editor.setDetails({ ...editor.details(), description: "New words." }),
+    ).toEqual({ kind: "changed" });
+    expect(editor.changeCount()).toBe(1);
+    expect(
+      editor.setDetails({ ...editor.details(), name: `${long}y` }).kind,
+    ).toBe("refused");
+    await session.close();
+  });
+
+  it("the walk-through: cover chosen, saved, its photo deleted, saved by itself, reopened - nothing false is offered", async () => {
+    // Why (M4a review #1): the settings record kept the cover of the
+    // deleted photo, so every later open offered "Changed: the tour's
+    // details (cover)", and its Restore then said nothing was restored.
+    // The real draft over an in-memory store, the session's real saves.
+    const { session, manifest } = await opened([photo("f"), photo("g")]);
+    const store = memoryDraftStores();
+    const draft = createEditorDraft({
+      openStore: store.open,
+      holdLock: freeLocks,
+      noBackup: () => undefined,
+    });
+    await draft.open(K, manifest);
+    const writes = draft.writes();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: writes,
+    });
+    editor.setDetails(
+      form({
+        description: "Up and back.",
+        contact: "guide@example.org",
+        cover: "f",
+      }),
+    );
+    const first = await editor.save({ keepScan: false });
+    writes.built(first.written);
+    writes.landed(first.written, K);
+    expect(editor.remove("f").kind).toBe("deleted");
+    const second = await editor.save({ keepScan: false });
+    writes.built(second.written);
+    writes.landed(second.written, K);
+    await draft.idle();
+    draft.close();
+    const again = createEditorDraft({
+      openStore: store.open,
+      holdLock: freeLocks,
+      noBackup: () => undefined,
+    });
+    const { offer } = await again.open(K, await carried(second.blob));
+    expect(offer).toBeNull();
+    await session.close();
+  });
+
   it("restores a draft's details unless they were changed here meanwhile", async () => {
     const { session, manifest } = await opened([pin("a")], { title: "Old" });
     const offered = {
@@ -867,9 +1024,11 @@ describe("createEditorSession, the tour details (W2)", () => {
  * for 8 s, and was lost to any save. Ctrl+Z / Ctrl+Shift+Z now walk an
  * edit stack in the session, over every edit kind - a text, a move, a
  * delete, the "needs no GPS" setting, the tour details, a restore. An undo
- * is an edit like any other: pending until saved, backed up by the draft,
+ * is an edit like any other: pending until saved, written to the draft,
  * written by the next save - also when a save already wrote the step it
- * undoes, which is what lets autosave run during the old 8 s window.
+ * undoes. (A note brought back after a save wrote its delete is not
+ * offered by a later open's draft, so the page still holds autosave while
+ * a delete's Undo toast shows, M4a review #2.)
  */
 describe("createEditorSession, undo and redo (W2)", () => {
   const form = (over: Partial<DetailsForm> = {}): DetailsForm => ({
@@ -993,6 +1152,27 @@ describe("createEditorSession, undo and redo (W2)", () => {
     );
     expect(new TextDecoder().decode(bytes)).toBe("f");
     expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
+  it("a photo deleted after a save keeps its picture from the session's own last bytes when the page's copy does not read", async () => {
+    // Why (M4a review #5): right after the first in-place write the opened
+    // file no longer reads, and the page may not have opened its copy of
+    // the written bytes yet - the picture was lost, and the delete's undo
+    // after the next save refused. The session holds those bytes itself.
+    const { session, manifest } = await opened([photo("f"), photo("g")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      loadPhoto: () => Promise.reject(new Error("the file changed on disk")),
+    });
+    editor.remove("g");
+    await editor.save({ keepScan: false });
+    editor.remove("f");
+    await editor.save({ keepScan: false });
+    expect(editor.undo().kind).toBe("undone");
+    expect(await editor.pictureOf("f")?.text()).toBe("f");
     await session.close();
   });
 

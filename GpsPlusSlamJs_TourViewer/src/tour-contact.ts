@@ -25,7 +25,11 @@ export function contactLink(contact: string | undefined): ContactLink | null {
   if (href === null) return null;
   return {
     href,
-    label: contact.trim().replace(/^mailto:/i, ""),
+    // A web link is shown as the link it leads to (M4a review #4): the
+    // visitor reads the very address they open.
+    label: href.startsWith("mailto:")
+      ? contact.trim().replace(/^mailto:/i, "")
+      : href,
   };
 }
 

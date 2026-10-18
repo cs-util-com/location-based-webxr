@@ -38,7 +38,8 @@ import {
   type EditorItem,
   type EditorModel,
 } from "./editor-model.js";
-import { openTourForEditing } from "./editor-open.js";
+import { droppedDetailsLine, openTourForEditing } from "./editor-open.js";
+import { holdPageInert } from "./page-inert.js";
 import { fetchTourFile, linkOpenErrorText } from "./editor-link.js";
 import { driveProxyBaseUrl } from "../drive-proxy-url.js";
 import {
@@ -99,9 +100,10 @@ const EDGE_PX = 12;
 /** Below this width the rail starts folded (the prototype's 760 px). */
 const NARROW_PX = 760;
 /** How long a delete's toast offers its Undo - the phone's hold
- *  (`object-editing.ts` `OUTCOME_HOLD_MS`). Ctrl+Z undoes it later too
- *  (W2: the session's edit stack), also after a save wrote it; a newer
- *  edit ends the toast, whose Undo would no longer take back the delete. */
+ *  (`object-editing.ts` `OUTCOME_HOLD_MS`) - and holds autosave (M4a
+ *  review #2). Ctrl+Z undoes it later too (W2: the session's edit stack),
+ *  also after a save wrote it; a newer edit ends the toast, whose Undo
+ *  would no longer take back the delete. */
 const UNDO_MS = 8000;
 
 /** Said when "Delete it" did not land: nothing was thrown away. */
@@ -252,11 +254,14 @@ let saveQueued = false;
 let refusalToast: HTMLElement | null = null;
 
 /** Edits being made that a save must not cut into (M6 E2b-2, the E2b plan
- *  review #3, #7): typing not yet committed, a marker being moved. A
- *  delete's undo no longer holds a save (W2): an undo after the save that
- *  wrote the delete brings the note back as a change of its own. */
+ *  review #3, #7): a delete's undo while its toast offers it, typing not
+ *  yet committed, a marker being moved. The delete reaches the file only
+ *  once its Undo has lapsed (M4a review #2): an undo after the save that
+ *  wrote it still works in this tab (the edit stack), but a draft does not
+ *  bring the note back after a closed tab (`editor-draft.ts` places
+ *  nothing new). */
 function editing(): boolean {
-  return card.dirty() || moving !== null;
+  return undoOffer !== null || card.dirty() || moving !== null;
 }
 
 /** The page saves by itself, a few seconds after a committed change, while
@@ -531,6 +536,8 @@ function endUndo(): void {
   clearTimeout(undoOffer.timer);
   undoOffer.toast.remove();
   undoOffer = null;
+  // An autosave held for the delete's Undo may start now.
+  autosave.poke();
 }
 
 /** Said for each undo or redo (the async-UI rule's confirmation: the keys
@@ -807,6 +814,20 @@ function showCovers(chosen: string | null): void {
   }
 }
 
+/** The page's other parts while a dialog shows (`page-inert.ts`): its
+ *  focus stays in the dialog (M4a review #12). */
+function holdOutside(backdrop: HTMLElement): () => void {
+  return holdPageInert(
+    [...document.body.children].filter(
+      (el): el is HTMLElement =>
+        el instanceof HTMLElement && el !== backdrop && el.tagName !== "SCRIPT",
+    ),
+  );
+}
+
+/** The open dialog's hold on the rest of the page, until it closes. */
+let releaseOutside: (() => void) | null = null;
+
 /** The tour's details (W2), from the name in the top bar. */
 const details = wireDetailsDialog({
   dom: {
@@ -844,6 +865,8 @@ const details = wireDetailsDialog({
     if (kind === "changed") autosave.changed();
   },
   onClose: () => {
+    releaseOutside?.();
+    releaseOutside = null;
     releaseCoverThumbs();
     coverList.replaceChildren();
     if (!topbar.hidden) tourName.focus();
@@ -856,6 +879,7 @@ tourName.addEventListener("click", () => {
   // stands.
   card.commit();
   details.open();
+  releaseOutside = holdOutside(element("details-modal"));
 });
 
 /** Where a key goes to a field's own undo (typing in the card, a dialog,
@@ -1149,6 +1173,10 @@ async function openFile(
   renderSaveState();
   toast(`Opened ${outcome.fileName}: ${openedSummary(model)}`);
   sayNoBackup();
+  // Details the reader dropped are said, never lost silently by the next
+  // save (M4a review #6); kept until closed, as an instruction.
+  const dropped = droppedDetailsLine(outcome.dropped);
+  if (dropped !== null) fileToasts.push(toast(dropped, undefined, null));
   if (drafted.superseded !== null) {
     fileToasts.push(toast(drafted.superseded, undefined, null));
   }

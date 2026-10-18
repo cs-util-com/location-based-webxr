@@ -11,7 +11,12 @@ import {
   createEmptyTourManifest,
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { NOT_A_TOUR, NOT_A_ZIP, openTourForEditing } from "./editor-open.js";
+import {
+  droppedDetailsLine,
+  NOT_A_TOUR,
+  NOT_A_ZIP,
+  openTourForEditing,
+} from "./editor-open.js";
 
 async function zipFile(
   entries: { path: string; data: string }[],
@@ -38,6 +43,38 @@ describe("openTourForEditing", () => {
     if (out.kind !== "opened") return;
     expect(out.manifest.title).toBe("Altstadt walk");
     expect(out.fileName).toBe("tour.zip");
+    await out.session.close();
+  });
+
+  it("names the details the reader dropped, so a save never loses them silently", async () => {
+    // Why (M4a review #6): a description or contact the format's reader
+    // drops (a hand-edited file) was simply gone from the next save, with
+    // nothing said. The open now reports which ones, in the page's words.
+    const file = await zipFile([
+      {
+        path: "tour.json",
+        data: JSON.stringify({
+          version: 2,
+          minor: 3,
+          objects: [],
+          description: "Fine.",
+          contact: "call me",
+          cover: "gone",
+        }),
+      },
+    ]);
+    const out = await openTourForEditing(file);
+    expect(out.kind).toBe("opened");
+    if (out.kind !== "opened") return;
+    expect(out.manifest.description).toBe("Fine.");
+    expect(out.dropped.map((d) => d.field)).toEqual(["cover", "contact"]);
+    expect(droppedDetailsLine(out.dropped)).toBe(
+      "This tour's cover and contact could not be read, so the editor left them out: the next save writes the tour without them. Set them again in the tour's details.",
+    );
+    expect(droppedDetailsLine([])).toBeNull();
+    expect(droppedDetailsLine(out.dropped.slice(1))).toBe(
+      "This tour's contact could not be read, so the editor left it out: the next save writes the tour without it. Set it again in the tour's details.",
+    );
     await out.session.close();
   });
 

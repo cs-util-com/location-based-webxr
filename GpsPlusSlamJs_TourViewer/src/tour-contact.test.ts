@@ -32,6 +32,16 @@ describe("contactLink", () => {
     });
   });
 
+  it("shows a web link as the link it leads to, never as typed", () => {
+    // Why (M4a review #4): "https:example.org" led to the viewer itself
+    // (resolved against the page); the link now leads to the parsed URL,
+    // and the visitor reads the very address they will open.
+    expect(contactLink("https:example.org")).toEqual({
+      href: "https://example.org/",
+      label: "https://example.org/",
+    });
+  });
+
   it("gives nothing for no contact, or one a visitor may not follow", () => {
     expect(contactLink(undefined)).toBeNull();
     expect(contactLink("javascript:alert(1)")).toBeNull();

@@ -9,6 +9,9 @@ content cannot become invisible through a drifted entry name.
 ## Public API
 
 - `TOUR_MANIFEST_ENTRY = 'tour.json'`, `TOUR_CONTENT_FOLDER = 'content'`.
+- `TOUR_ID_PATTERN` - the one id rule (short, path-safe, one segment):
+  a content file's stem here, an object's id in `tour-manifest.ts`, a
+  cover's id in `tour-details.ts` (M4a review #8: three copies before).
 - `tourContentEntryName(id, extension): string` → `content/<id>.<ext>`;
   throws `TypeError` for an id that is not one path-safe segment, or an
   extension outside the media allowlist (`tour-media.ts`: raster images,
