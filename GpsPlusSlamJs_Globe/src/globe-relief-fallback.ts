@@ -20,11 +20,6 @@ export const RELIEF_FALLBACK = Object.freeze({
    * own limit, `GLOBE_TERRAIN.maxMeshLevel`).
    */
   maxDepth: 24,
-  /**
-   * Tiles remembered as missing (404) before the memory is cleared: about
-   * 100 KB of keys; enough for the tiles a session walks over the ocean.
-   */
-  knownMissingMax: 4_096,
 });
 
 /** The Terrarium offset (m): encoded = height + 32768. */
@@ -91,7 +86,9 @@ function checkCrop({ depth, col, row }: AncestorCrop): void {
  * The part `crop` of a square Terrarium tile of `srcSize` px (the whole
  * tile by default), resampled to `dstSize` px: heights decoded, sampled
  * bilinearly at the destination's pixel centres (a centre beyond the
- * source's outer centres takes the edge), encoded again. A part is
+ * source's outer centres takes the edge, so a strip half a source pixel
+ * wide along the source's border is flat: up to (2^(depth-1) - 0.5)
+ * destination pixels x the slope off, see the sidecar), encoded again. A part is
  * exactly the whole tile resampled to `dstSize` x 2^depth and cut: the
  * children of one ancestor meet without a seam. The whole tile at the
  * same size returns a copy. RangeError for a size that is not a positive
@@ -213,25 +210,9 @@ async function browserTexture(
   return texture;
 }
 
-const tileKey = (level: number, x: number, y: number) => `${level}/${x}/${y}`;
-
-/**
- * How many levels up a walk from tile x, y at `level` starts: one above
- * the coarsest tile known missing among the tile and its ancestors
- * (nothing under a missing tile exists), 0 when none is known.
- */
-function walkStart(
-  missing: ReadonlySet<string>,
-  x: number,
-  y: number,
-  level: number,
-): number {
-  let depth = 0;
-  for (let d = 0; d <= level; d++) {
-    if (missing.has(tileKey(level - d, x >> d, y >> d))) depth = d + 1;
-  }
-  return depth;
-}
+/** The library cancelling a tile it no longer wants: not a failure. */
+const isAbort = (error: unknown): boolean =>
+  (error as { name?: unknown } | null)?.name === "AbortError";
 
 /**
  * Installs the fallback on the library's terrain plugin: once its root
@@ -241,13 +222,13 @@ function walkStart(
  * 404 it walks up the same source's pyramid to the nearest ancestor that
  * exists, decodes it (`decodeRgba`), crops the tile's part of it and
  * upsamples that to `tileDimension` (`resampleTerrarium`), and makes it a
- * texture (`makeTexture`). Tiles that answered 404 are remembered (up to
- * `RELIEF_FALLBACK.knownMissingMax`), and a tile under a missing one is
- * not asked for: the source's coverage is nested (a tile exists only
- * where its parent does), and its 404s are not cached by the browser. Any
- * other status, or no ancestor at all, rejects, naming it; the library
- * then marks the tile failed and a coarser one stands in. `stats()` counts
- * fallbacks and failures; `dispose()` restores the root load (a source
+ * texture (`makeTexture`). Every walk starts at the tile itself and keeps
+ * no memory of earlier 404s: the source's 404s are cached by the browser
+ * (Mapterhorn's carry a week's `max-age`), and a memory would let one
+ * transient 404 hide a region for the session. Any other status, or no
+ * ancestor at all, rejects, naming it; the library then marks the tile
+ * failed and a coarser one stands in. `stats()` counts fallbacks and
+ * failures (every rejection but an abort); `dispose()` restores the root load (a source
  * already made keeps its fetch). TypeError for a plugin without
  * `loadRootTileset`; RangeError for a tile size that is not a positive
  * integer.
@@ -274,15 +255,6 @@ export function installReliefFallback(
   }
   let fallbacks = 0;
   let failures = 0;
-  const fail = (message: string): never => {
-    failures++;
-    throw new Error(message);
-  };
-  const missing = new Set<string>();
-  const remember = (k: string) => {
-    if (missing.size >= RELIEF_FALLBACK.knownMissingMax) missing.clear();
-    missing.add(k);
-  };
   const fetchTile = async (
     source: ReliefImageSource,
     tokens: number[],
@@ -290,21 +262,17 @@ export function installReliefFallback(
   ): Promise<unknown> => {
     const [x = 0, y = 0, level = 0] = tokens;
     const options = { ...source.fetchOptions, signal };
-    for (let depth = walkStart(missing, x, y, level); depth <= level; depth++) {
-      const at = [x >> depth, y >> depth, level - depth] as const;
-      const url = source.getUrl(...at);
+    for (let depth = 0; depth <= level; depth++) {
+      const url = source.getUrl(x >> depth, y >> depth, level - depth);
       const res = await source.fetchData(url, options);
-      if (res.status === 404) {
-        remember(tileKey(at[2], at[0], at[1]));
-        continue;
-      }
-      if (!res.ok) return fail(`height tile ${url}: HTTP ${res.status}`);
+      if (res.status === 404) continue;
+      if (!res.ok) throw new Error(`height tile ${url}: HTTP ${res.status}`);
       if (depth === 0) {
         return source.processBufferToTexture(await res.arrayBuffer());
       }
       const image = await decodeRgba(await res.arrayBuffer());
       if (image.width !== image.height) {
-        return fail(`height tile ${url} is not square`);
+        throw new Error(`height tile ${url} is not square`);
       }
       const mask = 2 ** depth - 1;
       const rgba = resampleTerrarium(image.data, image.width, tileDimension, {
@@ -312,10 +280,11 @@ export function installReliefFallback(
         col: x & mask,
         row: y & mask,
       });
+      const texture = await makeTexture(rgba, tileDimension);
       fallbacks++;
-      return makeTexture(rgba, tileDimension);
+      return texture;
     }
-    return fail(
+    throw new Error(
       `height tile ${source.getUrl(x, y, level)}: 404, and no ancestor`,
     );
   };
@@ -325,7 +294,11 @@ export function installReliefFallback(
     const result = await ownRoot.call(this);
     const source = this._source;
     if (source) {
-      source.fetchItem = (tokens, signal) => fetchTile(source, tokens, signal);
+      source.fetchItem = (tokens, signal) =>
+        fetchTile(source, tokens, signal).catch((error: unknown) => {
+          if (!isAbort(error)) failures++;
+          throw error;
+        });
     }
     return result;
   };

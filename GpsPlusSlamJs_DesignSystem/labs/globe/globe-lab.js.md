@@ -419,7 +419,10 @@
     source at its global zoom (12; the relief draws z14 where it can, an
     unmeasured difference, `globe-city-heights.js.md`); the detail
     colour stays on AWS z8.
-    `reliefDevice=phone|desktop` (default phone) sets the relief cache's
+    `reliefDevice=phone|desktop` (without it, from the input: phone for a
+    coarse pointer, desktop otherwise; the state's `relief.device` and
+    the Debug line show which; assuming phone put a desktop on
+    Mapterhorn's phone budget, which stalls) sets the relief cache's
     budget for the source's tile size (`reliefCacheBudget`: 64 MiB for
     AWS on a phone, about 151 MiB for Mapterhorn; desktop 256 and about
     604 MiB, from the 2026-10-18 sweep in `globe-relief-cache.ts.md`), which
@@ -494,8 +497,9 @@ register = true)` (a red sphere ahead, which the near plane follows
   - `state()` adds `relief` (`{ heightScale, litTiles, visibleTiles,
 heights, share, groundUnderCameraM, clearanceLifts, settled, stats,
 cachedBytes, cache, globeCachedBytes, releasedBytes, globeDrawn, reliefDrawn,
-globeTiles, detail, source, fallback, meshMaxLevel }` or null; `cache` is
+globeTiles, detail, device, source, fallback, meshMaxLevel }` or null; `cache` is
     the terrain's `reliefCache()` (full, refusals, stalled; G1 1c);
+    `device` the device class its budget is for;
     `source` the heights' source id (or `synthetic`), `fallback` its 404
     fallback's counts (`reliefFallback()`: tiles drawn from an ancestor
     and failures; null without it) and

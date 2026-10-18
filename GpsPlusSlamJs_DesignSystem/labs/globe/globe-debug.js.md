@@ -7,7 +7,7 @@
 - Opened, it shows (4 times a second) the altitude, the distance to the
   target, latitude and longitude under the camera, heading and pitch, E,
   the band share, each carrier's tiles and cache (the relief's against its
-  cap, and "CACHE TOO SMALL, not refining" while its cache is stalled (stuck full, or refusing tiles for a second and more),
+  cap, the device class its budget is for ("(desktop budget)"), and "CACHE TOO SMALL, not refining" while its cache is stalled (stuck full, or refusing tiles for a second and more),
   `reliefCache().stalled`, G1 1c: the G0 spikes found it stalling
   silently), the relief's kept heights (count and MiB), and the event
   count.

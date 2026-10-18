@@ -85,7 +85,7 @@
 - The budget's measurements (globe lab, 2026-10-18; `inUseBytes` once
   settled, Munich 48.1373 N 11.5754 E, first person, the OSM map routed
   to a fake tile, a 2,048 MiB cache so nothing was refused, a GPU via
-  ANGLE in headless Chromium; MiB):
+  ANGLE in headless Chromium; pixel ratio 1 unless named; MiB):
   - 1,280 x 800, mesh level 17 with the OSM map:
     - AWS, oblique (pitch -20) at 1.7 m / 30 m / 300 m / 3 km: 188.9 /
       188.9 / 191.3 / 147.1; steep (-70) at 300 m / 3 km: 47.1 / 51.7.
@@ -97,6 +97,21 @@
   - 1,920 x 1,080, mesh level 17 with the OSM map: AWS oblique at 1.7 m
     270.3, at 3 km 212.2 (steep 77.3); Mapterhorn oblique at 1.7 m 332.5,
     at 3 km 247.0 (steep 118.8).
+  - 1,280 x 800 at pixel ratio 2 (the lab caps the ratio at 2, and the
+    relief refines by drawing-buffer pixels), mesh level 17 with the OSM
+    map, Mapterhorn oblique at 1.7 m: 434 (against 241.7 at ratio 1, 1.8
+    times), inside the 604 MiB desktop cap with about a quarter in hand
+    (G1 re-review item 2, 2026-10-18).
+  - Not measured: 1,920 x 1,080 at ratio 2. Scaling its ratio-1 need
+    (332.5) by the 1.8 above gives about 600 MiB, at the cap: **a stall
+    is to be expected on large high-DPI windows** with Mapterhorn at mesh
+    level 17, and the act-on-`stalled` rule above is what must absorb it.
+    The budget is deliberately not scaled by the pixel ratio.
+  - **These are the library's COUNTED bytes** (`calculateBytesUsed`: the
+    height grid, the composed imagery and the mesh per tile), not the
+    real GPU or JavaScript heap use, which is unmeasured. The budget
+    bounds the count; what a phone or a desktop actually spends for it
+    is not known.
   - Not measured: a steep first view below about 300 m (30 m at pitch -45
     and -70, 1.7 m at -70). The lab never handed those views to the
     relief (band share 0, the relief's tiles released), a lab defect

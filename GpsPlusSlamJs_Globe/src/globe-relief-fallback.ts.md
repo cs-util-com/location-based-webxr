@@ -7,7 +7,7 @@
   tile: at z13-14 outside national coverage, and over deep ocean at every
   zoom finer than about z5 (probed 2026-10-18: Marrakesh z14 and z13 404,
   z12 200; mid-Atlantic 404 from z12 down to z6, z5 200; Munich present to
-  z16). Its coverage is nested: a tile exists only where its parent does.
+  z16).
   The library's image source neither checks the status nor knows what
   else to draw. This draws the missing tile from the SAME source's
   nearest ancestor, cropped to the tile and upsampled to the source's
@@ -28,8 +28,7 @@
   at all, or answers anything but 200 or 404.
 - Public API:
   - `RELIEF_FALLBACK`: `maxDepth` 24 (the deepest crop, the relief tree's
-    own limit), `knownMissingMax` 4,096 (tiles remembered as missing
-    before the memory is cleared: about 100 KB of keys).
+    own limit).
   - `decodeTerrariumM(r, g, b)`: the library's formula,
     `r * 256 + g + b / 256 - 32768`.
   - `encodeTerrarium(heightM, out, i)`: writes a Terrarium pixel (alpha
@@ -63,16 +62,21 @@ makeTexture? })` -> `{ stats(), dispose() }`:
       premultiplication, then a 2D canvas), crops and upsamples it to
       `tileDimension`, and makes it a texture (`makeTexture`, by default as
       the library makes one: flipped, no mipmaps, sRGB);
-    - every 404 is remembered, and a walk starts above the coarsest tile
-      known missing among the tile and its ancestors: the coverage is
-      nested, and the 404s carry no cache header, so the browser would
-      ask again every time (measured 2026-10-18: no `cache-control` on a
-      404, `max-age=604800` on a 200);
+    - every walk starts at the tile itself; nothing remembers an earlier 404. Mapterhorn's 404s carry `cache-control: public,
+max-age=604800` like its 200s (probed 2026-10-18, 14/7827/6678 and
+      13/3913/3339; an earlier probe this session that read "no
+      cache-control on a 404" was wrong), so the browser's HTTP cache
+      answers the repeats. A memory of its own (the first version had
+      one) let a single transient 404 hide a region's tiles for the
+      session (G1 re-review item 3);
     - any other status, an ancestor that is not square, or no ancestor at
       all (level 0 missing) rejects, naming the url and status, and the
       library marks the tile failed (above);
-    - `stats()` -> `{ fallbacks, failures }`; `dispose()` restores the root
-      load (a source already made keeps its fetch);
+    - `stats()` -> `{ fallbacks, failures }`: tiles drawn from an
+      ancestor, and every rejection but an abort (a status, no ancestor,
+      a network error, an image that does not decode: what the library
+      marks failed); `dispose()` restores the root load (a source already
+      made keeps its fetch);
     - TypeError for a plugin without `loadRootTileset`; RangeError for a
       tile size that is not a positive integer.
 - Invariants & assumptions:
@@ -80,7 +84,24 @@ makeTexture? })` -> `{ stats(), dispose() }`:
     red is a 256 m step in the bytes and 1/256 m in height.
   - The children of one ancestor meet without a seam: each part is exactly
     the whole ancestor resampled to `dstSize x 2^depth` and cut (a
-    property test holds this within 1/256 m).
+    property test holds this within 1/256 m; it guards the crop's offset
+    only, since both sides run the same sampling).
+  - **A flat strip along the ancestor's border.** Sampling clamps to the
+    ancestor's outer pixel centres, so the child texels within half an
+    ancestor pixel of the ancestor's edge take the edge pixel's height.
+    For tiles of the same size, the worst texel is (2^(depth-1) - 0.5)
+    texels from the outer centre, so its error is that distance x the
+    slope: at z14 from z12 (depth 2) 1.5 texels, about 4.8 m at 48 N, so
+    about 1.8 m on a 20 degree slope; from z13 (depth 1) 0.5 texels,
+    about 0.6 m. Only the child tiles touching the ancestor's border have
+    such a strip. The sampling is kept (re-review item 4): a sampler that
+    reached into the neighbour ancestor would need that tile too.
+  - **Gap, not tested:** no test runs a fallback tile through the
+    library's own grid decode (`TerrariumMeshPlugin`'s texture to height
+    grid, with its border refill) and compares it with the ancestor's
+    grid. The decode needs a canvas and the plugin's private grid cache,
+    so it is not cheap in node; the lab smoke checks the drawn ground
+    under the camera instead (within 10 m on the synthetic surface).
   - The library calls `_source.fetchItem([x, y, level], signal)` from its
     grid cache, and `getUrl(x, y, level)` fills an XYZ template with north
     first (0.5.3); `globe-terrain.test.ts` drives the real plugin to hold
@@ -89,10 +110,26 @@ makeTexture? })` -> `{ stats(), dispose() }`:
     ocean that is 0 m either way; at a national coverage border it is
     GLO-30 (the source's own z12) beside the national model, the same
     meeting the source has at that border in every other client.
-  - A known-missing memory that fills is cleared, not trimmed: the cost
-    of clearing is one 404 per level again, not a wrong tile.
-  - Concurrent walks may ask for the same missing ancestor before its
-    first 404 returns; that costs a request, not a wrong tile.
+  - Concurrent walks may ask for the same missing tile before its first
+    404 is cached; that costs a request, not a wrong tile.
+  - **Main-thread cost (G1 re-review item 7, measured 2026-10-18).** Per
+    fallback tile: the ancestor's decode (`createImageBitmap`, then
+    `getImageData` on a 512 px canvas), about 3 MiB of buffers, the resample (5.6
+    ms median, 9.1 ms max for 512 px at depth 2, in node), the texture's
+    bitmap, and the library's own decode of it. In the globe lab
+    (headless, ANGLE, 1,280 x 800, Mapterhorn, mesh level 17, first
+    person, frame times and long tasks from load until settled):
+    - Marrakesh (31.63 N, 8.0 W; no national model, 18 tiles from an
+      ancestor): at 1.7 m the longest frame 617 ms, 5 frames over 50 ms,
+      long tasks 613 / 491 / 426 / 128 ms; at 300 m 217 ms, 1 frame, one
+      long task of 227 ms.
+    - Munich, the control (national model, 0 tiles from an ancestor): at
+      1.7 m 700 ms, 5 frames, long tasks 715 / 459 / 414 / 126 ms; at
+      300 m 233 ms, 1 frame, one long task of 237 ms.
+    - Verdict: the frames over 50 ms are the relief's load itself (the
+      same count and size without any fallback), not the fallback; a
+      per-batch ancestor decode would not remove them, so it was not
+      built. What a phone pays is unmeasured.
 - Example:
 
   ```ts
@@ -112,9 +149,10 @@ makeTexture? })` -> `{ stats(), dispose() }`:
   child equal to its part of the whole ancestor upsampled as a property,
   crop and size refusals; the installer on a fake plugin: the library's
   path for a tile the source has, the walk up two missing levels to the
-  ancestor with the download queue's fetch and signal, the known-missing
-  skip, rejections naming the status and "no ancestor", dispose and
-  refusals). Two hand mutants were caught: column and row swapped, the
+  ancestor with the download queue's fetch and signal, every walk from
+  the tile up (a 404 that goes away is found), rejections naming the
+  status and "no ancestor", every rejection but an abort counted, dispose
+  and refusals). Two hand mutants were caught: column and row swapped, the
   crop's offset dropped. `globe-terrain.test.ts` drives it through the
   real plugin; the lab's `globe-editor-blocks.smoke.spec.mjs` through the
   page against a fake host with a nested coverage gap.

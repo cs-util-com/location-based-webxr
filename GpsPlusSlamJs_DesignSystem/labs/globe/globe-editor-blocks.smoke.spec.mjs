@@ -187,10 +187,12 @@ test("the Mapterhorn relief draws, fills a 404 from its own ancestor, and credit
   const seen = await routeHeightHosts(context, page);
   const errors = await bootGlobe(
     page,
-    // A cache with room for the view: this test is about the fallback, the
-    // cache test about the budget.
+    // No cache override and no device class (G1 re-review item 1): the
+    // lab picks the device from the input (headless Chromium has a fine
+    // pointer, so desktop) and the cache is that device's budget, the one
+    // an app gets from `reliefTerrainOptions`.
     BASE.replace("&reliefHeights=synthetic", "") +
-      `&reliefSource=mapterhorn&reliefCacheMiB=1024&view=${DOWN_VIEW}`,
+      `&reliefSource=mapterhorn&view=${DOWN_VIEW}`,
     { phase: "user", routeCity: false },
   );
   await page.waitForFunction(
@@ -243,6 +245,10 @@ test("the Mapterhorn relief draws, fills a 404 from its own ancestor, and credit
   expect(out.credits).toContain("Copernicus GLO-30");
   expect(out.credits).not.toContain("Mapzen");
   expect(out.links).toContain("https://mapterhorn.com/attribution");
+  // The device's own budget holds the view: desktop, Mapterhorn's 512 px
+  // tiles, about 604 MiB.
+  expect(out.relief.device).toBe("desktop");
+  expect(out.relief.cache.maxBytes / 2 ** 20).toBeCloseTo(604, -1);
   expect(out.relief.cache.stalled).toBe(false);
 });
 

@@ -124,7 +124,7 @@ export function createGlobeDebug({ log, live, device }) {
       `at ${fmt(s.lat, 3)}, ${fmt(s.lng, 3)}  heading ${fmt(s.headingDeg, 0)}°  pitch ${fmt(s.pitchDeg, 0)}°`,
       `E ${fmt(s.e, 1)}  band share ${fmt(s.bandShare, 2)}`,
       `globe tiles ${s.globeLoaded ?? "?"} loaded, ${s.globePending ?? "?"} pending, ${fmt(s.globeMiB)} MiB`,
-      `relief tiles ${s.reliefVisible ?? "-"} visible, ${s.reliefPending ?? "-"} pending, ${fmt(s.reliefMiB)} of ${fmt((s.reliefCache?.maxBytes ?? Number.NaN) / 2 ** 20)} MiB${s.reliefCache?.stalled ? "  CACHE TOO SMALL, not refining" : ""}`,
+      `relief tiles ${s.reliefVisible ?? "-"} visible, ${s.reliefPending ?? "-"} pending, ${fmt(s.reliefMiB)} of ${fmt((s.reliefCache?.maxBytes ?? Number.NaN) / 2 ** 20)} MiB${s.reliefDevice ? ` (${s.reliefDevice} budget)` : ""}${s.reliefCache?.stalled ? "  CACHE TOO SMALL, not refining" : ""}`,
       `heights kept ${s.keptHeights?.kept ?? "-"}, ${fmt((s.keptHeights?.keptBytes ?? Number.NaN) / 2 ** 20)} MiB`,
       `events ${log.total()}${tools?.rec.running() ? "  RECORDING" : ""}`,
     ].join("\n");

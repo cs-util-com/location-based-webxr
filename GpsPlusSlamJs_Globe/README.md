@@ -63,7 +63,9 @@ under the tile usage policy's limits (`globe-osm-overlay.ts`; it needs the
 relief at z15 or finer near the camera, so the denser mesh,
 `meshMaxLevel` 15 or more). Each has
 its sidecar; the globe lab shows them all (`eye=1`, `osm=1`,
-`reliefMeshLevel=17`, `reliefSource=mapterhorn`), and its `globe-editor-blocks` smoke holds
+`reliefMeshLevel=17`, `reliefSource=mapterhorn`, `reliefDevice=desktop`: the
+relief cache's budget is per device class, and Mapterhorn on the phone's
+budget stalls on a desktop window), and its `globe-editor-blocks` smoke holds
 them on the real page. The package depends on neither the framework nor
 the Osm library: their URLs, attributions and geoid are passed in.
 

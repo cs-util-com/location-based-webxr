@@ -878,6 +878,19 @@ function readParam(params, name) {
  * package's `globe-clock.ts`), and PARAMS. `timeScale` is the clock's
  * EFFECTIVE scale, which the plate shows.
  */
+/**
+ * The relief cache's device class: `reliefDevice=phone|desktop` from the
+ * hash, else from the input (a coarse pointer reads phone, anything else
+ * desktop). Assuming phone put a desktop on Mapterhorn's phone budget
+ * (about 151 MiB against the 186-242 MiB measured), which stalls (G1
+ * re-review item 1).
+ */
+function readReliefDevice(params) {
+  const asked = params.get("reliefDevice");
+  if (asked === "phone" || asked === "desktop") return asked;
+  return matchMedia("(pointer: coarse)").matches ? "phone" : "desktop";
+}
+
 function readHashParams() {
   const params = new URLSearchParams(location.hash.slice(1));
   const values = Object.fromEntries(
@@ -895,9 +908,8 @@ function readHashParams() {
     // nearest ancestor, cropped and upsampled).
     reliefSource:
       params.get("reliefSource") === "mapterhorn" ? "mapterhorn" : "aws",
-    // The relief cache's device class (`reliefCacheBudget`): phone or desktop.
-    reliefDevice:
-      params.get("reliefDevice") === "desktop" ? "desktop" : "phone",
+    // The relief cache's device class (`reliefCacheBudget`).
+    reliefDevice: readReliefDevice(params),
     // The first-person camera (G1 5, `/globe/globe-eye-camera.js`): an
     // eye-height clearance, the controls allowed down to it, the near plane
     // following the nearest item. Read at start.
@@ -3863,6 +3875,7 @@ async function start() {
       // The relief cache's cap and whether it is full and turning tiles
       // away (G1 1c): with 512 px heights it stalled silently in G0.
       reliefCache: terrain ? terrain.reliefCache() : null,
+      reliefDevice: terrain ? startParams.reliefDevice : null,
       keptHeights: terrain ? terrain.heightKeeperStats() : null,
       programs: renderer.info.programs?.length ?? null,
       textures: renderer.info.memory.textures,
@@ -4164,6 +4177,8 @@ async function start() {
             globeCachedBytes: globe.tiles.lruCache.cachedBytes,
             // Full and turning tiles away (`watchReliefCache`, G1 1c).
             cache: terrain.reliefCache(),
+            // The device class its budget was set for (hash or input).
+            device: startParams.reliefDevice,
             // The heights' source, its 404 fallback's counts and the tree's
             // deepest level when set (G1 2).
             source: terrarium ? reliefSource.id : "synthetic",

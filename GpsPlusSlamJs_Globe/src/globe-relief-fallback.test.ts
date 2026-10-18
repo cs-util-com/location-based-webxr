@@ -133,11 +133,16 @@ describe("resampleTerrarium", () => {
     expect(heightAt(out, 4, 0, 3)).toBeCloseTo(17.5 + 1.25, 2);
   });
 
-  // Why (M2, the property that removes the step at a level change): the
-  // children of an ancestor, cropped and upsampled one by one, are
-  // exactly the ancestor upsampled whole and cut into tiles. So adjacent
-  // fallback tiles meet without a seam, and a fallback tile matches the
-  // coarser tile it replaces wherever both are drawn.
+  // Why (M2): the children of an ancestor, cropped and upsampled one by
+  // one, are exactly the ancestor upsampled whole and cut into tiles, so
+  // adjacent fallback tiles meet without a seam. What this guards is the
+  // crop's OFFSET (column, row, depth): both sides run the same sampling
+  // arithmetic, so it cannot catch an error in the sampling itself (the
+  // hand-pinned crop above and the plane property do that). It does NOT
+  // show that a fallback tile matches the ancestor drawn as it is: within
+  // half an ancestor pixel of the ancestor's edge the sampling clamps to
+  // the outer pixel centres, a flat strip (see the sidecar for its size),
+  // and nothing here runs the library's own grid decode.
   it("tiles: each child equals its part of the whole ancestor upsampled", () => {
     fc.assert(
       fc.property(
@@ -301,13 +306,14 @@ describe("installReliefFallback", () => {
     expect(fallback.stats()).toEqual({ fallbacks: 1, failures: 0 });
   });
 
-  // Why: Mapterhorn's coverage is nested (no national model under a
-  // missing z13, no land under a missing ocean tile: probed 2026-10-18,
-  // Marrakesh z14 and z13 404 with z12 present, the mid-Atlantic 404 from
-  // z12 to z6 with z5 present), and its 404s carry no cache header, so
-  // the browser asks again every time. A sibling of a tile already walked
-  // goes straight to the ancestor, not to tiles known missing.
-  it("skips tiles known missing under a missing ancestor", async () => {
+  // Why (G1 re-review item 3): every walk asks from the tile up, keeping
+  // no memory of earlier 404s. Mapterhorn's 404s carry
+  // `cache-control: public, max-age=604800` (probed 2026-10-18), so the
+  // browser's HTTP cache answers the repeats; a memory of its own would
+  // let one transient or wrong 404 hide a region's real tiles for the
+  // whole session. Here the z13 tile answers 404 once, then exists: the
+  // next walk finds it.
+  it("walks up from the tile every time, so a 404 that goes away is not remembered", async () => {
     const server = new Map([
       ["https://primary/12/2178/1419.webp", new Response(new Uint8Array(3))],
     ]);
@@ -316,13 +322,48 @@ describe("installReliefFallback", () => {
     await plugin.loadRootTileset();
     await source.fetchItem([8713, 5678, 14], undefined);
     fetched.length = 0;
+    server.set(
+      "https://primary/13/4356/2839.webp",
+      new Response(new Uint8Array(5)),
+    );
     await source.fetchItem([8712, 5679, 14], undefined); // a sibling
-    await source.fetchItem([8713, 5678, 14], undefined); // itself, again
     expect(fetched.map((f) => f.url)).toEqual([
-      "https://primary/12/2178/1419.webp",
-      "https://primary/12/2178/1419.webp",
+      "https://primary/14/8712/5679.webp",
+      "https://primary/13/4356/2839.webp",
     ]);
-    expect(fallback.stats()).toEqual({ fallbacks: 3, failures: 0 });
+    expect(fallback.stats()).toEqual({ fallbacks: 2, failures: 0 });
+  });
+
+  // Why (G1 re-review item 6): `failures` is what the lab and G2 read to
+  // tell a broken source from a quiet one, so it counts every rejection
+  // the library will mark failed (a network error, an image that does not
+  // decode), not only the statuses this module names. An abort is the
+  // library cancelling a tile it no longer wants: not a failure.
+  it("counts every rejection but an abort as a failure", async () => {
+    const opts = options();
+    const { plugin, source } = fakePlugin(new Map());
+    const fallback = installReliefFallback(plugin, opts);
+    await plugin.loadRootTileset();
+    source.fetchData = () => Promise.reject(new TypeError("Failed to fetch"));
+    await expect(source.fetchItem([1, 1, 14], undefined)).rejects.toThrow(
+      TypeError,
+    );
+    source.fetchData = () =>
+      Promise.reject(new DOMException("aborted", "AbortError"));
+    await expect(source.fetchItem([1, 1, 14], undefined)).rejects.toThrow(
+      /aborted/,
+    );
+    source.fetchData = (url: string) =>
+      Promise.resolve(
+        url.includes("/14/")
+          ? new Response(null, { status: 404 })
+          : new Response(new Uint8Array(3)),
+      );
+    opts.decodeRgba.mockRejectedValueOnce(new Error("not an image"));
+    await expect(source.fetchItem([1, 1, 14], undefined)).rejects.toThrow(
+      /not an image/,
+    );
+    expect(fallback.stats()).toEqual({ fallbacks: 0, failures: 2 });
   });
 
   // Why: the library does not check the status; an error page decoded as
