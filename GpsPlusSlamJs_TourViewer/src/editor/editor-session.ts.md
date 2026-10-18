@@ -108,6 +108,26 @@ changes`; a label is cut at 40 characters, a label-less note is "a
 scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
     carries, for the draft's bases) and advances to what was written
     (`pendingAfterRebuild`).
+  - `walkEntries()` - the walk recording's entries in the newest bytes
+    (the last save's, else the opened file's; `scanEntryNames`): none once
+    it was moved out, or when a save left it out.
+  - `moveWalkOut()` - "Move the walk out" (W2, D19), queued with the
+    saves: a `WalkMove` with the walk's own zip (every walk entry of the
+    newest bytes, byte for byte, under its own path; named by
+    `walkFileName`, `castle.zip` -> `castle-walk.zip`) and the tour
+    rebuilt without it (`keepScan: false`, with the pending edits and the
+    photo spots), or a refusal in words: `NO_WALK`, or the recorded
+    photos still placed by the walk (no baked spots - they would be left
+    nowhere, `finish-rebuild.ts`). **Nothing changes until
+    `commit()`**: the page writes the walk's zip first, then the tour,
+    and commits only when both landed; `commit()` then makes the
+    walk-free bytes `previous` (the series version advances as in any
+    save), so no later save - an in-place autosave keeps "the walk" of the
+    bytes it rebuilds from - can bring the walk back. It throws when
+    another save landed since the move was built (the page holds saves
+    while a move runs). Bringing a moved-out walk back into a tour is a
+    later feature; nothing reads the walk's zip yet.
+- `walkFileName`, `NO_WALK`, `WalkMove`.
 - `EditorSession`, `EditorSave`, `EditorSessionDraft`, `TOUR_NAME_MAX_CHARS`; the module-private `CoverChoice` (an image id and its zip entry) and `UndoOutcome` (`undo()` / `redo()`'s result) are read through the session's methods.
 
 ## Invariants & assumptions
@@ -127,8 +147,8 @@ scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
 - Undo and redo are refused while a save runs: the save's end moves the
   saved file the step is measured against.
 
-- Saves run one after another: one called while another runs starts when
-  it ends (E2a review #9).
+- Saves (and moves of the walk) run one after another: one called while
+  another runs starts when it ends (E2a review #9).
 - The edits are snapshotted before the save's first await: an edit made
   while it runs stays for the next save, by content.
 - `filename` is `finishedFileName(session)` (the opened file's name, made
@@ -166,7 +186,11 @@ restored unless changed here; a draft naming a deleted cover restoring
 the rest; a long stored name not blocking other edits; the walk-through
 with the real draft (cover chosen, saved, its photo deleted, saved,
 reopened: no offer, M4a review #1); a deleted photo's picture read from
-the session's last bytes when the page's copy does not read (#5). Undo and redo (W2): every edit kind undone
+the session's last bytes when the page's copy does not read (#5). Moving
+the walk out (W2, D19): the walk's zip carrying every walk entry byte for
+byte and the tour none, also after the next save with `keepScan`; nothing
+changed before `commit()`; refused while the photos need the walk and
+for a tour without one; the walk's file name. Undo and redo (W2): every edit kind undone
 newest first and redone; a new edit dropping the redo; the revision; an
 undo after a save being a change the next save writes; a saved photo
 delete coming back with its picture, and refused in words (the step kept)

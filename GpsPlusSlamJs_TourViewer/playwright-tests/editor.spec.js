@@ -2607,3 +2607,167 @@ test("the open dialog's fine print says what Save does in this browser", async (
   );
   await withPicker.close();
 });
+
+// ---------------------------------------------------------------------------
+// "Done" (W2, D18, D19): where the changes are, how the tour at its link is
+// updated, and "Move the walk out".
+// ---------------------------------------------------------------------------
+
+/**
+ * A downloaded zip's entry names, sorted.
+ * @param {import("@playwright/test").Download} download
+ */
+async function downloadedNames(download) {
+  const bytes = new Uint8Array(readFileSync(await download.path()));
+  const reader = new ZipReader(new Uint8ArrayReader(bytes));
+  const names = (await reader.getEntries())
+    .filter((e) => !e.directory)
+    .map((e) => e.filename)
+    .sort();
+  await reader.close();
+  return names;
+}
+
+test("Done saves what is pending, says where it is and how to update the tour, and moves the walk out into a file of its own", async ({
+  page,
+}) => {
+  // Why (W2, D18, D19): a creator leaving the editor must learn where the
+  // changes are and what is left to do for the tour at its link - and,
+  // since the file written in place keeps the walk (the GPS track, the
+  // depth), that a hosted copy of it is public with the walk unless it is
+  // moved out. The move must put the walk in a file of its own, take it
+  // out of the tour file for good (also the next save), and leave the
+  // Drive-mount tip hidden until the owner's check (review #10).
+  await autosaveOutOfTheWay(page);
+  await noSavePicker(page);
+  await page.goto("/edit.html");
+  await offerOpfsFile(page, await wrappedTour({ pin: true }), "wrapped.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
+  await editPin(page, "Wrapped pin", "Done saves this");
+  await page.locator("#done-btn").click();
+  const done = page.locator("#done-modal");
+  await expect(done).toBeVisible();
+  await expect(page.locator("#done-where")).toHaveText(
+    "Your changes are saved in wrapped.zip, the file you opened on this computer.",
+  );
+  expect(
+    (await readOpfsTour(page, "wrapped.zip"))["mytour/tour.json"],
+  ).toContain("Done saves this");
+  await expect(page.locator("#done-update")).toContainText(
+    "Replace existing file",
+  );
+  await page.locator("#done-host").selectOption("dropbox");
+  await expect(page.locator("#done-update")).toContainText("In Dropbox");
+  await expect(page.locator("#done-public")).toContainText("public");
+  await expect(page.locator("#done-walk-text")).toContainText("GPS track");
+  await expect(page.locator("#done-drive-tip")).toBeHidden();
+  await expect(done.locator('a[href="legal.html#privacy"]')).toBeVisible();
+  const download = page.waitForEvent("download");
+  await page.locator("#done-move").click();
+  const walkFile = await download;
+  expect(walkFile.suggestedFilename()).toBe("wrapped-walk.zip");
+  expect(await downloadedNames(walkFile)).toEqual([
+    "mytour/actions/000001.json",
+    "mytour/session.json",
+  ]);
+  await expect(page.locator("#done-move-status")).toContainText(
+    "The walk is in wrapped-walk.zip",
+  );
+  await expect(page.locator("#done-move")).toBeHidden();
+  const tour = Object.keys(await readOpfsTour(page, "wrapped.zip"));
+  expect(tour).not.toContain("mytour/actions/000001.json");
+  expect(tour).not.toContain("mytour/session.json");
+  // The baked photo stays: visitors see it.
+  expect(tour).toContain("mytour/images/frame-000002.png");
+  await page.locator("#done-close").click();
+  await expect(done).toBeHidden();
+  await expect(page.locator("#done-btn")).toBeFocused();
+  // The next save keeps the walk of the bytes it rebuilds from: none.
+  await editPin(page, "Done saves this", "After the move");
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText("Saved to wrapped.zip");
+  const after = await readOpfsTour(page, "wrapped.zip");
+  expect(after["mytour/tour.json"]).toContain("After the move");
+  expect(Object.keys(after)).not.toContain("mytour/actions/000001.json");
+});
+
+test("Done shows its save in progress and stays shut when the save fails, and a failed write of either file leaves the tour file as it was", async ({
+  page,
+}) => {
+  // Why (the async-UI rule; W2, D19): Done's own save is awaited work, so
+  // it shows its state and says a failure; and the move writes two files -
+  // the walk's first, then the tour - so a failure of either must leave the
+  // tour file exactly as it was, still carrying the walk.
+  await autosaveOutOfTheWay(page);
+  await page.goto("/edit.html");
+  await offerCountedOpfsFile(
+    page,
+    await wrappedTour({ pin: true }),
+    "wrapped.zip",
+  );
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
+  await editPin(page, "Wrapped pin", "Held, then failed");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the counted picker.
+    window.__holdWrites = true;
+    // @ts-expect-error - read by the counted picker.
+    window.__failWrites = true;
+  });
+  const doneButton = page.locator("#done-btn");
+  await doneButton.click();
+  await expect(doneButton).toHaveText("Saving…");
+  await expect(doneButton).toBeDisabled();
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the counted picker.
+    window.__holdWrites = false;
+    // @ts-expect-error - set by the counted picker.
+    window.__release();
+  });
+  await expect(
+    page.locator(".toast", { hasText: "Not done yet" }),
+  ).toBeVisible();
+  await expect(doneButton).toHaveText("Done");
+  await expect(doneButton).toBeEnabled();
+  await expect(page.locator("#done-modal")).toBeHidden();
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the counted picker.
+    window.__failWrites = false;
+  });
+  await doneButton.click();
+  await expect(page.locator("#done-modal")).toBeVisible();
+  const before = await readOpfsTour(page, "wrapped.zip");
+  expect(before["mytour/tour.json"]).toContain("Held, then failed");
+  expect(Object.keys(before)).toContain("mytour/actions/000001.json");
+  // The walk's file is not saved (its save dialog dismissed): nothing moves.
+  await page.evaluate(() => {
+    // @ts-expect-error - the e2e's own save picker.
+    window.showSaveFilePicker = () =>
+      Promise.reject(new DOMException("dismissed", "AbortError"));
+  });
+  const move = page.locator("#done-move");
+  await move.click();
+  await expect(page.locator("#done-move-status")).toContainText(
+    "Nothing was moved",
+  );
+  await expect(move).toBeEnabled();
+  await expect(move).toHaveText("Move the walk out");
+  expect(await readOpfsTour(page, "wrapped.zip")).toEqual(before);
+  // The walk's file is saved, and the tour's write fails: the tour keeps
+  // its walk.
+  await page.evaluate(() => {
+    // @ts-expect-error - the e2e takes the picker away: a plain download.
+    delete window.showSaveFilePicker;
+    // @ts-expect-error - read by the counted picker.
+    window.__failWrites = true;
+  });
+  const download = page.waitForEvent("download");
+  await move.click();
+  expect((await download).suggestedFilename()).toBe("wrapped-walk.zip");
+  await expect(page.locator("#done-move-status")).toContainText(
+    "keeps its walk",
+  );
+  await expect(move).toBeEnabled();
+  expect(await readOpfsTour(page, "wrapped.zip")).toEqual(before);
+});

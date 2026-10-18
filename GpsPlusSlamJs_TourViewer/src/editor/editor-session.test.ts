@@ -17,6 +17,7 @@ import {
   createEmptyTourManifest,
   parseTourManifest,
   serializeTourManifest,
+  type TourCaptureSpots,
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -30,6 +31,7 @@ import {
   createEditorSession,
   NOT_IN_TOUR,
   TOUR_NAME_MAX_CHARS,
+  walkFileName,
   type EditorSessionDraft,
 } from "./editor-session.js";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
@@ -1271,5 +1273,162 @@ describe("createEditorSession, undo and redo (W2)", () => {
     });
     expect(editor.changeCount()).toBe(0);
     await session.close();
+  });
+});
+
+/** Spots that place the recorded photo without the walk (any valid ones). */
+const WALK_SPOTS: TourCaptureSpots = {
+  fixes: 3,
+  gpsAccuracyMedianM: 4,
+  captures: [
+    {
+      image: "images/frame-000002.jpg",
+      geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+    },
+  ],
+};
+
+/** The walk's entries and their bytes, as the phone records them. */
+const WALK_ENTRIES: Readonly<Record<string, string>> = {
+  "session.json": '{"version":1}',
+  "actions/000001.json": '[{"type":"gps"}]',
+  "images/frame-000001.jpg": "an unbaked frame",
+};
+
+/** A tour with a pin, a baked photo (`images/frame-000002.jpg`) and the
+ *  walk; `baked: false` leaves the photos' spots to the walk. */
+async function walkTour(baked = true): Promise<{
+  session: TourSession;
+  manifest: TourManifest;
+  bytes: Uint8Array;
+}> {
+  const manifest: TourManifest = {
+    ...createEmptyTourManifest(),
+    objects: [pin("a")],
+    ...(baked ? { captureSpots: WALK_SPOTS } : {}),
+  };
+  const zip = await packFilesAsZip([
+    { path: "tour.json", data: serializeTourManifest(manifest) },
+    { path: "images/frame-000002.jpg", data: "the baked photo" },
+    ...Object.entries(WALK_ENTRIES).map(([path, data]) => ({ path, data })),
+  ]);
+  const session = await openTourFile(
+    new File([zip], "tour.zip", { type: "application/zip" }),
+  );
+  return { session, manifest, bytes: new Uint8Array(await zip.arrayBuffer()) };
+}
+
+/** A zip's entry names, sorted. */
+async function namesIn(blob: Blob): Promise<string[]> {
+  return readStoredCentralDirectory(new Uint8Array(await blob.arrayBuffer()))
+    .map((e) => e.name)
+    .sort();
+}
+
+describe("moving the walk out (W2, D19)", () => {
+  // Why: a hosted tour file is public, and the walk (the GPS track, the
+  // depth) is the creator's. Moving it out must keep every byte of it in a
+  // file of its own, take it out of the tour for good - also the next
+  // autosave, which keeps "the walk" of the file it rebuilds from - and
+  // change nothing until the page has delivered both files: a move whose
+  // write failed must leave the next save carrying the walk.
+  const walkNames = Object.keys(WALK_ENTRIES).sort();
+
+  it("names the walk's file after the tour's", () => {
+    expect(walkFileName("castle.zip")).toBe("castle-walk.zip");
+    expect(walkFileName("Castle.ZIP")).toBe("Castle-walk.zip");
+    expect(walkFileName("castle")).toBe("castle-walk.zip");
+  });
+
+  it("puts every walk entry, byte for byte, into the walk's zip, and the tour carries none of them, also after the next save", async () => {
+    const { session, manifest, bytes } = await walkTour();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect((await editor.walkEntries()).sort()).toEqual(walkNames);
+    editor.editText("a", "Moved with the walk");
+    const move = await editor.moveWalkOut();
+    if (move.kind !== "ready") throw new Error(move.reason);
+    expect(move.walk.filename).toBe("tour-walk.zip");
+    expect(await namesIn(move.walk.blob)).toEqual(walkNames);
+    const walkBytes = new Uint8Array(await move.walk.blob.arrayBuffer());
+    for (const name of walkNames) {
+      // Read, never undefined on both sides: an equality of two misses
+      // would prove nothing.
+      expect(readStoredEntryBytes(walkBytes, name)).toBeDefined();
+      expect(readStoredEntryBytes(walkBytes, name)).toEqual(
+        readStoredEntryBytes(bytes, name),
+      );
+    }
+    const tourNames = await namesIn(move.save.blob);
+    for (const name of walkNames) expect(tourNames).not.toContain(name);
+    expect(tourNames).toContain("images/frame-000002.jpg");
+    // The pending edit rides along, as in any save.
+    expect((await carried(move.save.blob)).objects[0]).toMatchObject({
+      label: "Moved with the walk",
+    });
+    move.commit();
+    expect(editor.changeCount()).toBe(0);
+    expect(await editor.walkEntries()).toEqual([]);
+    editor.editText("a", "After the move");
+    // An in-place autosave keeps the walk of the bytes it rebuilds from:
+    // there is none left to keep.
+    const next = await editor.save({ keepScan: true });
+    const nextNames = await namesIn(next.blob);
+    for (const name of walkNames) expect(nextNames).not.toContain(name);
+    expect((await carried(next.blob)).objects[0]).toMatchObject({
+      label: "After the move",
+    });
+    await session.close();
+  });
+
+  it("changes nothing until the move is committed: a move whose files were not written leaves the walk in the next save", async () => {
+    const { session, manifest } = await walkTour();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    editor.editText("a", "Pending");
+    const move = await editor.moveWalkOut();
+    expect(move.kind).toBe("ready");
+    // Not committed: the page's write of either file failed.
+    expect(editor.changeCount()).toBe(1);
+    expect((await editor.walkEntries()).sort()).toEqual(walkNames);
+    const saved = await editor.save({ keepScan: true });
+    const names = await namesIn(saved.blob);
+    for (const name of walkNames) expect(names).toContain(name);
+    await session.close();
+  });
+
+  it("refuses while the recorded photos still need the walk, and for a tour without one", async () => {
+    const unbaked = await walkTour(false);
+    const editor = createEditorSession({
+      session: unbaked.session,
+      manifest: unbaked.manifest,
+      levels: new Map(),
+    });
+    const refused = await editor.moveWalkOut();
+    expect(refused.kind).toBe("refused");
+    expect(refused.kind === "refused" && refused.reason).toMatch(
+      /recorded photos/,
+    );
+    // Refused: the tour keeps its walk (unbaked, its frames are the
+    // visitors' photo ring, not the walk).
+    expect(await editor.walkEntries()).toEqual(
+      expect.arrayContaining(["session.json", "actions/000001.json"]),
+    );
+    await unbaked.session.close();
+    const plain = await opened([pin("a")]);
+    const none = createEditorSession({
+      session: plain.session,
+      manifest: plain.manifest,
+      levels: new Map(),
+    });
+    const nothing = await none.moveWalkOut();
+    expect(nothing.kind === "refused" && nothing.reason).toMatch(/no walk/);
+    await plain.session.close();
   });
 });

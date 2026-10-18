@@ -23,12 +23,15 @@ import {
   TOUR_CONTACT_MAX_CHARS,
   TOUR_DESCRIPTION_MAX_CHARS,
 } from "gps-plus-slam-app-framework/ar/tour-details";
+import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
 import {
   captureSpotsForRebuild,
   finishedFileName,
   pendingAfterRebuild,
   rebuildFinishedTour,
+  type FinishedTour,
 } from "../finish-rebuild.js";
+import { scanEntryNames } from "../tour-read-set.js";
 import { objectContentKey } from "../authoring-draft.js";
 import { recordDelete, type DraftObjectWrites } from "../draft-actions.js";
 import {
@@ -48,7 +51,7 @@ import {
 } from "./editor-draft.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
-import { readZipBlobEntry } from "../zip-blob.js";
+import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
 
 /** An edited or moved object, or one an undo brought back after a save
  *  wrote its delete - a photo then with its picture's bytes, which the
@@ -115,6 +118,40 @@ export interface EditorSave {
   /** The manifest the zip carries (the draft's `written` versions, M6
    *  E2c). */
   readonly written: TourManifest;
+}
+
+/** The walk's own file, named after the tour's (W2, D19): `castle.zip`
+ *  gives `castle-walk.zip`. */
+export function walkFileName(tourName: string): string {
+  return `${tourName.replace(/\.zip$/i, "")}-walk.zip`;
+}
+
+/** Said when "Move the walk out" finds no walk in the newest bytes. */
+export const NO_WALK = "This tour carries no walk recording to move out.";
+
+/** Said when the recorded photos are still placed by the walk: moving it
+ *  out would leave them nowhere (`finish-rebuild.ts`, S1 milestone review
+ *  #2). */
+function walkStaysReason(notPlaced: string | undefined): string {
+  return `The walk cannot be moved out: the recorded photos are placed by it, and they could not be fixed in place without it${notPlaced === undefined ? "" : ` (${notPlaced})`}. The tour keeps its walk.`;
+}
+
+/**
+ * A built move of the walk out of the tour (W2, D19): the walk's own zip
+ * (every walk entry of the newest bytes, byte for byte, under its own
+ * path) and the tour without it, with the pending edits. Nothing of the
+ * session changes until `commit()`: the page writes the walk's zip first,
+ * then the tour, and commits only when both landed - a commit before that
+ * would let the next save rebuild from walk-free bytes the creator never
+ * received. The page holds every save while a move runs.
+ */
+export interface WalkMove {
+  readonly kind: "ready";
+  readonly walk: { readonly blob: Blob; readonly filename: string };
+  readonly save: EditorSave;
+  /** Make the walk-free tour the session's newest bytes, as a landed save
+   *  does; throws when another save landed since the move was built. */
+  commit(): void;
 }
 
 /** Said for an id the tour no longer carries (a restore or a save took
@@ -308,6 +345,13 @@ export interface EditorSession {
    *  wait for the next save. Saves run one after another: one called
    *  while another runs starts when it ends (E2a review #9). */
   save(options: { readonly keepScan: boolean }): Promise<EditorSave>;
+  /** The walk recording's entries in the newest bytes (W2, D19): none
+   *  once it was moved out, or when the last save left it out. */
+  walkEntries(): Promise<string[]>;
+  /** Build the move of the walk out (`WalkMove`), queued with the saves;
+   *  refused, in words, when there is no walk or the recorded photos
+   *  still need it. Bringing a walk back is a later feature. */
+  moveWalkOut(): Promise<WalkMove | EditorRefusal>;
 }
 
 export function createEditorSession(input: {
@@ -801,46 +845,92 @@ export function createEditorSession(input: {
       return { changed: changed + settingsChanged, deleted: gone };
     },
     save(options) {
-      const start = (): Promise<EditorSave> => runSave(options);
-      const run = inFlight === 0 ? start() : tail.then(start, start);
-      inFlight += 1;
-      // Counted down BEFORE the caller hears the end: an undo asked for
-      // right after an awaited save is not refused as "a save is running".
-      const next = run.finally(() => {
-        inFlight -= 1;
-      });
-      tail = next.catch(() => undefined);
-      return next;
+      return queued(() => runSave(options));
+    },
+    async walkEntries() {
+      return scanEntryNames(
+        await newestNames(),
+        manifest,
+        session.manifestWrap,
+      );
+    },
+    moveWalkOut() {
+      return queued(buildWalkMove);
     },
   };
 
-  async function runSave(options: {
-    readonly keepScan: boolean;
-  }): Promise<EditorSave> {
-    // Snapshots before the first await: an edit made from here on waits
-    // for the next save (`pendingAfterRebuild`).
-    const placedNow = [...placed];
-    const deletedNow = [...deleted];
-    const manifestNow = withDetails(
-      withNeedsNoGps(manifest, noGps),
-      effectiveDetails(),
-    );
-    // After the snapshots: a deleted photo's picture is read before this
-    // save replaces the bytes it may be read from.
+  /** Saves (and moves of the walk) run one after another: one asked for
+   *  while another runs starts when it ends (E2a review #9). */
+  function queued<T>(start: () => Promise<T>): Promise<T> {
+    const run = inFlight === 0 ? start() : tail.then(start, start);
+    inFlight += 1;
+    // Counted down BEFORE the caller hears the end: an undo asked for
+    // right after an awaited save is not refused as "a save is running".
+    const next = run.finally(() => {
+      inFlight -= 1;
+    });
+    tail = next.catch(() => undefined);
+    return next;
+  }
+
+  /** The newest bytes' entry names: the last save's, else the opened
+   *  file's. */
+  async function newestNames(): Promise<string[]> {
+    return previous === null
+      ? session.entries.map((e) => e.filename)
+      : zipBlobEntryNames(previous.blob);
+  }
+
+  /** What a rebuild starts from, taken before its first await: an edit
+   *  made from then on waits for the next save (`pendingAfterRebuild`). */
+  function snapshot(): {
+    placedNow: EditorEntry[];
+    deletedNow: string[];
+    manifestNow: TourManifest;
+  } {
+    return {
+      placedNow: [...placed],
+      deletedNow: [...deleted],
+      manifestNow: withDetails(
+        withNeedsNoGps(manifest, noGps),
+        effectiveDetails(),
+      ),
+    };
+  }
+
+  /** The photo spots for a rebuild, decided once per open; a deleted
+   *  photo's picture is read first, before the rebuild replaces the bytes
+   *  it may be read from. */
+  async function photoSpots(
+    manifestNow: TourManifest,
+  ): Promise<{ spots?: TourCaptureSpots; notPlaced?: string }> {
     await Promise.all(pictureReads);
     spots ??= captureSpotsForRebuild(session, manifestNow);
-    const photos = await spots;
+    return spots;
+  }
+
+  async function rebuild(
+    snap: ReturnType<typeof snapshot>,
+    photos: { spots?: TourCaptureSpots },
+    keepScan: boolean,
+  ): Promise<FinishedTour> {
     const finished = await rebuildFinishedTour({
       tour: session,
-      manifest: manifestNow,
-      placed: placedNow,
-      deleted: deletedNow,
+      manifest: snap.manifestNow,
+      placed: snap.placedNow,
+      deleted: snap.deletedNow,
       levels: [],
-      keepScan: options.keepScan,
+      keepScan,
       ...(photos.spots === undefined ? {} : { captureSpots: photos.spots }),
       previous,
     });
     if (finished === null) throw new Error("the save was stopped");
+    return finished;
+  }
+
+  /** `finished` becomes the newest bytes: what it carries is no longer
+   *  pending. */
+  function landed(finished: FinishedTour, deletedNow: readonly string[]): void {
     previous = {
       blob: finished.blob,
       ...(finished.signedManifest === undefined
@@ -855,6 +945,12 @@ export function createEditorSession(input: {
     );
     placed = pending.placed;
     deleted = pending.deleted;
+  }
+
+  function saveOf(
+    finished: FinishedTour,
+    photos: { notPlaced?: string },
+  ): EditorSave {
     return {
       blob: finished.blob,
       filename: savedName,
@@ -863,6 +959,63 @@ export function createEditorSession(input: {
       ...(photos.notPlaced === undefined
         ? {}
         : { notPlaced: photos.notPlaced }),
+    };
+  }
+
+  async function runSave(options: {
+    readonly keepScan: boolean;
+  }): Promise<EditorSave> {
+    const snap = snapshot();
+    const photos = await photoSpots(snap.manifestNow);
+    const finished = await rebuild(snap, photos, options.keepScan);
+    landed(finished, snap.deletedNow);
+    return saveOf(finished, photos);
+  }
+
+  /** The move of the walk out (D19), built from the newest bytes. */
+  async function buildWalkMove(): Promise<WalkMove | EditorRefusal> {
+    const snap = snapshot();
+    const base = previous;
+    const wrap = session.manifestWrap;
+    const names = await newestNames();
+    if (scanEntryNames(names, snap.manifestNow, wrap).length === 0) {
+      return { kind: "refused", reason: NO_WALK };
+    }
+    const photos = await photoSpots(snap.manifestNow);
+    // Without baked spots the walk is what places the recorded photos: the
+    // rebuild would keep it (`finish-rebuild.ts`), so the move refuses.
+    if (photos.spots === undefined) {
+      return { kind: "refused", reason: walkStaysReason(photos.notPlaced) };
+    }
+    // The walk as the moved-out tour sees it: with its photos' spots, a
+    // recorded frame a spot shows stays in the tour.
+    const walk = new Set(
+      scanEntryNames(
+        names,
+        { ...snap.manifestNow, captureSpots: photos.spots },
+        wrap,
+      ),
+    );
+    const source = base === null ? await session.readWholeArchive() : base.blob;
+    const walkBlob = await rebuildZipWithEntries(source, [], {
+      remove: names.filter((name) => !walk.has(name)),
+      // The opened file is untrusted: read under the session's budget, as
+      // the rebuild below reads it (K0 milestone review R1).
+      ...(base === null ? { budget: session.budget } : {}),
+    });
+    const finished = await rebuild(snap, photos, false);
+    return {
+      kind: "ready",
+      walk: { blob: walkBlob, filename: walkFileName(savedName) },
+      save: saveOf(finished, photos),
+      commit() {
+        if (previous !== base) {
+          throw new Error(
+            "another save landed while the walk was moved out - move it again",
+          );
+        }
+        landed(finished, snap.deletedNow);
+      },
     };
   }
 }

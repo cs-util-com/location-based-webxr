@@ -38,6 +38,17 @@
       <button class="btn primary" id="save-btn" type="button" disabled>
         Save
       </button>
+      <!-- "Done" (W2 of the tour editor plan): saves what is pending, then
+           says where the changes are and what is left to do (done-dialog.ts). -->
+      <button
+        class="btn"
+        id="done-btn"
+        type="button"
+        aria-haspopup="dialog"
+        disabled
+      >
+        Done
+      </button>
       <button
         class="btn"
         id="open-another"
@@ -261,6 +272,46 @@
           </button>
         </div>
       </form>
+    </div>
+
+    <!-- "Done" (W2 of the tour editor plan, D18, D19): where the changes
+         are, how the tour at its link is updated, that a file at a link is
+         public, and - while the file carries the walk - "Move the walk out"
+         (done-dialog.ts). The Drive-mount tip is off until the owner's
+         check (DRIVE_MOUNT_TIP_SHOWN). -->
+    <div class="backdrop" id="done-modal" hidden>
+      <div
+        class="modal done"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="done-title"
+      >
+        <h1 id="done-title">Done editing</h1>
+        <p class="lede" id="done-where"></p>
+        <h2>Update the tour at its link</h2>
+        <label for="done-host">Where the tour lives</label>
+        <select id="done-host"></select>
+        <p id="done-update"></p>
+        <p class="note-line" id="done-public"></p>
+        <p class="note-line" id="done-drive-tip" hidden></p>
+        <section id="done-walk" aria-label="The walk recording" hidden>
+          <p class="note-line warn" id="done-walk-text"></p>
+          <button class="btn" id="done-move" type="button">
+            Move the walk out
+          </button>
+          <p id="done-move-status" role="status" aria-live="polite"></p>
+        </section>
+        <p class="fineprint">
+          <a href="legal.html#privacy" target="_blank" rel="noopener"
+            >Privacy</a
+          >
+        </p>
+        <div class="modal-actions">
+          <button class="btn primary" id="done-close" type="button">
+            Close
+          </button>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="/src/editor/edit-main.ts"></script>

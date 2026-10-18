@@ -21,7 +21,8 @@ AR (tour editor plan 2026-10-17-1816, W1).
 - `#topbar` - the tour's title (`#tour-name`, a button that opens the
   tour's details, W2) and file name, the "Keep the walk recording"
   switch (`#keep-walk`, only for a tour carrying a walk), `#save-status`,
-  `#save-btn` (Save downloads the tour, M6 E2a), "Open another tour".
+  `#save-btn` (Save downloads the tour, M6 E2a), `#done-btn` ("Done",
+  W2), "Open another tour".
 - `#rail` - the codes, pins and photos (`src/editor/editor-rail.ts`).
 - `#card`, `#offscreen-chip` - the card beside the selected marker
   (`src/editor/editor-card.ts`).
@@ -41,6 +42,13 @@ AR (tour editor plan 2026-10-17-1816, W1).
 covers-none` when the tour has no photo to choose), `#details-contact`
   (320), `#details-error` (`role="alert"`), Cancel and Apply
   (`src/editor/details-dialog.ts`). Above the toasts (z-index).
+- `#done-modal` - "Done editing" (W2, D18, D19; `src/editor/done-dialog.ts`):
+  `#done-where`, the host picker `#done-host` (options drawn by
+  `edit-main.ts`) with `#done-update`, `#done-public`, `#done-drive-tip`
+  (hidden: `DRIVE_MOUNT_TIP_SHOWN` is off until the owner's check),
+  `#done-walk` (only while the file carries the walk: `#done-walk-text`,
+  `#done-move` "Move the walk out", `#done-move-status`), a Privacy link
+  (`legal.html#privacy`) and Close. Above the toasts (z-index).
 - `#toasts` - "Opened <file>: N codes, M notes".
 
 ## Invariants
@@ -65,4 +73,5 @@ linked tour opened, a refused link, text that is not a link),
 back: the editor's paper, not the browser's plain page),
 `playwright-tests/editor.spec.js` (the real file chooser, the rail and the
 markers, the card beside its marker, a capped photo, a refused non-tour,
-the layout at three viewports, the details dialog, the fine print).
+the layout at three viewports, the details dialog, the fine print, Done
+and the walk's move).

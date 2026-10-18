@@ -9,7 +9,8 @@
  * picker, M6 E2b-1), writes the opened file in place - by itself too, a
  * few seconds after a change (M6 E2b-2, `autosave.ts`). The tour's name in
  * the top bar opens its details (W2 of the tour editor plan,
- * `details-dialog.ts`). Linked from the
+ * `details-dialog.ts`); "Done" says where the changes are and what is
+ * left to do, and moves the walk out (`done-dialog.ts`). Linked from the
  * setup page's "You already have a tour?" box and its step 5 on a device
  * without AR.
  *
@@ -51,6 +52,18 @@ import {
 } from "./editor-draft.js";
 import { createPhotoCopies } from "./photo-copy.js";
 import { wireDetailsDialog } from "./details-dialog.js";
+import {
+  DRIVE_MOUNT_TIP_SHOWN,
+  wireDoneDialog,
+  type DoneSaved,
+  type WalkMoveOutcome,
+} from "./done-dialog.js";
+import {
+  TOUR_HOSTS,
+  hostOfLink,
+  readTourHost,
+  type TourHost,
+} from "../tour-host.js";
 import { createEditorRail } from "./editor-rail.js";
 import {
   AUTOSAVE_MAX_BYTES,
@@ -174,6 +187,8 @@ const coverList = element("details-covers");
 const coversNone = element("details-covers-none");
 const toasts = element("toasts");
 const saveButton = element<HTMLButtonElement>("save-btn");
+/** "Done" (W2): saves what is pending, then opens its dialog. */
+const doneButton = element<HTMLButtonElement>("done-btn");
 const saveStatus = element("save-status");
 const keepWalk = element("keep-walk");
 const keepWalkInput = element<HTMLInputElement>("keep-walk-input");
@@ -252,6 +267,16 @@ let autoRunning = false;
 let saveQueued = false;
 /** The last in-place refusal's toast: a new one takes its place. */
 let refusalToast: HTMLElement | null = null;
+/** Where this tour's last save arrived, for Done (W2): in place or as a
+ *  download, under which name; null while nothing was saved. */
+let delivered: { readonly inPlace: boolean; readonly name: string } | null =
+  null;
+/** The host of the link the open tour was fetched from, if it was. */
+let linkHost: TourHost | null = null;
+/** Done is saving before it opens its dialog. */
+let doneBusy = false;
+/** The end of the save that runs, for Done to wait on. */
+let saveEnd: Promise<void> = Promise.resolve();
 
 /** Edits being made that a save must not cut into (M6 E2b-2, the E2b plan
  *  review #3, #7): a delete's undo while its toast offers it, typing not
@@ -451,6 +476,7 @@ function select(id: string | null, pan = false): void {
 
 function renderSaveState(): void {
   const count = editor?.changeCount() ?? 0;
+  if (!doneBusy) doneButton.disabled = editor === null;
   if (saving) {
     saveStatus.dataset["state"] = "saving";
     saveStatus.textContent = "Saving…";
@@ -884,6 +910,11 @@ tourName.addEventListener("click", () => {
 
 /** Where a key goes to a field's own undo (typing in the card, a dialog,
  *  the search): the page's undo stays out of it. */
+/** One of the page's dialogs shows. */
+function dialogOpen(): boolean {
+  return !modal.hidden || details.isOpen() || done.isOpen();
+}
+
 function inField(at: EventTarget | null): boolean {
   return (
     at instanceof HTMLElement &&
@@ -911,7 +942,7 @@ function undoKeys(event: KeyboardEvent): boolean {
   const z = commandKey(event, "z");
   const y = commandKey(event, "y");
   if (!z && !y) return false;
-  if (inField(event.target) || !modal.hidden || details.isOpen()) return true;
+  if (inField(event.target) || dialogOpen()) return true;
   event.preventDefault();
   runStep(y || event.shiftKey ? "redo" : "undo");
   return true;
@@ -953,6 +984,10 @@ document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (details.isOpen()) {
     details.close();
+    return;
+  }
+  if (done.isOpen()) {
+    done.close();
     return;
   }
   if (moving !== null) {
@@ -1000,6 +1035,7 @@ function resetEditing(): void {
   moved.clear();
   message = null;
   undelivered = null;
+  delivered = null;
   delete saveStatus.dataset["saved"];
 }
 
@@ -1007,6 +1043,7 @@ function resetEditing(): void {
  *  screen, and the dialog says why. */
 function dropTour(reason: string): void {
   details.close();
+  done.close();
   select(null);
   const open = session;
   session = null;
@@ -1127,6 +1164,8 @@ async function openFile(
   );
   setBusy(false, "");
   details.close();
+  done.close();
+  linkHost = null;
   select(null);
   const previous = session;
   session = outcome.session;
@@ -1332,10 +1371,14 @@ function readPhotosFrom(mine: EditorSession, written: File): Promise<void> {
   return photos.use(written, () => editor === mine);
 }
 
-/** Hand `save` to the browser as a download; whether it arrived. */
-async function download(save: EditorSave): Promise<boolean> {
+/** Hand a zip to the browser as a download (or its save dialog); whether
+ *  it arrived. */
+async function download(file: {
+  readonly blob: Blob;
+  readonly filename: string;
+}): Promise<boolean> {
   try {
-    return await downloadZip(save.blob, save.filename);
+    return await downloadZip(file.blob, file.filename);
   } catch {
     return false;
   }
@@ -1449,6 +1492,10 @@ async function saveTour(mode: "explicit" | "auto"): Promise<AutosaveOutcome> {
   const mine = editor;
   saving = true;
   autoRunning = mode === "auto";
+  let ended = (): void => undefined;
+  saveEnd = new Promise((resolve) => {
+    ended = resolve;
+  });
   try {
     if (mode === "explicit") {
       card.commit();
@@ -1475,6 +1522,7 @@ async function saveTour(mode: "explicit" | "auto"): Promise<AutosaveOutcome> {
       saving = false;
       autoRunning = false;
     }
+    ended();
     if (saveQueued && editor === mine && !saving) {
       saveQueued = false;
       void runSave();
@@ -1484,6 +1532,19 @@ async function saveTour(mode: "explicit" | "auto"): Promise<AutosaveOutcome> {
     // and a failed one must pause it, not start it (milestone review #5).
     if (mode === "auto") autosave.poke();
   }
+}
+
+/** Where a save arrived: the status line's words, and Done's facts. */
+function noteDelivered(
+  inPlace: boolean,
+  into: SaveTarget | null,
+  save: EditorSave,
+): void {
+  const name = inPlace ? (into?.name ?? save.filename) : save.filename;
+  delivered = { inPlace, name };
+  saveStatus.dataset["saved"] = inPlace
+    ? `Saved to ${name}`
+    : `Saved as ${name}`;
 }
 
 async function buildAndDeliver(
@@ -1543,9 +1604,7 @@ async function buildAndDeliver(
       const pending = new Set(mine.pendingIds());
       for (const id of [...moved]) if (!pending.has(id)) moved.delete(id);
       message = null;
-      saveStatus.dataset["saved"] = inPlace
-        ? `Saved to ${into?.name ?? save.filename}`
-        : `Saved as ${save.filename}`;
+      noteDelivered(inPlace, into, save);
     }
     // Quiet: an autosave says it saved in the status line only (it is
     // always in place, which keeps the walk, so the result has nothing
@@ -1684,7 +1743,8 @@ linkForm.addEventListener("submit", (event) => {
   })
     .then(async (file) => {
       setBusy(false, "");
-      await openFile(file);
+      // Done names the host the tour was fetched from (W2).
+      if (await openFile(file)) linkHost = hostOfLink(link);
     })
     .catch((err: unknown) => {
       setBusy(false, "");
@@ -1707,6 +1767,179 @@ element<HTMLButtonElement>("open-another").addEventListener("click", () => {
     return;
   }
   showModal(true);
+});
+
+/** Said when Done's save did not land: the dialog waits for it. */
+const DONE_NOT_SAVED =
+  "Not done yet: your changes are not saved (the line beside Save says why). Save them, then press Done again.";
+
+/** The host Done's steps start with: the link's the tour came from, else
+ *  the one chosen in the setup's step 1, else Google Drive. */
+function doneHost(): TourHost {
+  let stored: TourHost | null = null;
+  try {
+    stored = readTourHost(window.localStorage);
+  } catch {
+    // Site data blocked: no stored choice.
+  }
+  return linkHost ?? stored ?? "drive";
+}
+
+/** Where the changes are, for Done. */
+function doneSaved(): DoneSaved {
+  if (delivered !== null) {
+    return delivered.inPlace
+      ? { kind: "in-place", name: delivered.name }
+      : { kind: "downloaded", name: delivered.name };
+  }
+  return {
+    kind: "unchanged",
+    name: target?.name ?? element("tour-file").textContent ?? "",
+  };
+}
+
+/** "Done" (W2): what is pending is saved first - the button says so while
+ *  it runs (the async-UI rule) - then the dialog opens; a save that did not
+ *  land keeps it shut and says why. */
+async function finishEditing(): Promise<void> {
+  if (editor === null || busy || doneBusy || dialogOpen()) return;
+  const mine = editor;
+  card.commit();
+  if (moving !== null) finishMove();
+  if (unsavedWork()) {
+    doneBusy = true;
+    doneButton.disabled = true;
+    doneButton.textContent = "Saving…";
+    try {
+      // An autosave that runs ends first (and one queued behind it).
+      while (saving) await saveEnd;
+      if (editor === mine && unsavedWork()) await runSave();
+      while (saving) await saveEnd;
+    } finally {
+      doneBusy = false;
+      doneButton.textContent = "Done";
+      doneButton.disabled = editor === null;
+    }
+    if (editor !== mine) return;
+    if (unsavedWork()) {
+      toast(DONE_NOT_SAVED);
+      return;
+    }
+  }
+  const walk = await mine.walkEntries().catch(() => []);
+  if (editor !== mine || dialogOpen()) return;
+  done.open({
+    saved: doneSaved(),
+    host: doneHost(),
+    carriesWalk: walk.length > 0,
+    driveMountTip: DRIVE_MOUNT_TIP_SHOWN,
+  });
+  releaseOutside = holdOutside(element("done-modal"));
+}
+
+/**
+ * "Move the walk out" (W2, D19): the walk's own zip is written first, then
+ * the tour without it - in place, or downloaded - and only once both
+ * landed does the session take the walk-free bytes as its newest; a failed
+ * write of either leaves the tour file as it was. Every save waits while
+ * it runs (`saving`).
+ */
+async function moveWalk(): Promise<WalkMoveOutcome> {
+  const mine = editor;
+  if (mine === null) return { kind: "refused", reason: "No tour is open." };
+  if (saving) {
+    return {
+      kind: "refused",
+      reason: "A save is running - move the walk once it has finished.",
+    };
+  }
+  saving = true;
+  renderSaveState();
+  try {
+    const into = target;
+    if (into !== null) {
+      const state = await into.check().catch(() => "same" as const);
+      if (editor !== mine) return { kind: "cancelled" };
+      if (state !== "same") {
+        return {
+          kind: "refused",
+          reason: `${new InPlaceRefusal(state).message} The tour keeps its walk.`,
+        };
+      }
+    }
+    const move = await mine.moveWalkOut();
+    if (editor !== mine) return { kind: "cancelled" };
+    if (move.kind === "refused") return move;
+    if (!(await download(move.walk))) return { kind: "cancelled" };
+    if (editor !== mine) return { kind: "cancelled" };
+    tourDraft?.built(move.save.written);
+    const { arrived, inPlace } = await deliver(
+      mine,
+      move.save,
+      into,
+      tourDraft,
+    );
+    if (editor !== mine) return { kind: "cancelled" };
+    const name = into?.name ?? move.save.filename;
+    if (!arrived) {
+      return {
+        kind: "refused",
+        reason: `${move.walk.filename} was saved, but ${name} could not be written, so the tour keeps its walk.`,
+      };
+    }
+    move.commit();
+    built = true;
+    keepWalk.hidden = true;
+    undelivered = null;
+    noteDelivered(inPlace, into, move.save);
+    return { kind: "moved", walkName: move.walk.filename, tourName: name };
+  } catch (err) {
+    if (editor !== mine) return { kind: "cancelled" };
+    return {
+      kind: "refused",
+      reason: `The walk was not moved: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  } finally {
+    if (editor === mine) {
+      saving = false;
+      refresh();
+      autosave.poke();
+    }
+  }
+}
+
+const doneHostSelect = element<HTMLSelectElement>("done-host");
+for (const host of TOUR_HOSTS) {
+  const option = document.createElement("option");
+  option.value = host.id;
+  option.textContent = host.label;
+  doneHostSelect.append(option);
+}
+
+const done = wireDoneDialog({
+  dom: {
+    backdrop: element("done-modal"),
+    where: element("done-where"),
+    host: doneHostSelect,
+    update: element("done-update"),
+    publicLine: element("done-public"),
+    walk: element("done-walk"),
+    walkText: element("done-walk-text"),
+    moveButton: element<HTMLButtonElement>("done-move"),
+    moveStatus: element("done-move-status"),
+    driveTip: element("done-drive-tip"),
+    close: element<HTMLButtonElement>("done-close"),
+  },
+  moveWalk,
+  onClose: () => {
+    releaseOutside?.();
+    releaseOutside = null;
+    if (!topbar.hidden) doneButton.focus();
+  },
+});
+
+doneButton.addEventListener("click", () => {
+  void finishEditing();
 });
 
 // What Save does in this browser (W2): a chosen file is written in place

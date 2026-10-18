@@ -224,6 +224,26 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   stays until closed and covered its buttons). While it shows, the rest of
   the page is `inert` (`page-inert.ts`, M4a review #12): Tab stays in the
   dialog. Opening another tour or losing this one closes it.
+- **Done (W2, D18, D19).** `#done-btn` in the top bar commits the card,
+  waits for a running save and saves what is pending ("Saving…" on the
+  button, disabled, while it runs - the async-UI rule); a save that did
+  not land keeps the dialog shut and says so in a toast ("Not done
+  yet: ..."). Then `done-dialog.ts` opens with the facts: where the last
+  save arrived (`delivered`: in place under the target's name, or
+  downloaded; "unchanged" when nothing was saved), the host (the link's the
+  tour was fetched from, else the setup's stored choice, else Google
+  Drive; a picker of `TOUR_HOSTS`), whether the newest bytes carry the
+  walk (`walkEntries()`), and the Drive-mount tip's switch
+  (`DRIVE_MOUNT_TIP_SHOWN`, off). The rest of the page is `inert` while
+  it shows; Esc and Close close it, focus goes back to Done.
+- **Move the walk out (D19)** (`moveWalk`): holds every save
+  (`saving`), checks the in-place file is unchanged, builds the move
+  (`moveWalkOut`), writes the walk's zip first (`downloadZip`: the save
+  dialog where the browser has one, else a download; dismissed - nothing
+  moved), then the tour (`deliver`: in place, or downloaded), and only
+  when both landed commits the move - so a failed write of either leaves
+  the tour file, and the session's next save, carrying the walk. Its
+  outcome is said in the dialog.
 - **Undo and redo (W2 of the tour editor plan 2026-10-17-1816).** Ctrl+Z
   undoes, Ctrl+Shift+Z and Ctrl+Y redo (Cmd on a Mac; by the key's letter,
   as Ctrl+S): one step of the session's edit stack (`editor.undo()` /
@@ -259,5 +279,6 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 
 The modules it wires have their own unit tests; the page is pinned by
 `playwright-tests/editor.spec.js` (the details dialog, the fine print,
-the undo keys and a delete's Undo after its autosave among them) and `editor-entry.spec.js` (the
+the undo keys, a delete's Undo after its autosave, and Done with the
+walk's move - its success and both failed writes - among them) and `editor-entry.spec.js` (the
 "Nothing to save" toast, the open from a link); `way-in.spec.js` checks its first paint.

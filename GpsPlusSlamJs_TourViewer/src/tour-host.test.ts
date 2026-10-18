@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   TOUR_HOSTS,
+  hostReplaceOnComputer,
   hostReplaceText,
   hostSteps,
   isTourHost,
@@ -122,6 +123,40 @@ describe("hostReplaceText (polish round M2, step 6)", () => {
       const others = TOUR_HOSTS.filter((h) => h.id !== id && h.id !== "own");
       for (const other of others) expect(text).not.toContain(other.label);
     }
+  });
+});
+
+describe("hostReplaceOnComputer (tour editor plan 2026-10-17-1816, W2: Done)", () => {
+  // Why: the desktop editor's Done tells a creator at a computer how to put
+  // the saved file in place of the hosted one, for the host it lives on -
+  // Drive too, whose phone steps come from the link and speak of a phone.
+  // The phone's sentences must stay exactly as they were.
+  it("names the file and the host's own way to replace it under the same link", () => {
+    for (const { id, label } of TOUR_HOSTS) {
+      const text = hostReplaceOnComputer(id, "castle.zip");
+      expect(text).toContain("castle.zip");
+      expect(text).toMatch(/printed code - stays the same/);
+      // An own server has no name to say.
+      expect(id === "own" || text.includes(label)).toBe(true);
+    }
+    expect(hostReplaceOnComputer("drive", "castle.zip")).toMatch(
+      /"Replace existing file"/,
+    );
+    expect(hostReplaceOnComputer("own", "castle.zip")).toMatch(/server/);
+  });
+
+  it("speaks of one host only, never the others", () => {
+    for (const { id } of TOUR_HOSTS) {
+      const text = hostReplaceOnComputer(id, "castle.zip");
+      const others = TOUR_HOSTS.filter((h) => h.id !== id && h.id !== "own");
+      for (const other of others) expect(text).not.toContain(other.label);
+    }
+  });
+
+  it("leaves the phone's words as they were", () => {
+    expect(hostReplaceText("onedrive")).toBe(
+      'Last thing: upload this zip over the one at your link, so the link - and with it the printed code - stays the same. In OneDrive, upload it into the same folder with the same name and choose "Replace".',
+    );
   });
 });
 
