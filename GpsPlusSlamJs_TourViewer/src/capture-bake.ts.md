@@ -29,7 +29,11 @@ placesNothing? }`. `placesNothing: true` when the replayed walk names
     no recorded photo the tour carries (no photo was taken, or none of
     their files is in the zip): it places nothing, live or baked, whatever
     its GPS came to, so a lean Finish may leave it out and the editor may
-    move it out (the M4b milestone review #3). Absent for a decline before
+    move it out (the M4b milestone review #3). Only a recording of a known
+    era (`NEWEST_KNOWN_ODOM_COORD_VERSION`) may say so, and "no photo was
+    taken" means no `CAPTURE_ACTION` at all: a newer era, or photos the
+    replay turned into no spot (taken before the GPS zero), decline WITHOUT
+    `placesNothing` and keep the walk (PR #638 review). Absent for a decline before
     the replay (unknown) and for photos the tour carries that the solve
     could not place.
 - `posesOfCaptureSpots(spots: CaptureSpotsInWorld) -> CaptureWorldPose[]`: the spots as the

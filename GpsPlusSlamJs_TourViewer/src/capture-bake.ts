@@ -22,9 +22,11 @@ import { replayActions } from "gps-plus-slam-app-framework/state";
 
 import {
   assessReplayedJoin,
+  CAPTURE_ACTION,
   computeCaptureGeoJoin,
   createCapturePickTracker,
   type CaptureWorldPose,
+  NEWEST_KNOWN_ODOM_COORD_VERSION,
   preflightCaptureJoin,
   type PickTrackerState,
   type ReplayedJoinState,
@@ -102,8 +104,22 @@ export async function bakeCaptureSpots(
   );
   // A walk that names no photo the tour carries places nothing, live or
   // baked - decided before the GPS verdict, which does not change that.
+  // "Places nothing" lets a lean Finish drop the walk for good, so only
+  // a recording of a known era may say it, and only when it took no photo
+  // at all or none of its placed photos is a file of the tour. Photos the
+  // replay turned into no spot (a newer era, or captures before the GPS
+  // zero) are a decline that keeps the walk (PR #638 review).
   const taken = state.gpsData?.odometryPath.points;
   if (taken !== undefined && !taken.some((p) => images.has(p.imageFile))) {
+    const knownEra =
+      (meta?.odomCoordVersion as number) <= NEWEST_KNOWN_ODOM_COORD_VERSION;
+    const tookPhotos = actions.some((a) => a.type === CAPTURE_ACTION);
+    if (!knownEra || (taken.length === 0 && tookPhotos)) {
+      return {
+        kind: "declined",
+        reason: "none of the recorded photos could be placed",
+      };
+    }
     return {
       kind: "declined",
       reason:

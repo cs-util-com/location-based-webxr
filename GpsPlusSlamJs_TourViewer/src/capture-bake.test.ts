@@ -209,6 +209,49 @@ describe("bakeCaptureSpots over the real sample recording", () => {
   });
 });
 
+describe("bakeCaptureSpots keeps a walk it cannot read (PR #638 review)", () => {
+  // Why: "places nothing" lets a lean Finish drop the walk from the tour
+  // file for good. Only a recording that really took no photo, or whose
+  // photos are none of the tour's files, may say so. A replay that turns
+  // the recording's photos into no spot at all - a newer recording era
+  // this build cannot read, or capture actions it could not place - is a
+  // decline that keeps the walk, as the live join's "no captured photos"
+  // decline always did.
+  it("keeps the walk of a newer-era recording that shows this build no photo", async () => {
+    const source = await sampleSource();
+    const actions = (await source.loadRecordingActions())!;
+    // A newer era may name its photo actions differently: this build sees
+    // none of them.
+    const renamed = actions.map((a) =>
+      a.type === "gpsData/add2dImage"
+        ? { ...a, type: "gpsData/addPhotoV6" }
+        : a,
+    );
+    const bake = await bakeCaptureSpots({
+      ...source,
+      loadSessionMeta: () => Promise.resolve({ odomCoordVersion: 6 }),
+      loadRecordingActions: () => Promise.resolve(renamed),
+    });
+    expect(bake.kind).toBe("declined");
+    expect(bake).not.toHaveProperty("placesNothing");
+  });
+
+  it("keeps the walk when the recording took photos the replay placed none of", async () => {
+    const source = await sampleSource();
+    const actions = (await source.loadRecordingActions())!;
+    // Every photo before the GPS zero: the replay gives none a spot.
+    const photos = actions.filter((a) => a.type === "gpsData/add2dImage");
+    const rest = actions.filter((a) => a.type !== "gpsData/add2dImage");
+    expect(photos.length).toBeGreaterThan(0);
+    const bake = await bakeCaptureSpots({
+      ...source,
+      loadRecordingActions: () => Promise.resolve([...photos, ...rest]),
+    });
+    expect(bake.kind).toBe("declined");
+    expect(bake).not.toHaveProperty("placesNothing");
+  });
+});
+
 describe("bakeCaptureSpots declines where the live join declines", () => {
   it("a tour without a recording", async () => {
     const bake = await bakeCaptureSpots({
