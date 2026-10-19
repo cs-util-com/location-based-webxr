@@ -17,9 +17,12 @@
  * the scaled model's largest side, from {@link TOUR_MODEL_MIN_SIZE_M} to
  * {@link TOUR_MODEL_MAX_SIZE_M}. A factor would be the wrong unit for a
  * bound: its sensible range depends on the model's own size (a 0.1 m model
- * at 100x is 10 m, a 20 m one 2 km). A renderer scales the decoded model by
- * `sizeM` over its own largest side. Pins and photos have no size: they
- * keep the fixed size they are drawn at.
+ * at 100x is 10 m, a 20 m one 2 km). "Largest side" is measured ONE way,
+ * by every renderer and the editor: the axis-aligned box of the glTF's
+ * default scene at rest pose, node transforms included, in the glb's own
+ * units (glTF metres), before the item's own rotation - the largest of its
+ * three extents. The scale factor is `sizeM` over that length. Pins and
+ * photos have no size: they keep the fixed size they are drawn at.
  *
  * Defensive by the rule of `tour-manifest.ts`: hand-editable external data,
  * every field checked at the boundary. LENIENT for a newer minor (K1
@@ -62,7 +65,9 @@ export const TOUR_MODEL_MAX_SIZE_M = 500;
 
 /** What a pin, a photo or a model is, wherever it stands. */
 interface TourContentBase {
-  /** Short id, unique in the tour; also the content file's stem. */
+  /** Short id, unique in the tour among items and assets alike (one id
+   *  namespace). For a photo also its content file's stem; a model's file
+   *  is named by its asset. */
   readonly id: string;
   /** ISO-8601 timestamp of the placement (must parse as a date). */
   readonly createdAtIso: string;

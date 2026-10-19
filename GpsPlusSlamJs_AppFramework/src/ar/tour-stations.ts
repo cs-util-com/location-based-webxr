@@ -184,7 +184,8 @@ export interface TourStation {
   readonly steps: readonly TourStep[];
   /** For `branch` order: the default next station. */
   readonly next?: string;
-  /** The pins and photos placed at this station, at local poses. */
+  /** The items placed at this station (pins, photos, models), at local
+   *  poses. */
   readonly items: readonly TourItem[];
 }
 

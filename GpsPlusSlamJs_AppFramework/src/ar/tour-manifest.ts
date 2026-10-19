@@ -38,8 +38,7 @@
  *   version cannot read.
  * - MINOR 1 adds the placed 3D model (`tour-items.ts`). The writer writes
  *   the LOWEST minor the tour needs: 1 while it carries a model, else 0, so
- *   a tour without one stays editable by a release that knows only minor 0,
- *   and a minor-0 reader of a tour with a model leaves the model out (its
+ *   a tour without one stays editable by a 3.0 reader, and a 3.0 reader of a tour with a model leaves the model out (its
  *   lenient read) instead of refusing the tour.
  * - A newer minor may also add VALUES to a closed list (K1 milestone
  *   review R4): an item kind, an order, and the lists of
@@ -370,8 +369,10 @@ function orderOf(value: unknown, lenient: boolean): TourOrder {
   return value as TourOrder;
 }
 
-/** Item ids are unique across the whole tour, and no asset has one: both
- *  name a content file by id (`content/<id>.<ext>`). */
+/** One id namespace across the tour's items and assets: an item id is
+ *  unique, and no asset has one. A photo's and an asset's ids are their
+ *  content files' stems (`content/<id>.<ext>`), and a model names an asset
+ *  by id, so a shared id would make a reference ambiguous. */
 function checkContentIds(
   stations: readonly TourStation[],
   assets: readonly TourAsset[]

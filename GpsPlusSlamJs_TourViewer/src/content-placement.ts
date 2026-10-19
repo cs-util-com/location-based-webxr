@@ -298,9 +298,9 @@ async function renderContent<T extends TourContentFields>(
       continue;
     }
     if (object.kind === "model") {
-      // No renderer draws a placed model yet (format minor 1): left out,
-      // and named, so the status line says something was not shown.
-      skipped.push(object.id);
+      // No renderer draws a placed model yet (format minor 1): left out
+      // quietly, as a lenient read leaves out what it cannot show. Not in
+      // `skipped`: "could not load" would claim a download failed.
       continue;
     }
     const texture = await deps

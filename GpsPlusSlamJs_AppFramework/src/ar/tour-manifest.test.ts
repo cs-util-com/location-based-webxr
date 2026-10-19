@@ -352,11 +352,10 @@ describe('the version policy (tour editor plan W3, D5)', () => {
 });
 
 describe('a placed 3D model (minor 1, a size in metres)', () => {
-  // Why: the model is the one item a minor-0 reader does not know, so a
-  // tour carrying one is written at minor 1 - an older reader then leaves
-  // the model out instead of refusing the tour - and a tour without one
-  // keeps minor 0, so every tour made before stays editable by the release
-  // before this one. The size must come back exactly: it is the creator's
+  // Why: the model is the one item a 3.0 reader does not know, so a tour
+  // carrying one is written at minor 1 - a 3.0 reader then leaves the
+  // model out instead of refusing the tour - and a tour without one keeps
+  // minor 0, so every tour made before stays editable by a 3.0 reader. The size must come back exactly: it is the creator's
   // number.
   const model = {
     id: 'm1',
@@ -396,7 +395,7 @@ describe('a placed 3D model (minor 1, a size in metres)', () => {
     });
   });
 
-  it("a minor-0 reader's lenient path: a file of a newer minor with a model too large for this reader opens without it", () => {
+  it("a newer minor's model beyond this reader's bound is left out", () => {
     const manifest = parseTourManifest({
       ...withModel(),
       minor: TOUR_MANIFEST_MINOR + 1,
@@ -405,7 +404,10 @@ describe('a placed 3D model (minor 1, a size in metres)', () => {
     expect(tourItems(manifest).map((i) => i.id)).toEqual(['p1']);
   });
 
-  it('a model id may not be an asset id: both name a content file', () => {
+  // Why: items and assets share one id namespace - a model names an
+  // asset by id, so an item with an asset's id would make that reference
+  // ambiguous.
+  it('a model id may not be an asset id: one id namespace across items and assets', () => {
     expect(() =>
       parseTourManifest(
         tour({

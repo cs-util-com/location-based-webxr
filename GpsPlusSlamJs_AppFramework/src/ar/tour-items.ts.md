@@ -46,9 +46,15 @@ what a pin or a photo is (DEC-H3).
   decision, `GpsPlusSlamJs_Docs/docs/2026-10-19-0905-editor3d-prototypes-round-3-plan.md`
   §9): `sizeM` is the scaled model's largest side, so the bound holds
   whatever the model's own size (a factor's sensible range depends on it).
-  A renderer scales the decoded model by `sizeM` over its own largest
-  side; a model with no extent is the renderer's to refuse. Pins and
-  photos have no size.
+  A model with no extent is the renderer's to refuse. Pins and photos
+  have no size.
+- **"Largest side", defined once** (every renderer and the editor measure
+  it this way, or the same file shows a model at different sizes): the
+  axis-aligned bounding box of the glTF's default scene (`scene`, else the
+  first) at rest pose - no animation applied, skins at their bind pose -
+  with every node's transform included, in the glb's own units (glTF
+  units are metres), BEFORE the item's own rotation; the largest of the
+  box's three extents. The scale factor is `sizeM` over that length.
 - **What is refused, and why not clamped.** At this reader's minor a size
   outside 0.05-500 m fails the file: a clamp would make the next save
   rewrite the creator's number without a word. A lenient read (a newer
@@ -56,6 +62,13 @@ what a pin or a photo is (DEC-H3).
   is not a positive finite number (0, negative, -0, NaN, infinite, a
   string, absent) fails at EVERY minor: no revision can make it a size.
   An editor clamps its drag to the bound before it dispatches.
+- **Why the size bound is lenient for a newer minor and the offset bound
+  is not.** `TOUR_ITEM_MAX_OFFSET_M` is a sanity bound against corruption:
+  beyond 10 km a station's flat frame means nothing at ANY minor, so no
+  later revision can make such an offset valid and a lenient reader still
+  refuses it. The size bound is a product choice the owner already asked
+  to have room in, so a later minor may widen it; a reader that meets a
+  wider size leaves that one model out rather than the tour.
 - **The model's asset is resolved by `tour-stations.ts`** (which sees the
   assets): here only its id's shape is checked, so the world-view object
   of a draft can carry a model too.

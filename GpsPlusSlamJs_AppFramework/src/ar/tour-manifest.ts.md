@@ -77,13 +77,17 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - An item of kind `model` (`tour-items.ts`): `asset` names a MODEL asset
   of `assets` (resolved by `tour-stations.ts`), `sizeM` is the scaled
   model's largest side in metres within 0.05-500 m inclusive, `label`
-  optional. Decision record:
+  optional. "Largest side" is defined once, in `tour-items.ts.md`: the
+  axis-aligned box of the glTF default scene at rest pose, node transforms
+  included, in the glb's own units (glTF metres), before the item's own
+  rotation, the largest of its three extents; every renderer and the
+  editor measure it that way. Decision record:
   `GpsPlusSlamJs_Docs/docs/2026-10-19-0905-editor3d-prototypes-round-3-plan.md`
   §9 (the bound in metres, pins and photos without a size).
 - **The writer writes the lowest minor the tour needs**: 1 while any
   station carries a model, else 0, so every tour without one is written
-  byte for byte as before and stays editable by a release that knows only
-  minor 0. A minor-0 reader of a minor-1 tour reads it leniently and
+  byte for byte as before and stays editable by a 3.0 reader. A 3.0
+  reader of a minor-1 tour reads it leniently and
   leaves the models out (its unknown kind); it refuses to write it back.
 - **Refused, not clamped.** A size outside the bound in a file of this
   reader's minor is a broken file; a lenient read (a newer minor, which may

@@ -6,7 +6,7 @@
 
 - **`tour.json` format version 3** (`ar/tour-manifest`): every pin and
   photo is now an item of a station. `TOUR_MANIFEST_VERSION` is 3 and
-  `TOUR_MANIFEST_MINOR` starts again at 0. Version 1 and 2 files are not
+  version 3 starts at minor 0; minor 1 (below) adds the placed model. Version 1 and 2 files are not
   migrated: the reader refuses them with words ("this tour is in an older
   format ... it has to be made again"), and a version 2 reader refuses a
   version 3 file the same way ("update the app"), so neither opens the

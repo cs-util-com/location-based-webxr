@@ -32,7 +32,10 @@ imageHeight, nowIso }): TourPhoto | null` - the camera's RAW odometry pose
 planes (`placeCapturedImagePlanes`), all at the scene root; a photo whose
 texture fails is skipped and named in `skipped`; a placed 3D model
 (format minor 1) is not drawn yet - it never reaches the photo loader and
-is named in `skipped`too, so the status line counts it as not shown;`dispose()`removes and
+is left out quietly, NOT named in `skipped`("could not load" would claim a
+download failed; a lenient read leaves out what it cannot show the same
+way). The renderer milestone that draws models adds an honest line for a
+model it cannot show;`dispose()`removes and
 frees everything.`root` is the one group every rendered object hangs
 under - what a tap in AR is cast against to name the object
 (`object-pick.ts`, authoring plan 2026-09-28-0953 M4).
@@ -109,7 +112,8 @@ and 0.1 m, measured 24 mm).
 over positions; the photo's frame direction pinned by bearing against the
 framework's basis constant; refusals without zero/alignment; the id shape
 (property); rendering with a fake scene: counts, a skipped photo, a placed
-model left out and named (the photo loader never asked), disposal, and a
+model left out quietly (the photo loader never asked, no "could not
+load" in the status segment), disposal, and a
 caller's own pose and frame (`poseOf`) for pins and photos. For
 `renderTourStations`: the group structure (one group per station with
 items, the items as its children), and the property that the local poses

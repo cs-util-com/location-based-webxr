@@ -25,6 +25,7 @@ import {
   renderTourStations,
   rotationFromHeading,
 } from "./content-placement";
+import { contentSegment } from "./tour-flow";
 
 /**
  * Why these tests matter: a placed object's record is what a visitor sees
@@ -282,10 +283,11 @@ describe("renderTourObjects", () => {
   });
 
   // Why: a placed 3D model (format minor 1) is in the format before any
-  // renderer draws it. It must neither reach the photo loader (it has no
-  // image) nor vanish silently: it is left out and named in `skipped`, so
-  // the status line says something could not be shown.
-  it("leaves a placed 3D model out, names it in skipped, and never asks the photo loader for it", async () => {
+  // renderer draws it. It must not reach the photo loader (it has no
+  // image), and it is not a failure either: "could not load" would claim
+  // a download broke, so it is left out quietly, as a lenient read leaves
+  // out what it cannot show. The renderer milestone adds an honest line.
+  it("leaves a placed 3D model out quietly: no photo loader call, no 'could not load'", async () => {
     const { scene, children } = fakeScene();
     const pin = mintPin({
       id: "p",
@@ -314,8 +316,15 @@ describe("renderTourObjects", () => {
     });
     expect(asked).toEqual([]);
     expect(rendered.count).toBe(1);
-    expect(rendered.skipped).toEqual(["m"]);
+    expect(rendered.skipped).toEqual([]);
     expect(children[0]?.children).toHaveLength(1);
+    expect(
+      contentSegment({
+        kind: "placed",
+        count: rendered.count,
+        skipped: rendered.skipped.length,
+      }),
+    ).toBe("1 placed object");
   });
 
   it("places pins and photos at the caller's pose in the caller's frame when it passes one", async () => {
