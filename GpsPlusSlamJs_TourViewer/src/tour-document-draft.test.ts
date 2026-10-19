@@ -156,6 +156,48 @@ describe("followDocument", () => {
     ]);
   });
 
+  it("a redo of a delete a save already wrote writes its tombstone again", () => {
+    // Why (the r880 fix re-review, L1): a download leaves the draft
+    // standing (no in-place write landed), and the file a reload opens is
+    // the OPENED one, which still holds the object. Delete, save, undo,
+    // redo used to forget the undo's record and leave no tombstone, so the
+    // reload brought the deleted object back.
+    const { after: deleted } = writesFor(
+      opened,
+      act.deleted({ id: "a", what: "d" }),
+    );
+    const saved = reduce(
+      deleted,
+      act.saved({
+        generation: deleted.generation,
+        written: manifestToWrite(deleted)!,
+        appliedDeletions: ["a"],
+        stationsAtStart: deleted.stations,
+      }),
+    );
+    const { calls } = writesFor(saved, act.undone(), act.redone());
+    expect(calls.filter((c) => !c.startsWith("saveSettings"))).toEqual([
+      "saveObject a",
+      "forgetDeletion a",
+      "saveDeletion a",
+    ]);
+  });
+
+  it("a new object the written file lacks forgets its record when it goes", () => {
+    // The other side of the rule above: an object the opened file never
+    // held has nothing for a reload to bring back, so no tombstone.
+    const { calls } = writesFor(
+      opened,
+      act.placed({ object: pin("n"), what: "p" }),
+      act.undone(),
+    );
+    expect(calls).toEqual([
+      "saveObject n",
+      "forgetDeletion n",
+      "forgetObject n",
+    ]);
+  });
+
   it("a first edit of a written object writes its record only", () => {
     const { calls } = writesFor(
       opened,

@@ -1255,6 +1255,42 @@ describe("createEditorSession, undo and redo (W2)", () => {
     await session.close();
   });
 
+  it("delete, download, undo, redo: a reload of the opened file offers the delete again", async () => {
+    // Why (the r880 fix re-review, L1): a download clears nothing in the
+    // draft, and a reload opens the OPENED file, which still holds the
+    // note. The redo forgot the undo's record and left no tombstone, so the
+    // reload brought the deleted note back with nothing offered.
+    const { session, manifest } = await opened([pin("a"), pin("b")]);
+    const store = memoryDraftStores();
+    const draft = createEditorDraft({
+      openStore: store.open,
+      holdLock: freeLocks,
+      noBackup: () => undefined,
+    });
+    await draft.open(K, manifest);
+    const writes = draft.writes();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: writes,
+    });
+    expect(editor.remove("b").kind).toBe("deleted");
+    writes.built((await editor.save({ keepScan: false })).written);
+    expect(editor.undo().kind).toBe("undone");
+    expect(editor.redo().kind).toBe("redone");
+    await draft.idle();
+    draft.close();
+    const again = createEditorDraft({
+      openStore: store.open,
+      holdLock: freeLocks,
+      noBackup: () => undefined,
+    });
+    const { offer } = await again.open(K, manifest);
+    expect(offer?.deleted).toEqual(["b"]);
+    await session.close();
+  });
+
   it("a delete a save already wrote comes back, a photo with its picture", async () => {
     const { session, manifest } = await opened([pin("a"), photo("f")]);
     const editor = createEditorSession({

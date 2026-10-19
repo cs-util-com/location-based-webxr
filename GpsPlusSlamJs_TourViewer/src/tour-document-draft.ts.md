@@ -37,7 +37,12 @@ after the reducer, never from `store.subscribe`.
 - **The gestures' own writes, from the state** (`draft-actions.ts`):
   - now deleted, was not: `saveDeletion` (a tombstone removes the record);
   - now nothing: a tombstone goes (`forgetDeletion`), or a record only this
-    page had goes (`forgetObject`);
+    page had goes (`forgetObject`) - unless the written file lacks the id
+    and the OPENED file holds it: that is a delete a save wrote, taken
+    again (a redo after the undo across that save), and the draft keeps it
+    as a tombstone (`saveDeletion`), since a reload may open a file that
+    still holds the object (a download is not in place; the r880 fix
+    re-review, L1);
   - now an entry: its record (`saveObject`, with the page's picture for a
     photo, `pictureOf`) unless the content is the same, THEN a tombstone
     goes - the record first, so an undo cut short leaves the object
@@ -74,12 +79,15 @@ const stop = store.listenToDocument({
   written object's tombstone and a new one's forgotten record, an undo of
   an edited object's delete (record before tombstone), an undo across a
   save that wrote the delete (its tombstone forgotten after the record),
-  a photo's picture,
+  a redo of that delete (its tombstone written again, L1), a new object's
+  undo (no tombstone), a photo's picture,
   the settings record with and without details, the station poses once a
   station moved (review #1), nothing for a save landing
   or across an open.
 - The record's reading and comparing, through both drafts:
   `editor/editor-draft.test.ts` and `creator-setup.test.ts` "the draft
   keeps a moved station's pose".
-- Through the editor: `editor/editor-session.test.ts` and the parity
-  contract `tour-document-parity.test.ts` (the draft records compared).
+- Through the editor: `editor/editor-session.test.ts` (among them delete,
+  download, undo, redo, then a reload that offers the delete again) and the
+  parity contract `tour-document-parity.test.ts` (the draft records
+  compared).

@@ -12,6 +12,7 @@
 
 import { parseGeoPose } from "gps-plus-slam-app-framework/ar/qr/geo-pose";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
+import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { objectContentKey } from "./authoring-draft.js";
 import type { DraftObjectWrites } from "./draft-actions.js";
@@ -152,15 +153,20 @@ function standing(state: TourDocumentState, id: string): Standing {
   return state.placed.find((p) => p.object.id === id) ?? null;
 }
 
-/** One id's draft writes for a change from `was` to `now`; `written`
- *  says whether the written file holds the id. */
+/** Whether the written file, and the opened file, hold an id. */
+interface Holders {
+  written(id: string): boolean;
+  opened(id: string): boolean;
+}
+
+/** One id's draft writes for a change from `was` to `now`. */
 function followId(
   draft: TourDocumentDraft,
   id: string,
   was: Standing,
   now: Standing,
   pictureOf: (id: string) => Blob | undefined,
-  written: (id: string) => boolean,
+  holds: Holders,
 ): void {
   if (now === "deleted") {
     if (was !== "deleted") void draft.saveDeletion(id);
@@ -168,7 +174,14 @@ function followId(
   }
   if (now === null) {
     if (was === "deleted") void draft.forgetDeletion(id);
-    else if (was !== null) void draft.forgetObject(id);
+    // Gone, and the written file lacks it, while the opened file holds
+    // it: a delete a save wrote, taken again (a redo after the undo
+    // across that save). A reload opens a file that may still hold it (a
+    // download is not in place), so the draft keeps the delete - as its
+    // tombstone, not a forgotten record (the r880 fix re-review, L1).
+    else if (was !== null && !holds.written(id) && holds.opened(id)) {
+      void draft.saveDeletion(id);
+    } else if (was !== null) void draft.forgetObject(id);
     return;
   }
   const same =
@@ -180,9 +193,21 @@ function followId(
   // already wrote (and took out of the document's deletions, not the
   // draft's tombstone): an undo across that save. Its tombstone goes too,
   // after the record, or a later restore deletes it again.
-  if (was === "deleted" || (was === null && !written(id))) {
+  if (was === "deleted" || (was === null && !holds.written(id))) {
     void draft.forgetDeletion(id);
   }
+}
+
+/** Whether `manifest` holds an object of an id, its ids read once, when
+ *  first asked. */
+function holderOf(manifest: TourManifest | null): (id: string) => boolean {
+  let ids: ReadonlySet<string> | undefined;
+  return (id) => {
+    ids ??= new Set(
+      manifest === null ? [] : tourObjects(manifest).map((o) => o.id),
+    );
+    return ids.has(id);
+  };
 }
 
 /**
@@ -204,14 +229,9 @@ export function followDocument(
     ...after.placed.map((p) => p.object.id),
     ...after.deleted,
   ]);
-  let writtenIds: ReadonlySet<string> | undefined;
-  const written = (id: string): boolean => {
-    writtenIds ??= new Set(
-      before.written === null
-        ? []
-        : tourObjects(before.written).map((o) => o.id),
-    );
-    return writtenIds.has(id);
+  const holds: Holders = {
+    written: holderOf(before.written),
+    opened: holderOf(before.opened),
   };
   for (const id of ids) {
     followId(
@@ -220,7 +240,7 @@ export function followDocument(
       standing(before, id),
       standing(after, id),
       pictureOf,
-      written,
+      holds,
     );
   }
   const was = settingsRecord(before);

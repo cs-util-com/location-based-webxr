@@ -43,6 +43,7 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { ObjectListHandlers } from "./object-list.js";
 import { asHosted, stationIdOf, tourOf } from "./test-support/v3-tour.js";
 import { SETTINGS_KEY } from "./tour-document-draft.js";
+import { manifestToWrite } from "./tour-document.js";
 
 /** One fake element: the properties this module writes, and a click it can
  *  be told to fire. Not a DOM stand-in - only what `creator-setup` uses. */
@@ -137,6 +138,8 @@ function memoryStore(
   options: {
     removeNeverSettles?: boolean;
     putFails?: boolean;
+    /** Refuse every put whose key this names (the others land). */
+    failKeys?: (key: string) => boolean;
     holdFirstPut?: boolean;
     /** Hold every put whose key this names, until `releaseHeldKeys`. */
     holdKeys?: (key: string) => boolean;
@@ -158,13 +161,15 @@ function memoryStore(
   let released = false;
   const heldByKey: (() => void)[] = [];
   let refusedRemoves = 0;
+  const refuses =
+    options.failKeys ?? ((): boolean => options.putFails === true);
   const store: DraftFileStore = {
     put: (key: string, data: unknown) => {
       putKeys.push(key);
       if (key === META_KEY && typeof data === "string") metaPuts.push(data);
       // A store that REFUSES, as the real one does on a quota wall or a
       // revoked directory handle: `put` reports false rather than throwing.
-      if (options.putFails === true) return Promise.resolve(false);
+      if (refuses(key)) return Promise.resolve(false);
       if (options.holdKeys?.(key) === true) {
         return new Promise<boolean>((resolve) => {
           heldByKey.push(() => {
@@ -1342,6 +1347,84 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     expect(ctx.placementNote).toContain("1 deletion restored");
   });
 
+  // Why the next three matter (the r880 fix re-review, P1): the offer stays
+  // on screen through a Finish, and a Finish's write takes the live edits
+  // and deletions off the document's lists. The draft judged "live work"
+  // by those lists alone, so Restore after a Finish brought back an older
+  // version of a note the creator had changed or deleted here, and "Delete
+  // it" rejected the live record of a changed one.
+  const LIVE: TourObject = { ...pin("hosted"), label: "typed here" };
+
+  /** The tour's draft offered, an edit of the hosted note on disk. */
+  async function offeredEdit() {
+    const disk = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(EDITED),
+    });
+    const page = wire(disk.store);
+    page.ctx.tourDocument.open(tourOf([HOSTED]));
+    page.dom.draftOffer.hidden = true;
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(page.dom.draftOffer.hidden, "the draft is offered").toBe(false);
+    return { ...disk, ...page };
+  }
+
+  /** A Finish's write landing in the document, as `creator-finish.ts`
+   *  lands it: what it wrote leaves the lists. */
+  function finishLanded(ctx: ReturnType<typeof wire>["ctx"]): void {
+    const doc = ctx.tourDocument;
+    const now = doc.state();
+    const generation = doc.saveStarted();
+    doc.saved({
+      generation,
+      written: manifestToWrite(now)!,
+      appliedDeletions: [...now.deleted],
+      stationsAtStart: now.stations,
+    });
+    doc.saveEnded(generation);
+  }
+
+  it("Restore after a Finish leaves a note deleted here deleted", async () => {
+    const { ctx, dom } = await offeredEdit();
+    ctx.tourDocument.remove("hosted", "the live delete");
+    await settle();
+    finishLanded(ctx);
+    expect(ctx.tourDocument.deleted(), "the Finish wrote it").toEqual([]);
+
+    dom.draftRestore.click();
+    expect(
+      ctx.tourDocument.objects().map((o) => o.object.id),
+      "the delete is live work, newer than the draft",
+    ).not.toContain("hosted");
+  });
+
+  it("Restore after a Finish keeps a note changed here as it was changed", async () => {
+    const { ctx, dom } = await offeredEdit();
+    ctx.tourDocument.edit(LIVE, "the live edit");
+    await settle();
+    finishLanded(ctx);
+    expect(ctx.tourDocument.entries(), "the Finish wrote it").toEqual([]);
+
+    dom.draftRestore.click();
+    // (As written: the stored copy names its station.)
+    expect(
+      ctx.tourDocument.objects().find((o) => o.object.id === "hosted")?.object,
+    ).toMatchObject({ label: LIVE.label });
+  });
+
+  it("Delete it after a Finish keeps the record of a note changed here", async () => {
+    const { ctx, dom, files } = await offeredEdit();
+    ctx.tourDocument.edit(LIVE, "the live edit");
+    await settle();
+    finishLanded(ctx);
+
+    dom.draftDiscard.click();
+    await settle();
+    expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(LIVE);
+    expect(rejectedOf(files.get(META_KEY) as string)).not.toContain("hosted");
+  });
+
   it("treats a deletion the hosted zip no longer carries as spent", async () => {
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
@@ -1924,5 +2007,52 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
         .details,
       "the name, live work, stays",
     ).toMatchObject({ title: "Castle walk" });
+  });
+
+  it("a settings write queued for a tour that then closed keeps that tour's poses", async () => {
+    // Why (the r880 fix re-review, L2): the undecided poses were one
+    // variable for the page, read when the write RUNS - so a rename still
+    // queued when the tour closed read the closed state (no poses), and
+    // the draft lost the moved station.
+    const { store, files, releaseHeldKeys } = memoryStore(
+      { ...metaOnly(), [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]) },
+      { holdKeys: (key) => key === SETTINGS_KEY },
+    );
+    const page = await opened(store);
+    expect(page.dom.draftOffer.hidden).toBe(false);
+    expect(page.setup.renameTour("Castle walk")).toBeNull();
+    expect(page.setup.renameTour("Castle walk two")).toBeNull();
+    await settle();
+    // The tour closes while the second write waits behind the first.
+    page.setup.resetFinishStep();
+    releaseHeldKeys();
+    await settle();
+    releaseHeldKeys();
+    await settle();
+
+    expect(storedPose(files), "the closed tour's pose kept").toEqual(MOVED);
+    expect(
+      (JSON.parse(String(files.get(SETTINGS_KEY))) as { details?: unknown })
+        .details,
+    ).toMatchObject({ title: "Castle walk two" });
+  });
+
+  it("keeps the offered pose when Delete it does not land, for a rename after it", async () => {
+    // Why (the r880 fix re-review, L3): "Delete it" dropped the undecided
+    // poses at the tap, before its commit point - so a rejection that did
+    // not land (the draft "is still there, and will be offered again")
+    // left a later rename to write the record without the moved station.
+    const { store, files } = memoryStore(
+      { ...metaOnly(), [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]) },
+      { failKeys: (key) => key === META_KEY },
+    );
+    const page = await opened(store);
+    page.dom.draftDiscard.click();
+    await settle();
+    expect(page.ctx.placementNote).toContain("Could not delete");
+    expect(page.setup.renameTour("Castle walk")).toBeNull();
+    await settle();
+
+    expect(storedPose(files), "the pose is still the draft's").toEqual(MOVED);
   });
 });
