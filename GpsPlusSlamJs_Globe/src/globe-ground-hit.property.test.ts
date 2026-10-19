@@ -23,6 +23,7 @@ import { GROUND_HIT, groundReachM, marchToGround } from "./globe-ground-hit.js";
 const RIDGE_SLOPE_MAX = GROUND_HIT.maxSlope;
 const REACH_M = GROUND_HIT.maxDistanceM;
 const LEAST_STEP_M = GROUND_HIT.minStepM;
+const STEP_PER_M = GROUND_HIT.stepPerM;
 
 /** Even over [min, max] (fc.double piles its draws near 0; arbitraries.ts). */
 const evenly = (min: number, max: number) =>
@@ -150,8 +151,8 @@ describe("marchToGround over a ridge (the step bound)", () => {
   // it went metres into and picked the ground behind the hill. The step
   // from a sample is bounded by the height measured there, so on ground no
   // steeper than the assumed slope every underground stretch longer than
-  // the least step is found, and the hit is its entry: the first ground
-  // the ray meets. Swept over eye height to 3 km, pitches from nearly
+  // the least step at its distance (max(minStepM, stepPerM x t)) is found,
+  // and the hit is its entry: the first ground the ray meets. Swept over eye height to 3 km, pitches from nearly
   // straight down to slightly up, ridges near and far, gentle and steep,
   // pierced deep and passed over (a ridge under the ray must NOT be
   // picked; the ground behind it is).
@@ -179,9 +180,14 @@ describe("marchToGround over a ridge (the step bound)", () => {
           // The ray starts above the ground, not inside the ridge's flank.
           fc.pre(world.above(new THREE.Vector3(0, h, 0)) > 0.01);
           const first = world.underground(h, pitch, REACH_M)[0];
-          // A first stretch shorter than the least step may be stepped
-          // over; one starting right at the reach may fall either side.
-          fc.pre(!first || first.to - first.from >= LEAST_STEP_M);
+          // A first stretch shorter than the least step at its distance
+          // may be stepped over; one starting right at the reach may fall
+          // either side.
+          fc.pre(
+            !first ||
+              first.to - first.from >=
+                Math.max(LEAST_STEP_M, STEP_PER_M * first.from),
+          );
           fc.pre(!first || Math.abs(first.from - REACH_M) > 1);
           const dir = new THREE.Vector3(Math.cos(pitch), Math.sin(pitch), 0);
           const hit = marchToGround(

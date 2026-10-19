@@ -35,6 +35,18 @@ export const GROUND_HIT = Object.freeze({
   /** The least step (m): an underground stretch shorter can be stepped over. */
   minStepM: 1,
   /**
+   * The least step's growth with the distance (m per m): from a sample t
+   * along the ray the step is at least `stepPerM` x t, 1 mm a metre, about
+   * a pixel's footprint there (a 60 degree view over 1 000 pixels: 1.05e-3
+   * rad a pixel). A ray aimed at the horizon grazes the ground for its
+   * whole reach, where the step bounded by the height is a metre or less:
+   * from 300 m to its 61.8 km horizon that took 11 664 samples, 1 327 with
+   * this. The price: an underground stretch shorter than
+   * max(`minStepM`, `stepPerM` x its distance) can be stepped over (1 m
+   * at 1 km, 20 m at 20 km).
+   */
+  stepPerM: 1e-3,
+  /**
    * The step from a sample with NO heights loaded, as a fraction of the
    * distance (2 %; at least `minStepM`): nothing measured bounds it there.
    */
@@ -50,6 +62,8 @@ export interface GroundHitOptions {
   /** Finite and > 0. */
   readonly maxSlope?: number;
   readonly minStepM?: number;
+  /** Finite and >= 0 (0: the least step stays `minStepM`). */
+  readonly stepPerM?: number;
   readonly stepFraction?: number;
   /** 1-60. */
   readonly bisections?: number;
@@ -106,16 +120,22 @@ const finiteAtLeast = (v: number, least: number): boolean =>
 
 const finitePositive = (v: number): boolean => Number.isFinite(v) && v > 0;
 
-/** The options with their defaults, each checked (RangeError). */
-function checked(options: GroundHitOptions) {
-  const o = {
+/** The options with their defaults. */
+function withDefaults(options: GroundHitOptions) {
+  return {
     startM: options.startM ?? 0,
     maxDistanceM: options.maxDistanceM ?? GROUND_HIT.maxDistanceM,
     maxSlope: options.maxSlope ?? GROUND_HIT.maxSlope,
     minStepM: options.minStepM ?? GROUND_HIT.minStepM,
+    stepPerM: options.stepPerM ?? GROUND_HIT.stepPerM,
     stepFraction: options.stepFraction ?? GROUND_HIT.stepFraction,
     bisections: options.bisections ?? GROUND_HIT.bisections,
   };
+}
+
+/** The options with their defaults, each checked (RangeError). */
+function checked(options: GroundHitOptions) {
+  const o = withDefaults(options);
   must(
     finiteAtLeast(o.startM, 0),
     `the start must be finite and >= 0, got ${o.startM}`,
@@ -131,6 +151,10 @@ function checked(options: GroundHitOptions) {
   must(
     finitePositive(o.minStepM),
     `the least step must be finite and > 0, got ${o.minStepM}`,
+  );
+  must(
+    finiteAtLeast(o.stepPerM, 0),
+    `the least step's growth must be finite and >= 0, got ${o.stepPerM}`,
   );
   must(
     finiteAtLeast(o.stepFraction, 0),
@@ -178,14 +202,19 @@ function unitRay(ray: THREE.Ray): THREE.Ray {
 /**
  * Where `ray` first goes from above the ground to on or below it, by
  * `aboveGround`: marched in steps bounded by the height measured (from a
- * sample h over the ground, max(`minStepM`, h / sqrt(1 + `maxSlope`^2));
- * from an unloaded one, max(`minStepM`, `stepFraction` x the distance)),
+ * sample h over the ground at a distance t, max(`minStepM`,
+ * `stepPerM` x t, h / sqrt(1 + `maxSlope`^2)); from an unloaded one,
+ * max(`minStepM`, `stepPerM` x t, `stepFraction` x t)),
  * then bisected between the last loaded sample above the ground and the
  * first loaded sample on or below it, unloaded samples between them or
  * not (a crossing inside an unloaded stretch is found within that
  * stretch; a bisection that meets an unloaded midpoint stops there). On
- * ground no steeper than `maxSlope`, every underground stretch longer
- * than `minStepM` is found and the hit is the first one's entry. A miss
+ * ground no steeper than `maxSlope`, and where every sample had heights
+ * loaded (`nulls` 0), every underground stretch longer than
+ * max(`minStepM`, `stepPerM` x its distance) is found and the hit is the
+ * first one's entry; with `nulls` > 0 a ridge inside or right after an
+ * unloaded stretch can have been stepped over, so a hit may lie behind
+ * it (ask again once the heights load). A miss
  * says why (`GroundMissReason`): heights missing along the way (or at
  * the start) make it `not-loaded`, whatever else holds; else a first
  * loaded sample on or under the ground makes it `below-start`; else a ray
@@ -248,7 +277,8 @@ export function marchToGround(
       return missed(closing ? "out-of-reach" : "above");
     }
     const bound = h === null ? o.stepFraction * t : h * perHeight;
-    t = Math.min(o.maxDistanceM, t + Math.max(o.minStepM, bound));
+    const least = Math.max(o.minStepM, o.stepPerM * t);
+    t = Math.min(o.maxDistanceM, t + Math.max(least, bound));
   }
 }
 

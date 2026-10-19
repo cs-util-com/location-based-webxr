@@ -365,6 +365,12 @@ describe("marchToGround", () => {
     expect(() =>
       marchToGround(ok, above, { maxSlope: Number.POSITIVE_INFINITY }),
     ).toThrow(RangeError);
+    expect(() => marchToGround(ok, above, { stepPerM: -1e-3 })).toThrow(
+      RangeError,
+    );
+    expect(() => marchToGround(ok, above, { stepPerM: Number.NaN })).toThrow(
+      RangeError,
+    );
   });
 
   // Why (the step bound): a first-person ray at eye height, 0.5 degrees
@@ -388,11 +394,13 @@ describe("marchToGround", () => {
   });
 
   // Why (what the bound costs): near the ground the step is the least
-  // step, so a ray that grazes the ground all the way pays one sample a
-  // metre of its reach. This pins the worst case the editor must budget
-  // for (a level ray at eye height over level ground: the whole 5 km), and
-  // that a ray pointing down at the ground stays cheap.
-  it("costs at most one sample per least step of the reach, and little when pointing down", () => {
+  // step, so a ray that grazes the ground all the way pays a sample per
+  // least step of its reach. A level ray at eye height over level ground
+  // grazes its whole 5 km: 5 001 samples with a fixed 1 m least step, 2 612
+  // with the least step grown with the distance. This pins that, and that
+  // a ray pointing down at the ground stays cheap. (The dearest ray is one
+  // aimed at the horizon with the horizon's reach: the next test.)
+  it("costs about half a sample a metre for a level eye-height ray, and little when pointing down", () => {
     let samples = 0;
     const flat = (p: THREE.Vector3) => {
       samples++;
@@ -403,8 +411,8 @@ describe("marchToGround", () => {
       new THREE.Vector3(1, 0, 0),
     );
     expect(marchToGround(level, flat).miss).toBe("above");
-    expect(samples).toBeLessThanOrEqual(
-      GROUND_HIT.maxDistanceM / GROUND_HIT.minStepM + 1,
+    expect(samples).toBeLessThan(
+      (0.6 * GROUND_HIT.maxDistanceM) / GROUND_HIT.minStepM,
     );
     samples = 0;
     const down = new THREE.Ray(
@@ -413,6 +421,34 @@ describe("marchToGround", () => {
     );
     expect(marchToGround(down, flat).miss).toBeNull();
     expect(samples).toBeLessThan(100);
+  });
+
+  // Why (what a pick at the horizon costs): a ray aimed at the horizon
+  // grazes the curved Earth for its whole reach, where the step bounded by
+  // the height measured is a metre or less; with a fixed 1 m least step a
+  // pick from 300 m with the horizon's reach (61.8 km) took 11 664 samples.
+  // The least step grows with the distance (`stepPerM`, about a pixel's
+  // footprint), which bounds it. A smooth Earth of the mean radius, y up.
+  it("bounds the cost of a pick aimed at the horizon from 300 m", () => {
+    const R = 6_371_000;
+    const centre = new THREE.Vector3(0, -R, 0);
+    let samples = 0;
+    const sphere = (p: THREE.Vector3) => {
+      samples++;
+      return p.distanceTo(centre) - R;
+    };
+    const h = 300;
+    const dip = Math.acos(R / (R + h));
+    const ray = new THREE.Ray(
+      new THREE.Vector3(0, h, 0),
+      new THREE.Vector3(Math.cos(dip), -Math.sin(dip), 0),
+    );
+    marchToGround(ray, sphere, { maxDistanceM: groundReachM(h) });
+    expect(samples).toBeLessThan(1_500);
+    // The fixed least step, for the record of what it saved.
+    samples = 0;
+    marchToGround(ray, sphere, { maxDistanceM: groundReachM(h), stepPerM: 0 });
+    expect(samples).toBeGreaterThan(10_000);
   });
 
   // Why: a plain y-up world with ground at y = 0 shows the march's own
