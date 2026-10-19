@@ -1814,6 +1814,33 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
     await second.session.close();
   });
 
+  // Why: "as it stood when replaced" was the state of the session's LAST
+  // READ - an edit followed by no read before another open made the
+  // replaced session read its tour without that edit. It follows the
+  // store now, up to the replacing open.
+  it("a replaced session reads its tour as it stood when replaced, an edit no read followed included", async () => {
+    const first = await opened([pin("a")]);
+    const second = await opened([pin("z")]);
+    const store = createTourViewerStore();
+    const old = createEditorSession({
+      session: first.session,
+      manifest: first.manifest,
+      levels: new Map(),
+      store,
+    });
+    old.editText("a", "unread");
+    createEditorSession({
+      session: second.session,
+      manifest: second.manifest,
+      levels: new Map(),
+      store,
+    });
+    expect(old.changeCount()).toBe(1);
+    expect(old.pendingIds()).toEqual(["a"]);
+    await first.session.close();
+    await second.session.close();
+  });
+
   it("places a new note into the tour by the automatic-station rule, refusing an id the tour carries", async () => {
     const { session, manifest } = await opened([pin("a")]);
     const editor = createEditorSession({

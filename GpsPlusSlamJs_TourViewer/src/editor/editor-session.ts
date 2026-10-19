@@ -407,6 +407,17 @@ export function createEditorSession(input: {
    *  replaced session never reads another tour (the r875 milestone review
    *  #4). */
   let last = doc();
+  // Kept after every action while this open is the newest - an edit or a
+  // save's landing that no read of the session followed included - so "as
+  // it stood when replaced" is that, not the last read before it.
+  store.listenToDocument({
+    predicate: () => true,
+    effect: (_action, api) => {
+      const state = selectTourDocument(api.getState());
+      if (state.generation === generation) last = state;
+      else api.unsubscribe();
+    },
+  });
   function own(): TourDocumentState {
     const state = mine();
     if (state !== null) last = state;

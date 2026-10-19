@@ -31,7 +31,9 @@ bytes (`previous`), the photo spots' cache, the pictures' side table
     move of the walk asked of it after refuses ("Another tour was
     opened since"), and everything it reads (`model`, the counts, the
     details) is its own tour as it stood when replaced - never the new
-    one's (the r875 milestone review #4).
+    one's (the r875 milestone review #4). "As it stood" follows the store
+    (a listener keeps the newest state of this open after every action),
+    so an edit or a landed save that no read followed is part of it.
   - `draft` (M6 E2c) - the `EditorSessionDraft` every edit, move,
     delete, undo and redo is backed up through (`editor-draft.ts`): the
     four `DraftObjectWrites`, whose delete sequence is `draft-actions.ts`'s
@@ -264,3 +266,7 @@ backed up in the draft; a cover coming back with its photo; a restore as
 one step; an undo after a save that dropped the emptied station putting the
 note back into that station (the M5a milestone review M2,
 `tour-content.ts`).
+The tour document (D29-D31): a later open on the same store disowning the
+session (its edits refused, a save begun before landing nowhere, one asked
+for after refused, its reads its own tour), and a replaced session reading
+its tour as it stood when replaced, an edit no read followed included.
