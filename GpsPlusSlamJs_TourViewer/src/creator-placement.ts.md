@@ -63,7 +63,10 @@ troubleshooting recording's record of each placement. Split out of
   (`ctx.latestFrame.image`) through `seams.encodeFrameJpeg` and mints a
   `photo` record from THAT frame's raw capture pose
   (`ctx.latestFrame.cameraPose`) through the session alignment, keeping the
-  JPEG for the rebuild. The photo and its placement therefore describe the
+  JPEG for the rebuild. One photo is in flight at a time: its button
+  stays disabled from the tap until the encode lands or fails, through
+  every render meanwhile (`capturing`; the "Capturing…" note used to
+  re-render it enabled at once). The photo and its placement therefore describe the
   same moment; the pose used to be read at tap time (QR perf plan 2026-09-23
   M4). A frame older than `PHOTO_FRAME_MAX_AGE_MS` (1 s) is refused -
   `photo-frame.ts`, because frames stop during a tracking loss while

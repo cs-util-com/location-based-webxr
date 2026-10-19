@@ -93,6 +93,9 @@ export function wireCreatorPlacement(deps: {
   render: () => void;
 }): CreatorPlacement {
   const { ctx, arStore, arController, seams, dom } = deps;
+  /** A photo is being encoded: its button stays disabled until the encode
+   *  lands or fails, through every render meanwhile (one photo in flight). */
+  let capturing = false;
   /**
    * Placement needs this session's GPS alignment (its fixes solved in - the
    * matrix alone is the identity from the first fix, M4 review #2), a live
@@ -114,7 +117,8 @@ export function wireCreatorPlacement(deps: {
   function renderPlacementButtons(): void {
     const allowed = placementAllowed();
     dom.pinButton.disabled = !allowed;
-    dom.photoButton.disabled = !allowed || ctx.latestFrame === null;
+    dom.photoButton.disabled =
+      !allowed || ctx.latestFrame === null || capturing;
     // Object mode (polish round M3, B5): placing while an object is
     // selected makes no sense - the object's own actions take the place.
     const objectMode = deps.objectSelected?.() ?? false;
@@ -343,6 +347,7 @@ export function wireCreatorPlacement(deps: {
   });
 
   dom.photoButton.addEventListener("click", () => {
+    if (capturing) return;
     ctx.placementNote = null;
     const frame = usablePhotoFrame(
       ctx.latestFrame,
@@ -352,6 +357,7 @@ export function wireCreatorPlacement(deps: {
       note("No camera frame yet - try again in a moment.");
       return;
     }
+    capturing = true;
     dom.photoButton.disabled = true;
     note("Capturing…");
     // The pose of the frame being encoded, not the pose at tap time; the
@@ -366,6 +372,7 @@ export function wireCreatorPlacement(deps: {
     deps.alignmentPicks.notePlaced(photoId);
     seams.encodeFrameJpeg(frame.image).then(
       (jpeg) => {
+        capturing = false;
         // A visit that settled while this encoded (its session ended, or a
         // Finish ran) has its alignment on record: minted through that, the
         // photo IS settled - and the store's alignment may already belong
@@ -406,6 +413,7 @@ export function wireCreatorPlacement(deps: {
         );
       },
       (err: unknown) => {
+        capturing = false;
         note(
           `Capturing failed: ${err instanceof Error ? err.message : String(err)}`,
         );
