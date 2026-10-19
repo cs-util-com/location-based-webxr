@@ -43,6 +43,13 @@ export interface CreatorPlacementDom {
   pinSave: HTMLButtonElement;
   pinCancel: HTMLButtonElement;
   photoButton: HTMLButtonElement;
+  /** "New station here" (owner decision D8 of the editor round-2 plan):
+   *  arms the next placement to start its own station. Absent in the node
+   *  tests that do not need it. */
+  newStationButton?: Pick<
+    HTMLButtonElement,
+    "hidden" | "disabled" | "setAttribute" | "addEventListener"
+  >;
 }
 
 export interface CreatorPlacement {
@@ -80,6 +87,9 @@ export function wireCreatorPlacement(deps: {
    *  Station 3", "in Station 2"; `creator-stations.ts`), or null. Absent:
    *  the note names no station. */
   stationOf?: (id: string) => string | null;
+  /** The name of the station object `id` is in ("Station 3"), for a
+   *  "New station here" placement's note (D8), or null. */
+  stationNameOf?: (id: string) => string | null;
   render: () => void;
 }): CreatorPlacement {
   const { ctx, arStore, arController, seams, dom } = deps;
@@ -110,6 +120,15 @@ export function wireCreatorPlacement(deps: {
     const objectMode = deps.objectSelected?.() ?? false;
     dom.pinButton.hidden = objectMode;
     dom.photoButton.hidden = objectMode;
+    const chip = dom.newStationButton;
+    if (chip !== undefined) {
+      chip.disabled = !allowed;
+      chip.hidden = objectMode;
+      chip.setAttribute(
+        "aria-pressed",
+        String(ctx.tourDocument.newStationArmed()),
+      );
+    }
     if (!allowed || objectMode) hideLabelInput();
   }
 
@@ -126,24 +145,26 @@ export function wireCreatorPlacement(deps: {
     return ctx.tourDocument.objects().filter((o) => !o.hosted).length;
   }
 
-  /** Put `object` into the tour document; false (and said) when refused.
-   *  Its draft write is the document's listener's; one that does not land
-   *  is said once (`warnNoBackup`), as a placement's always was. */
+  /** Put `object` into the tour document; null (and said) when refused,
+   *  else whether it started its own station ("New station here" was
+   *  armed, D8: the document consumes the arm only when it takes the
+   *  object). Its draft write is the document's listener's; one that does
+   *  not land is said once (`warnNoBackup`), as a placement's always was. */
   function placeInTour(
     object: TourObject,
     extras: Parameters<TourViewerSession["tourDocument"]["place"]>[1],
-  ): boolean {
+  ): { ownStation: boolean } | null {
     const what =
       object.kind === "pin" ? `the pin "${object.label}"` : "a photo";
     const change = ctx.tourDocument.place(object, extras, what);
     if (change === null) {
       note("That spot is too far from its station - nothing was placed.");
-      return false;
+      return null;
     }
     void change.backedUp.then((ok) => {
       if (!ok) deps.draft.warnNoBackup();
     });
-    return true;
+    return { ownStation: change.ownStation };
   }
 
   function placed(count: number): string {
@@ -157,7 +178,12 @@ export function wireCreatorPlacement(deps: {
 
   /** " - it starts Station 3" / " - in Station 2" for a placement's note
    *  (tour editor plan W3, D20, D21), or "". */
-  function stationPart(id: string): string {
+  function stationPart(id: string, ownStation: boolean): string {
+    if (ownStation) {
+      // "New station here" (D8): the result in words, the station named.
+      const name = deps.stationNameOf?.(id) ?? null;
+      return ` - New station started${name === null ? "" : `: ${name}`}`;
+    }
     const where = deps.stationOf?.(id) ?? null;
     return where === null ? "" : ` - ${where}`;
   }
@@ -290,15 +316,29 @@ export function wireCreatorPlacement(deps: {
             },
           },
     );
-    if (!placedPin) return;
+    if (placedPin === null) return;
     if (local !== null) deps.alignmentPicks.notePlaced(pin.id);
     logPlacement(pin, { reticleWorld: position });
     dom.pinLabel.value = "";
     hideLabelInput();
     deps.previews.sync();
     note(
-      `Pin "${label}" placed${stationPart(pin.id)} · ${placed(newlyPlaced())}.`,
+      `Pin "${label}" placed${stationPart(pin.id, placedPin.ownStation)} · ${placed(newlyPlaced())}.`,
     );
+  });
+
+  // "New station here" (owner decision D8): a toggle, so a second tap
+  // disarms it. The arm is the tour document's flag (`newStationArmed`),
+  // read by the station line and consumed by the next placement taken.
+  dom.newStationButton?.addEventListener("click", () => {
+    const armed = !ctx.tourDocument.newStationArmed();
+    ctx.tourDocument.armNewStation(armed);
+    if (armed) {
+      note("The next pin or photo starts a new station here.");
+      return;
+    }
+    ctx.placementNote = null;
+    deps.render();
   });
 
   dom.photoButton.addEventListener("click", () => {
@@ -353,7 +393,7 @@ export function wireCreatorPlacement(deps: {
           // the world group's frame, never composed by hand (plan §3.2).
           placement: { visit, local: odomNueFromWebXr(cameraPose) },
         });
-        if (!placedPhoto) return;
+        if (placedPhoto === null) return;
         logPlacement(photo, { cameraOdomPose: cameraPose });
         // Logged as the settle's late arrival, through its record.
         if (settled !== undefined) deps.lateArrival(visit, photo);
@@ -361,7 +401,7 @@ export function wireCreatorPlacement(deps: {
         // The plane sits at the capture spot, facing back at it: the
         // creator is standing on it and sees it once they step back.
         note(
-          `Photo placed${stationPart(photo.id)}. Step back a metre to see it · ${placed(newlyPlaced())}.`,
+          `Photo placed${stationPart(photo.id, placedPhoto.ownStation)}. Step back a metre to see it · ${placed(newlyPlaced())}.`,
         );
       },
       (err: unknown) => {

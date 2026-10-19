@@ -248,6 +248,16 @@ describe("the words", () => {
     );
   });
 
+  // Why (owner decision D8): while "New station here" is armed, the line
+  // must not say "what you place here joins it" - the next item starts a
+  // station of its own, wherever the creator stands.
+  it("says the next item starts a new station here while 'New station here' is armed", () => {
+    const armed = "What you place next starts a new station here.";
+    expect(stationChipText(station("Station 2"), null, true)).toBe(armed);
+    expect(stationChipText(null, station("The well"), true)).toBe(armed);
+    expect(stationChipText(null, null, true)).toBe(armed);
+  });
+
   it("says a placement started a station only for its first element", () => {
     const stations = [station("Station 3", true), station("Station 1")];
     expect(placedInText(stations, "first")).toBe("it starts Station 3");
@@ -398,6 +408,31 @@ describe("wireCreatorStations", () => {
     );
     h.tour.place(pin("next", 62, 0), {}, "a pin");
     expect(h.stations.placedIn("next")).toBe("in Station 2");
+  });
+
+  // Why (owner decision D8): "New station here" is a flag of the tour
+  // document; the line follows it on the next frame, and the placement it
+  // armed starts its own station 2 m from the gate's anchor, which the
+  // note names by its station's name (`nameOf`).
+  it("follows 'New station here': the line while armed, the new station named after the placement", () => {
+    const h = harness();
+    h.stand(5, 0);
+    h.tour.armNewStation(true);
+    h.stand(5, 0);
+    expect(h.chip.textContent).toBe(
+      "What you place next starts a new station here.",
+    );
+    // The ring stays the station the creator stands in.
+    expect(h.ring()).toBeDefined();
+    h.tour.place(pin("own", 2, 0), {}, "a pin");
+    expect(h.stations.placedIn("own")).toBe("it starts Station 2");
+    expect(h.stations.nameOf("own")).toBe("Station 2");
+    expect(h.stations.nameOf("gate")).toBe("Station 1");
+    expect(h.stations.nameOf("nowhere")).toBeNull();
+    h.stand(2, 0);
+    expect(h.chip.textContent).toBe(
+      "In Station 2 - what you place here joins it.",
+    );
   });
 
   it("says nothing and draws nothing without a position, a scene or a tour, and after the visit", () => {

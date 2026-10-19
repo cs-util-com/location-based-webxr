@@ -50,6 +50,15 @@ reducers' building blocks, so a page cannot apply them differently.
   `queued` (a Save waiting for the autosave), `built`, `delivered`
   (in place or downloaded, under which name), `largeTour`, `cannotSave`.
 
+- `newStationArmed` - the phone's "New station here" is armed (owner
+  decision D8 of `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`): the next placement starts its own station. An
+  authoring flag of the page, kept here because this is the slice that
+  holds the page's authoring state (the save slot too); `tourAuthoring/*`
+  has no reducer by design. Not an edit: no history, no revision, no draft
+  write. The initial state, so `opened` and `closed` disarm it. The
+  phone's handle mints the station id and consumes the flag
+  (`creator-document.ts`).
+
 Blobs are never state: a photo's picture lives in the page's side table
 keyed by id (`editor-session.ts` `pictures`), handed to the draft by the
 listener (`tour-document-draft.ts`) and to the rebuild by the page.
@@ -101,6 +110,8 @@ appliedDeletions, stationsAtStart })`, `saveEnded({ generation, error? })`
   `saveClaimed({ by })`, `saveReleased({ error? })`, `saveQueued({ queued })`,
   `saveBuilt()`, `saveDelivered({ inPlace, name })`, `saveLimited({
 largeTour?, cannotSave? })`.
+- `newStationArmed({ armed })` - "New station here" armed or disarmed
+  (D8); no edit.
 - `closed()` - the tour is gone without another opening: back to the
   initial state, `generation` + 1, the save slot kept as for `opened`.
 
@@ -230,4 +241,7 @@ store.dispatch(tourDocumentActions.undone());
   manifest on a real zip, with the walk's photo spots and without, and
   again for a second save after the first landed.
 - `tour-document-parity.test.ts` - the phone's and the desktop's paths
-  write the same tour and draft (D30).
+  write the same tour and draft (D30); D8's "a pin that starts its own
+  station" is a by-design row (the desktop lacks it until the 3D editor),
+  and the harness accepts a by-design row on either page lacking the
+  operation.

@@ -22,9 +22,11 @@ placement went ("it starts Station 3" / "in Station 2") for its note.
 - `openStationAt(stations, at, radiusM?) -> ArStation | null` - the
   nearest station whose anchor is within R of `at` (`nearestStationWithin`
   of `station-assign.ts`, R itself inside), else null.
-- `stationChipText(open, left) -> string` - "In Station 2 - what you place
+- `stationChipText(open, left, newStationArmed?) -> string` - "In Station 2 - what you place
   here joins it." / "You left Station 2 - what you place next starts a new
-  station." / "No station here - what you place next starts a new one."
+  station." / "No station here - what you place next starts a new one." /
+  while "New station here" is armed (owner decision D8): "What you place
+  next starts a new station here."
 - `placedInText(stations, objectId) -> string | null` - "it starts
   Station 3" for the first element of a station the next Finish starts,
   else "in Station 2"; null when the object is in none.
@@ -37,9 +39,12 @@ placement went ("it starts Station 3" / "in Station 2") for its note.
 - `reticleNueOf(reticle) -> [n, u, e] | null` - a visible reticle's hit
   point in GPS-world NUE; null when hidden, absent or not finite.
 - `wireCreatorStations({ ctx, dom: { chip }, creatorNue, reticleNue?, zero, scene,
-radiusM? }) -> { tick, placedIn, endVisit }` - `tick()` every camera
+radiusM? }) -> { tick, placedIn, nameOf, endVisit }` - `tick()` every camera
   frame of a creator's session: the line and the ring; `placedIn(id)` for
-  a placement's note; `endVisit()` hides both.
+  a placement's note; `nameOf(id)` the name of the station object `id`
+  is in (hedged like `placedIn`), for a "New station here" placement's
+  note; `endVisit()` hides both. The line reads the document's
+  `newStationArmed` each frame.
 
 ## Invariants & assumptions
 
@@ -134,7 +139,9 @@ note(`Pin placed - ${stations.placedIn(pin.id) ?? ""}`);
   station the HUD called open, or starts one when it called none (R swept
   15-40 m); the same promise through the composed HUD with the reticle
   up to 10 m ahead or hidden (property, R swept); `reticleNueOf`; the
-  words; the line and the note hedged (stations still named) while the
+  words (the armed line too); "New station here" through the wiring
+  (the line while armed, the ring kept, the new station named); the
+  line and the note hedged (stations still named) while the
   walk's photos are pending, and `walkPhotosPending` (never finished or
   reopened after a decline: pending; baked or decided in this page: not); the station left, remembered across a
   deletion that renumbers it and across the Finish that writes it (a real

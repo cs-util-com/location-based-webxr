@@ -266,6 +266,7 @@ for (const viewport of [
     const card = await box(page, "setup-status");
     const pin = await box(page, "setup-pin");
     const photo = await box(page, "setup-photo");
+    const newStation = await box(page, "setup-new-station");
     // Done: a chip at the top right.
     await expect(page.getByTestId("enter-ar")).toHaveText("Done");
     expect(done.top).toBeLessThan(40);
@@ -275,11 +276,36 @@ for (const viewport of [
     expect(card.left).toBeLessThan(40);
     expect(card.right).toBeLessThanOrEqual(done.left);
     // The chips: at the bottom, one row, "Place a pin" first, centred.
+    // "New station here" (D8) ends that row where it fits (a wide screen),
+    // else sits centred just above it (a phone, until the labels fold);
+    // never off screen.
     expect(viewport.height - pin.bottom).toBeLessThan(80);
     expect(Math.abs(pin.top - photo.top)).toBeLessThan(6);
     expect(pin.right).toBeLessThanOrEqual(photo.left);
-    const middle = (pin.left + photo.right) / 2;
+    const inRow = Math.abs(pin.top - newStation.top) < 6;
+    const rowRight = inRow ? newStation.right : photo.right;
+    const middle = (pin.left + rowRight) / 2;
     expect(Math.abs(middle - viewport.width / 2)).toBeLessThan(2);
+    expect({
+      after: inRow ? photo.right <= newStation.left : null,
+      above: inRow ? null : newStation.bottom <= pin.top,
+      gap: inRow ? null : pin.top - newStation.bottom < 16,
+      centred: inRow
+        ? null
+        : Math.abs(
+            (newStation.left + newStation.right) / 2 - viewport.width / 2,
+          ) < 2,
+    }).toEqual({
+      after: inRow ? true : null,
+      above: inRow ? null : true,
+      gap: inRow ? null : true,
+      centred: inRow ? null : true,
+    });
+    expect(pin.left).toBeGreaterThanOrEqual(0);
+    expect(newStation.left).toBeGreaterThanOrEqual(0);
+    expect(newStation.right).toBeLessThanOrEqual(viewport.width);
+    // A wide screen keeps the one row.
+    expect(inRow).toBe(viewport.width > viewport.height);
     // The camera view between them is clear: nothing of the panel there.
     expect(pin.top - card.bottom).toBeGreaterThan(viewport.height * 0.3);
     // The technical line is ?debug=1's only.

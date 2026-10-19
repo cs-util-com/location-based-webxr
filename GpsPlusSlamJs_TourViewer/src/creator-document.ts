@@ -41,6 +41,7 @@ import {
   followDocument,
   type TourDocumentDraft,
 } from "./tour-document-draft.js";
+import { newObjectId } from "./content-placement.js";
 import type { NuePose } from "./visit-anchoring.js";
 
 /**
@@ -76,6 +77,10 @@ export type CreatorObject = Omit<
 export interface DocumentChange {
   readonly backedUp: Promise<boolean>;
 }
+
+/** A placement the document took: `ownStation` says it started its own
+ *  station, as "New station here" armed it (D8). */
+export type PlacedChange = DocumentChange & { readonly ownStation: boolean };
 
 /** What an undo did, or why it did not. */
 type DocumentUndo =
@@ -128,13 +133,22 @@ export interface CreatorDocument {
   open(manifest: TourManifest | null): void;
   /** The tour closed: back to no tour, its work and side tables gone. */
   close(): void;
-  /** A new object (a tap in AR, or work carried in): null when refused
-   *  (`canPlace`). */
+  /** A new object (a tap in AR): null when refused (`canPlace`). While
+   *  "New station here" is armed (D8) the object names a fresh station of
+   *  its own, so the rule starts it there even within R of another, and
+   *  the arm goes - only when the placement is taken: a refused one keeps
+   *  it. */
   place(
     object: TourObject,
     extras: { readonly blob?: Blob; readonly placement?: VisitPlacement },
     what: string,
-  ): DocumentChange | null;
+  ): PlacedChange | null;
+  /** "New station here" is armed (D8): the next placement starts its own
+   *  station. */
+  newStationArmed(): boolean;
+  /** Arm or disarm "New station here": no edit of the tour (no undo step,
+   *  no draft write). */
+  armNewStation(armed: boolean): void;
   /** A pin's text changed (`objectFits`); its placement is kept. */
   edit(object: TourObject, what: string): DocumentChange | null;
   /** An object moved (`objectFits`): `placement` replaces its AR placement
@@ -295,6 +309,22 @@ export function createCreatorDocument(
     sideVersion += 1;
   }
 
+  /** A station id the document does not use, for a placement that starts
+   *  its own station (D8): the write recreates a station an object names
+   *  that the tour lacks, under that id (`tour-content.ts`). */
+  function freshStationId(s: TourDocumentState): string {
+    const used = new Set([
+      ...s.stations.map((f) => f.id),
+      ...(s.written?.stations.map((f) => f.id) ?? []),
+      ...s.placed.flatMap((p) =>
+        p.object.station === undefined ? [] : [p.object.station],
+      ),
+    ]);
+    let id = newObjectId();
+    while (used.has(id)) id = newObjectId();
+    return id;
+  }
+
   function reopen(manifestToOpen: TourManifest): void {
     pictures.clear();
     placements.clear();
@@ -348,13 +378,26 @@ export function createCreatorDocument(
     close() {
       reopen(noTour);
     },
-    place(object, extras, what) {
-      if (!canPlace(state(), object)) return null;
+    place(given, extras, what) {
+      const before = state();
+      const ownStation = before.newStationArmed && given.station === undefined;
+      const object = ownStation
+        ? { ...given, station: freshStationId(before) }
+        : given;
+      if (!canPlace(before, object)) return null;
       if (extras.blob !== undefined) setPicture(object.id, extras.blob);
       if (extras.placement !== undefined) {
         setPlacement(object.id, extras.placement);
       }
-      return change(tourDocumentActions.placed({ object, what }));
+      const placed = change(tourDocumentActions.placed({ object, what }));
+      if (ownStation) {
+        store.dispatch(tourDocumentActions.newStationArmed({ armed: false }));
+      }
+      return { ...placed, ownStation };
+    },
+    newStationArmed: () => state().newStationArmed,
+    armNewStation(armed) {
+      store.dispatch(tourDocumentActions.newStationArmed({ armed }));
     },
     edit(object, what) {
       if (!objectFits(state(), object)) return null;

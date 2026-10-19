@@ -157,6 +157,10 @@ interface Page {
   /** A new pin where `object` says (the phone: as its AR placement leaves
    *  the page's lists). */
   place(object: TourObject): Promise<void>;
+  /** A new pin that starts its own station even within the automatic
+   *  radius of another (owner decision D8 of the editor round-2 plan; the
+   *  phone: its "New station here" chip, then a placement). */
+  placeOwnStation(object: TourObject): Promise<void>;
   /** A note to `lat`/`lon`, height and facing kept (the phone: as its AR
    *  move leaves the page's lists). */
   move(id: string, lat: number, lon: number): Promise<void>;
@@ -245,6 +249,12 @@ async function desktopPage(
       editor.place(object);
       return draft.idle();
     },
+    placeOwnStation: () =>
+      Promise.reject(
+        new NoSuchOperation(
+          "desktop: a new station for a placement (D8's desktop half)",
+        ),
+      ),
     move: (id, lat, lon) => {
       editor.move(id, lat, lon);
       return draft.idle();
@@ -417,6 +427,13 @@ async function phonePage(
       ctx.tourDocument.place(object, {}, "a pin");
       await flush();
     },
+    placeOwnStation: async (object) => {
+      // As `creator-placement.ts` places after "New station here" and a
+      // tap in AR.
+      ctx.tourDocument.armNewStation(true);
+      ctx.tourDocument.place(object, {}, "a pin");
+      await flush();
+    },
     move: async (id, lat, lon) => {
       // As `object-editing.ts`'s move changes the document (its AR
       // geometry decides the geo; here the same spot the desktop is given).
@@ -480,10 +497,10 @@ interface Row {
   readonly records: boolean;
   /** Where the two pages diverge today, and the step that ends it. */
   readonly diverges?: string;
-  /** A divergence by design: the phone has no such operation, and the
-   *  row may fail for that reason only (`NoSuchOperation`) - the phone
-   *  refusing a Finish, or writing something else, is a red row (the r880
-   *  milestone review LOW-6). */
+  /** A divergence by design: one page has no such operation (the phone,
+   *  or since D8 the desktop), and the row may fail for that reason only
+   *  (`NoSuchOperation`) - the phone refusing a Finish, or writing
+   *  something else, is a red row (the r880 milestone review LOW-6). */
   readonly byDesign?: true;
   /** What each page must leave, beyond agreeing with the other: two pages
    *  that share a bug agree too (the r880 milestone review, HIGH-1). */
@@ -619,6 +636,22 @@ const ROWS: readonly Row[] = [
     },
   },
   {
+    // Why (owner decision D8 of the editor round-2 plan): the phone's
+    // "New station here" goes through the document's own path; the
+    // desktop's "+" in the tree and "Move to a new station" come with the
+    // 3D editor. When they land this row turns red and becomes a parity
+    // row.
+    name: "place a pin that starts its own station within the radius (D8), save",
+    records: false,
+    byDesign: true,
+    diverges:
+      "by design until the 3D editor: D8's desktop half (the tree's '+', the inspector's 'Move to a new station') is not built yet",
+    run: async (p) => {
+      await p.placeOwnStation(pin("own", "Its own station", NORTH));
+      return p;
+    },
+  },
+  {
     name: "turn on 'needs no GPS', save",
     records: true,
     byDesign: true,
@@ -734,6 +767,8 @@ async function samePages(row: Row): Promise<void> {
   try {
     desktop = await outcome(row, desktopPage);
   } catch (err) {
+    // The desktop lacking an operation by design (D8's desktop half).
+    if (row.byDesign === true && err instanceof NoSuchOperation) throw err;
     broken(row, err);
     return;
   }
@@ -758,8 +793,8 @@ async function samePages(row: Row): Promise<void> {
     return;
   }
   if (row.byDesign === true) {
-    // The phone ran an operation it is meant to lack.
-    broken(row, new Error(`${row.name}: the phone has the operation now`));
+    // Both pages ran an operation one of them is meant to lack.
+    broken(row, new Error(`${row.name}: both pages have the operation now`));
     return;
   }
   if (

@@ -156,6 +156,11 @@ export interface TourDocumentState {
   /** Counts every edit, undo and redo. */
   readonly revision: number;
   readonly save: TourSaveStatus;
+  /** The phone's "New station here" is armed (owner decision D8 of the
+   *  editor round-2 plan): the next placed item starts its own station.
+   *  An authoring flag of the page, not of the tour - no edit, no undo
+   *  step, no draft write; gone with the tour (`opened`, `closed`). */
+  readonly newStationArmed: boolean;
 }
 
 /** How many steps are kept: enough for a working session, bounded. */
@@ -205,6 +210,7 @@ export const initialTourDocumentState: TourDocumentState = {
   future: [],
   revision: 0,
   save: IDLE,
+  newStationArmed: false,
 };
 
 // --- the pure rules ---------------------------------------------------------
@@ -927,6 +933,12 @@ const tourDocumentSlice = createSlice({
             : { cannotSave: action.payload.cannotSave }),
         }),
       };
+    },
+    /** "New station here" armed or disarmed (D8): no edit of the tour. */
+    newStationArmed(state, action: PayloadAction<{ armed: boolean }>) {
+      const before = plain(state);
+      if (before.newStationArmed === action.payload.armed) return before;
+      return { ...before, newStationArmed: action.payload.armed };
     },
     /** The tour closed without another opening (a late integrity
      *  failure): nothing of it stays, and its sessions' late answers land

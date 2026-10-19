@@ -1738,6 +1738,12 @@
         order: 5;
         align-self: center;
         display: flex;
+        /* "New station here" (D8) is a third chip: on a phone the three
+           labels do not fit one row until the pin's and the photo's fold,
+           so the row wraps UPWARDS - the pin and the photo stay at the
+           bottom, the station chip goes above them, next to the station
+           line it changes. */
+        flex-wrap: wrap-reverse;
         justify-content: center;
         gap: 10px;
         max-width: 100%;
@@ -1765,7 +1771,8 @@
         text-align: center;
       }
       body[data-mode="creator"][data-ar-active="true"] #setup-pin,
-      body[data-mode="creator"][data-ar-active="true"] #setup-photo {
+      body[data-mode="creator"][data-ar-active="true"] #setup-photo,
+      body[data-mode="creator"][data-ar-active="true"] #setup-new-station {
         display: inline-flex;
         flex: none;
         align-items: center;
@@ -1792,8 +1799,17 @@
         color: #1d1206;
       }
       body[data-mode="creator"][data-ar-active="true"] #setup-pin[hidden],
-      body[data-mode="creator"][data-ar-active="true"] #setup-photo[hidden] {
+      body[data-mode="creator"][data-ar-active="true"] #setup-photo[hidden],
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-new-station[hidden] {
         display: none;
+      }
+      /* "New station here" armed (D8): the accent ring says the next pin or
+         photo starts a station of its own. */
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-new-station[aria-pressed="true"] {
+        box-shadow: inset 0 0 0 3px var(--accent);
+        color: var(--accent);
       }
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls
@@ -1811,7 +1827,10 @@
         #setup-pin,
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls:has(#pin-label:not([hidden]))
-        #setup-photo {
+        #setup-photo,
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls:has(#pin-label:not([hidden]))
+        #setup-new-station {
         display: none;
       }
       body[data-mode="creator"][data-ar-active="true"] #pin-label {
@@ -3743,6 +3762,43 @@
                       />
                     </svg>
                     <span class="chip-label">Take a photo</span>
+                  </button>
+                  <!-- "New station here" (owner decision D8 of the editor
+                   round-2 plan): a toggle - the next pin or photo starts a
+                   station of its own, even within the automatic radius of
+                   another (creator-placement.ts). aria-pressed is its armed
+                   state. -->
+                  <button
+                    type="button"
+                    id="setup-new-station"
+                    class="btn btn--prose"
+                    data-testid="setup-new-station"
+                    aria-pressed="false"
+                    disabled
+                  >
+                    <!-- A station's ring with a plus. -->
+                    <svg
+                      class="chip-icon"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="8.5"
+                        fill="none"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                        stroke-dasharray="3.4 2.3"
+                      />
+                      <path
+                        d="M12 8.2v7.6M8.2 12h7.6"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                    <span class="chip-label">New station here</span>
                   </button>
                 </div>
                 <!-- OUTSIDE #setup-controls on purpose: the controls are the

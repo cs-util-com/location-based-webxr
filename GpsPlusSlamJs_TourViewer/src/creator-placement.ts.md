@@ -12,7 +12,8 @@ troubleshooting recording's record of each placement. Split out of
 
 - `wireCreatorPlacement({ ctx, arStore, arController, seams, dom, alignmentPicks, draft, previews, alignmentInfo, sizeOf, settledVisit, lateArrival, stationOf?, render }): CreatorPlacement`
   - `dom` (`CreatorPlacementDom`): `pinButton`, `pinLabel`, `pinSave`,
-    `pinCancel`, `photoButton`, whose clicks this module handles.
+    `pinCancel`, `photoButton`, `newStationButton?` ("New station
+    here", D8, below), whose clicks this module handles.
   - `seams`: `getArWorldGroup` (the odometry frame a placement is kept
     in), `encodeFrameJpeg` (the photo's bytes).
   - `settledVisit(visit)` - the settle record of a visit that already
@@ -24,6 +25,9 @@ troubleshooting recording's record of each placement. Split out of
     Station 1"), or null. The pin's and the photo's note carry it after
     "placed" (`Pin "Gate" placed - in Station 1 · ...`); absent or null,
     the note names no station.
+  - `stationNameOf(id)` (optional, D8) - the name of the station the
+    object is in ("Station 2", `creator-stations.ts` `nameOf`), for a
+    "New station here" placement's note.
 - `CreatorPlacement`:
   - `allowed()` - the gate below, re-checked at every tap; the object
     list asks it too.
@@ -85,11 +89,52 @@ troubleshooting recording's record of each placement. Split out of
   photo, the store's alignment, the group's matrix, the code last in view
   (read with `last`, never re-evaluated) and its printed size.
 - Every outcome is `ctx.placementNote` (see `creator-setup.ts.md`).
+- **"New station here"** (owner decision D8 of `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`, phone half):
+  places closer than about 40 m cannot be separated by any automatic
+  radius, so the chip makes the NEXT placed item start its own station,
+  anchored where it is placed, even within R of another. Decisions
+  inferred from the existing chips and rules (r886):
+  - **A toggle, and its state is the document's**: a tap arms it, a second
+    tap disarms it; the flag is the `tourDocument` slice's
+    `newStationArmed` (`ctx.tourDocument.armNewStation`), never module
+    scope. `aria-pressed` shows it (the page draws an accent ring), and
+    the station line says "What you place next starts a new station here."
+    while it is armed (`creator-stations.ts`). Arming says "The next pin
+    or photo starts a new station here." in the note; disarming clears it.
+  - **Consumed when the item enters the document**
+    (`CreatorDocument.place`): a pin at Save, a photo when its encode
+    lands - so whichever placement the document TAKES first uses it. A
+    placement that does not happen keeps it, so the creator can try again:
+    no text typed, the label input cancelled, no surface under the ring,
+    no GPS fix, a failed encode, or a refusal by the document's guard.
+  - **The result is said in the placement note**, the phone creator's one
+    channel for every placement outcome (the invariant above), not a
+    separate toast: `Pin "Gate" placed - New station started: Station 2 ·
+2 objects placed.` (the station named as `placedIn` would, hedged
+    while the walk's photos are pending).
+  - **It looks and steps aside like the other chips**: the photo chip's
+    dark pill, the same gate (disabled when a placement is not allowed),
+    hidden in object mode and while a pin's text is typed, its label
+    folding to its icon after its first use (`folding-label.ts`). The
+    strip wraps upwards on a phone, where three labels do not fit one row
+    (the page's CSS): the pin and the photo stay at the bottom, the
+    station chip goes above them.
+  - **Disarmed at the end of an AR visit** (`creator-setup.ts`) and when
+    a tour opens or closes (the slice's initial state); an undo of the
+    placement takes its station away and does not re-arm.
+  - Not built here: the desktop half (the tree's "+", the inspector's
+    "Move to a new station") comes with the 3D editor;
+    `tour-document-parity.test.ts` carries it as a by-design row.
 
 ## Tests
 
 Composed, through `wireCreatorSetup`: `authoring-settle.test.ts` (pins and
 photos placed rigid, the late-arriving photo, the gate),
+`creator-setup.test.ts` ("New station here": the armed state and a second
+tap, a pin within R starting its own station with the note, the one-shot,
+the arm kept when nothing was placed, the undo, the visit's end),
+`playwright-tests/creator-stations.spec.js` (the same through the page and
+the written tour),
 `authoring-recording.test.ts` (the placement's record) and the e2e
 placement specs. The sampled mutants that touch placement
 (`scripts/fixtures/creator-setup.mutants.json`) are killed.
