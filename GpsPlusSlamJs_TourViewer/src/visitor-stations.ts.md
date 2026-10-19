@@ -18,15 +18,23 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
 - `stationPlacementAllowed(ctx, mode): boolean` - the guide's
   `placementAllowed`, exported so the placement test drives the page's
   own rule (see below).
+- `stationAlignmentSignals(ctx, arStore)` - the guide's `codeLinedUp`,
+  `alignmentReady` and `trackingReady` (`tour-flow.ts`; the last is
+  `isPlacementReady` on the report, which a lined-up code's votes feed
+  too: the guide latches its heading on it only without a code): the viewer
+  pipeline's voted locks this AR entry (`ctx.viewerLockedText`,
+  `ctx.viewerVotedLocks`) and the store's tracking-quality report.
+  Exported for the same reason. No state of its own: all are read each
+  tick.
 
 ## Invariants & assumptions
 
-- The tour is read from the session object each time: `ctx.tourManifest`
-  (settled) for the stations, the order and the assets, `ctx.currentLevels`
-  for a code-only station's spot, `ctx.ignoredCodes` for the D20 veto,
-  `ctx.movedCodeChecks` (its `snapshot()` through `checkHadItsWindow`) for
-  the guide's hold of a code lock (K4 review R1), and the store's zero for
-  the visitor's raw fix position.
+- The tour is read from the session object each time:
+  `ctx.tourDocument.manifest()` (settled) for the stations, the order and the assets, and the store's
+  zero for the visitor's raw fix position. A code lock only re-judges the
+  guide (tour editor plan D16: a lock is no arrival; the moved-code check's
+  veto acts on the alignment, never here), so the code-only station's spot,
+  the D20 veto and the lock hold (K4 review R1) are no longer read.
 - Placement is allowed for a visitor with a live session
   (`ctx.placementUnsubscribe`) and a gate that allows it
   (`gateAllowsPlacement`, DEC-N3): the stations wait behind the scan gate
@@ -35,12 +43,24 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   swing the wait hid, r857 milestone review #1); since r863 a code's
   rotation stands from its first lock (`viewer-vote-sink.ts`
   `VIEWER_SOFT_TRIM`), so a station on the scanned code is found on that
-  lock.
+  lock: the lock places the visitor, and a station at the code is inside
+  its radius (D16).
+- The stations are judged on the aligned frame only while it is ready
+  (r881, `stationAlignmentSignals`): tracking ready or a code lined it up,
+  re-read each tick. While it is not the guide judges by the fresh device
+  fix (review H1). The arrows, the breadcrumbs, the figure's turn and the
+  figure's pose wait for the first readiness of the AR entry and keep it
+  through a dip (re-review L-B, M-B): the stage reads
+  `guide.figurePoseOf`, so a story found on the raw fix plays its words
+  and voice at once while its figure waits ("Waiting for your position to
+  place the figure…"). The gate alone was not enough: the library aligns
+  a session from its first fix, with no heading.
 - Media are read through `ctx.session.loadContentEntry` (K0's allowlist and
   `.glb` check, K1's per-entry hash check), ahead of time as the visitor
   approaches (`station-prefetch.ts`; the story's own reads go through the
   same cache). The cache lives with the open tour's manifest
-  (`ctx.tourManifest`, by identity): kept across AR sessions, dropped when
+  (`ctx.tourDocument.manifest()`, by identity; a visitor never edits it,
+  so it changes only with the tour): kept across AR sessions, dropped when
   the tour closes or another opens (K4 review R15). A figure is decoded by the framework's
   `decodeFrameTexture`, one at a time through a `keyed-chain` key, via
   `decodeFigure` (its size read from its own header, refused over the tour
@@ -50,6 +70,9 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   image inside it.
 - The breadcrumbs (`breadcrumbs.ts`) follow the guide's `onGuide`, one
   trail for the page.
+- The guide's `guideStore` is `arStore`: the present station lands in its
+  `visitorGuide` slice (visitor plan 2026-10-18-2349 M1). Nothing draws by
+  it yet; drawing per station is M2.
 - The assets by id are built once per manifest (K4 review R13).
 - A choice button is a `.btn` with `data-testid="scene-choice"`.
 - `stop()` stops the story and the HUD; the guide keeps the progress with
@@ -73,6 +96,8 @@ hooks.tickStations = stations.tick;
 ## Tests
 
 - `playwright-tests/stations.spec.js` (the composition).
+- `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
+  tracking-quality slice, `trackingReady` reading the report, not the lock state.
 - `viewer-content-alignment.test.ts` ("finds the station on the scanned
   code on the first voted lock"): the real station guide over the real
-  placement and `stationPlacementAllowed`.
+  placement, `stationPlacementAllowed` and `stationAlignmentSignals`.

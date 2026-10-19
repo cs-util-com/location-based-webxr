@@ -198,4 +198,30 @@ describe("createSceneStage", () => {
     h.stage.faceVisitor([0, 0, 0]);
     expect(h.scene.children).toHaveLength(0);
   });
+
+  // Why (r881 re-review M-B): the station guide now holds the figure's
+  // pose back until the alignment has a heading, which can take a walk.
+  // The story must be able to say why the figure is not there yet, so the
+  // stage reports the moment a decoded figure starts to wait - once, and
+  // never for a figure that stands at once.
+  it("reports once when a decoded figure starts waiting for its position, never when it stands at once", async () => {
+    const h = harness();
+    const atOnce = vi.fn();
+    await h.stage.showCharacter("gate", new Blob(["x"]), atOnce);
+    expect(atOnce).not.toHaveBeenCalled();
+    h.deps.poseOf.mockReturnValue(null);
+    const waits = vi.fn();
+    const shown = h.stage.showModel("gate", new Blob(["x"]), waits);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(waits).toHaveBeenCalledTimes(1);
+    h.stage.faceVisitor([0, 0, 0]);
+    expect(waits).toHaveBeenCalledTimes(1);
+    h.deps.poseOf.mockReturnValue({
+      positionNue: [1, 2, 3],
+      rotationNue: [0, 0, 0, 1],
+    });
+    h.stage.faceVisitor([0, 0, 0]);
+    await shown;
+    expect(waits).toHaveBeenCalledTimes(1);
+  });
 });

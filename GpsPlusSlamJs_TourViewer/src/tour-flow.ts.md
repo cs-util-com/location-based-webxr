@@ -23,8 +23,9 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
 - `interface ArStatusInput` - mode, controller status, camera-frame count,
   the tour, the viewer pipeline's QR inputs (the `viewerStatusLine` shape),
   the `readiness` (the framework's `OnboardingGuidance` for the current
-  tracking-quality report; null in creator mode), the placement, and a
-  placement error string.
+  tracking-quality report; null in creator mode), the placement, a
+  placement error string, and `stationsAwaitHeading?` (the visitor guide
+  waits for a heading, D34; read only by `visitorStatus`).
 - `isPlacementReady(report): boolean` - the placement trigger (flows plan
   M4, DEC-F3): true when `computeOnboardingGuidance(report).phase ===
 "ready"`, i.e. the tracking-quality `ok` state. At the first GPS fix the
@@ -35,6 +36,24 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
   It cannot be 180° wrong: a voted lock's ring carries the code's saved
   heading, unlike a single GPS fix (`viewer-content-alignment.test.ts`
   places the pin to under 1 cm on votes alone).
+- `codeLinedUp(qr): boolean` - a code's votes lined the tour up
+  (`qr.lockedText` set and `qr.votedLocks > 0`; after the escape too, the
+  gate staying "skipped"). Read by the visitor's status line and, through
+  `visitor-stations.ts`, by the station guide, which then trusts the
+  position whatever the raw fixes' accuracy.
+- `codePlacedTour(ctx): boolean` - the gate passed via a code and
+  `ctx.viewerVotedLocks > 0`: the walk's placement trigger runs whatever
+  the tracking phase reads (`viewer-placement.ts`). Since r881 the veto
+  sets the count to 0, so a tour whose votes were all taken back is no
+  longer code-placed (review M1).
+- `alignmentReady(report, qr): boolean` - `isPlacementReady(report) ||
+codeLinedUp(qr)`: whether the station guide judges on the aligned frame
+  (its position, the HUD's arrows, the breadcrumbs, the figure). The find
+  re-reads it each tick, and while it is false judges by the fresh device
+  fix instead (r881 review H1; readiness needs a walk with turns and may
+  never come for a visitor standing or walking straight). What needs a
+  heading latches its first `true` per AR entry, as the photos' trigger
+  does, so a degraded dip does not take the arrows away (re-review L-B).
 - `PlacementState` also carries `waiting-ready` (renders the readiness
   hint, or "Waiting for tracking to warm up…" without one) and
   `nothing-to-place` (a tour with neither a recording nor printed codes).

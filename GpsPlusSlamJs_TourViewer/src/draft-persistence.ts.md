@@ -23,6 +23,21 @@ are the framework's.
   base as seen hosted (`creator-draft.ts` passes the tour as opened). Both
   writes run at once; the result is the record's write only (E2p review
   #6). The page's object writes go through it.
+- `writeDraftLiveRecord(store, object, blob, seen) -> Promise<boolean>` -
+  a live record (`writeDraftEdit`), THEN, only once it landed, the id's
+  tombstone removed (`removeDraftDeletion`): an older draft's tombstone
+  outranks a record in `readDraft`, so an edit made over an offered
+  deletion was offered as deleted again. Record first, as an undo of a
+  delete writes them: a crash between the two leaves the object deleted,
+  never half restored; a record that did not land leaves the tombstone.
+  "Landed" is `writeDraftEdit`'s result, which is false also when the JSON
+  record landed but the photo's put failed: the tombstone then stays, so
+  the next read offers the edited object as deleted. Deliberate - never a
+  photo object restored without its photo - and the failed write is
+  reported where it happened (the backup notice).
+  The one implementation for the phone's draft (`creator-draft.ts`) and
+  the desktop editor's (`editor/editor-draft.ts`: `saveObject` and a key
+  move's carried records).
 - `writeDraftBase(store, id, base)` (M6 E2c) - a whole `base:<id>`
   written at once: the desktop editor's draft moving a record to a new
   namespace with the versions it knows (`editor/editor-draft.ts`).
@@ -179,11 +194,13 @@ are the framework's.
   lists in whatever order the directory yields, and a tour whose objects
   shuffle between restores would produce a different `tour.json` each time
   for no reason a reader could see.
-- **Format version 2 (tour kit plan K1, §8 D7).** A draft object is
-  validated by wrapping it in a manifest of the CURRENT format, and the
-  pin and photo shapes did not change from version 1 to 2, so a draft
-  written by a pre-K1 app loads unchanged and its Finish writes version 2
-  (`draft-persistence.test.ts` loads one from the files the old app wrote).
+- **A draft holds world poses, never a tour file** (tour kit plan K1, §8
+  D7; tour editor plan W3). A draft object is validated by the framework's
+  world-view reader (`parseTourObject`), whose pin and photo shapes have
+  not changed since version 1. So a draft written by a pre-K1 app loads
+  unchanged and needs no migration, and its Finish writes version 3, with
+  every object in a station (`draft-persistence.test.ts` loads one from
+  the files the old app wrote).
 
 ## Examples
 

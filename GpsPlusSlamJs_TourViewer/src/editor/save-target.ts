@@ -10,6 +10,7 @@ import {
   DEFAULT_ARCHIVE_LIMITS,
   writeFileOrAbort,
 } from "gps-plus-slam-app-framework/storage";
+import { hasFilePicker } from "../file-picker.js";
 
 /** The tail of the file a sync client's touch leaves alone: compared when
  *  only the modified time differs, so a touched file is not "changed". */
@@ -48,6 +49,22 @@ export type PickOutcome =
       /** Write permission was granted: the file can be saved in place. */
       readonly writable: boolean;
     };
+
+/**
+ * The open dialog's fine print about Save, true for this browser (tour
+ * editor plan 2026-10-17-1816, W2): where the file picker exists, a chosen
+ * file is written in place (and saved by itself after a change); elsewhere,
+ * and for a tour from a link or the sample, Save downloads a new copy.
+ * It opens with what leaves the computer: nothing of the tour, but the map
+ * comes from OpenStreetMap (W6: "nothing is uploaded" hid the tiles).
+ */
+export function saveFinePrint(win: PickerWindow): string {
+  const stays =
+    "The tour file stays on this computer. The map comes from OpenStreetMap.";
+  return hasFilePicker(win)
+    ? `${stays} A file you choose is saved into that file, where the browser allows it, and by itself a few seconds after each change. A tour opened from a link, or the sample, is saved as a new copy to put in place of the old one.`
+    : `${stays} Save gives you a new copy of the tour to put in place of the old one.`;
+}
 
 /**
  * Let the creator pick a tour zip, and ask to write it on the same gesture.
@@ -97,6 +114,57 @@ export async function pickTourFile(win: PickerWindow): Promise<PickOutcome> {
   }
 }
 
+/** The part of `window` the save dialog needs. */
+export interface SavePickerWindow {
+  showSaveFilePicker?: (options: {
+    suggestedName: string;
+    types: { description: string; accept: Record<string, string[]> }[];
+  }) => Promise<FileSystemFileHandle>;
+}
+
+export type SaveFilePick =
+  | { readonly kind: "picked"; readonly handle: FileSystemFileHandle }
+  /** The creator dismissed the dialog: nothing is to be written. */
+  | { readonly kind: "cancelled" }
+  /** No save dialog here, or the browser refused one (no click to open it
+   *  on, an iframe): the caller downloads instead. */
+  | { readonly kind: "unavailable" };
+
+/**
+ * Ask where a new zip goes with the browser's save dialog. Call it IN the
+ * click, before any await: Chromium opens the dialog only within a few
+ * seconds of a click, and a dialog asked for after a long build is refused
+ * - which a plain download used to paper over (the M4b milestone review
+ * #2). The dialog's own call happens before this returns.
+ */
+export function pickSaveFile(
+  win: SavePickerWindow,
+  suggestedName: string,
+): Promise<SaveFilePick> {
+  const picker = win.showSaveFilePicker;
+  if (typeof picker !== "function") {
+    return Promise.resolve({ kind: "unavailable" });
+  }
+  let asked: Promise<FileSystemFileHandle>;
+  try {
+    asked = picker.call(win, {
+      suggestedName,
+      types: [
+        { description: "ZIP Archive", accept: { "application/zip": [".zip"] } },
+      ],
+    });
+  } catch {
+    return Promise.resolve({ kind: "unavailable" });
+  }
+  return asked.then(
+    (handle): SaveFilePick => ({ kind: "picked", handle }),
+    (err: unknown): SaveFilePick =>
+      err instanceof DOMException && err.name === "AbortError"
+        ? { kind: "cancelled" }
+        : { kind: "unavailable" },
+  );
+}
+
 async function askToWrite(handle: WritableFileHandle): Promise<boolean> {
   if (typeof handle.requestPermission !== "function") return false;
   try {
@@ -134,6 +202,13 @@ export interface SaveTarget {
    * Resolves once the write landed.
    */
   write(blob: Blob): Promise<void>;
+  /**
+   * Whether `other` is this very file (`isSameEntry`) - asked before the
+   * walk's zip is written into a file the save dialog gave (the M4b fix
+   * re-review #1: written over the tour, it left the tour nowhere). Where
+   * the browser cannot tell, the same name counts as the same file.
+   */
+  isSame(other: FileSystemHandle): Promise<boolean>;
 }
 
 interface Baseline {
@@ -194,6 +269,16 @@ export async function createSaveTarget(
   return {
     name: handle.name,
     check,
+    async isSame(other) {
+      try {
+        if (typeof handle.isSameEntry === "function") {
+          return await handle.isSameEntry(other);
+        }
+      } catch {
+        // Unknown: decided by the name below.
+      }
+      return other.name === handle.name;
+    },
     async write(blob) {
       // The rebuild stores entries uncompressed, so a deflated tour grows.
       if (blob.size > maxBytes) throw new InPlaceRefusal("too-large");

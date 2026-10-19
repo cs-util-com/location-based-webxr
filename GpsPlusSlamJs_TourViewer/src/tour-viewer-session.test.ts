@@ -13,7 +13,29 @@ import {
   createTourViewerSession,
   endQrPipeline,
   endTourCodeVotes,
+  isCodeIgnored,
 } from "./tour-viewer-session.js";
+
+// Why: the viewer pipeline and the status line must agree on which codes
+// are ignored; both read the veto memory by level id through this, and a
+// text that resolves to no level is never ignored.
+describe("isCodeIgnored", () => {
+  it("reads the veto memory by the text's level id", () => {
+    const ctx = createTourViewerSession();
+    const text = "https://example.test/?qr=a";
+    expect(isCodeIgnored(ctx, text)).toBe(false);
+    ctx.ignoredCodes.set("a", { text, vetoSpreadM: 1 });
+    // Not yet resolved to a level: nothing to look up.
+    expect(isCodeIgnored(ctx, text)).toBe(false);
+    ctx.levelIdByText.set(text, "a");
+    expect(isCodeIgnored(ctx, text)).toBe(true);
+    // The line's text is not the test: cleared, the code stays ignored.
+    ctx.viewerIgnoredText = null;
+    expect(isCodeIgnored(ctx, text)).toBe(true);
+    ctx.ignoredCodes.delete("a");
+    expect(isCodeIgnored(ctx, text)).toBe(false);
+  });
+});
 
 describe("endQrPipeline", () => {
   it("disposes the QR controller and forgets it", () => {

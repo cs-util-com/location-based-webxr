@@ -82,7 +82,8 @@ function stationOf(
 ): TourStation {
   return {
     id,
-    anchor: { geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 } },
+    geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
+    items: [],
     activateRadiusM,
     foundRadiusM,
     hint: "arrow",

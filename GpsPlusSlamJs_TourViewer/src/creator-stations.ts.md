@@ -1,0 +1,156 @@
+# creator-stations.ts
+
+## Purpose
+
+The creator's stations in AR (tour editor plan 2026-10-17-1816, W3 "AR
+authoring", owner decisions D20 and D21): which station the creator
+stands in, the ground ring of its radius (`station-ring.ts`), the line
+above the action strip that says so in plain words, and where a
+placement went ("it starts Station 3" / "in Station 2") for its note.
+
+## Public API
+
+- `stationsAsFinished({ state, radiusM? }) -> ArStation[]`
+  - the tour's stations as the next Finish would write them: the tour
+    document's `state` through the document's own rule for what a write
+    carries (`manifestToWrite` of `tour-document.ts`, with this module's
+    `unwritten-N` ids for the stations it would start). Each station:
+    `id`, `anchor` (`{ lat, lon, alt }`), `name` (its title, else
+    "Station N" by its place, `stationTitle`), `started` (not in the
+    tour file yet: this page's placements start it) and `itemIds`. None
+    without a tour (`state` null).
+- `openStationAt(stations, at, radiusM?) -> ArStation | null` - the
+  nearest station whose anchor is within R of `at` (`nearestStationWithin`
+  of `station-assign.ts`, R itself inside), else null.
+- `stationChipText(open, left, newStationArmed?) -> string` - "In Station 2 - what you place
+  here joins it." / "You left Station 2 - what you place next starts a new
+  station." / "No station here - what you place next starts a new one." /
+  while "New station here" is armed (owner decision D8): "What you place
+  next starts a new station here."
+- `placedInText(stations, objectId) -> string | null` - "it starts
+  Station 3" for the first element of a station the next Finish starts,
+  else "in Station 2"; null when the object is in none.
+- `walkPhotosPending(session, manifest, decidedFor?) -> boolean` - the
+  tour has a recording and no baked photo spots, and `session` is not
+  `decidedFor` (the page's `walkDecidedFor`: a Finish of this open tour,
+  in this page, already settled the walk: its spots written, or none to
+  place; a declined bake settles nothing). `WALK_HEDGE` ("May change
+  at Finish, when the walk's photos are sorted in.") ends the line then.
+- `reticleNueOf(reticle) -> [n, u, e] | null` - a visible reticle's hit
+  point in GPS-world NUE; null when hidden, absent or not finite.
+- `wireCreatorStations({ ctx, dom: { chip }, creatorNue, reticleNue?, zero, scene,
+radiusM? }) -> { tick, placedIn, nameOf, endVisit }` - `tick()` every camera
+  frame of a creator's session: the line and the ring; `placedIn(id)` for
+  a placement's note; `nameOf(id)` the name of the station object `id`
+  is in (hedged like `placedIn`), for a "New station here" placement's
+  note; `endVisit()` hides both. The line reads the document's
+  `newStationArmed` each frame.
+
+## Invariants & assumptions
+
+- **No document state.** Nothing here is stored: the stations are
+  derived from the tour document (`deps.tour`: its `state()`, and
+  `manifest()` null for no tour) each time the parts they are made of
+  change (the written file, the frames, the placed objects, the
+  deletions - by identity, the slice replaces them), through the
+  document's rule for a write, so the HUD and the written tour cannot
+  disagree. A station the creator's placements start exists only in that
+  derivation until a Finish writes it (with an id the Finish mints; the
+  HUD's `unwritten-N` ids never leave this module).
+- **The open station is the rule's:** the nearest anchor within R of
+  where the next pin would land - the reticle's hit point while it is
+  visible, else where the creator stands (M5c review #3). Leaving R closes it ("You left ..." until the
+  creator enters a station again); the next element placed outside every
+  station's R starts a new one there, inside joins the nearest - which is
+  what the Finish's assignment does, so "Place a pin" with no station
+  open creates a station holding it (D21). A photo lands about where
+  the creator stands, so with the reticle hidden the creator's spot is
+  the right one to judge; with it visible a photo is judged at the
+  reticle, a few metres off, and its note says where it went.
+- **The ring is the station the creator STANDS in**, not the one at the
+  reticle (PR #642 review): the line follows where the next pin lands,
+  but the ring is the boundary the creator walks along, and judged at the
+  reticle it vanished exactly when they aimed past the edge to probe it.
+  Standing 22 m from a 25 m station's anchor and aiming 5 m further out,
+  the line says the next pin starts a new station and the ring stays.
+  Standing outside every radius with the reticle inside one, the line
+  names it and no ring is drawn.
+- **The station left** is remembered by its id when written, and by its
+  first element when the next Finish starts it: its `unwritten-N` id
+  shifts when an earlier one is deleted and is replaced by a minted one
+  at the Finish (M5c review #4).
+- **R** is `STATION_RADIUS_M` (25 m, provisional until the sweep over
+  recorded walks).
+- **The walk's photos:** a tour's FIRST Finish with a recording and no
+  photo spots places the walk's recorded photos before the objects
+  (`withTourContent`); they are baked at the Finish, so the HUD cannot see
+  them and its names and numbers may change until then. While that holds
+  (`walkPhotosPending`) the line names the station as usual and ends with
+  `WALK_HEDGE`, and a placement's note names it with the same hedge ("in
+  Station 1 (may change at Finish, when the walk's photos are sorted
+  in)"); the ring is unchanged (M5c review #2, PR #642 review). Naming no
+  station, as first built, left a dead HUD for good on a tour whose bake
+  DECLINED: a decline writes no spots, so the file reads as pending on
+  every reopen. Conservative: a recording that took no photos reads as
+  pending until a Finish. Feeding the live join's spots in instead was not
+  chosen: the bake is an async replay of the whole recording.
+- **The hedge drops after a Finish in this page settled the walk**: its
+  photos' spots written, or a walk that places no photo
+  (`ctx.walkDecidedFor`, set by `creator-finish.ts` only when the bake
+  gave no `notPlaced` reason, cleared at tour teardown). A DECLINED bake
+  keeps the hedge (PR #643 review, replacing the PR #642 choice): it
+  writes nothing, so the next Finish bakes again and may still re-sort the
+  stations - a decline from a transient read failure included. It is a
+  **per-page view hint, not document state**: a declined bake has no field
+  in tour.json (an empty `captureSpots` is refused by the parser, and its
+  presence would switch off the visitor's live join), and adding one was
+  declined as a format change for a hint. So a reopened tour hedges again
+  until a Finish settles its walk.
+- **Cost:** the stations are recomputed only when the manifest, any
+  placed object or the deletions change. Placed objects are compared entry
+  by entry, because the settle re-poses them by replacing entries IN the
+  array (`creator-settle.ts`); a frame costs that comparison and two
+  horizontal searches over the anchors (at the reticle and at the
+  creator).
+- Defensive: no position, no zero, no scene or no tour - the line hides
+  and the ring goes.
+
+## Examples
+
+```ts
+const stations = wireCreatorStations({
+  ctx,
+  dom: { chip: element("creator-station") },
+  creatorNue: () =>
+    visitorPosition({ alignment, arPose, gpsPositions: [] }).nue,
+  zero: () => selectZeroReference(store.getState()),
+  scene: () => seams.getScene(),
+});
+onFrame(() => stations.tick());
+note(`Pin placed - ${stations.placedIn(pin.id) ?? ""}`);
+```
+
+## Tests
+
+- `creator-stations.test.ts` - the Finish's assignment (join within R,
+  start beyond, anchor at the first element, names), deletions, no tour,
+  no id clash with a hosted station; the open station at R and beyond;
+  the property that a pin placed where the creator stands lands in the
+  station the HUD called open, or starts one when it called none (R swept
+  15-40 m); the same promise through the composed HUD with the reticle
+  up to 10 m ahead or hidden (property, R swept); `reticleNueOf`; the
+  words (the armed line too); "New station here" through the wiring
+  (the line while armed, the ring kept, the new station named); the
+  line and the note hedged (stations still named) while the
+  walk's photos are pending, and `walkPhotosPending` (never finished or
+  reopened after a decline: pending; baked or decided in this page: not); the station left, remembered across a
+  deletion that renumbers it and across the Finish that writes it (a real
+  tour document, changed as the creator changes it); the
+  wiring: the line, the ring at the anchor on
+  the ground, leaving and re-entering, the ring kept at the creator's
+  station while the reticle aims past its edge, a placement's note, and
+  nothing
+  without a position, a scene, a tour or after the visit.
+- `playwright-tests/creator-stations.spec.js` - the composed page: the
+  line and the ring, a pin inside joining, leaving closing, a pin with
+  none open starting a station, and the Finish writing it.

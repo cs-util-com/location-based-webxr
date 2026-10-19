@@ -109,7 +109,7 @@ function wire() {
     presentDraftForTour: vi.fn(),
   };
   const ctx = createTourViewerSession();
-  wireArchiveOpen({
+  const archive = wireArchiveOpen({
     ctx,
     dom: dom as unknown as ArchiveOpenDom,
     cacheStore: undefined,
@@ -117,7 +117,7 @@ function wire() {
     mode: "creator",
     hooks,
   });
-  return { dom, hooks, ctx };
+  return { dom, hooks, ctx, archive };
 }
 
 beforeEach(() => {
@@ -455,5 +455,65 @@ describe("the levels' settle reaches the visitor screen", () => {
     expect(ctx.currentLevels).toBeNull();
     expect(ctx.levelsUnreadable).toBe(true);
     expect(dom.errorBox.textContent).toContain("printed-code levels failed");
+  });
+});
+
+describe('the open path for the "You already have a tour?" box (tour editor plan 2026-10-17-1816, W1)', () => {
+  // Why: the box below the steps opens a tour through the page's ONE open
+  // path - never a second opener - and needs the outcome to ask "Play it,
+  // or continue setting it up?" or to say why it failed.
+  it("openLink makes the link the link of record, checks it as step 2 does, and reports it opened", async () => {
+    const url = "https://example.test/castle.zip";
+    mocks.openTourSession.mockResolvedValueOnce(fakeSession(url));
+    const { dom, hooks, archive } = wire();
+    const outcome = await archive.openLink(url);
+    expect(outcome).toEqual({ kind: "opened" });
+    expect(dom.linkInput.value).toBe(url);
+    expect(dom.linkStatus.textContent).toBe("Tour found - the link works.");
+    expect(hooks.presentTourForPrint).toHaveBeenCalledWith(url, "host-step");
+  });
+
+  // Why (PR #637 review, claude[bot]): step 2 hands a link it could not
+  // confirm but that may still work (offline, a file not uploaded yet) on
+  // to printing. The box is not about printing: a bad link pasted there
+  // jumped the wizard to the print step and became step 2's link. Step 2
+  // hears of the box's link only once it opened.
+  it.each(["offline", "missing"] as const)(
+    "openLink leaves step 2 alone when the link does not open (%s): no hand-off to printing, the open's own words kept",
+    async (cause) => {
+      mocks.openTourSession.mockRejectedValueOnce(
+        new OpenRemoteArchiveError("x", cause),
+      );
+      const { dom, hooks, archive } = wire();
+      const unverified = vi.spyOn(hooks, "presentUnverifiedLink");
+      dom.linkInput.value = "https://step-two.example/kept.zip";
+      expect(
+        await archive.openLink("https://own-server.example/tour.zip"),
+      ).toEqual({ kind: "failed", cause });
+      expect(unverified).not.toHaveBeenCalled();
+      expect(hooks.presentTourForPrint).not.toHaveBeenCalled();
+      expect(dom.linkInput.value).toBe("https://step-two.example/kept.zip");
+      expect(dom.linkStatus.textContent).toBe("");
+      expect(dom.errorBox.textContent).not.toBe("");
+    },
+  );
+
+  it("openLink reports a failure with its cause", async () => {
+    mocks.openTourSession.mockRejectedValueOnce(
+      new OpenRemoteArchiveError("x", "cors"),
+    );
+    const { archive } = wire();
+    expect(await archive.openLink("https://example.test/x.zip")).toEqual({
+      kind: "failed",
+      cause: "cors",
+    });
+  });
+
+  it("openFile opens a picked file as step 1's link does", async () => {
+    mocks.openTourFile.mockResolvedValueOnce(fakeSession("local-file:abc"));
+    const { hooks, archive } = wire();
+    const outcome = await archive.openFile(new File(["zip"], "tour.zip"));
+    expect(outcome).toEqual({ kind: "opened" });
+    expect(hooks.presentLocalTour).toHaveBeenCalledWith("host-step");
   });
 });

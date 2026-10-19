@@ -47,10 +47,19 @@ export interface SceneAudio {
   stop(): void;
 }
 
-/** What a step shows in AR at its station. */
+/** What a step shows in AR at its station. `onWaiting`: the decoded
+ *  figure waits for the station's pose (`scene-stage.ts`). */
 interface SceneStage {
-  showCharacter(stationId: string, image: Blob): Promise<void>;
-  showModel(stationId: string, model: Blob): Promise<void>;
+  showCharacter(
+    stationId: string,
+    image: Blob,
+    onWaiting?: () => void,
+  ): Promise<void>;
+  showModel(
+    stationId: string,
+    model: Blob,
+    onWaiting?: () => void,
+  ): Promise<void>;
   clear(): void;
 }
 
@@ -103,6 +112,25 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   let renderToken = 0;
   let cancelTimer: (() => void) | null = null;
   let liveUrl: string | null = null;
+  /** The step's media share one status line (r881 re-review M1: one
+   *  asset's settle blanked another's line). What it says, per step: */
+  /** The figure or model the stage holds back for the visitor's position. */
+  let figureWait: string | null = null;
+  /** The media still loading, in the order they started. */
+  const loading: string[] = [];
+  /** What went wrong with the step's media: true until the step changes. */
+  let notice: string | null = null;
+
+  /** The status line from the step's media: a parked figure, else what
+   *  still loads; then what went wrong, which outlives both. */
+  function showStatus(): void {
+    const current = loading.at(-1);
+    const now =
+      figureWait ?? (current === undefined ? null : `Loading the ${current}…`);
+    dom.status.textContent = [now, notice]
+      .filter((part) => part !== null)
+      .join(" ");
+  }
 
   function releaseStep(): void {
     renderToken += 1;
@@ -115,6 +143,9 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     }
     dom.image.hidden = true;
     dom.image.src = "";
+    figureWait = null;
+    loading.length = 0;
+    notice = null;
     dom.status.textContent = "";
     dom.choices.replaceChildren();
   }
@@ -128,8 +159,9 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
 
   /**
    * Load one asset of the step, with its in-progress line and its outcome:
-   * cleared when it shows, the use's own line when it returns one, a
-   * failure line when it could not be read (UI async-feedback rule).
+   * its loading line goes when it is read, the use's own line stays when
+   * it returns one, a failure line when it could not be read (UI
+   * async-feedback rule). Another asset's lines are left alone.
    */
   function withAsset(
     assetId: string,
@@ -139,18 +171,45 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     const asset = deps.assets.get(assetId);
     if (asset === undefined) return;
     const token = renderToken;
-    dom.status.textContent = `Loading the ${what}…`;
+    loading.push(what);
+    showStatus();
+    const loaded = (): void => {
+      const at = loading.indexOf(what);
+      if (at >= 0) loading.splice(at, 1);
+    };
     deps
       .loadAsset(asset.path)
       .then(async (blob) => {
         if (token !== renderToken) return;
+        loaded();
+        showStatus();
         const outcome = await use(blob);
-        if (token === renderToken) dom.status.textContent = outcome ?? "";
+        if (token !== renderToken) return;
+        if (typeof outcome === "string") notice = outcome;
+        showStatus();
       })
       .catch(() => {
         if (token !== renderToken) return;
-        dom.status.textContent = `The ${what} could not be loaded - the words are below.`;
+        loaded();
+        notice = `The ${what} could not be loaded - the words are below.`;
+        showStatus();
       });
+  }
+
+  /** Show a figure or model on the stage. While the stage holds it back
+   *  for the visitor's position (no GPS zero, or no heading yet: r881
+   *  re-review M-B) the status says so; once it stands that line goes. */
+  async function stageFigure(
+    what: string,
+    show: (onWaiting: () => void) => Promise<void>,
+  ): Promise<void> {
+    const token = renderToken;
+    await show(() => {
+      if (token !== renderToken) return;
+      figureWait = `Waiting for your position to place the ${what}…`;
+      showStatus();
+    });
+    if (token === renderToken) figureWait = null;
   }
 
   function playSound(assetId: string): void {
@@ -188,7 +247,9 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       case "character":
         dom.text.textContent = block.caption;
         withAsset(block.image, "figure", (blob) =>
-          deps.stage.showCharacter(station.id, blob),
+          stageFigure("figure", (onWaiting) =>
+            deps.stage.showCharacter(station.id, blob, onWaiting),
+          ),
         );
         if (block.voice !== undefined) playSound(block.voice);
         return;
@@ -203,7 +264,9 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       case "model":
         dom.text.textContent = block.caption ?? "";
         withAsset(block.asset, "3D model", (blob) =>
-          deps.stage.showModel(station.id, blob),
+          stageFigure("3D model", (onWaiting) =>
+            deps.stage.showModel(station.id, blob, onWaiting),
+          ),
         );
         return;
       case "choice":

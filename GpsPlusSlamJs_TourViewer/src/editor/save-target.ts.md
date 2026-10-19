@@ -23,6 +23,21 @@ build plan, re-cut" and its cold review
   - `picked` - `{ file, handle, writable }`; `writable` is false for a
     refused, dismissed or failing permission request, or a handle without
     one: the tour opens all the same and saves as a download.
+- `SaveTarget.isSame(other)` - whether `other` is this very file
+  (`isSameEntry`); where the browser cannot tell (no `isSameEntry`, or it
+  throws), the same name counts as the same file: refusing a move costs a
+  retry, writing the walk over the tour costs the tour (the M4b fix
+  re-review #1).
+- `pickSaveFile(win, suggestedName): Promise<SaveFilePick>` - the
+  browser's save dialog (`showSaveFilePicker`) for a new `.zip`, opened
+  BEFORE the call returns: the caller calls it in the click, before any
+  await (Chromium refuses the dialog a few seconds after a click; the M4b
+  milestone review #2). `picked` - `{ handle }`; `cancelled` - only a
+  dismissal (`AbortError`): nothing is to be written; `unavailable` - no
+  dialog, or any other refusal (`SecurityError`, `NotAllowedError`, a
+  thrown `TypeError`): the caller downloads instead and asks again before
+  it relies on the download. `SavePickerWindow` is the part of `window`
+  it reads.
 - `createSaveTarget(handle, opened, { maxBytes? }): Promise<SaveTarget>` -
   the baseline (size, modified time, the last 64 KiB) is read from `opened`
   at once; `maxBytes` defaults to the open cap
@@ -50,7 +65,16 @@ build plan, re-cut" and its cold review
 - `InPlaceRefusal`, `EditorLock`, `WritableFileHandle`, `PickerWindow`, `PickOutcome`,
   `SaveTarget`.
 
-## Invariants & assumptions
+- `saveFinePrint(win)` (W2 of the tour editor plan 2026-10-17-1816) - the
+  open dialog's fine print about Save, true for this browser: where
+  `showOpenFilePicker` exists (`../file-picker.ts`, the check the setup
+  page's line about the editor uses too), a chosen file is saved into itself (and by
+  itself after a change) while a tour from a link or the sample is saved as
+  a new copy; elsewhere Save gives a new copy. It opens with what leaves
+  the computer (W6): the tour file stays, the map comes from
+  OpenStreetMap (it said "nothing is uploaded", which hid the tiles).
+
+## Invariants & assumptions & assumptions
 
 - The permission is asked FIRST, while the picker's activation holds; the
   file's reads come after (E2b plan review #8).
@@ -80,5 +104,7 @@ if (picked.kind === "picked" && picked.writable) {
 refusals that still open, the write and its own baseline, a changed file
 refused and not written, a touched file accepted, a gone file, a failed
 write keeping the baseline, and the lock (granted, refused, released,
-without Web Locks). The page's e2e (`playwright-tests/editor.spec.js`)
+without Web Locks); the save dialog opened before `pickSaveFile` returns,
+cancelled only by a dismissal, unavailable without one or on any other
+refusal; `isSame` by the browser's answer, else by the name. The page's e2e (`playwright-tests/editor.spec.js`)
 writes a real origin-private file through it.

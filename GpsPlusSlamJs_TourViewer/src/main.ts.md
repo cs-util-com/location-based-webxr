@@ -43,12 +43,21 @@ listed in `index.html.md`. The concerns and their modules:
   renderer (`wireArEntry`).
 - `visitor-stations.ts` - the visitor's stations and their stories (tour
   kit plan K4, `wireVisitorStations`), wired after the viewer placement;
-  `main.ts` binds `hooks.tickStations`, `stationCodeLocked`,
-  `unlockStationAudio` and `stopStations`.
+  `main.ts` binds `hooks.tickStations` (the visitor's stations, then the
+  creator's open station, `CreatorSetup.tickStations`; each does nothing in
+  the other mode), `stationCodeLocked`, `unlockStationAudio` and
+  `stopStations`.
 - `archive-open.ts` - the open path, the gallery, the stats, the Storage
   section, the `?qr=` boot (`wireArchiveOpen`), and step 4's scan-to-open,
   which the setup panel reaches through a local late binding (the panel is
   wired before the open path).
+- `have-tour.ts` - the creator page's "You already have a tour?" box on a
+  phone (`wireHaveTour`, tour editor plan 2026-10-17-1816 W1), wired for a
+  creator only, after the open path, over `ArchiveOpen.openFile` /
+  `openLink`; "Play it" is `visitorLaunchHref` (keeps `?debug=1`) and
+  "Continue setting it up" scrolls `#setup-card` into view. The computer's
+  half gets its line from `have-tour.ts`'s `editorPitch(window)`:
+  what the editor's Save does in this browser (PR #637 review).
 - `tour-viewer-session.ts` - the session object, the store factory and
   the hooks contract they share.
 - `recording-switch.ts` - the visitor's hidden switch (QR-first plan M1c):
@@ -119,8 +128,15 @@ listed in `index.html.md`. The concerns and their modules:
   and `presentTourCodes` - the print step re-reads the codes, when the
   tour's arrive and whenever the creator setup's set of codes changes
   (follow-up F16);
-  and, for a visitor only, `presentTourInfo` - `visitor-start.ts`'s
-  page, with `URL.createObjectURL` and `pictureProblem` for the cover),
+  and `presentTourInfo` - for a visitor, `visitor-start.ts`'s page
+  (with `URL.createObjectURL` and `pictureProblem` for the cover) and the
+  contact line under `#error` (`tour-contact.ts`, also re-rendered by a
+  `MutationObserver` on the error box: W2 of the tour editor plan
+  2026-10-17-1816); for a creator, step 3's "Tour name" field
+  (`tour-name-field.ts`), which renames the tour through
+  `setup.renameTour` when it is left - and at every Finish's start
+  (`beforeFinish`), since that tap may not fire "change" - and says a
+  refusal in `#tour-name-error`),
   and callers read the hooks at call time - which
   is what keeps the modules free of import cycles (`check:cycles` is in
   the gate). A hook read before its owner is wired is the no-op from

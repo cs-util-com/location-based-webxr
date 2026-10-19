@@ -29,7 +29,20 @@ const arbInput: fc.Arbitrary<ArStatusInput> = fc.record({
       nil: null,
     }),
   }),
-  readiness: fc.constant(null),
+  readiness: fc.oneof(
+    fc.constant(null),
+    fc
+      .constantFrom(
+        "initializing" as const,
+        "move-around" as const,
+        "almost-ready" as const,
+        "ready" as const,
+        "ar-lost" as const,
+      )
+      .map((phase) => ({ phase, percentReady: 0.5, hint: "Move slowly." })),
+  ),
+  codesOnly: fc.boolean(),
+  stationsAwaitHeading: fc.boolean(),
   placement: fc.oneof(
     fc.constant({ kind: "idle" as const }),
     fc.constant({ kind: "waiting-ready" as const }),
@@ -87,7 +100,33 @@ const arbInput: fc.Arbitrary<ArStatusInput> = fc.record({
   ),
 });
 
+const WALK = "Walk a few steps so the guide knows the direction.";
+
 describe("visitorStatus (property)", () => {
+  // Why this property matters (D34; PR review S6, N8): the request for a
+  // few steps joins every sentence a running session can show, so for
+  // every combination it must appear once at most, only while the guide
+  // waits and tracking runs with location, and never beside "Look around."
+  // (the one sentence it replaces).
+  it("asks for a few steps once at most, only while the guide waits with tracking running and location, never beside Look around", () => {
+    fc.assert(
+      fc.property(arbInput, (input) => {
+        const { text } = visitorStatus(input);
+        const phase = input.readiness?.phase;
+        const allowed =
+          input.stationsAwaitHeading === true &&
+          input.codesOnly !== true &&
+          phase !== undefined &&
+          phase !== "initializing" &&
+          phase !== "ar-lost";
+        const count = text.split(WALK).length - 1;
+        expect(count).toBeLessThanOrEqual(allowed ? 1 : 0);
+        expect(count > 0 && text.includes("Look around.")).toBe(false);
+      }),
+      { numRuns: 1000 },
+    );
+  });
+
   it("a running session always says something, and never the debug readout", () => {
     fc.assert(
       fc.property(arbInput, (input) => {

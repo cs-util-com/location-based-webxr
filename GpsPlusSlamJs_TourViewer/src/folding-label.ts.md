@@ -5,7 +5,8 @@
 A HUD chip whose label folds to its icon after its first use (polish round
 M3, the owner's D-P4 on the H1 strip): remembered per device, and a long
 press shows the label again. Used for the creator's "Place a pin" and
-"Take a photo" chips in AR (`main.ts`).
+"Take a photo" chips in AR, and "New station here" (owner decision D8)
+(`main.ts`).
 
 ## Public API
 

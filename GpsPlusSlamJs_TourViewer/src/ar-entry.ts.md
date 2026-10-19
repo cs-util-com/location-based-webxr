@@ -20,8 +20,10 @@ since the flows plan M6.
     `buildArEnableConfig` and each sample is dispatched as-is as
     `recording/recordDepthSample` (the Recorder's way); once the runtime runs,
     `seams.startDepthCapture(RECORDING_DEPTH)` starts the sampler, and the
-    session end stops it. A creator's entry with `?mesh=1` (`deps.meshCursor`,
-    polish round M5) that is not recorded asks for depth at `MESH_DEPTH` the
+    session end stops it. A creator's entry with the mesh cursor
+    (`deps.meshCursor`, polish round M5; `main.ts` sets it for every
+    creator unless `?mesh=0`, the default since 2026-10-15) that is not
+    recorded asks for depth at `MESH_DEPTH` the
     same way (a recorded one keeps `RECORDING_DEPTH`: the recording's byte
     estimate assumes it), starts `seams.startMeshSurface` under the world
     group, hands the reticle its `pick`, puts its frame time and triangles in
@@ -59,7 +61,7 @@ since the flows plan M6.
     object; assigned to `hooks.renderArStatus` by `main.ts` so the other
     modules can call it without importing this one. A VISITOR without
     `?debug=1` reads `visitorStatus`'s one plain sentence; the creator and
-    `?debug=1` keep the technical `arStatusLine`. `data-state` carries `visitorStatus`'s state for a visitor (none for a creator, whose session it would mislead), `data-gate` the scan gate as one word for both (`passed-code` proves the code passed it); `arStatusLive` (the screen reader's live region) is written only when its text changes: the visitor's sentence, and a creator's line outside a session (a failed start with its cause), never per camera frame (UI round 1, U1, review F14; U1 milestone review #8, #9).
+    `?debug=1` keep the technical `arStatusLine`. The input carries `stationsAwaitHeading` from the store's `headingPending` (D34) with no creator guard: the guide never runs for a creator (`stationPlacementAllowed` needs visitor mode), and only `visitorStatus` reads it, whose sentence a creator never sees (PR review N4). `data-state` carries `visitorStatus`'s state for a visitor (none for a creator, whose session it would mislead), `data-gate` the scan gate as one word for both (`passed-code` proves the code passed it); `arStatusLive` (the screen reader's live region) is written only when its text changes: the visitor's sentence, and a creator's line outside a session (a failed start with its cause), never per camera frame (UI round 1, U1, review F14; U1 milestone review #8, #9).
   - Subscribes the button renderer to the controller and binds the click:
     - during a running session the click ENDS it ("Exit AR", UI round 1,
       U2), through the same teardown as the back gesture;
@@ -97,7 +99,10 @@ since the flows plan M6.
 
 ## Moved-code veto inputs (D20, M5c)
 
-`renderArStatus` passes `ignoredCode: ctx.viewerIgnoredText` to the line;
+`renderArStatus` passes `ignoredCode: ctx.viewerIgnoredText` to the line,
+and drops the fused-pose hint ("placing the tour") for any code in the
+veto memory (`isCodeIgnored`: every vetoed code of the tour, across AR
+entries), not only the latest veto the line names;
 `renderDebugReadout` passes the live checks' snapshot and the ignored
 codes to the `?debug=1` block, the session's GPS quality from device
 fixes only (median accuracy, extent through the framework's
@@ -183,7 +188,9 @@ session-end callback it hands the AR controller: the QR controller is
 disposed and the fused pose source dropped (QR near-frontal pose plan §64
 #4 - the call site had no test). The status line reads the visitor hint
 from `ctx.viewerLastEvaluation` (never re-evaluating: the render runs per
-camera frame) and the code keep-alive's phase from `ctx.viewerKeepAlive` at
+camera frame; none when that evaluation is of a code the moved-code
+check ignores, so a veto never hides another code's hint, r881 re-review
+L1; an earlier veto and a veto from an earlier AR entry hide it too) and the code keep-alive's phase from `ctx.viewerKeepAlive` at
 `Date.now()` (a cheap read that counts the hold down) and, with `?debug=1`, writes the QR readout into
 `dom.arDebug` (plan §66; `qr-debug-readout.ts`), headed by the running
 controller's own status (`ctx.qrController?.status`); the session end clears the

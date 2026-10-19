@@ -51,7 +51,9 @@ recording. Its own module since the flows plan M6.
     lock, so the first `onVotedLock` arrives while the gate still scans).
   - The tour's content (`tour.json`, M5) is rendered once per session as
     soon as the gate allows it and the GPS zero exists
-    (`renderTourObjects`; labels through `seams.createLabel`, photos
+    (`renderTourStations`: a group per station at its geo pose, its
+    pins and photos as children at their local poses, version 3; labels
+    through `seams.createLabel`, photos
     decoded through `session.loadContentEntry`, which joins the archive's
     manifest prefix - a re-zipped tour keeps its photos under
     `mytour/content/…` while the record names `content/…` (PR #435
@@ -111,10 +113,11 @@ recording. Its own module since the flows plan M6.
     because the core's 9-solve compass window gave the first compass reading
     full weight over a short scan and the content turned by about the
     compass's error. The owner raised that as a bug of its own: once a code
-    is recognised, its rotation must stand at once. The entry's overrides
-    now carry a 1-solve compass window (`viewer-vote-sink.ts`
-    `VIEWER_SOFT_TRIM`), so the compass weight is 0 from the first voted
-    lock, and everything shows on that lock: harness `CODE_YAW_PROBE=scan`
+    is recognised, its rotation must stand at once. The core's cold start
+    restarts on a solve that stores a wide sighting's votes (core 1.26.2;
+    from r863 to r868 the entry's overrides carried a 1-solve compass window
+    for it), so the compass
+    weight is 0 from the first voted lock, and everything shows on that lock: harness `CODE_YAW_PROBE=scan`
     (`code-yaw-compass-overwrite.test.ts`) measured at most 0.27 deg seen
     within 30 s of showing over compass bias 0-30 deg, a drifting compass,
     the first fix in the scan, 0-8 s late or before it, GPS noise 0 and 2 m
@@ -161,7 +164,10 @@ recording. Its own module since the flows plan M6.
   so the content moves ONCE, to the GPS answer; the vote budget is reset
   (M5c review M2: every code's votes are gone, so another code, even a
   spent one the keep-alive holds, votes again on its next lock; the vetoed
-  code stays blocked by `isIgnored`); the viewing log records
+  code stays blocked by `isIgnored`); `viewerVotedLocks` goes to 0 and
+  `viewerLockedText` to null (r881 review M1: nothing reads the tour as
+  lined up by a code - `codeLinedUp`, `codePlacedTour`, the stations'
+  trust - until a code votes again); the viewing log records
   `codeIgnored` with the evidence and the recovery; `viewerIgnoredText` is
   set; the gate passes `ignored` (`markGateIgnored`: a scanning gate, or
   one the code itself passed; an escape or a waived gate stays).
@@ -204,8 +210,10 @@ recording. Its own module since the flows plan M6.
 !imagePlanesLoading`, review #4); a lock after a placement changes the
   status only.
 - **The photos' spots come from `tour.json` when the creator's Finish
-  baked them** (`captureSpots`, scan-pass plan S1, S-D11): no download of
-  the walk, no replay, and the status line reports the baked fixes. A tour
+  baked them** (`captureSpots`, scan-pass plan S1, S-D11; read in the
+  world through `worldCaptureSpots`, since version 3 keeps them in
+  stations): no download of the walk, no replay, and the status line
+  reports the baked fixes. A tour
   without them runs the SAME bake here (`capture-bake.ts`: each photo
   through the first settled alignment after it was taken), so both show
   the photos at the same spots.
@@ -302,7 +310,7 @@ recording. Its own module since the flows plan M6.
      core refused the keys and broke, as designed, on core 1.26.
 - **The tour's content follows the live alignment - no per-note GPS anchors
   (owner decision D10a, authoring plan 2026-09-28-0953 §3.2, M2d).**
-  `tryPlaceContent` hands `renderTourObjects` the scene root
+  `tryPlaceContent` hands `renderTourStations` the scene root
   (`seams.getScene()`), so every alignment change - a scan's votes above
   all - moves the content in the visitor's view in the same dispatch. A
   GPS anchor (`FW/visualization/gps-anchor.ts`) moves only off screen and by
@@ -383,6 +391,12 @@ core, the composed GPS handler (`recordFix`) routes here; and the
 per-entry overrides through this module (soft on right before the first
 vote, a plain-AR entry and a re-entry start cleared, a tour switch turns
 them off until the next tour's first vote).
+
+`viewer-moved-code.test.ts` (M5c) - the wired veto: the keep-alive stops
+(also when another code holds it: no ring goes into the fixes after the
+veto, and that code's next lock votes again), every vote is taken back and
+the tour moves once, later locks of the code are free, the log, the gate,
+the line, the re-judged veto.
 
 `viewer-vote-sink.test.ts` (M2e) - the sink against the real store: the
 clear at entry start, the merge before the first vote and once only, a

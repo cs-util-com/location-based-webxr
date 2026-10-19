@@ -12,7 +12,8 @@ tour's other content (`content-placement.ts`). Plan:
 ## Public API
 
 - `createSceneStage(deps): SceneStage`
-  - `showCharacter(stationId, imageBlob)` / `showModel(stationId, glbBlob)`
+  - `showCharacter(stationId, imageBlob, onWaiting?)` /
+    `showModel(stationId, glbBlob, onWaiting?)`
     (`decodeTexture` measures the figure from its own header: the size the
     tour declares is no longer passed, K4 review R2)
     - replace what is shown; reject when the figure does not decode (so the
@@ -20,6 +21,10 @@ tour's other content (`content-placement.ts`). Plan:
       yet (no GPS zero, or a code-only station before the visitor's height
       is known) does not fail: the decoded figure or model waits and is
       mounted on the next `faceVisitor` that finds a pose (K4 review R8);
+      `onWaiting` is called once when it starts to wait, never for a
+      figure mounted at once (the story says what it waits for; the
+      guide's `figurePoseOf` holds the pose back until the alignment has
+      a heading, r881 re-review M-B);
   - `clear()` - remove and dispose;
   - `faceVisitor(nue)` - mount what waits for its position, then turn a
     standing character about the vertical.
@@ -60,4 +65,5 @@ stage.faceVisitor(visitorNue);
 - `scene-stage.test.ts` - the figure's spot, feet and aspect; facing the
   visitor; a model's own rotation; replace and dispose; every texture of a model freed (R12); a late decode
   dropped; a figure that does not decode rejects; a mount waits for its
-  position and is mounted once it has one, or freed by the next step (R8).
+  position and is mounted once it has one, or freed by the next step (R8);
+  `onWaiting` once when a figure waits, never when it stands at once.

@@ -71,10 +71,11 @@ the print stylesheet, `--print-side`, the `beforeprint` listener and the
     The preview tiles show the poster text as the PDF prints it
     (`winAnsiText`).
   - `PrintPanel.presentNoTour()` - back to asking for the link, the tiles
-    cleared, and the poster text reset to its defaults: the Finish writes
-    the poster title as the tour's name, so a left-over title would rename
-    the next tour (M4 review #2); the next tour's name fills it
-    (`presentCodes`).
+    cleared, and the poster text reset to its defaults: a left-over title
+    would print the last tour's name on the next tour's posters (M4 review
+    #2); the next tour's name fills it (`presentCodes`). The tour's own
+    name is its own field since W2 (`tour-name-field.ts`), so the poster
+    title no longer renames a tour (M4a review #9).
   - A link field cleared by the creator clears the same way (the tiles,
     the link under them, the info line; an in-flight render is dropped) -
     it used to leave the previous link's posters on screen (PR #595

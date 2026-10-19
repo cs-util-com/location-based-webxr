@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tour editor</title>
+    <!-- A link of the page, not an import of edit-main.ts: a module's CSS
+         arrives with the module, so the page painted unstyled until then
+         (tour editor plan 2026-10-17-1816, W1). -->
+    <link rel="stylesheet" href="/src/editor/editor.css" />
   </head>
   <body>
     <div id="map" aria-label="Tour map"></div>
@@ -12,7 +16,14 @@
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">T</div>
         <div class="brand-text">
-          <div class="tour-name" id="tour-name"></div>
+          <!-- The tour's name opens its details (W2 of the tour editor plan). -->
+          <button
+            class="tour-name"
+            id="tour-name"
+            type="button"
+            aria-haspopup="dialog"
+            title="Edit the tour's details"
+          ></button>
           <div class="tour-file" id="tour-file"></div>
         </div>
       </div>
@@ -26,6 +37,17 @@
       >
       <button class="btn primary" id="save-btn" type="button" disabled>
         Save
+      </button>
+      <!-- "Done" (W2 of the tour editor plan): saves what is pending, then
+           says where the changes are and what is left to do (done-dialog.ts). -->
+      <button
+        class="btn"
+        id="done-btn"
+        type="button"
+        aria-haspopup="dialog"
+        disabled
+      >
+        Done
       </button>
       <button
         class="btn"
@@ -153,6 +175,28 @@
             hidden
           />
         </label>
+        <!-- A hosted tour opens from its link (tour editor plan 2026-10-17-1816,
+             W1): fetched whole, then opened as a chosen file is
+             (editor-link.ts). type="text": the dialog says what is wrong
+             with a link, not the browser. -->
+        <form class="link-open" id="link-form">
+          <label class="link-label" for="link-input"
+            >Or open it from its link</label
+          >
+          <div class="link-row">
+            <input
+              id="link-input"
+              type="text"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="https://…"
+            />
+            <button class="btn small" id="link-btn" type="submit">
+              Open the link
+            </button>
+          </div>
+        </form>
         <div id="open-status" role="status" aria-live="polite"></div>
         <div id="open-error" role="alert" hidden></div>
         <div class="modal-actions">
@@ -163,10 +207,120 @@
             Use the sample tour
           </button>
         </div>
+        <!-- Said per browser by edit-main.ts (saveFinePrint): this text is
+             the one for a browser that cannot write a chosen file. The
+             privacy page beside it (W6, legal.html). -->
         <p class="fineprint">
-          The file stays on this computer: nothing is uploaded. Save gives you a
-          new copy of the tour to put in place of the old one.
+          <span id="open-fineprint"
+            >The tour file stays on this computer. The map comes from
+            OpenStreetMap. Save gives you a new copy of the tour to put in place
+            of the old one.</span
+          >
+          <a href="legal.html#privacy" target="_blank" rel="noopener"
+            >Privacy</a
+          >
         </p>
+      </div>
+    </div>
+
+    <!-- The tour's details (W2 of the tour editor plan): opened from the
+         name in the top bar, applied to the editor session as one change of
+         each field (details-dialog.ts). -->
+    <div class="backdrop" id="details-modal" hidden>
+      <form
+        class="modal details"
+        id="details-form"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="details-title"
+        novalidate
+      >
+        <h1 id="details-title">Tour details</h1>
+        <p class="lede">
+          What visitors see when they open the tour. An empty field removes it.
+        </p>
+        <!-- The caps are twice the format's limits: maxlength counts UTF-16
+             units, the format counts characters (code points), and an emoji
+             is two units. The save's check decides (page-contracts.test.ts). -->
+        <label class="field" for="details-name">Name</label>
+        <input
+          id="details-name"
+          type="text"
+          maxlength="160"
+          autocomplete="off"
+        />
+        <label class="field" for="details-description">Description</label>
+        <textarea id="details-description" rows="4" maxlength="4000"></textarea>
+        <fieldset class="covers">
+          <legend class="field">Cover photo</legend>
+          <div class="cover-list" id="details-covers"></div>
+          <p class="field-sub" id="details-covers-none" hidden>
+            This tour has no photos to choose from. Add photos with the phone,
+            then choose one here.
+          </p>
+        </fieldset>
+        <label class="field" for="details-contact">Contact</label>
+        <input
+          id="details-contact"
+          type="text"
+          inputmode="email"
+          autocomplete="off"
+          spellcheck="false"
+          maxlength="640"
+          placeholder="you@example.org or https://…"
+          aria-describedby="details-contact-sub"
+        />
+        <p class="field-sub" id="details-contact-sub">
+          An e-mail address or a web link. Visitors see it when the tour fails
+          to open or show.
+        </p>
+        <div id="details-error" role="alert" hidden></div>
+        <div class="modal-actions">
+          <button class="btn" id="details-cancel" type="button">Cancel</button>
+          <button class="btn primary" id="details-apply" type="submit">
+            Apply
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- "Done" (W2 of the tour editor plan, D18, D19): where the changes
+         are, how the tour at its link is updated, that a file at a link is
+         public, and - while the file carries the walk - "Move the walk out"
+         (done-dialog.ts). The Drive-mount tip is off until the owner's
+         check (DRIVE_MOUNT_TIP_SHOWN). -->
+    <div class="backdrop" id="done-modal" hidden>
+      <div
+        class="modal done"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="done-title"
+      >
+        <h1 id="done-title">Done editing</h1>
+        <p class="lede" id="done-where"></p>
+        <h2>Update the tour at its link</h2>
+        <label for="done-host">Where the tour lives</label>
+        <select id="done-host"></select>
+        <p id="done-update"></p>
+        <p class="note-line" id="done-public"></p>
+        <p class="note-line" id="done-drive-tip" hidden></p>
+        <section id="done-walk" aria-label="The walk recording" hidden>
+          <p class="note-line warn" id="done-walk-text"></p>
+          <button class="btn" id="done-move" type="button">
+            Move the walk out
+          </button>
+          <p id="done-move-status" role="status" aria-live="polite"></p>
+        </section>
+        <p class="fineprint">
+          <a href="legal.html#privacy" target="_blank" rel="noopener"
+            >Privacy</a
+          >
+        </p>
+        <div class="modal-actions">
+          <button class="btn primary" id="done-close" type="button">
+            Close
+          </button>
+        </div>
       </div>
     </div>
 

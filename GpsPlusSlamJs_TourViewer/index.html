@@ -154,6 +154,10 @@
         padding: var(--space-2) var(--space-3);
         border-radius: var(--radius-small);
       }
+      .error-contact {
+        margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+        overflow-wrap: anywhere;
+      }
       /* Step 4's content IS the WebXR DOM-overlay root. Nothing may clip it
          (the .step atom is `overflow: hidden`, and whether the overlay's
          top-layer promotion escapes that clip is not something any test
@@ -197,6 +201,11 @@
       #finish-block,
       #recording-block {
         margin-top: var(--space-3);
+      }
+      /* The placement row is a box of its own only in AR (below); outside
+         it its controls stay the strip's grid items. */
+      .setup-place-row {
+        display: contents;
       }
       /* The object list (authoring plan 2026-09-28-0953 M4): one row per
          object, its words over its buttons. Over the camera in AR, so the
@@ -600,6 +609,79 @@
         font-size: var(--size-hint);
         padding: var(--space-1) var(--space-2);
         overflow-wrap: anywhere;
+      }
+
+      /* ===== "You already have a tour?" (tour editor plan 2026-10-17-1816,
+         W1) ===== Below the stage. Which half shows follows the AR check
+         (`data-ar-state` on #enter-ar, written by ar-entry.ts): none while
+         it runs, the editor without AR, the phone's open with it. The whole
+         section waits for the check too (PR #637 review): its heading over
+         two hidden halves read as an empty box. */
+      .have-tour {
+        display: none;
+        gap: var(--space-2);
+        max-width: 48rem;
+        margin: var(--space-4) auto;
+        padding: 0 var(--space-4) var(--space-4);
+      }
+      body:has(#enter-ar[data-ar-state]:not([data-ar-state="checking"]))
+        .have-tour {
+        display: grid;
+      }
+      .have-tour h2 {
+        font-family: var(--map-serif);
+        margin: 0;
+      }
+      .have-tour-desktop,
+      .have-tour-phone,
+      .measure-desktop {
+        display: none;
+      }
+      body:has(#enter-ar[data-ar-state="unsupported"]) .have-tour-desktop,
+      body:has(
+          #enter-ar[data-ar-state]:not(
+              [data-ar-state="unsupported"],
+              [data-ar-state="checking"]
+            )
+        )
+        .have-tour-phone,
+      body:has(#enter-ar[data-ar-state="unsupported"]) .measure-desktop {
+        display: grid;
+        gap: var(--space-2);
+        justify-items: start;
+      }
+      .have-tour-form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        width: 100%;
+      }
+      .have-tour-form .input {
+        flex: 1 1 14rem;
+      }
+      /* A failure's sentences arrive separated by line breaks
+         (have-tour.ts, open-errors.ts). */
+      #have-tour-status {
+        white-space: pre-line;
+      }
+      #have-tour-ask {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      #have-tour-ask > p {
+        flex-basis: 100%;
+        margin: 0;
+      }
+      /* The editor's links wear the button: the sheet's .btn is written
+         for a <button>, which centres its label by itself. */
+      .have-tour a.btn,
+      .measure-desktop a.btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
       }
 
       /* ===== The setup page in the L5 look (polish round M2b) =====
@@ -1157,6 +1239,12 @@
         font-size: var(--visitor-subline-size);
         line-height: 1.35;
       }
+      .visitor-description {
+        margin: var(--space-2) 0 0;
+        color: var(--ink);
+        line-height: 1.45;
+        white-space: pre-line;
+      }
 
       /* The action: the status sentence above (a reason, when there is
          one), the round button, the hint as the one line under it. */
@@ -1341,6 +1429,36 @@
         color: var(--accent-ink);
         font-weight: 600;
         text-underline-offset: 3px;
+      }
+
+      /* The safety line before the start button (W6, D13): the visitor's
+         start page only - never the creator's, never in AR. */
+      .visitor-safety {
+        display: none;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"]) .visitor-safety {
+        display: block;
+        max-width: 340px;
+        margin: 0 0 6px;
+        font-size: 14px;
+        color: var(--ink-dim);
+      }
+      /* The setup page's foot: the legal notice and the privacy page. */
+      .setup-foot {
+        display: flex;
+        justify-content: center;
+        gap: var(--space-4);
+        margin: 0 auto var(--space-4);
+        padding: 0 var(--space-4);
+        font-size: 13.5px;
+      }
+      .setup-foot[hidden] {
+        display: none;
+      }
+      .setup-foot a {
+        display: inline-block;
+        padding: 12px 4px;
+        color: var(--accent-ink);
       }
 
       /* A phone without AR loses "What happens?": it describes a session
@@ -1624,8 +1742,21 @@
       body[data-mode="creator"][data-ar-active="true"] #setup-controls {
         order: 5;
         align-self: center;
+        /* "New station here" (D8) on its own line above the placement row,
+           first in the markup too: on a phone the three labels do not fit
+           one row until the pin's and the photo's fold, and the station
+           chip belongs next to the station line it changes. */
         display: flex;
-        justify-content: center;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        max-width: 100%;
+      }
+      body[data-mode="creator"][data-ar-active="true"] .setup-place-row {
+        display: flex;
+        /* Safe: should the chips ever outgrow the row, it starts at the
+           left edge instead of spilling off both. */
+        justify-content: safe center;
         gap: 10px;
         max-width: 100%;
         padding: 2px;
@@ -1635,10 +1766,31 @@
       body[data-mode="creator"][data-ar-active="true"] #setup-controls[hidden] {
         display: none;
       }
+      /* The open station (tour editor plan 2026-10-17-1816, W3 "AR
+         authoring"): one line just above the chips, in H1's dark card
+         look, saying which station the creator is in. */
+      body[data-mode="creator"][data-ar-active="true"] #creator-station {
+        order: 5;
+        align-self: center;
+        max-width: 100%;
+        margin: 0;
+        padding: 6px 14px;
+        border-radius: 999px;
+        background: rgb(20 22 26 / 66%);
+        color: #fff;
+        font-size: 14px;
+        line-height: 1.35;
+        text-align: center;
+      }
       body[data-mode="creator"][data-ar-active="true"] #setup-pin,
-      body[data-mode="creator"][data-ar-active="true"] #setup-photo {
+      body[data-mode="creator"][data-ar-active="true"] #setup-photo,
+      body[data-mode="creator"][data-ar-active="true"] #setup-new-station {
         display: inline-flex;
-        flex: none;
+        /* The chips shrink with the row and their labels wrap inside them:
+           in a wide face (a phone's own, or a Linux browser's fallback for
+           the UI font) "Place a pin" and "Take a photo" outgrew a 360 px
+           screen and the centred row spilled off both edges. */
+        flex: 0 1 auto;
         align-items: center;
         justify-content: center;
         gap: 8px;
@@ -1662,9 +1814,29 @@
         background: var(--accent);
         color: #1d1206;
       }
+      /* A narrow phone (up to 380 px): tighter chips, so the labels seldom
+         need to wrap. */
+      @media (width <= 380px) {
+        body[data-mode="creator"][data-ar-active="true"] #setup-pin,
+        body[data-mode="creator"][data-ar-active="true"] #setup-photo {
+          padding: 0 14px;
+        }
+        body[data-mode="creator"][data-ar-active="true"] .setup-place-row {
+          gap: 8px;
+        }
+      }
       body[data-mode="creator"][data-ar-active="true"] #setup-pin[hidden],
-      body[data-mode="creator"][data-ar-active="true"] #setup-photo[hidden] {
+      body[data-mode="creator"][data-ar-active="true"] #setup-photo[hidden],
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-new-station[hidden] {
         display: none;
+      }
+      /* "New station here" armed (D8): the accent ring says the next pin or
+         photo starts a station of its own. */
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-new-station[aria-pressed="true"] {
+        box-shadow: inset 0 0 0 3px var(--accent);
+        color: var(--accent);
       }
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls
@@ -1676,13 +1848,24 @@
         .chip-label {
         display: none;
       }
+      /* A chip's label wraps inside it when the row is short of room. */
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls
+        .chip-label {
+        min-width: 0;
+        line-height: 1.15;
+        text-align: center;
+      }
       /* Typing a new pin's text: the field and its buttons take the row. */
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls:has(#pin-label:not([hidden]))
         #setup-pin,
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls:has(#pin-label:not([hidden]))
-        #setup-photo {
+        #setup-photo,
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls:has(#pin-label:not([hidden]))
+        #setup-new-station {
         display: none;
       }
       body[data-mode="creator"][data-ar-active="true"] #pin-label {
@@ -1732,9 +1915,38 @@
         height: 22px;
         flex: none;
       }
+      /* Step 5 on a computer (tour editor plan 2026-10-17-1816, W1): the
+         #measure-desktop pointer replaces the disabled "AR not supported"
+         button, a dead end (review #9), and the AR lines that describe a
+         session this device cannot start. Last in the sheet: these out-rank
+         the visitor's and the HUD's rules for the same elements (stylelint
+         no-descending-specificity). */
+      body[data-mode="creator"]:has(#enter-ar[data-ar-state="unsupported"])
+        #enter-ar,
+      body[data-mode="creator"]:has(#enter-ar[data-ar-state="unsupported"])
+        #ar-hint,
+      body[data-mode="creator"]:has(#enter-ar[data-ar-state="unsupported"])
+        #ar-status {
+        display: none;
+      }
     </style>
   </head>
   <body class="page">
+    <script id="first-paint-mode">
+      // The first paint (tour editor plan 2026-10-17-1816, W1): the page's
+      // CSS keys the light paper and the hidden header on body[data-mode],
+      // and main.ts sets it only after its imports - until then the design
+      // system's dark default, the plain header and step 5's empty card
+      // showed. A classic script as the body's FIRST child runs before
+      // anything is painted. The same rule as viewerModeFromSearch
+      // (src/mode.ts), held to it by mode.test.ts: a qr parameter, whatever
+      // its value, is a visitor.
+      document.body.dataset.mode = new URLSearchParams(location.search).has(
+        "qr",
+      )
+        ? "visitor"
+        : "creator";
+    </script>
     <header>
       <h1>Tour Viewer</h1>
       <!-- Two pages in one (guided-setup plan DEC-N1): the plain page is the
@@ -1793,6 +2005,13 @@
           data-testid="visitor-subline"
           hidden
         ></p>
+        <!-- The tour's description (tour editor plan W2), when it has one. -->
+        <p
+          id="visitor-description"
+          class="visitor-description"
+          data-testid="visitor-description"
+          hidden
+        ></p>
       </section>
       <!-- The setup page in the L5 look (polish round M2b, the owner's
            prototype verdict P1-P5): an intro, then the stage - the map of
@@ -1812,11 +2031,12 @@
             A tour can be as simple as a short walk with notes and photos - with
             more to come. Visitors scan the code you printed and hung, and your
             tour opens right in their phone's browser, with nothing to install.
+            Tours run on Android phones with Chrome.
           </p>
           <ul class="setup-why" aria-label="Why it works this way">
             <li>Lives in your own storage</li>
             <li>No app to install</li>
-            <li>Runs offline once opened</li>
+            <li>Keeps working without signal once a tour has loaded</li>
             <li>No sign-up, no account</li>
           </ul>
           <p class="setup-cta">
@@ -2610,7 +2830,8 @@
                 </summary>
                 <p class="step-copy hint--dim">
                   Your tour is one small zip file in your own storage. Visitors'
-                  phones load it from there and keep it, so it runs offline.
+                  phones load it from there; once it has loaded, it keeps
+                  working without signal.
                 </p>
                 <div
                   id="host-tiles"
@@ -2787,6 +3008,31 @@
                     data-testid="print-url-shown"
                     hidden
                   ></div>
+                  <!-- The tour's own name (tour editor plan 2026-10-17-1816,
+                   W2), apart from the poster's title: it shows the open
+                   tour's title, and a changed one is a change of the tour
+                   (saved by the next Finish); an emptied one removes the
+                   title (tour-name-field.ts). No maxlength: it counts UTF-16
+                   units, the format counts characters - the check says
+                   when a name is too long (plan §23 #8). -->
+                  <label class="tour-name-ask" id="tour-name-ask"
+                    >Tour name
+                    <input
+                      id="tour-name-input"
+                      class="input"
+                      data-testid="tour-name-input"
+                      type="text"
+                      autocomplete="off"
+                      placeholder="Visitors see it when they open the tour"
+                    />
+                  </label>
+                  <p
+                    id="tour-name-error"
+                    class="step-copy"
+                    data-testid="tour-name-error"
+                    role="alert"
+                    hidden
+                  ></p>
                   <!-- The poster text (polish round D-P7, r820 feedback R8):
                    printed with every code so a sheet can be hung as it
                    comes out of the printer. Filled in; an emptied field is
@@ -2802,7 +3048,7 @@
                         type="text"
                         maxlength="80"
                         autocomplete="off"
-                        placeholder="Your tour's name"
+                        placeholder="The poster's headline"
                       />
                     </label>
                     <label
@@ -2996,6 +3242,22 @@
             </li>
           </ol>
           <div id="error" class="prose" role="alert" data-testid="error"></div>
+          <!-- Who to ask, under a visitor's error, when the tour names a
+           contact (tour editor plan 2026-10-17-1816, W2, D15;
+           tour-contact.ts). -->
+          <p
+            id="error-contact"
+            class="error-contact"
+            data-testid="error-contact"
+            hidden
+          >
+            Questions about this tour? Contact its maker:
+            <a
+              id="error-contact-link"
+              rel="noopener noreferrer"
+              target="_blank"
+            ></a>
+          </p>
           <!-- Both modes (tour kit plan K0): the advice's button under a "host
            blocks browsers" error, the line naming a file-opened tour, and
            the one file picker both "open a file" buttons click. -->
@@ -3071,6 +3333,22 @@
               When you are done, the tour file is saved to this phone, and the
               last step shows how to put it in place.
             </p>
+            <!-- Step 5 on a device without AR (tour editor plan 2026-10-17-1816,
+             W1, review #9): shown by the CSS once the AR check says
+             "unsupported", in place of the disabled button. -->
+            <div
+              id="measure-desktop"
+              class="creator-only measure-desktop"
+              data-testid="measure-desktop"
+              hidden
+            >
+              <p class="step-copy">
+                This step runs on site and needs an Android phone with Chrome
+                that supports AR: open this page there. Here, the editor opens a
+                tour you made: fix its texts, move its pins, remove photos.
+              </p>
+              <a class="btn setup-primary" href="edit.html">Open the editor</a>
+            </div>
             <!-- The troubleshooting recording (authoring recording plan
              2026-09-28-0953, M1a). OPT-IN and page-side: the switch arms it
              before AR starts (it then runs for the rest of the page's
@@ -3203,6 +3481,17 @@
               <!-- The ?debug=1 QR readout (main.ts shows it; plan §66). Never for
                visitors without the flag. -->
               <pre id="ar-debug" data-testid="ar-debug" hidden></pre>
+              <!-- The visitor's safety line, before the start button (tour
+               editor plan 2026-10-17-1816, W6, D13); shown on the visitor's
+               start page only (the CSS above). -->
+              <p
+                id="visitor-safety"
+                class="visitor-safety"
+                data-testid="visitor-safety"
+              >
+                Watch where you walk. Look up from your phone when you move, and
+                stay off roads.
+              </p>
               <button
                 type="button"
                 class="btn"
@@ -3408,98 +3697,148 @@
                   ></button>
                 </div>
                 <div id="setup-status" data-testid="setup-status"></div>
+                <!-- The open station in AR (tour editor plan 2026-10-17-1816,
+                 W3 "AR authoring"): which station the creator stands in,
+                 written by creator-stations.ts on each camera frame. -->
+                <p
+                  id="creator-station"
+                  data-testid="creator-station"
+                  role="status"
+                  hidden
+                ></p>
                 <div id="setup-controls" data-testid="setup-controls" hidden>
-                  <!-- Placement (M4): a pin at the reticle with a typed label
-                   (the input is an overlay control: window.prompt is
-                   unavailable in an XR session), a photo of the current
-                   camera frame. -->
+                  <!-- "New station here" (owner decision D8 of the editor
+                   round-2 plan): a toggle - the next pin or photo starts a
+                   station of its own, even within the automatic radius of
+                   another (creator-placement.ts). aria-pressed is its armed
+                   state. FIRST, on its own line above the placement row:
+                   the reading and focus order is the order on screen
+                   (WCAG 2.4.3), next to the station line it changes. -->
                   <button
                     type="button"
-                    id="setup-pin"
+                    id="setup-new-station"
                     class="btn btn--prose"
-                    data-testid="setup-pin"
+                    data-testid="setup-new-station"
+                    aria-pressed="false"
                     disabled
                   >
-                    <!-- A map pin with a plus (D-P4); the label folds to
-                     the icon after its first use (folding-label.ts). -->
+                    <!-- A station's ring with a plus. -->
                     <svg
                       class="chip-icon"
                       viewBox="0 0 24 24"
                       aria-hidden="true"
                     >
-                      <path
-                        d="M12 21s-6.5-5.8-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 15.2 12 21 12 21z"
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="8.5"
                         fill="none"
                         stroke="currentcolor"
                         stroke-width="2"
-                        stroke-linejoin="round"
+                        stroke-dasharray="3.4 2.3"
                       />
                       <path
-                        d="M12 6.8v6M9 9.8h6"
+                        d="M12 8.2v7.6M8.2 12h7.6"
                         stroke="currentcolor"
                         stroke-width="2"
                         stroke-linecap="round"
                       />
                     </svg>
-                    <span class="chip-label">Place a pin</span>
+                    <span class="chip-label">New station here</span>
                   </button>
-                  <input
-                    id="pin-label"
-                    class="input"
-                    data-testid="pin-label"
-                    type="text"
-                    autocomplete="off"
-                    placeholder="The pin's text"
-                    hidden
-                  />
-                  <button
-                    type="button"
-                    class="btn btn--prose"
-                    id="pin-save"
-                    data-testid="pin-save"
-                    hidden
-                  >
-                    Save the pin
-                  </button>
-                  <button
-                    type="button"
-                    id="pin-cancel"
-                    class="btn"
-                    data-testid="pin-cancel"
-                    hidden
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    id="setup-photo"
-                    class="btn btn--prose"
-                    data-testid="setup-photo"
-                    disabled
-                  >
-                    <svg
-                      class="chip-icon"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
+                  <div class="setup-place-row">
+                    <!-- Placement (M4): a pin at the reticle with a typed label
+                     (the input is an overlay control: window.prompt is
+                     unavailable in an XR session), a photo of the current
+                     camera frame. -->
+                    <button
+                      type="button"
+                      id="setup-pin"
+                      class="btn btn--prose"
+                      data-testid="setup-pin"
+                      disabled
                     >
-                      <path
-                        d="M3.5 8.5h3.2l1.9-2.6h6.8l1.9 2.6h3.2v10.6h-17z"
-                        fill="none"
-                        stroke="currentcolor"
-                        stroke-width="2"
-                        stroke-linejoin="round"
-                      />
-                      <circle
-                        cx="12"
-                        cy="13.6"
-                        r="3.4"
-                        fill="none"
-                        stroke="currentcolor"
-                        stroke-width="2"
-                      />
-                    </svg>
-                    <span class="chip-label">Take a photo</span>
-                  </button>
+                      <!-- A map pin with a plus (D-P4); the label folds to
+                       the icon after its first use (folding-label.ts). -->
+                      <svg
+                        class="chip-icon"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M12 21s-6.5-5.8-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 15.2 12 21 12 21z"
+                          fill="none"
+                          stroke="currentcolor"
+                          stroke-width="2"
+                          stroke-linejoin="round"
+                        />
+                        <path
+                          d="M12 6.8v6M9 9.8h6"
+                          stroke="currentcolor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                        />
+                      </svg>
+                      <span class="chip-label">Place a pin</span>
+                    </button>
+                    <input
+                      id="pin-label"
+                      class="input"
+                      data-testid="pin-label"
+                      type="text"
+                      autocomplete="off"
+                      placeholder="The pin's text"
+                      hidden
+                    />
+                    <button
+                      type="button"
+                      class="btn btn--prose"
+                      id="pin-save"
+                      data-testid="pin-save"
+                      hidden
+                    >
+                      Save the pin
+                    </button>
+                    <button
+                      type="button"
+                      id="pin-cancel"
+                      class="btn"
+                      data-testid="pin-cancel"
+                      hidden
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      id="setup-photo"
+                      class="btn btn--prose"
+                      data-testid="setup-photo"
+                      disabled
+                    >
+                      <svg
+                        class="chip-icon"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M3.5 8.5h3.2l1.9-2.6h6.8l1.9 2.6h3.2v10.6h-17z"
+                          fill="none"
+                          stroke="currentcolor"
+                          stroke-width="2"
+                          stroke-linejoin="round"
+                        />
+                        <circle
+                          cx="12"
+                          cy="13.6"
+                          r="3.4"
+                          fill="none"
+                          stroke="currentcolor"
+                          stroke-width="2"
+                        />
+                      </svg>
+                      <span class="chip-label">Take a photo</span>
+                    </button>
+                  </div>
                 </div>
                 <!-- OUTSIDE #setup-controls on purpose: the controls are the
                  camera's (mint, pin, photo) and go with the session, but a
@@ -3755,9 +4094,8 @@
             <summary>Other settings</summary>
             <p>
               Opened tours are kept on this device (up to five, oldest dropped)
-              so a revisit opens instantly and works offline. A changed file on
-              the host is picked up automatically; clearing is only needed to
-              free space.
+              so a revisit opens faster. A changed file on the host is picked up
+              automatically; clearing is only needed to free space.
             </p>
             <button
               type="button"
@@ -3778,6 +4116,118 @@
           <ul id="gallery" data-testid="gallery" hidden></ul>
         </div>
       </div>
+      <!-- "You already have a tour?" (tour editor plan 2026-10-17-1816, W1):
+           BELOW the map and the six steps, so the first-time story stays
+           first. Which half shows follows the AR check on #enter-ar
+           (have-tour.ts.md): without AR (a computer) the editor, a phone
+           with AR opens a tour from this device or from its link and then
+           asks "Play it, or continue setting it up?" (plan 2026-10-15-0348,
+           round 2) - through the page's one open path (archive-open.ts). -->
+      <section
+        id="have-tour"
+        class="creator-only have-tour"
+        data-testid="have-tour"
+        aria-labelledby="have-tour-title"
+        hidden
+      >
+        <h2 id="have-tour-title">You already have a tour?</h2>
+        <div class="have-tour-desktop" data-testid="have-tour-desktop">
+          <!-- Said per browser by main.ts (editorPitch, PR #637 review):
+               this text is the one for a browser that cannot write a
+               chosen file. -->
+          <p
+            class="hint--dim"
+            id="have-tour-editor-text"
+            data-testid="have-tour-editor-text"
+          >
+            The editor shows your tour on a map: fix a text, move a pin or
+            remove a photo, and save a new copy of the tour file to put in place
+            of the old one.
+          </p>
+          <a
+            class="btn setup-primary"
+            href="edit.html"
+            data-testid="have-tour-editor"
+            >Open the editor</a
+          >
+        </div>
+        <div class="have-tour-phone" data-testid="have-tour-phone">
+          <p class="hint--dim">
+            Open it to play it, or to go on setting it up.
+          </p>
+          <button
+            type="button"
+            id="have-tour-file"
+            class="btn"
+            data-testid="have-tour-file"
+          >
+            From this device
+          </button>
+          <input
+            id="have-tour-input"
+            type="file"
+            accept=".zip,application/zip,application/x-zip-compressed"
+            hidden
+          />
+          <form id="have-tour-form" class="have-tour-form">
+            <input
+              id="have-tour-link"
+              class="input"
+              type="text"
+              autocomplete="off"
+              placeholder="https://… link to the tour .zip"
+              aria-label="The tour's link"
+              data-testid="have-tour-link"
+            />
+            <button
+              type="submit"
+              id="have-tour-open"
+              class="btn"
+              data-testid="have-tour-open"
+            >
+              Open the link
+            </button>
+          </form>
+          <p
+            id="have-tour-status"
+            class="hint--dim"
+            role="status"
+            aria-live="polite"
+            data-testid="have-tour-status"
+            hidden
+          ></p>
+          <div id="have-tour-ask" data-testid="have-tour-ask" hidden>
+            <p id="have-tour-ask-text"></p>
+            <a
+              id="have-tour-play"
+              class="btn setup-primary"
+              data-testid="have-tour-play"
+              hidden
+              >Play it</a
+            >
+            <button
+              type="button"
+              id="have-tour-continue"
+              class="btn"
+              data-testid="have-tour-continue"
+            >
+              Continue setting it up
+            </button>
+          </div>
+        </div>
+      </section>
+      <!-- The legal notice and the privacy page (tour editor plan
+           2026-10-17-1816, W6, D13; legal.html.md), at the setup page's
+           foot. -->
+      <footer
+        id="setup-foot"
+        class="creator-only setup-foot"
+        data-testid="setup-foot"
+        hidden
+      >
+        <a href="legal.html#notice">Legal notice</a>
+        <a href="legal.html#privacy">Privacy</a>
+      </footer>
       <section id="visitor-more" hidden data-testid="visitor-more">
         <details id="visitor-what">
           <summary>What happens?</summary>
@@ -3793,7 +4243,17 @@
               </li>
               <li>
                 <b>Stays on your phone</b>
-                <span>Nothing is uploaded. No sign-up, no account.</span>
+                <span
+                  >The app sends none of your data: no camera image, no
+                  location. No sign-up, no account.
+                  <a
+                    href="legal.html#privacy"
+                    target="_blank"
+                    rel="noopener"
+                    data-testid="visitor-privacy"
+                    >Privacy</a
+                  ></span
+                >
               </li>
             </ul>
             <p class="visitor-after">

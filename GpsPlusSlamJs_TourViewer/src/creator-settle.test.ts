@@ -62,15 +62,16 @@ describe("the settle hands the planner every code of the visit (M4c-2)", () => {
       zero: ZERO,
       nowIso: "2026-10-06T10:00:00.000Z",
     }) as TourObject;
-    ctx.placedObjects = [
+    ctx.tourDocument.place(
+      pin,
       {
-        object: pin,
         placement: {
           visit: 0,
           local: { position: local, rotation: [0, 0, 0, 1] },
         },
       },
-    ];
+      "a pin",
+    );
     const codes = wireCreatorCodes({ ctx });
     // A then B measured in this visit; B is in hand.
     codes.setInHand(
@@ -138,7 +139,7 @@ describe("the settle hands the planner every code of the visit (M4c-2)", () => {
       },
       draft: {
         saveMeta: () => Promise.resolve(true),
-        recordPlacement: () => undefined,
+        warnNoBackup: () => undefined,
         recordVisit: () => undefined,
       },
       codes,
@@ -150,7 +151,8 @@ describe("the settle hands the planner every code of the visit (M4c-2)", () => {
     // Next to A (2 m walked from A's measurement, 28 m from B's): through
     // A's own pick, not B's (the code in hand) nor the end alignment.
     const settled = new Vector3(
-      ...objectPoseNue(ctx.placedObjects[0]!.object.geo, ZERO).positionNue,
+      ...objectPoseNue(ctx.tourDocument.entries()[0]!.object.geo, ZERO)
+        .positionNue,
     );
     const viaA = new Vector3(
       ...throughAlignment({ position: local, rotation: [0, 0, 0, 1] }, aPickA)!

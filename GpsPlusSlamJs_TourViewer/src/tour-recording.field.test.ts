@@ -19,6 +19,7 @@ import { TextWriter } from "@zip.js/zip.js";
 import { tourManifestEntryOf } from "gps-plus-slam-app-framework/ar/tour-archive";
 import {
   parseTourManifest,
+  type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { Quaternion, Vector3 } from "three";
@@ -37,6 +38,8 @@ import {
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
 import { createTourViewerStore } from "./tour-viewer-session.js";
+import { withWorldObjects } from "./test-support/v3-tour.js";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   alignmentTurnDeg,
   codePositionSentence,
@@ -526,8 +529,9 @@ async function readTourZip(path: string) {
     manifestName,
   );
   if (manifestEntry === undefined) throw new Error("tour.json unreadable");
-  const manifest = parseTourManifest(
-    JSON.parse(await manifestEntry.getText()) as unknown,
+  // Its pins and photos in the world (version 3 keeps them in stations).
+  const manifest = withWorldObjects(
+    parseTourManifest(JSON.parse(await manifestEntry.getText()) as unknown),
   );
   const levels = await Promise.all(
     (await loadEntriesFromSubdir(bytes, "qr")).map(async (e) => ({
@@ -582,10 +586,10 @@ describe.skipIf(TOUR_ZIP === undefined)("a Tour Viewer tour zip", () => {
       const finished = actions
         .filter((a) => a.type === "tourAuthoring/finished")
         .at(-1);
-      const recorded = (
-        finished?.payload as
-          { manifest?: { objects?: { id: string }[] } } | undefined
-      )?.manifest?.objects;
+      const logged = (
+        finished?.payload as { manifest?: TourManifest } | undefined
+      )?.manifest;
+      const recorded = logged === undefined ? undefined : tourObjects(logged);
       expect(
         recorded,
         "the recording logs the Finish's manifest",

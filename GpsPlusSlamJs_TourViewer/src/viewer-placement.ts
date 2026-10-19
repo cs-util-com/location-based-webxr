@@ -38,12 +38,13 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { Texture } from "three";
 
-import type { TourCaptureSpots } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourItems } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { bakeCaptureSpots, posesOfCaptureSpots } from "./capture-bake.js";
 import { entriesForVisitor } from "./tour-read-set.js";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type { CaptureWorldPose } from "./capture-geo-join.js";
-import { renderTourObjects } from "./content-placement.js";
+import { renderTourStations } from "./content-placement.js";
+import { type CaptureSpotsInWorld, worldCaptureSpots } from "./tour-content.js";
 import { placeCapturedImagePlanes, placeImagePlanes } from "./image-planes.js";
 import type { ViewerMode } from "./mode.js";
 import {
@@ -69,13 +70,14 @@ import {
 } from "./qr-viewer-mode.js";
 import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { TourViewerSeams } from "./seams.js";
-import { isPlacementReady } from "./tour-flow.js";
+import { codePlacedTour, isPlacementReady } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
-import type {
-  ArController,
-  TourViewerHooks,
-  TourViewerSession,
-  TourViewerStore,
+import {
+  isCodeIgnored,
+  type ArController,
+  type TourViewerHooks,
+  type TourViewerSession,
+  type TourViewerStore,
 } from "./tour-viewer-session.js";
 import { startEntryVoteSink } from "./viewer-vote-sink.js";
 import type { ViewingLog } from "./viewing-log.js";
@@ -246,15 +248,12 @@ export function createViewerPlacement(deps: {
     arStore.dispatch(setZeroPos({ lat: geo.lat, lon: geo.lon }));
   }
 
-  /** Whether a code's votes placed this tour: the gate passed on a voted
-   *  lock of a trusted code (M5). The placement trigger then runs whatever
-   *  the tracking-quality phase reads (§7 #9) - which changes only a scan
-   *  whose one voted lock opened the gate, since every later voted lock
-   *  starts the placement itself (`onVotedLock`). */
-  const codePlacedTour = (): boolean =>
-    ctx.scanGate.kind === "passed" &&
-    ctx.scanGate.via === "code" &&
-    ctx.viewerVotedLocks > 0;
+  /** Whether a code's votes placed this tour (`tour-flow.ts`). The
+   *  placement trigger then runs whatever the tracking-quality phase reads
+   *  (§7 #9) - which changes only a scan whose one voted lock opened the
+   *  gate, since every later voted lock starts the placement itself
+   *  (`onVotedLock`). */
+  const placedByCode = (): boolean => codePlacedTour(ctx);
 
   const ignoredLevelIds = (): ReadonlySet<string> =>
     new Set(ctx.ignoredCodes.keys());
@@ -376,10 +375,7 @@ export function createViewerPlacement(deps: {
     const checks = startMovedCodeChecks();
     /** Whether the moved-code check made the viewer ignore this text's
      *  level (by level id: the memory outlives the per-text caches). */
-    const isIgnored = (text: string): boolean => {
-      const id = ctx.levelIdByText.get(text);
-      return id !== undefined && ctx.ignoredCodes.has(id);
-    };
+    const isIgnored = (text: string): boolean => isCodeIgnored(ctx, text);
     /** The scan gate's part of a lock. */
     const gateOnLock = (level: QrLevel, hasVoted: boolean): void => {
       // The gate passes on the LOCK of a lockable level (M5; plan review
@@ -658,7 +654,8 @@ export function createViewerPlacement(deps: {
 
   /**
    * The veto (owner decision 2026-10-02; re-judged since polish round C5,
-   * `restoreMovedCode`): the code is ignored; its keep-alive stops; every vote is taken back - the GPS
+   * `restoreMovedCode`): the code is ignored; the keep-alive stops, whichever
+   * code it holds; every vote is taken back - the GPS
    * history reset and the device fixes re-fed with the soft keys off (the
    * M5a arm that lands on the GPS answer), so the content moves ONCE; the
    * gate and the line say the code is ignored; the viewing log records the
@@ -670,19 +667,20 @@ export function createViewerPlacement(deps: {
       text: verdict.text,
       vetoSpreadM: verdict.evidence.spreadM,
     });
-    const keepAlive = ctx.viewerKeepAlive;
-    const hold = keepAlive?.phase(now());
-    if (
-      hold !== undefined &&
-      hold.kind !== "none" &&
-      hold.text === verdict.text
-    ) {
-      keepAlive?.stop();
-    }
+    // Whichever code it holds: every vote is taken back below, and a ring
+    // of another code would go on feeding the GPS history - and the
+    // tracking report read from it - while nothing reads the tour as lined
+    // up by a code. That code's next lock votes again (the budget reset).
+    ctx.viewerKeepAlive?.stop();
     const recovery = ctx.viewerVoteSink?.retractVotes() ?? {
       refedFixes: 0,
       batches: 0,
     };
+    // No vote stands now: nothing reads the tour as lined up by a code -
+    // the stations' trust, the status line, the placement trigger - until
+    // a code votes again (r881 review M1).
+    ctx.viewerVotedLocks = 0;
+    ctx.viewerLockedText = null;
     // Every code's votes are gone, so every code may vote again by lock
     // (M5c review M2): a spent code the keep-alive holds would otherwise
     // cast nothing on its next lock. The vetoed code stays blocked by
@@ -773,7 +771,7 @@ export function createViewerPlacement(deps: {
     if (ctx.imagePlanesLoading) return;
     if (
       !isPlacementReady(selectTrackingQuality(arStore.getState())) &&
-      !codePlacedTour()
+      !placedByCode()
     ) {
       // Only over idle/waiting: a pre-ready lock whose ring failed leaves a
       // decline reason that the next dispatch must not overwrite
@@ -791,7 +789,10 @@ export function createViewerPlacement(deps: {
     // recording. The manifest's settle calls this trigger again.
     if (ctx.tourManifestStatus === "pending") return;
     ctx.placementAttempted = true;
-    if (!current.hasRecording && ctx.tourManifest?.captureSpots === undefined) {
+    if (
+      !current.hasRecording &&
+      ctx.tourDocument.manifest()?.captureSpots === undefined
+    ) {
       // No walk to place; the ring (if the tour has codes) waits for a lock.
       ctx.joinDeclined = true;
       ctx.placement = { kind: "declined", reason: "no recording in this tour" };
@@ -802,7 +803,7 @@ export function createViewerPlacement(deps: {
     // declines falls back to the ring in the same run (r857 review #3).
     // Without it the run's loading latch dropped the ring of the lock that
     // placed the tour, and a glance gets no later lock to retry.
-    const lockedText = codePlacedTour() ? ctx.viewerLockedText : null;
+    const lockedText = placedByCode() ? ctx.viewerLockedText : null;
     void placeTourImagePlanes(lockedText).catch((err: unknown) => {
       ctx.viewerPlanesError = describeOpenError(err, current.archive.url);
       hooks.renderArStatus();
@@ -818,8 +819,8 @@ export function createViewerPlacement(deps: {
    */
   function tryPlaceContent(current: TourSession): void {
     if (ctx.contentAttempted || ctx.tourManifestStatus !== "settled") return;
-    const manifest = ctx.tourManifest;
-    if (manifest === null || manifest.objects.length === 0) return;
+    const manifest = ctx.tourDocument.manifest();
+    if (manifest === null || tourItems(manifest).length === 0) return;
     const zero = selectZeroReference(arStore.getState());
     const scene = seams.getScene();
     if (zero === null || scene === null) return;
@@ -829,7 +830,9 @@ export function createViewerPlacement(deps: {
     // it on every dispatch at the frame cadence.
     ctx.contentAttempted = true;
     const generation = ctx.planesRunGeneration;
-    void renderTourObjects(manifest.objects, {
+    // One group per station, its pins and photos as children at their
+    // local poses (tour editor plan W3).
+    void renderTourStations(manifest.stations, {
       scene,
       zero,
       makeLabel: (text) => seams.createLabel(text),
@@ -985,8 +988,9 @@ export function createViewerPlacement(deps: {
   async function captureSpotsForRun(
     current: TourSession,
     generation: number,
-  ): Promise<TourCaptureSpots | null> {
-    const baked = ctx.tourManifest?.captureSpots;
+  ): Promise<CaptureSpotsInWorld | null> {
+    const manifest = ctx.tourDocument.manifest();
+    const baked = manifest === null ? undefined : worldCaptureSpots(manifest);
     if (baked !== undefined) return baked;
     const bake = await bakeCaptureSpots(current, {
       // Same bail contract as `decodeJoinedPoses` below. `onChunk` alone

@@ -51,6 +51,13 @@ export function offersFileOpen(cause: string): boolean {
   return cause === "cors";
 }
 
+/** The first sentence for a host that blocks browsers (`cors`): every
+ *  place that words that refusal starts with it - the viewer's error box,
+ *  the editor's link open, the "You already have a tour?" box - and each
+ *  adds the way around that its own page offers (M1 review #6). */
+export const HOST_REFUSED_TEXT =
+  "The host refused the browser access (it blocks reads from other sites, or the connection dropped).";
+
 /** The causes whose sentence does not depend on the error or the link. */
 const FIXED_TEXT: Partial<Record<RangeProbeRejectCause, string>> = {
   missing:
@@ -61,12 +68,24 @@ const FIXED_TEXT: Partial<Record<RangeProbeRejectCause, string>> = {
   // other sites' reads - and the way around it is the file itself (tour
   // kit plan K0, K-D1).
   cors:
-    "The host refused the browser access (it blocks reads from other sites, or the connection dropped).\n" +
+    `${HOST_REFUSED_TEXT}\n` +
     `Download the file to this device, then tap "${OPEN_FILE_ADVICE_LABEL}" below to open it here.\n` +
     "Note: Google Drive links go through the site's proxy automatically — for other hosts the file must allow cross-site reads.",
   offline:
     "This device is offline, and this tour is not saved on it. Connect to the internet and try again.",
 };
+
+/**
+ * The sentence for a cause that needs neither the error nor the link
+ * (`missing`, `corrupt`, `cors`, `offline`), or undefined. For a caller
+ * that has only the outcome's cause, e.g. the "You already have a tour?"
+ * box after step 2's check cleared the error box for a tolerated link.
+ */
+export function describeOpenCause(cause: string): string | undefined {
+  return Object.hasOwn(FIXED_TEXT, cause)
+    ? FIXED_TEXT[cause as RangeProbeRejectCause]
+    : undefined;
+}
 
 /**
  * A tour that does not match its own list of contents (tour kit plan K1,

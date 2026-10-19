@@ -17,6 +17,7 @@ import {
   renderTourObjects,
   type TourObjectRendererDeps,
 } from "./content-placement.js";
+import type { VisitPlacement } from "./creator-document.js";
 import { horizontalM } from "./move-with-code.js";
 import type { AuthoringObject } from "./object-editing.js";
 import type { TourViewerSeams } from "./seams.js";
@@ -157,7 +158,7 @@ export function wireCreatorPreviews(deps: {
    * the scene root outside a visit (plan §3.2).
    */
   function previewFrame(
-    placement: (typeof ctx.placedObjects)[number]["placement"],
+    placement: VisitPlacement | undefined,
     fromGeo: Object3D,
   ): Pick<TourObjectRendererDeps, "scene" | "poseOf"> {
     const group = seams.getArWorldGroup();
@@ -184,7 +185,7 @@ export function wireCreatorPreviews(deps: {
    */
   const previewKeys = new Map<string, string>();
   /**
-   * The bytes of photos a Finish took out of `placedObjects`: the hosted
+   * The bytes of photos a Finish took out of the document's entries: the hosted
    * zip does not carry them until the creator uploads the rebuilt one, so
    * their preview reads them from here. Emptied when the tour closes.
    */
