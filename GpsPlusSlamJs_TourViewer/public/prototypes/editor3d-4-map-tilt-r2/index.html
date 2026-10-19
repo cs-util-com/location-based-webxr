@@ -1233,7 +1233,11 @@ function cancelHandleDrag() {
   if (!drag || !HANDLE_DRAGS.includes(drag.type)) return;
   if (drag.moved) {
     const top = undoStack[undoStack.length - 1];
-    if (top && top.s === drag.snap) undoStack.pop();
+    if (top && top.s === drag.snap) {
+      undoStack.pop();
+      // the drag's pushUndo cleared the redo stack; the cancelled drag never happened, so what could be redone comes back
+      redoStack.length = 0; redoStack.push(...drag.redo);
+    }
     restore(drag.snap); afterStructure();
   }
   readout.style.display = 'none';
@@ -1273,7 +1277,7 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   if (e.button !== 0) return;
   const hit = pickAt(p.x, p.y);
-  drag = { type: null, pid: e.pointerId, hit, x0: p.x, y0: p.y, lx: p.x, ly: p.y, moved: false, snap: snap() };
+  drag = { type: null, pid: e.pointerId, hit, x0: p.x, y0: p.y, lx: p.x, ly: p.y, moved: false, snap: snap(), redo: redoStack.slice() };
   const gp = groundAt(p.x, p.y);
   switch (hit.kind) {
     case 'knob': {
@@ -1741,6 +1745,7 @@ let arcDrag = false;
 arc.addEventListener('pointerdown', (e) => { arcDrag = true; arc.setPointerCapture(e.pointerId); anim = null; preTop = null; if (cam.t < T_EYE) tBack = cam.t; cam.t = arcFromEvent(e); });
 arc.addEventListener('pointermove', (e) => { if (arcDrag) cam.t = arcFromEvent(e); });
 arc.addEventListener('pointerup', () => { arcDrag = false; });
+arc.addEventListener('pointercancel', () => { arcDrag = false; });
 
 const keys = new Set();
 window.addEventListener('keydown', (e) => {
@@ -1836,6 +1841,7 @@ function frame(now) {
   renderer.render(scene, camera);
   if (first) {
     first = false;
+    // test hook (used by throwaway headless checks; not part of any suite)
     window.__proto = {
       ready: true,
       select: (kind, id) => select(kind, id),
@@ -1848,7 +1854,7 @@ function frame(now) {
       gizmoR: () => gizmoR,
       touchGuard: () => touchGuard,
       groundH,
-      // world point -> canvas pixel (used by the smoke test to drive real pointer and touch drags)
+      // world point -> canvas pixel (lets a headless check drive real pointer and touch drags)
       project: (x, z, y) => { const v = new THREE.Vector3(x, y ?? groundH(x, z), z).project(camera); return { x: (v.x + 1) / 2 * vpW, y: (1 - v.y) / 2 * vpH }; },
     };
   }

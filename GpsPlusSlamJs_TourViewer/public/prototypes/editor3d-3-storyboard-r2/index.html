@@ -1794,7 +1794,7 @@ function frame(now) {
   if (!ready) { ready = true; window.__proto = { ready: true }; }
 }
 requestAnimationFrame(frame);
-// test hook for the smoke check (not part of the UI)
+// test hook (used by throwaway headless checks; not part of any suite)
 window.__protoApi = { objs, select, standHere, startPlay, stopPlay, setTop, state, undo, itemWorld, getStation, stationOfItem,
   get flying() { return !!flight; }, get mode() { return mode; }, get top() { return top.on; }, get camPos() { return camera.position.toArray(); },
   handleScreen(kind) { if (!G || !gizmo.visible) return null; const v = kind === 'rotate' ? G.knob : kind === 'resize' ? G.dots[0] : G.center; return v ? toScreen(v) : null; } };

@@ -2206,7 +2206,7 @@ window.addEventListener('resize', () => {
 // boot
 rebuildTour(); refreshTree(); refreshInsp(true); refreshDock(); refreshMeta(); setModeUI();
 camera.position.set(eye.x, eye.y, eye.z); camera.rotation.set(eye.pitch, eye.yaw, 0);
-// small hooks for a smoke test (not part of the editor)
+// test hook (used by throwaway headless checks; not part of any suite)
 const toScreen = (x, y, z) => { const v = new THREE.Vector3(x, y, z).project(camera); return { x: ((v.x + 1) / 2) * innerWidth, y: ((1 - v.y) / 2) * innerHeight }; };
 window.__walk = {
   busy: () => !!(tween || glide || look), mode: () => mode, tour: () => tour, undoCount: () => undoStack.length,

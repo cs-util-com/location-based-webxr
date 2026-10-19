@@ -1599,7 +1599,7 @@ function frame(now) {
   if (!ready) { ready = true; window.__proto.ready = true; }
   requestAnimationFrame(frame);
 }
-// a small hook for smoke checks: read poses and project handle positions to the page
+// test hook (used by throwaway headless checks; not part of any suite): read poses and project handle positions to the page
 window.__proto = {
   ready: false,
   select: (kind, id) => select(kind, id),
