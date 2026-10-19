@@ -297,6 +297,59 @@ describe("marchToGround", () => {
       RangeError,
     );
     expect(() => marchToGround(ok, above, { startM: -1 })).toThrow(RangeError);
+    expect(() => marchToGround(ok, above, { maxSlope: 0 })).toThrow(RangeError);
+    expect(() =>
+      marchToGround(ok, above, { maxSlope: Number.POSITIVE_INFINITY }),
+    ).toThrow(RangeError);
+  });
+
+  // Why (the step bound): a first-person ray at eye height, 0.5 degrees
+  // down, meets flat ground 195 m out, but a bank 1.5 m high and 3 m wide
+  // stands across its way at 109 m. A step grown with the distance (2 %,
+  // 2.2 m there) jumped from in front of the bank to behind it and picked
+  // the flat ground beyond, 86 m too far; the step bounded by the height
+  // measured lands on the bank's face.
+  it("does not step over a low bank in front of a grazing ray", () => {
+    const pitch = -0.5 * DEG;
+    const ray = new THREE.Ray(
+      new THREE.Vector3(0, 1.7, 0),
+      new THREE.Vector3(Math.cos(pitch), Math.sin(pitch), 0),
+    );
+    const bank = (p: THREE.Vector3) =>
+      p.y - Math.max(0, 1.5 - Math.abs(p.x - 109));
+    const hit = marchToGround(ray, bank);
+    expect(hit).not.toBeNull();
+    expect(hit!.t).toBeGreaterThan(107.5);
+    expect(hit!.t).toBeLessThan(109);
+    expect(Math.abs(bank(hit!.point))).toBeLessThan(1e-3);
+  });
+
+  // Why (what the bound costs): near the ground the step is the least
+  // step, so a ray that grazes the ground all the way pays one sample a
+  // metre of its reach. This pins the worst case the editor must budget
+  // for (a level ray at eye height over level ground: the whole 5 km), and
+  // that a ray pointing down at the ground stays cheap.
+  it("costs at most one sample per least step of the reach, and little when pointing down", () => {
+    let samples = 0;
+    const flat = (p: THREE.Vector3) => {
+      samples++;
+      return p.y;
+    };
+    const level = new THREE.Ray(
+      new THREE.Vector3(0, 1.7, 0),
+      new THREE.Vector3(1, 0, 0),
+    );
+    expect(marchToGround(level, flat)).toBeNull();
+    expect(samples).toBeLessThanOrEqual(
+      GROUND_HIT.maxDistanceM / GROUND_HIT.minStepM + 1,
+    );
+    samples = 0;
+    const down = new THREE.Ray(
+      new THREE.Vector3(0, 3_000, 0),
+      new THREE.Vector3(1, -1, 0).normalize(),
+    );
+    expect(marchToGround(down, flat)).not.toBeNull();
+    expect(samples).toBeLessThan(100);
   });
 
   // Why: a plain y-up world with ground at y = 0 shows the march's own
