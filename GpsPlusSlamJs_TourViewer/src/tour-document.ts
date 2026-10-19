@@ -52,6 +52,7 @@ import {
   type TourDetailFields,
 } from "./tour-details-form.js";
 import type { CaptureSpotsInWorld } from "./tour-content.js";
+import { sameJson } from "./same-json.js";
 
 /** A station without its items: what the document edits of a station
  *  (its pose, D17); the items stay with the written tour. */
@@ -417,9 +418,10 @@ export function canStep(state: TourDocumentState): boolean {
   return state.save.rebuilds === 0;
 }
 
-/** The same frame: every field but the items alike. */
+/** The same frame: every field but the items alike, whatever order a
+ *  writer built their keys in (`sameJson`). */
 function sameFrame(a: StationFrame, b: StationFrame | undefined): boolean {
-  return b !== undefined && JSON.stringify(a) === JSON.stringify(b);
+  return b !== undefined && sameJson(a, b);
 }
 
 /** Changes not yet written, counted as a page shows them: each object
@@ -538,8 +540,7 @@ function goTo(
   const detailsMoved = DETAIL_FIELDS.some(
     (f) => view.details[f] !== state.details[f],
   );
-  const stationsMoved =
-    JSON.stringify(view.stations) !== JSON.stringify(state.stations);
+  const stationsMoved = !sameJson(view.stations, state.stations);
   return {
     ...state,
     ...contentAt(state.written, view),
@@ -828,8 +829,7 @@ const tourDocumentSlice = createSlice({
       const { written, appliedDeletions, stationsAtStart, generation } =
         action.payload;
       if (generation !== before.generation) return before;
-      const unmoved =
-        JSON.stringify(before.stations) === JSON.stringify(stationsAtStart);
+      const unmoved = sameJson(before.stations, stationsAtStart);
       // A frame moved while the write ran stays the document's: what the
       // file holds is read through it, as `documentObjects` will read it.
       const pending = pendingAfterRebuild(

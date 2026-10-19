@@ -126,7 +126,9 @@ different times (a walk's move lands only after the page wrote both files).
   a reader that previews the write: the creator's station HUD
   (`creator-stations.ts`) names the stations it would start its own way.
 - `changeCount(state)` - each pending entry, deletion, moved frame, the
-  setting and each detail field differing from the written file.
+  setting and each detail field differing from the written file. A frame
+  is compared by its data, never by the order its keys were built in
+  (`same-json.ts`), so a station moved back is no change.
 - `effectiveDetails(state)` - the cover only while its image is in the tour.
 - `coverImageIds(state)` - the images the tour may show as its cover (its
   photos as they stand, its image assets).

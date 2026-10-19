@@ -11,7 +11,6 @@
  */
 
 import { parseGeoPose } from "gps-plus-slam-app-framework/ar/qr/geo-pose";
-import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { objectContentKey } from "./authoring-draft.js";
@@ -19,6 +18,7 @@ import type { DraftObjectWrites } from "./draft-actions.js";
 import type { EditEntry } from "./object-edits.js";
 import { DETAIL_FIELDS, type TourDetailFields } from "./tour-details-form.js";
 import type { StationPose, TourDocumentState } from "./tour-document.js";
+import { sameJson } from "./same-json.js";
 
 /** The tour-level settings a draft keeps: the setting, and the details
  *  once they were set or restored (`editor/editor-draft.ts` THE
@@ -50,13 +50,9 @@ export function changedStations(
   return wanted
     .filter((p) => {
       const there = poses.get(p.id);
-      return there !== undefined && !sameGeo(there, p.geo);
+      return there !== undefined && !sameJson(there, p.geo);
     })
     .map((p) => p.id);
-}
-
-function sameGeo(a: QrGeoPose, b: QrGeoPose): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /** A stored record's station poses: undefined when absent, null when they

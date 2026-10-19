@@ -21,8 +21,9 @@ after the reducer, never from `store.subscribe`.
   not read (a bad station pose or detail costs the record, never the
   objects beside it).
 - `changedStations(wanted, against)` - the ids of `wanted`'s stations
-  whose pose differs from `against`'s; none without an opinion, none for a
-  station `against` does not carry.
+  whose pose differs from `against`'s (by data, whatever its key order:
+  `same-json.ts`); none without an opinion, none for a station `against`
+  does not carry.
 - `settingsRecord(state)` - the record as the document holds it: the
   details only once `detailsRecorded`, the station poses (every station's,
   in the document's order) only once `stationsRecorded`.

@@ -243,6 +243,38 @@ describe("tour document: a station's frame (D17)", () => {
     expect(changeCount(state)).toBe(0);
   });
 
+  // Why: a frame was compared with the written one through JSON.stringify,
+  // which depends on key order - so a station moved and moved back by a
+  // writer that builds its geo keys in another order counted as a change,
+  // and the leave guard asked about a tour with nothing to save.
+  it("a station moved and moved back with its geo keys in another order is no change", () => {
+    let state = open();
+    const station = stationIdOf("a");
+    const was = OPENED.stations.find((s) => s.id === station)!;
+    state = reduce(
+      state,
+      act.stationMoved({
+        stationId: station,
+        geo: { ...was.geo, lat: was.geo.lat + 0.0001 },
+        what: "the move of the station",
+      }),
+    );
+    expect(changeCount(state)).toBe(1);
+    const reordered = Object.fromEntries(
+      Object.entries(was.geo).reverse(),
+    ) as typeof was.geo;
+    expect(Object.keys(reordered)).not.toEqual(Object.keys(was.geo));
+    state = reduce(
+      state,
+      act.stationMoved({
+        stationId: station,
+        geo: reordered,
+        what: "the move of the station",
+      }),
+    );
+    expect(changeCount(state)).toBe(0);
+  });
+
   // Why (found by the "undoing everything" property, seed 1254187575): a
   // save can write an item at a local offset under a MOVED frame - here
   // the station moved down, its note back up to where it stood, then a
