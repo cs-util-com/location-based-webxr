@@ -20,6 +20,7 @@ import {
   serializeTourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import {
   deletedKey,
@@ -35,9 +36,12 @@ import {
   writeDraftBase,
   writeDraftEdit,
   writeDraftDeletion,
+  writeDraftLiveRecord,
   writeDraftMeta,
   writeDraftObject,
 } from "./draft-persistence.js";
+import "./test-support/v3-tour.js";
+import { withTourContent } from "./tour-content.js";
 import type { VisitLogEntry } from "./visit-log.js";
 import { objectContentKey } from "./authoring-draft.js";
 
@@ -629,10 +633,11 @@ describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", (
   // Why this matters: drafts live on the creator's phone across app
   // updates. A draft written by the pre-K1 app (format version 1) must load
   // with every object and photo - a draft that silently stopped loading
-  // after an update would cost the creator a walk they cannot repeat. Its
-  // Finish holds pins and photos only, so it is written as version 1, which
-  // pre-K1 builds still open (K1 milestone review R10).
-  it("loads a v1 draft from the files the old app wrote, and finishes it as version 1", async () => {
+  // after an update would cost the creator a walk they cannot repeat. A
+  // draft holds world poses, not a tour file, so it needs no migration: its
+  // Finish writes version 3 with every object in a station (tour editor
+  // plan W3).
+  it("loads a v1 draft from the files the old app wrote, and finishes it as version 3", async () => {
     const store = memoryStore();
     // The files exactly as the pre-K1 app wrote them (literal keys and
     // records, not this version's writers).
@@ -671,13 +676,24 @@ describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", (
     expect(stored?.draft.objects.map((o) => o.id)).toEqual(["p1", "f1"]);
     expect(stored?.photos.has("f1")).toBe(true);
     const finished: unknown = JSON.parse(
-      serializeTourManifest({
-        ...createEmptyTourManifest(),
-        objects: [...(stored?.draft.objects ?? [])],
-      }),
+      serializeTourManifest(
+        withTourContent(createEmptyTourManifest(), {
+          objects: [...(stored?.draft.objects ?? [])],
+        }),
+      ),
     );
-    expect(finished).toMatchObject({ version: 1 });
-    expect(parseTourManifest(finished).objects).toEqual(stored?.draft.objects);
+    expect(finished).toMatchObject({ version: 3, minor: 0 });
+    const read = tourObjects(parseTourManifest(finished));
+    expect(read.map((o) => [o.id, o.kind])).toEqual([
+      ["p1", "pin"],
+      ["f1", "photo"],
+    ]);
+    for (const [i, o] of read.entries()) {
+      const draft = stored!.draft.objects[i]!;
+      expect(o.geo.lat).toBeCloseTo(draft.geo.lat, 9);
+      expect(o.geo.lon).toBeCloseTo(draft.geo.lon, 9);
+      expect(o.geo.alt).toBeCloseTo(draft.geo.alt, 6);
+    }
   });
 });
 
@@ -761,6 +777,41 @@ describe("writeDraftEdit (M6 E2p)", () => {
     };
     await writeDraftMeta(store, META);
     expect(await writeDraftEdit(store, pin("a"), undefined, "k")).toBe(true);
+  });
+});
+
+describe("writeDraftLiveRecord", () => {
+  // Why: a tombstone outranks a record at the read, so a live record of an
+  // id an older draft deleted must take that tombstone away - or the next
+  // read offers to delete what was just edited. Only once the record
+  // landed: removed after a refused record, the read would see neither,
+  // and an earlier deletion would be lost without the edit replacing it.
+  it("takes the id's tombstone away once the record landed", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftDeletion(store, "a");
+    expect(
+      await writeDraftLiveRecord(store, pin("a"), undefined, undefined),
+    ).toBe(true);
+    expect(store.files.has(deletedKey("a"))).toBe(false);
+    const read = await readDraft(store);
+    expect(read?.draft.deleted).toEqual([]);
+    expect(read?.draft.objects.map((o) => o.id)).toEqual(["a"]);
+  });
+
+  it("keeps the tombstone when the record does not land", async () => {
+    const inner = memoryStore();
+    const store: DraftFileStore = {
+      ...inner,
+      put: (key, data) =>
+        key === objectKey("a") ? Promise.resolve(false) : inner.put(key, data),
+    };
+    await writeDraftMeta(store, META);
+    await writeDraftDeletion(store, "a");
+    expect(
+      await writeDraftLiveRecord(store, pin("a"), undefined, undefined),
+    ).toBe(false);
+    expect(inner.files.has(deletedKey("a"))).toBe(true);
   });
 });
 

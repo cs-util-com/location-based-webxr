@@ -33,7 +33,7 @@ function memoryStore() {
 describe("defaultPosterFields", () => {
   it("fills in the owner's wording, and the tour's name as the title", () => {
     expect(DEFAULT_EXPLANATION).toBe("AR tour starts here");
-    expect(DEFAULT_CALL_TO_ACTION).toBe("Scan with your phone camera");
+    expect(DEFAULT_CALL_TO_ACTION).toBe("Scan with Chrome on Android");
     expect(defaultPosterFields("Harbour Lights")).toEqual({
       title: "Harbour Lights",
       explanation: DEFAULT_EXPLANATION,

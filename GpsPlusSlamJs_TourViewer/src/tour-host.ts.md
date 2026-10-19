@@ -35,6 +35,11 @@ offered). Plan:
   server: the same place and
   name). Null for Google Drive, whose numbered steps come from the link
   itself (`driveReplaceSteps`, which knows the file's name).
+- `hostReplaceOnComputer(host, fileName)` - the same on a computer, for
+  the desktop editor's Done (tour editor plan 2026-10-17-1816, W2): names
+  the saved file, and Drive included (the Drive website's upload with
+  "Replace existing file"). Both read one sentence per host, so the
+  phone's and the computer's words cannot drift apart.
 - `needsStarterZip(host)` - every cloud host needs a file before it gives a
   link; an own server does not.
 - `readTourHost(store)` / `writeTourHost(store, host | null)` - the choice (null clears it) under
@@ -53,5 +58,6 @@ offered). Plan:
 
 `tour-host.test.ts` - the host list and order, the steps of each, the own
 server's headers, the replace text per host (one host each, none for
-Drive), the starter-zip rule, the stored round trip, unknown
+Drive), the computer's replace text (every host, Drive included, naming
+the file; the phone's words pinned unchanged), the starter-zip rule, the stored round trip, unknown
 values and throwing stores.

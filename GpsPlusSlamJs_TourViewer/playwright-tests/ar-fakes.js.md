@@ -15,6 +15,11 @@ camera, so `installTourViewerArFakes(page)` installs
   GPS fixes into the app store, so the mint gate and placement unlock.
   Shared by `ar-mode.spec.js`, `object-editing.spec.js` and
   `ar-layout.spec.js` (it was copied into the first two).
+- `forceTrackingReady(page)` - dispatches the tracking-quality slice's own
+  `reportUpdated` with `state: "ok"`, so the alignment is ready without a
+  code: the walk's photos place and the visitor's stations are judged.
+  Shared by `ar-mode.spec.js` and `sample-tour.spec.js` (moved out of the
+  first when the second needed it, r881).
 - `standAt(page, north, east, second)` - one device fix with the phone
   `north`/`east` metres from the fakes' zero, its AR pose taken back through
   the store's current alignment, so the camera stands exactly there. Shared
@@ -129,8 +134,14 @@ guarantee it relies on is unit-tested in `src/seams.test.ts`.
   JSON entry's text.
 - `levelTexts(bytes)` returns the level files (`qr/*.json`) by entry name,
   as text.
-- `downloadedZip(page, index)` returns the entry names, the manifest and
-  the level files of the n-th download in the fakes' `downloads`.
+- `worldManifest(text)` parses a `tour.json` text and adds its pins and
+  photos in the world as `objects` (the framework's `tourObjects`;
+  version 3 keeps them in stations, tour editor plan W3). The world view
+  runs the core's licensed geodesy, so the first call activates the
+  licence with a `NullStorageBackend` store, as the app does at boot.
+- `downloadedZip(page, index)` returns the entry names, the manifest (by
+  `worldManifest`) and the level files of the n-th download in the fakes'
+  `downloads`.
 - `finishAndDownload(page, index)` taps Finish, waits for THIS rebuild,
   then for the Finish's own save (field test 2, F4) to land as the
   `index`-th download. The result line keeps the Finish's sentences under

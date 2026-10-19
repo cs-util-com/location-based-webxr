@@ -109,7 +109,7 @@ lives here.
   store: it neither dispatches `odometryTrackingRestarted` /
   `arLoopClosureDetected` nor wires the framework's live loop-closure
   handler. The session hook `onRestarted` is wired in `ar-mode.ts` only,
-  and only TELLS (the `?mesh=1` cursor clears its raw-WebXR grid -
+  and only TELLS (the mesh cursor clears its raw-WebXR grid -
   follow-up F11, owner 2026-10-13): it drops the restart's payload and
   hands the app a `() => void`, so no action can be built from it, and the
   two actions stay banned by name (r837 review #4).

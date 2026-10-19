@@ -33,5 +33,62 @@ module.exports = {
       from: { path: "^src/[^/]+\\.ts$", pathNot: "\\.test\\.ts$" },
       to: { path: "^src/editor/" },
     },
+
+    // The tour a creator edits has ONE copy: the tour document
+    // (`tour-document.ts`, D29-D31). Its rules - the object edits, the
+    // Finish's manifest, the stations' content, the objects a written file
+    // holds and how a change applies to them (`authoring-draft.ts`'s
+    // `hostedObjects`, `applyObjectChanges`; the r875 milestone review #6:
+    // a rule is per module, so the draft's other rules are protected with
+    // them and the draft's own modules are named) - are applied by its
+    // reducers, so a page that imported them directly could keep a second
+    // copy that means something else (the split that earned the root rule
+    // "App state lives in the Redux store"). Only the document, the shared
+    // pure modules themselves and tests may import them; every other
+    // importer is named below with its reason.
+    {
+      name: "document-rules-through-tour-document",
+      severity: "error",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "\\.test\\.ts$",
+          "^src/test-support/",
+          // The document and the shared pure modules (each other's peers),
+          // named one by one: a new `tour-document-*` module is not exempt
+          // until it is listed here. `tour-document-draft.ts` is the draft's
+          // follower; `tour-document-save.ts` is the document's save - I/O,
+          // the rebuild and the photo bake - whose snapshot and landing
+          // read the rules.
+          "^src/tour-document\\.ts$",
+          "^src/tour-document-draft\\.ts$",
+          "^src/tour-document-save\\.ts$",
+          "^src/(object-edits|finish-rebuild|tour-content|authoring-draft|capture-bake)\\.ts$",
+          // Read-only helpers, permanent: the visitor's photo spots
+          // (`worldCaptureSpots`), the AR placement's world view
+          // (`tourObjectsOf`).
+          "^src/viewer-placement\\.ts$",
+          "^src/creator-placement\\.ts$",
+          // The draft's own modules, permanent: its storage (`withBaseKey`,
+          // the draft's types) and the desktop's draft store (the offer
+          // rules, and `hostedObjects` to tell what the opened file holds).
+          "^src/draft-persistence\\.ts$",
+          "^src/editor/editor-draft\\.ts$",
+          // ...and the phone's draft store, its peer (the offer rules,
+          // `hostedObjects`); it reads the tour only through the document.
+          "^src/creator-draft\\.ts$",
+          // TEMPORARY - the phone's Finish: its rebuild I/O
+          // (`rebuildFinishedTour`, `captureSpotsForRebuild`,
+          // `finishedFileName`) - until it saves through the document's
+          // save (`tour-document-save.ts`, the desktop editor's already;
+          // follow-up of D30). The phone's tour itself is the document
+          // since its adoption (`creator-document.ts`).
+          "^src/creator-finish\\.ts$",
+        ],
+      },
+      to: {
+        path: "^src/(object-edits|finish-rebuild|tour-content|authoring-draft)\\.ts$",
+      },
+    },
   ],
 };

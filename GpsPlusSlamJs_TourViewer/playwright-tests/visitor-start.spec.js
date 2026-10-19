@@ -184,3 +184,52 @@ test("five taps on the tour's name reload the page to record this visit", async 
   expect(url.searchParams.get("qr")).toBe(SAMPLE);
   await expect(page.getByTestId("record-session")).toBeChecked();
 });
+
+test("a tour's details: its name in the tab, its description, the cover it chose, and its contact under an error", async ({
+  page,
+}) => {
+  // Why (tour editor plan 2026-10-17-1816, W2, D15): a creator now sets
+  // these in the editor. The visitor must see the cover they chose (here
+  // the SECOND photo, 3 px wide - the first is 1 px), the description, the
+  // tour's name as the page's title (what a shared link shows), and, when
+  // something goes wrong, who to ask.
+  await openAsNewVisitor(
+    page,
+    "http://127.0.0.1:5197/ranges-ok/details-tour.zip",
+  );
+  await expect(page.getByTestId("visitor-title")).toHaveText("Harbour Lights", {
+    timeout: 15000,
+  });
+  await expect(page).toHaveTitle("Harbour Lights");
+  await expect(page.getByTestId("visitor-description")).toHaveText(
+    "Six places along the old harbour.",
+  );
+  const cover = page.getByTestId("visitor-cover");
+  await expect(cover).toBeVisible();
+  await expect
+    .poll(() =>
+      cover
+        .locator("img")
+        .evaluate((img) => /** @type {HTMLImageElement} */ (img).naturalWidth),
+    )
+    .toBe(3);
+  // No error, no contact line.
+  const contact = page.getByTestId("error-contact");
+  await expect(contact).toBeHidden();
+  // An error said while this tour is open names its contact.
+  await page.evaluate(() => {
+    const box = /** @type {HTMLElement} */ (document.getElementById("error"));
+    box.textContent = "Something went wrong.";
+  });
+  await expect(contact).toBeVisible();
+  await expect(contact.locator("a")).toHaveText("guide@example.org");
+  await expect(contact.locator("a")).toHaveAttribute(
+    "href",
+    "mailto:guide@example.org",
+  );
+  await page.evaluate(() => {
+    /** @type {HTMLElement} */ (document.getElementById("error")).textContent =
+      "";
+  });
+  await expect(contact).toBeHidden();
+});

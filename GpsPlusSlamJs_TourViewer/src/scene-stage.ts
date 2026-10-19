@@ -8,7 +8,9 @@
  * One thing at a time: a new figure or model replaces the previous one, and
  * `clear` removes it (the story ended or was stopped). A decode that lands
  * after the stage moved on is disposed, never shown. A station with no
- * position yet does not fail the show: what was decoded waits for it.
+ * position yet does not fail the show: what was decoded waits for it, and
+ * the show's `onWaiting` says so (the guide holds the pose back until the
+ * alignment has a heading, which can take a walk).
  *
  * The character's size and placement are the K4 build agent's choice, not
  * the owner's (the plan leaves them open; revised by K4 review R6): 1.7 m
@@ -40,7 +42,8 @@ export interface StagePose {
 export interface SceneStageDeps {
   getScene(): Object3D | null;
   /** The station's pose at the scene root, or null when it cannot be
-   *  placed yet (no GPS zero). */
+   *  placed yet (no GPS zero, or no heading yet: the guide's
+   *  `figurePoseOf`). */
   poseOf(stationId: string): StagePose | null;
   /** Decode a figure within the decode caps (`station-prefetch.ts`
    *  `decodeFigure`: its size read from its own header). */
@@ -50,8 +53,18 @@ export interface SceneStageDeps {
 }
 
 export interface SceneStage {
-  showCharacter(stationId: string, image: Blob): Promise<void>;
-  showModel(stationId: string, model: Blob): Promise<void>;
+  /** Settles once the figure stands (or the stage moved on). `onWaiting`
+   *  is called once if, decoded, it waits for the station's pose. */
+  showCharacter(
+    stationId: string,
+    image: Blob,
+    onWaiting?: () => void,
+  ): Promise<void>;
+  showModel(
+    stationId: string,
+    model: Blob,
+    onWaiting?: () => void,
+  ): Promise<void>;
   clear(): void;
   /** Turn a standing character towards the visitor (NUE). */
   faceVisitor(visitorNue: readonly [number, number, number]): void;
@@ -95,6 +108,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     stationId: string,
     root: Object3D,
     character: boolean,
+    onWaiting: (() => void) | undefined,
   ): Promise<void> {
     if (mine !== token) {
       disposeObject3D(root);
@@ -103,6 +117,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     if (tryMount(stationId, root, character)) return Promise.resolve();
     return new Promise((settle) => {
       waiting = { mine, stationId, root, character, settle };
+      onWaiting?.();
     });
   }
 
@@ -135,7 +150,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
   }
 
   return {
-    async showCharacter(stationId, image) {
+    async showCharacter(stationId, image, onWaiting) {
       clear();
       const mine = token;
       const texture = await deps.decodeTexture(image);
@@ -159,14 +174,14 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       // Feet on the station's altitude.
       plane.position.set(0, CHARACTER_HEIGHT_M / 2, 0);
       plane.name = "station-character";
-      await mount(mine, stationId, plane, true);
+      await mount(mine, stationId, plane, true, onWaiting);
     },
-    async showModel(stationId, model) {
+    async showModel(stationId, model, onWaiting) {
       clear();
       const mine = token;
       const root = await deps.loadModel(model);
       root.name = "station-model";
-      await mount(mine, stationId, root, false);
+      await mount(mine, stationId, root, false, onWaiting);
     },
     clear,
     faceVisitor(visitor) {

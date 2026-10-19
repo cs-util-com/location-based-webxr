@@ -13,12 +13,12 @@ import {
   readStoredEntryBytes,
 } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
 import {
-  createEmptyTourManifest,
   parseTourManifest,
   serializeTourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { rebuildFinishedTour } from "./finish-rebuild.js";
+import { tourOf, withWorldObjects } from "./test-support/v3-tour.js";
 import { openTourFile } from "./tour-session.js";
 
 const HOSTED = ["a", "b", "c", "d"] as const;
@@ -51,17 +51,14 @@ describe("rebuildFinishedTour (property)", () => {
     const zip = await packFilesAsZip([
       {
         path: "tour.json",
-        data: serializeTourManifest({
-          ...createEmptyTourManifest(),
-          objects: hosted,
-        }),
+        data: serializeTourManifest(tourOf(hosted)),
       },
       ...HOSTED.map((id) => ({ path: `content/${id}.jpg`, data: id })),
     ]);
     const tour = await openTourFile(
       new File([zip], "t.zip", { type: "application/zip" }),
     );
-    const manifest = { ...createEmptyTourManifest(), objects: hosted };
+    const manifest = tourOf(hosted);
     await fc.assert(
       fc.asyncProperty(
         fc.subarray([...HOSTED]),
@@ -83,10 +80,12 @@ describe("rebuildFinishedTour (property)", () => {
           });
           // Read from the zip's bytes, not the in-memory report (E0 review #1).
           const bytes = new Uint8Array(await result!.blob.arrayBuffer());
-          const carried = parseTourManifest(
-            JSON.parse(
-              new TextDecoder().decode(
-                readStoredEntryBytes(bytes, "tour.json"),
+          const carried = withWorldObjects(
+            parseTourManifest(
+              JSON.parse(
+                new TextDecoder().decode(
+                  readStoredEntryBytes(bytes, "tour.json"),
+                ),
               ),
             ),
           );
@@ -96,7 +95,9 @@ describe("rebuildFinishedTour (property)", () => {
             ...HOSTED.filter((id) => !deleted.includes(id)),
             ...added,
           ];
-          expect(ids).toEqual(expected);
+          // As a set: since version 3 the order is the stations' (a new
+          // pin joins the nearest station within R, D20).
+          expect([...ids].sort()).toEqual([...expected].sort());
           const byId = new Map(carried.objects.map((o) => [o.id, o]));
           // A deletion wins over an edit of the same id.
           for (const id of edited.filter((e) => !deleted.includes(e))) {

@@ -101,23 +101,40 @@ export function hostStepParts(
   });
 }
 
+/** Why the file goes over the hosted one rather than beside it. */
+const KEEPS_LINK =
+  "so the link - and with it the printed code - stays the same.";
+
+/** How each host replaces a file under the same link. Google Drive's is
+ *  for a computer (the editor's Done, W2): on the phone its steps come from
+ *  the link itself (`driveReplaceSteps`), which knows the file's name. */
+const REPLACE_HOW: Readonly<Record<TourHost, string>> = {
+  drive:
+    'In Google Drive (drive.google.com), open the folder with your tour, choose New, then File upload, pick the file and choose "Replace existing file" - Drive replaces only a file of the same name. If Drive does not ask, it uploaded a second copy: delete that copy.',
+  dropbox:
+    "In Dropbox, upload it into the same folder with the same name so it overwrites the old file - never delete the old one first, which ends the link - then open your link once to check.",
+  onedrive:
+    'In OneDrive, upload it into the same folder with the same name and choose "Replace".',
+  github: "On GitHub, commit it over the same path in the same repository.",
+  own: "Put it on your server at the same place, under the same name.",
+};
+
 /** How the saved zip replaces the hosted one under the same link, so the
  *  printed code keeps working (step 6). Google Drive: null - its steps
  *  come from the link itself (`driveReplaceSteps`), which knows the
  *  file's name. */
-const HOST_REPLACE: Readonly<Record<TourHost, string | null>> = {
-  drive: null,
-  dropbox:
-    "Last thing: upload this zip over the one at your link, so the link - and with it the printed code - stays the same. In Dropbox, upload it into the same folder with the same name so it overwrites the old file - never delete the old one first, which ends the link - then open your link once to check.",
-  onedrive:
-    'Last thing: upload this zip over the one at your link, so the link - and with it the printed code - stays the same. In OneDrive, upload it into the same folder with the same name and choose "Replace".',
-  github:
-    "Last thing: upload this zip over the one at your link, so the link - and with it the printed code - stays the same. On GitHub, commit it over the same path in the same repository.",
-  own: "Last thing: upload this zip over the one at your link, so the link - and with it the printed code - stays the same. Put it on your server at the same place, under the same name.",
-};
-
 export function hostReplaceText(host: TourHost): string | null {
-  return HOST_REPLACE[host];
+  if (host === "drive") return null;
+  return `Last thing: upload this zip over the one at your link, ${KEEPS_LINK} ${REPLACE_HOW[host]}`;
+}
+
+/** The same on a computer (the editor's Done, tour editor plan
+ *  2026-10-17-1816, W2), naming the saved file, Drive included. */
+export function hostReplaceOnComputer(
+  host: TourHost,
+  fileName: string,
+): string {
+  return `Upload ${fileName} over the file at your tour's link, ${KEEPS_LINK} ${REPLACE_HOW[host]}`;
 }
 
 /** The hostnames each cloud host's links (share pages and their raw

@@ -195,11 +195,11 @@ export interface TourViewerSeams {
     arWorldGroup: Object3D,
     onSelect?: (tap: SelectTargetRay | null) => void,
     /** A surface point from the app's mesh, preferred over the hit-test
-     *  each frame (polish round M5, `?mesh=1`). */
+     *  each frame (polish round M5, the mesh cursor). */
     surfacePick?: () => SurfacePoint | null,
   ): HitTestReticleHandle;
   /** The surroundings as a mesh for the creator's cursor (polish round M5,
-   *  `?mesh=1`): fed from the store's depth samples, meshed in a worker
+   *  off with `?mesh=0`): fed from the store's depth samples, meshed in a worker
    *  under `parent` (`mesh-surface.ts`). A seam because the e2e scene has
    *  no depth to mesh. */
   startMeshSurface(parent: Object3D, store: DepthSampleStore): MeshSurface;
@@ -269,7 +269,9 @@ export const realSeams: TourViewerSeams = {
   createQrFrontEnd: () => createBarcodeDetectorFrontEnd(),
   solveQrPose: (input) => solveQrPose({ ...input, solver: pnpSolver }),
   estimateQrPrintSize: (entries) => estimateQrSizeFromParallax(entries),
-  // Depth is OFF in this app (QD-5), so the projection comes from the
+  // The QR pipelines never use depth (QD-5; a creator's depth feeds only
+  // the mesh cursor and the recording, and a visitor's is off unless
+  // recorded), so the projection comes from the
   // in-session three camera — WebXR owns its projectionMatrix during an
   // immersive session (the wayfinding-placement precedent) — scaled to the
   // DETECTOR buffer's width/height, never the render size.

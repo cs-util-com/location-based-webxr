@@ -20,13 +20,10 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  createEmptyTourManifest,
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
-import { objectContentKey } from "../authoring-draft.js";
-import { recordUndoDelete } from "../draft-actions.js";
 import { META_KEY, objectKey, readDraft } from "../draft-persistence.js";
 import {
   createEditorDraft,
@@ -36,6 +33,8 @@ import {
   type NoBackupReason,
 } from "./editor-draft.js";
 import type { EditorLock } from "./save-target.js";
+import { tourOf } from "../test-support/v3-tour.js";
+import { hostedObjects } from "../authoring-draft.js";
 
 /** One browser's draft directories: namespace -> files. `failIn` makes
  *  one namespace's writes refuse; `holdPuts` holds every write until
@@ -202,7 +201,7 @@ function photo(id: string, lat = 48.5): TourObject {
 }
 
 function tour(...objects: TourObject[]): TourManifest {
-  return { ...createEmptyTourManifest(), objects };
+  return tourOf(objects);
 }
 
 const K1 = "local-file:00000000000000000000000000000001";
@@ -222,7 +221,8 @@ describe("createEditorDraft", () => {
     const stored = await readDraft((await b.open(editorDraftKey(K1)))!);
     expect(stored?.draft.objects.map((o) => o.id)).toEqual(["a"]);
     expect(stored?.draft.bases?.get("a")).toEqual({
-      seen: [objectContentKey(pin("a"))],
+      // The opened version as the file holds it (in its station).
+      seen: [hostedObjects(opened).key("a")],
       written: [],
     });
   });
@@ -400,6 +400,35 @@ describe("createEditorDraft", () => {
     ]);
   });
 
+  it("a key move onto a file whose namespace holds an old deletion of the id carries the edit, never the deletion", async () => {
+    // Why: namespaces outlive their sessions (one is emptied only once a
+    // key move landed, and an unanswered draft stays), so the key a save
+    // moves to can already hold a tombstone for an id it carries - a copy
+    // of the same tour edited there earlier. The carried record must take
+    // it away, as every live record does (`writeDraftLiveRecord`), or the
+    // next open offers to delete the note just edited.
+    const b = browser();
+    const original = tour(pin("a"), pin("b"));
+    const earlier = draftIn(b);
+    await earlier.open(K2, original);
+    void earlier.saveDeletion("a");
+    await earlier.idle();
+    earlier.close();
+    const draft = draftIn(b);
+    await draft.open(K1, original);
+    void draft.saveObject(pin("b", "saved"));
+    const written = tour(pin("a"), pin("b", "saved"));
+    draft.writes().built(written);
+    // Made while the save ran: carried to the new key.
+    void draft.saveObject(pin("a", "during"));
+    draft.writes().landed(written, K2);
+    await draft.idle();
+    draft.close();
+    const reopened = await draftIn(b).open(K2, written);
+    expect(reopened.offer?.deleted).toEqual([]);
+    expect(reopened.offer?.objects.map((o) => o.label)).toEqual(["during"]);
+  });
+
   it("Delete it takes the offer's records, never one edited since the open, and a later edit of a deleted one is kept", async () => {
     // Why (review #7): live edits win over an unanswered offer, and a
     // rejection must not hide a change made after it.
@@ -423,6 +452,29 @@ describe("createEditorDraft", () => {
     const reopened = await draftIn(b).open(K1, original);
     expect(reopened.offer?.objects.map((o) => o.label)).toEqual(["live a"]);
     expect(reopened.offer?.deleted).toEqual(["c"]);
+  });
+
+  // Why: an offered deletion's tombstone stays on disk until the creator
+  // answers, and the editor lets them edit the note meanwhile. The edit's
+  // record did not outrank that tombstone at the read, so the next open
+  // offered to delete the note just edited. A live record takes its id's
+  // tombstone away, as on the phone (`writeDraftLiveRecord`).
+  it("a note edited over an offered deletion is offered as the edit, never as deleted", async () => {
+    const b = browser();
+    const earlier = draftIn(b);
+    const original = tour(pin("a"), pin("b"));
+    await earlier.open(K1, original);
+    void earlier.saveDeletion("b");
+    await earlier.idle();
+    earlier.close();
+    const draft = draftIn(b);
+    expect((await draft.open(K1, original)).offer?.deleted).toEqual(["b"]);
+    expect(await draft.saveObject(pin("b", "live b"))).toBe(true);
+    await draft.idle();
+    draft.close();
+    const reopened = await draftIn(b).open(K1, original);
+    expect(reopened.offer?.deleted).toEqual([]);
+    expect(reopened.offer?.objects.map((o) => o.label)).toEqual(["live b"]);
   });
 
   it("a rejected id whose files are gone is dropped from the meta at the next open, so a later edit of it is not hidden", async () => {
@@ -522,11 +574,10 @@ describe("createEditorDraft", () => {
     await draft.open(K1, tour(pin("a")));
     void draft.saveObject(pin("a", "edited"));
     void draft.saveDeletion("a");
-    await recordUndoDelete(draft, {
-      object: pin("a"),
-      placed: { object: pin("a", "edited") },
-      hosted: true,
-    });
+    // An undo's writes, in the order the document's follower issues
+    // them (`tour-document-draft.ts`): the record, then the tombstone.
+    void draft.saveObject(pin("a", "edited"));
+    await draft.forgetDeletion("a");
     draft.close();
     const { offer } = await draftIn(b).open(K1, tour(pin("a")));
     expect(offer?.objects.map((o) => o.label)).toEqual(["edited"]);
@@ -601,11 +652,8 @@ describe("createEditorDraft", () => {
     void first.saveObject(photo("p", 48.6));
     void first.saveObject(photo("q", 48.7));
     void first.saveDeletion("q");
-    await recordUndoDelete(first, {
-      object: photo("q"),
-      placed: { object: photo("q", 48.7) },
-      hosted: true,
-    });
+    void first.saveObject(photo("q", 48.7));
+    await first.forgetDeletion("q");
     await first.idle();
     first.close();
     const { offer, superseded } = await draftIn(b).open(K1, opened);
@@ -1035,6 +1083,30 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
   });
 
+  it("a record whose station poses do not read is no offer, and goes", async () => {
+    // Why (the r875 milestone review #1): the poses are parsed as the
+    // format parses a pose; one that does not read costs the record, as
+    // any unreadable record does.
+    const b = browser();
+    const first = draftIn(b);
+    await first.open(K1, tour(pin("a")));
+    await first.idle();
+    first.close();
+    b.spaces.get(editorDraftKey(K1))?.set(
+      SETTINGS,
+      JSON.stringify({
+        // A real change: only the pose that does not read keeps it from
+        // being offered.
+        needsNoGps: true,
+        stations: [{ id: "s", geo: { lat: 200, lon: 9, alt: 0 } }],
+      }),
+    );
+    const again = draftIn(b);
+    expect((await again.open(K1, tour(pin("a")))).offer).toBeNull();
+    await again.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
+  });
+
   it("a settings write that does not land is said once", async () => {
     const b = browser();
     const draft = draftIn(b);
@@ -1270,5 +1342,151 @@ describe("createEditorDraft, the PR #626 bot findings", () => {
     expect(draft.said).toEqual([]);
     expect(backedUp).toBe(true);
     expect(draft.backsUp()).toBe(true);
+  });
+});
+
+/**
+ * Why (tour editor plan 2026-10-17-1816, W2): the tour's details join
+ * "needs no GPS" in the ONE settings record, by the same rules - kept
+ * while the file does not carry them, offered by a later open, spent by a
+ * file that does. A record written before the details existed carries no
+ * opinion about them, so it never offers to change (or blank) them.
+ */
+describe("createEditorDraft, the tour's details (W2)", () => {
+  const named = (title: string, ...objects: TourObject[]): TourManifest => ({
+    ...tour(...objects),
+    title,
+  });
+
+  it("changed details survive a closed tab, and the offer names them", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = named("Old", pin("a"));
+    await first.open(K1, opened);
+    await first.saveSettings({
+      needsNoGps: false,
+      details: { title: "New", contact: "guide@example.org" },
+    });
+    await first.idle();
+    first.close();
+    const { offer } = await draftIn(b).open(K1, opened);
+    expect(offer?.settings).toEqual({
+      needsNoGps: false,
+      details: { title: "New", contact: "guide@example.org" },
+    });
+    expect(offer?.text).toContain("the tour's details (name, contact)");
+    expect(offer?.settingsWhat).toBe("this tour's details");
+  });
+
+  it("details put back to the file's own leave nothing to offer", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = named("Old", pin("a"));
+    await first.open(K1, opened);
+    void first.saveSettings({ needsNoGps: false, details: { title: "New" } });
+    void first.saveSettings({ needsNoGps: false, details: { title: "Old" } });
+    await first.idle();
+    first.close();
+    expect((await draftIn(b).open(K1, opened)).offer).toBeNull();
+  });
+
+  it("a file that carries the details spends the record", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    await first.open(K1, named("Old", pin("a")));
+    void first.saveSettings({ needsNoGps: false, details: { title: "New" } });
+    await first.idle();
+    first.close();
+    expect(
+      (await draftIn(b).open(K1, named("New", pin("a")))).offer,
+    ).toBeNull();
+  });
+
+  it("a record from before the details offers only its setting, whatever the file's name", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = named("Old", pin("a"));
+    await first.open(K1, opened);
+    void first.saveSettings({ needsNoGps: true });
+    await first.idle();
+    first.close();
+    const { offer } = await draftIn(b).open(K1, opened);
+    expect(offer?.settings).toEqual({ needsNoGps: true });
+    expect(offer?.text).toContain('"This tour needs no GPS" turned on');
+    expect(offer?.text).not.toContain("details");
+  });
+
+  it("both at once are named together", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = named("Old", pin("a"));
+    await first.open(K1, opened);
+    void first.saveSettings({ needsNoGps: true, details: { title: "New" } });
+    await first.idle();
+    first.close();
+    const { offer } = await draftIn(b).open(K1, opened);
+    expect(offer?.text).toContain(
+      `"This tour needs no GPS" turned on, and the tour's details (name)`,
+    );
+    expect(offer?.settingsWhat).toBe("this tour's settings");
+  });
+
+  it("a record's cover naming a photo the file no longer has is no opinion: spent by that file, and never offered", async () => {
+    // Why (M4a review #1): the record kept the cover of a deleted photo,
+    // so the file written without it never spent the record, and every
+    // later open offered "the tour's details (cover)" - a change no save
+    // can make, whose Restore then said nothing was restored.
+    const b = browser();
+    const first = draftIn(b);
+    const withPhoto: TourManifest = {
+      ...named("Old", photo("f"), photo("g")),
+      description: "Up.",
+      cover: "f",
+    };
+    await first.open(K1, withPhoto);
+    void first.saveSettings({
+      needsNoGps: false,
+      details: { title: "Old", description: "Up.", cover: "f" },
+    });
+    const without: TourManifest = {
+      ...named("Old", photo("g")),
+      description: "Up.",
+    };
+    first.writes().built(without);
+    first.writes().landed(without, K1);
+    await first.idle();
+    first.close();
+    expect((await draftIn(b).open(K1, without)).offer).toBeNull();
+    // A record whose other details still differ is offered for them alone.
+    const second = draftIn(b);
+    await second.open(K1, without);
+    void second.saveSettings({
+      needsNoGps: false,
+      details: { title: "New", description: "Up.", cover: "f" },
+    });
+    await second.idle();
+    second.close();
+    const { offer } = await draftIn(b).open(K1, without);
+    expect(offer?.text).toContain("the tour's details (name)");
+    expect(offer?.settings?.details).toEqual({
+      title: "New",
+      description: "Up.",
+    });
+  });
+
+  it("an unreadable details part makes the record unreadable: no offer", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = named("Old", pin("a"));
+    await first.open(K1, opened);
+    await first.idle();
+    first.close();
+    b.spaces
+      .get(editorDraftKey(K1))
+      ?.set(
+        "settings",
+        JSON.stringify({ needsNoGps: false, details: { title: 7 } }),
+      );
+    expect((await draftIn(b).open(K1, opened)).offer).toBeNull();
   });
 });

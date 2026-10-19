@@ -10,13 +10,14 @@ import {
   SKIP_SUGGEST_BASE_MS,
   SKIP_SUGGEST_SLOW_MPS,
   skipSuggestAfterMs,
+  stationTitle,
 } from "./station-run";
 import { ACCURACY_CEILING_M } from "./station-bands";
 
 /**
  * Why these tests matter: the station run is the tour's whole game state on
- * the visitor's phone. A station found from the wrong side of town, a code
- * that still counts after it was moved, an order that offers a station
+ * the visitor's phone. A station found from the wrong side of town or
+ * before the visitor stands inside its radius (D16), an order that offers a station
  * nobody can reach with no way past it (plan §8 D5), or a station that
  * quietly drops out of the order would each end a castle tour half-way.
  * The examples pin each rule; the properties walk generated tours to the
@@ -32,7 +33,8 @@ const step = {
 function station(id: string, extra: Partial<TourStation> = {}): TourStation {
   return {
     id,
-    anchor: { geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 } },
+    geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
+    items: [],
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
@@ -51,16 +53,12 @@ describe("createStationRun: states", () => {
       nowMs: 0,
     });
     expect(run.status("a")?.state).toBe("waiting");
-    expect(
-      run.observe({ distances: at({ a: 100 }), accuracyM: 4, nowMs: 1 }),
-    ).toEqual([]);
-    expect(
-      run.observe({ distances: at({ a: 4 }), accuracyM: 4, nowMs: 3 }),
-    ).toEqual([{ kind: "found", id: "a", via: "gps" }]);
+    expect(run.observe({ distances: at({ a: 100 }), nowMs: 1 })).toEqual([]);
+    expect(run.observe({ distances: at({ a: 4 }), nowMs: 3 })).toEqual([
+      { kind: "found", id: "a" },
+    ]);
     // Found never reverts, however far the noise throws the estimate.
-    expect(
-      run.observe({ distances: at({ a: 300 }), accuracyM: 4, nowMs: 4 }),
-    ).toEqual([]);
+    expect(run.observe({ distances: at({ a: 300 }), nowMs: 4 })).toEqual([]);
     expect(run.status("a")?.state).toBe("found");
     expect(run.finish("a", 5)).toEqual([
       { kind: "done", id: "a", skipped: false },
@@ -81,45 +79,86 @@ describe("createStationRun: states", () => {
       nowMs: 0,
     });
     for (const d of [29, 12, 33, 35, 20]) {
-      expect(
-        run.observe({ distances: at({ a: d }), accuracyM: 4, nowMs: d }),
-      ).toEqual([]);
+      expect(run.observe({ distances: at({ a: d }), nowMs: d })).toEqual([]);
       expect(run.status("a")?.state).toBe("waiting");
     }
   });
 
-  it("does not judge distances on a fix too poor to place anything (above the accuracy ceiling)", () => {
+  it("is found by its radius alone: at the radius itself yes, a centimetre beyond no (D16)", () => {
+    // Why this test matters (tour editor plan D16): arrival depends only
+    // on the tour's settings, how close one must be - no accuracy widens
+    // the radius and no floor narrows it.
+    const run = createStationRun({
+      stations: [station("a", { foundRadiusM: 2 }), station("b")],
+      order: "any",
+      nowMs: 0,
+    });
+    expect(
+      run.observe({ distances: at({ a: 2.01, b: 5.01 }), nowMs: 1 }),
+    ).toEqual([]);
+    expect(run.observe({ distances: at({ a: 2, b: 5 }), nowMs: 2 })).toEqual([
+      { kind: "found", id: "a" },
+      { kind: "found", id: "b" },
+    ]);
+  });
+
+  // Why (PR #640 review): D16 forbids WIDENING the radius by the accuracy,
+  // not judging on a fix the guide itself calls too weak. A ±500 m
+  // cold-start fix inside a 10 m station latched "found" while the line
+  // said "GPS too weak to guide you". The run refuses to judge above the
+  // ceiling the line uses, so the line and the latch agree.
+  it("does not judge on a fix too weak to guide by: ±500 m inside a 10 m station is no arrival, ±5 m is", () => {
+    const run = createStationRun({
+      stations: [station("a", { foundRadiusM: 10 })],
+      order: "fixed",
+      nowMs: 0,
+    });
+    expect(
+      run.observe({ distances: at({ a: 3 }), nowMs: 1, accuracyM: 500 }),
+    ).toEqual([]);
+    expect(run.status("a")?.state).toBe("waiting");
+    expect(
+      run.observe({ distances: at({ a: 3 }), nowMs: 2, accuracyM: 5 }),
+    ).toEqual([{ kind: "found", id: "a" }]);
+  });
+
+  it.each([10, 24, 25, 26, 60, 500])(
+    "at ±%d m a position inside the radius finds the station exactly while the accuracy is within the ceiling",
+    (accuracyM) => {
+      const run = createStationRun({
+        stations: [station("a", { foundRadiusM: 10 })],
+        order: "fixed",
+        nowMs: 0,
+      });
+      run.observe({ distances: at({ a: 3 }), nowMs: 1, accuracyM });
+      expect(run.status("a")?.state).toBe(
+        accuracyM <= ACCURACY_CEILING_M ? "found" : "waiting",
+      );
+    },
+  );
+
+  it("judges an unknown accuracy (a position by a code alone) by the radius alone (D16)", () => {
     const run = createStationRun({
       stations: [station("a")],
       order: "fixed",
       nowMs: 0,
     });
     expect(
-      run.observe({
-        distances: at({ a: 1 }),
-        accuracyM: ACCURACY_CEILING_M + 1,
-        nowMs: 1,
-      }),
-    ).toEqual([]);
-    expect(
-      run.observe({ distances: at({ a: 1 }), accuracyM: null, nowMs: 1 }),
-    ).toEqual([]);
-    expect(run.status("a")?.state).toBe("waiting");
+      run.observe({ distances: at({ a: 4 }), nowMs: 1, accuracyM: null }),
+    ).toEqual([{ kind: "found", id: "a" }]);
   });
 
-  it("is found by its own code's lock from any distance, and only by its own code", () => {
+  it("judges nothing it has no distance for, and no non-finite distance", () => {
     const run = createStationRun({
-      stations: [station("a", { anchor: { code: "level-a" } })],
+      stations: [station("a")],
       order: "fixed",
       nowMs: 0,
     });
-    expect(run.codeLocked("level-b", 1)).toEqual([]);
-    expect(run.codeLocked("level-a", 2)).toEqual([
-      { kind: "found", id: "a", via: "code" },
-    ]);
-    expect(run.status("a")?.foundVia).toBe("code");
-    // A second lock changes nothing.
-    expect(run.codeLocked("level-a", 3)).toEqual([]);
+    expect(run.observe({ distances: at({}), nowMs: 1 })).toEqual([]);
+    expect(run.observe({ distances: at({ a: Number.NaN }), nowMs: 2 })).toEqual(
+      [],
+    );
+    expect(run.status("a")?.state).toBe("waiting");
   });
 
   it("a station whose every step was left out (a newer minor) is done the moment it is found", () => {
@@ -128,10 +167,8 @@ describe("createStationRun: states", () => {
       order: "fixed",
       nowMs: 0,
     });
-    expect(
-      run.observe({ distances: at({ a: 1 }), accuracyM: 4, nowMs: 1 }),
-    ).toEqual([
-      { kind: "found", id: "a", via: "gps" },
+    expect(run.observe({ distances: at({ a: 1 }), nowMs: 1 })).toEqual([
+      { kind: "found", id: "a" },
       { kind: "done", id: "a", skipped: false },
       { kind: "offered", ids: ["b"] },
     ]);
@@ -141,15 +178,14 @@ describe("createStationRun: states", () => {
 describe("createStationRun: offering", () => {
   it("fixed: one station at a time, in list order; a station not offered is never found", () => {
     const run = createStationRun({
-      stations: [station("a"), station("b", { anchor: { code: "level-b" } })],
+      stations: [station("a"), station("b")],
       order: "fixed",
       nowMs: 0,
     });
     expect(run.offered()).toEqual(["a"]);
-    expect(
-      run.observe({ distances: at({ a: 500, b: 1 }), accuracyM: 4, nowMs: 1 }),
-    ).toEqual([]);
-    expect(run.codeLocked("level-b", 2)).toEqual([]);
+    expect(run.observe({ distances: at({ a: 500, b: 1 }), nowMs: 1 })).toEqual(
+      [],
+    );
     expect(run.status("b")?.state).toBe("waiting");
   });
 
@@ -160,7 +196,7 @@ describe("createStationRun: offering", () => {
       nowMs: 0,
     });
     expect(run.offered()).toEqual(["a", "b", "c"]);
-    run.observe({ distances: at({ b: 1 }), accuracyM: 4, nowMs: 1 });
+    run.observe({ distances: at({ b: 1 }), nowMs: 1 });
     run.finish("b", 2);
     expect(run.offered()).toEqual(["a", "c"]);
   });
@@ -200,8 +236,7 @@ describe("createStationRun: offering", () => {
       nowMs: 0,
     });
     expect(fixed.upcoming()).toBeNull();
-    fixed.codeLocked("x", 1);
-    fixed.observe({ distances: at({ a: 1 }), accuracyM: 4, nowMs: 1 });
+    fixed.observe({ distances: at({ a: 1 }), nowMs: 1 });
     expect(fixed.upcoming()).toBe("b");
     fixed.finish("a", 2);
     expect(fixed.upcoming()).toBeNull();
@@ -210,7 +245,7 @@ describe("createStationRun: offering", () => {
       order: "branch",
       nowMs: 0,
     });
-    branch.observe({ distances: at({ a: 1 }), accuracyM: 4, nowMs: 1 });
+    branch.observe({ distances: at({ a: 1 }), nowMs: 1 });
     expect(branch.upcoming()).toBe("c");
     // Under "any" every station not done is offered already.
     const any = createStationRun({
@@ -218,7 +253,7 @@ describe("createStationRun: offering", () => {
       order: "any",
       nowMs: 0,
     });
-    any.observe({ distances: at({ a: 1 }), accuracyM: 4, nowMs: 1 });
+    any.observe({ distances: at({ a: 1 }), nowMs: 1 });
     expect(any.upcoming()).toBeNull();
   });
 
@@ -248,7 +283,7 @@ describe("skip suggestion clock", () => {
       order: "any",
       nowMs: 0,
     });
-    run.observe({ distances: at({ a: 30, b: 40 }), accuracyM: 4, nowMs: 0 });
+    run.observe({ distances: at({ a: 30, b: 40 }), nowMs: 0 });
     expect(run.skipSuggested("b", 10_000_000)).toBe(false);
     run.focus("b", 10_000_000, 40);
     // Focusing again later does not restart it.
@@ -298,12 +333,12 @@ describe("skip suggestion clock", () => {
       nowMs: 0,
     });
     run.focus("a", 0, null);
-    run.observe({ distances: at({ a: 100 }), accuracyM: 4, nowMs: 0 });
+    run.observe({ distances: at({ a: 100 }), nowMs: 0 });
     const due = skipSuggestAfterMs(100);
     expect(run.skipSuggested("a", due - 1)).toBe(false);
     expect(run.skipSuggested("a", due)).toBe(true);
     expect(run.skipSuggested("b", due * 10)).toBe(false); // never offered yet
-    run.observe({ distances: at({ a: 1 }), accuracyM: 4, nowMs: due + 1 });
+    run.observe({ distances: at({ a: 1 }), nowMs: due + 1 });
     expect(run.skipSuggested("a", due * 10)).toBe(false); // found
   });
 
@@ -363,7 +398,6 @@ describe("createStationRun: properties", () => {
           else {
             run.observe({
               distances: new Map([[id, 0]]),
-              accuracyM: 4,
               nowMs: t++,
             });
             run.finish(id, t++);
@@ -404,11 +438,9 @@ describe("createStationRun: properties", () => {
           if (before?.state !== "done") continue;
           run.observe({
             distances: new Map([[id, 0]]),
-            accuracyM: 4,
             nowMs: t++,
           });
           run.skip(id, t++);
-          run.codeLocked("level", t++);
           expect(run.status(id)).toEqual(before);
         }
       }),
@@ -416,35 +448,25 @@ describe("createStationRun: properties", () => {
   });
 });
 
-// Why (owner decision 2026-10-14 after the M1b-1 review, "both"): without
-// location no fix carries an accuracy, so a station without a printed code
-// can never be found by position. The visitor's own "I'm here" finds it -
-// only an offered station that still waits, so a tap can neither reach
-// ahead of the order nor find a station twice.
-describe("createStationRun: the visitor's own arrival (codes only)", () => {
-  it("finds an offered, waiting station as the visitor's", () => {
-    const run = createStationRun({
-      stations: [station("a"), station("b")],
-      order: "fixed",
-      nowMs: 0,
-    });
-    expect(run.arrive("a", 5)).toEqual([
-      { kind: "found", id: "a", via: "visitor" },
-    ]);
-    expect(run.status("a")?.foundVia).toBe("visitor");
+describe("stationTitle (plan 2026-10-15-0348 M0: one rule for the visitor and the editor)", () => {
+  // Why: the package had two exported stationTitle functions with different
+  // fallbacks (the visitor's "the next station", the editor's "Station N"),
+  // and the visitor's kept a blank title, so a station named "  " showed an
+  // empty heading and "Play: " with nothing after it. One function now: the
+  // trimmed title, else the place in the story where the caller knows it.
+  it("is the trimmed title when there is one", () => {
+    expect(stationTitle({ title: "  The gate " })).toBe("The gate");
+    expect(stationTitle({ title: "The gate" }, 2)).toBe("The gate");
   });
 
-  it("does nothing for a station not offered, already found, or done", () => {
-    const run = createStationRun({
-      stations: [station("a"), station("b")],
-      order: "fixed",
-      nowMs: 0,
-    });
-    expect(run.arrive("b", 1)).toEqual([]);
-    expect(run.arrive("missing", 1)).toEqual([]);
-    run.arrive("a", 2);
-    expect(run.arrive("a", 3)).toEqual([]);
-    run.finish("a", 4);
-    expect(run.arrive("a", 5)).toEqual([]);
+  it("names an untitled station by its place when the caller knows it", () => {
+    expect(stationTitle({}, 3)).toBe("Station 3");
+    expect(stationTitle({ title: "   " }, 1)).toBe("Station 1");
+  });
+
+  it("is 'the next station' for an untitled one in the visitor's lines", () => {
+    expect(stationTitle({})).toBe("the next station");
+    expect(stationTitle({ title: "" })).toBe("the next station");
+    expect(stationTitle({ title: " 	 " })).toBe("the next station");
   });
 });

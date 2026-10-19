@@ -14,7 +14,10 @@ into the build, so a branch preview serves it at
   private location reaches the public repository), fixed order, 25-30 m
   apart: "The column" (the Mariensaeule, a knight who greets and asks a
   choice), "The old gate" (a grey arch as a `.glb`), "The town hall steps"
-  (the knight says farewell).
+  (the knight says farewell). Written as `tour.json` version 3 (tour editor
+  plan 2026-10-17-1816, W3): each station has its own geo pose and an
+  empty `items` list (the story places no pins or photos), so a build
+  from before version 3 refuses it with "update the app".
 - Every asset is generated here, so there is nothing to license: a
   pixel-art knight PNG (24 x 40 cells, 8 px each), a three-note fanfare WAV
   (16 kHz mono), and an arch GLB (two pillars and a lintel, one grey

@@ -19,7 +19,10 @@ export function viewerModeFromSearch(search: string): ViewerMode {
 }
 
 /** The creator's cursor on a mesh of the surroundings (polish round M5,
- *  B3), behind `?mesh=1` until the owner likes it on the phone (Q-Mesh). */
+ *  B3): the default since the owner's phone test of 2026-10-15 (mesh-cursor
+ *  smoothing plan 2026-10-15-0944); `?mesh=0` (or `false`, case and
+ *  spaces tolerated, as the debug flag reads `1`/`true`) turns it off. */
 export function meshCursorFromSearch(search: string): boolean {
-  return new URLSearchParams(search).get("mesh") === "1";
+  const value = new URLSearchParams(search).get("mesh")?.trim().toLowerCase();
+  return value !== "0" && value !== "false";
 }

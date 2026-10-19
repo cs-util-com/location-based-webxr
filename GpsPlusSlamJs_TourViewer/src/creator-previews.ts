@@ -17,6 +17,7 @@ import {
   renderTourObjects,
   type TourObjectRendererDeps,
 } from "./content-placement.js";
+import type { VisitPlacement } from "./creator-document.js";
 import { horizontalM } from "./move-with-code.js";
 import type { AuthoringObject } from "./object-editing.js";
 import type { TourViewerSeams } from "./seams.js";
@@ -38,6 +39,20 @@ interface EarlierCodeFrame {
   readonly alignment: readonly number[] | null;
   /** The code's stored pose: which objects are nearest it. */
   readonly geo: LatLong;
+}
+
+/** What a preview's look is made from: a pin's text, a photo's image, a
+ *  placed model's asset and size (drawn by no renderer yet, but a change
+ *  of either is a new look). */
+function lookOf(object: AuthoringObject["object"]): unknown {
+  switch (object.kind) {
+    case "pin":
+      return object.label;
+    case "photo":
+      return object.image;
+    case "model":
+      return [object.asset, object.sizeM];
+  }
 }
 
 export interface CreatorPreviews {
@@ -157,7 +172,7 @@ export function wireCreatorPreviews(deps: {
    * the scene root outside a visit (plan §3.2).
    */
   function previewFrame(
-    placement: (typeof ctx.placedObjects)[number]["placement"],
+    placement: VisitPlacement | undefined,
     fromGeo: Object3D,
   ): Pick<TourObjectRendererDeps, "scene" | "poseOf"> {
     const group = seams.getArWorldGroup();
@@ -184,7 +199,7 @@ export function wireCreatorPreviews(deps: {
    */
   const previewKeys = new Map<string, string>();
   /**
-   * The bytes of photos a Finish took out of `placedObjects`: the hosted
+   * The bytes of photos a Finish took out of the document's entries: the hosted
    * zip does not carry them until the creator uploads the rebuilt one, so
    * their preview reads them from here. Emptied when the tour closes.
    */
@@ -197,7 +212,7 @@ export function wireCreatorPreviews(deps: {
       placement !== undefined && placement.visit === ctx.arSessionGeneration;
     return JSON.stringify([
       object.kind,
-      object.kind === "pin" ? object.label : object.image,
+      lookOf(object),
       rigid ? placement.local : object.geo,
     ]);
   }

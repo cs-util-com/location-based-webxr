@@ -283,11 +283,13 @@ function geoAt(northM, eastM) {
 export function buildSampleTour() {
   const knight = knightPng();
   return {
+    // Version 3 (tour editor plan W3): every station has a geo pose of its
+    // own and carries its items; this story places no pins or photos.
     tour: {
-      version: 2,
+      version: 3,
+      minor: 0,
       title: "The knight of Marienplatz (sample)",
       order: "fixed",
-      objects: [],
       assets: [
         {
           id: "knight",
@@ -302,9 +304,10 @@ export function buildSampleTour() {
         {
           id: "column",
           title: "The column",
-          anchor: { geo: geoAt(0, 0) },
+          geo: geoAt(0, 0),
           activateRadiusM: 30,
           foundRadiusM: 5,
+          hint: "arrow",
           steps: [
             {
               id: "greet",
@@ -343,13 +346,15 @@ export function buildSampleTour() {
               },
             },
           ],
+          items: [],
         },
         {
           id: "gate",
           title: "The old gate",
-          anchor: { geo: geoAt(-10, 28) },
+          geo: geoAt(-10, 28),
           activateRadiusM: 30,
           foundRadiusM: 5,
+          hint: "arrow",
           steps: [
             {
               id: "arch",
@@ -360,13 +365,15 @@ export function buildSampleTour() {
               },
             },
           ],
+          items: [],
         },
         {
           id: "steps",
           title: "The town hall steps",
-          anchor: { geo: geoAt(25, 12) },
+          geo: geoAt(25, 12),
           activateRadiusM: 30,
           foundRadiusM: 5,
+          hint: "arrow",
           steps: [
             {
               id: "farewell",
@@ -378,6 +385,7 @@ export function buildSampleTour() {
               },
             },
           ],
+          items: [],
         },
       ],
     },

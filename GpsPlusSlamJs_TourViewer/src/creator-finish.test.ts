@@ -41,11 +41,11 @@ import {
   readStoredEntryBytes,
 } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
 import {
-  createEmptyTourManifest,
   parseTourManifest,
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type {
+  TourCaptureSpots,
   TourManifest,
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -57,15 +57,19 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import { objectPoseNue } from "./content-placement.js";
+import { walkPhotosPending } from "./creator-stations.js";
 import {
   buildListedTourFixture,
   buildSignedTourFixture,
   generateFixtureKey,
 } from "./test-support/tour-signing-fixture.js";
 import { openTourFile, type TourSession } from "./tour-session.js";
+import type { VisitPlacement } from "./creator-document.js";
 import { describeTourTrust } from "./tour-trust-view.js";
 import { linkTrustKey, type TrustStorage } from "./tour-trust.js";
 import { FINISH_LABELS } from "./qr-author-mode.js";
+import { tourOf, withWorldObjects } from "./test-support/v3-tour.js";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 /** The element surface `creator-setup` writes to, and nothing else. */
 interface FakeEl {
@@ -172,7 +176,7 @@ async function hostedArchive(
   existing: readonly TourObject[],
   content: readonly { path: string; data: string }[] = [],
 ): Promise<Blob> {
-  const manifest = { ...createEmptyTourManifest(), objects: [...existing] };
+  const manifest = tourOf([...existing]);
   return packFilesAsZip([
     { path: `${WRAP}tour.json`, data: serializeTourManifest(manifest) },
     { path: `${WRAP}qr/${LEVEL_ID}.json`, data: '{"old":true}' },
@@ -273,6 +277,8 @@ async function wireFinishable(options: {
   onOpenStep?: (step: string) => void;
   /** The tour's name as typed in step 3 (the poster title). */
   tourTitle?: string | null;
+  /** The page's last word before a Finish starts (its name field). */
+  beforeFinish?: (ctx: ReturnType<typeof createTourViewerSession>) => void;
 }) {
   const blob = await hostedArchive(options.hosted, options.hostedContent);
   const dom = fakeDom();
@@ -289,22 +295,40 @@ async function wireFinishable(options: {
     ...options.sessionExtras,
   }) as never;
   ctx.tourManifestStatus = "settled";
-  ctx.tourManifest = {
-    ...createEmptyTourManifest(),
-    objects: [...options.hosted],
-    ...options.manifestExtras,
+  const tour = ctx.tourDocument;
+  tour.open(tourOf([...options.hosted], options.manifestExtras));
+  for (const id of options.deleted ?? []) {
+    if (tour.remove(id, "a deletion") === null) {
+      throw new Error(`the tour does not carry ${id} to delete`);
+    }
+  }
+  // An object the tour carries is an edit of it, any other a placement;
+  // the document refuses either outside its station's reach, which would
+  // make a test pass for the wrong reason, so a refusal fails it here.
+  const hostedIds = new Set(options.hosted.map((o) => o.id));
+  const put = (object: TourObject, placement?: VisitPlacement) => {
+    const changed = hostedIds.has(object.id)
+      ? tour.move(object, "an edit", placement)
+      : tour.place(
+          object,
+          placement === undefined ? {} : { placement },
+          "a placement",
+        );
+    if (changed === null) throw new Error(`refused: ${object.id}`);
   };
-  ctx.deletedObjectIds = [...(options.deleted ?? [])];
-  ctx.placedObjects = [
-    ...options.placed.map((object) => ({ object })),
-    ...(options.placedInVisit ?? []).map(({ object, local }) => ({
-      object,
-      placement: {
-        visit: 0,
-        local: { position: local, rotation: [0, 0, 0, 1] as const },
-      },
-    })),
-  ];
+  for (const object of options.placed) put(object);
+  // The name typed in step 3's field, as the page hands it over
+  // (`renameTour`).
+  if (options.tourTitle !== undefined && options.tourTitle !== null) {
+    const renamed = tour.rename(options.tourTitle);
+    if (renamed.kind === "refused") throw new Error(renamed.reason);
+  }
+  for (const { object, local } of options.placedInVisit ?? []) {
+    put(object, {
+      visit: 0,
+      local: { position: local, rotation: [0, 0, 0, 1] as const },
+    });
+  }
   const arStore = alignedArStore(options.alignment) as {
     dispatched: unknown[];
   };
@@ -335,9 +359,7 @@ async function wireFinishable(options: {
     } as never,
     dom: dom as unknown as CreatorSetupDom,
     openDraftStore: () => Promise.resolve(undefined),
-    ...(options.tourTitle === undefined
-      ? {}
-      : { tourTitle: () => options.tourTitle ?? null }),
+    beforeFinish: () => options.beforeFinish?.(ctx),
   });
   if (options.noCodeInHand !== true) {
     setup.codes.setInHand({ id: LEVEL_ID, json: '{"measured":true}' }, null);
@@ -397,10 +419,7 @@ describe("the finish rebuilds the open archive under its session's budget (K0 mi
  *  from a file: the shape a Finish of a K1 tour starts from. */
 async function listedHostedSession(signed: boolean, withLevel = true) {
   const files = {
-    "tour.json": serializeTourManifest({
-      ...createEmptyTourManifest(),
-      objects: [pin("already-there")],
-    }),
+    "tour.json": serializeTourManifest(tourOf([pin("already-there")])),
     ...(withLevel ? { [`qr/${LEVEL_ID}.json`]: '{"old":true}' } : {}),
     "content/kept.jpg": "0123456789",
   };
@@ -527,7 +546,7 @@ describe("the finish continues a listed tour's series, unsigned (K1 milestone re
     await session.close();
   });
 
-  it("a tour that uses nothing of version 2 is published as tour.json version 1, which older builds open (K1 milestone review R10)", async () => {
+  it("a Finish publishes tour.json version 3, minor 0 (tour editor plan W3; older builds refuse it with 'update the app', D5)", async () => {
     const { dom, ctx } = await wireFinishable({
       hosted: [pin("already-there")],
       placed: [pin("new-one")],
@@ -539,7 +558,8 @@ describe("the finish continues a listed tour's series, unsigned (K1 milestone re
       `${WRAP}tour.json`,
     );
     expect(JSON.parse(new TextDecoder().decode(bytes))).toMatchObject({
-      version: 1,
+      version: 3,
+      minor: 0,
     });
   });
 });
@@ -607,7 +627,7 @@ describe("what the finish actually writes into the published zip", () => {
     expect(names).toContain(`${WRAP}tour.json`);
 
     // And the manifest the ARCHIVE CARRIES lists each id exactly once.
-    // Read from the bytes, not from `ctx.tourManifest`: the in-memory
+    // Read from the bytes, not from `ctx.tourDocument`: the in-memory
     // copy is the object the writer built, which this file's header
     // rejects as proof. A finish that de-duplicated its own state while
     // serializing a different list would pass the weaker assertion and
@@ -620,7 +640,7 @@ describe("what the finish actually writes into the published zip", () => {
     const written = parseTourManifest(
       JSON.parse(new TextDecoder().decode(bytes)),
     );
-    const ids = written.objects.map((o) => o.id);
+    const ids = tourObjects(written).map((o) => o.id);
     expect(ids).toEqual(["already-there", "genuinely-new"]);
     expect(
       new Set(ids).size,
@@ -636,7 +656,9 @@ async function publishedManifest(blob: Blob) {
     `${WRAP}tour.json`,
   );
   expect(bytes, "the archive must carry a manifest").toBeDefined();
-  return parseTourManifest(JSON.parse(new TextDecoder().decode(bytes)));
+  return withWorldObjects(
+    parseTourManifest(JSON.parse(new TextDecoder().decode(bytes))),
+  );
 }
 
 function photo(id: string): TourObject {
@@ -668,9 +690,12 @@ describe("edits and deletions reach the published zip (authoring plan 2026-09-28
     expect(ctx.finishError).toBeNull();
     const written = await publishedManifest(ctx.rebuiltZip!.blob);
     expect(written.objects.map((o) => o.id)).toEqual(["a", "b", "c"]);
-    expect(written.objects[1]).toEqual(edited);
+    expect(written.objects[1]).toMatchObject({
+      id: "b",
+      label: "the new text",
+    });
     // The edit is in the zip, so it leaves the list of work to write.
-    expect(ctx.placedObjects).toEqual([]);
+    expect(ctx.tourDocument.entries()).toEqual([]);
   });
 
   it("drops a deleted object and takes a deleted photo's jpg out of the archive", async () => {
@@ -693,12 +718,12 @@ describe("edits and deletions reach the published zip (authoring plan 2026-09-28
     expect(names).not.toContain(`${WRAP}content/gone.jpg`);
     expect(names).toContain(`${WRAP}content/kept.jpg`);
     // Applied: the next Finish has nothing left to delete.
-    expect(ctx.deletedObjectIds).toEqual([]);
+    expect(ctx.tourDocument.deleted()).toEqual([]);
   });
 });
 
 describe("a finished photo keeps its bytes for its preview (code book plan M2)", () => {
-  // Why this test matters: the Finish takes a photo out of `placedObjects`,
+  // Why this test matters: the Finish takes a photo out of the page's work,
   // while the HOSTED zip does not carry its bytes until the creator uploads
   // the rebuilt one. The Finish hands the bytes to the previews; without
   // that, the next visit's preview asks the hosted zip, finds nothing, and
@@ -726,12 +751,16 @@ describe("a finished photo keeps its bytes for its preview (code book plan M2)",
         },
       },
     });
-    ctx.placedObjects = [{ object: photo("new"), blob: new Blob(["jpg"]) }];
+    ctx.tourDocument.place(
+      photo("new"),
+      { blob: new Blob(["jpg"]) },
+      "a photo",
+    );
     dom.finishButton.click();
     await settle(ctx);
     expect(ctx.finishError).toBeNull();
     // Written, so it left the list of work to write.
-    expect(ctx.placedObjects).toEqual([]);
+    expect(ctx.tourDocument.entries()).toEqual([]);
     setup.beginAuthorVisit();
     for (let i = 0; i < 5; i += 1) await Promise.resolve();
     expect(zipReads).toEqual([]);
@@ -808,14 +837,13 @@ describe("the troubleshooting recording's log of the finish", () => {
     const finished = dispatched.filter(
       (a) => (a as { type: string }).type === "tourAuthoring/finished",
     ) as {
-      payload: { levelId: string; manifest: { objects: TourObject[] } };
+      payload: { levelId: string; manifest: TourManifest };
     }[];
     expect(finished).toHaveLength(1);
     expect(finished[0]!.payload.levelId).toBe(LEVEL_ID);
-    expect(finished[0]!.payload.manifest.objects.map((o) => o.id)).toEqual([
-      "already-there",
-      "new-one",
-    ]);
+    expect(tourObjects(finished[0]!.payload.manifest).map((o) => o.id)).toEqual(
+      ["already-there", "new-one"],
+    );
   });
 
   // Why this test matters (code book plan §3, M4 milestone review #6): a
@@ -878,8 +906,8 @@ describe("the finish settles the AR visit still running (authoring plan 2026-09-
     );
     const finished = dispatched.find(
       (a) => (a as { type: string }).type === "tourAuthoring/finished",
-    ) as { payload: { manifest: { objects: TourObject[] } } };
-    const written = finished.payload.manifest.objects[0]!;
+    ) as { payload: { manifest: TourManifest } };
+    const written = tourObjects(finished.payload.manifest)[0]!;
     const expected = new Vector3(2, 0, -1).applyMatrix4(
       new Matrix4().fromArray(END),
     );
@@ -971,7 +999,7 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     >;
   }
 
-  it("writes the spots of a tour that carries a recording, at minor 1", async () => {
+  it("writes the spots of a tour that carries a recording, each photo in a station", async () => {
     const recording = await recordingExtras();
     const { dom, ctx } = await wireFinishable({
       hosted: [],
@@ -982,23 +1010,32 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     await settle(ctx);
     expect(ctx.finishError).toBeNull();
     const written = await writtenManifest(ctx);
-    expect(written).toMatchObject({ version: 2, minor: 1 });
-    const spots = parseTourManifest(written).captureSpots;
+    expect(written).toMatchObject({ version: 3, minor: 0 });
+    const read = parseTourManifest(written);
+    const spots = read.captureSpots;
+    const stations = new Set(read.stations.map((s) => s.id));
+    for (const c of spots?.captures ?? []) {
+      expect(stations.has(c.station)).toBe(true);
+    }
     // 5 of 6: the fixture's first photo precedes the GPS zero.
     expect(spots?.captures).toHaveLength(5);
     // The in-memory manifest advances with it, as with objects.
-    expect(ctx.tourManifest?.captureSpots).toEqual(spots);
+    expect(ctx.tourDocument.manifest()?.captureSpots).toEqual(spots);
+    // This page knows the walk is decided (the creator's HUD drops its
+    // hedge, PR #642 review).
+    expect(ctx.walkDecidedFor).toBe(ctx.session);
   });
 
   it("does not bake again when the tour already carries its spots", async () => {
     const recording = await recordingExtras();
-    const spots = {
+    const spots: TourCaptureSpots = {
       fixes: 9,
       gpsAccuracyMedianM: 2,
       captures: [
         {
           image: "images/frame-000002.jpg",
-          geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+          station: "walk",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
         },
       ],
     };
@@ -1006,7 +1043,20 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
       hosted: [],
       placed: [pin("new-one")],
       sessionExtras: recording.extras,
-      manifestExtras: { captureSpots: spots as never },
+      manifestExtras: {
+        stations: [
+          {
+            id: "walk",
+            geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+            activateRadiusM: 50,
+            foundRadiusM: 25,
+            hint: "arrow",
+            steps: [],
+            items: [],
+          },
+        ],
+        captureSpots: spots,
+      },
     });
     dom.finishButton.click();
     await settle(ctx);
@@ -1023,10 +1073,25 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
       placed: [pin("new-one")],
       sessionExtras: recording.extras,
     });
+    // Why (PR #643 review, replacing the PR #642 choice): a declined bake
+    // writes no spots, and the phone's next Finish bakes again - so its
+    // station names may still change, and the HUD keeps its hedge. Only a
+    // Finish that settled the walk (spots written, or a walk that places
+    // nothing) drops it.
+    const pending = () =>
+      walkPhotosPending(
+        ctx.session,
+        ctx.tourDocument.manifest(),
+        ctx.walkDecidedFor,
+      );
+    expect(pending()).toBe(true);
     dom.finishButton.click();
     await settle(ctx);
     expect(ctx.finishError).toBeNull();
     expect(await writtenManifest(ctx)).not.toHaveProperty("captureSpots");
+    expect(ctx.tourDocument.manifest()?.captureSpots).toBeUndefined();
+    expect(ctx.walkDecidedFor).toBeNull();
+    expect(pending()).toBe(true);
   });
 
   it("finishes without the marker when reading the recording fails", async () => {
@@ -1067,19 +1132,23 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
   // A file of the creator's own that no viewer reads: never the walk.
   const README = `${WRAP}README.txt`;
 
-  async function wireRecordingTour(keepScan: boolean, odomCoordVersion = 5) {
+  async function wireRecordingTour(
+    keepScan: boolean,
+    odomCoordVersion = 5,
+    walk: readonly string[] = WALK,
+  ) {
     const bytes = new Uint8Array(readFileSync(FIXTURE));
     const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
     const wired = await wireFinishable({
       hosted: [],
       placed: [pin("new-one")],
-      hostedContent: [...WALK, README].map((path) => ({ path, data: "x" })),
+      hostedContent: [...walk, README].map((path) => ({ path, data: "x" })),
       sessionExtras: {
         hasRecording: true,
         entries: [
           { filename: `${WRAP}tour.json` },
           { filename: `${WRAP}qr/${LEVEL_ID}.json` },
-          ...[...WALK, README].map((filename) => ({
+          ...[...walk, README].map((filename) => ({
             filename,
             isImage: filename.endsWith(".jpg"),
           })),
@@ -1131,6 +1200,28 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     expect(dom.finishStatus.textContent).toContain(
       "The recorded photos could not be placed",
     );
+  });
+
+  it("leaves out a walk that places nothing - its photos are not in the tour - and says nothing of photos", async () => {
+    // Why (the M4b milestone review #3): such a walk was kept with "the
+    // recorded photos could not be placed", about photos the tour does not
+    // carry; it places nothing for any visitor, so S-D10's default holds.
+    const walk = ["session.json", "actions/000001.json"];
+    const { ctx, dom } = await wireRecordingTour(false, 5, walk);
+    expect(ctx.finishError).toBeNull();
+    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
+    for (const name of walk) expect(names).not.toContain(name);
+    expect(names).toContain(README);
+    expect(dom.finishStatus.textContent).toContain(
+      "leaves out the walk recording",
+    );
+    expect(dom.finishStatus.textContent).not.toContain(
+      "The recorded photos could not be placed",
+    );
+    // Kept when asked, as any walk.
+    const kept = await wireRecordingTour(true, 5, walk);
+    const keptNames = await entryNamesOf(kept.ctx.rebuiltZip!.blob);
+    for (const name of walk) expect(keptNames).toContain(name);
   });
 
   it("forgets the creator's tick with the tour it was given for", async () => {
@@ -1447,7 +1538,7 @@ describe("the save cannot be forgotten (UI round 1, U2)", () => {
     await settle(ctx);
     await saved();
     expect(dom.downloadButton.disabled).toBe(false);
-    ctx.placedObjects = [{ object: pin("another-one") }];
+    ctx.tourDocument.place(pin("another-one"), {}, "another pin");
     dom.finishButton.click();
     expect(ctx.finishing).toBe(true);
     expect(dom.downloadButton.disabled).toBe(true);
@@ -1560,7 +1651,10 @@ describe("desk edits: a Finish with no AR visit (code book plan M4d, §9 D4)", (
     expect(ctx.finishError).toBeNull();
     const blob = ctx.rebuiltZip!.blob;
     const written = await publishedManifest(blob);
-    expect(written.objects[1]).toEqual(edited);
+    expect(written.objects[1]).toMatchObject({
+      id: "b",
+      label: "the new text",
+    });
     // The hosted level file is kept as it was: nothing rewrote it.
     const names = await entryNamesOf(blob);
     expect(names).toContain(`${WRAP}qr/${LEVEL_ID}.json`);
@@ -1599,7 +1693,9 @@ describe("the tour's name at the Finish (polish round M4a)", () => {
   // Why: the visitor's start page (V4, D-R12) leads with the tour's name,
   // which the manifest carries as `title` - and nothing wrote it, so
   // every tour would have shown none. The name the creator types in step 3
-  // for the posters is the tour's name.
+  // is the tour's name - in its own field since W2 of the tour editor plan
+  // (2026-10-17-1816), where an emptied name removes the title instead of
+  // silently keeping the old one.
   it("writes the typed name as the manifest's title", async () => {
     const { dom, ctx } = await wireFinishable({
       hosted: [pin("a")],
@@ -1613,7 +1709,20 @@ describe("the tour's name at the Finish (polish round M4a)", () => {
     expect(written.title).toBe("Harbour Lights");
   });
 
-  it("keeps the tour's title when nothing was typed", async () => {
+  it("keeps the tour's title when no name was typed", async () => {
+    const { dom, ctx } = await wireFinishable({
+      hosted: [pin("a")],
+      placed: [],
+      manifestExtras: { title: "Castle walk" },
+      tourTitle: null,
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    const written = await publishedManifest(ctx.rebuiltZip!.blob);
+    expect(written.title).toBe("Castle walk");
+  });
+
+  it("removes the tour's title when the name was emptied", async () => {
     const { dom, ctx } = await wireFinishable({
       hosted: [pin("a")],
       placed: [],
@@ -1623,7 +1732,27 @@ describe("the tour's name at the Finish (polish round M4a)", () => {
     dom.finishButton.click();
     await settle(ctx);
     const written = await publishedManifest(ctx.rebuiltZip!.blob);
-    expect(written.title).toBe("Castle walk");
+    expect(written.title).toBeUndefined();
+  });
+
+  it("commits a name still in its field before it starts (the review's LOW-3)", async () => {
+    // Why: the phone renames on the field's "change", which a browser
+    // fires when the Finish tap takes the focus - and a name that is the
+    // only change would otherwise leave the Finish with nothing to write.
+    // The page commits the field first (`beforeFinish`).
+    const { dom, ctx } = await wireFinishable({
+      hosted: [pin("a")],
+      placed: [],
+      noCodeInHand: true,
+      beforeFinish: (session) => {
+        session.tourDocument.rename("Harbour Lights");
+      },
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    const written = await publishedManifest(ctx.rebuiltZip!.blob);
+    expect(written.title).toBe("Harbour Lights");
   });
 
   it("writes no title when there is none either way", async () => {

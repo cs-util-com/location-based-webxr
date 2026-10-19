@@ -1,5 +1,5 @@
 /**
- * Why this test matters: `tour.json` v2 carries the tour kit's game content
+ * Why this test matters: `tour.json` carries the tour kit's game content
  * (tour kit plan K1, §8 D7: the full schema in one step) - stations, their
  * steps, scene choices, quizzes and the media assets they name. It is
  * hand-editable external data that later drives what a visitor sees and
@@ -32,7 +32,7 @@ const assetsJson = [
 ];
 
 function assets(): TourAsset[] {
-  return parseTourAssets(assetsJson, { objectIds: new Set(), fail });
+  return parseTourAssets(assetsJson, { fail });
 }
 
 const geo = { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 30 };
@@ -40,10 +40,11 @@ const geo = { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 30 };
 function station(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 's1',
-    anchor: { geo },
+    geo,
     activateRadiusM: 25,
     foundRadiusM: 5,
     steps: [{ id: 'a', block: { kind: 'text', text: 'Welcome' } }],
+    items: [],
     ...extra,
   };
 }
@@ -107,18 +108,7 @@ describe('parseTourAssets', () => {
       /duplicate asset id "a"/,
     ],
   ])('rejects %s', (_label, data, message) => {
-    expect(() => parseTourAssets(data, { objectIds: new Set(), fail })).toThrow(
-      message
-    );
-  });
-
-  it('rejects an asset id an object already uses, since both name a content file by id', () => {
-    expect(() =>
-      parseTourAssets([{ id: 'p1', path: 'content/p1.jpg' }], {
-        objectIds: new Set(['p1']),
-        fail,
-      })
-    ).toThrow(/assets\[0\]\.id" "p1" is already an object id/);
+    expect(() => parseTourAssets(data, { fail })).toThrow(message);
   });
 });
 
@@ -127,7 +117,6 @@ describe('parseTourStations', () => {
     const [parsed] = parse([
       station({
         title: 'The gate',
-        anchor: { code: 'a1b2c3d4e5f6', geo },
         hint: 'arrow',
         steps: [
           {
@@ -169,7 +158,7 @@ describe('parseTourStations', () => {
       }),
     ]);
     expect(parsed?.title).toBe('The gate');
-    expect(parsed?.anchor.code).toBe('a1b2c3d4e5f6');
+    expect(parsed?.geo).toEqual(geo);
     expect(parsed?.hint).toBe('arrow');
     expect(parsed?.steps.map((s) => s.block.kind)).toEqual([
       'character',
@@ -273,19 +262,93 @@ describe('parseTourStations', () => {
       /duplicate station id "s1"/,
     ],
     [
-      'an anchor with neither code nor geo',
-      [station({ anchor: {} })],
-      /stations\[0\]\.anchor" needs a code, a geo pose, or both/,
+      'a station without a geo pose (no code-only station, D9)',
+      [station({ geo: undefined, anchor: { code: 'a1b2c3d4e5f6' } })],
+      /stations\[0\]\.geo/,
     ],
     [
-      'an anchor code that cannot be a level id',
-      [station({ anchor: { code: '../x' } })],
-      /stations\[0\]\.anchor\.code/,
+      'a bad station geo pose',
+      [station({ geo: { ...geo, lat: 95 } })],
+      /stations\[0\]\.geo\.lat/,
     ],
     [
-      'a bad anchor geo pose',
-      [station({ anchor: { geo: { ...geo, lat: 95 } } })],
-      /stations\[0\]\.anchor\.geo\.lat/,
+      'items that are not a list',
+      [station({ items: {} })],
+      /stations\[0\]\.items" must be an array/,
+    ],
+    [
+      'an item without a local pose',
+      [
+        station({
+          items: [
+            {
+              id: 'p1',
+              kind: 'pin',
+              label: 'Hi',
+              createdAtIso: '2026-10-18T06:00:00.000Z',
+            },
+          ],
+        }),
+      ],
+      /stations\[0\]\.items\[0\]\.pose/,
+    ],
+    [
+      'an item placed absurdly far from its station',
+      [
+        station({
+          items: [
+            {
+              id: 'p1',
+              kind: 'pin',
+              label: 'Hi',
+              createdAtIso: '2026-10-18T06:00:00.000Z',
+              pose: { position: [0, 0, 20_000], rotation: [0, 0, 0, 1] },
+            },
+          ],
+        }),
+      ],
+      /stations\[0\]\.items\[0\]\.pose\.position" must be three numbers within 10000 m/,
+    ],
+    [
+      'an item whose rotation is not a unit quaternion',
+      [
+        station({
+          items: [
+            {
+              id: 'p1',
+              kind: 'pin',
+              label: 'Hi',
+              createdAtIso: '2026-10-18T06:00:00.000Z',
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 2] },
+            },
+          ],
+        }),
+      ],
+      /stations\[0\]\.items\[0\]\.pose\.rotation" must be a unit quaternion/,
+    ],
+    [
+      'the same item twice in a station',
+      [
+        station({
+          items: [
+            {
+              id: 'p1',
+              kind: 'pin',
+              label: 'Hi',
+              createdAtIso: '2026-10-18T06:00:00.000Z',
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+            {
+              id: 'p1',
+              kind: 'pin',
+              label: 'Again',
+              createdAtIso: '2026-10-18T06:00:00.000Z',
+              pose: { position: [1, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+          ],
+        }),
+      ],
+      /duplicate item id "p1"/,
     ],
     [
       'a found radius larger than the activation radius',
@@ -298,11 +361,6 @@ describe('parseTourStations', () => {
       /stations\[0\]\.activateRadiusM/,
     ],
     ['an unknown hint', [station({ hint: 'map' })], /stations\[0\]\.hint/],
-    [
-      'no steps',
-      [station({ steps: [] })],
-      /stations\[0\]\.steps" must be a non-empty array/,
-    ],
     [
       'a duplicate step id',
       [
@@ -606,5 +664,113 @@ describe('parseTourStations', () => {
   ])('rejects %s', (_label, data, message) => {
     expect(() => parse(data)).toThrow(Invalid);
     expect(() => parse(data)).toThrow(message);
+  });
+});
+
+describe('version 3 stations (tour editor plan 2026-10-17-1816, W3)', () => {
+  // Why: a station is now the parent of what was placed around it. It has
+  // its own geo pose and no code (D9), it may have no story at all (an
+  // automatic station, D20: finding it completes it), and its pins and
+  // photos carry local poses that move with it.
+  it('a station may have no steps: an automatic station only groups its items', () => {
+    const [parsed] = parse([station({ steps: [] })]);
+    expect(parsed?.steps).toEqual([]);
+  });
+
+  it('reads its items with their local poses, kind by kind', () => {
+    const [parsed] = parse([
+      station({
+        items: [
+          {
+            id: 'p1',
+            kind: 'pin',
+            label: 'The well',
+            createdAtIso: '2026-10-18T06:00:00.000Z',
+            pose: { position: [1, 0.5, -2], rotation: [0, 0, 0, 1] },
+          },
+          {
+            id: 'f1',
+            kind: 'photo',
+            image: 'content/f1.jpg',
+            imageWidth: 640,
+            imageHeight: 480,
+            createdAtIso: '2026-10-18T06:01:00.000Z',
+            pose: { position: [3, 1.6, 0], rotation: [0, 0.6, 0, 0.8] },
+          },
+        ],
+      }),
+    ]);
+    expect(parsed?.items).toEqual([
+      {
+        id: 'p1',
+        kind: 'pin',
+        label: 'The well',
+        createdAtIso: '2026-10-18T06:00:00.000Z',
+        pose: { position: [1, 0.5, -2], rotation: [0, 0, 0, 1] },
+      },
+      {
+        id: 'f1',
+        kind: 'photo',
+        image: 'content/f1.jpg',
+        imageWidth: 640,
+        imageHeight: 480,
+        createdAtIso: '2026-10-18T06:01:00.000Z',
+        pose: { position: [3, 1.6, 0], rotation: [0, 0.6, 0, 0.8] },
+      },
+    ]);
+  });
+
+  // Why: a placed model names a model asset, and the reference is
+  // resolved here, where the assets are known, so a renderer never meets a
+  // model with no file or an image where a model should be.
+  const placedModel = (asset: unknown) => ({
+    id: 'm1',
+    kind: 'model',
+    asset,
+    sizeM: 3,
+    createdAtIso: '2026-10-19T12:00:00.000Z',
+    pose: { position: [2, 0, 1], rotation: [0, 0, 0, 1] },
+  });
+
+  it('reads a placed model naming a model asset, its size exactly', () => {
+    const [parsed] = parse([station({ items: [placedModel('arch')] })]);
+    expect(parsed?.items).toEqual([placedModel('arch')]);
+  });
+
+  it.each([
+    ['a missing asset', 'nowhere'],
+    ['an image asset', 'gate'],
+    ['an audio asset', 'voice'],
+  ])('refuses a placed model naming %s', (_name, asset) => {
+    expect(() => parse([station({ items: [placedModel(asset)] })])).toThrow(
+      /"stations\[0\]\.items\[0\]\.asset" must name a model asset/
+    );
+  });
+
+  it('a lenient read leaves out a model whose asset it left out or does not have', () => {
+    // A newer minor's model format (here .usdz, unknown to this reader) is
+    // left out of the assets; the model naming it cannot be shown.
+    const newer = parseTourAssets(
+      [...assetsJson, { id: 'tower', path: 'content/tower.usdz' }],
+      { fail, lenient: true }
+    );
+    const [parsed] = parseTourStations(
+      [
+        station({
+          items: [
+            placedModel('tower'),
+            { ...placedModel('nowhere'), id: 'm2' },
+            { ...placedModel('arch'), id: 'm3' },
+          ],
+        }),
+      ],
+      { assets: newer, fail, lenient: true }
+    );
+    expect(parsed?.items.map((i) => i.id)).toEqual(['m3']);
+  });
+
+  it('ignores a code a version 2 station named: no station is found by a code any more', () => {
+    const [parsed] = parse([station({ anchor: { code: 'a1b2c3d4e5f6' } })]);
+    expect(parsed).not.toHaveProperty('anchor');
   });
 });

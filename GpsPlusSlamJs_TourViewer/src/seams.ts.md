@@ -37,7 +37,8 @@ createAudioElement }`
   - `createAudioElement()` (K4) - `new Audio()`: the page's ONE element
     for the stories (`scene-audio.ts`). The e2e fake records what plays.
   - `startMeshSurface(parent, store)` - the creator's mesh of the
-    surroundings behind `?mesh=1` (polish round M5, `mesh-surface.ts`), with
+    surroundings, a creator's default unless `?mesh=0` (polish round M5,
+    `mesh-surface.ts`), with
     the app's mesh worker (`./workers/occlusion-mesher.worker.ts`, a
     `new Worker(new URL(...))` here because it resolves against this app's
     source). A seam because the e2e scene has no depth to mesh.
@@ -61,9 +62,11 @@ createAudioElement }`
     canvas/scale with a transparent pill) and the
     one-shot clock behind the scan gate's escape (M5; the e2e fires it instead
     of waiting); `startDepthCapture` / `stopDepthCapture` are the framework's
-    depth sampler controls, used only by an entry the troubleshooting
-    recording records (authoring recording plan 2026-09-28-0953, D4; the e2e
-    fake counts the calls) - `controllerDeps` is a
+    depth sampler controls, used by an entry that asks for depth: every
+    creator entry by default (the mesh cursor, at the mesh density; not with
+    `?mesh=0`) and an entry the troubleshooting recording records, at the
+    recording's 16 x 16 / 1 Hz (authoring recording plan 2026-09-28-0953, D4;
+    the e2e fake counts the calls) - `controllerDeps` is a
     `Partial<EnableGpsArDeps>` injected into `createEnableGpsArController`
     (empty in production; the e2e fake supplies the full dep set there). The
     `queryGeolocationPermission` / `requestLocationOnce` are the visitor
@@ -95,8 +98,9 @@ createAudioElement }`
     `getCameraPose`) is the author pipeline's device layer: BarcodeDetector
     front end (or `null` — desktop has no fallback by design), the pure-JS
     planar-PnP solver, and PnP intrinsics from the in-session camera projection scaled to the
-    DETECTOR buffer's dimensions (depth is OFF in this app, so the projection
-    matrix is the only source). There is no camera-pose seam: every camera
+    DETECTOR buffer's dimensions (the QR pipelines never use depth - a
+    creator's depth feeds only the mesh cursor and the recording - so the
+    projection matrix is the only source). There is no camera-pose seam: every camera
     frame arrives as a `CapturedCameraFrame` carrying the pose of the XR frame
     it was captured in, and the QR controllers and the photo placement read
     that (`frame.cameraPose`).

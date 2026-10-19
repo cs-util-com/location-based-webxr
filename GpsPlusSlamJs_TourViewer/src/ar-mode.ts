@@ -7,13 +7,17 @@
  *
  * Both modes are deliberately IDENTICAL down here (QD-5/delta #7): QR
  * detection needs camera frames everywhere, so camera access + texture
- * acquisition are ON in viewer AND author mode, and depth stays OFF in both
- * (v1 authoring takes the printed size as an input, which dissolved the
- * per-mode depth split). Author mode only changes labels here; the pipelines
- * diverge in M3/M4. The one exception is an entry the creator's
- * troubleshooting recording records: it asks for depth, because the
- * recording carries depth samples instead of camera pictures (authoring
- * recording plan 2026-09-28-0953, decision D4).
+ * acquisition are ON in viewer AND author mode (v1 authoring takes the
+ * printed size as an input, which dissolved the per-mode depth split, so
+ * the QR pipelines never need depth). Author mode only changes labels here;
+ * the pipelines diverge in M3/M4. Depth is asked for by the hooks alone
+ * (`onDepthSample`): every CREATOR entry has them by default - the mesh
+ * cursor's depth at the mesh density (polish round M5, a creator default
+ * since 2026-10-15; `?mesh=0` drops it) - and an entry the troubleshooting
+ * recording records (a creator's, or a visitor's with `?debug=1`) asks at
+ * the recording's 16 x 16 / 1 Hz instead, because the recording carries
+ * depth samples in place of camera pictures (authoring recording plan
+ * 2026-09-28-0953, decision D4). Any other visitor entry asks for none.
  */
 
 import type {
@@ -183,9 +187,11 @@ export interface ArEnableHooks {
   onSessionEnd(): void;
   onGpsPosition(position: GpsPosition): void;
   onOrientation(orientation: RawDeviceOrientation): void;
-  /** Present only for an entry the troubleshooting recording records
+  /** Present for an entry that wants depth - a creator's by default (the
+   *  mesh cursor, unless `?mesh=0`) and a recorded one in either mode
    *  (decision D4): requests the depth feature and receives its samples.
-   *  Absent, depth stays off as for every other entry. */
+   *  Absent (an unrecorded visitor, a creator with `?mesh=0` and no
+   *  recording), depth stays off. */
   onDepthSample?: (sample: DepthSample) => void;
   /** WebXR reset its origin after a tracking loss: raw-WebXR geometry
    *  (the mesh cursor's grid) is in a frame that no longer exists
@@ -237,9 +243,10 @@ export function buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig {
     container: hooks.container,
     requestHitTest: hooks.requestHitTest,
     ...(hooks.location === undefined ? {} : { location: hooks.location }),
-    // Camera ON (access + texture acquisition), depth OFF — in BOTH modes,
-    // unless this entry is recorded (then depth is requested as an OPTIONAL
-    // feature: a phone without it starts AR all the same, without depth).
+    // Camera ON (access + texture acquisition) in BOTH modes; depth only
+    // with `onDepthSample` (a creator's mesh cursor by default, or a
+    // recorded entry), and then as an OPTIONAL feature: a phone without it
+    // starts AR all the same, without depth.
     // These are the opposite of MinimalExample/AnchorStarter, which turn the
     // camera path off to dodge its Chromium crash surface; a CV app needs it
     // and inherits that surface (mitigated by the framework's projection-
