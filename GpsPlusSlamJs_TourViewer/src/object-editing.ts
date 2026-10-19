@@ -27,7 +27,6 @@ import {
 import { Vector3, type Object3D } from "three";
 
 import type { CreatorObject } from "./creator-document.js";
-import { pinTextEdit } from "./object-edits.js";
 import { objectListModel, type ObjectListView } from "./object-list.js";
 import {
   objectDeleted,
@@ -35,6 +34,7 @@ import {
   objectEdited,
   objectMoved,
 } from "./tour-authoring-actions.js";
+import { pinTextChange } from "./tour-document.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -259,8 +259,10 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     if (found === undefined) return;
     const before = found.object;
     if (before.kind !== "pin") return;
-    // The shared rule (`object-edits.ts`), as the desktop editor uses it.
-    const edit = pinTextEdit(before, text);
+    // The shared rule, through the document (`pinTextChange`), as the
+    // desktop editor uses it.
+    const edit = pinTextChange(tour.state(), id, text);
+    if (edit.kind === "missing") return;
     if (edit.kind === "refused") {
       say(edit.reason);
       return;

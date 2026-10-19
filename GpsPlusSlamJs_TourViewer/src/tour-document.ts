@@ -39,6 +39,8 @@ import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
 import {
   authoringObjects,
   deleteObject,
+  moveObjectTo,
+  pinTextEdit,
   upsertPlaced,
   type AuthoringObject,
   type EditEntry,
@@ -116,6 +118,15 @@ export interface TourSaveStatus {
   /** The opened file no longer reads and nothing was built: Save cannot
    *  work here. */
   readonly cannotSave: boolean;
+  /** Where the file last written IN PLACE stands in the history (D33): the
+   *  `position` of the view it holds; `elsewhere` once a new edit dropped
+   *  that view (it was undone, and is no longer on the history); null
+   *  while no in-place save of this open landed, and after a download. */
+  readonly inPlaceAt: number | "elsewhere" | null;
+  /** An undo or a redo crossed the in-place file (`stepCrossesInPlaceSave`)
+   *  and no save was claimed since: the page writes the file again as soon
+   *  as no save runs (D33). */
+  readonly resave: boolean;
 }
 
 export interface TourDocumentState {
@@ -155,6 +166,11 @@ export interface TourDocumentState {
   readonly future: readonly TourHistoryStep[];
   /** Counts every edit, undo and redo. */
   readonly revision: number;
+  /** Where the document stands in its history: 0 at the open, + 1 for an
+   *  edit or a redo, - 1 for an undo. Absolute - the history's bound drops
+   *  old steps, never renumbers them - so a save names the view it wrote
+   *  (`save.inPlaceAt`). */
+  readonly position: number;
   readonly save: TourSaveStatus;
   /** The phone's "New station here" is armed (owner decision D8 of the
    *  editor round-2 plan): the next placed item starts its own station.
@@ -176,6 +192,8 @@ const IDLE: TourSaveStatus = {
   delivered: null,
   largeTour: false,
   cannotSave: false,
+  inPlaceAt: null,
+  resave: false,
 };
 
 /** `save` with `next` applied and its status following: saving while the
@@ -209,6 +227,7 @@ export const initialTourDocumentState: TourDocumentState = {
   past: [],
   future: [],
   revision: 0,
+  position: 0,
   save: IDLE,
   newStationArmed: false,
 };
@@ -310,6 +329,49 @@ export function detailsChange(
     return { kind: "unchanged" };
   }
   return { kind: "changed", details: checked.details };
+}
+
+/** What a pin's new text would change, by the rule both pages share
+ *  (`pinTextEdit`: trimmed, never empty): the object to dispatch
+ *  (`edited`), nothing (the same text, or not a pin), why not in plain
+ *  words, or `missing` for an id the tour does not carry. */
+export function pinTextChange(
+  state: TourDocumentState,
+  id: string,
+  text: string,
+):
+  | { readonly kind: "edited"; readonly after: TourObject }
+  | { readonly kind: "unchanged" }
+  | { readonly kind: "refused"; readonly reason: string }
+  | { readonly kind: "missing" } {
+  const found = documentObjects(state).find((o) => o.object.id === id);
+  if (found === undefined) return { kind: "missing" };
+  return pinTextEdit(found.object, text);
+}
+
+/** What a move of an object to `lat`/`lon` on the map would change
+ *  (`moveObjectTo`: its height and facing kept): the object before and
+ *  after (`moved`, to dispatch), `too-far` beyond its station's reach
+ *  (`objectFits`), or `missing` for an id the tour does not carry.
+ *  Throws for a position nobody can draw, as `moveObjectTo` does. */
+export function objectMoveChange(
+  state: TourDocumentState,
+  id: string,
+  lat: number,
+  lon: number,
+):
+  | {
+      readonly kind: "moved";
+      readonly before: TourObject;
+      readonly after: TourObject;
+    }
+  | { readonly kind: "too-far" }
+  | { readonly kind: "missing" } {
+  const found = documentObjects(state).find((o) => o.object.id === id);
+  if (found === undefined) return { kind: "missing" };
+  const after = moveObjectTo(found.object, lat, lon);
+  if (!objectFits(state, after)) return { kind: "too-far" };
+  return { kind: "moved", before: found.object, after };
 }
 
 /** The changes of the tour's own fields not written yet - its station
@@ -527,13 +589,42 @@ function edited(
 ): TourDocumentState {
   const past = [...before.past, { view: viewOf(before), what }];
   if (past.length > TOUR_HISTORY_LIMIT) past.shift();
+  const at = before.save.inPlaceAt;
   return {
     ...before,
     ...next,
     past,
     future: [],
     revision: before.revision + 1,
+    position: before.position + 1,
+    // The in-place file's view was undone, and the redo that led back to
+    // it is dropped now: no view on the history is the file's any more.
+    save:
+      typeof at === "number" && at > before.position
+        ? saveWith(before.save, { inPlaceAt: "elsewhere" })
+        : before.save,
   };
+}
+
+/**
+ * Whether a step (undo or redo) from `state` crosses the file last written
+ * in place (D33): it undoes an edit that file holds (the file's view is at
+ * or past the document's position), or redoes one that file lacks (the
+ * file's view is at or before it). With the file's view off the history
+ * (`elsewhere`) every step crosses: the file differs from the document on
+ * a step it cannot name. False with no in-place save, or no step to take.
+ * Positions, not times: a redo of an edit made after the file was written,
+ * and undone since, crosses it too - the redo takes the document away from
+ * what the file holds.
+ */
+function stepCrossesInPlaceSave(
+  state: TourDocumentState,
+  which: "undo" | "redo",
+): boolean {
+  const at = state.save.inPlaceAt;
+  if (at === null || nextStep(state, which) === undefined) return false;
+  if (at === "elsewhere") return true;
+  return which === "undo" ? at >= state.position : at <= state.position;
 }
 
 /** The document moved to `view` (an undo or a redo step). */
@@ -570,6 +661,7 @@ function step(
 ): TourDocumentState {
   const target = nextStep(state, which);
   if (target === undefined || state.written === null) return state;
+  const crosses = stepCrossesInPlaceSave(state, which);
   const here: TourHistoryStep = { view: viewOf(state), what: target.what };
   const moved = goTo(state, target.view);
   const from = which === "undo" ? state.past : state.future;
@@ -581,6 +673,8 @@ function step(
     past: which === "undo" ? rest : kept,
     future: which === "undo" ? kept : rest,
     revision: state.revision + 1,
+    position: state.position + (which === "undo" ? -1 : 1),
+    save: crosses ? saveWith(state.save, { resave: true }) : state.save,
   };
 }
 
@@ -603,6 +697,10 @@ interface TourSaved {
   readonly written: TourManifest;
   readonly appliedDeletions: readonly string[];
   readonly stationsAtStart: readonly StationFrame[];
+  /** The write goes over the opened file (the desktop's in place), and
+   *  holds the view at this history `position` (the save's snapshot's).
+   *  Absent for a download and for the phone's Finish. */
+  readonly inPlaceAt?: number;
 }
 
 /** A fresh save status that keeps who holds the page's save slot: the
@@ -849,6 +947,9 @@ const tourDocumentSlice = createSlice({
         placed: pending.placed,
         deleted: pending.deleted,
         stations: unmoved ? framesOf(written) : before.stations,
+        save: saveWith(before.save, {
+          inPlaceAt: action.payload.inPlaceAt ?? null,
+        }),
       };
     },
     /** A queued rebuild ended, landed or not (`error`: why it failed). */
@@ -872,7 +973,13 @@ const tourDocumentSlice = createSlice({
       const before = plain(state);
       return {
         ...before,
-        save: saveWith(before.save, { by: action.payload.by, error: null }),
+        // A save claimed after a step writes the document as it stands
+        // then, or says why it could not: the resave is taken on (D33).
+        save: saveWith(before.save, {
+          by: action.payload.by,
+          error: null,
+          resave: false,
+        }),
       };
     },
     /** The page let its save slot go; `error` says why the save failed. */

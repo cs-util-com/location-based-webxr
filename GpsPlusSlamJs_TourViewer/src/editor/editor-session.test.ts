@@ -1255,6 +1255,55 @@ describe("createEditorSession, undo and redo (W2)", () => {
     await session.close();
   });
 
+  it("delete, save in place, undo: a resave is due, and the file it writes keeps the note through a reload (D33)", async () => {
+    // Why (D33): the open drops every draft record of an id the file on
+    // disk lacks. A delete written in place and then undone was therefore
+    // lost on a reload - the disk lacked the note, the draft's record went
+    // with it. The undo now says a resave is due; the page writes in place
+    // at once, and the file it writes holds the note again.
+    const { session, manifest } = await opened([pin("a"), pin("b")]);
+    const drafts = memoryDraftStores();
+    const draftOf = () =>
+      createEditorDraft({
+        openStore: drafts.open,
+        holdLock: freeLocks,
+        noBackup: () => undefined,
+      });
+    const draft = draftOf();
+    await draft.open(K, manifest);
+    const writes = draft.writes();
+    const store = createTourViewerStore();
+    const doc = () => selectTourDocument(store.getState());
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: writes,
+      store,
+    });
+    expect(editor.remove("b").kind).toBe("deleted");
+    const first = await editor.save({ keepScan: false, inPlace: true });
+    writes.built(first.written);
+    writes.landed(first.written, K);
+    expect(editor.undo().kind).toBe("undone");
+    expect(doc().save.resave).toBe(true);
+    // The loss the resave exists for: a reload of the file as it stands
+    // now (without b) neither shows b nor offers it.
+    await draft.idle();
+    draft.close();
+    const lost = draftOf();
+    const before = await lost.open(K, await carried(first.blob));
+    expect(before.offer?.objects.map((o) => o.id) ?? []).not.toContain("b");
+    expect((await carried(first.blob)).objects.map((o) => o.id)).toEqual(["a"]);
+    lost.close();
+    // The page's resave: the save path, written in place.
+    const again = await editor.save({ keepScan: false, inPlace: true });
+    expect(doc().save.inPlaceAt).toBe(doc().position);
+    const reopened = await carried(again.blob);
+    expect(reopened.objects.map((o) => o.id)).toEqual(["a", "b"]);
+    await session.close();
+  });
+
   it("delete, download, undo, redo: a reload of the opened file offers the delete again", async () => {
     // Why (the r880 fix re-review, L1): a download clears nothing in the
     // draft, and a reload opens the OPENED file, which still holds the
@@ -1810,6 +1859,33 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
       second.manifest,
     );
     expect(now.changeCount()).toBe(0);
+    await first.session.close();
+    await second.session.close();
+  });
+
+  // Why: "as it stood when replaced" was the state of the session's LAST
+  // READ - an edit followed by no read before another open made the
+  // replaced session read its tour without that edit. It follows the
+  // store now, up to the replacing open.
+  it("a replaced session reads its tour as it stood when replaced, an edit no read followed included", async () => {
+    const first = await opened([pin("a")]);
+    const second = await opened([pin("z")]);
+    const store = createTourViewerStore();
+    const old = createEditorSession({
+      session: first.session,
+      manifest: first.manifest,
+      levels: new Map(),
+      store,
+    });
+    old.editText("a", "unread");
+    createEditorSession({
+      session: second.session,
+      manifest: second.manifest,
+      levels: new Map(),
+      store,
+    });
+    expect(old.changeCount()).toBe(1);
+    expect(old.pendingIds()).toEqual(["a"]);
     await first.session.close();
     await second.session.close();
   });

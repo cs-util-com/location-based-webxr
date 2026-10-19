@@ -14,9 +14,15 @@ the phone's creator in a later milestone. The session is the page's facade
 over it: it asks the document's own guards first (`objectFits`,
 `canPlace`, `canStep` - the reducers keep the same rules, so a refusal
 here is only the page's words for one) and checks what only the page can
-(a photo's picture for an undo), then dispatches; its closure keeps imperative resources only - the newest
-bytes (`previous`), the photo spots' cache, the pictures' side table
-(Blobs are never state) and the save queue. Design:
+(a photo's picture for an undo), then dispatches. An edit's payload is
+shaped by the document too (`pinTextChange`, `objectMoveChange`), and the
+save is the document's (`../tour-document-save.ts`): thunks dispatched
+into the store, whose handle keeps the newest bytes, the photo spots'
+decision and the save queue, while the slice's save status says whether
+a save runs, landed or failed. The session imports none of the shared
+rules itself (`config/.dependency-cruiser.cjs`). Its closure keeps
+imperative resources only - that handle and the pictures' side table
+(Blobs are never state). Design:
 `GpsPlusSlamJs_Docs/docs/2026-10-13-0832-tour-desktop-editor-and-scan-data-design.md`
 §9 ("E2 as revised").
 
@@ -31,7 +37,14 @@ bytes (`previous`), the photo spots' cache, the pictures' side table
     move of the walk asked of it after refuses ("Another tour was
     opened since"), and everything it reads (`model`, the counts, the
     details) is its own tour as it stood when replaced - never the new
-    one's (the r875 milestone review #4).
+    one's (the r875 milestone review #4). "As it stood" follows the store
+    (a listener on `listenToDocument` keeps the newest state of this open
+    after every action that changed the document), so an edit or a landed
+    save that no read followed is part of it. This relies on Redux
+    Toolkit's listener middleware calling the effect synchronously after
+    the reducer, inside the dispatch (its `notifyListener` calls the
+    effect before its first await): a read right after a dispatch never
+    finds `last` behind.
   - `draft` (M6 E2c) - the `EditorSessionDraft` every edit, move,
     delete, undo and redo is backed up through (`editor-draft.ts`): the
     four `DraftObjectWrites`, whose delete sequence is `draft-actions.ts`'s
@@ -87,10 +100,12 @@ bytes (`previous`), the photo spots' cache, the pictures' side table
     tour's stations and codes: what the setting's warnings are about (the
     stations farther than 40 m from every code that can place the tour,
     and whether a code can place it).
-  - `editText(id, text)` - `pinTextEdit`'s outcome (`edited`, `unchanged`,
-    `refused` with the phone's sentence; `refused` with `NOT_IN_TOUR` for an
-    id the tour no longer carries).
-  - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept):
+  - `editText(id, text)` - `pinTextEdit`'s outcome, through the document's
+    `pinTextChange` (`edited`, `unchanged`, `refused` with the phone's
+    sentence; `refused` with `NOT_IN_TOUR` for an id the tour no longer
+    carries).
+  - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept),
+    through the document's `objectMoveChange`:
     `{ kind: "moved" }`, or `EditorRefusal` (module-private: `refused` with `NOT_IN_TOUR`)
     for an id the tour no longer carries (PR #622 bot finding C), and
     `refused` with `TOO_FAR_FROM_STATION` for a spot further from the
@@ -153,12 +168,17 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     under, and its reach is checked there - review #1 of the tour document
     milestone); what was applied
     is written to the draft again. Returns the counts.
-  - `save({ keepScan })` - `rebuildFinishedTour` with `levels: []`, the
-    photo spots decided once per open (`captureSpotsForRebuild`, its result
-    kept), `previous` = the last save's bytes; returns `{ blob, filename,
-scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
-    carries, for the draft's bases) and advances to what was written
-    (`pendingAfterRebuild`).
+  - `save({ keepScan, inPlace? })` - the document's save thunk
+    (`../tour-document-save.ts` `save`, through `dispatchThunk`):
+    `rebuildFinishedTour` with `levels: []`, the photo spots decided once
+    per open (`captureSpotsForRebuild`, its result kept), from the last
+    save's bytes; returns `{ blob, filename, scanLeftOut, notPlaced?,
+written }` (`written`: the manifest the zip carries, for the draft's
+    bases) and advances to what was written (`saved`,
+    `pendingAfterRebuild`). `inPlace`: the page writes it over the opened
+    file, and the document learns where in its history that file stands
+    (`saved`'s `inPlaceAt`): an undo or a redo across it is then due a
+    resave (D33, `../tour-document.ts.md`).
   - `walkEntries()` - the walk recording's entries in the newest bytes
     (the last save's, else the opened file's; `scanEntryNames`): none once
     it was moved out, or when a save left it out.
@@ -179,8 +199,10 @@ scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
     `commit()`**: the page writes the walk's zip first, then the tour,
     and commits only when both landed; `current()` says no other save
     landed since the build (asked before the tour is written, so a stale
-    move writes nothing); `commit()` then makes the
-    walk-free bytes `previous` (the series version advances as in any
+    move writes nothing); `commit(inPlace?)` (`inPlace`: the tour was written
+    over the opened file, as for `save`) then makes the
+    walk-free bytes the newest (the save handle's `land`; the series
+    version advances as in any
     save), so no later save - an in-place autosave keeps "the walk" of the
     bytes it rebuilds from - can bring the walk back. It throws when
     another save landed since the move was built (the page holds saves
@@ -264,3 +286,8 @@ backed up in the draft; a cover coming back with its photo; a restore as
 one step; an undo after a save that dropped the emptied station putting the
 note back into that station (the M5a milestone review M2,
 `tour-content.ts`).
+The tour document (D29-D31): a later open on the same store disowning the
+session (its edits refused, a save begun before landing nowhere, one asked
+for after refused, its reads its own tour), and a replaced session reading
+its tour as it stood when replaced, an edit no read followed included. The
+save thunk itself: `../tour-document-save.test.ts`.

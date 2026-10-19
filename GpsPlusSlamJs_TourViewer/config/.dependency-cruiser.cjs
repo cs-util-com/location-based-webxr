@@ -54,8 +54,15 @@ module.exports = {
         pathNot: [
           "\\.test\\.ts$",
           "^src/test-support/",
-          // The document and the shared pure modules (each other's peers).
-          "^src/tour-document[^/]*\\.ts$",
+          // The document and the shared pure modules (each other's peers),
+          // named one by one: a new `tour-document-*` module is not exempt
+          // until it is listed here. `tour-document-draft.ts` is the draft's
+          // follower; `tour-document-save.ts` is the document's save - I/O,
+          // the rebuild and the photo bake - whose snapshot and landing
+          // read the rules.
+          "^src/tour-document\\.ts$",
+          "^src/tour-document-draft\\.ts$",
+          "^src/tour-document-save\\.ts$",
           "^src/(object-edits|finish-rebuild|tour-content|authoring-draft|capture-bake)\\.ts$",
           // Read-only helpers, permanent: the visitor's photo spots
           // (`worldCaptureSpots`), the AR placement's world view
@@ -70,23 +77,13 @@ module.exports = {
           // ...and the phone's draft store, its peer (the offer rules,
           // `hostedObjects`); it reads the tour only through the document.
           "^src/creator-draft\\.ts$",
-          // TEMPORARY - the desktop session's save: the rebuild's I/O
-          // (`rebuildFinishedTour`, `captureSpotsForRebuild`), the saved
-          // file's name (`finishedFileName`; the page reads it through the
-          // session's `savedName`), the edit validators that shape a payload
-          // (`pinTextEdit`, `moveObjectTo`), the written file's objects
-          // (`hostedObjects`, for a deleted photo's picture) and the
-          // `AuthoringObject` type - until the save moves into a
-          // tour-document thunk (follow-up of D30).
-          "^src/editor/editor-session\\.ts$",
-          // TEMPORARY - the phone's side of the same follow-up as the
-          // desktop session's: its Finish's rebuild I/O
+          // TEMPORARY - the phone's Finish: its rebuild I/O
           // (`rebuildFinishedTour`, `captureSpotsForRebuild`,
-          // `finishedFileName`) and its object list's pin-text validator
-          // (`pinTextEdit`) - until the save moves into a tour-document
-          // thunk. The phone's tour itself is the document since its
-          // adoption (`creator-document.ts`).
-          "^src/(object-editing|creator-finish)\\.ts$",
+          // `finishedFileName`) - until it saves through the document's
+          // save (`tour-document-save.ts`, the desktop editor's already;
+          // follow-up of D30). The phone's tour itself is the document
+          // since its adoption (`creator-document.ts`).
+          "^src/creator-finish\\.ts$",
         ],
       },
       to: {

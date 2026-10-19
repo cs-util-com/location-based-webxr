@@ -27,7 +27,9 @@ import {
   manifestNow,
   manifestToWrite,
   objectFits,
+  objectMoveChange,
   picturesNeeded,
+  pinTextChange,
   TOUR_HISTORY_LIMIT,
   tourDocumentActions as act,
   tourDocumentReducer as reduce,
@@ -683,5 +685,172 @@ describe("tour document: the rules its reducers keep", () => {
     );
     expect(unsavedEntries(state).map((p) => p.object.id)).toEqual(["b"]);
     expect(changeCount(state)).toBe(2); // the note and the frame
+  });
+});
+
+// Why: both pages shape an edit's payload by these, through the document
+// (the boundary rule keeps them from importing `object-edits.ts`): the
+// phone's object list and the desktop session must refuse and accept the
+// same text and the same moves.
+describe("tour document: what an edit would change", () => {
+  it("a pin's text: trimmed, the same text no change, an empty one refused, an unknown id missing", () => {
+    const state = open();
+    expect(pinTextChange(state, "a", "  New  ")).toEqual({
+      kind: "edited",
+      after: { ...objectOf(state, "a"), label: "New" },
+    });
+    expect(pinTextChange(state, "a", "pin a")).toEqual({ kind: "unchanged" });
+    expect(pinTextChange(state, "a", "   ")).toMatchObject({
+      kind: "refused",
+    });
+    // A photo has no text to edit.
+    expect(pinTextChange(state, "f", "x")).toEqual({ kind: "unchanged" });
+    expect(pinTextChange(state, "gone", "x")).toEqual({ kind: "missing" });
+  });
+
+  it("a move on the map: height and facing kept, too far from its station refused, an unknown id missing", () => {
+    const state = open();
+    const a = objectOf(state, "a");
+    expect(objectMoveChange(state, "a", 48.5205, 9.051)).toEqual({
+      kind: "moved",
+      before: a,
+      after: { ...a, geo: { ...a.geo, lat: 48.5205, lon: 9.051 } },
+    });
+    const far = (TOUR_ITEM_MAX_OFFSET_M * 2) / 111_320;
+    expect(objectMoveChange(state, "a", a.geo.lat + far, 9.05)).toEqual({
+      kind: "too-far",
+    });
+    expect(objectMoveChange(state, "gone", 48.52, 9.05)).toEqual({
+      kind: "missing",
+    });
+    expect(() => objectMoveChange(state, "a", 91, 9.05)).toThrow(RangeError);
+  });
+});
+
+/** A save written over the opened file (the desktop's in place): it names
+ *  the history position of the view it wrote. */
+function saveInPlace(state: TourDocumentState): TourDocumentState {
+  const written = manifestToWrite(state);
+  if (written === null) throw new Error("nothing open");
+  return reduce(
+    state,
+    act.saved({
+      generation: state.generation,
+      written,
+      appliedDeletions: [...state.deleted],
+      stationsAtStart: state.stations,
+      inPlaceAt: state.position,
+    }),
+  );
+}
+
+function del(state: TourDocumentState, id: string): TourDocumentState {
+  return reduce(state, act.deleted({ id, what: `the delete of ${id}` }));
+}
+
+function relabel(state: TourDocumentState, id: string): TourDocumentState {
+  const object = objectOf(state, id);
+  if (object.kind !== "pin") throw new Error(`${id} is no pin`);
+  return reduce(
+    state,
+    act.edited({ object: { ...object, label: `${object.label}!` }, what: id }),
+  );
+}
+
+const undo = (s: TourDocumentState) => reduce(s, act.undone());
+const redo = (s: TourDocumentState) => reduce(s, act.redone());
+
+describe("tour document: a step across an in-place save (D33)", () => {
+  // Why: the desktop's open drops every draft record of an id the file on
+  // disk lacks, so a delete written in place and then undone was lost on a
+  // reload. The owner's fix (D33): an undo or redo that crosses an in-place
+  // save writes the file again at once. The slice says when that is due
+  // (`save.resave`); these pin the rule - which steps cross, which do not.
+
+  it("an undo of a delete an in-place save wrote is due a resave", () => {
+    const state = undo(saveInPlace(del(open(), "b")));
+    expect(state.save.resave).toBe(true);
+    expect(documentObjects(state).map((o) => o.object.id)).toContain("b");
+  });
+
+  it("an undo of an edit no save wrote is not, nor of one after the save", () => {
+    expect(undo(del(open(), "b")).save.resave).toBe(false);
+    // The file was written before the delete: the undo moves back to it.
+    expect(undo(del(saveInPlace(open()), "b")).save.resave).toBe(false);
+    // Two edits after the save: undoing the newer crosses nothing either.
+    const after = del(relabel(saveInPlace(open()), "a"), "b");
+    expect(undo(after).save.resave).toBe(false);
+    expect(undo(undo(after)).save.resave).toBe(false);
+  });
+
+  it("the second undo below the save crosses it, the first does not", () => {
+    // a, b written in place; c after it.
+    const written = saveInPlace(relabel(del(open(), "b"), "a"));
+    const later = relabel(written, "a");
+    expect(undo(later).save.resave).toBe(false);
+    expect(undo(undo(later)).save.resave).toBe(true);
+  });
+
+  it("a download is no in-place save: an undo across it is not due", () => {
+    expect(undo(save(del(open(), "b"))).save.resave).toBe(false);
+    // A download after an in-place save: the page writes downloads now.
+    const both = save(saveInPlace(del(open(), "b")));
+    expect(undo(both).save.resave).toBe(false);
+  });
+
+  it("a redo across an in-place save is due; one with no save between is not", () => {
+    // The delete undone, then the file written holding b: the redo takes b
+    // away from what the file holds.
+    const written = saveInPlace(undo(del(open(), "b")));
+    expect(redo(written).save.resave).toBe(true);
+    expect(redo(undo(del(open(), "b"))).save.resave).toBe(false);
+    // Written before the delete was made, then the delete undone and
+    // redone: the redo takes b away from what the file holds, so it is due
+    // too (the rule reads positions, not when the edit was first made).
+    expect(redo(undo(del(saveInPlace(open()), "b"))).save.resave).toBe(true);
+  });
+
+  it("a new edit past an undone save leaves the file off the history: every step crosses it", () => {
+    // Written with b deleted; the delete undone (the resave not landed);
+    // a new edit drops the redo, so no view on the history is the file's.
+    let state = undo(saveInPlace(del(open(), "b")));
+    state = reduce(state, act.saveClaimed({ by: "auto" }));
+    state = reduce(state, act.saveReleased({}));
+    expect(state.save.resave).toBe(false);
+    state = relabel(state, "a");
+    expect(state.save.inPlaceAt).toBe("elsewhere");
+    expect(undo(state).save.resave).toBe(true);
+    const back = reduce(
+      reduce(undo(state), act.saveClaimed({ by: "auto" })),
+      act.saveReleased({}),
+    );
+    expect(redo(back).save.resave).toBe(true);
+    // A landed in-place save puts the file back on the history.
+    expect(saveInPlace(state).save.inPlaceAt).toBe(state.position);
+  });
+
+  it("a claimed save takes the resave on; an open forgets it; a refused undo sets nothing", () => {
+    const due = undo(saveInPlace(del(open(), "b")));
+    expect(reduce(due, act.saveClaimed({ by: "auto" })).save.resave).toBe(
+      false,
+    );
+    expect(reduce(due, act.opened({ manifest: OPENED })).save).toMatchObject({
+      resave: false,
+      inPlaceAt: null,
+    });
+    const running = reduce(
+      saveInPlace(del(open(), "b")),
+      act.saveStarted({ generation: 1 }),
+    );
+    expect(undo(running).save.resave).toBe(false);
+  });
+
+  it("counts its position: an edit and a redo forward, an undo back, an open from zero", () => {
+    let state = relabel(del(open(), "b"), "a");
+    expect(state.position).toBe(2);
+    state = undo(undo(state));
+    expect(state.position).toBe(0);
+    expect(redo(state).position).toBe(1);
+    expect(reduce(state, act.opened({ manifest: OPENED })).position).toBe(0);
   });
 });

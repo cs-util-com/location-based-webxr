@@ -359,3 +359,86 @@ describe("tour document (properties)", () => {
     await tour.close();
   });
 });
+
+/** A creator's step as the D33 property drives it: the edits of `opArb`
+ *  (no save), undo, redo, and a save written in place or downloaded. */
+type CrossingOp = Op | { kind: "in-place" } | { kind: "download" };
+
+const crossingOpArb: fc.Arbitrary<CrossingOp> = fc.oneof(
+  opArb.filter((op) => op.kind !== "save"),
+  fc.constant({ kind: "undo" as const }),
+  fc.constant({ kind: "redo" as const }),
+  fc.constant({ kind: "in-place" as const }),
+  fc.constant({ kind: "download" as const }),
+);
+
+describe("tour document (properties): a step across an in-place save (D33)", () => {
+  it("a step is due a resave exactly when it undoes an edit the in-place file holds, or redoes one it lacks", () => {
+    // Why: the slice decides the crossing by history POSITIONS. This model
+    // decides it by the SET of edits each view carries - the file holds the
+    // edits of the view it wrote; an edit dropped by a new branch it still
+    // holds puts it off the history, where every step crosses. Two
+    // formulations, one answer, over any mix of edits, steps and saves.
+    fc.assert(
+      fc.property(fc.array(crossingOpArb, { maxLength: 40 }), (ops) => {
+        let state = opened;
+        let line: number[] = [];
+        let pos = 0;
+        let next = 0;
+        let file: Set<number> | null = null;
+        for (const op of ops) {
+          if (op.kind === "in-place" || op.kind === "download") {
+            const written = manifestToWrite(state)!;
+            state = reduce(
+              state,
+              act.saved({
+                generation: state.generation,
+                written,
+                appliedDeletions: [...state.deleted],
+                stationsAtStart: state.stations,
+                ...(op.kind === "in-place"
+                  ? { inPlaceAt: state.position }
+                  : {}),
+              }),
+            );
+            file = op.kind === "in-place" ? new Set(line.slice(0, pos)) : null;
+            continue;
+          }
+          // Each step is read on its own: a claimed save takes the last one's
+          // resave on, as the page's resave does.
+          state = reduce(
+            reduce(state, act.saveClaimed({ by: "auto" })),
+            act.saveReleased({}),
+          );
+          const before = state;
+          state =
+            op.kind === "undo" || op.kind === "redo"
+              ? reduce(state, op.kind === "undo" ? act.undone() : act.redone())
+              : apply(state, op);
+          const taken = state.revision !== before.revision;
+          const onLine = new Set(line);
+          const off =
+            file !== null && [...file].some((edit) => !onLine.has(edit));
+          // The model's answer: a step not taken, and an edit, cross nothing.
+          let due = false;
+          if (taken && op.kind === "undo") {
+            const edit = line[pos - 1]!;
+            pos -= 1;
+            due = file !== null && (off || file.has(edit));
+          } else if (taken && op.kind === "redo") {
+            const edit = line[pos]!;
+            pos += 1;
+            due = file !== null && (off || !file.has(edit));
+          } else if (taken) {
+            line = [...line.slice(0, pos), next];
+            next += 1;
+            pos += 1;
+          }
+          expect(state.save.resave).toBe(due);
+          expect(state.position).toBe(pos);
+        }
+      }),
+      { numRuns: 400 },
+    );
+  });
+});

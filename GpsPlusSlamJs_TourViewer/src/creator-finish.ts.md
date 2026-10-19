@@ -77,10 +77,19 @@ module's sidecar states them as its contract.
   places say whether a save runs, so a reader must know which one it
   reads: the undo reads the slice (`canStep`); the object list's lock,
   the readout, the Finish button and the AR button read `ctx`. Follow-up:
-  the save moves into a tour-document thunk (the same follow-up as the
-  rebuild I/O's TEMPORARY boundary entries, `config/.dependency-cruiser.cjs`),
-  which takes the status into the store and leaves only the Blob beside
-  it. As the desktop's selection was recorded (`editor/edit-main.ts.md`).
+  the Finish moves onto the tour document's save thunk
+  (`tour-document-save.ts`, the desktop editor's save since it was built;
+  the same follow-up as this file's TEMPORARY boundary entry,
+  `config/.dependency-cruiser.cjs`), which takes the status into the store
+  and leaves only the Blob beside it. Not done with the desktop's, because
+  it would change this page's behaviour: the Finish reads its entries
+  after the photo bake (the thunk, before its first await), ends the
+  document's save only after the AR session's end and the wizard's step
+  (the thunk ends it at the landing, so an undo would be let in earlier),
+  and rebuilds with the code levels, a progress line and a stop check the
+  thunk does not take - each a decision to take, not a refactor
+  (`tour-document-save.ts.md`, "Not here yet"). As the desktop's
+  selection was recorded (`editor/edit-main.ts.md`).
 
 - **The tour's title** (polish round M4a; W2 of the tour editor plan
   2026-10-17-1816) is the tour document's: step 3's "Tour name" field
