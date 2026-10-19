@@ -319,6 +319,56 @@ describe("withTourContent", () => {
     });
   });
 
+  // Why this test matters: the walk's photos go through the rule before the
+  // objects, so a station an object starts of its own ("New station here")
+  // did not exist yet when they were assigned. Photos taken at its spot then
+  // joined a neighbour 20 m back (R 20-40) or started a duplicate station
+  // beside it (R 15), never the station the creator started there. Swept
+  // over R, because which of the two failures shows depends on R.
+  it.each([15, 20, 25, 30, 35, 40])(
+    "recorded photos at an own station's spot join it, and an earlier pin stays out of it (R %d m)",
+    (radiusM) => {
+      const captures = [
+        { image: "images/frame-1.jpg", geo: geo(20, 1, 521) },
+        { image: "images/frame-2.jpg", geo: geo(21, 0, 521) },
+      ];
+      const next = withTourContent(tour([station("gate", 0, 0)]), {
+        objects: [
+          pin("near", 18, 0),
+          { ...pin("own", 20, 0), station: "mine" },
+        ],
+        captureSpots: { fixes: 9, gpsAccuracyMedianM: 4, captures },
+        newStationId: counter(),
+        radiusM,
+      });
+      expect(next.captureSpots?.captures.map((c) => c.station)).toEqual([
+        "mine",
+        "mine",
+      ]);
+      const mine = next.stations.find((s) => s.id === "mine")!;
+      expect(mine.items.map((i) => i.id)).toEqual(["own"]);
+      const own = pin("own", 20, 0).geo;
+      expect(mine.geo).toMatchObject({ lat: own.lat, lon: own.lon });
+      // The earlier pin is where the rule puts it without the own station:
+      // in the gate within R, in a station of its own beyond. And there is
+      // no duplicate station at the own station's spot.
+      const expected =
+        radiusM >= 18
+          ? [
+              ["gate", ["near"]],
+              ["mine", ["own"]],
+            ]
+          : [
+              ["gate", []],
+              ["s1", ["near"]],
+              ["mine", ["own"]],
+            ];
+      expect(
+        next.stations.map((s) => [s.id, s.items.map((i) => i.id)]),
+      ).toEqual(expected);
+    },
+  );
+
   it("recorded photos are assigned in capture order, before the objects; the tour's own spots are kept", () => {
     const captures = [0, 30, 60].map((n) => ({
       image: `images/frame-${String(n)}.jpg`,
