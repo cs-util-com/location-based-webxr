@@ -116,6 +116,11 @@ describe("createTourSaves", () => {
     rename(store, "b", "During");
     await running;
     expect(doc(store).position).toBe(2);
+    // Named once the write arrives (the page's delivery), not before.
+    expect(doc(store).save.inPlaceAt).toBeNull();
+    store.dispatch(
+      tourDocumentActions.saveDelivered({ inPlace: true, name: "t.zip" }),
+    );
     expect(doc(store).save.inPlaceAt).toBe(1);
     await dispatchThunk(store, saves.save({ keepScan: false }));
     expect(doc(store).save.inPlaceAt).toBeNull();

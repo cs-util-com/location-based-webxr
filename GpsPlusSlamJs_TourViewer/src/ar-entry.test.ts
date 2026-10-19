@@ -20,7 +20,7 @@ import {
   type TourViewerSession,
 } from "./tour-viewer-session.js";
 import type { TourViewerSeams } from "./seams.js";
-import { headingPendingSet } from "./visitor-guide-slice.js";
+import { headingPendingSet, presenceCleared } from "./visitor-guide-slice.js";
 import { RECORDING_DEPTH } from "./authoring-recording.js";
 import {
   endSession,
@@ -224,6 +224,35 @@ describe("wireArEntry session end", () => {
     expect(settle).toBeGreaterThanOrEqual(0);
     expect(settle).toBeLessThan(order.indexOf(endSession.type));
     expect(settle).toBeLessThan(order.indexOf(resetGpsSessionData.type));
+  });
+
+  // Why this test matters (PR review): the station guide's end of session
+  // dispatches into the store (its presence cleared). While the placement
+  // trigger was still subscribed, that dispatch re-entered the placement
+  // and the guide's tick mid-teardown - harmless only because the gate had
+  // been set idle first. The trigger now ends before the guide's teardown,
+  // so no order of the resets can place or re-publish presence.
+  it("ends the placement trigger before the guide's teardown: a dispatch from it places nothing and ticks no station", async () => {
+    const h = harness({ enableOk: true });
+    await h.enter();
+    expect(h.ctx.placementUnsubscribe).not.toBeNull();
+    let attempts = 0;
+    let ticks = 0;
+    h.hooks.tryPlaceTour = () => {
+      attempts += 1;
+    };
+    h.hooks.tickStations = () => {
+      ticks += 1;
+    };
+    h.hooks.stopStations = () => {
+      // A gate that still allows placement, whatever the reset order.
+      h.ctx.scanGate = { kind: "passed", via: "code" };
+      h.arStore.dispatch(presenceCleared());
+    };
+    h.enabledConfig()!.callbacks?.onSessionEnd?.({ requestedByApp: false });
+    expect(attempts).toBe(0);
+    expect(ticks).toBe(0);
+    expect(h.ctx.placementUnsubscribe).toBeNull();
   });
 
   // Why this test matters (code book plan M6 v5.1): the settle compares the

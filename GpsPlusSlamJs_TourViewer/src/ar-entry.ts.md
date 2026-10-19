@@ -127,7 +127,10 @@ entry; C7).
 - **The visitor's stations (tour kit plan K4):** every camera frame and
   every store dispatch of a visitor session calls `hooks.tickStations()`
   (next to `tryPlaceTour`); the session end calls `hooks.stopStations()`
-  (the story stops, the HUD goes, the progress stays); a visitor's tap on
+  (the story stops, the HUD goes, the progress stays) AFTER it ends the
+  placement trigger (`ctx.placementUnsubscribe`), so a gate or presence
+  change the guide's teardown publishes neither places the tour nor ticks a
+  station in the dying session; a visitor's tap on
   `#enter-ar` calls `hooks.unlockStationAudio()` FIRST, synchronously,
   before any await - a phone lets the stories' audio element play later
   only if it played inside a gesture.

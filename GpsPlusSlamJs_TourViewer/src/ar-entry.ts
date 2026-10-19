@@ -481,6 +481,11 @@ export function wireArEntry(deps: {
     ctx.stationContent = null;
     ctx.contentAttempted = false;
     ctx.contentError = null;
+    // The placement trigger goes first: the guide's teardown below may
+    // still publish (a gate or presence change), and a live trigger would
+    // answer it with a placement attempt into the dying session.
+    ctx.placementUnsubscribe?.();
+    ctx.placementUnsubscribe = null;
     // The story stops with the session; the station progress stays.
     hooks.stopStations();
     dom.escapeButton.hidden = true;
@@ -494,11 +499,10 @@ export function wireArEntry(deps: {
     ctx.placement = { kind: "idle" };
     ctx.viewerPlanesError = null;
     ctx.imagePlanesLoading = false;
-    // The placement trigger is session state: unsubscribe, and let the next
-    // entry attempt again once ITS tracking reports ready (flows plan M4,
-    // review #12 - per-entry re-placement by design).
-    ctx.placementUnsubscribe?.();
-    ctx.placementUnsubscribe = null;
+    // The placement trigger is session state (unsubscribed above, before
+    // the guide's teardown): let the next entry attempt again once ITS
+    // tracking reports ready (flows plan M4, review #12 - per-entry
+    // re-placement by design).
     ctx.placementAttempted = false;
     ctx.joinDeclined = false;
     // Invalidate any join still awaiting: it cannot be cancelled, but every

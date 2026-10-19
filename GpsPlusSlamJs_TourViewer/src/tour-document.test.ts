@@ -727,9 +727,10 @@ describe("tour document: what an edit would change", () => {
   });
 });
 
-/** A save written over the opened file (the desktop's in place): it names
- *  the history position of the view it wrote. */
-function saveInPlace(state: TourDocumentState): TourDocumentState {
+/** A save built to go over the opened file (the desktop's in place): it
+ *  names the history position of the view it writes; the write has not
+ *  arrived yet. */
+function builtInPlace(state: TourDocumentState): TourDocumentState {
   const written = manifestToWrite(state);
   if (written === null) throw new Error("nothing open");
   return reduce(
@@ -741,6 +742,24 @@ function saveInPlace(state: TourDocumentState): TourDocumentState {
       stationsAtStart: state.stations,
       inPlaceAt: state.position,
     }),
+  );
+}
+
+/** A save written over the opened file whose write arrived. */
+function saveInPlace(state: TourDocumentState): TourDocumentState {
+  return reduce(
+    builtInPlace(state),
+    act.saveDelivered({ inPlace: true, name: "tour.zip" }),
+  );
+}
+
+/** A resave of the document as it stands, built in place, whose write was
+ *  refused or failed: the slot let go without the write arriving. */
+function failedResave(state: TourDocumentState): TourDocumentState {
+  const claimed = reduce(state, act.saveClaimed({ by: "auto" }));
+  return reduce(
+    builtInPlace(claimed),
+    act.saveReleased({ error: "the disk is full" }),
   );
 }
 
@@ -843,6 +862,63 @@ describe("tour document: a step across an in-place save (D33)", () => {
       act.saveStarted({ generation: 1 }),
     );
     expect(undo(running).save.resave).toBe(false);
+  });
+
+  // Why (PR review): the file's view was named when the save was BUILT,
+  // so a write that was refused or failed left the slice believing the disk
+  // held a view it never received, and a later step could then miss the
+  // real file. The view is named when the write arrives; until then the
+  // disk keeps the view it had.
+  it("names the file's view only once the in-place write arrives; a failed write leaves the disk's view", () => {
+    const built = builtInPlace(del(open(), "b"));
+    expect(built.save.inPlaceAt).toBeNull();
+    expect(
+      reduce(built, act.saveDelivered({ inPlace: true, name: "t.zip" })).save
+        .inPlaceAt,
+    ).toBe(built.position);
+    // The disk holds b deleted (position 1); the undo crosses it, and its
+    // resave fails: the disk still holds position 1.
+    const failed = failedResave(undo(saveInPlace(del(open(), "b"))));
+    expect(failed.save.inPlaceAt).toBe(1);
+  });
+
+  // Why: "tap Save again" re-delivers the build that did not arrive, with
+  // no new build (the page's `undelivered`). Its view must still be named
+  // when that write arrives, or the slice keeps the view the disk no
+  // longer holds and a later step misses the real file.
+  it("a retried write of the build that did not arrive names its view when it arrives", () => {
+    const failed = failedResave(undo(saveInPlace(del(open(), "b"))));
+    const retried = reduce(
+      reduce(failed, act.saveClaimed({ by: "explicit" })),
+      act.saveDelivered({ inPlace: true, name: "t.zip" }),
+    );
+    expect(retried.save.inPlaceAt).toBe(0);
+    // The disk holds 0 now: a redo to 1 leaves it and must write.
+    expect(redo(reduce(retried, act.saveReleased({}))).save.resave).toBe(true);
+  });
+
+  it("after a failed resave a later step still crosses the real file (the counter-traces)", () => {
+    // The disk at 1 (b deleted); undo to 0 crosses; its resave fails.
+    const failed = failedResave(undo(saveInPlace(del(open(), "b"))));
+    // A redo to 1 comes back to what the disk holds: nothing to write.
+    expect(redo(failed).save.resave).toBe(false);
+    // Then an undo back to 0 (a save attempted between, taking any resave
+    // on): the disk still holds 1, so the undo leaves it and must write.
+    const attempted = (x: TourDocumentState) =>
+      reduce(reduce(x, act.saveClaimed({ by: "auto" })), act.saveReleased({}));
+    expect(undo(attempted(redo(failed))).save.resave).toBe(true);
+    // A new edit at 1 and its undo back to 0: the edit dropped the disk's
+    // view from the history, so the undo crosses it.
+    expect(undo(relabel(failed, "a")).save.resave).toBe(true);
+  });
+
+  it("a step while an in-place write runs is measured against the view it writes too", () => {
+    // Written at 1 (b deleted), the write not arrived: an undo already
+    // takes the document off what the disk will hold.
+    const writing = builtInPlace(
+      reduce(del(open(), "b"), act.saveClaimed({ by: "auto" })),
+    );
+    expect(undo(writing).save.resave).toBe(true);
   });
 
   it("counts its position: an edit and a redo forward, an undo back, an open from zero", () => {

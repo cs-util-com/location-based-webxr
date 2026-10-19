@@ -29,7 +29,7 @@ import {
   type TourSession,
 } from "../tour-session.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
-import { selectTourDocument } from "../tour-document.js";
+import { selectTourDocument, tourDocumentActions } from "../tour-document.js";
 import {
   createEditorSession,
   NOT_IN_TOUR,
@@ -1285,6 +1285,10 @@ describe("createEditorSession, undo and redo (W2)", () => {
     const first = await editor.save({ keepScan: false, inPlace: true });
     writes.built(first.written);
     writes.landed(first.written, K);
+    // The page's delivery: the in-place write arrived.
+    store.dispatch(
+      tourDocumentActions.saveDelivered({ inPlace: true, name: "t.zip" }),
+    );
     expect(editor.undo().kind).toBe("undone");
     expect(doc().save.resave).toBe(true);
     // The loss the resave exists for: a reload of the file as it stands
@@ -1298,6 +1302,9 @@ describe("createEditorSession, undo and redo (W2)", () => {
     lost.close();
     // The page's resave: the save path, written in place.
     const again = await editor.save({ keepScan: false, inPlace: true });
+    store.dispatch(
+      tourDocumentActions.saveDelivered({ inPlace: true, name: "t.zip" }),
+    );
     expect(doc().save.inPlaceAt).toBe(doc().position);
     const reopened = await carried(again.blob);
     expect(reopened.objects.map((o) => o.id)).toEqual(["a", "b"]);

@@ -626,8 +626,10 @@ function endUndo(): void {
   clearTimeout(undoOffer.timer);
   undoOffer.toast.remove();
   undoOffer = null;
-  // An autosave held for the delete's Undo may start now.
+  // An autosave held for the delete's Undo may start now, and so may a
+  // resave that fell due meanwhile (D33).
   autosave.poke();
+  void resaveIfDue();
 }
 
 /** Said for each undo or redo (the async-UI rule's confirmation: the keys
@@ -651,19 +653,22 @@ function runStep(which: "undo" | "redo"): void {
     toast(outcome.reason);
     return;
   }
-  endUndo();
   if (outcome.kind === "nothing") {
+    endUndo();
     toast(STEP_WORDS[which].none);
     return;
   }
-  toast(`${STEP_WORDS[which].done}: ${outcome.what}.`);
-  autosave.changed();
   // Restarted by every step: the resave writes where a run of steps ended.
+  // Before the undo offer ends, whose end asks for a due resave: the quiet
+  // time must already hold it.
   stopResaveTimer();
   resaveTimer = window.setTimeout(() => {
     resaveTimer = null;
     void resaveIfDue();
   }, RESAVE_QUIET_MS);
+  endUndo();
+  toast(`${STEP_WORDS[which].done}: ${outcome.what}.`);
+  autosave.changed();
 }
 
 function stopResaveTimer(): void {
@@ -685,8 +690,12 @@ function stopResaveTimer(): void {
  * off. Never for downloads (`target` null): a download cannot be rewritten
  * silently. It waits - the resave staying due - while a save runs (that
  * save's end asks again, `saveTour`), while the steps' quiet time runs
- * (its end asks), and while another tour is being chosen or opened (the
- * open dialog's close asks, `showModal`).
+ * (its end asks), while an edit is being made (`editing`: the end of the
+ * delete's Undo offer, a committed field and a finished or cancelled move
+ * ask), and while another tour is being chosen or opened (the open
+ * dialog's close asks, `showModal`). Started during an edit it would be
+ * claimed - which takes the resave on - and then held, and nothing would
+ * write the file until Save on a large tour.
  */
 async function resaveIfDue(): Promise<void> {
   const mine = editor;
@@ -698,13 +707,15 @@ async function resaveIfDue(): Promise<void> {
 }
 
 /** A resave is due and nothing holds it: written in place, no save
- *  running, the steps' quiet time over, no other tour being opened. */
+ *  running, the steps' quiet time over, no edit being made, no other tour
+ *  being opened. */
 function resaveMayStart(): boolean {
   return (
     target !== null &&
     saveState().resave &&
     !saving() &&
     resaveTimer === null &&
+    !editing() &&
     !busy &&
     Boolean(modal.hidden)
   );
@@ -744,6 +755,7 @@ function finishMove(): void {
   }
   refresh();
   autosave.poke();
+  void resaveIfDue();
 }
 
 function cancelMove(): void {
@@ -754,6 +766,7 @@ function cancelMove(): void {
   // Redrawn from the model: the marker goes back to where it was.
   refresh();
   autosave.poke();
+  void resaveIfDue();
 }
 
 const map = createEditorMap(element("map"), {
@@ -846,6 +859,7 @@ const card = createEditorCard(
         autosave.changed();
       }
       autosave.poke();
+      void resaveIfDue();
     },
     onMove: startMove,
     onMoveDone: finishMove,

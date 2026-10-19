@@ -296,8 +296,15 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     lost the note. `resaveIfDue` runs `RESAVE_QUIET_MS` after the last step
     (every step restarts the timer), at each save's end, and when the open
     dialog closes; it waits - the resave staying due - while the quiet time
-    runs, while a save runs, and while another tour is being chosen or
-    opened (`busy`, the open dialog showing). When
+    runs, while a save runs, while an edit is being made (`editing()`: the
+    delete's Undo offer, a card field not yet committed, a move; their end
+    asks again - the Undo offer's end, the card's commit, a finished or
+    cancelled move), and while another tour is being chosen or opened
+    (`busy`, the open dialog showing). Started during an edit, a resave
+    would be claimed - which takes it on - and then held as an autosave
+    is, and nothing would write the file until Save. A step restarts the
+    quiet time before it ends the Undo offer, so that end finds the timer
+    running. When
     the slice says a resave is due (`save.resave`; the rule, "crosses", is
     `tour-document.ts.md`'s "A step across an in-place save") and the tour
     is written in place (`target`), it saves through `saveTour("auto")` -

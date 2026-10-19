@@ -218,20 +218,26 @@ once. The slice says when; the page writes (`editor/edit-main.ts`
 - **`resave`** is set by the step that crossed and taken on by the next
   `saveClaimed`. A step during the write of an in-place save (after its
   rebuild, which an undo waits for) is measured against the view that write
-  holds - `saved` already landed it - and is written once that save ends.
+  holds (`inPlaceWriting`, named by `saved`) as well as against
+  `inPlaceAt` - the disk holds one of the two once the write ends - and is
+  written once that save ends.
 - **A download is no in-place save.** `inPlaceAt` is null after one, so no
   step crosses: a download cannot be rewritten silently. A tour whose saves
   turned into downloads ("Download instead") keeps the earlier in-place file
   on disk as it was; this page no longer writes it.
-- **A write that failed after its `saved` landed** leaves `inPlaceAt` at its
-  view although the disk does not hold it. After a failed write the disk is
-  not trusted until a write lands, and a step may then cross the real file
-  without the rule seeing it (the disk at view 3, an undo to 2 crosses and
-  its write fails, so `inPlaceAt` is 2; a new edit and its undo back to 2
-  cross nothing while the disk still holds 3). The page says so meanwhile:
-  the status line's "Not saved yet - tap Save again" (the save built, not
-  delivered), the in-place refusal toast, autosave paused, and leaving
-  asks first (`beforeunload`).
+- **The file's view is named when the write ARRIVES**, not when the save is
+  built: `saved` names it `inPlaceWriting`, `saveDelivered` (in place)
+  makes it `inPlaceAt`, and a build whose write never arrived keeps its
+  view in `inPlaceWriting` (counted only while a save holds the slot) so
+  that "tap Save again", which re-delivers the same build, names it when
+  it arrives. A refused or failed in-place write therefore leaves
+  `inPlaceAt` at the view the disk still holds, and later steps are measured against
+  the real file (the disk at view 1, an undo to 0 whose resave fails: a
+  redo back to 1 writes nothing, and the undo after it crosses the file
+  again; a new edit at 1 drops the disk's view, so its undo crosses too).
+  The page also says a failed write: the status line's "Not saved yet -
+  tap Save again" (the save built, not delivered), the in-place refusal
+  toast, autosave paused, and leaving asks first (`beforeunload`).
 - **The walk's move** names its position from its snapshot, taken when the
   move was built; no step can come between that and its commit (the Done
   dialog is modal).

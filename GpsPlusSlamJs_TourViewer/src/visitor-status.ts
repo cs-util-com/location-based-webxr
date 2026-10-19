@@ -342,8 +342,18 @@ function runningSentence(input: ArStatusInput): VisitorStatus {
   // (D34).
   const code = codeSentence(input);
   if (code !== null) return code;
-  const placing = placementSentence(input);
-  return asksForSteps(input)
+  return withWalkRequest(input, placementSentence(input));
+}
+
+/** The placing line, with the walk request after it while the guide waits
+ *  for a heading - except at a dead end: no step makes a tour with nothing
+ *  to show, or one that only a code can place, appear. */
+function withWalkRequest(
+  input: ArStatusInput,
+  placing: VisitorStatus,
+): VisitorStatus {
+  const deadEnd = placing.state === "nothing" || placing.state === "needs-code";
+  return asksForSteps(input) && !deadEnd
     ? { state: placing.state, text: `${placing.text} ${WALK}` }
     : placing;
 }

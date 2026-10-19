@@ -361,14 +361,20 @@ describe("tour document (properties)", () => {
 });
 
 /** A creator's step as the D33 property drives it: the edits of `opArb`
- *  (no save), undo, redo, and a save written in place or downloaded. */
-type CrossingOp = Op | { kind: "in-place" } | { kind: "download" };
+ *  (no save), undo, redo, and a save written in place (arriving, or
+ *  failing after it was built) or downloaded. */
+type CrossingOp =
+  | Op
+  | { kind: "in-place" }
+  | { kind: "in-place-failed" }
+  | { kind: "download" };
 
 const crossingOpArb: fc.Arbitrary<CrossingOp> = fc.oneof(
   opArb.filter((op) => op.kind !== "save"),
   fc.constant({ kind: "undo" as const }),
   fc.constant({ kind: "redo" as const }),
   fc.constant({ kind: "in-place" as const }),
+  fc.constant({ kind: "in-place-failed" as const }),
   fc.constant({ kind: "download" as const }),
 );
 
@@ -387,8 +393,13 @@ describe("tour document (properties): a step across an in-place save (D33)", () 
         let next = 0;
         let file: Set<number> | null = null;
         for (const op of ops) {
-          if (op.kind === "in-place" || op.kind === "download") {
+          if (
+            op.kind === "in-place" ||
+            op.kind === "in-place-failed" ||
+            op.kind === "download"
+          ) {
             const written = manifestToWrite(state)!;
+            const inPlace = op.kind !== "download";
             state = reduce(
               state,
               act.saved({
@@ -396,12 +407,18 @@ describe("tour document (properties): a step across an in-place save (D33)", () 
                 written,
                 appliedDeletions: [...state.deleted],
                 stationsAtStart: state.stations,
-                ...(op.kind === "in-place"
-                  ? { inPlaceAt: state.position }
-                  : {}),
+                ...(inPlace ? { inPlaceAt: state.position } : {}),
               }),
             );
-            file = op.kind === "in-place" ? new Set(line.slice(0, pos)) : null;
+            // The write arrives, or fails and leaves the file as it was.
+            state = reduce(
+              state,
+              op.kind === "in-place-failed"
+                ? act.saveReleased({ error: "write failed" })
+                : act.saveDelivered({ inPlace, name: "t.zip" }),
+            );
+            if (op.kind === "in-place") file = new Set(line.slice(0, pos));
+            if (op.kind === "download") file = null;
             continue;
           }
           // Each step is read on its own: a claimed save takes the last one's

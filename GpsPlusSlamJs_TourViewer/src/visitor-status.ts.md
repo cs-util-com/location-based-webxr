@@ -67,7 +67,9 @@ visitor's `?debug=1`.
   in place of "Look around." (state `placed-gps`), and before placement it
   follows whatever the line says (a moved code, the photos loading, the
   coaching), the state unchanged. The code situations come first, without
-  it. It goes as soon as the flag clears.
+  it, and so do the dead ends - "nothing" (nothing to show here) and
+  "needs-code" (nothing by GPS alone) - which no step can change. It goes
+  as soon as the flag clears.
 - **Away from every station, the line asks for one** (M2 review N5):
   content is drawn per station, so with every piece of it waiting at a
   station the visitor is not at (`awayFromStations`) "Look around." points

@@ -2276,6 +2276,36 @@ test("a large tour, saved by hand, still writes an undo across its in-place save
   ).toContain("photo-ok");
 });
 
+test("a large tour's resave whose quiet time ends during an edit waits for the edit, then writes the undone state", async ({
+  page,
+}) => {
+  // Why (PR review, D33): a resave falling due while a field was being
+  // typed in was claimed and then held, and the claim had already taken the
+  // resave on - so on a large tour (autosave off) nothing wrote the file
+  // until Save, the very loss D33 closes. It now waits out the edit and
+  // runs when the edit ends.
+  await fountainDeletedInPlace(page, { clock: true, largeTour: true });
+  await page.keyboard.press("Control+z");
+  await expect(page.locator(".toast").last()).toHaveText(
+    'Undone: the delete of "Fountain".',
+  );
+  // Typing starts inside the resave's quiet time, and is not committed.
+  await page.locator("#rail .row", { hasText: "Town hall" }).click();
+  const field = page.locator("#card textarea");
+  await field.fill("Held a while");
+  await page.clock.runFor(1_000);
+  expect(await writes(page)).toBe(1);
+  // The edit ends: the resave runs now.
+  await field.blur();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to editor-fixture.zip",
+  );
+  expect(await writes(page)).toBe(2);
+  expect(
+    (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"],
+  ).toContain("photo-ok");
+});
+
 test("after Download instead, a step across the old in-place save downloads nothing by itself", async ({
   page,
 }) => {

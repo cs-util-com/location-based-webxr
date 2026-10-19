@@ -775,6 +775,39 @@ describe("visitorStatus - the guide waits for a heading (D34)", () => {
     ).toEqual({ state: "warming-up", text: "Tracking lost - move slowly." });
   });
 
+  // Why (PR review): walking earns a heading for a guide that has
+  // something to show; after "nothing to show here" or "nothing to show by
+  // GPS alone" it sends the visitor walking for nothing.
+  it("is not added to a dead end: nothing to show here, or nothing by GPS alone", () => {
+    expect(
+      visitorStatus(
+        input({
+          tour: { kind: "open", levelCount: 0 },
+          gate: { kind: "not-required", reason: "no-lockable-level" },
+          placement: { kind: "declined", reason: "no recording in this tour" },
+          readiness: tracking,
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({
+      state: "nothing",
+      text: "This tour has nothing to show here.",
+    });
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "skipped" },
+          placement: { kind: "declined", reason: "no recording in this tour" },
+          readiness: tracking,
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({
+      state: "needs-code",
+      text: "Nothing to show by GPS alone. Point your phone at the tour's code to show the photos.",
+    });
+  });
+
   it("is never said before AR runs or without a tour", () => {
     expect(
       visitorStatus(

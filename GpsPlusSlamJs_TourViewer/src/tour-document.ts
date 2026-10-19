@@ -121,8 +121,19 @@ export interface TourSaveStatus {
   /** Where the file last written IN PLACE stands in the history (D33): the
    *  `position` of the view it holds; `elsewhere` once a new edit dropped
    *  that view (it was undone, and is no longer on the history); null
-   *  while no in-place save of this open landed, and after a download. */
+   *  while no in-place write of this open arrived, and after a download.
+   *  Named only once the write ARRIVED (`saveDelivered`): a write that was
+   *  refused or failed leaves the view the disk still holds. */
   readonly inPlaceAt: number | "elsewhere" | null;
+  /** The view the last in-place build holds, named when it was built
+   *  (`saved`) until its write arrives (it then becomes `inPlaceAt`) or
+   *  the next build replaces it. It outlives a write that failed: "tap
+   *  Save again" re-delivers that same build, and its arrival names it. A
+   *  step taken while a save holds the slot is measured against it as well
+   *  as against `inPlaceAt` (the disk holds one of the two once the write
+   *  ends); with the slot free the disk holds `inPlaceAt`, and it counts
+   *  for nothing. */
+  readonly inPlaceWriting: number | "elsewhere" | null;
   /** An undo or a redo crossed the in-place file (`stepCrossesInPlaceSave`)
    *  and no save was claimed since: the page writes the file again as soon
    *  as no save runs (D33). */
@@ -193,6 +204,7 @@ const IDLE: TourSaveStatus = {
   largeTour: false,
   cannotSave: false,
   inPlaceAt: null,
+  inPlaceWriting: null,
   resave: false,
 };
 
@@ -589,7 +601,15 @@ function edited(
 ): TourDocumentState {
   const past = [...before.past, { view: viewOf(before), what }];
   if (past.length > TOUR_HISTORY_LIMIT) past.shift();
-  const at = before.save.inPlaceAt;
+  // The in-place file's view (or the one being written) was undone, and
+  // the redo that led back to it is dropped now: no view on the history is
+  // that file's any more.
+  const dropped = (
+    at: number | "elsewhere" | null,
+  ): number | "elsewhere" | null =>
+    typeof at === "number" && at > before.position ? "elsewhere" : at;
+  const inPlaceAt = dropped(before.save.inPlaceAt);
+  const inPlaceWriting = dropped(before.save.inPlaceWriting);
   return {
     ...before,
     ...next,
@@ -597,12 +617,11 @@ function edited(
     future: [],
     revision: before.revision + 1,
     position: before.position + 1,
-    // The in-place file's view was undone, and the redo that led back to
-    // it is dropped now: no view on the history is the file's any more.
     save:
-      typeof at === "number" && at > before.position
-        ? saveWith(before.save, { inPlaceAt: "elsewhere" })
-        : before.save,
+      inPlaceAt === before.save.inPlaceAt &&
+      inPlaceWriting === before.save.inPlaceWriting
+        ? before.save
+        : saveWith(before.save, { inPlaceAt, inPlaceWriting }),
   };
 }
 
@@ -615,16 +634,23 @@ function edited(
  * a step it cannot name. False with no in-place save, or no step to take.
  * Positions, not times: a redo of an edit made after the file was written,
  * and undone since, crosses it too - the redo takes the document away from
- * what the file holds.
+ * what the file holds. While a save holds the slot, the view an in-place
+ * write of it holds counts as well (`inPlaceWriting`): the disk holds one
+ * of the two once it ends.
  */
 function stepCrossesInPlaceSave(
   state: TourDocumentState,
   which: "undo" | "redo",
 ): boolean {
-  const at = state.save.inPlaceAt;
-  if (at === null || nextStep(state, which) === undefined) return false;
-  if (at === "elsewhere") return true;
-  return which === "undo" ? at >= state.position : at <= state.position;
+  if (nextStep(state, which) === undefined) return false;
+  const crosses = (at: number | "elsewhere" | null): boolean =>
+    at !== null &&
+    (at === "elsewhere" ||
+      (which === "undo" ? at >= state.position : at <= state.position));
+  return (
+    crosses(state.save.inPlaceAt) ||
+    (state.save.by !== null && crosses(state.save.inPlaceWriting))
+  );
 }
 
 /** The document moved to `view` (an undo or a redo step). */
@@ -947,9 +973,14 @@ const tourDocumentSlice = createSlice({
         placed: pending.placed,
         deleted: pending.deleted,
         stations: unmoved ? framesOf(written) : before.stations,
-        save: saveWith(before.save, {
-          inPlaceAt: action.payload.inPlaceAt ?? null,
-        }),
+        // An in-place write names its view once it arrives
+        // (`saveDelivered`); a download leaves no in-place file.
+        save: saveWith(
+          before.save,
+          action.payload.inPlaceAt === undefined
+            ? { inPlaceAt: null, inPlaceWriting: null }
+            : { inPlaceWriting: action.payload.inPlaceAt },
+        ),
       };
     },
     /** A queued rebuild ended, landed or not (`error`: why it failed). */
@@ -982,7 +1013,10 @@ const tourDocumentSlice = createSlice({
         }),
       };
     },
-    /** The page let its save slot go; `error` says why the save failed. */
+    /** The page let its save slot go; `error` says why the save failed.
+     *  An in-place write that has not arrived by then never did: the disk
+     *  keeps the view it held (`inPlaceAt`), and the build's view stays
+     *  named (`inPlaceWriting`) for a retry that re-delivers it. */
     saveReleased(state, action: PayloadAction<{ error?: string }>) {
       const before = plain(state);
       return {
@@ -1019,6 +1053,10 @@ const tourDocumentSlice = createSlice({
         save: saveWith(before.save, {
           delivered: action.payload,
           error: null,
+          // The in-place write arrived: the disk holds its view now.
+          ...(action.payload.inPlace && before.save.inPlaceWriting !== null
+            ? { inPlaceAt: before.save.inPlaceWriting, inPlaceWriting: null }
+            : {}),
         }),
       };
     },
