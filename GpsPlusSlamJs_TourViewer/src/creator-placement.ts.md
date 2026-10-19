@@ -130,10 +130,14 @@ troubleshooting recording's record of each placement. Split out of
   - **It looks and steps aside like the other chips**: the photo chip's
     dark pill, the same gate (disabled when a placement is not allowed),
     hidden in object mode and while a pin's text is typed, its label
-    folding to its icon after its first use (`folding-label.ts`). The
-    strip wraps upwards on a phone, where three labels do not fit one row
-    (the page's CSS): the pin and the photo stay at the bottom, the
-    station chip goes above them.
+    folding to its icon after its first use (`folding-label.ts`). It
+    sits on its own line above the pin and the photo, on every screen,
+    and comes first in the markup (the page's CSS and `index.html`): the
+    focus and reading order is the order on screen (WCAG 2.4.3). A
+    reversed wrap, as first built, kept a wide screen to one row but put
+    the chip's tab stop after the photo while it showed above the pin
+    (r886 review L4); the cost of the fix is one row more on a wide
+    screen.
   - **Disarmed at the end of an AR visit** (`creator-setup.ts`) and when
     a tour opens or closes (the slice's initial state); an undo of the
     placement takes its station away and does not re-arm.

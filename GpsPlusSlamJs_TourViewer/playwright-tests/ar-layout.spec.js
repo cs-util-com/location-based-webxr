@@ -276,36 +276,33 @@ for (const viewport of [
     expect(card.left).toBeLessThan(40);
     expect(card.right).toBeLessThanOrEqual(done.left);
     // The chips: at the bottom, one row, "Place a pin" first, centred.
-    // "New station here" (D8) ends that row where it fits (a wide screen),
-    // else sits centred just above it (a phone, until the labels fold);
-    // never off screen.
+    // "New station here" (D8) sits centred just above that row on every
+    // screen, never off screen.
     expect(viewport.height - pin.bottom).toBeLessThan(80);
     expect(Math.abs(pin.top - photo.top)).toBeLessThan(6);
     expect(pin.right).toBeLessThanOrEqual(photo.left);
-    const inRow = Math.abs(pin.top - newStation.top) < 6;
-    const rowRight = inRow ? newStation.right : photo.right;
-    const middle = (pin.left + rowRight) / 2;
+    const middle = (pin.left + photo.right) / 2;
     expect(Math.abs(middle - viewport.width / 2)).toBeLessThan(2);
-    expect({
-      after: inRow ? photo.right <= newStation.left : null,
-      above: inRow ? null : newStation.bottom <= pin.top,
-      gap: inRow ? null : pin.top - newStation.bottom < 16,
-      centred: inRow
-        ? null
-        : Math.abs(
-            (newStation.left + newStation.right) / 2 - viewport.width / 2,
-          ) < 2,
-    }).toEqual({
-      after: inRow ? true : null,
-      above: inRow ? null : true,
-      gap: inRow ? null : true,
-      centred: inRow ? null : true,
-    });
+    expect(newStation.bottom).toBeLessThanOrEqual(pin.top);
+    expect(pin.top - newStation.bottom).toBeLessThan(16);
+    expect(
+      Math.abs((newStation.left + newStation.right) / 2 - viewport.width / 2),
+    ).toBeLessThan(2);
     expect(pin.left).toBeGreaterThanOrEqual(0);
     expect(newStation.left).toBeGreaterThanOrEqual(0);
     expect(newStation.right).toBeLessThanOrEqual(viewport.width);
-    // A wide screen keeps the one row.
-    expect(inRow).toBe(viewport.width > viewport.height);
+    // The focus and reading order is the order on screen (WCAG 2.4.3):
+    // top to bottom, then left to right - never CSS `order` or a reversed
+    // wrap, which move the boxes but not the tab stops.
+    expect(
+      await page
+        .getByTestId("setup-controls")
+        .evaluate((el) =>
+          [...el.querySelectorAll("button")]
+            .filter((b) => b.getClientRects().length > 0)
+            .map((b) => b.dataset.testid),
+        ),
+    ).toEqual(["setup-new-station", "setup-pin", "setup-photo"]);
     // The camera view between them is clear: nothing of the panel there.
     expect(pin.top - card.bottom).toBeGreaterThan(viewport.height * 0.3);
     // The technical line is ?debug=1's only.

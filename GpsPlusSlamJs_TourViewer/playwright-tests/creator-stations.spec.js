@@ -253,8 +253,8 @@ for (const viewport of [
     await stand(page, 0, 0);
     await expect(page.getByTestId("creator-station")).toBeVisible();
     const line = await box(page, "creator-station");
-    // The strip's top: "New station here" (D8) wraps above the pin and
-    // the photo on a phone, next to the line it changes.
+    // The strip's top: "New station here" (D8) sits above the pin and
+    // the photo, next to the line it changes.
     const strip = await box(page, "setup-controls");
     const pin = await box(page, "setup-pin");
     const status = await box(page, "setup-status");
