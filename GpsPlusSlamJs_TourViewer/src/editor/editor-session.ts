@@ -14,25 +14,11 @@ import type {
   TourManifest,
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import { tourCoverEntry } from "gps-plus-slam-app-framework/ar/tour-details";
 import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
-import {
-  captureSpotsForRebuild,
-  finishedFileName,
-  rebuildFinishedTour,
-  type FinishedTour,
-  type RebuildPhotoSpots,
-} from "../finish-rebuild.js";
 import { recordingEntryNames, scanEntryNames } from "../tour-read-set.js";
-import { hostedObjects } from "../authoring-draft.js";
 import type { DraftObjectWrites } from "../draft-actions.js";
-import {
-  moveObjectTo,
-  pinTextEdit,
-  type AuthoringObject,
-} from "../object-edits.js";
 import type { TourSession } from "../tour-session.js";
 import {
   checkDetailsForm,
@@ -51,7 +37,9 @@ import {
   manifestNow,
   objectFits,
   nextStep,
+  objectMoveChange,
   picturesNeeded,
+  pinTextChange,
   selectTourDocument,
   tourDocumentActions,
   tourDocumentReducer,
@@ -59,6 +47,12 @@ import {
   type TourDocumentState,
 } from "../tour-document.js";
 import { followDocument } from "../tour-document-draft.js";
+import {
+  createTourSaves,
+  dispatchThunk,
+  TOUR_REPLACED,
+  type TourSaveBuilt,
+} from "../tour-document-save.js";
 import {
   createTourViewerStore,
   type TourViewerStore,
@@ -69,13 +63,8 @@ import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
 
-/** An edited or moved object as a rebuild takes it, or one an undo
- *  brought back after a save wrote its delete - a photo then with its
- *  picture's bytes, which the saved file no longer carries (W2). */
-interface EditorEntry {
-  readonly object: TourObject;
-  readonly blob?: Blob;
-}
+/** One of the tour's objects as it stands, with this page's entry. */
+type AuthoringObject = ReturnType<typeof documentObjects>[number];
 
 /** Said for an undo or a redo asked for while a save runs: the save's end
  *  decides what the file carries, so the step waits (W2). */
@@ -183,10 +172,6 @@ export const NOT_IN_TOUR = "That note is no longer in this tour.";
 
 /** Said for a placement of an id the tour already carries. */
 const ALREADY_IN_TOUR = "That note is already in this tour.";
-
-/** A save or a move of the walk asked of a session another open replaced. */
-const TOUR_REPLACED =
-  "Another tour was opened since: this one is no longer open here.";
 
 /** Said for a move of a station the tour does not carry. */
 const NO_SUCH_STATION = "That station is no longer in this tour.";
@@ -347,17 +332,9 @@ export function createEditorSession(input: {
   const generation = doc().generation;
 
   // What follows is imperative resources only (root CLAUDE.md, "App state
-  // lives in the Redux store"): the newest bytes, the photo spots' cache,
-  // the pictures' side table, the save queue.
-  let previous: { blob: Blob; signedManifest?: SignedTourManifest } | null =
-    null;
-  /** The photo spots, decided once per open (a decline is not re-baked on
-   *  every save, E1 review #11). */
-  let spots: Promise<RebuildPhotoSpots> | null = null;
-  /** The saved file's name: the opened one's, made safe (the Finish's rule). */
-  const savedName = finishedFileName(session);
-  /** The name the page shows when the tour has no title. */
-  const shownName = input.fileName ?? savedName;
+  // lives in the Redux store"): the pictures' side table, and the saves'
+  // own (the newest bytes, the photo spots' cache, the queue) in the
+  // document's save (`tour-document-save.ts`), whose status is the slice's.
   /** Deleted photos' pictures, for an undo after a save took them out
    *  (the side table: Blobs are never state). */
   const pictures = new Map<string, Blob>();
@@ -366,8 +343,16 @@ export function createEditorSession(input: {
   const pictureReads = new Set<Promise<void>>();
   const loadPhoto =
     input.loadPhoto ?? ((image: string) => session.loadContentEntry(image));
-  /** The end of the last save, for the next to start after. */
-  let tail: Promise<unknown> = Promise.resolve();
+  const saves = createTourSaves({
+    tour: session,
+    generation,
+    pictureOf: (id) => pictures.get(id),
+    picturesRead: () => Promise.all(pictureReads),
+  });
+  /** The saved file's name: the opened one's, made safe (the Finish's rule). */
+  const savedName = saves.fileName;
+  /** The name the page shows when the tour has no title. */
+  const shownName = input.fileName ?? savedName;
 
   const draft = input.draft;
   if (draft !== undefined) {
@@ -465,7 +450,7 @@ export function createEditorSession(input: {
     // from this session's own last bytes - the page's copy may not read
     // right after an in-place write (M4a review #5). A read that fails
     // both ways leaves an undo after a save refused, in words.
-    const newest = previous?.blob;
+    const newest = saves.newest()?.blob;
     const read = loadPhoto(object.image)
       .catch((err: unknown) =>
         newest === undefined
@@ -595,9 +580,10 @@ export function createEditorSession(input: {
       return checkNoGps({ stations: now().stations, levels });
     },
     editText(id, text) {
-      const found = find(id);
-      if (found === undefined) return notInTour;
-      const edit = pinTextEdit(found.object, text);
+      const state = mine();
+      if (state === null) return notInTour;
+      const edit = pinTextChange(state, id, text);
+      if (edit.kind === "missing") return notInTour;
       if (edit.kind !== "edited") return edit;
       store.dispatch(
         tourDocumentActions.edited({
@@ -608,16 +594,17 @@ export function createEditorSession(input: {
       return { kind: "edited" };
     },
     move(id, lat, lon) {
-      const found = find(id);
-      if (found === undefined) return notInTour;
-      const after = moveObjectTo(found.object, lat, lon);
-      if (!objectFits(own(), after)) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const change = objectMoveChange(state, id, lat, lon);
+      if (change.kind === "missing") return notInTour;
+      if (change.kind === "too-far") {
         return { kind: "refused", reason: TOO_FAR_FROM_STATION };
       }
       store.dispatch(
         tourDocumentActions.moved({
-          object: after,
-          what: `the move of ${objectName(found.object)}`,
+          object: change.after,
+          what: `the move of ${objectName(change.before)}`,
         }),
       );
       return { kind: "moved" };
@@ -769,7 +756,9 @@ export function createEditorSession(input: {
       return { changed, deleted: deleted.length };
     },
     save(options) {
-      return queued(() => runSave(options));
+      // The document's save (`tour-document-save.ts`): a thunk, queued with
+      // the moves of the walk.
+      return dispatchThunk(store, saves.save(options)).then(saveOf);
     },
     async walkEntries() {
       return scanEntryNames(
@@ -779,140 +768,20 @@ export function createEditorSession(input: {
       );
     },
     moveWalkOut() {
-      return queued(buildWalkMove);
+      return dispatchThunk(store, saves.queued(buildWalkMove));
     },
   };
-
-  /** Saves (and moves of the walk) run one after another: one asked for
-   *  while another runs starts when it ends (E2a review #9). The document
-   *  counts them (`saveStarted` / `saveEnded`): an undo waits for them. */
-  function queued<T>(start: () => Promise<T>): Promise<T> {
-    const run = own().save.rebuilds === 0 ? start() : tail.then(start, start);
-    store.dispatch(tourDocumentActions.saveStarted({ generation }));
-    // Ended BEFORE the caller hears the end: an undo asked for right after
-    // an awaited save is not refused as "a save is running".
-    const next = run.then(
-      (value) => {
-        store.dispatch(tourDocumentActions.saveEnded({ generation }));
-        return value;
-      },
-      (err: unknown) => {
-        store.dispatch(
-          tourDocumentActions.saveEnded({
-            generation,
-            error: err instanceof Error ? err.message : String(err),
-          }),
-        );
-        throw err;
-      },
-    );
-    tail = next.catch(() => undefined);
-    return next;
-  }
 
   /** The newest bytes' entry names: the last save's, else the opened
    *  file's. */
   async function newestNames(): Promise<string[]> {
-    return previous === null
+    const newest = saves.newest();
+    return newest === null
       ? session.entries.map((e) => e.filename)
-      : zipBlobEntryNames(previous.blob);
+      : zipBlobEntryNames(newest.blob);
   }
 
-  /** What a rebuild starts from, taken before its first await: an edit
-   *  made from then on waits for the next save (`pendingAfterRebuild`). */
-  function snapshot(): {
-    placedNow: EditorEntry[];
-    deletedNow: string[];
-    manifestNow: TourManifest;
-    stationsAtStart: TourDocumentState["stations"];
-  } {
-    const state = own();
-    const hosted = hostedObjects(state.written);
-    return {
-      // A photo the written file has no picture for carries the one this
-      // session kept (an undo brought it back after a save took it out).
-      placedNow: state.placed.map(({ object }) => {
-        const blob =
-          object.kind === "photo" && hosted.key(object.id) === undefined
-            ? pictures.get(object.id)
-            : undefined;
-        return blob === undefined ? { object } : { object, blob };
-      }),
-      deletedNow: [...state.deleted],
-      manifestNow: now(),
-      stationsAtStart: state.stations,
-    };
-  }
-
-  /** The photo spots for a rebuild, decided once per open; a deleted
-   *  photo's picture is read first, before the rebuild replaces the bytes
-   *  it may be read from. */
-  async function photoSpots(tourNow: TourManifest): Promise<RebuildPhotoSpots> {
-    await Promise.all(pictureReads);
-    spots ??= captureSpotsForRebuild(session, tourNow);
-    return spots;
-  }
-
-  /** `whole` is the opened file as already read, when the caller read it
-   *  (the walk's move): the rebuild then does not read it again (the M4b
-   *  milestone review #11 - a listed tour's whole-file check ran twice). */
-  async function rebuild(
-    snap: ReturnType<typeof snapshot>,
-    photos: RebuildPhotoSpots,
-    keepScan: boolean,
-    whole?: Blob,
-  ): Promise<FinishedTour> {
-    const finished = await rebuildFinishedTour({
-      tour:
-        whole === undefined
-          ? session
-          : {
-              entries: session.entries,
-              manifestWrap: session.manifestWrap,
-              integrity: session.integrity,
-              budget: session.budget,
-              readWholeArchive: () => Promise.resolve(whole),
-            },
-      manifest: snap.manifestNow,
-      placed: snap.placedNow,
-      deleted: snap.deletedNow,
-      levels: [],
-      keepScan,
-      ...(photos.spots === undefined ? {} : { captureSpots: photos.spots }),
-      walkPlacesNothing: photos.placesNothing === true,
-      previous,
-    });
-    if (finished === null) throw new Error("the save was stopped");
-    return finished;
-  }
-
-  /** `finished` becomes the newest bytes: what it carries is no longer
-   *  pending. */
-  function landed(
-    finished: FinishedTour,
-    snap: ReturnType<typeof snapshot>,
-  ): void {
-    previous = {
-      blob: finished.blob,
-      ...(finished.signedManifest === undefined
-        ? {}
-        : { signedManifest: finished.signedManifest }),
-    };
-    // A save of a tour opened since lands nowhere (`generation`).
-    store.dispatch(
-      tourDocumentActions.saved({
-        generation,
-        written: finished.written,
-        appliedDeletions: snap.deletedNow,
-        stationsAtStart: snap.stationsAtStart,
-      }),
-    );
-  }
-
-  function saveOf(
-    finished: FinishedTour,
-    photos: { notPlaced?: string },
-  ): EditorSave {
+  function saveOf({ finished, photos }: TourSaveBuilt): EditorSave {
     return {
       blob: finished.blob,
       filename: savedName,
@@ -924,31 +793,17 @@ export function createEditorSession(input: {
     };
   }
 
-  async function runSave(options: {
-    readonly keepScan: boolean;
-  }): Promise<EditorSave> {
-    // Asked for once another open replaced this one: its bytes would be
-    // built for a tour no page shows (a save started before keeps its own
-    // snapshot, and lands nowhere).
-    if (mine() === null) throw new Error(TOUR_REPLACED);
-    const snap = snapshot();
-    const photos = await photoSpots(snap.manifestNow);
-    const finished = await rebuild(snap, photos, options.keepScan);
-    landed(finished, snap);
-    return saveOf(finished, photos);
-  }
-
   /** The move of the walk out (D19), built from the newest bytes. */
   async function buildWalkMove(): Promise<WalkMove | EditorRefusal> {
     if (mine() === null) return { kind: "refused", reason: TOUR_REPLACED };
-    const snap = snapshot();
-    const base = previous;
+    const snap = dispatchThunk(store, saves.snapshot());
+    const base = saves.newest();
     const wrap = session.manifestWrap;
     const names = await newestNames();
-    if (scanEntryNames(names, snap.manifestNow, wrap).length === 0) {
+    if (scanEntryNames(names, snap.manifest, wrap).length === 0) {
       return { kind: "refused", reason: NO_WALK };
     }
-    const photos = await photoSpots(snap.manifestNow);
+    const photos = await saves.photoSpots(snap.manifest);
     // Without baked spots the walk is what places the recorded photos: the
     // rebuild would keep it (`finish-rebuild.ts`), so the move refuses -
     // unless the walk places nothing (the M4b milestone review #3).
@@ -967,7 +822,7 @@ export function createEditorSession(input: {
           path: WALK_NOTE,
           data: walkNoteText({
             fileName: savedName,
-            title: snap.manifestNow.title,
+            title: snap.manifest.title,
             seriesId:
               session.integrity.kind === "listed"
                 ? session.integrity.manifest.seriesId
@@ -983,7 +838,7 @@ export function createEditorSession(input: {
       },
     );
     // From the same bytes, read once (review #11).
-    const finished = await rebuild(
+    const finished = await saves.rebuild(
       snap,
       photos,
       false,
@@ -992,15 +847,15 @@ export function createEditorSession(input: {
     return {
       kind: "ready",
       walk: { blob: walkBlob, filename: walkFileName(savedName) },
-      save: saveOf(finished, photos),
-      current: () => previous === base,
+      save: saveOf({ finished, photos }),
+      current: () => saves.newest() === base,
       commit() {
-        if (previous !== base) {
+        if (saves.newest() !== base) {
           throw new Error(
             "another save landed while the walk was moved out - move it again",
           );
         }
-        landed(finished, snap);
+        dispatchThunk(store, saves.land(finished, snap));
       },
     };
   }

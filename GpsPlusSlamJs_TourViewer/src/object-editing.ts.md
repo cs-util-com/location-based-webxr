@@ -15,8 +15,9 @@ draft writes and history. Wired by `creator-setup.ts`, drawn by
 
 - `AuthoringObject` - one object as the creator sees it now (the
   document's `CreatorObject`: `documentObjects` with this page's entry
-  joined). The rule for a pin's text (`pinTextEdit`) lives in
-  `object-edits.ts`, shared with the desktop editor; this file wires the
+  joined). The rule for a pin's text (`pinTextEdit`, `object-edits.ts`)
+  is asked through the document (`pinTextChange`, `tour-document.ts`), as
+  the desktop editor asks it; this file wires the
   document to the store's log, the scene and the list's sentences.
 - `wireObjectEditing(deps): ObjectEditing` - binds the list's handlers.
   - `render()` - redraw the list (cheap when nothing changed).

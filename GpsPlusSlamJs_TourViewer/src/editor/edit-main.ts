@@ -544,7 +544,7 @@ function renderSaveState(): void {
   }
   if (count === 0) {
     saveStatus.dataset["state"] = "clean";
-    saveStatus.textContent = saveStatus.dataset["saved"] ?? "No changes";
+    saveStatus.textContent = savedLine() ?? "No changes";
     return;
   }
   saveStatus.dataset["state"] = "pending";
@@ -1591,9 +1591,19 @@ function noteDelivered(
 ): void {
   const name = inPlace ? (into?.name ?? save.filename) : save.filename;
   store.dispatch(tourDocumentActions.saveDelivered({ inPlace, name }));
-  saveStatus.dataset["saved"] = inPlace
-    ? `Saved to ${name}`
-    : `Saved as ${name}`;
+  // A view of the slice's `delivered` (the e2e reads it), never read back.
+  const line = savedLine();
+  if (line !== null) saveStatus.dataset["saved"] = line;
+}
+
+/** Where the last save arrived, in the status line's words; null while
+ *  nothing was saved (the slice's `delivered`, which an open resets). */
+function savedLine(): string | null {
+  const delivered = saveState().delivered;
+  if (delivered === null) return null;
+  return delivered.inPlace
+    ? `Saved to ${delivered.name}`
+    : `Saved as ${delivered.name}`;
 }
 
 async function buildAndDeliver(

@@ -39,6 +39,8 @@ import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
 import {
   authoringObjects,
   deleteObject,
+  moveObjectTo,
+  pinTextEdit,
   upsertPlaced,
   type AuthoringObject,
   type EditEntry,
@@ -304,6 +306,49 @@ export function detailsChange(
     return { kind: "unchanged" };
   }
   return { kind: "changed", details: checked.details };
+}
+
+/** What a pin's new text would change, by the rule both pages share
+ *  (`pinTextEdit`: trimmed, never empty): the object to dispatch
+ *  (`edited`), nothing (the same text, or not a pin), why not in plain
+ *  words, or `missing` for an id the tour does not carry. */
+export function pinTextChange(
+  state: TourDocumentState,
+  id: string,
+  text: string,
+):
+  | { readonly kind: "edited"; readonly after: TourObject }
+  | { readonly kind: "unchanged" }
+  | { readonly kind: "refused"; readonly reason: string }
+  | { readonly kind: "missing" } {
+  const found = documentObjects(state).find((o) => o.object.id === id);
+  if (found === undefined) return { kind: "missing" };
+  return pinTextEdit(found.object, text);
+}
+
+/** What a move of an object to `lat`/`lon` on the map would change
+ *  (`moveObjectTo`: its height and facing kept): the object before and
+ *  after (`moved`, to dispatch), `too-far` beyond its station's reach
+ *  (`objectFits`), or `missing` for an id the tour does not carry.
+ *  Throws for a position nobody can draw, as `moveObjectTo` does. */
+export function objectMoveChange(
+  state: TourDocumentState,
+  id: string,
+  lat: number,
+  lon: number,
+):
+  | {
+      readonly kind: "moved";
+      readonly before: TourObject;
+      readonly after: TourObject;
+    }
+  | { readonly kind: "too-far" }
+  | { readonly kind: "missing" } {
+  const found = documentObjects(state).find((o) => o.object.id === id);
+  if (found === undefined) return { kind: "missing" };
+  const after = moveObjectTo(found.object, lat, lon);
+  if (!objectFits(state, after)) return { kind: "too-far" };
+  return { kind: "moved", before: found.object, after };
 }
 
 /** The changes of the tour's own fields not written yet - its station

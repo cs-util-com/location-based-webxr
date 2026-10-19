@@ -309,7 +309,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   the one save slot (`saveClaimed` / `saveReleased`; `saving()`,
   `walkMoving()`, the autosave's `by === "auto"`), a Save queued behind
   an autosave (`saveQueued`), a save built (`saveBuilt`), where the last
-  one arrived (`saveDelivered`, read by Done), and what the opened file
+  one arrived (`saveDelivered`, read by Done and by the status line's
+  "Saved to …" / "Saved as …", `savedLine()`; `#save-status[data-saved]`
+  is only a view of it, for the e2e, never read back), the save's own
+  rebuilds (the session's thunks, `../tour-document-save.ts`), and what the opened file
   allows (`saveLimited`: `largeTour`, `cannotSave`). An open resets them
   (`opened`), and so does a tour dropped for a late integrity failure
   (`closed`); the slot itself is kept across both, since the save holding

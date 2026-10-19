@@ -135,6 +135,17 @@ different times (a walk's move lands only after the page wrote both files).
 - `detailsChange(state, form)` - a details form checked by the format's
   rules (`checkDetailsForm`), as both pages check it: `changed` with the
   details to dispatch, `unchanged`, or `refused` with the reason in words.
+- `pinTextChange(state, id, text)` - a pin's new text by the shared rule
+  (`pinTextEdit`: trimmed, never empty), as both pages shape the `edited`
+  payload: `edited` with the object to dispatch, `unchanged` (the same
+  text, or not a pin), `refused` with the phone's sentence, or `missing`
+  for an id the tour does not carry.
+- `objectMoveChange(state, id, lat, lon)` - a move on the map
+  (`moveObjectTo`, height and facing kept): `moved` with the object
+  `before` and `after`, `too-far` beyond its station's reach
+  (`objectFits`), or `missing`; throws for a position nobody can draw.
+  These two (with `detailsChange`) are why a page imports no rule of
+  `object-edits.ts` itself (`config/.dependency-cruiser.cjs`).
 - `tourFieldChanges(state)` - `changeCount` less the objects': the moved
   frames, the setting and the detail fields not written yet.
 - `viewOf(state)`, `picturesNeeded(state, view)` - for a page's undo: a
@@ -222,7 +233,9 @@ store.dispatch(tourDocumentActions.undone());
   a restore as one step, the save status, an edit made during a save
   staying pending, a late save of another open ignored, the rules the
   reducers keep (each confirmed to fail with its guard turned off), a note
-  pending after its station moved and it moved back.
+  pending after its station moved and it moved back, and what a pin's text
+  and a move on the map would change (`pinTextChange`, `objectMoveChange`).
+- The save, a thunk against this slice: `tour-document-save.ts.md`.
 - `tour-document.property.test.ts` - over random sequences of edits,
   moves, deletes, placements, station moves, settings, details, undos,
   redos and saves: undo then redo is identity; undoing everything gives the

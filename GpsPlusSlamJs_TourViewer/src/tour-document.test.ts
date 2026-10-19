@@ -27,7 +27,9 @@ import {
   manifestNow,
   manifestToWrite,
   objectFits,
+  objectMoveChange,
   picturesNeeded,
+  pinTextChange,
   TOUR_HISTORY_LIMIT,
   tourDocumentActions as act,
   tourDocumentReducer as reduce,
@@ -683,5 +685,44 @@ describe("tour document: the rules its reducers keep", () => {
     );
     expect(unsavedEntries(state).map((p) => p.object.id)).toEqual(["b"]);
     expect(changeCount(state)).toBe(2); // the note and the frame
+  });
+});
+
+// Why: both pages shape an edit's payload by these, through the document
+// (the boundary rule keeps them from importing `object-edits.ts`): the
+// phone's object list and the desktop session must refuse and accept the
+// same text and the same moves.
+describe("tour document: what an edit would change", () => {
+  it("a pin's text: trimmed, the same text no change, an empty one refused, an unknown id missing", () => {
+    const state = open();
+    expect(pinTextChange(state, "a", "  New  ")).toEqual({
+      kind: "edited",
+      after: { ...objectOf(state, "a"), label: "New" },
+    });
+    expect(pinTextChange(state, "a", "pin a")).toEqual({ kind: "unchanged" });
+    expect(pinTextChange(state, "a", "   ")).toMatchObject({
+      kind: "refused",
+    });
+    // A photo has no text to edit.
+    expect(pinTextChange(state, "f", "x")).toEqual({ kind: "unchanged" });
+    expect(pinTextChange(state, "gone", "x")).toEqual({ kind: "missing" });
+  });
+
+  it("a move on the map: height and facing kept, too far from its station refused, an unknown id missing", () => {
+    const state = open();
+    const a = objectOf(state, "a");
+    expect(objectMoveChange(state, "a", 48.5205, 9.051)).toEqual({
+      kind: "moved",
+      before: a,
+      after: { ...a, geo: { ...a.geo, lat: 48.5205, lon: 9.051 } },
+    });
+    const far = (TOUR_ITEM_MAX_OFFSET_M * 2) / 111_320;
+    expect(objectMoveChange(state, "a", a.geo.lat + far, 9.05)).toEqual({
+      kind: "too-far",
+    });
+    expect(objectMoveChange(state, "gone", 48.52, 9.05)).toEqual({
+      kind: "missing",
+    });
+    expect(() => objectMoveChange(state, "a", 91, 9.05)).toThrow(RangeError);
   });
 });
