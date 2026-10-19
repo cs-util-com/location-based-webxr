@@ -16,8 +16,7 @@ VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
   of the open tour's entries through the stations' prefetch cache: the
   station content's photos (`viewer-placement.ts`) read through it, but
   the cache holds story media only, so a return to a station reads its item
-  photos from the archive again until item photos join the prefetch
-  (visitor plan M3). `relocate` (`{ onRelocated }`) turns on the
+  photos from the archive again until item photos join the prefetch. `relocate` (`{ onRelocated }`) turns on the
   test switch `?relocate=here` (`tour-relocation.ts`): the stations are
   held back until the phone's first raw GPS fix, then moved there.
 - `stationPlacementAllowed(ctx, mode): boolean` - the guide's

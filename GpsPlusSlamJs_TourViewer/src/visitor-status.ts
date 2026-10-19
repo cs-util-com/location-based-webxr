@@ -64,7 +64,7 @@ export interface VisitorStatus {
 
 const LOOK_AROUND = "Look around.";
 /** Placed, every piece of content waiting at a station the visitor is not
- *  at (M2 review N5): nothing is in view to look at. */
+ *  at: nothing is in view to look at. */
 const TO_STATION = "Walk to a station to see its content.";
 const GPS_PLACED = "Tour placed by GPS (less exact)";
 

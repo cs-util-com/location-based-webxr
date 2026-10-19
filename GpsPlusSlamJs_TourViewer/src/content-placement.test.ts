@@ -559,7 +559,7 @@ describe("renderTourStation", () => {
   });
 
   it("frees what it made before a throw: the decoded photo and the label made so far, and rejects", async () => {
-    // Why this matters (the M2 review): a station is drawn and freed again
+    // Why this matters: a station is drawn and freed again
     // and again as the visitor walks; a label constructor that throws half
     // way used to strand the textures decoded before it.
     const geo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 0, yaw(0));

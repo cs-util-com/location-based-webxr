@@ -347,7 +347,7 @@ recording. Its own module since the flows plan M6.
   `syncContent()` tells the table the shown set on every store dispatch
   and camera frame (`main.ts` `hooks.tickStations`); `tryPlaceTour` ends
   with it.
-  - **What the status line says** (the async-UI rule, M2 review B1): the
+  - **What the status line says** (the async-UI rule): the
     loose photos decode up front, so the line says "loading photos k/N"
     (a progress callback into their decode), then `placed` with the count
     that DECODED once their part is drawn. Photos held by stations are not
@@ -409,7 +409,7 @@ ctx.placementUnsubscribe = arStore.subscribe(() => viewer.tryPlaceTour());
 
 ## Tests
 
-`viewer-placement-photos.test.ts` (M2 review B1, S1, S3) - through the real
+`viewer-placement-photos.test.ts` - through the real
 controller config, the bake and the decoder faked: a walk no station holds
 says "loading photos" with its progress, then the count that decoded; a
 walk or ring none of whose photos loads sets the photos' error; a walk or

@@ -282,7 +282,7 @@ describe("the figure follows its station's presence (it fades, the story plays o
     expect(h.decodeTexture).toHaveBeenCalledTimes(1);
   });
 
-  // Why (M2 review N2): the page calls `follow` on every tick; a figure
+  // Why: the page calls `follow` on every tick; a figure
   // standing at its settled opacity must not have its materials rewritten
   // each time.
   it("writes no material while the figure stands settled", async () => {

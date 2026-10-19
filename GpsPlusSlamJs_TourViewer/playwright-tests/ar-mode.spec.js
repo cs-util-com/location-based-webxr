@@ -228,7 +228,7 @@ test("a visitor who refuses the location starts the tour on codes alone: no loca
     }
   });
   // Every station's content shows: away from every station the placed
-  // line asks for one instead (M2 review N5, stations.spec.js), and these
+  // line asks for one instead (stations.spec.js), and these
   // fakes put the guide at no station.
   await openAsVisitor(page, RANGES_ARCHIVE, { allStations: true });
   const button = page.getByTestId("enter-ar");
@@ -1477,7 +1477,7 @@ test("a tour whose photo spots were baked at its Finish places them without any 
       { timeout: 20000 },
     )
     // Baked photos keep their stations, so they are counted where they
-    // wait, drawn only while their station shows (M2 review B1).
+    // wait, drawn only while their station shows.
     .toMatch(/2 photos at their stations \(7 fixes/);
   await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
   // A visitor's page decodes no photo for its hidden gallery at all

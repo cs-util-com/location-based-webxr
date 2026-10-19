@@ -627,7 +627,7 @@ function endUndo(): void {
   undoOffer.toast.remove();
   undoOffer = null;
   // An autosave held for the delete's Undo may start now, and so may a
-  // resave that fell due meanwhile (D33).
+  // resave that fell due meanwhile.
   autosave.poke();
   void resaveIfDue();
 }

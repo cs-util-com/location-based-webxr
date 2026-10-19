@@ -117,7 +117,7 @@ const CAPTURE_PLANE_DECODE_DIVISOR = 2;
  * The side-table id of content no station holds (`station-captures.ts`): a
  * walk photo beyond every station's radius, the ring around a code beyond
  * every station's radius. Always shown (the table's `alwaysShown`, in its
- * own render lane), as all content was before M2. Never a tour id (tour
+ * own render lane). Never a tour id (tour
  * ids are path-safe ids without ":").
  */
 const LOOSE_STATION = "loose:always";
@@ -180,7 +180,7 @@ export function createViewerPlacement(deps: {
   /** How a station's item photo is read: through the stations' prefetch
    *  cache in the page (visitor plan §9). That cache holds story media
    *  only, so an item photo is read from the archive again on every return
-   *  until item photos join the prefetch (visitor plan M3). Absent: the
+   *  until item photos join the prefetch. Absent: the
    *  open tour's own read. */
   loadContent?: (path: string) => Promise<Blob>;
 }): ViewerPlacement {
@@ -1243,7 +1243,7 @@ export function createViewerPlacement(deps: {
     // metric (meanAlignmentError is model-internal), so the line reports
     // what the numbers actually are — fixes and their median GPS accuracy
     // — never a claimed placement error (the copy lives in tour-flow).
-    // The count is what STANDS (M2 review B1): the loose photos once
+    // The count is what STANDS: the loose photos once
     // decoded; the ones at their stations are counted where they wait.
     const placed = (count: number): PlacementState => ({
       kind: "placed",
@@ -1393,8 +1393,8 @@ export function createViewerPlacement(deps: {
   }
 
   /** Run a plane constructor over decoded textures; if it throws, the
-   *  textures it was handed are freed before the throw goes on (M2 review
-   *  S3: nothing else holds them). */
+   *  textures it was handed are freed before the throw goes on (nothing
+   *  else holds them). */
   function withTexturesFreedOnThrow<T>(
     textures: readonly Texture[],
     build: () => T,

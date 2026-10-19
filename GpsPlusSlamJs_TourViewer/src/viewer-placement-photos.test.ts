@@ -1,10 +1,10 @@
 /**
  * The walk's photos and the ring around a code, placed per station
- * (visitor plan 2026-10-18-2349 M2), through the viewer placement with the
+ * through the viewer placement with the
  * framework's controller config captured (as `viewer-placement-viewing-log`
  * does), the bake and the photo decoder faked.
  *
- * Why these tests matter (the M2 review): the status line must say what
+ * Why these tests matter: the status line must say what
  * actually stands. Photos that decode up front (content no station holds)
  * report their progress and then the count that decoded; photos held by
  * stations are counted where they wait, never as placed; a walk or a ring
@@ -340,7 +340,7 @@ describe("the walk's photos and the ring, said as they stand", () => {
 
   // Why: a walk or a ring whose planes cannot be built must neither leak
   // the photos it decoded nor leave the line on "Loading the photos…"
-  // forever (M2 review S3, B1).
+  // forever.
   it.each(["walk", "ring"] as const)(
     "a %s whose planes cannot be built frees its decoded photos and says so",
     async (what) => {

@@ -1052,7 +1052,7 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     return h;
   }
 
-  // Why (M2 review N5): between the stations nothing is drawn, so the line
+  // Why: between the stations nothing is drawn, so the line
   // must not say "Look around."; the page reads that from the side table.
   it("asks for a station while nothing shown holds content, and is the placed line again at one", () => {
     const h = placedVisitor();

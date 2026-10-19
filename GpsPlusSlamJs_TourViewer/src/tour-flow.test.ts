@@ -282,7 +282,7 @@ describe("placementSegment - what the photo placement did", () => {
       "7 photos at capture spots (4 fixes)",
     ],
     // Photos held by stations are not standing: they are counted where
-    // they wait (M2 review), never as placed.
+    // they wait, never as placed.
     [
       {
         kind: "placed",

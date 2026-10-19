@@ -544,7 +544,7 @@ describe("visitorStatus - codes only, and no code can place the tour (M1b-1 revi
 // escape's "find the code") with the request after it. It is never said
 // while tracking still initializes (the coaching says hold steady), nor
 // without location, where walking cannot earn a heading.
-describe("visitorStatus - away from every station (M2 review N5)", () => {
+describe("visitorStatus - away from every station", () => {
   // Why: content drawn per station leaves nothing in view between the
   // stations; "Tour placed. Look around." then sends the visitor looking
   // for nothing. The line says what to do instead, and keeps a GPS

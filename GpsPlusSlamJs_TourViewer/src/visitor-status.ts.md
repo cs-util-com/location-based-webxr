@@ -70,7 +70,7 @@ visitor's `?debug=1`.
   it, and so do the dead ends - "nothing" (nothing to show here) and
   "needs-code" (nothing by GPS alone) - which no step can change. It goes
   as soon as the flag clears.
-- **Away from every station, the line asks for one** (M2 review N5):
+- **Away from every station, the line asks for one**:
   content is drawn per station, so with every piece of it waiting at a
   station the visitor is not at (`awayFromStations`) "Look around." points
   at nothing. The placed line becomes "Walk to a station to see its

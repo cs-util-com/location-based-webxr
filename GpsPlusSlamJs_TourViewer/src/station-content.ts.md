@@ -65,7 +65,7 @@ under "show all"); this module never reads the store.
   (textures, materials, geometries). Shown again during the fade-out: fades
   back in without decoding again. Shown again later: decodes again, its
   files read from the archive once more (the stations' prefetch holds story
-  media only, until item photos join it in visitor plan M3).
+  media only, until item photos join it).
 - **Always shown** (`alwaysShown`): neither waits for a station's
   fade-out nor holds a station back, and is never faded out by `show`.
 - **A part that throws** is latched as failed (a `WeakSet` of parts): an

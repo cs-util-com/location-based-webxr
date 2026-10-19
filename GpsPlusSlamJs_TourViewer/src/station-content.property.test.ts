@@ -5,7 +5,7 @@ import { Group, Mesh, MeshBasicMaterial, PlaneGeometry } from "three";
 import { createStationContent, type ContentPart } from "./station-content.js";
 
 /**
- * Why this property matters (the M2 review): the side table's promises are
+ * Why this property matters: the side table's promises are
  * about every sequence of presence changes, part changes, frames and late
  * renders, not the handful the example tests walk. Over generated
  * sequences it holds that:

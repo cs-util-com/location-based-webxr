@@ -143,7 +143,7 @@ describe("visitorStatus (property)", () => {
     );
   });
 
-  // Why this property matters (M2 review N5): with every piece of content
+  // Why this property matters: with every piece of content
   // waiting at a station the visitor is not at, "Look around." points at
   // nothing. A placed tour then asks the visitor to walk to a station,
   // never beside "Look around." and never beside the request for a few

@@ -126,7 +126,7 @@ describe("nearestStationId (the ring)", () => {
   });
 
   // Why: a ring bound to a station 100 m away showed only there, so the
-  // visitor standing at the code saw nothing after the lock (M2 review).
+  // visitor standing at the code saw nothing after the lock.
   // Beyond the radius the ring has no station and stands always, as a
   // walk photo joined live does by the same rule.
   it("is null for a code beyond every station's radius", () => {

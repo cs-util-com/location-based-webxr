@@ -428,7 +428,7 @@ describe("station content: one side table, drawn by presence", () => {
 });
 
 describe("station content: always-shown content, its own lane, failures and fades", () => {
-  // Why these tests matter (the M2 review): content no station holds (the
+  // Why these tests matter: content no station holds (the
   // loose group) shows whatever the presence says, so it must neither wait
   // for a station's fade nor make a station wait behind its decodes; a part
   // that cannot be built must not be rebuilt on every entry; a throwing

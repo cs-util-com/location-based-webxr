@@ -453,7 +453,7 @@ function ringOpacitiesIn(page, group) {
 test("the ring around the code stands with its station: in the gate's group there, fading out on the walk away, and between the stations the line asks for one", async ({
   page,
 }) => {
-  // Why this test matters (M2 review S4): on the default path (no
+  // Why this test matters: on the default path (no
   // ?allstations) the ring around a code goes with the station within the
   // station radius of the code, so it must stand while the visitor is at
   // that station, fade out with it, and leave nothing in view between the
