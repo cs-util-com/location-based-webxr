@@ -16,8 +16,11 @@ import { describe, expect, it } from "vitest";
 import {
   GROUND_HIT,
   groundHit,
+  groundReachM,
   marchToGround,
   terrainAboveGround,
+  type GroundHit,
+  type GroundHitResult,
 } from "./globe-ground-hit.js";
 
 const DEG = Math.PI / 180;
@@ -84,19 +87,24 @@ const heightOf = (p: THREE.Vector3) =>
     height: 0,
   }).height;
 
+/** The hit, failing the test with the miss's reason when there is none. */
+function hitOf(result: GroundHitResult): GroundHit {
+  if (result.miss !== null) throw new Error(`no hit: ${result.miss}`);
+  return result;
+}
+
 describe("groundHit", () => {
   // Why: the eye-height case the spike measured, 1.7 m over flat ground
   // looking 10 degrees down: the ground about 9.8 m ahead, and the point
   // ON the sampled ground, not near it.
   it("lands on flat ground at eye height", () => {
     const terrain = fakeTerrain(() => 516);
-    const hit = groundHit(terrain, rayFrom(516, 1.7, -10));
-    expect(hit).not.toBeNull();
-    expect(hit!.t).toBeCloseTo(1.7 / Math.sin(10 * DEG), 1);
-    expect(heightOf(hit!.point)).toBeCloseTo(516, 4);
+    const hit = hitOf(groundHit(terrain, rayFrom(516, 1.7, -10)));
+    expect(hit.t).toBeCloseTo(1.7 / Math.sin(10 * DEG), 1);
+    expect(heightOf(hit.point)).toBeCloseTo(516, 4);
     // About the spike's cost: a march of a few steps, then the bisections.
-    expect(hit!.samples).toBeLessThan(60);
-    expect(hit!.nulls).toBe(0);
+    expect(hit.samples).toBeLessThan(60);
+    expect(hit.nulls).toBe(0);
   });
 
   // Why: on a slope the hit must follow the ground, not a plane through
@@ -120,16 +128,15 @@ describe("groundHit", () => {
       return 500 + 0.2 * p.sub(foot).dot(north);
     };
     const terrain = fakeTerrain(ground);
-    const hit = groundHit(terrain, rayFrom(500, 10, -5));
-    expect(hit).not.toBeNull();
-    const c = WGS84_ELLIPSOID.getPositionToCartographic(hit!.point, {
+    const hit = hitOf(groundHit(terrain, rayFrom(500, 10, -5)));
+    const c = WGS84_ELLIPSOID.getPositionToCartographic(hit.point, {
       lat: 0,
       lon: 0,
       height: 0,
     });
     expect(c.height - ground(c.lat, c.lon)).toBeCloseTo(0, 4);
     // Flat ground would be 10 / tan(5 deg) = 114 m away; the slope is nearer.
-    expect(hit!.t).toBeLessThan(114);
+    expect(hit.t).toBeLessThan(114);
   });
 
   // Why (the spike's seam profile): two tiles' heights meet at a seam with
@@ -140,9 +147,8 @@ describe("groundHit", () => {
     const ground = (lat: number) => (lat < seamLat ? 516 : 516.004);
     const terrain = fakeTerrain((lat) => ground(lat));
     for (const pitch of [-2, -3, -4, -5, -8]) {
-      const hit = groundHit(terrain, rayFrom(516, 1.7, pitch));
-      expect(hit, `pitch ${pitch}`).not.toBeNull();
-      const c = WGS84_ELLIPSOID.getPositionToCartographic(hit!.point, {
+      const hit = hitOf(groundHit(terrain, rayFrom(516, 1.7, pitch)));
+      const c = WGS84_ELLIPSOID.getPositionToCartographic(hit.point, {
         lat: 0,
         lon: 0,
         height: 0,
@@ -161,9 +167,8 @@ describe("groundHit", () => {
       fine = !fine;
       return h;
     });
-    const hit = groundHit(terrain, rayFrom(516, 1.7, -10));
-    expect(hit).not.toBeNull();
-    const h = heightOf(hit!.point);
+    const hit = hitOf(groundHit(terrain, rayFrom(516, 1.7, -10)));
+    const h = heightOf(hit.point);
     expect(h).toBeGreaterThan(515.99);
     expect(h).toBeLessThan(516.03);
   });
@@ -190,34 +195,56 @@ describe("groundHit", () => {
         .dot(north);
       return d > 2 && d < 8 ? null : 516;
     });
-    const hit = groundHit(terrain, rayFrom(516, 1.7, -10));
-    expect(hit).not.toBeNull();
-    expect(heightOf(hit!.point)).toBeCloseTo(516, 3);
-    expect(hit!.nulls).toBeGreaterThan(0);
+    const hit = hitOf(groundHit(terrain, rayFrom(516, 1.7, -10)));
+    expect(heightOf(hit.point)).toBeCloseTo(516, 3);
+    expect(hit.nulls).toBeGreaterThan(0);
   });
 
-  // Why: a ray that never meets the ground (up into the sky, or one under
-  // the ground from its start, or nothing loaded) has no hit; the editor
-  // then leaves the item where it is.
-  it("is null for a ray up, a ray starting underground, or no heights", () => {
-    expect(
-      groundHit(
-        fakeTerrain(() => 516),
-        rayFrom(516, 1.7, 10),
-      ),
-    ).toBeNull();
-    expect(
-      groundHit(
-        fakeTerrain(() => 516),
-        rayFrom(516, -1, -10),
-      ),
-    ).toBeNull();
-    expect(
-      groundHit(
-        fakeTerrain(() => null),
-        rayFrom(516, 1.7, -10),
-      ),
-    ).toBeNull();
+  // Why: a ray that never meets the ground has no hit, and the editor
+  // needs to know why: it leaves the item where it is for a ray into the
+  // sky ("above") or from under the ground ("below-start"), and asks again
+  // a frame later only where heights were missing ("not-loaded"), since
+  // only those can change by waiting.
+  it("says why a ray has no hit: up into the sky, starting underground, or no heights", () => {
+    const flat = fakeTerrain(() => 516);
+    expect(groundHit(flat, rayFrom(516, 1.7, 10)).miss).toBe("above");
+    // A level ray over the curved Earth: the ground falls away from it.
+    expect(groundHit(flat, rayFrom(516, 1.7, 0)).miss).toBe("above");
+    expect(groundHit(flat, rayFrom(516, -1, -10)).miss).toBe("below-start");
+    const none = groundHit(
+      fakeTerrain(() => null),
+      rayFrom(516, 1.7, -10),
+    );
+    expect(none.miss).toBe("not-loaded");
+    expect(none.samples).toBeGreaterThan(0);
+    expect(none.nulls).toBe(none.samples);
+  });
+
+  // Why: a ray that passed over a stretch with no heights may have missed
+  // ground there (a hill in a tile still loading), so it is "not-loaded",
+  // never "above": the editor asks again rather than give up.
+  it("is not-loaded, not above, when the ray passed over missing heights", () => {
+    const { north } = enuAt(MUNICH.lat, MUNICH.lon);
+    const foot = WGS84_ELLIPSOID.getCartographicToPosition(
+      MUNICH.lat,
+      MUNICH.lon,
+      0,
+      new THREE.Vector3(),
+    );
+    const terrain = fakeTerrain((lat, lon) => {
+      const d = WGS84_ELLIPSOID.getCartographicToPosition(
+        lat,
+        lon,
+        0,
+        new THREE.Vector3(),
+      )
+        .sub(foot)
+        .dot(north);
+      return d > 100 && d < 300 ? null : 516;
+    });
+    const miss = groundHit(terrain, rayFrom(516, 1.7, 2));
+    expect(miss.miss).toBe("not-loaded");
+    expect(miss.nulls).toBeGreaterThan(0);
   });
 
   // Why: the globe lab draws the relief in a frame centred at the target
@@ -233,11 +260,10 @@ describe("groundHit", () => {
     const terrain = fakeTerrain(() => 516, frame);
     const ecefRay = rayFrom(516, 1.7, -10);
     const worldRay = ecefRay.clone().applyMatrix4(frame);
-    const hit = groundHit(terrain, worldRay);
-    expect(hit).not.toBeNull();
-    const ecef = hit!.point.clone().applyMatrix4(frame.clone().invert());
+    const hit = hitOf(groundHit(terrain, worldRay));
+    const ecef = hit.point.clone().applyMatrix4(frame.clone().invert());
     expect(heightOf(ecef)).toBeCloseTo(516, 3);
-    expect(hit!.t).toBeCloseTo(1.7 / Math.sin(10 * DEG), 1);
+    expect(hit.t).toBeCloseTo(1.7 / Math.sin(10 * DEG), 1);
   });
 
   it("stops at its maximum distance", () => {
@@ -246,17 +272,23 @@ describe("groundHit", () => {
     // the ray meets the ground about 7.8 km out, past the 5 km default.
     // (1.7 m up at 0.01 degrees down never meets it: the ground falls away
     // faster than the ray.)
-    expect(groundHit(terrain, rayFrom(516, 50, -0.4))).toBeNull();
-    const far = groundHit(terrain, rayFrom(516, 50, -0.4), {
-      maxDistanceM: 20_000,
-    });
-    expect(far).not.toBeNull();
-    expect(far!.t).toBeGreaterThan(7_000);
-    expect(far!.t).toBeLessThan(8_500);
-    expect(heightOf(far!.point)).toBeCloseTo(516, 3);
+    // Short of the ground and still closing on it: a longer reach finds it.
+    expect(groundHit(terrain, rayFrom(516, 50, -0.4)).miss).toBe(
+      "out-of-reach",
+    );
+    const far = hitOf(
+      groundHit(terrain, rayFrom(516, 50, -0.4), {
+        maxDistanceM: 20_000,
+      }),
+    );
+    expect(far.t).toBeGreaterThan(7_000);
+    expect(far.t).toBeLessThan(8_500);
+    expect(heightOf(far.point)).toBeCloseTo(516, 3);
+    // Past its closest approach the ground falls away from it: above.
     expect(
-      groundHit(terrain, rayFrom(516, 1.7, -0.01), { maxDistanceM: 20_000 }),
-    ).toBeNull();
+      groundHit(terrain, rayFrom(516, 1.7, -0.01), { maxDistanceM: 20_000 })
+        .miss,
+    ).toBe("above");
     expect(GROUND_HIT.maxDistanceM).toBe(5_000);
   });
 });
@@ -275,6 +307,38 @@ describe("terrainAboveGround", () => {
     );
     expect(above(p)).toBeCloseTo(1.7, 6);
     expect(terrainAboveGround(fakeTerrain(() => null))(p)).toBeNull();
+  });
+});
+
+describe("groundReachM", () => {
+  // Why: the default 5 km reach meets flat ground from 3 km only when the
+  // ray is pitched at least 37 degrees down, so an overview pick was a
+  // miss. The reach for a camera's height over the ground runs to its
+  // horizon over a smooth Earth (sqrt(2 R h + h^2)), never below the
+  // default: 1.7 m keeps 5 km, 30 m gets 19.6 km, 3 km 195.5 km.
+  it("runs to the camera's horizon, at least the default reach", () => {
+    expect(groundReachM(1.7)).toBe(GROUND_HIT.maxDistanceM);
+    expect(groundReachM(0)).toBe(GROUND_HIT.maxDistanceM);
+    expect(groundReachM(30) / 1000).toBeCloseTo(19.55, 1);
+    expect(groundReachM(3_000) / 1000).toBeCloseTo(195.5, 0);
+    // A camera under the ground (a bad height) keeps the default.
+    expect(groundReachM(-5)).toBe(GROUND_HIT.maxDistanceM);
+    expect(() => groundReachM(Number.NaN)).toThrow(RangeError);
+  });
+
+  // Why: with that reach a shallow pick from 3 km (10 degrees down, the
+  // ground about 17 km out) is found, where the default reach called it
+  // out of reach.
+  it("lets a shallow overview pick reach the ground", () => {
+    const terrain = fakeTerrain(() => 516);
+    const ray = rayFrom(516, 3_000, -10);
+    expect(groundHit(terrain, ray).miss).toBe("out-of-reach");
+    const hit = hitOf(
+      groundHit(terrain, ray, { maxDistanceM: groundReachM(3_000) }),
+    );
+    expect(hit.t / 1000).toBeGreaterThan(16);
+    expect(hit.t / 1000).toBeLessThan(18);
+    expect(heightOf(hit.point)).toBeCloseTo(516, 3);
   });
 });
 
@@ -317,11 +381,10 @@ describe("marchToGround", () => {
     );
     const bank = (p: THREE.Vector3) =>
       p.y - Math.max(0, 1.5 - Math.abs(p.x - 109));
-    const hit = marchToGround(ray, bank);
-    expect(hit).not.toBeNull();
-    expect(hit!.t).toBeGreaterThan(107.5);
-    expect(hit!.t).toBeLessThan(109);
-    expect(Math.abs(bank(hit!.point))).toBeLessThan(1e-3);
+    const hit = hitOf(marchToGround(ray, bank));
+    expect(hit.t).toBeGreaterThan(107.5);
+    expect(hit.t).toBeLessThan(109);
+    expect(Math.abs(bank(hit.point))).toBeLessThan(1e-3);
   });
 
   // Why (what the bound costs): near the ground the step is the least
@@ -339,7 +402,7 @@ describe("marchToGround", () => {
       new THREE.Vector3(0, 1.7, 0),
       new THREE.Vector3(1, 0, 0),
     );
-    expect(marchToGround(level, flat)).toBeNull();
+    expect(marchToGround(level, flat).miss).toBe("above");
     expect(samples).toBeLessThanOrEqual(
       GROUND_HIT.maxDistanceM / GROUND_HIT.minStepM + 1,
     );
@@ -348,7 +411,7 @@ describe("marchToGround", () => {
       new THREE.Vector3(0, 3_000, 0),
       new THREE.Vector3(1, -1, 0).normalize(),
     );
-    expect(marchToGround(down, flat)).not.toBeNull();
+    expect(marchToGround(down, flat).miss).toBeNull();
     expect(samples).toBeLessThan(100);
   });
 
@@ -359,9 +422,9 @@ describe("marchToGround", () => {
       new THREE.Vector3(0, 2, 0),
       new THREE.Vector3(1, -1, 0).normalize(),
     );
-    const hit = marchToGround(ray, (p) => p.y);
-    expect(hit!.point.y).toBeCloseTo(0, 5);
-    expect(hit!.t).toBeCloseTo(2 * Math.SQRT2, 5);
+    const hit = hitOf(marchToGround(ray, (p) => p.y));
+    expect(hit.point.y).toBeCloseTo(0, 5);
+    expect(hit.t).toBeCloseTo(2 * Math.SQRT2, 5);
   });
 
   it("does not count the start's own sample as a crossing when it starts on the ground", () => {
@@ -369,31 +432,35 @@ describe("marchToGround", () => {
       new THREE.Vector3(0, 0, 0),
       new THREE.Vector3(1, -1, 0).normalize(),
     );
-    expect(marchToGround(ray, (p) => p.y)).toBeNull();
+    expect(marchToGround(ray, (p) => p.y).miss).toBe("below-start");
   });
 
   // Why: a camera under the ground (a cave of the relief's mesh, a bad
   // height) must not pick a far slope it can only see from behind: a ray
-  // that starts below the ground is null even where it comes out and goes
-  // under again further on.
-  it("is null for a ray that starts underground, even where it re-enters the ground later", () => {
+  // that starts below the ground has no hit ("below-start") even where it
+  // comes out and goes under again further on.
+  it("has no hit for a ray that starts underground, even where it re-enters the ground later", () => {
     const ray = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(1, 0, 0));
     const ridge = (p: THREE.Vector3) => (p.x > 5 && p.x < 10 ? 1 : -1);
-    expect(marchToGround(ray, ridge)).toBeNull();
+    expect(marchToGround(ray, ridge).miss).toBe("below-start");
     // From inside the open stretch the same ground is found at 10 m.
-    expect(marchToGround(ray, ridge, { startM: 6 })!.t).toBeCloseTo(10, 5);
+    expect(hitOf(marchToGround(ray, ridge, { startM: 6 })).t).toBeCloseTo(
+      10,
+      5,
+    );
   });
 
   // Why (G1 review L3): the same camera under the ground, but with no
   // heights loaded at the ray's start (the tile under a camera that just
   // arrived). The first sample that IS loaded reads underground, so the
-  // ray started underground as far as anything shows: null, not the far
-  // slope at 10 m.
-  it("is null when the first loaded sample is underground, the start unloaded", () => {
+  // far slope at 10 m must not be picked; and since the start's own height
+  // is unknown (it may read above the ground once loaded), the miss is
+  // "not-loaded", which the editor asks again, not "below-start".
+  it("has no hit when the first loaded sample is underground, the start unloaded", () => {
     const ray = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(1, 0, 0));
     const ground = (p: THREE.Vector3) =>
       p.x < 1 ? null : p.x > 5 && p.x < 10 ? 1 : -1;
-    expect(marchToGround(ray, ground)).toBeNull();
+    expect(marchToGround(ray, ground).miss).toBe("not-loaded");
   });
 
   // Why (G1 review L3): a crossing inside an unloaded stretch was lost:
@@ -404,10 +471,9 @@ describe("marchToGround", () => {
   it("finds a crossing inside an unloaded stretch, within its bracket", () => {
     const ray = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(1, 0, 0));
     const ground = (p: THREE.Vector3) => (p.x < 4 ? 1 : p.x < 8 ? null : -1);
-    const hit = marchToGround(ray, ground);
-    expect(hit).not.toBeNull();
-    expect(hit!.t).toBeGreaterThanOrEqual(3);
-    expect(hit!.t).toBeLessThanOrEqual(8 + GROUND_HIT.minStepM);
-    expect(hit!.nulls).toBeGreaterThan(0);
+    const hit = hitOf(marchToGround(ray, ground));
+    expect(hit.t).toBeGreaterThanOrEqual(3);
+    expect(hit.t).toBeLessThanOrEqual(8 + GROUND_HIT.minStepM);
+    expect(hit.nulls).toBeGreaterThan(0);
   });
 });

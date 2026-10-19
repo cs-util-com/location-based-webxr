@@ -17,7 +17,9 @@
   - Heights: `drawnHeightM`, `ellipsoidalHeightM` (`globe-heights.ts`;
     pass the Osm library's `egm96Geoid()`).
   - Picking: `groundHit`, `marchToGround`, `terrainAboveGround`,
-    `GROUND_HIT` (`globe-ground-hit.ts`).
+    `groundReachM`, `GROUND_HIT` and the types `GroundHit`, `GroundMiss`,
+    `GroundMissReason`, `GroundHitResult`, `GroundHitOptions`
+    (`globe-ground-hit.ts`).
   - First person: `GLOBE_EYE`, `eyeNearM`, `eyeClipPlanes`,
     `nearestItemDistanceM`, `applyEyeControls` (`globe-eye-camera.ts`).
   - The OSM map: `createGlobeOsmOverlay`, `GLOBE_OSM`, `osmCredit`, the

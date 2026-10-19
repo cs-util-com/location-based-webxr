@@ -340,7 +340,7 @@ test("first person stands at eye height, draws the ground at its feet and a near
   }
   for (const { depth, out } of results) {
     console.log(
-      `first person, ${depth} depth (three gave ${out.eye.depth}): ${out.overGroundM.toFixed(2)} m over the drawn ground (clearance ${out.clearanceM} m), near ${out.probe.near.toFixed(3)} m, far ${(out.probe.far / 1000).toFixed(0)} km; holes in the lower two thirds ${out.probe.backgroundShare.toFixed(4)}; 1 mm apart ${out.probe.changedShare.toExponential(2)} of ${out.probe.pixels} pixels; pick ${out.pick ? `${out.pick.t.toFixed(2)} m ahead, ${(out.pick.heightM - out.pick.groundM).toFixed(4)} m off the sampled ground, ${out.pick.samples} samples` : "none"}; item 0.45 m away: unregistered ${out.clipped ? "drawn" : "clipped"} (near ${out.nearWithout.toFixed(3)}), registered ${out.drawn ? "drawn" : "clipped"} (near ${out.nearWith.toFixed(3)})`,
+      `first person, ${depth} depth (three gave ${out.eye.depth}): ${out.overGroundM.toFixed(2)} m over the drawn ground (clearance ${out.clearanceM} m), near ${out.probe.near.toFixed(3)} m, far ${(out.probe.far / 1000).toFixed(0)} km; holes in the lower two thirds ${out.probe.backgroundShare.toFixed(4)}; 1 mm apart ${out.probe.changedShare.toExponential(2)} of ${out.probe.pixels} pixels; pick ${out.pick?.miss === null ? `${out.pick.t.toFixed(2)} m ahead, ${(out.pick.heightM - out.pick.groundM).toFixed(4)} m off the sampled ground, ${out.pick.samples} samples` : `none (${out.pick?.miss})`}; item 0.45 m away: unregistered ${out.clipped ? "drawn" : "clipped"} (near ${out.nearWithout.toFixed(3)}), registered ${out.drawn ? "drawn" : "clipped"} (near ${out.nearWith.toFixed(3)})`,
     );
   }
   for (const { depth, errors, out } of results) {
@@ -356,7 +356,7 @@ test("first person stands at eye height, draws the ground at its feet and a near
     expect(out.probe.near).toBeGreaterThanOrEqual(0.1);
     expect(out.probe.backgroundShare).toBe(0);
     expect(out.probe.changedShare).toBeLessThanOrEqual(1e-3);
-    expect(out.pick).not.toBeNull();
+    expect(out.pick.miss).toBeNull();
     expect(Math.abs(out.pick.heightM - out.pick.groundM)).toBeLessThan(0.01);
     expect(out.clipped).toBe(false);
     expect(out.drawn).toBe(true);

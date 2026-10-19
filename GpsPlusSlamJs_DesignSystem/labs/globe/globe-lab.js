@@ -133,7 +133,9 @@ import {
   createGlobeOsmOverlay,
   eyeClipPlanes,
   groundHit,
+  groundReachM,
   nearestItemDistanceM,
+  terrainAboveGround,
 } from "/globe/globe-editor.js";
 import {
   OSM_TILE_ATTRIBUTION,
@@ -4597,19 +4599,33 @@ void main() {
     /**
      * The ground under a screen point (`u`, `v` from the top left, 0-1)
      * as the editor will pick it (G1 4, `groundHit`): the camera's ray,
-     * marched over the relief's sampled heights. Null without the relief
-     * or a hit; else the distance, the place, its height over the
-     * ellipsoid and the sampled ground there.
+     * marched over the relief's sampled heights, with a reach to the
+     * camera's horizon (`groundReachM` of its height over the sampled
+     * ground; the default reach where none is loaded under it). Null
+     * without the relief; a miss is `{ miss, reachM, samples, nulls }`;
+     * a hit has `miss: null`, the distance, the place, its height over
+     * the ellipsoid and the sampled ground there.
      */
     groundHitAt(u, v) {
       if (!terrain) return null;
       const ray = new THREE.Raycaster();
       ray.setFromCamera(new THREE.Vector2(u * 2 - 1, 1 - v * 2), camera);
-      const hit = groundHit(terrain, ray.ray);
-      if (!hit) return null;
+      const overGroundM = terrainAboveGround(terrain)(camera.position);
+      const reachM = groundReachM(overGroundM ?? 0);
+      const hit = groundHit(terrain, ray.ray, { maxDistanceM: reachM });
+      if (hit.miss !== null) {
+        return {
+          miss: hit.miss,
+          reachM,
+          samples: hit.samples,
+          nulls: hit.nulls,
+        };
+      }
       const local = globe.tiles.group.worldToLocal(hit.point.clone());
       const c = globe.tiles.ellipsoid.getPositionToCartographic(local, {});
       return {
+        miss: null,
+        reachM,
         t: hit.t,
         samples: hit.samples,
         nulls: hit.nulls,

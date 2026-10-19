@@ -451,7 +451,8 @@
 register = true)` (a red sphere ahead, which the near plane follows
     unless unregistered), `clearEyeItems()`, and `groundHitAt(u, v)`
     (the ground under a screen point as the editor picks it:
-    `groundHit` over the relief's sampled heights). State: `eye`
+    `groundHit` over the relief's sampled heights, with a reach to the
+    camera's horizon, `groundReachM`; a miss names its reason). State: `eye`
     (`on`, `near`, `depth`, `items`).
   - The OSM map (G1 step 6): `osm=1` (off by default; a select in
     "Tiles and memory") attaches `createGlobeOsmOverlay` with the

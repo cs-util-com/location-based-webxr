@@ -55,15 +55,40 @@ export interface GroundHitOptions {
   readonly bisections?: number;
 }
 
-export interface GroundHit {
+/** Height samples taken, and how many found no heights loaded. */
+interface GroundSamples {
+  readonly samples: number;
+  readonly nulls: number;
+}
+
+export interface GroundHit extends GroundSamples {
+  /** Null: a hit. */
+  readonly miss: null;
   /** The distance along the (normalised) ray to the ground, m. */
   readonly t: number;
   /** The point on the ground, in the ray's frame. */
   readonly point: THREE.Vector3;
-  /** Height samples taken, and how many found no heights loaded. */
-  readonly samples: number;
-  readonly nulls: number;
 }
+
+/**
+ * Why a ray found no ground, so the editor knows what to do about it:
+ * - `not-loaded`: some heights along the ray were missing (or the start's
+ *   were), so the ground may be there once they load: ask again;
+ * - `below-start`: the ray starts on or under the ground: no pick;
+ * - `out-of-reach`: the ray was still closing on the ground when its
+ *   reach ran out: a longer `maxDistanceM` may find it;
+ * - `above`: the ray was moving away from the ground at its end (the
+ *   sky, or past the horizon): no pick.
+ */
+export type GroundMissReason =
+  "not-loaded" | "below-start" | "out-of-reach" | "above";
+
+export interface GroundMiss extends GroundSamples {
+  readonly miss: GroundMissReason;
+}
+
+/** A hit (`miss` null) or a miss with its reason. */
+export type GroundHitResult = GroundHit | GroundMiss;
 
 /**
  * The height (m) of a point above the sampled ground (negative below), or
@@ -160,17 +185,19 @@ function unitRay(ray: THREE.Ray): THREE.Ray {
  * not (a crossing inside an unloaded stretch is found within that
  * stretch; a bisection that meets an unloaded midpoint stops there). On
  * ground no steeper than `maxSlope`, every underground stretch longer
- * than `minStepM` is found and the hit is the first one's entry. Null
- * when the ray stays above the ground within `maxDistanceM`, starts on or
- * below it (its first LOADED sample is: an unloaded start proves nothing),
- * or finds nothing loaded. RangeError for a zero direction or an option
- * out of range.
+ * than `minStepM` is found and the hit is the first one's entry. A miss
+ * says why (`GroundMissReason`): heights missing along the way (or at
+ * the start) make it `not-loaded`, whatever else holds; else a first
+ * loaded sample on or under the ground makes it `below-start`; else a ray
+ * still closing on the ground at `maxDistanceM` (its last two loaded
+ * heights falling) is `out-of-reach`, and any other is `above`.
+ * RangeError for a zero direction or an option out of range.
  */
 export function marchToGround(
   ray: THREE.Ray,
   aboveGround: AboveGround,
   options: GroundHitOptions = {},
-): GroundHit | null {
+): GroundHitResult {
   const o = checked(options);
   const r = unitRay(ray);
   // The clear distance per metre of height over S-sloped ground.
@@ -187,26 +214,39 @@ export function marchToGround(
     }
     return h;
   };
-  // The last loaded sample above the ground (null before the first).
+  // Missing heights make any miss not-loaded: waiting may change it.
+  const missed = (reason: GroundMissReason): GroundMiss => ({
+    miss: nulls > 0 ? "not-loaded" : reason,
+    samples,
+    nulls,
+  });
+  // The last loaded sample above the ground (null before the first), its
+  // height, and whether that height fell from the loaded one before it.
   let lastAbove: number | null = null;
+  let lastH = Infinity;
+  let closing = false;
   for (let t = o.startM; ;) {
     const h = above(t);
-    if (h !== null) {
-      if (h > 0) lastAbove = t;
+    if (h !== null && h > 0) {
+      closing = h < lastH;
+      lastH = h;
+      lastAbove = t;
+    } else if (h !== null) {
       // On or under the ground: a crossing if anything loaded was above,
       // else the ray started there, as far as anything loaded shows.
-      else if (lastAbove === null) return null;
-      else {
-        const hit = bisect(lastAbove, t, above, o.bisections);
-        return {
-          t: hit,
-          point: r.at(hit, new THREE.Vector3()),
-          samples,
-          nulls,
-        };
-      }
+      if (lastAbove === null) return missed("below-start");
+      const hit = bisect(lastAbove, t, above, o.bisections);
+      return {
+        miss: null,
+        t: hit,
+        point: r.at(hit, new THREE.Vector3()),
+        samples,
+        nulls,
+      };
     }
-    if (t >= o.maxDistanceM) return null;
+    if (t >= o.maxDistanceM) {
+      return missed(closing ? "out-of-reach" : "above");
+    }
     const bound = h === null ? o.stepFraction * t : h * perHeight;
     t = Math.min(o.maxDistanceM, t + Math.max(o.minStepM, bound));
   }
@@ -246,6 +286,28 @@ export function groundHit(
   terrain: SampledTerrain,
   ray: THREE.Ray,
   options: GroundHitOptions = {},
-): GroundHit | null {
+): GroundHitResult {
   return marchToGround(ray, terrainAboveGround(terrain), options);
+}
+
+/** The Earth's mean radius (m), for the horizon's distance. */
+const EARTH_RADIUS_M = 6_371_000;
+
+/**
+ * A reach (`maxDistanceM`) for a camera `heightM` over the ground: the
+ * distance to its horizon over a smooth Earth, sqrt(2 R h + h^2), and never
+ * less than the default reach (a camera under the ground, at a bad height,
+ * keeps the default). From 30 m 19.6 km, from 3 km 195.5 km. Ground that
+ * stands up beyond the horizon (a far mountain) is out of this reach.
+ * RangeError for a non-finite height.
+ */
+export function groundReachM(heightM: number): number {
+  if (!Number.isFinite(heightM)) {
+    throw new RangeError(`the height must be finite, got ${heightM}`);
+  }
+  const h = Math.max(0, heightM);
+  return Math.max(
+    GROUND_HIT.maxDistanceM,
+    Math.sqrt(2 * EARTH_RADIUS_M * h + h * h),
+  );
 }

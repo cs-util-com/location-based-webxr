@@ -38,10 +38,14 @@ export {
 export {
   GROUND_HIT,
   groundHit,
+  groundReachM,
   marchToGround,
   terrainAboveGround,
   type GroundHit,
   type GroundHitOptions,
+  type GroundHitResult,
+  type GroundMiss,
+  type GroundMissReason,
 } from "./globe-ground-hit.js";
 export {
   GLOBE_EYE,

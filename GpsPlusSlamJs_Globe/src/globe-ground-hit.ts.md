@@ -15,12 +15,21 @@
     of the crossing's step).
   - `marchToGround(ray, aboveGround, options?)`: the first distance `t`
     where `aboveGround` goes from > 0 to <= 0 along the ray (normalised
-    first), as `{ t, point, samples, nulls }`; null when the ray stays
-    above the ground within `maxDistanceM`, starts on or below it (its
-    first LOADED sample is at or below the ground), or finds nothing
-    loaded. Options: `startM`, `maxDistanceM`, `maxSlope` (> 0),
-    `minStepM`, `stepFraction`, `bisections` (1-60). RangeError for a zero or
-    non-finite direction or an option out of range.
+    first), as a `GroundHitResult`: a hit `{ miss: null, t, point,
+samples, nulls }`, or a miss `{ miss, samples, nulls }` whose
+    `GroundMissReason` says why, in this order:
+    - `not-loaded`: any sample found no heights (or the start's were
+      missing and the first loaded sample is underground); the ground may
+      be there once they load, so the editor asks again (the only reason
+      worth a retry);
+    - `below-start`: the first loaded sample is on or under the ground;
+    - `out-of-reach`: at `maxDistanceM` the ray was still closing on the
+      ground (its last two loaded heights falling): a longer reach may
+      find it;
+    - `above`: any other ray that stayed over the ground: into the sky,
+      level over the curved Earth, or past its closest approach. Options: `startM`, `maxDistanceM`, `maxSlope` (> 0),
+      `minStepM`, `stepFraction`, `bisections` (1-60). RangeError for a zero or
+      non-finite direction or an option out of range.
   - `terrainAboveGround(terrain)`: an `AboveGround` over a
     `createGlobeTerrain` result: a world point into the tiles' frame (the
     group's world matrix, read once when called), to latitude, longitude
@@ -28,9 +37,18 @@
     `sampleCartographicElevation`; null where no heights are loaded.
   - `groundHit(terrain, ray, options?)`: the two together, for a
     WORLD-space ray.
+  - `groundReachM(heightM)`: a `maxDistanceM` for a camera `heightM` over
+    the ground: to its horizon over a smooth Earth, sqrt(2 R h + h^2) with
+    R 6 371 km, at least the default 5 km (a negative height, a camera
+    under the ground, keeps the default): 30 m 19.6 km, 3 km 195.5 km.
+    Ground that stands up beyond that horizon (a far mountain) is out of
+    reach. RangeError for a non-finite height.
 - What G2 (the editor's picking) uses:
   - a ray from `THREE.Raycaster.setFromCamera(ndc, camera)` (its `.ray`),
-    passed to `groundHit(terrain, raycaster.ray)`;
+    passed to `groundHit(terrain, raycaster.ray, { maxDistanceM:
+groundReachM(heightOverGroundM) })`;
+  - the miss reason: ask again on `not-loaded` only, leave the item
+    where it is on any other;
   - `t` to tell an item in front of the ground (its own hit closer than
     `t`) from one behind a hill;
   - `point` as the drag target, then `ellipsoidalHeightM`
@@ -82,14 +100,19 @@
     returns the loaded end at or below the ground; G1 review L3: the
     first version needed two loaded samples in a row and missed it).
   - An unloaded start followed by a loaded sample at or below the ground
-    counts as underground (null), not as a crossing: nothing says the ray
-    was ever above it.
+    is no hit, never a crossing: nothing says the ray was ever above it.
+    Its reason is `not-loaded`, not `below-start`: the start's own height
+    is unknown and may read above the ground once loaded.
+  - The `out-of-reach` / `above` split reads the trend of the last two
+    loaded heights, not the geometry: a ray still falling towards a far
+    mountain past a dip reads by the dip. It tells the editor whether a
+    longer reach is worth trying; it is not a proof either way.
   - **A shallow ray needs `maxDistanceM` raised.** From 3 km over the
     ground the default 5 km reach meets flat ground only below about 37
     degrees of pitch (asin(3/5)); a shallower overview pick is null. The
-    editor passes a reach from its own height and pitch (or the far
-    plane) for an overview.
-  - A ray that starts below the ground is null, even where it comes out
+    editor passes `groundReachM` of its height over the ground (the lab's
+    `groundHitAt` does).
+  - A ray that starts below the ground has no hit, even where it comes out
     and goes under again: a camera under the relief must not pick a slope
     it sees from behind.
   - Pure apart from `three` and the library's `Ellipsoid` type; no DOM.
@@ -97,18 +120,28 @@
 
   ```ts
   raycaster.setFromCamera(ndc, camera);
-  const hit = groundHit(terrain, raycaster.ray);
-  if (hit && (!itemHit || itemHit.distance > hit.t)) dragTo(hit.point);
+  const hit = groundHit(terrain, raycaster.ray, {
+    maxDistanceM: groundReachM(cameraOverGroundM),
+  });
+  if (hit.miss === "not-loaded") retryNextFrame();
+  else if (hit.miss === null && !(itemHit?.distance <= hit.t)) {
+    dragTo(hit.point);
+  }
   ```
 
 - Tests: `globe-ground-hit.property.test.ts`: random planes (the hit at
-  the analytic distance) and the ridge property of the step bound.
+  the analytic distance; the miss `above` away from the plane and
+  `out-of-reach` towards it past the reach), the ridge property of the
+  step bound, and `groundReachM` growing with the height.
   `globe-ground-hit.test.ts`: the bank in front of a grazing ray, the
   bound's cost, flat ground at eye height, a slope
   rising ahead, a tile seam (two tiles of different heights meeting), the
   sampled level changing between samples, unloaded stretches skipped and
-  counted, a crossing inside an unloaded stretch found, null cases (up,
-  underground, no heights, an underground start that re-enters further
-  on, an unloaded start whose first loaded sample is underground), the group's world matrix, the maximum
-  distance (and the Earth's curvature beyond it), `terrainAboveGround`
-  directly, and the option refusals.
+  counted, a crossing inside an unloaded stretch found, each miss reason
+  (up and level: `above`; underground and on the ground: `below-start`;
+  no heights, missing heights along the way, an unloaded start whose first
+  loaded sample is underground: `not-loaded`; short of the ground:
+  `out-of-reach`), an underground start that re-enters further on, the
+  group's world matrix, the maximum distance (and the Earth's curvature
+  beyond it), `groundReachM` and the shallow overview pick it lets reach
+  the ground, `terrainAboveGround` directly, and the option refusals.

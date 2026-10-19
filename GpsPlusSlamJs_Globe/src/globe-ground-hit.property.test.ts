@@ -12,7 +12,7 @@ import fc from "fast-check";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { GROUND_HIT, marchToGround } from "./globe-ground-hit.js";
+import { GROUND_HIT, groundReachM, marchToGround } from "./globe-ground-hit.js";
 
 /**
  * The ridge property draws flanks up to the slope the step bound assumes
@@ -69,11 +69,20 @@ describe("marchToGround over random planes", () => {
           const expected = -above(origin) / toward;
           // A crossing right at the reach's end may fall either side.
           fc.pre(Math.abs(expected - 5_000) > 1);
-          // Away from the ground, or past the reach: no hit.
-          const reachable = toward < 0 && expected < 5_000;
-          expect(hit !== null).toBe(reachable);
-          expect(hit ? Math.abs(above(hit.point)) : 0).toBeLessThan(1e-3);
-          expect(hit ? Math.abs(hit.t - expected) : 0).toBeLessThan(1e-3);
+          // A ray all but parallel to the plane (its height changing by
+          // under 5 mm over the reach) reads level, either reason.
+          fc.pre(Math.abs(toward) > 1e-6);
+          // Away from the ground ("above"), or towards it but past the
+          // reach ("out-of-reach"): no hit.
+          const reason =
+            toward >= 0 ? "above" : expected < 5_000 ? null : "out-of-reach";
+          expect(hit.miss).toBe(reason);
+          expect(
+            hit.miss === null ? Math.abs(above(hit.point)) : 0,
+          ).toBeLessThan(1e-3);
+          expect(
+            hit.miss === null ? Math.abs(hit.t - expected) : 0,
+          ).toBeLessThan(1e-3);
         },
       ),
       { numRuns: 300 },
@@ -180,15 +189,33 @@ describe("marchToGround over a ridge (the step bound)", () => {
             world.above,
           );
           // No ground ahead within the reach: no hit; else its entry.
-          expect(hit !== null, `the ground at ${first?.from}`).toBe(
+          expect(hit.miss === null, `the ground at ${first?.from}`).toBe(
             first !== undefined,
           );
-          expect(hit && first ? Math.abs(hit.t - first.from) : 0).toBeLessThan(
-            1e-3,
-          );
+          expect(
+            hit.miss === null && first ? Math.abs(hit.t - first.from) : 0,
+          ).toBeLessThan(1e-3);
         },
       ),
       { numRuns: 2_000 },
+    );
+  });
+});
+
+describe("groundReachM", () => {
+  // Why: the editor passes this reach for its camera's height, so a
+  // higher camera must never reach less (an overview that picked from 2 km
+  // must still pick from 3 km), and no camera less than the default.
+  it("grows with the height and never drops below the default", () => {
+    fc.assert(
+      fc.property(logEvenly(0.01, 20_000), logEvenly(0.01, 20_000), (a, b) => {
+        const [low, high] = a <= b ? [a, b] : [b, a];
+        expect(groundReachM(low)).toBeLessThanOrEqual(groundReachM(high));
+        expect(groundReachM(low)).toBeGreaterThanOrEqual(
+          GROUND_HIT.maxDistanceM,
+        );
+      }),
+      { numRuns: 300 },
     );
   });
 });
