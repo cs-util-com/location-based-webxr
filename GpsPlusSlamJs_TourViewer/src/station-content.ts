@@ -118,7 +118,7 @@ export function contentStatus(
 }
 
 /** The name of a station's group in the scene (what the e2e suite reads). */
-export function stationContentName(stationId: string): string {
+function stationContentName(stationId: string): string {
   return `station-content:${stationId}`;
 }
 

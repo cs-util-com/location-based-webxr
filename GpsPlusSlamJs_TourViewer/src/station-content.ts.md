@@ -40,8 +40,8 @@ under "show all"); this module never reads the store.
   items: `{ kind: "none" }` until a station holds one, then
   `{ kind: "placed", count, skipped }` for the stations shown now (0 with no
   station shown).
-- `stationContentName(id)` - `station-content:<id>`, the group's name (what
-  the e2e suite reads).
+- A station's group is named `station-content:<id>` (what the e2e suite
+  reads).
 
 ## Invariants & assumptions
 
