@@ -81,7 +81,7 @@ export interface DocumentChange {
 /** A placement the document took: `object` as the document holds it, and
  *  `ownStation` whether it started its own station, as "New station here"
  *  armed it (D8: then `object` names that station). */
-export type PlacedChange = DocumentChange & {
+type PlacedChange = DocumentChange & {
   readonly object: TourObject;
   readonly ownStation: boolean;
 };

@@ -70,7 +70,7 @@ generation, written, appliedDeletions, stationsAtStart })`,
   page (a second call throws: two drafts would write everything twice).
 - `revision()`; the types `VisitPlacement`, `CreatorObject`,
   `DocumentChange`, `CreatorDocumentStore` (`PlacedEntry`,
-  `DocumentUndo` and `DocumentRename` are the methods' own shapes,
+  `PlacedChange`, `DocumentUndo` and `DocumentRename` are the methods' own shapes,
   module-private).
 
 ## Invariants & assumptions
