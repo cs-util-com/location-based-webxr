@@ -15,6 +15,18 @@
 
 ### Added
 
+- **A placed 3D model, `tour.json` version 3 minor 1** (`ar/tour-items`,
+  `ar/tour-manifest`): a station item of kind `model` (`TourModelItem`; in
+  the world view `TourModel`) names a model asset of the tour (`asset`, a
+  `.glb` in `assets`) and carries its size in metres, `sizeM`: the scaled
+  model's largest side, from `TOUR_MODEL_MIN_SIZE_M` (0.05) to
+  `TOUR_MODEL_MAX_SIZE_M` (500), both inclusive. A size outside the bound
+  is refused, never clamped; a lenient read (a newer minor) leaves out a
+  model whose positive size lies beyond the bound, and nothing that is not
+  a positive finite number is a size at any minor. Pins and photos have no
+  size. `TOUR_MANIFEST_MINOR` is 1; the writer writes the lowest minor the
+  tour needs (1 only while it carries a model), so a tour without models is
+  written exactly as before. Nothing renders a placed model yet.
 - **Stations own their items at local poses** (`ar/tour-manifest`):
   `TourStation.items` holds the station's pins and photos (`TourItem`:
   `TourPinItem` or `TourPhotoItem`), each with a `TourLocalPose` relative

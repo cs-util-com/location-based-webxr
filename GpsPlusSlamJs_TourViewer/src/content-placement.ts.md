@@ -30,7 +30,9 @@ imageHeight, nowIso }): TourPhoto | null` - the camera's RAW odometry pose
   Details:
   Promise<RenderedTourObjects>` - pins as label objects, photos as capture
 planes (`placeCapturedImagePlanes`), all at the scene root; a photo whose
-texture fails is skipped and named in `skipped`; `dispose()`removes and
+texture fails is skipped and named in `skipped`; a placed 3D model
+(format minor 1) is not drawn yet - it never reaches the photo loader and
+is named in `skipped`too, so the status line counts it as not shown;`dispose()`removes and
 frees everything.`root` is the one group every rendered object hangs
 under - what a tap in AR is cast against to name the object
 (`object-pick.ts`, authoring plan 2026-09-28-0953 M4).
@@ -106,7 +108,8 @@ and 0.1 m, measured 24 mm).
 `content-placement.test.ts` - the pin round trip (mint → NUE) as a property
 over positions; the photo's frame direction pinned by bearing against the
 framework's basis constant; refusals without zero/alignment; the id shape
-(property); rendering with a fake scene: counts, a skipped photo, disposal, and a
+(property); rendering with a fake scene: counts, a skipped photo, a placed
+model left out and named (the photo loader never asked), disposal, and a
 caller's own pose and frame (`poseOf`) for pins and photos. For
 `renderTourStations`: the group structure (one group per station with
 items, the items as its children), and the property that the local poses

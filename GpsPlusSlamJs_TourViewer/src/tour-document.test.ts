@@ -12,8 +12,10 @@
 import { describe, expect, it } from "vitest";
 import type {
   TourManifest,
+  TourModel,
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { serializeTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import {
@@ -852,5 +854,62 @@ describe("tour document: a step across an in-place save (D33)", () => {
     expect(state.position).toBe(0);
     expect(redo(state).position).toBe(1);
     expect(reduce(state, act.opened({ manifest: OPENED })).position).toBe(0);
+  });
+});
+
+// Why: a placed 3D model (format minor 1) carries its size in metres, a
+// number no page can edit yet. The document must carry it through every
+// edit, station move and save untouched - a page that dropped it, or
+// rounded it, would rewrite the creator's file without a word.
+describe("tour document: a placed 3D model rides along unchanged", () => {
+  const model: TourModel = {
+    id: "m",
+    kind: "model",
+    asset: "statue",
+    sizeM: 12.345678901234,
+    label: "The fountain",
+    createdAtIso: "2026-10-19T12:00:00.000Z",
+    geo: { lat: 48.5203, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+  };
+  const withModel = tourOf([pin("a"), model], {
+    assets: [{ id: "statue", path: "content/statue.glb", kind: "model" }],
+  });
+
+  it("keeps the model, its asset and its size exactly through an edit, a station move and a save", () => {
+    let state = open(withModel);
+    const { geo: _geo, ...fields } = model;
+    expect(objectOf(state, "m")).toMatchObject({
+      ...fields,
+      station: stationIdOf("m"),
+    });
+    state = reduce(
+      state,
+      act.edited({ object: { ...pin("a"), label: "x" }, what: "e" }),
+    );
+    const station = stationIdOf("m");
+    const was = withModel.stations.find((s) => s.id === station)!;
+    state = reduce(
+      state,
+      act.stationMoved({
+        stationId: station,
+        geo: { ...was.geo, lat: was.geo.lat + 0.0001 },
+        what: "the move of the station",
+      }),
+    );
+    const written = manifestToWrite(state)!;
+    const item = written.stations.find((s) => s.id === station)!.items[0]!;
+    expect(item).toEqual(was.items[0]);
+    // The file the save writes carries it at minor 1, readable again.
+    const json = JSON.parse(serializeTourManifest(written)) as {
+      minor: number;
+    };
+    expect(json.minor).toBe(1);
+    const saved = save(state);
+    expect(objectOf(saved, "m")).toMatchObject({
+      kind: "model",
+      asset: "statue",
+      sizeM: model.sizeM,
+    });
+    expect(changeCount(saved)).toBe(0);
   });
 });

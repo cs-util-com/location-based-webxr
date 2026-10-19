@@ -321,3 +321,7 @@ store.dispatch(tourDocumentActions.undone());
   station" is a by-design row (the desktop lacks it until the 3D editor),
   and the harness accepts a by-design row on either page lacking the
   operation.
+- `tour-document.test.ts` also carries a placed 3D model (format minor 1)
+  through a pin edit, its station's move and a save: its asset, its size in
+  metres and its local pose come back exactly, and the write is at minor 1.
+  The slice is kind-agnostic; this pins that it stays so.

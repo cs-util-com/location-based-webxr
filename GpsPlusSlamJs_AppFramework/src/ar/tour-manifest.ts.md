@@ -3,7 +3,8 @@
 **Purpose:** the schema, reader and writer of `tour.json` - what a creator
 placed in a tour. Since format version 3 (tour editor plan
 `GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md`,
-W3) every text pin and captured photo is an ITEM of a STATION: the station
+W3) every text pin, captured photo and (minor 1) placed 3D model is an
+ITEM of a STATION: the station
 carries the exact geo pose (lat, lon, absolute altitude, rotation against
 north) and its items carry LOCAL poses relative to it (`tour-items.ts`,
 `tour-station-pose.ts`). Also the tour kit's game content (title, station
@@ -16,8 +17,8 @@ Guided-setup plan DEC-N7/N8/N9 for the original pins and photos
 ## Public API
 
 - `TOUR_MANIFEST_VERSION = 3` (the format's major number) and
-  `TOUR_MANIFEST_MINOR = 0` (the newest additive revision of version 3
-  this module knows).
+  `TOUR_MANIFEST_MINOR = 1` (the newest additive revision of version 3
+  this module knows; minor 1 adds the placed 3D model).
 - `parseTourManifest(data: unknown, options?: TourManifestReadOptions): TourManifest`
   - validates every field; throws `TourManifestValidationError` naming the
     record (`"stations[1].items[3].pose.position" …`,
@@ -27,19 +28,25 @@ Guided-setup plan DEC-N7/N8/N9 for the original pins and photos
     each tour detail left out (below).
 - `serializeTourManifest(manifest, options?): string` - re-validates
   through the reader, refuses a manifest of a newer minor, then
-  pretty-prints `{ version: 3, minor: 0, ... }`.
+  pretty-prints `{ version: 3, minor, ... }` at the lowest minor the tour
+  needs (`minorNeeded`: 1 while it carries a model, else 0).
 - `createEmptyTourManifest(): TourManifest` - `{ version: 3, minor: 0,
 order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - `tourItems(tour): TourItem[]` - every station's items, in station order.
-- `parseTourObject(value, at?): TourObject` - one WORLD-VIEW pin or photo
+- `parseTourObject(value, at?): TourObject` - one WORLD-VIEW pin, photo or
+  model
   (geo pose, optional `station` id), the record a creator's on-device
   draft keeps (`draft-persistence.ts` in the Tour Viewer); same field
-  rules as an item (`tour-items.ts` `parseTourContentFields`).
-- Types `TourManifest`; the world view `TourObject = TourPin | TourPhoto`
+  rules as an item (`tour-items.ts` `parseTourContentFields`). A model's
+  `asset` is checked for its shape only there (a draft record has no
+  assets beside it); the manifest's write re-validates the reference.
+- Types `TourManifest`; the world view
+  `TourObject = TourPin | TourPhoto | TourModel`
   (`kind`, the item's fields, `geo`, `station?`), `TourObjectKind`;
   `TourCaptureSpots` and `TourCapture` (`{ image, station, pose }`);
   `TourManifestValidationError`; re-exported from `tour-items.ts`:
-  `TourItem`, `TourPinItem`, `TourPhotoItem`, `TourLocalPose`; and from
+  `TourItem`, `TourPinItem`, `TourPhotoItem`, `TourModelItem`,
+  `TourLocalPose`; and from
   `tour-stations.ts`: `TourAsset`, `TourAssetKind`, `TourOrder`,
   `TourStation`, `TourStep`, `TourStepAdvance`, `TourBlock`,
   `TourChoiceOption`, `TourQuizOption`, `TourQuizAnswer`, `TourQuizRoute`.
@@ -64,6 +71,30 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - **Ids.** Item ids are unique across the whole tour (they are content
   file stems); an asset may not share one (checked here, since only the
   manifest sees every station's items).
+
+## Minor 1: the placed 3D model (editor round 3, the size bound)
+
+- An item of kind `model` (`tour-items.ts`): `asset` names a MODEL asset
+  of `assets` (resolved by `tour-stations.ts`), `sizeM` is the scaled
+  model's largest side in metres within 0.05-500 m inclusive, `label`
+  optional. Decision record:
+  `GpsPlusSlamJs_Docs/docs/2026-10-19-0905-editor3d-prototypes-round-3-plan.md`
+  §9 (the bound in metres, pins and photos without a size).
+- **The writer writes the lowest minor the tour needs**: 1 while any
+  station carries a model, else 0, so every tour without one is written
+  byte for byte as before and stays editable by a release that knows only
+  minor 0. A minor-0 reader of a minor-1 tour reads it leniently and
+  leaves the models out (its unknown kind); it refuses to write it back.
+- **Refused, not clamped.** A size outside the bound in a file of this
+  reader's minor is a broken file; a lenient read (a newer minor, which may
+  widen the bound) leaves such a model out; a size that is not a positive
+  finite number fails at any minor. A clamp would make the next save
+  rewrite the creator's number silently. An editor clamps its drag to the
+  bound BEFORE it dispatches, so arithmetic at the edge (a factor times a
+  native size landing one ulp past 500) never reaches the writer as a
+  refusal.
+- **Nothing renders a placed model yet**: the Tour Viewer's renderer leaves
+  it out until the 3D editor's work draws it.
 
 ## Baked capture spots (scan-pass plan S1)
 
@@ -107,12 +138,13 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
   reader opens any minor; unknown fields are IGNORED at every level and at
   every minor. The writer refuses a manifest whose minor is newer than
   `TOUR_MANIFEST_MINOR` (it was read with fields dropped). When a minor is
-  added, the writer must learn which content needs it (the version 2
-  writer's `minorNeeded`), so an older reader at a lower minor is never
-  handed a field it parses strictly.
+  added, the writer must learn which content needs it (`minorNeeded`; it
+  did for minor 1), so an older reader at a lower minor is never handed a
+  field it parses strictly.
 - **Unknown VALUES of a newer minor (K1 milestone review R4):** an
-  unknown item kind, or a photo of an unknown image type, leaves the item
-  out; an unknown `order` reads `any`; the stations' lists degrade as
+  unknown item kind, a photo of an unknown image type, or a model whose
+  asset the reader lacks or whose positive size lies beyond its bound,
+  leaves the item out; an unknown `order` reads `any`; the stations' lists degrade as
   `tour-stations.ts` says. At this reader's own minor the same value
   fails. Such a tour is never written back.
 - The series id and version number of a tour are NOT here:
@@ -162,7 +194,10 @@ parseTourManifest({ version: 2, objects: [] }); // throws: an older format
   manifest, one rejection per rule with the record named (ids across
   stations, an asset on an item id, item fields, poses, the station geo),
   versions 1 and 2 refused as older formats and 4 as newer, version 3
-  minor 0 written always, a full tour, a newer minor's unknown fields
+  minor 0 written while the tour has no model, a full tour, the placed
+  model (minor 1 written and read back exactly, minor 0 again once the last
+  model is gone, a newer minor's oversized model left out, a model id that
+  is an asset id refused, the world-view model), a newer minor's unknown fields
   ignored and its unknown values degraded (and refused at this minor and
   on write), write/read round trip, the writer's refusal, the world-view
   object parser, the baked spots (round trip, null median, each malformed
@@ -170,8 +205,10 @@ parseTourManifest({ version: 2, objects: [] }); // throws: an older format
   needs-no-GPS flag, the tour details (round trip, cover on a station's
   photo or an image asset only, dropped details, the writer's cover drop
   and refusals).
-- `tour-manifest.property.test.ts` - over generated stations, items,
-  recorded photos and details: serialize->parse is the identity with every
-  local pose the same numbers exactly; parse is idempotent; every item
+- `tour-manifest.property.test.ts` - over generated stations, items
+  (placed models among them), recorded photos and details: serialize->parse
+  is the identity (but for the minor, the writer's choice) with every local
+  pose the same numbers exactly; minor 1 is written exactly when a model is
+  present, every model's size read back unchanged; parse is idempotent; every item
   stays in its station and a kept cover is always one of the tour's
   photos.

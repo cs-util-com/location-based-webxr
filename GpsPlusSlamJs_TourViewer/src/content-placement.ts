@@ -297,6 +297,12 @@ async function renderContent<T extends TourContentFields>(
       labels.push(label);
       continue;
     }
+    if (object.kind === "model") {
+      // No renderer draws a placed model yet (format minor 1): left out,
+      // and named, so the status line says something was not shown.
+      skipped.push(object.id);
+      continue;
+    }
     const texture = await deps
       .loadPhotoTexture(object.image)
       .catch((): Texture | null => null);

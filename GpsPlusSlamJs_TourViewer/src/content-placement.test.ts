@@ -10,7 +10,10 @@ import {
   deriveVerticalHeading,
   mintQrGeoPose,
 } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
-import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourObject,
+  TourStation,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import {
@@ -276,6 +279,43 @@ describe("renderTourObjects", () => {
     rendered.dispose();
     expect(children).toHaveLength(0);
     expect(disposed).toEqual(["Gate"]);
+  });
+
+  // Why: a placed 3D model (format minor 1) is in the format before any
+  // renderer draws it. It must neither reach the photo loader (it has no
+  // image) nor vanish silently: it is left out and named in `skipped`, so
+  // the status line says something could not be shown.
+  it("leaves a placed 3D model out, names it in skipped, and never asks the photo loader for it", async () => {
+    const { scene, children } = fakeScene();
+    const pin = mintPin({
+      id: "p",
+      label: "Gate",
+      worldNuePosition: { x: 5, y: 400, z: 0 },
+      zero: ZERO,
+      nowIso: NOW,
+    })!;
+    const model: TourObject = {
+      id: "m",
+      kind: "model",
+      asset: "statue",
+      sizeM: 3,
+      createdAtIso: NOW,
+      geo: pin.geo,
+    };
+    const asked: string[] = [];
+    const rendered = await renderTourObjects([pin, model], {
+      scene,
+      zero: ZERO,
+      makeLabel: () => ({ object: new Object3D(), dispose: () => undefined }),
+      loadPhotoTexture: (name) => {
+        asked.push(name);
+        return Promise.resolve(new Texture());
+      },
+    });
+    expect(asked).toEqual([]);
+    expect(rendered.count).toBe(1);
+    expect(rendered.skipped).toEqual(["m"]);
+    expect(children[0]?.children).toHaveLength(1);
   });
 
   it("places pins and photos at the caller's pose in the caller's frame when it passes one", async () => {
