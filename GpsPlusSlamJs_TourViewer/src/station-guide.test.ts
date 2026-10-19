@@ -947,7 +947,10 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
   function guideOn(
     store: ReturnType<typeof coldStart>,
     stations: TourStation[],
-    signals: { codeLinedUp: boolean; alignmentReady: boolean },
+    /** The raw signals: tracking ready (`isPlacementReady`) and a code
+     *  lined up. The readiness is the page's rule over them (`tour-flow.ts`
+     *  `alignmentReady`: either), and the latch is the guide's own. */
+    signals: { codeLinedUp: boolean; tracking: boolean },
   ) {
     const found: string[] = [];
     const targets: (() => WayfindingTarget[])[] = [];
@@ -969,9 +972,8 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
           zero: selectZeroReference(store.getState()),
         }),
       codeLinedUp: () => signals.codeLinedUp,
-      alignmentReady: () => signals.alignmentReady,
-      // These cold starts are ready on tracking or on a code, never both.
-      trackingReady: () => signals.alignmentReady && !signals.codeLinedUp,
+      alignmentReady: () => signals.tracking || signals.codeLinedUp,
+      trackingReady: () => signals.tracking,
       startHud: (getTargets) => {
         targets.push(getTargets);
         return { dispose: () => undefined };
@@ -1005,11 +1007,11 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
   });
 
   it("a ±500 m first fix inside a 10 m station finds nothing and says the GPS is too weak, ready or not", () => {
-    for (const alignmentReady of [false, true]) {
+    for (const tracking of [false, true]) {
       const g = guideOn(
         coldStart(500),
         [station("gate", 3, 0, { foundRadiusM: 10 })],
-        { codeLinedUp: false, alignmentReady },
+        { codeLinedUp: false, tracking },
       );
       g.guide.tick();
       expect(g.found).toEqual([]);
@@ -1027,7 +1029,7 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
   // what needs a heading (the HUD's arrows, the breadcrumbs) waits.
   it("an alignment that is not ready yet judges by the fresh raw fix: found, but no arrows and no breadcrumbs", () => {
     const store = coldStart(4);
-    const signals = { codeLinedUp: false, alignmentReady: false };
+    const signals = { codeLinedUp: false, tracking: false };
     const g = guideOn(
       store,
       [station("gate", 3, 0, { foundRadiusM: 10 })],
@@ -1038,7 +1040,7 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
     const far = guideOn(
       coldStart(4),
       [station("gate", 30, 0, { foundRadiusM: 10 })],
-      { codeLinedUp: false, alignmentReady: false },
+      { codeLinedUp: false, tracking: false },
     );
     far.guide.tick();
     expect(far.found).toEqual([]);
@@ -1052,7 +1054,7 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
     const g = guideOn(
       coldStart(40),
       [station("well", 3, 0, { foundRadiusM: 5 })],
-      { codeLinedUp: true, alignmentReady: true },
+      { codeLinedUp: true, tracking: false },
     );
     g.guide.tick();
     expect(g.found).toEqual(["well"]);
@@ -1426,23 +1428,45 @@ describe("re-review findings on the guide (r881)", () => {
     expect(h.guide.figurePoseOf("gate")).toBeNull();
   });
 
-  // Why: the page's readiness folds tracking and a code into one answer,
-  // so a latch that read only that answer never saw tracking reach `ok`
-  // while a code was also lined up. A veto that took the code's votes back
-  // during a tracking dip then dropped a heading tracking HAD earned: the
-  // arrows, the breadcrumbs and the figure vanished mid-walk. The latch
-  // reads tracking on its own (`trackingReady`), whatever the code does.
-  it("a heading tracking earned while a code was lined up stays through a veto in a tracking dip", () => {
+  // Why: the tracking report is not independent of a lined-up code. A
+  // lock's votes enter the GPS history the report reads (one lock is
+  // enough fixes, they dominate the accuracy median, and the residuals
+  // and the convergence come from the matrix they pinned), so tracking
+  // `ok` while a code is lined up can be the code's own work. A latch
+  // taken then would keep a heading only the code gave after a veto
+  // takes its votes back - the case the code-only test above forbids.
+  it("tracking ready only while a code was lined up does not latch: the veto that drops the report takes the heading", () => {
     const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
     // A code locks and votes; tracking is not ready yet.
     h.ready(false);
     h.lined(true);
     h.at(0, 0);
-    // Tracking reaches placement-ready while the code is still lined up.
+    // Tracking reads ok while the code is lined up: the votes' work.
     h.ready(true);
     h.at(0, 0);
-    // The moved-code veto takes the votes back, during a tracking dip.
+    // The veto takes the votes back, and the report drops with them.
     h.lined(false);
+    h.ready(false);
+    h.at(0, 0);
+    expect(h.huds.at(-1)!.getTargets()).toEqual([]);
+    expect(h.crumbsFrom.at(-1)).toBeNull();
+    expect(h.guide.figurePoseOf("gate")).toBeNull();
+  });
+
+  // Why: a heading tracking really earned is not lost by the rule above.
+  // Once the veto has taken the votes back, a report still `ok` is
+  // tracking's own, and it latches on that tick, kept through a later dip.
+  it("a report still ok after the veto latches the heading on the next tick", () => {
+    const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
+    h.ready(false);
+    h.lined(true);
+    h.at(0, 0);
+    h.ready(true);
+    h.at(0, 0);
+    // The veto; the report, re-fed without the votes, stays ok.
+    h.lined(false);
+    h.at(0, 0);
+    // A later dip keeps the heading tracking earned.
     h.ready(false);
     h.at(0, 0);
     expect(

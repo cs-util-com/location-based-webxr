@@ -21,9 +21,9 @@
  *   position at all (M5a review M3). What needs a heading - the HUD's
  *   arrows, the breadcrumbs, the figure's pose and its turn - waits for the
  *   first readiness of each AR entry and keeps a heading tracking earned
- *   through a dip (r881 re-review L-B, M-B), also one earned while a code
- *   was lined up (`trackingReady`); a heading only a code gave goes with
- *   the code (third review L2).
+ *   through a dip (r881 re-review L-B, M-B); a heading only a code gave
+ *   goes with the code (third review L2), and tracking ready while a code
+ *   is lined up does not latch, since the code's votes feed that report.
  *   A code lock is no arrival: it only improves that position, and the
  *   guide re-judges at once. With no position nothing is reached. A moved
  *   poster can pull the position onto a station until the moved-code
@@ -106,10 +106,10 @@ export interface StationGuideDeps {
    *  What needs a heading (the arrows, the breadcrumbs, the figure) waits
    *  for its first `true` of each AR entry and keeps it through a dip. */
   alignmentReady(): boolean;
-  /** Whether tracking alone is ready (`tour-flow.ts` `isPlacementReady`;
-   *  re-read each tick). Only this latches a heading for the AR entry,
-   *  whether or not a code is lined up too: a heading only a code gave
-   *  goes with the code. */
+  /** Whether the tracking report reads ready (`tour-flow.ts`
+   *  `isPlacementReady`; re-read each tick). It latches a heading for the
+   *  AR entry only while no code is lined up: a lined-up code's votes feed
+   *  the report, so a heading only a code gave goes with the code. */
   trackingReady(): boolean;
   /** Start the HUD for this AR session; null while it cannot (no camera
    *  yet). The guide retries on the next tick. */
@@ -258,10 +258,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  measurement (R13: the geodesy ran several times per station a tick). */
   const poseCache = new Map<string, StagePose | null>();
   let measuredZero: LatLong | null | undefined;
-  /** Tracking was ready once this AR entry (`trackingReady`, with or
-   *  without a code lined up): it earned a heading, kept through a dip of
-   *  the tracking quality, as the walk's photos latch their trigger. Reset
-   *  at the session's end. */
+  /** Tracking was ready once this AR entry with no code lined up
+   *  (`trackingReady` while not `codeLinedUp`): it earned a heading, kept
+   *  through a dip of the tracking quality, as the walk's photos latch
+   *  their trigger. Reset at the session's end. */
   let trackedHeading = false;
   /** The alignment has a heading now: tracking earned one this AR entry,
    *  or it is ready now (a code lined it up). A heading only a code gave
@@ -289,9 +289,16 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   /** Whether the alignment has a heading this tick (`headingReady`):
-   *  tracking earned one this AR entry, or it is ready now. */
-  function noteHeading(ready: boolean, tracking: boolean): void {
-    if (tracking) trackedHeading = true;
+   *  tracking earned one this AR entry, or it is ready now. Tracking ready
+   *  while a code is lined up does not latch: the code's votes feed the
+   *  tracking report, so that `ok` can be the code's own work. Once the
+   *  votes are gone, a report still `ok` latches on that tick. */
+  function noteHeading(
+    ready: boolean,
+    tracking: boolean,
+    lined: boolean,
+  ): void {
+    if (tracking && !lined) trackedHeading = true;
     headingReady = trackedHeading || ready;
   }
 
@@ -308,7 +315,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const seen = deps.visitor();
     const ready = deps.alignmentReady();
     const lined = deps.codeLinedUp();
-    noteHeading(ready, deps.trackingReady());
+    noteHeading(ready, deps.trackingReady(), lined);
     const visitor =
       seen.aligned && !ready ? { ...seen, nue: null, aligned: false } : seen;
     const position = bestPosition(visitor);

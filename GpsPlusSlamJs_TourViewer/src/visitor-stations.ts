@@ -63,7 +63,9 @@ export function stationPlacementAllowed(
  * lined it up (the viewer pipeline's voted locks this AR entry,
  * `tour-flow.ts` `codeLinedUp`), whether it is ready to be judged by
  * (`alignmentReady`, the readiness the walk's photos wait for), and
- * whether tracking alone is ready (`isPlacementReady`, the heading latch).
+ * whether the tracking report reads ready (`isPlacementReady`; a lined-up
+ * code's votes feed it too, so the guide latches its heading on it only
+ * while no code is lined up).
  */
 export function stationAlignmentSignals(
   ctx: Pick<TourViewerSession, "viewerLockedText" | "viewerVotedLocks">,

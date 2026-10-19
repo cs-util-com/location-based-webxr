@@ -63,10 +63,10 @@ describe("stationAlignmentSignals", () => {
     expect(signals.alignmentReady()).toBe(false);
   });
 
-  // Why: the guide latches a heading on tracking alone, so this signal must
-  // read the tracking slice and nothing else - neither hide tracking `ok`
-  // behind a lined-up code nor count a code as tracking.
-  it("trackingReady reads tracking alone, whatever a code does", () => {
+  // Why: the guide decides what a lined-up code means for its latch, so
+  // this signal must read the tracking slice and nothing else - neither
+  // hide the report behind a lined-up code nor count a lock as ready.
+  it("trackingReady reads the tracking report, not the lock state", () => {
     const store = createTourViewerStore();
     const ctx = {
       viewerLockedText: "https://example.test/code",
