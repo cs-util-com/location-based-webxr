@@ -162,8 +162,9 @@ interface WalkMove {
    *  review #2: the page's second click may come after an autosave). */
   current(): boolean;
   /** Make the walk-free tour the session's newest bytes, as a landed save
-   *  does; throws when another save landed since the move was built. */
-  commit(): void;
+   *  does; throws when another save landed since the move was built.
+   *  `inPlace`: the tour was written over the opened file (D33). */
+  commit(inPlace?: boolean): void;
 }
 
 /** Said for an id the tour no longer carries (a restore or a save took
@@ -295,7 +296,12 @@ export interface EditorSession {
   /** Build the saved zip from the newest bytes; edits made while it runs
    *  wait for the next save. Saves run one after another: one called
    *  while another runs starts when it ends (E2a review #9). */
-  save(options: { readonly keepScan: boolean }): Promise<EditorSave>;
+  save(options: {
+    readonly keepScan: boolean;
+    /** The page writes it over the opened file (D33's resave reads where
+     *  that file stands in the history). Default: a download. */
+    readonly inPlace?: boolean;
+  }): Promise<EditorSave>;
   /** The walk recording's entries in the newest bytes (W2, D19): none
    *  once it was moved out, or when the last save left it out. */
   walkEntries(): Promise<string[]>;
@@ -852,13 +858,13 @@ export function createEditorSession(input: {
       walk: { blob: walkBlob, filename: walkFileName(savedName) },
       save: saveOf({ finished, photos }),
       current: () => saves.newest() === base,
-      commit() {
+      commit(inPlace) {
         if (saves.newest() !== base) {
           throw new Error(
             "another save landed while the walk was moved out - move it again",
           );
         }
-        dispatchThunk(store, saves.land(finished, snap));
+        dispatchThunk(store, saves.land(finished, snap, inPlace));
       },
     };
   }

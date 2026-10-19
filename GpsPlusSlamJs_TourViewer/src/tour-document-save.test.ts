@@ -101,6 +101,27 @@ async function labels(blob: Blob): Promise<string[]> {
 }
 
 describe("createTourSaves", () => {
+  it("an in-place save names the history position of the view it wrote; a download names none (D33)", async () => {
+    // Why: an undo that crosses an in-place save writes the file again
+    // (D33), and "crosses" is read against the position of the view the
+    // file holds - the snapshot's, not where the document stood when the
+    // write landed: an edit made while it ran is not in the file.
+    const { session, store } = await opened([pin("a"), pin("b")]);
+    const saves = savesOf(session, store);
+    rename(store, "a", "First");
+    const running = dispatchThunk(
+      store,
+      saves.save({ keepScan: false, inPlace: true }),
+    );
+    rename(store, "b", "During");
+    await running;
+    expect(doc(store).position).toBe(2);
+    expect(doc(store).save.inPlaceAt).toBe(1);
+    await dispatchThunk(store, saves.save({ keepScan: false }));
+    expect(doc(store).save.inPlaceAt).toBeNull();
+    await session.close();
+  });
+
   it("a save is the document's: saving while it runs, then the written file, nothing pending, idle", async () => {
     const { session, store } = await opened([pin("a"), pin("b")]);
     const saves = savesOf(session, store);

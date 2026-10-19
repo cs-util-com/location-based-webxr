@@ -42,13 +42,18 @@ reducers' building blocks, so a page cannot apply them differently.
   `TourDocumentView` (`stations`, the world `objects`, `needsNoGps`,
   `details`) and the edit in words. At most `TOUR_HISTORY_LIMIT` (200).
 - `revision` - counts every edit, undo and redo.
+- `position` - where the document stands in its history: 0 at the open,
+  one more for an edit or a redo, one less for an undo. Absolute (the
+  history's bound drops old steps, never renumbers them), so a save names
+  the view it wrote (`save.inPlaceAt`).
 - `save: TourSaveStatus` - what used to be the desktop page's module-scope
   save flags: `status` (`idle` / `saving` / `error`, derived: saving while
   the page's slot is held or a rebuild runs), `error` (the last failure's
   words), `by` (who holds the page's one save slot: `explicit`, `auto`,
   `walk`), `rebuilds` (the session's queued rebuilds: an undo waits),
   `queued` (a Save waiting for the autosave), `built`, `delivered`
-  (in place or downloaded, under which name), `largeTour`, `cannotSave`.
+  (in place or downloaded, under which name), `largeTour`, `cannotSave`,
+  `inPlaceAt` and `resave` (D33, below).
 
 - `newStationArmed` - the phone's "New station here" is armed (owner
   decision D8 of `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`): the next placement starts its own station. An
@@ -101,13 +106,18 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   skipped here too, `objectFits`): one step to undo; not live work
   (`touched` unchanged).
 - `saveStarted({ generation })`, `saved({ generation, written,
-appliedDeletions, stationsAtStart })`, `saveEnded({ generation, error? })`
+appliedDeletions, stationsAtStart, inPlaceAt? })`, `saveEnded({ generation, error? })`
   - a rebuild queued, landed (the written file replaced; `pendingAfterRebuild` keeps what the
     write did not carry; the written frames replace the document's unless one
     moved while it ran), and ended. Each names the open it began on and is
-    ignored for another.
+    ignored for another. `inPlaceAt` (the desktop's in-place write: the
+    history position of the view the save's snapshot took) becomes
+    `save.inPlaceAt`; without it (a download, the phone's Finish) that is
+    null.
 - The page's save slot (the desktop page, `editor/edit-main.ts`):
-  `saveClaimed({ by })`, `saveReleased({ error? })`, `saveQueued({ queued })`,
+  `saveClaimed({ by })` (it also takes a due `resave` on: a save claimed
+  after a step writes the document as it stands then, or says why it could
+  not - so a refusal never loops), `saveReleased({ error? })`, `saveQueued({ queued })`,
   `saveBuilt()`, `saveDelivered({ inPlace, name })`, `saveLimited({
 largeTour?, cannotSave? })`.
 - `newStationArmed({ armed })` - "New station here" armed or disarmed
@@ -181,6 +191,45 @@ object)` (within the format's `TOUR_ITEM_MAX_OFFSET_M` per axis of its
   not carry, within reach) and `canStep(state)` (no save queued or
   running). The per-station test under `objectFits` is module-private.
 
+## A step across an in-place save (D33)
+
+The desktop's open drops every draft record of an id the file on disk
+lacks, so a delete written in place and then undone was lost on a reload
+(the tour editor plan's §28/§29 "P2"). The owner's fix (D33, §32): an undo
+or a redo that crosses an in-place save writes the file in place again at
+once. The slice says when; the page writes (`editor/edit-main.ts`
+`resaveIfDue`).
+
+- **The rule** (module-private `stepCrossesInPlaceSave(state, which)`): with
+  `w = save.inPlaceAt` and `p = position` before the step,
+  - an undo crosses when `w >= p` - it undoes an edit the in-place file
+    holds;
+  - a redo crosses when `w <= p` - it redoes an edit that file lacks;
+  - with `w = "elsewhere"` every step crosses; with `w = null` (no in-place
+    save of this open, or the last save a download) none does; a step that
+    does not happen (nothing to undo, a save running) crosses nothing.
+- **`elsewhere`**: a new edit made below `w` drops the redo that led back to
+  the file's view (the file was undone across and its resave had not yet
+  landed, or failed). No view on the history is the file's then, so every
+  step crosses until a save lands.
+- **Positions, not times.** A redo of an edit made after the in-place save
+  and undone since crosses it too (the file lacks the edit): it writes at
+  once where the autosave would have written a few seconds later.
+- **`resave`** is set by the step that crossed and taken on by the next
+  `saveClaimed`. A step during the write of an in-place save (after its
+  rebuild, which an undo waits for) is measured against the view that write
+  holds - `saved` already landed it - and is written once that save ends.
+- **A download is no in-place save.** `inPlaceAt` is null after one, so no
+  step crosses: a download cannot be rewritten silently. A tour whose saves
+  turned into downloads ("Download instead") keeps the earlier in-place file
+  on disk as it was; this page no longer writes it.
+- **A write that failed after its `saved` landed** leaves `inPlaceAt` at its
+  view although the disk does not hold it: at worst one more write attempt,
+  which says its own outcome.
+- **The walk's move** names its position from its snapshot, taken when the
+  move was built; no step can come between that and its commit (the Done
+  dialog is modal).
+
 ## Invariants & assumptions
 
 - **One copy of the tour.** A page reads the document through selectors and
@@ -236,7 +285,11 @@ store.dispatch(tourDocumentActions.undone());
 
 ## Tests
 
-- `tour-document.test.ts` - the open, pending by content, the same
+- `tour-document.test.ts` - the step across an in-place save (D33: an undo
+  of a written delete, an undo of an edit no save wrote or made after it,
+  the second undo below the save, a download, a redo across and not, the
+  file off the history, the claim taking it on, the position count), the
+  open, pending by content, the same
   content put again as no step, undo and redo,
   the history bound, an undo after a save (the photo needing its picture,
   the emptied station coming back in its place), a station's frame moving
@@ -247,7 +300,11 @@ store.dispatch(tourDocumentActions.undone());
   pending after its station moved and it moved back, and what a pin's text
   and a move on the map would change (`pinTextChange`, `objectMoveChange`).
 - The save, a thunk against this slice: `tour-document-save.ts.md`.
-- `tour-document.property.test.ts` - over random sequences of edits,
+- `tour-document.property.test.ts` - D33's rule against a model that reads
+  the SET of edits each view carries (over random edits, steps, in-place
+  saves and downloads: a resave is due exactly when a step undoes an edit
+  the in-place file holds, redoes one it lacks, or the file is off the
+  history); over random sequences of edits,
   moves, deletes, placements, station moves, settings, details, undos,
   redos and saves: undo then redo is identity; undoing everything gives the
   opened tour; `manifestToWrite` equals `rebuildFinishedTour`'s written

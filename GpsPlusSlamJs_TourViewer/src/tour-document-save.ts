@@ -98,6 +98,9 @@ interface TourSaveSnapshot {
   /** The frames it starts from: one moved while it runs stays the
    *  document's (`saved`). */
   readonly stationsAtStart: readonly StationFrame[];
+  /** The history position of the view it writes (`TourDocumentState`
+   *  `position`): an in-place write names it (`saved`'s `inPlaceAt`). */
+  readonly position: number;
 }
 
 /** A save that landed: the file it built and the photo spots it used. */
@@ -120,6 +123,10 @@ interface TourSaves {
    *  (`saveEnded`'s `error`). */
   save(options: {
     readonly keepScan: boolean;
+    /** The file built goes over the opened file (the page writes it in
+     *  place): the document then knows where in its history the file on
+     *  disk stands (D33). Default: a download. */
+    readonly inPlace?: boolean;
   }): TourDocumentThunk<Promise<TourSaveBuilt>>;
   /** Run `start` after the saves queued before it (at once when none
    *  runs: its first steps run inside the dispatch), counted by the
@@ -142,8 +149,13 @@ interface TourSaves {
     whole?: Blob,
   ): Promise<FinishedTour>;
   /** `finished` becomes the newest bytes and the document's written file
-   *  (`saved`; nowhere for a tour opened since). */
-  land(finished: FinishedTour, snap: TourSaveSnapshot): TourDocumentThunk<void>;
+   *  (`saved`; nowhere for a tour opened since); `inPlace`: it goes over
+   *  the opened file. */
+  land(
+    finished: FinishedTour,
+    snap: TourSaveSnapshot,
+    inPlace?: boolean,
+  ): TourDocumentThunk<void>;
 }
 
 export function createTourSaves(input: {
@@ -178,6 +190,7 @@ export function createTourSaves(input: {
       deleted: [...state.deleted],
       manifest,
       stationsAtStart: state.stations,
+      position: state.position,
     };
   }
 
@@ -199,7 +212,7 @@ export function createTourSaves(input: {
               photos,
               options.keepScan,
             );
-            dispatch(saves.land(finished, snap));
+            dispatch(saves.land(finished, snap, options.inPlace === true));
             return { finished, photos };
           }),
         );
@@ -263,7 +276,7 @@ export function createTourSaves(input: {
       if (finished === null) throw new Error("the save was stopped");
       return finished;
     },
-    land(finished, snap) {
+    land(finished, snap, inPlace = false) {
       return (dispatch) => {
         newest = {
           blob: finished.blob,
@@ -277,6 +290,7 @@ export function createTourSaves(input: {
             written: finished.written,
             appliedDeletions: snap.deleted,
             stationsAtStart: snap.stationsAtStart,
+            ...(inPlace ? { inPlaceAt: snap.position } : {}),
           }),
         );
       };

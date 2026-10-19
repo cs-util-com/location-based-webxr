@@ -33,14 +33,17 @@ phone's Finish does not yet: see "Not here yet" below.
     (`finishedFileName`: the opened file's, made safe).
   - `newest()` - the newest bytes this open's saves wrote; null before
     one landed (a rebuild then reads the opened file, under its budget).
-  - `save({ keepScan })` - thunk; resolves with `{ finished, photos }`
+  - `save({ keepScan, inPlace? })` - thunk; resolves with `{ finished, photos }`
     (`TourSaveBuilt`). Queued behind the saves before it; when it starts,
     the snapshot (`TourSaveSnapshot`: the entries with their kept
-    pictures, the deletions, `manifestNow`, the frames) is taken before
+    pictures, the deletions, `manifestNow`, the frames, the history
+    `position`) is taken before
     any await, then the photo spots, the rebuild, the landing. Rejects
     with `TOUR_REPLACED` when another open replaced this one before it
     started, and with the rebuild's own error; either way the slice says
-    it (`saveEnded`'s `error`, status `error`).
+    it (`saveEnded`'s `error`, status `error`). `inPlace`: the page writes
+    the file over the opened one; the landing then names the snapshot's
+    history `position` (`saved`'s `inPlaceAt`, D33 in `tour-document.ts.md`).
   - `queued(start)` - thunk; runs `start` after the saves queued before it
     (at once, inside the dispatch, when none of this open runs), counted
     by the document: `saveStarted` at the call, `saveEnded` (with the
@@ -58,9 +61,10 @@ phone's Finish does not yet: see "Not here yet" below.
     from the newest bytes, or from `whole` (the opened file as the caller
     already read it, so it is not read twice); `levels: []`. Throws what
     the rebuild throws, and "the save was stopped" for a stopped one.
-  - `land(finished, snap)` - thunk; `finished` becomes the newest bytes
+  - `land(finished, snap, inPlace = false)` - thunk; `finished` becomes the newest bytes
     and the document's written file (`saved` with the snapshot's
-    deletions and frames; nowhere for a tour opened since).
+    deletions and frames, and `inPlaceAt: snap.position` when `inPlace`;
+    nowhere for a tour opened since).
 - `dispatchThunk(store, thunk)` - dispatches a document thunk into the
   store, through its middleware. The framework's store runs Redux
   Toolkit's default middleware (the thunk middleware among it) but its
@@ -122,7 +126,9 @@ const { finished, photos } = await dispatchThunk(
 
 ## Tests
 
-`tour-document-save.test.ts` on real zips: a save that lands (saving while
+`tour-document-save.test.ts` on real zips: an in-place save naming the
+snapshot's position (an edit made while it ran is not in it) and a download
+naming none (D33), a save that lands (saving while
 it runs, then the written file, nothing pending, idle), one that fails
 (the reason in the slice, nothing written, the edit still pending), a save
 asked for while another runs (the first's read held on a promise: the

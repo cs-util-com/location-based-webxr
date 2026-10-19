@@ -647,6 +647,30 @@ function runStep(which: "undo" | "redo"): void {
   }
   toast(`${STEP_WORDS[which].done}: ${outcome.what}.`);
   autosave.changed();
+  void resaveIfDue();
+}
+
+/**
+ * An undo or a redo that crossed the file written in place (D33, the
+ * slice's `save.resave`, `tour-document.ts` `stepCrossesInPlaceSave`)
+ * writes it again at once, through the one save path: the file on disk then
+ * holds what the editor shows, so a reload loses nothing (an open drops
+ * every draft record of an id the file lacks). Quiet as an autosave - the
+ * status line says "Saving…", then "Saved to <name>"; a refused or failed
+ * write is said as an autosave's is, after the undo's own toast, and pauses
+ * autosave as a failed Save does. Also for a large tour, whose autosave is
+ * off: one write per crossing step. Never for downloads (`target` null): a
+ * download cannot be rewritten silently. While a save runs it waits, and
+ * that save's end asks again (`saveTour`).
+ */
+async function resaveIfDue(): Promise<void> {
+  if (editor === null || target === null) return;
+  if (saving() || !saveState().resave) return;
+  const mine = editor;
+  const outcome = await saveTour("auto");
+  if (editor !== mine || outcome === "held") return;
+  if (outcome === "saved") autosave.saved();
+  else autosave.failed();
 }
 
 function startMove(id: string): void {
@@ -1576,6 +1600,8 @@ async function saveTour(mode: "explicit" | "auto"): Promise<AutosaveOutcome> {
       store.dispatch(tourDocumentActions.saveQueued({ queued: false }));
       void runSave();
     }
+    // A step that crossed the file while this save wrote it (D33).
+    if (editor === mine) void resaveIfDue();
     // A save that fell due while this autosave ran starts now. Not after
     // an explicit save: `runSave` tells the autosave its outcome first,
     // and a failed one must pause it, not start it (milestone review #5).
@@ -1647,6 +1673,7 @@ async function buildAndDeliver(
           // the creator's only copy of it (E2b plan review #1).
           await mine.save({
             keepScan: keepsWalk || keepWalkInput.checked,
+            inPlace: into !== null,
           });
     if (editor !== mine) return abandon();
     if (save !== undelivered) {
@@ -2094,7 +2121,7 @@ async function writeMovedTour(
       reason: `${walkName} was saved, but ${name} could not be written${refusal === undefined ? "" : ` (${refusal})`}, so the tour keeps its walk.`,
     };
   }
-  move.commit();
+  move.commit(inPlace);
   store.dispatch(tourDocumentActions.saveBuilt());
   keepWalk.hidden = true;
   undelivered = null;

@@ -168,14 +168,17 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     under, and its reach is checked there - review #1 of the tour document
     milestone); what was applied
     is written to the draft again. Returns the counts.
-  - `save({ keepScan })` - the document's save thunk
+  - `save({ keepScan, inPlace? })` - the document's save thunk
     (`../tour-document-save.ts` `save`, through `dispatchThunk`):
     `rebuildFinishedTour` with `levels: []`, the photo spots decided once
     per open (`captureSpotsForRebuild`, its result kept), from the last
     save's bytes; returns `{ blob, filename, scanLeftOut, notPlaced?,
 written }` (`written`: the manifest the zip carries, for the draft's
     bases) and advances to what was written (`saved`,
-    `pendingAfterRebuild`).
+    `pendingAfterRebuild`). `inPlace`: the page writes it over the opened
+    file, and the document learns where in its history that file stands
+    (`saved`'s `inPlaceAt`): an undo or a redo across it is then due a
+    resave (D33, `../tour-document.ts.md`).
   - `walkEntries()` - the walk recording's entries in the newest bytes
     (the last save's, else the opened file's; `scanEntryNames`): none once
     it was moved out, or when a save left it out.
@@ -196,7 +199,8 @@ written }` (`written`: the manifest the zip carries, for the draft's
     `commit()`**: the page writes the walk's zip first, then the tour,
     and commits only when both landed; `current()` says no other save
     landed since the build (asked before the tour is written, so a stale
-    move writes nothing); `commit()` then makes the
+    move writes nothing); `commit(inPlace?)` (`inPlace`: the tour was written
+    over the opened file, as for `save`) then makes the
     walk-free bytes the newest (the save handle's `land`; the series
     version advances as in any
     save), so no later save - an in-place autosave keeps "the walk" of the

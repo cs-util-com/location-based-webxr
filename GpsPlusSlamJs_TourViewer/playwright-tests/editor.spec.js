@@ -1973,8 +1973,9 @@ test("a delete is not written while its Undo is offered, and Ctrl+Z still brings
   // later, and an undo after that save did not survive a closed tab (the
   // draft places nothing new). So autosave waits out the toast's 8 s
   // again; after it, the edit stack's Ctrl+Z still brings the photo back -
-  // its picture too, which the saved file no longer carries - as a change
-  // the next save writes.
+  // its picture too, which the saved file no longer carries - and, since
+  // the undo crosses that in-place save, writes the file again at once
+  // (D33).
   await page.clock.install();
   await page.goto("/edit.html");
   await offerOpfsFile(page, await editorTour(), "editor-fixture.zip");
@@ -2007,18 +2008,152 @@ test("a delete is not written while its Undo is offered, and Ctrl+Z still brings
   await expect(page.locator("#rail .row", { hasText: "Fountain" })).toHaveCount(
     1,
   );
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  // No clock moved: the write is the undo's own, not the autosave's.
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to editor-fixture.zip",
+  );
   // Its card shows the picture the session kept.
   await page.locator("#rail .row", { hasText: "Fountain" }).click();
   await expect(page.locator("#card img.card-photo")).toBeVisible();
   await page.keyboard.press("Escape");
-  await page.clock.runFor(3_500);
-  await expect(page.locator("#save-status")).toHaveText(
-    "Saved to editor-fixture.zip",
-  );
   const back = await readOpfsTour(page, "editor-fixture.zip");
   expect(back["tour.json"]).toContain("photo-ok");
   expect(Object.keys(back)).toContain("content/photo-ok.png");
+});
+
+/**
+ * The Fountain photo deleted and saved in place with Save (autosave out of
+ * the way), through the counting picker: one write, the file without it.
+ * @param {import("@playwright/test").Page} page
+ */
+async function fountainDeletedInPlace(page) {
+  await autosaveOutOfTheWay(page);
+  await page.goto("/edit.html");
+  await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await page.locator("#rail .row", { hasText: "Fountain" }).click();
+  await page.locator("#card button", { hasText: "Delete" }).click();
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to editor-fixture.zip",
+  );
+  expect(await writes(page)).toBe(1);
+  expect(
+    (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"],
+  ).not.toContain("photo-ok");
+}
+
+test("an undo across an in-place save writes the file again at once, and a reload keeps the note (D33)", async ({
+  page,
+  context,
+}) => {
+  // Why (D33): the open drops every draft record of an id the file on disk
+  // lacks, so a delete saved in place and then undone was lost on a reload
+  // made before the next save. The undo now writes the file in place at
+  // once - "Saving…" while it writes, then "Saved to" - so the disk holds
+  // what the editor shows.
+  await fountainDeletedInPlace(page);
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__holdWrites = true;
+  });
+  await page.keyboard.press("Control+z");
+  await expect(page.locator(".toast").last()).toHaveText(
+    'Undone: the delete of "Fountain".',
+  );
+  await expect(page.locator("#save-status")).toHaveText("Saving…");
+  await expect(page.locator("#save-btn")).toBeDisabled();
+  await expect.poll(() => writes(page)).toBe(2);
+  await page.evaluate(() => {
+    // @ts-expect-error - set by the picker.
+    window.__release();
+  });
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to editor-fixture.zip",
+  );
+  await expect(page.locator("#save-btn")).toBeEnabled();
+  const back = await readOpfsTour(page, "editor-fixture.zip");
+  expect(back["tour.json"]).toContain("photo-ok");
+  expect(Object.keys(back)).toContain("content/photo-ok.png");
+  await backedUp(page);
+  await page.close();
+  const next = await context.newPage();
+  await answerTiles(next);
+  await next.goto("/edit.html");
+  await offerExistingOpfsFile(next, "editor-fixture.zip");
+  await next.locator("#choose-btn").click();
+  await expect(next.locator("#rail .row", { hasText: "Fountain" })).toHaveCount(
+    1,
+  );
+  await backedUp(next);
+  await expect(next.locator(".toast.draft-offer")).toHaveCount(0);
+});
+
+test("an undo across an in-place save whose write fails says why after the undo, and keeps the change", async ({
+  page,
+}) => {
+  // Why (D33, the async-feedback rule): the resave's failure (the file
+  // moved, the permission lapsed, the disk refused) reaches the creator
+  // through the in-place refusal, after the undo's own toast; the status
+  // line leaves "Saving…" and says the change is not saved.
+  await fountainDeletedInPlace(page);
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__failWrites = true;
+  });
+  await page.keyboard.press("Control+z");
+  await expect(page.locator(".toast").last()).toContainText(
+    "Not saved to editor-fixture.zip. It could not be written: the disk is full.",
+  );
+  await expect(
+    page.locator(".toast", { hasText: 'Undone: the delete of "Fountain".' }),
+  ).toBeVisible();
+  expect(await writes(page)).toBe(2);
+  // The save was built and not delivered: the status line's own words for
+  // that, as for any failed in-place write.
+  await expect(page.locator("#save-status")).toHaveText(
+    "Not saved yet - tap Save again",
+  );
+  await expect(page.locator("#save-status")).toHaveAttribute(
+    "data-state",
+    "error",
+  );
+  await expect(page.locator("#save-btn")).toBeEnabled();
+  await expect(page.locator("#rail .row", { hasText: "Fountain" })).toHaveCount(
+    1,
+  );
+  // Save again delivers it once the disk takes it.
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__failWrites = false;
+  });
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to editor-fixture.zip",
+  );
+  expect(
+    (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"],
+  ).toContain("photo-ok");
+});
+
+test("an undo of an edit made after the in-place save writes nothing at once", async ({
+  page,
+}) => {
+  // Why (D33's rule): only a step across the in-place file writes it.
+  // Undoing an edit no save wrote moves back TOWARD the file; it waits for
+  // the autosave like any change.
+  await fountainDeletedInPlace(page);
+  await editTownHall(page, "After the save");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Control+z");
+  await expect(page.locator(".toast").last()).toHaveText(
+    'Undone: the text of "After the save".',
+  );
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to editor-fixture.zip",
+  );
+  expect(await writes(page)).toBe(1);
 });
 
 test("Ctrl+Z undoes, Ctrl+Shift+Z and Ctrl+Y redo, each said; in a field Ctrl+Z is the field's own", async ({

@@ -289,6 +289,38 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   while a dialog shows, the keys are left to the browser: the field's own
   undo. A photo brought back after a save wrote its delete is drawn from
   the picture the session kept (`pictureOf`).
+  - **A step across an in-place save writes the file again at once (D33,
+    owner decision of the tour editor plan §32).** The open drops every
+    draft record of an id the file on disk lacks, so a delete saved in
+    place, then undone and the page reloaded before the next save, lost the
+    note. `resaveIfDue` runs after each step and at each save's end: when
+    the slice says a resave is due (`save.resave`; the rule, "crosses", is
+    `tour-document.ts.md`'s "A step across an in-place save") and the tour
+    is written in place (`target`), it saves through `saveTour("auto")` -
+    quiet like an autosave: "Saving…" in the status line (Save disabled),
+    then "Saved to <name>". Its outcome tells autosave as an explicit
+    Save's does (a landed one ends a pause, a failed one pauses it).
+    - **A failure** is said after the undo's own toast, through the
+      existing channels: the in-place refusal toast (the file changed or
+      moved, the permission lapsed, the write failed - with "Download
+      instead") or the status line's "Not saved: ..." for a build that
+      failed; the status line leaves "Saving…" and counts the change as
+      not saved.
+    - **A second undo** while the resave rebuilds is refused, as during
+      any save: the toast "A save is running - undo or redo once it has
+      finished." (the delete toast stays). Once the rebuild ended (the
+      file being written), a step is taken; when it crosses again, it is
+      written when that save ends - so steps never overlap a write, and
+      the last step's view is what the disk keeps.
+    - **Not for a download** (Save as a new copy, or after "Download
+      instead"): `target` is null, the slice's `inPlaceAt` is null after
+      a download, and a download cannot be rewritten silently. The earlier
+      in-place file then stays as it was written.
+    - **Also for a large tour** (autosave off): one full write per step
+      that crosses - the cost of the disk matching the editor.
+    - **Held**: a resave that finds an edit begun (typing, a move) gives
+      itself back as an autosave would; the autosave writes it once the
+      hold ends (a large tour's waits for Save).
 - **Titles:** the top bar and the tab say the tour's name (`model.title`,
   the file's name when it has none): `<name> - Tour editor`.
 - **The open dialog's fine print** is `save-target.ts`'s
@@ -340,7 +372,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 
 The modules it wires have their own unit tests; the page is pinned by
 `playwright-tests/editor.spec.js` (the details dialog, the fine print,
-the undo keys, a delete's Undo after its autosave, and Done with the
+the undo keys, a delete's Undo after its autosave - written again at once,
+since that undo crosses the in-place save - an undo across an in-place save
+written at once ("Saving…" while it writes, then a reload keeping the note),
+its failed write said after the undo, an undo of an edit made after the save
+writing nothing at once (D33), and Done with the
 walk's move - the save dialog asked for on the click and the walk in the
 chosen file, the dialog held open and Done disabled while it runs, the
 download's second click, the tour file itself refused as the walk's, a
