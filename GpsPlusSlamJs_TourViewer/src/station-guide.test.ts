@@ -1587,6 +1587,83 @@ describe("wireStationGuide: the present station", () => {
     expect(selectPresentStationId(store.getState())).toBe("a");
   });
 
+  // Why (PR review S1, the H1 lesson): presence used to hold on every tick
+  // nothing could be judged, so a station made present by a code outlived
+  // the code's veto: indoors at ±40 m the moved poster's station stayed
+  // present for the rest of the session.
+  it("a station present by a code ends when the code goes and nothing else can judge (a moved poster's veto)", () => {
+    const { store, guideStore } = countingStore();
+    const h = harness(
+      { stations: [station("a", 20, 0), station("b", -20, 0)], order: "any" },
+      { guideStore },
+    );
+    // Indoors: tracking never ready, the raw fixes ±40 m; the moved code
+    // lines the position up on B.
+    h.ready(false);
+    h.lined(true);
+    h.at(-20, 0, 40);
+    expect(selectPresentStationId(store.getState())).toBe("b");
+    // The veto: no code, the lone ±40 m fix is too weak - and close enough
+    // to B that its exit alone would hold.
+    h.lined(false);
+    h.at(-20, 0, 40);
+    expect(selectPresentStationId(store.getState())).toBeNull();
+    // Nothing comes back on that fix.
+    h.at(-20, 0, 40);
+    expect(selectPresentStationId(store.getState())).toBeNull();
+  });
+
+  it("a code's station holds through a tracking drop while the code stays lined up, and ends with no position once it goes", () => {
+    const { store, guideStore } = countingStore();
+    const h = harness(
+      { stations: [station("a", 20, 0)], order: "fixed" },
+      { guideStore },
+    );
+    h.ready(false);
+    h.lined(true);
+    h.at(20, 0, 40);
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    h.trackingLost(80, 0, 40);
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    h.lined(false);
+    h.lost();
+    expect(selectPresentStationId(store.getState())).toBeNull();
+  });
+
+  // Why (PR review S1): an underpass turns a good fix into a ±40 m one. It
+  // must not enter or hand over, but a fix past the exit even by its
+  // accuracy proves the visitor left.
+  it("a fix too weak to guide by still ends presence past the exit by its accuracy, and never enters", () => {
+    const { store, guideStore } = countingStore();
+    const h = harness(
+      { stations: [station("a", 20, 0), station("b", 140, 0)], order: "any" },
+      { guideStore },
+    );
+    h.at(20, 0, 4);
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    // The exit at a weak fix is 5 + 25 m (the band's ceiling): 60 m away at
+    // ±40 m might still be inside it.
+    h.at(80, 0, 40);
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    h.at(140, 0, 40);
+    expect(selectPresentStationId(store.getState())).toBeNull();
+    expect(h.found).toEqual(["a"]);
+  });
+
+  // Why (PR review S5): the first run of a page's tour is no tour CHANGE;
+  // resetting there switched off a "show all" set before the first tick
+  // (the URL flag, M2).
+  it("keeps a 'show all' set before the first tick", () => {
+    const { store, guideStore } = countingStore();
+    const h = harness(
+      { stations: [station("a", 20, 0)], order: "fixed" },
+      { guideStore },
+    );
+    store.dispatch(showAllContentSet(true));
+    h.at(0, 0);
+    expect(selectShowAllContent(store.getState())).toBe(true);
+  });
+
   it("takes a code's band when a code lined the position up (the found exit 1.5 m past the radius)", () => {
     const { store, guideStore } = countingStore();
     const h = harness(

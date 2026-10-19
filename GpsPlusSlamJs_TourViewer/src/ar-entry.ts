@@ -289,10 +289,11 @@ export function wireArEntry(deps: {
               count: ctx.contentRendered.count,
               skipped: ctx.contentRendered.skipped.length,
             },
-      // The visitor guide waits for a heading (D34): the store's flag,
-      // which the guide sets only for a visitor's stations.
-      stationsAwaitHeading:
-        !authorMode && selectHeadingPending(arStore.getState()),
+      // The visitor guide waits for a heading (D34): the store's flag. No
+      // creator guard: the guide never runs for a creator (its placement
+      // needs visitor mode, `stationPlacementAllowed`), and only
+      // `visitorStatus` reads the flag, whose sentence a creator never sees.
+      stationsAwaitHeading: selectHeadingPending(arStore.getState()),
     };
     // A visitor reads one plain sentence (UI round 1, U1); the technical
     // line stays for the creator and for a visitor's `?debug=1`. The state

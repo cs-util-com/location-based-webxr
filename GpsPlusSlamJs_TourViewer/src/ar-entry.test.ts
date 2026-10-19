@@ -28,6 +28,8 @@ import {
   selectGpsPositions,
   resetGpsSessionData,
   setZeroPos,
+  reportUpdated,
+  type TrackingQualityReport,
 } from "gps-plus-slam-app-framework/state";
 
 /** A stand-in element: the fields `wireArEntry` writes, and click handlers. */
@@ -987,16 +989,46 @@ describe("a visitor without location starts on codes alone (QR-first M1b-1)", ()
 // Why (D34 of the tour editor plan 2026-10-17-1816): the visitor's line
 // asks for a few steps while the guide waits for a heading, read from the
 // store the guide writes; once the heading exists the placed line is back.
+// Not before tracking reports at all (the coaching's hold steady, N8).
 describe("wireArEntry: the wait for a heading (D34)", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the walk line while the store says the guide waits, and the placed line once it does not", () => {
+  function trackingReport(
+    state: TrackingQualityReport["state"],
+  ): TrackingQualityReport {
+    return {
+      state,
+      confidence: 0.3,
+      subScores: {
+        convergence: 1,
+        residualConsensus: 1,
+        gpsAccuracy: 1,
+        coverage: 0.5,
+      },
+      diagnostics: {},
+    } as TrackingQualityReport;
+  }
+
+  function placedVisitor() {
     const h = harness({ arStatus: "running" });
     h.ctx.session = {} as never;
     h.ctx.scanGate = { kind: "passed", via: "code" };
     h.ctx.contentRendered = { count: 2, skipped: [] } as never;
+    return h;
+  }
+
+  it("holds the placed line while tracking has not reported yet (initializing)", () => {
+    const h = placedVisitor();
+    h.arStore.dispatch(headingPendingSet(true));
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("placed");
+  });
+
+  it("shows the walk line while the store says the guide waits, and the placed line once it does not", () => {
+    const h = placedVisitor();
+    h.arStore.dispatch(reportUpdated(trackingReport("warming-up")));
     h.arStore.dispatch(headingPendingSet(true));
     h.entry.renderArStatus();
     expect(h.dom.arStatus.dataset["state"]).toBe("finding-direction");

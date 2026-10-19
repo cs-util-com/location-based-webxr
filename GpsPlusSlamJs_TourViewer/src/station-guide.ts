@@ -51,8 +51,12 @@
  *   shows (`station-presence.ts`), in one function (`judged`), so the two
  *   never disagree. Presence reads every station, not the offer (V-D5); it
  *   lives in the page's store (`visitor-guide-slice.ts`), dispatched only
- *   when it changes and after the tick's own work, holds with no judged
- *   position, clears at the session's end and resets with the tour.
+ *   when it changes and after the tick's own work, holds with no position
+ *   (a tracking drop, a stale fix), clears at the session's end and resets
+ *   with another tour. Not a hold (PR review S1): a fix too weak to guide
+ *   by still ends it past the exit by its accuracy, and a station a code
+ *   made present ends when the code goes and nothing else can judge (a
+ *   moved poster's veto).
  * - **The wait for a heading is said** (D34 of the tour editor plan): while
  *   the guide has stations to point at and no heading yet this AR entry,
  *   the store's `headingPending` is true and the visitor's status line
@@ -301,9 +305,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  goes with the code's votes (a veto) while tracking is not ready
    *  (r881 third review L2). */
   let headingReady = false;
-  /** The run was created anew or dropped (another tour, or none): the
-   *  store's presence and its "show all" reset at the end of the tick. */
+  /** The run was replaced or dropped (another tour, or none; never the
+   *  first run): the store's presence and its "show all" reset at the end
+   *  of the tick. */
   let tourChangePending = false;
+  /** The present station was last judged on a position a code lined up:
+   *  once the code goes (a veto) and nothing else can judge, it ends. */
+  let presentByCode = false;
 
   function stationById(id: string): TourStation | undefined {
     return runStations?.find((s) => s.id === id);
@@ -377,7 +385,9 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     }
     if (tour.stations !== runStations) {
       if (!deps.placementAllowed()) return null;
-      tourChangePending = true;
+      // The page's first tour is no change: a "show all" set before the
+      // first tick stays (PR review S5).
+      if (runStations !== null) tourChangePending = true;
       runStations = tour.stations;
       run = createStationRun({
         stations: tour.stations,
@@ -447,28 +457,52 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     }
   }
 
-  /** The store's presence after this tick: a tour change resets it, and
-   *  a judgement (null: hold) is dispatched only when it changes the
-   *  answer. Called at the END of a tick: a dispatch re-enters the tick
-   *  through the store's subscriber, which then finds nothing to change. */
+  /** What presence may read this tick: the gate's judgement, else a fix
+   *  too weak to guide by - which can only end presence (`presenceAfter`,
+   *  PR review S1) - else nothing (null: hold). */
+  function presenceJudgement(
+    m: Measurement,
+    j: Judgement | null,
+  ): PresenceJudgement | null {
+    if (runStations === null) return null;
+    const accuracyM = j?.accuracyM ?? accuracyOf(m);
+    const weak = j === null && m.best !== null && m.distances.size > 0;
+    if (j === null && !(weak && tooWeakToGuide(accuracyM))) return null;
+    return {
+      candidates: presenceCandidates(runStations, m.distances, (station) =>
+        bandsOf(station, m),
+      ),
+      accuracyM,
+      codeLinedUp: m.codeLinedUp,
+    };
+  }
+
+  /** The store's presence after this tick: a tour change resets it, a
+   *  station a code made present ends once the code goes and nothing can
+   *  judge, and a judgement is dispatched only when it changes the answer.
+   *  Called at the END of a tick: a dispatch re-enters the tick through the
+   *  store's subscriber, which then finds nothing to change. */
   function publishPresence(m: Measurement | null, j: Judgement | null): void {
     const store = deps.guideStore;
     if (store === undefined) return;
     if (tourChangePending) {
       tourChangePending = false;
+      presentByCode = false;
       const s = store.getState().visitorGuide;
       if (s.presentStationId !== null || s.showAllContent) {
         store.dispatch(guideTourChanged());
       }
     }
-    if (m === null || j === null || runStations === null) return;
-    const judgement: PresenceJudgement = {
-      candidates: presenceCandidates(runStations, j.distances, (station) =>
-        bandsOf(station, m),
-      ),
-      accuracyM: j.accuracyM,
-    };
+    if (m === null) return;
     const state = store.getState().visitorGuide;
+    if (j === null && presentByCode && !m.codeLinedUp) {
+      presentByCode = false;
+      if (state.presentStationId !== null) store.dispatch(presenceCleared());
+      return;
+    }
+    const judgement = presenceJudgement(m, j);
+    if (judgement === null) return;
+    if (j !== null) presentByCode = m.codeLinedUp;
     if (presenceAfter(state, judgement) !== state.presentStationId) {
       store.dispatch(presenceJudged(judgement));
     }
@@ -823,6 +857,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       trackedHeading = false;
       headingReady = false;
       // Nothing is present outside an AR session (visitor plan §3).
+      presentByCode = false;
       if (deps.guideStore?.getState().visitorGuide.presentStationId != null) {
         deps.guideStore.dispatch(presenceCleared());
       }

@@ -69,10 +69,19 @@ activateM)` (each tick, each offered station with a distance: the
   judged accuracy's margin (`takeoverMarginM`), whatever the order (V-D5).
   The guide dispatches `presenceJudged` only when `presenceAfter` differs
   from the store's answer, and only at the END of its tick (the store's
-  subscriber ticks again, and finds nothing to change). No judged position
-  holds it; `endSession` dispatches `presenceCleared`; a run created anew
-  or dropped (another tour, none) dispatches `guideTourChanged` at the end
-  of that tick, when anything was set. Nothing draws by it yet (M2).
+  subscriber ticks again, and finds nothing to change). No position (a
+  tracking drop, a stale fix) holds it; `endSession` dispatches
+  `presenceCleared`; a run replaced or dropped (another tour, none)
+  dispatches `guideTourChanged` at the end of that tick, when anything was
+  set - never the page's first run, so a "show all" set before the first
+  tick stays (PR review S5). Nothing draws by it yet (M2).
+- **Presence never outlives what judged it** (PR review S1, the H1
+  lesson): a fix too weak to guide by is still handed to the reducer, which
+  applies only the exit (`presentAfterWeakFix`: past the exit by its
+  accuracy); and a station last judged on a code's position
+  (`presentByCode`) is cleared on a tick whose judgement is null once the
+  code is no longer lined up (a moved poster's veto indoors, where the
+  ±40 m fix that follows is too weak to judge by and close enough to hold).
 
 - **A run per open tour**, created once placement is allowed (a visitor's
   session with the scan gate passed or not required), kept across AR
@@ -327,9 +336,12 @@ store.subscribe(() => guide.tick());
 - `station-guide.test.ts` ("the present station", visitor plan M1) -
   enter at the found radius, leave past the exit, a dispatch only per
   change; a too-weak fix neither finds nor makes present, no position and a
-  stale fix hold; a code's 1.5 m band; a later station of a fixed tour
-  present but not found (V-D5); cleared at the session's end, reset with
-  "show all" by another tour.
+  stale fix hold; a code's station ends with its code's veto (and holds
+  through a tracking drop while the code stays); a too-weak fix ends
+  presence past the exit by its accuracy and never enters (an underpass); a
+  "show all" set before the first tick stays; a code's 1.5 m band; a later
+  station of a fixed tour present but not found (V-D5); cleared at the
+  session's end, reset with "show all" by another tour.
 - `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
   tracking-quality slice (L3).
 - `playwright-tests/stations.spec.js` - the whole flow on the page.

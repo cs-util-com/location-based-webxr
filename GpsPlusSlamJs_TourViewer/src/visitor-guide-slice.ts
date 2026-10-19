@@ -24,8 +24,10 @@ import {
   type UnknownAction,
 } from "@reduxjs/toolkit";
 
+import { tooWeakToGuide } from "./station-bands.js";
 import {
   nextPresentStation,
+  presentAfterWeakFix,
   takeoverMarginM,
   type PresenceCandidate,
 } from "./station-presence.js";
@@ -46,11 +48,15 @@ export interface VisitorGuideState {
 }
 
 /** One judged position, as presence reads it: every station's candidate
- *  (null: nothing may be judged, presence holds) and the judged accuracy
- *  (null for a position a code lined up), which sets the margin. */
+ *  (null: nothing may be judged, presence holds), the judged accuracy
+ *  (`judgedAccuracy`: null for a position a code lined up) and whether a
+ *  code lined it up, which set the margin (`takeoverMarginM`). An accuracy
+ *  too weak to guide by (`tooWeakToGuide`) only ends presence
+ *  (`presentAfterWeakFix`). */
 export interface PresenceJudgement {
   readonly candidates: readonly PresenceCandidate[] | null;
   readonly accuracyM: number | null;
+  readonly codeLinedUp: boolean;
 }
 
 const initialVisitorGuideState: VisitorGuideState = {
@@ -65,10 +71,18 @@ export function presenceAfter(
   state: VisitorGuideState,
   judgement: PresenceJudgement,
 ): string | null {
+  const { accuracyM } = judgement;
+  if (accuracyM !== null && tooWeakToGuide(accuracyM)) {
+    return presentAfterWeakFix(
+      state.presentStationId,
+      judgement.candidates,
+      accuracyM,
+    );
+  }
   return nextPresentStation(
     state.presentStationId,
     judgement.candidates,
-    takeoverMarginM(judgement.accuracyM),
+    takeoverMarginM(accuracyM, judgement.codeLinedUp),
   );
 }
 

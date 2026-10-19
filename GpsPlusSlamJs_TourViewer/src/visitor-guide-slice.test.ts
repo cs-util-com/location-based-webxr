@@ -52,7 +52,11 @@ describe("visitorGuide slice", () => {
   it("applies the presence rule on a judged position, with the margin of its accuracy", () => {
     const store = createTourViewerStore();
     store.dispatch(
-      presenceJudged({ candidates: [at("a", 1)], accuracyM: null }),
+      presenceJudged({
+        candidates: [at("a", 1)],
+        accuracyM: null,
+        codeLinedUp: true,
+      }),
     );
     expect(selectPresentStationId(store.getState())).toBe("a");
     // B nearer by 1.2 m: over the 1 m floor (a code's position, null), so
@@ -62,16 +66,53 @@ describe("visitorGuide slice", () => {
       presenceAfter(store.getState().visitorGuide, {
         candidates: nearer,
         accuracyM: 4,
+        codeLinedUp: false,
       }),
     ).toBe("a");
-    store.dispatch(presenceJudged({ candidates: nearer, accuracyM: null }));
+    store.dispatch(
+      presenceJudged({
+        candidates: nearer,
+        accuracyM: null,
+        codeLinedUp: true,
+      }),
+    );
     expect(selectPresentStationId(store.getState())).toBe("b");
+  });
+
+  it("a fix too weak to guide by only ends presence, by the present station's exit and its accuracy", () => {
+    // Why (PR review S1): above the accuracy ceiling nothing enters or
+    // takes over, but a fix that is past the exit even by its accuracy
+    // ends presence (an underpass).
+    const store = createTourViewerStore();
+    const weak = (candidates: PresenceCandidate[]) =>
+      presenceJudged({ candidates, accuracyM: 40, codeLinedUp: false });
+    store.dispatch(weak([at("a", 0)]));
+    expect(selectPresentStationId(store.getState())).toBeNull();
+    store.dispatch(
+      presenceJudged({
+        candidates: [at("a", 1)],
+        accuracyM: 3,
+        codeLinedUp: false,
+      }),
+    );
+    store.dispatch(weak([at("a", 30), at("b", 0)]));
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    store.dispatch(weak([at("a", 60), at("b", 0)]));
+    expect(selectPresentStationId(store.getState())).toBeNull();
   });
 
   it("holds on no judged position and clears at the session's end", () => {
     const store = createTourViewerStore();
-    store.dispatch(presenceJudged({ candidates: [at("a", 1)], accuracyM: 3 }));
-    store.dispatch(presenceJudged({ candidates: null, accuracyM: null }));
+    store.dispatch(
+      presenceJudged({
+        candidates: [at("a", 1)],
+        accuracyM: 3,
+        codeLinedUp: false,
+      }),
+    );
+    store.dispatch(
+      presenceJudged({ candidates: null, accuracyM: null, codeLinedUp: true }),
+    );
     expect(selectPresentStationId(store.getState())).toBe("a");
     store.dispatch(presenceCleared());
     expect(selectPresentStationId(store.getState())).toBeNull();
@@ -79,7 +120,13 @@ describe("visitorGuide slice", () => {
 
   it("'show all' shows every station's content; a new tour forgets it and its presence", () => {
     const store = createTourViewerStore();
-    store.dispatch(presenceJudged({ candidates: [at("a", 1)], accuracyM: 3 }));
+    store.dispatch(
+      presenceJudged({
+        candidates: [at("a", 1)],
+        accuracyM: 3,
+        codeLinedUp: false,
+      }),
+    );
     expect(selectStationContentShown(store.getState(), "a")).toBe(true);
     expect(selectStationContentShown(store.getState(), "b")).toBe(false);
     store.dispatch(showAllContentSet(true));

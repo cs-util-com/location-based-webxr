@@ -36,8 +36,9 @@ visitor's `?debug=1`.
   only `err.message` - to a plain cause: the location permission, the
   camera, an unsupported session, else "Tap Try again"); no tour open;
   PLACED (tracking lost reads the framework's `ar-lost` hint, else placed
-  through the code, or by GPS with the reason when one applies, or
-  "finding-direction" while the visitor guide waits for a heading); the code
+  through the code, or by GPS with the reason when one applies; while the
+  visitor guide waits for a heading the bare placed line becomes
+  "finding-direction" and a GPS placement keeps its reason); the code
   situations, which only come BEFORE placement (a code of another tour, an
   unusable code, the code being measured - the page passes no hint for
   the code the moved-code check ignores, whose veto set its votes back to
@@ -55,11 +56,18 @@ visitor's `?debug=1`.
   code mentions the GPS escape only while it is offered; a moved code does
   not hide loading progress; no counter in "Loading the photos…".
 - **The wait for a heading is said** (D34 of the tour editor plan
-  2026-10-17-1816): while `stationsAwaitHeading` is true (the guide has
-  stations to point at and no heading yet), "Walk a few steps so the guide
-  knows the direction." replaces the placed sentence and comes before the
-  placement sentence, after the code situations and never over an `ar-lost`
-  hint; it goes as soon as the flag clears.
+  2026-10-17-1816; PR review S6, N8): "Walk a few steps so the guide knows
+  the direction." is asked while `stationsAwaitHeading` is true (the guide
+  has stations to point at and no heading yet), tracking runs (a report
+  exists: not `initializing`, whose coaching says hold steady, and not
+  `ar-lost`, whose own hint is the cure) and location is on (never codes
+  only, where walking cannot earn a heading - after a veto too). It
+  REPLACES only the bare placed line ("Tour placed. Look around.", state
+  `finding-direction`); a GPS placement keeps its reason with the request
+  in place of "Look around." (state `placed-gps`), and before placement it
+  follows whatever the line says (a moved code, the photos loading, the
+  coaching), the state unchanged. The code situations come first, without
+  it. It goes as soon as the flag clears.
 - **Never a counter, the mode prefix or a debug number** (property test);
   a running session always says something.
 - **Never "scan the code again"** after the code's hold ended; the hold's
@@ -99,10 +107,15 @@ el.textContent =
 ## Tests
 
 `visitor-status.test.ts` (one case per state, the start-failure causes,
-what must never reach a visitor, load notes);
+what must never reach a visitor, load notes, the walk request: replacing
+only the placed line, after a GPS placement's or a moved code's reason, never
+while tracking initializes or without location);
 `visitor-status.property.test.ts` (any combination of code, gate,
-placement, content and errors: non-empty, no debug words); `ar-entry.test.ts`
+placement, content, errors, readiness, codes only and the heading wait:
+non-empty, no debug words, the walk request once at most, only where
+allowed and never beside "Look around."); `ar-entry.test.ts`
 (the measuring hint reaches the line; after a veto the ignored code's
-hint is withheld, another code's still shows); `viewer-moved-code.test.ts`
+hint is withheld, another code's still shows; the walk line from the
+store, not before tracking reports); `viewer-moved-code.test.ts`
 (the veto records the ignored code by its scanned text, the key its
 evaluations carry).

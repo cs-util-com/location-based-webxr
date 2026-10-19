@@ -15,15 +15,20 @@
  *   (`d_B + m < d_A`, `takeoverMarginM`: the judged accuracy, at least
  *   1 m). With none present, the nearest station whose found
  *   radius holds the position (list order on a tie).
- * - **Hold** with no judged position (a tracking drop, a stale fix, a GPS
- *   too weak to guide by): nothing changes. The caller clears presence when
- *   the AR session ends.
+ * - **Hold** with no position to judge by (plan §3: a tracking drop, a
+ *   stale fix): nothing changes. Two cases are no hold (PR review S1): a
+ *   fix too weak to guide by (above the accuracy ceiling) never enters or
+ *   takes over but still ENDS presence once it is past the found exit even
+ *   by its accuracy (`presentAfterWeakFix`, an underpass); and the caller
+ *   (`station-guide.ts`) clears a station a code made present once the
+ *   code goes and nothing else can judge (a moved poster's veto), and at
+ *   the AR session's end.
  * - **Not the order** (V-D5): every station of the tour is a candidate,
  *   offered or not, found or done; the story still starts only at an
  *   offered station (the run).
  *
- * Pure. `station-presence.sweep.test.ts` measures the wrong-station and the
- * switch rates behind the margin.
+ * Pure. `station-presence.sweep.test.ts` measures the wrong-station rate and the
+ * flicker behind the margin.
  */
 
 import { ACCURACY_CEILING_M, type StationBands } from "./station-bands.js";
@@ -42,28 +47,52 @@ export interface PresenceCandidate {
 /**
  * The takeover margin's floor (m): what a position a code lined up takes
  * (its accuracy is unknown, `judgedAccuracy`). Swept 0-3 m against the
- * aligned position's jitter 0.05-0.5 m (`station-presence.sweep.test.ts`,
- * the sidecar's Evidence): 0 flickers where circles overlap; 0.5 m stops it
- * only while the jitter stays near 5 cm, 1 m up to 0.25 m; each further
- * 0.5 m keeps the previous exhibit about 1-4 points of the time longer.
- * Reversed by a field measurement of the aligned position's jitter: below
- * about 0.1 m, 0.5 m wins; about 0.5 m, 1.5 m does.
+ * aligned position's jitter 0.05-0.5 m, the flicker counted directly
+ * (`station-presence.sweep.test.ts`, the sidecar's Evidence): 0 flickers
+ * where circles overlap; 0.5 m holds only while the jitter stays near 5 cm,
+ * 1 m up to 0.25 m; each further 0.5 m keeps the previous exhibit about
+ * 2-5 points of the time longer. Reversed by a field measurement of the
+ * aligned position's jitter, in either direction: below about 0.1 m, 0.5 m
+ * wins (about 1.4 points fewer wrong stations); about 0.5 m, 1 m flickers
+ * and 1.5-2 m win.
  */
 export const TAKEOVER_MARGIN_MIN_M = 1;
 
 /**
  * The takeover margin `m` (m) for a judged position: how much nearer a
  * neighbour must be than the present station before it takes over while
- * both circles hold the position. The judged accuracy (the raw fixes',
- * without a code; null with one), at least `TAKEOVER_MARGIN_MIN_M`, at most
- * the accuracy ceiling (above it nothing is judged). The sweep's verdict: a
- * margin must match the position's noise - no fixed value in 0-3 m stops a
- * raw fix of 8-20 m from switching neighbours several times per visit,
- * while one band (the accuracy) does, at no worse wrong-station rate.
+ * both circles hold the position.
+ * - A code lined the position up: the floor (its accuracy is unknown).
+ * - Otherwise the reported accuracy (the raw fixes', `judgedAccuracy`), at
+ *   least `TAKEOVER_MARGIN_MIN_M`, at most the accuracy ceiling (above it
+ *   only the exit is judged, `presentAfterWeakFix`); a missing or nonsense
+ *   one reads as the ceiling, as the bands' clamp reads it.
+ *
+ * The sweep's verdict: a margin must match the position's noise - no fixed
+ * value in 0-3 m keeps a raw fix of 8-25 m from switching neighbours, while
+ * the accuracy reduces that flicker at least twofold, within half a point
+ * of the wrong-station rate. Its factor (1x the accuracy) is right only
+ * while the phone reports its error honestly, and the sweep (0.5-2x on
+ * reports 0.5/1/2x the true error) reverses it both ways: a phone that
+ * reports HALF its error wants about 2x (a third less flicker or better);
+ * one that reports DOUBLE wants about 0.5x (2-4 points fewer wrong
+ * stations). Field data comparing reported and true error decides it.
+ * No cap below the spacing: where the margin exceeds it (a GPS-only
+ * museum) the position's noise, not the margin, is what fails.
  */
-export function takeoverMarginM(judgedAccuracyM: number | null): number {
-  if (judgedAccuracyM === null || !Number.isFinite(judgedAccuracyM)) {
-    return TAKEOVER_MARGIN_MIN_M;
+export function takeoverMarginM(
+  judgedAccuracyM: number | null,
+  codeLinedUp: boolean,
+): number {
+  if (codeLinedUp) return TAKEOVER_MARGIN_MIN_M;
+  // A missing or nonsense raw accuracy reads as the ceiling, as the bands'
+  // clamp reads it (`station-bands.ts`; PR review N1).
+  if (
+    judgedAccuracyM === null ||
+    !Number.isFinite(judgedAccuracyM) ||
+    judgedAccuracyM <= 0
+  ) {
+    return ACCURACY_CEILING_M;
   }
   return Math.min(
     Math.max(judgedAccuracyM, TAKEOVER_MARGIN_MIN_M),
@@ -102,6 +131,27 @@ export function nextPresentStation(
     if (best === undefined || c.distanceM < best.distanceM) best = c;
   }
   return best?.id ?? kept?.id ?? null;
+}
+
+/**
+ * The present station after a fix too weak to guide by (`tooWeakToGuide`,
+ * above the accuracy ceiling; PR review S1): it never enters a station nor
+ * hands over to one, but it ends presence when even `accuracyM` nearer the
+ * visitor the position would be past the present station's found exit
+ * (`d - accuracy > foundExit`: an underpass fix that places the visitor
+ * well away). Holds on anything it cannot read (no candidates, the present
+ * station not among them, a nonsense distance or accuracy).
+ */
+export function presentAfterWeakFix(
+  presentId: string | null,
+  candidates: readonly PresenceCandidate[] | null,
+  accuracyM: number,
+): string | null {
+  if (presentId === null || candidates === null) return presentId;
+  if (!Number.isFinite(accuracyM) || accuracyM < 0) return presentId;
+  const present = candidates.find((c) => c.id === presentId && usable(c));
+  if (present === undefined) return presentId;
+  return present.distanceM - accuracyM > present.foundExitM ? null : presentId;
 }
 
 /** The present station while its exit holds the position (and only while

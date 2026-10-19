@@ -205,7 +205,7 @@ describe("nextPresentStation (properties)", () => {
             const next = nextPresentStation(
               present,
               c,
-              takeoverMarginM(code ? null : rawAccuracyM),
+              takeoverMarginM(code ? null : rawAccuracyM, code),
             );
             const problem = stepProblem(present, next, c);
             if (problem !== null) problems.push(problem);

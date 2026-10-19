@@ -4,6 +4,7 @@ import { ACCURACY_CEILING_M } from "./station-bands";
 import {
   nextPresentStation,
   presenceCandidates,
+  presentAfterWeakFix,
   takeoverMarginM,
   TAKEOVER_MARGIN_MIN_M,
   type PresenceCandidate,
@@ -115,16 +116,60 @@ describe("takeoverMarginM", () => {
     // match the position's noise - a code's AR position wanders centimetres,
     // a raw fix metres. One fixed value either flickers outdoors or shows
     // the previous exhibit too long indoors.
-    expect(takeoverMarginM(null)).toBe(TAKEOVER_MARGIN_MIN_M);
-    expect(takeoverMarginM(0.2)).toBe(TAKEOVER_MARGIN_MIN_M);
-    expect(takeoverMarginM(8)).toBe(8);
+    expect(takeoverMarginM(null, true)).toBe(TAKEOVER_MARGIN_MIN_M);
+    expect(takeoverMarginM(8, true)).toBe(TAKEOVER_MARGIN_MIN_M);
+    expect(takeoverMarginM(0.2, false)).toBe(TAKEOVER_MARGIN_MIN_M);
+    expect(takeoverMarginM(8, false)).toBe(8);
     expect(TAKEOVER_MARGIN_MIN_M).toBe(1);
   });
 
-  it("reads nonsense as the floor and never exceeds the accuracy ceiling", () => {
-    expect(takeoverMarginM(Number.NaN)).toBe(TAKEOVER_MARGIN_MIN_M);
-    expect(takeoverMarginM(-3)).toBe(TAKEOVER_MARGIN_MIN_M);
-    expect(takeoverMarginM(400)).toBe(ACCURACY_CEILING_M);
+  it("without a code reads a missing or nonsense accuracy as the ceiling, as the bands do, and never exceeds it", () => {
+    // Why (PR review N1): an unknown raw accuracy is the widest band there
+    // is (`stationBands`' clamp); a 1 m margin beside a 25 m band would
+    // let a neighbour take over on noise the band itself allows for.
+    for (const nonsense of [null, 0, -3, Number.NaN]) {
+      expect(takeoverMarginM(nonsense, false)).toBe(ACCURACY_CEILING_M);
+    }
+    expect(takeoverMarginM(400, false)).toBe(ACCURACY_CEILING_M);
+  });
+});
+
+describe("presentAfterWeakFix", () => {
+  // Why (PR review S1): a fix too weak to guide by (an underpass, a ±40 m
+  // indoor fix) judges no arrival and no entry, but it can still prove the
+  // visitor left: even `accuracy` metres nearer, the position is past the
+  // present station's found exit. Holding forever on it kept a station's
+  // content up for the rest of the session.
+  const a = (d: number): PresenceCandidate => ({
+    id: "a",
+    distanceM: d,
+    foundM: 5,
+    foundExitM: 30,
+  });
+  const b = (d: number): PresenceCandidate => ({
+    id: "b",
+    distanceM: d,
+    foundM: 5,
+    foundExitM: 30,
+  });
+
+  it("ends presence only when the position is past the exit by more than its accuracy", () => {
+    expect(presentAfterWeakFix("a", [a(60)], 40)).toBe("a");
+    expect(presentAfterWeakFix("a", [a(70)], 40)).toBe("a");
+    expect(presentAfterWeakFix("a", [a(70.1)], 40)).toBeNull();
+  });
+
+  it("never enters a station nor hands over to one", () => {
+    expect(presentAfterWeakFix(null, [a(0), b(0)], 40)).toBeNull();
+    expect(presentAfterWeakFix("a", [a(50), b(0)], 40)).toBe("a");
+    expect(presentAfterWeakFix("a", [a(100), b(0)], 40)).toBeNull();
+  });
+
+  it("holds without candidates, without the present station, or on a nonsense accuracy", () => {
+    expect(presentAfterWeakFix("a", null, 40)).toBe("a");
+    expect(presentAfterWeakFix("a", [b(0)], 40)).toBe("a");
+    expect(presentAfterWeakFix("a", [a(500)], Number.NaN)).toBe("a");
+    expect(presentAfterWeakFix("a", [a(Number.NaN)], 40)).toBe("a");
   });
 });
 

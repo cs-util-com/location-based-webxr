@@ -66,10 +66,23 @@ const GPS_PLACED = "Tour placed by GPS (less exact)";
 
 /** The guide waits for a heading (D34): the arrows, the breadcrumbs and a
  *  story's figure need one, and a few steps give it. */
-const FINDING_DIRECTION: VisitorStatus = {
-  state: "finding-direction",
-  text: "Walk a few steps so the guide knows the direction.",
-};
+const WALK = "Walk a few steps so the guide knows the direction.";
+
+/** Whether the line asks for a few steps (D34): the guide waits for a
+ *  heading, tracking runs - not while it initializes (the coaching says
+ *  hold steady) nor once it is lost (its own hint is the cure) - and
+ *  walking can earn one: never without location, where only a code gives a
+ *  heading (after a veto, too). */
+function asksForSteps(input: ArStatusInput): boolean {
+  const phase = input.readiness?.phase;
+  return (
+    input.stationsAwaitHeading === true &&
+    input.codesOnly !== true &&
+    phase !== undefined &&
+    phase !== "initializing" &&
+    phase !== "ar-lost"
+  );
+}
 
 /** Why AR did not start, from the controller's error message (the
  *  framework keeps only the message, not the exception's name): the causes
@@ -160,31 +173,36 @@ function isPlaced(input: ArStatusInput): boolean {
 
 /** Placed: through the code, or by GPS - with the one hint that can still
  *  help (find the code) only after the escape, never when the code cannot
- *  line the tour up. */
-function placedSentence(input: ArStatusInput): VisitorStatus {
+ *  line the tour up. While the guide waits for a heading (`walk`, D34) the
+ *  bare placed line gives way to the request; a GPS placement keeps its
+ *  reason, the request in place of "Look around.". */
+function placedSentence(input: ArStatusInput, walk: boolean): VisitorStatus {
   const { gate } = input;
   if (!gpsOnly(gate) || codeLinedUp(input.qr)) {
-    return { state: "placed", text: `Tour placed. ${LOOK_AROUND}` };
+    return walk
+      ? { state: "finding-direction", text: WALK }
+      : { state: "placed", text: `Tour placed. ${LOOK_AROUND}` };
   }
+  const next = walk ? WALK : LOOK_AROUND;
   if (gate.kind === "not-required" && gate.reason === "no-detector") {
     return {
       state: "placed-gps",
-      text: `${GPS_PLACED}: this browser can't read codes. ${LOOK_AROUND}`,
+      text: `${GPS_PLACED}: this browser can't read codes. ${next}`,
     };
   }
   if (gate.kind === "passed" && gate.via === "ignored") {
     return {
       state: "placed-gps",
-      text: `${GPS_PLACED}: its code seems to have been moved. ${LOOK_AROUND}`,
+      text: `${GPS_PLACED}: its code seems to have been moved. ${next}`,
     };
   }
   if (gate.kind === "passed" && gate.via === "skipped") {
     return {
       state: "placed-gps",
-      text: `${GPS_PLACED}. ${LOOK_AROUND} Find the poster's code to line it up.`,
+      text: `${GPS_PLACED}. ${next} Find the poster's code to line it up.`,
     };
   }
-  return { state: "placed-gps", text: `${GPS_PLACED}. ${LOOK_AROUND}` };
+  return { state: "placed-gps", text: `${GPS_PLACED}. ${next}` };
 }
 
 /** The code is in view and its pose still settles (plan §66's hint):
@@ -308,22 +326,17 @@ function runningSentence(input: ArStatusInput): VisitorStatus {
     if (input.readiness?.phase === "ar-lost") {
       return { state: "tracking-lost", text: input.readiness.hint };
     }
-    return input.stationsAwaitHeading === true
-      ? FINDING_DIRECTION
-      : placedSentence(input);
+    return placedSentence(input, asksForSteps(input));
   }
-  // A code situation needs the visitor to point elsewhere first; then the
-  // guide's wait for a heading (D34), unless tracking is lost, whose own
-  // hint is the cure.
+  // A code situation needs the visitor to point elsewhere first; any other
+  // sentence keeps what it says, the guide's wait for a heading after it
+  // (D34).
   const code = codeSentence(input);
   if (code !== null) return code;
-  if (
-    input.stationsAwaitHeading === true &&
-    input.readiness?.phase !== "ar-lost"
-  ) {
-    return FINDING_DIRECTION;
-  }
-  return placementSentence(input);
+  const placing = placementSentence(input);
+  return asksForSteps(input)
+    ? { state: placing.state, text: `${placing.text} ${WALK}` }
+    : placing;
 }
 
 /** The visitor's status for a state of the page. */
