@@ -23,11 +23,16 @@ where the prefetch starts. Plans:
   - `foundExitM = foundM + band`;
   - `activateM = max(activateRadiusM, foundExitM)`: where the prefetch
     starts (plus its lead); nothing toggles on it (K4 review R10).
-- `alignedStationBands(station): StationBands` - the bands of an ALIGNED
-  position (PR #642 review): band `= HUD_ARRIVAL_BAND_M`, whatever the raw
-  fixes say. The raw fixes' accuracy says nothing about an alignment, and
-  `stationBands` reads an unknown accuracy as the ceiling, so passing it
-  null would widen an aligned visitor's bands to the widest there is.
+- `judgedAccuracy(rawAccuracyM, codeLinedUp): number | null` - the
+  accuracy a position is judged by, for the run's arrival and the line's
+  "GPS too weak" alike: the raw fixes' own, or null (unknown, never too
+  weak) when a code lined the position up (M5c review #1).
+- `judgedStationBands(station, rawAccuracyM, codeLinedUp): StationBands` -
+  the bands by the same rule (PR #642 review): a code-lined-up position's
+  band is `HUD_ARRIVAL_BAND_M` whatever the raw fixes say (`stationBands`
+  reads an unknown accuracy as the ceiling, so passing it null would widen
+  that position's bands to the widest there is); every other position is
+  `stationBands(station, rawAccuracyM)`.
 - (module-internal) `clampAccuracy` - null, non-finite or non-positive read
   as `ACCURACY_CEILING_M`; above it clamped to it.
 - Constants: `BAND_ACCURACY_FACTOR` (1.0), `HUD_ARRIVAL_MIN_M` (1.5, the HUD's own
@@ -60,8 +65,18 @@ where the prefetch starts. Plans:
   ±500 m cold-start fix inside a 10 m station latched "found" while the
   line said the GPS was too weak). D16 still holds below the ceiling: the
   accuracy never widens the radius. Unknown (null) is not too weak, and
-  the guide passes null for an alignment's position: the accuracy is the
-  raw fixes' and speaks only for the raw fix (M5c review #1).
+  the guide passes null only for a position a code lined up
+  (`judgedAccuracy`): the accuracy is the raw fixes' and says nothing
+  about a code's position (M5c review #1).
+- **Aligned is not trusted (r881).** The library creates a session's GPS
+  data with an alignment at the first zero (no rotation, at the first fix
+  of any accuracy), so every live position is "aligned" from the first
+  fix. Until r881 every aligned position was judged like a code's (null
+  accuracy, the HUD's own band): the "too weak" line could never show,
+  and a ±500 m cold-start fix inside a station latched "found" - the
+  PR #640 case again. Only a code (`tour-flow.ts` `codeLinedUp`) earns
+  the trust now; the guide also waits for a ready alignment before it
+  judges an aligned position at all (`alignmentReady`).
 
 ## Evidence (`station-bands.sweep.test.ts`)
 
@@ -83,6 +98,30 @@ p90), 120 seeds per cell:
 - The radius measurement of 15-40 m (tour editor plan, after M5a) refines
   the default.
 
+The judged path (r881): the shipped run's `observe` fed by
+`judgedAccuracy`, raw accuracy 3-500 m, found radius 5 m (the sample tour)
+and 25 m (the default), 120 seeds, a visitor standing on the spot for
+120 s and one walking past at three radii. Without a code this is the
+aligned position once tracking is ready, and the fresh device fix before
+(the `raw` model; review H1: readiness may never come). The `raw` model
+reports one accuracy for every fix; it has no single outlier fix, so the
+case the guide guards against before readiness - one ±40 m Wi-Fi fix after
+a run of ±5 m GPS fixes, judged by the worse of the median and its own
+accuracy (`fixAccuracyM`, r881 re-review M-A) - is not simulated here but
+pinned in `station-guide.test.ts`:
+
+- without a code, at or below the 25 m ceiling: as above (standing found
+  in 99-100 % of runs; passing a 5 m station at 3 radii found by mistake
+  0-52 % by noise model and accuracy, a 25 m one 0-2 %); above it nothing
+  latches, standing or passing (0 %);
+- with a code (its position modelled as the fused noise at 1 / 3 / 5 m, an
+  assumption): standing found 100 %, passing 0 %, identical at every raw
+  accuracy - the raw accuracy does not enter;
+- the rule it replaced (every aligned position trusted, its error the raw
+  fixes'): above the ceiling, passing at three radii was found by mistake
+  in up to 55 % of runs at 5 m (raw 30-40 m) and 88 % at 25 m (raw
+  100 m).
+
 ## Examples
 
 ```ts
@@ -95,10 +134,14 @@ const b = stationBands({ activateRadiusM: 30, foundRadiusM: 3 }, 8);
 - `station-bands.test.ts` - the authored radius at every accuracy with no
   floor (D16), the HUD band floor, nonsense accuracies; properties:
   ordering and finiteness for any input, the band monotone in the accuracy;
-  `alignedStationBands` is the HUD's own band at several radii. Through
-  `station-guide.test.ts`: an aligned visitor's prefetch, HUD band and
-  breadcrumb stop are not widened by a raw fix of ±5-100 m or none.
-- `station-bands.sweep.test.ts` - the simulation above.
+  `judgedStationBands` is the HUD's own band at several radii for a code,
+  `stationBands` otherwise; `judgedAccuracy` is null for a code, the raw
+  accuracy otherwise. Through `station-guide.test.ts`: a code-lined-up
+  visitor's prefetch, HUD band and breadcrumb stop are not widened by a raw
+  fix of ±5-100 m or none, and an aligned one with no code keeps the raw
+  accuracy's.
+- `station-bands.sweep.test.ts` - the simulation above, the judged path
+  included.
 - `tooWeakToGuide` through `station-run.test.ts` (the latch flips exactly at
   the ceiling, swept 10-500 m; null is judged) and `station-guide.test.ts`
   (the line and the latch agree on a ±500 m and a ±60 m fix).

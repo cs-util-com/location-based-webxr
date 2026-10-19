@@ -18,6 +18,11 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
 - `stationPlacementAllowed(ctx, mode): boolean` - the guide's
   `placementAllowed`, exported so the placement test drives the page's
   own rule (see below).
+- `stationAlignmentSignals(ctx, arStore)` - the guide's `codeLinedUp` and
+  `alignmentReady` (`tour-flow.ts`): the viewer pipeline's voted locks
+  this AR entry (`ctx.viewerLockedText`, `ctx.viewerVotedLocks`) and the
+  store's tracking-quality report. Exported for the same reason. No state
+  of its own: both are read each tick.
 
 ## Invariants & assumptions
 
@@ -37,6 +42,16 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   `VIEWER_SOFT_TRIM`), so a station on the scanned code is found on that
   lock: the lock places the visitor, and a station at the code is inside
   its radius (D16).
+- The stations are judged on the aligned frame only while it is ready
+  (r881, `stationAlignmentSignals`): tracking ready or a code lined it up,
+  re-read each tick. While it is not the guide judges by the fresh device
+  fix (review H1). The arrows, the breadcrumbs, the figure's turn and the
+  figure's pose wait for the first readiness of the AR entry and keep it
+  through a dip (re-review L-B, M-B): the stage reads
+  `guide.figurePoseOf`, so a story found on the raw fix plays its words
+  and voice at once while its figure waits ("Waiting for your position to
+  place the figure…"). The gate alone was not enough: the library aligns
+  a session from its first fix, with no heading.
 - Media are read through `ctx.session.loadContentEntry` (K0's allowlist and
   `.glb` check, K1's per-entry hash check), ahead of time as the visitor
   approaches (`station-prefetch.ts`; the story's own reads go through the
@@ -77,4 +92,4 @@ hooks.tickStations = stations.tick;
 - `playwright-tests/stations.spec.js` (the composition).
 - `viewer-content-alignment.test.ts` ("finds the station on the scanned
   code on the first voted lock"): the real station guide over the real
-  placement and `stationPlacementAllowed`.
+  placement, `stationPlacementAllowed` and `stationAlignmentSignals`.

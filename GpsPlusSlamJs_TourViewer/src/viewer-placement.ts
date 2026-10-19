@@ -70,7 +70,7 @@ import {
 } from "./qr-viewer-mode.js";
 import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { TourViewerSeams } from "./seams.js";
-import { isPlacementReady } from "./tour-flow.js";
+import { codePlacedTour, isPlacementReady } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
 import type {
   ArController,
@@ -247,15 +247,12 @@ export function createViewerPlacement(deps: {
     arStore.dispatch(setZeroPos({ lat: geo.lat, lon: geo.lon }));
   }
 
-  /** Whether a code's votes placed this tour: the gate passed on a voted
-   *  lock of a trusted code (M5). The placement trigger then runs whatever
-   *  the tracking-quality phase reads (§7 #9) - which changes only a scan
-   *  whose one voted lock opened the gate, since every later voted lock
-   *  starts the placement itself (`onVotedLock`). */
-  const codePlacedTour = (): boolean =>
-    ctx.scanGate.kind === "passed" &&
-    ctx.scanGate.via === "code" &&
-    ctx.viewerVotedLocks > 0;
+  /** Whether a code's votes placed this tour (`tour-flow.ts`). The
+   *  placement trigger then runs whatever the tracking-quality phase reads
+   *  (§7 #9) - which changes only a scan whose one voted lock opened the
+   *  gate, since every later voted lock starts the placement itself
+   *  (`onVotedLock`). */
+  const placedByCode = (): boolean => codePlacedTour(ctx);
 
   const ignoredLevelIds = (): ReadonlySet<string> =>
     new Set(ctx.ignoredCodes.keys());
@@ -684,6 +681,11 @@ export function createViewerPlacement(deps: {
       refedFixes: 0,
       batches: 0,
     };
+    // No vote stands now: nothing reads the tour as lined up by a code -
+    // the stations' trust, the status line, the placement trigger - until
+    // a code votes again (r881 review M1).
+    ctx.viewerVotedLocks = 0;
+    ctx.viewerLockedText = null;
     // Every code's votes are gone, so every code may vote again by lock
     // (M5c review M2): a spent code the keep-alive holds would otherwise
     // cast nothing on its next lock. The vetoed code stays blocked by
@@ -774,7 +776,7 @@ export function createViewerPlacement(deps: {
     if (ctx.imagePlanesLoading) return;
     if (
       !isPlacementReady(selectTrackingQuality(arStore.getState())) &&
-      !codePlacedTour()
+      !placedByCode()
     ) {
       // Only over idle/waiting: a pre-ready lock whose ring failed leaves a
       // decline reason that the next dispatch must not overwrite
@@ -806,7 +808,7 @@ export function createViewerPlacement(deps: {
     // declines falls back to the ring in the same run (r857 review #3).
     // Without it the run's loading latch dropped the ring of the lock that
     // placed the tour, and a glance gets no later lock to retry.
-    const lockedText = codePlacedTour() ? ctx.viewerLockedText : null;
+    const lockedText = placedByCode() ? ctx.viewerLockedText : null;
     void placeTourImagePlanes(lockedText).catch((err: unknown) => {
       ctx.viewerPlanesError = describeOpenError(err, current.archive.url);
       hooks.renderArStatus();

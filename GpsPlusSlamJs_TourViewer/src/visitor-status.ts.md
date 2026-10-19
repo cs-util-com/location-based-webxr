@@ -37,7 +37,10 @@ visitor's `?debug=1`.
   PLACED (tracking lost reads the framework's `ar-lost` hint, else placed
   through the code, or by GPS with the reason when one applies); the code
   situations, which only come BEFORE placement (a code of another tour, an
-  unusable code, the code being measured, the gate scanning); then what is
+  unusable code, the code being measured - the page passes no hint for
+  the code the moved-code check ignores, whose veto set its votes back to
+  0, but still one for any other code (`ar-entry.ts`; r881 re-review L-F,
+  L1) - the gate scanning); then what is
   happening (photos loading, tracking warming up, nothing to show, needs
   the code, a moved code, the code found, placing).
 - **U1 milestone review fixes (2026-10-06):** a tour with no usable code
@@ -91,4 +94,7 @@ el.textContent =
 what must never reach a visitor, load notes);
 `visitor-status.property.test.ts` (any combination of code, gate,
 placement, content and errors: non-empty, no debug words); `ar-entry.test.ts`
-(the measuring hint reaches the line).
+(the measuring hint reaches the line; after a veto the ignored code's
+hint is withheld, another code's still shows); `viewer-moved-code.test.ts`
+(the veto records the ignored code by its scanned text, the key its
+evaluations carry).

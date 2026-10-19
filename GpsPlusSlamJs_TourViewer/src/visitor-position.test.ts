@@ -233,4 +233,54 @@ describe("visitorPosition", () => {
       }).accuracyM,
     ).toBeNull();
   });
+
+  // Why (r881 re-review M-A): before the alignment is ready the latest fix
+  // alone is the position, but the accuracy above is the median of ten.
+  // One ±40 m Wi-Fi fix after a run of ±5 m GPS fixes left the median at
+  // 5 m, and that single fix could latch a station found. The guide needs
+  // the fix's OWN accuracy too.
+  it("reports the latest DEVICE fix's own accuracy beside the median", () => {
+    const fix = (
+      accuracy: number | undefined,
+      timestamp: number,
+      source: string = GPS_POINT_SOURCE_DEVICE,
+    ): GpsPoint =>
+      ({
+        latitude: 47.5,
+        longitude: 8.7,
+        altitude: 400,
+        latLongAccuracy: accuracy,
+        timestamp,
+        source,
+      }) as unknown as GpsPoint;
+    const run = Array.from({ length: 9 }, (_, i) => fix(5, i * 1000));
+    const p = visitorPosition({
+      alignment: null,
+      arPose: null,
+      gpsPositions: [...run, fix(40, 9_000), fix(1, 9_500, "synthetic-qr")],
+      zero,
+    });
+    expect(p.accuracyM).toBe(5);
+    // The latest DEVICE fix's own, never a vote's.
+    expect(p.fixAccuracyM).toBe(40);
+    // That fix states no usable accuracy: unknown, even with older ones.
+    for (const bad of [undefined, -1, 0, Number.NaN]) {
+      expect(
+        visitorPosition({
+          alignment: null,
+          arPose: null,
+          gpsPositions: [...run, fix(bad, 9_000)],
+          zero,
+        }).fixAccuracyM,
+      ).toBeNull();
+    }
+    // No fix position (no zero): no fix accuracy either.
+    expect(
+      visitorPosition({
+        alignment: null,
+        arPose: null,
+        gpsPositions: [...run, fix(40, 9_000)],
+      }).fixAccuracyM,
+    ).toBeNull();
+  });
 });

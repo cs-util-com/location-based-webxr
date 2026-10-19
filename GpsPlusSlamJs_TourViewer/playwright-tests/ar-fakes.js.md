@@ -15,6 +15,11 @@ camera, so `installTourViewerArFakes(page)` installs
   GPS fixes into the app store, so the mint gate and placement unlock.
   Shared by `ar-mode.spec.js`, `object-editing.spec.js` and
   `ar-layout.spec.js` (it was copied into the first two).
+- `forceTrackingReady(page)` - dispatches the tracking-quality slice's own
+  `reportUpdated` with `state: "ok"`, so the alignment is ready without a
+  code: the walk's photos place and the visitor's stations are judged.
+  Shared by `ar-mode.spec.js` and `sample-tour.spec.js` (moved out of the
+  first when the second needed it, r881).
 - `standAt(page, north, east, second)` - one device fix with the phone
   `north`/`east` metres from the fakes' zero, its AR pose taken back through
   the store's current alignment, so the camera stands exactly there. Shared

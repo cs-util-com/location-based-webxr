@@ -21,10 +21,17 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
   - `endSession()` - the HUD goes, the line hides; the progress stays, and
     a found station's story plays again on the next session's first tick
     with a position and the GPS zero;
-  - `poseOf(stationId)` - the station's pose at the scene root (the stage
-    stands its figure there).
+  - `poseOf(stationId)` - the station's pose at the scene root (the
+    distances and the HUD read it);
+  - `figurePoseOf(stationId)` - where the stage stands a story's figure:
+    the same pose once this AR entry's alignment was ready, null before
+    (no heading yet; the stage waits, r881 re-review M-B).
 - Deps: `dom` (`line`, `skip`), `tour()` (stations, order),
   `placementAllowed()`, `zero()`, `visitor()` (`visitor-position.ts`),
+  `codeLinedUp()` (a code's votes lined the alignment up, `tour-flow.ts`),
+  `alignmentReady()` (the alignment may be judged on: tracking ready or a
+  code, re-read each tick by the find, latched per AR entry by what needs
+  a heading, `tour-flow.ts` `alignmentReady`),
   `startHud(getTargets)`, `now()`, `fixMaxAgeMs?` (default
   `FIX_MAX_AGE_MS`, 5 s),
   `onFound(station)`, `onEndStory?(stationId)` (R9), `onVisitor?(nue)`, `onApproach?(station, distanceM,
@@ -34,7 +41,9 @@ activateM)` (each tick, each offered station with a distance: the
   station is found under a fixed or branch order: the station that comes
   next, which the prefetch reads ahead, K4 review R5), `onGuide?(visitor, target)` (every render: the breadcrumbs'
   target, the station in focus with its arrival band as `stopM`; null when
-  there is none, at a session end and with no run).
+  there is none, at a session end and with no run; the visitor is null
+  until this AR entry's alignment was ready). `onVisitor` too is called
+  only from that first readiness on.
 
 ## Invariants & assumptions
 
@@ -48,30 +57,79 @@ activateM)` (each tick, each offered station with a distance: the
   own gate passes.
 - **A replay waits (R8):** a found station's story cut short by the
   session's end plays again on the first tick that has a position and the
-  GPS zero (before them its figure had no pose).
+  GPS zero (before them its figure had no pose) - any position the find
+  judges by, the fresh fix included (r881 re-review M-C: requiring a
+  camera position meant a session never ready never replayed, while the
+  line said "its story is playing"). Its figure waits for the heading as
+  on a first play.
 - **Where a station is (D19, §8 D8; tour editor plan D9):** its own geo
   pose, as a pin's; since version 3 every station has one (`station.geo`).
   The pose was fixed at authoring (D33's settle, K6a); the viewer reads
   it.
 - **Reached by its radius alone (D16):** the distance is measured from the
   phone's current best position - the alignment's (`VisitorPosition.nue`,
-  fed by GPS and codes alike), else - only while there is no alignment at
-  all (`VisitorPosition.aligned`) - the latest device fix (`fixNue`) if it
-  is at most `FIX_MAX_AGE_MS` (5 s) old by its own timestamp against
-  `now()` - and a station is found inside its authored found radius:
-  whatever the accuracy when aligned (the accuracy is the raw fixes' and
-  says nothing about an alignment, M5c review #1), and on the raw fix only
-  while its own accuracy is within the ceiling (`tooWeakToGuide`, PR #640
-  review). The accuracy never widens the radius. With neither position nothing is reached. An
-  aligned session whose tracking dropped (no AR pose) has no position
-  until it is back, and the line says "waiting for your position": its
-  raw fix carries no accuracy or age check and used to latch "found" (M5a
-  review M3). 5 s is argued, not measured (about four missed 1 Hz fixes,
-  7 m of walking); 2-10 s are swept in the tests.
-  A code lock is no arrival: it only improves the position, and
-  `codeLocked()` re-judges at once. This replaced the code-only station,
-  the held code lock (`CODE_HOLD_MAX_MS`, `codeAgrees`) and the
-  visitor's own "I'm here" (review 2 #5).
+  fed by GPS and codes alike) while it is ready (`alignmentReady()`,
+  re-read each tick); while it is not, or while there is no alignment at
+  all, the latest device fix (`fixNue`) if it is at most `FIX_MAX_AGE_MS`
+  (5 s) old by its own timestamp against `now()`. A station is found
+  inside its authored found radius: whatever the raw accuracy when a code
+  lined the aligned position up (the accuracy is the raw fixes' and says
+  nothing about a code's position, M5c review #1), and otherwise only
+  while the raw accuracy is within the ceiling (`tooWeakToGuide`, PR #640
+  review): the median of the latest fixes for the aligned position, the
+  worse of that and the fix's own (`fixAccuracyM`) for a lone fix (r881
+  re-review M-A: one ±40 m fix after a ±5 m run hid behind the median).
+  When neither the median nor the fix states an accuracy the radius alone
+  judges, as for any unknown accuracy: a real device fix always states one
+  (the Geolocation spec requires it), so only injected points (a test
+  page, a replay) lack it (third review L4).
+  The accuracy never widens the radius. With neither position nothing is
+  reached. A GPS-only session whose tracking quality drops is not ready
+  any more and falls back to the fresh fix; only a session that stays
+  ready (a code lined it up) has no position while its camera pose is
+  dropped, and the line says "waiting for your position": the raw fix
+  would bypass the code's trust and used to latch "found" (M5a review M3;
+  r881 re-review L-C corrected the claim that every ready session had no
+  position then). 5 s is
+  argued, not measured (about four missed 1 Hz fixes, 7 m of walking);
+  2-10 s are swept in the tests. A code lock is no arrival: it only
+  improves the position, and `codeLocked()` re-judges at once. This
+  replaced the code-only station, the held code lock (`CODE_HOLD_MAX_MS`,
+  `codeAgrees`) and the visitor's own "I'm here" (review 2 #5).
+- **Aligned alone is not trusted, and not used before it is ready
+  (r881):** the library aligns a session from its first fix (no rotation,
+  at the zero, at any accuracy), so `aligned` holds from the first fix
+  on. Until r881 it was trusted outright: the "too weak" line was dead
+  and a ±500 m cold-start fix inside a station latched "found". Now only
+  a code earns the trust, and only for the aligned position
+  (`codeLinedUp()`, kept through a tracking drop: review L1; never for a
+  lone raw fix: re-review L-A), and the aligned position counts only while
+  `alignmentReady()` (tracking ready, or a code lined it up). While it is
+  not, the alignment may have no heading and can be 180° wrong: the
+  session counts as unaligned, so the fresh device fix stands in (review
+  H1: readiness needs ten fixes, a walk and turns, and never came for a
+  visitor standing at a station or walking straight).
+- **What needs a heading latches per AR entry** (r881 re-review L-B, M-B):
+  the HUD's targets, the breadcrumbs' start, the figure's turn
+  (`onVisitor`) and its pose (`figurePoseOf`) wait for the first
+  `alignmentReady()` of the AR entry and keep it through a degraded dip,
+  as the walk's photos latch their trigger; `endSession()` resets it. The
+  find does not latch: in a dip it judges by the fresh fix, while the
+  arrows keep pointing from the aligned camera. A visitor who never
+  becomes ready finds stations and hears their stories, but sees no
+  arrows and no figure (an owner question; the default chosen in r881).
+  - **Only tracking's heading latches** (third review L2): a tick ready
+    with no code lined up latches it; a heading that only a code gave
+    lasts while the code is lined up, so a veto that lifts the code while
+    tracking is not `ok` takes the arrows and the figure's pose away with
+    it. `alignmentReady()` folds tracking and the code into one answer,
+    so tracking that reached `ok` only while a code was lined up is not
+    seen and does not latch (the safe side).
+  - **In a dip the arrow and the line can disagree** (third review L3,
+    deliberate, an owner question): the HUD and the breadcrumbs measure
+    from the aligned camera while the find judges by the raw fix, so the
+    arrow can say "arrived" while the line still says the station is not
+    found.
 - **A moved poster pulls the position only until it is judged:** the
   moved-code check then ignores its code and takes its votes back
   (`isIgnored` of the viewer pipeline, `qr-viewer-mode.ts`, D20), the one guard left
@@ -85,11 +143,12 @@ activateM)` (each tick, each offered station with a distance: the
   the HUD's 3D distance is the horizontal distance the run judges. Only
   offered stations not yet found are targets.
 - **One accuracy rule for every band** (PR #642 review): the prefetch's
-  activation, the HUD's band and the breadcrumbs' stop read the same
-  `judgedAccuracy` as the line and the run. An aligned visitor takes the
-  HUD's own band (`alignedStationBands`), so a ±40 m raw fix beside a
-  code-placed position widens nothing; a raw fix alone keeps its own
-  accuracy's band, as before. The HUD is started once per
+  activation, the HUD's band and the breadcrumbs' stop read the same rule
+  as the line and the run (`station-bands.ts` `judgedAccuracy` /
+  `judgedStationBands`, on the measurement's `codeLinedUp`). A visitor a
+  code lined up takes the HUD's own band, so a ±40 m raw fix beside a
+  code-placed position widens nothing; every other position - a raw fix,
+  or an alignment no code lined up - keeps the raw accuracy's band. The HUD is started once per
   AR session (retried while there is no camera) and disposed at the
   session's end and when the tour completes.
 - **The skip** is about the nearest offered, unfound station: on demand in
@@ -99,7 +158,10 @@ activateM)` (each tick, each offered station with a distance: the
 - **K4 review R14:**
   - the skip clock starts when a station becomes the focus (`run.focus`,
     called at every render), not at the tour's start: under `any` order
-    every focus was a one-tap skip two minutes in;
+    every focus was a one-tap skip two minutes in; and only once the
+    focus has a distance, which sizes it (r881 review M2: started without
+    one, the bare 2 min allowance suggested the skip to a visitor still
+    waiting for a position);
   - a tap does what the button's label showed, for the station it named
     (`rendered`): a clock that ran out since, or a focus that moved,
     changes nothing;
@@ -121,9 +183,11 @@ activateM)` (each tick, each offered station with a distance: the
   format, and the button now covers it.
 - **The line:** "Next: <title>, N m", "N stations to find - nearest:
   <title>, N m", "... - waiting for your position…", "... - GPS too weak to
-  guide you (±N m); step into the open." (only when the raw fix is the
-  position and its accuracy is above the ceiling, `tooWeakToGuide`; the run
-  then judges no arrival either, PR #640 review, M5c review #1),
+  guide you (±N m); step into the open." (when no code lined the
+  position up and the raw fixes' accuracy is above the ceiling,
+  `tooWeakToGuide` - checked before "waiting", so it shows while the
+  alignment is not ready too; the run then judges no arrival either,
+  PR #640 review, M5c review #1),
   "Station found - its story is
   playing.", "Tour complete - every station visited." or "- N skipped.";
   under branch order "Tour complete - you reached the end of your path."
@@ -156,6 +220,8 @@ const guide = wireStationGuide({
   placementAllowed,
   zero,
   visitor,
+  codeLinedUp,
+  alignmentReady,
   startHud,
   now: Date.now,
   onFound: (station) => view.offer(station),
@@ -180,7 +246,32 @@ store.subscribe(() => guide.tick());
   2-10 s (M3); no position and weak GPS lines; the skip on demand and suggested,
   the completion and the HUD's disposal; a story's end; progress across
   AR entries and a new tour; the replay of a story cut short; nothing found
-  that is not offered; an aligned visitor's prefetch, HUD band and
-  breadcrumb stop not widened by a raw fix of ±5-100 m or none, a raw fix
-  alone keeping its own band (swept, PR #642 review).
+  that is not offered; a code-lined-up visitor's prefetch, HUD band and
+  breadcrumb stop not widened by a raw fix of ±5-100 m or none, an aligned
+  visitor with no code and a raw fix alone keeping the raw accuracy's band
+  (swept, PR #642 review; changed r881); a code-lined-up visitor found
+  however weak the fix, one without a code not (r881); the cold start on
+  the real store (r881): one fix aligns the session with no rotation, a
+  ±500 m first fix inside a 10 m station finds nothing and says the GPS
+  is too weak (ready or not), an alignment not yet ready judges by the
+  fresh fix (found, but no HUD target and no breadcrumbs), and a
+  code-lined-up courtyard visitor at ±40 m is found; on the real store a
+  visitor with no code standing at a 5 m station or walking straight to
+  it never reaches tracking `ok` and is found on the fix (at once; on
+  arrival), with a walk round a square as the positive control that does
+  reach it (review H1, re-review L-G); a tracking drop in a code-placed
+  session waits instead of "too weak" (L1); the skip clock waits for a
+  distance (M2). Re-review: a lone weak fix after good ones is too weak
+  while a ready alignment keeps the median (M-A); a code's trust never
+  reaches a lone fix (L-A); before readiness the find follows the fix,
+  not the camera (L-G); a story cut short replays in a session never
+  ready (M-C); a dip keeps the arrows, the breadcrumbs and the figure's
+  turn while the find falls back to the fix, and a new AR entry waits
+  again (L-B); the figure's pose waits for readiness (M-B); the two-tap
+  skip works with no distance ever (L-G); a heading only a code gave goes
+  with the code while tracking is not ready (third review L2).
+  `station-guide.property.test.ts` also pins that a lone-fix find means
+  the worse known accuracy is within the ceiling (L4).
+- `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
+  tracking-quality slice (L3).
 - `playwright-tests/stations.spec.js` - the whole flow on the page.

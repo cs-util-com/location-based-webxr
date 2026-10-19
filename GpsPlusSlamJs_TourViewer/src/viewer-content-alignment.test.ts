@@ -73,7 +73,10 @@ import {
   endTourCodeVotes,
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
-import { stationPlacementAllowed } from "./visitor-stations.js";
+import {
+  stationAlignmentSignals,
+  stationPlacementAllowed,
+} from "./visitor-stations.js";
 
 /** The code's converged (fused) pose: a stand-in, its own tests are
  *  `fused-pose-wiring.test.ts`. */
@@ -577,6 +580,8 @@ describe("after a code-set zero the content shows on the first voted lock (no co
       tour: () => ({ stations, order: "fixed" }),
       // The page's own gate (`visitor-stations.ts`).
       placementAllowed: () => stationPlacementAllowed(s.ctx, "visitor"),
+      // ... and its alignment signals: the code that lined it up.
+      ...stationAlignmentSignals(s.ctx, s.arStore),
       zero: () => selectZeroReference(s.arStore.getState()),
       // The phone at the code, once the code has placed it (an alignment
       // and a zero); no device fix at any point.
@@ -590,6 +595,7 @@ describe("after a code-set zero the content shows on the first voted lock (no co
           fixNue: null,
           aligned: placed,
           fixAtMs: null,
+          fixAccuracyM: null,
         };
       },
       startHud: () => null,

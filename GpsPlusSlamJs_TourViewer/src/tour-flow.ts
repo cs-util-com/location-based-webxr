@@ -140,13 +140,59 @@ export function contentSegment(content: ArStatusInput["content"]): string {
  *  coaching copy stay one contract (DEC-H3). At the first GPS fix the
  *  alignment is the identity - no heading - so an earlier trigger would
  *  start the scene up to 180° wrong. One exemption (QR-first M1): a code
- *  that placed the tour (`viewer-placement.ts` `codePlacedTour()`) places
+ *  that placed the tour (`codePlacedTour` below) places
  *  before this gate, and cannot be 180° wrong - a voted lock's ring
  *  carries the code's saved heading, unlike a single GPS fix. */
 export function isPlacementReady(
   report: TrackingQualityReport | null,
 ): boolean {
   return computeOnboardingGuidance(report).phase === "ready";
+}
+
+/** A code lined the tour up: its votes were cast (after the escape too -
+ *  the gate stays "skipped" when a later lock votes). Read by the visitor's
+ *  status line and by the station guide, whose position is then the
+ *  code's, not the raw fixes'. */
+export function codeLinedUp(
+  qr: Pick<ArStatusInput["qr"], "lockedText" | "votedLocks">,
+): boolean {
+  return qr.lockedText !== null && qr.votedLocks > 0;
+}
+
+/** Whether a code's votes placed this tour: the gate passed on a voted
+ *  lock of a trusted code (M5). The walk's placement trigger then runs
+ *  whatever the tracking-quality phase reads (`viewer-placement.ts`, §7
+ *  #9). The voted count goes back to 0 when a veto takes every vote back
+ *  (r881 review M1), so a gate another code passed no longer counts. */
+export function codePlacedTour(ctx: {
+  readonly scanGate: ScanGate;
+  readonly viewerVotedLocks: number;
+}): boolean {
+  return (
+    ctx.scanGate.kind === "passed" &&
+    ctx.scanGate.via === "code" &&
+    ctx.viewerVotedLocks > 0
+  );
+}
+
+/**
+ * Whether the visitor's stations may be judged on the session's alignment
+ * - its position found by, the HUD's arrows and the breadcrumbs pointed on
+ * it: tracking ready (`isPlacementReady`) or a code lined it up
+ * (`codeLinedUp`; a voted lock after the gate's escape too, which places
+ * the walk's photos by itself, `onVotedLock`). Before it the alignment is
+ * the identity at the first fix, which can be 180° wrong. The guide's
+ * find re-reads this each tick, and while it is false judges by the fresh
+ * device fix instead (r881 review H1); what needs a heading (the arrows,
+ * the breadcrumbs, the figure) latches its first `true` per AR entry, as
+ * the photos' trigger does, so a degraded dip does not take it away (r881
+ * re-review L-B).
+ */
+export function alignmentReady(
+  report: TrackingQualityReport | null,
+  qr: Pick<ArStatusInput["qr"], "lockedText" | "votedLocks">,
+): boolean {
+  return isPlacementReady(report) || codeLinedUp(qr);
 }
 
 /** The printed-code line: the viewer pipeline's status, with the no-codes

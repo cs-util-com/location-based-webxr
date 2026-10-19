@@ -10,7 +10,7 @@
  * @see visitor-status.ts.md
  */
 
-import type { ArStatusInput } from "./tour-flow.js";
+import { codeLinedUp, type ArStatusInput } from "./tour-flow.js";
 /** The in-AR scan line without location (QR-first M1b-1), under the scan
  *  card's title ("Scan the code again so the tour can start"): what the
  *  absence of location means, not a second "scan". */
@@ -135,12 +135,6 @@ function gpsOnly(gate: ArStatusInput["gate"]): boolean {
   );
 }
 
-/** A code lined the tour up: its votes were cast (after the escape too -
- *  the gate stays "skipped" when a later lock votes). */
-function codeLinedUp(input: ArStatusInput): boolean {
-  return input.qr.lockedText !== null && input.qr.votedLocks > 0;
-}
-
 /** The tour has no code that can lock (the photo ring needs one). */
 function noUsableCodes(input: ArStatusInput): boolean {
   const { tour, gate } = input;
@@ -161,7 +155,7 @@ function isPlaced(input: ArStatusInput): boolean {
  *  line the tour up. */
 function placedSentence(input: ArStatusInput): VisitorStatus {
   const { gate } = input;
-  if (!gpsOnly(gate) || codeLinedUp(input)) {
+  if (!gpsOnly(gate) || codeLinedUp(input.qr)) {
     return { state: "placed", text: `Tour placed. ${LOOK_AROUND}` };
   }
   if (gate.kind === "not-required" && gate.reason === "no-detector") {
@@ -185,6 +179,16 @@ function placedSentence(input: ArStatusInput): VisitorStatus {
   return { state: "placed-gps", text: `${GPS_PLACED}. ${LOOK_AROUND}` };
 }
 
+/** The code is in view and its pose still settles (plan §66's hint):
+ *  guidance a visitor can act on, until its first vote. The page passes
+ *  no hint for the code the moved-code check ignores (`ar-entry.ts`),
+ *  only for the code evaluated, so a veto never hides another code's
+ *  (r881 re-review L1). */
+function measuringHint(qr: ArStatusInput["qr"]): string | null {
+  if (qr.votedLocks > 0) return null;
+  return qr.fusedHint ?? null;
+}
+
 /** The code situations that come before placement: they need the visitor
  *  to point elsewhere. Never once the tour is placed (a passing product
  *  code must not take over a placed tour; U1 review #3). */
@@ -205,11 +209,8 @@ function codeSentence(input: ArStatusInput): VisitorStatus | null {
         : "This code can't line up the tour. Point your phone at another of the tour's codes.",
     };
   }
-  // The code is in view and its pose still settles (plan §66's hint):
-  // guidance a visitor can act on, until its first vote.
-  if (qr.fusedHint != null && qr.votedLocks === 0) {
-    return { state: "measuring-code", text: qr.fusedHint };
-  }
+  const hint = measuringHint(qr);
+  if (hint !== null) return { state: "measuring-code", text: hint };
   if (gate.kind === "scanning") {
     // Without location the codes are the only way in (QR-first M1b-1).
     if (input.codesOnly === true) {

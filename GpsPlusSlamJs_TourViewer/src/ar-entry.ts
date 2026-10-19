@@ -253,13 +253,17 @@ export function wireArEntry(deps: {
         ignoredCode: ctx.viewerIgnoredText,
         // Read from the last evaluation, never re-evaluated here: this runs
         // per camera frame, past the budget's short-circuit (plan §67 #5).
-        fusedHint: authorMode
-          ? null
-          : visitorFusedHint({
-              last: ctx.viewerLastEvaluation,
-              status: ctx.viewerQrStatus,
-              nowMs: performance.now(),
-            }),
+        // Never the ignored code's: its veto set the votes back to 0, and
+        // "placing the tour" is a promise it cannot keep; another code's
+        // hint still shows (r881 re-review L-F, L1).
+        fusedHint:
+          authorMode || ctx.viewerLastEvaluation?.text === ctx.viewerIgnoredText
+            ? null
+            : visitorFusedHint({
+                last: ctx.viewerLastEvaluation,
+                status: ctx.viewerQrStatus,
+                nowMs: performance.now(),
+              }),
       },
       // The onboarding mapping of the tracking-quality report - `null`
       // before the slice reports maps to the `initializing` hint, which is

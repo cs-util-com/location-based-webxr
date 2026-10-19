@@ -8,6 +8,7 @@ import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
+import { ACCURACY_CEILING_M } from "./station-bands";
 import { FIX_MAX_AGE_MS, wireStationGuide } from "./station-guide";
 import type { VisitorPosition } from "./visitor-position";
 
@@ -89,6 +90,7 @@ describe("wireStationGuide (properties)", () => {
           fixNue: [1000, 400, 1000] as [number, number, number],
           aligned: true,
           fixAtMs: 0,
+          fixAccuracyM: 4,
         };
         const dom = {
           line: { textContent: "", hidden: true },
@@ -100,6 +102,9 @@ describe("wireStationGuide (properties)", () => {
           placementAllowed: () => true,
           zero: () => zero,
           visitor: () => visitor,
+          // A ready alignment no code lined up: GPS alone.
+          codeLinedUp: () => false,
+          alignmentReady: () => true,
           startHud: () => ({ dispose: () => undefined }),
           now: () => now,
           // A found station's story starts, and never ends by itself.
@@ -116,6 +121,7 @@ describe("wireStationGuide (properties)", () => {
             fixNue: [north, 400, east],
             aligned: true,
             fixAtMs: now,
+            fixAccuracyM: 4,
           };
           now += 1_000;
           guide.tick();
@@ -128,6 +134,7 @@ describe("wireStationGuide (properties)", () => {
           fixNue: [1000, 400, 1000],
           aligned: true,
           fixAtMs: now,
+          fixAccuracyM: 4,
         };
         for (let taps = 0; taps < 2 * n + 2; taps += 1) {
           now += 10_000;
@@ -180,6 +187,7 @@ describe("wireStationGuide (properties)", () => {
             fixNue: [north, 400, east],
             aligned,
             fixAtMs: now - ageMs,
+            fixAccuracyM: 4,
           };
           const found: string[] = [];
           const guide = wireStationGuide({
@@ -191,6 +199,8 @@ describe("wireStationGuide (properties)", () => {
             placementAllowed: () => true,
             zero: () => zero,
             visitor: () => visitor,
+            codeLinedUp: () => false,
+            alignmentReady: () => true,
             startHud: () => ({ dispose: () => undefined }),
             now: () => now,
             onFound: (s) => found.push(s.id),
@@ -199,6 +209,79 @@ describe("wireStationGuide (properties)", () => {
           const reached =
             !aligned && ageMs <= FIX_MAX_AGE_MS && Math.hypot(north, east) < 5;
           expect(found).toEqual(reached ? ["s"] : []);
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  // Why (r881 third review L4): a lone fix (no alignment, or one not
+  // ready) is judged by the worse of the median and its own accuracy. For
+  // any pair - either may be unknown - and a visitor on the station's spot,
+  // a find means the worse known one is within the ceiling. Both unknown
+  // is judged by the radius alone: a real device fix always states an
+  // accuracy (the Geolocation spec requires it), so only injected points
+  // (a test page, a replay) can lack one, and refusing them would refuse
+  // nothing a phone sends.
+  it("a lone-fix find implies the worse of the median and the fix's own accuracy is within the ceiling", () => {
+    const accuracy = fc.option(fc.integer({ min: 1, max: 500 }), {
+      nil: null,
+    });
+    fc.assert(
+      fc.property(
+        accuracy,
+        accuracy,
+        fc.boolean(),
+        (medianM, ownM, alignedNotReady) => {
+          const geo = calcGpsCoords(zero, [0, 0, 0]);
+          const station: TourStation = {
+            id: "s",
+            title: "S",
+            geo: { lat: geo.lat, lon: geo.lon, alt: 400, headingDeg: 0 },
+            items: [],
+            activateRadiusM: 20,
+            foundRadiusM: 5,
+            hint: "arrow",
+            steps: [
+              {
+                id: "t",
+                block: { kind: "text", text: "Hi" },
+                advance: { mode: "tap" },
+              },
+            ],
+          };
+          const now = 100_000;
+          // Aligned but not ready (a cold start: the camera far away), or
+          // no alignment at all: either way the fix alone is the position.
+          const visitor: VisitorPosition = {
+            nue: alignedNotReady ? [40, 401.5, 0] : null,
+            accuracyM: medianM,
+            fixNue: [1, 400, 1],
+            aligned: alignedNotReady,
+            fixAtMs: now,
+            fixAccuracyM: ownM,
+          };
+          const found: string[] = [];
+          const guide = wireStationGuide({
+            dom: {
+              line: { textContent: "", hidden: true },
+              skip: { textContent: "", hidden: true },
+            },
+            tour: () => ({ stations: [station], order: "fixed" }),
+            placementAllowed: () => true,
+            zero: () => zero,
+            visitor: () => visitor,
+            codeLinedUp: () => false,
+            alignmentReady: () => !alignedNotReady,
+            startHud: () => ({ dispose: () => undefined }),
+            now: () => now,
+            onFound: (s) => found.push(s.id),
+          });
+          guide.tick();
+          const known = [medianM, ownM].filter((m) => m !== null);
+          const worse = known.length === 0 ? null : Math.max(...known);
+          const expected = worse === null || worse <= ACCURACY_CEILING_M;
+          expect(found).toEqual(expected ? ["s"] : []);
         },
       ),
       { numRuns: 300 },

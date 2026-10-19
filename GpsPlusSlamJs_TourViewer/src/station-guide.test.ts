@@ -1,11 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-stations";
 import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
-import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
+import {
+  createSlamAppStore,
+  poseReceived,
+  recordGpsEvent,
+  selectAlignmentMatrix,
+  selectGpsPositions,
+  selectTrackingQuality,
+  selectZeroReference,
+  setZeroPos,
+} from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 
-import { alignedStationBands, stationBands } from "./station-bands";
+import { judgedStationBands, stationBands } from "./station-bands";
 import { skipSuggestAfterMs } from "./station-run";
 import {
   FIX_MAX_AGE_MS,
@@ -13,15 +22,18 @@ import {
   wireStationGuide,
   type StationTour,
 } from "./station-guide";
-import type { VisitorPosition } from "./visitor-position";
+import { visitorPosition, type VisitorPosition } from "./visitor-position";
+import { createTourViewerStore } from "./tour-viewer-session";
+import { stationAlignmentSignals } from "./visitor-stations";
 
 /**
  * Why these tests matter: this is where the visitor's real position, the
  * tour's stations and the HUD meet. A station is reached by its radius alone
- * (tour editor plan D16): the phone's best position - the alignment's, else
- * before any alignment the device fix - inside the authored found radius; a
- * code lock only improves that position, and with no position nothing is
- * reached. The HUD must say "arrived" exactly there, the skip must be there
+ * (tour editor plan D16): the phone's best position - the alignment's while
+ * it is ready, else the fresh device fix - inside the
+ * authored found radius; a code lock only improves that position, and with
+ * no position nothing is reached. The raw fixes' accuracy judges every
+ * position but one a code lined up. The HUD must say "arrived" exactly there, the skip must be there
  * on demand and suggested after its clock, and the progress must survive
  * leaving AR and coming back.
  */
@@ -68,8 +80,12 @@ function harness(
     fixNue: [0, 400, 0],
     aligned: true,
     fixAtMs: now,
+    fixAccuracyM: 4,
   };
   let allowed = true;
+  /** The alignment is ready (`alignmentReady`); a code lined it up. */
+  let ready = true;
+  let lined = false;
   let zeroNow: typeof zero | null = zero;
   const found: string[] = [];
   const approaches: [string, number, number][] = [];
@@ -77,6 +93,10 @@ function harness(
   const upcomings: string[] = [];
   const ended: string[] = [];
   const guides: (string | null)[] = [];
+  /** Where the figure was turned to (`onVisitor`), per tick. */
+  const visitors: (readonly [number, number, number])[] = [];
+  /** Where the breadcrumbs start (`onGuide`'s visitor; null: none). */
+  const crumbsFrom: (readonly [number, number, number] | null)[] = [];
   const huds: { getTargets: () => WayfindingTarget[]; disposed: boolean }[] =
     [];
   /** How often the guide wrote the line and read its inputs (R13). */
@@ -108,6 +128,8 @@ function harness(
       calls.visitor += 1;
       return visitor;
     },
+    codeLinedUp: () => lined,
+    alignmentReady: () => ready,
     startHud: (getTargets) => {
       const h = { getTargets, disposed: false };
       huds.push(h);
@@ -126,12 +148,15 @@ function harness(
       ended.push(id);
       guide.storyEnded(id);
     },
-    onGuide: (_visitor, target) =>
+    onVisitor: (nue) => visitors.push(nue),
+    onGuide: (from, target) => {
+      crumbsFrom.push(from);
       guides.push(
         target === null
           ? null
           : `${target.id}@${Math.round(target.to[0])},${Math.round(target.to[2])}/${target.stopM}`,
-      ),
+      );
+    },
   });
   return {
     guide,
@@ -143,6 +168,8 @@ function harness(
     ended,
     calls,
     guides,
+    visitors,
+    crumbsFrom,
     huds,
     at: (north: number, east: number, accuracyM: number | null = 4) => {
       visitor = {
@@ -151,6 +178,7 @@ function harness(
         fixNue: [north, 400, east],
         aligned: true,
         fixAtMs: now,
+        fixAccuracyM: accuracyM,
       };
       guide.tick();
     },
@@ -162,6 +190,8 @@ function harness(
       fixN: number,
       fixE: number,
       accuracyM: number | null = 4,
+      /** The fix's own accuracy; default the median's. */
+      fixAccuracyM: number | null = accuracyM,
     ) => {
       visitor = {
         nue: [north, 401.5, east],
@@ -169,6 +199,7 @@ function harness(
         fixNue: [fixN, 400, fixE],
         aligned: true,
         fixAtMs: now,
+        fixAccuracyM,
       };
       guide.tick();
     },
@@ -178,6 +209,8 @@ function harness(
       east: number,
       accuracyM: number | null = 4,
       ageMs = 0,
+      /** The fix's own accuracy; default the median's. */
+      fixAccuracyM: number | null = accuracyM,
     ) => {
       visitor = {
         nue: null,
@@ -185,29 +218,33 @@ function harness(
         fixNue: [north, 400, east],
         aligned: false,
         fixAtMs: now - ageMs,
+        fixAccuracyM,
       };
       guide.tick();
     },
     /** An aligned session whose tracking dropped (no AR pose this frame):
      *  no camera position, and the latest raw fix somewhere else. */
-    trackingLost: (fixN: number, fixE: number) => {
+    trackingLost: (fixN: number, fixE: number, accuracyM = 4) => {
       visitor = {
         nue: null,
-        accuracyM: 4,
+        accuracyM,
         fixNue: [fixN, 400, fixE],
         aligned: true,
         fixAtMs: now,
+        fixAccuracyM: accuracyM,
       };
       guide.tick();
     },
     /** Placed by a code alone: an aligned position, no device fix at all. */
     byCodeOnly: (north: number, east: number) => {
+      lined = true;
       visitor = {
         nue: [north, 401.5, east],
         accuracyM: null,
         fixNue: null,
         aligned: true,
         fixAtMs: null,
+        fixAccuracyM: null,
       };
     },
     lost: () => {
@@ -217,11 +254,15 @@ function harness(
         fixNue: null,
         aligned: false,
         fixAtMs: null,
+        fixAccuracyM: null,
       };
       guide.tick();
     },
     advance: (ms: number) => (now += ms),
     allow: (v: boolean) => (allowed = v),
+    /** The alignment ready or not, a code lined it up or not. */
+    ready: (v: boolean) => (ready = v),
+    lined: (v: boolean) => (lined = v),
     setZero: (z: typeof zero | null) => (zeroNow = z),
     setTour: (t: StationTour | null) => (tour = t),
   };
@@ -259,7 +300,7 @@ describe("wireStationGuide", () => {
     expect(gate.position.x).toBeCloseTo(50, 1);
     expect(gate.position.y).toBe(401.5);
     expect(gate.position.z).toBeCloseTo(20, 1);
-    const bands = alignedStationBands(s);
+    const bands = judgedStationBands(s, 6, false);
     expect([gate.distanceMin, gate.distanceMax]).toEqual([
       bands.foundM,
       bands.foundExitM,
@@ -283,8 +324,16 @@ describe("wireStationGuide", () => {
     expect(h.dom.line.textContent).toMatch(
       /GPS too weak to guide you \(±60 m\)/,
     );
-    // Aligned (M5c review #1): the accuracy is the raw fixes' and says
-    // nothing about the alignment's position, which guides as usual.
+    // Aligned with no code (r881, changed): the library aligns a session
+    // from its first fix, so the alignment's position is the fixes' own,
+    // and their accuracy speaks for it.
+    h.at(0, 0, 60);
+    expect(h.dom.line.textContent).toMatch(
+      /GPS too weak to guide you \(±60 m\)/,
+    );
+    // A code lined it up (M5c review #1): the accuracy is the raw fixes'
+    // and says nothing about the code's position, which guides as usual.
+    h.lined(true);
     h.at(0, 0, 60);
     expect(h.dom.line.textContent).toBe("Next: GATE, 50 m");
   });
@@ -546,7 +595,7 @@ describe("wireStationGuide", () => {
     });
     h.at(0, 0);
     expect(h.approaches).toEqual([
-      ["gate", 0, alignedStationBands(s).activateM],
+      ["gate", 0, judgedStationBands(s, 4, false).activateM],
     ]);
     h.guide.storyEnded("gate");
     h.at(0, 0);
@@ -577,7 +626,7 @@ describe("wireStationGuide", () => {
     });
     h.at(0, 0);
     expect(h.guides.at(-1)).toBe(
-      `well@0,80/${alignedStationBands(s).foundExitM}`,
+      `well@0,80/${judgedStationBands(s, 4, false).foundExitM}`,
     );
     h.at(0, 79);
     expect(h.guides.at(-1)).toBeNull();
@@ -665,44 +714,73 @@ describe("arrival by the station radius alone (D16)", () => {
   });
 
   // Why (M5c review #1): `accuracyM` is the raw fixes' median and says
-  // nothing about an alignment. An indoor or courtyard tour placed by one
-  // code with a ±40-60 m Wi-Fi fix was never found and was told to step
-  // into the open, though its position was the code's.
-  it("an aligned visitor is found inside the radius however weak the raw fix", () => {
+  // nothing about a position a code lined up. An indoor or courtyard tour
+  // placed by one code with a ±40-60 m Wi-Fi fix was never found and was
+  // told to step into the open, though its position was the code's.
+  // Changed (r881): this test used to grant the same to ANY aligned
+  // visitor, code or not. The library aligns a session from its first fix
+  // (the identity at the zero, at any accuracy), so "aligned" alone said
+  // nothing, and a ±500 m cold-start fix latched "found" (the PR #640
+  // case). Only a code earns the trust now.
+  it("a visitor a code lined up is found inside the radius however weak the raw fix; one without a code is not", () => {
     const h = harness({
       stations: [station("well", 30, 0)],
       order: "fixed",
     });
+    h.lined(true);
     h.at(28, 0, 60);
     expect(h.found).toEqual(["well"]);
     expect(h.dom.line.textContent).not.toMatch(/too weak/);
+    const gpsOnly = harness({
+      stations: [station("well", 30, 0)],
+      order: "fixed",
+    });
+    gpsOnly.at(28, 0, 60);
+    expect(gpsOnly.found).toEqual([]);
+    expect(gpsOnly.dom.line.textContent).toMatch(/too weak/);
+    // The GPS recovers at the same spot: found.
+    gpsOnly.at(28, 0, 5);
+    expect(gpsOnly.found).toEqual(["well"]);
   });
 
-  // Why (PR #642 review): the run and the line judged an aligned visitor
+  // Why (PR #642 review): the run and the line judged a code-placed visitor
   // without the raw fixes' accuracy, but the prefetch, the HUD's band and
   // the breadcrumbs' stop still read it - so a ±40 m Wi-Fi fix beside a
   // code-placed position moved where the arrow came back and the crumbs
   // stopped. One rule decides all of them. Swept over the raw accuracy
-  // (and none at all), aligned and not.
-  it("widens nothing for an aligned visitor however weak the raw fix; a raw fix alone keeps its own band", () => {
+  // (and none at all), with a code, without one, and with no alignment.
+  // Changed (r881): "aligned" used to be the condition; a code is now.
+  it("widens nothing for a visitor a code lined up however weak the raw fix; any other position keeps the raw accuracy's band", () => {
     // An activation radius inside the widest band, so the prefetch shows it.
     const s = station("gate", 50, 0, { activateRadiusM: 6, foundRadiusM: 5 });
     const tour: StationTour = { stations: [s], order: "fixed" };
-    const aligned = alignedStationBands(s);
+    const coded = judgedStationBands(s, null, true);
+    expect(coded.foundExitM).toBe(5 + 1.5);
     for (const accuracyM of [5, 25, 40, 100, null]) {
       const h = harness(tour);
+      h.lined(true);
       h.at(0, 0, accuracyM);
-      expect(h.approaches.at(-1)).toEqual(["gate", 50, aligned.activateM]);
-      expect(h.guides.at(-1)).toBe(`gate@50,0/${aligned.foundExitM}`);
+      expect(h.approaches.at(-1)).toEqual(["gate", 50, coded.activateM]);
+      expect(h.guides.at(-1)).toBe(`gate@50,0/${coded.foundExitM}`);
       const [target] = h.huds[0]!.getTargets();
       expect([target!.distanceMin, target!.distanceMax]).toEqual([
-        aligned.foundM,
-        aligned.foundExitM,
+        coded.foundM,
+        coded.foundExitM,
+      ]);
+      // Aligned with no code: the raw accuracy's band, as a raw fix's.
+      const own = stationBands(s, accuracyM);
+      const gpsOnly = harness(tour);
+      gpsOnly.at(0, 0, accuracyM);
+      expect(gpsOnly.approaches.at(-1)).toEqual(["gate", 50, own.activateM]);
+      expect(gpsOnly.guides.at(-1)).toBe(`gate@50,0/${own.foundExitM}`);
+      const [own0] = gpsOnly.huds[0]!.getTargets();
+      expect([own0!.distanceMin, own0!.distanceMax]).toEqual([
+        own.foundM,
+        own.foundExitM,
       ]);
       // No alignment: the raw fix IS the position, and its accuracy its band.
       const raw = harness(tour);
       raw.fixOnly(0, 0, accuracyM);
-      const own = stationBands(s, accuracyM);
       expect(raw.approaches.at(-1)).toEqual(["gate", 50, own.activateM]);
       expect(raw.guides.at(-1)).toBe(`gate@50,0/${own.foundExitM}`);
       // The HUD needs a camera position: none from a raw fix alone.
@@ -830,4 +908,517 @@ describe("arrival by the station radius alone (D16)", () => {
       expect(ahead.found).toEqual(["gate"]);
     },
   );
+});
+
+// Why (plan review of the QR-votes plan, r881): the library creates the
+// session's GPS data with the IDENTITY alignment at the first zero, and the
+// zero is the first fix at any accuracy. So a live session is "aligned" from
+// its first fix, and an aligned position used to be trusted outright: the
+// raw fixes' accuracy was never read, the "GPS too weak" line could not
+// show, and a ±500 m cold-start fix inside a station latched "found" - the
+// very case the PR #640 guard was written for. These tests drive the real
+// store, so they fail again if the library's cold start changes shape.
+describe("a cold start's first fix (the library's identity alignment)", () => {
+  /** A real store with its zero at the one fix it has, of `accuracyM`. */
+  function coldStart(accuracyM: number) {
+    const store = createSlamAppStore({
+      storageBackend: new NullStorageBackend(),
+    });
+    store.dispatch(setZeroPos(zero));
+    store.dispatch(
+      recordGpsEvent({
+        odomPosition: [0, 1.5, 0],
+        odomRotation: [0, 0, 0, 1],
+        rawGpsPoint: {
+          id: "first",
+          latitude: zero.lat,
+          longitude: zero.lon,
+          altitude: 400,
+          latLongAccuracy: accuracyM,
+          timestamp: 1_790_000_000_000,
+        },
+      }),
+    );
+    return store;
+  }
+
+  function guideOn(
+    store: ReturnType<typeof coldStart>,
+    stations: TourStation[],
+    signals: { codeLinedUp: boolean; alignmentReady: boolean },
+  ) {
+    const found: string[] = [];
+    const targets: (() => WayfindingTarget[])[] = [];
+    const guides: (string | null)[] = [];
+    const dom = {
+      line: { textContent: "" as string, hidden: true },
+      skip: { textContent: "" as string, hidden: true },
+    };
+    const guide = wireStationGuide({
+      dom,
+      tour: () => ({ stations, order: "fixed" }),
+      placementAllowed: () => true,
+      zero: () => selectZeroReference(store.getState()),
+      visitor: () =>
+        visitorPosition({
+          alignment: selectAlignmentMatrix(store.getState()),
+          arPose: { position: { x: 0, y: 1.5, z: 0 } },
+          gpsPositions: selectGpsPositions(store.getState()),
+          zero: selectZeroReference(store.getState()),
+        }),
+      codeLinedUp: () => signals.codeLinedUp,
+      alignmentReady: () => signals.alignmentReady,
+      startHud: (getTargets) => {
+        targets.push(getTargets);
+        return { dispose: () => undefined };
+      },
+      now: () => 1_790_000_000_000,
+      onFound: (s) => found.push(s.id),
+      onGuide: (v, target) =>
+        guides.push(v === null || target === null ? null : target.id),
+    });
+    return { guide, dom, found, targets, guides };
+  }
+
+  it("the precondition: one fix makes the session aligned, with no rotation", () => {
+    const store = coldStart(500);
+    const alignment = selectAlignmentMatrix(store.getState());
+    expect(alignment).not.toBeNull();
+    // Column-major: the rotation is the identity (no heading yet), and the
+    // translation only lifts the odometry to the fix's altitude.
+    const m = Array.from(alignment!);
+    expect(m.slice(0, 12)).toEqual([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+    expect([m[12], m[14], m[15]]).toEqual([0, 0, 1]);
+    const visitor = visitorPosition({
+      alignment,
+      arPose: { position: { x: 0, y: 1.5, z: 0 } },
+      gpsPositions: selectGpsPositions(store.getState()),
+      zero: selectZeroReference(store.getState()),
+    });
+    expect(visitor.aligned).toBe(true);
+    expect(visitor.nue).not.toBeNull();
+    expect(visitor.accuracyM).toBe(500);
+  });
+
+  it("a ±500 m first fix inside a 10 m station finds nothing and says the GPS is too weak, ready or not", () => {
+    for (const alignmentReady of [false, true]) {
+      const g = guideOn(
+        coldStart(500),
+        [station("gate", 3, 0, { foundRadiusM: 10 })],
+        { codeLinedUp: false, alignmentReady },
+      );
+      g.guide.tick();
+      expect(g.found).toEqual([]);
+      expect(g.dom.line.textContent).toMatch(
+        /GPS too weak to guide you \(±500 m\)/,
+      );
+    }
+  });
+
+  // Changed (r881 review H1): an alignment not yet ready used to judge
+  // nothing at all. Readiness (tracking-quality `ok`) needs a walk with
+  // turns, so a visitor standing at a station, or walking straight, could
+  // wait for ever with no guidance. Before readiness the fresh device fix
+  // stands in, judged by the raw accuracy, as before any alignment; only
+  // what needs a heading (the HUD's arrows, the breadcrumbs) waits.
+  it("an alignment that is not ready yet judges by the fresh raw fix: found, but no arrows and no breadcrumbs", () => {
+    const store = coldStart(4);
+    const signals = { codeLinedUp: false, alignmentReady: false };
+    const g = guideOn(
+      store,
+      [station("gate", 3, 0, { foundRadiusM: 10 })],
+      signals,
+    );
+    g.guide.tick();
+    expect(g.found).toEqual(["gate"]);
+    const far = guideOn(
+      coldStart(4),
+      [station("gate", 30, 0, { foundRadiusM: 10 })],
+      { codeLinedUp: false, alignmentReady: false },
+    );
+    far.guide.tick();
+    expect(far.found).toEqual([]);
+    expect(far.dom.line.textContent).toBe("Next: GATE, 30 m");
+    expect(far.targets.at(-1)?.() ?? []).toEqual([]);
+    expect(far.guides.at(-1)).toBeNull();
+  });
+
+  it("a code that lined the alignment up is trusted whatever the raw fix: the courtyard tour is found at ±40 m", () => {
+    // M5c review #1: a one-code courtyard tour with a ±40 m Wi-Fi fix.
+    const g = guideOn(
+      coldStart(40),
+      [station("well", 3, 0, { foundRadiusM: 5 })],
+      { codeLinedUp: true, alignmentReady: true },
+    );
+    g.guide.tick();
+    expect(g.found).toEqual(["well"]);
+    expect(g.dom.line.textContent).not.toMatch(/too weak/);
+  });
+});
+
+// Why (r881 review H1): the stations' readiness is the tracking-quality
+// `ok` phase or a code. `ok` needs at least ten fixes, a walk of some
+// metres AND a spread of directions, so a visitor without a code who
+// stands at the first station, or walks straight to it, never reaches it.
+// This drives the real store and the page's own signals through such
+// walks: the readiness never comes, and the fresh device fix still finds
+// the station (before the review fix it was never found).
+describe("a visitor without a code while tracking is not ready (real store)", () => {
+  const T = 1_790_000_000_000;
+
+  /** One fix a second along `path` (north, east m at second s), the AR
+   *  pose and the fix agreeing, accuracy ±5 m; the guide ticks each
+   *  second. Returns when the station was found (s), and whether the
+   *  alignment was ever ready. */
+  function walk(
+    path: (s: number) => readonly [number, number],
+    target: TourStation,
+    seconds = 120,
+  ) {
+    // The page's own store (the tracking-quality middleware included).
+    const store = createTourViewerStore();
+    const ctx = { viewerLockedText: null, viewerVotedLocks: 0 };
+    const signals = stationAlignmentSignals(ctx, store);
+    let now = T;
+    let pose = { x: 0, y: 1.5, z: 0 };
+    let foundAt: number | null = null;
+    let second = 0;
+    let everReady = false;
+    let everTargets = false;
+    const hud: { targets: (() => WayfindingTarget[]) | null } = {
+      targets: null,
+    };
+    const guide = wireStationGuide({
+      dom: {
+        line: { textContent: "", hidden: true },
+        skip: { textContent: "", hidden: true },
+      },
+      tour: () => ({ stations: [target], order: "fixed" }),
+      placementAllowed: () => true,
+      zero: () => selectZeroReference(store.getState()),
+      visitor: () =>
+        visitorPosition({
+          alignment: selectAlignmentMatrix(store.getState()),
+          arPose: { position: pose },
+          gpsPositions: selectGpsPositions(store.getState()),
+          zero: selectZeroReference(store.getState()),
+        }),
+      ...signals,
+      startHud: (getTargets) => {
+        hud.targets = getTargets;
+        return { dispose: () => undefined };
+      },
+      now: () => now,
+      onFound: () => {
+        foundAt ??= second;
+      },
+    });
+    store.dispatch(setZeroPos(zero));
+    for (second = 0; second <= seconds; second += 1) {
+      const [n, e] = path(second);
+      now = T + second * 1000;
+      // WebXR: x east, y up, z south.
+      pose = { x: e, y: 1.5, z: -n };
+      store.dispatch(
+        poseReceived({
+          pose: { position: pose, orientation: { x: 0, y: 0, z: 0, w: 1 } },
+          sensorOrientation: null,
+        }),
+      );
+      const geo = calcGpsCoords(zero, [n, 0, e]);
+      store.dispatch(
+        recordGpsEvent({
+          odomPosition: [e, 1.5, -n],
+          odomRotation: [0, 0, 0, 1],
+          rawGpsPoint: {
+            id: `fix-${String(second)}`,
+            latitude: geo.lat,
+            longitude: geo.lon,
+            altitude: 400,
+            latLongAccuracy: 5,
+            timestamp: now,
+          },
+        }),
+      );
+      everReady ||= signals.alignmentReady();
+      guide.tick();
+      if ((hud.targets?.() ?? []).length > 0) everTargets = true;
+    }
+    // The report itself: "never ready" must not be "never measured".
+    const report = selectTrackingQuality(store.getState());
+    return { foundAt, everReady, everTargets, report };
+  }
+
+  it("standing at the sample's 5 m station: never ready, found at once on the fix", () => {
+    const r = walk(() => [0, 0], station("column", 3, 0, { foundRadiusM: 5 }));
+    expect(r.report).not.toBeNull();
+    expect(r.everReady).toBe(false);
+    expect(r.foundAt).toBe(0);
+    expect(r.everTargets).toBe(false);
+  });
+
+  it("walking straight to a 5 m station 40 m away: never ready, found on arrival", () => {
+    const r = walk(
+      (s) => [Math.min(1.4 * s, 40), 0],
+      station("column", 40, 0, { foundRadiusM: 5 }),
+    );
+    expect(r.report).not.toBeNull();
+    expect(r.everReady).toBe(false);
+    // 1.4 m/s: inside 5 m of the station from 35 m on, second 25.
+    expect(r.foundAt).toBe(25);
+    // No arrows on the way: they need a heading the walk never gave.
+    expect(r.everTargets).toBe(false);
+  });
+
+  // Why (r881 re-review L-G): the two walks above prove "never ready" only
+  // if this simulation CAN become ready. A walk round a 15 m square (turns,
+  // distance, ten fixes and more) is the positive control: it reaches the
+  // tracking-quality `ok` phase, and the HUD's arrows appear.
+  it("the positive control: walking round a square reaches readiness, and the arrows appear", () => {
+    const side = 15;
+    const square = (s: number): readonly [number, number] => {
+      const d = (1.4 * s) % (4 * side);
+      if (d < side) return [d, 0];
+      if (d < 2 * side) return [side, d - side];
+      if (d < 3 * side) return [3 * side - d, side];
+      return [0, 4 * side - d];
+    };
+    const r = walk(square, station("tower", 200, 0, { foundRadiusM: 5 }));
+    expect(r.everReady).toBe(true);
+    expect(r.everTargets).toBe(true);
+    expect(r.foundAt).toBeNull();
+  });
+});
+
+describe("review findings on the guide (r881)", () => {
+  // Why (r881 review L1): the trust a code earned was dropped with the
+  // camera position, so a tracking drop in a code-placed courtyard tour
+  // flipped the line to "GPS too weak (±60 m)" for the visitor whose
+  // position is the code's. The trust is the code's, not the frame's.
+  it("a tracking drop in a code-placed session waits for the position; it never says the GPS is too weak", () => {
+    const h = harness({
+      stations: [station("well", 30, 0)],
+      order: "fixed",
+    });
+    h.lined(true);
+    h.at(0, 0, 60);
+    expect(h.dom.line.textContent).toBe("Next: WELL, 30 m");
+    h.trackingLost(0, 0, 60);
+    expect(h.dom.line.textContent).toBe(
+      "Next: WELL - waiting for your position…",
+    );
+  });
+
+  // Why (r881 review M2): the skip clock started on the first render with
+  // no distance, and a clock with no distance suggests the skip after the
+  // bare allowance (2 min), so a visitor still waiting for a position was
+  // told to skip. The clock starts with the first distance, sized by it.
+  it("the skip clock waits for a distance: no suggestion while there is no position, then sized by the first distance", () => {
+    const h = harness({
+      stations: [station("tower", 300, 0)],
+      order: "fixed",
+    });
+    h.lost();
+    h.advance(skipSuggestAfterMs(null) + 1);
+    h.lost();
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+    h.at(0, 0);
+    h.advance(skipSuggestAfterMs(null) + 1);
+    h.at(0, 0);
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+    h.advance(skipSuggestAfterMs(300) - skipSuggestAfterMs(null));
+    h.at(0, 0);
+    expect(h.dom.skip.textContent).toBe("Skip TOWER - I can't get there");
+  });
+});
+
+describe("re-review findings on the guide (r881)", () => {
+  const tooWeak = (m: number) => `GPS too weak to guide you (±${String(m)} m)`;
+
+  // Why (re-review M-A): before readiness the latest fix alone is the
+  // position, but it was judged by the median of the last ten fixes. One
+  // ±60 m Wi-Fi fix right after a run of ±5 m GPS left the median at 5 m,
+  // and that one fix could latch a station found. A lone fix is judged by
+  // the worse of the median and its own accuracy.
+  it("a lone weak fix after a run of good ones finds nothing and says the GPS is too weak", () => {
+    const h = harness({ stations: [station("gate", 0, 0)], order: "fixed" });
+    h.fixOnly(0, 0, 5, 0, 60);
+    expect(h.found).toEqual([]);
+    expect(h.dom.line.textContent).toContain(tooWeak(60));
+    // The same on an aligned session that is not ready yet (a cold start).
+    const cold = harness({
+      stations: [station("gate", 0, 0)],
+      order: "fixed",
+    });
+    cold.ready(false);
+    cold.atFix(30, 0, 0, 0, 5, 60);
+    expect(cold.found).toEqual([]);
+    expect(cold.dom.line.textContent).toContain(tooWeak(60));
+    // Its own accuracy good again: found on it.
+    cold.atFix(30, 0, 0, 0, 5, 5);
+    expect(cold.found).toEqual(["gate"]);
+  });
+
+  // Why (re-review M-A, the other side): once the alignment is ready the
+  // position is the alignment's, fed by every fix, and one outlier fix
+  // says nothing about it: the median judges, as before.
+  it("a ready alignment is judged by the median, not by the latest fix's own accuracy", () => {
+    const h = harness({ stations: [station("gate", 0, 0)], order: "fixed" });
+    h.atFix(0, 0, 30, 0, 5, 60);
+    expect(h.found).toEqual(["gate"]);
+  });
+
+  // Why (re-review L-A): a code's trust is for the position it lined up.
+  // A lone raw fix (no camera position) took the code's trust too, so a
+  // ±60 m fix was judged with no accuracy at all.
+  it("a code's trust stays with the aligned position: a lone ±60 m fix still says the GPS is too weak", () => {
+    const h = harness({ stations: [station("gate", 0, 0)], order: "fixed" });
+    h.lined(true);
+    h.fixOnly(0, 0, 60);
+    expect(h.found).toEqual([]);
+    expect(h.dom.line.textContent).toContain(tooWeak(60));
+  });
+
+  // Why (re-review L-G): before readiness the camera through the identity
+  // alignment and the raw fix can lie far apart. The find must follow the
+  // fix, never the headingless camera position.
+  it("before readiness the find follows the fix, not the aligned camera", () => {
+    const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
+    h.ready(false);
+    h.atFix(30, 0, 0, 0);
+    expect(h.found).toEqual([]);
+    expect(h.dom.line.textContent).toBe("Next: GATE, 30 m");
+    h.atFix(0, 0, 30, 0);
+    expect(h.found).toEqual(["gate"]);
+  });
+
+  // Why (re-review M-C, a regression of the first fix): the replay waited
+  // for a camera position, which a session that never becomes ready never
+  // has. A story cut short by leaving AR then never played again, while
+  // the line said "its story is playing". It replays on the same position
+  // the first play was found on.
+  it("a story cut short replays in a session that never becomes ready, on the fresh fix", () => {
+    const h = harness({
+      stations: [station("gate", 0, 0), station("well", 0, 80)],
+      order: "fixed",
+    });
+    h.ready(false);
+    h.atFix(30, 0, 0, 0);
+    expect(h.found).toEqual(["gate"]);
+    h.guide.endSession();
+    h.atFix(30, 0, 0, 0);
+    expect(h.found).toEqual(["gate", "gate"]);
+    h.atFix(30, 0, 0, 0);
+    expect(h.found).toEqual(["gate", "gate"]);
+  });
+
+  // Why (re-review L-B): readiness can dip (a degraded phase) and come
+  // back. The arrows, the breadcrumbs and the figure's turn need a heading,
+  // and the alignment keeps the one it had: they must not flicker away
+  // with the dip. They wait for the first readiness of each AR entry. The
+  // find re-reads readiness every tick, so in a dip it judges by the fix.
+  it("a dip in readiness keeps the arrows, the breadcrumbs and the figure's turn; the find falls back to the fix", () => {
+    const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
+    h.ready(false);
+    h.at(0, 0);
+    expect(h.huds.at(-1)!.getTargets()).toEqual([]);
+    expect(h.crumbsFrom.at(-1)).toBeNull();
+    expect(h.visitors).toEqual([]);
+    h.ready(true);
+    h.at(0, 0);
+    expect(
+      h.huds
+        .at(-1)!
+        .getTargets()
+        .map((t) => t.id),
+    ).toEqual(["gate"]);
+    expect(h.crumbsFrom.at(-1)).toEqual([0, 401.5, 0]);
+    expect(h.visitors).toHaveLength(1);
+    h.ready(false);
+    h.at(0, 0);
+    expect(
+      h.huds
+        .at(-1)!
+        .getTargets()
+        .map((t) => t.id),
+    ).toEqual(["gate"]);
+    expect(h.crumbsFrom.at(-1)).toEqual([0, 401.5, 0]);
+    expect(h.visitors).toHaveLength(2);
+    // The find, in the dip: the camera on the spot finds nothing, the fix does.
+    h.atFix(30, 0, 0, 0);
+    expect(h.found).toEqual([]);
+    // A new AR entry waits for its own readiness again.
+    h.guide.endSession();
+    h.at(0, 0);
+    expect(h.huds.at(-1)!.getTargets()).toEqual([]);
+    expect(h.crumbsFrom.at(-1)).toBeNull();
+    expect(h.visitors).toHaveLength(3);
+    h.atFix(0, 0, 30, 0);
+    expect(h.found).toEqual(["gate"]);
+  });
+
+  // Why (re-review M-B): a station found on the raw fix plays its story;
+  // its figure, mounted on an alignment with no heading, stood up to 180°
+  // off and jumped when the heading came. The stage's pose waits for the
+  // first readiness of the AR entry (the stage parks the figure and
+  // retries); the caption and the voice play as before.
+  it("the figure's pose waits for readiness; the station's own pose does not", () => {
+    const h = harness({ stations: [station("gate", 0, 0)], order: "fixed" });
+    h.ready(false);
+    h.at(0, 0);
+    expect(h.found).toEqual(["gate"]);
+    expect(h.guide.poseOf("gate")).not.toBeNull();
+    expect(h.guide.figurePoseOf("gate")).toBeNull();
+    h.ready(true);
+    h.at(0, 0);
+    expect(h.guide.figurePoseOf("gate")).toEqual(h.guide.poseOf("gate"));
+    h.ready(false);
+    h.at(0, 0);
+    expect(h.guide.figurePoseOf("gate")).not.toBeNull();
+    h.guide.endSession();
+    expect(h.guide.figurePoseOf("gate")).toBeNull();
+  });
+
+  // Why (re-review L-G): the skip clock waits for a distance (M2), so a
+  // visitor who never gets a position never sees the suggestion. The
+  // on-demand skip must still work in two taps, or such a visitor could
+  // never get past the station.
+  it("the two-tap skip works when no distance ever arrives", () => {
+    const h = harness({
+      stations: [station("tower", 300, 0), station("well", 0, 80)],
+      order: "fixed",
+    });
+    h.lost();
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+    h.guide.skipTapped();
+    expect(h.dom.skip.textContent).toBe("Skip TOWER - I can't get there");
+    h.guide.skipTapped();
+    expect(h.dom.line.textContent).toMatch(/^Skipped TOWER\. Next: WELL/);
+  });
+
+  // Why (r881 third review L2): the heading latch outlived its only
+  // source. Ready only because a code lined the alignment up, a veto that
+  // takes the code's votes back while tracking is not `ok` leaves an
+  // alignment with no heading again - the arrows and the figure must go
+  // with it. A heading tracking earned stays (the dip test above).
+  it("a heading that only a code gave goes when the code is lifted while tracking is not ready", () => {
+    const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
+    // The page's readiness is tracking OR a code: here the code alone.
+    h.ready(true);
+    h.lined(true);
+    h.at(0, 0);
+    expect(
+      h.huds
+        .at(-1)!
+        .getTargets()
+        .map((t) => t.id),
+    ).toEqual(["gate"]);
+    expect(h.guide.figurePoseOf("gate")).not.toBeNull();
+    h.lined(false);
+    h.ready(false);
+    h.at(0, 0);
+    expect(h.huds.at(-1)!.getTargets()).toEqual([]);
+    expect(h.crumbsFrom.at(-1)).toBeNull();
+    expect(h.guide.figurePoseOf("gate")).toBeNull();
+  });
 });

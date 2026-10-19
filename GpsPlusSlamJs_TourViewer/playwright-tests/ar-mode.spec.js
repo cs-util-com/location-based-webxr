@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   enterArAndMeasure,
+  forceTrackingReady,
   installTourViewerArFakes,
   openFixtureTour,
   seedAlignment,
@@ -1446,28 +1447,6 @@ test("a tour whose photo spots were baked at its Finish places them without any 
   // (follow-up F14), so the walk's frame is not read either.
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(0);
 });
-
-/** Force the tracking-quality slice to `ok` (→ onboarding `ready`). The
- *  fake initAR never dispatches poses, and `reportUpdated` is the slice's
- *  own action (not a middleware input), so it is not recomputed away. */
-async function forceTrackingReady(page) {
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
-      type: "trackingQuality/reportUpdated",
-      payload: {
-        state: "ok",
-        confidence: 0.9,
-        subScores: {
-          convergence: 1,
-          residualConsensus: 1,
-          gpsAccuracy: 1,
-          coverage: 1,
-        },
-        diagnostics: {},
-      },
-    });
-  });
-}
 
 test("a tour with no recording and no printed codes says so, instead of scanning", async ({
   page,

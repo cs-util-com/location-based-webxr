@@ -11,10 +11,18 @@
  *   settle, K6a); the viewer only reads it. Since version 3 every station
  *   has one (D9: no code-only station).
  * - **Reached by its radius alone (D16):** the phone's current best
- *   position - the alignment's, fed by GPS and codes alike; only while
- *   there is no alignment at all, the latest device fix if it is fresh
- *   (`FIX_MAX_AGE_MS`; a tracking drop in an aligned session is no
- *   position, M5a review M3) - inside the station's found radius.
+ *   position - the alignment's, fed by GPS and codes alike, while it is
+ *   ready (`alignmentReady`, re-read each tick); while it is not (it
+ *   starts as the identity at the first fix, with no heading, and a
+ *   GPS-only session whose tracking quality drops is not ready any more)
+ *   or there is no alignment at all, the latest device fix if it is fresh
+ *   (`FIX_MAX_AGE_MS`) - inside the station's found radius. Only while the
+ *   session stays ready (a code lined it up) is a dropped camera pose no
+ *   position at all (M5a review M3). What needs a heading - the HUD's
+ *   arrows, the breadcrumbs, the figure's pose and its turn - waits for the
+ *   first readiness of each AR entry and keeps a heading tracking earned
+ *   through a dip (r881 re-review L-B, M-B); a heading only a code gave
+ *   goes with the code (third review L2).
  *   A code lock is no arrival: it only improves that position, and the
  *   guide re-judges at once. With no position nothing is reached. A moved
  *   poster can pull the position onto a station until the moved-code
@@ -23,6 +31,15 @@
  *   viewer pipeline, `qr-viewer-mode.ts`, D20), the one guard left since
  *   the lock-hold went (review 2 #5). Inside that window a visitor who
  *   scans a moved poster near another station may find it early.
+ * - **Judged by the raw fixes' accuracy unless a code lined it up**
+ *   (`station-bands.ts` `judgedAccuracy`, `judgedStationBands`): the
+ *   median of the latest fixes, and for a lone fix standing in for the
+ *   position the worse of that and the fix's own (r881 re-review M-A).
+ *   Above the ceiling the line says the GPS is too weak and nothing is
+ *   found (PR #640 review); the aligned position a code lined up is
+ *   trusted whatever the fixes say (M5c review #1). Being aligned alone
+ *   earns no trust: the library aligns a session from its first fix, at
+ *   any accuracy.
  * - **The HUD's arrival is the found radius** (`station-bands.ts`, §8 D9):
  *   each target's `distanceMin`/`distanceMax` are the station's found band at
  *   the measured accuracy, and the target sits at the visitor's own height so
@@ -44,8 +61,8 @@ import { Vector3 } from "three";
 import { objectPoseNue } from "./content-placement.js";
 import type { StagePose } from "./scene-stage.js";
 import {
-  alignedStationBands,
-  stationBands,
+  judgedAccuracy,
+  judgedStationBands,
   tooWeakToGuide,
   type StationBands,
 } from "./station-bands.js";
@@ -78,12 +95,23 @@ export interface StationGuideDeps {
   placementAllowed(): boolean;
   zero(): LatLong | null;
   visitor(): VisitorPosition;
+  /** Whether a code lined the alignment up (`tour-flow.ts` `codeLinedUp`):
+   *  its position is then trusted whatever the raw fixes' accuracy says. */
+  codeLinedUp(): boolean;
+  /** Whether the alignment may be judged on now (`tour-flow.ts`
+   *  `alignmentReady`: tracking ready, or a code lined it up; re-read each
+   *  tick). While it is not, the fresh device fix stands in, as before any
+   *  alignment, judged by the worse of the median and its own accuracy.
+   *  What needs a heading (the arrows, the breadcrumbs, the figure) waits
+   *  for its first `true` of each AR entry and keeps it through a dip. */
+  alignmentReady(): boolean;
   /** Start the HUD for this AR session; null while it cannot (no camera
    *  yet). The guide retries on the next tick. */
   startHud(getTargets: () => WayfindingTarget[]): { dispose(): void } | null;
   now(): number;
-  /** The oldest a device fix may be to stand in for the position before
-   *  any alignment (ms, on `now`'s clock); default `FIX_MAX_AGE_MS`. */
+  /** The oldest a device fix may be to stand in for the position (no
+   *  alignment, or one not ready; ms, on `now`'s clock); default
+   *  `FIX_MAX_AGE_MS`. */
   readonly fixMaxAgeMs?: number;
   /** A station was found: play its story. */
   onFound(station: TourStation): void;
@@ -100,10 +128,12 @@ export interface StationGuideDeps {
    *  or branch order: the station that comes next (the prefetch reads it
    *  ahead, K4 review R5). */
   onUpcoming?(station: TourStation): void;
-  /** Every tick with a position: the stage turns its figure to the visitor. */
+  /** Every tick with a camera position, once this AR entry's alignment was
+   *  ready (a heading): the stage turns its figure to the visitor. */
   onVisitor?(nue: readonly [number, number, number]): void;
   /** The breadcrumbs: from the visitor towards the station in focus,
-   *  stopping at its arrival band; a null target (or visitor) clears them. */
+   *  stopping at its arrival band; a null target (or visitor) clears them.
+   *  The visitor is null until this AR entry's alignment was ready. */
   onGuide?(
     visitor: readonly [number, number, number] | null,
     target: {
@@ -128,6 +158,11 @@ export interface StationGuide {
   endSession(): void;
   /** A station's pose at the scene root, or null (no zero yet). */
   poseOf(stationId: string): StagePose | null;
+  /** Where the stage stands a story's figure: the station's pose once
+   *  this AR entry's alignment was ready, null before (no heading yet:
+   *  the figure would stand up to 180° off, then jump; the stage waits,
+   *  r881 re-review M-B). */
+  figurePoseOf(stationId: string): StagePose | null;
 }
 
 /**
@@ -142,7 +177,7 @@ export const SKIP_UNDO_MS = DEFAULT_TOAST_LINGER_MS;
 
 /**
  * The oldest a device fix may be to stand in for the visitor's position
- * before any alignment (M5a review M3), against the fix's own Geolocation
+ * (no alignment, or one not ready; M5a review M3), against the fix's own Geolocation
  * time. Argued, not measured: Android delivers about one fix a second, so
  * 5 s tolerates four missed fixes, and a visitor walking 1.4 m/s has moved
  * about 7 m since - about a typical fix's own accuracy, and more than a
@@ -152,6 +187,30 @@ export const SKIP_UNDO_MS = DEFAULT_TOAST_LINGER_MS;
  * radii. Reversed by field data showing fix gaps over 5 s in normal walking.
  */
 export const FIX_MAX_AGE_MS = 5_000;
+
+/** One measurement of the visitor, taken once per tick (K4 review R13). */
+interface Measurement {
+  /** The visitor; while the alignment is not ready (`alignmentReady`)
+   *  it counts as unaligned: no camera position, the fresh fix stands in. */
+  readonly visitor: VisitorPosition;
+  /** The best position this measurement judged by (`bestPosition`). */
+  readonly best: readonly [number, number, number] | null;
+  /** The raw fixes' accuracy for `best`: their median, and for a lone
+   *  fix the worse of that and the fix's own (r881 re-review M-A: one
+   *  ±40 m fix after a ±5 m run hid behind the median). */
+  readonly rawAccuracyM: number | null;
+  /** A code lined the alignment up and `best` is the aligned position:
+   *  trusted whatever the raw fixes' accuracy (`judgedAccuracy`), through
+   *  a tracking drop too (r881 review L1: the line must not call it too
+   *  weak then); never for a lone raw fix (re-review L-A). */
+  readonly codeLinedUp: boolean;
+  /** The camera position for what needs a heading (the HUD's arrows, the
+   *  breadcrumbs, the figure's turn): once this AR entry's alignment was
+   *  ready, null before (r881 re-review L-B: no flicker in a dip). */
+  readonly headingNue: readonly [number, number, number] | null;
+  /** Every placeable station's horizontal distance from `best`. */
+  readonly distances: Map<string, number>;
+}
 
 /** What a tap on the skip button does (its label says which). */
 interface SkipAction {
@@ -188,16 +247,21 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  horizontal distance from the best position (all stations, so an offer
    *  that changes between ticks has its distances already). Taken once per
    *  tick (K4 review R13). */
-  let last: {
-    visitor: VisitorPosition;
-    /** The best position this measurement judged by (`bestPosition`). */
-    best: readonly [number, number, number] | null;
-    distances: Map<string, number>;
-  } | null = null;
+  let last: Measurement | null = null;
   /** Station poses at the last measurement's zero, computed once each per
    *  measurement (R13: the geodesy ran several times per station a tick). */
   const poseCache = new Map<string, StagePose | null>();
   let measuredZero: LatLong | null | undefined;
+  /** This AR entry's alignment was ready once without a code
+   *  (`alignmentReady` while not `codeLinedUp`): tracking earned it a
+   *  heading, kept through a dip of the tracking quality, as the walk's
+   *  photos latch their trigger. Reset at the session's end. */
+  let trackedHeading = false;
+  /** The alignment has a heading now: tracking earned one this AR entry,
+   *  or it is ready now (a code lined it up). A heading only a code gave
+   *  goes with the code's votes (a veto) while tracking is not ready
+   *  (r881 third review L2). */
+  let headingReady = false;
 
   function stationById(id: string): TourStation | undefined {
     return runStations?.find((s) => s.id === id);
@@ -218,14 +282,39 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     return objectPoseNue(station.geo, zero);
   }
 
+  /** Whether the alignment has a heading this tick (`headingReady`):
+   *  tracking earned one this AR entry, or it is ready now. */
+  function noteHeading(ready: boolean, lined: boolean): void {
+    if (ready && !lined) trackedHeading = true;
+    headingReady = trackedHeading || ready;
+  }
+
   /** Measure once: the visitor, the zero, every station's pose and
-   *  horizontal distance. */
+   *  horizontal distance. An alignment that is not ready now counts as
+   *  none (`alignmentReady`): the fresh device fix stands in, judged by
+   *  the worse of the median and its own accuracy (r881 review H1:
+   *  readiness needs a walk with turns, and a visitor standing at a
+   *  station had no guidance at all; re-review M-A). Only an aligned
+   *  position a code lined up is trusted (`codeLinedUp`). */
   function measure(): void {
     poseCache.clear();
     measuredZero = deps.zero();
-    const visitor = deps.visitor();
-    const best = bestPosition(visitor);
-    last = { visitor, best, distances: horizontalDistances(best) };
+    const seen = deps.visitor();
+    const ready = deps.alignmentReady();
+    const lined = deps.codeLinedUp();
+    noteHeading(ready, lined);
+    const visitor =
+      seen.aligned && !ready ? { ...seen, nue: null, aligned: false } : seen;
+    const position = bestPosition(visitor);
+    const best = position?.nue ?? null;
+    last = {
+      visitor,
+      best,
+      rawAccuracyM: rawAccuracyFor(visitor, position?.loneFix === true),
+      codeLinedUp: visitor.aligned && lined,
+      headingNue: headingReady ? seen.nue : null,
+      distances: horizontalDistances(best),
+    };
   }
 
   /** The run for the open tour, created once the tour may be placed. */
@@ -253,41 +342,37 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   /** The phone's current best position (D16): the alignment's, else -
-   *  only while there is no alignment at all - the latest device fix, if
-   *  it is fresh; null otherwise. An aligned session that lost tracking
-   *  has no position until it is back: its raw fix carries no accuracy
-   *  or age check and would latch "found" (M5a review M3). */
+   *  only while the visitor counts as unaligned (no alignment, or one not
+   *  ready, `measure`) - the latest device fix, if it is fresh, as a
+   *  lone fix; null otherwise. A session still ready whose camera pose
+   *  dropped has no position until it is back: the raw fix would bypass
+   *  the trust that keeps it ready and could latch "found" (M5a review
+   *  M3). */
   function bestPosition(
     visitor: VisitorPosition,
-  ): readonly [number, number, number] | null {
-    if (visitor.nue !== null) return visitor.nue;
+  ): { nue: readonly [number, number, number]; loneFix: boolean } | null {
+    if (visitor.nue !== null) return { nue: visitor.nue, loneFix: false };
     if (visitor.aligned || visitor.fixNue === null) return null;
     const at = visitor.fixAtMs;
     if (at === null || !Number.isFinite(at)) return null;
-    return deps.now() - at <= fixMaxAgeMs ? visitor.fixNue : null;
+    return deps.now() - at <= fixMaxAgeMs
+      ? { nue: visitor.fixNue, loneFix: true }
+      : null;
   }
 
-  /** The accuracy that speaks for the position judged by: the raw fix's
-   *  own when the raw fix IS that position; null for the alignment's,
-   *  since `accuracyM` is the raw fixes' median and says nothing about an
-   *  alignment (M5c review #1: a code-placed indoor tour with a ±40 m
-   *  Wi-Fi fix was never found). Read by the line and the run alike. */
-  function judgedAccuracy(visitor: VisitorPosition): number | null {
-    return visitor.nue === null ? visitor.accuracyM : null;
+  /** The accuracy that speaks for the position judged by
+   *  (`judgedAccuracy`): the raw fixes' (`rawAccuracyM`), null for an
+   *  aligned position a code lined up. Read by the line and the run
+   *  alike. */
+  function accuracyOf(m: Measurement): number | null {
+    return judgedAccuracy(m.rawAccuracyM, m.codeLinedUp);
   }
 
-  /** A station's bands at the position judged by (PR #642 review): the
-   *  raw fix's accuracy only when the raw fix is that position; an
-   *  alignment's takes the HUD's own band (`alignedStationBands`), since
-   *  `stationBands` reads an unknown accuracy as its ceiling. Read by the
-   *  prefetch, the HUD's targets and the breadcrumbs' stop alike. */
-  function bandsOf(
-    station: TourStation,
-    visitor: VisitorPosition,
-  ): StationBands {
-    return visitor.nue === null
-      ? stationBands(station, judgedAccuracy(visitor))
-      : alignedStationBands(station);
+  /** A station's bands at the position judged by, by the same rule
+   *  (`judgedStationBands`, PR #642 review). Read by the prefetch, the
+   *  HUD's targets and the breadcrumbs' stop alike. */
+  function bandsOf(station: TourStation, m: Measurement): StationBands {
+    return judgedStationBands(station, m.rawAccuracyM, m.codeLinedUp);
   }
 
   function horizontalDistances(
@@ -331,16 +416,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   /** The prefetch's view of the offer: each offered station's distance. */
-  function approach(
-    distances: ReadonlyMap<string, number>,
-    visitor: VisitorPosition,
-  ): void {
+  function approach(m: Measurement): void {
+    const { distances } = m;
     if (deps.onApproach === undefined || run === null) return;
     for (const id of run.offered()) {
       const d = distances.get(id);
       const station = stationById(id);
       if (d === undefined || station === undefined) continue;
-      deps.onApproach(station, d, bandsOf(station, visitor).activateM);
+      deps.onApproach(station, d, bandsOf(station, m).activateM);
     }
   }
 
@@ -359,8 +442,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   function hudTargets(): WayfindingTarget[] {
-    if (run === null || last === null || last.visitor.nue === null) return [];
-    const eyeHeight = last.visitor.nue[1];
+    if (run === null || last === null || last.headingNue === null) return [];
+    const eyeHeight = last.headingNue[1];
     const targets: WayfindingTarget[] = [];
     for (const id of run.offered()) {
       const status = run.status(id);
@@ -369,7 +452,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       if (status?.state === "found" || station === undefined || pose === null) {
         continue;
       }
-      const bands = bandsOf(station, last.visitor);
+      const bands = bandsOf(station, last);
       targets.push({
         id,
         position: new Vector3(
@@ -404,18 +487,20 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (focus === null) return `${lead}Station found - its story is playing.`;
     const station = stationById(focus)!;
     const title = stationTitle(station);
-    const visitor = last?.visitor;
     const d = last?.distances.get(focus);
     const waiting =
       run.offered().length > 1
         ? `${String(run.offered().length)} stations to find - nearest: ${title}`
         : `Next: ${title}`;
-    if (visitor === undefined || last?.best == null) {
-      return `${lead}${waiting} - waiting for your position…`;
-    }
-    const accuracyM = judgedAccuracy(visitor);
+    if (last === null) return `${lead}${waiting} - waiting for your position…`;
+    // Before the position: a fix too weak to guide by is what the visitor
+    // can act on (step into the open), with a position or still without.
+    const accuracyM = accuracyOf(last);
     if (accuracyM !== null && tooWeakToGuide(accuracyM)) {
       return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(accuracyM)}); step into the open.`;
+    }
+    if (last.best === null) {
+      return `${lead}${waiting} - waiting for your position…`;
     }
     // Every station has a spot of its own (version 3, D9): no distance
     // yet means no session zero to measure it in yet.
@@ -439,8 +524,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function render(): void {
     // A code lock can find a station before the guide has ticked at all.
     if (last === null) measure();
-    const visitor = last!.visitor;
-    deps.onGuide?.(visitor.nue, guideTarget());
+    deps.onGuide?.(last!.headingNue, guideTarget());
     const upcoming = run?.upcoming() ?? null;
     const next = upcoming === null ? undefined : stationById(upcoming);
     if (next !== undefined) deps.onUpcoming?.(next);
@@ -464,8 +548,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function skipAction(): SkipAction | null {
     if (run === null) return null;
     const focus = focusStation();
-    if (focus !== null) {
-      run.focus(focus, deps.now(), last?.distances.get(focus) ?? null);
+    // The skip clock starts with the first distance, sized by it (r881
+    // review M2: started without one, it suggested the skip after the bare
+    // allowance to a visitor still waiting for a position).
+    const focusDistance =
+      focus === null ? undefined : last?.distances.get(focus);
+    if (focus !== null && focusDistance !== undefined) {
+      run.focus(focus, deps.now(), focusDistance);
     }
     // A skip that can still be undone: the button undoes it (R14).
     if (undoable !== null) return { kind: "undo", id: undoable.id };
@@ -525,7 +614,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     return {
       id: focus,
       to: pose.positionNue,
-      stopM: bandsOf(station, last.visitor).foundExitM,
+      stopM: bandsOf(station, last).foundExitM,
     };
   }
 
@@ -546,11 +635,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         return;
       }
       measure();
-      const { visitor, distances } = last!;
-      // A story cut short by the session's end plays again once it can be
-      // placed: a position and the GPS zero (R8: before them its figure had
-      // no pose).
-      if (replayFound && measuredZero !== null && visitor.nue !== null) {
+      const m = last!;
+      // A story cut short by the session's end plays again on the same
+      // terms as its first play: a position and the GPS zero (R8: before
+      // them its figure had no pose; r881 re-review M-C: a camera position
+      // was required, which a session never ready never has). Its figure
+      // waits for the heading as on a first play (`figurePoseOf`).
+      if (replayFound && measuredZero !== null && m.best !== null) {
         replayFound = false;
         for (const status of current.statuses()) {
           const station = stationById(status.id);
@@ -559,13 +650,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
           }
         }
       }
-      if (visitor.nue !== null) deps.onVisitor?.(visitor.nue);
-      approach(distances, visitor);
+      if (m.headingNue !== null) deps.onVisitor?.(m.headingNue);
+      approach(m);
       handle(
         current.observe({
-          distances,
+          distances: m.distances,
           nowMs: deps.now(),
-          accuracyM: judgedAccuracy(visitor),
+          accuracyM: accuracyOf(m),
         }),
       );
       render();
@@ -621,11 +712,33 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       hud?.dispose();
       hud = null;
       replayFound = true;
+      // The next AR entry earns its own heading (a new session's odometry).
+      trackedHeading = false;
+      headingReady = false;
       deps.onGuide?.(null, null);
       dom.line.hidden = true;
       dom.skip.hidden = true;
     },
     poseOf,
+    figurePoseOf: (stationId) => (headingReady ? poseOf(stationId) : null),
   };
   return guide;
+}
+
+/** The raw accuracy that speaks for a position: the median of the latest
+ *  fixes, and for a lone fix the worse of that and its own. */
+function rawAccuracyFor(
+  visitor: VisitorPosition,
+  loneFix: boolean,
+): number | null {
+  return loneFix
+    ? worseAccuracy(visitor.accuracyM, visitor.fixAccuracyM)
+    : visitor.accuracyM;
+}
+
+/** The worse of two accuracies (m); an unknown one gives way to a known. */
+function worseAccuracy(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.max(a, b);
 }

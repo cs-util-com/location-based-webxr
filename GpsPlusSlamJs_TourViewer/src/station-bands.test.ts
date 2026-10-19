@@ -3,10 +3,12 @@ import fc from "fast-check";
 
 import {
   ACCURACY_CEILING_M,
-  alignedStationBands,
   BAND_ACCURACY_FACTOR,
   HUD_ARRIVAL_BAND_M,
+  judgedAccuracy,
+  judgedStationBands,
   stationBands,
+  tooWeakToGuide,
 } from "./station-bands";
 
 /**
@@ -69,22 +71,42 @@ describe("stationBands", () => {
     expect(wide.foundExitM - wide.foundM).toBe(ACCURACY_CEILING_M);
   });
 
-  // Why (PR #642 review): an alignment's position has no accuracy the raw
-  // fixes speak for, and `stationBands` reads an unknown one as its
-  // CEILING - so an aligned visitor's HUD band, breadcrumb stop and
-  // prefetch were widened to the widest there is. Its bands are the HUD's
-  // own band, whatever the fixes say.
-  it("gives an aligned position the HUD's own band, never the ceiling an unknown accuracy reads as", () => {
+  // Why (PR #642 review): a position a code lined up has no accuracy the
+  // raw fixes speak for, and `stationBands` reads an unknown one as its
+  // CEILING - so its HUD band, breadcrumb stop and prefetch were widened to
+  // the widest there is. Its bands are the HUD's own band, whatever the
+  // fixes say. Changed (r881): this was granted to any ALIGNED position;
+  // the library aligns a session from its first fix, so only a code earns
+  // it now, and every other position takes the raw accuracy's band.
+  it("gives a code-lined-up position the HUD's own band, never the ceiling; any other the raw accuracy's", () => {
     for (const radii of [
       { activateRadiusM: 30, foundRadiusM: 10 },
       { activateRadiusM: 6, foundRadiusM: 5 },
       { activateRadiusM: 0, foundRadiusM: 2 },
     ]) {
-      const b = alignedStationBands(radii);
-      expect(b.foundM).toBe(radii.foundRadiusM);
-      expect(b.foundExitM).toBe(radii.foundRadiusM + HUD_ARRIVAL_BAND_M);
-      expect(b.activateM).toBe(Math.max(radii.activateRadiusM, b.foundExitM));
+      for (const raw of [3, 12, 40, 500, null]) {
+        const b = judgedStationBands(radii, raw, true);
+        expect(b.foundM).toBe(radii.foundRadiusM);
+        expect(b.foundExitM).toBe(radii.foundRadiusM + HUD_ARRIVAL_BAND_M);
+        expect(b.activateM).toBe(Math.max(radii.activateRadiusM, b.foundExitM));
+        expect(judgedStationBands(radii, raw, false)).toEqual(
+          stationBands(radii, raw),
+        );
+      }
     }
+  });
+
+  // Why (r881): the arrival and the "GPS too weak" line read this. A code
+  // lined up: unknown (never too weak, M5c review #1). Otherwise the raw
+  // fixes' own - so a ±500 m cold-start fix is too weak however aligned
+  // the session looks (PR #640 review).
+  it("judges by the raw accuracy unless a code lined the position up", () => {
+    for (const raw of [3, 25, 26, 500, null]) {
+      expect(judgedAccuracy(raw, true)).toBeNull();
+      expect(judgedAccuracy(raw, false)).toBe(raw);
+    }
+    expect(tooWeakToGuide(judgedAccuracy(500, false))).toBe(true);
+    expect(tooWeakToGuide(judgedAccuracy(500, true))).toBe(false);
   });
 
   it("orders the three distances for any radii and accuracy (property)", () => {
