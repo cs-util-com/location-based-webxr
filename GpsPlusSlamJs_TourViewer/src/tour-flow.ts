@@ -124,6 +124,11 @@ export interface ArStatusInput {
   /** The tour's placed content (`tour.json`), once rendered. */
   content:
     { kind: "none" } | { kind: "placed"; count: number; skipped: number };
+  /** The visitor guide has stations to point at and waits for a heading
+   *  (D34 of the tour editor plan 2026-10-17-1816; the store's
+   *  `visitorGuide.headingPending`): the visitor's line asks for a few
+   *  steps. Absent: false. */
+  stationsAwaitHeading?: boolean;
 }
 
 /** The content segment: how many of the tour's objects stand. */

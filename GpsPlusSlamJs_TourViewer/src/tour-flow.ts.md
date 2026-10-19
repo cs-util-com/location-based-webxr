@@ -23,8 +23,9 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
 - `interface ArStatusInput` - mode, controller status, camera-frame count,
   the tour, the viewer pipeline's QR inputs (the `viewerStatusLine` shape),
   the `readiness` (the framework's `OnboardingGuidance` for the current
-  tracking-quality report; null in creator mode), the placement, and a
-  placement error string.
+  tracking-quality report; null in creator mode), the placement, a
+  placement error string, and `stationsAwaitHeading?` (the visitor guide
+  waits for a heading, D34; read only by `visitorStatus`).
 - `isPlacementReady(report): boolean` - the placement trigger (flows plan
   M4, DEC-F3): true when `computeOnboardingGuidance(report).phase ===
 "ready"`, i.e. the tracking-quality `ok` state. At the first GPS fix the

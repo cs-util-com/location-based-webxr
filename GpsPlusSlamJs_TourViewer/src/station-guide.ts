@@ -53,6 +53,10 @@
  *   lives in the page's store (`visitor-guide-slice.ts`), dispatched only
  *   when it changes and after the tick's own work, holds with no judged
  *   position, clears at the session's end and resets with the tour.
+ * - **The wait for a heading is said** (D34 of the tour editor plan): while
+ *   the guide has stations to point at and no heading yet this AR entry,
+ *   the store's `headingPending` is true and the visitor's status line
+ *   asks for a few steps (`visitor-status.ts`); the figure keeps waiting.
  * - **Progress lives as long as the tour stays open** (several AR entries;
  *   saving it across page lives is K3). A different tour starts a new run.
  */
@@ -84,6 +88,7 @@ import {
 import { presenceCandidates } from "./station-presence.js";
 import {
   guideTourChanged,
+  headingPendingSet,
   presenceAfter,
   presenceCleared,
   presenceJudged,
@@ -432,6 +437,16 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     return { distances: m.distances, accuracyM };
   }
 
+  /** Whether the guide waits for a heading (D34), in the store; only a
+   *  change is dispatched. */
+  function publishHeadingPending(pending: boolean): void {
+    const store = deps.guideStore;
+    if (store === undefined) return;
+    if (store.getState().visitorGuide.headingPending !== pending) {
+      store.dispatch(headingPendingSet(pending));
+    }
+  }
+
   /** The store's presence after this tick: a tour change resets it, and
    *  a judgement (null: hold) is dispatched only when it changes the
    *  answer. Called at the END of a tick: a dispatch re-enters the tick
@@ -717,6 +732,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         show(dom.skip, "");
         deps.onGuide?.(null, null);
         publishPresence(null, null);
+        publishHeadingPending(false);
         return;
       }
       measure();
@@ -749,6 +765,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       }
       render();
       publishPresence(m, judgement);
+      // Stations still to point at, and no heading to point with (D34).
+      publishHeadingPending(!headingReady && !current.isComplete());
     },
     codeLocked() {
       guide.tick();
@@ -808,6 +826,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       if (deps.guideStore?.getState().visitorGuide.presentStationId != null) {
         deps.guideStore.dispatch(presenceCleared());
       }
+      publishHeadingPending(false);
       deps.onGuide?.(null, null);
       dom.line.hidden = true;
       dom.skip.hidden = true;

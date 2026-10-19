@@ -52,6 +52,7 @@ import type { TourViewerSeams } from "./seams.js";
 import { arStatusLine, type ArStatusInput } from "./tour-flow.js";
 import { scanCardShown } from "./scan-gate.js";
 import { visitorStatus } from "./visitor-status.js";
+import { selectHeadingPending } from "./visitor-guide-slice.js";
 import type { LocationGate } from "./visitor-screen.js";
 import type { RecordingPanel } from "./recording-panel.js";
 import {
@@ -288,6 +289,10 @@ export function wireArEntry(deps: {
               count: ctx.contentRendered.count,
               skipped: ctx.contentRendered.skipped.length,
             },
+      // The visitor guide waits for a heading (D34): the store's flag,
+      // which the guide sets only for a visitor's stations.
+      stationsAwaitHeading:
+        !authorMode && selectHeadingPending(arStore.getState()),
     };
     // A visitor reads one plain sentence (UI round 1, U1); the technical
     // line stays for the creator and for a visitor's `?debug=1`. The state

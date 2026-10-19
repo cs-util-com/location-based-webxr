@@ -17,7 +17,8 @@ visitor's `?debug=1`.
   `checking`, `starting`, `stopping`, `unsupported`, `error`, `no-tour`,
   `scan`, `measuring-code`, `code-other-tour`, `code-unusable`,
   `code-moved`, `locking`, `warming-up`, `placing`, `placed`,
-  `placed-gps`, `tracking-lost`, `needs-code`, `nothing`. `ar-entry.ts`
+  `placed-gps`, `tracking-lost`, `finding-direction`, `needs-code`,
+  `nothing`. `ar-entry.ts`
   writes it to `#ar-status`'s `data-state` for a visitor (beside
   `data-gate`, the scan gate as one word), the stable channel for styling
   and tests. `text` is the sentence, followed by what could not load;
@@ -35,7 +36,8 @@ visitor's `?debug=1`.
   only `err.message` - to a plain cause: the location permission, the
   camera, an unsupported session, else "Tap Try again"); no tour open;
   PLACED (tracking lost reads the framework's `ar-lost` hint, else placed
-  through the code, or by GPS with the reason when one applies); the code
+  through the code, or by GPS with the reason when one applies, or
+  "finding-direction" while the visitor guide waits for a heading); the code
   situations, which only come BEFORE placement (a code of another tour, an
   unusable code, the code being measured - the page passes no hint for
   the code the moved-code check ignores, whose veto set its votes back to
@@ -52,6 +54,12 @@ visitor's `?debug=1`.
   lock voted (the gate stays "skipped" after a later lock); the unusable
   code mentions the GPS escape only while it is offered; a moved code does
   not hide loading progress; no counter in "Loading the photos…".
+- **The wait for a heading is said** (D34 of the tour editor plan
+  2026-10-17-1816): while `stationsAwaitHeading` is true (the guide has
+  stations to point at and no heading yet), "Walk a few steps so the guide
+  knows the direction." replaces the placed sentence and comes before the
+  placement sentence, after the code situations and never over an `ar-lost`
+  hint; it goes as soon as the flag clears.
 - **Never a counter, the mode prefix or a debug number** (property test);
   a running session always says something.
 - **Never "scan the code again"** after the code's hold ended; the hold's

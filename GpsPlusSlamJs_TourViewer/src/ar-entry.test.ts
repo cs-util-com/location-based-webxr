@@ -20,6 +20,7 @@ import {
   type TourViewerSession,
 } from "./tour-viewer-session.js";
 import type { TourViewerSeams } from "./seams.js";
+import { headingPendingSet } from "./visitor-guide-slice.js";
 import { RECORDING_DEPTH } from "./authoring-recording.js";
 import {
   endSession,
@@ -980,5 +981,38 @@ describe("a visitor without location starts on codes alone (QR-first M1b-1)", ()
     await h.enter();
     expect(h.enabledConfig()?.location).toBeUndefined();
     expect(h.ctx.codesOnly).toBe(false);
+  });
+});
+
+// Why (D34 of the tour editor plan 2026-10-17-1816): the visitor's line
+// asks for a few steps while the guide waits for a heading, read from the
+// store the guide writes; once the heading exists the placed line is back.
+describe("wireArEntry: the wait for a heading (D34)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the walk line while the store says the guide waits, and the placed line once it does not", () => {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.scanGate = { kind: "passed", via: "code" };
+    h.ctx.contentRendered = { count: 2, skipped: [] } as never;
+    h.arStore.dispatch(headingPendingSet(true));
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("finding-direction");
+    expect(h.dom.arStatus.textContent).toBe(
+      "Walk a few steps so the guide knows the direction.",
+    );
+    h.arStore.dispatch(headingPendingSet(false));
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("placed");
+  });
+
+  it("never says it to a creator", () => {
+    const h = harness({ arStatus: "running", mode: "creator" });
+    h.ctx.session = {} as never;
+    h.arStore.dispatch(headingPendingSet(true));
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).not.toContain("Walk a few steps");
   });
 });

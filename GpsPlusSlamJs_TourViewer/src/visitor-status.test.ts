@@ -535,3 +535,85 @@ describe("visitorStatus - codes only, and no code can place the tour (M1b-1 revi
     expect(status).toEqual({ state: "nothing", text });
   });
 });
+
+// Why (D34 of the tour editor plan 2026-10-17-1816): until the AR entry has
+// a heading the guide's arrows, breadcrumbs and a story's figure wait. A
+// visitor who never walks never gets one, so the line must say what earns
+// it - and go once a heading exists.
+describe("visitorStatus - the guide waits for a heading (D34)", () => {
+  const placed = {
+    gate: { kind: "passed", via: "skipped" } as const,
+    content: { kind: "placed", count: 3, skipped: 0 } as const,
+  };
+
+  it("asks for a few steps over the placed line, and the placed line comes back once a heading exists", () => {
+    expect(
+      visitorStatus(input({ ...placed, stationsAwaitHeading: true })),
+    ).toEqual({
+      state: "finding-direction",
+      text: "Walk a few steps so the guide knows the direction.",
+    });
+    expect(
+      visitorStatus(input({ ...placed, stationsAwaitHeading: false })).state,
+    ).toBe("placed-gps");
+    expect(visitorStatus(input(placed)).state).toBe("placed-gps");
+  });
+
+  it("asks for it while the photos wait for tracking too, keeping what could not load", () => {
+    const status = visitorStatus(
+      input({
+        gate: { kind: "passed", via: "code" },
+        placement: { kind: "waiting-ready" },
+        planesError: "boom",
+        stationsAwaitHeading: true,
+      }),
+    );
+    expect(status).toEqual({
+      state: "finding-direction",
+      text: "Walk a few steps so the guide knows the direction. Some photos could not load.",
+    });
+  });
+
+  it("yields to a code that needs pointing elsewhere, and to tracking lost", () => {
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "code" },
+          qr: qr({ unknownCode: "https://example.test/other" }),
+          stationsAwaitHeading: true,
+        }),
+      ).state,
+    ).toBe("code-other-tour");
+    const lost = {
+      phase: "ar-lost",
+      hint: "Tracking lost - move slowly.",
+    } as never;
+    expect(
+      visitorStatus(
+        input({ ...placed, readiness: lost, stationsAwaitHeading: true }),
+      ).state,
+    ).toBe("tracking-lost");
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "code" },
+          placement: { kind: "waiting-ready" },
+          readiness: lost,
+          stationsAwaitHeading: true,
+        }),
+      ).state,
+    ).toBe("warming-up");
+  });
+
+  it("is never said before AR runs or without a tour", () => {
+    expect(
+      visitorStatus(input({ arStatus: "starting", stationsAwaitHeading: true }))
+        .state,
+    ).toBe("starting");
+    expect(
+      visitorStatus(
+        input({ tour: { kind: "none" }, stationsAwaitHeading: true }),
+      ).state,
+    ).toBe("no-tour");
+  });
+});

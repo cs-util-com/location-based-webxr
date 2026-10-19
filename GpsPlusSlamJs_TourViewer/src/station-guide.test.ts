@@ -26,6 +26,7 @@ import { visitorPosition, type VisitorPosition } from "./visitor-position";
 import { createTourViewerStore } from "./tour-viewer-session";
 import { stationAlignmentSignals } from "./visitor-stations";
 import {
+  selectHeadingPending,
   selectPresentStationId,
   selectShowAllContent,
   showAllContentSet,
@@ -1631,5 +1632,73 @@ describe("wireStationGuide: the present station", () => {
     h.at(0, 0);
     expect(selectShowAllContent(store.getState())).toBe(false);
     expect(selectPresentStationId(store.getState())).toBeNull();
+  });
+});
+
+/**
+ * Why these tests matter (D34 of the tour editor plan 2026-10-17-1816):
+ * until the AR entry has a heading the arrows, the breadcrumbs and a
+ * story's figure wait; the visitor's status line says to walk a few steps,
+ * and it reads that wait from the store. The flag must follow the guide's
+ * own latch exactly, and go once a heading exists.
+ */
+describe("wireStationGuide: the wait for a heading (D34)", () => {
+  it("says so while there are stations and no heading, and stops once tracking earns one", () => {
+    const { store, guideStore, guideActions } = countingStore();
+    const h = harness(
+      { stations: [station("a", 40, 0)], order: "fixed" },
+      { guideStore },
+    );
+    h.ready(false);
+    h.at(0, 0);
+    expect(selectHeadingPending(store.getState())).toBe(true);
+    expect(h.guide.figurePoseOf("a")).toBeNull();
+    h.at(1, 0);
+    h.ready(true);
+    h.at(2, 0);
+    expect(selectHeadingPending(store.getState())).toBe(false);
+    expect(h.guide.figurePoseOf("a")).not.toBeNull();
+    // The heading is latched: a dip does not bring the line back.
+    h.ready(false);
+    h.at(3, 0);
+    expect(selectHeadingPending(store.getState())).toBe(false);
+    expect(
+      guideActions.filter((t) => t === "visitorGuide/headingPendingSet"),
+    ).toHaveLength(2);
+  });
+
+  it("a code lined up gives the heading at once: no wait", () => {
+    const { store, guideStore } = countingStore();
+    const h = harness(
+      { stations: [station("a", 40, 0)], order: "fixed" },
+      { guideStore },
+    );
+    h.ready(false);
+    h.lined(true);
+    h.at(0, 0);
+    expect(selectHeadingPending(store.getState())).toBe(false);
+  });
+
+  it("is false at the session's end, behind the scan gate, and once the tour is complete", () => {
+    const { store, guideStore } = countingStore();
+    const h = harness(
+      { stations: [station("a", 40, 0, { steps: [] })], order: "fixed" },
+      { guideStore },
+    );
+    h.ready(false);
+    h.at(0, 0);
+    expect(selectHeadingPending(store.getState())).toBe(true);
+    h.guide.endSession();
+    expect(selectHeadingPending(store.getState())).toBe(false);
+    h.at(0, 0);
+    expect(selectHeadingPending(store.getState())).toBe(true);
+    h.allow(false);
+    h.at(0, 0);
+    expect(selectHeadingPending(store.getState())).toBe(false);
+    h.allow(true);
+    // Found with no steps: done at once, the tour complete, nothing to
+    // point at any more.
+    h.at(39, 0);
+    expect(selectHeadingPending(store.getState())).toBe(false);
   });
 });

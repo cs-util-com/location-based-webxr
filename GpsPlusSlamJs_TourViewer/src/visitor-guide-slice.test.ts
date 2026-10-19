@@ -4,9 +4,11 @@ import { createTourViewerStore } from "./tour-viewer-session";
 import type { PresenceCandidate } from "./station-presence";
 import {
   guideTourChanged,
+  headingPendingSet,
   presenceAfter,
   presenceCleared,
   presenceJudged,
+  selectHeadingPending,
   selectPresentStationId,
   selectShowAllContent,
   selectStationContentShown,
@@ -30,6 +32,21 @@ describe("visitorGuide slice", () => {
     const store = createTourViewerStore();
     expect(selectPresentStationId(store.getState())).toBeNull();
     expect(selectShowAllContent(store.getState())).toBe(false);
+    expect(selectHeadingPending(store.getState())).toBe(false);
+  });
+
+  // Why (D34): the status line reads whether the guide waits for a
+  // heading from the store, so the flag must be set, cleared, and gone
+  // with the tour.
+  it("records whether the guide waits for a heading, and a new tour forgets it", () => {
+    const store = createTourViewerStore();
+    store.dispatch(headingPendingSet(true));
+    expect(selectHeadingPending(store.getState())).toBe(true);
+    store.dispatch(headingPendingSet(false));
+    expect(selectHeadingPending(store.getState())).toBe(false);
+    store.dispatch(headingPendingSet(true));
+    store.dispatch(guideTourChanged());
+    expect(selectHeadingPending(store.getState())).toBe(false);
   });
 
   it("applies the presence rule on a judged position, with the margin of its accuracy", () => {

@@ -14,7 +14,8 @@ the station guide dispatches a judged position only when the answer changes.
 - `visitorGuideReducer` - mounted as `visitorGuide` by
   `createTourViewerStore` (`tour-viewer-session.ts`).
 - `type VisitorGuideState` - `{ presentStationId: string | null;
-showAllContent: boolean }`, both null/false at the start.
+showAllContent: boolean; headingPending: boolean }`, null/false/false at
+  the start.
 - Actions:
   - `presenceJudged({ candidates, accuracyM })` - a judged position
     (`type PresenceJudgement`): `presentStationId` becomes
@@ -23,11 +24,14 @@ showAllContent: boolean }`, both null/false at the start.
   - `presenceCleared()` - the AR session ended;
   - `guideTourChanged()` - another tour (or none): back to the initial
     state, "show all" off (§3: not kept across tours);
-  - `showAllContentSet(on)` - the switch (its UI and URL flag come with M2).
+  - `showAllContentSet(on)` - the switch (its UI and URL flag come with M2);
+  - `headingPendingSet(pending)` - the guide waits for a heading (D34);
+    `guideTourChanged` resets it with the rest.
 - `presenceAfter(state, judgement)` - the reducer's rule, for the guide's
   dispatch-on-change check (one rule, never restated).
 - Selectors: `selectPresentStationId`, `selectShowAllContent`,
-  `selectStationContentShown(state, stationId)` (present, or all are).
+  `selectStationContentShown(state, stationId)` (present, or all are),
+  `selectHeadingPending`.
 - `interface VisitorGuideStore` - what the guide needs of the store
   (`getState`, `dispatch`).
 

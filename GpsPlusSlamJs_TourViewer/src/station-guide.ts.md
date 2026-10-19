@@ -53,6 +53,11 @@ activateM)` (each tick, each offered station with a distance: the
 
 ## Invariants & assumptions
 
+- **The wait for a heading is published** (D34): after each tick the guide
+  sets the store's `headingPending` to `!headingReady && !run.isComplete()`
+  (dispatched only on a change), false with no run, at no tour and at the
+  session's end; `ar-entry.ts` turns it into the visitor's "walk a few
+  steps" sentence.
 - **One gate for found and presence** (visitor plan M1, §3): `judged` is
   the one function that says what a tick may judge - the measured best
   position's distances and the judged accuracy, or nothing (no position, no

@@ -50,6 +50,7 @@ type VisitorStatusState =
   | "placed"
   | "placed-gps"
   | "tracking-lost"
+  | "finding-direction"
   | "needs-code"
   | "nothing";
 
@@ -62,6 +63,13 @@ export interface VisitorStatus {
 
 const LOOK_AROUND = "Look around.";
 const GPS_PLACED = "Tour placed by GPS (less exact)";
+
+/** The guide waits for a heading (D34): the arrows, the breadcrumbs and a
+ *  story's figure need one, and a few steps give it. */
+const FINDING_DIRECTION: VisitorStatus = {
+  state: "finding-direction",
+  text: "Walk a few steps so the guide knows the direction.",
+};
 
 /** Why AR did not start, from the controller's error message (the
  *  framework keeps only the message, not the exception's name): the causes
@@ -300,9 +308,22 @@ function runningSentence(input: ArStatusInput): VisitorStatus {
     if (input.readiness?.phase === "ar-lost") {
       return { state: "tracking-lost", text: input.readiness.hint };
     }
-    return placedSentence(input);
+    return input.stationsAwaitHeading === true
+      ? FINDING_DIRECTION
+      : placedSentence(input);
   }
-  return codeSentence(input) ?? placementSentence(input);
+  // A code situation needs the visitor to point elsewhere first; then the
+  // guide's wait for a heading (D34), unless tracking is lost, whose own
+  // hint is the cure.
+  const code = codeSentence(input);
+  if (code !== null) return code;
+  if (
+    input.stationsAwaitHeading === true &&
+    input.readiness?.phase !== "ar-lost"
+  ) {
+    return FINDING_DIRECTION;
+  }
+  return placementSentence(input);
 }
 
 /** The visitor's status for a state of the page. */

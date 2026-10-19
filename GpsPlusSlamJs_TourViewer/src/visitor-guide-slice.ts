@@ -2,8 +2,10 @@
  * The visitor's guide state in the page's store (visitor plan
  * 2026-10-18-2349 §3 "State in Redux", cold review MEDIUM-4; root CLAUDE.md,
  * the Redux rule): the ONE station whose content shows
- * (`presentStationId`) and the "show all stations' content" override
- * (`showAllContent`). Its reducer applies the pure presence rule
+ * (`presentStationId`), the "show all stations' content" override
+ * (`showAllContent`), and whether the guide waits for a heading
+ * (`headingPending`, D34 of the tour editor plan 2026-10-17-1816: the
+ * visitor's status line then asks for a few steps). Its reducer applies the pure presence rule
  * (`station-presence.ts`), so every view reads one answer; the station
  * guide (`station-guide.ts`) dispatches a judged position only when the
  * answer changes. three.js handles (per-station groups, textures) never
@@ -36,6 +38,11 @@ export interface VisitorGuideState {
    *  the visitor page, a URL flag for tests). Off by default; a new tour
    *  starts with it off. */
   readonly showAllContent: boolean;
+  /** The guide has stations to point at and no heading yet this AR entry
+   *  (`station-guide.ts` `headingReady`): the arrows, the breadcrumbs
+   *  and a story's figure wait, and the visitor's line says to walk a few
+   *  steps (D34). False outside a running guide. */
+  readonly headingPending: boolean;
 }
 
 /** One judged position, as presence reads it: every station's candidate
@@ -49,6 +56,7 @@ export interface PresenceJudgement {
 const initialVisitorGuideState: VisitorGuideState = {
   presentStationId: null,
   showAllContent: false,
+  headingPending: false,
 };
 
 /** The present station after a judgement: the reducer's rule, for the
@@ -83,6 +91,10 @@ const visitorGuideSlice = createSlice({
     showAllContentSet(state, action: PayloadAction<boolean>) {
       state.showAllContent = action.payload;
     },
+    /** The guide started or stopped waiting for a heading (D34). */
+    headingPendingSet(state, action: PayloadAction<boolean>) {
+      state.headingPending = action.payload;
+    },
   },
 });
 
@@ -92,6 +104,7 @@ export const {
   presenceCleared,
   guideTourChanged,
   showAllContentSet,
+  headingPendingSet,
 } = visitorGuideSlice.actions;
 
 /** What the guide needs of the page's store. */
@@ -108,6 +121,11 @@ export function selectPresentStationId(state: WithGuide): string | null {
 
 export function selectShowAllContent(state: WithGuide): boolean {
   return state.visitorGuide.showAllContent;
+}
+
+/** Whether the guide waits for a heading (D34). */
+export function selectHeadingPending(state: WithGuide): boolean {
+  return state.visitorGuide.headingPending;
 }
 
 /** Whether a station's content shows: it is present, or all are. */
