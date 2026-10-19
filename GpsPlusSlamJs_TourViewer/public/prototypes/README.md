@@ -33,6 +33,12 @@ wired into its logic: every interaction is faked.
   a two-finger guard), each keeping its own idea. They move a station's items rigidly with it
   and offer "Put items on the ground", as decided after round 1. The
   round-1 pages stay.
+- `editor3d-1-studio-r3/` and `editor3d-4-map-r3/` - round 3 (made
+  2026-10-19): two converged pages with one set of rules, Studio opening in
+  a tilted 3D view and Map opening from above. Both take a `#morph=A-B` or
+  `#morph=snapN` flag for how pins and photos lie flat by camera angle
+  (their defaults differ: Studio 3-22 degrees, Map 8-42), and
+  `#stations=1000` for a large generated tour. The earlier rounds stay.
 
 **Kept, the chosen and the unchosen** (owner, 2026-10-11 evening): another
 developer may prefer a variant the owner did not choose and ask their own
