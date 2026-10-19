@@ -88,7 +88,6 @@ import {
   removeDraftObject,
   writeDraftBase,
   writeDraftDeletion,
-  writeDraftEdit,
   writeDraftLiveRecord,
   writeDraftMeta,
 } from "../draft-persistence.js";
@@ -721,10 +720,12 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         if (s.rejected.includes(id)) return true;
         const store = await s.store;
         if (store === undefined) return false;
+        // A live record, as `saveObject` writes it: the new key's namespace
+        // may hold an older session's tombstone for this id.
         const wrote =
           change === null
             ? await writeDraftDeletion(store, id)
-            : await writeDraftEdit(store, change, undefined, undefined);
+            : await writeDraftLiveRecord(store, change, undefined, undefined);
         // After the record: a record without its base is never superseded.
         if (base !== undefined) await writeDraftBase(store, id, base);
         return wrote;

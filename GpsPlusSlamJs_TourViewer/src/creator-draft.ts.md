@@ -200,7 +200,10 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   rejected the live record of a changed one. Every id the document's
   writes name (`write`, `writeObject`, `forgetObject`) joins the set, which
   only `reset` clears - the desktop editor's `touched`. Restore skips
-  those ids, and "Delete it" never rejects them (`liveIds`, `notLive`).
+  those ids, and "Delete it" never rejects them (`liveObjectIds`,
+  `notLive`). The sweep also spares this page's visit ids (`notLive`); the
+  restore filters by object ids alone, so a draft object whose id equals a
+  visit id is still put back.
   Restore's note counts what it put back (`restoreWork` returns it), not
   the offer: a skipped edit is never claimed as restored. The same for the
   rest of the note: the draft's code position is claimed only when
@@ -265,7 +268,8 @@ change, in its own queue. The phone reads only its STATION POSES back:
   after a close removes the record at once, unless the tour was reopened
   (that open read the record and owns it), the settings were live at the
   tap, or a record was issued for the tour since the tap (a rename before
-  the close: `settingsPuts`, counted per tour) - then the record is kept,
+  the close: `settingsPuts`, counted per namespace key, as the reopen is
+  compared, `draftKeyForTour`) - then the record is kept,
   rejected poses and all, because nothing is left to rewrite it from: the
   safe side. An interrupted removal is safe: a record the opened tour
   carries is spent again at the next open.
@@ -297,10 +301,12 @@ the ordered writes, the claims and sweeps; "the draft keeps a moved
 station's pose" for the settings record, a write queued across a close, a
 "Delete it" that did not land and one that landed after another tour
 opened among them, one that landed after a close removing the record and
-one keeping a rename made after the tap; an edit over an offered deletion
-not offered as deleted again, and one whose record did not land keeping
-the tombstone; Restore's note counting what it put back, beside a code
-measured here), `creator-finish.test.ts` and
+ones keeping a rename made before or after the tap, and one leaving the
+record to a reopen through the same url padded; an edit over an offered
+deletion not offered as deleted again, and one whose record did not land
+keeping the tombstone; Restore's note counting what it put back, beside a
+code measured here and beside visits the log already held; a draft object
+whose id equals a visit id restored), `creator-finish.test.ts` and
 `authoring-settle.test.ts` (the meta a mint or settle writes, the backup
 notice), plus the draft e2e specs. The pure rules are in
 `authoring-draft.test.ts` and the on-disk shape in

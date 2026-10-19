@@ -400,6 +400,35 @@ describe("createEditorDraft", () => {
     ]);
   });
 
+  it("a key move onto a file whose namespace holds an old deletion of the id carries the edit, never the deletion", async () => {
+    // Why: namespaces outlive their sessions (one is emptied only once a
+    // key move landed, and an unanswered draft stays), so the key a save
+    // moves to can already hold a tombstone for an id it carries - a copy
+    // of the same tour edited there earlier. The carried record must take
+    // it away, as every live record does (`writeDraftLiveRecord`), or the
+    // next open offers to delete the note just edited.
+    const b = browser();
+    const original = tour(pin("a"), pin("b"));
+    const earlier = draftIn(b);
+    await earlier.open(K2, original);
+    void earlier.saveDeletion("a");
+    await earlier.idle();
+    earlier.close();
+    const draft = draftIn(b);
+    await draft.open(K1, original);
+    void draft.saveObject(pin("b", "saved"));
+    const written = tour(pin("a"), pin("b", "saved"));
+    draft.writes().built(written);
+    // Made while the save ran: carried to the new key.
+    void draft.saveObject(pin("a", "during"));
+    draft.writes().landed(written, K2);
+    await draft.idle();
+    draft.close();
+    const reopened = await draftIn(b).open(K2, written);
+    expect(reopened.offer?.deleted).toEqual([]);
+    expect(reopened.offer?.objects.map((o) => o.label)).toEqual(["during"]);
+  });
+
   it("Delete it takes the offer's records, never one edited since the open, and a later edit of a deleted one is kept", async () => {
     // Why (review #7): live edits win over an unanswered offer, and a
     // rejection must not hide a change made after it.

@@ -30,8 +30,14 @@ are the framework's.
   deletion was offered as deleted again. Record first, as an undo of a
   delete writes them: a crash between the two leaves the object deleted,
   never half restored; a record that did not land leaves the tombstone.
+  "Landed" is `writeDraftEdit`'s result, which is false also when the JSON
+  record landed but the photo's put failed: the tombstone then stays, so
+  the next read offers the edited object as deleted. Deliberate - never a
+  photo object restored without its photo - and the failed write is
+  reported where it happened (the backup notice).
   The one implementation for the phone's draft (`creator-draft.ts`) and
-  the desktop editor's (`editor/editor-draft.ts`, `saveObject`).
+  the desktop editor's (`editor/editor-draft.ts`: `saveObject` and a key
+  move's carried records).
 - `writeDraftBase(store, id, base)` (M6 E2c) - a whole `base:<id>`
   written at once: the desktop editor's draft moving a record to a new
   namespace with the versions it knows (`editor/editor-draft.ts`).

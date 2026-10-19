@@ -249,9 +249,13 @@ export function wireCreatorDraft(deps: {
    *  the next tour's (the r880 fix re-review, L2). */
   let undecided: { poses: readonly StationPose[] | null } | null = null;
   /** The settings records (not removals) issued per tour since the page
-   *  loaded: a "Delete it" that commits after its tour closed compares it
-   *  with its tap's count, to tell whether live work wrote the file since. */
+   *  loaded, by the namespace key (as the queues above): a "Delete it" that
+   *  commits after its tour closed compares it with its tap's count, to
+   *  tell whether live work wrote the file since. */
   const settingsPuts = new Map<string, number>();
+  function settingsPutsFor(tourUrl: string): number {
+    return settingsPuts.get(draftKeyForTour(tourUrl)) ?? 0;
+  }
   /** Every object id this page changed since the tour opened (an edit, a
    *  move, a placement, a delete, an undo, a restore): live work, which
    *  wins over the offer and is never rejected with it. Unlike the
@@ -385,7 +389,7 @@ export function wireCreatorDraft(deps: {
     held: { poses: readonly StationPose[] | null } | null,
   ): Promise<boolean> {
     if (record !== null) {
-      settingsPuts.set(tourUrl, (settingsPuts.get(tourUrl) ?? 0) + 1);
+      settingsPuts.set(draftKeyForTour(tourUrl), settingsPutsFor(tourUrl) + 1);
     }
     return draftWrites
       .run(settingsChainKey(tourUrl), () => {
@@ -488,16 +492,14 @@ export function wireCreatorDraft(deps: {
     });
   }
 
-  /** The ids of this page's live work: the document's edits and
-   *  deletions, every id changed since the open (`touchedIds`: a Finish
-   *  empties the lists, not this), and this page's visits (M3b: a read
-   *  racing their first write may list them). */
-  function liveIds(): Set<string> {
+  /** The object ids of this page's live work: the document's edits and
+   *  deletions, and every id changed since the open (`touchedIds`: a
+   *  Finish empties the lists, not this). What Restore leaves out. */
+  function liveObjectIds(): Set<string> {
     return new Set([
       ...ctx.tourDocument.entries().map((p) => p.object.id),
       ...ctx.tourDocument.deleted(),
       ...touchedIds,
-      ...deps.visitLog.ids(),
     ]);
   }
 
@@ -505,10 +507,14 @@ export function wireCreatorDraft(deps: {
    * `ids` minus those the creator changed or deleted in this page (M4):
    * an edit of a hosted object keeps its id, so its file on disk is the
    * live change's now, and a sweep of an older draft must not take it.
+   * Minus this page's visits too (M3b: a read racing their first write may
+   * list them) - for the sweep only: a visit id says nothing about an
+   * object's, so Restore filters by `liveObjectIds` alone.
    */
   function notLive(ids: readonly string[]): string[] {
-    const live = liveIds();
-    return ids.filter((id) => !live.has(id));
+    const live = liveObjectIds();
+    const visits = new Set(deps.visitLog.ids());
+    return ids.filter((id) => !live.has(id) && !visits.has(id));
   }
 
   /**
@@ -595,8 +601,9 @@ export function wireCreatorDraft(deps: {
     deleted: number;
   } {
     // Live work on the same id is newer than the draft's, and wins - also
-    // after a Finish wrote it (P1).
-    const live = liveIds();
+    // after a Finish wrote it (P1). Object ids only: a visit's id is not
+    // an object's.
+    const live = liveObjectIds();
     const objects = waiting.objects.filter((o) => !live.has(o.id));
     // The frames before the objects, whose records stand in them - unless
     // a frame was moved here meanwhile: live work wins (as on the desktop).
@@ -752,7 +759,7 @@ export function wireCreatorDraft(deps: {
     // What the settings file held at the tap, for a commit that lands
     // after the tour closed (below).
     const liveAtTap = settingsLive();
-    const putsAtTap = settingsPuts.get(tourUrl) ?? 0;
+    const putsAtTap = settingsPutsFor(tourUrl);
     // ENQUEUED synchronously, with the values captured at the tap. The
     // chain guarantees ordering, not immediacy: the `put` itself is issued
     // from a `then`, so it is a microtask away at best (PR #457 review).
@@ -820,8 +827,13 @@ export function wireCreatorDraft(deps: {
       // kept, rejected poses and all, as before. Otherwise nothing but the
       // rejected draft's record is there, and it goes now - or the next
       // open would offer the rejected poses again.
-      if (draftTourUrl === tourUrl) return;
-      if (liveAtTap || (settingsPuts.get(tourUrl) ?? 0) !== putsAtTap) return;
+      if (
+        draftTourUrl !== null &&
+        draftKeyForTour(draftTourUrl) === draftKeyForTour(tourUrl)
+      ) {
+        return;
+      }
+      if (liveAtTap || settingsPutsFor(tourUrl) !== putsAtTap) return;
       void writeSettings(store, tourUrl, null, held);
     })();
   });

@@ -38,7 +38,9 @@ import {
   objectKey,
   photoKey,
   readDraft,
+  visitKey,
 } from "./draft-persistence.js";
+import { serializeVisitLogEntry, type VisitLogEntry } from "./visit-log.js";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { ObjectListHandlers } from "./object-list.js";
 import { asHosted, stationIdOf, tourOf } from "./test-support/v3-tour.js";
@@ -1223,6 +1225,79 @@ describe("work made before the tour's draft opened reaches it", () => {
     expect(setup.codes.inHand()?.id, "the live code stays").toBe("fresh");
     expect(ctx.placementNote).not.toContain("measured position");
   });
+
+  // Why: the visit log adds only visits it does not hold, but the note
+  // counted every visit the draft offered - so a draft offered again after
+  // its visits were already brought back said they "came back" a second
+  // time. The note counts what joined the log.
+  it("Restore counts only the visits that joined the log, never one it already held", async () => {
+    const visit = (visitId: string): VisitLogEntry => ({
+      visitId,
+      atMs: 5,
+      gpsAccuracyM: 4,
+      baselineM: 30,
+      gps: [{ lat: 47.5, lng: 8.7, accuracy: 4 }],
+      fused: [{ lat: 47.5001, lng: 8.7 }],
+      codes: [],
+    });
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [visitKey("page1-0")]: serializeVisitLogEntry(visit("page1-0")),
+    });
+    const { ctx, dom, setup } = wire(store);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden, "the visit is offered").toBe(false);
+    dom.draftRestore.click();
+    expect(ctx.placementNote).toMatch(/^1 AR visit restored/);
+    await settle();
+    // A second visit reaches the draft; the offer comes again, the first
+    // visit already in the log.
+    files.set(visitKey("page2-0"), serializeVisitLogEntry(visit("page2-0")));
+    dom.draftOffer.hidden = true;
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden, "offered again").toBe(false);
+    dom.draftRestore.click();
+    expect(ctx.placementNote).toMatch(/^1 AR visit restored/);
+  });
+
+  // Why: the live ids that keep a sweep off this page's visits were also
+  // the filter of what Restore puts back, so a draft OBJECT whose id
+  // equals a visit id in the log was skipped as "live work". Visit ids and
+  // object ids are apart: Restore filters by live object work only.
+  it("Restore puts back a draft object whose id equals a visit id in the log", async () => {
+    const SHARED = "page1-0";
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [visitKey(SHARED)]: serializeVisitLogEntry({
+        visitId: SHARED,
+        atMs: 5,
+        gpsAccuracyM: 4,
+        baselineM: 30,
+        gps: [{ lat: 47.5, lng: 8.7, accuracy: 4 }],
+        fused: [{ lat: 47.5001, lng: 8.7 }],
+        codes: [],
+      }),
+    });
+    const { ctx, dom, setup } = wire(store);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.draftRestore.click();
+    await settle();
+    // The visit is in the log now; an object of the same id reaches the
+    // draft and is offered.
+    files.set(objectKey(SHARED), JSON.stringify(pin(SHARED)));
+    dom.draftOffer.hidden = true;
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden, "the object is offered").toBe(false);
+    dom.draftRestore.click();
+    expect(
+      ctx.tourDocument.entries().map((e) => e.object.id),
+      "the object came back",
+    ).toContain(SHARED);
+  });
 });
 
 describe("a closed tour's replace steps", () => {
@@ -2254,6 +2329,61 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     page.dom.draftDiscard.click();
     await settle();
     expect(page.setup.renameTour("Castle walk")).toBeNull();
+    await settle();
+    page.setup.resetFinishStep();
+    page.ctx.tourDocument.close();
+    releaseHeldKeys();
+    await settle();
+
+    expect(
+      (JSON.parse(String(files.get(SETTINGS_KEY))) as { details?: unknown })
+        .details,
+      "the name, live work, stays",
+    ).toMatchObject({ title: "Castle walk" });
+  });
+
+  it("a Delete it that lands after the tour was reopened by the same url, padded, leaves the record to that open", async () => {
+    // Why: the draft's namespace is keyed by the trimmed url
+    // (`draftKeyForTour`), and a `?qr=` boot passes its payload untouched.
+    // Compared raw, a reopen through such a url read as another tour, and
+    // the late removal deleted the record the reopen had already read.
+    const { store, files, releaseHeldKeys } = memoryStore(
+      { ...metaOnly(), [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]) },
+      { holdKeys: (key) => key === META_KEY },
+    );
+    const page = wire(store);
+    page.ctx.tourDocument.open(PUBLISHED);
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    page.dom.draftDiscard.click();
+    await settle();
+    page.setup.resetFinishStep();
+    page.ctx.tourDocument.close();
+    page.ctx.tourDocument.open(PUBLISHED);
+    page.setup.presentDraftForTour(` ${TOUR} `);
+    await settle();
+    releaseHeldKeys();
+    await settle();
+
+    expect(files.has(SETTINGS_KEY), "the reopen's record stays").toBe(true);
+  });
+
+  it("a Delete it that lands after the tour closed keeps a rename made before the tap", async () => {
+    // Why: the record was live work AT the tap (the rename was written
+    // before it, so no write follows the tap to count). After the close
+    // there is no document to rewrite it from, so the removal is skipped
+    // rather than taking the name with it.
+    const { store, files, releaseHeldKeys } = memoryStore(
+      { ...metaOnly(), [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]) },
+      { holdKeys: (key) => key === META_KEY },
+    );
+    const page = wire(store);
+    page.ctx.tourDocument.open(PUBLISHED);
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(page.setup.renameTour("Castle walk")).toBeNull();
+    await settle();
+    page.dom.draftDiscard.click();
     await settle();
     page.setup.resetFinishStep();
     page.ctx.tourDocument.close();
