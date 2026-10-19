@@ -224,8 +224,14 @@ once. The slice says when; the page writes (`editor/edit-main.ts`
   turned into downloads ("Download instead") keeps the earlier in-place file
   on disk as it was; this page no longer writes it.
 - **A write that failed after its `saved` landed** leaves `inPlaceAt` at its
-  view although the disk does not hold it: at worst one more write attempt,
-  which says its own outcome.
+  view although the disk does not hold it. After a failed write the disk is
+  not trusted until a write lands, and a step may then cross the real file
+  without the rule seeing it (the disk at view 3, an undo to 2 crosses and
+  its write fails, so `inPlaceAt` is 2; a new edit and its undo back to 2
+  cross nothing while the disk still holds 3). The page says so meanwhile:
+  the status line's "Not saved yet - tap Save again" (the save built, not
+  delivered), the in-place refusal toast, autosave paused, and leaving
+  asks first (`beforeunload`).
 - **The walk's move** names its position from its snapshot, taken when the
   move was built; no step can come between that and its commit (the Done
   dialog is modal).

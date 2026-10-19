@@ -289,11 +289,15 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   while a dialog shows, the keys are left to the browser: the field's own
   undo. A photo brought back after a save wrote its delete is drawn from
   the picture the session kept (`pictureOf`).
-  - **A step across an in-place save writes the file again at once (D33,
-    owner decision of the tour editor plan §32).** The open drops every
-    draft record of an id the file on disk lacks, so a delete saved in
-    place, then undone and the page reloaded before the next save, lost the
-    note. `resaveIfDue` runs after each step and at each save's end: when
+  - **A step across an in-place save writes the file again once the steps
+    pause (D33, owner decision of the tour editor plan §32).** The open
+    drops every draft record of an id the file on disk lacks, so a delete
+    saved in place, then undone and the page reloaded before the next save,
+    lost the note. `resaveIfDue` runs `RESAVE_QUIET_MS` after the last step
+    (every step restarts the timer), at each save's end, and when the open
+    dialog closes; it waits - the resave staying due - while the quiet time
+    runs, while a save runs, and while another tour is being chosen or
+    opened (`busy`, the open dialog showing). When
     the slice says a resave is due (`save.resave`; the rule, "crosses", is
     `tour-document.ts.md`'s "A step across an in-place save") and the tour
     is written in place (`target`), it saves through `saveTour("auto")` -
@@ -306,18 +310,36 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
       instead") or the status line's "Not saved: ..." for a build that
       failed; the status line leaves "Saving…" and counts the change as
       not saved.
-    - **A second undo** while the resave rebuilds is refused, as during
-      any save: the toast "A save is running - undo or redo once it has
-      finished." (the delete toast stays). Once the rebuild ended (the
-      file being written), a step is taken; when it crosses again, it is
-      written when that save ends - so steps never overlap a write, and
-      the last step's view is what the disk keeps.
-    - **Not for a download** (Save as a new copy, or after "Download
-      instead"): `target` is null, the slice's `inPlaceAt` is null after
-      a download, and a download cannot be rewritten silently. The earlier
-      in-place file then stays as it was written.
-    - **Also for a large tour** (autosave off): one full write per step
-      that crosses - the cost of the disk matching the editor.
+    - **Coalesced** (the r888 review's SHOULD-FIX 1, the coordinator's
+      decision): autosave writes about 3 s after each change, so nearly
+      every undo starts at the file and crosses it. Written at once, a run
+      of five undos was five rebuilds and five whole-file writes, and each
+      undo that came while one rebuilt was refused. Now a run of steps is
+      one write of where it ended.
+      - **The quiet time is 700 ms**, a judgement for steps at a person's
+        pace (a few hundred ms apart), not a measurement.
+        - Shorter (towards 0) brings the refusals back for a slower hand:
+          a step that comes once a resave has started is refused while it
+          rebuilds.
+        - Longer widens the window in which the disk still lacks the
+          restored note. The draft does NOT cover that window: the open
+          drops a record of an id the file lacks, which is the loss D33
+          fixes. A reload in it asks first (`beforeunload`: the change is
+          pending), so only a crash or a forced close loses it.
+    - **A second undo** after the resave started is refused while it
+      rebuilds, as during any save: the toast "A save is running - undo or
+      redo once it has finished." (the delete toast stays). Once the
+      rebuild ended (the file being written), a step is taken; when it
+      crosses again, it is written when that save ends - so resaves never
+      overlap a write, and the last step's view is what the disk keeps.
+    - **Not for a download**: a tour opened from the file input, a link or
+      the sample, a file the browser may not write, or one whose saves
+      "Download instead" turned into downloads. `target` is null, the
+      slice's `inPlaceAt` is null after a download, and a download cannot
+      be rewritten silently. The earlier in-place file then stays as it was
+      written.
+    - **Also for a large tour** (autosave off): one full write per run of
+      steps that crosses - the cost of the disk matching the editor.
     - **Held**: a resave that finds an edit begun (typing, a move) gives
       itself back as an autosave would; the autosave writes it once the
       hold ends (a large tour's waits for Save).
@@ -376,7 +398,11 @@ the undo keys, a delete's Undo after its autosave - written again at once,
 since that undo crosses the in-place save - an undo across an in-place save
 written at once ("Saving…" while it writes, then a reload keeping the note),
 its failed write said after the undo, an undo of an edit made after the save
-writing nothing at once (D33), and Done with the
+writing nothing once the quiet time passed, three undos at a person's pace
+making one write with no refusal, an undo while a write runs written at that
+save's end, a large tour's undo written, no download by itself after
+"Download instead", and a resave waiting while another tour is being chosen
+(D33), and Done with the
 walk's move - the save dialog asked for on the click and the walk in the
 chosen file, the dialog held open and Done disabled while it runs, the
 download's second click, the tour file itself refused as the walk's, a

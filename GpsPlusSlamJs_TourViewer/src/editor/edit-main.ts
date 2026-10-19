@@ -132,6 +132,15 @@ const NARROW_PX = 760;
  *  would no longer take back the delete. */
 const UNDO_MS = 8000;
 
+/** The quiet after the last undo or redo before a step across the
+ *  in-place file is written (D33, `resaveIfDue`): a run of steps at a
+ *  person's pace (a few hundred ms apart) is one write of where it ended,
+ *  instead of a rebuild per step that refuses the next. Shorter brings the
+ *  refusals back for a slower hand; longer widens the window in which a
+ *  closed tab loses the restore (the draft does not cover it; a reload
+ *  asks first, `beforeunload`). */
+const RESAVE_QUIET_MS = 700;
+
 /** Said when "Delete it" did not land: nothing was thrown away. */
 const DISCARD_FAILED =
   "The earlier changes could not be deleted - they are still kept, and offered again next time.";
@@ -289,6 +298,8 @@ let message: { id: string; text: string; refused?: true } | null = null;
 /** The open delete's Undo toast, until it times out or a newer edit
  *  comes. */
 let undoOffer: { toast: HTMLElement; timer: number } | null = null;
+/** The quiet time after the last step, before its resave (D33). */
+let resaveTimer: number | null = null;
 /** The last in-place refusal's toast: a new one takes its place. */
 let refusalToast: HTMLElement | null = null;
 /** The host of the link the open tour was fetched from, if it was. */
@@ -647,30 +658,56 @@ function runStep(which: "undo" | "redo"): void {
   }
   toast(`${STEP_WORDS[which].done}: ${outcome.what}.`);
   autosave.changed();
-  void resaveIfDue();
+  // Restarted by every step: the resave writes where a run of steps ended.
+  stopResaveTimer();
+  resaveTimer = window.setTimeout(() => {
+    resaveTimer = null;
+    void resaveIfDue();
+  }, RESAVE_QUIET_MS);
+}
+
+function stopResaveTimer(): void {
+  if (resaveTimer === null) return;
+  clearTimeout(resaveTimer);
+  resaveTimer = null;
 }
 
 /**
  * An undo or a redo that crossed the file written in place (D33, the
  * slice's `save.resave`, `tour-document.ts` `stepCrossesInPlaceSave`)
- * writes it again at once, through the one save path: the file on disk then
+ * writes it again once the steps paused (`RESAVE_QUIET_MS` after the last
+ * one), through the one save path: the file on disk then
  * holds what the editor shows, so a reload loses nothing (an open drops
  * every draft record of an id the file lacks). Quiet as an autosave - the
  * status line says "Saving…", then "Saved to <name>"; a refused or failed
  * write is said as an autosave's is, after the undo's own toast, and pauses
  * autosave as a failed Save does. Also for a large tour, whose autosave is
- * off: one write per crossing step. Never for downloads (`target` null): a
- * download cannot be rewritten silently. While a save runs it waits, and
- * that save's end asks again (`saveTour`).
+ * off. Never for downloads (`target` null): a download cannot be rewritten
+ * silently. It waits - the resave staying due - while a save runs (that
+ * save's end asks again, `saveTour`), while the steps' quiet time runs
+ * (its end asks), and while another tour is being chosen or opened (the
+ * open dialog's close asks, `showModal`).
  */
 async function resaveIfDue(): Promise<void> {
-  if (editor === null || target === null) return;
-  if (saving() || !saveState().resave) return;
   const mine = editor;
+  if (mine === null || !resaveMayStart()) return;
   const outcome = await saveTour("auto");
   if (editor !== mine || outcome === "held") return;
   if (outcome === "saved") autosave.saved();
   else autosave.failed();
+}
+
+/** A resave is due and nothing holds it: written in place, no save
+ *  running, the steps' quiet time over, no other tour being opened. */
+function resaveMayStart(): boolean {
+  return (
+    target !== null &&
+    saveState().resave &&
+    !saving() &&
+    resaveTimer === null &&
+    !busy &&
+    Boolean(modal.hidden)
+  );
 }
 
 function startMove(id: string): void {
@@ -1030,8 +1067,12 @@ function showModal(on: boolean): void {
   // Cancel returns to the open tour; with none there is nothing to return to.
   cancelButton.hidden = session === null;
   if (on) openError.hidden = true;
-  // An autosave held while the dialog showed may start now.
-  else autosave.poke();
+  // An autosave held while the dialog showed may start now, and so may a
+  // resave (D33).
+  else {
+    autosave.poke();
+    void resaveIfDue();
+  }
 }
 
 /** Leaving would lose edits: changes not saved, or a save not delivered. */
@@ -1095,6 +1136,7 @@ function leaveFile(): void {
   letGo = was?.released ?? Promise.resolve();
   target = null;
   autosave.stop();
+  stopResaveTimer();
   refusalToast = null;
   keepsWalk = false;
   for (const t of fileToasts.splice(0)) t.remove();
