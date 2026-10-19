@@ -26,6 +26,10 @@
  * object in that parent's frame (`poseOf`): the creator's previews of
  * THIS visit sit under the AR world group at their odometry pose, so they
  * stay rigid while GPS re-solves (authoring plan 2026-09-28-0953 §3.2, M2c).
+ *
+ * A version 3 tour (tour editor plan 2026-10-17-1816, W3) is played by
+ * `renderTourStations`: one group per station at its geo pose, its pins
+ * and photos children at their LOCAL poses, so a station moves them all.
  */
 
 import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -33,10 +37,12 @@ import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-min
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import { tourContentEntryName } from "gps-plus-slam-app-framework/ar/tour-archive";
+import type { TourContentFields } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
   TourObject,
   TourPhoto,
   TourPin,
+  TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
@@ -199,9 +205,78 @@ export interface RenderedTourObjects {
  * decoded first (async); a failed decode leaves that object out and names
  * it in `skipped` (the null-tolerance rule of the levels, made visible).
  */
-export async function renderTourObjects(
+export function renderTourObjects(
   objects: readonly TourObject[],
   deps: TourObjectRendererDeps,
+): Promise<RenderedTourObjects> {
+  const { poseOf } = deps;
+  return renderContent(objects, {
+    ...deps,
+    poseOf: (object) =>
+      poseOf?.(object) ?? objectPoseNue(object.geo, deps.zero),
+  });
+}
+
+/** What `renderTourStations` needs: the renderer's, without a pose rule
+ *  (a station's items carry their own). */
+export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf">;
+
+/**
+ * Play a version 3 tour's stations (tour editor plan W3): under ONE root
+ * group, each station with items as a group at its geo pose in the
+ * session's NUE (`objectPoseNue`), and its pins and photos as children at
+ * their local poses. A station without items draws nothing. The root is
+ * added to the scene once every photo decoded (M5 review #6's rule).
+ *
+ * The station's group stands in the session's tangent plane, the items in
+ * the station's: for a zero within a kilometre the two agree to well under
+ * a centimetre (`content-placement.test.ts`, swept).
+ */
+export async function renderTourStations(
+  stations: readonly TourStation[],
+  deps: TourStationRendererDeps,
+): Promise<RenderedTourObjects> {
+  const root = new Group();
+  const parts: RenderedTourObjects[] = [];
+  for (const station of stations) {
+    if (station.items.length === 0) continue;
+    const frame = new Group();
+    const at = objectPoseNue(station.geo, deps.zero);
+    frame.position.set(...at.positionNue);
+    frame.quaternion.set(...at.rotationNue);
+    root.add(frame);
+    const poses = new Map(station.items.map((item) => [item.id, item.pose]));
+    parts.push(
+      await renderContent(station.items, {
+        ...deps,
+        scene: frame,
+        poseOf: (item) => {
+          const pose = poses.get(item.id)!;
+          return { positionNue: pose.position, rotationNue: pose.rotation };
+        },
+      }),
+    );
+  }
+  deps.scene.add(root);
+  return {
+    count: parts.reduce((sum, part) => sum + part.count, 0),
+    skipped: parts.flatMap((part) => part.skipped),
+    root,
+    dispose: () => {
+      root.removeFromParent();
+      deps.scene.remove(root);
+      for (const part of parts) part.dispose();
+    },
+  };
+}
+
+/** The one renderer: pins as labels, photos as planes, each at `poseOf`
+ *  in `scene`'s frame, under one group added once everything decoded. */
+async function renderContent<T extends TourContentFields>(
+  objects: readonly T[],
+  deps: Omit<TourObjectRendererDeps, "poseOf"> & {
+    poseOf: (object: T) => ObjectPoseNue;
+  },
 ): Promise<RenderedTourObjects> {
   const labels: { object: Object3D; dispose(): void }[] = [];
   const photoPoses: ObjectPoseNue[] = [];
@@ -214,12 +289,18 @@ export async function renderTourObjects(
   // GPU-memory hazard, and decoding them all at once doubles the peak.
   const group = new Group();
   for (const object of objects) {
-    const pose = deps.poseOf?.(object) ?? objectPoseNue(object.geo, deps.zero);
+    const pose = deps.poseOf(object);
     if (object.kind === "pin") {
       const label = deps.makeLabel(object.label);
       label.object.position.set(...pose.positionNue);
       group.add(label.object);
       labels.push(label);
+      continue;
+    }
+    if (object.kind === "model") {
+      // No renderer draws a placed model yet (format minor 1): left out
+      // quietly, as a lenient read leaves out what it cannot show. Not in
+      // `skipped`: "could not load" would claim a download failed.
       continue;
     }
     const texture = await deps

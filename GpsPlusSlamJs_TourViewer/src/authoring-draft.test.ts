@@ -19,7 +19,9 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
-  createEmptyTourManifest,
+  parseTourManifest,
+  serializeTourManifest,
+  tourItems,
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -45,6 +47,8 @@ import {
   DRAFT_BASE_MAX_KEYS,
   withBaseKey,
 } from "./authoring-draft.js";
+import { finishedManifest } from "./finish-rebuild.js";
+import { asHosted, tourOf } from "./test-support/v3-tour.js";
 
 function pin(id: string): TourObject {
   return {
@@ -87,7 +91,7 @@ function edited(object: TourObject, label: string): TourObject {
 }
 
 function manifestOf(objects: readonly TourObject[]): TourManifest {
-  return { ...createEmptyTourManifest(), objects: [...objects] };
+  return tourOf([...objects]);
 }
 
 describe("draftObjectsNotYetHosted", () => {
@@ -146,6 +150,31 @@ describe("draftObjectsNotYetHosted", () => {
     const draft = draftOf([pin("a"), pin("b")]);
     expect(draftObjectsNotYetHosted(draft, null)).toHaveLength(2);
     expect(draftObjectsNotYetHosted(draft, manifestOf([]))).toHaveLength(2);
+  });
+
+  // Why (M5a review L2): the hosted comparison re-expresses a draft object
+  // in its HOSTED station's frame to absorb the round trip's micrometres,
+  // and that step overwrote the object's own `station` - so an object moved
+  // into another station at the same spot read as already saved, was never
+  // offered back, and a spent draft would have deleted the re-assignment.
+  it("counts a re-assignment to another station as not yet hosted, at the same spot", () => {
+    const hosted = manifestOf([pin("a"), pin("b")]);
+    const inA = asHosted(pin("a"));
+    const movedToB: TourObject = { ...inA, station: "st-b" };
+    const draft = draftOf([movedToB]);
+    expect(draftObjectsNotYetHosted(draft, hosted).map((o) => o.id)).toEqual([
+      "a",
+    ]);
+    expect(draftIsSpent({ ...draft, level: null }, hosted)).toBe(false);
+    // The same object in its own station is still held, round trip and all.
+    expect(draftObjectsNotYetHosted(draftOf([inA]), hosted)).toEqual([]);
+    // A station the file does not have is no move: the writer keeps the
+    // object where it is (`withTourContent`), so it is held.
+    expect(
+      draftObjectsNotYetHosted(draftOf([{ ...inA, station: "gone" }]), hosted),
+    ).toEqual([]);
+    // And one that names no station is judged by its spot alone, as before.
+    expect(draftObjectsNotYetHosted(draftOf([pin("a")]), hosted)).toEqual([]);
   });
 
   it("never returns anything the manifest already has (property)", () => {
@@ -323,6 +352,30 @@ describe("contentEntriesToRemove (a deleted photo takes its jpg with it)", () =>
     ).toEqual(["mytour/content/p1.jpg"]);
     expect(contentEntriesToRemove([photo("p1")], [], "")).toEqual([]);
   });
+
+  // Why: placed 3D models (format minor 1) name a SHARED model asset, not a
+  // file of their own. Deleting one model must never remove that asset's
+  // file - the other model still draws from it - and the tour written
+  // after the delete must still name a model asset that exists.
+  it("removes no file when one of two models sharing an asset is deleted, and the rebuilt tour still validates", () => {
+    const model = (id: string, lat: number): TourObject => ({
+      id,
+      kind: "model",
+      asset: "statue",
+      sizeM: 4,
+      createdAtIso: "2026-10-19T00:00:00.000Z",
+      geo: { lat, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+    });
+    const both = [model("m1", 48.52), model("m2", 48.5201)];
+    const manifest = tourOf(both, {
+      assets: [{ id: "statue", path: "content/statue.glb", kind: "model" }],
+    });
+    expect(contentEntriesToRemove(both, ["m1"], "mytour/")).toEqual([]);
+    const written = finishedManifest({ manifest, placed: [], deleted: ["m1"] });
+    const read = parseTourManifest(JSON.parse(serializeTourManifest(written)));
+    expect(tourItems(read).map((i) => i.id)).toEqual(["m2"]);
+    expect(read.assets.map((a) => a.path)).toEqual(["content/statue.glb"]);
+  });
 });
 
 describe("draftKeyForTour", () => {
@@ -381,6 +434,15 @@ describe("the words the creator reads", () => {
     );
   });
 
+  // Why: live work on an id outranks the draft's, so a restore can bring
+  // back nothing at all. The note then claimed the code's measured
+  // position came back although no code did.
+  it("claims the measured code only when one came back, and says when nothing did", () => {
+    expect(restoredText(0, true)).toContain("measured position was restored");
+    expect(restoredText(0, false)).not.toContain("measured position");
+    expect(restoredText(0, false)).toContain("Nothing");
+  });
+
   it("always names the count and never reads as a command (property)", () => {
     fc.assert(
       fc.property(fc.integer({ min: 1, max: 500 }), (count) => {
@@ -434,17 +496,14 @@ describe("a newer edit elsewhere wins over the phone's draft (M6 E2p)", () => {
   // phone draft that still held an older edit of the same object offered
   // it back ("1 change. Add it back?"), and a yes reverted the desktop's
   // edit; a pin the desktop deleted came back as "1 thing you placed".
-  const manifestOf = (objects: TourObject[]): TourManifest => ({
-    ...createEmptyTourManifest(),
-    objects,
-  });
   const relabel = (o: TourObject, label: string): TourObject => ({
     ...o,
     label,
   });
-  /** A base that saw these versions hosted. */
+  /** A base that saw these versions hosted: as the hosted file reads
+   *  them back (version 3: in their station, with a minted rotation). */
   const seen = (...objects: TourObject[]): DraftBase => ({
-    seen: objects.map(objectContentKey),
+    seen: objects.map((o) => objectContentKey(asHosted(o))),
     written: [],
   });
 
@@ -547,7 +606,10 @@ describe("a newer edit elsewhere wins over the phone's draft (M6 E2p)", () => {
       bases: new Map([
         [
           "a",
-          { seen: [objectContentKey(a0)], written: [objectContentKey(p1)] },
+          {
+            seen: [objectContentKey(asHosted(a0))],
+            written: [objectContentKey(asHosted(p1))],
+          },
         ],
       ]),
     };
@@ -609,19 +671,20 @@ describe("the editor's uses of the shared rules (M6 E2c)", () => {
   // parser normalises a heading into [0, 360) - or a base never matches
   // the version the file carries.
   it("reads a manifest as a reader of the written file would", () => {
-    const manifest: TourManifest = {
-      ...createEmptyTourManifest(),
-      objects: [
-        { ...pin("a"), geo: { lat: 1, lon: 2, alt: 3, headingDeg: 370 } },
+    const manifest = tourOf([pin("a")]);
+    const turned: TourManifest = {
+      ...manifest,
+      stations: [
+        {
+          ...manifest.stations[0]!,
+          geo: { lat: 1, lon: 2, alt: 3, headingDeg: 370 },
+        },
       ],
     };
-    const read = manifestAsRead(manifest);
-    expect(read.objects[0]?.geo).toMatchObject({ headingDeg: 10 });
+    const read = manifestAsRead(turned);
+    expect(read.stations[0]?.geo).toMatchObject({ headingDeg: 10 });
     // A manifest the serializer refuses is returned as it is.
-    const twice: TourManifest = {
-      ...createEmptyTourManifest(),
-      objects: [pin("a"), pin("a")],
-    };
+    const twice = tourOf([pin("a"), pin("a")]);
     expect(manifestAsRead(twice)).toBe(twice);
   });
 });

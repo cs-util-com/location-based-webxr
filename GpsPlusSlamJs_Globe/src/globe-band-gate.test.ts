@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 import {
   GLOBE_BAND_GATE,
   nextDrawnShare,
+  topLevelInView,
   topLevelReady,
 } from "./globe-band-gate.js";
 
@@ -154,5 +155,96 @@ describe("topLevelReady", () => {
     expect(topLevelReady({ root: null, frameCount: 0 })).toBe(false);
     const root = tile(true, 3, true, [tile(false, 3)]);
     expect(topLevelReady({ root, frameCount: 9 })).toBe(false);
+  });
+});
+
+describe("topLevelReady with nothing of the set in view", () => {
+  // Why: a view placed under the relief (a link's ellipsoidal height below
+  // the ground, the editor's first person before the clearance lifts it)
+  // that looks steeply down sees none of the relief: the library clears
+  // `inFrustum` on every tile none of whose children is in view, up to the
+  // top level. "No top-level tile in view" then read as "not ready", so
+  // the relief never took a pixel, and the clearance, which lifts the
+  // camera only where the relief draws, never got the camera out: the
+  // lab's steep first views below the ground stayed on the globe for good.
+  // A set its last update visited with nothing in view has nothing missing
+  // from the view: it is ready.
+  it("is ready when its top-level tiles were visited this frame and none is in view", () => {
+    const root = tile(true, 7, false, [tile(true, 7, false)]);
+    expect(topLevelReady({ root, frameCount: 7 })).toBe(true);
+    // Even when such a tile is still loading: nothing of it is drawn here.
+    const loading = tile(true, 7, false, [tile(false, 7, false)]);
+    expect(topLevelReady({ root: loading, frameCount: 7 })).toBe(true);
+  });
+
+  // Why: the other half of the rule must survive: a set whose last update
+  // did not visit its top level this frame has said nothing about the view.
+  it("is still not ready when no top-level tile was visited this frame", () => {
+    const root = tile(true, 6, false, [tile(true, 6, false)]);
+    expect(topLevelReady({ root, frameCount: 7 })).toBe(false);
+    expect(
+      topLevelReady({ root: tile(true, 7, false, []), frameCount: 7 }),
+    ).toBe(false);
+  });
+});
+
+describe("topLevelInView", () => {
+  // Why: the globe's first look (the plain sphere that fills its holes
+  // until it has first drawn its view) must not end on a frame that saw
+  // none of the globe. With "nothing in view is ready" above, a camera
+  // that starts looking away from the Earth would end it for good, and
+  // turning to the Earth would show the holes it exists to fill. The first
+  // look therefore also asks whether a top-level tile was in view.
+  it("is true only for a top-level tile visited this frame and in view", () => {
+    expect(
+      topLevelInView({
+        root: tile(true, 7, true, [tile(false, 7)]),
+        frameCount: 7,
+      }),
+    ).toBe(true);
+    expect(
+      topLevelInView({
+        root: tile(true, 7, true, [tile(true, 7, false), tile(true, 6)]),
+        frameCount: 7,
+      }),
+    ).toBe(false);
+    expect(topLevelInView({ root: null, frameCount: 0 })).toBe(false);
+    expect(
+      topLevelInView({ root: tile(true, 7, true, []), frameCount: 7 }),
+    ).toBe(false);
+  });
+});
+
+describe("topLevelReady over random top levels", () => {
+  // Why: the gate's readiness must hold for any mix of top-level tiles a
+  // frame can show, not only the cases named above: a top-level tile in
+  // view that is still loading always blocks (that is the hole the gate
+  // exists to prevent), tiles out of view or not visited this frame never
+  // block, and a set its last update did not visit is never ready.
+  it("blocks exactly on a visited, in-view tile that has not loaded", () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            loaded: fc.boolean(),
+            visited: fc.boolean(),
+            inView: fc.boolean(),
+          }),
+          { maxLength: 8 },
+        ),
+        (tiles) => {
+          const root = tile(
+            true,
+            7,
+            true,
+            tiles.map((t) => tile(t.loaded, t.visited ? 7 : 6, t.inView)),
+          );
+          const ready = topLevelReady({ root, frameCount: 7 });
+          const anyVisited = tiles.some((t) => t.visited);
+          const hole = tiles.some((t) => t.visited && t.inView && !t.loaded);
+          expect(ready).toBe(anyVisited && !hole);
+        },
+      ),
+    );
   });
 });

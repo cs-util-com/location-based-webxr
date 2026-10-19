@@ -24,6 +24,14 @@ the image-plane loader and the AR entry (flows plan M6 pulled it out of
   other cause reads as Drive's refusal when `url` is a Drive URL, else the
   generic "cannot be opened as an archive"; a non-probe error passes its
   message through.
+- `HOST_REFUSED_TEXT` - the first sentence of every `cors` wording: the
+  creator's error box, the editor's link open (`editor/editor-link.ts`) and
+  the "You already have a tour?" box (`have-tour.ts`) each start with it
+  and add the way around their own page offers (M1 review #6).
+- `describeOpenCause(cause): string | undefined` - the fixed sentence of a
+  cause that needs neither the error nor the link (`missing`, `corrupt`,
+  `cors`, `offline`), else undefined; for callers that hold only an
+  outcome's cause.
 - `describeIntegrityError(err: TourIntegrityError): string` (tour kit plan
   K1, §4.2) - "does not match its own list of contents, so it is not
   shown ... Do not trust this copy", with the technical detail at the

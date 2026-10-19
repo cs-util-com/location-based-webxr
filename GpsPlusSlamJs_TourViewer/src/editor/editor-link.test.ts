@@ -1,0 +1,110 @@
+/**
+ * The editor opens a tour from its link (tour editor plan 2026-10-17-1816,
+ * W1 step 5).
+ *
+ * Why these tests matter: a creator whose tour is hosted had to download
+ * the zip before the editor could open it. The link is fetched whole
+ * through the same transport the viewer streams with (its Drive proxy, its
+ * caps, its refusal causes) and handed to the editor's ONE open path as a
+ * file. These pin what crosses that seam: every byte, in order; the name
+ * the editor's Save offers; the download stopped on every outcome; and a
+ * refusal worded as the viewer words it, never a raw transport error.
+ */
+import { OpenRemoteArchiveError } from "gps-plus-slam-app-framework/storage";
+import { describe, expect, it, vi } from "vitest";
+
+import { HOST_REFUSED_TEXT, describeOpenError } from "../open-errors.js";
+import { NOT_A_LINK, fetchTourFile, linkOpenErrorText } from "./editor-link.js";
+
+function fakeArchive(bytes: Uint8Array, url: string) {
+  return {
+    size: bytes.length,
+    url,
+    source: {
+      size: bytes.length,
+      read: vi.fn((offset: number, length: number) =>
+        Promise.resolve(bytes.slice(offset, offset + length)),
+      ),
+    },
+    dispose: vi.fn(),
+  };
+}
+
+const LINK = "https://example.test/tours/Castle%20walk.zip";
+
+describe("fetchTourFile", () => {
+  it("reads the whole archive, in slices, into a zip File named after the link", async () => {
+    const bytes = Uint8Array.from({ length: 10 }, (_, i) => i);
+    const archive = fakeArchive(bytes, LINK);
+    const open = vi.fn(() => Promise.resolve(archive));
+    const file = await fetchTourFile(` ${LINK} `, {
+      open,
+      corsProxyBaseUrl: "/api/drive-proxy",
+      sliceBytes: 4,
+    });
+    expect(open).toHaveBeenCalledWith(LINK, {
+      corsProxyBaseUrl: "/api/drive-proxy",
+      warm: false,
+    });
+    expect(file.name).toBe("Castle walk.zip");
+    expect(file.type).toBe("application/zip");
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(bytes);
+    expect(archive.source.read).toHaveBeenCalledTimes(3);
+    expect(archive.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("names a link without a .zip name tour.zip (a Drive id says nothing)", async () => {
+    const drive = "https://drive.google.com/file/d/abc123/view";
+    const archive = fakeArchive(new Uint8Array([1]), drive);
+    const file = await fetchTourFile(drive, {
+      open: () => Promise.resolve(archive),
+    });
+    expect(file.name).toBe("tour.zip");
+  });
+
+  it("stops the download when a read fails, and rejects", async () => {
+    const archive = fakeArchive(new Uint8Array(8), LINK);
+    archive.source.read.mockImplementationOnce(() =>
+      Promise.reject(new Error("network gone")),
+    );
+    await expect(
+      fetchTourFile(LINK, { open: () => Promise.resolve(archive) }),
+    ).rejects.toThrow("network gone");
+    expect(archive.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses what is not a web link, before any request", async () => {
+    const open = vi.fn();
+    for (const text of ["", "   ", "castle.zip", "ftp://example.test/a.zip"]) {
+      await expect(fetchTourFile(text, { open })).rejects.toThrow(NOT_A_LINK);
+    }
+    expect(open).not.toHaveBeenCalled();
+  });
+});
+
+describe("linkOpenErrorText", () => {
+  it("words a refusal as the viewer does (a host that blocks browsers)", () => {
+    const text = linkOpenErrorText(
+      new OpenRemoteArchiveError("blocked", "cors"),
+      LINK,
+    );
+    // One wording for one refusal (M1 review #6): the viewer's first
+    // sentence itself, not a copy that can drift from it.
+    expect(text.split("\n")[0]).toBe(HOST_REFUSED_TEXT);
+    // The viewer's "tap Open the downloaded file below" names a button
+    // the editor has not got: here the way around is its own picker.
+    expect(text).toMatch(/download the file to this computer, then choose it/i);
+    expect(text).not.toMatch(/Open the downloaded file/);
+  });
+
+  it("words every other refusal exactly as the viewer does", () => {
+    const err = new OpenRemoteArchiveError("gone", "missing");
+    expect(linkOpenErrorText(err, LINK)).toBe(describeOpenError(err, LINK));
+  });
+
+  it("keeps a plain error's own words", () => {
+    expect(linkOpenErrorText(new Error("network gone"), LINK)).toBe(
+      "network gone",
+    );
+  });
+});

@@ -73,8 +73,15 @@ import { wireVisitorStart } from "./visitor-start.js";
 import { wireFoldingLabel } from "./folding-label.js";
 import { pictureProblem } from "./image-cap.js";
 import { driveProxyBaseUrl } from "./drive-proxy-url.js";
-import { stepStoreOrUndefined, wireWizard } from "./wizard.js";
+import {
+  stepStoreOrUndefined,
+  visitorLaunchHref,
+  wireWizard,
+} from "./wizard.js";
+import { editorPitch, wireHaveTour } from "./have-tour.js";
 import { readPrintedText } from "./level-printed.js";
+import { wireTourNameField } from "./tour-name-field.js";
+import { renderTourContact } from "./tour-contact.js";
 
 /** Keep at most this many archives cached (LRU) — see BoundedLocalCacheStore. */
 const MAX_CACHED_ARCHIVES = 5;
@@ -150,7 +157,7 @@ const arController = createEnableGpsArController({
       requestGeolocationPermission,
   }),
 });
-const ctx = createTourViewerSession();
+const ctx = createTourViewerSession(arStore);
 ctx.debug = debug;
 // The gallery is a creator's debugging aid (polish round M2): shown only
 // with ?debug=1, and never to a visitor, whose tour appears in AR. Hidden,
@@ -205,7 +212,7 @@ const print = wirePrintPanel({
   downloadPdf: (blob, filename) => seams.downloadPdf(blob, filename),
   openPdfTab: () => seams.openPdfTab(),
   // The poster title defaults to the tour's name (polish round D-P7).
-  tourTitle: () => ctx.tourManifest?.title ?? null,
+  tourTitle: () => ctx.tourDocument.manifest()?.title ?? null,
   posterStore: stepStoreOrUndefined(),
   // The re-check before the PDF of a link step 2 could not confirm
   // (polish round M2): the same transport an open uses, probed and let go.
@@ -369,7 +376,7 @@ const visitor = wireVisitorScreen({
   // read failed (r857 review #4).
   codesUsable: () => tourCodesUsable(ctx.currentLevels, ctx.levelsUnreadable),
   // A tour marked "needs no GPS" never asks its visitor (Q-QF-1).
-  needsNoGps: () => ctx.tourManifest?.needsNoGps === true,
+  needsNoGps: () => ctx.tourDocument.manifest()?.needsNoGps === true,
 });
 
 // The visitor's start page leads with the tour's name, a line and one of
@@ -379,6 +386,8 @@ if (mode === "visitor") {
     dom: {
       title: element("visitor-title"),
       subline: element("visitor-subline"),
+      description: element("visitor-description"),
+      page: document,
       cover: element("visitor-cover"),
       coverImage: element<HTMLImageElement>("visitor-cover-image"),
     },
@@ -388,9 +397,29 @@ if (mode === "visitor") {
     },
     checkPicture: pictureProblem,
   });
+  // The tour's contact under an error (W2, D15): while an error shows,
+  // for the tour open now. An error before its manifest is read names no
+  // contact: the contact is inside the file.
+  const contactDom = {
+    line: element("error-contact"),
+    link: element<HTMLAnchorElement>("error-contact-link"),
+  };
+  const renderContact = (): void => {
+    renderTourContact(
+      contactDom,
+      errorBox.textContent ?? "",
+      ctx.tourDocument.manifest()?.contact,
+    );
+  };
+  new MutationObserver(renderContact).observe(errorBox, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
   hooks.presentTourInfo = (manifest, loadImage) => {
     if (manifest === null) visitorStart.clear();
     else visitorStart.present(manifest, loadImage);
+    renderContact();
     visitor.tourChanged();
   };
   // The levels settle after the manifest, often: the line follows whether
@@ -485,6 +514,7 @@ if (mode === "creator") {
   for (const [id, label] of [
     ["setup-pin", "Place a pin"],
     ["setup-photo", "Take a photo"],
+    ["setup-new-station", "New station here"],
   ] as const) {
     wireFoldingLabel({
       button: element(id),
@@ -502,9 +532,40 @@ if (mode === "creator") {
   }
 }
 
+/** The tour's own name in step 3 (tour editor plan 2026-10-17-1816, W2):
+ *  it shows the open tour's title (or the name typed for it before a
+ *  reload) and tells the Finish what the creator did with it
+ *  (`tour-name-field.ts`). */
+const tourNameField = wireTourNameField(
+  element<HTMLInputElement>("tour-name-input"),
+  // A typed name outlives a reload, as the poster text does (M4a review
+  // #12), keyed by the tour's file.
+  stepStore,
+  // The name becomes the tour document's (W2): a change like any other,
+  // saved by the next Finish - or refused in words beside the field (over
+  // 80 characters, counted as the format counts them). Read when a tour
+  // opens, after `setup` exists.
+  {
+    apply: (name) => setup.renameTour(name),
+    error: element<HTMLElement>("tour-name-error"),
+  },
+);
+if (mode === "creator") {
+  hooks.presentTourInfo = (manifest) => {
+    tourNameField.present(
+      manifest?.title ?? null,
+      manifest === null ? null : (ctx.session?.archive.url ?? null),
+    );
+  };
+}
+
 const setup = wireCreatorSetup({
   ctx,
   mode,
+  // A name still in its field is the tour's before any Finish reads it.
+  beforeFinish: () => {
+    tourNameField.commit();
+  },
   // A code measured or restored from a draft after the open: the print
   // step continues the numbering past it (follow-up F16). Through the
   // hook, which the print panel fills in once it is wired.
@@ -516,9 +577,6 @@ const setup = wireCreatorSetup({
   },
   // Step 6 names the host chosen in step 1 (polish round M2).
   host: () => readTourHost(stepStore),
-  // The tour's name, typed in step 3 for the posters, becomes its title
-  // at the Finish (polish round M4a: the visitor's start page shows it).
-  tourTitle: () => element<HTMLInputElement>("poster-title").value,
   codeTour: {
     onDetection: (text) => {
       scanOpen?.onDetection(text);
@@ -559,6 +617,7 @@ const setup = wireCreatorSetup({
     pinSave: element("pin-save"),
     pinCancel: element("pin-cancel"),
     photoButton: element("setup-photo"),
+    newStationButton: element<HTMLButtonElement>("setup-new-station"),
     draftOffer: element("draft-offer"),
     draftOfferText: element("draft-offer-text"),
     draftRestore: element("draft-restore"),
@@ -570,6 +629,7 @@ const setup = wireCreatorSetup({
     sizeOfferKeep: element("size-offer-keep"),
     // Editing placed objects (authoring plan 2026-09-28-0953 M4).
     objectList: createObjectListView(element("object-list"), document),
+    stationChip: element("creator-station"),
   },
   // Crash-safe authoring (F13), in this origin's private file system - the
   // desktop editor's draft opens through the same wrapper (M6 E2c).
@@ -786,7 +846,12 @@ const stations = wireVisitorStations({
       }
     : {}),
 });
-hooks.tickStations = stations.tick;
+// Every camera frame: the visitor's stations, and the creator's open
+// station (each does nothing in the other mode).
+hooks.tickStations = () => {
+  stations.tick();
+  setup.tickStations();
+};
 hooks.stationCodeLocked = stations.codeLocked;
 hooks.unlockStationAudio = stations.unlockAudio;
 hooks.stopStations = stations.stop;
@@ -804,7 +869,8 @@ const arEntry = wireArEntry({
   mode,
   arStore,
   // The creator's ring on a mesh of the surroundings (polish round M5,
-  // Q-Mesh): behind ?mesh=1 until the owner likes it on the phone.
+  // Q-Mesh): the default since the owner's phone test of 2026-10-15;
+  // ?mesh=0 turns it off.
   meshCursor: mode === "creator" && meshCursorFromSearch(location.search),
   arController,
   gpsHandler,
@@ -857,6 +923,38 @@ const archive = wireArchiveOpen({
   hooks,
 });
 scanOpen = archive.scanOpen;
+
+// "You already have a tour?" below the steps (tour editor plan
+// 2026-10-17-1816, W1): a phone opens a tour through the page's one open
+// path, then plays it or goes on setting it up. A creator's only.
+if (mode === "creator") {
+  // The computer's half: what the editor's Save does in this browser.
+  element("have-tour-editor-text").textContent = editorPitch(window);
+  wireHaveTour({
+    dom: {
+      fileButton: element<HTMLButtonElement>("have-tour-file"),
+      fileInput: element<HTMLInputElement>("have-tour-input"),
+      form: element("have-tour-form"),
+      linkInput: element<HTMLInputElement>("have-tour-link"),
+      linkButton: element<HTMLButtonElement>("have-tour-open"),
+      status: element("have-tour-status"),
+      ask: element("have-tour-ask"),
+      askText: element("have-tour-ask-text"),
+      play: element<HTMLAnchorElement>("have-tour-play"),
+      continueButton: element("have-tour-continue"),
+    },
+    openFile: archive.openFile,
+    openLink: archive.openLink,
+    playHref: (url) => visitorLaunchHref(url, ctx.debug),
+    errorText: () => errorBox.textContent ?? "",
+    continueSetup: () => {
+      element("setup-card").scrollIntoView({
+        block: "start",
+        behavior: "smooth",
+      });
+    },
+  });
+}
 
 // The QR launch is the one flow with no retry (a printed code) — an
 // unexpected boot failure must reach the error box, not vanish in an

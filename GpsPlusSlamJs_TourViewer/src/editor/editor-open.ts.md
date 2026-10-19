@@ -10,8 +10,10 @@ and the codes, or the reason the file cannot be edited, worded by
 ## Public API
 
 - `openTourForEditing(file, { onIntegrityFailure?, open? }): Promise<EditorOpen>`
-  - `{ kind: "opened", session, manifest, levels, fileName }` - `manifest`
-    is an empty one for a tour with codes but no `tour.json`.
+  - `{ kind: "opened", session, manifest, levels, fileName, dropped }` -
+    `manifest` is an empty one for a tour with codes but no `tour.json`;
+    `dropped` lists the details the format's reader left out (a
+    hand-edited description, contact or cover; M4a review #6).
   - `{ kind: "refused", reason }`:
     - `NOT_A_ZIP` for a name without `.zip` and a type other than
       `application/zip` (checked before any read);
@@ -24,6 +26,10 @@ and the codes, or the reason the file cannot be edited, worded by
       after the open succeeded.
   - `onIntegrityFailure` is passed to the opener for the late (background)
     check; `open` replaces the opener in tests.
+- `droppedDetailsLine(dropped): string | null` - the page's toast for
+  them: which details ("This tour's cover and contact could not be
+  read..."), that the next save writes the tour without them, and to set
+  them again; null for none.
 - `EditorOpen`, `NOT_A_TOUR`, `NOT_A_ZIP`.
 
 ## Invariants & assumptions
@@ -35,4 +41,4 @@ and the codes, or the reason the file cannot be edited, worded by
 
 `editor-open.test.ts` on real zips: a tour, a zip without a tour, a broken
 `tour.json`, a non-zip name (the opener never called), a zip the opener
-refuses.
+refuses, and the dropped details named in the toast's words.

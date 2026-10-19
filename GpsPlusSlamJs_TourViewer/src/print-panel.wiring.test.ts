@@ -232,7 +232,7 @@ describe("the poster text (polish round D-P7, r820 feedback R8)", () => {
     panel.presentTour("https://h.example/t.zip");
     expect(dom.posterTitle.value).toBe("Harbour Lights");
     expect(dom.posterExplanation.value).toBe("AR tour starts here");
-    expect(dom.posterCallToAction.value).toBe("Scan with your phone camera");
+    expect(dom.posterCallToAction.value).toBe("Scan with Chrome on Android");
     dom.posterExplanation.value = "";
     dom.posterExplanation.fire("input");
     dom.pdfButton.fire("click");
@@ -241,7 +241,7 @@ describe("the poster text (polish round D-P7, r820 feedback R8)", () => {
       poster: {
         title: "Harbour Lights",
         explanation: "",
-        callToAction: "Scan with your phone camera",
+        callToAction: "Scan with Chrome on Android",
       },
     });
   });
@@ -252,7 +252,7 @@ describe("the poster text (polish round D-P7, r820 feedback R8)", () => {
   it("starts with the default wording before any tour opens", () => {
     const { dom } = wire();
     expect(dom.posterExplanation.value).toBe("AR tour starts here");
-    expect(dom.posterCallToAction.value).toBe("Scan with your phone camera");
+    expect(dom.posterCallToAction.value).toBe("Scan with Chrome on Android");
     expect(dom.posterTitle.value).toBe("");
   });
 
@@ -431,9 +431,11 @@ describe("a cleared link clears the posters (PR #595 review)", () => {
 });
 
 describe("a tour that goes away takes its poster text with it (M4 review #2)", () => {
-  // Why: since the Finish writes the poster title as the tour's name, a
-  // title left over from the previous tour would rename the next one - a
-  // tour opened from a file keeps no link to load its own text by.
+  // Why: a title left over from the previous tour would print its name on
+  // the next tour's posters - a tour opened from a file keeps no link to
+  // load its own text by. (It used to rename the next tour too, while the
+  // Finish wrote the poster title as the tour's name; the name has its own
+  // field since W2, M4a review #9.)
   it("clears the previous tour's poster title, and the next tour's name fills it", () => {
     let name: string | null = null;
     const { dom, panel } = wire({ tourTitle: () => name });

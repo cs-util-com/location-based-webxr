@@ -11,6 +11,7 @@
         "src/model/index.ts",
         "src/source/index.ts",
         "src/spatial/index.ts",
+        "src/three/index.ts",
         "config/eslint.config.mjs"
       ],
       "project": ["src/**/*.ts"],
@@ -19,6 +20,7 @@
     "GpsPlusSlamJs_Globe": {
       "entry": [
         "src/globe-surface.ts",
+        "src/globe-editor.ts",
         "src/vendor/generated-surface-plugin.ts",
         "scripts/fetch-globe-assets.mjs",
         "config/eslint.config.mjs"
@@ -213,7 +215,13 @@
     "GpsPlusSlamJs_DesignSystem": {
       "entry": ["config/stylelint.config.mjs"],
       "project": ["*.mjs", "config/*.mjs"],
-      "ignoreUnresolved": ["/3d/water-metrics.mjs", "/globe/sky-level.js"],
+      "ignoreUnresolved": [
+        "/3d/water-metrics.mjs",
+        "/globe/sky-level.js",
+        "/fw/visualization/atmosphere/cloud-live-noise.js",
+        "/globe/globe-cloud-shell-volume.js",
+        "/globe/globe-sources.js"
+      ],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "stylelint-config-standard"

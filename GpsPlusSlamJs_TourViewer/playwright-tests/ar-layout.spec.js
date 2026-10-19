@@ -210,9 +210,20 @@ async function box(page, testId) {
   return { left: b.x, top: b.y, right: b.x + b.width, bottom: b.y + b.height };
 }
 
+/**
+ * A wide sans-serif in place of the UI font. Windows renders the stack in
+ * Corbel, a narrow face; a Linux runner falls back to a much wider one, and
+ * the chip row that fit locally overflowed the 360 px screen there (left
+ * edge at -3.86 px). Every layout check below runs in the wide face, so a
+ * local run sees what a phone with wide fonts sees.
+ */
+const WIDE_UI_FONT =
+  ':root { --font-ui: "DejaVu Sans", Verdana, sans-serif !important; }';
+
 for (const viewport of [
   { width: 412, height: 915 },
   { width: 360, height: 640 },
+  { width: 320, height: 640 },
   { width: 915, height: 412 },
 ]) {
   test(`the creator's HUD in AR is H1 on ${viewport.width}x${viewport.height}: the card top left, Done top right, the chips at the bottom (polish round M3, D-P4)`, async ({
@@ -227,6 +238,7 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await installTourViewerArFakes(page);
     await page.goto("/");
+    await page.addStyleTag({ content: WIDE_UI_FONT });
     await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
     await page.getByTestId("open-button").click();
     await expect(page.locator("body")).toHaveAttribute(
@@ -266,6 +278,7 @@ for (const viewport of [
     const card = await box(page, "setup-status");
     const pin = await box(page, "setup-pin");
     const photo = await box(page, "setup-photo");
+    const newStation = await box(page, "setup-new-station");
     // Done: a chip at the top right.
     await expect(page.getByTestId("enter-ar")).toHaveText("Done");
     expect(done.top).toBeLessThan(40);
@@ -275,11 +288,36 @@ for (const viewport of [
     expect(card.left).toBeLessThan(40);
     expect(card.right).toBeLessThanOrEqual(done.left);
     // The chips: at the bottom, one row, "Place a pin" first, centred.
+    // "New station here" (D8) sits centred just above that row on every
+    // screen, never off screen.
     expect(viewport.height - pin.bottom).toBeLessThan(80);
     expect(Math.abs(pin.top - photo.top)).toBeLessThan(6);
     expect(pin.right).toBeLessThanOrEqual(photo.left);
     const middle = (pin.left + photo.right) / 2;
     expect(Math.abs(middle - viewport.width / 2)).toBeLessThan(2);
+    expect(newStation.bottom).toBeLessThanOrEqual(pin.top);
+    expect(pin.top - newStation.bottom).toBeLessThan(16);
+    expect(
+      Math.abs((newStation.left + newStation.right) / 2 - viewport.width / 2),
+    ).toBeLessThan(2);
+    // The whole row on screen, at every width down to 320 px in the wide
+    // face: a centred row wider than the screen spills off both edges.
+    expect(pin.left).toBeGreaterThanOrEqual(0);
+    expect(photo.right).toBeLessThanOrEqual(viewport.width);
+    expect(newStation.left).toBeGreaterThanOrEqual(0);
+    expect(newStation.right).toBeLessThanOrEqual(viewport.width);
+    // The focus and reading order is the order on screen (WCAG 2.4.3):
+    // top to bottom, then left to right - never CSS `order` or a reversed
+    // wrap, which move the boxes but not the tab stops.
+    expect(
+      await page
+        .getByTestId("setup-controls")
+        .evaluate((el) =>
+          [...el.querySelectorAll("button")]
+            .filter((b) => b.getClientRects().length > 0)
+            .map((b) => b.dataset.testid),
+        ),
+    ).toEqual(["setup-new-station", "setup-pin", "setup-photo"]);
     // The camera view between them is clear: nothing of the panel there.
     expect(pin.top - card.bottom).toBeGreaterThan(viewport.height * 0.3);
     // The technical line is ?debug=1's only.

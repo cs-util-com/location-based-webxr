@@ -29,7 +29,7 @@ import {
   heightfieldFrom,
   TERRAIN_EXTENT_M,
   type HeightfieldData,
-} from "./heightfield.js";
+} from "gps-plus-slam-osm";
 
 /** A field with deliberate TWIST, which is the only thing that separates the two
  * interpolations: a plane or a pure ramp is bilinear and barycentric alike. */

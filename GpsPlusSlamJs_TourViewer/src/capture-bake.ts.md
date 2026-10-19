@@ -6,8 +6,9 @@ The capture join, baked (scan-pass plan
 `2026-10-05-1240-tour-scan-pass-desktop-editor-and-partial-download-plan`,
 S1 and owner decision S-D11): replay a tour's recording once, place each
 recorded photo through the first settled alignment after it was taken, and
-return the spots `tour.json` carries as `captureSpots`. The creator's
-Finish writes them; a visitor places them and never downloads or replays
+return the spots in the world (`CaptureSpotsInWorld` of `tour-content.ts`).
+The creator's Finish writes them as `captureSpots`, each photo in a station
+at a local pose (version 3, tour editor plan W3, D21); a visitor places them and never downloads or replays
 the walk. The viewer runs the same function over a tour never finished
 since S1, so a baked tour and an unbaked one show the photos at the same
 spots.
@@ -23,8 +24,23 @@ spots.
   - `options.onChunk(done, total)`: the replay's progress.
   - `options.extentOf(state)`: the pick tracker's GPS-extent measure
     (`createCapturePickTracker`'s own option); production leaves it unset.
-  - Result: `{ kind: "baked", spots }` or `{ kind: "declined", reason }`.
-- `posesOfCaptureSpots(spots) -> CaptureWorldPose[]`: the spots as the
+  - Result: `{ kind: "baked", spots }` or `{ kind: "declined", reason,
+placesNothing? }`. `placesNothing: true` when the replayed walk names
+    no recorded photo the tour carries (no photo was taken, or none of
+    their files is in the zip): it places nothing, live or baked, whatever
+    its GPS came to, so a lean Finish may leave it out and the editor may
+    move it out (the M4b milestone review #3). Only a recording of a known
+    era (`NEWEST_KNOWN_ODOM_COORD_VERSION`) may say so, and "no photo was
+    taken" means no `CAPTURE_ACTION` at all: a newer era, or photos the
+    replay turned into no spot (taken before the GPS zero), decline WITHOUT
+    `placesNothing` and keep the walk (PR #638 review). The era is NARROWED
+    (a number at most the newest known), never cast: a hand-edited string
+    version compares as a number in JavaScript ("3" <= 5; PR #640 review).
+    Today the preflight already declines such a version before the replay;
+    the narrowing keeps this branch safe on its own. Absent for a decline before
+    the replay (unknown) and for photos the tour carries that the solve
+    could not place.
+- `posesOfCaptureSpots(spots: CaptureSpotsInWorld) -> CaptureWorldPose[]`: the spots as the
   join's poses for the viewer's one placing path (`alt` becomes
   `altitude`); a spot without a rotation is left out.
 
@@ -32,9 +48,13 @@ spots.
 
 - **Every decline is the live join's own** (`preflightCaptureJoin`: no
   recording, era, segmenting actions; `assessReplayedJoin`: no GPS, too
-  few fixes, an unsolved or malformed alignment, no captures), plus one:
-  no photo file left. A declined bake writes nothing, so the tour keeps
-  the live join, exactly as before S1.
+  few fixes, an unsolved or malformed alignment, no captures), plus two:
+  no photo file left ("no recorded photo file in this tour", checked
+  right after the replay, before the GPS verdict, with `placesNothing`),
+  and photo files none of which could be placed ("none of the recorded
+  photos could be placed"; no unit test reaches it - the sample's solve
+  places every photo whose file it names). A declined bake writes nothing,
+  so the tour keeps the live join, exactly as before S1.
 - **Only photos the zip carries as images are baked**: the live join's
   decode skips a missing frame, and a spot naming no file would show
   nothing.
@@ -56,7 +76,9 @@ spots.
 const bake = await bakeCaptureSpots(session, {
   shouldContinue: () => ctx.session === session,
 });
-if (bake.kind === "baked") manifest = { ...manifest, captureSpots: bake.spots };
+if (bake.kind === "baked") {
+  manifest = withTourContent(manifest, { objects, captureSpots: bake.spots });
+}
 ```
 
 ## Tests
@@ -66,8 +88,12 @@ PhysicsDemo fixture): five spots of six photos that the visitor's reader
 accepts; each photo through ITS pick (with every moment declared settled
 the spots move off the end-of-walk join, which a bake ignoring the picks
 cannot do - the sample walk alone never settles and could not tell them
-apart); a missing photo file dropped and none left declined; the live
-join's declines (no recording, an old era, a stopped replay); and the pose
+apart); a missing photo file dropped and none left declined as placing
+nothing, also when the only file left is the photo the recording never
+placed; a walk with no photo taken placing nothing, with GPS that solves
+and with no fix at all; the live
+join's declines (no recording, an old era, a stopped replay); an absent or
+string era declining and keeping the walk (PR #640 review); and the pose
 conversion. The Finish's use is pinned in `creator-finish.test.ts`, the
 viewer's in `playwright-tests/ar-mode.spec.js` (a baked tour without a
 recording) and `replay-abort-wiring.test.ts`.

@@ -9,20 +9,21 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
-import {
-  createEmptyTourManifest,
-  type TourManifest,
-  type TourObject,
+import type {
+  TourManifest,
+  TourObject,
+  TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
+import { tourOf } from "./test-support/v3-tour.js";
 import { visitorStartView, wireVisitorStart } from "./visitor-start.js";
 
-const GEO = {
+const GEO: TourStation["geo"] = {
   lat: 47,
   lon: 8,
   alt: 400,
   rotation: [0, 0, 0, 1],
-} as const;
+};
 
 function pin(id: string): TourObject {
   return {
@@ -46,8 +47,37 @@ function photo(id: string): TourObject {
   } as unknown as TourObject;
 }
 
-function tour(extra: Partial<TourManifest>): TourManifest {
-  return { ...createEmptyTourManifest(), ...extra };
+/** A version 3 tour: each of `objects` in a station of its own. */
+function tour(
+  extra: Partial<TourManifest> & { objects?: readonly TourObject[] },
+): TourManifest {
+  const { objects = [], ...rest } = extra;
+  return tourOf(objects, rest);
+}
+
+/** A walk's recorded photos, each in a station of its own (version 3). */
+function recorded(images: readonly string[]): Partial<TourManifest> {
+  const stations: TourStation[] = images.map((_, i) => ({
+    id: `walk-${String(i)}`,
+    geo: GEO,
+    activateRadiusM: 50,
+    foundRadiusM: 25,
+    hint: "arrow",
+    steps: [],
+    items: [],
+  }));
+  return {
+    stations,
+    captureSpots: {
+      fixes: 4,
+      gpsAccuracyMedianM: 3,
+      captures: images.map((image, i) => ({
+        image,
+        station: `walk-${String(i)}`,
+        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      })),
+    },
+  };
 }
 
 describe("visitorStartView", () => {
@@ -63,7 +93,9 @@ describe("visitorStartView", () => {
     expect(visitorStartView(null)).toEqual({
       title: "An AR tour",
       subline: null,
+      description: null,
       coverPath: null,
+      pageTitle: "Tour Viewer",
     });
   });
 
@@ -77,20 +109,19 @@ describe("visitorStartView", () => {
     );
     expect(visitorStartView(tour({})).subline).toBeNull();
     // A tour of stations (the sample) counts its stations.
-    const station = {
-      id: "s",
-      title: "S",
-    } as unknown as TourManifest["stations"][number];
+    const station = recorded(["x"]).stations![0]!;
     expect(
       visitorStartView(tour({ stations: [station, station] })).subline,
     ).toBe("2 places to discover");
     // Its stations are its places: the objects they show are not counted
-    // twice (M4 review #10).
-    expect(
-      visitorStartView(
-        tour({ stations: [station, station], objects: [pin("a"), pin("b")] }),
-      ).subline,
-    ).toBe("2 places to discover");
+    // twice (M4 review #10; since version 3 every object is in one).
+    const shared = tour({ objects: [pin("a")] });
+    const [only] = shared.stations;
+    const both = {
+      ...shared,
+      stations: [{ ...only!, items: [...only!.items, ...only!.items] }],
+    };
+    expect(visitorStartView(both).subline).toBe("1 place to discover");
   });
 
   it("takes the tour's first photo as the cover, and none without a photo", () => {
@@ -103,29 +134,49 @@ describe("visitorStartView", () => {
     ).toBeNull();
   });
 
+  // Why (tour editor plan 2026-10-17-1816, W2): a creator may now choose
+  // the cover and write a description in the editor; the start page must
+  // show what they chose, and the tab (and a shared link's title) the
+  // tour's name rather than the app's.
+  it("takes the cover the creator chose over the first photo", () => {
+    expect(
+      visitorStartView(tour({ objects: [photo("b"), photo("c")], cover: "c" }))
+        .coverPath,
+    ).toBe("content/c.jpg");
+  });
+
+  it("shows the tour's description, trimmed, and none without one", () => {
+    expect(
+      visitorStartView(tour({ description: "  Up and back. " })).description,
+    ).toBe("Up and back.");
+    expect(visitorStartView(tour({})).description).toBeNull();
+    expect(visitorStartView(null).description).toBeNull();
+  });
+
+  it("names the page after the tour, else the app", () => {
+    expect(visitorStartView(tour({ title: " Harbour " })).pageTitle).toBe(
+      "Harbour",
+    );
+    expect(visitorStartView(tour({})).pageTitle).toBe("Tour Viewer");
+    expect(visitorStartView(null).pageTitle).toBe("Tour Viewer");
+  });
+
   // A tour made from a recording carries its photos as baked capture
-  // spots, not as photo objects: they are its places and its cover too.
+  // spots, not as photo objects: they are its cover too, and the stations
+  // they sit in are places (version 3).
   it("counts and covers a recorded tour by its capture spots", () => {
-    const spot = (image: string) => ({
-      image,
-      geo: { lat: 47, lon: 8, alt: 400, rotation: [0, 0, 0, 1] },
-    });
-    const recorded = tour({
-      objects: [pin("a")],
-      captureSpots: {
-        fixes: 4,
-        gpsAccuracyMedianM: 3,
-        captures: [spot("images/frame-0.png"), spot("images/frame-1.png")],
-      },
-    } as unknown as Partial<TourManifest>);
-    expect(visitorStartView(recorded)).toEqual({
+    const walk = recorded(["images/frame-0.png", "images/frame-1.png"]);
+    const withWalk = tour({ objects: [pin("a")], ...walk });
+    expect(visitorStartView(withWalk)).toEqual({
       title: "An AR tour",
       subline: "3 places to discover",
+      description: null,
       coverPath: "images/frame-0.png",
+      pageTitle: "Tour Viewer",
     });
     // A placed photo still comes first.
     expect(
-      visitorStartView({ ...recorded, objects: [photo("b")] }).coverPath,
+      visitorStartView(tour({ objects: [photo("b")], ...walk })).coverPath,
     ).toBe("content/b.jpg");
   });
 
@@ -134,42 +185,46 @@ describe("visitorStartView", () => {
   // anything else the manifest holds (M4 review #8: capture spots were
   // never generated here).
   it("only ever names one of the tour's own photos (property)", () => {
-    const capture = (i: number) => ({
-      image: `images/frame-${String(i)}.png`,
-      geo: { lat: 47, lon: 8, alt: 400, rotation: [0, 0, 0, 1] },
-    });
     fc.assert(
       fc.property(
         fc.array(fc.constantFrom("pin", "photo"), { maxLength: 8 }),
         fc.nat({ max: 4 }),
-        (kinds, captureCount) => {
+        // A chosen cover (W2): a photo, a pin or an id the tour lacks.
+        fc.option(
+          fc
+            .constantFrom("f", "p", "x")
+            .chain((p) => fc.nat({ max: 9 }).map((n) => `${p}${String(n)}`)),
+        ),
+        (kinds, captureCount, cover) => {
           const objects = kinds.map((kind, i) =>
             kind === "pin" ? pin(`p${String(i)}`) : photo(`f${String(i)}`),
           );
-          const captures = Array.from({ length: captureCount }, (_, i) =>
-            capture(i),
+          const captures = Array.from(
+            { length: captureCount },
+            (_, i) => `images/frame-${String(i)}.png`,
           );
           const manifest = tour({
             objects,
-            ...(captureCount === 0
-              ? {}
-              : {
-                  captureSpots: {
-                    fixes: 4,
-                    gpsAccuracyMedianM: 3,
-                    captures,
-                  },
-                }),
-          } as unknown as Partial<TourManifest>);
+            ...(cover === null ? {} : { cover }),
+            ...(captureCount === 0 ? {} : recorded(captures)),
+          });
           const { coverPath } = visitorStartView(manifest);
           const own = [
             ...objects.flatMap((o) =>
               o.kind === "photo" ? [(o as { image: string }).image] : [],
             ),
-            ...captures.map((c) => c.image),
+            ...captures,
           ];
-          // The first of them, in that order, or none when there is none.
-          expect(coverPath).toBe(own[0] ?? null);
+          // The chosen photo when it is one of them, else the first of
+          // them, in that order, or none when there is none.
+          const chosen = objects.find(
+            (o) => o.id === cover && o.kind === "photo",
+          );
+          expect(coverPath).toBe(
+            chosen === undefined
+              ? (own[0] ?? null)
+              : (chosen as { image: string }).image,
+          );
         },
       ),
     );
@@ -187,6 +242,8 @@ describe("wireVisitorStart", () => {
     const dom = {
       title: { textContent: "" },
       subline: { textContent: "", hidden: true },
+      description: { textContent: "", hidden: true },
+      page: { title: "" },
       cover: { hidden: true },
       coverImage: { src: "" },
     };
@@ -216,6 +273,8 @@ describe("wireVisitorStart", () => {
     expect(dom.title.textContent).toBe("Harbour Lights");
     expect(dom.subline.textContent).toBe("1 place to discover");
     expect(dom.subline.hidden).toBe(false);
+    expect(dom.page.title).toBe("Harbour Lights");
+    expect(dom.description.hidden).toBe(true);
     await vi.waitFor(() => {
       expect(dom.cover.hidden).toBe(false);
     });
@@ -257,5 +316,18 @@ describe("wireVisitorStart", () => {
     expect(dom.subline.hidden).toBe(true);
     expect(dom.cover.hidden).toBe(true);
     expect(revoked).toEqual(["blob:1"]);
+    expect(dom.page.title).toBe("Tour Viewer");
+  });
+
+  it("writes the description under the subline, and hides it for none", () => {
+    const { dom, start } = setup();
+    start.present(tour({ description: "Up and back." }), () =>
+      Promise.reject(new Error("no photo")),
+    );
+    expect(dom.description.textContent).toBe("Up and back.");
+    expect(dom.description.hidden).toBe(false);
+    start.clear();
+    expect(dom.description.textContent).toBe("");
+    expect(dom.description.hidden).toBe(true);
   });
 });

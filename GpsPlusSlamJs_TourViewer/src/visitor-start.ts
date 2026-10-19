@@ -6,7 +6,11 @@
  * @see visitor-start.ts.md
  */
 
-import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourCoverEntry } from "gps-plus-slam-app-framework/ar/tour-details";
+import {
+  tourItems,
+  type TourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 export interface VisitorStartView {
   /** The tour's name; "An AR tour" when it has none (yet). */
@@ -14,29 +18,44 @@ export interface VisitorStartView {
   /** "3 places to discover" (its stations, else its objects and recorded photos), or
    *  null for a tour with nothing placed. */
   subline: string | null;
-  /** The cover: the tour's first placed photo, else its first recorded
-   *  photo (a baked capture spot), as an archive path; or null. */
+  /** The tour's description (W2 of the tour editor plan), trimmed; null
+   *  for none. */
+  description: string | null;
+  /** The cover: the one the creator chose (W2), else the tour's first
+   *  placed photo, else its first recorded photo (a baked capture spot),
+   *  as an archive path; or null. */
   coverPath: string | null;
+  /** The tab's title, which a shared link's title shows too: the tour's
+   *  name, else the app's. */
+  pageTitle: string;
 }
+
+/** The page's own title (`index.html`), for a tour without a name. */
+const APP_TITLE = "Tour Viewer";
 
 /** A tour without a name still reads as a tour. */
 const UNNAMED = "An AR tour";
 
-/** "N places to discover": a tour of stations counts its stations (the
- *  objects they show are not places of their own - M4 review #10); any
- *  other tour its objects and recorded photos. */
+/** "N places to discover": a tour counts its stations (the pins and photos
+ *  they show are not places of their own - M4 review #10; since version 3
+ *  every pin and photo is in one, tour editor plan W3). */
 function sublineFor(manifest: TourManifest): string | null {
-  const count =
-    manifest.stations.length > 0
-      ? manifest.stations.length
-      : manifest.objects.length + (manifest.captureSpots?.captures.length ?? 0);
+  const count = manifest.stations.length;
   if (count === 0) return null;
   return `${String(count)} ${count === 1 ? "place" : "places"} to discover`;
 }
 
-/** The first placed photo, else the first recorded one. */
+/** The chosen cover, else the first placed photo, else the first
+ *  recorded one. */
 function coverPathOf(manifest: TourManifest): string | null {
-  for (const object of manifest.objects) {
+  const items = tourItems(manifest);
+  const chosen = tourCoverEntry({
+    objects: items,
+    assets: manifest.assets,
+    ...(manifest.cover === undefined ? {} : { cover: manifest.cover }),
+  });
+  if (chosen !== null) return chosen;
+  for (const object of items) {
     if (object.kind === "photo") return object.image;
   }
   return manifest.captureSpots?.captures[0]?.image ?? null;
@@ -46,13 +65,22 @@ export function visitorStartView(
   manifest: TourManifest | null,
 ): VisitorStartView {
   if (manifest === null) {
-    return { title: UNNAMED, subline: null, coverPath: null };
+    return {
+      title: UNNAMED,
+      subline: null,
+      description: null,
+      coverPath: null,
+      pageTitle: APP_TITLE,
+    };
   }
   const name = manifest.title?.trim() ?? "";
+  const description = manifest.description?.trim() ?? "";
   return {
     title: name === "" ? UNNAMED : name,
     subline: sublineFor(manifest),
+    description: description === "" ? null : description,
     coverPath: coverPathOf(manifest),
+    pageTitle: name === "" ? APP_TITLE : name,
   };
 }
 
@@ -61,6 +89,9 @@ export function visitorStartView(
 export interface VisitorStartDom {
   title: Pick<HTMLElement, "textContent">;
   subline: Pick<HTMLElement, "textContent" | "hidden">;
+  description: Pick<HTMLElement, "textContent" | "hidden">;
+  /** The document, for its title. */
+  page: { title: string };
   /** The cover's frame, hidden while there is no photo. */
   cover: Pick<HTMLElement, "hidden">;
   /** Decorative (`alt=""` in the markup): the title names the tour. */
@@ -101,6 +132,9 @@ export function wireVisitorStart(deps: {
     dom.title.textContent = view.title;
     dom.subline.textContent = view.subline ?? "";
     dom.subline.hidden = view.subline === null;
+    dom.description.textContent = view.description ?? "";
+    dom.description.hidden = view.description === null;
+    dom.page.title = view.pageTitle;
   }
 
   async function showCover(

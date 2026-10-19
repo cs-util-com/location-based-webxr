@@ -39,7 +39,21 @@ where)`, owner question Q-E2-2's default; `where` is the phone's "on this
   question Q-E2-2.
 - `draftObjectsNotYetHosted(draft, manifest) -> readonly TourObject[]` -
   the whole state machine in one function; see the invariants. Compares
-  CONTENT (`objectContentKey`), not ids.
+  CONTENT (`objectContentKey`), not ids, through `hostedObjects`.
+- `hostedObjects(manifest | null) -> HostedObjects` - the hosted tour's
+  pins and photos in the world (`tourObjects`, version 3) with
+  `key(id)` (the hosted content key) and `holds(object)`: the hosted
+  copy has this object's content, either exactly or as its station
+  stores it (`asStored` of `tour-content.ts`). A placement saved into a
+  station reads back a few micrometres off, and comparing it raw would
+  offer it again in every later draft and save. An object that names
+  another station of the hosted file is never held, however close it
+  stands: that is a re-assignment, compared before the round trip (which
+  writes the hosted station in; M5a review L2). A station the file does
+  not have is no move, as the writer (`withTourContent`) reads it. Every module that asks
+  "does the hosted file already have this?" goes through it
+  (`creator-draft.ts`, `editor/editor-draft.ts`,
+  `editor/editor-session.ts`, `finish-rebuild.ts`).
 - `draftDeletionsNotYetHosted(draft, manifest) -> readonly string[]` - the
   tombstones whose id the hosted manifest still carries.
 - `objectContentKey(object) -> string` - an object's JSON with every key
@@ -58,10 +72,15 @@ where)`, owner question Q-E2-2's default; `where` is the phone's "on this
   its id, the rest of `changes` appended, every deleted id filtered out.
 - `contentEntriesToRemove(existing, deleted, wrap) -> string[]` - the zip
   paths of deleted photos' content files, for the rebuild's removal list.
+  Photos only: a placed 3D model names a SHARED model asset, so deleting
+  one never removes a file another model may still draw from.
 - `restoreOfferText(count, hasLevel, { changed, deleted, visits })`,
   `restoredText(count, hasLevel, { changed, deleted, visits })` - the
   creator's words; changes, deletions and AR visits are named apart from
   new placements, and visits are never said to go into the zip.
+  `restoredText` is given what a restore PUT BACK (live work left out),
+  claims the code's measured position only with `hasLevel`, and says
+  "Nothing was restored" when live work outranked everything.
 
 - `manifestAsRead(manifest)` - the manifest as a reader of the written
   file parses it (serialize, then parse: a heading normalised into
@@ -136,8 +155,11 @@ where)`, owner question Q-E2-2's default; `where` is the phone's "on this
 `authoring-draft.test.ts`. The property that carries it is "never returns
 anything the manifest already has", because that failure is permanent and
 silent. Plus: an absent manifest restoring everything, an edit of a hosted
-object counted as not hosted and field order ignored, pending deletions
+object counted as not hosted and field order ignored, a re-assignment to
+another station at the same spot counted as not hosted (L2), pending deletions
 and the spent rule, `applyObjectChanges` (replace, append, filter) with a
 property that no deleted id comes back and no id is written twice,
-`contentEntriesToRemove`, the key's identity, and the counts in the copy
+`contentEntriesToRemove` (and the guard that deleting one of two models
+sharing an asset removes no file and the rebuilt tour still validates;
+seen to fail with the filter widened to `kind !== "pin"`), the key's identity, and the counts in the copy
 (changes and deletions named).

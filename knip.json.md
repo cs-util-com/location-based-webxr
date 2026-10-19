@@ -112,6 +112,13 @@ entirely after confirming they were only transitively pulled in.
   makes that import 404 and the smoke fail at once, so the ignore hides
   nothing; it is an exact string, so a second such import must be added on
   purpose. Found by the root dead-code check before the r759 publish.
+  The page paths `/globe/sky-level.js` (the terrain lab's sun test),
+  `/fw/visualization/atmosphere/cloud-live-noise.js` and
+  `/globe/globe-cloud-shell-volume.js` (the spherical cloud volume's field
+  test) and `/globe/globe-sources.js` (its smoke, the cloud map's file)
+  are imported by lab tests through `test-route-loader.mjs`, which
+  resolves them with the dev server's route table; knip has no such
+  mapping. Each is an exact string and fails its test at once if moved.
 - **GpsPlusSlamJs_TourViewer** - `src/editor/edit-main.ts` is an entry:
   knip follows `index.html` to `src/main.ts` but not the second Vite input,
   `edit.html` (the desktop editor, M6 E1), so without it the whole editor

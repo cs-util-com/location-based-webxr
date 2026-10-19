@@ -17,7 +17,8 @@ visitor's `?debug=1`.
   `checking`, `starting`, `stopping`, `unsupported`, `error`, `no-tour`,
   `scan`, `measuring-code`, `code-other-tour`, `code-unusable`,
   `code-moved`, `locking`, `warming-up`, `placing`, `placed`,
-  `placed-gps`, `tracking-lost`, `needs-code`, `nothing`. `ar-entry.ts`
+  `placed-gps`, `tracking-lost`, `finding-direction`, `needs-code`,
+  `nothing`. `ar-entry.ts`
   writes it to `#ar-status`'s `data-state` for a visitor (beside
   `data-gate`, the scan gate as one word), the stable channel for styling
   and tests. `text` is the sentence, followed by what could not load;
@@ -25,16 +26,24 @@ visitor's `?debug=1`.
 
 ## Invariants & assumptions
 
-- The `unsupported` sentence ends "Copy the link and open it in Chrome on
-  an Android phone that supports AR." - a visitor's button under it is
-  the Copy link (polish round M4a, V4).
+- The `unsupported` sentence says first that the tour needs an Android
+  phone with Chrome (D8 of tour editor plan 2026-10-17-1816: Android-only,
+  said plainly, no view without AR), and ends "Copy the link and open it
+  in Chrome on an Android phone." - a visitor's button under it is the
+  Copy link (polish round M4a, V4). A session the browser refuses
+  (`NotSupportedError`) names the same need.
 - **Order:** not running (an error maps the framework's message - it keeps
   only `err.message` - to a plain cause: the location permission, the
   camera, an unsupported session, else "Tap Try again"); no tour open;
   PLACED (tracking lost reads the framework's `ar-lost` hint, else placed
-  through the code, or by GPS with the reason when one applies); the code
+  through the code, or by GPS with the reason when one applies; while the
+  visitor guide waits for a heading the bare placed line becomes
+  "finding-direction" and a GPS placement keeps its reason); the code
   situations, which only come BEFORE placement (a code of another tour, an
-  unusable code, the code being measured, the gate scanning); then what is
+  unusable code, the code being measured - the page passes no hint for
+  the code the moved-code check ignores, whose veto set its votes back to
+  0, but still one for any other code (`ar-entry.ts`; r881 re-review L-F,
+  L1) - the gate scanning); then what is
   happening (photos loading, tracking warming up, nothing to show, needs
   the code, a moved code, the code found, placing).
 - **U1 milestone review fixes (2026-10-06):** a tour with no usable code
@@ -46,6 +55,19 @@ visitor's `?debug=1`.
   lock voted (the gate stays "skipped" after a later lock); the unusable
   code mentions the GPS escape only while it is offered; a moved code does
   not hide loading progress; no counter in "Loading the photos…".
+- **The wait for a heading is said** (D34 of the tour editor plan
+  2026-10-17-1816; PR review S6, N8): "Walk a few steps so the guide knows
+  the direction." is asked while `stationsAwaitHeading` is true (the guide
+  has stations to point at and no heading yet), tracking runs (a report
+  exists: not `initializing`, whose coaching says hold steady, and not
+  `ar-lost`, whose own hint is the cure) and location is on (never codes
+  only, where walking cannot earn a heading - after a veto too). It
+  REPLACES only the bare placed line ("Tour placed. Look around.", state
+  `finding-direction`); a GPS placement keeps its reason with the request
+  in place of "Look around." (state `placed-gps`), and before placement it
+  follows whatever the line says (a moved code, the photos loading, the
+  coaching), the state unchanged. The code situations come first, without
+  it. It goes as soon as the flag clears.
 - **Never a counter, the mode prefix or a debug number** (property test);
   a running session always says something.
 - **Never "scan the code again"** after the code's hold ended; the hold's
@@ -85,7 +107,15 @@ el.textContent =
 ## Tests
 
 `visitor-status.test.ts` (one case per state, the start-failure causes,
-what must never reach a visitor, load notes);
+what must never reach a visitor, load notes, the walk request: replacing
+only the placed line, after a GPS placement's or a moved code's reason, never
+while tracking initializes or without location);
 `visitor-status.property.test.ts` (any combination of code, gate,
-placement, content and errors: non-empty, no debug words); `ar-entry.test.ts`
-(the measuring hint reaches the line).
+placement, content, errors, readiness, codes only and the heading wait:
+non-empty, no debug words, the walk request once at most, only where
+allowed and never beside "Look around."); `ar-entry.test.ts`
+(the measuring hint reaches the line; after a veto the ignored code's
+hint is withheld, another code's still shows; the walk line from the
+store, not before tracking reports); `viewer-moved-code.test.ts`
+(the veto records the ignored code by its scanned text, the key its
+evaluations carry).

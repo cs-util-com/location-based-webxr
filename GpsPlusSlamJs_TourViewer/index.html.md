@@ -55,7 +55,13 @@ screen. Everything marked `.creator-only` is hidden for a visitor
      wizard, so a visitor reaches them too - with `#file-advice`, the
      "Open the downloaded file" button shown under a "host blocks
      browsers" error.
-  3. **Print** (`#print-panel`): by PDF only since polish round M0b - a
+  3. **Print** (`#print-panel`): the tour's own name first (`#tour-name-input`,
+     W2 of the tour editor plan 2026-10-17-1816: apart from the poster's
+     title, it shows the open tour's title, and a changed one renames the
+     tour, saved by the next Finish - an emptied one removes the title,
+     `tour-name-field.ts`; no `maxlength`, which counts UTF-16 units: a
+     name over 80 characters is refused in `#tour-name-error`, plan §23
+     #8); by PDF only since polish round M0b - a
      PDF of N numbered posters (`#print-count` between the big - and +
      `#print-count-down` / `#print-count-up`, three by default), each
      carrying the poster text of `#poster-title`, `#poster-explanation`
@@ -88,11 +94,17 @@ screen. Everything marked `.creator-only` is hidden for a visitor
 - The visitor's start page in the owner's V4 look (polish round M4a,
   D-R12/D-R14; reference `public/prototypes/visitor-4-one-tap/`):
   `#visitor-screen` (kicker, `#visitor-cover` one photo, `#visitor-title`,
-  `#visitor-subline` - written by `visitor-start.ts`), then `#ar-root`
+  `#visitor-subline`, `#visitor-description` (W2) - written by
+  `visitor-start.ts`, which also titles the tab after the tour), then `#ar-root`
   restyled as the action (the status sentence above, the round
   `#enter-ar` with its ring and `data-step` marker, `#ar-hint` as the
   one line under it, by flex `order`), then `#visitor-more` after the
-  stage ("What happens?" `#visitor-what` and `make-your-own`). All of it
+  stage ("What happens?" `#visitor-what`, whose "Stays on your phone"
+  says the app sends none of your data - no camera image, no location -
+  and links the privacy page,
+  `visitor-privacy`; and `make-your-own`). The safety line
+  `#visitor-safety` stands before the round button (W6, D13: "Watch where
+  you walk..."), shown on the visitor's start page only. All of it
   is scoped to `body[data-mode="visitor"]:not([data-ar-active="true"])`:
   in a session `#ar-root` is the overlay and keeps the sheet's HUD look.
   The paper palette is the creator page's (`:root:has(...)`), extended to
@@ -108,9 +120,51 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   (the visitor's sentence); `#scan-escape` lives in it, at the bottom of
   the screen, the only part that takes taps. Sideways: animation beside
   the words. `ar-mode.spec.js` pins its centring and the skip's place.
+- **"You already have a tour?"** (`#have-tour`, creator-only, tour editor
+  plan 2026-10-17-1816 W1): BELOW the map and the steps, so the first-time
+  story stays first. Two halves, chosen by CSS from the page's AR check
+  (`#enter-ar[data-ar-state]`, written by `ar-entry.ts`): `unsupported`
+  (a computer) shows `.have-tour-desktop` - one line
+  (`#have-tour-editor-text`, said per browser by `main.ts` with
+  `have-tour.ts`'s `editorPitch`: saved back into the tour file where the
+  file picker exists, else a new copy; the markup holds the latter, PR #637
+  review) and "Open the
+  editor" (`edit.html`); any other settled state (a phone with AR) shows
+  `.have-tour-phone` - "From this device" (`#have-tour-file` over its own
+  hidden `#have-tour-input`, no test id), the link form (`#have-tour-form`,
+  `#have-tour-link`, `#have-tour-open`), the status line
+  `#have-tour-status` and, after an open, `#have-tour-ask` ("Play it" /
+  "Continue setting it up"). While the check runs (`checking`) and before
+  it began (no state) the whole section stays out of view, its heading
+  too: a heading over two hidden halves read as an empty box (PR #637
+  review). `#measure-desktop`'s rule carries no mode check and needs none:
+  it is `.creator-only` and keeps `hidden` on a visitor's page, which the
+  design system's `[hidden]` rule wins over (`way-in.spec.js` pins it).
+  Behaviour: `have-tour.ts`.
+- **The setup page's foot** (`#setup-foot`, creator-only, W6, D13): the
+  legal notice and the privacy page (`legal.html#notice`,
+  `legal.html#privacy`; `legal.html.md`). The intro's "Runs offline once
+  opened" became "Works offline once the tour is loaded", and then (the M4b
+  fix re-review #3) "Keeps working without signal once a tour has loaded":
+  the tour is cached, the page is not (no service worker), so nothing on
+  the page promises an offline revisit - the host step says the same, and
+  "Other settings" says the kept tours open faster (`legal.spec.js`).
+- **Step 5 on a computer** (W1, plan review #9): `#measure-desktop` says
+  the step runs on site on an Android phone with Chrome and links the
+  editor; the same AR check shows it, and on the creator page an
+  `unsupported` `#enter-ar`, `#ar-hint` and `#ar-status` are hidden
+  rather than shown as a dead "AR not supported" button (the button keeps
+  its text and disabled state for the code that reads them).
+- **Android only, said plainly** (D8): the setup lede says tours run on
+  Android phones with Chrome; the visitor's no-AR sentence
+  (`visitor-status.ts`) and the poster's default call to action
+  (`poster-text.ts`) say it too.
 - Below the steps, creator-only: the Storage section (`#storage-panel`,
   summary "Other settings" - something you normally do not open, F9).
-- Shared: `#error`, `#ar-root` (the DOM-overlay root: hint, status line,
+- Shared: `#error`, and under it `#error-contact` (W2, D15: "Questions
+  about this tour? Contact its maker:" and the tour's contact as a link,
+  `#error-contact-link`, shown for a visitor while an error shows and the
+  open tour names a contact, `tour-contact.ts`), `#ar-root` (the DOM-overlay root: hint, status line,
   button, the setup panel `#setup-panel` with `setup-status` and, inside
   `#setup-controls` (the code is measured on its own and its position
   decided by the settle: the measure button, the explicit replace and its
@@ -140,22 +194,27 @@ drawn `map-station-<step>`), `setup-card` (owns `setup-badge`, `setup-of`,
 `file-input`, `file-status`, `tour-trust`, `file-advice`, `open-file-advice`,
 `storage-panel`,
 `clear-cache`, `print-panel` (owns `print-url-ask`, `print-url`,
-`print-url-shown`, `poster-text` (`poster-title`, `poster-explanation`,
+`print-url-shown`, `tour-name-input`, `poster-text` (`poster-title`, `poster-explanation`,
 `poster-cta`), `print-count-down`, `print-count`, `print-count-up`,
 `print-settings` (`author-size`, `print-paper`, `author-c`), `print-pdf`,
 `print-info`,
 `print-tiles` (its tiles `print-tile`, the first canvas `print-canvas`), `visitor-link` - opens in a
 new tab, polish round A17), `make-your-own` (on the visitor screen: the
-setup page in a new tab, polish round A8), `step-hang`, `hang-done`, `step-measure` (owns
+setup page in a new tab, polish round A8), `visitor-safety`, `visitor-privacy`,
+`setup-foot`, `step-hang`, `hang-done`, `step-measure` (owns
 `draft-offer`,
 `draft-offer-text`, `draft-restore`, `draft-dismiss`, `draft-discard`),
+`measure-desktop`, `have-tour` (owns `have-tour-desktop`,
+`have-tour-editor-text`, `have-tour-editor`, `have-tour-phone`, `have-tour-file`,
+`have-tour-link`, `have-tour-open`, `have-tour-status`, `have-tour-ask`,
+`have-tour-play`, `have-tour-continue`),
 `step-done` (owns `done-pending`, `finish-block`,
 `finish-status`, `finish-download`, `summary` (the summary after Finish,
 authoring plan 2026-09-28-0953 M3b: owns `summary-codes`, `summary-map`,
 `summary-map-status`, `summary-start-ar`; written by `summary-panel.ts`,
 its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
 `replace-help-generic`, `replace-help-drive`, `replace-drive-copy`)), `visitor-screen`,
-`stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
+`visitor-description`, `stats`, `error`, `error-contact`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
 `setup-panel`, `setup-status`, `size-offer`, `size-offer-text`,
 `size-offer-use`, `size-offer-keep`, `setup-controls`,
 `object-list` (its rows carry
@@ -220,6 +279,16 @@ the creator's; `visitor-screen.ts` re-words it for a visitor.
 
 ## Invariants & assumptions
 
+- **The first paint has its mode** (tour editor plan 2026-10-17-1816, W1):
+  `<script id="first-paint-mode">`, a classic inline script and the
+  body's FIRST child, sets `body[data-mode]` before anything is painted.
+  The paper, the hidden header and the closed steps are keyed on it, and
+  `main.ts` sets it only after its imports - the owner saw the design
+  system's dark default, the header and step 5's empty card until then.
+  Its rule is a copy of `viewerModeFromSearch` (`src/mode.ts`): a classic
+  script cannot import a module, so `mode.test.ts` runs the script's text
+  against the function (fixed cases and a property). `main.ts` still
+  writes the same value.
 - **Step 4 must never be collapsed while an AR session runs.** Its content
   is `#ar-root`, the DOM-overlay root, and a collapsed `<details>` renders
   nothing - so a collapse mid-session blanks the overlay, on a phone,
@@ -247,9 +316,21 @@ the creator's; `visitor-screen.ts` re-words it for a visitor.
   (`src/printed-size-default.test.ts`).
 - The gallery is a `<ul>` of `<li><img><figcaption>` items appended in
   archive order as bytes arrive.
+- **The creator's AR chip row fits any width from 320 px, in any face.**
+  "Place a pin" and "Take a photo" shrink with `.setup-place-row` (`flex: 0 1
+auto`) and their labels wrap inside the chip; up to 380 px the chips take a
+  tighter padding and gap; the row is `justify-content: safe center`, so a
+  row that still outgrew the screen would start at its left edge instead of
+  spilling off both. Windows renders the UI stack in Corbel, a narrow face,
+  so it fit locally while a Linux browser's wider fallback pushed the row
+  4 px off a 360 px screen (24 px at 320). `ar-layout.spec.js` checks the
+  H1 HUD in a forced wide face at 412, 360, 320 and 915 px, both edges of
+  the row included.
 
 ## Tests
 
-Driven by `playwright-tests/*.spec.js`; the no-console-errors smoke boots
+Driven by `playwright-tests/*.spec.js`; `way-in.spec.js` holds the
+module back and checks the first paint (paper, no header, no empty step)
+for a creator and a visitor; the no-console-errors smoke boots
 exactly this page. `src/printed-size-default.test.ts` reads this file for
 the size default.

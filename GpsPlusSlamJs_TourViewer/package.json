@@ -31,8 +31,10 @@
     "node": ">=26.0.0"
   },
   "dependencies": {
+    "@reduxjs/toolkit": "^2.12.0",
     "@zip.js/zip.js": "^2.11.2",
     "gps-plus-slam-app-framework": "workspace:*",
+    "gps-plus-slam-globe": "workspace:*",
     "leaflet": "^1.9.4",
     "qrcode": "^1.5.4",
     "three": "^0.185.1"

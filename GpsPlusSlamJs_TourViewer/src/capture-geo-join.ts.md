@@ -10,6 +10,11 @@ taken instead of ringing them around the QR code.
 
 ## Public API
 
+- `CAPTURE_ACTION` (`"gpsData/add2dImage"`), the recorder's photo action,
+  and `NEWEST_KNOWN_ODOM_COORD_VERSION` (**5**), the newest era this viewer
+  knows. The preflight lets a NEWER era replay, so `capture-bake.ts` uses
+  both to decide whether an empty replay may be read as "the walk took no
+  photo" (only for a known era with no capture action; PR #638 review).
 - `preflightCaptureJoin(meta, actionTypes)` — the BEFORE-replay half (the era
   gate and the segmenting-action scan) so a declined zip never pays the
   seconds-long replay.

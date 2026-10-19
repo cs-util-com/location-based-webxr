@@ -1,6 +1,7 @@
 # tour-stations.ts
 
-**Purpose:** the game content of `tour.json` version 2 - media assets with
+**Purpose:** the game content of `tour.json` (version 2, and version 3's
+stations as parents of the tour's items) - media assets with
 their own ids, stations, their steps (text, image, cut-out character,
 audio, video, 3D model, scene choice, quiz), how a step advances, and the
 answer routes of `branch` order. Tour kit plan K1 and §8 D7 ("the full v2
@@ -8,12 +9,15 @@ schema in one step"), G5 (media ids per asset), K-D3 (game scope v1),
 K-D6 (arrow hints):
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`.
 
-K1 defines and validates this content; nothing renders it yet (stations
-and the scene player are K4, quizzes at runtime K5).
+Version 3 (tour editor plan
+`GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md`,
+W3, D9, D20): a station carries its own geo pose (no printed-code link, no
+code-only station), its pins and photos as `items` at local poses
+(`tour-items.ts`), and may have no steps (an automatic station).
 
 ## Public API
 
-- `parseTourAssets(value, { objectIds, fail }): TourAsset[]` - each asset
+- `parseTourAssets(value, { fail, lenient? }): TourAsset[]` - each asset
   is `{ id, path: "content/<id>.<ext>", kind, width?, height? }`. The kind
   is DERIVED from the extension through the media allowlist
   (`tour-media.ts`), never stored. Width/height are images only and come
@@ -21,7 +25,7 @@ and the scene player are K4, quizzes at runtime K5).
 - `parseTourStations(value, { assets, fail }): TourStation[]` - validates
   every station and resolves every reference.
 - Types: `TourAsset`, `TourAssetKind`, `TourOrder` (`fixed | any |
-branch`), `TourStation`, `TourStationAnchor`, `TourStep`,
+branch`), `TourStation`, `TourStep`,
   `TourStepAdvance`, `TourBlock`, `TourChoiceOption`, `TourQuizOption`,
   `TourQuizAnswer`, `TourQuizRoute`.
 - `fail` is the caller's: `tour-manifest.ts` passes one that throws
@@ -32,13 +36,17 @@ branch`), `TourStation`, `TourStationAnchor`, `TourStep`,
 
 - **Asset**: `id` (`[A-Za-z0-9_-]{1,64}`), `path` exactly
   `content/<id>.<ext>` with an allowlisted extension (no SVG, K0). An
-  asset id must not repeat and must not be an OBJECT id, because both name
-  a content file by id.
-- **Station**: `id`, optional `title`, `anchor` (`code`: a printed code's
-  level id, `geo`: a geo pose, at least one), `activateRadiusM` and
+  asset id must not repeat; that it is no ITEM id (both name a content
+  file by id) is checked by `tour-manifest.ts`, which sees every station.
+- **Station**: `id`, optional `title`, `geo` (a geo pose, required;
+  `qr/geo-pose.ts`), `activateRadiusM` and
   `foundRadiusM` (positive, found <= activate; the hysteresis is K4's),
-  `hint` (`"arrow"`, the default), `steps` (non-empty), optional `next`
-  (the default next station for `branch` order).
+  `hint` (`"arrow"`, the default), `steps` (may be empty), `items` (pins,
+  photos and placed models at local poses, ids unique per station;
+  `tour-items.ts`; a placed model's `asset` must name a MODEL asset,
+  resolved here because only this module sees the assets),
+  optional `next` (the default next station for `branch` order). An old
+  `anchor` field is ignored as an unknown field.
 - **Step**: `id` (unique per station), `block`, `advance` (`{ mode: "tap" }`
   by default, or `{ mode: "auto", afterS > 0 }`). The default is written
   out on parse, so a renderer never guesses.
@@ -70,7 +78,9 @@ tolerance >= 0, unit? }`.
   closed lists - block kind, quiz answer type, advance mode, hint, an
   asset's media type - are what a later minor extends. With `lenient` an
   unknown value degrades instead of failing: an asset of an unknown type
-  is left out; a step whose block kind or quiz type is unknown, or whose
+  is left out; an item of an unknown kind or image type is left out, and
+  so is a placed model whose asset was left out or is not a model; a
+  step whose block kind or quiz type is unknown, or whose
   asset is missing or of another kind, is SKIPPED; a scene choice keeps
   only options whose target step is still there, and is skipped itself
   below two (repeated until nothing changes); an unknown advance mode is
@@ -89,7 +99,7 @@ tolerance >= 0, unit? }`.
 ## Examples
 
 ```ts
-const assets = parseTourAssets(json.assets, { objectIds, fail });
+const assets = parseTourAssets(json.assets, { fail });
 const stations = parseTourStations(json.stations, { assets, fail });
 // A file of a newer minor: what this reader cannot show is skipped.
 parseTourStations(json.stations, { assets, fail, lenient: true });
@@ -98,8 +108,11 @@ parseTourStations(json.stations, { assets, fail, lenient: true });
 ## Tests
 
 - `tour-stations.test.ts` - a castle station (character scene, choice,
-  model, quiz), every quiz answer type, routes, the defaults, and one
-  rejection per rule.
+  model, quiz), every quiz answer type, routes, the defaults, one
+  rejection per rule, and the version 3 station (empty steps, items read,
+  a placed model naming a model asset, refused for a missing, image or
+  audio asset, left out by a lenient read whose asset it lacks, an old
+  anchor ignored).
 - `tour-stations.property.test.ts` - generated station sets survive a JSON
   round trip unchanged; breaking any one asset reference or a choice
   target is refused; one unknown closed-list value anywhere never fails a

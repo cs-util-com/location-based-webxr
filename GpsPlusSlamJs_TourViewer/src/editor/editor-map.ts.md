@@ -34,10 +34,10 @@ plan review #4).
 - Markers are `divIcon`s built from ELEMENTS (`textContent` for a code's
   number), never HTML strings: a label comes from a zip anyone can write.
 - Codes are drawn above notes (`zIndexOffset` 500, the owner's stacking
-  default), the selected marker above both (1000). A station at its code's
-  point (`onCode`) is drawn beside the code, to the upper right over its
-  edge, and above it (600), so both can be clicked (PR #609 review; the
-  e2e clicks each).
+  default), the selected marker above both (1000). A station at a code's
+  point (`onCode`, within 1 m of it: version 3 has no code link, D9) is
+  drawn beside the code, to the upper right over its edge, and above it
+  (600), so both can be clicked (PR #609 review; the e2e clicks each).
 - The zoom control sits top right, under the top bar (the prototype's
   place); the map's own keyboard handling is Leaflet's default.
 - Imports Leaflet statically: this module belongs to `edit.html` alone

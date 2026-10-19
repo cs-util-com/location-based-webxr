@@ -52,7 +52,7 @@ describe("visitorStatus - one plain sentence per state", () => {
       "an unsupported phone",
       { arStatus: "unsupported" },
       "unsupported",
-      "This phone or browser can't show the tour in AR. Copy the link and open it in Chrome on an Android phone that supports AR.",
+      "This tour needs an Android phone with Chrome, and this phone or browser can't show it in AR. Copy the link and open it in Chrome on an Android phone.",
     ],
     [
       "AR failed to start",
@@ -235,7 +235,7 @@ describe("visitorStatus - why AR did not start, in plain words (review F5)", () 
     [
       "a session the browser refuses",
       "NotSupportedError: The specified session configuration is not supported.",
-      "This phone can't start AR for this tour. Open this page in Chrome on an Android phone that supports AR.",
+      "This phone can't start AR for this tour, which needs an Android phone with Chrome. Open this page there.",
     ],
     [
       "anything else",
@@ -533,5 +533,205 @@ describe("visitorStatus - codes only, and no code can place the tour (M1b-1 revi
       }),
     );
     expect(status).toEqual({ state: "nothing", text });
+  });
+});
+
+// Why (D34 of the tour editor plan 2026-10-17-1816): until the AR entry has
+// a heading the guide's arrows, breadcrumbs and a story's figure wait. A
+// visitor who never walks never gets one, so the line must say what earns
+// it - and go once a heading exists. It replaces only the bare "placed"
+// line: every other sentence keeps its reason (a moved code, the GPS
+// escape's "find the code") with the request after it. It is never said
+// while tracking still initializes (the coaching says hold steady), nor
+// without location, where walking cannot earn a heading.
+describe("visitorStatus - the guide waits for a heading (D34)", () => {
+  const WALK = "Walk a few steps so the guide knows the direction.";
+  const tracking = {
+    phase: "move-around",
+    percentReady: 0.4,
+    hint: "Move the phone slowly.",
+  } as never;
+  const initializing = {
+    phase: "initializing",
+    percentReady: 0,
+    hint: "Hold the phone steady.",
+  } as never;
+  const lost = {
+    phase: "ar-lost",
+    percentReady: 0,
+    hint: "Tracking lost - move slowly.",
+  } as never;
+  const content = { kind: "placed", count: 3, skipped: 0 } as const;
+  const placedByCode = {
+    gate: { kind: "passed", via: "code" } as const,
+    content,
+    readiness: tracking,
+  };
+
+  it("replaces the placed line, which comes back once a heading exists", () => {
+    expect(
+      visitorStatus(input({ ...placedByCode, stationsAwaitHeading: true })),
+    ).toEqual({ state: "finding-direction", text: WALK });
+    expect(
+      visitorStatus(input({ ...placedByCode, stationsAwaitHeading: false })),
+    ).toEqual({ state: "placed", text: "Tour placed. Look around." });
+  });
+
+  it.each<[string, ArStatusInput["gate"], string]>([
+    [
+      "the GPS escape",
+      { kind: "passed", via: "skipped" },
+      `Tour placed by GPS (less exact). ${WALK} Find the poster's code to line it up.`,
+    ],
+    [
+      "a moved code",
+      { kind: "passed", via: "ignored" },
+      `Tour placed by GPS (less exact): its code seems to have been moved. ${WALK}`,
+    ],
+    [
+      "no code reader",
+      { kind: "not-required", reason: "no-detector" },
+      `Tour placed by GPS (less exact): this browser can't read codes. ${WALK}`,
+    ],
+  ])(
+    "placed by GPS after %s: the reason stays, the request follows",
+    (_, gate, text) => {
+      expect(
+        visitorStatus(
+          input({
+            gate,
+            content,
+            readiness: tracking,
+            stationsAwaitHeading: true,
+          }),
+        ),
+      ).toEqual({ state: "placed-gps", text });
+    },
+  );
+
+  it("follows the sentence before placement too, keeping what could not load", () => {
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "code" },
+          placement: { kind: "waiting-ready" },
+          readiness: tracking,
+          planesError: "boom",
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({
+      state: "warming-up",
+      text: `Move the phone slowly. ${WALK} Some photos could not load.`,
+    });
+  });
+
+  it("keeps the moved code's sentence before placement, the request after it", () => {
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "ignored" },
+          qr: qr({ ignoredCode: "https://example.test/moved" }),
+          readiness: tracking,
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({
+      state: "code-moved",
+      text: `This code seems to have been moved, so the tour is placed by GPS (less exact). ${WALK}`,
+    });
+  });
+
+  it("is never said while tracking initializes: the coaching's hold steady stays", () => {
+    expect(
+      visitorStatus(
+        input({
+          ...placedByCode,
+          readiness: initializing,
+          stationsAwaitHeading: true,
+        }),
+      ).state,
+    ).toBe("placed");
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "code" },
+          placement: { kind: "waiting-ready" },
+          readiness: initializing,
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({ state: "warming-up", text: "Hold the phone steady." });
+  });
+
+  it("is never said without location: only a code gives a heading there (after a veto too)", () => {
+    expect(
+      visitorStatus(
+        input({
+          ...placedByCode,
+          codesOnly: true,
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({ state: "placed", text: "Tour placed. Look around." });
+    const vetoed = visitorStatus(
+      input({
+        gate: { kind: "passed", via: "ignored" },
+        qr: qr({ ignoredCode: "https://example.test/moved" }),
+        readiness: tracking,
+        codesOnly: true,
+        stationsAwaitHeading: true,
+      }),
+    );
+    expect(vetoed.text).not.toContain(WALK);
+  });
+
+  it("yields to a code that needs pointing elsewhere, and to tracking lost", () => {
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "code" },
+          qr: qr({ unknownCode: "https://example.test/other" }),
+          readiness: tracking,
+          stationsAwaitHeading: true,
+        }),
+      ).state,
+    ).toBe("code-other-tour");
+    expect(
+      visitorStatus(
+        input({ ...placedByCode, readiness: lost, stationsAwaitHeading: true }),
+      ).state,
+    ).toBe("tracking-lost");
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "code" },
+          placement: { kind: "waiting-ready" },
+          readiness: lost,
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({ state: "warming-up", text: "Tracking lost - move slowly." });
+  });
+
+  it("is never said before AR runs or without a tour", () => {
+    expect(
+      visitorStatus(
+        input({
+          arStatus: "starting",
+          readiness: tracking,
+          stationsAwaitHeading: true,
+        }),
+      ).state,
+    ).toBe("starting");
+    expect(
+      visitorStatus(
+        input({
+          tour: { kind: "none" },
+          readiness: tracking,
+          stationsAwaitHeading: true,
+        }),
+      ).state,
+    ).toBe("no-tour");
   });
 });
