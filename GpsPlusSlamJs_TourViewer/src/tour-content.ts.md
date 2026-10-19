@@ -50,14 +50,41 @@ radiusM? }) -> TourManifest`: the manifest with `objects` as its pins and
   hint, no steps and no title.
 - **The tour's own recorded photos are kept.** Baked spots are placed only
   when the manifest has none, so a second Finish never re-assigns them.
-- **An object naming a station the tour lacks recreates that station** under
-  the same id, anchored where the object stands, as an automatic station
-  (the M5a milestone review M2). Such an object is one an undo brought back
-  after a save dropped its emptied station: the automatic rule would merge
-  it into a neighbour within R or start a station under a new id. The
-  recreated station goes after the tour's own, before any new one: a save
-  hands the objects "saved, then changed", so their order cannot say where
-  it stood, and its old position in the order is not recovered.
+- **An object naming a station the tour lacks starts that station** under
+  the same id, anchored where the first object naming it stands, as an
+  automatic station - never merged into a neighbour, even within R. Two
+  cases name one: an undo that brought an object back after a save dropped
+  its emptied station (the M5a milestone review M2), and the phone's "New
+  station here" (owner decision D8 of
+  `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`),
+  whose placement names a fresh id. It goes through the rule
+  (`assignToStations`' `ownStationOf`) IN THE OBJECTS' ORDER, like the
+  rule's own new stations: after the tour's own, and a new object placed
+  before it is never taken into it (r886: recreated up front, as first
+  built, a new pin placed 3 m before a "New station here" pin was absorbed
+  into the later station, against the note it was given). A later new
+  object within R of it joins it as the rule says. A save hands the
+  objects "saved, then changed", so an undone M2 station's old position in
+  the order is not recovered.
+- **The recorded photos can join an own station; the earlier objects
+  cannot.** The rule runs twice. The photos go first, in capture order,
+  with every own station already seated at its first object's spot; the
+  objects follow without those seats, so an own station starts when its
+  object comes. Without the seats (as first built) the photos were
+  assigned before any own station existed: photos taken at its spot
+  joined a neighbour 20 m back (R 20-40 m) or started a duplicate station
+  beside it (R 15 m), never the station the creator started there.
+  - **Inference: EVERY recorded photo may join an own station, by
+    nearness, also one taken before its pin.** The photos reach this
+    module without a time (`CaptureSpotsInWorld`), so "only photos after
+    the pin" cannot be decided here. Nearness alone is the conservative
+    choice: it is what the rule does for every other station, and it never
+    leaves a duplicate station at the spot the creator chose. An earlier
+    OBJECT is treated differently because it was already told its station
+    in a placement note; a photo was told nothing (the HUD hedges a walk
+    photo's station until the Finish). Open question: if the photos ever
+    carry their capture time, should a photo taken before the pin stay out
+    of it? Default: no, nearness only.
 - An object missing from `objects` leaves its station. A station this
   write EMPTIED (it held items and holds none now) goes when nothing else
   keeps it: no title, no steps, no recorded photo in it, and no other
@@ -89,7 +116,10 @@ const written = withTourContent(manifest, {
   pose; a move is re-expressed in its own station, even beyond R; new
   objects join or start stations; chains; removal; an emptied station
   dropped unless titled, storied, photographed or routed to; a station
-  an object names but the tour lacks, recreated under its id; the
+  an object names but the tour lacks, recreated under its id, and started
+  in the objects' order even within R of another (D8); recorded photos at
+  an own station's spot joining it while an earlier pin stays out, swept
+  over R 15-40 m; the
   capture order and the kept spots; a refused R; and the `asStored`
   property (it is what a written tour holds, by content key).
 - Through `finish-rebuild.test.ts` (the Finish's capture assignment, and a

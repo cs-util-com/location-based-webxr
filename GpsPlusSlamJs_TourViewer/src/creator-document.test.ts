@@ -14,7 +14,8 @@ import { describe, expect, it } from "vitest";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { createCreatorDocument } from "./creator-document.js";
-import { manifestToWrite } from "./tour-document.js";
+import { stationsAsFinished } from "./creator-stations.js";
+import { manifestToWrite, tourDocumentActions } from "./tour-document.js";
 import type { TourDocumentDraft } from "./tour-document-draft.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import { tourOf } from "./test-support/v3-tour.js";
@@ -428,5 +429,175 @@ describe("the creator's document: the tour's name (plan W2, §23 #8)", () => {
     );
     expect(doc.entries()).toEqual([]);
     expect(doc.tourChanged()).toBe(true);
+  });
+});
+
+// Why (owner decision D8 of the editor round-2 plan, 2026-10-18): places
+// closer than about 40 m cannot be separated by any automatic radius, so
+// the phone's "New station here" makes the NEXT placed item start its own
+// station even within the radius. The arm is a flag of the shared slice,
+// not the page's module scope; the placement goes through the document's
+// own path (an object naming a station the tour lacks), so the HUD, the
+// draft, the undo and the Finish all see the same station. The document
+// starts the station when its caller ASKS (`ownStation`): the caller takes
+// the arm when the item is committed (a photo's shutter tap, not its
+// encode's end), so the document never reads the arm itself.
+describe("the creator's document: 'New station here' (D8)", () => {
+  /** About 5 m north of `pin("a")`'s station anchor: within R (25 m). */
+  const NEAR = 48.52 + 5 / 111_320;
+  const OWN = { ownStation: true } as const;
+
+  function opened() {
+    const store = createTourViewerStore();
+    const doc = createCreatorDocument(store);
+    doc.open(tourOf([pin("a")]));
+    return { doc, store };
+  }
+
+  it("is off until armed; arming and disarming are no edit of the tour", () => {
+    const doc = fresh();
+    const { draft, calls } = recordingDraft();
+    doc.follow(draft);
+    doc.open(tourOf([pin("a")]));
+    expect(doc.newStationArmed()).toBe(false);
+    const revision = doc.revision();
+    doc.armNewStation(true);
+    expect(doc.newStationArmed()).toBe(true);
+    doc.armNewStation(false);
+    expect(doc.newStationArmed()).toBe(false);
+    expect(doc.revision()).toBe(revision);
+    expect(calls).toEqual([]);
+    expect(doc.undo()).toEqual({ kind: "nothing" });
+  });
+
+  it("without it, a pin 5 m from a station joins it (the rule D8 overrides)", () => {
+    const { doc } = opened();
+    expect(doc.place(pin("b", NEAR), {}, "a pin")?.ownStation).toBe(false);
+    const stations = stationsAsFinished({ state: doc.state() });
+    expect(stations.map((s) => s.itemIds)).toEqual([["a", "b"]]);
+  });
+
+  it("starts the placement's own station, anchored at it, within the radius", () => {
+    const { doc } = opened();
+    const change = doc.place(pin("b", NEAR), OWN, "a pin");
+    expect(change?.ownStation).toBe(true);
+    const stations = stationsAsFinished({ state: doc.state() });
+    expect(stations.map((s) => s.itemIds)).toEqual([["a"], ["b"]]);
+    expect(stations[1]).toMatchObject({
+      started: true,
+      anchor: { lat: NEAR, lon: 9.05, alt: 340 },
+    });
+    // What the Finish writes is what the HUD says.
+    const written = manifestToWrite(doc.state());
+    expect(written?.stations.map((s) => s.items.map((i) => i.id))).toEqual([
+      ["a"],
+      ["b"],
+    ]);
+  });
+
+  it("follows its caller, never the arm: the caller takes the arm when the item is committed", () => {
+    // A photo armed at its shutter tap lands after the visit ended (and
+    // its arm with it); a photo shot BEFORE the creator armed lands while
+    // the arm waits for the next item. Both are decided by the caller.
+    const { doc } = opened();
+    doc.armNewStation(true);
+    expect(doc.place(pin("b", NEAR), {}, "a pin")?.ownStation).toBe(false);
+    expect(doc.newStationArmed()).toBe(true);
+    doc.armNewStation(false);
+    expect(doc.place(pin("c", NEAR), OWN, "a pin")?.ownStation).toBe(true);
+    expect(doc.newStationArmed()).toBe(false);
+    expect(
+      stationsAsFinished({ state: doc.state() }).map((s) => s.itemIds),
+    ).toEqual([["a", "b"], ["c"]]);
+  });
+
+  it("a placement after it follows the rule again", () => {
+    const { doc } = opened();
+    doc.place(pin("b", NEAR), OWN, "a pin");
+    // 1 m past "b": nearer b's new station than a's, so it joins b's.
+    const after = doc.place(pin("c", NEAR + 1 / 111_320), {}, "a pin");
+    expect(after?.ownStation).toBe(false);
+    const stations = stationsAsFinished({ state: doc.state() });
+    expect(stations.map((s) => s.itemIds)).toEqual([["a"], ["b", "c"]]);
+  });
+
+  it("two such placements in a row start two stations, even 1 m apart", () => {
+    const { doc } = opened();
+    const first = doc.place(pin("b", NEAR), OWN, "a pin");
+    const second = doc.place(pin("c", NEAR + 1 / 111_320), OWN, "a pin");
+    expect(first?.object.station).toBeDefined();
+    expect(second?.object.station).toBeDefined();
+    expect(second?.object.station).not.toBe(first?.object.station);
+    expect(
+      stationsAsFinished({ state: doc.state() }).map((s) => s.itemIds),
+    ).toEqual([["a"], ["b"], ["c"]]);
+  });
+
+  it("a refused placement starts nothing", () => {
+    const { doc } = opened();
+    // An id the tour carries: refused by the slice's guard.
+    expect(doc.place(pin("a"), OWN, "a pin")).toBeNull();
+    expect(stationsAsFinished({ state: doc.state() })).toHaveLength(1);
+  });
+
+  it("an undo removes the new station and a redo brings the same station back; neither re-arms", () => {
+    const { doc, store } = opened();
+    const placed = doc.place(pin("b", NEAR), OWN, "a pin");
+    const own = placed?.object.station;
+    expect(own).toBeDefined();
+    expect(doc.undo()).toMatchObject({ kind: "undone", what: "a pin" });
+    expect(
+      stationsAsFinished({ state: doc.state() }).map((s) => s.itemIds),
+    ).toEqual([["a"]]);
+    expect(doc.newStationArmed()).toBe(false);
+    store.dispatch(tourDocumentActions.redone());
+    expect(doc.entries().find((e) => e.object.id === "b")?.object.station).toBe(
+      own,
+    );
+    expect(
+      stationsAsFinished({ state: doc.state() }).map((s) => s.itemIds),
+    ).toEqual([["a"], ["b"]]);
+    expect(manifestToWrite(doc.state())?.stations.map((s) => s.id)).toContain(
+      own,
+    );
+    expect(doc.newStationArmed()).toBe(false);
+  });
+
+  it("writes the placement into the draft naming its own station, so a reload keeps it apart", () => {
+    const doc = fresh();
+    const saved: TourObject[] = [];
+    const { draft } = recordingDraft();
+    doc.follow({
+      ...draft,
+      saveObject: (object) => {
+        saved.push(object);
+        return Promise.resolve(true);
+      },
+    });
+    doc.open(tourOf([pin("a")]));
+    doc.place(pin("b", NEAR), OWN, "a pin");
+    const own = saved.find((o) => o.id === "b")?.station;
+    expect(own).toBeDefined();
+    expect(own).not.toBe(doc.state().stations[0]!.id);
+    // A later page restoring that record starts the same separate station.
+    const reloaded = fresh();
+    reloaded.open(tourOf([pin("a")]));
+    reloaded.restore(
+      { objects: saved, deleted: [], pictures: new Map() },
+      "the draft",
+    );
+    expect(
+      stationsAsFinished({ state: reloaded.state() }).map((s) => s.itemIds),
+    ).toEqual([["a"], ["b"]]);
+  });
+
+  it("is disarmed by a tour opening or closing", () => {
+    const { doc } = opened();
+    doc.armNewStation(true);
+    doc.open(tourOf([pin("x")]));
+    expect(doc.newStationArmed()).toBe(false);
+    doc.armNewStation(true);
+    doc.close();
+    expect(doc.newStationArmed()).toBe(false);
   });
 });

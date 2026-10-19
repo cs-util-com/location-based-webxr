@@ -21,8 +21,14 @@ anchor. Pure.
   `null`. Horizontal distance (`move-with-code.ts` `horizontalM`), R itself
   inside, a tie to the earlier station.
 - `assignToStations({ stations, elements, positionOf, newStationId,
-radiusM? })` - every element, in order, joins the nearest station within
-  R, or starts a new one anchored at the element's own `{ lat, lon, alt }`.
+ownStationOf?, radiusM? })` - every element, in order, joins the nearest
+  station within R, or starts a new one anchored at the element's own
+  `{ lat, lon, alt }`. `ownStationOf(element, index)` names an element's
+  OWN station: it joins the station of that id if one stands (given, or
+  started by an earlier element), else starts it anchored at itself, even
+  within R of another (owner decision D8 of the editor round-2 plan, the
+  phone's "New station here"; and the M5a review M2 undo, see
+  `tour-content.ts.md`).
   Returns `{ stations, stationOf }`: the given stations first (the same
   objects, their order), the new ones after in the order they started, and
   per element the id of its station.
@@ -38,9 +44,13 @@ radiusM? })` - every element, in order, joins the nearest station within
   differently (a fixed anchor at the FIRST element); callers pass them in
   the order they were made: the walk's photos in capture order, the AR
   placements in placement order.
+- **An own station is taken in order too.** It exists from its element on:
+  an earlier element never joins it (it would be absorbed into a station
+  started after it), a later one within R joins it like any station.
 - Defensive: a radius that is not a positive finite number throws
-  `RangeError`; a new id that is already taken throws (two stations under
-  one id would merge their items).
+  `RangeError`; a new id that is already taken throws, and so does an own
+  station naming an id this call minted for another station (two stations
+  under one id would merge their items).
 - The geodesy is licence-gated: the caller runs after the store is built.
 
 ## Examples
@@ -58,9 +68,13 @@ const { stations, stationOf } = assignToStations({
 
 - `station-assign.test.ts` - the edges: R itself, a tie, horizontal
   distance, a chain along a path, existing stations first, the order, a
-  swept radius, refused radii and ids.
+  swept radius, refused radii and ids; an element's own station (D8):
+  started within R, never taking an earlier element, joined by a second
+  element naming it, and refused when it names a minted id.
 - `station-assign.property.test.ts` - for any elements over 200 m and any
   R in 15-40 m: an element within R joins the nearest station, one beyond
   R starts a new station at itself, anchors never move as elements are
   added, every element ends within R of its anchor, and a batch equals
-  adding one element at a time.
+  adding one element at a time; with any elements marked to start their
+  own station, each marked one starts it at itself and the rest follow
+  the rule against the stations standing before them.

@@ -514,6 +514,7 @@ if (mode === "creator") {
   for (const [id, label] of [
     ["setup-pin", "Place a pin"],
     ["setup-photo", "Take a photo"],
+    ["setup-new-station", "New station here"],
   ] as const) {
     wireFoldingLabel({
       button: element(id),
@@ -616,6 +617,7 @@ const setup = wireCreatorSetup({
     pinSave: element("pin-save"),
     pinCancel: element("pin-cancel"),
     photoButton: element("setup-photo"),
+    newStationButton: element<HTMLButtonElement>("setup-new-station"),
     draftOffer: element("draft-offer"),
     draftOfferText: element("draft-offer-text"),
     draftRestore: element("draft-restore"),

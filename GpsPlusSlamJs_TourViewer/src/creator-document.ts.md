@@ -32,7 +32,15 @@ copy of the tour.
   refused, else a `DocumentChange` whose `backedUp` settles once every
   draft write the change caused settled (true: all landed, or no draft
   follows):
-  - `place(object, { blob?, placement? }, what)` - `canPlace`;
+  - `place(object, { blob?, placement?, ownStation? }, what)` -
+    `canPlace`; returns the change with `ownStation`: asked for it ("New
+    station here", owner decision D8 of `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`),
+    an object naming no station names a fresh station id of its own (one
+    the document does not use), so the write starts it there even within
+    R of another (`tour-content.ts`). It never reads or changes the arm:
+    the caller takes it when the item is committed (a photo at its
+    shutter tap, not when its encode lands) and gives it back if the item
+    is not placed (`creator-placement.ts`);
   - `edit(object, what)` - `objectFits`; the AR placement is kept;
   - `move(object, what, placement?)` - `objectFits`; `placement` replaces
     the AR placement (a move in AR), else it is kept (a settle's re-pose);
@@ -43,6 +51,9 @@ copy of the tour.
   - `undo()` - `{ kind: "undone", what, backedUp }`, `{ kind: "nothing" }`,
     or refused: `"saving"` (`canStep`) or `"picture-gone"`
     (`picturesNeeded`, a photo whose picture this page does not hold).
+- `newStationArmed()`, `armNewStation(armed)` - the slice's
+  `newStationArmed` flag (D8): no edit of the tour (no undo step, no
+  revision, no draft write); gone when a tour opens or closes.
 - `rename(name)` - the tour's name (the phone's one detail, plan W2):
   `detailsChange` with the other details as they stand - `renamed`
   (`backedUp`), `unchanged`, or `refused` with the reason (over 80
@@ -62,7 +73,7 @@ generation, written, appliedDeletions, stationsAtStart })`,
   page (a second call throws: two drafts would write everything twice).
 - `revision()`; the types `VisitPlacement`, `CreatorObject`,
   `DocumentChange`, `CreatorDocumentStore` (`PlacedEntry`,
-  `DocumentUndo` and `DocumentRename` are the methods' own shapes,
+  `PlacedChange`, `DocumentUndo` and `DocumentRename` are the methods' own shapes,
   module-private).
 
 ## Invariants & assumptions

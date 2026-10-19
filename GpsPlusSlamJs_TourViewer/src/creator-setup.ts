@@ -49,7 +49,10 @@ import { wireCreatorCodes, type CreatorCodes } from "./creator-codes.js";
 import { wireCreatorDraft } from "./creator-draft.js";
 import { wireCreatorPreviews } from "./creator-previews.js";
 import { wireCreatorAlignmentPicks } from "./creator-alignment-picks.js";
-import { wireCreatorPlacement } from "./creator-placement.js";
+import {
+  wireCreatorPlacement,
+  type CreatorPlacementDom,
+} from "./creator-placement.js";
 import { wireCreatorMeasuring } from "./creator-measuring.js";
 import { wireCreatorSettle } from "./creator-settle.js";
 import { wireCreatorFinish } from "./creator-finish.js";
@@ -160,6 +163,10 @@ export interface CreatorSetupDom {
   pinSave: HTMLButtonElement;
   pinCancel: HTMLButtonElement;
   photoButton: HTMLButtonElement;
+  /** "New station here" beside the placement chips (owner decision D8;
+   *  `creator-placement.ts`). Absent in the node tests that do not need
+   *  it. */
+  newStationButton?: NonNullable<CreatorPlacementDom["newStationButton"]>;
   /** The "unsaved work is still on this device" offer (F13). */
   draftOffer: HTMLElement;
   draftOfferText: HTMLElement;
@@ -684,6 +691,7 @@ export function wireCreatorSetup(deps: {
       settle.lateArrival(visit, photo);
     },
     stationOf: (id) => stations.placedIn(id),
+    stationNameOf: (id) => stations.nameOf(id),
     render: () => {
       renderAuthorReadout();
     },
@@ -850,8 +858,11 @@ export function wireCreatorSetup(deps: {
       doneWaits = false;
       // What the previews were made from, and the earlier visits' frame.
       previews.endVisit();
-      // The open station's line and ring belong to the session.
+      // The open station's line and ring belong to the session, and so
+      // does "New station here": an arm left for the next visit would
+      // start a station the creator no longer expects (D8).
       stations.endVisit();
+      ctx.tourDocument.armNewStation(false);
       // An AR selection means nothing on the page.
       editing.reset();
     },

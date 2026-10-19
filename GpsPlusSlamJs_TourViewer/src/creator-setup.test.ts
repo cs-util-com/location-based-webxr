@@ -58,6 +58,10 @@ interface FakeEl {
   /** The status line's AR clamp flag (`data-clamped`). */
   dataset: Record<string, string>;
   handlers: Map<string, () => void>;
+  /** Attributes set (`aria-pressed` on "New station here"). */
+  attributes: Record<string, string>;
+  setAttribute: (name: string, value: string) => void;
+  focus: () => void;
   addEventListener: (type: string, handler: () => void) => void;
   click: () => void;
   bind: (bound: ObjectListHandlers) => void;
@@ -77,6 +81,11 @@ function el(): FakeEl {
     open: false,
     dataset: {},
     handlers,
+    attributes: {},
+    focus: () => undefined,
+    setAttribute(name, value) {
+      this.attributes[name] = value;
+    },
     addEventListener: (type, handler) => handlers.set(type, handler),
     click: () => handlers.get("click")?.(),
     // The object list's view (authoring plan M4): a stand-in - its model
@@ -112,6 +121,7 @@ const DOM_KEYS = [
   "pinSave",
   "pinCancel",
   "photoButton",
+  "newStationButton",
   "draftOffer",
   "draftOfferText",
   "draftRestore",
@@ -2414,5 +2424,143 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     await settle();
 
     expect(storedPose(files), "the pose is still the draft's").toEqual(MOVED);
+  });
+});
+
+// Why (owner decision D8 of the editor round-2 plan, 2026-10-18): places
+// closer than about 40 m cannot be separated by any automatic radius, so a
+// chip in the phone's AR authoring makes the NEXT placed item start its own
+// station. These drive the chip and the pin's Save as the page does: the
+// armed state on the chip (aria-pressed), the one-shot, the arm surviving a
+// placement that did not happen, the note naming the result, and the arm
+// gone at the end of the AR visit.
+describe("'New station here' (D8)", () => {
+  /** A tour whose one station is anchored where the reticle's pin lands
+   *  (the fake reticle and zero put it at about 47.5, 8.7): any pin placed
+   *  here is within R of it. */
+  async function placeable() {
+    const { store } = memoryStore();
+    const wired = wire(store, { placeable: true });
+    wired.ctx.tourDocument.open(tourOf([pin("hosted")]));
+    wired.setup.presentDraftForTour(TOUR);
+    await settle();
+    wired.setup.renderAuthorReadout();
+    return wired;
+  }
+
+  function stationsOf(ctx: ReturnType<typeof createTourViewerSession>) {
+    return (
+      manifestToWrite(ctx.tourDocument.state())?.stations.map((s) =>
+        s.items.map((i) => (i.kind === "pin" ? i.label : i.id)),
+      ) ?? []
+    );
+  }
+
+  it("shows its armed state, and a second tap disarms it", async () => {
+    const { ctx, dom } = await placeable();
+    const chip = dom.newStationButton;
+    expect(chip.hidden).toBe(false);
+    expect(chip.disabled).toBe(false);
+    expect(chip.attributes["aria-pressed"]).toBe("false");
+    chip.click();
+    expect(chip.attributes["aria-pressed"]).toBe("true");
+    expect(ctx.tourDocument.newStationArmed()).toBe(true);
+    expect(ctx.placementNote).toBe(
+      "The next pin or photo starts a new station here.",
+    );
+    chip.click();
+    expect(chip.attributes["aria-pressed"]).toBe("false");
+    expect(ctx.tourDocument.newStationArmed()).toBe(false);
+    expect(ctx.placementNote).toBeNull();
+  });
+
+  it("makes the next pin start its own station within the radius, says so, and disarms", async () => {
+    const { ctx, dom } = await placeable();
+    // Unarmed, a pin here joins the hosted station.
+    dom.pinLabel.value = "Joins";
+    dom.pinSave.click();
+    await settle();
+    expect(stationsOf(ctx)).toEqual([["pin hosted", "Joins"]]);
+
+    dom.newStationButton.click();
+    dom.pinLabel.value = "Own";
+    dom.pinSave.click();
+    await settle();
+    expect(stationsOf(ctx)).toEqual([["pin hosted", "Joins"], ["Own"]]);
+    expect(ctx.placementNote).toMatch(
+      /^Pin "Own" placed - New station started: Station 2 · /,
+    );
+    expect(ctx.tourDocument.newStationArmed()).toBe(false);
+    expect(dom.newStationButton.attributes["aria-pressed"]).toBe("false");
+
+    // One-shot: the next pin follows the rule (the nearer, newer station).
+    dom.pinLabel.value = "After";
+    dom.pinSave.click();
+    await settle();
+    expect(stationsOf(ctx)).toEqual([
+      ["pin hosted", "Joins"],
+      ["Own", "After"],
+    ]);
+  });
+
+  // Why: the troubleshooting recording logs a placement "exactly as the
+  // manifest will carry it"; a log without the station the arm gave it
+  // could not explain afterwards why the pin started a station of its own.
+  it("logs the placement into the recording with the station it starts", async () => {
+    const { ctx, dom, dispatched } = await placeable();
+    dom.newStationButton.click();
+    dom.pinLabel.value = "Own";
+    dom.pinSave.click();
+    await settle();
+    const entry = ctx.tourDocument.entries()[0]!.object;
+    expect(entry.station).toBeDefined();
+    const logged = dispatched.filter(
+      (a) => (a as { type: string }).type === "tourAuthoring/objectPlaced",
+    ) as { payload: { object: TourObject } }[];
+    expect(logged.map((a) => a.payload.object)).toEqual([entry]);
+  });
+
+  it("stays armed when the placement does not happen, so the creator can try again", async () => {
+    const { ctx, dom } = await placeable();
+    dom.newStationButton.click();
+    // No text typed: nothing placed.
+    dom.pinLabel.value = "";
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.placementNote).toBe("Type the pin's text first.");
+    expect(ctx.tourDocument.newStationArmed()).toBe(true);
+    // The label input cancelled: nothing placed.
+    dom.pinButton.click();
+    dom.pinCancel.click();
+    expect(ctx.tourDocument.newStationArmed()).toBe(true);
+    // No surface under the ring: nothing placed.
+    ctx.reticle = {
+      isVisible: () => false,
+      getWorldPosition: (v: Vector3) => v,
+    } as never;
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.tourDocument.newStationArmed()).toBe(true);
+    expect(dom.newStationButton.attributes["aria-pressed"]).toBe("true");
+    expect(stationsOf(ctx)).toEqual([["pin hosted"]]);
+  });
+
+  it("an undo of that placement takes the new station away", async () => {
+    const { ctx, dom } = await placeable();
+    dom.newStationButton.click();
+    dom.pinLabel.value = "Own";
+    dom.pinSave.click();
+    await settle();
+    expect(stationsOf(ctx)).toHaveLength(2);
+    expect(ctx.tourDocument.undo()).toMatchObject({ kind: "undone" });
+    expect(stationsOf(ctx)).toEqual([["pin hosted"]]);
+  });
+
+  it("is disarmed when the AR visit ends: the chip is the session's", async () => {
+    const { ctx, dom, setup } = await placeable();
+    dom.newStationButton.click();
+    setup.endAuthorVisit();
+    expect(ctx.tourDocument.newStationArmed()).toBe(false);
   });
 });

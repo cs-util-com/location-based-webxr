@@ -168,3 +168,64 @@ describe("automatic-station rule properties", () => {
     );
   });
 });
+
+// Why (owner decision D8 of the editor round-2 plan): the phone's "New
+// station here" gives an element its own station even within R of
+// another. For any elements, any of them marked, and any R in 15-40 m:
+// a marked element starts its own station exactly where it stands; every
+// other element still follows the rule against the stations standing
+// BEFORE it (a station a later element starts never takes it); and one
+// batch still equals adding one element at a time.
+describe("automatic-station rule properties: elements with their own station (D8)", () => {
+  it("a marked element starts its own station at itself; the rest follow the rule in order", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.record({ at: element, own: fc.boolean() }), {
+          maxLength: 25,
+        }),
+        radius,
+        (els, r) => {
+          const ownOf = (i: number) =>
+            els[i]!.own ? `own-${String(i)}` : undefined;
+          const batch = assignToStations({
+            stations: [],
+            elements: els,
+            positionOf: (x) => x.at,
+            newStationId: ids(),
+            ownStationOf: (_x, i) => ownOf(i),
+            radiusM: r,
+          });
+          const newId = ids();
+          let seats: StationSeat[] = [];
+          els.forEach((e, i) => {
+            const expected = ownOf(i) ?? nearestWithin(seats, e.at, r);
+            const step = assignToStations({
+              stations: seats,
+              elements: [e],
+              positionOf: (x) => x.at,
+              newStationId: newId,
+              ownStationOf: () => ownOf(i),
+              radiusM: r,
+            });
+            const got = step.stationOf[0]!;
+            const seat = step.stations.find((s) => s.id === got)!;
+            const marked = ownOf(i) !== undefined;
+            // A marked element: its own id, anchored at itself. Another:
+            // the rule's station, or a new one when none is within R.
+            expect({
+              id: expected ?? "new",
+              anchor: marked ? seat.anchor : null,
+              isNew: marked ? null : !seats.some((s) => s.id === got),
+            }).toEqual({
+              id: expected === null ? "new" : got,
+              anchor: marked ? e.at : null,
+              isNew: marked ? null : expected === null,
+            });
+            expect(batch.stationOf[i]).toBe(got);
+            seats = step.stations;
+          });
+        },
+      ),
+    );
+  });
+});

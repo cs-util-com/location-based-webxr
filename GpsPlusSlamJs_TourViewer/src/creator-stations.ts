@@ -111,12 +111,17 @@ export function openStationAt(
 
 /**
  * The HUD's line about stations, in plain words: the open one, the one
- * the creator just left, or none.
+ * the creator just left, or none - or, while "New station here" is armed
+ * (owner decision D8), that the next item starts a station of its own.
  */
 export function stationChipText(
   open: ArStation | null,
   left: ArStation | null,
+  newStationArmed = false,
 ): string {
+  if (newStationArmed) {
+    return "What you place next starts a new station here.";
+  }
   if (open !== null) {
     return `In ${open.name} - what you place here joins it.`;
   }
@@ -223,6 +228,10 @@ export interface CreatorStations {
   tick(): void;
   /** Where object `id` went, for its placement note (`placedInText`). */
   placedIn(id: string): string | null;
+  /** The name of the station object `id` is in ("Station 2", hedged
+   *  while the walk's photos are pending), or null: what a "New station
+   *  here" placement's note names (D8). */
+  nameOf(id: string): string | null;
   /** The session ended: the line and the ring go. */
   endVisit(): void;
 }
@@ -325,7 +334,11 @@ export function wireCreatorStations(deps: {
       const left =
         open === null && lastOpen !== null ? findMarked(list, lastOpen) : null;
       if (open !== null) lastOpen = markOf(open);
-      const line = stationChipText(open, left);
+      const line = stationChipText(
+        open,
+        left,
+        deps.tour.state().newStationArmed,
+      );
       show(
         deps.walkPhotosPending?.() === true ? `${line} ${WALK_HEDGE}` : line,
       );
@@ -344,6 +357,13 @@ export function wireCreatorStations(deps: {
       return where !== null && deps.walkPhotosPending?.() === true
         ? `${where} (${HEDGE})`
         : where;
+    },
+    nameOf(id) {
+      const station = stations().find((s) => s.itemIds.includes(id));
+      if (station === undefined) return null;
+      return deps.walkPhotosPending?.() === true
+        ? `${station.name} (${HEDGE})`
+        : station.name;
     },
     endVisit() {
       show("");

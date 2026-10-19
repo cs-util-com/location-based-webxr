@@ -155,6 +155,79 @@ test("the creator's open station is named and ringed; a pin inside joins it, lea
   await expectWrittenAsTold(page);
 });
 
+test("'New station here' makes the next pin start its own station within the radius; the Finish writes it apart (D8)", async ({
+  page,
+}) => {
+  // Why (owner decision D8 of the editor round-2 plan): places closer than
+  // about 40 m cannot be separated by any automatic radius. Only the
+  // composed page shows the chip's armed state, the line, the placement's
+  // note and the written tour telling the same story: a pin 5 m from the
+  // fixture station's anchor starts Station 2 when armed, the arm is
+  // one-shot, survives a cancelled label input, and the Finish writes the
+  // new station anchored at that pin.
+  await openFixtureTour(page);
+  await enterArAndMeasure(page);
+  const chip = page.getByTestId("creator-station");
+  const arm = page.getByTestId("setup-new-station");
+  await stand(page, 0, 0);
+  await expect(chip).toHaveText("In Station 1 - what you place here joins it.");
+  await expect(arm).toBeEnabled();
+  await expect(arm).toHaveAttribute("aria-pressed", "false");
+
+  // A second tap disarms.
+  await arm.click();
+  await expect(arm).toHaveAttribute("aria-pressed", "true");
+  await arm.click();
+  await expect(arm).toHaveAttribute("aria-pressed", "false");
+
+  // Armed: the line says so on the next frame.
+  await arm.click();
+  await expect(arm).toHaveAttribute("aria-pressed", "true");
+  await stand(page, 0, 0);
+  await expect(chip).toHaveText(
+    "What you place next starts a new station here.",
+  );
+
+  // A cancelled label input places nothing: still armed.
+  await page.getByTestId("setup-pin").click();
+  await expect(arm).toBeHidden();
+  await page.getByTestId("pin-cancel").click();
+  await expect(arm).toHaveAttribute("aria-pressed", "true");
+
+  // 5 m from the fixture's anchor (~10 m north): inside its radius.
+  await placePin(page, "Own", 5, 0);
+  await expect(page.getByTestId("setup-status")).toContainText(
+    'Pin "Own" placed - New station started: Station 2',
+  );
+  await expect(arm).toHaveAttribute("aria-pressed", "false");
+
+  // One-shot: the next pin follows the rule and joins the nearer station.
+  await placePin(page, "After", 4, 0);
+  await expect(page.getByTestId("setup-status")).toContainText(
+    'Pin "After" placed - in Station 2',
+  );
+
+  await finishAndDownload(page, 0);
+  const { manifest } = await downloadedZip(page, 0);
+  const holding = (/** @type {string} */ label) =>
+    manifest.stations.find((s) =>
+      s.items.some((i) => i.kind === "pin" && i.label === label),
+    );
+  const own = manifest.objects.find(
+    (o) => o.kind === "pin" && o.label === "Own",
+  );
+  const fixture = holding("Fixture pin");
+  const started = holding("Own");
+  if (own === undefined || fixture === undefined || started === undefined) {
+    throw new Error("the written tour lost a pin or its station");
+  }
+  expect(started.id).not.toBe(fixture.id);
+  expect(holding("After")?.id).toBe(started.id);
+  expect(fixture.items.map((i) => i.id)).toHaveLength(1);
+  expect(started.geo.lat).toBeCloseTo(own.geo.lat, 9);
+  expect(started.geo.lon).toBeCloseTo(own.geo.lon, 9);
+});
+
 /** The box of a test id, in viewport pixels. */
 async function box(page, testId) {
   const b = await page.getByTestId(testId).boundingBox();
@@ -180,10 +253,14 @@ for (const viewport of [
     await stand(page, 0, 0);
     await expect(page.getByTestId("creator-station")).toBeVisible();
     const line = await box(page, "creator-station");
+    // The strip's top: "New station here" (D8) sits above the pin and
+    // the photo, next to the line it changes.
+    const strip = await box(page, "setup-controls");
     const pin = await box(page, "setup-pin");
     const status = await box(page, "setup-status");
+    expect(line.bottom).toBeLessThanOrEqual(strip.top);
+    expect(strip.top - line.bottom).toBeLessThan(24);
     expect(line.bottom).toBeLessThanOrEqual(pin.top);
-    expect(pin.top - line.bottom).toBeLessThan(24);
     expect(line.top).toBeGreaterThanOrEqual(status.bottom);
     expect(line.left).toBeGreaterThanOrEqual(0);
     expect(line.right).toBeLessThanOrEqual(viewport.width);

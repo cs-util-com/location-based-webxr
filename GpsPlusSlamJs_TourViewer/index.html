@@ -202,6 +202,11 @@
       #recording-block {
         margin-top: var(--space-3);
       }
+      /* The placement row is a box of its own only in AR (below); outside
+         it its controls stay the strip's grid items. */
+      .setup-place-row {
+        display: contents;
+      }
       /* The object list (authoring plan 2026-09-28-0953 M4): one row per
          object, its words over its buttons. Over the camera in AR, so the
          text wears the status line's halo. The selected row (a tap in AR)
@@ -1737,6 +1742,17 @@
       body[data-mode="creator"][data-ar-active="true"] #setup-controls {
         order: 5;
         align-self: center;
+        /* "New station here" (D8) on its own line above the placement row,
+           first in the markup too: on a phone the three labels do not fit
+           one row until the pin's and the photo's fold, and the station
+           chip belongs next to the station line it changes. */
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        max-width: 100%;
+      }
+      body[data-mode="creator"][data-ar-active="true"] .setup-place-row {
         display: flex;
         justify-content: center;
         gap: 10px;
@@ -1765,7 +1781,8 @@
         text-align: center;
       }
       body[data-mode="creator"][data-ar-active="true"] #setup-pin,
-      body[data-mode="creator"][data-ar-active="true"] #setup-photo {
+      body[data-mode="creator"][data-ar-active="true"] #setup-photo,
+      body[data-mode="creator"][data-ar-active="true"] #setup-new-station {
         display: inline-flex;
         flex: none;
         align-items: center;
@@ -1792,8 +1809,17 @@
         color: #1d1206;
       }
       body[data-mode="creator"][data-ar-active="true"] #setup-pin[hidden],
-      body[data-mode="creator"][data-ar-active="true"] #setup-photo[hidden] {
+      body[data-mode="creator"][data-ar-active="true"] #setup-photo[hidden],
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-new-station[hidden] {
         display: none;
+      }
+      /* "New station here" armed (D8): the accent ring says the next pin or
+         photo starts a station of its own. */
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-new-station[aria-pressed="true"] {
+        box-shadow: inset 0 0 0 3px var(--accent);
+        color: var(--accent);
       }
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls
@@ -1811,7 +1837,10 @@
         #setup-pin,
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls:has(#pin-label:not([hidden]))
-        #setup-photo {
+        #setup-photo,
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls:has(#pin-label:not([hidden]))
+        #setup-new-station {
         display: none;
       }
       body[data-mode="creator"][data-ar-active="true"] #pin-label {
@@ -3653,97 +3682,138 @@
                   hidden
                 ></p>
                 <div id="setup-controls" data-testid="setup-controls" hidden>
-                  <!-- Placement (M4): a pin at the reticle with a typed label
-                   (the input is an overlay control: window.prompt is
-                   unavailable in an XR session), a photo of the current
-                   camera frame. -->
+                  <!-- "New station here" (owner decision D8 of the editor
+                   round-2 plan): a toggle - the next pin or photo starts a
+                   station of its own, even within the automatic radius of
+                   another (creator-placement.ts). aria-pressed is its armed
+                   state. FIRST, on its own line above the placement row:
+                   the reading and focus order is the order on screen
+                   (WCAG 2.4.3), next to the station line it changes. -->
                   <button
                     type="button"
-                    id="setup-pin"
+                    id="setup-new-station"
                     class="btn btn--prose"
-                    data-testid="setup-pin"
+                    data-testid="setup-new-station"
+                    aria-pressed="false"
                     disabled
                   >
-                    <!-- A map pin with a plus (D-P4); the label folds to
-                     the icon after its first use (folding-label.ts). -->
+                    <!-- A station's ring with a plus. -->
                     <svg
                       class="chip-icon"
                       viewBox="0 0 24 24"
                       aria-hidden="true"
                     >
-                      <path
-                        d="M12 21s-6.5-5.8-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 15.2 12 21 12 21z"
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="8.5"
                         fill="none"
                         stroke="currentcolor"
                         stroke-width="2"
-                        stroke-linejoin="round"
+                        stroke-dasharray="3.4 2.3"
                       />
                       <path
-                        d="M12 6.8v6M9 9.8h6"
+                        d="M12 8.2v7.6M8.2 12h7.6"
                         stroke="currentcolor"
                         stroke-width="2"
                         stroke-linecap="round"
                       />
                     </svg>
-                    <span class="chip-label">Place a pin</span>
+                    <span class="chip-label">New station here</span>
                   </button>
-                  <input
-                    id="pin-label"
-                    class="input"
-                    data-testid="pin-label"
-                    type="text"
-                    autocomplete="off"
-                    placeholder="The pin's text"
-                    hidden
-                  />
-                  <button
-                    type="button"
-                    class="btn btn--prose"
-                    id="pin-save"
-                    data-testid="pin-save"
-                    hidden
-                  >
-                    Save the pin
-                  </button>
-                  <button
-                    type="button"
-                    id="pin-cancel"
-                    class="btn"
-                    data-testid="pin-cancel"
-                    hidden
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    id="setup-photo"
-                    class="btn btn--prose"
-                    data-testid="setup-photo"
-                    disabled
-                  >
-                    <svg
-                      class="chip-icon"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
+                  <div class="setup-place-row">
+                    <!-- Placement (M4): a pin at the reticle with a typed label
+                     (the input is an overlay control: window.prompt is
+                     unavailable in an XR session), a photo of the current
+                     camera frame. -->
+                    <button
+                      type="button"
+                      id="setup-pin"
+                      class="btn btn--prose"
+                      data-testid="setup-pin"
+                      disabled
                     >
-                      <path
-                        d="M3.5 8.5h3.2l1.9-2.6h6.8l1.9 2.6h3.2v10.6h-17z"
-                        fill="none"
-                        stroke="currentcolor"
-                        stroke-width="2"
-                        stroke-linejoin="round"
-                      />
-                      <circle
-                        cx="12"
-                        cy="13.6"
-                        r="3.4"
-                        fill="none"
-                        stroke="currentcolor"
-                        stroke-width="2"
-                      />
-                    </svg>
-                    <span class="chip-label">Take a photo</span>
-                  </button>
+                      <!-- A map pin with a plus (D-P4); the label folds to
+                       the icon after its first use (folding-label.ts). -->
+                      <svg
+                        class="chip-icon"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M12 21s-6.5-5.8-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 15.2 12 21 12 21z"
+                          fill="none"
+                          stroke="currentcolor"
+                          stroke-width="2"
+                          stroke-linejoin="round"
+                        />
+                        <path
+                          d="M12 6.8v6M9 9.8h6"
+                          stroke="currentcolor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                        />
+                      </svg>
+                      <span class="chip-label">Place a pin</span>
+                    </button>
+                    <input
+                      id="pin-label"
+                      class="input"
+                      data-testid="pin-label"
+                      type="text"
+                      autocomplete="off"
+                      placeholder="The pin's text"
+                      hidden
+                    />
+                    <button
+                      type="button"
+                      class="btn btn--prose"
+                      id="pin-save"
+                      data-testid="pin-save"
+                      hidden
+                    >
+                      Save the pin
+                    </button>
+                    <button
+                      type="button"
+                      id="pin-cancel"
+                      class="btn"
+                      data-testid="pin-cancel"
+                      hidden
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      id="setup-photo"
+                      class="btn btn--prose"
+                      data-testid="setup-photo"
+                      disabled
+                    >
+                      <svg
+                        class="chip-icon"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M3.5 8.5h3.2l1.9-2.6h6.8l1.9 2.6h3.2v10.6h-17z"
+                          fill="none"
+                          stroke="currentcolor"
+                          stroke-width="2"
+                          stroke-linejoin="round"
+                        />
+                        <circle
+                          cx="12"
+                          cy="13.6"
+                          r="3.4"
+                          fill="none"
+                          stroke="currentcolor"
+                          stroke-width="2"
+                        />
+                      </svg>
+                      <span class="chip-label">Take a photo</span>
+                    </button>
+                  </div>
                 </div>
                 <!-- OUTSIDE #setup-controls on purpose: the controls are the
                  camera's (mint, pin, photo) and go with the session, but a
