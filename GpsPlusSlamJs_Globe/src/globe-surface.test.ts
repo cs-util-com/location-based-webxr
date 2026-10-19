@@ -366,6 +366,47 @@ describe("createGlobeSurface", () => {
     }
   });
 
+  // Why: a tile set with nothing of it in view counts as ready (the band
+  // gate's rule, so a camera under the relief hands over), but the first
+  // look must not end on such a frame: a camera that starts looking away
+  // from the Earth would end it for good, and turning to the Earth would
+  // show the holes it exists to fill. The surface ends it only once the
+  // globe has drawn a view that held some of it.
+  it("keeps the first look while the globe's top level is visited but out of view", () => {
+    const loader = stubLoader();
+    const globe = createGlobeSurface(loader);
+    loader.finish[loader.loaded.findIndex((s) => s.id === "clouds")]!();
+    globe.surfaceUniforms.uDayReady.value = 1;
+    const highCamera = new THREE.PerspectiveCamera();
+    highCamera.position.set(30_000_000, 0, 0);
+    const renderer = {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+    } as unknown as THREE.WebGLRenderer;
+    // The library's traversal replaced by a top level this test sets.
+    const top = {
+      internal: { loadingState: 4 },
+      traversal: { lastFrameVisited: 7, inFrustum: false },
+      children: [],
+    };
+    const root = { children: [top] };
+    vi.spyOn(globe.tiles, "update").mockImplementation(() => {});
+    Object.defineProperty(globe.tiles, "root", { get: () => root });
+    (globe.tiles as unknown as { frameCount: number }).frameCount = 7;
+    // Visited and loaded, out of view: ready, yet nothing of it drawn.
+    globe.update(highCamera, renderer);
+    expect(globe.firstLook.visible).toBe(true);
+    globe.update(highCamera, renderer);
+    expect(globe.firstLook.visible).toBe(true);
+    // In view and loaded: the globe has drawn its view; the look is done.
+    top.traversal.inFrustum = true;
+    globe.update(highCamera, renderer);
+    expect(globe.firstLook.visible).toBe(false);
+    top.traversal.inFrustum = false;
+    globe.update(highCamera, renderer);
+    expect(globe.firstLook.visible).toBe(false);
+    globe.dispose();
+  });
+
   it("frees the first look's two images on dispose", () => {
     const globe = createGlobeSurface(stubLoader());
     const west = vi.spyOn(globe.surfaceUniforms.uDayWest.value, "dispose");

@@ -25,8 +25,17 @@
       With nothing of the set in view nothing is missing from the view, so
       it is ready; the relief takes the view and the clearance lifts the
       camera in the same frame. A top-level tile in view that is still
-      loading still blocks (its children are not known yet, so the library
-      cannot clear its flag).
+      loading still blocks, and the library keeps it in view while it
+      loads: the terrain plugin creates a tile's children before its
+      content loads (`TerrainRGBMeshPlugin.preprocessNode`), and the
+      traversal descends without loaded content (`canTraverse`), but a
+      tile whose heights have not loaded carries the placeholder bounding
+      volume of the whole elevation range (`createBoundingVolume` and
+      `_updateBoundingVolume`, MIN to MAX elevation x the height scale),
+      which reaches up past any camera over the ground. Once a tile's
+      heights load, its volume shrinks to their measured range (padded by
+      its geometric error), and only then can a camera under the volumes
+      see none of them (all read in 3d-tiles-renderer 0.5.3's source).
   - `topLevelInView({ root, frameCount })`: whether the last update found
     any top-level tile in view. The globe's first look ends on
     `topLevelReady && topLevelInView` (`globe-surface.ts`), so a camera

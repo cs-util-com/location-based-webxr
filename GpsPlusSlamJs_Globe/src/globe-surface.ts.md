@@ -165,6 +165,8 @@ onError)`, from `globe-map-loader.ts`) fetches the two global maps (night lights
   data and wrapping, the maps counted as they load and fail, one call for
   the light and the uniform, the light beside the tiles and turned with
   them, the swap keeps each texture and the patch, the cleanup
-  frees only its clones and never a texture) and `.property.test.ts` (over
+  frees only its clones and never a texture; the first look kept while
+  the globe's top level is visited but out of view, ended once a view
+  held some of it) and `.property.test.ts` (over
   random model trees: every mesh an owned clone with its own map, the tree
   unchanged, the cleanup complete). The browser: the globe lab smoke.
