@@ -137,6 +137,32 @@ describe("the creator's document: identities the readers memoize on", () => {
     expect(doc.entries()).not.toBe(e);
   });
 
+  // Why: the manifest depends on the tombstones too - a cover whose photo
+  // is deleted is none (`effectiveDetails`). Every reducer that changes
+  // `deleted` today also replaces `placed`, so a memo keyed without
+  // `deleted` looks right; no reducer can produce the state below, so the
+  // memo is driven directly through a store that serves it. A later
+  // reducer that touches only the tombstones would otherwise serve the
+  // manifest with the deleted photo still its cover.
+  it("gives a new manifest when only the tombstones change", () => {
+    const real = createTourViewerStore();
+    let served: ReturnType<typeof real.getState> | null = null;
+    const doc = createCreatorDocument({
+      getState: () => served ?? real.getState(),
+      dispatch: (action) => real.dispatch(action),
+      listenToDocument: real.listenToDocument,
+    });
+    doc.open(tourOf([photo("q"), pin("b")], { cover: "q" }));
+    const before = doc.manifest();
+    expect(before?.cover).toBe("q");
+    const s = real.getState();
+    served = { ...s, tourDocument: { ...s.tourDocument, deleted: ["q"] } };
+    expect(served.tourDocument.placed).toBe(s.tourDocument.placed);
+    const after = doc.manifest();
+    expect(after).not.toBe(before);
+    expect(after?.cover).toBeUndefined();
+  });
+
   it("joins a picture kept later into the entries", () => {
     const doc = fresh();
     doc.open(tourOf([]));

@@ -62,4 +62,23 @@ describe("stationAlignmentSignals", () => {
     expect(signals.codeLinedUp()).toBe(false);
     expect(signals.alignmentReady()).toBe(false);
   });
+
+  // Why: the guide latches a heading on tracking alone, so this signal must
+  // read the tracking slice and nothing else - neither hide tracking `ok`
+  // behind a lined-up code nor count a code as tracking.
+  it("trackingReady reads tracking alone, whatever a code does", () => {
+    const store = createTourViewerStore();
+    const ctx = {
+      viewerLockedText: "https://example.test/code",
+      viewerVotedLocks: 1,
+    };
+    const signals = stationAlignmentSignals(ctx, store);
+    expect(signals.trackingReady()).toBe(false);
+    store.dispatch(reportUpdated(report("degraded")));
+    expect(signals.trackingReady()).toBe(false);
+    store.dispatch(reportUpdated(report("ok")));
+    expect(signals.trackingReady()).toBe(true);
+    ctx.viewerVotedLocks = 0;
+    expect(signals.trackingReady()).toBe(true);
+  });
 });

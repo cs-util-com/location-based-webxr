@@ -72,11 +72,12 @@ import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { TourViewerSeams } from "./seams.js";
 import { codePlacedTour, isPlacementReady } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
-import type {
-  ArController,
-  TourViewerHooks,
-  TourViewerSession,
-  TourViewerStore,
+import {
+  isCodeIgnored,
+  type ArController,
+  type TourViewerHooks,
+  type TourViewerSession,
+  type TourViewerStore,
 } from "./tour-viewer-session.js";
 import { startEntryVoteSink } from "./viewer-vote-sink.js";
 import type { ViewingLog } from "./viewing-log.js";
@@ -374,10 +375,7 @@ export function createViewerPlacement(deps: {
     const checks = startMovedCodeChecks();
     /** Whether the moved-code check made the viewer ignore this text's
      *  level (by level id: the memory outlives the per-text caches). */
-    const isIgnored = (text: string): boolean => {
-      const id = ctx.levelIdByText.get(text);
-      return id !== undefined && ctx.ignoredCodes.has(id);
-    };
+    const isIgnored = (text: string): boolean => isCodeIgnored(ctx, text);
     /** The scan gate's part of a lock. */
     const gateOnLock = (level: QrLevel, hasVoted: boolean): void => {
       // The gate passes on the LOCK of a lockable level (M5; plan review

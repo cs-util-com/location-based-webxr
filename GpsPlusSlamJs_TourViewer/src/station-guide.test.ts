@@ -83,8 +83,9 @@ function harness(
     fixAccuracyM: 4,
   };
   let allowed = true;
-  /** The alignment is ready (`alignmentReady`); a code lined it up. */
-  let ready = true;
+  /** Tracking is ready (`trackingReady`); a code lined it up. The
+   *  alignment is ready (`alignmentReady`) on either, as on the page. */
+  let tracking = true;
   let lined = false;
   let zeroNow: typeof zero | null = zero;
   const found: string[] = [];
@@ -129,7 +130,8 @@ function harness(
       return visitor;
     },
     codeLinedUp: () => lined,
-    alignmentReady: () => ready,
+    alignmentReady: () => tracking || lined,
+    trackingReady: () => tracking,
     startHud: (getTargets) => {
       const h = { getTargets, disposed: false };
       huds.push(h);
@@ -260,8 +262,8 @@ function harness(
     },
     advance: (ms: number) => (now += ms),
     allow: (v: boolean) => (allowed = v),
-    /** The alignment ready or not, a code lined it up or not. */
-    ready: (v: boolean) => (ready = v),
+    /** Tracking ready or not (the alignment is ready on it or a code). */
+    ready: (v: boolean) => (tracking = v),
     lined: (v: boolean) => (lined = v),
     setZero: (z: typeof zero | null) => (zeroNow = z),
     setTour: (t: StationTour | null) => (tour = t),
@@ -968,6 +970,8 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
         }),
       codeLinedUp: () => signals.codeLinedUp,
       alignmentReady: () => signals.alignmentReady,
+      // These cold starts are ready on tracking or on a code, never both.
+      trackingReady: () => signals.alignmentReady && !signals.codeLinedUp,
       startHud: (getTargets) => {
         targets.push(getTargets);
         return { dispose: () => undefined };
@@ -1404,7 +1408,7 @@ describe("re-review findings on the guide (r881)", () => {
   it("a heading that only a code gave goes when the code is lifted while tracking is not ready", () => {
     const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
     // The page's readiness is tracking OR a code: here the code alone.
-    h.ready(true);
+    h.ready(false);
     h.lined(true);
     h.at(0, 0);
     expect(
@@ -1420,5 +1424,38 @@ describe("re-review findings on the guide (r881)", () => {
     expect(h.huds.at(-1)!.getTargets()).toEqual([]);
     expect(h.crumbsFrom.at(-1)).toBeNull();
     expect(h.guide.figurePoseOf("gate")).toBeNull();
+  });
+
+  // Why: the page's readiness folds tracking and a code into one answer,
+  // so a latch that read only that answer never saw tracking reach `ok`
+  // while a code was also lined up. A veto that took the code's votes back
+  // during a tracking dip then dropped a heading tracking HAD earned: the
+  // arrows, the breadcrumbs and the figure vanished mid-walk. The latch
+  // reads tracking on its own (`trackingReady`), whatever the code does.
+  it("a heading tracking earned while a code was lined up stays through a veto in a tracking dip", () => {
+    const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
+    // A code locks and votes; tracking is not ready yet.
+    h.ready(false);
+    h.lined(true);
+    h.at(0, 0);
+    // Tracking reaches placement-ready while the code is still lined up.
+    h.ready(true);
+    h.at(0, 0);
+    // The moved-code veto takes the votes back, during a tracking dip.
+    h.lined(false);
+    h.ready(false);
+    h.at(0, 0);
+    expect(
+      h.huds
+        .at(-1)!
+        .getTargets()
+        .map((t) => t.id),
+    ).toEqual(["gate"]);
+    expect(h.crumbsFrom.at(-1)).toEqual([0, 401.5, 0]);
+    expect(h.guide.figurePoseOf("gate")).not.toBeNull();
+    // A new AR entry earns its own heading again.
+    h.guide.endSession();
+    h.at(0, 0);
+    expect(h.huds.at(-1)!.getTargets()).toEqual([]);
   });
 });

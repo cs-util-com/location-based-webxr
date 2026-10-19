@@ -56,6 +56,7 @@ import type { LocationGate } from "./visitor-screen.js";
 import type { RecordingPanel } from "./recording-panel.js";
 import {
   endQrPipeline,
+  isCodeIgnored,
   type ArController,
   type TourViewerHooks,
   type TourViewerSession,
@@ -253,11 +254,15 @@ export function wireArEntry(deps: {
         ignoredCode: ctx.viewerIgnoredText,
         // Read from the last evaluation, never re-evaluated here: this runs
         // per camera frame, past the budget's short-circuit (plan §67 #5).
-        // Never the ignored code's: its veto set the votes back to 0, and
+        // Never an ignored code's: its veto set the votes back to 0, and
         // "placing the tour" is a promise it cannot keep; another code's
-        // hint still shows (r881 re-review L-F, L1).
+        // hint still shows (r881 re-review L-F, L1). Ignored is the veto
+        // memory (every vetoed code of the tour, across AR entries), not
+        // the line's latest veto.
         fusedHint:
-          authorMode || ctx.viewerLastEvaluation?.text === ctx.viewerIgnoredText
+          authorMode ||
+          (ctx.viewerLastEvaluation !== null &&
+            isCodeIgnored(ctx, ctx.viewerLastEvaluation.text))
             ? null
             : visitorFusedHint({
                 last: ctx.viewerLastEvaluation,

@@ -92,6 +92,12 @@ generation, written, appliedDeletions, stationsAtStart })`,
   middleware calls the effect inside the dispatch, so the writes a change
   causes are known when `change` returns - the test "writes each change
   from the listener" pins it.
+- **`manifest()` is memoized on every field `manifestNow` reads**: the
+  written file, the frames, the entries, the tombstones (`deleted`: a
+  cover whose photo is deleted is none, `effectiveDetails`), the setting
+  and the details. The tombstones are in the key although each reducer
+  that changes them also replaces `placed` today; a later reducer that
+  touched only them would otherwise serve a stale manifest.
 - Nothing here re-implements a document rule: every guard is the slice's
   exported one, asked first so a page can say why in its own words.
 
@@ -109,7 +115,9 @@ else void placed.backedUp.then((ok) => ok || draft.warnNoBackup());
 
 - `creator-document.test.ts` - no tour and a tour opening (work carried,
   a file without `tour.json`, a close dropping everything), the identities
-  readers memoize on, the guards (a known id, a move beyond reach, an
+  readers memoize on (a new manifest when only the tombstones change,
+  driven through a store that serves that state, since no reducer makes
+  it), the guards (a known id, a move beyond reach, an
   unknown station), the placement kept or replaced, undo (refused while a
   write runs, refused without a picture), a write taking an entry and its
   placement out, and the draft following (writes from the listener with

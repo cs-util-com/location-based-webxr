@@ -31,7 +31,9 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
   `codeLinedUp()` (a code's votes lined the alignment up, `tour-flow.ts`),
   `alignmentReady()` (the alignment may be judged on: tracking ready or a
   code, re-read each tick by the find, latched per AR entry by what needs
-  a heading, `tour-flow.ts` `alignmentReady`),
+  a heading, `tour-flow.ts` `alignmentReady`), `trackingReady()` (tracking
+  alone is ready, `tour-flow.ts` `isPlacementReady`: the only signal that
+  latches a heading),
   `startHud(getTargets)`, `now()`, `fixMaxAgeMs?` (default
   `FIX_MAX_AGE_MS`, 5 s),
   `onFound(station)`, `onEndStory?(stationId)` (R9), `onVisitor?(nue)`, `onApproach?(station, distanceM,
@@ -118,18 +120,24 @@ activateM)` (each tick, each offered station with a distance: the
   arrows keep pointing from the aligned camera. A visitor who never
   becomes ready finds stations and hears their stories, but sees no
   arrows and no figure (an owner question; the default chosen in r881).
-  - **Only tracking's heading latches** (third review L2): a tick ready
-    with no code lined up latches it; a heading that only a code gave
-    lasts while the code is lined up, so a veto that lifts the code while
+  - **Only tracking's heading latches** (third review L2): a tick on
+    which tracking alone is ready (`trackingReady()`) latches it, whether
+    or not a code is lined up too; a heading that only a code gave lasts
+    while the code is lined up, so a veto that lifts the code while
     tracking is not `ok` takes the arrows and the figure's pose away with
-    it. `alignmentReady()` folds tracking and the code into one answer,
-    so tracking that reached `ok` only while a code was lined up is not
-    seen and does not latch (the safe side).
+    it. The latch reads its own signal because `alignmentReady()` folds
+    tracking and the code into one answer: read from that, tracking that
+    reached `ok` while a code was lined up went unseen, and a veto in a
+    later tracking dip dropped a heading tracking had earned.
   - **In a dip the arrow and the line can disagree** (third review L3,
-    deliberate, an owner question): the HUD and the breadcrumbs measure
+    deliberate, an open question): the HUD and the breadcrumbs measure
     from the aligned camera while the find judges by the raw fix, so the
     arrow can say "arrived" while the line still says the station is not
-    found.
+    found. The readiness dip is the one window where the two origins
+    differ: the HUD's origin (`headingNue`, the camera, kept through the
+    dip by the latch) and the find's position (`best`, the fresh device
+    fix) are the same point at every other time, so only in a dip can
+    the arrow read "arrived" while nothing is found.
 - **A moved poster pulls the position only until it is judged:** the
   moved-code check then ignores its code and takes its votes back
   (`isIgnored` of the viewer pipeline, `qr-viewer-mode.ts`, D20), the one guard left
@@ -269,7 +277,9 @@ store.subscribe(() => guide.tick());
   turn while the find falls back to the fix, and a new AR entry waits
   again (L-B); the figure's pose waits for readiness (M-B); the two-tap
   skip works with no distance ever (L-G); a heading only a code gave goes
-  with the code while tracking is not ready (third review L2).
+  with the code while tracking is not ready (third review L2); a heading
+  tracking earned while a code was lined up stays through a veto in a
+  tracking dip, and a new AR entry waits again.
   `station-guide.property.test.ts` also pins that a lone-fix find means
   the worse known accuracy is within the ceiling (L4).
 - `visitor-stations.test.ts` - `stationAlignmentSignals` against the real

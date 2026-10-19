@@ -32,6 +32,13 @@ lives here.
   `viewerIgnoredText`): per tour, cleared at a tour switch (D20 M5c, §7j
   #13).
   `archive-open.ts`'s teardown calls it.
+- `isCodeIgnored(ctx, text)` - whether the moved-code check made the
+  viewer ignore this decoded text's code: its level id
+  (`levelIdByText`) is in the veto memory (`ignoredCodes`). The one
+  reading of that memory, shared by the viewer pipeline's `isIgnored`
+  (`viewer-placement.ts`) and the status line's hint guard
+  (`ar-entry.ts`); `viewerIgnoredText` names only the latest veto of
+  this AR entry and is never the test of "ignored".
 - `interface TourViewerSession` - the fields, grouped by owner:
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
     `levelsUnreadable` (the levels' read failed: the tour has no usable
@@ -186,7 +193,8 @@ wireArEntry({ ctx, ... });
 `tour-viewer-session.test.ts`: `endQrPipeline` disposes and forgets the
 QR controller, is harmless without one, and stops and forgets the
 keep-alive and the vote budget; `endTourCodeVotes` stops the hold and
-re-arms every code while keeping both objects. `viewer-votes.test.ts`
+re-arms every code while keeping both objects; `isCodeIgnored` reads
+the memory by level id. `viewer-votes.test.ts`
 drives a reopened tour through it. Otherwise no logic to test;
 the fields' behaviour is pinned by the owning modules' tests and the e2e suite (`playwright-tests/*.spec.js`), which runs
 unchanged across the split (the split's behaviour-neutrality proof).

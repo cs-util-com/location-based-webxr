@@ -18,11 +18,13 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
 - `stationPlacementAllowed(ctx, mode): boolean` - the guide's
   `placementAllowed`, exported so the placement test drives the page's
   own rule (see below).
-- `stationAlignmentSignals(ctx, arStore)` - the guide's `codeLinedUp` and
-  `alignmentReady` (`tour-flow.ts`): the viewer pipeline's voted locks
-  this AR entry (`ctx.viewerLockedText`, `ctx.viewerVotedLocks`) and the
-  store's tracking-quality report. Exported for the same reason. No state
-  of its own: both are read each tick.
+- `stationAlignmentSignals(ctx, arStore)` - the guide's `codeLinedUp`,
+  `alignmentReady` and `trackingReady` (`tour-flow.ts`; the last is
+  `isPlacementReady` alone, the guide's heading latch): the viewer
+  pipeline's voted locks this AR entry (`ctx.viewerLockedText`,
+  `ctx.viewerVotedLocks`) and the store's tracking-quality report.
+  Exported for the same reason. No state of its own: all are read each
+  tick.
 
 ## Invariants & assumptions
 
@@ -90,6 +92,8 @@ hooks.tickStations = stations.tick;
 ## Tests
 
 - `playwright-tests/stations.spec.js` (the composition).
+- `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
+  tracking-quality slice, `trackingReady` reading tracking alone.
 - `viewer-content-alignment.test.ts` ("finds the station on the scanned
   code on the first voted lock"): the real station guide over the real
   placement, `stationPlacementAllowed` and `stationAlignmentSignals`.

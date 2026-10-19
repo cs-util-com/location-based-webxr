@@ -528,6 +528,21 @@ export function endTourCodeVotes(ctx: TourViewerSession): void {
   ctx.viewerIgnoredText = null;
 }
 
+/**
+ * Whether the moved-code check made the viewer ignore this decoded text's
+ * code: its level id is in the veto memory (`ignoredCodes`, per tour, kept
+ * across AR entries). The one reading of that memory: the viewer pipeline's
+ * `isIgnored` and the status line's hint guard both use it, never
+ * `viewerIgnoredText`, which names only the latest veto of this AR entry.
+ */
+export function isCodeIgnored(
+  ctx: Pick<TourViewerSession, "levelIdByText" | "ignoredCodes">,
+  text: string,
+): boolean {
+  const id = ctx.levelIdByText.get(text);
+  return id !== undefined && ctx.ignoredCodes.has(id);
+}
+
 /** The page's session object; `store` holds its tour document (the
  *  page's store; a fresh one in tests that need no other). */
 export function createTourViewerSession(

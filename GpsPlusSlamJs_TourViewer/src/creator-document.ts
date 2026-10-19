@@ -252,7 +252,16 @@ export function createCreatorDocument(
   function manifest(): TourManifest | null {
     const s = state();
     if (s.written === null || s.written === noTour) return null;
-    const key = [s.written, s.stations, s.placed, s.needsNoGps, s.details];
+    // Every field `manifestNow` reads: the tombstones too, though today
+    // each reducer that changes them also replaces `placed`.
+    const key = [
+      s.written,
+      s.stations,
+      s.placed,
+      s.deleted,
+      s.needsNoGps,
+      s.details,
+    ];
     if (manifestMemo?.key.every((k, i) => k === key[i]) !== true) {
       manifestMemo = { key, value: manifestNow(s) };
     }

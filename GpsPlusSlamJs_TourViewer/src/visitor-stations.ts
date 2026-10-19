@@ -29,7 +29,7 @@ import type { TourViewerSeams } from "./seams.js";
 import { wireStationGuide, type StationGuideDom } from "./station-guide.js";
 import { createStationPrefetch, decodeFigure } from "./station-prefetch.js";
 import { createStationRelocator, firstDeviceFix } from "./tour-relocation.js";
-import { alignmentReady, codeLinedUp } from "./tour-flow.js";
+import { alignmentReady, codeLinedUp, isPlacementReady } from "./tour-flow.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -61,13 +61,18 @@ export function stationPlacementAllowed(
 /**
  * What the station guide reads of the alignment each tick: whether a code
  * lined it up (the viewer pipeline's voted locks this AR entry,
- * `tour-flow.ts` `codeLinedUp`) and whether it is ready to be judged by
- * (`alignmentReady`, the readiness the walk's photos wait for).
+ * `tour-flow.ts` `codeLinedUp`), whether it is ready to be judged by
+ * (`alignmentReady`, the readiness the walk's photos wait for), and
+ * whether tracking alone is ready (`isPlacementReady`, the heading latch).
  */
 export function stationAlignmentSignals(
   ctx: Pick<TourViewerSession, "viewerLockedText" | "viewerVotedLocks">,
   arStore: Pick<TourViewerStore, "getState">,
-): { codeLinedUp: () => boolean; alignmentReady: () => boolean } {
+): {
+  codeLinedUp: () => boolean;
+  alignmentReady: () => boolean;
+  trackingReady: () => boolean;
+} {
   const votes = () => ({
     lockedText: ctx.viewerLockedText,
     votedLocks: ctx.viewerVotedLocks,
@@ -76,6 +81,8 @@ export function stationAlignmentSignals(
     codeLinedUp: () => codeLinedUp(votes()),
     alignmentReady: () =>
       alignmentReady(selectTrackingQuality(arStore.getState()), votes()),
+    trackingReady: () =>
+      isPlacementReady(selectTrackingQuality(arStore.getState())),
   };
 }
 

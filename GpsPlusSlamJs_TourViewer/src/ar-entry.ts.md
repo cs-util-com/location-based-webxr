@@ -99,7 +99,10 @@ since the flows plan M6.
 
 ## Moved-code veto inputs (D20, M5c)
 
-`renderArStatus` passes `ignoredCode: ctx.viewerIgnoredText` to the line;
+`renderArStatus` passes `ignoredCode: ctx.viewerIgnoredText` to the line,
+and drops the fused-pose hint ("placing the tour") for any code in the
+veto memory (`isCodeIgnored`: every vetoed code of the tour, across AR
+entries), not only the latest veto the line names;
 `renderDebugReadout` passes the live checks' snapshot and the ignored
 codes to the `?debug=1` block, the session's GPS quality from device
 fixes only (median accuracy, extent through the framework's
@@ -185,9 +188,9 @@ session-end callback it hands the AR controller: the QR controller is
 disposed and the fused pose source dropped (QR near-frontal pose plan §64
 #4 - the call site had no test). The status line reads the visitor hint
 from `ctx.viewerLastEvaluation` (never re-evaluating: the render runs per
-camera frame; none when that evaluation is of the code the moved-code
+camera frame; none when that evaluation is of a code the moved-code
 check ignores, so a veto never hides another code's hint, r881 re-review
-L1) and the code keep-alive's phase from `ctx.viewerKeepAlive` at
+L1; an earlier veto and a veto from an earlier AR entry hide it too) and the code keep-alive's phase from `ctx.viewerKeepAlive` at
 `Date.now()` (a cheap read that counts the hold down) and, with `?debug=1`, writes the QR readout into
 `dom.arDebug` (plan §66; `qr-debug-readout.ts`), headed by the running
 controller's own status (`ctx.qrController?.status`); the session end clears the

@@ -17,6 +17,7 @@ import {
   createTourViewerSession,
   createTourViewerStore,
   createUnwiredHooks,
+  type TourViewerSession,
 } from "./tour-viewer-session.js";
 import type { TourViewerSeams } from "./seams.js";
 import { RECORDING_DEPTH } from "./authoring-recording.js";
@@ -397,7 +398,7 @@ describe("wireArEntry QR readout and visitor hint", () => {
     const h = harness({ arStatus: "running" });
     h.ctx.session = {} as never;
     h.ctx.viewerQrStatus = "tracking";
-    h.ctx.viewerIgnoredText = "https://gps.csutil.com/tour/?qr=a";
+    veto(h.ctx, "a");
     h.ctx.viewerLastEvaluation = {
       text: "https://gps.csutil.com/tour/?qr=b",
       result: { status: "measuring", notStableReason: "fit" } as never,
@@ -416,7 +417,64 @@ describe("wireArEntry QR readout and visitor hint", () => {
     expect(h.dom.arStatus.textContent).not.toContain("Code measured");
     expect(h.dom.arStatus.textContent).not.toContain("Measuring the code");
   });
+
+  // Why: the status line names only the LATEST veto, and forgets it at
+  // each AR entry, while the veto memory keeps every vetoed code for the
+  // tour. Guarding the hint by the line's text let an earlier vetoed code,
+  // or a vetoed code in a later AR entry, promise "placing the tour" again
+  // although its votes are never counted.
+  it("hides the hint of a code vetoed before the latest veto", () => {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.viewerQrStatus = "tracking";
+    veto(h.ctx, "a");
+    veto(h.ctx, "b");
+    h.ctx.viewerLastEvaluation = stableEvaluation("a");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).not.toContain("Code measured");
+  });
+
+  it("hides the hint of a vetoed code in a later AR entry", () => {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.viewerQrStatus = "tracking";
+    veto(h.ctx, "a");
+    // A new AR entry forgets the line's text; the memory stays.
+    h.ctx.viewerIgnoredText = null;
+    h.ctx.viewerLastEvaluation = stableEvaluation("a");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).not.toContain("Code measured");
+    // The control: a code nobody vetoed still promises it.
+    h.ctx.viewerLastEvaluation = stableEvaluation("c");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toContain("Code measured");
+  });
 });
+
+/** The moved-code check's veto of `?qr=<id>`, as the placement records it:
+ *  the memory by level id, and the line's text. */
+function veto(
+  ctx: Pick<
+    TourViewerSession,
+    "levelIdByText" | "ignoredCodes" | "viewerIgnoredText"
+  >,
+  id: string,
+): void {
+  const text = `https://gps.csutil.com/tour/?qr=${id}`;
+  ctx.levelIdByText.set(text, id);
+  ctx.ignoredCodes.set(id, { text, vetoSpreadM: 1 });
+  ctx.viewerIgnoredText = text;
+}
+
+function stableEvaluation(
+  id: string,
+): TourViewerSession["viewerLastEvaluation"] {
+  return {
+    text: `https://gps.csutil.com/tour/?qr=${id}`,
+    result: { status: "stable" } as never,
+    atMs: performance.now(),
+  };
+}
 
 // The creator's troubleshooting recording (authoring recording plan
 // 2026-09-28-0953, M1a, decision D4): a recorded entry carries depth samples
