@@ -84,7 +84,9 @@ troubleshooting recording's record of each placement. Split out of
   settled, and logged as the settle's late arrival. Its pick opens at the
   capture, not when the encode lands (D33).
 - **The troubleshooting recording's record** (`tourAuthoring/objectPlaced`):
-  dispatched from the tap's own handler, with the raw inputs - the reticle
+  dispatched from the tap's own handler, with the object as the document
+  took it (naming its own station after "New station here", D8) and the
+  raw inputs - the reticle
   in the world group's frame for a pin, the frame's capture pose for a
   photo, the store's alignment, the group's matrix, the code last in view
   (read with `last`, never re-evaluated) and its printed size.

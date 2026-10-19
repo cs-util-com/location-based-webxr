@@ -78,9 +78,13 @@ export interface DocumentChange {
   readonly backedUp: Promise<boolean>;
 }
 
-/** A placement the document took: `ownStation` says it started its own
- *  station, as "New station here" armed it (D8). */
-export type PlacedChange = DocumentChange & { readonly ownStation: boolean };
+/** A placement the document took: `object` as the document holds it, and
+ *  `ownStation` whether it started its own station, as "New station here"
+ *  armed it (D8: then `object` names that station). */
+export type PlacedChange = DocumentChange & {
+  readonly object: TourObject;
+  readonly ownStation: boolean;
+};
 
 /** What an undo did, or why it did not. */
 type DocumentUndo =
@@ -393,7 +397,7 @@ export function createCreatorDocument(
       if (ownStation) {
         store.dispatch(tourDocumentActions.newStationArmed({ armed: false }));
       }
-      return { ...placed, ownStation };
+      return { ...placed, object, ownStation };
     },
     newStationArmed: () => state().newStationArmed,
     armNewStation(armed) {

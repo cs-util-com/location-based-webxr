@@ -2503,6 +2503,23 @@ describe("'New station here' (D8)", () => {
     ]);
   });
 
+  // Why: the troubleshooting recording logs a placement "exactly as the
+  // manifest will carry it"; a log without the station the arm gave it
+  // could not explain afterwards why the pin started a station of its own.
+  it("logs the placement into the recording with the station it starts", async () => {
+    const { ctx, dom, dispatched } = await placeable();
+    dom.newStationButton.click();
+    dom.pinLabel.value = "Own";
+    dom.pinSave.click();
+    await settle();
+    const entry = ctx.tourDocument.entries()[0]!.object;
+    expect(entry.station).toBeDefined();
+    const logged = dispatched.filter(
+      (a) => (a as { type: string }).type === "tourAuthoring/objectPlaced",
+    ) as { payload: { object: TourObject } }[];
+    expect(logged.map((a) => a.payload.object)).toEqual([entry]);
+  });
+
   it("stays armed when the placement does not happen, so the creator can try again", async () => {
     const { ctx, dom } = await placeable();
     dom.newStationButton.click();

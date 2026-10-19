@@ -146,14 +146,15 @@ export function wireCreatorPlacement(deps: {
   }
 
   /** Put `object` into the tour document; null (and said) when refused,
-   *  else whether it started its own station ("New station here" was
-   *  armed, D8: the document consumes the arm only when it takes the
-   *  object). Its draft write is the document's listener's; one that does
+   *  else the object as the document took it and whether it started its
+   *  own station ("New station here" was armed, D8: the document consumes
+   *  the arm only when it takes the object, and the object then names
+   *  that station - what the recording logs). Its draft write is the document's listener's; one that does
    *  not land is said once (`warnNoBackup`), as a placement's always was. */
   function placeInTour(
     object: TourObject,
     extras: Parameters<TourViewerSession["tourDocument"]["place"]>[1],
-  ): { ownStation: boolean } | null {
+  ): { object: TourObject; ownStation: boolean } | null {
     const what =
       object.kind === "pin" ? `the pin "${object.label}"` : "a photo";
     const change = ctx.tourDocument.place(object, extras, what);
@@ -164,7 +165,7 @@ export function wireCreatorPlacement(deps: {
     void change.backedUp.then((ok) => {
       if (!ok) deps.draft.warnNoBackup();
     });
-    return { ownStation: change.ownStation };
+    return { object: change.object, ownStation: change.ownStation };
   }
 
   function placed(count: number): string {
@@ -318,7 +319,7 @@ export function wireCreatorPlacement(deps: {
     );
     if (placedPin === null) return;
     if (local !== null) deps.alignmentPicks.notePlaced(pin.id);
-    logPlacement(pin, { reticleWorld: position });
+    logPlacement(placedPin.object, { reticleWorld: position });
     dom.pinLabel.value = "";
     hideLabelInput();
     deps.previews.sync();
@@ -394,7 +395,7 @@ export function wireCreatorPlacement(deps: {
           placement: { visit, local: odomNueFromWebXr(cameraPose) },
         });
         if (placedPhoto === null) return;
-        logPlacement(photo, { cameraOdomPose: cameraPose });
+        logPlacement(placedPhoto.object, { cameraOdomPose: cameraPose });
         // Logged as the settle's late arrival, through its record.
         if (settled !== undefined) deps.lateArrival(visit, photo);
         deps.previews.sync();
