@@ -170,3 +170,70 @@ describe("assignToStations", () => {
     ).toThrow(/s1/);
   });
 });
+
+// Why (owner decision D8 of the editor round-2 plan, 2026-10-18): places
+// closer than about 40 m cannot be separated by any automatic radius, so
+// the phone's "New station here" makes the next element start its own
+// station even within R of another. The rule carries it as an element's
+// own station id, taken IN ORDER like every other element: an earlier
+// element must never be absorbed into a station a later one starts.
+describe("assignToStations: an element with its own station (D8)", () => {
+  it("starts its station under that id, anchored where it stands, even within R of another", () => {
+    const own = new Map([[1, "mine"]]);
+    const result = assignToStations({
+      stations: [{ id: "gate", anchor: at(0, 0) }],
+      elements: [at(0, 2), at(0, 5), at(0, 6)],
+      positionOf: (e) => e,
+      newStationId: ids(),
+      ownStationOf: (_e, i) => own.get(i),
+    });
+    // The first joins the gate as usual; the second starts "mine" 5 m
+    // from the gate's anchor; the third joins the nearer of the two.
+    expect(result.stationOf).toEqual(["gate", "mine", "mine"]);
+    expect(result.stations.map((s) => s.id)).toEqual(["gate", "mine"]);
+    expect(result.stations[1]!.anchor).toEqual(at(0, 5));
+  });
+
+  it("never takes an earlier element into a station a later one starts", () => {
+    // 60 m out, the first element starts a station of the rule's; the
+    // second, 3 m from it, starts its own. The first stays where it is.
+    const result = assignToStations({
+      stations: [{ id: "gate", anchor: at(0, 0) }],
+      elements: [at(0, 60), at(0, 63)],
+      positionOf: (e) => e,
+      newStationId: ids(),
+      ownStationOf: (_e, i) => (i === 1 ? "mine" : undefined),
+    });
+    expect(result.stationOf).toEqual(["s1", "mine"]);
+    expect(result.stations.map((s) => s.id)).toEqual(["gate", "s1", "mine"]);
+  });
+
+  it("joins a station of that id that already stands, wherever the element is", () => {
+    // Two elements naming one station: the first starts it, the second
+    // joins it, though 100 m away; and an existing station is joined too.
+    const result = assignToStations({
+      stations: [{ id: "gate", anchor: at(0, 0) }],
+      elements: [at(0, 50), at(0, 150), at(0, 300)],
+      positionOf: (e) => e,
+      newStationId: ids(),
+      ownStationOf: (_e, i) => (i === 2 ? "gate" : "mine"),
+    });
+    expect(result.stationOf).toEqual(["mine", "mine", "gate"]);
+    expect(result.stations.map((s) => s.id)).toEqual(["gate", "mine"]);
+    expect(result.stations[1]!.anchor).toEqual(at(0, 50));
+  });
+
+  it("never mints an id that an element's own station takes later", () => {
+    // The rule's next id would be "s1"; an element later names "s1" as
+    // its own. Two stations under one id would merge their items.
+    expect(() =>
+      assignToStations({
+        stations: [],
+        elements: [at(0, 0), at(0, 100)],
+        positionOf: (e) => e,
+        newStationId: ids(),
+        ownStationOf: (_e, i) => (i === 1 ? "s1" : undefined),
+      }),
+    ).toThrow(/s1/);
+  });
+});

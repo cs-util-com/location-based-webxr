@@ -288,6 +288,37 @@ describe("withTourContent", () => {
     expect(m.geo.lon).toBeCloseTo(before[1]!.geo.lon, 9);
   });
 
+  // Why (owner decision D8 of the editor round-2 plan): the phone's "New
+  // station here" places an object naming a fresh station, so it starts
+  // its own even 5 m from another. It is taken in the objects' order like
+  // the rule's own new stations: a new object placed BEFORE it, 3 m away,
+  // must stay in the station it started (its note said so), not be
+  // absorbed into the later one.
+  it("an object naming a station the tour lacks starts it in the objects' order, even within R of another", () => {
+    const next = withTourContent(tour([station("gate", 0, 0)]), {
+      objects: [
+        pin("near", 3, 0),
+        { ...pin("own", 5, 0), station: "mine" },
+        pin("far", 60, 0),
+        { ...pin("own2", 63, 0), station: "mine2" },
+        pin("after", 62, 0),
+      ],
+      newStationId: counter(),
+    });
+    expect(next.stations.map((s) => [s.id, s.items.map((i) => i.id)])).toEqual([
+      ["gate", ["near"]],
+      ["mine", ["own"]],
+      ["s1", ["far"]],
+      ["mine2", ["own2", "after"]],
+    ]);
+    const own = pin("own", 5, 0).geo;
+    expect(next.stations[1]!.geo).toMatchObject({
+      lat: own.lat,
+      lon: own.lon,
+      alt: own.alt,
+    });
+  });
+
   it("recorded photos are assigned in capture order, before the objects; the tour's own spots are kept", () => {
     const captures = [0, 30, 60].map((n) => ({
       image: `images/frame-${String(n)}.jpg`,

@@ -178,23 +178,19 @@ export function withTourContent(
   for (const capture of bake?.captures ?? []) {
     unplaced.push({ kind: "capture", image: capture.image, geo: capture.geo });
   }
-  /** The stations the objects go into, in order: the tour's, then any an
-   *  object names that the tour lacks, recreated. */
-  const seats = new Map(stationById);
   for (const object of content.objects) {
-    if (object.station !== undefined && !seats.has(object.station)) {
-      // An object naming a station the tour lacks is one an undo brought
-      // back after a save dropped its emptied station (the M5a milestone
-      // review M2): that station comes back, under its own id, anchored
-      // where the object stands - never merged into a neighbour. It goes
-      // after the tour's own: the objects come "saved, then changed", so
-      // their order cannot tell where it stood.
-      seats.set(object.station, automaticStation(object.station, object.geo));
-      items.set(object.station, []);
-    }
     const stationId = object.station ?? stationOfItem.get(object.id);
-    const station = stationId === undefined ? undefined : seats.get(stationId);
+    const station =
+      stationId === undefined ? undefined : stationById.get(stationId);
     if (station === undefined) {
+      // A new object, or one naming a station the tour lacks: the rule
+      // places it, the latter in a station of that very id, anchored
+      // where the first object naming it stands - never merged into a
+      // neighbour, and in the objects' order like the rule's own new
+      // stations. Two cases name one: an undo that brought an object back
+      // after a save dropped its emptied station (the M5a milestone review
+      // M2), and the phone's "New station here" (owner decision D8 of the
+      // editor round-2 plan), which starts a station even within R.
       unplaced.push({ kind: "object", object });
       continue;
     }
@@ -209,13 +205,14 @@ export function withTourContent(
     });
   }
   const assigned = assignToStations({
-    stations: [...seats.values()].map((s) => ({ id: s.id, anchor: s.geo })),
+    stations: manifest.stations.map((s) => ({ id: s.id, anchor: s.geo })),
     elements: unplaced,
     positionOf: (e) => (e.kind === "object" ? e.object.geo : e.geo),
+    ownStationOf: (e) => (e.kind === "object" ? e.object.station : undefined),
     newStationId: content.newStationId ?? (() => newObjectId()),
     ...(content.radiusM === undefined ? {} : { radiusM: content.radiusM }),
   });
-  const stations = new Map(seats);
+  const stations = new Map(stationById);
   const captures: TourCapture[] = [];
   for (const [i, element] of unplaced.entries()) {
     const id = assigned.stationOf[i]!;

@@ -50,14 +50,22 @@ radiusM? }) -> TourManifest`: the manifest with `objects` as its pins and
   hint, no steps and no title.
 - **The tour's own recorded photos are kept.** Baked spots are placed only
   when the manifest has none, so a second Finish never re-assigns them.
-- **An object naming a station the tour lacks recreates that station** under
-  the same id, anchored where the object stands, as an automatic station
-  (the M5a milestone review M2). Such an object is one an undo brought back
-  after a save dropped its emptied station: the automatic rule would merge
-  it into a neighbour within R or start a station under a new id. The
-  recreated station goes after the tour's own, before any new one: a save
-  hands the objects "saved, then changed", so their order cannot say where
-  it stood, and its old position in the order is not recovered.
+- **An object naming a station the tour lacks starts that station** under
+  the same id, anchored where the first object naming it stands, as an
+  automatic station - never merged into a neighbour, even within R. Two
+  cases name one: an undo that brought an object back after a save dropped
+  its emptied station (the M5a milestone review M2), and the phone's "New
+  station here" (owner decision D8 of
+  `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`),
+  whose placement names a fresh id. It goes through the rule
+  (`assignToStations`' `ownStationOf`) IN THE OBJECTS' ORDER, like the
+  rule's own new stations: after the tour's own, and a new object placed
+  before it is never taken into it (r886: recreated up front, as first
+  built, a new pin placed 3 m before a "New station here" pin was absorbed
+  into the later station, against the note it was given). A later new
+  object within R of it joins it as the rule says. A save hands the
+  objects "saved, then changed", so an undone M2 station's old position in
+  the order is not recovered.
 - An object missing from `objects` leaves its station. A station this
   write EMPTIED (it held items and holds none now) goes when nothing else
   keeps it: no title, no steps, no recorded photo in it, and no other
@@ -89,7 +97,8 @@ const written = withTourContent(manifest, {
   pose; a move is re-expressed in its own station, even beyond R; new
   objects join or start stations; chains; removal; an emptied station
   dropped unless titled, storied, photographed or routed to; a station
-  an object names but the tour lacks, recreated under its id; the
+  an object names but the tour lacks, recreated under its id, and started
+  in the objects' order even within R of another (D8); the
   capture order and the kept spots; a refused R; and the `asStored`
   property (it is what a written tour holds, by content key).
 - Through `finish-rebuild.test.ts` (the Finish's capture assignment, and a
