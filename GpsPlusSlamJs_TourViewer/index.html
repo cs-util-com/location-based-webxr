@@ -1754,7 +1754,9 @@
       }
       body[data-mode="creator"][data-ar-active="true"] .setup-place-row {
         display: flex;
-        justify-content: center;
+        /* Safe: should the chips ever outgrow the row, it starts at the
+           left edge instead of spilling off both. */
+        justify-content: safe center;
         gap: 10px;
         max-width: 100%;
         padding: 2px;
@@ -1784,7 +1786,11 @@
       body[data-mode="creator"][data-ar-active="true"] #setup-photo,
       body[data-mode="creator"][data-ar-active="true"] #setup-new-station {
         display: inline-flex;
-        flex: none;
+        /* The chips shrink with the row and their labels wrap inside them:
+           in a wide face (a phone's own, or a Linux browser's fallback for
+           the UI font) "Place a pin" and "Take a photo" outgrew a 360 px
+           screen and the centred row spilled off both edges. */
+        flex: 0 1 auto;
         align-items: center;
         justify-content: center;
         gap: 8px;
@@ -1808,6 +1814,17 @@
         background: var(--accent);
         color: #1d1206;
       }
+      /* A narrow phone (up to 380 px): tighter chips, so the labels seldom
+         need to wrap. */
+      @media (width <= 380px) {
+        body[data-mode="creator"][data-ar-active="true"] #setup-pin,
+        body[data-mode="creator"][data-ar-active="true"] #setup-photo {
+          padding: 0 14px;
+        }
+        body[data-mode="creator"][data-ar-active="true"] .setup-place-row {
+          gap: 8px;
+        }
+      }
       body[data-mode="creator"][data-ar-active="true"] #setup-pin[hidden],
       body[data-mode="creator"][data-ar-active="true"] #setup-photo[hidden],
       body[data-mode="creator"][data-ar-active="true"]
@@ -1830,6 +1847,14 @@
         [data-folded="true"]
         .chip-label {
         display: none;
+      }
+      /* A chip's label wraps inside it when the row is short of room. */
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls
+        .chip-label {
+        min-width: 0;
+        line-height: 1.15;
+        text-align: center;
       }
       /* Typing a new pin's text: the field and its buttons take the row. */
       body[data-mode="creator"][data-ar-active="true"]

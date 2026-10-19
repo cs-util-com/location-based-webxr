@@ -316,6 +316,16 @@ the creator's; `visitor-screen.ts` re-words it for a visitor.
   (`src/printed-size-default.test.ts`).
 - The gallery is a `<ul>` of `<li><img><figcaption>` items appended in
   archive order as bytes arrive.
+- **The creator's AR chip row fits any width from 320 px, in any face.**
+  "Place a pin" and "Take a photo" shrink with `.setup-place-row` (`flex: 0 1
+auto`) and their labels wrap inside the chip; up to 380 px the chips take a
+  tighter padding and gap; the row is `justify-content: safe center`, so a
+  row that still outgrew the screen would start at its left edge instead of
+  spilling off both. Windows renders the UI stack in Corbel, a narrow face,
+  so it fit locally while a Linux browser's wider fallback pushed the row
+  4 px off a 360 px screen (24 px at 320). `ar-layout.spec.js` checks the
+  H1 HUD in a forced wide face at 412, 360, 320 and 915 px, both edges of
+  the row included.
 
 ## Tests
 
