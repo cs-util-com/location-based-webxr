@@ -820,6 +820,9 @@ importers:
       gps-plus-slam-app-framework:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_AppFramework
+      gps-plus-slam-globe:
+        specifier: workspace:*
+        version: link:../GpsPlusSlamJs_Globe
       leaflet:
         specifier: ^1.9.4
         version: 1.9.4

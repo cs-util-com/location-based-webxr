@@ -34,6 +34,12 @@
     the design system's dev server, types stripped); the globe lab imports
     the first-person, picking and OSM blocks through it, which is what
     proves the entry loads in a browser.
+  - The package's one export (`package.json` `exports`: `./editor`), as
+    TypeScript source: a Vite app depends on `gps-plus-slam-globe`
+    (`workspace:*`), imports `gps-plus-slam-globe/editor`, and builds it
+    (the Tour Viewer's `src/globe-dependency.test.ts` builds an entry
+    importing it: one three in the bundle, every third-party package it
+    bundles named in the Tour Viewer's `NOTICE`).
   - A `knip` entry of the Globe workspace (root `knip.json`): the lab
     imports it by URL, which knip cannot follow, so without the entry its
     exports would read as unused.
@@ -52,8 +58,10 @@
     applyEyeControls,
     eyeClipPlanes,
     createGlobeOsmOverlay,
-  } from "gps-plus-slam-globe/src/globe-editor.js";
+  } from "gps-plus-slam-globe/editor";
   ```
 
 - Tests: none of its own (it adds no behaviour); each block's tests, and
-  the globe lab's `globe-editor-blocks.smoke.spec.mjs`, which loads it.
+  the globe lab's `globe-editor-blocks.smoke.spec.mjs`, which loads it, and
+  the Tour Viewer's `src/globe-dependency.test.ts`, which imports and
+  builds it as a dependency.

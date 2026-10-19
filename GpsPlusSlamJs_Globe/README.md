@@ -6,6 +6,24 @@ served no-build to the design system's globe lab
 (`GpsPlusSlamJs_DesignSystem/labs/globe/`). OsmDemo consumes it in phase 5.
 Design: the private repo's `GpsPlusSlamJs_Docs/docs/2026-09-26-0539-globe-intro-start-scene-plan.md` §7.
 
+## As a dependency of a Vite app
+
+The package exports one entry, `gps-plus-slam-globe/editor`
+(`src/globe-editor.ts`, the 3D editor's building blocks), as TypeScript
+SOURCE: there is no build. A consumer adds `"gps-plus-slam-globe":
+"workspace:*"` and imports from that name; Vite transpiles the source, and
+the consumer's `tsc` type-checks it under the consumer's own compiler
+options. The Tour Viewer is the first consumer; its
+`src/globe-dependency.test.ts` builds an entry that imports the blocks and
+holds two things a consumer must keep:
+
+- one three in the bundle (pnpm links both packages' `three` to the same
+  installed copy while their versions match, which the repo-config test
+  `globe-three-version.test.js` checks for the framework);
+- every third-party package the build pulls in named in the consumer's
+  `NOTICE` (3d-tiles-renderer is Apache-2.0, Copyright 2020 California
+  Institute of Technology).
+
 ## The dependency exception (DEC-PRG-4)
 
 The workspace keeps production code dependency-free. `3d-tiles-renderer`

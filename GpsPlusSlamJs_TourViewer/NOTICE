@@ -1,0 +1,23 @@
+Tour Viewer
+Copyright 2026 cs-util-com
+
+This product includes software developed at cs-util-com
+(https://github.com/cs-util-com/location-based-webxr).
+
+This product depends on the following third-party libraries:
+
+- Three.js (npm: three, https://threejs.org/) - MIT License
+- 3d-tiles-renderer (npm: 3d-tiles-renderer,
+  https://github.com/NASA-AMMOS/3DTilesRendererJS) - Apache License 2.0,
+  Copyright 2020 California Institute of Technology; drawn in through the
+  workspace's globe package (gps-plus-slam-globe) for the 3D editor
+- Leaflet (npm: leaflet, https://leafletjs.com/) - BSD 2-Clause License
+- Redux Toolkit (npm: @reduxjs/toolkit, https://redux-toolkit.js.org/) - MIT
+  License
+- zip.js (npm: @zip.js/zip.js, https://gildas-lormeau.github.io/zip.js/) -
+  BSD 3-Clause License
+- node-qrcode (npm: qrcode, https://github.com/soldair/node-qrcode) - MIT
+  License
+
+The App Framework (gps-plus-slam-app-framework, Apache License
+2.0) has its own NOTICE, listing the libraries it depends on.
