@@ -15,7 +15,11 @@ thin band lying on the ground around the station's anchor, R metres out.
     rebuilds its geometry on a new radius, moves it to a new parent; a
     centre or radius that is not finite and positive takes it away.
   - `hide()` - take it away (kept for the next `show`).
-  - `dispose()` - take it away and free its geometry and material.
+  - No `dispose()`: one ring per page wiring (`creator-stations.ts`), kept
+    for the page's life. A session's end only hides it; its material is
+    shared by every later session, so freeing it there would break the
+    next one, and the page has no teardown to free it at (PR #646 bot
+    finding #2: the method was never called).
 - `STATION_RING_NAME` - `"station-ring"`, how tests find it.
 
 ## Invariants & assumptions
@@ -45,7 +49,7 @@ ring.hide();
 
 - `station-ring.test.ts` - flat at the centre with the radius inside the
   band; moves, rebuilds and re-parents with one ring at a time; hides
-  from a parent without parent links and on bad input; disposes; never
-  hit by a ray.
+  from a parent without parent links and on bad input; shows the same
+  ring again after a hide; never hit by a ray.
 - Through `creator-stations.test.ts` and
   `playwright-tests/creator-stations.spec.js`.

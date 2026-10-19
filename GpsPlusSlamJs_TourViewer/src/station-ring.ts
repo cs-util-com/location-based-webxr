@@ -42,10 +42,14 @@ export interface StationRing {
   show(parent: Object3D, centre: Nue, radiusM: number): void;
   /** Take the ring away (kept for the next `show`). */
   hide(): void;
-  /** Take it away and free its geometry and material. */
-  dispose(): void;
 }
 
+/**
+ * One ring per page wiring (`creator-stations.ts`), kept for the page's
+ * life: every AR session shows and hides the same mesh and material, so
+ * there is no teardown - a session's end only hides it, and nothing frees
+ * the material a later session reuses.
+ */
 export function createStationRing(): StationRing {
   const material = new MeshBasicMaterial({
     color: RING_COLOUR,
@@ -111,11 +115,5 @@ export function createStationRing(): StationRing {
       ring.position.set(centre[0], centre[1], centre[2]);
     },
     hide,
-    dispose() {
-      hide();
-      mesh?.geometry.dispose();
-      mesh = null;
-      material.dispose();
-    },
   };
 }

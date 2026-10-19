@@ -75,9 +75,14 @@ describe("createStationRing", () => {
     expect(ringIn(scene)).toBeUndefined();
     ring.show(scene, [0, 0, 0], 0);
     expect(ringIn(scene)).toBeUndefined();
+    // Kept for the page's life (no teardown): the next session's show
+    // brings back the same ring.
     ring.show(scene, [0, 0, 0], 25);
-    ring.dispose();
+    const shown = ringIn(scene);
+    ring.hide();
     expect(ringIn(scene)).toBeUndefined();
+    ring.show(scene, [0, 0, 0], 25);
+    expect(ringIn(scene)).toBe(shown);
   });
 
   it("never takes a tap", () => {
