@@ -55,7 +55,10 @@ since the flows plan M6.
     creator's is `not-required/creator`, a visitor's holds placement back)
     before the visitor's placement subscription; the session end cancels
     the escape clock, hides the escape button and disposes the placed
-    content (M5).
+    content (M5; the side table `ctx.stationContent`, every station's
+    parts with it). The status line's content count is
+    `contentStatus(ctx.stationContent)`: the items of the stations shown
+    now.
   - `ArEntryDom { arRoot; arStatus; arHint; enterArButton; escapeButton; sizeInput; errorBox; arDebug?; arStatusLive? }`
   - `ArEntry.renderArStatus()` - composes `#ar-status` from the session
     object; assigned to `hooks.renderArStatus` by `main.ts` so the other

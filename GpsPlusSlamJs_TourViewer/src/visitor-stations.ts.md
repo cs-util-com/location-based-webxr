@@ -11,8 +11,11 @@ in those modules, the composition in `playwright-tests/stations.spec.js`.
 ## Public API
 
 - `wireVisitorStations({ ctx, mode, arStore, seams, dom, now, schedule, relocate? }):
-VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
-  handed to the hooks unbound). `relocate` (`{ onRelocated }`) turns on the
+VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
+  (properties, handed to the hooks unbound). `loadContent(path)` reads one
+  of the open tour's entries through the stations' prefetch cache: the
+  station content's photos (`viewer-placement.ts`) share it, so a return
+  to a station re-decodes from memory while the cache holds its files. `relocate` (`{ onRelocated }`) turns on the
   test switch `?relocate=here` (`tour-relocation.ts`): the stations are
   held back until the phone's first raw GPS fix, then moved there.
 - `stationPlacementAllowed(ctx, mode): boolean` - the guide's
@@ -71,8 +74,11 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
 - The breadcrumbs (`breadcrumbs.ts`) follow the guide's `onGuide`, one
   trail for the page.
 - The guide's `guideStore` is `arStore`: the present station lands in its
-  `visitorGuide` slice (visitor plan 2026-10-18-2349 M1). Nothing draws by
-  it yet; drawing per station is M2.
+  `visitorGuide` slice (visitor plan 2026-10-18-2349 M1). The station
+  content draws by it (`viewer-placement.ts`, M2), and each `tick` hands
+  the stage `selectStationContentShown` (`stage.follow`): the figure fades
+  with its station. The stage's fade runs on `deps.now` and the AR frame
+  loop (`registerFrameUpdate`).
 - The assets by id are built once per manifest (K4 review R13).
 - A choice button is a `.btn` with `data-testid="scene-choice"`.
 - `stop()` stops the story and the HUD; the guide keeps the progress with

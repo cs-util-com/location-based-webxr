@@ -323,3 +323,111 @@ test("without location, a station is reached by its radius on the code-placed po
     ),
   ).toBeNull();
 });
+
+/** The names of the station-content groups in the fake scene. */
+function contentGroups(page) {
+  return page.evaluate(() =>
+    /** @type {any} */ (window).__tourViewerTest.fakeScene.children
+      .map((c) => c.name)
+      .filter((n) => n.startsWith("station-content:")),
+  );
+}
+
+test("only the present station's content stands in the scene: walking from the gate to the well fades the one out, then the other in", async ({
+  page,
+}) => {
+  // Why this test matters (visitor plan 2026-10-18-2349 §3, M2): a long
+  // tour draws only the station the visitor stands at. The walk crosses
+  // from the gate's radius into the well's; a sampler in the page records
+  // every station group in the scene and its opacity, so a switch that
+  // mounts both at once, pops without a fade, or leaves the gate behind
+  // fails here through the real page.
+  await startTheTour(page);
+  await standAt(page, 0, 0, 0);
+  await lockTheCode(page);
+  await expect
+    .poll(() => contentGroups(page))
+    .toEqual(["station-content:gate"]);
+
+  // From here the walk is by GPS: the code is out of sight.
+  await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    t.nextDetection = null;
+    t.contentSamples = [];
+    // No XR frames run under the fakes: camera frames advance the fades.
+    t.contentSampler = setInterval(() => {
+      t.emitFrames(1);
+      t.contentSamples.push(
+        t.fakeScene.children
+          .filter((c) => c.name.startsWith("station-content:"))
+          .map((g) => {
+            let opacity = null;
+            g.traverse((o) => {
+              if (opacity === null && o.material) opacity = o.material.opacity;
+            });
+            return [g.name, opacity];
+          }),
+      );
+    }, 16);
+  });
+  for (let m = 5, s = 1; m <= 30; m += 5, s += 1) await standAt(page, m, 0, s);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const t = /** @type {any} */ (window).__tourViewerTest;
+        return t.contentSamples.at(-1);
+      }),
+    )
+    .toEqual([["station-content:well", 1]]);
+  const samples = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    clearInterval(t.contentSampler);
+    return t.contentSamples;
+  });
+  // One station's group at a time, every sample.
+  expect(samples.every((s) => s.length <= 1)).toBe(true);
+  const fading = (name) =>
+    samples.findIndex(
+      (s) =>
+        s[0]?.[0] === name && s[0][1] !== null && s[0][1] > 0 && s[0][1] < 1,
+    );
+  // The gate faded out, the well faded in, and in that order.
+  expect(fading("station-content:gate")).toBeGreaterThanOrEqual(0);
+  expect(fading("station-content:well")).toBeGreaterThan(
+    fading("station-content:gate"),
+  );
+  const lastGate = samples.findLastIndex(
+    (s) => s[0]?.[0] === "station-content:gate",
+  );
+  const firstWell = samples.findIndex(
+    (s) => s[0]?.[0] === "station-content:well",
+  );
+  expect(firstWell).toBeGreaterThan(lastGate);
+});
+
+test("?allstations=1 shows every station's content at once", async ({
+  page,
+}) => {
+  // Why this test matters: the test switch is how a creator checks a whole
+  // tour on site; without it only the present station's content shows.
+  await page.goto(`/?qr=${encodeURIComponent(STATIONS_ARCHIVE)}&allstations=1`);
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    { timeout: 15000 },
+  );
+  const button = page.getByTestId("enter-ar");
+  await expect(button).toBeEnabled({ timeout: 10000 });
+  await button.click();
+  await seedAlignment(page);
+  await standAt(page, 0, 0, 0);
+  await lockTheCode(page);
+  await expect
+    .poll(async () => {
+      await page.evaluate(() => {
+        /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+      });
+      return (await contentGroups(page)).sort();
+    })
+    .toEqual(["station-content:gate", "station-content:well"]);
+});

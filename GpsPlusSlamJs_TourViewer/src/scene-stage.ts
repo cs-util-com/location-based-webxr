@@ -12,6 +12,14 @@
  * the show's `onWaiting` says so (the guide holds the pose back until the
  * alignment has a heading, which can take a walk).
  *
+ * The figure follows its station's presence (visitor plan 2026-10-18-2349,
+ * "the figure fades, the audio plays on"): `follow` is told each tick
+ * which stations' content shows; a figure whose station stops showing fades
+ * out and leaves the scene, kept decoded, and fades back in when the
+ * visitor steps back. One decoded while its station is not shown waits off
+ * the scene. The story panel and its sound are not the stage's: they play
+ * on (`scene-view.ts`).
+ *
  * The character's size and placement are the K4 build agent's choice, not
  * the owner's (the plan leaves them open; revised by K4 review R6): 1.7 m
  * tall, its feet at the station's altitude, facing the visitor about the
@@ -21,6 +29,12 @@
  */
 
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
+
+import {
+  CONTENT_FADE_MS,
+  setSubtreeOpacity,
+  stepAlpha,
+} from "./content-fade.js";
 import {
   DoubleSide,
   Group,
@@ -50,6 +64,15 @@ export interface SceneStageDeps {
   decodeTexture(blob: Blob): Promise<Texture | null>;
   /** A `.glb` already checked inert (`checkGlbInert`, K0). */
   loadModel(blob: Blob): Promise<Object3D>;
+  /** The page clock (ms) for the figure's fade; default `Date.now`. */
+  now?(): number;
+  /** The fade's length (ms); default `CONTENT_FADE_MS`, as the station's
+   *  own content. */
+  readonly fadeMs?: number;
+  /** Register a per-rendered-frame callback (the AR frame loop) while a
+   *  fade runs; returns its unregister. Absent: the fade advances on
+   *  `follow` calls only. */
+  registerFrame?(fn: () => void): () => void;
 }
 
 export interface SceneStage {
@@ -68,13 +91,29 @@ export interface SceneStage {
   clear(): void;
   /** Turn a standing character towards the visitor (NUE). */
   faceVisitor(visitorNue: readonly [number, number, number]): void;
+  /** Which stations' content shows now (the present one, or all): the
+   *  figure fades in or out with its station. Every tick. */
+  follow(isShown: (stationId: string) => boolean): void;
 }
 
 export function createSceneStage(deps: SceneStageDeps): SceneStage {
+  const now = (): number => deps.now?.() ?? Date.now();
+  const fadeMs = deps.fadeMs ?? CONTENT_FADE_MS;
   /** The scene it was added to, kept: the e2e scene root is a stub that
-   *  sets no `parent`. */
-  let shown: { root: Object3D; scene: Object3D; character: boolean } | null =
-    null;
+   *  sets no `parent`. `inScene` and `alpha`: the presence fade. */
+  let shown: {
+    root: Object3D;
+    scene: Object3D;
+    character: boolean;
+    stationId: string;
+    inScene: boolean;
+    alpha: number;
+    target: number;
+    lastMs: number;
+  } | null = null;
+  /** Which stations' content shows (`follow`); everything until told. */
+  let isShown: (stationId: string) => boolean = () => true;
+  let unregisterFrame: (() => void) | null = null;
   let token = 0;
   /** Decoded and waiting for the station's position (no GPS zero yet, or a
    *  code-only station before the visitor's height is known): mounted on
@@ -96,9 +135,45 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       waiting = null;
     }
     if (shown === null) return;
-    shown.scene.remove(shown.root);
+    if (shown.inScene) shown.scene.remove(shown.root);
     disposeObject3D(shown.root);
     shown = null;
+    stopFrames();
+  }
+
+  function stopFrames(): void {
+    unregisterFrame?.();
+    unregisterFrame = null;
+  }
+
+  /** Fade the figure towards its station's presence; it leaves the scene
+   *  once faded out and comes back (from 0) when its station shows again. */
+  function advance(): void {
+    if (shown === null) return;
+    const t = now();
+    const target = isShown(shown.stationId) ? 1 : 0;
+    if (target !== shown.target) {
+      shown.target = target;
+      shown.lastMs = t;
+    }
+    if (target === 1 && !shown.inScene) {
+      shown.scene.add(shown.root);
+      shown.inScene = true;
+    }
+    shown.alpha = stepAlpha(shown.alpha, target, t - shown.lastMs, fadeMs);
+    shown.lastMs = t;
+    setSubtreeOpacity(shown.root, shown.alpha);
+    if (target === 0 && shown.alpha <= 0 && shown.inScene) {
+      shown.scene.remove(shown.root);
+      shown.inScene = false;
+    }
+    if (shown.alpha === target) {
+      stopFrames();
+    } else if (deps.registerFrame !== undefined) {
+      // Idempotent per function: a session's end clears the registry, and
+      // the next fade registers again.
+      unregisterFrame = deps.registerFrame(advance);
+    }
   }
 
   /** Mount `root` at the station, unless the stage moved on meanwhile;
@@ -135,8 +210,21 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     holder.position.set(...pose.positionNue);
     if (!character) holder.quaternion.set(...pose.rotationNue);
     holder.add(root);
-    scene.add(holder);
-    shown = { root: holder, scene, character };
+    // At once where its station shows (the story's start); off the scene,
+    // faded out, where it does not.
+    const visible = isShown(stationId);
+    if (visible) scene.add(holder);
+    else setSubtreeOpacity(holder, 0);
+    shown = {
+      root: holder,
+      scene,
+      character,
+      stationId,
+      inScene: visible,
+      alpha: visible ? 1 : 0,
+      target: visible ? 1 : 0,
+      lastMs: now(),
+    };
     return true;
   }
 
@@ -193,6 +281,10 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       if (north === 0 && east === 0) return;
       // The plane faces +Z (East); turn it about Up towards the visitor.
       shown.root.rotation.set(0, Math.atan2(north, east), 0);
+    },
+    follow(next) {
+      isShown = next;
+      advance();
     },
   };
 }

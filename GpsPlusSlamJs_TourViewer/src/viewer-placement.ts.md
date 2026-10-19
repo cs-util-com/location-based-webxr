@@ -20,8 +20,9 @@ recording. Its own module since the flows plan M6.
     hooks - `detection` after each recorded detection (with the status before
     it), `vote` after each dispatched vote, `votedLock` first in
     `onVotedLock`, `placed` after the content, the capture-spot and the ring
-    placements (the ring's count comes back from `placeDecodedPlanes`, 0 when
-    it bailed), and `keepAlive` wrapping each AR entry's code keep-alive so
+    placements - since visitor plan 2026-10-18-2349 M2 once per station
+    each time that station is drawn (`station` names it; content no
+    station holds logs without), with the count that stood - and `keepAlive` wrapping each AR entry's code keep-alive so
     its state changes are logged (M1b review #5; the wrapper is what
     `ctx.viewerKeepAlive` holds, so the AR exit's and the tour close's
     `stop()` are logged too). Silent unless a recording runs; absent,
@@ -51,10 +52,13 @@ recording. Its own module since the flows plan M6.
     lock, so the first `onVotedLock` arrives while the gate still scans).
   - The tour's content (`tour.json`, M5) is rendered once per session as
     soon as the gate allows it and the GPS zero exists
-    (`renderTourStations`: a group per station at its geo pose, its
-    pins and photos as children at their local poses, version 3; labels
+    (`renderTourStation`: a group per station at its geo pose, its
+    pins and photos as children at their local poses, version 3; each
+    station one "items" part of the side table, see below; labels
     through `seams.createLabel`, photos
-    decoded through `session.loadContentEntry`, which joins the archive's
+    decoded through `deps.loadContent` when given (the stations' prefetch
+    cache, `visitor-stations.ts`), else `session.loadContentEntry`, which
+    joins the archive's
     manifest prefix - a re-zipped tour keeps its photos under
     `mytour/content/…` while the record names `content/…` (PR #435
     review) - at the capture planes' divisor); a
@@ -310,7 +314,7 @@ recording. Its own module since the flows plan M6.
      core refused the keys and broke, as designed, on core 1.26.
 - **The tour's content follows the live alignment - no per-note GPS anchors
   (owner decision D10a, authoring plan 2026-09-28-0953 §3.2, M2d).**
-  `tryPlaceContent` hands `renderTourStations` the scene root
+  `tryPlaceContent` hands the side table the scene root
   (`seams.getScene()`), so every alignment change - a scan's votes above
   all - moves the content in the visitor's view in the same dispatch. A
   GPS anchor (`FW/visualization/gps-anchor.ts`) moves only off screen and by
@@ -320,6 +324,31 @@ recording. Its own module since the flows plan M6.
   QR controller (which also pins the votes-before-lock order the gate
   relies on: the content is placed on the first voted lock, through that
   lock's votes); revisit only with that decision.
+- **Drawn per station** (visitor plan 2026-10-18-2349 §3, M2;
+  `station-content.ts`): everything placed is a part of its station in
+  the session's side table (`ctx.stationContent`, created with the first
+  part): the tour's items ("items", one per station that has some), the
+  walk's photos ("walk", grouped by `station-captures.ts`: a baked photo
+  keeps its station, a live one goes to the nearest station within 25 m)
+  and the ring ("ring", with the station nearest its code). Only the
+  stations the store shows - the present one, or every one under "show
+  all" - are decoded and stand in the scene, one station group at a time
+  with a 400 ms fade; content no station holds (live photos beyond every
+  station, the ring of a tour without stations) is the loose group
+  `loose:always`, which always shows. `syncContent()` tells the table the
+  shown set on every store dispatch and camera frame (`main.ts`
+  `hooks.tickStations`); `tryPlaceTour` ends with it.
+  - What changed with it: the placement's `count` is the photos placed in
+    the TOUR, not the photos decoded (those decode only while their
+    station shows); the "placing loading-photos" progress is no longer
+    produced (the type stays, a follow-up removes it); a walk none of whose
+    photos is readable now shows them as skipped where it used to fall back
+    to the ring - only a walk with no photo at all ("no readable capture
+    photos") falls back.
+  - Tracking alone shows nothing: a code's votes feed the tracking-quality report;
+    nothing here is shown or kept alive on tracking alone - the shown set
+    comes from presence (`station-guide.ts`'s one gate), and a veto still
+    stops every keep-alive. M2 reads `codeLinedUp` nowhere new.
 - Planes live at the SCENE ROOT in raw GPS-world NUE (the framework's
   built-once parenting rule); the alignment moves the odometry group under
   them, which is why a later lock needs no re-placement.

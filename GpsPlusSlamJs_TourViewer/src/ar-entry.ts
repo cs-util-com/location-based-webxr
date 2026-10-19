@@ -49,6 +49,7 @@ import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { debugReadoutLines, visitorFusedHint } from "./qr-debug-readout.js";
 import type { TourViewerSeams } from "./seams.js";
+import { contentStatus } from "./station-content.js";
 import { arStatusLine, type ArStatusInput } from "./tour-flow.js";
 import { scanCardShown } from "./scan-gate.js";
 import { visitorStatus } from "./visitor-status.js";
@@ -281,14 +282,9 @@ export function wireArEntry(deps: {
       planesError: ctx.viewerPlanesError,
       contentError: ctx.contentError,
       gate: ctx.scanGate,
-      content:
-        ctx.contentRendered === null
-          ? { kind: "none" }
-          : {
-              kind: "placed",
-              count: ctx.contentRendered.count,
-              skipped: ctx.contentRendered.skipped.length,
-            },
+      // The tour's items, counted for the stations shown now (visitor plan
+      // 2026-10-18-2349 §3: the present station's, not the tour's).
+      content: contentStatus(ctx.stationContent),
       // The visitor guide waits for a heading (D34): the store's flag. No
       // creator guard: the guide never runs for a creator (its placement
       // needs visitor mode, `stationPlacementAllowed`), and only
@@ -478,8 +474,8 @@ export function wireArEntry(deps: {
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
     ctx.scanGate = { kind: "idle" };
-    ctx.contentRendered?.dispose();
-    ctx.contentRendered = null;
+    ctx.stationContent?.dispose();
+    ctx.stationContent = null;
     ctx.contentAttempted = false;
     ctx.contentError = null;
     // The story stops with the session; the station progress stays.

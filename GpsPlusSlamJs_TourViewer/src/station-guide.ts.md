@@ -195,7 +195,20 @@ activateM)` (each tick, each offered station with a distance: the
   `distanceMin` / `distanceMax` are the station's found band at the
   accuracy of the position judged by, and the target sits at the visitor's own height, so
   the HUD's 3D distance is the horizontal distance the run judges. Only
-  offered stations not yet found are targets.
+  offered stations not yet found are targets, and of those only the
+  `HUD_NEAREST_STATIONS` (5) nearest, in the offer's order (visitor plan
+  2026-10-18-2349, the owner's "where the closest five stations are"; a
+  station with no distance yet counts as farthest; `nearestOf`). A present
+  station that is offered is found already, so the markers are the
+  stations whose content is hidden. No distance cap: a visitor far from
+  every station still gets markers.
+  - The count is swept (`station-guide.hud.test.ts`): markers in a 60°
+    view whose bearings lie within 6° of each other, per view, over 100
+    spots and 24 headings. Scattered stations: 0.023 / 0.076 / 0.107 /
+    0.147 / 0.352 overlapping pairs a view for 3 / 5 / 6 / 7 / 10 markers;
+    a regular grid none up to 6. Five stays under one overlap in ten
+    views; markers about 10° wide on a phone would favour four, a
+    grid-like layout allows seven.
 - **One accuracy rule for every band** (PR #642 review): the prefetch's
   activation, the HUD's band and the breadcrumbs' stop read the same rule
   as the line and the run (`station-bands.ts` `judgedAccuracy` /
@@ -292,7 +305,9 @@ store.subscribe(() => guide.tick());
   radius (M3).
 - `station-guide.test.ts` - the undo, the focus clock under `any` order and
   the tap acting on its label (R14); the gate wait, the line, the find; the HUD
-  targets and their bands; arrival by the radius alone (D16): codes only (reached after a
+  targets and their bands; the HUD's five nearest (re-chosen as the visitor
+  walks, a found station replaced by the next; five of a generated
+  100-station tour); arrival by the radius alone (D16): codes only (reached after a
   scan, by distance), poor GPS (found by distance, never widened), none
   before any position, the device fix before an alignment and the
   alignment after it, a tracking drop in an aligned session finding

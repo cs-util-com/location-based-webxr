@@ -73,7 +73,10 @@ lives here.
   - the scan gate and the placed content (viewer-placement.ts, M5):
     `codesOnly`, `scanGate`, `cancelEscapeClock` (the compass wait's two
     fields went in r863: a code's rotation now stands from its first lock,
-    `viewer-vote-sink.ts`), `contentRendered`, `contentAttempted`,
+    `viewer-vote-sink.ts`), `stationContent` (the side table of the
+    visitor's content per station, `station-content.ts`: created with the
+    first part after the gate, disposed at the session's end and when its
+    tour closes), `contentAttempted`,
     `contentError`; the hooks `startScanGate` / `resetScanGate` /
     `reconsiderScanGate(levels | "unavailable")`;
   - the visitor's stations (tour kit plan K4, `visitor-stations.ts`):

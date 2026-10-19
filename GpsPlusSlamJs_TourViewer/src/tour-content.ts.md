@@ -15,7 +15,9 @@ LOCAL pose. A version 3 tour has no loose pins.
   an automatic station starts guiding. It is provisional, like R itself:
   chosen, not measured.
 - `CaptureSpotsInWorld`: `{ fixes, gpsAccuracyMedianM, captures: { image,
-geo }[] }`. These are the walk's recorded photos in the world, before they
+geo, station? }[] }`; `station` is the station a Finish baked the photo
+  into, passed through by `worldCaptureSpots` so the viewer draws it with
+  that station (`station-captures.ts`). These are the walk's recorded photos in the world, before they
   are in stations: what the Finish's bake produces (`capture-bake.ts`) and
   what a viewer places.
 - `worldCaptureSpots(manifest) -> CaptureSpotsInWorld | undefined`: the

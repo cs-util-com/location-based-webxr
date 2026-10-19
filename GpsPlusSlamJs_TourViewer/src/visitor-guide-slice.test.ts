@@ -13,6 +13,7 @@ import {
   selectShowAllContent,
   selectStationContentShown,
   showAllContentSet,
+  showAllStationsFromSearch,
 } from "./visitor-guide-slice";
 
 /**
@@ -135,5 +136,17 @@ describe("visitorGuide slice", () => {
     expect(selectShowAllContent(store.getState())).toBe(false);
     expect(selectPresentStationId(store.getState())).toBeNull();
     expect(selectStationContentShown(store.getState(), "a")).toBe(false);
+  });
+});
+
+describe("showAllStationsFromSearch (the test switch)", () => {
+  it("is on for ?allstations=1 only", () => {
+    // Why this matters: a visitor link with any other value must keep the
+    // one-station rule; only the exact test switch shows every station.
+    expect(showAllStationsFromSearch("?allstations=1")).toBe(true);
+    expect(showAllStationsFromSearch("?qr=x&allstations=1")).toBe(true);
+    expect(showAllStationsFromSearch("")).toBe(false);
+    expect(showAllStationsFromSearch("?allstations=true")).toBe(false);
+    expect(showAllStationsFromSearch("?allstations=0")).toBe(false);
   });
 });

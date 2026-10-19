@@ -80,6 +80,10 @@ import {
 } from "./wizard.js";
 import { editorPitch, wireHaveTour } from "./have-tour.js";
 import { readPrintedText } from "./level-printed.js";
+import {
+  showAllContentSet,
+  showAllStationsFromSearch,
+} from "./visitor-guide-slice.js";
 import { wireTourNameField } from "./tour-name-field.js";
 import { renderTourContact } from "./tour-contact.js";
 
@@ -145,6 +149,11 @@ const recording = createAuthoringRecording({
   holdFolder: (name) => holdRecordingFolder(navigator.locks, name),
 });
 const arStore = createTourViewerStore(recording);
+// The test switch ?allstations=1 (visitor plan 2026-10-18-2349 §3): every
+// station's content shows, not only the present one's.
+if (showAllStationsFromSearch(location.search)) {
+  arStore.dispatch(showAllContentSet(true));
+}
 // The location permission enable() asks for is settled without waiting for
 // a fix (QR-first M1b-1 review #1): indoors a visitor who allowed location
 // got none, and the framework's requester failed enable() on every tap.
@@ -785,6 +794,9 @@ const viewer = createViewerPlacement({
   errorBox,
   escapeButton,
   hooks,
+  // A station's photos are read through the stations' prefetch cache
+  // (visitor plan §9): a return re-decodes from it while it holds them.
+  loadContent: (path) => stations.loadContent(path),
   // The `tourViewing/*` log (M1b): only where a recording can run, and
   // silent until it does.
   ...(recordingPanel === null
@@ -851,6 +863,8 @@ const stations = wireVisitorStations({
 hooks.tickStations = () => {
   stations.tick();
   setup.tickStations();
+  // The present station's content follows the guide's verdict at once.
+  viewer.syncContent();
 };
 hooks.stationCodeLocked = stations.codeLocked;
 hooks.unlockStationAudio = stations.unlockAudio;

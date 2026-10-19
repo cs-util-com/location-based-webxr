@@ -16,8 +16,10 @@ import {
 import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-stations";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
+import { registerFrameUpdate } from "gps-plus-slam-app-framework/ar/frame-loop";
 
 import type { ViewerMode } from "./mode.js";
+import { selectStationContentShown } from "./visitor-guide-slice.js";
 import { pictureProblem } from "./image-cap.js";
 import { createKeyedChain } from "./keyed-chain.js";
 import { createBreadcrumbTrail } from "./breadcrumbs.js";
@@ -92,6 +94,9 @@ export function stationAlignmentSignals(
 export interface VisitorStations {
   /** Re-judge (a store change, a camera frame). */
   tick: () => void;
+  /** Read one of the open tour's entries through the stations' cache: the
+   *  station content's photos (`viewer-placement.ts`) share it. */
+  loadContent: (path: string) => Promise<Blob>;
   codeLocked: (levelId: string) => void;
   /** Inside the "Start the tour" tap. */
   unlockAudio: () => void;
@@ -196,6 +201,9 @@ export function wireVisitorStations(deps: {
         ),
       ),
     loadModel: (blob) => seams.loadGlbModel(blob),
+    // The figure fades with its station's content (`follow` below).
+    now: deps.now,
+    registerFrame: registerFrameUpdate,
   });
   const view = createSceneView({
     dom: dom.scene,
@@ -287,7 +295,10 @@ export function wireVisitorStations(deps: {
   return {
     tick: () => {
       guide.tick();
+      // The figure shows only where its station's content does.
+      stage.follow((id) => selectStationContentShown(arStore.getState(), id));
     },
+    loadContent: (path) => prefetch.load(path),
     // A lock only improved the position (D16): the guide re-judges now.
     codeLocked: () => {
       guide.codeLocked();

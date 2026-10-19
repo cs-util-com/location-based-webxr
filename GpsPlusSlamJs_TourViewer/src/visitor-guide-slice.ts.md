@@ -33,7 +33,9 @@ takeoverMarginM(accuracyM, codeLinedUp))`;
     its code with nothing else to judge by (`station-guide.ts`);
   - `guideTourChanged()` - another tour (or none): back to the initial
     state, "show all" off (§3: not kept across tours);
-  - `showAllContentSet(on)` - the switch (its UI and URL flag come with M2);
+  - `showAllContentSet(on)` - the switch. Its URL flag `?allstations=1`
+    sets it at page start (`main.ts`); a visible control is an open
+    question (it would put a control on the visitor's page);
   - `headingPendingSet(pending)` - the guide waits for a heading (D34);
     `guideTourChanged` resets it with the rest.
 - `presenceAfter(state, judgement)` - the reducer's rule, for the guide's
@@ -41,6 +43,8 @@ takeoverMarginM(accuracyM, codeLinedUp))`;
 - Selectors: `selectPresentStationId`, `selectShowAllContent`,
   `selectStationContentShown(state, stationId)` (present, or all are),
   `selectHeadingPending`.
+- `showAllStationsFromSearch(search)` - whether the page's query asks for
+  every station's content (`allstations=1` exactly).
 - `interface VisitorGuideStore` - what the guide needs of the store
   (`getState`, `dispatch`).
 
@@ -70,5 +74,5 @@ selectStationContentShown(store.getState(), "s2");
 - `visitor-guide-slice.test.ts` - the page's store carries the slice; the
   rule with the margin of the judged accuracy; a fix too weak to guide by
   only ends presence; hold and clear; "show all" and the tour change; the
-  heading wait.
+  heading wait; the URL flag (only `1` counts).
 - `station-guide.test.ts` ("the present station") - the guide's dispatches.

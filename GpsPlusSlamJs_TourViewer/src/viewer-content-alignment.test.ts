@@ -73,6 +73,7 @@ import {
   endTourCodeVotes,
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
+import { showAllContentSet } from "./visitor-guide-slice.js";
 import {
   stationAlignmentSignals,
   stationPlacementAllowed,
@@ -186,6 +187,11 @@ async function visitorSession(
   const bias = [biasM * 0.5, biasM * Math.sqrt(3) * 0.5] as const; // N, E
   // First: the store's construction activates the licence-gated geodesy.
   const arStore = createTourViewerStore();
+  // Every station's content shows (the "show all" switch): these tests
+  // are about WHEN and WHERE the placed content stands against the
+  // alignment, not about presence, which no station guide judges here
+  // (presence is pinned in station-guide.test.ts and stations.spec.js).
+  arStore.dispatch(showAllContentSet(true));
   const { level, pin } = tourAtTruth();
   const scene = new Scene();
   const label = new Object3D();
@@ -648,8 +654,8 @@ describe("after a code-set zero the content shows on the first voted lock (no co
     function reEnterAr(s: Awaited<ReturnType<typeof visitorSession>>): void {
       teardownArSessionState(s.arStore);
       endQrPipeline(s.ctx);
-      s.ctx.contentRendered?.dispose();
-      s.ctx.contentRendered = null;
+      s.ctx.stationContent?.dispose();
+      s.ctx.stationContent = null;
       s.ctx.contentAttempted = false;
       s.ctx.imagePlanes?.dispose();
       s.ctx.imagePlanes = null;
@@ -676,8 +682,8 @@ describe("after a code-set zero the content shows on the first voted lock (no co
       endTourCodeVotes(s.ctx);
       s.ctx.imagePlanes?.dispose();
       s.ctx.imagePlanes = null;
-      s.ctx.contentRendered?.dispose();
-      s.ctx.contentRendered = null;
+      s.ctx.stationContent?.dispose();
+      s.ctx.stationContent = null;
       s.ctx.contentAttempted = false;
       s.placement.resetScanGate();
       s.ctx.placementAttempted = false;

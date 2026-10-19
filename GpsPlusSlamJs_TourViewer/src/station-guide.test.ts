@@ -1779,3 +1779,60 @@ describe("wireStationGuide: the wait for a heading (D34)", () => {
     expect(selectHeadingPending(store.getState())).toBe(false);
   });
 });
+
+describe("the HUD marks the five nearest stations still to find", () => {
+  // Why this matters (visitor plan 2026-10-18-2349): under the `any` order
+  // a town walk offers every station, and the HUD used to mark each one.
+  // It marks the nearest few unfound ones instead, re-chosen as the
+  // visitor walks; a found station drops out and the next one comes in.
+  const line = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      station(`s${String(i + 1)}`, 20 * (i + 1), 0),
+    );
+
+  it("marks the nearest five in the offer's order, and the next one once one is found", () => {
+    const h = harness({ stations: [...line(8)].reverse(), order: "any" });
+    h.at(0, 0);
+    expect(h.huds[0]!.getTargets().map((t) => t.id)).toEqual([
+      "s5",
+      "s4",
+      "s3",
+      "s2",
+      "s1",
+    ]);
+    h.at(20, 0);
+    expect(h.found).toEqual(["s1"]);
+    expect(h.huds[0]!.getTargets().map((t) => t.id)).toEqual([
+      "s6",
+      "s5",
+      "s4",
+      "s3",
+      "s2",
+    ]);
+    // From the far end the far stations are the nearest.
+    h.at(150, 0);
+    expect(h.huds[0]!.getTargets().map((t) => t.id)).toEqual([
+      "s8",
+      "s7",
+      "s6",
+      "s5",
+      "s4",
+    ]);
+  });
+
+  it("marks five of a generated 100-station tour", () => {
+    const stations = Array.from({ length: 100 }, (_, i) =>
+      station(
+        `g${String(i)}`,
+        40 * Math.floor(i / 10) + 10,
+        40 * (i % 10) + 10,
+      ),
+    );
+    const h = harness({ stations, order: "any" });
+    h.at(0, 0);
+    const ids = h.huds[0]!.getTargets().map((t) => t.id);
+    expect(ids).toHaveLength(5);
+    // The corner station and its neighbours.
+    expect(ids).toEqual(["g0", "g1", "g2", "g10", "g11"]);
+  });
+});

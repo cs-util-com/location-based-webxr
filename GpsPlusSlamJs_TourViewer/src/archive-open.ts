@@ -212,8 +212,8 @@ export function wireArchiveOpen(deps: {
     endTourCodeVotes(ctx);
     ctx.imagePlanes?.dispose();
     ctx.imagePlanes = null;
-    ctx.contentRendered?.dispose();
-    ctx.contentRendered = null;
+    ctx.stationContent?.dispose();
+    ctx.stationContent = null;
     ctx.contentAttempted = false;
     ctx.contentError = null;
     // The gate belongs to the closing tour too (M5 review #8): a gate

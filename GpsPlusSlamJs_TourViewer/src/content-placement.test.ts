@@ -19,7 +19,7 @@ import {
   newObjectId,
   objectPoseNue,
   renderTourObjects,
-  renderTourStations,
+  renderTourStation,
   rotationFromHeading,
 } from "./content-placement";
 
@@ -332,7 +332,7 @@ describe("renderTourObjects", () => {
   });
 });
 
-describe("renderTourStations", () => {
+describe("renderTourStation", () => {
   // Why these tests matter (tour editor plan 2026-10-17-1816, W3): a
   // version 3 tour stores each pin and photo RELATIVE to its station, and
   // the viewer plays it as one group per station with the items as its
@@ -395,40 +395,43 @@ describe("renderTourStations", () => {
       position: [0, 1.4, 3] as [number, number, number],
       rotation: yaw(45),
     };
-    const rendered = await renderTourStations(
-      [
-        stationAt("empty", stationGeo, []),
-        stationAt("gate", stationGeo, [
-          {
-            id: "p",
-            kind: "pin",
-            label: "Gate",
-            createdAtIso: NOW,
-            pose: pinPose,
-          },
-          {
-            id: "g",
-            kind: "photo",
-            image: "content/g.jpg",
-            imageWidth: 4,
-            imageHeight: 3,
-            createdAtIso: NOW,
-            pose: photoPose,
-          },
-        ]),
-      ],
-      {
-        scene,
-        zero: ZERO,
-        makeLabel: labelStub,
-        loadPhotoTexture: () => Promise.resolve(new Texture()),
-      },
+    const deps = {
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    };
+    // A station without items places nothing.
+    const empty = await renderTourStation(
+      stationAt("empty", stationGeo, []),
+      deps,
+    );
+    expect(empty.count).toBe(0);
+    empty.dispose();
+    const rendered = await renderTourStation(
+      stationAt("gate", stationGeo, [
+        {
+          id: "p",
+          kind: "pin",
+          label: "Gate",
+          createdAtIso: NOW,
+          pose: pinPose,
+        },
+        {
+          id: "g",
+          kind: "photo",
+          image: "content/g.jpg",
+          imageWidth: 4,
+          imageHeight: 3,
+          createdAtIso: NOW,
+          pose: photoPose,
+        },
+      ]),
+      deps,
     );
     expect(rendered.count).toBe(2);
     expect(scene.children).toEqual([rendered.root]);
-    // A station without items draws nothing.
-    expect(rendered.root.children).toHaveLength(1);
-    const frame = rendered.root.children[0]!;
+    const frame = rendered.root;
     const at = objectPoseNue(stationGeo, ZERO);
     expect(frame.position.toArray()).toEqual([...at.positionNue]);
     expect(frame.quaternion.angleTo(new Quaternion(...yaw(90)))).toBeLessThan(
@@ -477,20 +480,18 @@ describe("renderTourStations", () => {
             turn.w,
           ]);
           const scene = new Group();
-          const rendered = await renderTourStations(
-            [
-              stationAt("s", stationGeo, [
-                {
-                  id: "g",
-                  kind: "photo",
-                  image: "content/g.jpg",
-                  imageWidth: 4,
-                  imageHeight: 3,
-                  createdAtIso: NOW,
-                  pose: localPoseOf(settled, stationGeo),
-                },
-              ]),
-            ],
+          const rendered = await renderTourStation(
+            stationAt("s", stationGeo, [
+              {
+                id: "g",
+                kind: "photo",
+                image: "content/g.jpg",
+                imageWidth: 4,
+                imageHeight: 3,
+                createdAtIso: NOW,
+                pose: localPoseOf(settled, stationGeo),
+              },
+            ]),
             {
               scene,
               zero: ZERO,
@@ -499,7 +500,7 @@ describe("renderTourStations", () => {
             },
           );
           scene.updateMatrixWorld(true);
-          const frame = rendered.root.children[0]!;
+          const frame = rendered.root;
           const plane = frame.children[0]!.children[0]!;
           const position = new Vector3();
           const rotation = new Quaternion();
@@ -520,6 +521,42 @@ describe("renderTourStations", () => {
     );
     return { positionM, angleRad };
   }
+
+  it("decodes no further photo once the result is no longer wanted (alive turns false)", async () => {
+    // Why this matters (visitor plan M2): a visitor who walks on while a
+    // station's photos decode must not pay for the rest of them.
+    const photo = (id: string) => ({
+      id,
+      kind: "photo" as const,
+      image: `content/${id}.jpg`,
+      imageWidth: 4,
+      imageHeight: 3,
+      createdAtIso: NOW,
+      pose: {
+        position: [0, 1.4, 3] as [number, number, number],
+        rotation: yaw(0),
+      },
+    });
+    const geo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 0, yaw(0));
+    let alive = true;
+    const loaded: string[] = [];
+    const rendered = await renderTourStation(
+      stationAt("s", geo, [photo("a"), photo("b"), photo("c")]),
+      {
+        scene: new Group(),
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: (name) => {
+          loaded.push(name);
+          alive = false;
+          return Promise.resolve(new Texture());
+        },
+        alive: () => alive,
+      },
+    );
+    expect(loaded).toEqual(["content/a.jpg"]);
+    expect(rendered.count).toBe(1);
+  });
 
   it("reproduces each object's settled pose within 1.2 cm per km between the zero and the station (property, swept)", async () => {
     // Measured 2026-10-18, max over 150 runs each, objects within 40 m of

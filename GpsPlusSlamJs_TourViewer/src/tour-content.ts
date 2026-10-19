@@ -71,6 +71,10 @@ export interface CaptureSpotsInWorld {
   readonly captures: readonly {
     readonly image: string;
     readonly geo: QrGeoPose;
+    /** The station a baked spot is held by (`worldCaptureSpots`); absent
+     *  for spots joined live, which the viewer assigns itself
+     *  (`station-captures.ts`). */
+    readonly station?: string;
   }[];
 }
 
@@ -83,9 +87,10 @@ export function worldCaptureSpots(
   return {
     fixes: spots.fixes,
     gpsAccuracyMedianM: spots.gpsAccuracyMedianM,
-    captures: tourCaptureGeos(manifest).map(({ image, geo }) => ({
+    captures: tourCaptureGeos(manifest).map(({ image, geo, station }) => ({
       image,
       geo,
+      station,
     })),
   };
 }

@@ -52,6 +52,7 @@ import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { ViewerVoteSink } from "./viewer-vote-sink.js";
 import type { ScanGate } from "./scan-gate.js";
 import type { PlacedImagePlanes } from "./image-planes.js";
+import type { StationContent } from "./station-content.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { PlacementState } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
@@ -460,6 +461,9 @@ export interface TourViewerSession {
    *  capture-plane paths write `viewerPlanesError`, and whichever failed
    *  second used to erase the other's message (M5 review #5). */
   contentError: string | null;
+  /** The walk's photos or the ring, placed in the tour (since visitor plan
+   *  M2 as parts of their stations in `stationContent`, decoded only while
+   *  shown); its `dispose` takes those parts out. */
   imagePlanes: PlacedImagePlanes | null;
   /** In-flight guard: without it every voted lock during the decode window
    *  started ANOTHER placement run (M4 milestone review #4). */
@@ -485,8 +489,12 @@ export interface TourViewerSession {
   scanGate: ScanGate;
   /** Cancels the escape clock while the gate scans. */
   cancelEscapeClock: (() => void) | null;
-  /** The tour's `tour.json` objects, rendered after the gate. */
-  contentRendered: RenderedTourObjects | null;
+  /** The visitor's content per station (`station-content.ts`, visitor plan
+   *  2026-10-18-2349 M2): the tour's items, the walk's photos and the ring
+   *  as parts of their stations, drawn only while the store shows them.
+   *  Created with the first part after the gate; disposed at the session's
+   *  end and when its tour closes. */
+  stationContent: StationContent | null;
   /** Whether this session already attempted the content placement. */
   contentAttempted: boolean;
 }
@@ -616,7 +624,7 @@ export function createTourViewerSession(
     codesOnly: false,
     scanGate: { kind: "idle" },
     cancelEscapeClock: null,
-    contentRendered: null,
+    stationContent: null,
     contentAttempted: false,
   };
 }

@@ -1015,7 +1015,10 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     const h = harness({ arStatus: "running" });
     h.ctx.session = {} as never;
     h.ctx.scanGate = { kind: "passed", via: "code" };
-    h.ctx.contentRendered = { count: 2, skipped: [] } as never;
+    h.ctx.stationContent = {
+      has: () => true,
+      shown: () => ({ count: 2, skipped: [] }),
+    } as never;
     return h;
   }
 

@@ -27,9 +27,11 @@
  * THIS visit sit under the AR world group at their odometry pose, so they
  * stay rigid while GPS re-solves (authoring plan 2026-09-28-0953 §3.2, M2c).
  *
- * A version 3 tour (tour editor plan 2026-10-17-1816, W3) is played by
- * `renderTourStations`: one group per station at its geo pose, its pins
- * and photos children at their LOCAL poses, so a station moves them all.
+ * A version 3 tour (tour editor plan 2026-10-17-1816, W3) is played one
+ * station at a time by `renderTourStation`: a group at the station's geo
+ * pose, its pins and photos children at their LOCAL poses, so a station
+ * moves them all. The visitor's page renders a station only while its
+ * content shows (visitor plan 2026-10-18-2349 M2, `station-content.ts`).
  */
 
 import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -217,55 +219,51 @@ export function renderTourObjects(
   });
 }
 
-/** What `renderTourStations` needs: the renderer's, without a pose rule
- *  (a station's items carry their own). */
-export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf">;
+/** What `renderTourStation` needs: the renderer's, without a pose rule
+ *  (a station's items carry their own), and whether the result is still
+ *  wanted: once `alive()` turns false the photos left are not decoded (the
+ *  caller disposes what came back). */
+export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
+  readonly alive?: () => boolean;
+};
 
 /**
- * Play a version 3 tour's stations (tour editor plan W3): under ONE root
- * group, each station with items as a group at its geo pose in the
- * session's NUE (`objectPoseNue`), and its pins and photos as children at
- * their local poses. A station without items draws nothing. The root is
- * added to the scene once every photo decoded (M5 review #6's rule).
+ * Play one station of a version 3 tour (tour editor plan W3): a group at
+ * the station's geo pose in the session's NUE (`objectPoseNue`), its pins
+ * and photos as children at their local poses, added to `deps.scene` once
+ * every photo decoded (M5 review #6's rule). The result's `root` is that
+ * group; a station without items gives an empty one.
  *
  * The station's group stands in the session's tangent plane, the items in
  * the station's: for a zero within a kilometre the two agree to well under
  * a centimetre (`content-placement.test.ts`, swept).
  */
-export async function renderTourStations(
-  stations: readonly TourStation[],
+export async function renderTourStation(
+  station: TourStation,
   deps: TourStationRendererDeps,
 ): Promise<RenderedTourObjects> {
-  const root = new Group();
-  const parts: RenderedTourObjects[] = [];
-  for (const station of stations) {
-    if (station.items.length === 0) continue;
-    const frame = new Group();
-    const at = objectPoseNue(station.geo, deps.zero);
-    frame.position.set(...at.positionNue);
-    frame.quaternion.set(...at.rotationNue);
-    root.add(frame);
-    const poses = new Map(station.items.map((item) => [item.id, item.pose]));
-    parts.push(
-      await renderContent(station.items, {
-        ...deps,
-        scene: frame,
-        poseOf: (item) => {
-          const pose = poses.get(item.id)!;
-          return { positionNue: pose.position, rotationNue: pose.rotation };
-        },
-      }),
-    );
-  }
-  deps.scene.add(root);
+  const frame = new Group();
+  const at = objectPoseNue(station.geo, deps.zero);
+  frame.position.set(...at.positionNue);
+  frame.quaternion.set(...at.rotationNue);
+  const poses = new Map(station.items.map((item) => [item.id, item.pose]));
+  const part = await renderContent(station.items, {
+    ...deps,
+    scene: frame,
+    poseOf: (item) => {
+      const pose = poses.get(item.id)!;
+      return { positionNue: pose.position, rotationNue: pose.rotation };
+    },
+  });
+  deps.scene.add(frame);
   return {
-    count: parts.reduce((sum, part) => sum + part.count, 0),
-    skipped: parts.flatMap((part) => part.skipped),
-    root,
+    count: part.count,
+    skipped: part.skipped,
+    root: frame,
     dispose: () => {
-      root.removeFromParent();
-      deps.scene.remove(root);
-      for (const part of parts) part.dispose();
+      frame.removeFromParent();
+      deps.scene.remove(frame);
+      part.dispose();
     },
   };
 }
@@ -276,6 +274,7 @@ async function renderContent<T extends TourContentFields>(
   objects: readonly T[],
   deps: Omit<TourObjectRendererDeps, "poseOf"> & {
     poseOf: (object: T) => ObjectPoseNue;
+    alive?: () => boolean;
   },
 ): Promise<RenderedTourObjects> {
   const labels: { object: Object3D; dispose(): void }[] = [];
@@ -289,6 +288,9 @@ async function renderContent<T extends TourContentFields>(
   // GPU-memory hazard, and decoding them all at once doubles the peak.
   const group = new Group();
   for (const object of objects) {
+    // Dropped meanwhile (the station's content no longer shows): decode
+    // nothing more; the caller disposes what came back.
+    if (deps.alive?.() === false) break;
     const pose = deps.poseOf(object);
     if (object.kind === "pin") {
       const label = deps.makeLabel(object.label);

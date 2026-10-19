@@ -27,7 +27,9 @@ with three stations in fixed order (tour kit plan K4, `stations.spec.js`):
 "The gate" on the fixture's printed code (a knight with a voice and a scene
 choice; the level's geo is where the fakes' armed pose puts the code under
 the seeded alignment, so its votes agree with the walk), "The well" 30 m
-north (a minimal `.glb` built here), "The tower" 300 m east (skipped). And
+north (a minimal `.glb` built here), "The tower" 300 m east (skipped).
+The gate and the well each hold one pin, so the suite sees which station's
+content stands in the scene (only the present one's). And
 `/api/drive-proxy?id=…` - the standard zip with ranges, on the Drive
 proxy's own path so the app treats it as a Drive tour without a Google host
 (Drive replace plan §5 #12): `id=e2e-drive` sends `content-disposition`

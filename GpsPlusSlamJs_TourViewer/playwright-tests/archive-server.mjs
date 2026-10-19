@@ -168,7 +168,9 @@ const DEG_PER_M_LON = 1.32966e-5;
  * fixture's printed code (2 m north, 1 m east: the lock that passes the
  * scan gate places the visitor inside its radius - a lock is no arrival of
  * its own, tour editor plan D16), "The well" 30 m north (found by
- * walking), "The tower" 300 m east (skipped).
+ * walking), "The tower" 300 m east (skipped). The gate and the well each
+ * hold one pin, so the e2e suite can see which station's content stands in
+ * the scene (only the present one's).
  */
 async function buildStationsZip() {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
@@ -229,7 +231,15 @@ async function buildStationsZip() {
             activateRadiusM: 30,
             foundRadiusM: 5,
             hint: "arrow",
-            items: [],
+            items: [
+              {
+                id: "gate-pin",
+                kind: "pin",
+                label: "Gate sign",
+                createdAtIso: "2026-10-19T08:00:00.000Z",
+                pose: { position: [0, 1.5, 1], rotation: [0, 0, 0, 1] },
+              },
+            ],
             steps: [
               {
                 id: "knight",
@@ -266,7 +276,15 @@ async function buildStationsZip() {
             activateRadiusM: 20,
             foundRadiusM: 5,
             hint: "arrow",
-            items: [],
+            items: [
+              {
+                id: "well-pin",
+                kind: "pin",
+                label: "Well sign",
+                createdAtIso: "2026-10-19T08:00:00.000Z",
+                pose: { position: [0, 1.5, 1], rotation: [0, 0, 0, 1] },
+              },
+            ],
             steps: [
               {
                 id: "arch",

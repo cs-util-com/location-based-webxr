@@ -34,16 +34,19 @@ texture fails is skipped and named in `skipped`; `dispose()`removes and
 frees everything.`root` is the one group every rendered object hangs
 under - what a tap in AR is cast against to name the object
 (`object-pick.ts`, authoring plan 2026-09-28-0953 M4).
-- `renderTourStations(stations, { scene, zero, makeLabel, loadPhotoTexture })
--> Promise<RenderedTourObjects>` - the visitor's playback of a version 3
-  tour (tour editor plan 2026-10-17-1816, W3): one root group; under it one
-  `Group` per station that has items, at the station's geo pose in the
-  session's NUE (`objectPoseNue`); its pins and photos as children at
-  their LOCAL poses (`[north, up, east]` and a rotation relative to the
-  station). A station without items draws nothing. The same rendering
-  (`renderContent`) as `renderTourObjects`, so labels, photo planes,
-  `skipped` and `dispose` behave the same; the root is added once every
-  photo decoded.
+- `renderTourStation(station, { scene, zero, makeLabel, loadPhotoTexture, alive? })
+-> Promise<RenderedTourObjects>` - the visitor's playback of ONE station of
+  a version 3 tour (tour editor plan 2026-10-17-1816, W3; one call per
+  station since visitor plan 2026-10-18-2349 M2, so each station is drawn
+  and freed on its own, `station-content.ts`): a `Group` at the station's
+  geo pose in the session's NUE (`objectPoseNue`), its pins and photos as
+  children at their LOCAL poses (`[north, up, east]` and a rotation
+  relative to the station), added to `scene` once every photo decoded;
+  `root` is that group. A station without items gives an empty one. The
+  same rendering (`renderContent`) as `renderTourObjects`, so labels,
+  photo planes, `skipped` and `dispose` behave the same. `alive()`
+  turning false stops the decode loop: no further photo is decoded, and the
+  caller disposes what came back.
 
 ## Invariants & assumptions
 
@@ -108,7 +111,8 @@ over positions; the photo's frame direction pinned by bearing against the
 framework's basis constant; refusals without zero/alignment; the id shape
 (property); rendering with a fake scene: counts, a skipped photo, disposal, and a
 caller's own pose and frame (`poseOf`) for pins and photos. For
-`renderTourStations`: the group structure (one group per station with
-items, the items as its children), and the property that the local poses
+`renderTourStation`: the group structure (the station's group, the items
+as its children), no further decode once `alive()` is false, and the
+property that the local poses
 taken from the settled geo reproduce each object's direct AR pose within
 the stated bound, swept over zero distances of 0, 100, 1000 and 5000 m.

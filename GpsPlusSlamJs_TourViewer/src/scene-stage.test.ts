@@ -225,3 +225,91 @@ describe("createSceneStage", () => {
     expect(waits).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("the figure follows its station's presence (it fades, the story plays on)", () => {
+  // Why this matters: the owner's decision is that the figure fades with
+  // its station while the story panel and audio play on, and that stepping
+  // back shows it again - so the figure must leave the scene on leaving,
+  // come back on return without a second decode, and never appear while
+  // its station's content is not shown.
+  const FADE = 400;
+
+  function following() {
+    const clock = { ms: 1000 };
+    const scene = new Group();
+    const decodeTexture = vi.fn((): Promise<Texture | null> =>
+      Promise.resolve(textureOf(100, 200)),
+    );
+    const stage = createSceneStage({
+      getScene: () => scene,
+      poseOf: () => ({
+        positionNue: [0, 400, 0] as [number, number, number],
+        rotationNue: [0, 0, 0, 1] as [number, number, number, number],
+      }),
+      decodeTexture,
+      loadModel: () => Promise.resolve(new Group()),
+      now: () => clock.ms,
+      fadeMs: FADE,
+    });
+    const opacity = (): number => {
+      const plane = scene.getObjectByName("station-character") as
+        Mesh | undefined;
+      return plane === undefined
+        ? -1
+        : (plane.material as MeshBasicMaterial).opacity;
+    };
+    return { clock, scene, stage, decodeTexture, opacity };
+  }
+
+  it("fades out when its station stops showing, leaves the scene, and fades back in on return without decoding again", async () => {
+    const h = following();
+    await h.stage.showCharacter("gate", new Blob(["png"]));
+    h.stage.follow(() => true);
+    expect(h.scene.children).toHaveLength(1);
+    h.stage.follow((id) => id !== "gate");
+    h.clock.ms += FADE / 2;
+    h.stage.follow((id) => id !== "gate");
+    expect(h.opacity()).toBeCloseTo(0.5, 6);
+    h.clock.ms += FADE / 2;
+    h.stage.follow((id) => id !== "gate");
+    expect(h.scene.children).toHaveLength(0);
+    h.stage.follow(() => true);
+    expect(h.scene.children).toHaveLength(1);
+    expect(h.opacity()).toBe(0);
+    h.clock.ms += FADE;
+    h.stage.follow(() => true);
+    expect(h.opacity()).toBe(1);
+    expect(h.decodeTexture).toHaveBeenCalledTimes(1);
+  });
+
+  it("a figure decoded while its station is not shown waits off the scene", async () => {
+    const h = following();
+    h.stage.follow(() => false);
+    await h.stage.showCharacter("gate", new Blob(["png"]));
+    expect(h.scene.children).toHaveLength(0);
+    h.stage.follow(() => true);
+    expect(h.scene.children).toHaveLength(1);
+  });
+
+  it("clear frees a figure that is off the scene", async () => {
+    const h = following();
+    await h.stage.showCharacter("gate", new Blob(["png"]));
+    h.stage.follow(() => false);
+    h.clock.ms += FADE;
+    h.stage.follow(() => false);
+    const plane = h.scene.children.length === 0;
+    expect(plane).toBe(true);
+    const disposeSpy = vi.fn();
+    // Reach the hidden figure through a return, then hide it again.
+    h.stage.follow(() => true);
+    const material = (h.scene.getObjectByName("station-character") as Mesh)
+      .material as MeshBasicMaterial;
+    material.dispose = disposeSpy;
+    h.stage.follow(() => false);
+    h.clock.ms += FADE;
+    h.stage.follow(() => false);
+    h.stage.clear();
+    expect(disposeSpy).toHaveBeenCalled();
+    expect(h.scene.children).toHaveLength(0);
+  });
+});

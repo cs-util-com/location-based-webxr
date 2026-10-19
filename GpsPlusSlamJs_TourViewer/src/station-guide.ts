@@ -224,6 +224,17 @@ export const SKIP_UNDO_MS = DEFAULT_TOAST_LINGER_MS;
  */
 export const FIX_MAX_AGE_MS = 5_000;
 
+/**
+ * How many stations the HUD marks at once: the nearest unfound offered
+ * ones (visitor plan 2026-10-18-2349, the owner's "where the closest five
+ * stations are"). Under the `any` order a town walk offers every station,
+ * and a marker for each would crowd the view; the sweep in
+ * `station-guide.hud.test.ts` counts the markers inside the field of view
+ * for 3-10. No distance cap: a cap would leave a visitor far from every
+ * station with no marker at all.
+ */
+export const HUD_NEAREST_STATIONS = 5;
+
 /** One measurement of the visitor, taken once per tick (K4 review R13). */
 interface Measurement {
   /** The visitor; while the alignment is not ready (`alignmentReady`)
@@ -259,6 +270,27 @@ interface Judgement {
 interface SkipAction {
   readonly kind: "ask-skip" | "skip" | "ask-end" | "end" | "undo";
   readonly id: string;
+}
+
+/**
+ * The `count` items nearest by `distanceOf` (undefined: farthest), kept
+ * in their own order; ties go to the earlier item. Exported for the HUD's
+ * tests.
+ */
+export function nearestOf<T>(
+  items: readonly T[],
+  count: number,
+  distanceOf: (item: T) => number | undefined,
+): T[] {
+  if (items.length <= count) return [...items];
+  const keep = new Set(
+    items
+      .map((item, index) => ({ index, d: distanceOf(item) ?? Infinity }))
+      .sort((a, b) => a.d - b.d || a.index - b.index)
+      .slice(0, Math.max(0, count))
+      .map((e) => e.index),
+  );
+  return items.filter((_, index) => keep.has(index));
 }
 
 /** Whole metres: GPS-guided distances are not more precise than that. */
@@ -574,9 +606,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     )[0]!;
   }
 
+  /** The HUD's markers: the `HUD_NEAREST_STATIONS` nearest offered
+   *  stations not yet found (a station with no distance yet counts as
+   *  farthest), in the offer's order. A present station that is offered
+   *  is found already, so these are the stations whose content is hidden. */
   function hudTargets(): WayfindingTarget[] {
     if (run === null || last === null || last.headingNue === null) return [];
     const eyeHeight = last.headingNue[1];
+    const distances = last.distances;
     const targets: WayfindingTarget[] = [];
     for (const id of run.offered()) {
       const status = run.status(id);
@@ -597,7 +634,9 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         distanceMax: bands.foundExitM,
       });
     }
-    return targets;
+    return nearestOf(targets, HUD_NEAREST_STATIONS, (t) =>
+      distances.get(t.id ?? ""),
+    );
   }
 
   function lineText(): string {

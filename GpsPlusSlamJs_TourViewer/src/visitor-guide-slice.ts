@@ -121,6 +121,12 @@ export const {
   headingPendingSet,
 } = visitorGuideSlice.actions;
 
+/** The test switch `?allstations=1`: the page starts with every station's
+ *  content shown (`showAllContent`). Only the exact value `1` counts. */
+export function showAllStationsFromSearch(search: string): boolean {
+  return new URLSearchParams(search).get("allstations") === "1";
+}
+
 /** What the guide needs of the page's store. */
 export interface VisitorGuideStore {
   getState(): { readonly visitorGuide: VisitorGuideState };
