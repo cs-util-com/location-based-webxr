@@ -159,6 +159,28 @@ export async function writeDraftEdit(
   return wrote;
 }
 
+/**
+ * A LIVE record of `object` (`writeDraftEdit`), then - once it landed - its
+ * id's tombstone removed. The object exists on the page, so a tombstone an
+ * older draft left for the id is stale, and `readDraft` lets a tombstone
+ * outrank a record: the next read would offer to delete what was just
+ * edited. In this order, as an undo of a delete writes them: a crash
+ * between the two leaves the object deleted, never half restored. A
+ * record that did not land leaves the tombstone, which is then the only
+ * thing the draft holds for the id. Both drafts write their live records
+ * through this (the phone's and the desktop editor's).
+ */
+export async function writeDraftLiveRecord(
+  store: DraftFileStore,
+  object: TourObject,
+  blob: Blob | undefined,
+  seen: string | undefined,
+): Promise<boolean> {
+  const wrote = await writeDraftEdit(store, object, blob, seen);
+  if (wrote) await removeDraftDeletion(store, object.id);
+  return wrote;
+}
+
 /** Parse a stored base; `undefined` for anything else, which then
  *  behaves as no base (never superseded - the safe direction). */
 export function parseDraftBase(

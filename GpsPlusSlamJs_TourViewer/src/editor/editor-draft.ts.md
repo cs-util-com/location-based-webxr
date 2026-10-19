@@ -21,6 +21,11 @@ editor's own namespace, one tab at a time. Design:
     `"other-tab"`: another tab holds the draft); `onWriting(true|false)` -
     writes started / all settled (the page's `data-draft` mark).
 - `EditorDraft` - the four `DraftObjectWrites` (`draft-actions.ts`), plus:
+  - `saveObject` writes through `writeDraftLiveRecord`
+    (`draft-persistence.ts`, shared with the phone's draft): a record that
+    landed takes its id's tombstone away, so a note edited over an offered
+    deletion (whose tombstone stays until "Delete it") is offered as the
+    edit at the next open, never as deleted again.
   - `saveSettings(settings)` (QR-first M1b-2) - the tour's settings
     (`EditorTourSettings`: `{ needsNoGps, details?, stations? }`, the
     details since W2 of the tour editor plan, the station poses since the
@@ -230,7 +235,7 @@ made meanwhile; the key move (the later edit under the new key, the old
 namespace emptied); a key move carrying a during-save edit and an
 unanswered offer; "Delete it" sparing a live edit and a later edit of a
 rejected id; the pruned rejection list; the undo of a delete of an edited
-note; a second tab; no storage and a failed write said once; the settings
+note; a note edited over an offered deletion offered as the edit; a second tab; no storage and a failed write said once; the settings
 record (offered as a change, counted with the notes', spent when put back
 or when the file carries it, a build never put in place, a landed write
 clearing it and one made during it kept, key moves, "Delete it", a closed

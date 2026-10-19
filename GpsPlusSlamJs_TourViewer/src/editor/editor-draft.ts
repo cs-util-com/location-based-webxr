@@ -89,6 +89,7 @@ import {
   writeDraftBase,
   writeDraftDeletion,
   writeDraftEdit,
+  writeDraftLiveRecord,
   writeDraftMeta,
 } from "../draft-persistence.js";
 import { createKeyedChain } from "../keyed-chain.js";
@@ -1116,7 +1117,11 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       if (seen !== undefined) {
         bases.set(id, withBaseKey(bases.get(id), "seen", seen));
       }
-      return write(id, (store) => writeDraftEdit(store, object, blob, seen));
+      // A live record takes its id's stale tombstone away (an offered
+      // deletion edited meanwhile), once the record landed.
+      return write(id, (store) =>
+        writeDraftLiveRecord(store, object, blob, seen),
+      );
     },
     saveDeletion(id) {
       pending.set(id, null);

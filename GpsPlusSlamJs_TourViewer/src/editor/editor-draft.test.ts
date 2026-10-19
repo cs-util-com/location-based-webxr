@@ -425,6 +425,29 @@ describe("createEditorDraft", () => {
     expect(reopened.offer?.deleted).toEqual(["c"]);
   });
 
+  // Why: an offered deletion's tombstone stays on disk until the creator
+  // answers, and the editor lets them edit the note meanwhile. The edit's
+  // record did not outrank that tombstone at the read, so the next open
+  // offered to delete the note just edited. A live record takes its id's
+  // tombstone away, as on the phone (`writeDraftLiveRecord`).
+  it("a note edited over an offered deletion is offered as the edit, never as deleted", async () => {
+    const b = browser();
+    const earlier = draftIn(b);
+    const original = tour(pin("a"), pin("b"));
+    await earlier.open(K1, original);
+    void earlier.saveDeletion("b");
+    await earlier.idle();
+    earlier.close();
+    const draft = draftIn(b);
+    expect((await draft.open(K1, original)).offer?.deleted).toEqual(["b"]);
+    expect(await draft.saveObject(pin("b", "live b"))).toBe(true);
+    await draft.idle();
+    draft.close();
+    const reopened = await draftIn(b).open(K1, original);
+    expect(reopened.offer?.deleted).toEqual([]);
+    expect(reopened.offer?.objects.map((o) => o.label)).toEqual(["live b"]);
+  });
+
   it("a rejected id whose files are gone is dropped from the meta at the next open, so a later edit of it is not hidden", async () => {
     const b = browser();
     const original = tour(pin("a"));

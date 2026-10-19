@@ -36,6 +36,7 @@ import {
   writeDraftBase,
   writeDraftEdit,
   writeDraftDeletion,
+  writeDraftLiveRecord,
   writeDraftMeta,
   writeDraftObject,
 } from "./draft-persistence.js";
@@ -776,6 +777,41 @@ describe("writeDraftEdit (M6 E2p)", () => {
     };
     await writeDraftMeta(store, META);
     expect(await writeDraftEdit(store, pin("a"), undefined, "k")).toBe(true);
+  });
+});
+
+describe("writeDraftLiveRecord", () => {
+  // Why: a tombstone outranks a record at the read, so a live record of an
+  // id an older draft deleted must take that tombstone away - or the next
+  // read offers to delete what was just edited. Only once the record
+  // landed: removed after a refused record, the read would see neither,
+  // and an earlier deletion would be lost without the edit replacing it.
+  it("takes the id's tombstone away once the record landed", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftDeletion(store, "a");
+    expect(
+      await writeDraftLiveRecord(store, pin("a"), undefined, undefined),
+    ).toBe(true);
+    expect(store.files.has(deletedKey("a"))).toBe(false);
+    const read = await readDraft(store);
+    expect(read?.draft.deleted).toEqual([]);
+    expect(read?.draft.objects.map((o) => o.id)).toEqual(["a"]);
+  });
+
+  it("keeps the tombstone when the record does not land", async () => {
+    const inner = memoryStore();
+    const store: DraftFileStore = {
+      ...inner,
+      put: (key, data) =>
+        key === objectKey("a") ? Promise.resolve(false) : inner.put(key, data),
+    };
+    await writeDraftMeta(store, META);
+    await writeDraftDeletion(store, "a");
+    expect(
+      await writeDraftLiveRecord(store, pin("a"), undefined, undefined),
+    ).toBe(false);
+    expect(inner.files.has(deletedKey("a"))).toBe(true);
   });
 });
 

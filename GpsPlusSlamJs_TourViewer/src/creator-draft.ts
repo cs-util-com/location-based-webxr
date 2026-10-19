@@ -33,11 +33,10 @@ import {
 } from "./authoring-draft.js";
 import {
   readDraft,
-  removeDraftDeletion,
   removeDraftObject,
   addDraftBaseKey,
   writeDraftDeletion,
-  writeDraftEdit,
+  writeDraftLiveRecord,
   writeDraftMeta,
   writeDraftVisit,
 } from "./draft-persistence.js";
@@ -249,6 +248,10 @@ export function wireCreatorDraft(deps: {
    *  (or another opens) carries its own tour's poses - never none, never
    *  the next tour's (the r880 fix re-review, L2). */
   let undecided: { poses: readonly StationPose[] | null } | null = null;
+  /** The settings records (not removals) issued per tour since the page
+   *  loaded: a "Delete it" that commits after its tour closed compares it
+   *  with its tap's count, to tell whether live work wrote the file since. */
+  const settingsPuts = new Map<string, number>();
   /** Every object id this page changed since the tour opened (an edit, a
    *  move, a placement, a delete, an undo, a restore): live work, which
    *  wins over the offer and is never rejected with it. Unlike the
@@ -336,26 +339,6 @@ export function wireCreatorDraft(deps: {
     return hostedObjects(openedTour()).key(id);
   }
 
-  /**
-   * A live record of `object`, then its id's tombstone removed: the object
-   * exists here, so a tombstone an older draft left for the id is stale,
-   * and `readDraft` would let it outrank the record (a reload offering to
-   * delete what was just edited, and a crash bringing it back as
-   * deleted). In this order, as an
-   * undo of a delete writes them (`followDocument`): a crash between the
-   * two leaves the object deleted, never half restored.
-   */
-  async function writeLiveRecord(
-    s: DraftFileStore,
-    object: TourObject,
-    blob: Blob | undefined,
-    seen: string | undefined,
-  ): Promise<boolean> {
-    const wrote = await writeDraftEdit(s, object, blob, seen);
-    await removeDraftDeletion(s, object.id);
-    return wrote;
-  }
-
   function recordPlacement(object: TourObject, blob?: Blob): void {
     const store = draftStore;
     const tourUrl = draftTourUrl;
@@ -369,7 +352,7 @@ export function wireCreatorDraft(deps: {
     }
     const seen = seenKey(object.id);
     void writeForObject(store, tourUrl, object.id, (s) =>
-      writeLiveRecord(s, object, blob, seen),
+      writeDraftLiveRecord(s, object, blob, seen),
     ).then((ok) => {
       if (!ok) noteNoPersistence();
     });
@@ -401,6 +384,9 @@ export function wireCreatorDraft(deps: {
     record: TourSettingsRecord | null,
     held: { poses: readonly StationPose[] | null } | null,
   ): Promise<boolean> {
+    if (record !== null) {
+      settingsPuts.set(tourUrl, (settingsPuts.get(tourUrl) ?? 0) + 1);
+    }
     return draftWrites
       .run(settingsChainKey(tourUrl), () => {
         if (record === null) {
@@ -662,7 +648,12 @@ export function wireCreatorDraft(deps: {
     // them to the draft again (the same records: harmless).
     const restored = restoreWork(waiting);
     // And the visits it measured (M3b): the summary after Finish combines
-    // them with this page's.
+    // them with this page's. Counted before: one the log already holds
+    // (this page's own) does not come back.
+    const known = new Set(deps.visitLog.ids());
+    const visitsBack = waiting.visits.filter(
+      (v) => !known.has(v.visitId),
+    ).length;
     deps.visitLog.restore(waiting.visits);
     // The measured level comes back too, and it is what unlocks Finish
     // without walking to the poster again. Only when the session has not
@@ -670,7 +661,8 @@ export function wireCreatorDraft(deps: {
     // Every code it kept (M4c-1), in the draft's order: saved, so the next
     // Finish writes them; live work on a code is newer and wins.
     deps.codes.restoreLevels(waiting.levels);
-    if (waiting.level !== null) deps.codes.restoreInHand(waiting.level);
+    const levelBack =
+      waiting.level !== null && deps.codes.restoreInHand(waiting.level);
     // And the printed size, which the page rewrites from the framework
     // default on every load - so without this a re-entry would solve
     // against 16 cm for a poster printed at 20.
@@ -683,11 +675,12 @@ export function wireCreatorDraft(deps: {
     // at the same spot in the published zip. The sync guards against a
     // dead scene, so this is safe outside a session too.
     deps.syncPreviews();
-    // What was put back, not what was offered: live work left some out.
-    ctx.placementNote = restoredText(restored.placed, waiting.level !== null, {
+    // What was put back, not what was offered: live work left some out,
+    // a code measured here kept its place, and a visit already held stayed.
+    ctx.placementNote = restoredText(restored.placed, levelBack, {
       changed: restored.changed,
       deleted: restored.deleted,
-      visits: waiting.visits.length,
+      visits: visitsBack,
     });
     deps.render();
   });
@@ -756,6 +749,10 @@ export function wireCreatorDraft(deps: {
     // same tick must carry the rejection too, or its write would drop it.
     const wasRejected = draftRejected;
     draftRejected = rejectedIds;
+    // What the settings file held at the tap, for a commit that lands
+    // after the tour closed (below).
+    const liveAtTap = settingsLive();
+    const putsAtTap = settingsPuts.get(tourUrl) ?? 0;
     // ENQUEUED synchronously, with the values captured at the tap. The
     // chain guarantees ordering, not immediacy: the `put` itself is issued
     // from a `then`, so it is a microtask away at best (PR #457 review).
@@ -806,14 +803,26 @@ export function wireCreatorDraft(deps: {
       // is written again without the rejected poses it carried. Only
       // while this tour is still the open one: the document and its
       // settings are another tour's after a close (as in the failure
-      // branch above), and the next open of this one reads the record.
-      if (draftStore !== store || draftTourUrl !== tourUrl) return;
-      void writeSettings(
-        store,
-        tourUrl,
-        settingsLive() ? settingsRecord(ctx.tourDocument.state()) : null,
-        held,
-      );
+      // branch above).
+      if (draftStore === store && draftTourUrl === tourUrl) {
+        void writeSettings(
+          store,
+          tourUrl,
+          settingsLive() ? settingsRecord(ctx.tourDocument.state()) : null,
+          held,
+        );
+        return;
+      }
+      // Closed since the tap. Reopened: that open read the record and owns
+      // it now. Live work at the tap, or a record written for this tour
+      // since (a rename before the close, the reopen's own): the file is
+      // that work's, and with no document left to rewrite it from it is
+      // kept, rejected poses and all, as before. Otherwise nothing but the
+      // rejected draft's record is there, and it goes now - or the next
+      // open would offer the rejected poses again.
+      if (draftTourUrl === tourUrl) return;
+      if (liveAtTap || (settingsPuts.get(tourUrl) ?? 0) !== putsAtTap) return;
+      void writeSettings(store, tourUrl, null, held);
     })();
   });
 
@@ -1135,7 +1144,7 @@ export function wireCreatorDraft(deps: {
       touchedIds.add(object.id);
       const seen = seenKey(object.id);
       return draftWrite(object.id, (s) =>
-        writeLiveRecord(s, object, blob, seen),
+        writeDraftLiveRecord(s, object, blob, seen),
       );
     },
     finished: (ids, written) => {

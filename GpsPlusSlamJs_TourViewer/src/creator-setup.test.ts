@@ -1202,6 +1202,27 @@ describe("work made before the tour's draft opened reaches it", () => {
     };
     expect(last.level?.id).toBe("fresh");
   });
+
+  // Why: Restore keeps a code measured live (it is newer than the draft's),
+  // but its note said the draft's measured position came back - a claim
+  // about a code the creator did not get back.
+  it("Restore beside a code measured here does not claim the draft's position came back", async () => {
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({
+        tourUrl: TOUR,
+        sizeM: 0.16,
+        level: { id: "old", json: "{}" },
+      }),
+    });
+    const { ctx, dom, setup } = wire(store);
+    setup.codes.setInHand({ id: "fresh", json: "{}" }, null);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden, "the draft's code is offered").toBe(false);
+    dom.draftRestore.click();
+    expect(setup.codes.inHand()?.id, "the live code stays").toBe("fresh");
+    expect(ctx.placementNote).not.toContain("measured position");
+  });
 });
 
 describe("a closed tour's replace steps", () => {
@@ -1497,6 +1518,27 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     again.setup.presentDraftForTour(TOUR);
     await settle();
     expect(again.dom.draftOfferText.textContent).not.toContain("deletion");
+  });
+
+  // Why: the tombstone goes only once the live record landed. Taken away
+  // after a record the store refused, the draft would hold neither, and
+  // a crash would lose the deletion with nothing in its place.
+  it("an edit whose record does not land leaves the offered deletion's tombstone", async () => {
+    const disk = memoryStore(
+      {
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+        [deletedKey("hosted")]: "1",
+      },
+      { failKeys: (key) => key === objectKey("hosted") },
+    );
+    const page = wire(disk.store);
+    page.ctx.tourDocument.open(tourOf([HOSTED]));
+    page.dom.draftOffer.hidden = true;
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    page.ctx.tourDocument.edit(LIVE, "the live edit");
+    await settle();
+    expect(disk.files.has(deletedKey("hosted"))).toBe(true);
   });
 
   it("treats a deletion the hosted zip no longer carries as spent", async () => {
@@ -2161,6 +2203,68 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
       stored.stations?.find((s) => s.id === STATION)?.geo,
       "never B's pose",
     ).not.toEqual(MOVED_B);
+  });
+
+  it("a Delete it that lands after the tour closed still removes the rejected poses", async () => {
+    // Why: the guard above (never write another tour's record) also dropped
+    // the plain removal when the creator tapped "Delete it" and closed the
+    // tour at once - so the record outlived its draft and the next open
+    // offered the rejected pose again. With no settings work since the tap
+    // and the tour not reopened, the removal is issued at once.
+    const { store, files, releaseHeldKeys } = memoryStore(
+      { ...metaOnly(), [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]) },
+      { holdKeys: (key) => key === META_KEY },
+    );
+    const page = wire(store);
+    page.ctx.tourDocument.open(PUBLISHED);
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(page.dom.draftOffer.hidden, "the pose is offered").toBe(false);
+    page.dom.draftDiscard.click();
+    await settle();
+    page.setup.resetFinishStep();
+    page.ctx.tourDocument.close();
+    releaseHeldKeys();
+    await settle();
+
+    expect(files.has(SETTINGS_KEY), "the record went with the draft").toBe(
+      false,
+    );
+    page.ctx.tourDocument.open(PUBLISHED);
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(page.dom.draftOffer.hidden, "nothing rejected is offered").toBe(
+      true,
+    );
+  });
+
+  it("a Delete it that lands after the tour closed keeps a rename made after the tap", async () => {
+    // Why: the other side of the test above. A rename between the tap and
+    // the close is live work written into the record; after the close
+    // there is no document left to tell, so the removal is skipped rather
+    // than taking the name with it.
+    const { store, files, releaseHeldKeys } = memoryStore(
+      { ...metaOnly(), [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]) },
+      { holdKeys: (key) => key === META_KEY },
+    );
+    const page = wire(store);
+    page.ctx.tourDocument.open(PUBLISHED);
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    page.dom.draftDiscard.click();
+    await settle();
+    expect(page.setup.renameTour("Castle walk")).toBeNull();
+    await settle();
+    page.setup.resetFinishStep();
+    page.ctx.tourDocument.close();
+    releaseHeldKeys();
+    await settle();
+
+    expect(
+      (JSON.parse(String(files.get(SETTINGS_KEY))) as { details?: unknown })
+        .details,
+      "the name, live work, stays",
+    ).toMatchObject({ title: "Castle walk" });
   });
 
   it("keeps the offered pose when Delete it does not land, for a rename after it", async () => {

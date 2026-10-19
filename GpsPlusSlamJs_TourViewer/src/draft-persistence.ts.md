@@ -23,6 +23,15 @@ are the framework's.
   base as seen hosted (`creator-draft.ts` passes the tour as opened). Both
   writes run at once; the result is the record's write only (E2p review
   #6). The page's object writes go through it.
+- `writeDraftLiveRecord(store, object, blob, seen) -> Promise<boolean>` -
+  a live record (`writeDraftEdit`), THEN, only once it landed, the id's
+  tombstone removed (`removeDraftDeletion`): an older draft's tombstone
+  outranks a record in `readDraft`, so an edit made over an offered
+  deletion was offered as deleted again. Record first, as an undo of a
+  delete writes them: a crash between the two leaves the object deleted,
+  never half restored; a record that did not land leaves the tombstone.
+  The one implementation for the phone's draft (`creator-draft.ts`) and
+  the desktop editor's (`editor/editor-draft.ts`, `saveObject`).
 - `writeDraftBase(store, id, base)` (M6 E2c) - a whole `base:<id>`
   written at once: the desktop editor's draft moving a record to a new
   namespace with the versions it knows (`editor/editor-draft.ts`).

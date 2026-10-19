@@ -202,9 +202,14 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   only `reset` clears - the desktop editor's `touched`. Restore skips
   those ids, and "Delete it" never rejects them (`liveIds`, `notLive`).
   Restore's note counts what it put back (`restoreWork` returns it), not
-  the offer: a skipped edit is never claimed as restored.
-- **A live record takes its id's tombstone away, after it**
-  (`writeLiveRecord`, for `writeObject` and `recordPlacement`): an older
+  the offer: a skipped edit is never claimed as restored. The same for the
+  rest of the note: the draft's code position is claimed only when
+  `restoreInHand` took it (a code measured here keeps its place), and
+  visits only those whose ids the log did not hold already.
+- **A live record takes its id's tombstone away, after it, once it
+  landed** (`writeDraftLiveRecord` in `draft-persistence.ts`, shared with
+  the desktop editor's `saveObject`; for `writeObject` and
+  `recordPlacement`): an older
   draft's tombstone outranks a record in `readDraft`, and an edited id is
   live work that "Delete it" does not sweep - so an edit made over an
   offered deletion was offered as deleted again at the next reload, and
@@ -255,11 +260,15 @@ change, in its own queue. The phone reads only its STATION POSES back:
 - **Removed** with a spent draft (after its meta commit) and by "Delete
   it" (after the rejection lands), unless this page changed the settings
   since the open - then "Delete it" rewrites the live record without the
-  rejected poses. Only while the tour is still the open one: a commit
-  that lands after a close leaves the record alone (the document is
-  another tour's by then), so the next open of this tour may offer the
-  rejected poses again - the safe side. An interrupted removal is safe: a
-  record the opened tour carries is spent again at the next open.
+  rejected poses. The rewrite only while the tour is still the open one
+  (the document is another tour's after a close). A commit that lands
+  after a close removes the record at once, unless the tour was reopened
+  (that open read the record and owns it), the settings were live at the
+  tap, or a record was issued for the tour since the tap (a rename before
+  the close: `settingsPuts`, counted per tour) - then the record is kept,
+  rejected poses and all, because nothing is left to rewrite it from: the
+  safe side. An interrupted removal is safe: a record the opened tour
+  carries is spent again at the next open.
 - The record's details and setting are not offered on the phone (it edits
   only the tour's name, plan W2; its "needs no GPS" is the editor's,
   Q-QF-1).
@@ -287,8 +296,11 @@ Composed, through `wireCreatorSetup` and unchanged by the split:
 the ordered writes, the claims and sweeps; "the draft keeps a moved
 station's pose" for the settings record, a write queued across a close, a
 "Delete it" that did not land and one that landed after another tour
-opened among them; an edit over an offered deletion not offered as deleted
-again; Restore's note counting what it put back), `creator-finish.test.ts` and
+opened among them, one that landed after a close removing the record and
+one keeping a rename made after the tap; an edit over an offered deletion
+not offered as deleted again, and one whose record did not land keeping
+the tombstone; Restore's note counting what it put back, beside a code
+measured here), `creator-finish.test.ts` and
 `authoring-settle.test.ts` (the meta a mint or settle writes, the backup
 notice), plus the draft e2e specs. The pure rules are in
 `authoring-draft.test.ts` and the on-disk shape in
