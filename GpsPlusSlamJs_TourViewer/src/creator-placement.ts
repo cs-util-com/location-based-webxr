@@ -172,6 +172,28 @@ export function wireCreatorPlacement(deps: {
     return { object: change.object, ownStation: change.ownStation };
   }
 
+  /** Take "New station here" for the item being committed now (D8): the
+   *  arm goes at once, so one arm starts one station, whatever lands
+   *  meanwhile. Whether it was armed. */
+  function takeNewStationArm(): boolean {
+    const armed = ctx.tourDocument.newStationArmed();
+    if (armed) ctx.tourDocument.armNewStation(false);
+    return armed;
+  }
+
+  /** The item that took the arm was not placed: the arm comes back, so
+   *  the creator can try again - only into the visit it was taken in (the
+   *  visit's end disarms for good, `creator-setup.ts`). */
+  function giveBackNewStationArm(taken: boolean, visit: number): void {
+    if (
+      taken &&
+      visit === ctx.arSessionGeneration &&
+      arController.getState().status === "running"
+    ) {
+      ctx.tourDocument.armNewStation(true);
+    }
+  }
+
   function placed(count: number): string {
     return count === 1 ? "1 object placed" : `${String(count)} objects placed`;
   }
@@ -307,21 +329,27 @@ export function wireCreatorPlacement(deps: {
       note("No GPS fix yet - the pin cannot be placed.");
       return;
     }
-    const placedPin = placeInTour(
-      pin,
-      local === null
+    const visit = ctx.arSessionGeneration;
+    const ownStation = takeNewStationArm();
+    const placedPin = placeInTour(pin, {
+      ownStation,
+      ...(local === null
         ? {}
         : {
             placement: {
-              visit: ctx.arSessionGeneration,
+              visit,
               local: {
                 position: [local.x, local.y, local.z],
                 rotation: [0, 0, 0, 1],
               },
             },
-          },
-    );
-    if (placedPin === null) return;
+          }),
+    });
+    if (placedPin === null) {
+      giveBackNewStationArm(ownStation, visit);
+      deps.render();
+      return;
+    }
     if (local !== null) deps.alignmentPicks.notePlaced(pin.id);
     logPlacement(placedPin.object, { reticleWorld: position });
     dom.pinLabel.value = "";
@@ -359,6 +387,10 @@ export function wireCreatorPlacement(deps: {
     }
     capturing = true;
     dom.photoButton.disabled = true;
+    // "New station here" goes with the photo at its shutter tap (D8): the
+    // encode is async, and an arm read when it lands would miss a photo
+    // whose visit ended meanwhile, or catch one shot before the arm.
+    const ownStation = takeNewStationArm();
     note("Capturing…");
     // The pose of the frame being encoded, not the pose at tap time; the
     // frame is at most PHOTO_FRAME_MAX_AGE_MS old (QR perf plan M4).
@@ -392,6 +424,7 @@ export function wireCreatorPlacement(deps: {
           nowIso: new Date().toISOString(),
         });
         if (photo === null) {
+          giveBackNewStationArm(ownStation, visit);
           note("No usable GPS alignment yet - the photo cannot be placed.");
           return;
         }
@@ -400,11 +433,19 @@ export function wireCreatorPlacement(deps: {
           // The capture pose is RAW WebXR: through the one conversion into
           // the world group's frame, never composed by hand (plan §3.2).
           placement: { visit, local: odomNueFromWebXr(cameraPose) },
+          ownStation,
         });
-        if (placedPhoto === null) return;
+        if (placedPhoto === null) {
+          giveBackNewStationArm(ownStation, visit);
+          deps.render();
+          return;
+        }
         logPlacement(placedPhoto.object, { cameraOdomPose: cameraPose });
-        // Logged as the settle's late arrival, through its record.
-        if (settled !== undefined) deps.lateArrival(visit, photo);
+        // Logged as the settle's late arrival, through its record: the
+        // photo as the document took it (its own station, D8).
+        if (settled !== undefined && placedPhoto.object.kind === "photo") {
+          deps.lateArrival(visit, placedPhoto.object);
+        }
         deps.previews.sync();
         // The plane sits at the capture spot, facing back at it: the
         // creator is standing on it and sees it once they step back.
@@ -414,6 +455,7 @@ export function wireCreatorPlacement(deps: {
       },
       (err: unknown) => {
         capturing = false;
+        giveBackNewStationArm(ownStation, visit);
         note(
           `Capturing failed: ${err instanceof Error ? err.message : String(err)}`,
         );

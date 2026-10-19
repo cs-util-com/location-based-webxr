@@ -106,12 +106,22 @@ troubleshooting recording's record of each placement. Split out of
     the station line says "What you place next starts a new station here."
     while it is armed (`creator-stations.ts`). Arming says "The next pin
     or photo starts a new station here." in the note; disarming clears it.
-  - **Consumed when the item enters the document**
-    (`CreatorDocument.place`): a pin at Save, a photo when its encode
-    lands - so whichever placement the document TAKES first uses it. A
-    placement that does not happen keeps it, so the creator can try again:
-    no text typed, the label input cancelled, no surface under the ring,
-    no GPS fix, a failed encode, or a refusal by the document's guard.
+  - **Taken when the item is committed, and handed to the document**
+    (`ownStation` of `CreatorDocument.place`): a pin at Save, a photo
+    at its SHUTTER TAP - not when its encode lands, which is async (r886
+    review M4): read then, the arm missed a photo whose visit ended
+    meanwhile (the visit's end disarms) and went to a photo shot before
+    the creator armed. One arm therefore starts one station: the chip
+    shows it taken during the encode, and an arm set meanwhile is for the
+    NEXT item. An item that is not placed gives it back, so the creator
+    can try again: a failed encode, no usable alignment, or a refusal by
+    the document's guard - but only into the visit it was taken in (a
+    visit that ended disarmed it for good). Checks that fail before the
+    commit never take it: no text typed, the label input cancelled, no
+    surface under the ring, no GPS fix, no camera frame.
+  - **The late arrival is logged with the photo as the document took
+    it** (naming its own station). The settle's log records each object's
+    id and geo only, so the station itself is not in that record.
   - **The result is said in the placement note**, the phone creator's one
     channel for every placement outcome (the invariant above), not a
     separate toast: `Pin "Gate" placed - New station started: Station 2 ·
@@ -138,6 +148,10 @@ photos placed rigid, the late-arriving photo, the gate),
 `creator-setup.test.ts` ("New station here": the armed state and a second
 tap, a pin within R starting its own station with the note, the one-shot,
 the arm kept when nothing was placed, the undo, the visit's end),
+`authoring-settle.test.ts` ("New station here" and a photo: the arm taken
+at the shutter tap, a visit ended during the encode, an arm set during
+"Capturing...", the arm given back after a failed encode but not into an
+ended visit),
 `playwright-tests/creator-stations.spec.js` (the same through the page and
 the written tour),
 `authoring-recording.test.ts` (the placement's record) and the e2e

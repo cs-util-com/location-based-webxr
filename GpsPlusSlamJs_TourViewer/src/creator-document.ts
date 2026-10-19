@@ -79,8 +79,8 @@ export interface DocumentChange {
 }
 
 /** A placement the document took: `object` as the document holds it, and
- *  `ownStation` whether it started its own station, as "New station here"
- *  armed it (D8: then `object` names that station). */
+ *  `ownStation` whether it started its own station, as its caller asked
+ *  ("New station here", D8: then `object` names that station). */
 type PlacedChange = DocumentChange & {
   readonly object: TourObject;
   readonly ownStation: boolean;
@@ -137,14 +137,19 @@ export interface CreatorDocument {
   open(manifest: TourManifest | null): void;
   /** The tour closed: back to no tour, its work and side tables gone. */
   close(): void;
-  /** A new object (a tap in AR): null when refused (`canPlace`). While
-   *  "New station here" is armed (D8) the object names a fresh station of
-   *  its own, so the rule starts it there even within R of another, and
-   *  the arm goes - only when the placement is taken: a refused one keeps
-   *  it. */
+  /** A new object (a tap in AR): null when refused (`canPlace`). With
+   *  `ownStation` ("New station here", D8) an object naming no station
+   *  names a fresh station of its own, so the rule starts it there even
+   *  within R of another. The arm is the CALLER's to take and give back:
+   *  it decides when an item took it (a photo at its shutter tap, not when
+   *  its encode lands), so this never reads or changes it. */
   place(
     object: TourObject,
-    extras: { readonly blob?: Blob; readonly placement?: VisitPlacement },
+    extras: {
+      readonly blob?: Blob;
+      readonly placement?: VisitPlacement;
+      readonly ownStation?: boolean;
+    },
     what: string,
   ): PlacedChange | null;
   /** "New station here" is armed (D8): the next placement starts its own
@@ -384,7 +389,8 @@ export function createCreatorDocument(
     },
     place(given, extras, what) {
       const before = state();
-      const ownStation = before.newStationArmed && given.station === undefined;
+      const ownStation =
+        extras.ownStation === true && given.station === undefined;
       const object = ownStation
         ? { ...given, station: freshStationId(before) }
         : given;
@@ -394,9 +400,6 @@ export function createCreatorDocument(
         setPlacement(object.id, extras.placement);
       }
       const placed = change(tourDocumentActions.placed({ object, what }));
-      if (ownStation) {
-        store.dispatch(tourDocumentActions.newStationArmed({ armed: false }));
-      }
       return { ...placed, object, ownStation };
     },
     newStationArmed: () => state().newStationArmed,

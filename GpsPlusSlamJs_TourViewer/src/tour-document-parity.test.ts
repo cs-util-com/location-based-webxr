@@ -33,6 +33,7 @@ import {
   serializeTourManifest,
   type TourManifest,
   type TourObject,
+  type TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   packFilesAsZip,
@@ -429,9 +430,10 @@ async function phonePage(
     },
     placeOwnStation: async (object) => {
       // As `creator-placement.ts` places after "New station here" and a
-      // tap in AR.
+      // tap in AR: the placement takes the arm and asks for the station.
       ctx.tourDocument.armNewStation(true);
-      ctx.tourDocument.place(object, {}, "a pin");
+      ctx.tourDocument.armNewStation(false);
+      ctx.tourDocument.place(object, { ownStation: true }, "a pin");
       await flush();
     },
     move: async (id, lat, lon) => {
@@ -504,10 +506,32 @@ interface Row {
   readonly byDesign?: true;
   /** What each page must leave, beyond agreeing with the other: two pages
    *  that share a bug agree too (the r880 milestone review, HIGH-1). */
-  readonly each?: (records: { objects: string[]; deleted: string[] }) => void;
+  /** It sees each page's records (null for a row that compares none)
+   *  and written tour. A by-design row whose DESKTOP lacks the operation
+   *  still runs it on the phone against this (the r886 review M2:
+   *  otherwise the phone's half never ran). */
+  readonly each?: (page: {
+    readonly records: { objects: string[]; deleted: string[] } | null;
+    readonly written: TourManifest;
+  }) => void;
 }
 
 const NORTH = 48.5205;
+
+/** The item ids of a written tour, station by station: the opened tour's
+ *  stations, and the stations the write added. */
+function itemsByStation(written: TourManifest): {
+  opened: string[][];
+  added: string[][];
+} {
+  const opened = new Set(tourOf(OPENED).stations.map((s) => s.id));
+  const itemsOf = (stations: readonly TourStation[]) =>
+    stations.map((s) => s.items.map((i) => i.id));
+  return {
+    opened: itemsOf(written.stations.filter((s) => opened.has(s.id))),
+    added: itemsOf(written.stations.filter((s) => !opened.has(s.id))),
+  };
+}
 
 const ROWS: readonly Row[] = [
   {
@@ -577,8 +601,8 @@ const ROWS: readonly Row[] = [
     // Why: the first save wrote the deletion and took "b" out of the
     // document's deletions, but not the draft's tombstone; an undo that
     // left it would delete "b" again on the next restore.
-    each: (records) => {
-      expect(records.deleted).not.toContain("b");
+    each: ({ records }) => {
+      expect(records?.deleted).not.toContain("b");
     },
   },
   {
@@ -647,8 +671,16 @@ const ROWS: readonly Row[] = [
     diverges:
       "by design until the 3D editor: D8's desktop half (the tree's '+', the inspector's 'Move to a new station') is not built yet",
     run: async (p) => {
-      await p.placeOwnStation(pin("own", "Its own station", NORTH));
+      // About 11 m north of pin b: within R, so only its own station
+      // keeps it out of b's.
+      await p.placeOwnStation(pin("own", "Its own station", 48.5203));
       return p;
+    },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["a"], ["b"], ["f"]],
+        added: [["own"]],
+      });
     },
   },
   {
@@ -720,6 +752,7 @@ async function outcome(
   ) => Promise<Page>,
 ): Promise<{
   written: unknown;
+  manifest: TourManifest;
   records: { objects: string[]; deleted: string[] } | null;
 }> {
   const file = await tourFile();
@@ -729,6 +762,7 @@ async function outcome(
   await flush();
   return {
     written: withStationsByOrder(written),
+    manifest: written,
     records: row.records ? await page.records() : null,
   };
 }
@@ -749,6 +783,11 @@ function withStationsByOrder(written: TourManifest): unknown {
   ) as unknown;
 }
 
+/** What `row` asks of each page's outcome (`each`). */
+function expectEach(row: Row, page: Awaited<ReturnType<typeof outcome>>): void {
+  row.each?.({ records: page.records, written: page.manifest });
+}
+
 /** A marked row broke for a reason that is not a divergence: swallowed,
  *  so the row PASSES and `it.fails` turns it red. An unmarked row fails. */
 function broken(row: Row, err: unknown): void {
@@ -767,8 +806,18 @@ async function samePages(row: Row): Promise<void> {
   try {
     desktop = await outcome(row, desktopPage);
   } catch (err) {
-    // The desktop lacking an operation by design (D8's desktop half).
-    if (row.byDesign === true && err instanceof NoSuchOperation) throw err;
+    // The desktop lacking an operation by design (D8's desktop half): the
+    // phone's half still runs and must leave what the row says, or the
+    // row is red - only then the desktop's reason ends it.
+    if (row.byDesign === true && err instanceof NoSuchOperation) {
+      try {
+        expectEach(row, await outcome(row, phonePage));
+      } catch (phoneErr) {
+        broken(row, phoneErr);
+        return;
+      }
+      throw err;
+    }
     broken(row, err);
     return;
   }
@@ -787,9 +836,8 @@ async function samePages(row: Row): Promise<void> {
   if (row.diverges === undefined) {
     expect(desktop.written).toEqual(phone.written);
     expect(desktop.records).toEqual(phone.records);
-    for (const records of [desktop.records, phone.records]) {
-      if (row.each !== undefined && records !== null) row.each(records);
-    }
+    expectEach(row, desktop);
+    expectEach(row, phone);
     return;
   }
   if (row.byDesign === true) {

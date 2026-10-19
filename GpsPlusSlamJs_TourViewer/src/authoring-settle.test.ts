@@ -4805,3 +4805,96 @@ describe(
     }
   },
 );
+
+describe(
+  "'New station here' and a photo: the arm is taken at the shutter tap (D8)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why: a photo is committed at its shutter tap, but it reaches the
+    // document only when its encode lands. Read then, the arm missed a
+    // photo whose visit ended meanwhile (the visit's end disarms) and went
+    // to a photo shot BEFORE the creator armed. The photo takes the arm at
+    // the tap, and gives it back when it is not placed, while its visit
+    // still runs.
+    const CAMERA: Pose = { position: [0.5, 1.4, -0.2], rotation: yawQ(90) };
+
+    function lastPhoto(a: ReturnType<typeof authoring>) {
+      const photo = a.ctx.tourDocument.entries().at(-1)!.object;
+      expect(photo.kind).toBe("photo");
+      return photo;
+    }
+
+    it("an armed photo starts its own station; the arm goes at the tap, not at the encode's end", async () => {
+      const a = authoring();
+      await a.mint();
+      a.dom.newStationButton.click();
+      expect(a.ctx.tourDocument.newStationArmed()).toBe(true);
+      a.encodes.hold = true;
+      a.tapPhoto(CAMERA);
+      expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
+      expect(a.dom.newStationButton.attributes["aria-pressed"]).toBe("false");
+      for (const land of a.encodes.waiting.splice(0)) land();
+      await flush();
+      expect(lastPhoto(a).station).toBeDefined();
+      expect(a.ctx.placementNote).toMatch(/^Photo placed/);
+      expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
+    });
+
+    it("armed at the tap, the photo starts its station even when the AR visit ends during its encode", async () => {
+      const a = authoring();
+      await a.mint();
+      a.dom.newStationButton.click();
+      a.encodes.hold = true;
+      a.tapPhoto(CAMERA);
+      a.endVisit();
+      for (const land of a.encodes.waiting.splice(0)) land();
+      await flush();
+      expect(lastPhoto(a).station).toBeDefined();
+      expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
+    });
+
+    it("armed during 'Capturing...', the arm goes to the NEXT item, not to the photo being encoded", async () => {
+      const a = authoring();
+      await a.mint();
+      a.encodes.hold = true;
+      a.tapPhoto(CAMERA);
+      a.dom.newStationButton.click();
+      expect(a.ctx.tourDocument.newStationArmed()).toBe(true);
+      for (const land of a.encodes.waiting.splice(0)) land();
+      await flush();
+      expect(lastPhoto(a).station).toBeUndefined();
+      expect(a.ctx.tourDocument.newStationArmed()).toBe(true);
+      await a.placePin("Next", [3, 0, 1]);
+      const next = a.ctx.tourDocument.entries().at(-1)!.object;
+      expect(next.kind).toBe("pin");
+      expect(next.station).toBeDefined();
+      expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
+    });
+
+    it("a photo that is not placed gives the arm back while its visit runs", async () => {
+      const a = authoring();
+      await a.mint();
+      a.dom.newStationButton.click();
+      a.encodes.fail = true;
+      a.tapPhoto(CAMERA);
+      await flush();
+      expect(a.ctx.placementNote).toMatch(/^Capturing failed/);
+      expect(a.ctx.tourDocument.newStationArmed()).toBe(true);
+      expect(a.dom.newStationButton.attributes["aria-pressed"]).toBe("true");
+    });
+
+    it("but not into a visit that ended: the visit's end disarmed it for good", async () => {
+      const a = authoring();
+      await a.mint();
+      a.dom.newStationButton.click();
+      a.encodes.hold = true;
+      a.encodes.fail = true;
+      a.tapPhoto(CAMERA);
+      a.endVisit();
+      for (const land of a.encodes.waiting.splice(0)) land();
+      await flush();
+      expect(a.ctx.placementNote).toMatch(/^Capturing failed/);
+      expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
+    });
+  },
+);

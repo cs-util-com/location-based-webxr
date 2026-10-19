@@ -424,7 +424,9 @@ describe("wireCreatorStations", () => {
     );
     // The ring stays the station the creator stands in.
     expect(h.ring()).toBeDefined();
-    h.tour.place(pin("own", 2, 0), {}, "a pin");
+    // As the placement takes the arm (`creator-placement.ts`).
+    h.tour.armNewStation(false);
+    h.tour.place(pin("own", 2, 0), { ownStation: true }, "a pin");
     expect(h.stations.placedIn("own")).toBe("it starts Station 2");
     expect(h.stations.nameOf("own")).toBe("Station 2");
     expect(h.stations.nameOf("gate")).toBe("Station 1");
