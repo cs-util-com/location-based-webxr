@@ -134,8 +134,9 @@ listed in `index.html.md`. The concerns and their modules:
   `MutationObserver` on the error box: W2 of the tour editor plan
   2026-10-17-1816); for a creator, step 3's "Tour name" field
   (`tour-name-field.ts`), which renames the tour through
-  `setup.renameTour` when it is left and says a refusal in
-  `#tour-name-error`),
+  `setup.renameTour` when it is left - and at every Finish's start
+  (`beforeFinish`), since that tap may not fire "change" - and says a
+  refusal in `#tour-name-error`),
   and callers read the hooks at call time - which
   is what keeps the modules free of import cycles (`check:cycles` is in
   the gate). A hook read before its owner is wired is the no-op from

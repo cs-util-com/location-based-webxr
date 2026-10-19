@@ -64,7 +64,10 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   (`upsertPlaced`): a new object, a pin's text, a move on the map or in AR.
   Three names so a log reads as what happened. `placed` changes nothing
   for an id the tour carries (`canPlace`); none of the three for a spot
-  beyond its station's reach (`objectFits`).
+  beyond its station's reach (`objectFits`), nor for a pending object put
+  again with the same content (`objectContentKey`): the AR settle
+  re-poses every object of a visit, and an unchanged one is no step - it
+  would withdraw a delete's Undo.
 - `deleted({ id, what })` - `deleteObject`: the entry goes, a written
   object gets a tombstone; an unknown id changes nothing.
 - `stationMoved({ stationId, geo, what })` - D17: the frame moves, and every
@@ -209,7 +212,8 @@ store.dispatch(tourDocumentActions.undone());
 
 ## Tests
 
-- `tour-document.test.ts` - the open, pending by content, undo and redo,
+- `tour-document.test.ts` - the open, pending by content, the same
+  content put again as no step, undo and redo,
   the history bound, an undo after a save (the photo needing its picture,
   the emptied station coming back in its place), a station's frame moving
   its items rigidly, the setting and details, a cover following its photo,

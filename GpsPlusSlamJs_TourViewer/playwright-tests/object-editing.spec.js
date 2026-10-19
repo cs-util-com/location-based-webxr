@@ -70,6 +70,33 @@ test("the list edits a hosted pin on the page - no AR needed - and the Finish wr
   expect(pins[0]?.kind === "pin" && pins[0].label).toBe("The renamed pin");
 });
 
+test("the tour's name typed in step 3 is the title the Finish writes", async ({
+  page,
+}) => {
+  // Why (the r880 milestone review LOW-3): the name is a change of the
+  // tour document, handed over when the field is left - which, on the way
+  // to the Finish, the creator does by tapping on. The unit tests prove
+  // the rename and the Finish's own commit of the field; only the
+  // composed page shows the typed name reaching the written tour.
+  test.setTimeout(90_000);
+  await openTour(page);
+  await row(page, "Fixture pin").getByTestId("object-edit").click();
+  await page.getByTestId("object-edit-input").fill("Renamed at the desk");
+  await page.getByTestId("object-edit-save").click();
+  await expect(page.getByTestId("object-list-note")).toHaveText(
+    /Saved "Renamed at the desk"/,
+  );
+  await page.getByTestId("station-print").click();
+  await expect(page.getByTestId("print-panel")).toHaveAttribute("open", "");
+  await page.getByTestId("tour-name-input").fill("Castle walk");
+  await page.getByTestId("station-measure").click();
+  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("tour-name-error")).toBeHidden();
+  await finishAndDownload(page, 0);
+  const zip = await downloadedZip(page, 0);
+  expect(zip.manifest.title).toBe("Castle walk");
+});
+
 test("a desk edit is finished without entering AR, and the hosted code's level is not rewritten (code book plan M4e, §9 D4)", async ({
   page,
 }) => {

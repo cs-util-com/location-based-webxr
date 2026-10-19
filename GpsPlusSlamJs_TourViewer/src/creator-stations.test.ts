@@ -79,17 +79,27 @@ function finishedOf(input: {
     undefined,
     tourDocumentActions.opened({ manifest: input.manifest }),
   );
+  // A refused change would make a test pass for the wrong reason: the
+  // document ignores it, so each is checked here (the review's LOW-6).
   for (const id of input.deleted) {
+    const before = state;
     state = tourDocumentReducer(
       state,
       tourDocumentActions.deleted({ id, what: "a deletion" }),
     );
+    if (state.revision === before.revision) {
+      throw new Error(`the document refused the deletion of ${id}`);
+    }
   }
   for (const object of input.placed) {
+    const before = state;
     state = tourDocumentReducer(
       state,
       tourDocumentActions.placed({ object, what: "a pin" }),
     );
+    if (state.revision === before.revision) {
+      throw new Error(`the document refused the placement of ${object.id}`);
+    }
   }
   return stationsAsFinished({ state, ...radius });
 }

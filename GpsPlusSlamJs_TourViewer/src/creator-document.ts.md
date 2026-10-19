@@ -20,6 +20,9 @@ copy of the tour.
     its frames moved, its setting and details applied); null while no tour
     file is open (none, or one without `tour.json`) and nothing was
     written. The same object until the document changes.
+  - `opened()` - the tour file as it was OPENED (the slice's `opened`):
+    not what a Finish wrote since, nor this page's changes; null while no
+    tour file is open. The phone's draft compares its records with it.
   - `entries()` - this page's entries (`PlacedEntry`: the object, its
     `blob`, its `placement`), in order; the same array until the document
     or a side table changes.
@@ -63,6 +66,12 @@ generation, written, appliedDeletions, stationsAtStart })`,
   module-private).
 
 ## Invariants & assumptions
+
+- **The save status is not all here yet**: the slice's `save` says
+  whether a write runs for the undo (`canStep`); the phone's Finish keeps
+  its own beside it - a named deviation from the root Redux rule, with its
+  follow-up, in `creator-finish.ts.md` (the r880 milestone review
+  MEDIUM-1).
 
 - **No tour is an open, empty document.** The slice takes edits only into
   an open document, and the creator may place before any tour is open

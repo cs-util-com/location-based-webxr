@@ -296,6 +296,32 @@ describe("the creator's document: the draft follows it", () => {
   });
 });
 
+describe("the creator's document: the tour as opened", () => {
+  // Why (the r880 milestone review LOW-5): the phone's draft compares its
+  // records with the tour as HOSTED - the file opened, not what a Finish
+  // wrote since nor this page's changes - and reads it from here rather
+  // than keeping a copy of its own.
+  it("is the file opened, through changes and a Finish; none without a tour", () => {
+    const doc = fresh();
+    expect(doc.opened()).toBeNull();
+    const file = tourOf([pin("a")]);
+    doc.open(file);
+    doc.edit({ ...doc.objects()[0]!.object, label: "x" }, "e");
+    const generation = doc.saveStarted();
+    doc.saved({
+      generation,
+      written: manifestToWrite(doc.state())!,
+      appliedDeletions: [],
+      stationsAtStart: doc.state().stations,
+    });
+    doc.saveEnded(generation);
+    expect(doc.manifest()).not.toBe(file);
+    expect(doc.opened()).toBe(file);
+    doc.close();
+    expect(doc.opened()).toBeNull();
+  });
+});
+
 describe("the creator's document: the tour's name (plan W2, §23 #8)", () => {
   // Why these tests matter: the phone's name used to reach only its
   // Finish, unchecked - a name alone was never saved, and a name over the

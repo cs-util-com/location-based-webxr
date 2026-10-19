@@ -31,6 +31,10 @@ kept the old title.
     renamed it) is forgotten.
   - `typed()` - what the creator typed since then (`""` for an emptied
     name), or null when they typed nothing.
+  - `commit()` - hand what is in the field to the document now, as
+    leaving it does: the Finish's start calls it (`main.ts`
+    `beforeFinish`), since the tap that starts a Finish may not fire
+    "change" (the r880 milestone review LOW-3).
 
 ## Invariants & assumptions
 

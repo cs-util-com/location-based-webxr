@@ -480,6 +480,11 @@ interface Row {
   readonly records: boolean;
   /** Where the two pages diverge today, and the step that ends it. */
   readonly diverges?: string;
+  /** A divergence by design: the phone has no such operation, and the
+   *  row may fail for that reason only (`NoSuchOperation`) - the phone
+   *  refusing a Finish, or writing something else, is a red row (the r880
+   *  milestone review LOW-6). */
+  readonly byDesign?: true;
   /** What each page must leave, beyond agreeing with the other: two pages
    *  that share a bug agree too (the r880 milestone review, HIGH-1). */
   readonly each?: (records: { objects: string[]; deleted: string[] }) => void;
@@ -616,6 +621,7 @@ const ROWS: readonly Row[] = [
   {
     name: "turn on 'needs no GPS', save",
     records: true,
+    byDesign: true,
     diverges:
       "by design: the setting is marked in the editor (Q-QF-1, the QR-first field study plan), the phone offers none - removed only if the owner wants it on the phone",
     run: async (p) => {
@@ -634,6 +640,7 @@ const ROWS: readonly Row[] = [
   {
     name: "give the tour a description and a contact, save",
     records: true,
+    byDesign: true,
     diverges:
       "by design: the phone has a tour name field only (W2 of the tour editor plan), the full details dialog is the editor's - removed only if the owner wants it on the phone",
     run: async (p) => {
@@ -734,7 +741,11 @@ async function samePages(row: Row): Promise<void> {
   try {
     phone = await outcome(row, phonePage);
   } catch (err) {
-    if (isDivergence(err)) throw err;
+    const named =
+      row.byDesign === true
+        ? err instanceof NoSuchOperation
+        : isDivergence(err);
+    if (named) throw err;
     broken(row, err);
     return;
   }
@@ -744,6 +755,11 @@ async function samePages(row: Row): Promise<void> {
     for (const records of [desktop.records, phone.records]) {
       if (row.each !== undefined && records !== null) row.each(records);
     }
+    return;
+  }
+  if (row.byDesign === true) {
+    // The phone ran an operation it is meant to lack.
+    broken(row, new Error(`${row.name}: the phone has the operation now`));
     return;
   }
   if (

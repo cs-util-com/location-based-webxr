@@ -2,13 +2,15 @@
 
 ## Purpose
 
-What a delete and an undo write to a page's draft (M6 E2c, the E2c plan
-review #4): one home for the sequences the phone's object list
-(`object-editing.ts`) and the desktop editor (`editor/editor-session.ts`)
-both run, so the two pages cannot disagree about the order that keeps an
-undo cut short from half restoring an object (root `CLAUDE.md` DEC-H3).
-The writes are each page's own draft's (`creator-draft.ts`,
-`editor/editor-draft.ts`); the records are `draft-persistence.ts`'s.
+The writes a page's draft offers for its objects (M6 E2c): the shape the
+tour document's draft-following (`tour-document-draft.ts`
+`followDocument`) issues on both pages, and the phone's builder of it over
+`creator-draft.ts`. The ORDER that keeps an undo cut short from half
+restoring an object is `followDocument`'s (the record, then the
+tombstone); the records are `draft-persistence.ts`'s. The gesture
+sequences that used to live here (`recordDelete`, `recordUndoDelete`)
+went when both pages adopted the document (the r880 milestone review
+LOW-4).
 
 ## Public API
 
@@ -20,14 +22,6 @@ The writes are each page's own draft's (`creator-draft.ts`,
   id (`write(id, task)`), writes a record with its base (`writeObject`) and
   forgets a record (`forgetObject`): the phone's `creator-draft.ts`. The
   tombstone tasks are `writeDraftDeletion` / `removeDraftDeletion`.
-- `recordDelete(writes, id, hosted)` - a hosted object's tombstone, else
-  the record goes; whether it landed, never rejects.
-- `recordUndoDelete(writes, undone)` - the record first (when the page had
-  one: an edited or placed object's, with a photo's bytes), then the
-  tombstone goes (when hosted); both ISSUED synchronously in that order;
-  whether both landed, never rejects.
-- `UndoneDelete` - `{ object: { id }, placed: { object, blob? } | null,
-hosted }`, which `object-edits.ts`'s `DeletedRecord` satisfies.
 
 ## Invariants & assumptions
 
@@ -44,17 +38,13 @@ hosted }`, which `object-edits.ts`'s `DeletedRecord` satisfies.
 
 ```ts
 const writes = draftObjectWrites(draft);
-void recordDelete(writes, id, found.hosted).then((ok) =>
-  say(ok ? done : notBackedUp),
-);
-void recordUndoDelete(writes, gone.record);
+followDocument(writes, before, after, pictureOf); // tour-document-draft.ts
 ```
 
 ## Tests
 
-`draft-actions.test.ts`: a hosted delete's tombstone and a local
-delete's forget; a failed or thrown write is false; the undo's order (record,
-then tombstone) and its outcomes; the builder's tombstone tasks through a
-store. The phone's composed suites (`creator-setup.test.ts`,
-`object-editing.test.ts`, `authoring-settle.test.ts`) run the same sequences
-through `object-editing.ts`.
+`draft-actions.test.ts`: the builder's tombstone tasks through a store.
+The order of a delete's and an undo's writes is `followDocument`'s
+(`tour-document-draft.test.ts`); the phone's composed suites
+(`creator-setup.test.ts`, `authoring-settle.test.ts`) run it through
+`object-editing.ts`.

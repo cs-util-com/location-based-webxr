@@ -20,10 +20,11 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     visit is recorded into it, and `notLive` keeps this page's visits out
     of any sweep.
 - `CreatorDraft`:
-  - The base (M6 E2p, its review and re-review): `present` snapshots the
-    tour AS OPENED (`opened`; a Finish later advances the document's
-    written tour to what this page wrote, which is not hosted until the creator uploads
-    it), and every hosted comparison of `present` uses that snapshot. Every
+  - The base (M6 E2p, its review and re-review): `present` compares with
+    the tour AS OPENED, which the document keeps (`opened()`; a Finish
+    later advances the document's written tour to what this page wrote,
+    which is not hosted until the creator uploads it) - no copy of its own
+    (the r880 milestone review LOW-5). Every
     draft write of an object adds the opened tour's version of it as seen,
     taken when the write is queued (a queued write can run after another
     open, whose tour is not the one edited); `finished(ids, written)` adds a

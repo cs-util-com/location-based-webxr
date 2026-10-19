@@ -106,6 +106,9 @@ export interface CreatorDocument {
    *  is open - none, or one without `tour.json` - and nothing was written
    *  yet. The same object until the document changes. */
   manifest(): TourManifest | null;
+  /** The tour file as it was OPENED - not what a Finish wrote since, nor
+   *  this page's changes; null while no tour file is open. */
+  opened(): TourManifest | null;
   /** This page's entries (placed, edited or moved, not yet pruned by a
    *  write), in order. The same array until the document or a side table
    *  changes. */
@@ -293,6 +296,10 @@ export function createCreatorDocument(
   return {
     state,
     manifest,
+    opened: () => {
+      const { opened } = state();
+      return opened === noTour ? null : opened;
+    },
     entries,
     deleted: () => state().deleted,
     objects: () =>

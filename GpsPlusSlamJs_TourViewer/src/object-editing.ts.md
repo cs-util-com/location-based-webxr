@@ -77,9 +77,14 @@ draft writes and history. Wired by `creator-setup.ts`, drawn by
   ends, when any later note replaces the outcome (single-level undo: it
   undoes what the note says), when the document changed after the delete
   (another open, or any later change: the document's undo takes back the
-  LAST step) or when the visit or tour ends (`reset`). A Finish changes no
-  revision, so the Undo outlives it, as on the desktop (the parity row
-  "delete, save, undo the delete, save"). The Undo is the document's
+  LAST step) or when the visit or tour ends (`reset`). A Finish's write
+  itself changes no revision, so on the page the Undo outlives it while its
+  hold lasts, as on the desktop (the parity row "delete, save, undo the
+  delete, save"). In AR a Finish first settles the running visit
+  (`settleVisit`), and a re-pose that moves an object is a later change
+  that withdraws it (one that moves nothing is no step, the document's
+  `putObject`). The tap checks again (`stillUndoable`): a change that
+  rendered nothing since the button was shown makes it take back nothing. The Undo is the document's
   `undone`: the object comes back at its old place in the tour, into the
   scene, the draft (the listener: the record first, the tombstone after,
   both in the id's queue - an Undo cut short leaves the object deleted

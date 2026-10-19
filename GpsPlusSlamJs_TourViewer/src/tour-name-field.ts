@@ -41,6 +41,9 @@ export interface TourNameField {
   /** What the creator typed since the tour was presented ("" for an
    *  emptied name), or null when they typed nothing. */
   typed(): string | null;
+  /** Hand what is in the field to the document now, as leaving it does
+   *  (a Finish's start: its tap may not fire "change"). */
+  commit(): void;
 }
 
 const KEY_PREFIX = "tour-viewer.tour-name.";
@@ -123,5 +126,6 @@ export function wireTourNameField(
       commit();
     },
     typed: () => (touched ? input.value : null),
+    commit,
   };
 }

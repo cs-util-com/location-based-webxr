@@ -248,6 +248,9 @@ export function wireCreatorSetup(deps: {
   host?: () => TourHost | null;
   /** Re-render the AR button: it reads the finish (polish round M3). */
   renderArEntry?: () => void;
+  /** Runs first in every Finish's start: the page commits what is still
+   *  in a field (the tour's name, whose "change" a tap may not fire). */
+  beforeFinish?: () => void;
 }): CreatorSetup {
   const { ctx, mode, arStore, arController, seams, wizard, dom } = deps;
   const codeTour: Pick<ScanOpen, "onDetection" | "status" | "relation"> =
@@ -779,6 +782,9 @@ export function wireCreatorSetup(deps: {
     ...(deps.renderArEntry === undefined
       ? {}
       : { renderArEntry: deps.renderArEntry }),
+    ...(deps.beforeFinish === undefined
+      ? {}
+      : { beforeStart: deps.beforeFinish }),
   });
 
   return {

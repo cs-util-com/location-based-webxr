@@ -122,7 +122,8 @@ export const OUTCOME_HOLD_MS = 8_000;
 /** A delete while its Undo can take it back: offered while the document
  *  stands where the delete left it (the same open, the same revision) -
  *  the document's undo takes back the LAST step, so any later change
- *  withdraws it. A Finish changes no revision: the Undo outlives it. */
+ *  withdraws it. A Finish's write changes no revision; its AR settle's
+ *  re-pose of a moved object does. */
 interface Undoable {
   readonly generation: number;
   readonly revision: number;
@@ -522,7 +523,10 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     undo: () => {
       const pending = undoable;
       undoable = null;
-      pending?.run();
+      // Checked again at the tap: a change that rendered nothing may have
+      // landed since the button was shown.
+      if (pending !== null && stillUndoable(pending)) pending.run();
+      else render();
     },
     deselect: () => {
       selectObject(null);

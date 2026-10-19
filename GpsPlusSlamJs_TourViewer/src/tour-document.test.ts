@@ -131,6 +131,23 @@ describe("tour document: edits and their history", () => {
     expect(state.past.map((s) => s.what)).toEqual(["the text", "the text"]);
   });
 
+  it("putting a pending object again with the same content is no step (the review's LOW-2)", () => {
+    // Why: the AR settle re-poses every object of a visit, moved or not; a
+    // re-pose that changes nothing must not cost a step - it would withdraw
+    // a delete's Undo and bury the creator's last change one step deeper.
+    let state = open();
+    const a = objectOf(state, "a");
+    const moved = { ...a, label: "new" };
+    state = reduce(state, act.edited({ object: moved, what: "the text" }));
+    const before = state;
+    state = reduce(
+      state,
+      act.moved({ object: { ...moved }, what: "a settle" }),
+    );
+    expect(state).toBe(before);
+    expect(state.past.map((s) => s.what)).toEqual(["the text"]);
+  });
+
   it("undo goes back to the view before the edit, redo comes forward again", () => {
     let state = open();
     const opened = viewOf(state);

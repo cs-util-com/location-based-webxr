@@ -2524,6 +2524,31 @@ describe(
       expect(files.has(objectKey(id)), "its record is written back").toBe(true);
     });
 
+    it("an Undo tapped after a later change takes back nothing (the review's LOW-1)", async () => {
+      // Why: the button is withdrawn at the next render, but a change that
+      // renders nothing (a settle's re-pose, a listener's edit) could land
+      // before the tap - and the document's undo would take back THAT.
+      const a = await withHostedTour([
+        hostedPin("h1", "Gate"),
+        hostedPin("h2", "Mill"),
+      ]);
+      const list = a.dom.objectList;
+      list.listHandlers!.remove("h1");
+      await flush();
+      expect(list.lastModel?.undo).toBe(true);
+      const h2 = a.ctx.tourDocument
+        .objects()
+        .find((o) => o.object.id === "h2")!.object;
+      a.ctx.tourDocument.edit({ ...h2, label: "Later" }, "a later change");
+      list.listHandlers!.undo();
+      await flush();
+      expect(a.ctx.tourDocument.deleted()).toEqual(["h1"]);
+      expect(
+        a.ctx.tourDocument.objects().find((o) => o.object.id === "h2")?.object,
+      ).toMatchObject({ label: "Later" });
+      expect(list.lastModel?.undo).toBe(false);
+    });
+
     it(`withdraws Undo after ${String(OUTCOME_HOLD_MS)} ms, and an expired Undo restores nothing`, async () => {
       const a = await withHostedTour([hostedPin("h1", "Gate")]);
       const list = a.dom.objectList;

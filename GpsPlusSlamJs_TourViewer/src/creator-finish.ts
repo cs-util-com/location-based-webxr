@@ -83,6 +83,9 @@ export function wireCreatorFinish(deps: {
   render: () => void;
   /** Re-render the AR button when a finish ends (polish round M3). */
   renderArEntry?: () => void;
+  /** Runs first in `start`, before readiness is read: the page commits
+   *  what is still in a field (the tour's name). */
+  beforeStart?: () => void;
 }): CreatorFinish {
   const { ctx, arStore, dom } = deps;
   /** The open tour's entries a visitor never reads, kept for the tour and
@@ -187,6 +190,7 @@ export function wireCreatorFinish(deps: {
    *  creator's Done in AR (polish round M3, Q-Done) share this; false when
    *  none could start. */
   function start(): boolean {
+    deps.beforeStart?.();
     const current = ctx.session;
     if (current === null || !canStart()) return false;
     // The visit still running is settled BEFORE anything is read for the

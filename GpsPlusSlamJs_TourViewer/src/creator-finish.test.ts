@@ -277,6 +277,8 @@ async function wireFinishable(options: {
   onOpenStep?: (step: string) => void;
   /** The tour's name as typed in step 3 (the poster title). */
   tourTitle?: string | null;
+  /** The page's last word before a Finish starts (its name field). */
+  beforeFinish?: (ctx: ReturnType<typeof createTourViewerSession>) => void;
 }) {
   const blob = await hostedArchive(options.hosted, options.hostedContent);
   const dom = fakeDom();
@@ -357,6 +359,7 @@ async function wireFinishable(options: {
     } as never,
     dom: dom as unknown as CreatorSetupDom,
     openDraftStore: () => Promise.resolve(undefined),
+    beforeFinish: () => options.beforeFinish?.(ctx),
   });
   if (options.noCodeInHand !== true) {
     setup.codes.setInHand({ id: LEVEL_ID, json: '{"measured":true}' }, null);
@@ -1730,6 +1733,26 @@ describe("the tour's name at the Finish (polish round M4a)", () => {
     await settle(ctx);
     const written = await publishedManifest(ctx.rebuiltZip!.blob);
     expect(written.title).toBeUndefined();
+  });
+
+  it("commits a name still in its field before it starts (the review's LOW-3)", async () => {
+    // Why: the phone renames on the field's "change", which a browser
+    // fires when the Finish tap takes the focus - and a name that is the
+    // only change would otherwise leave the Finish with nothing to write.
+    // The page commits the field first (`beforeFinish`).
+    const { dom, ctx } = await wireFinishable({
+      hosted: [pin("a")],
+      placed: [],
+      noCodeInHand: true,
+      beforeFinish: (session) => {
+        session.tourDocument.rename("Harbour Lights");
+      },
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    const written = await publishedManifest(ctx.rebuiltZip!.blob);
+    expect(written.title).toBe("Harbour Lights");
   });
 
   it("writes no title when there is none either way", async () => {

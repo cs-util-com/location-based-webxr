@@ -68,6 +68,8 @@ were here. What stays is the Finish's side:
     `onIdsChanged`): `main.ts` re-presents the print step's codes (F16).
   - `host()` - the host chosen in step 1, handed to the hand-off for step
     6's replace steps (polish round M2).
+  - `beforeFinish()` (optional) - handed to the Finish as its
+    `beforeStart`: `main.ts` commits the tour name field there.
   - `renameTour(name)` (returned) - step 3's name field renames the tour
     document (`CreatorDocument.rename`): null when taken or the same,
     else the refusal in words; a draft write that did not land is said

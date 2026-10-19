@@ -142,6 +142,18 @@ describe("wireTourNameField", () => {
       expect(r.names).toEqual(["New"]);
     });
 
+    it("commits a name still in the field when asked (a Finish's start), as leaving it does", () => {
+      const el = input();
+      const r = renamer();
+      const field = wireTourNameField(el, undefined, r.rename);
+      field.present("Old", "tour-a");
+      field.commit();
+      expect(r.names, "untouched: nothing to hand over").toEqual([]);
+      el.type("New");
+      field.commit();
+      expect(r.names).toEqual(["New"]);
+    });
+
     it("says why a name was refused beside the field, and clears it once one is taken", () => {
       const el = input();
       const r = renamer();

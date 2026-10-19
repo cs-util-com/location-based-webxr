@@ -305,8 +305,9 @@ export function wireCreatorDraft(deps: {
   /** The tour as it was OPENED (M6 E2p review #2): a Finish advances the
    *  tour document to what this page wrote, which is not what is hosted
    *  until the creator uploads it. Every hosted comparison of `present`
-   *  uses it (re-review #3). */
-  let opened: TourManifest | null = null;
+   *  uses it (re-review #3). The document keeps it (`opened()`), so the
+   *  draft holds no copy of its own (the r880 milestone review LOW-5). */
+  const openedTour = (): TourManifest | null => ctx.tourDocument.opened();
   /** The line saying the draft gave way to newer edits, for the open. */
   let supersededNote: string | null = null;
   /** The objects this load's Finishes wrote (F19): what a yes to "did you
@@ -319,7 +320,7 @@ export function wireCreatorDraft(deps: {
    *  open (`reset`, `present`), whose tour is not the one edited (third
    *  review #1). */
   function seenKey(id: string): string | undefined {
-    return hostedObjects(opened).key(id);
+    return hostedObjects(openedTour()).key(id);
   }
 
   function recordPlacement(object: TourObject, blob?: Blob): void {
@@ -761,10 +762,10 @@ export function wireCreatorDraft(deps: {
     // open path already guards every other continuation this way.
     const generation = ctx.openGeneration;
     const stale = (): boolean => generation !== ctx.openGeneration;
-    // The tour as opened (M6 E2p): taken here, before any write of this
-    // load, and every hosted comparison below uses it, never a manifest a
-    // Finish advanced meanwhile.
-    opened = ctx.tourDocument.manifest();
+    // The tour as opened (M6 E2p): every hosted comparison below uses it,
+    // never a manifest a Finish advanced meanwhile (the continuation is
+    // this open's: `stale`).
+    const opened = openedTour();
     supersededNote = null;
     undecidedStations = null;
     void (async () => {
@@ -1038,7 +1039,6 @@ export function wireCreatorDraft(deps: {
   return {
     present,
     reset: () => {
-      opened = null;
       supersededNote = null;
       undecidedStations = null;
       finishedIds.clear();

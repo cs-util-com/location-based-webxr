@@ -34,7 +34,7 @@ import {
   localPoseOf,
   tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
-import { hostedObjects } from "./authoring-draft.js";
+import { hostedObjects, objectContentKey } from "./authoring-draft.js";
 import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
 import {
   authoringObjects,
@@ -613,6 +613,15 @@ function putObject(
 ): TourDocumentState {
   if (before.written === null) return before;
   const { object, what } = action.payload;
+  // A pending object put again unchanged (an AR settle re-poses every
+  // object of a visit) is no step: it would withdraw a delete's Undo.
+  const pending = before.placed.find((p) => p.object.id === object.id);
+  if (
+    pending !== undefined &&
+    objectContentKey(pending.object) === objectContentKey(object)
+  ) {
+    return before;
+  }
   return edited(
     before,
     { placed: upsertPlaced(before.placed, { object }) },

@@ -24,7 +24,6 @@ import {
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
-import { recordUndoDelete } from "../draft-actions.js";
 import { META_KEY, objectKey, readDraft } from "../draft-persistence.js";
 import {
   createEditorDraft,
@@ -523,11 +522,10 @@ describe("createEditorDraft", () => {
     await draft.open(K1, tour(pin("a")));
     void draft.saveObject(pin("a", "edited"));
     void draft.saveDeletion("a");
-    await recordUndoDelete(draft, {
-      object: pin("a"),
-      placed: { object: pin("a", "edited") },
-      hosted: true,
-    });
+    // An undo's writes, in the order the document's follower issues
+    // them (`tour-document-draft.ts`): the record, then the tombstone.
+    void draft.saveObject(pin("a", "edited"));
+    await draft.forgetDeletion("a");
     draft.close();
     const { offer } = await draftIn(b).open(K1, tour(pin("a")));
     expect(offer?.objects.map((o) => o.label)).toEqual(["edited"]);
@@ -602,11 +600,8 @@ describe("createEditorDraft", () => {
     void first.saveObject(photo("p", 48.6));
     void first.saveObject(photo("q", 48.7));
     void first.saveDeletion("q");
-    await recordUndoDelete(first, {
-      object: photo("q"),
-      placed: { object: photo("q", 48.7) },
-      hosted: true,
-    });
+    void first.saveObject(photo("q", 48.7));
+    await first.forgetDeletion("q");
     await first.idle();
     first.close();
     const { offer, superseded } = await draftIn(b).open(K1, opened);

@@ -51,6 +51,10 @@ module's sidecar states them as its contract.
   (polish round M3, Q-Done, through `creator-setup.ts`'s `finishNow`)
   share it. When a finish ends, `deps.renderArEntry` re-renders the AR
   button (it reads "Saving…" / "Close AR" from the finish).
+- `deps.beforeStart` (optional) - runs first in `start()`, before the
+  readiness is read: the page commits what is still in a field (the tour
+  name, whose "change" a tap may not fire; the r880 milestone review
+  LOW-3), so a name that is the only change still has its Finish.
 - `CreatorFinish.readiness()` / `canStart()` - whether a Finish could run
   (the readout's hint), and whether a tap starts one now: ready, no
   measurement in flight, none running. The ONE rule the button's state and
@@ -62,6 +66,21 @@ module's sidecar states them as its contract.
   rebuilt file waits.
 
 ## Invariants & assumptions
+
+- **A named deviation from the root rule "App state lives in the Redux
+  store"** (the r880 milestone review MEDIUM-1): the phone's save status
+  stays in the session object (`TourViewerSession`) beside the slice's
+  own (`save.rebuilds`, `save.error`) - `ctx.finishing` (a Finish
+  runs), `ctx.finishError` (why the last one failed),
+  `ctx.finishProgress` (its progress line) and `ctx.rebuiltZip` (the
+  file it made, a Blob - which stays outside the store either way). Two
+  places say whether a save runs, so a reader must know which one it
+  reads: the undo reads the slice (`canStep`); the object list's lock,
+  the readout, the Finish button and the AR button read `ctx`. Follow-up:
+  the save moves into a tour-document thunk (the same follow-up as the
+  rebuild I/O's TEMPORARY boundary entries, `config/.dependency-cruiser.cjs`),
+  which takes the status into the store and leaves only the Blob beside
+  it. As the desktop's selection was recorded (`editor/edit-main.ts.md`).
 
 - **The tour's title** (polish round M4a; W2 of the tour editor plan
   2026-10-17-1816) is the tour document's: step 3's "Tour name" field
