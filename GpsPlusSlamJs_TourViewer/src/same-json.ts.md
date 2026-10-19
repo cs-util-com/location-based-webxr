@@ -20,6 +20,10 @@ was none, and a leave guard asking about a tour with nothing to save.
   absent, NaN and the infinities read as null, arrays keep their order.
 - Whatever plain `JSON.stringify` calls equal, this calls equal too: it
   only ever forgives key order. Symmetric.
+- An own `"__proto__"` key (one `JSON.parse` can produce) is compared like
+  any other: the sorted copy has no prototype, so writing the key never
+  reaches the prototype setter. Before this, two values differing only under
+  such a key read as the same.
 - For plain data only, which is what a tour file carries: a value with
   `toJSON` (a Date) or a class instance is compared by its own enumerable
   keys.
@@ -51,7 +55,7 @@ sameJson([1, 2], [2, 1]); // false
 
 - `same-json.test.ts` - key order ignored at any depth; a changed value, a
   missing key, another array order told apart; an `undefined`-valued key
-  absent.
+  absent; an own `__proto__` key told apart.
 - `same-json.property.test.ts` - over any JSON value: equal to itself with
   its keys reordered; equal by `JSON.stringify` implies equal here, and
   symmetric; a changed leaf is a change.

@@ -22,7 +22,10 @@ function sortedKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortedKeys);
   if (value === null || typeof value !== "object") return value;
   const record = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
+  // No prototype: an own "__proto__" key (a parsed file can carry one)
+  // stays a key here, instead of hitting the prototype setter and vanishing
+  // from the serialization.
+  const out = Object.create(null) as Record<string, unknown>;
   for (const key of Object.keys(record).sort()) {
     out[key] = sortedKeys(record[key]);
   }

@@ -38,4 +38,16 @@ describe("sameJson", () => {
     expect(sameJson(undefined, undefined)).toBe(true);
     expect(sameJson(null, undefined)).toBe(false);
   });
+
+  // Why: a parsed tour file can carry an own "__proto__" key. Copying it
+  // into a plain object hit the prototype setter, so the key dropped out of
+  // the serialization and two versions differing only under it read as the
+  // same (the property test found it: {"__proto__":0,"":0}).
+  it("tells apart values that differ only under an own __proto__ key", () => {
+    const a: unknown = JSON.parse('{"__proto__":1}');
+    const b: unknown = JSON.parse('{"__proto__":2}');
+    expect(sameJson(a, b)).toBe(false);
+    expect(sameJson({ geo: a }, { geo: b })).toBe(false);
+    expect(sameJson(a, JSON.parse('{"__proto__":1}'))).toBe(true);
+  });
 });
