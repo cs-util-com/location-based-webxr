@@ -1018,9 +1018,36 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     h.ctx.stationContent = {
       has: () => true,
       shown: () => ({ count: 2, skipped: [] }),
+      showsAny: () => true,
     } as never;
     return h;
   }
+
+  // Why (M2 review N5): between the stations nothing is drawn, so the line
+  // must not say "Look around."; the page reads that from the side table.
+  it("asks for a station while nothing shown holds content, and is the placed line again at one", () => {
+    const h = placedVisitor();
+    let showsAny = false;
+    h.ctx.stationContent = {
+      has: () => true,
+      shown: () => ({ count: 0, skipped: [] }),
+      showsAny: () => showsAny,
+    } as never;
+    h.ctx.placement = {
+      kind: "placed",
+      placedKind: "ring",
+      count: 0,
+      atStations: 3,
+    };
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("to-station");
+    expect(h.dom.arStatus.textContent).toBe(
+      "Walk to a station to see its content.",
+    );
+    showsAny = true;
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("placed");
+  });
 
   it("holds the placed line while tracking has not reported yet (initializing)", () => {
     const h = placedVisitor();

@@ -57,7 +57,9 @@ recording. Its own module since the flows plan M6.
     station one "items" part of the side table, see below; labels
     through `seams.createLabel`, photos
     decoded through `deps.loadContent` when given (the stations' prefetch
-    cache, `visitor-stations.ts`), else `session.loadContentEntry`, which
+    cache, `visitor-stations.ts`, which holds story media only: an item
+    photo is read from the archive again on each return until visitor
+    plan M3), else `session.loadContentEntry`, which
     joins the archive's
     manifest prefix - a re-zipped tour keeps its photos under
     `mytour/content/…` while the record names `content/…` (PR #435
@@ -330,21 +332,28 @@ recording. Its own module since the flows plan M6.
   part): the tour's items ("items", one per station that has some), the
   walk's photos ("walk", grouped by `station-captures.ts`: a baked photo
   keeps its station, a live one goes to the nearest station within 25 m)
-  and the ring ("ring", with the station nearest its code). Only the
-  stations the store shows - the present one, or every one under "show
-  all" - are decoded and stand in the scene, one station group at a time
-  with a 400 ms fade; content no station holds (live photos beyond every
-  station, the ring of a tour without stations) is the loose group
-  `loose:always`, which always shows. `syncContent()` tells the table the
-  shown set on every store dispatch and camera frame (`main.ts`
-  `hooks.tickStations`); `tryPlaceTour` ends with it.
-  - What changed with it: the placement's `count` is the photos placed in
-    the TOUR, not the photos decoded (those decode only while their
-    station shows); the "placing loading-photos" progress is no longer
-    produced (the type stays, a follow-up removes it); a walk none of whose
-    photos is readable now shows them as skipped where it used to fall back
-    to the ring - only a walk with no photo at all ("no readable capture
-    photos") falls back.
+  and the ring ("ring", with the station nearest its code within the same
+  25 m). Only the stations the store shows - the present one, or every one
+  under "show all" - are decoded and stand in the scene, one station group
+  at a time with a 400 ms fade; content no station holds (live photos
+  beyond every station, a ring whose code is beyond every station) is the
+  loose group `loose:always`, the table's `alwaysShown`: always shown,
+  in its own render lane, so a present station never waits behind it.
+  `syncContent()` tells the table the shown set on every store dispatch
+  and camera frame (`main.ts` `hooks.tickStations`); `tryPlaceTour` ends
+  with it.
+  - **What the status line says** (the async-UI rule, M2 review B1): the
+    loose photos decode up front, so the line says "loading photos k/N"
+    (a progress callback into their decode), then `placed` with the count
+    that DECODED once their part is drawn. Photos held by stations are not
+    standing: they are counted as `atStations` ("5 photos at their
+    stations"), never as placed. A walk or ring part that is drawn with no
+    photo at all, or whose planes cannot be built, sets
+    `ctx.viewerPlanesError` ("Some photos could not load."); a plane
+    constructor's throw frees the photos decoded for it first.
+  - A walk none of whose photos is readable shows them as skipped where it
+    used to fall back to the ring - only a walk with no photo at all ("no
+    readable capture photos") falls back.
   - Tracking alone shows nothing: a code's votes feed the tracking-quality report;
     nothing here is shown or kept alive on tracking alone - the shown set
     comes from presence (`station-guide.ts`'s one gate), and a veto still
@@ -389,6 +398,14 @@ ctx.placementUnsubscribe = arStore.subscribe(() => viewer.tryPlaceTour());
 ```
 
 ## Tests
+
+`viewer-placement-photos.test.ts` (M2 review B1, S1, S3) - through the real
+controller config, the bake and the decoder faked: a walk no station holds
+says "loading photos" with its progress, then the count that decoded; a
+walk or ring none of whose photos loads sets the photos' error; a walk or
+ring whose planes cannot be built frees its decoded photos and says so; a
+code beyond every station's radius shows its ring after the lock; a ring or
+a walk held by a station is counted `atStations` and decodes nothing.
 
 `viewer-placement-viewing-log.test.ts` - the `tourViewing/*` hooks through the
 real viewer controller config (a lock, then its votes as one batch; no

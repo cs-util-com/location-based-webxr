@@ -2,6 +2,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  forceTrackingReady,
   installTourViewerArFakes,
   seedAlignment,
   standAt,
@@ -430,4 +431,86 @@ test("?allstations=1 shows every station's content at once", async ({
       return (await contentGroups(page)).sort();
     })
     .toEqual(["station-content:gate", "station-content:well"]);
+});
+
+/** The ring's photo planes in one station's group: meshes standing
+ *  directly in it (the station's own items hang one level deeper, under
+ *  their frame), each with its opacity. */
+function ringOpacitiesIn(page, group) {
+  return page.evaluate(
+    (name) =>
+      /** @type {any} */ (
+        window.__tourViewerTest.fakeScene.children.find(
+          (/** @type {any} */ c) => c.name === name,
+        )?.children ?? []
+      )
+        .filter((/** @type {any} */ o) => o.isMesh === true)
+        .map((/** @type {any} */ o) => o.material.opacity),
+    group,
+  );
+}
+
+test("the ring around the code stands with its station: in the gate's group there, fading out on the walk away, and between the stations the line asks for one", async ({
+  page,
+}) => {
+  // Why this test matters (M2 review S4): on the default path (no
+  // ?allstations) the ring around a code goes with the station within the
+  // station radius of the code, so it must stand while the visitor is at
+  // that station, fade out with it, and leave nothing in view between the
+  // stations - where "Look around." would send the visitor looking for
+  // nothing, so the line asks for a station instead. The stations tour has
+  // no recording: its one image is the ring, and the gate is at the code.
+  await startTheTour(page);
+  await standAt(page, 0, 0, 0);
+  await lockTheCode(page);
+  await expect
+    .poll(async () => {
+      await page.evaluate(() => {
+        /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+      });
+      return ringOpacitiesIn(page, "station-content:gate");
+    })
+    .toEqual([1]);
+  const status = page.getByTestId("ar-status");
+  /** The visitor's line state, tracking held ready: the fakes send frames
+   *  but no poses, so tracking quality decays to "lost", which the placed
+   *  line would report instead (as in the AR suite's plain-line test). */
+  const lineState = async () => {
+    await forceTrackingReady(page);
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+    });
+    return status.getAttribute("data-state");
+  };
+  await expect.poll(lineState, { timeout: 20000 }).toBe("placed");
+
+  // Walk north, away from the code: 15 m is past the gate's found exit and
+  // outside the well's found radius (30 m north, 5 m).
+  await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    t.nextDetection = null;
+    t.ringSamples = [];
+    t.ringSampler = setInterval(() => {
+      t.emitFrames(1);
+      const gate = t.fakeScene.children.find(
+        (/** @type {any} */ c) => c.name === "station-content:gate",
+      );
+      const plane = gate?.children.find(
+        (/** @type {any} */ o) => o.isMesh === true,
+      );
+      t.ringSamples.push(plane === undefined ? null : plane.material.opacity);
+    }, 16);
+  });
+  for (let m = 5, s = 1; m <= 15; m += 5, s += 1) await standAt(page, m, 0, s);
+  await expect.poll(() => contentGroups(page)).toEqual([]);
+  const samples = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    clearInterval(t.ringSampler);
+    return t.ringSamples;
+  });
+  // It faded (an opacity between 0 and 1), then left the scene.
+  expect(samples.some((o) => o !== null && o > 0 && o < 1)).toBe(true);
+  expect(samples.at(-1)).toBeNull();
+  await expect.poll(lineState, { timeout: 20000 }).toBe("to-station");
+  await expect(status).toHaveText("Walk to a station to see its content.");
 });

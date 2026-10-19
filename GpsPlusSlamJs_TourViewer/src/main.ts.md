@@ -47,7 +47,9 @@ listed in `index.html.md`. The concerns and their modules:
   creator's open station, `CreatorSetup.tickStations`; each does nothing in
   the other mode; then `viewer.syncContent()`, so the present station's
   content follows the guide's verdict at once), hands the viewer placement
-  `loadContent` (the stations' prefetch cache), and dispatches
+  `loadContent` (the stations' prefetch cache; story media only, so an
+  item photo is read from the archive again on each return until visitor
+  plan M3), and dispatches
   `showAllContentSet(true)` at boot under `?allstations=1`; `stationCodeLocked`, `unlockStationAudio` and
   `stopStations`.
 - `archive-open.ts` - the open path, the gallery, the stats, the Storage

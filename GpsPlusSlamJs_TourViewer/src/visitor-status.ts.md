@@ -17,7 +17,7 @@ visitor's `?debug=1`.
   `checking`, `starting`, `stopping`, `unsupported`, `error`, `no-tour`,
   `scan`, `measuring-code`, `code-other-tour`, `code-unusable`,
   `code-moved`, `locking`, `warming-up`, `placing`, `placed`,
-  `placed-gps`, `tracking-lost`, `finding-direction`, `needs-code`,
+  `to-station`, `placed-gps`, `tracking-lost`, `finding-direction`, `needs-code`,
   `nothing`. `ar-entry.ts`
   writes it to `#ar-status`'s `data-state` for a visitor (beside
   `data-gate`, the scan gate as one word), the stable channel for styling
@@ -68,6 +68,13 @@ visitor's `?debug=1`.
   follows whatever the line says (a moved code, the photos loading, the
   coaching), the state unchanged. The code situations come first, without
   it. It goes as soon as the flag clears.
+- **Away from every station, the line asks for one** (M2 review N5):
+  content is drawn per station, so with every piece of it waiting at a
+  station the visitor is not at (`awayFromStations`) "Look around." points
+  at nothing. The placed line becomes "Walk to a station to see its
+  content." (state `to-station`); a GPS placement keeps its reason with
+  that request in place of "Look around." (state `placed-gps`). The
+  request for a few steps still comes first: walking answers both.
 - **Never a counter, the mode prefix or a debug number** (property test);
   a running session always says something.
 - **Never "scan the code again"** after the code's hold ended; the hold's
@@ -109,13 +116,17 @@ el.textContent =
 `visitor-status.test.ts` (one case per state, the start-failure causes,
 what must never reach a visitor, load notes, the walk request: replacing
 only the placed line, after a GPS placement's or a moved code's reason, never
-while tracking initializes or without location);
+while tracking initializes or without location; away from every station:
+the station request, a GPS placement's reason kept, the steps first);
 `visitor-status.property.test.ts` (any combination of code, gate,
 placement, content, errors, readiness, codes only and the heading wait:
 non-empty, no debug words, the walk request once at most, only where
-allowed and never beside "Look around."); `ar-entry.test.ts`
+allowed and never beside "Look around."; the station request once at most,
+only away from every station, never beside "Look around." or the steps);
+`ar-entry.test.ts`
 (the measuring hint reaches the line; after a veto the ignored code's
 hint is withheld, another code's still shows; the walk line from the
-store, not before tracking reports); `viewer-moved-code.test.ts`
+store, not before tracking reports; the station request read from the
+side table's `showsAny`); `viewer-moved-code.test.ts`
 (the veto records the ignored code by its scanned text, the key its
 evaluations carry).

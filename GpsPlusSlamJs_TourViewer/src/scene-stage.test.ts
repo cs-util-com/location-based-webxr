@@ -282,6 +282,37 @@ describe("the figure follows its station's presence (it fades, the story plays o
     expect(h.decodeTexture).toHaveBeenCalledTimes(1);
   });
 
+  // Why (M2 review N2): the page calls `follow` on every tick; a figure
+  // standing at its settled opacity must not have its materials rewritten
+  // each time.
+  it("writes no material while the figure stands settled", async () => {
+    const h = following();
+    await h.stage.showCharacter("gate", new Blob(["png"]));
+    h.stage.follow(() => true);
+    const material = (h.scene.getObjectByName("station-character") as Mesh)
+      .material as MeshBasicMaterial;
+    let writes = 0;
+    let own = material.opacity;
+    Object.defineProperty(material, "opacity", {
+      get: () => own,
+      set: (v: number) => {
+        writes += 1;
+        own = v;
+      },
+    });
+    for (let i = 0; i < 5; i += 1) {
+      h.clock.ms += 16;
+      h.stage.follow(() => true);
+    }
+    expect(writes).toBe(0);
+    // A fade still writes.
+    h.clock.ms += FADE / 2;
+    h.stage.follow(() => false);
+    h.clock.ms += FADE / 4;
+    h.stage.follow(() => false);
+    expect(writes).toBeGreaterThan(0);
+  });
+
   it("a figure decoded while its station is not shown waits off the scene", async () => {
     const h = following();
     h.stage.follow(() => false);

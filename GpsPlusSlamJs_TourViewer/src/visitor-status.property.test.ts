@@ -43,6 +43,7 @@ const arbInput: fc.Arbitrary<ArStatusInput> = fc.record({
   ),
   codesOnly: fc.boolean(),
   stationsAwaitHeading: fc.boolean(),
+  awayFromStations: fc.boolean(),
   placement: fc.oneof(
     fc.constant({ kind: "idle" as const }),
     fc.constant({ kind: "waiting-ready" as const }),
@@ -101,6 +102,7 @@ const arbInput: fc.Arbitrary<ArStatusInput> = fc.record({
 });
 
 const WALK = "Walk a few steps so the guide knows the direction.";
+const TO_STATION = "Walk to a station to see its content.";
 
 describe("visitorStatus (property)", () => {
   // Why this property matters (D34; PR review S6, N8): the request for a
@@ -138,6 +140,24 @@ describe("visitorStatus (property)", () => {
         );
       }),
       { numRuns: 500 },
+    );
+  });
+
+  // Why this property matters (M2 review N5): with every piece of content
+  // waiting at a station the visitor is not at, "Look around." points at
+  // nothing. A placed tour then asks the visitor to walk to a station,
+  // never beside "Look around." and never beside the request for a few
+  // steps (which, when asked, comes first and walking answers both).
+  it("away from every station a placed tour asks for a station, never Look around", () => {
+    fc.assert(
+      fc.property(arbInput, (input) => {
+        const { text } = visitorStatus(input);
+        const asked = text.split(TO_STATION).length - 1;
+        expect(asked).toBeLessThanOrEqual(input.awayFromStations ? 1 : 0);
+        expect(asked > 0 && text.includes("Look around.")).toBe(false);
+        expect(asked > 0 && text.includes(WALK)).toBe(false);
+      }),
+      { numRuns: 1000 },
     );
   });
 });

@@ -14,8 +14,10 @@ in those modules, the composition in `playwright-tests/stations.spec.js`.
 VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
   (properties, handed to the hooks unbound). `loadContent(path)` reads one
   of the open tour's entries through the stations' prefetch cache: the
-  station content's photos (`viewer-placement.ts`) share it, so a return
-  to a station re-decodes from memory while the cache holds its files. `relocate` (`{ onRelocated }`) turns on the
+  station content's photos (`viewer-placement.ts`) read through it, but
+  the cache holds story media only, so a return to a station reads its item
+  photos from the archive again until item photos join the prefetch
+  (visitor plan M3). `relocate` (`{ onRelocated }`) turns on the
   test switch `?relocate=here` (`tour-relocation.ts`): the stations are
   held back until the phone's first raw GPS fix, then moved there.
 - `stationPlacementAllowed(ctx, mode): boolean` - the guide's

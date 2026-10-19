@@ -290,6 +290,9 @@ export function wireArEntry(deps: {
       // needs visitor mode, `stationPlacementAllowed`), and only
       // `visitorStatus` reads the flag, whose sentence a creator never sees.
       stationsAwaitHeading: selectHeadingPending(arStore.getState()),
+      // Content drawn per station leaves nothing in view between them.
+      awayFromStations:
+        ctx.stationContent !== null && !ctx.stationContent.showsAny(),
     };
     // A visitor reads one plain sentence (UI round 1, U1); the technical
     // line stays for the creator and for a visitor's `?debug=1`. The state

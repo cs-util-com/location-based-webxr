@@ -64,7 +64,9 @@ tour's other content (`content-placement.ts`). Plan:
   station shows, it stands at full opacity at once (the story's start, as
   before). The story panel and its sound are not the stage's: they play on.
   `clear` frees a figure on or off the scene alike. Until `follow` is
-  first called every station counts as shown.
+  first called every station counts as shown. The page follows on every
+  tick; a settled figure writes no material (only a changing alpha is
+  written).
 - Every removed subtree's geometries, materials and textures are disposed
   by the framework's `disposeObject3D` (every texture slot of a material,
   not only `map`: K4 review R12; no second dispose walk here, DEC-H3).
@@ -86,4 +88,5 @@ stage.faceVisitor(visitorNue);
   `onWaiting` once when a figure waits, never when it stands at once;
   the figure following its station (fades out and leaves the scene, comes
   back at 0 and fades in without a second decode; waits off the scene when
-  decoded while hidden; `clear` frees a hidden figure).
+  decoded while hidden; `clear` frees a hidden figure; no material write
+  while it stands settled).

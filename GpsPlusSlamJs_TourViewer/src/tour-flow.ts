@@ -53,25 +53,34 @@ export type PlacementState =
       kind: "nothing-to-place";
     }
   | {
+      /** `loading-photos`: the photos no station holds, decoded up front
+       *  (`done` of `total` decoded so far). */
       kind: "placing";
       phase: "reading-walk" | "loading-photos";
       done: number;
       total: number;
     }
   | {
+      /** `count`: the photos standing (decoded and drawn, held by no
+       *  station); `atStations`: the photos waiting at their stations,
+       *  drawn only while one shows (absent: 0). */
       kind: "placed";
       placedKind: "capture-spots";
       count: number;
+      atStations?: number;
       fixes: number;
       gpsAccuracyMedianM: number | null;
     }
   | {
       /** The ring around a locked code - the fallback for a tour without
        *  a recording (milestone review #2: a placed ring used to keep the
-       *  decline copy, indistinguishable from "a ring is pending"). */
+       *  decline copy, indistinguishable from "a ring is pending").
+       *  `count` and `atStations` as for the capture spots: a ring is
+       *  either standing or held by the code's station. */
       kind: "placed";
       placedKind: "ring";
       count: number;
+      atStations?: number;
     }
   | {
       /** The join declined (taxonomy reason) - the ring is the fallback and
@@ -129,6 +138,10 @@ export interface ArStatusInput {
    *  `visitorGuide.headingPending`): the visitor's line asks for a few
    *  steps. Absent: false. */
   stationsAwaitHeading?: boolean;
+  /** The tour is placed and every piece of its content waits at a station
+   *  not shown now (`StationContent.showsAny` false): nothing is in view,
+   *  so the visitor's line asks for a station. Absent: false. */
+  awayFromStations?: boolean;
 }
 
 /** The content segment: how many of the tour's objects stand. */
@@ -242,8 +255,11 @@ export function placementSegment(
         ? `reading the walk ${String(placement.done)}/${String(placement.total)}…`
         : `loading photos ${String(placement.done)}/${String(placement.total)}…`;
     case "placed": {
+      const atStations = placement.atStations ?? 0;
       if (placement.placedKind === "ring") {
-        return `${String(placement.count)} photos in a ring around the code`;
+        return atStations > 0
+          ? `${String(atStations)} photos in a ring around the code, at its station`
+          : `${String(placement.count)} photos in a ring around the code`;
       }
       // HONEST label (geo-join review, finding 5): fixes and their median
       // GPS accuracy are what the numbers are - never a claimed placement
@@ -252,7 +268,15 @@ export function placementSegment(
         placement.gpsAccuracyMedianM === null
           ? ""
           : `, median GPS ±${placement.gpsAccuracyMedianM.toFixed(1)}m`;
-      return `${String(placement.count)} photos at capture spots (${String(placement.fixes)} fixes${accuracy})`;
+      // Standing photos and photos waiting at their stations, each named
+      // only when there are some (a tour of loose photos reads as before).
+      const where =
+        atStations === 0
+          ? `${String(placement.count)} photos at capture spots`
+          : placement.count === 0
+            ? `${String(atStations)} photos at their stations`
+            : `${String(placement.count)} photos at capture spots and ${String(atStations)} at their stations`;
+      return `${where} (${String(placement.fixes)} fixes${accuracy})`;
     }
     case "declined":
       return `photo ring (${placement.reason})`;

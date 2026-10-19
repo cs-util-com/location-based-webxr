@@ -13,16 +13,22 @@
  *   every photo was shown before (the station a Finish would create does
  *   not exist in this tour, so no presence can be judged for it).
  * - **The ring around a code** (a tour without a walk) goes with the
- *   station nearest the code, however far; with no station at all
- *   there is none.
+ *   station nearest the code within the same R; a code beyond every
+ *   station's R has none, and its ring stands always, as a loose photo
+ *   does (a visitor at that code would otherwise see nothing after the
+ *   lock).
  *
  * Pure.
  *
  * @see station-captures.ts.md
  */
 
-import { horizontalM } from "./move-with-code.js";
-import { assignToStations, type StationPoint } from "./station-assign.js";
+import {
+  assignToStations,
+  nearestStationWithin,
+  STATION_RADIUS_M,
+  type StationPoint,
+} from "./station-assign.js";
 
 /** A station as these rules read it: its id and its spot. */
 export interface StationSpot {
@@ -74,16 +80,16 @@ export function capturesByStation<T extends CaptureSpot>(
   return { byStation, loose };
 }
 
-/** The station nearest `at` horizontally (the earlier one on a tie), or
- *  null without stations. */
+/** The station nearest `at` within `STATION_RADIUS_M` horizontally
+ *  (inclusive; the earlier one on a tie), else null: the rule a live walk
+ *  photo gets, so the ring and the walk agree on what a station holds. */
 export function nearestStationId(
   stations: readonly StationSpot[],
   at: { readonly lat: number; readonly lon: number },
 ): string | null {
-  let best: { id: string; d: number } | null = null;
-  for (const s of stations) {
-    const d = horizontalM(s.geo, at);
-    if (best === null || d < best.d) best = { id: s.id, d };
-  }
-  return best?.id ?? null;
+  return nearestStationWithin(
+    stations.map((s) => ({ id: s.id, anchor: s.geo })),
+    at,
+    STATION_RADIUS_M,
+  );
 }

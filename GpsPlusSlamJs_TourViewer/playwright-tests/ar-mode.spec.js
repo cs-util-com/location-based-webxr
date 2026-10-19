@@ -227,7 +227,10 @@ test("a visitor who refuses the location starts the tour on codes alone: no loca
       t.locationOutcome = "denied";
     }
   });
-  await openAsVisitor(page, RANGES_ARCHIVE);
+  // Every station's content shows: away from every station the placed
+  // line asks for one instead (M2 review N5, stations.spec.js), and these
+  // fakes put the guide at no station.
+  await openAsVisitor(page, RANGES_ARCHIVE, { allStations: true });
   const button = page.getByTestId("enter-ar");
   await expect(button).toHaveText("Allow location", { timeout: 10000 });
   await button.click();
@@ -1473,7 +1476,9 @@ test("a tour whose photo spots were baked at its Finish places them without any 
       },
       { timeout: 20000 },
     )
-    .toMatch(/2 photos at capture spots \(7 fixes/);
+    // Baked photos keep their stations, so they are counted where they
+    // wait, drawn only while their station shows (M2 review B1).
+    .toMatch(/2 photos at their stations \(7 fixes/);
   await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
   // A visitor's page decodes no photo for its hidden gallery at all
   // (follow-up F14), so the walk's frame is not read either.
@@ -1644,8 +1649,10 @@ test("a visitor reads one plain sentence per state, never the debug readout (UI 
   // Why this matters (usability review F1, F15): the visitor's status line
   // used to be a debug readout - a frame counter, "vote batches", "Pose
   // error px". Without ?debug=1 a visitor now reads one sentence per
-  // state, and the line's data-state names the state for the page.
-  await openAsVisitor(page, RANGES_ARCHIVE);
+  // state, and the line's data-state names the state for the page. Every
+  // station's content shows, so the placed line is the one at a station
+  // (away from every station it asks for one, stations.spec.js).
+  await openAsVisitor(page, RANGES_ARCHIVE, { allStations: true });
   await enterAr(page);
   await seedAlignment(page);
   await forceTrackingReady(page);

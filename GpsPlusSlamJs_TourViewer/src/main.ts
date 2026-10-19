@@ -795,7 +795,8 @@ const viewer = createViewerPlacement({
   escapeButton,
   hooks,
   // A station's photos are read through the stations' prefetch cache
-  // (visitor plan §9): a return re-decodes from it while it holds them.
+  // (visitor plan §9). It holds story media only, so a return reads an
+  // item photo from the archive again until item photos join it (M3).
   loadContent: (path) => stations.loadContent(path),
   // The `tourViewing/*` log (M1b): only where a recording can run, and
   // silent until it does.

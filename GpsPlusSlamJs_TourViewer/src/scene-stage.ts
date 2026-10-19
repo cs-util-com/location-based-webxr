@@ -160,9 +160,11 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       shown.scene.add(shown.root);
       shown.inScene = true;
     }
+    const before = shown.alpha;
     shown.alpha = stepAlpha(shown.alpha, target, t - shown.lastMs, fadeMs);
     shown.lastMs = t;
-    setSubtreeOpacity(shown.root, shown.alpha);
+    // The page follows on every tick: a settled figure writes no material.
+    if (shown.alpha !== before) setSubtreeOpacity(shown.root, shown.alpha);
     if (target === 0 && shown.alpha <= 0 && shown.inScene) {
       shown.scene.remove(shown.root);
       shown.inScene = false;

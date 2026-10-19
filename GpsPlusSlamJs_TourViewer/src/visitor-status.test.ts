@@ -544,6 +544,67 @@ describe("visitorStatus - codes only, and no code can place the tour (M1b-1 revi
 // escape's "find the code") with the request after it. It is never said
 // while tracking still initializes (the coaching says hold steady), nor
 // without location, where walking cannot earn a heading.
+describe("visitorStatus - away from every station (M2 review N5)", () => {
+  // Why: content drawn per station leaves nothing in view between the
+  // stations; "Tour placed. Look around." then sends the visitor looking
+  // for nothing. The line says what to do instead, and keeps a GPS
+  // placement's reason.
+  const TO_STATION = "Walk to a station to see its content.";
+  const placedAway = {
+    gate: { kind: "passed", via: "code" } as const,
+    placement: {
+      kind: "placed",
+      placedKind: "ring",
+      count: 0,
+      atStations: 3,
+    } as const,
+    awayFromStations: true,
+  };
+
+  it("a tour placed by its code asks for a station", () => {
+    expect(visitorStatus(input(placedAway))).toEqual({
+      state: "to-station",
+      text: TO_STATION,
+    });
+  });
+
+  it("is the placed line again at a station", () => {
+    expect(
+      visitorStatus(input({ ...placedAway, awayFromStations: false })),
+    ).toEqual({ state: "placed", text: "Tour placed. Look around." });
+  });
+
+  it("a GPS placement keeps its reason, the station request in place of Look around", () => {
+    expect(
+      visitorStatus(
+        input({ ...placedAway, gate: { kind: "passed", via: "skipped" } }),
+      ),
+    ).toEqual({
+      state: "placed-gps",
+      text: `Tour placed by GPS (less exact). ${TO_STATION} Find the poster's code to line it up.`,
+    });
+  });
+
+  it("the request for a few steps comes first (walking answers both)", () => {
+    expect(
+      visitorStatus(
+        input({
+          ...placedAway,
+          stationsAwaitHeading: true,
+          readiness: {
+            phase: "move-around",
+            percentReady: 0.4,
+            hint: "Move the phone slowly.",
+          } as never,
+        }),
+      ),
+    ).toEqual({
+      state: "finding-direction",
+      text: "Walk a few steps so the guide knows the direction.",
+    });
+  });
+});
+
 describe("visitorStatus - the guide waits for a heading (D34)", () => {
   const WALK = "Walk a few steps so the guide knows the direction.";
   const tracking = {

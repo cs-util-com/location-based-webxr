@@ -46,7 +46,9 @@ under - what a tap in AR is cast against to name the object
   same rendering (`renderContent`) as `renderTourObjects`, so labels,
   photo planes, `skipped` and `dispose` behave the same. `alive()`
   turning false stops the decode loop: no further photo is decoded, and the
-  caller disposes what came back.
+  caller disposes what came back. A throw part-way (a label or plane
+  constructor) frees the labels and decoded photos made so far, then goes
+  on (the caller gets the rejection and nothing to dispose).
 
 ## Invariants & assumptions
 
@@ -109,7 +111,8 @@ and 0.1 m, measured 24 mm).
 `content-placement.test.ts` - the pin round trip (mint → NUE) as a property
 over positions; the photo's frame direction pinned by bearing against the
 framework's basis constant; refusals without zero/alignment; the id shape
-(property); rendering with a fake scene: counts, a skipped photo, disposal, and a
+(property); rendering with a fake scene: counts, a skipped photo, disposal,
+what a throw part-way frees (the decoded photo and the label made so far), and a
 caller's own pose and frame (`poseOf`) for pins and photos. For
 `renderTourStation`: the group structure (the station's group, the items
 as its children), no further decode once `alive()` is false, and the

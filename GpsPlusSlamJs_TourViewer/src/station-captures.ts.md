@@ -13,7 +13,8 @@ shows it (`station-content.ts`).
   grouped by station id, each list in the captures' order; `loose` holds
   the ones no station of this tour takes.
 - `nearestStationId(stations, at) -> string | null` - the station nearest
-  `at` horizontally (the earlier one on a tie); null without stations.
+  `at` horizontally within `STATION_RADIUS_M` (inclusive; the earlier one
+  on a tie); null beyond every station's radius and without stations.
 - Types: `StationSpot { id, geo }`, `CaptureSpot { geo, station? }`.
 
 ## Invariants & assumptions
@@ -26,7 +27,16 @@ shows it (`station-content.ts`).
   station for is `loose`: the caller shows it always, as every photo was
   shown before, since no presence can be judged for a station the tour
   does not have.
-- **The ring** goes with the station nearest the code, however far.
+  - The rule runs in order, as the Finish does, so a photo within R of a
+    real station can still end up loose: an earlier loose photo may have
+    started a new (minted) station nearer to it, and the photo joins that
+    one. "Loose" therefore means "with a station the tour lacks", not
+    "beyond R of every station".
+- **The ring** goes with the station nearest the code within the same R
+  (`nearestStationWithin`); a code beyond every station's R has none, and
+  the caller shows its ring always. The radius rather than the station's
+  found exit: R is the rule that already groups live walk photos, and it
+  is fixed, while the found exit moves with GPS accuracy.
 - Pure; minted ids (`loose:N`) carry a ":" so they never equal a tour's id.
 
 ## Example
@@ -42,4 +52,5 @@ const ringStation = nearestStationId(manifest.stations, codeGeo);
   one goes to the nearest station within R; one beyond R is loose; an
   unknown baked station is judged by the rule; no stations leaves
   everything loose; a property over generated layouts; the ring's nearest
-  station, the tie, and null without stations.
+  station within R (inclusive at 25 m), null beyond it, the tie, and null
+  without stations.

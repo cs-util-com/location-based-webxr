@@ -287,33 +287,43 @@ async function renderContent<T extends TourContentFields>(
   // decode one at a time on purpose - a long tour's textures are a
   // GPU-memory hazard, and decoding them all at once doubles the peak.
   const group = new Group();
-  for (const object of objects) {
-    // Dropped meanwhile (the station's content no longer shows): decode
-    // nothing more; the caller disposes what came back.
-    if (deps.alive?.() === false) break;
-    const pose = deps.poseOf(object);
-    if (object.kind === "pin") {
-      const label = deps.makeLabel(object.label);
-      label.object.position.set(...pose.positionNue);
-      group.add(label.object);
-      labels.push(label);
-      continue;
+  let planes: ReturnType<typeof placeCapturedImagePlanes>;
+  try {
+    for (const object of objects) {
+      // Dropped meanwhile (the station's content no longer shows): decode
+      // nothing more; the caller disposes what came back.
+      if (deps.alive?.() === false) break;
+      const pose = deps.poseOf(object);
+      if (object.kind === "pin") {
+        const label = deps.makeLabel(object.label);
+        label.object.position.set(...pose.positionNue);
+        group.add(label.object);
+        labels.push(label);
+        continue;
+      }
+      const texture = await deps
+        .loadPhotoTexture(object.image)
+        .catch((): Texture | null => null);
+      if (texture === null) {
+        skipped.push(object.id);
+        continue;
+      }
+      photoPoses.push(pose);
+      textures.push(texture);
     }
-    const texture = await deps
-      .loadPhotoTexture(object.image)
-      .catch((): Texture | null => null);
-    if (texture === null) {
-      skipped.push(object.id);
-      continue;
-    }
-    photoPoses.push(pose);
-    textures.push(texture);
+    planes = placeCapturedImagePlanes({
+      scene: group,
+      poses: photoPoses,
+      textures,
+    });
+  } catch (error) {
+    // A constructor that throws half way (a label without a canvas) must
+    // not strand what was made before it: a station is drawn and freed
+    // again as the visitor walks.
+    for (const label of labels) label.dispose();
+    for (const texture of textures) texture.dispose();
+    throw error;
   }
-  const planes = placeCapturedImagePlanes({
-    scene: group,
-    poses: photoPoses,
-    textures,
-  });
   deps.scene.add(group);
   return {
     count: labels.length + planes.count,

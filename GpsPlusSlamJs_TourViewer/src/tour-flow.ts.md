@@ -16,16 +16,25 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
   (Whether the zip has a recording is NOT an input: a decline already says
   the recording path is out - M6 review #1.)
 - `type PlacementState` - what the photo placement did: `idle` ·
-  `placing { phase: "reading-walk" | "loading-photos"; done; total }` ·
-  `placed { placedKind: "capture-spots"; count; fixes; gpsAccuracyMedianM }`
+  `placing { phase: "reading-walk" | "loading-photos"; done; total }`
+  (`loading-photos`: the photos no station holds, decoding up front) ·
+  `placed { placedKind: "capture-spots"; count; atStations?; fixes; gpsAccuracyMedianM }`
+  · `placed { placedKind: "ring"; count; atStations? }` (`count`: the
+  photos standing, decoded and drawn; `atStations`: the photos waiting at
+  their stations, drawn only while one shows; absent: 0. Rendered "N photos
+  at capture spots", "N photos at their stations", "A photos at capture
+  spots and B at their stations", "N photos in a ring around the code[, at
+  its station]")
   · `declined { reason }` (the join's taxonomy reason; the ring is the
   fallback and the reason stays visible while it stands).
 - `interface ArStatusInput` - mode, controller status, camera-frame count,
   the tour, the viewer pipeline's QR inputs (the `viewerStatusLine` shape),
   the `readiness` (the framework's `OnboardingGuidance` for the current
   tracking-quality report; null in creator mode), the placement, a
-  placement error string, and `stationsAwaitHeading?` (the visitor guide
-  waits for a heading, D34; read only by `visitorStatus`).
+  placement error string, `stationsAwaitHeading?` (the visitor guide
+  waits for a heading, D34; read only by `visitorStatus`) and
+  `awayFromStations?` (the tour placed, every piece of its content waiting
+  at a station not shown now; read only by `visitorStatus`).
 - `isPlacementReady(report): boolean` - the placement trigger (flows plan
   M4, DEC-F3): true when `computeOnboardingGuidance(report).phase ===
 "ready"`, i.e. the tracking-quality `ok` state. At the first GPS fix the
@@ -143,7 +152,8 @@ arStatusLine({
 ## Tests
 
 - `tour-flow.test.ts` - every branch of the line, string-exact, including
-  the e2e-pinned prefix and the no-codes rule's scope.
+  the e2e-pinned prefix and the no-codes rule's scope; the placed wording
+  with photos standing, at their stations, or both.
 - `tour-flow.property.test.ts` - the no-codes rule for every open-tour
   state and its absence with no tour; decline reasons verbatim; no
   non-idle placement renders as silence.

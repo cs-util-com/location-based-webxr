@@ -558,6 +558,61 @@ describe("renderTourStation", () => {
     expect(rendered.count).toBe(1);
   });
 
+  it("frees what it made before a throw: the decoded photo and the label made so far, and rejects", async () => {
+    // Why this matters (the M2 review): a station is drawn and freed again
+    // and again as the visitor walks; a label constructor that throws half
+    // way used to strand the textures decoded before it.
+    const geo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 0, yaw(0));
+    const disposed: string[] = [];
+    const texture = new Texture();
+    texture.dispose = () => {
+      disposed.push("texture");
+    };
+    let labels = 0;
+    const pin = (id: string) => ({
+      id,
+      kind: "pin" as const,
+      label: id,
+      createdAtIso: NOW,
+      pose: {
+        position: [0, 1.5, 0] as [number, number, number],
+        rotation: yaw(0),
+      },
+    });
+    const photo = {
+      id: "f",
+      kind: "photo" as const,
+      image: "content/f.jpg",
+      imageWidth: 4,
+      imageHeight: 3,
+      createdAtIso: NOW,
+      pose: {
+        position: [0, 1.4, 3] as [number, number, number],
+        rotation: yaw(0),
+      },
+    };
+    const scene = new Group();
+    await expect(
+      renderTourStation(stationAt("s", geo, [pin("p1"), photo, pin("p2")]), {
+        scene,
+        zero: ZERO,
+        makeLabel: (text) => {
+          labels += 1;
+          if (labels === 2) throw new Error("no canvas");
+          return {
+            object: new Object3D(),
+            dispose: () => {
+              disposed.push(`label:${text}`);
+            },
+          };
+        },
+        loadPhotoTexture: () => Promise.resolve(texture),
+      }),
+    ).rejects.toThrow("no canvas");
+    expect(disposed.sort()).toEqual(["label:p1", "texture"]);
+    expect(scene.children).toHaveLength(0);
+  });
+
   it("reproduces each object's settled pose within 1.2 cm per km between the zero and the station (property, swept)", async () => {
     // Measured 2026-10-18, max over 150 runs each, objects within 40 m of
     // their station: 0 m at the station's own zero; 0.7 mm at 100 m;

@@ -281,6 +281,45 @@ describe("placementSegment - what the photo placement did", () => {
       },
       "7 photos at capture spots (4 fixes)",
     ],
+    // Photos held by stations are not standing: they are counted where
+    // they wait (M2 review), never as placed.
+    [
+      {
+        kind: "placed",
+        placedKind: "capture-spots",
+        count: 0,
+        atStations: 5,
+        fixes: 4,
+        gpsAccuracyMedianM: null,
+      },
+      "5 photos at their stations (4 fixes)",
+    ],
+    [
+      {
+        kind: "placed",
+        placedKind: "capture-spots",
+        count: 2,
+        atStations: 5,
+        fixes: 4,
+        gpsAccuracyMedianM: 5,
+      },
+      "2 photos at capture spots and 5 at their stations (4 fixes, median GPS ±5.0m)",
+    ],
+    [
+      {
+        kind: "placed",
+        placedKind: "capture-spots",
+        count: 3,
+        atStations: 0,
+        fixes: 4,
+        gpsAccuracyMedianM: null,
+      },
+      "3 photos at capture spots (4 fixes)",
+    ],
+    [
+      { kind: "placed", placedKind: "ring", count: 0, atStations: 3 },
+      "3 photos in a ring around the code, at its station",
+    ],
     [
       { kind: "declined", reason: "no recording in this tour" },
       "photo ring (no recording in this tour)",

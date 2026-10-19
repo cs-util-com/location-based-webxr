@@ -118,10 +118,22 @@ describe("capturesByStation", () => {
 });
 
 describe("nearestStationId (the ring)", () => {
-  it("is the station nearest the code, however far", () => {
+  it("is the station nearest the code within the station radius (25 m, inclusive)", () => {
     const stations = [station("a", 0, 0), station("b", 300, 0)];
-    expect(nearestStationId(stations, at(200, 0))).toBe("b");
-    expect(nearestStationId(stations, at(-900, 0))).toBe("a");
+    expect(nearestStationId(stations, at(290, 0))).toBe("b");
+    expect(nearestStationId(stations, at(24.9, 0))).toBe("a");
+    expect(nearestStationId(stations, at(0, 25))).toBe("a");
+  });
+
+  // Why: a ring bound to a station 100 m away showed only there, so the
+  // visitor standing at the code saw nothing after the lock (M2 review).
+  // Beyond the radius the ring has no station and stands always, as a
+  // walk photo joined live does by the same rule.
+  it("is null for a code beyond every station's radius", () => {
+    const stations = [station("a", 0, 0), station("b", 300, 0)];
+    expect(nearestStationId(stations, at(26, 0))).toBeNull();
+    expect(nearestStationId(stations, at(200, 0))).toBeNull();
+    expect(nearestStationId(stations, at(-900, 0))).toBeNull();
   });
 
   it("is the earlier station on a tie, and null without stations", () => {

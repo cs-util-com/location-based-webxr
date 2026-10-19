@@ -48,6 +48,7 @@ type VisitorStatusState =
   | "warming-up"
   | "placing"
   | "placed"
+  | "to-station"
   | "placed-gps"
   | "tracking-lost"
   | "finding-direction"
@@ -62,6 +63,9 @@ export interface VisitorStatus {
 }
 
 const LOOK_AROUND = "Look around.";
+/** Placed, every piece of content waiting at a station the visitor is not
+ *  at (M2 review N5): nothing is in view to look at. */
+const TO_STATION = "Walk to a station to see its content.";
 const GPS_PLACED = "Tour placed by GPS (less exact)";
 
 /** The guide waits for a heading (D34): the arrows, the breadcrumbs and a
@@ -175,15 +179,20 @@ function isPlaced(input: ArStatusInput): boolean {
  *  help (find the code) only after the escape, never when the code cannot
  *  line the tour up. While the guide waits for a heading (`walk`, D34) the
  *  bare placed line gives way to the request; a GPS placement keeps its
- *  reason, the request in place of "Look around.". */
+ *  reason, the request in place of "Look around.". Away from every
+ *  station (`awayFromStations`) "Look around." gives way to the station
+ *  request; the request for steps still comes first, since walking
+ *  answers both. */
 function placedSentence(input: ArStatusInput, walk: boolean): VisitorStatus {
   const { gate } = input;
+  const away = input.awayFromStations === true;
   if (!gpsOnly(gate) || codeLinedUp(input.qr)) {
-    return walk
-      ? { state: "finding-direction", text: WALK }
+    if (walk) return { state: "finding-direction", text: WALK };
+    return away
+      ? { state: "to-station", text: TO_STATION }
       : { state: "placed", text: `Tour placed. ${LOOK_AROUND}` };
   }
-  const next = walk ? WALK : LOOK_AROUND;
+  const next = walk ? WALK : away ? TO_STATION : LOOK_AROUND;
   if (gate.kind === "not-required" && gate.reason === "no-detector") {
     return {
       state: "placed-gps",
