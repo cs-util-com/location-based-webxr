@@ -114,8 +114,18 @@
     is not known.
   - Not measured: a steep first view below about 300 m (30 m at pitch -45
     and -70, 1.7 m at -70). The lab never handed those views to the
-    relief (band share 0, the relief's tiles released), a lab defect
-    filed with the G1 review; until it is fixed those cells are unknown.
+    relief (band share 0, the relief's tiles released). The cause, found
+    and fixed later (`globe-band-gate.ts.md`, "Nothing in view is
+    ready"): the lab's `view=` height is over the ELLIPSOID, so over
+    Munich (ground about 520 m) those views started under the ground,
+    below the relief's tile volumes, where a steep view sees none of the
+    relief and the gate never handed over. The cells are still unmeasured.
+    The same fact bears on the cells above: the oblique 1.7 m, 30 m and
+    300 m views over Munich also started under the ground and were lifted
+    to the clearance, which would explain why they read alike (188.9 /
+    188.9 / 191.3); if the sweep set its heights with `view=`, they are
+    one eye-height view measured three times, not three heights. The
+    sweep's script is not in the repo, so this is inferred, not checked.
   - What the numbers decide, and which other value would change it:
     - desktop 256 MiB holds every 1,280 x 800 view measured with a third
       in hand for AWS (191) and more than half for Mapterhorn (242 of

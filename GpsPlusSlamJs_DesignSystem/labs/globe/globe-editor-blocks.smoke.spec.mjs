@@ -365,6 +365,67 @@ test("first person stands at eye height, draws the ground at its feet and a near
 });
 
 /**
+ * A view placed 1 m over the ellipsoid under a synthetic peak (the 900 m
+ * term at its crest: the ground 1.6-2.2 km up), looking steeply down: the
+ * camera starts far UNDER the relief, below the bounding volumes of its
+ * finer tiles, so it sees none of the relief until the clearance lifts it.
+ */
+const UNDER_PEAK_VIEW = "46.5,9.125,0.001,0,-70";
+
+// WHY (a lab defect the relief budget sweep found, 2026-10-18): a first
+// view looking steeply down from under the ground (the link's height is
+// ellipsoidal, so a low view over high ground starts underground; the
+// sweep's 1.7 m and 30 m cells over Munich did) never handed over to the
+// relief: the band share stayed 0 and the globe drew its own two tiles.
+// From under the relief's tile volumes a steep frustum meets none of
+// them, the library clears `inFrustum` up to the top level, and the gate
+// read "no top-level tile in view" as "not ready"; the clearance lifts the
+// camera only where the relief draws, so nothing ever got the camera out.
+// The oblique views worked (their frustum reaches up to the volumes
+// ahead). First person must start from such a view: the relief takes the
+// view and the camera stands at eye height over the drawn ground.
+test("a steep first view from under the relief hands over and lifts the camera to eye height", async ({
+  context,
+}) => {
+  test.setTimeout(900_000);
+  const page = await context.newPage();
+  const errors = await bootGlobe(
+    page,
+    `${BASE}&eye=1&view=${UNDER_PEAK_VIEW}`,
+    { phase: "user" },
+  );
+  await page.waitForFunction(
+    () => {
+      const r = window.__globeLab.state().relief;
+      return Boolean(r?.share >= 1 && r.groundUnderCameraM !== null);
+    },
+    null,
+    { timeout: EYE_SETTLE_MS },
+  );
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
+  const out = await page.evaluate(() => {
+    const s = window.__globeLab.state();
+    return {
+      share: s.relief.share,
+      groundM: s.relief.groundUnderCameraM,
+      overGroundM: s.altitudeM - s.relief.groundUnderCameraM,
+      clearanceM: s.relief.clearanceM,
+      visibleTiles: s.relief.visibleTiles,
+    };
+  });
+  console.log(
+    `steep first view from under the relief: share ${out.share}, ground ${out.groundM.toFixed(1)} m, ${out.overGroundM.toFixed(2)} m over it (clearance ${out.clearanceM} m), ${out.visibleTiles} relief tiles drawn`,
+  );
+  expect(errors).toEqual([]);
+  // The premise: the view started more than a kilometre under the ground.
+  expect(out.groundM).toBeGreaterThan(1_000);
+  expect(out.share).toBe(1);
+  expect(out.visibleTiles).toBeGreaterThan(0);
+  expect(out.overGroundM).toBeGreaterThanOrEqual(out.clearanceM - 0.01);
+  expect(out.overGroundM).toBeLessThan(out.clearanceM + 1);
+});
+
+/**
  * A fake of the OSM tile host on the CONTEXT: every request answered with
  * a solid magenta tile and counted with its zoom, place and time.
  */

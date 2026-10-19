@@ -24,7 +24,7 @@ import {
   createGlobeCloudShell,
 } from "./globe-cloud-shell.js";
 import { celestialToEcefQuaternion } from "./globe-stars.js";
-import { topLevelReady } from "./globe-band-gate.js";
+import { topLevelInView, topLevelReady } from "./globe-band-gate.js";
 import { createMaterialRetirer } from "./globe-warm-material.js";
 import {
   applyGlobeSurface,
@@ -544,7 +544,7 @@ export function createGlobeSurface(
       const look = firstLookStep(
         firstLookDone,
         firstLookImagesIn(),
-        topLevelReady(runtime),
+        topLevelReady(runtime) && topLevelInView(runtime),
         tiles.ellipsoid.getPositionElevation(
           tiles.group.worldToLocal(cameraEcef.copy(camera.position)),
         ),

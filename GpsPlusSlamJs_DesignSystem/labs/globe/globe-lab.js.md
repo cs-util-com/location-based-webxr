@@ -433,10 +433,17 @@
     (2026-10-18, 256 px synthetic heights) the relief's whole tree took
     about 130 MiB, so 64 and 128 MiB stayed full and missed tiles (the
     state's `relief.cache.stalled` and the Debug line say so), 256 MiB
-    did not. Known defect (found in the same sweep, not fixed): a first
-    view looking steeply down from below about 300 m (30 m at pitch -45
-    or -70, 1.7 m at -70) never hands over to the relief: the band share
-    stays 0 and the globe draws its own two tiles.
+    did not. A defect found in the same sweep, since fixed: a first view
+    looking steeply down from below about 300 m (30 m at pitch -45 or
+    -70, 1.7 m at -70) never handed over to the relief: the band share
+    stayed 0 and the globe drew its own two tiles. `view=`'s height is
+    over the ellipsoid, so those views over Munich started under the
+    ground, below the relief's tile volumes; a steep view there sees none
+    of the relief, and the band gate read that as "not ready", while the
+    clearance lifts the camera only where the relief draws. The gate now
+    reads a carrier with nothing in view as ready (`globe-band-gate.ts.md`),
+    and `globe-editor-blocks.smoke.spec.mjs` starts first person from
+    such a view.
   - First person (G1 step 5, read at start): `eye=1` keeps the camera
     1.7 m over the drawn ground (`GLOBE_EYE.clearanceM`, not the
     flight's 100 m), lowers the controls' limits to it

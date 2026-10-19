@@ -7,10 +7,32 @@
   after its tiles were released.
 - Public API:
   - `topLevelReady({ root, frameCount })`: a tile set can draw the whole
-    view when every top-level tile (the root's children: an image-tiled
-    set's coarsest level) its last update visited in view has loaded. Below
-    that level the library keeps a parent drawn until its children are
-    ready. False before any top-level tile was visited.
+    view when its last update visited its top level (the root's children:
+    an image-tiled set's coarsest level) and every top-level tile it found
+    in view has loaded. Below that level the library keeps a parent drawn
+    until its children are ready. False when the last update visited no
+    top-level tile (a set never updated).
+    - **Nothing in view is ready.** A camera under the relief that looks
+      steeply down sees none of it: 3d-tiles-renderer 0.5.3
+      (`markUsedTiles`) clears `inFrustum` on a REPLACE tile none of whose
+      children is in view, so from below the finer tiles' bounding volumes
+      the flag is cleared up to the top level. The gate read that as "not
+      ready", the relief never took a pixel, and the clearance (which lifts
+      the camera only where the relief draws) never got the camera out: a
+      deadlock (the lab's steep first views below the ground, found by the
+      relief budget sweep, 2026-10-18; reproduced under a synthetic peak, the
+      top-level tile visited and out of view for 187 s, settled, share 0).
+      With nothing of the set in view nothing is missing from the view, so
+      it is ready; the relief takes the view and the clearance lifts the
+      camera in the same frame. A top-level tile in view that is still
+      loading still blocks (its children are not known yet, so the library
+      cannot clear its flag).
+  - `topLevelInView({ root, frameCount })`: whether the last update found
+    any top-level tile in view. The globe's first look ends on
+    `topLevelReady && topLevelInView` (`globe-surface.ts`), so a camera
+    that starts looking away from the Earth keeps it until the globe has
+    drawn a view that holds some of it (with "nothing in view is ready"
+    alone, turning to the Earth would show the holes it fills).
   - `nextDrawnShare({ drawn, target, reliefReady, globeReady, dtMs })`: the
     relief's drawn share for the next frame.
     - Both carriers ready: toward the altitude's `target` by at most
@@ -31,4 +53,8 @@
     lower frame) with the old rule.
 - Tests: `globe-band-gate.test.ts`: each rule, the refusals, the property
   over random states, and `topLevelReady` over in-view, out-of-view, stale
-  and missing tiles.
+  and missing tiles, and a set visited with nothing in view (ready) against
+  one not visited this frame (not); `topLevelInView` over in-view,
+  out-of-view, stale and missing tiles. In the browser: the globe lab's
+  `globe-editor-blocks.smoke.spec.mjs` "a steep first view from under the
+  relief hands over and lifts the camera to eye height".

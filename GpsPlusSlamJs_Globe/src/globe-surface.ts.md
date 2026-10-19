@@ -58,7 +58,9 @@ setCloudShellShare(share, flat?), dispose() }`.
       frame, in a lit copy of the template without a map, so it shows the
       level 0 lit and clouded as the tiles are; it is drawn once the images
       are in and until the globe has FIRST drawn its whole view
-      (`topLevelReady`), then never again (`firstLookStep`): shown again
+      (`topLevelReady`, on a view that held some of the globe:
+      `topLevelInView`, since a set with nothing in view counts as ready),
+      then never again (`firstLookStep`): shown again
       whenever the globe could not draw its view, it filled the holes the
       handover's positive control must see (the full browser run). It
       also ends for good once the camera goes below 2,000 km
