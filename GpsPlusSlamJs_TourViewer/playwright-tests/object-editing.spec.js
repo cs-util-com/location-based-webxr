@@ -74,10 +74,14 @@ test("the tour's name typed in step 3 is the title the Finish writes", async ({
   page,
 }) => {
   // Why (the r880 milestone review LOW-3): the name is a change of the
-  // tour document, handed over when the field is left - which, on the way
-  // to the Finish, the creator does by tapping on. The unit tests prove
-  // the rename and the Finish's own commit of the field; only the
-  // composed page shows the typed name reaching the written tour.
+  // tour document, handed over when the field is left. A Finish started
+  // while the name is still in its field (a tap that never blurs it, or a
+  // key) fires no "change", so the Finish commits the field itself
+  // (`main.ts`'s `beforeFinish`). The unit tests prove the rename and that
+  // hook's call; only the composed page shows the typed name reaching the
+  // written tour through it. The Finish is started WITHOUT moving focus:
+  // a real click elsewhere would blur the field, fire "change" and pass
+  // with the hook removed (the r880 fix re-review, L4).
   test.setTimeout(90_000);
   await openTour(page);
   await row(page, "Fixture pin").getByTestId("object-edit").click();
@@ -88,11 +92,24 @@ test("the tour's name typed in step 3 is the title the Finish writes", async ({
   );
   await page.getByTestId("station-print").click();
   await expect(page.getByTestId("print-panel")).toHaveAttribute("open", "");
-  await page.getByTestId("tour-name-input").fill("Castle walk");
-  await page.getByTestId("station-measure").click();
-  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
+  const name = page.getByTestId("tour-name-input");
+  await name.fill("Castle walk");
+  await expect(name).toBeFocused();
+  await expect(page.getByTestId("setup-finish")).toBeEnabled();
+  // A click event straight on the button: no focus moves, no "change".
+  await page
+    .getByTestId("setup-finish")
+    .evaluate((button) => /** @type {HTMLButtonElement} */ (button).click());
+  await expect(name, "the field was never left").toBeFocused();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (key) => /** @type {any} */ (window)[key].downloads.length,
+        TEST_KEY,
+      ),
+    )
+    .toBe(1);
   await expect(page.getByTestId("tour-name-error")).toBeHidden();
-  await finishAndDownload(page, 0);
   const zip = await downloadedZip(page, 0);
   expect(zip.manifest.title).toBe("Castle walk");
 });
