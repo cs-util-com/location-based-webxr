@@ -10,7 +10,7 @@
  * the reducer, since the save's end moves the file the step is measured
  * against). Real zips, read back as the viewer reads them.
  */
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 import { readStoredEntryBytes } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
 import {
@@ -145,20 +145,46 @@ describe("createTourSaves", () => {
     await session.close();
   });
 
-  it("a save asked for while another runs waits for it, and the edit made between them is the second's", async () => {
+  // Both checks fail without the queue (confirmed by running starts at
+  // once): the second save would snapshot at its dispatch, missing the
+  // edit made after it, and would read the opened file again instead of
+  // starting from the first save's bytes.
+  it("a save asked for while another runs starts only once the first landed: its snapshot then, from the first's bytes", async () => {
     const { session, store } = await opened([pin("a"), pin("b")]);
-    const saves = savesOf(session, store);
+    let reads = 0;
+    let release = (): void => undefined;
+    const held = Object.create(session, {
+      readWholeArchive: {
+        value: () => {
+          reads += 1;
+          return new Promise<Blob>((resolve, reject) => {
+            release = () => {
+              session.readWholeArchive().then(resolve, reject);
+            };
+          });
+        },
+      },
+    }) as TourSession;
+    const saves = savesOf(held, store);
     rename(store, "a", "One");
+    // Nothing runs: this one starts, and snapshots, at its dispatch.
     const first = dispatchThunk(store, saves.save({ keepScan: false }));
-    // Snapshotted at the dispatch: this edit is not the first save's.
     rename(store, "b", "Two");
     const second = dispatchThunk(store, saves.save({ keepScan: false }));
+    // Made after the second was asked for, before it started.
+    rename(store, "b", "Three");
     expect(doc(store).save.rebuilds).toBe(2);
+    await vi.waitFor(() => {
+      expect(reads).toBe(1);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(reads).toBe(1);
+    release();
     const one = await first;
     expect(await labels(one.finished.blob)).toEqual(["One", "pin b"]);
-    expect(doc(store).save).toMatchObject({ status: "saving", rebuilds: 1 });
     const two = await second;
-    expect(await labels(two.finished.blob)).toEqual(["One", "Two"]);
+    expect(await labels(two.finished.blob)).toEqual(["One", "Three"]);
+    expect(reads).toBe(1);
     expect(doc(store).placed).toEqual([]);
     expect(doc(store).save).toMatchObject({ status: "idle", rebuilds: 0 });
     expect(saves.newest()?.blob).toBe(two.finished.blob);

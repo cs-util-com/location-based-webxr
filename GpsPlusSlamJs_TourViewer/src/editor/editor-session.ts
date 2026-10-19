@@ -392,11 +392,14 @@ export function createEditorSession(input: {
    *  replaced session never reads another tour (the r875 milestone review
    *  #4). */
   let last = doc();
-  // Kept after every action while this open is the newest - an edit or a
-  // save's landing that no read of the session followed included - so "as
-  // it stood when replaced" is that, not the last read before it.
+  // Kept after every change of the document while this open is the newest
+  // - an edit or a save's landing that no read of the session followed
+  // included - so "as it stood when replaced" is that, not the last read
+  // before it. The listener middleware runs the effect synchronously
+  // after the reducer, inside the dispatch, so `last` is never behind.
   store.listenToDocument({
-    predicate: () => true,
+    predicate: (_action, after, before) =>
+      selectTourDocument(after) !== selectTourDocument(before),
     effect: (_action, api) => {
       const state = selectTourDocument(api.getState());
       if (state.generation === generation) last = state;

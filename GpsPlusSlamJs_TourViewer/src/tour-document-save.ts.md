@@ -50,7 +50,10 @@ phone's Finish does not yet: see "Not here yet" below.
   - `snapshot()` - thunk; the document as a save reads it now.
   - `photoSpots(manifest)` - the recorded photos' spots
     (`captureSpotsForRebuild`), decided once per open (a decline is not
-    re-baked on every save), after `picturesRead()`.
+    re-baked on every save), after `picturesRead()`. A rejected decision
+    (a cap's refusal, a failed integrity check) stays cached too, so every
+    later save of the open fails with the same words, as before the save
+    moved here: those errors are deterministic for the open's bytes.
   - `rebuild(snap, photos, keepScan, whole?)` - `rebuildFinishedTour`
     from the newest bytes, or from `whole` (the opened file as the caller
     already read it, so it is not read twice); `levels: []`. Throws what
@@ -74,8 +77,14 @@ phone's Finish does not yet: see "Not here yet" below.
 - **The status is the slice's.** The handle keeps no flag of its own: the
   queue's "a save of this open runs" is the slice's `save.rebuilds` for
   this generation.
-- **The snapshot is taken before the first await**: an edit made from then
-  on stays pending for the next save (`pendingAfterRebuild`, by content).
+- **One handle per open.** The queue waits on the handle's own tail, so
+  two handles for the same open would run their saves in parallel, each
+  from its own newest bytes. A page creates one when it opens a tour
+  (`editor-session.ts` does, per session) and never a second.
+- **The snapshot is taken when the save STARTS** - after the saves queued
+  before it (at the dispatch only when none runs) - and before its first
+  await: an edit made from then on stays pending for the next save
+  (`pendingAfterRebuild`, by content).
 - **Saves run one after another**; the second starts from the first one's
   bytes (`newest()`), so a deleted photo's file stays gone.
 - A save of an open another replaced, begun before, keeps its own
@@ -116,8 +125,11 @@ const { finished, photos } = await dispatchThunk(
 `tour-document-save.test.ts` on real zips: a save that lands (saving while
 it runs, then the written file, nothing pending, idle), one that fails
 (the reason in the slice, nothing written, the edit still pending), a save
-asked for while another runs (it waits; the edit made between them is the
-second's, which starts from the first's bytes), an undo asked for while a
+asked for while another runs (the first's read held on a promise: the
+second starts only once the first landed - its snapshot then, so an edit
+made after it was asked for is in it - and from the first's bytes, so the
+opened file is read once; confirmed red with the queue removed), an undo
+asked for while a
 save runs (refused, then taken once it ended), and a save of a replaced
 open (one begun before lands nowhere, one asked for after rejects). The
 desktop's whole save and walk move are covered through the session

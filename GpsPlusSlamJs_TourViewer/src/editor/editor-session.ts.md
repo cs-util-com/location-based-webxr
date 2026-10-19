@@ -38,8 +38,13 @@ imperative resources only - that handle and the pictures' side table
     opened since"), and everything it reads (`model`, the counts, the
     details) is its own tour as it stood when replaced - never the new
     one's (the r875 milestone review #4). "As it stood" follows the store
-    (a listener keeps the newest state of this open after every action),
-    so an edit or a landed save that no read followed is part of it.
+    (a listener on `listenToDocument` keeps the newest state of this open
+    after every action that changed the document), so an edit or a landed
+    save that no read followed is part of it. This relies on Redux
+    Toolkit's listener middleware calling the effect synchronously after
+    the reducer, inside the dispatch (its `notifyListener` calls the
+    effect before its first await): a read right after a dispatch never
+    finds `last` behind.
   - `draft` (M6 E2c) - the `EditorSessionDraft` every edit, move,
     delete, undo and redo is backed up through (`editor-draft.ts`): the
     four `DraftObjectWrites`, whose delete sequence is `draft-actions.ts`'s

@@ -54,8 +54,15 @@ module.exports = {
         pathNot: [
           "\\.test\\.ts$",
           "^src/test-support/",
-          // The document and the shared pure modules (each other's peers).
-          "^src/tour-document[^/]*\\.ts$",
+          // The document and the shared pure modules (each other's peers),
+          // named one by one: a new `tour-document-*` module is not exempt
+          // until it is listed here. `tour-document-draft.ts` is the draft's
+          // follower; `tour-document-save.ts` is the document's save - I/O,
+          // the rebuild and the photo bake - whose snapshot and landing
+          // read the rules.
+          "^src/tour-document\\.ts$",
+          "^src/tour-document-draft\\.ts$",
+          "^src/tour-document-save\\.ts$",
           "^src/(object-edits|finish-rebuild|tour-content|authoring-draft|capture-bake)\\.ts$",
           // Read-only helpers, permanent: the visitor's photo spots
           // (`worldCaptureSpots`), the AR placement's world view

@@ -1,7 +1,8 @@
 /**
  * The tour document's save (the follow-up of D30): a page's Save of the
  * open tour as thunks against the store. The snapshot is the document's
- * (taken when the save is dispatched), the file is rebuilt by the Finish's
+ * (taken when the save STARTS, after the saves queued before it - at the
+ * dispatch only when none runs), the file is rebuilt by the Finish's
  * rules from the newest bytes (`finish-rebuild.ts`), and what it wrote
  * lands in the document (`saved`). Saves run one after another, counted
  * by the document (`saveStarted` / `saveEnded`): its save status is the
@@ -208,7 +209,8 @@ export function createTourSaves(input: {
         const state = getState().tourDocument;
         const running =
           state.generation === generation && state.save.rebuilds > 0;
-        const run = running ? tail.then(start, start) : start();
+        // The tail never rejects (`next.catch` below).
+        const run = running ? tail.then(start) : start();
         dispatch(tourDocumentActions.saveStarted({ generation }));
         const next = run.then(
           (value) => {
