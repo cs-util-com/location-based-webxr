@@ -24,8 +24,9 @@ the measured accuracy (the median of the latest device fixes). Plan:
     alignment yet". The station guide's raw fix stands in only without
     one (M5a review M3).
   - `fixAtMs` - the latest device fix's own time (its Geolocation
-    timestamp, epoch ms), or null exactly when `fixNue` is: the guide
-    ignores a fix older than `FIX_MAX_AGE_MS`.
+    timestamp, epoch ms), or null when `fixNue` is or that fix's time is
+    missing or not finite (validated here, never NaN): the guide ignores a
+    fix older than `FIX_MAX_AGE_MS`, and one with no time.
   - `fixAccuracyM` - the latest device fix's own reported accuracy (m),
     or null when `fixNue` is or that fix states none (missing, zero,
     negative, not finite). Where the fix alone is the position, the guide
@@ -61,4 +62,5 @@ const p = visitorPosition({
   the camera where the shift says; no position without each input; the
   median of the latest ten device fixes, votes and older fixes ignored;
   `aligned` with a dropped pose and without an alignment, and the latest
-  device fix's time (never a vote's).
+  device fix's time (never a vote's), null for a missing or non-finite
+  timestamp.

@@ -196,6 +196,32 @@ describe("visitorPosition", () => {
     ).toBeNull();
   });
 
+  // Why: the fix's time is external data. A missing or NaN timestamp gave
+  // `fixAtMs: NaN` - a number, so a reader trusting the type compared NaN
+  // against its age limit and read the fix as never stale. A time that is
+  // not finite is no time: null, while the fix's position still stands.
+  it("has no fix time when the device fix's timestamp is missing or not finite", () => {
+    for (const timestamp of [Number.NaN, undefined, Number.POSITIVE_INFINITY]) {
+      const p = visitorPosition({
+        alignment: null,
+        arPose: null,
+        gpsPositions: [
+          {
+            latitude: 47.5,
+            longitude: 8.7,
+            altitude: 400,
+            latLongAccuracy: 4,
+            timestamp,
+            source: GPS_POINT_SOURCE_DEVICE,
+          } as unknown as GpsPoint,
+        ],
+        zero,
+      });
+      expect(p.fixNue, String(timestamp)).not.toBeNull();
+      expect(p.fixAtMs, String(timestamp)).toBeNull();
+    }
+  });
+
   it("reads the accuracy from the latest DEVICE fixes only, as their median", () => {
     const fix = (accuracy: number | undefined, source?: string): GpsPoint =>
       ({

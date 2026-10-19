@@ -53,7 +53,8 @@ export interface VisitorPosition {
    *  (M5a review M3: the station guide's fix stands in only without one). */
   readonly aligned: boolean;
   /** The latest device fix's own time (its Geolocation timestamp, epoch
-   *  ms), or null exactly when `fixNue` is: how old the fix is. */
+   *  ms): how old the fix is. Null when `fixNue` is, or when that fix's
+   *  time is missing or not finite (external data: no time, never NaN). */
   readonly fixAtMs: number | null;
   /** The latest device fix's own reported accuracy (m), or null when
    *  `fixNue` is or that fix states none: where the fix alone is the
@@ -94,7 +95,7 @@ function latestFix(
   zero: LatLong | null,
 ): {
   nue: readonly [number, number, number];
-  atMs: number;
+  atMs: number | null;
   accuracyM: number | null;
 } | null {
   if (zero === null) return null;
@@ -113,7 +114,7 @@ function latestFix(
     );
     return {
       nue: [nue[0], nue[1], nue[2]],
-      atMs: p.timestamp,
+      atMs: Number.isFinite(p.timestamp) ? p.timestamp : null,
       accuracyM: usableAccuracy(p.latLongAccuracy),
     };
   }
