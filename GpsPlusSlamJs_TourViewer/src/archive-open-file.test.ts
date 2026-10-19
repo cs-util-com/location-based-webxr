@@ -82,7 +82,7 @@ function fakeSession(url: string) {
   };
 }
 
-function wire() {
+function wire(mode: "creator" | "visitor" = "creator") {
   const dom = {
     form: el(),
     linkInput: el(),
@@ -114,7 +114,7 @@ function wire() {
     dom: dom as unknown as ArchiveOpenDom,
     cacheStore: undefined,
     corsProxyBaseUrl: "https://proxy.test",
-    mode: "creator",
+    mode,
     hooks,
   });
   return { dom, hooks, ctx, archive };
@@ -203,6 +203,54 @@ describe("open a file", () => {
     dom.fileInput.fire("change");
     expect(mocks.openTourFile).not.toHaveBeenCalled();
     expect(dom.openFileButton.disabled).toBe(false);
+  });
+});
+
+describe("a recording without tour.json", () => {
+  // Why this matters: every Recorder zip lacks tour.json, and the creator
+  // builds a tour on it. Opened as "no tour", it had no stations until the
+  // first Finish wrote one, so the station shown, the settle and the write
+  // each read something different. Opened as an empty tour, a pin placed
+  // a moment later already stands in a station of the document.
+  it("opens for the creator as an empty unnamed tour whose first pin is in a station", async () => {
+    mocks.openTourFile.mockResolvedValueOnce(fakeSession("local-file:abc"));
+    const { dom, ctx, hooks } = wire("creator");
+    pick(dom, new File(["zip"], "walk.zip"));
+    // Called once the manifest settled and the document opened.
+    await vi.waitFor(() =>
+      expect(hooks.presentDraftForTour).toHaveBeenCalled(),
+    );
+    const opened = ctx.tourDocument.opened();
+    expect(opened?.stations).toEqual([]);
+    expect(opened?.title).toBeUndefined();
+    const placed = ctx.tourDocument.place(
+      {
+        id: "p",
+        kind: "pin",
+        label: "p",
+        createdAtIso: "2026-10-20T00:00:00.000Z",
+        geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
+      },
+      {},
+      "a pin",
+    );
+    const station = placed?.object.station;
+    expect(station).toBeDefined();
+    expect(ctx.tourDocument.manifest()?.stations.map((s) => s.id)).toEqual([
+      station,
+    ]);
+  });
+
+  it("stays no tour for a visitor", async () => {
+    mocks.openTourFile.mockResolvedValueOnce(fakeSession("local-file:abc"));
+    const { dom, ctx, hooks } = wire("visitor");
+    pick(dom, new File(["zip"], "walk.zip"));
+    // Called once the manifest settled and the document opened.
+    await vi.waitFor(() =>
+      expect(hooks.presentDraftForTour).toHaveBeenCalled(),
+    );
+    expect(ctx.tourDocument.opened()).toBeNull();
+    expect(ctx.tourDocument.manifest()).toBeNull();
   });
 });
 

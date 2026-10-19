@@ -18,8 +18,9 @@ copy of the tour.
   - `state()` - the slice.
   - `manifest()` - the open tour's manifest as it stands (`manifestNow`:
     its frames moved, its setting and details applied); null while no tour
-    file is open (none, or one without `tour.json`) and nothing was
-    written. The same object until the document changes.
+    is open (`open(null)`: a visitor's file without `tour.json`) and
+    nothing was written. A creator's recording opens as an empty tour
+    (`archive-open.ts`), so it reads a manifest from the start. The same object until the document changes.
   - `opened()` - the tour file as it was OPENED (the slice's `opened`):
     not what a Finish wrote since, nor this page's changes; null while no
     tour file is open. The phone's draft compares its records with it.
@@ -94,13 +95,17 @@ generation, written, appliedDeletions, stationsAtStart })`,
 
 - **No tour is an open, empty document.** The slice takes edits only into
   an open document, and the creator may place before any tour is open
-  (scan-to-open plan §9 #5) or in a tour whose file has no `tour.json`. So
-  "no tour" is an empty manifest the handle opened itself, told apart by
-  identity: `manifest()` reads null there, as the session field it replaces
-  did, until a write lands.
+  (scan-to-open plan §9 #5). So "no tour" is an empty manifest the handle
+  opened itself, told apart by identity: `manifest()` reads null there,
+  as the session field it replaces did, until a write lands. A creator's
+  file without `tour.json` is NOT "no tour": the page opens it as an
+  empty manifest of its own (a real, unnamed tour), whose stations the
+  HUD, the settle and the write read from the first placement.
 - **`open` carries only that work.** Objects placed with no tour open come
   into the opened tour as one restored step (their pictures and placements
-  with them); anything of another tour was dropped at its `close`, side
+  with them), each seated again by the station rule against the opened
+  tour's stations (`rerun`): the stations they stood in were the empty
+  document's, and none of them comes along; anything of another tour was dropped at its `close`, side
   tables included (M4 review #1: carried into another tour it would be
   written into ITS zip).
 - **Side tables are set before the dispatch**, so the listener's
@@ -133,6 +138,7 @@ else void placed.backedUp.then((ok) => ok || draft.warnNoBackup());
 ## Tests
 
 - `creator-document.test.ts` - no tour and a tour opening (work carried,
+  carried work seated by the rule against the opened tour's stations,
   a file without `tour.json`, a close dropping everything), the identities
   readers memoize on (a new manifest when only the tombstones change,
   driven through a store that serves that state, since no reducer makes

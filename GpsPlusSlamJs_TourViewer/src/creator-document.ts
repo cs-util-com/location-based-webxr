@@ -384,6 +384,9 @@ export function createCreatorDocument(
           tourDocumentActions.restored({
             objects: carried,
             deleted: [],
+            // Seated again by the rule against the opened tour: the
+            // stations they stood in were the empty document's.
+            rerun: true,
             what: "the work made before the tour opened",
           }),
         );

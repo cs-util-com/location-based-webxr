@@ -102,6 +102,27 @@ describe("the creator's document: no tour, and a tour opening", () => {
     expect(carried?.placement).toEqual(PLACEMENT);
   });
 
+  // Why this matters: work made before a tour opens stood in stations of
+  // the empty "no tour" document. The tour that opens has its own: the
+  // rule runs again against them, so a pin made next to one of its
+  // stations joins it instead of keeping a station of its own there.
+  it("seats carried work by the rule against the opened tour's stations", () => {
+    const doc = fresh();
+    const near = doc.place(pin("p"), {}, "a pin")?.object.station;
+    const far = doc.place(pin("q", 48.53), {}, "a pin")?.object.station;
+    doc.open(tourOf([pin("a")]));
+    const stationOf = (id: string) =>
+      doc.objects().find((o) => o.object.id === id)?.object.station;
+    const hosted = stationOf("a");
+    expect(stationOf("p")).toBe(hosted);
+    expect(stationOf("q")).not.toBe(hosted);
+    const ids = doc.manifest()?.stations.map((st) => st.id) ?? [];
+    expect(ids).toEqual([hosted, stationOf("q")]);
+    // None of the stations made before the tour opened comes along.
+    expect(ids).not.toContain(near);
+    expect(ids).not.toContain(far);
+  });
+
   it("keeps a tour without tour.json as no manifest until a write lands", () => {
     const doc = fresh();
     doc.place(pin("p"), {}, "a pin");

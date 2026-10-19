@@ -12,6 +12,7 @@ import {
   type BoundedLocalCacheStore,
 } from "gps-plus-slam-app-framework/storage";
 import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
+import { createEmptyTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { pictureProblem } from "./image-cap.js";
 import { DEFAULT_ASSET_PREFIX } from "./code-tour.js";
@@ -485,8 +486,16 @@ export function wireArchiveOpen(deps: {
         (manifest) => {
           if (ctx.session !== opened) return;
           // The creator's work made before the manifest settled (or before
-          // any tour opened) comes along (scan-to-open plan §9 #5).
-          ctx.tourDocument.open(manifest);
+          // any tour opened) comes along (scan-to-open plan §9 #5). A
+          // creator's zip without tour.json (a recording) opens as an
+          // empty unnamed tour, not as "no tour": its stations exist from
+          // the first placement, for the HUD, the settle and the write
+          // alike. A visitor's stays "no tour".
+          ctx.tourDocument.open(
+            manifest === null && deps.mode === "creator"
+              ? createEmptyTourManifest()
+              : manifest,
+          );
           ctx.tourManifestStatus = "settled";
           hooks.presentTourInfo(manifest, (path) =>
             opened.loadEntry(`${opened.manifestWrap}${path}`),

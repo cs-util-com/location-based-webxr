@@ -163,6 +163,13 @@ DOM glue, its own module since the flows plan M6.
   photo on every open, for nothing.
 - The gallery streams SEQUENTIALLY; a newer open supersedes an in-flight
   fill per entry; object URLs are revoked on teardown.
+- **A creator's recording is a tour from the moment it opens.** A zip
+  without `tour.json` opens the creator's tour document on an empty
+  manifest (an unnamed tour), not as "no tour", so every object placed in
+  it belongs to a station of the document at once; a visitor's opens as
+  "no tour" (null). The gallery, the scan entries and the tour info still
+  read the file's own (null) manifest. Tests: `archive-open-file.test.ts`
+  ("a recording without tour.json").
 - **The gallery waits for `tour.json` and leaves out the creator's walk**
   (scan-pass plan S1, `tour-read-set.ts`): the settle sets
   `ctx.scanEntries` (empty without a manifest, as before) and then fills
