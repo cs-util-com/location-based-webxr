@@ -137,10 +137,11 @@ export interface CreatorDocument {
   open(manifest: TourManifest | null): void;
   /** The tour closed: back to no tour, its work and side tables gone. */
   close(): void;
-  /** A new object (a tap in AR): null when refused (`canPlace`). With
-   *  `ownStation` ("New station here", D8) an object naming no station
-   *  names a fresh station of its own, so the rule starts it there even
-   *  within R of another. The arm is the CALLER's to take and give back:
+  /** A new object (a tap in AR): null when refused (`canPlace`). The
+   *  station rule seats one naming no station (`placed`): the station
+   *  holding it, or a new one anchored at it; with `ownStation` ("New
+   *  station here", D8) always a new one, even within another's radius.
+   *  The result's `object` names its station. The arm is the CALLER's to take and give back:
    *  it decides when an item took it (a photo at its shutter tap, not when
    *  its encode lands), so this never reads or changes it. */
   place(
@@ -160,8 +161,10 @@ export interface CreatorDocument {
   armNewStation(armed: boolean): void;
   /** A pin's text changed (`objectFits`); its placement is kept. */
   edit(object: TourObject, what: string): DocumentChange | null;
-  /** An object moved (`objectFits`): `placement` replaces its AR placement
-   *  when given (a move in AR), else it is kept (a settle's re-pose). */
+  /** An object moved: within its station's found radius it stays there,
+   *  beyond it the station rule seats it anew (`moved`). `placement`
+   *  replaces its AR placement when given (a move in AR), else it is kept
+   *  (a settle's re-pose). Null for an id the document lacks. */
   move(
     object: TourObject,
     what: string,
@@ -193,6 +196,9 @@ export interface CreatorDocument {
       readonly deleted: readonly string[];
       readonly pictures: ReadonlyMap<string, Blob>;
       readonly stations?: readonly StationPose[];
+      /** Whole frames of stations a draft's objects name that the tour
+       *  lacks (`TourSettingsRecord.createdStations`). */
+      readonly createdStations?: readonly StationFrame[];
     },
     what: string,
   ): DocumentChange;
@@ -318,9 +324,8 @@ export function createCreatorDocument(
     sideVersion += 1;
   }
 
-  /** A station id the document does not use, for a placement that starts
-   *  its own station (D8): the write recreates a station an object names
-   *  that the tour lacks, under that id (`tour-content.ts`). */
+  /** A station id the document does not use, for a station a placement
+   *  or a move may start (the slice refuses a taken one). */
   function freshStationId(s: TourDocumentState): string {
     const used = new Set([
       ...s.stations.map((f) => f.id),
@@ -391,15 +396,23 @@ export function createCreatorDocument(
       const before = state();
       const ownStation =
         extras.ownStation === true && given.station === undefined;
-      const object = ownStation
-        ? { ...given, station: freshStationId(before) }
-        : given;
-      if (!canPlace(before, object)) return null;
-      if (extras.blob !== undefined) setPicture(object.id, extras.blob);
+      if (!canPlace(before, given)) return null;
+      if (extras.blob !== undefined) setPicture(given.id, extras.blob);
       if (extras.placement !== undefined) {
-        setPlacement(object.id, extras.placement);
+        setPlacement(given.id, extras.placement);
       }
-      const placed = change(tourDocumentActions.placed({ object, what }));
+      const placed = change(
+        tourDocumentActions.placed({
+          object: given,
+          what,
+          newStationId: freshStationId(before),
+          ...(ownStation ? { newStation: true } : {}),
+        }),
+      );
+      // The object as the station rule seated it.
+      const object =
+        documentObjects(state()).find((o) => o.object.id === given.id)
+          ?.object ?? given;
       return { ...placed, object, ownStation };
     },
     newStationArmed: () => state().newStationArmed,
@@ -411,9 +424,18 @@ export function createCreatorDocument(
       return change(tourDocumentActions.edited({ object, what }));
     },
     move(object, what, placement) {
-      if (!objectFits(state(), object)) return null;
+      const before = state();
+      if (!documentObjects(before).some((o) => o.object.id === object.id)) {
+        return null;
+      }
       if (placement !== undefined) setPlacement(object.id, placement);
-      return change(tourDocumentActions.moved({ object, what }));
+      return change(
+        tourDocumentActions.moved({
+          object,
+          what,
+          newStationId: freshStationId(before),
+        }),
+      );
     },
     remove(id, what) {
       if (!documentObjects(state()).some((o) => o.object.id === id)) {
@@ -453,6 +475,10 @@ export function createCreatorDocument(
           objects: work.objects,
           deleted: work.deleted,
           ...(work.stations === undefined ? {} : { stations: work.stations }),
+          ...(work.createdStations === undefined ||
+          work.createdStations.length === 0
+            ? {}
+            : { createdStations: work.createdStations }),
           what,
         }),
       );

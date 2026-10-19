@@ -252,10 +252,11 @@ export interface EditorSession {
     id: string,
     text: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
-  /** Move a note on the map (its height and facing kept); refused for an
-   *  id the tour no longer carries, and for a spot further from its
-   *  station than a tour can carry (`TOO_FAR_FROM_STATION`). Throws for a
-   *  position nobody can draw (`moveObjectTo`). */
+  /** Move a note on the map (its height and facing kept): beyond its
+   *  station's found radius the station rule seats it anew - the station
+   *  holding its new spot, or a new one there - so no move is too far.
+   *  Refused for an id the tour no longer carries. Throws for a position
+   *  nobody can draw (`moveObjectTo`). */
   move(id: string, lat: number, lon: number): { kind: "moved" } | EditorRefusal;
   /** Delete (undone by `undo`, also after a save wrote it: a photo's
    *  picture is kept for that). Refused, deleting nothing, for an id the
@@ -607,9 +608,6 @@ export function createEditorSession(input: {
       if (state === null) return notInTour;
       const change = objectMoveChange(state, id, lat, lon);
       if (change.kind === "missing") return notInTour;
-      if (change.kind === "too-far") {
-        return { kind: "refused", reason: TOO_FAR_FROM_STATION };
-      }
       store.dispatch(
         tourDocumentActions.moved({
           object: change.after,
@@ -698,27 +696,20 @@ export function createEditorSession(input: {
           JSON.stringify(frame.geo) !== JSON.stringify(pose.geo)
         );
       });
-      const poses = new Map(stations.map((p) => [p.id, p.geo]));
-      const framed: TourDocumentState = {
-        ...state,
-        stations: state.stations.map((s) => {
-          const geo = poses.get(s.id);
-          return geo === undefined ? s : { ...s, geo };
-        }),
-      };
-      // An object too far from its station (a draft written before far
-      // moves were refused) is skipped as the reducer skips it
-      // (`objectFits`, the M5a milestone review L1) - measured in the
-      // frames the restore puts back.
+      // An object its station cannot carry (a draft written before far
+      // moves re-ran the station rule) is seated by the rule as the
+      // restore puts it back (`restored`), never skipped.
       const objects = work.objects.filter(
-        (object) =>
-          !live.has(object.id) &&
-          find(object.id) !== undefined &&
-          objectFits(framed, object),
+        (object) => !live.has(object.id) && find(object.id) !== undefined,
       );
       const deleted = work.deleted.filter(
         (id) => !live.has(id) && find(id) !== undefined,
       );
+      // The stations the draft's objects were seated in that the tour
+      // lacks (a far move started one), whole: back before the objects.
+      const created = settings?.createdStations ?? [];
+      const createdStations =
+        created.length === 0 ? {} : { createdStations: created };
       const needsNoGps =
         settings !== undefined &&
         !state.touched.needsNoGps &&
@@ -733,6 +724,7 @@ export function createEditorSession(input: {
           objects,
           deleted,
           ...(stations.length === 0 ? {} : { stations }),
+          ...createdStations,
           what: "",
         }),
       );
@@ -758,6 +750,7 @@ export function createEditorSession(input: {
             ...(needsNoGps === undefined ? {} : { needsNoGps }),
             ...(details === null ? {} : { details }),
             ...(stations.length === 0 ? {} : { stations }),
+            ...createdStations,
             what: "the restored changes",
           }),
         );

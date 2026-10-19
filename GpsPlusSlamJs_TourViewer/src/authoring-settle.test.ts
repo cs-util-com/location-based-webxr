@@ -4824,9 +4824,19 @@ describe(
       return photo;
     }
 
+    /** A pin a metre from the camera, placed before anything is armed:
+     *  the station the rule alone would seat the photo in. */
+    async function stationNearby(a: ReturnType<typeof authoring>) {
+      await a.placePin("Nearby", [1, 0, 0]);
+      const station = a.ctx.tourDocument.entries().at(-1)!.object.station;
+      expect(station).toBeDefined();
+      return station;
+    }
+
     it("an armed photo starts its own station; the arm goes at the tap, not at the encode's end", async () => {
       const a = authoring();
       await a.mint();
+      const nearby = await stationNearby(a);
       a.dom.newStationButton.click();
       expect(a.ctx.tourDocument.newStationArmed()).toBe(true);
       a.encodes.hold = true;
@@ -4836,6 +4846,7 @@ describe(
       for (const land of a.encodes.waiting.splice(0)) land();
       await flush();
       expect(lastPhoto(a).station).toBeDefined();
+      expect(lastPhoto(a).station).not.toBe(nearby);
       expect(a.ctx.placementNote).toMatch(/^Photo placed/);
       expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
     });
@@ -4843,6 +4854,7 @@ describe(
     it("armed at the tap, the photo starts its station even when the AR visit ends during its encode", async () => {
       const a = authoring();
       await a.mint();
+      const nearby = await stationNearby(a);
       a.dom.newStationButton.click();
       a.encodes.hold = true;
       a.tapPhoto(CAMERA);
@@ -4850,6 +4862,7 @@ describe(
       for (const land of a.encodes.waiting.splice(0)) land();
       await flush();
       expect(lastPhoto(a).station).toBeDefined();
+      expect(lastPhoto(a).station).not.toBe(nearby);
       expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
     });
 
@@ -4862,12 +4875,18 @@ describe(
       expect(a.ctx.tourDocument.newStationArmed()).toBe(true);
       for (const land of a.encodes.waiting.splice(0)) land();
       await flush();
-      expect(lastPhoto(a).station).toBeUndefined();
+      // The photo is seated by the station rule (every object names a
+      // station), and the arm still waits.
+      const photoStation = lastPhoto(a).station;
+      expect(photoStation).toBeDefined();
       expect(a.ctx.tourDocument.newStationArmed()).toBe(true);
+      // A few metres from the photo, where the rule alone would put the pin
+      // into the photo's station: the arm makes it start its own.
       await a.placePin("Next", [3, 0, 1]);
       const next = a.ctx.tourDocument.entries().at(-1)!.object;
       expect(next.kind).toBe("pin");
       expect(next.station).toBeDefined();
+      expect(next.station).not.toBe(photoStation);
       expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
     });
 

@@ -27,6 +27,10 @@ geo, station? }[] }`; `station` is the station a Finish baked the photo
   frame and back. A saved object differs from the placed one by the
   micrometres of that round trip, so a page comparing a placement with the
   saved file compares this one (the authoring draft's `hostedObjects`).
+- `automaticStationFrame(id, at)`: a new automatic station's frame
+  (below), the one the tour document's station rule starts.
+- `routedTo(station)`: the stations `station` routes to (its `next` and
+  its quizzes' routes): what keeps an emptied station from being dropped.
 - `withTourContent(manifest, { objects, captureSpots?, newStationId?,
 radiusM? }) -> TourManifest`: the manifest with `objects` as its pins and
   photos, each in a station, plus the recorded photos placed when the tour

@@ -42,7 +42,11 @@ import {
 } from "./draft-persistence.js";
 import type { CreatorCodes } from "./creator-codes.js";
 import { createKeyedChain } from "./keyed-chain.js";
-import type { StationPose } from "./tour-document.js";
+import {
+  createdStationFrames,
+  type StationFrame,
+  type StationPose,
+} from "./tour-document.js";
 import {
   changedStations,
   parseSettingsRecord,
@@ -291,6 +295,10 @@ export function wireCreatorDraft(deps: {
      *  opened tour's (D17): a restore moves those frames first, so their
      *  items' records land inside them. */
     stations: readonly StationPose[];
+    /** The stations this draft's objects were placed in that the opened
+     *  tour lacks, whole (the settings record's `createdStations`): put
+     *  back before the objects, so each comes back in its own station. */
+    createdStations: readonly StationFrame[];
   } | null = null;
   /**
    * The stored draft's codes while they are not this page's (M6 E2c review
@@ -412,8 +420,14 @@ export function wireCreatorDraft(deps: {
    *  moved, the details set): its record is live work, newer than any
    *  draft's. */
   function settingsLive(): boolean {
-    const { touched } = ctx.tourDocument.state();
-    return touched.stations || touched.details || touched.needsNoGps;
+    const state = ctx.tourDocument.state();
+    const { touched } = state;
+    return (
+      touched.stations ||
+      touched.details ||
+      touched.needsNoGps ||
+      createdStationFrames(state).length > 0
+    );
   }
 
   function writeVisit(
@@ -615,6 +629,9 @@ export function wireCreatorDraft(deps: {
     ctx.tourDocument.restore(
       {
         ...(stations.length === 0 ? {} : { stations }),
+        ...(waiting.createdStations.length === 0
+          ? {}
+          : { createdStations: waiting.createdStations }),
         objects,
         deleted,
         pictures: new Map(
@@ -1095,6 +1112,9 @@ export function wireCreatorDraft(deps: {
         counts,
         visits: stored.visits,
         stations: waitingStations,
+        // Whatever this page did meanwhile: a frame of an id the document
+        // carries is left as it is (`restored`).
+        createdStations: storedSettings?.createdStations ?? [],
       };
       dom.draftOfferText.textContent = restoreOfferText(
         counts.placed,

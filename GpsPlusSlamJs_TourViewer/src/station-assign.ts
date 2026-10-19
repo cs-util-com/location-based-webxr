@@ -77,6 +77,39 @@ export function nearestStationWithin(
   return best?.id ?? null;
 }
 
+/** A station as the per-station rule reads it: its id, its anchor and its
+ *  own found radius (m), which the creator may have changed. */
+export interface HoldingStation {
+  readonly id: string;
+  readonly geo: { readonly lat: number; readonly lon: number };
+  readonly foundRadiusM: number;
+}
+
+/**
+ * The station that holds `at`: the nearest whose anchor is within ITS OWN
+ * `foundRadiusM` (horizontally, inclusive; a tie goes to the earlier
+ * station), else null. The rule every placement, move and recorded photo
+ * of a tour runs (the tour document's `placed` and `moved`, the bake at
+ * open): a station's own radius decides, so a radius set in the editor is
+ * respected. A radius that is not a positive finite number holds nothing
+ * (a broken hand-edited file must not swallow every object).
+ */
+export function stationHolding(
+  stations: readonly HoldingStation[],
+  at: { readonly lat: number; readonly lon: number },
+): string | null {
+  let best: { id: string; d: number } | null = null;
+  for (const station of stations) {
+    const r = station.foundRadiusM;
+    if (!Number.isFinite(r) || r <= 0) continue;
+    const d = horizontalM(station.geo, at);
+    if (d <= r && (best === null || d < best.d)) {
+      best = { id: station.id, d };
+    }
+  }
+  return best?.id ?? null;
+}
+
 /**
  * Assign `elements`, in order, to `stations` and to the new stations the
  * rule starts. The given stations come back first, as they are (the same

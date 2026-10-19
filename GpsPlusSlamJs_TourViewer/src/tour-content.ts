@@ -134,7 +134,15 @@ export function asStored(
   };
 }
 
-function automaticStation(id: string, at: StationPoint): TourStation {
+/**
+ * A new automatic station's frame (D20): anchored where its first element
+ * stands, turned like north, found within R (`STATION_RADIUS_M`, 25 m) and
+ * guiding from twice that (`AUTO_STATION_ACTIVATE_M`), with no story.
+ */
+export function automaticStationFrame(
+  id: string,
+  at: StationPoint,
+): Omit<TourStation, "items"> {
   return {
     id,
     geo: { lat: at.lat, lon: at.lon, alt: at.alt, rotation: [0, 0, 0, 1] },
@@ -142,8 +150,11 @@ function automaticStation(id: string, at: StationPoint): TourStation {
     foundRadiusM: STATION_RADIUS_M,
     hint: "arrow",
     steps: [],
-    items: [],
   };
+}
+
+function automaticStation(id: string, at: StationPoint): TourStation {
+  return { ...automaticStationFrame(id, at), items: [] };
 }
 
 /**
@@ -306,7 +317,7 @@ function emptiedAndBare(
 }
 
 /** The stations `station` routes to: its `next` and its quizzes' routes. */
-function routedTo(station: TourStation): string[] {
+export function routedTo(station: Omit<TourStation, "items">): string[] {
   const ids = station.next === undefined ? [] : [station.next];
   for (const { block } of station.steps) {
     if (block.kind !== "quiz" || block.route === undefined) continue;

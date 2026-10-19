@@ -526,11 +526,19 @@ function itemsByStation(written: TourManifest): {
 } {
   const opened = new Set(tourOf(OPENED).stations.map((s) => s.id));
   const itemsOf = (stations: readonly TourStation[]) =>
-    stations.map((s) => s.items.map((i) => i.id));
+    stations.map((s) => s.items.map((i) => i.id).sort());
   return {
     opened: itemsOf(written.stations.filter((s) => opened.has(s.id))),
     added: itemsOf(written.stations.filter((s) => !opened.has(s.id))),
   };
+}
+
+/** The written station holding item `id`. */
+function stationHolding(
+  written: TourManifest,
+  id: string,
+): TourStation | undefined {
+  return written.stations.find((s) => s.items.some((i) => i.id === id));
 }
 
 const ROWS: readonly Row[] = [
@@ -554,11 +562,16 @@ const ROWS: readonly Row[] = [
     },
   },
   {
+    // Why: pin b is its station's only object, and the station has no
+    // title, story or route: deleting the pin drops the station with it.
     name: "delete a pin, save",
     records: true,
     run: async (p) => {
       await p.remove("b");
       return p;
+    },
+    each: ({ written }) => {
+      expect(written.stations.map((s) => s.id)).toEqual(["st-a", "st-f"]);
     },
   },
   {
@@ -615,19 +628,94 @@ const ROWS: readonly Row[] = [
     },
   },
   {
-    name: "move a note, save",
+    // Why: a move out of its station's found radius re-runs the station
+    // rule. About 57 m from its station and 36 m from the nearest other
+    // one (25 m radii): the note starts a station at its new spot, and the
+    // station it left, now empty and automatic, goes.
+    name: "move a note out of its station's radius, save",
     records: false,
     run: async (p) => {
       await p.move("a", NORTH, 9.0502);
       return p;
     },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["b"], ["f"]],
+        added: [["a"]],
+      });
+    },
   },
   {
-    name: "place a new pin, save",
+    // Why: the same rule, the other way: a note moved to about 11 m from
+    // another station (inside its 25 m radius) joins that station.
+    name: "move a note into another station's radius, save",
+    records: false,
+    run: async (p) => {
+      await p.move("a", 48.5203, 9.05);
+      return p;
+    },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["a", "b"], ["f"]],
+        added: [],
+      });
+    },
+  },
+  {
+    // Why: a new pin about 33 m from the nearest station is beyond every
+    // station's 25 m radius: it starts a station anchored where it stands.
+    name: "place a new pin beyond every station's radius, save",
     records: false,
     run: async (p) => {
       await p.place(pin("new", "A new pin", NORTH));
       return p;
+    },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["a"], ["b"], ["f"]],
+        added: [["new"]],
+      });
+      expect(stationHolding(written, "new")?.geo.lat).toBeCloseTo(NORTH, 9);
+      expect(stationHolding(written, "new")).toMatchObject({
+        foundRadiusM: 25,
+        activateRadiusM: 50,
+      });
+    },
+  },
+  {
+    // Why: the station a move started is the document's from that moment,
+    // not the next write's, so the draft must keep it: after a reload the
+    // note comes back in its own station at its own spot, on both pages.
+    // (A placement's reload is the phone's alone - the desktop places
+    // nothing a draft offers back - and is held by the creator document's
+    // tests and the phone's end-to-end run.)
+    name: "move a note out of its station's radius, reload and restore the draft, save",
+    records: false,
+    run: async (p) => {
+      await p.move("a", NORTH, 9.0502);
+      return p.reopenRestored();
+    },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["b"], ["f"]],
+        added: [["a"]],
+      });
+    },
+  },
+  {
+    // Why: a new pin about 11 m from pin b's station, within its radius,
+    // joins it rather than starting one of its own.
+    name: "place a new pin within a station's radius, save",
+    records: false,
+    run: async (p) => {
+      await p.place(pin("near", "A near pin", 48.5203));
+      return p;
+    },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["a"], ["b", "near"], ["f"]],
+        added: [],
+      });
     },
   },
   {

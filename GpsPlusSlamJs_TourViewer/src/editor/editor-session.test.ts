@@ -461,6 +461,9 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     expect(draft.calls).toEqual([
       "save a New",
       "save b pin b",
+      // About 1.3 km away the move starts a station of its own, whose
+      // frame the settings record keeps (a reload brings it back).
+      "settings needsNoGps=false",
       "tombstone a",
       "save a New",
       "untombstone a",
@@ -468,7 +471,7 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     // An unchanged text and a refused one write nothing.
     editor.editText("a", "New");
     editor.editText("a", " ");
-    expect(draft.calls).toHaveLength(5);
+    expect(draft.calls).toHaveLength(6);
     await session.close();
   });
 
@@ -563,42 +566,40 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     await session.close();
   });
 
-  // Why (the M5a milestone review L1): a note stays in its station however
-  // far it is moved, and the format refuses an item more than 10 km from
-  // its station. A far drag on the 2D map was taken, and from then on
-  // every save failed with the parser's technical message. The move is
-  // refused in words instead, changing nothing, and saving still works.
-  it("refuses a move further from the note's station than a tour can carry, in words", async () => {
+  // Why: the format refuses an item more than 10 km from its station, and
+  // a far drag on the 2D map once made every later save fail with the
+  // parser's technical message. A move out of its station's found radius
+  // now re-runs the station rule, so the note lands in a station at its
+  // new spot - never far from its station, however far it went - and the
+  // station it left, now empty, goes with the same step.
+  it("seats a note moved far beyond its station in a station at its new spot, and saving works", async () => {
     const { session, manifest } = await opened([pin("a"), pin("b")]);
-    const draft = loggedDraft();
     const editor = createEditorSession({
       session,
       manifest,
       levels: new Map(),
-      draft,
     });
-    // About 22 km north of its station.
-    expect(editor.move("a", 48.72, 9.05)).toEqual({
-      kind: "refused",
-      reason: TOO_FAR_FROM_STATION,
-    });
-    expect(TOO_FAR_FROM_STATION).toContain("10 km");
-    expect(editor.changeCount()).toBe(0);
-    expect(editor.undo()).toEqual({ kind: "nothing" });
-    expect(draft.calls).toEqual([]);
-    // About 5.5 km is far, but a tour can carry it.
-    expect(editor.move("b", 48.57, 9.05)).toEqual({ kind: "moved" });
+    // About 22 km north of its station: beyond the format's 10 km bound.
+    expect(editor.move("a", 48.72, 9.05)).toEqual({ kind: "moved" });
+    expect(editor.changeCount()).toBe(1);
     const saved = await carried((await editor.save({ keepScan: false })).blob);
-    expect(saved.objects.find((o) => o.id === "b")?.geo.lat).toBeCloseTo(
-      48.57,
-      6,
-    );
+    const a = saved.objects.find((o) => o.id === "a");
+    expect(a?.geo.lat).toBeCloseTo(48.72, 6);
+    expect(a?.station).not.toBe(stationIdOf("a"));
+    const stations = saved.stations;
+    const home = stations.find((s) => s.id === a?.station);
+    expect(home?.geo.lat).toBeCloseTo(48.72, 6);
+    expect(stations.map((s) => s.id)).not.toContain(stationIdOf("a"));
+    // The undo takes the note back into its old station.
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
     await session.close();
   });
 
-  // Why (L1, the same bound): a draft written before the move was refused
-  // can still offer such a move; restoring it would make every save fail.
-  it("skips a draft's object that stands further from its station than a tour can carry", async () => {
+  // Why: a draft written before far moves re-ran the station rule can
+  // still hold a note its station cannot carry; restoring it as it was
+  // would make every save fail, and skipping it would lose the work. It is
+  // restored, seated by the rule where it stands.
+  it("restores a draft's note its station cannot carry into a station of the rule's", async () => {
     const { session, manifest } = await opened([pin("a"), pin("b")]);
     const editor = createEditorSession({
       session,
@@ -611,16 +612,22 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     };
     const near = inOwnStation(pin("b", "near"));
     expect(editor.restore({ objects: [far, near], deleted: [] })).toEqual({
-      changed: 1,
+      changed: 2,
       deleted: 0,
     });
     const saved = await carried((await editor.save({ keepScan: false })).blob);
     expect(
-      saved.objects.map((o) => [o.id, "label" in o ? o.label : ""]),
+      saved.objects
+        .map((o) => [o.id, "label" in o ? o.label : "", o.station])
+        .sort(),
     ).toEqual([
-      ["a", "pin a"],
-      ["b", "near"],
+      ["a", "far", expect.not.stringMatching(`^${stationIdOf("a")}$`)],
+      ["b", "near", stationIdOf("b")],
     ]);
+    expect(saved.objects.find((o) => o.id === "a")?.geo.lat).toBeCloseTo(
+      48.72,
+      6,
+    );
     await session.close();
   });
 });
@@ -1912,6 +1919,30 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
     expect(editor.undo()).toMatchObject({ kind: "undone" });
     const undone = await carried((await editor.save({ keepScan: false })).blob);
     expect(undone.objects.map((o) => o.id)).toEqual(["a"]);
+    await session.close();
+  });
+
+  // Why: a note that NAMES its station keeps it, so the format's 10 km
+  // bound between an item and its station still applies to it - refused
+  // in words rather than taken and failing every later save.
+  it("refuses a new note naming a station further away than a tour can carry, in words", async () => {
+    const { session, manifest } = await opened([pin("a")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const far: TourObject = {
+      ...pin("n"),
+      station: stationIdOf("a"),
+      geo: { ...pin("n").geo, lat: 48.72 },
+    };
+    expect(editor.place(far)).toEqual({
+      kind: "refused",
+      reason: TOO_FAR_FROM_STATION,
+    });
+    expect(TOO_FAR_FROM_STATION).toContain("10 km");
+    expect(editor.changeCount()).toBe(0);
     await session.close();
   });
 

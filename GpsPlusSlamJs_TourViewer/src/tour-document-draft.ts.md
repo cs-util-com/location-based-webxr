@@ -9,17 +9,25 @@ after the reducer, never from `store.subscribe`.
 
 ## Public API
 
-- `TourSettingsRecord` - `{ needsNoGps, details?, stations? }` (`stations`:
-  `StationPose[]`, each station's `{ id, geo }`), the draft's settings
-  record (`editor/editor-draft.ts`'s `EditorTourSettings` has the same
-  shape).
+- `TourSettingsRecord` - `{ needsNoGps, details?, stations?,
+createdStations? }` (`stations`: `StationPose[]`, each station's
+  `{ id, geo }`; `createdStations`: the whole frames of the stations this
+  page created, `createdStationFrames` of `tour-document.ts`, absent when
+  none), the draft's settings record (`editor/editor-draft.ts`'s
+  `EditorTourSettings` has the same shape). Every object belongs to a
+  station from its placement on, and the objects' records only NAME it:
+  the record keeps the frame, so a reload brings a pin's station back
+  where it stood (`restored` puts it back before the objects).
 - `TourDocumentDraft` - `DraftObjectWrites` (`draft-actions.ts`) plus
   `saveSettings(record)`.
 - `SETTINGS_KEY` (`"settings"`) - the record's file in a draft
   namespace, on both pages; `readDraft` skips it.
 - `parseSettingsRecord(text)` - a stored record, or undefined when it does
   not read (a bad station pose or detail costs the record, never the
-  objects beside it).
+  objects beside it). The created frames are read as the format reads a
+  station (`parseTourManifest` over them, without items); frames that do
+  not read cost only themselves - the objects naming them are seated by
+  the station rule as they come back.
 - `changedStations(wanted, against)` - the ids of `wanted`'s stations
   whose pose differs from `against`'s (by data, whatever its key order:
   `same-json.ts`); none without an opinion, none for a station `against`
@@ -84,7 +92,9 @@ const stop = store.listenToDocument({
   undo (no tombstone), a photo's picture,
   the settings record with and without details, the station poses once a
   station moved (review #1), nothing for a save landing
-  or across an open.
+  or across an open; the created stations' frames written by a placement
+  that starts one (none for one that joins), read back as they were, and
+  a record whose frames do not read keeping the rest.
 - The record's reading and comparing, through both drafts:
   `editor/editor-draft.test.ts` and `creator-setup.test.ts` "the draft
   keeps a moved station's pose".

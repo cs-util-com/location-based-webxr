@@ -1418,6 +1418,12 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
   // no representation at all, so a crash brought the object back.
   const HOSTED = pin("hosted");
   const EDITED: TourObject = { ...pin("hosted"), label: "the new text" };
+  /** `object` as the document holds it: in the station it stands in
+   *  (every object names its station). */
+  const inItsStation = (object: TourObject): TourObject => ({
+    ...object,
+    station: stationIdOf("hosted"),
+  });
 
   it("offers an edit of a hosted object as a change, and restores it in place of the hosted one", async () => {
     const { store, files } = memoryStore({
@@ -1434,7 +1440,9 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     expect(dom.draftOfferText.textContent).toContain("1 change");
     expect(files.has(objectKey("hosted")), "and it is not swept").toBe(true);
     dom.draftRestore.click();
-    expect(ctx.tourDocument.entries().map((p) => p.object)).toEqual([EDITED]);
+    expect(ctx.tourDocument.entries().map((p) => p.object)).toEqual([
+      inItsStation(EDITED),
+    ]);
   });
 
   it("offers a deletion the hosted zip has not seen, and restores it as a tombstone", async () => {
@@ -1561,7 +1569,9 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
 
     dom.draftDiscard.click();
     await settle();
-    expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(LIVE);
+    expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(
+      inItsStation(LIVE),
+    );
     expect(rejectedOf(files.get(META_KEY) as string)).not.toContain("hosted");
   });
 
@@ -1593,7 +1603,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     await settle();
     expect(disk.files.has(deletedKey("hosted"))).toBe(false);
     expect(JSON.parse(String(disk.files.get(objectKey("hosted"))))).toEqual(
-      LIVE,
+      inItsStation(LIVE),
     );
 
     // The reload: the edit is offered as the change it is, never a delete.
@@ -1657,7 +1667,9 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
 
     expect(files.has(objectKey("hosted"))).toBe(true);
     // The live edit's content, not the spent draft's (M4 review #2).
-    expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(EDITED);
+    expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(
+      inItsStation(EDITED),
+    );
     const meta = JSON.parse(String(files.get(META_KEY))) as {
       rejected?: string[];
     };

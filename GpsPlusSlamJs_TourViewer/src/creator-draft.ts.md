@@ -227,11 +227,22 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
 ## The settings record (tour editor plan §19 #1)
 
 The tour document's settings record (`tour-document-draft.ts`: the
-setting, the details once set, every station's pose once one moved) is
-one file, `settings` (`SETTINGS_KEY`), in the tour's namespace - the
-desktop's name and shape (`editor/editor-draft.ts`), read by the same
-`parseSettingsRecord`. The document's listener writes it whole on each
-change, in its own queue. The phone reads only its STATION POSES back:
+setting, the details once set, every station's pose once one moved, the
+whole frames of the stations this page created) is one file, `settings`
+(`SETTINGS_KEY`), in the tour's namespace - the desktop's name and shape
+(`editor/editor-draft.ts`), read by the same `parseSettingsRecord`. The
+document's listener writes it whole on each change, in its own queue. The
+phone reads its STATION POSES and its CREATED STATIONS back:
+
+- **Created stations** (every object belongs to a station from its
+  placement on): the offer carries the record's created frames, and the
+  restore hands them to the document before the objects, so a pin comes
+  back in the station it was placed in - not seated anew because the tour
+  file lacks it. A frame of an id the document carries is left as it is.
+  They are not work of their own (the objects naming them are); a page
+  holding created stations counts as live settings work
+  (`settingsLive`), so neither "Delete it" nor a spent draft removes the
+  record their live objects need.
 
 - **Offered**: the poses that differ from the opened tour's
   (`changedStations`) are work like any object - the draft is not spent

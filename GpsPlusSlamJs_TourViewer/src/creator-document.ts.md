@@ -33,21 +33,29 @@ copy of the tour.
   draft write the change caused settled (true: all landed, or no draft
   follows):
   - `place(object, { blob?, placement?, ownStation? }, what)` -
-    `canPlace`; returns the change with `ownStation`: asked for it ("New
-    station here", owner decision D8 of `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`),
-    an object naming no station names a fresh station id of its own (one
-    the document does not use), so the write starts it there even within
-    R of another (`tour-content.ts`). It never reads or changes the arm:
+    `canPlace`; the slice's station rule seats an object naming no station
+    (the station holding it, or a new one anchored at it, under a fresh id
+    the document does not use); with `ownStation` ("New station here",
+    owner decision D8 of `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`)
+    always a new one, even within another's radius. Returns the change,
+    `ownStation` as asked, and the `object` as the document seated it
+    (naming its station). It never reads or changes the arm:
     the caller takes it when the item is committed (a photo at its
     shutter tap, not when its encode lands) and gives it back if the item
     is not placed (`creator-placement.ts`);
   - `edit(object, what)` - `objectFits`; the AR placement is kept;
-  - `move(object, what, placement?)` - `objectFits`; `placement` replaces
-    the AR placement (a move in AR), else it is kept (a settle's re-pose);
+  - `move(object, what, placement?)` - null for an id the document
+    lacks; within its station's found radius the object stays there,
+    beyond it the station rule seats it anew (a fresh id for a station it
+    starts), and the station it left goes when that empties an automatic
+    one. `placement` replaces the AR placement (a move in AR), else it is
+    kept (a settle's re-pose);
   - `remove(id, what)` - null for an id the tour does not carry;
   - `moveStation(stationId, geo, what)` - D17, null for an unknown station;
-  - `restore({ objects, deleted, pictures, stations? }, what)` - a draft's
-    work, already filtered by the page, with its photos' pictures;
+  - `restore({ objects, deleted, pictures, stations?, createdStations? },
+what)` - a draft's work, already filtered by the page, with its
+    photos' pictures and the whole frames of the stations its objects were
+    seated in that the tour lacks;
   - `undo()` - `{ kind: "undone", what, backedUp }`, `{ kind: "nothing" }`,
     or refused: `"saving"` (`canStep`) or `"picture-gone"`
     (`picturesNeeded`, a photo whose picture this page does not hold).

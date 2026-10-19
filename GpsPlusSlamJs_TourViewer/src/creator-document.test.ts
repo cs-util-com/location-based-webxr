@@ -16,7 +16,11 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { createCreatorDocument } from "./creator-document.js";
 import { stationsAsFinished } from "./creator-stations.js";
 import { manifestToWrite, tourDocumentActions } from "./tour-document.js";
-import type { TourDocumentDraft } from "./tour-document-draft.js";
+import {
+  parseSettingsRecord,
+  type TourDocumentDraft,
+  type TourSettingsRecord,
+} from "./tour-document-draft.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import { tourOf } from "./test-support/v3-tour.js";
 
@@ -182,13 +186,23 @@ describe("the creator's document: changes through the slice's guards", () => {
     expect(doc.place(pin("a"), {}, "a pin")).toBeNull();
   });
 
-  it("refuses a move beyond its station's reach", () => {
+  // Why: a move beyond its station's found radius re-runs the station
+  // rule, so however far it goes the object stands in a station near it -
+  // the format's 10 km bound between an item and its station cannot be
+  // crossed by a move. A move of an id the document lacks is refused.
+  it("seats a move far beyond its station in a station at the new spot, and refuses an unknown id", () => {
     const doc = fresh();
     doc.open(tourOf([pin("a")]));
     const a = doc.objects()[0]!.object;
-    // Far beyond the format's per-axis bound (TOUR_ITEM_MAX_OFFSET_M).
-    expect(doc.move({ ...a, geo: { ...a.geo, lat: 49.5 } }, "far")).toBeNull();
-    expect(doc.entries()).toEqual([]);
+    // About 110 km north: far beyond the format's bound.
+    expect(
+      doc.move({ ...a, geo: { ...a.geo, lat: 49.5 } }, "far"),
+    ).not.toBeNull();
+    const moved = doc.objects()[0]!.object;
+    expect(moved.station).not.toBe(a.station);
+    const home = doc.state().stations.find((f) => f.id === moved.station);
+    expect(home?.geo.lat).toBe(49.5);
+    expect(doc.move({ ...pin("nobody") }, "nobody")).toBeNull();
   });
 
   it("keeps an object's AR placement across an edit, replaces it on a move in AR", () => {
@@ -564,13 +578,22 @@ describe("the creator's document: 'New station here' (D8)", () => {
   });
 
   it("writes the placement into the draft naming its own station, so a reload keeps it apart", () => {
+    // Why: the station is the document's from the placement on, so the
+    // draft keeps its whole frame (the settings record's created
+    // stations) beside the object naming it. Without the frame a reload
+    // would seat "b" by the rule - into a's station, 5 m away.
     const doc = fresh();
     const saved: TourObject[] = [];
+    let settings: TourSettingsRecord | null = null;
     const { draft } = recordingDraft();
     doc.follow({
       ...draft,
       saveObject: (object) => {
         saved.push(object);
+        return Promise.resolve(true);
+      },
+      saveSettings: (record) => {
+        settings = record;
         return Promise.resolve(true);
       },
     });
@@ -579,16 +602,36 @@ describe("the creator's document: 'New station here' (D8)", () => {
     const own = saved.find((o) => o.id === "b")?.station;
     expect(own).toBeDefined();
     expect(own).not.toBe(doc.state().stations[0]!.id);
-    // A later page restoring that record starts the same separate station.
+    // The record as a later open reads it back from disk.
+    const read = parseSettingsRecord(JSON.stringify(settings));
+    expect(read?.createdStations?.map((f) => f.id)).toEqual([own]);
+    // A later page restoring those records starts the same separate
+    // station, anchored where it stood.
     const reloaded = fresh();
     reloaded.open(tourOf([pin("a")]));
     reloaded.restore(
-      { objects: saved, deleted: [], pictures: new Map() },
+      {
+        objects: saved,
+        deleted: [],
+        pictures: new Map(),
+        createdStations: read?.createdStations ?? [],
+      },
       "the draft",
     );
     expect(
       stationsAsFinished({ state: reloaded.state() }).map((s) => s.itemIds),
     ).toEqual([["a"], ["b"]]);
+    expect(reloaded.state().stations[1]).toEqual(doc.state().stations[1]);
+    // The control: the objects alone come back by the rule, into a's.
+    const bare = fresh();
+    bare.open(tourOf([pin("a")]));
+    bare.restore(
+      { objects: saved, deleted: [], pictures: new Map() },
+      "the draft",
+    );
+    expect(
+      stationsAsFinished({ state: bare.state() }).map((s) => s.itemIds),
+    ).toEqual([["a", "b"]]);
   });
 
   it("is disarmed by a tour opening or closing", () => {

@@ -651,8 +651,8 @@ export function wireCreatorSetup(deps: {
   }
 
   /** The creator's stations in AR (tour editor plan W3 "AR authoring"):
-   *  the open one's line and ring, read from the working copy through the
-   *  Finish's own writer - no state of their own. */
+   *  the open one's line and ring, read from the tour document's stations
+   *  as the next write carries them - no state of their own. */
   const stations = wireCreatorStations({
     tour: ctx.tourDocument,
     dom: { chip: dom.stationChip ?? { textContent: "", hidden: true } },
