@@ -620,11 +620,12 @@ export function createViewerPlacement(deps: {
    * M2b), and the one store subscription that stops it when the odometry
    * frame changes: a frame change (`qrDetected.frameEpoch`: an odometry
    * restart or loop closure) leaves the kept pose naming a place in the old
-   * frame, so the hold ends there (M2b review #1); the code's next scan
-   * votes afresh in the new one. The subscription ends itself once the
-   * entry's keep-alive is no longer the session's (`endQrPipeline` at AR
-   * exit, or the next entry's pipeline). Its votes are cast per device fix
-   * by {@link recordDeviceFix}.
+   * frame, so the hold ends there (M2b review #1), and so does the code's
+   * trust ({@link endCodeTrust}); the code's next scan votes afresh in the
+   * new one and lines the tour up again. The subscription ends itself once
+   * the entry's keep-alive is no longer the session's (`endQrPipeline` at
+   * AR exit, or the next entry's pipeline). Its votes are cast per device
+   * fix by {@link recordDeviceFix}.
    */
   function startKeepAlive(): QrVoteKeepAlive {
     ctx.viewerKeepAlive?.stop();
@@ -644,9 +645,27 @@ export function createViewerPlacement(deps: {
       if (epoch !== keptFrameEpoch) {
         keptFrameEpoch = epoch;
         keepAlive.stop();
+        endCodeTrust();
       }
     });
     return keepAlive;
+  }
+
+  /**
+   * A code's trust ends on events only: a veto ({@link vetoMovedCode}),
+   * an odometry-frame change (here), an AR exit and a new tour (the
+   * session's resets) - never by the clock, a count of fixes or a distance. After a frame change the votes
+   * name places in the old frame, so nothing may read the tour as lined up
+   * by a code: the stations' trust (`codeLinedUp`, the 1 m takeover
+   * margin), the status line, the placement trigger. Unlike the veto the
+   * code is not ignored and its votes stay; its next voted lock lines the
+   * tour up again.
+   */
+  function endCodeTrust(): void {
+    if (ctx.viewerLockedText === null && ctx.viewerVotedLocks === 0) return;
+    ctx.viewerVotedLocks = 0;
+    ctx.viewerLockedText = null;
+    hooks.renderArStatus();
   }
 
   /**

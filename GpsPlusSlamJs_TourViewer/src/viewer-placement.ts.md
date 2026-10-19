@@ -86,7 +86,12 @@ recording. Its own module since the flows plan M6.
     (`ctx.viewerKeepAlive`, authoring plan M2b) with one store
     subscription that stops it when the odometry frame changes
     (`qrDetected.frameEpoch`: the kept pose names a place in the old frame,
-    M2b review #1) and removes itself once that keep-alive is no longer the
+    M2b review #1) - and ends the code's trust there too
+    (`endCodeTrust`: `viewerLockedText` null and `viewerVotedLocks` 0, so
+    `codeLinedUp` reads false for the stations, the status line and the
+    placement trigger; unlike a veto the code is not ignored, its votes
+    stay, and its next voted lock lines the tour up again) - and removes
+    itself once that keep-alive is no longer the
     session's (`endQrPipeline`, the next entry); its votes are cast by
     `recordDeviceFix`. A lock's votes reach the sink all at once
     (`dispatchVotes`): one batch per lock. It creates the entry's vote
@@ -354,6 +359,11 @@ recording. Its own module since the flows plan M6.
   - A walk none of whose photos is readable shows them as skipped where it
     used to fall back to the ring - only a walk with no photo at all ("no
     readable capture photos") falls back.
+  - **A code's trust ends on events only**: a veto, an odometry-frame
+    change, an AR exit, a new tour - never by the clock, a count of fixes
+    or a distance (measured across clock, fix-count and distance rules in
+    a museum-sized layout: every clock rule kept the right station far
+    less often than "never by the clock").
   - Tracking alone shows nothing: a code's votes feed the tracking-quality report;
     nothing here is shown or kept alive on tracking alone - the shown set
     comes from presence (`station-guide.ts`'s one gate), and a veto still
@@ -427,6 +437,10 @@ keep-alive casts exactly one ring per device fix from the kept pose,
 answers no synthetic point, stops at AR exit, and starts fresh per entry;
 a code re-scanned 20 minutes later votes from where it reads now and the
 keep-alive re-votes from there, a frame change ends the hold (review #1);
+a frame change ends the code's trust (no code lines the tour up, neither
+line says it places the tour) but keeps what a veto takes (the code not
+ignored, its votes, the gate), a re-scan lines the tour up again, a store
+change without a frame change keeps it, and codes only behaves the same;
 the hold hands over by arrival with the fix clock skewed by 5 s or 1 h
 either way (review #4); a tour reopened in the same entry waits for a real
 vote and holds again (review #6). M2e: a lock's ring is ONE batch, a
