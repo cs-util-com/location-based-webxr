@@ -2279,7 +2279,7 @@ test("a large tour, saved by hand, still writes an undo across its in-place save
 test("a large tour's resave whose quiet time ends during an edit waits for the edit, then writes the undone state", async ({
   page,
 }) => {
-  // Why (PR review): a resave falling due while a field was being
+  // Why: a resave falling due while a field was being
   // typed in was claimed and then held, and the claim had already taken the
   // resave on - so on a large tour (autosave off) nothing wrote the file
   // until Save, the very loss the resave closes. It now waits out the edit and

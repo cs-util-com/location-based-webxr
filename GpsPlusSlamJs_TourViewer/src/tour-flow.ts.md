@@ -54,7 +54,8 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
   `ctx.viewerVotedLocks > 0`: the walk's placement trigger runs whatever
   the tracking phase reads (`viewer-placement.ts`). Since r881 the veto
   sets the count to 0, so a tour whose votes were all taken back is no
-  longer code-placed (review M1).
+  longer code-placed (review M1); an odometry-frame change sets it to 0 as
+  well (`endCodeTrust`), until the code's next voted lock.
 - `alignmentReady(report, qr): boolean` - `isPlacementReady(report) ||
 codeLinedUp(qr)`: whether the station guide judges on the aligned frame
   (its position, the HUD's arrows, the breadcrumbs, the figure). The find

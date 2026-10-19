@@ -120,7 +120,10 @@ content.update(Date.now());
   show all / setPart / frames / settles: at most one station group besides
   the always-shown content (presence only); every result disposed at most
   once, and exactly once after `dispose`; every live material back at its
-  own opacity and transparent flag once its fade ends.
+  own opacity and transparent flag once its fade ends; once every render
+  landed and every fade ended, each station shown last that still has a
+  part stands in the scene, and so does the always-shown content with one
+  (a table that held every station back would pass the other checks).
 - `station-content.scale.test.ts` - the 100-station object count.
 - `station-content.sweep.test.ts` - the fade length's sweep.
 - End to end: `playwright-tests/stations.spec.js` (the walk from the gate

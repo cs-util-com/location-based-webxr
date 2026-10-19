@@ -58,8 +58,8 @@ recording. Its own module since the flows plan M6.
     through `seams.createLabel`, photos
     decoded through `deps.loadContent` when given (the stations' prefetch
     cache, `visitor-stations.ts`, which holds story media only: an item
-    photo is read from the archive again on each return until visitor
-    plan M3), else `session.loadContentEntry`, which
+    photo is read from the archive again on each return until item photos
+    join the prefetch), else `session.loadContentEntry`, which
     joins the archive's
     manifest prefix - a re-zipped tour keeps its photos under
     `mytour/content/…` while the record names `content/…` (PR #435
@@ -337,11 +337,11 @@ recording. Its own module since the flows plan M6.
   part): the tour's items ("items", one per station that has some), the
   walk's photos ("walk", grouped by `station-captures.ts`: a baked photo
   keeps its station, a live one goes to the nearest station within 25 m)
-  and the ring ("ring", with the station nearest its code within the same
-  25 m). Only the stations the store shows - the present one, or every one
+  and the ring ("ring", with the nearest station whose own found radius
+  holds its code, where a visitor at the code is present). Only the stations the store shows - the present one, or every one
   under "show all" - are decoded and stand in the scene, one station group
   at a time with a 400 ms fade; content no station holds (live photos
-  beyond every station, a ring whose code is beyond every station) is the
+  beyond every station, a ring whose code no found radius holds) is the
   loose group `loose:always`, the table's `alwaysShown`: always shown,
   in its own render lane, so a present station never waits behind it.
   `syncContent()` tells the table the shown set on every store dispatch
@@ -438,7 +438,9 @@ answers no synthetic point, stops at AR exit, and starts fresh per entry;
 a code re-scanned 20 minutes later votes from where it reads now and the
 keep-alive re-votes from there, a frame change ends the hold (review #1);
 a frame change ends the code's trust (no code lines the tour up, neither
-line says it places the tour) but keeps what a veto takes (the code not
+line says it places the tour, the visitor's line asks for the code, and
+the tour is no longer code-placed until the next voted lock:
+`codePlacedTour`) but keeps what a veto takes (the code not
 ignored, its votes, the gate), a re-scan lines the tour up again, a store
 change without a frame change keeps it, and codes only behaves the same;
 the hold hands over by arrival with the fix clock skewed by 5 s or 1 h

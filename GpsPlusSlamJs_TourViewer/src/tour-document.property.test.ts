@@ -362,12 +362,17 @@ describe("tour document (properties)", () => {
 
 /** A creator's step as the D33 property drives it: the edits of `opArb`
  *  (no save), undo, redo, and a save written in place (arriving, or
- *  failing after it was built) or downloaded. */
+ *  failing after it was built) or downloaded - or an in-place write still
+ *  in flight, holding the slot across the steps that follow until it lands
+ *  or fails. */
 type CrossingOp =
   | Op
   | { kind: "in-place" }
   | { kind: "in-place-failed" }
-  | { kind: "download" };
+  | { kind: "download" }
+  | { kind: "writing-start" }
+  | { kind: "writing-lands" }
+  | { kind: "writing-fails" };
 
 const crossingOpArb: fc.Arbitrary<CrossingOp> = fc.oneof(
   opArb.filter((op) => op.kind !== "save"),
@@ -376,6 +381,9 @@ const crossingOpArb: fc.Arbitrary<CrossingOp> = fc.oneof(
   fc.constant({ kind: "in-place" as const }),
   fc.constant({ kind: "in-place-failed" as const }),
   fc.constant({ kind: "download" as const }),
+  fc.constant({ kind: "writing-start" as const }),
+  fc.constant({ kind: "writing-lands" as const }),
+  fc.constant({ kind: "writing-fails" as const }),
 );
 
 describe("tour document (properties): a step across an in-place save (D33)", () => {
@@ -384,7 +392,9 @@ describe("tour document (properties): a step across an in-place save (D33)", () 
     // decides it by the SET of edits each view carries - the file holds the
     // edits of the view it wrote; an edit dropped by a new branch it still
     // holds puts it off the history, where every step crosses. Two
-    // formulations, one answer, over any mix of edits, steps and saves.
+    // formulations, one answer, over any mix of edits, steps and saves -
+    // steps taken while an in-place write is in flight included, where the
+    // disk ends up holding either view.
     fc.assert(
       fc.property(fc.array(crossingOpArb, { maxLength: 40 }), (ops) => {
         let state = opened;
@@ -392,12 +402,51 @@ describe("tour document (properties): a step across an in-place save (D33)", () 
         let pos = 0;
         let next = 0;
         let file: Set<number> | null = null;
+        /** The view an in-place write in flight holds; the slot is held
+         *  while it is set. */
+        let writing: Set<number> | null = null;
         for (const op of ops) {
+          if (op.kind === "writing-start") {
+            if (writing !== null) continue;
+            state = reduce(state, act.saveClaimed({ by: "explicit" }));
+            state = reduce(
+              state,
+              act.saved({
+                generation: state.generation,
+                written: manifestToWrite(state)!,
+                appliedDeletions: [...state.deleted],
+                stationsAtStart: state.stations,
+                inPlaceAt: state.position,
+              }),
+            );
+            writing = new Set(line.slice(0, pos));
+            continue;
+          }
+          if (op.kind === "writing-lands" || op.kind === "writing-fails") {
+            if (writing === null) continue;
+            if (op.kind === "writing-lands") {
+              state = reduce(
+                state,
+                act.saveDelivered({ inPlace: true, name: "t.zip" }),
+              );
+              file = writing;
+              state = reduce(state, act.saveReleased({}));
+            } else {
+              state = reduce(
+                state,
+                act.saveReleased({ error: "write failed" }),
+              );
+            }
+            writing = null;
+            continue;
+          }
           if (
             op.kind === "in-place" ||
             op.kind === "in-place-failed" ||
             op.kind === "download"
           ) {
+            // One save at a time: a write in flight holds the slot.
+            if (writing !== null) continue;
             const written = manifestToWrite(state)!;
             const inPlace = op.kind !== "download";
             state = reduce(
@@ -422,11 +471,15 @@ describe("tour document (properties): a step across an in-place save (D33)", () 
             continue;
           }
           // Each step is read on its own: a claimed save takes the last one's
-          // resave on, as the page's resave does.
-          state = reduce(
-            reduce(state, act.saveClaimed({ by: "auto" })),
-            act.saveReleased({}),
-          );
+          // resave on, as the page's resave does (while a write holds the
+          // slot, its holder's claim again).
+          state =
+            writing === null
+              ? reduce(
+                  reduce(state, act.saveClaimed({ by: "auto" })),
+                  act.saveReleased({}),
+                )
+              : reduce(state, act.saveClaimed({ by: "explicit" }));
           const before = state;
           state =
             op.kind === "undo" || op.kind === "redo"
@@ -434,18 +487,23 @@ describe("tour document (properties): a step across an in-place save (D33)", () 
               : apply(state, op);
           const taken = state.revision !== before.revision;
           const onLine = new Set(line);
-          const off =
-            file !== null && [...file].some((edit) => !onLine.has(edit));
+          const off = (held: Set<number>): boolean =>
+            [...held].some((edit) => !onLine.has(edit));
+          // While a write is in flight the disk ends up holding the file's
+          // view or the write's: a step crossing either is due.
+          const views = [file, writing].filter(
+            (v): v is Set<number> => v !== null,
+          );
           // The model's answer: a step not taken, and an edit, cross nothing.
           let due = false;
           if (taken && op.kind === "undo") {
             const edit = line[pos - 1]!;
             pos -= 1;
-            due = file !== null && (off || file.has(edit));
+            due = views.some((v) => off(v) || v.has(edit));
           } else if (taken && op.kind === "redo") {
             const edit = line[pos]!;
             pos += 1;
-            due = file !== null && (off || !file.has(edit));
+            due = views.some((v) => off(v) || !v.has(edit));
           } else if (taken) {
             line = [...line.slice(0, pos), next];
             next += 1;

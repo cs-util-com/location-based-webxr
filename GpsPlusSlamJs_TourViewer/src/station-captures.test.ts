@@ -14,7 +14,7 @@ import { capturesByStation, nearestStationId } from "./station-captures.js";
  * under none would never show. Baked photos keep the station the creator's
  * Finish gave them; photos joined live get the same rule the Finish uses
  * (`assignToStations`); the ring around a code goes with the station
- * nearest the code.
+ * nearest the code whose own found radius holds it.
  */
 
 // The geodesy is licence-gated; the store's construction activates it.
@@ -28,8 +28,8 @@ function at(n: number, e: number) {
   return { lat: g.lat, lon: g.lon, alt: 400 };
 }
 
-function station(id: string, n: number, e: number) {
-  return { id, geo: at(n, e) };
+function station(id: string, n: number, e: number, foundRadiusM = 25) {
+  return { id, geo: at(n, e), foundRadiusM };
 }
 
 const capture = (name: string, n: number, e: number, station?: string) => ({
@@ -118,18 +118,39 @@ describe("capturesByStation", () => {
 });
 
 describe("nearestStationId (the ring)", () => {
-  it("is the station nearest the code within the station radius (25 m, inclusive)", () => {
+  it("is the station nearest the code whose own found radius holds it (inclusive)", () => {
     const stations = [station("a", 0, 0), station("b", 300, 0)];
     expect(nearestStationId(stations, at(290, 0))).toBe("b");
     expect(nearestStationId(stations, at(24.9, 0))).toBe("a");
     expect(nearestStationId(stations, at(0, 25))).toBe("a");
   });
 
+  // Why: the ring shows only while its station is present, and presence
+  // starts only inside the station's OWN found radius. A ring given to a
+  // 5 m station from a code 8 m away showed nowhere a visitor at the code
+  // stands, so the visitor saw nothing after the lock. Both sides of the
+  // 5 m boundary, and a code at 3 m.
+  it("takes a station only when the code lies inside that station's found radius", () => {
+    const small = [station("s", 0, 0, 5)];
+    expect(nearestStationId(small, at(8, 0))).toBeNull();
+    expect(nearestStationId(small, at(5.1, 0))).toBeNull();
+    expect(nearestStationId(small, at(4.9, 0))).toBe("s");
+    expect(nearestStationId(small, at(3, 0))).toBe("s");
+  });
+
+  // Why: a nearer station whose radius does not reach the code must not
+  // shadow a farther one whose radius does: the visitor at the code is
+  // present at the farther one.
+  it("passes over a nearer station whose radius misses the code", () => {
+    const stations = [station("near", 0, 0, 5), station("far", 28, 0, 25)];
+    expect(nearestStationId(stations, at(8, 0))).toBe("far");
+    expect(nearestStationId(stations, at(2, 0))).toBe("near");
+  });
+
   // Why: a ring bound to a station 100 m away showed only there, so the
   // visitor standing at the code saw nothing after the lock.
-  // Beyond the radius the ring has no station and stands always, as a
-  // walk photo joined live does by the same rule.
-  it("is null for a code beyond every station's radius", () => {
+  // Beyond every found radius the ring has no station and stands always.
+  it("is null for a code beyond every station's found radius", () => {
     const stations = [station("a", 0, 0), station("b", 300, 0)];
     expect(nearestStationId(stations, at(26, 0))).toBeNull();
     expect(nearestStationId(stations, at(200, 0))).toBeNull();
@@ -141,5 +162,13 @@ describe("nearestStationId (the ring)", () => {
       nearestStationId([station("a", 0, 10), station("b", 0, -10)], at(0, 0)),
     ).toBe("a");
     expect(nearestStationId([], at(0, 0))).toBeNull();
+  });
+
+  // Why: a radius that is not a positive finite number holds no code
+  // (presence reads such a radius as 0, so no visitor is ever present).
+  it("never takes a station whose radius is not a positive number", () => {
+    for (const r of [0, -3, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(nearestStationId([station("a", 0, 0, r)], at(1, 0))).toBeNull();
+    }
   });
 });

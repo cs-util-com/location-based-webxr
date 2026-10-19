@@ -864,7 +864,7 @@ describe("tour document: a step across an in-place save (D33)", () => {
     expect(undo(running).save.resave).toBe(false);
   });
 
-  // Why (PR review): the file's view was named when the save was BUILT,
+  // Why: the file's view was named when the save was BUILT,
   // so a write that was refused or failed left the slice believing the disk
   // held a view it never received, and a later step could then miss the
   // real file. The view is named when the write arrives; until then the

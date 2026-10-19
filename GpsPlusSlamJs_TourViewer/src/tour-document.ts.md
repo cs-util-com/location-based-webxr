@@ -314,9 +314,10 @@ store.dispatch(tourDocumentActions.undone());
 - The save, a thunk against this slice: `tour-document-save.ts.md`.
 - `tour-document.property.test.ts` - D33's rule against a model that reads
   the SET of edits each view carries (over random edits, steps, in-place
-  saves and downloads: a resave is due exactly when a step undoes an edit
-  the in-place file holds, redoes one it lacks, or the file is off the
-  history); over random sequences of edits,
+  saves, failed ones and downloads, and steps while an in-place write is in
+  flight holding the slot: a resave is due exactly when a step undoes an
+  edit the in-place file - or the write in flight - holds, redoes one it
+  lacks, or that view is off the history); over random sequences of edits,
   moves, deletes, placements, station moves, settings, details, undos,
   redos and saves: undo then redo is identity; undoing everything gives the
   opened tour; `manifestToWrite` equals `rebuildFinishedTour`'s written

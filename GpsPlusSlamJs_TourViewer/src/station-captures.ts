@@ -13,22 +13,19 @@
  *   every photo was shown before (the station a Finish would create does
  *   not exist in this tour, so no presence can be judged for it).
  * - **The ring around a code** (a tour without a walk) goes with the
- *   station nearest the code within the same R; a code beyond every
- *   station's R has none, and its ring stands always, as a loose photo
- *   does (a visitor at that code would otherwise see nothing after the
- *   lock).
+ *   nearest station whose OWN found radius holds the code: presence starts
+ *   only inside that radius, so a visitor at the code is present there. A
+ *   code outside every station's found radius has none, and its ring
+ *   stands always, as a loose photo does (a visitor at that code would
+ *   otherwise see nothing after the lock).
  *
  * Pure.
  *
  * @see station-captures.ts.md
  */
 
-import {
-  assignToStations,
-  nearestStationWithin,
-  STATION_RADIUS_M,
-  type StationPoint,
-} from "./station-assign.js";
+import { horizontalM } from "./move-with-code.js";
+import { assignToStations, type StationPoint } from "./station-assign.js";
 
 /** A station as these rules read it: its id and its spot. */
 export interface StationSpot {
@@ -80,16 +77,26 @@ export function capturesByStation<T extends CaptureSpot>(
   return { byStation, loose };
 }
 
-/** The station nearest `at` within `STATION_RADIUS_M` horizontally
- *  (inclusive; the earlier one on a tie), else null: the rule a live walk
- *  photo gets, so the ring and the walk agree on what a station holds. */
+/** A station as the ring's rule reads it: its spot and its found radius. */
+export interface RingStation extends StationSpot {
+  readonly foundRadiusM: number;
+}
+
+/** The station nearest `at` horizontally among those whose own found
+ *  radius holds it (inclusive; the earlier one on a tie), else null. The
+ *  found radius is where presence starts (`station-presence.ts`), so the
+ *  station returned is one a visitor at `at` is present at. A radius that
+ *  is not a positive finite number holds nothing (presence reads it as 0). */
 export function nearestStationId(
-  stations: readonly StationSpot[],
+  stations: readonly RingStation[],
   at: { readonly lat: number; readonly lon: number },
 ): string | null {
-  return nearestStationWithin(
-    stations.map((s) => ({ id: s.id, anchor: s.geo })),
-    at,
-    STATION_RADIUS_M,
-  );
+  let best: { id: string; d: number } | null = null;
+  for (const station of stations) {
+    const r = station.foundRadiusM;
+    if (!Number.isFinite(r) || r <= 0) continue;
+    const d = horizontalM(station.geo, at);
+    if (d <= r && (best === null || d < best.d)) best = { id: station.id, d };
+  }
+  return best?.id ?? null;
 }

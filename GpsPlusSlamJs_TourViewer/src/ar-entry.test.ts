@@ -20,7 +20,12 @@ import {
   type TourViewerSession,
 } from "./tour-viewer-session.js";
 import type { TourViewerSeams } from "./seams.js";
-import { headingPendingSet, presenceCleared } from "./visitor-guide-slice.js";
+import {
+  headingPendingSet,
+  presenceCleared,
+  presenceJudged,
+  selectPresentStationId,
+} from "./visitor-guide-slice.js";
 import { RECORDING_DEPTH } from "./authoring-recording.js";
 import {
   endSession,
@@ -226,7 +231,7 @@ describe("wireArEntry session end", () => {
     expect(settle).toBeLessThan(order.indexOf(resetGpsSessionData.type));
   });
 
-  // Why this test matters (PR review): the station guide's end of session
+  // Why this test matters: the station guide's end of session
   // dispatches into the store (its presence cleared). While the placement
   // trigger was still subscribed, that dispatch re-entered the placement
   // and the guide's tick mid-teardown - harmless only because the gate had
@@ -1044,6 +1049,9 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     const h = harness({ arStatus: "running" });
     h.ctx.session = {} as never;
     h.ctx.scanGate = { kind: "passed", via: "code" };
+    // The code that passed the gate lines the tour up with its votes.
+    h.ctx.viewerLockedText = "c";
+    h.ctx.viewerVotedLocks = 3;
     h.ctx.stationContent = {
       has: () => true,
       shown: () => ({ count: 2, skipped: [] }),
@@ -1076,6 +1084,39 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     showsAny = true;
     h.entry.renderArStatus();
     expect(h.dom.arStatus.dataset["state"]).toBe("placed");
+  });
+
+  // Why: a station whose only content is a story or a figure draws nothing
+  // in the side table, so "nothing shown" alone sent a visitor standing at
+  // that station away to walk to one. Away means no content shown AND no
+  // station present.
+  it("does not ask for a station while one is present, even with nothing drawn", () => {
+    const h = placedVisitor();
+    h.ctx.stationContent = {
+      has: () => true,
+      shown: () => ({ count: 0, skipped: [] }),
+      showsAny: () => false,
+    } as never;
+    h.ctx.placement = {
+      kind: "placed",
+      placedKind: "ring",
+      count: 0,
+      atStations: 3,
+    };
+    h.arStore.dispatch(
+      presenceJudged({
+        candidates: [{ id: "a", distanceM: 1, foundM: 5, foundExitM: 9 }],
+        accuracyM: 4,
+        codeLinedUp: false,
+      }),
+    );
+    expect(selectPresentStationId(h.arStore.getState())).toBe("a");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("placed");
+    expect(h.dom.arStatus.textContent).toBe("Tour placed. Look around.");
+    h.arStore.dispatch(presenceCleared());
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("to-station");
   });
 
   it("holds the placed line while tracking has not reported yet (initializing)", () => {

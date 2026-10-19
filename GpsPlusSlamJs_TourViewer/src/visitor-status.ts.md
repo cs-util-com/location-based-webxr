@@ -77,6 +77,17 @@ visitor's `?debug=1`.
   content." (state `to-station`); a GPS placement keeps its reason with
   that request in place of "Look around." (state `placed-gps`). The
   request for a few steps still comes first: walking answers both.
+- **A code's trust ended, the line asks for the code again**: an
+  odometry-frame change ends the trust of the code that passed the gate
+  (`viewer-placement.ts` `endCodeTrust`: its votes name places in the old
+  frame); the gate stays passed on the code while `codeLinedUp` is false.
+  The placed line, the station request and the request for steps each get
+  "Find the poster's code to line it up." after them, the state unchanged,
+  until the code's next voted lock. Without location only a code judges
+  presence, so the present station has ended (`station-guide.ts`) while
+  the visitor may still stand at it: away from every station the line is
+  then "Tour placed. Find the poster's code to line it up." (state
+  `needs-code`), never "Walk to a station", which no walk can answer.
 - **Never a counter, the mode prefix or a debug number** (property test);
   a running session always says something.
 - **Never "scan the code again"** after the code's hold ended; the hold's
@@ -119,7 +130,9 @@ el.textContent =
 what must never reach a visitor, load notes, the walk request: replacing
 only the placed line, after a GPS placement's or a moved code's reason, never
 while tracking initializes or without location; away from every station:
-the station request, a GPS placement's reason kept, the steps first);
+the station request, a GPS placement's reason kept, the steps first; a
+code's trust ended: the code asked for after each placed line, and alone
+without location);
 `visitor-status.property.test.ts` (any combination of code, gate,
 placement, content, errors, readiness, codes only and the heading wait:
 non-empty, no debug words, the walk request once at most, only where
@@ -129,6 +142,10 @@ only away from every station, never beside "Look around." or the steps);
 (the measuring hint reaches the line; after a veto the ignored code's
 hint is withheld, another code's still shows; the walk line from the
 store, not before tracking reports; the station request read from the
-side table's `showsAny`); `viewer-moved-code.test.ts`
+side table's `showsAny`, never while a station is present);
+`viewer-votes.test.ts` (an odometry-frame change: the line asks for the
+code, and is the placed line again after the re-scan, codes only too);
+`station-guide.test.ts` (codes only: the frame change ends the code's
+station where the visitor stands); `viewer-moved-code.test.ts`
 (the veto records the ignored code by its scanned text, the key its
 evaluations carry).

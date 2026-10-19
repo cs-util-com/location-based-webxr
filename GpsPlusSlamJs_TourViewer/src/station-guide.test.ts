@@ -1613,6 +1613,34 @@ describe("wireStationGuide: the present station", () => {
     expect(selectPresentStationId(store.getState())).toBeNull();
   });
 
+  // Why: without location only a code judges presence. An odometry-frame
+  // change ends the code's trust; with tracking not ready nothing else can
+  // judge, so the station the code made present ends while the visitor
+  // still stands at it. The line must then ask for the code
+  // (`visitor-status.ts`), since no walk can bring the station back; the
+  // code's next voted lock does.
+  it("without location, a frame change ending the code's trust ends the code's station where the visitor stands", () => {
+    const { store, guideStore } = countingStore();
+    const h = harness(
+      { stations: [station("a", 20, 0)], order: "fixed" },
+      { guideStore },
+    );
+    h.ready(false);
+    h.byCodeOnly(20, 0);
+    h.guide.tick();
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    // The frame change: the same spot, still no device fix.
+    h.lined(false);
+    h.guide.tick();
+    expect(selectPresentStationId(store.getState())).toBeNull();
+    h.guide.tick();
+    expect(selectPresentStationId(store.getState())).toBeNull();
+    // The re-scan lines the position up again.
+    h.lined(true);
+    h.guide.tick();
+    expect(selectPresentStationId(store.getState())).toBe("a");
+  });
+
   it("a code's station holds through a tracking drop while the code stays lined up, and ends with no position once it goes", () => {
     const { store, guideStore } = countingStore();
     const h = harness(

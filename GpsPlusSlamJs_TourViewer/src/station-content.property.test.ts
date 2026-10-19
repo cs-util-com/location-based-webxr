@@ -15,7 +15,12 @@ import { createStationContent, type ContentPart } from "./station-content.js";
  * - every render's result is disposed at most once, and exactly once after
  *   the table is disposed;
  * - once a fade has ended, every material is back at its own opacity and
- *   its own transparent flag.
+ *   its own transparent flag;
+ * - once every render has landed and every fade ended, each station the
+ *   page shows last that still has a part stands in the scene, and so does
+ *   the always-shown content with a part: a table that hides content
+ *   holds the first three promises trivially, so this one makes them mean
+ *   something.
  */
 
 const FADE = 400;
@@ -111,12 +116,21 @@ async function run(ops: readonly Op[], presenceOnly: boolean): Promise<void> {
   for (const id of [...STATIONS, LOOSE]) {
     content.setPart(id, "x", partOf(made, 1, 1));
   }
+  /** The model: the part keys each station holds, and what the page shows. */
+  const keys = new Map<string, Set<string>>(
+    [...STATIONS, LOOSE].map((id) => [id, new Set(["x"])]),
+  );
+  let shown = new Set<string>();
   for (const step of ops) {
     if (step.kind === "show") {
-      content.show(new Set(step.id === null ? [] : [step.id]));
+      shown = new Set(step.id === null ? [] : [step.id]);
+      content.show(new Set(shown));
     } else if (step.kind === "show-all") {
-      content.show(new Set(STATIONS));
+      shown = new Set(STATIONS);
+      content.show(new Set(shown));
     } else if (step.kind === "part") {
+      if (step.remove) keys.get(step.id)!.delete(step.key);
+      else keys.get(step.id)!.add(step.key);
       content.setPart(
         step.id,
         step.key,
@@ -139,6 +153,11 @@ async function run(ops: readonly Op[], presenceOnly: boolean): Promise<void> {
     await flush();
   }
   if (presenceOnly) expect(stationGroups()).toBeLessThanOrEqual(1);
+  const standing = new Set(scene.children.map((g) => g.name));
+  for (const id of [...shown, LOOSE]) {
+    if (keys.get(id)!.size === 0) continue;
+    expect(standing.has(`station-content:${id}`)).toBe(true);
+  }
   for (const m of made) {
     if (m.disposals > 0) continue;
     expect(m.material.opacity).toBe(m.ownOpacity);
@@ -150,7 +169,7 @@ async function run(ops: readonly Op[], presenceOnly: boolean): Promise<void> {
 }
 
 describe("station content: properties over generated sequences", () => {
-  it("presence only: one station group at a time besides the always-shown content; every result disposed once; materials restored", async () => {
+  it("presence only: one station group at a time besides the always-shown content; the shown station stands; every result disposed once; materials restored", async () => {
     let runs = 0;
     await fc.assert(
       fc.asyncProperty(
@@ -166,7 +185,7 @@ describe("station content: properties over generated sequences", () => {
     expect(runs).toBe(150);
   });
 
-  it("with show all mixed in: every result disposed once; materials restored", async () => {
+  it("with show all mixed in: every shown station stands; every result disposed once; materials restored", async () => {
     let runs = 0;
     await fc.assert(
       fc.asyncProperty(

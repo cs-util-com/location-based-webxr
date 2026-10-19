@@ -53,7 +53,10 @@ import { contentStatus } from "./station-content.js";
 import { arStatusLine, type ArStatusInput } from "./tour-flow.js";
 import { scanCardShown } from "./scan-gate.js";
 import { visitorStatus } from "./visitor-status.js";
-import { selectHeadingPending } from "./visitor-guide-slice.js";
+import {
+  selectHeadingPending,
+  selectPresentStationId,
+} from "./visitor-guide-slice.js";
 import type { LocationGate } from "./visitor-screen.js";
 import type { RecordingPanel } from "./recording-panel.js";
 import {
@@ -291,8 +294,12 @@ export function wireArEntry(deps: {
       // `visitorStatus` reads the flag, whose sentence a creator never sees.
       stationsAwaitHeading: selectHeadingPending(arStore.getState()),
       // Content drawn per station leaves nothing in view between them.
+      // A present station may draw nothing (only a story or a figure):
+      // the visitor is at a station then, never away.
       awayFromStations:
-        ctx.stationContent !== null && !ctx.stationContent.showsAny(),
+        ctx.stationContent !== null &&
+        !ctx.stationContent.showsAny() &&
+        selectPresentStationId(arStore.getState()) === null,
     };
     // A visitor reads one plain sentence (UI round 1, U1); the technical
     // line stays for the creator and for a visitor's `?debug=1`. The state

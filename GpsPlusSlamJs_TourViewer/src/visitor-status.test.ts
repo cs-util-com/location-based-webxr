@@ -39,6 +39,14 @@ function input(overrides: Partial<ArStatusInput> = {}): ArStatusInput {
 
 const qr = (o: Partial<ArStatusInput["qr"]>) => ({ ...input().qr, ...o });
 
+/** A code's votes lining the tour up, as they do once the gate passed on
+ *  it (until a frame change ends its trust, tested at the end). */
+const LINED_UP = {
+  status: "tracking",
+  lockedText: "c",
+  votedLocks: 3,
+} as const;
+
 describe("visitorStatus - one plain sentence per state", () => {
   it.each<[string, Partial<ArStatusInput>, string, string]>([
     [
@@ -159,6 +167,7 @@ describe("visitorStatus - one plain sentence per state", () => {
       "placed through the code",
       {
         gate: { kind: "passed", via: "code" },
+        qr: qr(LINED_UP),
         placement: {
           kind: "placed",
           placedKind: "capture-spots",
@@ -174,6 +183,7 @@ describe("visitorStatus - one plain sentence per state", () => {
       "only the tour's content placed",
       {
         gate: { kind: "passed", via: "code" },
+        qr: qr(LINED_UP),
         content: { kind: "placed", count: 4, skipped: 0 },
       },
       "placed",
@@ -289,7 +299,7 @@ describe("visitorStatus - states the first version got wrong (U1 milestone revie
       visitorStatus(
         input({
           gate: { kind: "passed", via: "code" },
-          qr: qr({ unknownCode: "https://shop.example/product" }),
+          qr: qr({ ...LINED_UP, unknownCode: "https://shop.example/product" }),
           placement: { kind: "placed", placedKind: "ring", count: 3 },
         }),
       ),
@@ -448,6 +458,7 @@ describe("visitorStatus - what must never reach a visitor", () => {
       visitorStatus(
         input({
           gate: { kind: "passed", via: "code" },
+          qr: qr(LINED_UP),
           content: { kind: "placed", count: 4, skipped: 2 },
           planesError: "HTTP 404",
         }),
@@ -552,6 +563,7 @@ describe("visitorStatus - away from every station", () => {
   const TO_STATION = "Walk to a station to see its content.";
   const placedAway = {
     gate: { kind: "passed", via: "code" } as const,
+    qr: qr(LINED_UP),
     placement: {
       kind: "placed",
       placedKind: "ring",
@@ -577,7 +589,11 @@ describe("visitorStatus - away from every station", () => {
   it("a GPS placement keeps its reason, the station request in place of Look around", () => {
     expect(
       visitorStatus(
-        input({ ...placedAway, gate: { kind: "passed", via: "skipped" } }),
+        input({
+          ...placedAway,
+          gate: { kind: "passed", via: "skipped" },
+          qr: input().qr,
+        }),
       ),
     ).toEqual({
       state: "placed-gps",
@@ -625,6 +641,7 @@ describe("visitorStatus - the guide waits for a heading (D34)", () => {
   const content = { kind: "placed", count: 3, skipped: 0 } as const;
   const placedByCode = {
     gate: { kind: "passed", via: "code" } as const,
+    qr: qr(LINED_UP),
     content,
     readiness: tracking,
   };
@@ -775,7 +792,7 @@ describe("visitorStatus - the guide waits for a heading (D34)", () => {
     ).toEqual({ state: "warming-up", text: "Tracking lost - move slowly." });
   });
 
-  // Why (PR review): walking earns a heading for a guide that has
+  // Why: walking earns a heading for a guide that has
   // something to show; after "nothing to show here" or "nothing to show by
   // GPS alone" it sends the visitor walking for nothing.
   it("is not added to a dead end: nothing to show here, or nothing by GPS alone", () => {
@@ -827,5 +844,73 @@ describe("visitorStatus - the guide waits for a heading (D34)", () => {
         }),
       ).state,
     ).toBe("no-tour");
+  });
+});
+
+// Why: a code's trust ends on an odometry-frame change - its votes name
+// places in the old frame - while the gate stays passed on the code. The
+// line kept saying "Tour placed. Look around." and never asked for the
+// code, the one thing that lines the tour up again.
+describe("visitorStatus - a code's trust ended (an odometry-frame change)", () => {
+  const RESCAN = "Find the poster's code to line it up.";
+  const ended = {
+    gate: { kind: "passed", via: "code" } as const,
+    // The gate passed on the code; the frame change reset its count.
+    qr: qr({ status: "tracking", lockedText: null, votedLocks: 0 }),
+    placement: { kind: "placed", placedKind: "ring", count: 3 } as const,
+  };
+
+  it("asks for the code after the placed line", () => {
+    expect(visitorStatus(input(ended))).toEqual({
+      state: "placed",
+      text: `Tour placed. Look around. ${RESCAN}`,
+    });
+  });
+
+  it("asks for the code after the station request and the request for steps", () => {
+    expect(visitorStatus(input({ ...ended, awayFromStations: true }))).toEqual({
+      state: "to-station",
+      text: `Walk to a station to see its content. ${RESCAN}`,
+    });
+    expect(
+      visitorStatus(
+        input({
+          ...ended,
+          stationsAwaitHeading: true,
+          readiness: {
+            phase: "move-around",
+            percentReady: 0.4,
+            hint: "Move the phone slowly.",
+          } as never,
+        }),
+      ),
+    ).toEqual({
+      state: "finding-direction",
+      text: `Walk a few steps so the guide knows the direction. ${RESCAN}`,
+    });
+  });
+
+  it("is the placed line again once the code's next lock lines the tour up", () => {
+    expect(
+      visitorStatus(
+        input({ ...ended, qr: qr({ lockedText: "c", votedLocks: 3 }) }),
+      ),
+    ).toEqual({ state: "placed", text: "Tour placed. Look around." });
+  });
+
+  // Why: without location only a code judges presence, so once its trust
+  // ends the present station is cleared (`station-guide.ts`) while the
+  // visitor still stands there. "Walk to a station" then sends them away
+  // from where they are, and no walk can help: the code is the only cure.
+  it("without location asks for the code alone, never to walk to a station", () => {
+    expect(
+      visitorStatus(
+        input({ ...ended, codesOnly: true, awayFromStations: true }),
+      ),
+    ).toEqual({ state: "needs-code", text: `Tour placed. ${RESCAN}` });
+    expect(visitorStatus(input({ ...ended, codesOnly: true }))).toEqual({
+      state: "placed",
+      text: `Tour placed. Look around. ${RESCAN}`,
+    });
   });
 });

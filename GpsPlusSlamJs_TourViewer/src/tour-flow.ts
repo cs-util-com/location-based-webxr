@@ -181,7 +181,10 @@ export function codeLinedUp(
  *  lock of a trusted code (M5). The walk's placement trigger then runs
  *  whatever the tracking-quality phase reads (`viewer-placement.ts`, §7
  *  #9). The voted count goes back to 0 when a veto takes every vote back
- *  (r881 review M1), so a gate another code passed no longer counts. */
+ *  (r881 review M1), so a gate another code passed no longer counts, and
+ *  when an odometry-frame change ends the code's trust
+ *  (`viewer-placement.ts` `endCodeTrust`): its votes name places in the
+ *  old frame until its next voted lock. */
 export function codePlacedTour(ctx: {
   readonly scanGate: ScanGate;
   readonly viewerVotedLocks: number;

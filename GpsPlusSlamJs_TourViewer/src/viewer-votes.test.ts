@@ -51,7 +51,7 @@ import {
   VIEWER_VOTE_COUNT,
 } from "./qr-viewer-mode.js";
 import { SCAN_GATE_ESCAPE_MS } from "./scan-gate.js";
-import { codeLinedUp, isPlacementReady } from "./tour-flow.js";
+import { codeLinedUp, codePlacedTour, isPlacementReady } from "./tour-flow.js";
 import { viewerStatusLine } from "./qr-viewer-mode.js";
 import { visitorStatus } from "./visitor-status.js";
 import type { TourViewerSeams } from "./seams.js";
@@ -755,8 +755,9 @@ describe(
         hold: v.ctx.viewerKeepAlive?.phase(T0 + 3000) ?? null,
         deviceFixes: 1,
       });
-    /** The visitor's line after the GPS escape: placed by the code only
-     *  while it lines the tour up. */
+    /** The visitor's line for the session's own gate (the code passed it):
+     *  the line asks for the code again once the code no longer lines the
+     *  tour up. */
     const visitorLine = (v: ReturnType<typeof viewer>): string =>
       visitorStatus({
         mode: "visitor",
@@ -775,7 +776,8 @@ describe(
         placement: { kind: "placed", placedKind: "ring", count: 3 },
         planesError: null,
         contentError: null,
-        gate: { kind: "passed", via: "skipped" },
+        gate: v.ctx.scanGate,
+        codesOnly: v.ctx.codesOnly,
         content: { kind: "none" },
       }).text;
 
@@ -787,7 +789,23 @@ describe(
       v.arStore.dispatch(qrFrameChanged());
       expect(trusted(v)).toBe(false);
       expect(debugLine(v)).not.toMatch(/Relocaliz/);
-      expect(visitorLine(v)).toMatch(/^Tour placed by GPS \(less exact\)\./);
+      expect(visitorLine(v)).toBe(
+        "Tour placed. Look around. Find the poster's code to line it up.",
+      );
+    });
+
+    // Why: the walk's placement trigger runs whatever the tracking phase
+    // reads only while a code placed the tour (`codePlacedTour`, which
+    // reads the voted count). The frame change must zero that count, or a
+    // re-entered placement would trust votes that name the old frame.
+    it("the tour no longer counts as code-placed, until the code's next voted lock", () => {
+      const v = scanned();
+      expect(codePlacedTour(v.ctx)).toBe(true);
+      v.arStore.dispatch(qrFrameChanged());
+      expect(codePlacedTour(v.ctx)).toBe(false);
+      v.lock(T0 + 4000);
+      expect(codePlacedTour(v.ctx)).toBe(true);
+      expect(visitorLine(v)).toBe("Tour placed. Look around.");
     });
 
     it("keeps what a veto would take: the code is not ignored, its votes stay, the gate stays passed", () => {
@@ -829,8 +847,12 @@ describe(
       v.arStore.dispatch(qrFrameChanged());
       expect(trusted(v)).toBe(false);
       expect(v.ctx.scanGate).toEqual(gate);
+      expect(visitorLine(v)).toBe(
+        "Tour placed. Look around. Find the poster's code to line it up.",
+      );
       v.lock(T0 + 4000);
       expect(trusted(v)).toBe(true);
+      expect(visitorLine(v)).toBe("Tour placed. Look around.");
     });
   },
 );

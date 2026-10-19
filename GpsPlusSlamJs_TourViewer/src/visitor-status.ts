@@ -67,6 +67,8 @@ const LOOK_AROUND = "Look around.";
  *  at: nothing is in view to look at. */
 const TO_STATION = "Walk to a station to see its content.";
 const GPS_PLACED = "Tour placed by GPS (less exact)";
+/** The one hint that can still help a tour no code lines up now. */
+const FIND_CODE = "Find the poster's code to line it up.";
 
 /** The guide waits for a heading (D34): the arrows, the breadcrumbs and a
  *  story's figure need one, and a few steps give it. */
@@ -182,11 +184,14 @@ function isPlaced(input: ArStatusInput): boolean {
  *  reason, the request in place of "Look around.". Away from every
  *  station (`awayFromStations`) "Look around." gives way to the station
  *  request; the request for steps still comes first, since walking
- *  answers both. */
+ *  answers both. A tour a code placed whose trust has ended (an
+ *  odometry-frame change: the gate stays passed on the code, its count goes
+ *  back to 0) asks for the code after it (`codeTrustEnded`). */
 function placedSentence(input: ArStatusInput, walk: boolean): VisitorStatus {
   const { gate } = input;
   const away = input.awayFromStations === true;
   if (!gpsOnly(gate) || codeLinedUp(input.qr)) {
+    if (codeTrustEnded(input)) return trustEndedSentence(input, walk, away);
     if (walk) return { state: "finding-direction", text: WALK };
     return away
       ? { state: "to-station", text: TO_STATION }
@@ -208,10 +213,42 @@ function placedSentence(input: ArStatusInput, walk: boolean): VisitorStatus {
   if (gate.kind === "passed" && gate.via === "skipped") {
     return {
       state: "placed-gps",
-      text: `${GPS_PLACED}. ${next} Find the poster's code to line it up.`,
+      text: `${GPS_PLACED}. ${next} ${FIND_CODE}`,
     };
   }
   return { state: "placed-gps", text: `${GPS_PLACED}. ${next}` };
+}
+
+/** The gate passed on a code that no longer lines the tour up: its trust
+ *  ended on an odometry-frame change (`viewer-placement.ts`
+ *  `endCodeTrust`). A veto passes the gate as "ignored" instead. */
+function codeTrustEnded(input: ArStatusInput): boolean {
+  return (
+    input.gate.kind === "passed" &&
+    input.gate.via === "code" &&
+    !codeLinedUp(input.qr)
+  );
+}
+
+/** The placed line with the code asked for after it. Without location
+ *  only a code judges presence, so the present station has ended
+ *  (`station-guide.ts`) while the visitor may still stand at it: no walk
+ *  can help, and the line asks for the code alone. */
+function trustEndedSentence(
+  input: ArStatusInput,
+  walk: boolean,
+  away: boolean,
+): VisitorStatus {
+  if (walk) return { state: "finding-direction", text: `${WALK} ${FIND_CODE}` };
+  if (!away) {
+    return {
+      state: "placed",
+      text: `Tour placed. ${LOOK_AROUND} ${FIND_CODE}`,
+    };
+  }
+  return input.codesOnly === true
+    ? { state: "needs-code", text: `Tour placed. ${FIND_CODE}` }
+    : { state: "to-station", text: `${TO_STATION} ${FIND_CODE}` };
 }
 
 /** The code is in view and its pose still settles (plan §66's hint):

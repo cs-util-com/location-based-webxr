@@ -302,7 +302,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     cancelled move), and while another tour is being chosen or opened
     (`busy`, the open dialog showing). Started during an edit, a resave
     would be claimed - which takes it on - and then held as an autosave
-    is, and nothing would write the file until Save. A step restarts the
+    is, and nothing would write the file until Save. One small window
+    remains (filed as a follow-up): a resave already claimed, and still
+    checking the file, when an edit starts is held the same way, and since
+    its claim took the resave on, nothing raises it again until Save. A
+    step restarts the
     quiet time before it ends the Undo offer, so that end finds the timer
     running. When
     the slice says a resave is due (`save.resave`; the rule, "crosses", is

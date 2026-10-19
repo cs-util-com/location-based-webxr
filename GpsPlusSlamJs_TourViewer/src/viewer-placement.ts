@@ -178,7 +178,7 @@ export function createViewerPlacement(deps: {
    *  controller's own default and what the status line reads the hold with. */
   now?: () => number;
   /** How a station's item photo is read: through the stations' prefetch
-   *  cache in the page (visitor plan §9). That cache holds story media
+   *  cache in the page. That cache holds story media
    *  only, so an item photo is read from the archive again on every return
    *  until item photos join the prefetch. Absent: the
    *  open tour's own read. */
