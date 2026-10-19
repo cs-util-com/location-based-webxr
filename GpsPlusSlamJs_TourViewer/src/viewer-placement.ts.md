@@ -392,6 +392,12 @@ per-entry overrides through this module (soft on right before the first
 vote, a plain-AR entry and a re-entry start cleared, a tour switch turns
 them off until the next tour's first vote).
 
+`viewer-moved-code.test.ts` (M5c) - the wired veto: the keep-alive stops
+(also when another code holds it: no ring goes into the fixes after the
+veto, and that code's next lock votes again), every vote is taken back and
+the tour moves once, later locks of the code are free, the log, the gate,
+the line, the re-judged veto.
+
 `viewer-vote-sink.test.ts` (M2e) - the sink against the real store: the
 clear at entry start, the merge before the first vote and once only, a
 keep-alive tick bringing the first vote, a ringless fix changing nothing,

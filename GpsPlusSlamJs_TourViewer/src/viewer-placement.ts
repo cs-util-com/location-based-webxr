@@ -654,7 +654,8 @@ export function createViewerPlacement(deps: {
 
   /**
    * The veto (owner decision 2026-10-02; re-judged since polish round C5,
-   * `restoreMovedCode`): the code is ignored; its keep-alive stops; every vote is taken back - the GPS
+   * `restoreMovedCode`): the code is ignored; the keep-alive stops, whichever
+   * code it holds; every vote is taken back - the GPS
    * history reset and the device fixes re-fed with the soft keys off (the
    * M5a arm that lands on the GPS answer), so the content moves ONCE; the
    * gate and the line say the code is ignored; the viewing log records the
@@ -666,15 +667,11 @@ export function createViewerPlacement(deps: {
       text: verdict.text,
       vetoSpreadM: verdict.evidence.spreadM,
     });
-    const keepAlive = ctx.viewerKeepAlive;
-    const hold = keepAlive?.phase(now());
-    if (
-      hold !== undefined &&
-      hold.kind !== "none" &&
-      hold.text === verdict.text
-    ) {
-      keepAlive?.stop();
-    }
+    // Whichever code it holds: every vote is taken back below, and a ring
+    // of another code would go on feeding the GPS history - and the
+    // tracking report read from it - while nothing reads the tour as lined
+    // up by a code. That code's next lock votes again (the budget reset).
+    ctx.viewerKeepAlive?.stop();
     const recovery = ctx.viewerVoteSink?.retractVotes() ?? {
       refedFixes: 0,
       batches: 0,

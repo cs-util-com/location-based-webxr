@@ -676,6 +676,43 @@ describe(
       expect(v.votesStored()).toBe(afterB);
     });
 
+    // Why: the veto stopped the keep-alive only when it held the VETOED
+    // code. With code B holding it, B's ring kept going into every device
+    // fix after the veto took every vote back - code votes feeding the
+    // tracking report while nothing read the tour as lined up by a code,
+    // so the station guide could latch a heading only a code had earned.
+    // "No vote stands now" must hold until a code locks again.
+    it("the veto stops another code's keep-alive too: no code vote goes into the fixes after it", () => {
+      const v = viewer(LEVEL, true);
+      v.walk(0, 0);
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 500 + i * 10);
+      }
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 700 + i * 10, "B");
+      }
+      let s = 1;
+      let heldBeforeVeto: unknown = null;
+      while (!v.ctx.ignoredCodes.has(LEVEL_ID) && s <= 90) {
+        heldBeforeVeto = v.ctx.viewerKeepAlive?.phase(v.clock.nowMs) ?? null;
+        v.walk(s, s);
+        s += 1;
+      }
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      expect(heldBeforeVeto, "B held the keep-alive up to the veto").toEqual(
+        expect.objectContaining({ text: TEXT_B }),
+      );
+      expect(v.votesStored()).toBe(0);
+      v.walk(s, s + 5);
+      expect(v.votesStored(), "no ring after the veto").toBe(0);
+      expect(stationAlignmentSignals(v.ctx, v.arStore).codeLinedUp()).toBe(
+        false,
+      );
+      // B's next lock votes again, as after any veto.
+      v.lock(T0 + (s + 6) * 1000, "B");
+      expect(v.votesStored()).toBeGreaterThan(0);
+    });
+
     // Why (polish round C5, owner decision Q-C5): a veto used to hold for
     // the rest of the tour. It is re-judged now: once a wider walk reads the
     // code consistent again, the code is used again - the ignored line

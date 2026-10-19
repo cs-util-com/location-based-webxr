@@ -130,10 +130,15 @@ activateM)` (each tick, each offered station with a distance: the
     lock's votes enter the GPS history it reads (one lock is enough
     fixes, they dominate its accuracy median) and its residuals and
     convergence come from the matrix they pinned, so the `ok` can be the
-    code's own work. A heading tracking really earned is not lost: once
-    the veto took the votes back, a report still `ok` latches on that
-    tick. The cost is a veto that lands in the same tick as a tracking
-    dip: the heading goes, and comes back with the next `ok`.
+    code's own work. Once the veto took every vote back (the keep-alive
+    stops with it, whichever code it held), a report still `ok` on the
+    GPS-only history latches on that tick. The cost is larger than one
+    tick: "lined up" holds from the first voted lock until a veto or the
+    end of the session, so tracking that is genuinely `ok` through a long
+    lined-up visit never latches, and a later veto takes the heading
+    whenever the re-fed GPS-only report is not `ok` at that moment - it
+    comes back with the next `ok`. A heading tracking latched BEFORE any
+    code locked is kept through the lock and any later veto.
   - **In a dip the arrow and the line can disagree** (third review L3,
     deliberate, an open question): the HUD and the breadcrumbs measure
     from the aligned camera while the find judges by the raw fix, so the
@@ -287,7 +292,9 @@ store.subscribe(() => guide.tick());
   with the code while tracking is not ready (third review L2); tracking
   ready only while a code was lined up does not latch, so the veto that
   drops the report takes the heading, while a report still ok after the
-  veto latches it on the next tick and a new AR entry waits again. The
+  veto latches it on the next tick and a new AR entry waits again; a
+  heading tracking latched before any code locked stays through the lock
+  and a veto in a dip. The
   cold-start harness feeds the raw signals (tracking, a code) and the
   page's readiness rule over them, so the latch tested is the guide's.
   `station-guide.property.test.ts` also pins that a lone-fix find means

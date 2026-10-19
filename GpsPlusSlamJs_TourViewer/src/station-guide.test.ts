@@ -1482,4 +1482,28 @@ describe("re-review findings on the guide (r881)", () => {
     h.at(0, 0);
     expect(h.huds.at(-1)!.getTargets()).toEqual([]);
   });
+
+  // Why: the rule above withholds the latch only WHILE a code is lined up.
+  // A heading tracking latched before any code locked is tracking's own,
+  // and neither the lock nor a veto that lands in a dip may take it.
+  it("a heading tracking latched before any code locked stays through the lock and a veto in a dip", () => {
+    const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
+    h.ready(true);
+    h.at(0, 0);
+    // A code locks and votes.
+    h.lined(true);
+    h.at(0, 0);
+    // The veto lands while tracking dips.
+    h.lined(false);
+    h.ready(false);
+    h.at(0, 0);
+    expect(
+      h.huds
+        .at(-1)!
+        .getTargets()
+        .map((t) => t.id),
+    ).toEqual(["gate"]);
+    expect(h.crumbsFrom.at(-1)).toEqual([0, 401.5, 0]);
+    expect(h.guide.figurePoseOf("gate")).not.toBeNull();
+  });
 });
