@@ -47,10 +47,18 @@ time. Plan:
   while the stage holds a loaded figure or model back for the visitor's
   position (no GPS zero, or no heading yet: the guide's `figurePoseOf`)
   it says "Waiting for your position to place the figure…" (or "the 3D
-  model"), cleared once it stands (r881 re-review M-B); a read
+  model") until it stands (r881 re-review M-B); a read
   failure says it "could not be loaded - the words are below"; a sound the
   browser refuses says it "did not play here". The words never wait for
   the media.
+- **One status line, several media** (r881 third review M1): the line is
+  composed from the step's state, never overwritten by one asset's
+  settle - the waiting figure, else the latest asset still loading, then
+  what went wrong. A voice that plays while the figure waits or loads
+  leaves that line standing; a refused voice and a waiting figure are
+  both said, and the failure outlives the wait (it stays true for the
+  whole step, the wait does not). Everything resets when the step
+  changes.
 - **No stale paint:** every rendered step bumps a token; a load that lands
   after the step changed is dropped; the step's object URL is revoked and
   its sound stopped when the step changes.
@@ -75,4 +83,6 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   a late picture dropped and URLs revoked, the auto timer and its cancel, a
   choice, one story at a time and the queue, de-duplication and `stopAll`;
   ending a playing, a queued and an unknown story (R9); the figure's
-  waiting line while the stage holds it, cleared once it stands (M-B).
+  waiting line while the stage holds it, cleared once it stands (M-B);
+  a voice that plays while the figure waits or still loads keeps that
+  line, and a refused voice is said beside the wait and outlives it (M1).

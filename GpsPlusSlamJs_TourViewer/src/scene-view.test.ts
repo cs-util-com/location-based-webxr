@@ -228,6 +228,112 @@ describe("createSceneView", () => {
     expect(h.dom.status.textContent).toBe("");
   });
 
+  /** A character step with a voice; its figure parks until `stand()`. */
+  function parkedKnight(
+    overrides: Parameters<typeof harness>[0] = {},
+  ): ReturnType<typeof harness> & { stand: () => void } {
+    let stand: () => void = () => undefined;
+    const h = harness({
+      ...overrides,
+      showCharacter: (_id, _image, onWaiting) =>
+        new Promise((resolve) => {
+          onWaiting?.();
+          stand = resolve;
+        }),
+    });
+    h.view.offer(
+      station("gate", [
+        {
+          id: "k",
+          block: {
+            kind: "character",
+            name: "Sir Kay",
+            image: "knight",
+            caption: "Welcome, traveller.",
+            voice: "voice",
+          },
+          advance: { mode: "tap" },
+        },
+      ]),
+    );
+    return { ...h, stand: () => stand() };
+  }
+
+  // Why (r881 re-review M1): the figure and the voice share one status
+  // line. The voice's success wrote "" over "Waiting for your position…"
+  // while the figure was still parked, so the visitor lost the one line
+  // that says why no figure stands there.
+  it("a voice that plays while the figure is parked keeps the waiting line", async () => {
+    let played: () => void = () => undefined;
+    const h = parkedKnight({
+      play: () => new Promise<void>((resolve) => (played = resolve)),
+    });
+    await settle();
+    expect(h.dom.status.textContent).toBe(
+      "Waiting for your position to place the figure…",
+    );
+    played();
+    await settle();
+    expect(h.dom.status.textContent).toBe(
+      "Waiting for your position to place the figure…",
+    );
+    h.stand();
+    await settle();
+    expect(h.dom.status.textContent).toBe("");
+  });
+
+  // Why (r881 re-review M1): the reverse - the waiting line overwrote
+  // "The sound did not play here", and the figure's later settle cleared
+  // the line, so a refused voice went unexplained. Both are said; the
+  // sound's failure outlives the wait, since it stays true for the step.
+  it("a refused voice and a parked figure are both said, and the sound's failure outlives the wait", async () => {
+    const h = parkedKnight({
+      play: () => Promise.reject(new Error("NotAllowedError")),
+    });
+    await settle();
+    expect(h.dom.status.textContent).toBe(
+      "Waiting for your position to place the figure… The sound did not play here - the words are below.",
+    );
+    h.stand();
+    await settle();
+    expect(h.dom.status.textContent).toBe(
+      "The sound did not play here - the words are below.",
+    );
+  });
+
+  // Why (r881 re-review M1, the same shared line): a voice that played
+  // while the figure was still loading blanked "Loading the figure…".
+  it("a voice that plays while the figure still loads keeps the loading line", async () => {
+    let figureLoaded: (b: Blob) => void = () => undefined;
+    const h = harness({
+      loadAsset: (path) =>
+        path.includes("knight")
+          ? new Promise<Blob>((resolve) => (figureLoaded = resolve))
+          : Promise.resolve(new Blob([path])),
+    });
+    h.view.offer(
+      station("gate", [
+        {
+          id: "k",
+          block: {
+            kind: "character",
+            name: "Sir Kay",
+            image: "knight",
+            caption: "Welcome, traveller.",
+            voice: "voice",
+          },
+          advance: { mode: "tap" },
+        },
+      ]),
+    );
+    await settle();
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
+    expect(h.dom.status.textContent).toBe("Loading the figure…");
+    figureLoaded(new Blob(["png"]));
+    await settle();
+    expect(h.dom.status.textContent).toBe("");
+  });
+
   it("says when a sound is refused or a file cannot be read, and keeps the words", async () => {
     const refused = harness({
       play: () => Promise.reject(new Error("NotAllowedError")),

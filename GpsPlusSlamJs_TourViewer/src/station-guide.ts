@@ -20,8 +20,9 @@
  *   session stays ready (a code lined it up) is a dropped camera pose no
  *   position at all (M5a review M3). What needs a heading - the HUD's
  *   arrows, the breadcrumbs, the figure's pose and its turn - waits for the
- *   first readiness of each AR entry and keeps it through a dip (r881
- *   re-review L-B, M-B).
+ *   first readiness of each AR entry and keeps a heading tracking earned
+ *   through a dip (r881 re-review L-B, M-B); a heading only a code gave
+ *   goes with the code (third review L2).
  *   A code lock is no arrival: it only improves that position, and the
  *   guide re-judges at once. With no position nothing is reached. A moved
  *   poster can pull the position onto a station until the moved-code
@@ -251,9 +252,15 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  measurement (R13: the geodesy ran several times per station a tick). */
   const poseCache = new Map<string, StagePose | null>();
   let measuredZero: LatLong | null | undefined;
-  /** This AR entry's alignment was ready once (`alignmentReady`): it has
-   *  a heading, and keeps it through a dip of the tracking quality, as the
-   *  walk's photos latch their trigger. Reset at the session's end. */
+  /** This AR entry's alignment was ready once without a code
+   *  (`alignmentReady` while not `codeLinedUp`): tracking earned it a
+   *  heading, kept through a dip of the tracking quality, as the walk's
+   *  photos latch their trigger. Reset at the session's end. */
+  let trackedHeading = false;
+  /** The alignment has a heading now: tracking earned one this AR entry,
+   *  or it is ready now (a code lined it up). A heading only a code gave
+   *  goes with the code's votes (a veto) while tracking is not ready
+   *  (r881 third review L2). */
   let headingReady = false;
 
   function stationById(id: string): TourStation | undefined {
@@ -275,6 +282,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     return objectPoseNue(station.geo, zero);
   }
 
+  /** Whether the alignment has a heading this tick (`headingReady`):
+   *  tracking earned one this AR entry, or it is ready now. */
+  function noteHeading(ready: boolean, lined: boolean): void {
+    if (ready && !lined) trackedHeading = true;
+    headingReady = trackedHeading || ready;
+  }
+
   /** Measure once: the visitor, the zero, every station's pose and
    *  horizontal distance. An alignment that is not ready now counts as
    *  none (`alignmentReady`): the fresh device fix stands in, judged by
@@ -287,7 +301,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     measuredZero = deps.zero();
     const seen = deps.visitor();
     const ready = deps.alignmentReady();
-    headingReady ||= ready;
+    const lined = deps.codeLinedUp();
+    noteHeading(ready, lined);
     const visitor =
       seen.aligned && !ready ? { ...seen, nue: null, aligned: false } : seen;
     const position = bestPosition(visitor);
@@ -295,11 +310,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     last = {
       visitor,
       best,
-      rawAccuracyM:
-        position?.loneFix === true
-          ? worseAccuracy(visitor.accuracyM, visitor.fixAccuracyM)
-          : visitor.accuracyM,
-      codeLinedUp: visitor.aligned && deps.codeLinedUp(),
+      rawAccuracyM: rawAccuracyFor(visitor, position?.loneFix === true),
+      codeLinedUp: visitor.aligned && lined,
       headingNue: headingReady ? seen.nue : null,
       distances: horizontalDistances(best),
     };
@@ -701,6 +713,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       hud = null;
       replayFound = true;
       // The next AR entry earns its own heading (a new session's odometry).
+      trackedHeading = false;
       headingReady = false;
       deps.onGuide?.(null, null);
       dom.line.hidden = true;
@@ -710,6 +723,17 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     figurePoseOf: (stationId) => (headingReady ? poseOf(stationId) : null),
   };
   return guide;
+}
+
+/** The raw accuracy that speaks for a position: the median of the latest
+ *  fixes, and for a lone fix the worse of that and its own. */
+function rawAccuracyFor(
+  visitor: VisitorPosition,
+  loneFix: boolean,
+): number | null {
+  return loneFix
+    ? worseAccuracy(visitor.accuracyM, visitor.fixAccuracyM)
+    : visitor.accuracyM;
 }
 
 /** The worse of two accuracies (m); an unknown one gives way to a known. */

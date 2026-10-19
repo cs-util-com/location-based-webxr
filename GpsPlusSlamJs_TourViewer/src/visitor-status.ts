@@ -180,11 +180,12 @@ function placedSentence(input: ArStatusInput): VisitorStatus {
 }
 
 /** The code is in view and its pose still settles (plan §66's hint):
- *  guidance a visitor can act on, until its first vote. Never for a code
- *  the moved-code check ignores: its veto set the votes back to 0, and
- *  "placing the tour" is a promise it cannot keep (r881 re-review L-F). */
+ *  guidance a visitor can act on, until its first vote. The page passes
+ *  no hint for the code the moved-code check ignores (`ar-entry.ts`),
+ *  only for the code evaluated, so a veto never hides another code's
+ *  (r881 re-review L1). */
 function measuringHint(qr: ArStatusInput["qr"]): string | null {
-  if (qr.votedLocks > 0 || qr.ignoredCode != null) return null;
+  if (qr.votedLocks > 0) return null;
   return qr.fusedHint ?? null;
 }
 

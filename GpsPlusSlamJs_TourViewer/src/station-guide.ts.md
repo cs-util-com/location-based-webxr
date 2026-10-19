@@ -79,6 +79,10 @@ activateM)` (each tick, each offered station with a distance: the
   review): the median of the latest fixes for the aligned position, the
   worse of that and the fix's own (`fixAccuracyM`) for a lone fix (r881
   re-review M-A: one ±40 m fix after a ±5 m run hid behind the median).
+  When neither the median nor the fix states an accuracy the radius alone
+  judges, as for any unknown accuracy: a real device fix always states one
+  (the Geolocation spec requires it), so only injected points (a test
+  page, a replay) lack it (third review L4).
   The accuracy never widens the radius. With neither position nothing is
   reached. A GPS-only session whose tracking quality drops is not ready
   any more and falls back to the fresh fix; only a session that stays
@@ -114,6 +118,18 @@ activateM)` (each tick, each offered station with a distance: the
   arrows keep pointing from the aligned camera. A visitor who never
   becomes ready finds stations and hears their stories, but sees no
   arrows and no figure (an owner question; the default chosen in r881).
+  - **Only tracking's heading latches** (third review L2): a tick ready
+    with no code lined up latches it; a heading that only a code gave
+    lasts while the code is lined up, so a veto that lifts the code while
+    tracking is not `ok` takes the arrows and the figure's pose away with
+    it. `alignmentReady()` folds tracking and the code into one answer,
+    so tracking that reached `ok` only while a code was lined up is not
+    seen and does not latch (the safe side).
+  - **In a dip the arrow and the line can disagree** (third review L3,
+    deliberate, an owner question): the HUD and the breadcrumbs measure
+    from the aligned camera while the find judges by the raw fix, so the
+    arrow can say "arrived" while the line still says the station is not
+    found.
 - **A moved poster pulls the position only until it is judged:** the
   moved-code check then ignores its code and takes its votes back
   (`isIgnored` of the viewer pipeline, `qr-viewer-mode.ts`, D20), the one guard left
@@ -252,7 +268,10 @@ store.subscribe(() => guide.tick());
   ready (M-C); a dip keeps the arrows, the breadcrumbs and the figure's
   turn while the find falls back to the fix, and a new AR entry waits
   again (L-B); the figure's pose waits for readiness (M-B); the two-tap
-  skip works with no distance ever (L-G).
+  skip works with no distance ever (L-G); a heading only a code gave goes
+  with the code while tracking is not ready (third review L2).
+  `station-guide.property.test.ts` also pins that a lone-fix find means
+  the worse known accuracy is within the ceiling (L4).
 - `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
   tracking-quality slice (L3).
 - `playwright-tests/stations.spec.js` - the whole flow on the page.

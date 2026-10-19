@@ -387,6 +387,35 @@ describe("wireArEntry QR readout and visitor hint", () => {
       "Measuring the code: keep moving slowly, still measuring.",
     );
   });
+
+  // Why (r881 re-review L-F, L1): after a veto the voted count is 0, so
+  // the code-measuring hint would show again. For the ignored code it
+  // promised "Code measured - placing the tour.", which it cannot keep;
+  // but a veto must not hide the hint of ANOTHER code (B) the visitor now
+  // measures - the ignored text stays set until a code votes again.
+  it("after a veto hides the ignored code's hint, never another code's", () => {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.viewerQrStatus = "tracking";
+    h.ctx.viewerIgnoredText = "https://gps.csutil.com/tour/?qr=a";
+    h.ctx.viewerLastEvaluation = {
+      text: "https://gps.csutil.com/tour/?qr=b",
+      result: { status: "measuring", notStableReason: "fit" } as never,
+      atMs: performance.now(),
+    };
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toContain(
+      "Measuring the code: keep moving slowly, still measuring.",
+    );
+    h.ctx.viewerLastEvaluation = {
+      text: "https://gps.csutil.com/tour/?qr=a",
+      result: { status: "stable" } as never,
+      atMs: performance.now(),
+    };
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).not.toContain("Code measured");
+    expect(h.dom.arStatus.textContent).not.toContain("Measuring the code");
+  });
 });
 
 // The creator's troubleshooting recording (authoring recording plan

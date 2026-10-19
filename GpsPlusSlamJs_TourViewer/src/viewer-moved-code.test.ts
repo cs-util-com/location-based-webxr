@@ -601,24 +601,19 @@ describe(
       });
     });
 
-    // Why (r881 re-review L-F): the veto now sets the voted count back to
+    // Why (r881 re-review L-F, L1): the veto sets the voted count back to
     // 0, and "a code in view with no vote yet" is when the line shows the
-    // code-measuring hint. The ignored code, still in view and stable,
-    // then read "Code measured - placing the tour." - a promise the
-    // ignored code cannot keep. The ignored code's own line wins.
-    it("after the veto an ignored code in view never says it is placing the tour", () => {
+    // code-measuring hint, so the ignored code still in view read "Code
+    // measured - placing the tour." The page withholds the hint of an
+    // evaluation whose text IS the ignored code (`ar-entry.ts`), never of
+    // another code. That only works if the pipeline records the ignored
+    // code by its scanned text, the key its evaluations carry
+    // (`onEvaluated(result, ms, text)`) - pinned here on the real veto.
+    it("after the veto the ignored code is recorded by its scanned text, the key its evaluations carry", () => {
       const v = scannedAndWalked();
       v.walk(1, 75);
       expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
-      const input = v.statusInput();
-      const status = visitorStatus({
-        ...input,
-        placement: { kind: "idle" },
-        content: { kind: "none" },
-        qr: { ...input.qr, fusedHint: "Code measured - placing the tour." },
-      });
-      expect(status.text).not.toContain("Code measured");
-      expect(status.state).toBe("code-moved");
+      expect(v.ctx.viewerIgnoredText).toBe(TEXT);
     });
 
     // Why (r881 review M1): code B passed the gate and keeps it, but the

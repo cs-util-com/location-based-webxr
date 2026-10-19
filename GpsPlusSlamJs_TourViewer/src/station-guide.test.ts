@@ -1395,4 +1395,30 @@ describe("re-review findings on the guide (r881)", () => {
     h.guide.skipTapped();
     expect(h.dom.line.textContent).toMatch(/^Skipped TOWER\. Next: WELL/);
   });
+
+  // Why (r881 third review L2): the heading latch outlived its only
+  // source. Ready only because a code lined the alignment up, a veto that
+  // takes the code's votes back while tracking is not `ok` leaves an
+  // alignment with no heading again - the arrows and the figure must go
+  // with it. A heading tracking earned stays (the dip test above).
+  it("a heading that only a code gave goes when the code is lifted while tracking is not ready", () => {
+    const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
+    // The page's readiness is tracking OR a code: here the code alone.
+    h.ready(true);
+    h.lined(true);
+    h.at(0, 0);
+    expect(
+      h.huds
+        .at(-1)!
+        .getTargets()
+        .map((t) => t.id),
+    ).toEqual(["gate"]);
+    expect(h.guide.figurePoseOf("gate")).not.toBeNull();
+    h.lined(false);
+    h.ready(false);
+    h.at(0, 0);
+    expect(h.huds.at(-1)!.getTargets()).toEqual([]);
+    expect(h.crumbsFrom.at(-1)).toBeNull();
+    expect(h.guide.figurePoseOf("gate")).toBeNull();
+  });
 });
