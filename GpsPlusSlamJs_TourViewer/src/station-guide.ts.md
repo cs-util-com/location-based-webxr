@@ -7,7 +7,9 @@ station run from the visitor's position, points the wayfinding HUD at the
 offered stations, writes the station line, offers the labelled "skip, I
 can't get there" (§8 D5), and hands a found station to its story. Plans:
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`,
-`GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md` (D9, D16).
+`GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md` (D9, D16),
+`GpsPlusSlamJs_Docs/docs/2026-10-18-2349-visitor-station-content-at-radius-plan.md`
+(M1: the present station).
 
 ## Public API
 
@@ -35,7 +37,9 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
   tracking report reads ready, `tour-flow.ts` `isPlacementReady`: it
   latches a heading, only while no code is lined up),
   `startHud(getTargets)`, `now()`, `fixMaxAgeMs?` (default
-  `FIX_MAX_AGE_MS`, 5 s),
+  `FIX_MAX_AGE_MS`, 5 s), `guideStore?` (the page's store with the
+  `visitorGuide` slice, `visitor-guide-slice.ts`: the present station is
+  dispatched there; absent, none is judged),
   `onFound(station)`, `onEndStory?(stationId)` (R9), `onVisitor?(nue)`, `onApproach?(station, distanceM,
 activateM)` (each tick, each offered station with a distance: the
   prefetch), `onDone?(stationId)` (a story's end or a skip: the prefetch may
@@ -48,6 +52,22 @@ activateM)` (each tick, each offered station with a distance: the
   only from that first readiness on.
 
 ## Invariants & assumptions
+
+- **One gate for found and presence** (visitor plan M1, §3): `judged` is
+  the one function that says what a tick may judge - the measured best
+  position's distances and the judged accuracy, or nothing (no position, no
+  GPS zero, `tooWeakToGuide`). The run's `observe` and the present station
+  both read only it, so a station is never found where presence would not
+  count the visitor, nor present on a fix the arrival refused.
+- **The present station** (`station-presence.ts`): every station of the
+  tour is a candidate, with its judged bands (`judgedStationBands`) and the
+  judged accuracy's margin (`takeoverMarginM`), whatever the order (V-D5).
+  The guide dispatches `presenceJudged` only when `presenceAfter` differs
+  from the store's answer, and only at the END of its tick (the store's
+  subscriber ticks again, and finds nothing to change). No judged position
+  holds it; `endSession` dispatches `presenceCleared`; a run created anew
+  or dropped (another tour, none) dispatches `guideTourChanged` at the end
+  of that tick, when anything was set. Nothing draws by it yet (M2).
 
 - **A run per open tour**, created once placement is allowed (a visitor's
   session with the scan gate passed or not required), kept across AR
@@ -299,6 +319,12 @@ store.subscribe(() => guide.tick());
   page's readiness rule over them, so the latch tested is the guide's.
   `station-guide.property.test.ts` also pins that a lone-fix find means
   the worse known accuracy is within the ceiling (L4).
+- `station-guide.test.ts` ("the present station", visitor plan M1) -
+  enter at the found radius, leave past the exit, a dispatch only per
+  change; a too-weak fix neither finds nor makes present, no position and a
+  stale fix hold; a code's 1.5 m band; a later station of a fixed tour
+  present but not found (V-D5); cleared at the session's end, reset with
+  "show all" by another tour.
 - `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
   tracking-quality slice (L3).
 - `playwright-tests/stations.spec.js` - the whole flow on the page.

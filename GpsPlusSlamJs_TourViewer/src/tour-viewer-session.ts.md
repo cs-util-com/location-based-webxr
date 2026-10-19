@@ -110,8 +110,10 @@ lives here.
   built-ins: `qrDetected`, `tourAuthoring` and `tourViewing` (M1b), all derived from real action
   creators (`slicePrefixOf`). Without `recording` (tests) it writes into a
   `NullStorageBackend` as before.
-  It also mounts the tour document (`tourDocument`, `tour-document.ts`,
-  D29-D31; not persisted) and returns `listenToDocument`, its own listener
+  It also mounts the visitor's guide state (`visitorGuide`,
+  `visitor-guide-slice.ts`: the present station and "show all", visitor
+  plan 2026-10-18-2349 M1; not persisted) and the tour document
+  (`tourDocument`, `tour-document.ts`, D29-D31; not persisted) and returns `listenToDocument`, its own listener
   middleware's `startListening`, where a page runs the document's side
   effects (the draft's writes, `tour-document-draft.ts`) after the
   reducer. Its own middleware rather than an `addListener` dispatch, which

@@ -70,6 +70,9 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   image inside it.
 - The breadcrumbs (`breadcrumbs.ts`) follow the guide's `onGuide`, one
   trail for the page.
+- The guide's `guideStore` is `arStore`: the present station lands in its
+  `visitorGuide` slice (visitor plan 2026-10-18-2349 M1). Nothing draws by
+  it yet; drawing per station is M2.
 - The assets by id are built once per manifest (K4 review R13).
 - A choice button is a `.btn` with `data-testid="scene-choice"`.
 - `stop()` stops the story and the HUD; the guide keeps the progress with

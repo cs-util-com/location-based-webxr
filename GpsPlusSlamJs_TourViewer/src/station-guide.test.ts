@@ -25,6 +25,12 @@ import {
 import { visitorPosition, type VisitorPosition } from "./visitor-position";
 import { createTourViewerStore } from "./tour-viewer-session";
 import { stationAlignmentSignals } from "./visitor-stations";
+import {
+  selectPresentStationId,
+  selectShowAllContent,
+  showAllContentSet,
+  type VisitorGuideStore,
+} from "./visitor-guide-slice";
 
 /**
  * Why these tests matter: this is where the visitor's real position, the
@@ -71,7 +77,7 @@ function station(
 
 function harness(
   tourValue: StationTour,
-  options: { fixMaxAgeMs?: number } = {},
+  options: { fixMaxAgeMs?: number; guideStore?: VisitorGuideStore } = {},
 ) {
   let now = 1_000;
   let visitor: VisitorPosition = {
@@ -141,6 +147,9 @@ function harness(
     ...(options.fixMaxAgeMs === undefined
       ? {}
       : { fixMaxAgeMs: options.fixMaxAgeMs }),
+    ...(options.guideStore === undefined
+      ? {}
+      : { guideStore: options.guideStore }),
     onFound: (s) => found.push(s.id),
     onApproach: (s, d, exit) => approaches.push([s.id, Math.round(d), exit]),
     onDone: (id) => dones.push(id),
@@ -1505,5 +1514,122 @@ describe("re-review findings on the guide (r881)", () => {
     ).toEqual(["gate"]);
     expect(h.crumbsFrom.at(-1)).toEqual([0, 401.5, 0]);
     expect(h.guide.figurePoseOf("gate")).not.toBeNull();
+  });
+});
+
+/** The page's store, counting the guide's `visitorGuide/*` dispatches. */
+function countingStore() {
+  const store = createTourViewerStore();
+  const guideActions: string[] = [];
+  const guideStore: VisitorGuideStore = {
+    getState: () => store.getState(),
+    dispatch: (action) => {
+      if (action.type.startsWith("visitorGuide/")) {
+        guideActions.push(action.type);
+      }
+      return store.dispatch(action);
+    },
+  };
+  return { store, guideStore, guideActions };
+}
+
+/**
+ * Why these tests matter (visitor plan 2026-10-18-2349 M1, §3): the station
+ * whose content shows is judged on the SAME position, accuracy and gate as
+ * the story's arrival, in one place, so the two never disagree; it lives in
+ * the store, and the guide dispatches only when it changes (it ticks on
+ * every camera frame).
+ */
+describe("wireStationGuide: the present station", () => {
+  it("enters at the found radius, leaves past the found exit, and dispatches only on a change", () => {
+    const { store, guideStore, guideActions } = countingStore();
+    const h = harness(
+      { stations: [station("a", 20, 0), station("b", -20, 0)], order: "any" },
+      { guideStore },
+    );
+    h.at(0, 0);
+    expect(selectPresentStationId(store.getState())).toBeNull();
+    // Found radius 5 m; at a raw 4 m accuracy the band is 4 m: exit 9 m.
+    h.at(16, 0);
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    h.at(16.5, 0);
+    h.at(12, 0);
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    h.at(10.9, 0);
+    expect(selectPresentStationId(store.getState())).toBeNull();
+    expect(guideActions).toEqual([
+      "visitorGuide/presenceJudged",
+      "visitorGuide/presenceJudged",
+    ]);
+  });
+
+  it("one gate with the arrival: a fix too weak to guide by neither finds nor makes present, and no position holds", () => {
+    const { store, guideStore } = countingStore();
+    const h = harness(
+      { stations: [station("a", 20, 0)], order: "fixed" },
+      { guideStore },
+    );
+    h.at(20, 0, 30);
+    expect(h.found).toEqual([]);
+    expect(selectPresentStationId(store.getState())).toBeNull();
+    h.at(20, 0, 4);
+    expect(h.found).toEqual(["a"]);
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    // A tracking drop, then a stale fix: presence holds.
+    h.lost();
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    h.advance(FIX_MAX_AGE_MS + 1);
+    h.fixOnly(60, 0, 4, FIX_MAX_AGE_MS + 1);
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    // Too weak, far away: holds as well (nothing is judged on it).
+    h.at(80, 0, 40);
+    expect(selectPresentStationId(store.getState())).toBe("a");
+  });
+
+  it("takes a code's band when a code lined the position up (the found exit 1.5 m past the radius)", () => {
+    const { store, guideStore } = countingStore();
+    const h = harness(
+      { stations: [station("a", 20, 0)], order: "fixed" },
+      { guideStore },
+    );
+    h.lined(true);
+    h.at(16, 0);
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    h.at(13.6, 0);
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    h.at(13.4, 0);
+    expect(selectPresentStationId(store.getState())).toBeNull();
+  });
+
+  it("does not follow the order (V-D5): a later station of a fixed tour is present at its spot, and not found", () => {
+    const { store, guideStore } = countingStore();
+    const h = harness(
+      {
+        stations: [station("first", 50, 0), station("second", 0, 10)],
+        order: "fixed",
+      },
+      { guideStore },
+    );
+    h.at(0, 9);
+    expect(selectPresentStationId(store.getState())).toBe("second");
+    expect(h.found).toEqual([]);
+  });
+
+  it("clears at the AR session's end; another tour starts with nothing present and 'show all' off", () => {
+    const { store, guideStore } = countingStore();
+    const h = harness(
+      { stations: [station("a", 20, 0)], order: "fixed" },
+      { guideStore },
+    );
+    h.at(18, 0);
+    expect(selectPresentStationId(store.getState())).toBe("a");
+    h.guide.endSession();
+    expect(selectPresentStationId(store.getState())).toBeNull();
+    h.at(18, 0);
+    store.dispatch(showAllContentSet(true));
+    h.setTour({ stations: [station("z", -40, 0)], order: "fixed" });
+    h.at(0, 0);
+    expect(selectShowAllContent(store.getState())).toBe(false);
+    expect(selectPresentStationId(store.getState())).toBeNull();
   });
 });

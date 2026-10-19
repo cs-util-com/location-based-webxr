@@ -247,6 +247,9 @@ export function wireVisitorStations(deps: {
     ...stationAlignmentSignals(ctx, arStore),
     startHud: (getTargets) => seams.createWayfindingHud({ getTargets }),
     now: deps.now,
+    // The present station (visitor plan 2026-10-18-2349 M1): judged here,
+    // drawn per station from M2 on.
+    guideStore: arStore,
     onFound: (station) => {
       view.offer(station);
     },

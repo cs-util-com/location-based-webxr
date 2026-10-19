@@ -35,6 +35,7 @@ import {
   tourDocumentReducer,
   type TourDocumentState,
 } from "./tour-document.js";
+import { visitorGuideReducer } from "./visitor-guide-slice.js";
 
 import type {
   HitTestReticleHandle,
@@ -80,6 +81,10 @@ type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
  * across those sessions for the same reason. Without it (tests) the store
  * writes into a `NullStorageBackend` as before.
  *
+ * `visitorGuide` is the visitor's present station and its "show all"
+ * override (`visitor-guide-slice.ts`, visitor plan 2026-10-18-2349 §3),
+ * not written into the recording either.
+ *
  * It also holds the tour a creator edits (`tourDocument`,
  * `tour-document.ts`, D29-D31) - not written into the recording - and
  * `listenToDocument`, its own listener middleware's `startListening`: a
@@ -103,6 +108,7 @@ export function createTourViewerStore(recording?: {
     extraReducers: {
       qrDetected: qrDetectedReducer,
       tourDocument: tourDocumentReducer,
+      visitorGuide: visitorGuideReducer,
     },
     extraMiddleware: [documentListener.middleware],
     // Beyond the framework's built-ins (GPS with its paired poses, the

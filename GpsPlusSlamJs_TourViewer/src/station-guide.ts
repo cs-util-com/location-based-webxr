@@ -45,6 +45,14 @@
  *   each target's `distanceMin`/`distanceMax` are the station's found band at
  *   the measured accuracy, and the target sits at the visitor's own height so
  *   the HUD's distance is the horizontal one the run judges.
+ * - **One gate for found and presence** (visitor plan 2026-10-18-2349 §3):
+ *   the same judged position, judged accuracy, `tooWeakToGuide` and
+ *   readiness decide the story's arrival and the station whose content
+ *   shows (`station-presence.ts`), in one function (`judged`), so the two
+ *   never disagree. Presence reads every station, not the offer (V-D5); it
+ *   lives in the page's store (`visitor-guide-slice.ts`), dispatched only
+ *   when it changes and after the tick's own work, holds with no judged
+ *   position, clears at the session's end and resets with the tour.
  * - **Progress lives as long as the tour stays open** (several AR entries;
  *   saving it across page lives is K3). A different tour starts a new run.
  */
@@ -73,6 +81,15 @@ import {
   type StationEvent,
   type StationRun,
 } from "./station-run.js";
+import { presenceCandidates } from "./station-presence.js";
+import {
+  guideTourChanged,
+  presenceAfter,
+  presenceCleared,
+  presenceJudged,
+  type PresenceJudgement,
+  type VisitorGuideStore,
+} from "./visitor-guide-slice.js";
 import type { VisitorPosition } from "./visitor-position.js";
 
 /** The station line and the skip button, inside `#ar-root`. */
@@ -119,6 +136,10 @@ export interface StationGuideDeps {
    *  alignment, or one not ready; ms, on `now`'s clock); default
    *  `FIX_MAX_AGE_MS`. */
   readonly fixMaxAgeMs?: number;
+  /** The page's store, where the visitor's present station lives
+   *  (`visitor-guide-slice.ts`): the guide dispatches a judged position
+   *  only when it changes the answer. Absent: no presence is judged. */
+  readonly guideStore?: VisitorGuideStore;
   /** A station was found: play its story. */
   onFound(station: TourStation): void;
   /** Each tick, for each offered station with a distance: how far it is,
@@ -218,6 +239,13 @@ interface Measurement {
   readonly distances: Map<string, number>;
 }
 
+/** What one tick may judge (`judged`): the arrival and presence alike. */
+interface Judgement {
+  readonly distances: ReadonlyMap<string, number>;
+  /** The judged accuracy (`judgedAccuracy`; null: a code lined it up). */
+  readonly accuracyM: number | null;
+}
+
 /** What a tap on the skip button does (its label says which). */
 interface SkipAction {
   readonly kind: "ask-skip" | "skip" | "ask-end" | "end" | "undo";
@@ -268,6 +296,9 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  goes with the code's votes (a veto) while tracking is not ready
    *  (r881 third review L2). */
   let headingReady = false;
+  /** The run was created anew or dropped (another tour, or none): the
+   *  store's presence and its "show all" reset at the end of the tick. */
+  let tourChangePending = false;
 
   function stationById(id: string): TourStation | undefined {
     return runStations?.find((s) => s.id === id);
@@ -334,12 +365,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function currentRun(): StationRun | null {
     const tour = deps.tour();
     if (tour === null || tour.stations.length === 0) {
+      if (run !== null) tourChangePending = true;
       run = null;
       runStations = null;
       return null;
     }
     if (tour.stations !== runStations) {
       if (!deps.placementAllowed()) return null;
+      tourChangePending = true;
       runStations = tour.stations;
       run = createStationRun({
         stations: tour.stations,
@@ -386,6 +419,44 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  HUD's targets and the breadcrumbs' stop alike. */
   function bandsOf(station: TourStation, m: Measurement): StationBands {
     return judgedStationBands(station, m.rawAccuracyM, m.codeLinedUp);
+  }
+
+  /** The one gate (visitor plan §3): what this tick may judge, for the
+   *  run's arrival and the present station alike; null when nothing may
+   *  be judged - no position, no GPS zero yet (no distance), or a
+   *  position too weak to guide by (`tooWeakToGuide`). */
+  function judged(m: Measurement): Judgement | null {
+    if (m.best === null || m.distances.size === 0) return null;
+    const accuracyM = accuracyOf(m);
+    if (tooWeakToGuide(accuracyM)) return null;
+    return { distances: m.distances, accuracyM };
+  }
+
+  /** The store's presence after this tick: a tour change resets it, and
+   *  a judgement (null: hold) is dispatched only when it changes the
+   *  answer. Called at the END of a tick: a dispatch re-enters the tick
+   *  through the store's subscriber, which then finds nothing to change. */
+  function publishPresence(m: Measurement | null, j: Judgement | null): void {
+    const store = deps.guideStore;
+    if (store === undefined) return;
+    if (tourChangePending) {
+      tourChangePending = false;
+      const s = store.getState().visitorGuide;
+      if (s.presentStationId !== null || s.showAllContent) {
+        store.dispatch(guideTourChanged());
+      }
+    }
+    if (m === null || j === null || runStations === null) return;
+    const judgement: PresenceJudgement = {
+      candidates: presenceCandidates(runStations, j.distances, (station) =>
+        bandsOf(station, m),
+      ),
+      accuracyM: j.accuracyM,
+    };
+    const state = store.getState().visitorGuide;
+    if (presenceAfter(state, judgement) !== state.presentStationId) {
+      store.dispatch(presenceJudged(judgement));
+    }
   }
 
   function horizontalDistances(
@@ -645,6 +716,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         show(dom.line, "");
         show(dom.skip, "");
         deps.onGuide?.(null, null);
+        publishPresence(null, null);
         return;
       }
       measure();
@@ -665,14 +737,18 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       }
       if (m.headingNue !== null) deps.onVisitor?.(m.headingNue);
       approach(m);
-      handle(
-        current.observe({
-          distances: m.distances,
-          nowMs: deps.now(),
-          accuracyM: accuracyOf(m),
-        }),
-      );
+      const judgement = judged(m);
+      if (judgement !== null) {
+        handle(
+          current.observe({
+            distances: judgement.distances,
+            nowMs: deps.now(),
+            accuracyM: judgement.accuracyM,
+          }),
+        );
+      }
       render();
+      publishPresence(m, judgement);
     },
     codeLocked() {
       guide.tick();
@@ -728,6 +804,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       // The next AR entry earns its own heading (a new session's odometry).
       trackedHeading = false;
       headingReady = false;
+      // Nothing is present outside an AR session (visitor plan §3).
+      if (deps.guideStore?.getState().visitorGuide.presentStationId != null) {
+        deps.guideStore.dispatch(presenceCleared());
+      }
       deps.onGuide?.(null, null);
       dom.line.hidden = true;
       dom.skip.hidden = true;
