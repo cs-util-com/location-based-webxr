@@ -595,6 +595,7 @@ describe("after a code-set zero the content shows on the first voted lock (no co
           fixNue: null,
           aligned: placed,
           fixAtMs: null,
+          fixAccuracyM: null,
         };
       },
       startHud: () => null,

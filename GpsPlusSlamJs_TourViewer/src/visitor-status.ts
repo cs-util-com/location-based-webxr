@@ -179,6 +179,15 @@ function placedSentence(input: ArStatusInput): VisitorStatus {
   return { state: "placed-gps", text: `${GPS_PLACED}. ${LOOK_AROUND}` };
 }
 
+/** The code is in view and its pose still settles (plan §66's hint):
+ *  guidance a visitor can act on, until its first vote. Never for a code
+ *  the moved-code check ignores: its veto set the votes back to 0, and
+ *  "placing the tour" is a promise it cannot keep (r881 re-review L-F). */
+function measuringHint(qr: ArStatusInput["qr"]): string | null {
+  if (qr.votedLocks > 0 || qr.ignoredCode != null) return null;
+  return qr.fusedHint ?? null;
+}
+
 /** The code situations that come before placement: they need the visitor
  *  to point elsewhere. Never once the tour is placed (a passing product
  *  code must not take over a placed tour; U1 review #3). */
@@ -199,11 +208,8 @@ function codeSentence(input: ArStatusInput): VisitorStatus | null {
         : "This code can't line up the tour. Point your phone at another of the tour's codes.",
     };
   }
-  // The code is in view and its pose still settles (plan §66's hint):
-  // guidance a visitor can act on, until its first vote.
-  if (qr.fusedHint != null && qr.votedLocks === 0) {
-    return { state: "measuring-code", text: qr.fusedHint };
-  }
+  const hint = measuringHint(qr);
+  if (hint !== null) return { state: "measuring-code", text: hint };
   if (gate.kind === "scanning") {
     // Without location the codes are the only way in (QR-first M1b-1).
     if (input.codesOnly === true) {

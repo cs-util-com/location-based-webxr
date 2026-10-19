@@ -77,6 +77,11 @@ function harness(
     loadAsset?: (path: string) => Promise<Blob>;
     play?: () => Promise<void>;
     checkPicture?: (blob: Blob) => Promise<string | null>;
+    showCharacter?: (
+      stationId: string,
+      image: Blob,
+      onWaiting?: () => void,
+    ) => Promise<void>;
   } = {},
 ) {
   const { dom, lastChoices } = fakeDom();
@@ -88,7 +93,11 @@ function harness(
     stop: vi.fn(),
   };
   const stage = {
-    showCharacter: vi.fn(() => Promise.resolve()),
+    showCharacter: vi.fn(
+      overrides.showCharacter ??
+        ((_id: string, _image: Blob, _onWaiting?: () => void) =>
+          Promise.resolve()),
+    ),
     showModel: vi.fn(() => Promise.resolve()),
     clear: vi.fn(),
   };
@@ -174,8 +183,48 @@ describe("createSceneView", () => {
     expect(h.stage.showCharacter).toHaveBeenCalledWith(
       "gate",
       expect.any(Blob),
+      expect.any(Function),
     );
     expect(h.audio.play).toHaveBeenCalledTimes(1);
+    expect(h.dom.status.textContent).toBe("");
+  });
+
+  // Why (r881 re-review M-B): a station found before the alignment has a
+  // heading plays its words and its voice at once, but its figure waits
+  // for the heading (it would stand up to 180° off and then jump). The
+  // panel said "Loading the figure…" all that time, for a file already
+  // loaded: it now says what the figure waits for, and clears once it
+  // stands.
+  it("says the figure waits for the visitor's position while the stage holds it, and clears once it stands", async () => {
+    let stand: () => void = () => undefined;
+    const h = harness({
+      showCharacter: (_id, _image, onWaiting) =>
+        new Promise((resolve) => {
+          onWaiting?.();
+          stand = resolve;
+        }),
+    });
+    h.view.offer(
+      station("gate", [
+        {
+          id: "k",
+          block: {
+            kind: "character",
+            name: "Sir Kay",
+            image: "knight",
+            caption: "Welcome, traveller.",
+          },
+          advance: { mode: "tap" },
+        },
+      ]),
+    );
+    await settle();
+    expect(h.dom.text.textContent).toBe("Welcome, traveller.");
+    expect(h.dom.status.textContent).toBe(
+      "Waiting for your position to place the figure…",
+    );
+    stand();
+    await settle();
     expect(h.dom.status.textContent).toBe("");
   });
 

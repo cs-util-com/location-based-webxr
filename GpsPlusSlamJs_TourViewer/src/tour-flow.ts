@@ -140,7 +140,7 @@ export function contentSegment(content: ArStatusInput["content"]): string {
  *  coaching copy stay one contract (DEC-H3). At the first GPS fix the
  *  alignment is the identity - no heading - so an earlier trigger would
  *  start the scene up to 180° wrong. One exemption (QR-first M1): a code
- *  that placed the tour (`viewer-placement.ts` `codePlacedTour()`) places
+ *  that placed the tour (`codePlacedTour` below) places
  *  before this gate, and cannot be 180° wrong - a voted lock's ring
  *  carries the code's saved heading, unlike a single GPS fix. */
 export function isPlacementReady(
@@ -181,10 +181,12 @@ export function codePlacedTour(ctx: {
  * it: tracking ready (`isPlacementReady`) or a code lined it up
  * (`codeLinedUp`; a voted lock after the gate's escape too, which places
  * the walk's photos by itself, `onVotedLock`). Before it the alignment is
- * the identity at the first fix, which can be 180° wrong. Unlike the
- * photos' trigger, which latches, the guide re-reads this each tick, and
- * while it is false judges by the fresh device fix instead (r881 review
- * H1), so a degraded phase only takes the arrows away for a while.
+ * the identity at the first fix, which can be 180° wrong. The guide's
+ * find re-reads this each tick, and while it is false judges by the fresh
+ * device fix instead (r881 review H1); what needs a heading (the arrows,
+ * the breadcrumbs, the figure) latches its first `true` per AR entry, as
+ * the photos' trigger does, so a degraded dip does not take it away (r881
+ * re-review L-B).
  */
 export function alignmentReady(
   report: TrackingQualityReport | null,

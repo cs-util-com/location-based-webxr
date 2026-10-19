@@ -47,11 +47,12 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
   longer code-placed (review M1).
 - `alignmentReady(report, qr): boolean` - `isPlacementReady(report) ||
 codeLinedUp(qr)`: whether the station guide judges on the aligned frame
-  (its position, the HUD's arrows, the breadcrumbs). Not the photos' rule:
-  their trigger latches once, this is re-read each tick, and while it is
-  false the guide judges by the fresh device fix instead (r881 review H1;
-  readiness needs a walk with turns and may never come for a visitor
-  standing or walking straight).
+  (its position, the HUD's arrows, the breadcrumbs, the figure). The find
+  re-reads it each tick, and while it is false judges by the fresh device
+  fix instead (r881 review H1; readiness needs a walk with turns and may
+  never come for a visitor standing or walking straight). What needs a
+  heading latches its first `true` per AR entry, as the photos' trigger
+  does, so a degraded dip does not take the arrows away (re-review L-B).
 - `PlacementState` also carries `waiting-ready` (renders the readiness
   hint, or "Waiting for tracking to warm up…" without one) and
   `nothing-to-place` (a tour with neither a recording nor printed codes).

@@ -50,8 +50,12 @@
  * code accuracy of 1 / 3 / 5 m, an assumption: no field figure exists yet)
  * and the raw accuracy does not enter at all. Before the alignment is
  * ready (tracking `ok`, which a visitor standing or walking straight may
- * never reach) the guide judges by the fresh device fix with its own
- * accuracy - the no-code rows with the `raw` model are that case.
+ * never reach) the guide judges by the fresh device fix - the no-code rows
+ * with the `raw` model are that case. The guide judges such a lone fix by
+ * the worse of the median and the fix's own accuracy (r881 re-review
+ * M-A); the `raw` model reports one accuracy for every fix and has no
+ * single outlier fix, so that guard is pinned in `station-guide.test.ts`,
+ * not simulated here.
  */
 
 import { writeFileSync } from "node:fs";

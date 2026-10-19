@@ -47,10 +47,19 @@ export interface SceneAudio {
   stop(): void;
 }
 
-/** What a step shows in AR at its station. */
+/** What a step shows in AR at its station. `onWaiting`: the decoded
+ *  figure waits for the station's pose (`scene-stage.ts`). */
 interface SceneStage {
-  showCharacter(stationId: string, image: Blob): Promise<void>;
-  showModel(stationId: string, model: Blob): Promise<void>;
+  showCharacter(
+    stationId: string,
+    image: Blob,
+    onWaiting?: () => void,
+  ): Promise<void>;
+  showModel(
+    stationId: string,
+    model: Blob,
+    onWaiting?: () => void,
+  ): Promise<void>;
   clear(): void;
 }
 
@@ -153,6 +162,18 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       });
   }
 
+  /** While the stage holds a loaded figure back for the visitor's
+   *  position (no GPS zero, or no heading yet: r881 re-review M-B), the
+   *  status says so instead of "Loading…"; the figure's settle clears it. */
+  function waitingLine(what: string): () => void {
+    const token = renderToken;
+    return () => {
+      if (token === renderToken) {
+        dom.status.textContent = `Waiting for your position to place the ${what}…`;
+      }
+    };
+  }
+
   function playSound(assetId: string): void {
     withAsset(assetId, "sound", async (blob) => {
       try {
@@ -188,7 +209,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       case "character":
         dom.text.textContent = block.caption;
         withAsset(block.image, "figure", (blob) =>
-          deps.stage.showCharacter(station.id, blob),
+          deps.stage.showCharacter(station.id, blob, waitingLine("figure")),
         );
         if (block.voice !== undefined) playSound(block.voice);
         return;
@@ -203,7 +224,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       case "model":
         dom.text.textContent = block.caption ?? "";
         withAsset(block.asset, "3D model", (blob) =>
-          deps.stage.showModel(station.id, blob),
+          deps.stage.showModel(station.id, blob, waitingLine("3D model")),
         );
         return;
       case "choice":

@@ -26,6 +26,12 @@ the measured accuracy (the median of the latest device fixes). Plan:
   - `fixAtMs` - the latest device fix's own time (its Geolocation
     timestamp, epoch ms), or null exactly when `fixNue` is: the guide
     ignores a fix older than `FIX_MAX_AGE_MS`.
+  - `fixAccuracyM` - the latest device fix's own reported accuracy (m),
+    or null when `fixNue` is or that fix states none (missing, zero,
+    negative, not finite). Where the fix alone is the position, the guide
+    judges it by the worse of this and `accuracyM`: one ±40 m Wi-Fi fix
+    after a run of ±5 m GPS fixes leaves the median at 5 m (r881
+    re-review M-A).
 
 ## Invariants & assumptions
 

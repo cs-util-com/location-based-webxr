@@ -42,12 +42,16 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   `VIEWER_SOFT_TRIM`), so a station on the scanned code is found on that
   lock: the lock places the visitor, and a station at the code is inside
   its radius (D16).
-- The stations are judged on the aligned frame only once it is ready
+- The stations are judged on the aligned frame only while it is ready
   (r881, `stationAlignmentSignals`): tracking ready or a code lined it up,
-  re-read each tick. Before it the guide judges by the fresh device fix
-  (review H1), and the arrows and breadcrumbs wait. The gate alone was not
-  enough: the library aligns a session from its first fix, with no
-  heading.
+  re-read each tick. While it is not the guide judges by the fresh device
+  fix (review H1). The arrows, the breadcrumbs, the figure's turn and the
+  figure's pose wait for the first readiness of the AR entry and keep it
+  through a dip (re-review L-B, M-B): the stage reads
+  `guide.figurePoseOf`, so a story found on the raw fix plays its words
+  and voice at once while its figure waits ("Waiting for your position to
+  place the figure…"). The gate alone was not enough: the library aligns
+  a session from its first fix, with no heading.
 - Media are read through `ctx.session.loadContentEntry` (K0's allowlist and
   `.glb` check, K1's per-entry hash check), ahead of time as the visitor
   approaches (`station-prefetch.ts`; the story's own reads go through the

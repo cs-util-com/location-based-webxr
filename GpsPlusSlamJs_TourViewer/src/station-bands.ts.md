@@ -103,8 +103,12 @@ The judged path (r881): the shipped run's `observe` fed by
 and 25 m (the default), 120 seeds, a visitor standing on the spot for
 120 s and one walking past at three radii. Without a code this is the
 aligned position once tracking is ready, and the fresh device fix before
-(the `raw` model; review H1: readiness may never come), so it describes
-production either way:
+(the `raw` model; review H1: readiness may never come). The `raw` model
+reports one accuracy for every fix; it has no single outlier fix, so the
+case the guide guards against before readiness - one ±40 m Wi-Fi fix after
+a run of ±5 m GPS fixes, judged by the worse of the median and its own
+accuracy (`fixAccuracyM`, r881 re-review M-A) - is not simulated here but
+pinned in `station-guide.test.ts`:
 
 - without a code, at or below the 25 m ceiling: as above (standing found
   in 99-100 % of runs; passing a 5 m station at 3 radii found by mistake

@@ -43,7 +43,11 @@ time. Plan:
   text, the image's or model's caption, the character's caption, the
   audio's or video's transcript. A character also shows its name.
 - **Async feedback** (CLAUDE.md): a step's media shows "Loading the
-  picture/figure/sound/3D model…" in `status`, cleared when it shows; a read
+  picture/figure/sound/3D model…" in `status`, cleared when it shows;
+  while the stage holds a loaded figure or model back for the visitor's
+  position (no GPS zero, or no heading yet: the guide's `figurePoseOf`)
+  it says "Waiting for your position to place the figure…" (or "the 3D
+  model"), cleared once it stands (r881 re-review M-B); a read
   failure says it "could not be loaded - the words are below"; a sound the
   browser refuses says it "did not play here". The words never wait for
   the media.
@@ -70,4 +74,5 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   caption, figure on the stage, voice), refused sound and unreadable file,
   a late picture dropped and URLs revoked, the auto timer and its cancel, a
   choice, one story at a time and the queue, de-duplication and `stopAll`;
-  ending a playing, a queued and an unknown story (R9).
+  ending a playing, a queued and an unknown story (R9); the figure's
+  waiting line while the stage holds it, cleared once it stands (M-B).

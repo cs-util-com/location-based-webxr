@@ -55,6 +55,11 @@ export interface VisitorPosition {
   /** The latest device fix's own time (its Geolocation timestamp, epoch
    *  ms), or null exactly when `fixNue` is: how old the fix is. */
   readonly fixAtMs: number | null;
+  /** The latest device fix's own reported accuracy (m), or null when
+   *  `fixNue` is or that fix states none: where the fix alone is the
+   *  position, one outlier fix must not hide behind the median
+   *  (`accuracyM`; r881 re-review M-A). */
+  readonly fixAccuracyM: number | null;
 }
 
 /** A WebXR pose's position (`getCurrentArPose`'s shape). */
@@ -80,13 +85,18 @@ export function visitorPosition(input: {
     fixNue: fix?.nue ?? null,
     aligned: usableAlignment(input.alignment),
     fixAtMs: fix?.atMs ?? null,
+    fixAccuracyM: fix?.accuracyM ?? null,
   };
 }
 
 function latestFix(
   points: readonly GpsPoint[],
   zero: LatLong | null,
-): { nue: readonly [number, number, number]; atMs: number } | null {
+): {
+  nue: readonly [number, number, number];
+  atMs: number;
+  accuracyM: number | null;
+} | null {
   if (zero === null) return null;
   for (let i = points.length - 1; i >= 0; i -= 1) {
     const p = points[i]!;
@@ -101,7 +111,11 @@ function latestFix(
       alt,
       0,
     );
-    return { nue: [nue[0], nue[1], nue[2]], atMs: p.timestamp };
+    return {
+      nue: [nue[0], nue[1], nue[2]],
+      atMs: p.timestamp,
+      accuracyM: usableAccuracy(p.latLongAccuracy),
+    };
   }
   return null;
 }
@@ -131,19 +145,22 @@ function cameraNue(
   return [n, u, e];
 }
 
+/** A reported accuracy a fix can be judged by: finite and positive. */
+function usableAccuracy(accuracy: unknown): number | null {
+  return typeof accuracy === "number" &&
+    Number.isFinite(accuracy) &&
+    accuracy > 0
+    ? accuracy
+    : null;
+}
+
 function deviceAccuracy(points: readonly GpsPoint[]): number | null {
   const recent: number[] = [];
   for (let i = points.length - 1; i >= 0; i -= 1) {
     const p = points[i]!;
     if (gpsPointSourceOf(p) !== GPS_POINT_SOURCE_DEVICE) continue;
-    const accuracy = p.latLongAccuracy;
-    if (
-      typeof accuracy !== "number" ||
-      !Number.isFinite(accuracy) ||
-      accuracy <= 0
-    ) {
-      continue;
-    }
+    const accuracy = usableAccuracy(p.latLongAccuracy);
+    if (accuracy === null) continue;
     recent.push(accuracy);
     if (recent.length === ACCURACY_WINDOW_FIXES) break;
   }

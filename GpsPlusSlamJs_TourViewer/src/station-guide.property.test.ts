@@ -89,6 +89,7 @@ describe("wireStationGuide (properties)", () => {
           fixNue: [1000, 400, 1000] as [number, number, number],
           aligned: true,
           fixAtMs: 0,
+          fixAccuracyM: 4,
         };
         const dom = {
           line: { textContent: "", hidden: true },
@@ -119,6 +120,7 @@ describe("wireStationGuide (properties)", () => {
             fixNue: [north, 400, east],
             aligned: true,
             fixAtMs: now,
+            fixAccuracyM: 4,
           };
           now += 1_000;
           guide.tick();
@@ -131,6 +133,7 @@ describe("wireStationGuide (properties)", () => {
           fixNue: [1000, 400, 1000],
           aligned: true,
           fixAtMs: now,
+          fixAccuracyM: 4,
         };
         for (let taps = 0; taps < 2 * n + 2; taps += 1) {
           now += 10_000;
@@ -183,6 +186,7 @@ describe("wireStationGuide (properties)", () => {
             fixNue: [north, 400, east],
             aligned,
             fixAtMs: now - ageMs,
+            fixAccuracyM: 4,
           };
           const found: string[] = [];
           const guide = wireStationGuide({

@@ -601,10 +601,33 @@ describe(
       });
     });
 
+    // Why (r881 re-review L-F): the veto now sets the voted count back to
+    // 0, and "a code in view with no vote yet" is when the line shows the
+    // code-measuring hint. The ignored code, still in view and stable,
+    // then read "Code measured - placing the tour." - a promise the
+    // ignored code cannot keep. The ignored code's own line wins.
+    it("after the veto an ignored code in view never says it is placing the tour", () => {
+      const v = scannedAndWalked();
+      v.walk(1, 75);
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      const input = v.statusInput();
+      const status = visitorStatus({
+        ...input,
+        placement: { kind: "idle" },
+        content: { kind: "none" },
+        qr: { ...input.qr, fusedHint: "Code measured - placing the tour." },
+      });
+      expect(status.text).not.toContain("Code measured");
+      expect(status.state).toBe("code-moved");
+    });
+
     // Why (r881 review M1): code B passed the gate and keeps it, but the
     // veto of code A took B's votes back too. The placement trigger's
-    // "a code placed the tour" must not hold on B's spent count, or the
-    // walk's photos would place on a GPS-only alignment with no heading.
+    // "a code placed the tour" must not hold on B's spent count: until a
+    // code votes again, photos not placed yet wait for tracking readiness
+    // like any GPS-only session. That is the safe direction (accepted in
+    // the re-review): at worst they wait longer; photos already placed
+    // stay where they are.
     it("after a veto the placement trigger no longer reads the tour as code-placed, until a code votes again", () => {
       const v = viewer(LEVEL, true);
       v.walk(0, 0);

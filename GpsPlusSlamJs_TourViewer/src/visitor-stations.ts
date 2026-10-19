@@ -40,10 +40,12 @@ import { visitorPosition } from "./visitor-position.js";
  * Whether the visitor's stations may be offered now: a visitor's running
  * session whose scan gate allows placement. (Until r863 the stations also
  * waited for the compass wait; a code's rotation now stands from its first
- * lock, `viewer-vote-sink.ts` `VIEWER_SOFT_TRIM`.) Found, pointed at and
- * guided to they are only on an alignment that is ready - the readiness
- * the walk's photos wait for (`tour-flow.ts` `alignmentReady`, read by the
- * guide each tick), since the alignment is the identity from the first fix.
+ * lock, `viewer-vote-sink.ts` `VIEWER_SOFT_TRIM`.) Offered, they are found
+ * on the alignment's position while it is ready (`tour-flow.ts`
+ * `alignmentReady`, re-read by the guide each tick) and on the fresh
+ * device fix while it is not, since the alignment is the identity from the
+ * first fix. Pointed at, guided to and given a figure they are only once
+ * the AR entry's alignment was ready (a heading; the guide latches it).
  */
 export function stationPlacementAllowed(
   ctx: Pick<TourViewerSession, "placementUnsubscribe" | "scanGate">,
@@ -167,7 +169,9 @@ export function wireVisitorStations(deps: {
   const breadcrumbs = createBreadcrumbTrail({
     getScene: () => seams.getScene(),
   });
-  // The guide is created below; the stage reads its poses late.
+  // The guide is created below; the stage reads its poses late. The
+  // figure's pose waits for a heading (`figurePoseOf`, r881 re-review
+  // M-B): the stage parks the figure and the story says so.
   let poseOf: (id: string) => ReturnType<typeof guide.poseOf> = () => null;
   const stage = createSceneStage({
     getScene: () => seams.getScene(),
@@ -256,7 +260,7 @@ export function wireVisitorStations(deps: {
       breadcrumbs.update(visitor, target);
     },
   });
-  poseOf = (id) => guide.poseOf(id);
+  poseOf = (id) => guide.figurePoseOf(id);
 
   dom.skipButton.addEventListener("click", () => {
     guide.skipTapped();
