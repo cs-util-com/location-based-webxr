@@ -1860,4 +1860,69 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     expect(stored.stations?.find((s) => s.id === STATION)?.geo).toEqual(MOVED);
     expect(stationGeo(page)).toEqual(MOVED);
   });
+
+  // Why the next two matter (the r880 milestone review, HIGH-2): a name
+  // is a settings change too. The kept name re-applied at every open, or
+  // any rename while the pose is still offered, wrote the whole record
+  // WITHOUT the station poses - and the moved station was lost again.
+  const storedPose = (files: Map<string, unknown>) =>
+    (
+      JSON.parse(String(files.get(SETTINGS_KEY))) as {
+        stations?: { id: string; geo: unknown }[];
+      }
+    ).stations?.find((s) => s.id === STATION)?.geo;
+
+  it("keeps the stored pose when a kept name renames the tour at the open", async () => {
+    const { store, files } = memoryStore({
+      ...metaOnly(),
+      [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]),
+    });
+    const page = wire(store);
+    page.ctx.tourDocument.open(PUBLISHED);
+    // What the name field does on an open: the kept name, re-applied.
+    expect(page.setup.renameTour("Castle walk")).toBeNull();
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(page.dom.draftOffer.hidden, "the pose is still offered").toBe(false);
+    expect(storedPose(files), "and still stored").toEqual(MOVED);
+    page.dom.draftRestore.click();
+    expect(stationGeo(page)).toEqual(MOVED);
+    expect(page.ctx.tourDocument.manifest()?.title).toBe("Castle walk");
+  });
+
+  it("keeps an offered pose through a rename, for a reload", async () => {
+    const { store, files } = memoryStore({
+      ...metaOnly(),
+      [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]),
+    });
+    const first = await opened(store);
+    expect(first.dom.draftOffer.hidden).toBe(false);
+    expect(first.setup.renameTour("Castle walk")).toBeNull();
+    await settle();
+    expect(storedPose(files), "the rename kept the pose").toEqual(MOVED);
+
+    const later = await opened(store);
+    expect(later.dom.draftOffer.hidden, "offered again").toBe(false);
+    later.dom.draftRestore.click();
+    expect(stationGeo(later)).toEqual(MOVED);
+  });
+
+  it("drops the carried pose on Delete it, keeping the live name", async () => {
+    const { store, files } = memoryStore({
+      ...metaOnly(),
+      [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]),
+    });
+    const page = await opened(store);
+    expect(page.setup.renameTour("Castle walk")).toBeNull();
+    page.dom.draftDiscard.click();
+    await settle();
+
+    expect(storedPose(files), "the rejected pose is gone").toBeUndefined();
+    expect(
+      (JSON.parse(String(files.get(SETTINGS_KEY))) as { details?: unknown })
+        .details,
+      "the name, live work, stays",
+    ).toMatchObject({ title: "Castle walk" });
+  });
 });

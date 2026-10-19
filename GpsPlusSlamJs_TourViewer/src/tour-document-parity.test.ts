@@ -480,6 +480,9 @@ interface Row {
   readonly records: boolean;
   /** Where the two pages diverge today, and the step that ends it. */
   readonly diverges?: string;
+  /** What each page must leave, beyond agreeing with the other: two pages
+   *  that share a bug agree too (the r880 milestone review, HIGH-1). */
+  readonly each?: (records: { objects: string[]; deleted: string[] }) => void;
 }
 
 const NORTH = 48.5205;
@@ -548,6 +551,12 @@ const ROWS: readonly Row[] = [
       await p.save();
       await p.undoDelete();
       return p;
+    },
+    // Why: the first save wrote the deletion and took "b" out of the
+    // document's deletions, but not the draft's tombstone; an undo that
+    // left it would delete "b" again on the next restore.
+    each: (records) => {
+      expect(records.deleted).not.toContain("b");
     },
   },
   {
@@ -669,7 +678,10 @@ async function outcome(
     file: File,
     stores: (key: string) => Promise<DraftFileStore>,
   ) => Promise<Page>,
-): Promise<{ written: unknown; records: unknown }> {
+): Promise<{
+  written: unknown;
+  records: { objects: string[]; deleted: string[] } | null;
+}> {
   const file = await tourFile();
   const stores = memoryStores();
   const page = await row.run(await make(file, stores));
@@ -729,6 +741,9 @@ async function samePages(row: Row): Promise<void> {
   if (row.diverges === undefined) {
     expect(desktop.written).toEqual(phone.written);
     expect(desktop.records).toEqual(phone.records);
+    for (const records of [desktop.records, phone.records]) {
+      if (row.each !== undefined && records !== null) row.each(records);
+    }
     return;
   }
   if (

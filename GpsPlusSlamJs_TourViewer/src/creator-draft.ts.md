@@ -212,12 +212,20 @@ change, in its own queue. The phone reads only its STATION POSES back:
 - **Restored** frames first (the slice's `restored` moves them before the
   objects), so the moved items' records land inside their moved stations -
   unless a station was moved here meanwhile: live work wins.
-- **Live work outranks it**: settings changed on this page before the
-  draft opened (`touched`) are written after the read, and the stored
-  record is then neither offered nor removed.
+- **Read first, in the record's own queue**, before this page writes it:
+  settings changed here before the draft opened (`touched`) are written
+  after the read. Only a station moved HERE outranks the stored poses; a
+  name (the kept name re-applied at every open, `tour-name-field.ts`) or
+  another setting does not.
+- **Undecided poses ride along** (the r880 milestone review HIGH-2): while
+  the stored poses are neither restored nor discarded (offered, or "Not
+  now"), every record this page writes WITHOUT poses carries them
+  (`undecidedStations`, applied when the write runs), so a rename never
+  costs a moved station.
 - **Removed** with a spent draft (after its meta commit) and by "Delete
   it" (after the rejection lands), unless this page changed the settings
-  since the open. An interrupted removal is safe: a record the opened tour
+  since the open - then "Delete it" rewrites the live record without the
+  rejected poses. An interrupted removal is safe: a record the opened tour
   carries is spent again at the next open.
 - The record's details and setting are not offered on the phone (it edits
   only the tour's name, plan W2; its "needs no GPS" is the editor's,

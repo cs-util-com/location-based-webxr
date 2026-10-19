@@ -12,6 +12,7 @@
 
 import { parseGeoPose } from "gps-plus-slam-app-framework/ar/qr/geo-pose";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { objectContentKey } from "./authoring-draft.js";
 import type { DraftObjectWrites } from "./draft-actions.js";
 import type { EditEntry } from "./object-edits.js";
@@ -151,13 +152,15 @@ function standing(state: TourDocumentState, id: string): Standing {
   return state.placed.find((p) => p.object.id === id) ?? null;
 }
 
-/** One id's draft writes for a change from `was` to `now`. */
+/** One id's draft writes for a change from `was` to `now`; `written`
+ *  says whether the written file holds the id. */
 function followId(
   draft: TourDocumentDraft,
   id: string,
   was: Standing,
   now: Standing,
   pictureOf: (id: string) => Blob | undefined,
+  written: (id: string) => boolean,
 ): void {
   if (now === "deleted") {
     if (was !== "deleted") void draft.saveDeletion(id);
@@ -173,7 +176,13 @@ function followId(
     was !== "deleted" &&
     objectContentKey(was.object) === objectContentKey(now.object);
   if (!same) void draft.saveObject(now.object, pictureOf(id));
-  if (was === "deleted") void draft.forgetDeletion(id);
+  // An object back that the written file lacks may be a delete a save
+  // already wrote (and took out of the document's deletions, not the
+  // draft's tombstone): an undo across that save. Its tombstone goes too,
+  // after the record, or a later restore deletes it again.
+  if (was === "deleted" || (was === null && !written(id))) {
+    void draft.forgetDeletion(id);
+  }
 }
 
 /**
@@ -195,8 +204,24 @@ export function followDocument(
     ...after.placed.map((p) => p.object.id),
     ...after.deleted,
   ]);
+  let writtenIds: ReadonlySet<string> | undefined;
+  const written = (id: string): boolean => {
+    writtenIds ??= new Set(
+      before.written === null
+        ? []
+        : tourObjects(before.written).map((o) => o.id),
+    );
+    return writtenIds.has(id);
+  };
   for (const id of ids) {
-    followId(draft, id, standing(before, id), standing(after, id), pictureOf);
+    followId(
+      draft,
+      id,
+      standing(before, id),
+      standing(after, id),
+      pictureOf,
+      written,
+    );
   }
   const was = settingsRecord(before);
   const now = settingsRecord(after);

@@ -41,7 +41,13 @@ after the reducer, never from `store.subscribe`.
   - now an entry: its record (`saveObject`, with the page's picture for a
     photo, `pictureOf`) unless the content is the same, THEN a tombstone
     goes - the record first, so an undo cut short leaves the object
-    deleted rather than half restored (M4 review #5).
+    deleted rather than half restored (M4 review #5). The tombstone goes
+    when it was deleted here, AND when it was nothing and the written file
+    lacks it: an undo across a save that wrote its delete (the save took
+    the id out of the document's deletions but not the draft's tombstone,
+    which a later restore would apply again - the r880 milestone review
+    HIGH-1). For a new object that is a removal of a key that is not
+    there.
 - Fire and forget: the draft queues per id and says its own failures once.
 - A landed save is not followed (`isDocumentEdit`): it takes entries off
   the pending list, which would read as forgotten records.
@@ -66,7 +72,9 @@ const stop = store.listenToDocument({
 
 - `tour-document-draft.test.ts` - an edit (and the same content again), a
   written object's tombstone and a new one's forgotten record, an undo of
-  an edited object's delete (record before tombstone), a photo's picture,
+  an edited object's delete (record before tombstone), an undo across a
+  save that wrote the delete (its tombstone forgotten after the record),
+  a photo's picture,
   the settings record with and without details, the station poses once a
   station moved (review #1), nothing for a save landing
   or across an open.

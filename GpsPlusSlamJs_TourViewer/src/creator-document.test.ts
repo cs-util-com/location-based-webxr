@@ -242,11 +242,12 @@ describe("the creator's document: the draft follows it", () => {
     doc.follow(draft);
     doc.open(tourOf([pin("a")]));
     const placed = doc.place(photo("q"), { blob: new Blob(["q"]) }, "a photo");
-    // Issued inside the dispatch: the change knows its writes at once.
-    expect(calls).toEqual(["save q +picture"]);
+    // Issued inside the dispatch: the change knows its writes at once (a
+    // new object also forgets any tombstone of its id, `followDocument`).
+    expect(calls).toEqual(["save q +picture", "undelete q"]);
     await expect(placed?.backedUp).resolves.toBe(true);
     await doc.remove("a", "the delete")?.backedUp;
-    expect(calls).toEqual(["save q +picture", "delete a"]);
+    expect(calls).toEqual(["save q +picture", "undelete q", "delete a"]);
   });
 
   it("reports a write that did not land to the change that caused it", async () => {

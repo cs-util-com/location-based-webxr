@@ -20,6 +20,7 @@ import {
   documentObjects,
   initialTourDocumentState,
   isDocumentEdit,
+  manifestToWrite,
   selectTourDocument,
   tourDocumentActions as act,
   tourDocumentReducer as reduce,
@@ -99,8 +100,11 @@ describe("followDocument", () => {
       act.deleted({ id: "n", what: "d" }),
       act.deleted({ id: "a", what: "d" }),
     );
+    // (An object the written file lacks also forgets any tombstone of its
+    // id - for a new one a no-op; see the undo across a save below.)
     expect(placed.calls).toEqual([
       "saveObject n",
+      "forgetDeletion n",
       "forgetObject n",
       "saveDeletion a",
     ]);
@@ -123,6 +127,43 @@ describe("followDocument", () => {
     ]);
   });
 
+  it("an undo of a delete a save already wrote forgets its tombstone after the record (review HIGH-1)", () => {
+    // Why: the save takes the id out of the document's deletions but not
+    // the draft's tombstone, so the undo that brings it back must forget
+    // it - or a later restore deletes the object again.
+    const { after: deleted } = writesFor(
+      opened,
+      act.deleted({ id: "a", what: "d" }),
+    );
+    // The save landing is not an edit: the draft does not follow it.
+    expect(isDocumentEdit(act.saved({} as never))).toBe(false);
+    const saved = reduce(
+      deleted,
+      act.saved({
+        generation: deleted.generation,
+        written: manifestToWrite(deleted)!,
+        appliedDeletions: ["a"],
+        stationsAtStart: deleted.stations,
+      }),
+    );
+    expect(saved.deleted).toEqual([]);
+    const { calls } = writesFor(saved, act.undone());
+    // (The undo also brings back the station the save dropped with its
+    // last item, so the settings record follows; not this test's point.)
+    expect(calls.filter((c) => !c.startsWith("saveSettings"))).toEqual([
+      "saveObject a",
+      "forgetDeletion a",
+    ]);
+  });
+
+  it("a first edit of a written object writes its record only", () => {
+    const { calls } = writesFor(
+      opened,
+      act.edited({ object: pin("b", "new"), what: "e" }),
+    );
+    expect(calls).toEqual(["saveObject b"]);
+  });
+
   it("a photo's picture the page holds goes with its record", () => {
     const photo: TourObject = {
       id: "p",
@@ -137,7 +178,7 @@ describe("followDocument", () => {
       opened,
       act.placed({ object: photo, what: "p" }),
     );
-    expect(calls).toEqual(["saveObject p +picture"]);
+    expect(calls).toEqual(["saveObject p +picture", "forgetDeletion p"]);
   });
 
   it("the settings record follows the setting and, once set, the details", () => {
