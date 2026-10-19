@@ -151,8 +151,10 @@ The workspace's globe package (`gps-plus-slam-globe`) is a dependency, for
 the 3D editor's building blocks (`import ... from
 "gps-plus-slam-globe/editor"`; nothing in the app imports it yet).
 `src/globe-dependency.test.ts` builds those blocks with Vite and fails if
-the build holds two copies of three or bundles a third-party package that
-`NOTICE` does not name.
+the build holds two copies of three, bundles a third-party package that
+`NOTICE` does not name, bundles an Apache-2.0 package whose licence text
+is not shipped verbatim in `public/third-party-licenses/`, or bundles a
+patched package that `NOTICE` does not call modified.
 
 ## Where the design lives
 

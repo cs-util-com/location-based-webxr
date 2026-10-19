@@ -10,7 +10,11 @@ This product depends on the following third-party libraries:
 - 3d-tiles-renderer (npm: 3d-tiles-renderer,
   https://github.com/NASA-AMMOS/3DTilesRendererJS) - Apache License 2.0,
   Copyright 2020 California Institute of Technology; drawn in through the
-  workspace's globe package (gps-plus-slam-globe) for the 3D editor
+  workspace's globe package (gps-plus-slam-globe) for the 3D editor. The
+  bundled copy is MODIFIED: version 0.5.3 with the workspace's
+  patches/3d-tiles-renderer@0.5.3.patch applied. The licence text ships
+  with the app as third-party-licenses/3d-tiles-renderer-LICENSE.txt
+  (public/ in the source).
 - Leaflet (npm: leaflet, https://leafletjs.com/) - BSD 2-Clause License
 - Redux Toolkit (npm: @reduxjs/toolkit, https://redux-toolkit.js.org/) - MIT
   License

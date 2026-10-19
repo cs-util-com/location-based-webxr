@@ -15,14 +15,22 @@ SOURCE: there is no build. A consumer adds `"gps-plus-slam-globe":
 the consumer's `tsc` type-checks it under the consumer's own compiler
 options. The Tour Viewer is the first consumer; its
 `src/globe-dependency.test.ts` builds an entry that imports the blocks and
-holds two things a consumer must keep:
+holds what a consumer must keep:
 
 - one three in the bundle (pnpm links both packages' `three` to the same
   installed copy while their versions match, which the repo-config test
   `globe-three-version.test.js` checks for the framework);
 - every third-party package the build pulls in named in the consumer's
   `NOTICE` (3d-tiles-renderer is Apache-2.0, Copyright 2020 California
-  Institute of Technology).
+  Institute of Technology);
+- the licence text of every bundled Apache-2.0 package shipped with the
+  app, verbatim (Apache 2.0 section 4(a)): the Tour Viewer keeps it in
+  `public/third-party-licenses/<package>-LICENSE.txt`, which its build
+  copies into the site;
+- every bundled package the workspace patches (`patchedDependencies` in
+  `pnpm-workspace.yaml`) said in the `NOTICE` to be modified, naming its
+  patch (section 4(b)): the bundled 3d-tiles-renderer is 0.5.3 with
+  `patches/3d-tiles-renderer@0.5.3.patch` applied.
 
 ## The dependency exception (DEC-PRG-4)
 

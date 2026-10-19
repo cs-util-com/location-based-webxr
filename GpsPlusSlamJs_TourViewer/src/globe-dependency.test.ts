@@ -11,9 +11,15 @@
  *   foreign to the app's scene: `instanceof` checks fail and two renderers'
  *   state diverges);
  * - every third-party package that build pulls in is named in this app's
- *   NOTICE, so a new dependency of the globe cannot ship unattributed.
+ *   NOTICE, so a new dependency of the globe cannot ship unattributed;
+ * - every bundled package under the Apache License 2.0 has its licence
+ *   text shipped with the app (section 4(a): a copy goes with every
+ *   redistribution), verbatim, under `public/third-party-licenses/`, which
+ *   the build copies into the site;
+ * - every bundled package the workspace patches (`patchedDependencies`)
+ *   is said in the NOTICE to be modified, by its patch (section 4(b)).
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { GROUND_HIT, groundReachM } from "gps-plus-slam-globe/editor";
@@ -73,13 +79,50 @@ function packageOf(id: string): string | null {
   return match?.[1] ?? null;
 }
 
+/** The module ids' packages, each with its install directory. */
+function bundledPackages(ids: string[]): Map<string, string> {
+  const dirs = new Map<string, string>();
+  for (const id of ids) {
+    const p = packageOf(id);
+    if (p === null || dirs.has(p)) continue;
+    const at = id.lastIndexOf(`/node_modules/${p}/`);
+    dirs.set(p, id.slice(0, at + `/node_modules/${p}`.length));
+  }
+  return dirs;
+}
+
+/** Where the app ships a package's licence text (a file name per package). */
+const licenceUrl = (p: string) =>
+  new URL(
+    `../public/third-party-licenses/${p.replace(/^@/, "").replace("/", "-")}-LICENSE.txt`,
+    import.meta.url,
+  );
+
+/** The workspace's patched packages, name to patch file (`name@version: path`). */
+function patchedPackages(): Map<string, string> {
+  const yaml = readFileSync(
+    new URL("../../pnpm-workspace.yaml", import.meta.url),
+    "utf8",
+  );
+  const block = /^patchedDependencies:\n((?:[ \t]+.*\n?)*)/m.exec(yaml)?.[1];
+  const patched = new Map<string, string>();
+  for (const line of (block ?? "").split("\n")) {
+    const m = /^\s+["']?((?:@[^/@]+\/)?[^@"'\s]+)@[^:]+:\s*(\S+)/.exec(line);
+    if (m) patched.set(m[1]!, m[2]!);
+  }
+  return patched;
+}
+
+const sameText = (a: string, b: string) =>
+  a.replaceAll("\r\n", "\n").trim() === b.replaceAll("\r\n", "\n").trim();
+
 describe("the globe package as a dependency of this Vite app", () => {
   it("resolves by its name and runs", () => {
     expect(groundReachM(1.7)).toBe(GROUND_HIT.maxDistanceM);
     expect(groundReachM(3_000) / 1000).toBeCloseTo(195.5, 0);
   });
 
-  it("builds with one three, and every third-party package it bundles is in the NOTICE", async () => {
+  it("builds with one three; every bundled package is in the NOTICE, Apache licences shipped, patches declared", async () => {
     const ids = await builtModuleIds();
     // The globe's own source is in the build, through the package link.
     expect(
@@ -100,5 +143,37 @@ describe("the globe package as a dependency of this Vite app", () => {
     // Named as the NOTICE names a package: "(npm: <name>,".
     const missing = [...bundled].filter((p) => !notice.includes(`(npm: ${p},`));
     expect(missing).toEqual([]);
+    const dirs = bundledPackages(ids);
+    // Apache 2.0: the licence text ships with the app, verbatim.
+    const apache = [...dirs].filter(([, dir]) =>
+      /Apache-2\.0/.test(
+        String(
+          (
+            JSON.parse(readFileSync(`${dir}/package.json`, "utf8")) as {
+              license?: unknown;
+            }
+          ).license,
+        ),
+      ),
+    );
+    expect(apache.map(([p]) => p)).toContain("3d-tiles-renderer");
+    const unshipped = apache
+      .filter(
+        ([p, dir]) =>
+          !existsSync(licenceUrl(p)) ||
+          !sameText(
+            readFileSync(licenceUrl(p), "utf8"),
+            readFileSync(`${dir}/LICENSE`, "utf8"),
+          ),
+      )
+      .map(([p]) => p);
+    expect(unshipped).toEqual([]);
+    // A patched package is said to be modified, by its patch.
+    const patched = patchedPackages();
+    expect(patched.has("3d-tiles-renderer")).toBe(true);
+    const unsaid = [...bundled].filter(
+      (p) => patched.has(p) && !notice.includes(patched.get(p)!),
+    );
+    expect(unsaid).toEqual([]);
   }, 120_000);
 });
