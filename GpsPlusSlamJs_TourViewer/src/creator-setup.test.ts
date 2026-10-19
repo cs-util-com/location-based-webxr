@@ -296,6 +296,8 @@ function wire(
     worldGroupYawDeg?: number;
     /** The page hears the set of codes changed (follow-up F16). */
     onCodesChanged?: () => void;
+    /** A store per draft namespace (by its key); `store` otherwise. */
+    storeFor?: (key: string) => DraftFileStore;
   } = {},
 ) {
   let opens = 0;
@@ -341,7 +343,7 @@ function wire(
     } as never,
     wizard: { openStep: () => undefined, revealStep: () => undefined } as never,
     dom: dom as unknown as CreatorSetupDom,
-    openDraftStore: () => {
+    openDraftStore: (key: string) => {
       opens += 1;
       // The first open yields NO store - a browser without OPFS, blocked
       // site data, a quota wall - which is the path that fires the shared
@@ -349,7 +351,7 @@ function wire(
       if (options.firstOpenFails === true && opens === 1) {
         return Promise.resolve(undefined);
       }
-      return Promise.resolve(store);
+      return Promise.resolve(options.storeFor?.(key) ?? store);
     },
   });
   if (options.placeable === true) {
@@ -1413,6 +1415,38 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     ).toMatchObject({ label: LIVE.label });
   });
 
+  // Why: Restore leaves out what live work outranks, but its note counted
+  // the whole offer - "1 change restored" for an edit it had skipped.
+  it("Restore's note counts what it put back, not what was offered", async () => {
+    const OTHER_PIN = pin("other");
+    const disk = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(EDITED),
+      [deletedKey("other")]: "1",
+    });
+    const page = wire(disk.store);
+    page.ctx.tourDocument.open(tourOf([HOSTED, OTHER_PIN]));
+    page.dom.draftOffer.hidden = true;
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(page.dom.draftOfferText.textContent).toContain("1 change");
+    expect(page.dom.draftOfferText.textContent).toContain("1 deletion");
+    page.ctx.tourDocument.edit(LIVE, "the live edit");
+    await settle();
+
+    page.dom.draftRestore.click();
+    expect(page.ctx.placementNote).toContain("1 deletion restored");
+    expect(page.ctx.placementNote).not.toContain("change");
+
+    // Everything outranked: nothing is claimed, the code least of all.
+    const all = await offeredEdit();
+    all.ctx.tourDocument.edit(LIVE, "the live edit");
+    await settle();
+    all.dom.draftRestore.click();
+    expect(all.ctx.placementNote).toContain("Nothing was restored");
+    expect(all.ctx.placementNote).not.toContain("measured position");
+  });
+
   it("Delete it after a Finish keeps the record of a note changed here", async () => {
     const { ctx, dom, files } = await offeredEdit();
     ctx.tourDocument.edit(LIVE, "the live edit");
@@ -1423,6 +1457,46 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     await settle();
     expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(LIVE);
     expect(rejectedOf(files.get(META_KEY) as string)).not.toContain("hosted");
+  });
+
+  // Why: a live edit's record does not outrank a tombstone an older draft
+  // left for the same id (`readDraft` lets the tombstone win), and the
+  // edited id is live work, so "Delete it" does not sweep it either. The
+  // reload then offered to delete the note the creator had just edited,
+  // and a crash after the edit brought it back as deleted. A live record
+  // takes its id's tombstone away after it, as an undo of a delete does.
+  it("a note edited here over an offered deletion is not offered as deleted again", async () => {
+    const disk = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [deletedKey("hosted")]: "1",
+    });
+    const page = wire(disk.store);
+    page.ctx.tourDocument.open(tourOf([HOSTED]));
+    page.dom.draftOffer.hidden = true;
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(page.dom.draftOfferText.textContent).toContain("1 deletion");
+    page.ctx.tourDocument.edit(LIVE, "the live edit");
+    await settle();
+    expect(
+      disk.files.has(deletedKey("hosted")),
+      "the live record took the tombstone away",
+    ).toBe(false);
+    finishLanded(page.ctx);
+    page.dom.draftDiscard.click();
+    await settle();
+    expect(disk.files.has(deletedKey("hosted"))).toBe(false);
+    expect(JSON.parse(String(disk.files.get(objectKey("hosted"))))).toEqual(
+      LIVE,
+    );
+
+    // The reload: the edit is offered as the change it is, never a delete.
+    const again = wire(disk.store);
+    again.ctx.tourDocument.open(tourOf([HOSTED]));
+    again.dom.draftOffer.hidden = true;
+    again.setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(again.dom.draftOfferText.textContent).not.toContain("deletion");
   });
 
   it("treats a deletion the hosted zip no longer carries as spent", async () => {
@@ -2035,6 +2109,58 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
       (JSON.parse(String(files.get(SETTINGS_KEY))) as { details?: unknown })
         .details,
     ).toMatchObject({ title: "Castle walk two" });
+  });
+
+  it("a Delete it that lands after another tour opened writes nothing of that tour into its own", async () => {
+    // Why: the settings rewrite after "Delete it" ran once its commit had
+    // landed, reading the page's CURRENT document and holder - so when the
+    // creator had closed tour A and opened B meanwhile, B's record and B's
+    // undecided poses went into A's namespace. The rewrite now reads the
+    // tap's holder and waits on A still being the open tour, as the
+    // failure branch already did.
+    const OTHER = "https://example.test/other.zip";
+    const MOVED_B = { ...MOVED, lat: 47.5009 };
+    const a = memoryStore(
+      { ...metaOnly(), [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]) },
+      { holdKeys: (key) => key === META_KEY },
+    );
+    const b = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: OTHER, sizeM: 0.16, level: null }),
+      [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED_B }]),
+    });
+    const page = wire(a.store, {
+      storeFor: (key) => (key.includes("other.zip") ? b.store : a.store),
+    });
+    page.ctx.tourDocument.open(PUBLISHED);
+    page.dom.draftOffer.hidden = true;
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(page.setup.renameTour("Tour A")).toBeNull();
+    await settle();
+    // "Delete it" on A: its commit (the meta write) is held.
+    page.dom.draftDiscard.click();
+    await settle();
+    // A closes and B opens, with its own undecided pose and a new name.
+    page.setup.resetFinishStep();
+    page.ctx.tourDocument.close();
+    page.ctx.tourDocument.open(PUBLISHED);
+    page.setup.presentDraftForTour(OTHER);
+    await settle();
+    expect(page.setup.renameTour("Tour B")).toBeNull();
+    await settle();
+    // A's commit lands now.
+    a.releaseHeldKeys();
+    await settle();
+
+    const stored = JSON.parse(String(a.files.get(SETTINGS_KEY))) as {
+      details?: { title?: string };
+      stations?: { id: string; geo: unknown }[];
+    };
+    expect(stored.details?.title, "never B's record").not.toBe("Tour B");
+    expect(
+      stored.stations?.find((s) => s.id === STATION)?.geo,
+      "never B's pose",
+    ).not.toEqual(MOVED_B);
   });
 
   it("keeps the offered pose when Delete it does not land, for a rename after it", async () => {

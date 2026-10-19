@@ -33,6 +33,7 @@ import {
 } from "./authoring-draft.js";
 import {
   readDraft,
+  removeDraftDeletion,
   removeDraftObject,
   addDraftBaseKey,
   writeDraftDeletion,
@@ -242,11 +243,11 @@ export function wireCreatorDraft(deps: {
    *  milestone review HIGH-2). `poses` is null once restored, discarded,
    *  or when the stored record moves none.
    *
-   *  One holder PER OPEN, made by `present` and dropped by `reset`: a
-   *  write captures the holder of the open it was issued in and reads its
-   *  poses when it runs, so a write still queued when the tour closes (or
-   *  another opens) carries its own tour's poses - never none, never the
-   *  next tour's (the r880 fix re-review, L2). */
+   *  One holder PER OPEN, made by `present` and dropped by `reset`: each
+   *  settings write names the holder of the open it writes for and reads
+   *  its poses when it runs, so a write still queued when the tour closes
+   *  (or another opens) carries its own tour's poses - never none, never
+   *  the next tour's (the r880 fix re-review, L2). */
   let undecided: { poses: readonly StationPose[] | null } | null = null;
   /** Every object id this page changed since the tour opened (an edit, a
    *  move, a placement, a delete, an undo, a restore): live work, which
@@ -335,6 +336,26 @@ export function wireCreatorDraft(deps: {
     return hostedObjects(openedTour()).key(id);
   }
 
+  /**
+   * A live record of `object`, then its id's tombstone removed: the object
+   * exists here, so a tombstone an older draft left for the id is stale,
+   * and `readDraft` would let it outrank the record (a reload offering to
+   * delete what was just edited, and a crash bringing it back as
+   * deleted). In this order, as an
+   * undo of a delete writes them (`followDocument`): a crash between the
+   * two leaves the object deleted, never half restored.
+   */
+  async function writeLiveRecord(
+    s: DraftFileStore,
+    object: TourObject,
+    blob: Blob | undefined,
+    seen: string | undefined,
+  ): Promise<boolean> {
+    const wrote = await writeDraftEdit(s, object, blob, seen);
+    await removeDraftDeletion(s, object.id);
+    return wrote;
+  }
+
   function recordPlacement(object: TourObject, blob?: Blob): void {
     const store = draftStore;
     const tourUrl = draftTourUrl;
@@ -348,7 +369,7 @@ export function wireCreatorDraft(deps: {
     }
     const seen = seenKey(object.id);
     void writeForObject(store, tourUrl, object.id, (s) =>
-      writeDraftEdit(s, object, blob, seen),
+      writeLiveRecord(s, object, blob, seen),
     ).then((ok) => {
       if (!ok) noteNoPersistence();
     });
@@ -371,14 +392,15 @@ export function wireCreatorDraft(deps: {
   }
 
   /** The settings record's write in its queue: the whole record, or its
-   *  removal (`null`). */
+   *  removal (`null`). `held` is the holder of the open the write is FOR
+   *  (L2): the caller names it, because a write issued after an await may
+   *  run once another tour is open, whose holder `undecided` is then. */
   function writeSettings(
     store: DraftFileStore,
     tourUrl: string,
     record: TourSettingsRecord | null,
+    held: { poses: readonly StationPose[] | null } | null,
   ): Promise<boolean> {
-    // The holder of the open this write is issued in (L2).
-    const held = undecided;
     return draftWrites
       .run(settingsChainKey(tourUrl), () => {
         if (record === null) {
@@ -579,8 +601,13 @@ export function wireCreatorDraft(deps: {
   }
 
   /** Put a restored draft's objects and deletions back into the tour
-   *  document, as one step (see the restore below). */
-  function restoreWork(waiting: NonNullable<typeof offered>): void {
+   *  document, as one step (see the restore below). Returns what it put
+   *  back, live work left out: what the restore's note may claim. */
+  function restoreWork(waiting: NonNullable<typeof offered>): {
+    placed: number;
+    changed: number;
+    deleted: number;
+  } {
     // Live work on the same id is newer than the draft's, and wins - also
     // after a Finish wrote it (P1).
     const live = liveIds();
@@ -590,12 +617,13 @@ export function wireCreatorDraft(deps: {
     const stations = ctx.tourDocument.state().touched.stations
       ? []
       : waiting.stations;
+    // The deletions come back as the tombstones they are (plan §3.4).
+    const deleted = waiting.deleted.filter((id) => !live.has(id));
     ctx.tourDocument.restore(
       {
         ...(stations.length === 0 ? {} : { stations }),
         objects,
-        // The deletions come back as the tombstones they are (plan §3.4).
-        deleted: waiting.deleted.filter((id) => !live.has(id)),
+        deleted,
         pictures: new Map(
           objects.flatMap((o) => {
             const blob = waiting.photos.get(o.id);
@@ -605,6 +633,15 @@ export function wireCreatorDraft(deps: {
       },
       "the restored draft",
     );
+    // Split as the offer splits it (`present`): changes of objects the
+    // opened tour carries, and a moved station as one change.
+    const hosted = hostedObjects(openedTour());
+    const edits = objects.filter((o) => hosted.key(o.id) !== undefined).length;
+    return {
+      placed: objects.length - edits,
+      changed: edits + stations.length,
+      deleted: deleted.length,
+    };
   }
 
   dom.draftRestore.addEventListener("click", () => {
@@ -623,7 +660,7 @@ export function wireCreatorDraft(deps: {
     // and the photo bytes as content entries. Live work on the same id is
     // newer than the draft's, and wins. The document's listener writes
     // them to the draft again (the same records: harmless).
-    restoreWork(waiting);
+    const restored = restoreWork(waiting);
     // And the visits it measured (M3b): the summary after Finish combines
     // them with this page's.
     deps.visitLog.restore(waiting.visits);
@@ -646,15 +683,12 @@ export function wireCreatorDraft(deps: {
     // at the same spot in the published zip. The sync guards against a
     // dead scene, so this is safe outside a session too.
     deps.syncPreviews();
-    ctx.placementNote = restoredText(
-      waiting.counts.placed,
-      waiting.level !== null,
-      {
-        changed: waiting.counts.changed,
-        deleted: waiting.deleted.length,
-        visits: waiting.visits.length,
-      },
-    );
+    // What was put back, not what was offered: live work left some out.
+    ctx.placementNote = restoredText(restored.placed, waiting.level !== null, {
+      changed: restored.changed,
+      deleted: restored.deleted,
+      visits: waiting.visits.length,
+    });
     deps.render();
   });
 
@@ -769,11 +803,16 @@ export function wireCreatorDraft(deps: {
       if (held !== null) held.poses = null;
       // The record goes with the draft - unless this page changed the
       // settings since the open: then the file is that live work's, and
-      // is written again without the rejected poses it carried.
+      // is written again without the rejected poses it carried. Only
+      // while this tour is still the open one: the document and its
+      // settings are another tour's after a close (as in the failure
+      // branch above), and the next open of this one reads the record.
+      if (draftStore !== store || draftTourUrl !== tourUrl) return;
       void writeSettings(
         store,
         tourUrl,
         settingsLive() ? settingsRecord(ctx.tourDocument.state()) : null,
+        held,
       );
     })();
   });
@@ -880,6 +919,7 @@ export function wireCreatorDraft(deps: {
           store,
           tourUrl,
           settingsRecord(ctx.tourDocument.state()),
+          held,
         ).then((ok) => {
           if (!ok) noteNoPersistence();
         });
@@ -984,7 +1024,9 @@ export function wireCreatorDraft(deps: {
         // The record is spent too: the opened tour carries its poses. Not
         // when this page wrote its own (live) - and `settingsLive` asked
         // again, a station may have moved during the awaits.
-        if (!live && !settingsLive()) void writeSettings(store, tourUrl, null);
+        if (!live && !settingsLive()) {
+          void writeSettings(store, tourUrl, null, held);
+        }
         return;
       }
       // The draft stays: records the hosted zip already carries get their
@@ -1093,7 +1135,7 @@ export function wireCreatorDraft(deps: {
       touchedIds.add(object.id);
       const seen = seenKey(object.id);
       return draftWrite(object.id, (s) =>
-        writeDraftEdit(s, object, blob, seen),
+        writeLiveRecord(s, object, blob, seen),
       );
     },
     finished: (ids, written) => {
@@ -1152,7 +1194,8 @@ export function wireCreatorDraft(deps: {
         noteNoPersistence();
         return Promise.resolve(false);
       }
-      return writeSettings(store, tourUrl, settings).then((ok) => {
+      // Issued now, for the open tour: its holder is this open's.
+      return writeSettings(store, tourUrl, settings, undecided).then((ok) => {
         if (!ok) noteNoPersistence();
         return ok;
       });

@@ -201,6 +201,16 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   writes name (`write`, `writeObject`, `forgetObject`) joins the set, which
   only `reset` clears - the desktop editor's `touched`. Restore skips
   those ids, and "Delete it" never rejects them (`liveIds`, `notLive`).
+  Restore's note counts what it put back (`restoreWork` returns it), not
+  the offer: a skipped edit is never claimed as restored.
+- **A live record takes its id's tombstone away, after it**
+  (`writeLiveRecord`, for `writeObject` and `recordPlacement`): an older
+  draft's tombstone outranks a record in `readDraft`, and an edited id is
+  live work that "Delete it" does not sweep - so an edit made over an
+  offered deletion was offered as deleted again at the next reload, and
+  a crash after the edit brought it back deleted. Record first, then the
+  tombstone, as an undo of a delete writes them: a crash between the two
+  leaves the object deleted, never half restored.
 - **A draft is deleted only on PROOF**: a re-opened tour whose `tour.json`
   already carries its ids. Not on the download tap - on Android that
   resolves true the moment a download starts, and the creator still has to
@@ -232,17 +242,24 @@ change, in its own queue. The phone reads only its STATION POSES back:
   now"), every record this page writes WITHOUT poses carries them
   (`undecided`, applied when the write runs), so a rename never costs a
   moved station. The poses sit in a holder made PER OPEN by `present` and
-  dropped by `reset`; a write captures the holder of the open it was
-  issued in, so a write still queued when the tour closes or another opens
-  carries its own tour's poses, never none and never the next tour's (the
-  r880 fix re-review, L2). "Delete it" drops them only once its rejection
+  dropped by `reset`; every `writeSettings` call names the holder of the
+  open it writes FOR (`present` and the spent sweep their own open's,
+  `saveSettings` the open tour's at its call, "Delete it" the one captured
+  at its tap), so a write still queued when the tour closes or another
+  opens carries its own tour's poses, never none and never the next
+  tour's (the r880 fix re-review, L2; a holder read when the write was
+  issued was not enough, since "Delete it" issues its write only after
+  its commit lands). "Delete it" drops them only once its rejection
   landed: a rejection that did not land leaves the draft, poses and all,
   for a later rename to carry (L3).
 - **Removed** with a spent draft (after its meta commit) and by "Delete
   it" (after the rejection lands), unless this page changed the settings
   since the open - then "Delete it" rewrites the live record without the
-  rejected poses. An interrupted removal is safe: a record the opened tour
-  carries is spent again at the next open.
+  rejected poses. Only while the tour is still the open one: a commit
+  that lands after a close leaves the record alone (the document is
+  another tour's by then), so the next open of this tour may offer the
+  rejected poses again - the safe side. An interrupted removal is safe: a
+  record the opened tour carries is spent again at the next open.
 - The record's details and setting are not offered on the phone (it edits
   only the tour's name, plan W2; its "needs no GPS" is the editor's,
   Q-QF-1).
@@ -268,8 +285,10 @@ change, in its own queue. The phone reads only its STATION POSES back:
 Composed, through `wireCreatorSetup` and unchanged by the split:
 `creator-setup.test.ts` (the offer, its three answers after a Finish too,
 the ordered writes, the claims and sweeps; "the draft keeps a moved
-station's pose" for the settings record, a write queued across a close and
-a "Delete it" that did not land among them), `creator-finish.test.ts` and
+station's pose" for the settings record, a write queued across a close, a
+"Delete it" that did not land and one that landed after another tour
+opened among them; an edit over an offered deletion not offered as deleted
+again; Restore's note counting what it put back), `creator-finish.test.ts` and
 `authoring-settle.test.ts` (the meta a mint or settle writes, the backup
 notice), plus the draft e2e specs. The pure rules are in
 `authoring-draft.test.ts` and the on-disk shape in

@@ -492,7 +492,11 @@ export function restoredText(
   const visits = other.visits ?? 0;
   const visitWords = counted(visits, "AR visit", "AR visits");
   if (total === 0 && visits === 0) {
-    return `The code's measured position was restored - Finish is ready without walking to the poster again.`;
+    // Live work on every id outranked the draft: nothing came back, and
+    // no code unless one did.
+    return hasLevel
+      ? `The code's measured position was restored - Finish is ready without walking to the poster again.`
+      : "Nothing was restored - the changes made here are newer than the saved draft.";
   }
   const measured = hasLevel
     ? " The code's measured position came back too, so Finish is ready without walking to the poster again."

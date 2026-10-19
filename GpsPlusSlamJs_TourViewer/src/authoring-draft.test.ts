@@ -406,6 +406,15 @@ describe("the words the creator reads", () => {
     );
   });
 
+  // Why: live work on an id outranks the draft's, so a restore can bring
+  // back nothing at all. The note then claimed the code's measured
+  // position came back although no code did.
+  it("claims the measured code only when one came back, and says when nothing did", () => {
+    expect(restoredText(0, true)).toContain("measured position was restored");
+    expect(restoredText(0, false)).not.toContain("measured position");
+    expect(restoredText(0, false)).toContain("Nothing");
+  });
+
   it("always names the count and never reads as a command (property)", () => {
     fc.assert(
       fc.property(fc.integer({ min: 1, max: 500 }), (count) => {

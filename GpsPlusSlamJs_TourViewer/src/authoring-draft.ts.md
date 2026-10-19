@@ -76,6 +76,9 @@ where)`, owner question Q-E2-2's default; `where` is the phone's "on this
   `restoredText(count, hasLevel, { changed, deleted, visits })` - the
   creator's words; changes, deletions and AR visits are named apart from
   new placements, and visits are never said to go into the zip.
+  `restoredText` is given what a restore PUT BACK (live work left out),
+  claims the code's measured position only with `hasLevel`, and says
+  "Nothing was restored" when live work outranked everything.
 
 - `manifestAsRead(manifest)` - the manifest as a reader of the written
   file parses it (serialize, then parse: a heading normalised into
