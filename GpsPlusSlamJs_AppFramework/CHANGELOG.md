@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.30.0] - 2026-10-20
+
 ### ⚠️ Breaking changes
 
 - **`tour.json` format version 3** (`ar/tour-manifest`): every pin and
