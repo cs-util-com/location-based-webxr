@@ -4,7 +4,8 @@
  * where the changes are, how the tour at its link is updated (per host,
  * `tour-host.ts`), that a file at a link is public at once, and, while the
  * file still carries the walk, that the walk goes public with it unless it
- * is moved out ("Move the walk out", the page's `moveWalk`). The words are
+ * is moved out ("Move the debug data out", the page's `moveWalk`: the
+ * debug bundle of M2 of the debug-captures plan). The words are
  * pure (`doneWords`); the wiring takes structural elements, so its tests
  * run in node.
  *
@@ -74,10 +75,10 @@ function whereLine(saved: DoneSaved): string {
 
 function walkLine(name: string, carries: boolean | "unknown"): string | null {
   if (carries === false) return null;
-  const moveOut = `Move the walk out to keep it to yourself: it goes into a separate file you keep, and ${name} keeps what visitors need.`;
+  const moveOut = `Move the debug data out to keep it to yourself: it goes into a separate file you keep, and ${name} keeps what visitors need.`;
   return carries === "unknown"
-    ? `Whether ${name} also carries your walk recording (the GPS track of your walk, the depth your phone measured and the camera captures it took by itself) could not be checked. If it does and it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`
-    : `${name} also carries your walk recording: the GPS track of your walk, the depth your phone measured and the camera captures it took by itself. If it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`;
+    ? `Whether ${name} also carries your debug data (the walk you recorded: the GPS track of your walk, the depth your phone measured and the camera captures it took by itself) could not be checked. If it does and it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`
+    : `${name} also carries your debug data, the walk you recorded: the GPS track of your walk, the depth your phone measured and the camera captures it took by itself. If it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`;
 }
 
 /** The dialog's words for `facts`. */
@@ -98,13 +99,13 @@ export function doneWords(facts: DoneFacts): DoneWords {
 }
 
 /** The move's button: idle, while it runs, and waiting for the second
- *  click - which takes a downloaded walk out of the tour (`confirm`), or
- *  downloads the tour without a walk already saved (`download`). */
+ *  click - which takes downloaded debug data out of the tour (`confirm`),
+ *  or downloads the tour without debug data already saved (`download`). */
 export const MOVE_LABELS = {
-  idle: "Move the walk out",
-  moving: "Moving the walk out…",
-  confirm: "Take the walk out of the tour",
-  download: "Download the tour without the walk",
+  idle: "Move the debug data out",
+  moving: "Moving the debug data out…",
+  confirm: "Take the debug data out of the tour",
+  download: "Download the tour without the debug data",
 } as const;
 
 /** What the page's move came to: done (with where the changes are now),
@@ -138,7 +139,7 @@ export type WalkMoveOutcome =
   | { readonly kind: "cancelled" };
 
 const NOTHING_MOVED =
-  "Nothing was moved: the walk's file was not saved, so the tour keeps its walk.";
+  "Nothing was moved: the debug data's file was not saved, so the tour keeps it.";
 
 interface Listening {
   addEventListener(type: string, handler: () => void): void;
@@ -166,7 +167,8 @@ export interface DoneDialogDom {
 
 export interface DoneDialogDeps {
   dom: DoneDialogDom;
-  /** Move the walk out (the page delivers both files, then commits).
+  /** Move the debug data out (the page delivers both files, then
+   *  commits).
    *  Called synchronously in the button's click: the page opens the
    *  browser's save dialog before its first await. */
   moveWalk: () => Promise<WalkMoveOutcome>;
@@ -223,7 +225,7 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
     switch (outcome.kind) {
       case "moved":
         moved = true;
-        dom.moveStatus.textContent = `The walk is in ${outcome.walkName} - keep that file. ${outcome.tourName} no longer carries it.`;
+        dom.moveStatus.textContent = `The debug data is in ${outcome.walkName} - keep that file. ${outcome.tourName} no longer carries it.`;
         dom.moveButton.hidden = true;
         if (facts !== null) {
           facts = { ...facts, saved: outcome.saved, carriesWalk: false };
@@ -232,12 +234,12 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
         return;
       case "downloaded":
         pending = outcome.confirm;
-        dom.moveStatus.textContent = `The walk was downloaded as ${outcome.walkName}. Check that it is in your downloads, then take it out of the tour - until then the tour file keeps it.`;
+        dom.moveStatus.textContent = `The debug data was downloaded as ${outcome.walkName}. Check that it is in your downloads, then take it out of the tour - until then the tour file keeps it.`;
         button(MOVE_LABELS.confirm);
         return;
       case "walk-saved":
         pending = outcome.confirm;
-        dom.moveStatus.textContent = `The walk is in ${outcome.walkName} - keep that file. Now download the tour without it - until then the tour still carries it.`;
+        dom.moveStatus.textContent = `The debug data is in ${outcome.walkName} - keep that file. Now download the tour without it - until then the tour still carries it.`;
         button(MOVE_LABELS.download);
         return;
       case "refused":
@@ -278,7 +280,7 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
     }
     void started
       .then(settle, (err: unknown) => {
-        dom.moveStatus.textContent = `The walk was not moved: ${err instanceof Error ? err.message : String(err)}`;
+        dom.moveStatus.textContent = `The debug data was not moved: ${err instanceof Error ? err.message : String(err)}`;
         button(MOVE_LABELS.idle);
       })
       .finally(() => {

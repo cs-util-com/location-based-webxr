@@ -16,8 +16,8 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import { tourCoverEntry } from "gps-plus-slam-app-framework/ar/tour-details";
-import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
-import { recordingEntryNames, scanEntryNames } from "../tour-read-set.js";
+import { buildDebugBundle, type DebugBundleTour } from "../debug-bundle.js";
+import { scanEntryNames } from "../tour-read-set.js";
 import type { DraftObjectWrites } from "../draft-actions.js";
 import type { TourSession } from "../tour-session.js";
 import {
@@ -106,39 +106,16 @@ export interface EditorSave {
   readonly written: TourManifest;
 }
 
-/** The walk's own file, named after the tour's (W2, D19): `castle.zip`
- *  gives `castle-walk.zip`. */
-export function walkFileName(tourName: string): string {
-  return `${tourName.replace(/\.zip$/i, "")}-walk.zip`;
-}
-
-/** Said when "Move the walk out" finds no walk in the newest bytes. */
+/** Said when "Move the debug data out" finds no walk in the newest
+ *  bytes. */
 const NO_WALK = "This tour carries no walk recording to move out.";
 
-/** The note inside a moved-out walk's zip, at its root: which tour it came
- *  from (the M4b milestone review #8). */
-export const WALK_NOTE = "about-this-walk.txt";
-
-function walkNoteText(tour: {
-  readonly fileName: string;
-  readonly title: string | undefined;
-  readonly seriesId: string | null;
-}): string {
-  return [
-    "This is the walk recording of a tour: the GPS track of the walk, the depth the phone measured and the camera captures it took by itself.",
-    `It was moved out of the tour file ${tour.fileName}${tour.title === undefined ? "" : ` (the tour "${tour.title}")`} by the tour editor, so that the tour file people open does not carry it.`,
-    ...(tour.seriesId === null ? [] : [`The tour's series: ${tour.seriesId}.`]),
-    "Keep this file to yourself: the tour does not need it.",
-    "",
-  ].join("\n");
-}
-
 /**
- * A built move of the walk out of the tour (W2, D19): the walk's own zip
- * (the whole recording of the newest bytes - the frames the tour keeps for
- * its visitors included - byte for byte, under its own paths, and a note
- * naming the tour, `WALK_NOTE`) and the tour without the walk, with the
- * pending edits. Nothing of the
+ * A built move of the walk out of the tour (W2, D19): the debug bundle
+ * (`debug-bundle.ts`, M2 of the debug-captures plan: the whole recording
+ * of the newest bytes, byte for byte, under its own paths, with the
+ * identity and the note naming the tour) and the tour without the walk,
+ * with the pending edits. Nothing of the
  * session changes until `commit()`: the page writes the walk's zip first,
  * then the tour, and commits only when both landed - a commit before that
  * would let the next save rebuild from walk-free bytes the creator never
@@ -790,6 +767,19 @@ export function createEditorSession(input: {
     };
   }
 
+  /** The tour a debug bundle names (`debug-bundle.json`): a listed
+   *  tour's series, the title the tour carries now and the file's name. */
+  function debugTour(manifest: TourManifest): DebugBundleTour {
+    return {
+      seriesId:
+        session.integrity.kind === "listed"
+          ? session.integrity.manifest.seriesId
+          : null,
+      title: manifest.title,
+      fileName: savedName,
+    };
+  }
+
   /** The move of the walk out (D19), built from the newest bytes. */
   async function buildWalkMove(): Promise<WalkMove | EditorRefusal> {
     if (mine() === null) return { kind: "refused", reason: TOUR_REPLACED };
@@ -802,33 +792,18 @@ export function createEditorSession(input: {
     }
     // The rebuild below replaces the bytes a picture may be read from.
     await saves.picturesRead();
-    // The walk's own file is the whole recording (the M4b milestone review
-    // #8): the frames the tour keeps for its visitors too, so it is a
-    // complete recording on its own.
-    const recording = new Set(recordingEntryNames(names));
+    // The debug bundle is the whole recording (the M4b milestone review
+    // #8), so it is a complete recording on its own, and names the tour it
+    // came from (one format for both pages, M2 of the debug-captures plan).
     const source = base === null ? await session.readWholeArchive() : base.blob;
-    const walkBlob = await rebuildZipWithEntries(
-      source,
-      [
-        {
-          path: WALK_NOTE,
-          data: walkNoteText({
-            fileName: savedName,
-            title: snap.manifest.title,
-            seriesId:
-              session.integrity.kind === "listed"
-                ? session.integrity.manifest.seriesId
-                : null,
-          }),
-        },
-      ],
-      {
-        remove: names.filter((name) => !recording.has(name)),
-        // The opened file is untrusted: read under the session's budget, as
-        // the rebuild below reads it (K0 milestone review R1).
-        ...(base === null ? { budget: session.budget } : {}),
-      },
-    );
+    const bundle = await buildDebugBundle(source, debugTour(snap.manifest), {
+      // The opened file is untrusted: read under the session's budget, as
+      // the rebuild below reads it (K0 milestone review R1).
+      ...(base === null ? { budget: session.budget } : {}),
+    });
+    if (bundle.kind === "refused") {
+      return { kind: "refused", reason: bundle.reason };
+    }
     // From the same bytes, read once (review #11).
     const finished = await saves.rebuild(
       snap,
@@ -837,7 +812,7 @@ export function createEditorSession(input: {
     );
     return {
       kind: "ready",
-      walk: { blob: walkBlob, filename: walkFileName(savedName) },
+      walk: { blob: bundle.blob, filename: bundle.filename },
       save: saveOf(finished),
       current: () => saves.newest() === base,
       commit(inPlace) {

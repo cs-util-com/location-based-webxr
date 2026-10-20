@@ -213,8 +213,8 @@ describe("scanEntryNames", () => {
 });
 
 describe("recordingEntryNames", () => {
-  // Why (the M4b milestone review #8): the editor's "Move the walk out"
-  // puts the walk into a file of its own, and that file must be the whole
+  // Why (the M4b milestone review #8): the debug bundle (the editor's
+  // "Move the debug data out") puts the walk into a file of its own, and that file must be the whole
   // recording, every frame included (frames a tour kept for its visitors
   // once among them). Without them the moved-out walk is a recording with
   // frames missing.

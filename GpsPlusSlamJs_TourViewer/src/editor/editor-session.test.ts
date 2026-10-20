@@ -34,8 +34,6 @@ import {
   createEditorSession,
   NOT_IN_TOUR,
   TOO_FAR_FROM_STATION,
-  WALK_NOTE,
-  walkFileName,
   type EditorSession,
   type EditorSessionDraft,
 } from "./editor-session.js";
@@ -57,6 +55,7 @@ import {
 } from "../test-support/v3-tour.js";
 import type { EditorModel } from "./editor-model.js";
 import { openTourForEditing } from "./editor-open.js";
+import { readDebugBundle } from "../debug-bundle.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -220,7 +219,7 @@ describe("createEditorSession", () => {
       levels: new Map(),
     });
     editor.editText("a", "x");
-    // The page names the walk's file after it before any save ran (the
+    // The page names the debug data's file after it before any save ran (the
     // r875 milestone review #6: the page reads the name here, not through
     // the Finish's rule it may not import), so it must be the save's own.
     expect(editor.savedName()).toBe("tour.zip");
@@ -1696,12 +1695,23 @@ describe("moving the walk out (W2, D19)", () => {
    *  is debug data like any other now (the document drops the spots), so
    *  it is the walk too. */
   const recording = [...walkNames, "images/frame-000002.jpg"].sort();
+  /** What the debug bundle adds at its root (`debug-bundle.ts`). */
+  const BUNDLE_ENTRIES = ["about-this-debug-data.txt", "debug-bundle.json"];
 
-  it("names the walk's file after the tour's", () => {
-    expect(walkFileName("castle.zip")).toBe("castle-walk.zip");
-    expect(walkFileName("Castle.ZIP")).toBe("Castle-walk.zip");
-    expect(walkFileName("castle")).toBe("castle-walk.zip");
-  });
+  /** What the moved-out file reads as when it is added back. */
+  async function bundleOf(blob: Blob) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    return readDebugBundle(await namesIn(blob), (name) => {
+      const entry = readStoredEntryBytes(bytes, name);
+      return entry === undefined
+        ? Promise.reject(new Error(`no ${name}`))
+        : Promise.resolve(new Blob([entry.slice()]));
+    });
+  }
+
+  // (A test of the walk's own file name stood here: the moved-out file is
+  // the debug bundle since M2 of the debug-captures plan, named by
+  // `debugBundleFileName`, whose rule `debug-bundle.test.ts` pins.)
 
   it("puts the whole recording, byte for byte, into the walk's zip, and the tour carries none of the walk, also after the next save", async () => {
     const { session, manifest, bytes } = await walkTour();
@@ -1715,11 +1725,14 @@ describe("moving the walk out (W2, D19)", () => {
     editor.editText("a", "Moved with the walk");
     const move = await editor.moveWalkOut();
     if (move.kind !== "ready") throw new Error(move.reason);
-    expect(move.walk.filename).toBe("tour-walk.zip");
+    // Changed expectation (M2 of the debug-captures plan): the walk's own
+    // zip (`tour-walk.zip`, with `about-this-walk.txt`) is the debug
+    // bundle now, one format for both pages.
+    expect(move.walk.filename).toBe("tour-debug.zip");
     // The whole recording (the M4b milestone review #8), every frame
-    // included - and a note naming the tour it came from.
+    // included - and the bundle's identity and note.
     expect(await namesIn(move.walk.blob)).toEqual(
-      [...recording, WALK_NOTE].sort(),
+      [...recording, ...BUNDLE_ENTRIES].sort(),
     );
     const walkBytes = new Uint8Array(await move.walk.blob.arrayBuffer());
     for (const name of recording) {
@@ -1828,10 +1841,12 @@ describe("moving the walk out (W2, D19)", () => {
     await session.close();
   });
 
-  it("names the tour the walk came from in a note inside the walk's zip", async () => {
+  it("names the tour the debug data came from, in the bundle's identity and its note", async () => {
     // Why (the M4b milestone review #8): a walk file on its own says
     // nothing of the tour it belongs to; the note does - the tour's file,
-    // its name and, for a listed tour, its series.
+    // its name and, for a listed tour, its series - and since M2 of the
+    // debug-captures plan the bundle's identity says it to the editor too,
+    // which compares it when the file is added back.
     const fixture = await buildListedTourFixture(
       {
         "tour.json": serializeTourManifest(
@@ -1858,13 +1873,22 @@ describe("moving the walk out (W2, D19)", () => {
     if (move.kind !== "ready") throw new Error(move.reason);
     const note = readStoredEntryBytes(
       new Uint8Array(await move.walk.blob.arrayBuffer()),
-      WALK_NOTE,
+      "about-this-debug-data.txt",
     );
     expect(note).toBeDefined();
     const text = new TextDecoder().decode(note);
     expect(text).toContain("castle.zip");
     expect(text).toContain("Castle walk");
     expect(text).toContain("Fx7qT2mK9pL4sV8bN1rW6a");
+    expect(await bundleOf(move.walk.blob)).toMatchObject({
+      kind: "bundle",
+      identity: {
+        seriesId: "Fx7qT2mK9pL4sV8bN1rW6a",
+        tour: "Castle walk",
+        file: "castle.zip",
+      },
+    });
+    expect(move.walk.filename).toBe("castle-debug.zip");
     await session.close();
   });
 
@@ -1924,7 +1948,9 @@ describe("moving the walk out (W2, D19)", () => {
     const editor = await tour();
     const move = await editor.moveWalkOut();
     if (move.kind !== "ready") throw new Error(move.reason);
-    expect(await namesIn(move.walk.blob)).toEqual([...walk, WALK_NOTE].sort());
+    expect(await namesIn(move.walk.blob)).toEqual(
+      [...walk, ...BUNDLE_ENTRIES].sort(),
+    );
     expect(await namesIn(move.save.blob)).toEqual(["tour.json"]);
     // The lean save (the editor's download without "keep the walk") leaves
     // it out as well. (It also said nothing about photos that do not

@@ -120,8 +120,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   saved apart); a file opened for writing keeps its walk in every save,
   a download included - `keepsWalk`, the switch hidden) and downloads it
   through the framework's `downloadZip` under the session's `savedName()`
-  (the page imports none of the Finish's rules; the walk's file is named
-  after it too, `walkFileName`); the
+  (the page imports none of the Finish's rules; the debug data's file is
+  named after it too, `debugBundleFileName`); the
   status reads "N changes not saved" / "Saving…" / "Saved as <name>" /
   the error, with the Finish's result sentences (the walk left out,
   photos not placed) in the toast. Save is on whenever a tour is open
@@ -255,7 +255,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   move runs - and focus goes back to Done. Done waits for saves with
   `savesSettled()`, which can never spin: a claim still set on an ended
   `saveEnd` stops the wait.
-- **Move the walk out (D19)** (`moveWalk`): each step holds the page's
+- **Move the debug data out (D19)** (`moveWalk`; the walk written as the
+  debug bundle, `debug-bundle.ts`, since M2 of the debug-captures plan,
+  and the dialog's and the refusals' words name it as debug data): each
+  step holds the page's
   one save slot (`claimSave("walk")`, which a save takes too, as
   `"explicit"` or `"auto"`: the save status names the holder and a new
   `saveEnd` is made for Done to wait on; `walkMoving()` - the holder is
@@ -278,7 +281,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   - dismissed: nothing moved;
   - without a save dialog (or one the browser refused): downloads the
     walk and returns `downloaded` - the tour is rewritten only on a
-    SECOND click ("Take the walk out of the tour"), since a started
+    SECOND click ("Take the debug data out of the tour"), since a started
     download is not one that landed;
   - the tour (`deliver` with `offerDownload: false`, in place or
     downloaded) is written only while the move is `current()` (no save

@@ -35,8 +35,9 @@ which a visitor never sees.
 - `recordingEntryNames(entryNames) -> string[]` - the whole recording, in
   archive order: every entry a recording writes, every frame included;
   none without an action stream. `scanEntryNames` is this minus
-  `visitorEntryNames`. The editor's "Move the walk out" puts it into the
-  walk's own file (the M4b milestone review #8).
+  `visitorEntryNames`. The debug bundle (`debug-bundle.ts`, the editor's
+  "Move the debug data out") puts it into a file of its own (the M4b
+  milestone review #8).
 - `entriesForVisitor(entries, scan) -> entries` - every entry except the
   walk, in archive order. The gallery uses it.
 - `stopsVisitorDownload(mode, manifest, scan) -> boolean` - true for a

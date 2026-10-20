@@ -3180,7 +3180,8 @@ test("the open dialog's fine print says what Save does in this browser", async (
 
 // ---------------------------------------------------------------------------
 // "Done" (W2, D18, D19): where the changes are, how the tour at its link is
-// updated, and "Move the walk out".
+// updated, and "Move the debug data out" (the walk, written as the debug
+// bundle since M2 of the debug-captures plan).
 // ---------------------------------------------------------------------------
 
 /**
@@ -3240,25 +3241,29 @@ test("Done saves what is pending, says where it is and how to update the tour, a
   const move = page.locator("#done-move");
   await move.click();
   const walkFile = await download;
-  expect(walkFile.suggestedFilename()).toBe("wrapped-walk.zip");
+  // Changed expectation (M2 of the debug-captures plan): the walk's own
+  // zip and its about-this-walk.txt are the debug bundle now - its
+  // identity, its note and the name the phone gives it too.
+  expect(walkFile.suggestedFilename()).toBe("wrapped-debug.zip");
   // The whole recording - every frame - and the note naming the tour (the
   // M4b milestone review #8).
   expect(await downloadedNames(walkFile)).toEqual([
-    "about-this-walk.txt",
+    "about-this-debug-data.txt",
+    "debug-bundle.json",
     "mytour/actions/000001.json",
     "mytour/images/frame-000002.png",
     "mytour/session.json",
   ]);
   await expect(page.locator("#done-move-status")).toContainText(
-    "The walk was downloaded as wrapped-walk.zip",
+    "The debug data was downloaded as wrapped-debug.zip",
   );
-  await expect(move).toHaveText("Take the walk out of the tour");
+  await expect(move).toHaveText("Take the debug data out of the tour");
   expect(Object.keys(await readOpfsTour(page, "wrapped.zip"))).toContain(
     "mytour/actions/000001.json",
   );
   await move.click();
   await expect(page.locator("#done-move-status")).toContainText(
-    "The walk is in wrapped-walk.zip",
+    "The debug data is in wrapped-debug.zip",
   );
   await expect(page.locator("#done-where")).toHaveText(
     "Your changes are saved in wrapped.zip, the file you opened on this computer.",
@@ -3349,7 +3354,7 @@ test("Done shows its save in progress and stays shut when the save fails, and a 
     "Nothing was moved",
   );
   await expect(move).toBeEnabled();
-  await expect(move).toHaveText("Move the walk out");
+  await expect(move).toHaveText("Move the debug data out");
   expect(await readOpfsTour(page, "wrapped.zip")).toEqual(before);
   // ... and the next save still carries the walk (the M4b milestone
   // review #7: a failed move must leave nothing behind that drops it).
@@ -3373,11 +3378,11 @@ test("Done shows its save in progress and stays shut when the save fails, and a 
   });
   const download = page.waitForEvent("download");
   await move.click();
-  expect((await download).suggestedFilename()).toBe("wrapped-walk.zip");
-  await expect(move).toHaveText("Take the walk out of the tour");
+  expect((await download).suggestedFilename()).toBe("wrapped-debug.zip");
+  await expect(move).toHaveText("Take the debug data out of the tour");
   await move.click();
   await expect(page.locator("#done-move-status")).toContainText(
-    "keeps its walk",
+    "keeps its debug data",
   );
   await expect(move).toBeEnabled();
   expect(await readOpfsTour(page, "wrapped.zip")).toEqual(before2);
@@ -3478,21 +3483,28 @@ test("the walk's file is asked for on the click, so a long build cannot cost the
   // walk - which then existed nowhere if that download was cancelled.
   await autosaveOutOfTheWay(page);
   await doneWithWrappedTour(page);
-  await clickBoundSavePicker(page, "wrapped-walk.zip");
+  await clickBoundSavePicker(page, "wrapped-debug.zip");
   await page.locator("#done-move").click();
   await expect(page.locator("#done-move-status")).toContainText(
-    "The walk is in wrapped-walk.zip",
+    "The debug data is in wrapped-debug.zip",
   );
   // @ts-expect-error - counted by the stand-in.
   expect(await page.evaluate(() => window.__walkPicks)).toBe(1);
-  const walk = await readOpfsTour(page, "wrapped-walk.zip");
+  const walk = await readOpfsTour(page, "wrapped-debug.zip");
   expect(Object.keys(walk).sort()).toEqual([
-    "about-this-walk.txt",
+    "about-this-debug-data.txt",
+    "debug-bundle.json",
     "mytour/actions/000001.json",
     "mytour/images/frame-000002.png",
     "mytour/session.json",
   ]);
-  expect(walk["about-this-walk.txt"]).toContain("wrapped.zip");
+  expect(walk["about-this-debug-data.txt"]).toContain("wrapped.zip");
+  expect(JSON.parse(walk["debug-bundle.json"] ?? "")).toMatchObject({
+    format: 1,
+    seriesId: null,
+    tour: "Wrapped fixture",
+    file: "wrapped.zip",
+  });
   const tour = Object.keys(await readOpfsTour(page, "wrapped.zip"));
   expect(tour).not.toContain("mytour/actions/000001.json");
   // Changed expectation: the frame stayed for the visitors while a capture
@@ -3508,9 +3520,11 @@ test("Done stays shut and the dialog stays open while the walk is moved out", as
   // waited on a promise that had long settled, and the tab froze.
   await autosaveOutOfTheWay(page);
   await doneWithWrappedTour(page);
-  await clickBoundSavePicker(page, "wrapped-walk.zip", { hold: true });
+  await clickBoundSavePicker(page, "wrapped-debug.zip", { hold: true });
   await page.locator("#done-move").click();
-  await expect(page.locator("#done-move")).toHaveText("Moving the walk out…");
+  await expect(page.locator("#done-move")).toHaveText(
+    "Moving the debug data out…",
+  );
   await page.keyboard.press("Escape");
   await expect(page.locator("#done-modal")).toBeVisible();
   await expect(page.locator("#done-close")).toBeDisabled();
@@ -3520,7 +3534,7 @@ test("Done stays shut and the dialog stays open while the walk is moved out", as
     window.__releaseWalkPick();
   });
   await expect(page.locator("#done-move-status")).toContainText(
-    "The walk is in wrapped-walk.zip",
+    "The debug data is in wrapped-debug.zip",
   );
   await expect(page.locator("#done-close")).toBeEnabled();
   await page.keyboard.press("Escape");
@@ -3545,7 +3559,9 @@ test("the tour file itself is refused as the walk's file, before anything is wri
   await expect(page.locator("#done-move-status")).toContainText(
     "wrapped.zip is the tour itself",
   );
-  await expect(page.locator("#done-move")).toHaveText("Move the walk out");
+  await expect(page.locator("#done-move")).toHaveText(
+    "Move the debug data out",
+  );
   expect(await readOpfsTour(page, "wrapped.zip")).toEqual(before);
   expect(Object.keys(before)).toContain("mytour/actions/000001.json");
 });
@@ -3568,14 +3584,14 @@ test("a tour with no file to write into is downloaded without the walk on a seco
   // Nothing edited: Done opens without a save.
   await page.locator("#done-btn").click();
   await expect(page.locator("#done-modal")).toBeVisible();
-  await clickBoundSavePicker(page, "wrapped-walk.zip");
+  await clickBoundSavePicker(page, "wrapped-debug.zip");
   const move = page.locator("#done-move");
   await move.click();
   await expect(page.locator("#done-move-status")).toContainText(
-    "The walk is in wrapped-walk.zip - keep that file.",
+    "The debug data is in wrapped-debug.zip - keep that file.",
   );
-  await expect(move).toHaveText("Download the tour without the walk");
-  expect(Object.keys(await readOpfsTour(page, "wrapped-walk.zip"))).toContain(
+  await expect(move).toHaveText("Download the tour without the debug data");
+  expect(Object.keys(await readOpfsTour(page, "wrapped-debug.zip"))).toContain(
     "mytour/actions/000001.json",
   );
   // The second click downloads the tour: the stand-in dialog goes, so the

@@ -187,14 +187,16 @@ changes`; a label is cut at 40 characters, a label-less note is "a
   - `walkEntries()` - the walk recording's entries in the newest bytes
     (the last save's, else the opened file's; `scanEntryNames`): none once
     it was moved out, or when a save left it out.
-  - `moveWalkOut()` - "Move the walk out" (W2, D19), queued with the
-    saves: a `WalkMove` with the walk's own zip (the whole recording of
-    the newest bytes, `recordingEntryNames` - the frames the tour keeps
-    for its visitors included, so it is a complete recording on its own -
-    byte for byte, under its own paths, plus `WALK_NOTE`
-    (`about-this-walk.txt`) naming the tour's file, its name and, for a
-    listed tour, its series; the M4b milestone review #8; named by
-    `walkFileName`, `castle.zip` -> `castle-walk.zip`) and the tour
+  - `moveWalkOut()` - "Move the debug data out" (W2, D19), queued with
+    the saves: a `WalkMove` with the debug bundle (`buildDebugBundle` of
+    `../debug-bundle.ts`, M2 of the debug-captures plan: the whole
+    recording of the newest bytes, every frame included, so it is a
+    complete recording on its own - byte for byte, under its own paths,
+    plus `debug-bundle.json` and the note naming the tour's file, its
+    title and, for a listed tour, its series; the M4b milestone review #8;
+    named by `debugBundleFileName`, `castle.zip` -> `castle-debug.zip`;
+    it replaced the walk's own zip, `castle-walk.zip` with
+    `about-this-walk.txt`) and the tour
     rebuilt without the walk (`keepScan: false`, with the pending edits
     from the same bytes: the opened file is read once), or a refusal in
     words: `NO_WALK`. Every recorded frame moves with the walk, also one
@@ -210,9 +212,9 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     save), so no later save - an in-place autosave keeps "the walk" of the
     bytes it rebuilds from - can bring the walk back. It throws when
     another save landed since the move was built (the page holds saves
-    while a move runs). Bringing a moved-out walk back into a tour is a
-    later feature; nothing reads the walk's zip yet.
-- `walkFileName`, `WALK_NOTE`; the module-private `WalkMove` and `NO_WALK` are read through `moveWalkOut()`.
+    while a move runs). A moved-out bundle never comes back into the
+    tour; the editor only shows it (`edit-main.ts`, "Add debug data...").
+- The module-private `WalkMove` and `NO_WALK` are read through `moveWalkOut()`.
 - `EditorSession`, `EditorSave`, `EditorSessionDraft`, `TOO_FAR_FROM_STATION`; the module-private `CoverChoice` (an image id and its zip entry) and `UndoOutcome` (`undo()` / `redo()`'s result) are read through the session's methods.
 
 ## Invariants & assumptions

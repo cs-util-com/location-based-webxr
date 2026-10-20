@@ -82,6 +82,10 @@ describe("doneWords", () => {
     expect(walk).toMatch(/camera captures/);
     expect(walk?.toLowerCase()).not.toContain("photo");
     expect(walk).toMatch(/file at your tour's link/);
+    // Named as the debug data it is, and moved out as such (M2 of the
+    // debug-captures plan: the moved-out file is the debug bundle).
+    expect(walk).toMatch(/debug data/);
+    expect(walk).toMatch(/Move the debug data out/);
     expect(doneWords({ ...IN_PLACE, carriesWalk: false }).walk).toBeNull();
   });
 
@@ -91,7 +95,20 @@ describe("doneWords", () => {
     const walk = doneWords({ ...IN_PLACE, carriesWalk: "unknown" }).walk;
     expect(walk).toMatch(/could not be checked/);
     expect(walk).toMatch(/GPS track/);
-    expect(walk).toMatch(/Move the walk out/);
+    // (Changed, M2 of the debug-captures plan: "Move the walk out".)
+    expect(walk).toMatch(/Move the debug data out/);
+  });
+
+  it("names the move's steps as the debug data's", () => {
+    // Why (M2 of the debug-captures plan): the moved-out file is the debug
+    // bundle, so every label says what the creator gets - the words were
+    // the walk's.
+    expect(MOVE_LABELS).toEqual({
+      idle: "Move the debug data out",
+      moving: "Moving the debug data out…",
+      confirm: "Take the debug data out of the tour",
+      download: "Download the tour without the debug data",
+    });
   });
 
   it("keeps the Drive-mount tip hidden by default, and the switch shows it for a Drive tour saved in place only", () => {
@@ -193,13 +210,16 @@ describe("wireDoneDialog", () => {
     expect(deps.moveWalk).toHaveBeenCalledTimes(1);
     finish({
       kind: "moved",
-      walkName: "castle-walk.zip",
+      walkName: "castle-debug.zip",
       tourName: "castle.zip",
       saved: { kind: "in-place", name: "castle.zip" },
     });
     await vi.waitFor(() => {
-      expect(dom.moveStatus.textContent).toMatch(/castle-walk\.zip/);
+      expect(dom.moveStatus.textContent).toMatch(/castle-debug\.zip/);
     });
+    expect(dom.moveStatus.textContent).toMatch(
+      /The debug data is in castle-debug\.zip/,
+    );
     expect(dom.moveStatus.textContent).toMatch(
       /castle\.zip no longer carries it/,
     );
@@ -280,7 +300,7 @@ describe("wireDoneDialog", () => {
     const confirm = vi.fn(() =>
       Promise.resolve<WalkMoveOutcome>({
         kind: "moved",
-        walkName: "castle-walk.zip",
+        walkName: "castle-debug.zip",
         tourName: "castle.zip",
         saved: { kind: "in-place", name: "castle.zip" },
       }),
@@ -288,7 +308,7 @@ describe("wireDoneDialog", () => {
     const { dom, deps, dialog } = wire(() =>
       Promise.resolve({
         kind: "downloaded",
-        walkName: "castle-walk.zip",
+        walkName: "castle-debug.zip",
         confirm,
       }),
     );
@@ -298,7 +318,7 @@ describe("wireDoneDialog", () => {
       expect(dom.moveButton.textContent).toBe(MOVE_LABELS.confirm);
     });
     expect(dom.moveStatus.textContent).toMatch(
-      /downloaded as castle-walk\.zip/,
+      /downloaded as castle-debug\.zip/,
     );
     expect(dom.moveStatus.textContent).toMatch(/the tour file keeps it/);
     expect(dom.moveButton.disabled).toBe(false);
@@ -333,7 +353,7 @@ describe("wireDoneDialog", () => {
     const confirm = vi.fn(() =>
       Promise.resolve<WalkMoveOutcome>({
         kind: "moved",
-        walkName: "castle-walk.zip",
+        walkName: "castle-debug.zip",
         tourName: "castle.zip",
         saved: { kind: "downloaded", name: "castle.zip" },
       }),
@@ -341,7 +361,7 @@ describe("wireDoneDialog", () => {
     const { dom, deps, dialog } = wire(() =>
       Promise.resolve({
         kind: "walk-saved",
-        walkName: "castle-walk.zip",
+        walkName: "castle-debug.zip",
         confirm,
       }),
     );
@@ -350,7 +370,7 @@ describe("wireDoneDialog", () => {
     await vi.waitFor(() => {
       expect(dom.moveButton.textContent).toBe(MOVE_LABELS.download);
     });
-    expect(dom.moveStatus.textContent).toMatch(/castle-walk\.zip/);
+    expect(dom.moveStatus.textContent).toMatch(/castle-debug\.zip/);
     expect(dom.moveStatus.textContent).toMatch(/keep that file/);
     expect(dom.moveStatus.textContent).toMatch(/still carries it/);
     expect(dom.walkText.hidden).toBe(false);
@@ -369,7 +389,7 @@ describe("wireDoneDialog", () => {
     const { dom, dialog } = wire(() =>
       Promise.resolve({
         kind: "moved",
-        walkName: "castle-walk.zip",
+        walkName: "castle-debug.zip",
         tourName: "castle.zip",
         saved: { kind: "downloaded", name: "castle (1).zip" },
       }),
@@ -387,7 +407,7 @@ describe("wireDoneDialog", () => {
     // The walk's words go; its section stays to say where the walk went.
     expect(dom.walkText.hidden).toBe(true);
     expect(dom.walk.hidden).toBe(false);
-    expect(dom.moveStatus.textContent).toMatch(/castle-walk\.zip/);
+    expect(dom.moveStatus.textContent).toMatch(/castle-debug\.zip/);
   });
 
   it("closes from its button and tells the page; an open clears the last move's line", () => {

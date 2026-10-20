@@ -19,7 +19,7 @@ A bundle holds:
 - `debug-bundle.json` at the root:
   `{format: 1, seriesId, tour, file, writtenAt}`;
 - `about-this-debug-data.txt` at the root, the note for a person (the
-  walk's note of the old "Move the walk out", reworded: debug data, and the
+  walk's note of the old "Move the walk out" zip, reworded: debug data, and the
   recorded frames are "debug camera captures", never photos).
 
 ## The wrap: kept
@@ -36,7 +36,8 @@ the note go at the root. Reasons:
 - Every reader of a recording already tolerates a folder: the session's
   `session.json` by suffix, the framework's action parse by
   `includes("actions/")`, the frames and scan folders by `(^|/)`.
-- It is the shape the walk's own zip of "Move the walk out" already has.
+- It is the shape the walk's own zip of "Move the walk out" had, which
+  "Move the debug data out" now writes as this bundle.
 
 The reader finds `debug-bundle.json` at the root, under `./`, or under one
 or more folders (`.../debug-bundle.json`): a bundle unzipped and zipped
@@ -64,9 +65,8 @@ again by an OS's "compress folder" gains a folder.
     throw (not a zip, a cap).
 - `debugBundleFileName(tourFileName) -> string` - `castle.zip` gives
   `castle-debug.zip` (case-insensitive `.zip`, trimmed); `tour-debug.zip`
-  for an empty or missing name. The rule `walkFileName` of
-  `editor/editor-session.ts` applies with `-walk`; M2 retires that one with
-  the move it names.
+  for an empty or missing name. It replaced `walkFileName` (`-walk`)
+  when M2 moved the editor's move-out onto the bundle.
 - `readDebugBundle(entryNames, readEntry) -> Promise<DebugBundleRead>` -
   never throws. In order:
   - no action stream: `{kind: "refused", code: "no-recording"}`, with or

@@ -7,8 +7,10 @@ plan 2026-10-17-1816, W2, D18, D19): where the changes are, how the tour
 at its link is updated for the host it lives on, that a file at a shared
 link is public as soon as it is uploaded, and - while the file still
 carries the walk recording - that the walk goes public with it unless it
-is moved out. "Move the walk out" is offered here; the page does the move
-(`edit-main.ts`, `EditorSession.moveWalkOut`).
+is moved out. "Move the debug data out" is offered here (M2 of the
+debug-captures plan: the moved-out file is the debug bundle,
+`debug-bundle.ts`, and every text names it as debug data); the page does
+the move (`edit-main.ts`, `EditorSession.moveWalkOut`).
 
 ## Public API
 

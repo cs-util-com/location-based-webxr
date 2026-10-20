@@ -94,10 +94,10 @@ import {
 } from "./autosave.js";
 import {
   createEditorSession,
-  walkFileName,
   type EditorSave,
   type EditorSession,
 } from "./editor-session.js";
+import { debugBundleFileName } from "../debug-bundle.js";
 import { noGpsWarnings } from "./no-gps-check.js";
 import { revealPadding, type Box } from "./popover-place.js";
 import { createStatusLines } from "./status-lines.js";
@@ -2051,8 +2051,8 @@ async function finishEditing(): Promise<void> {
 }
 
 /**
- * "Move the walk out" (W2, D19): the walk's own zip is written first, then
- * the tour without it - in place, or downloaded - and only once both
+ * "Move the debug data out" (W2, D19): the debug bundle (`debug-bundle.ts`,
+ * M2 of the debug-captures plan) is written first, then the tour without it - in place, or downloaded - and only once both
  * landed does the session take the walk-free bytes as its newest; a failed
  * write of either leaves the tour file as it was. The move holds the
  * page's save (`claimSave`): every save waits, and Done with it.
@@ -2073,14 +2073,14 @@ function moveWalk(): Promise<WalkMoveOutcome> {
   // First, before any await: the dialog needs the click.
   const pick = pickSaveFile(
     window as unknown as SavePickerWindow,
-    walkFileName(mine.savedName()),
+    debugBundleFileName(mine.savedName()),
   );
   return holdForMove(mine, () => buildMove(mine, pick));
 }
 
 const SAVE_RUNS: WalkMoveOutcome = {
   kind: "refused",
-  reason: "A save is running - move the walk once it has finished.",
+  reason: "A save is running - move the debug data once it has finished.",
 };
 
 /** Run one step of a move holding the page's save (review #1): Done is
@@ -2097,7 +2097,7 @@ async function holdForMove(
     if (editor !== mine) return { kind: "cancelled" };
     return {
       kind: "refused",
-      reason: `The walk was not moved: ${err instanceof Error ? err.message : String(err)}`,
+      reason: `The debug data was not moved: ${err instanceof Error ? err.message : String(err)}`,
     };
   } finally {
     // Let go whatever happened to the tour: a claim left set would hold
@@ -2132,7 +2132,7 @@ async function buildMove(
   ) {
     return {
       kind: "refused",
-      reason: `${into.name} is the tour itself - save the walk under another name. Nothing was written, so the tour keeps its walk.`,
+      reason: `${into.name} is the tour itself - save the debug data under another name. Nothing was written, so the tour keeps its debug data.`,
     };
   }
   if (editor !== mine) return { kind: "cancelled" };
@@ -2148,7 +2148,7 @@ async function buildMove(
     if (state !== "same") {
       return {
         kind: "refused",
-        reason: `${new InPlaceRefusal(state).message} The tour keeps its walk.${unused}`,
+        reason: `${new InPlaceRefusal(state).message} The tour keeps its debug data.${unused}`,
       };
     }
   }
@@ -2163,7 +2163,7 @@ async function buildMove(
     } catch (err) {
       return {
         kind: "refused",
-        reason: `The walk could not be written into ${picked.handle.name} (${err instanceof Error ? err.message : String(err)}), so the tour keeps its walk.`,
+        reason: `The debug data could not be written into ${picked.handle.name} (${err instanceof Error ? err.message : String(err)}), so the tour keeps it.`,
       };
     }
     if (editor !== mine) return { kind: "cancelled" };
@@ -2219,7 +2219,7 @@ async function writeMovedTour(
   if (!move.current()) {
     return {
       kind: "refused",
-      reason: `${name} was saved meanwhile, so the walk was not taken out of it - move the walk again.`,
+      reason: `${name} was saved meanwhile, so the debug data was not taken out of it - move it again.`,
     };
   }
   tourDraft?.built(move.save.written);
@@ -2234,7 +2234,7 @@ async function writeMovedTour(
   if (!arrived) {
     return {
       kind: "refused",
-      reason: `${walkName} was saved, but ${name} could not be written${refusal === undefined ? "" : ` (${refusal})`}, so the tour keeps its walk.`,
+      reason: `${walkName} was saved, but ${name} could not be written${refusal === undefined ? "" : ` (${refusal})`}, so the tour keeps its debug data.`,
     };
   }
   move.commit(inPlace);
