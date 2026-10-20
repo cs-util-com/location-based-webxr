@@ -200,8 +200,8 @@ module's sidecar states them as its contract.
   be placed, that visitors will not see them, and whether the copy kept
   the walk (`FINISH_LABELS.photosNotPlaced(reason, walkKept)`, `walkKept`
   = nothing of the walk left out). A walk that names no recorded photo
-  the tour carries says nothing about photos. The tick is cleared with
-  the Finish step when the tour closes (review #9).
+  the tour carries says nothing about photos. The tick is cleared with the Finish step
+  when the tour closes (review #9).
   The ready line then says so (`FINISH_LABELS.scanLeftOut`), because the
   hosted file may be the creator's only copy of the walk.
 - The finish's append is **id-deduplicating**, because the serializer

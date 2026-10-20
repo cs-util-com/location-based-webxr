@@ -197,11 +197,12 @@ DOM glue, its own module since the flows plan M6.
   zip without `tour.json` is such a tour, so a creator's recording hosted
   before its first Finish is not fetched whole by every visitor):
   `archive.dispose()` aborts the warm, and the tour reads its entries by
-  range instead. The costs, for that copy only: tier 3 (the whole-archive
-  check), the offline copy, and - because dispose aborts the archive's
-  one controller - the recovery download for a host that stops honouring
-  ranges mid-session (S1 milestone review #5). Tests:
-  `archive-open-file.test.ts` ("stops a visitor's download of a
+  range instead. The
+  costs, for that copy only: tier 3 (the whole-archive check), the offline
+  copy, and - because dispose aborts the archive's one controller - the
+  recovery download for a host that stops honouring ranges mid-session
+  (S1 milestone review #5).
+  Tests: `archive-open-file.test.ts` ("stops a visitor's download of a
   recording without tour.json").
 - **Another tour asks before replacing one with an unsaved rebuilt file**
   (UI round 1, U2): `openTour` returns `{ kind: "cancelled" }` when

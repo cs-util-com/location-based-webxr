@@ -1328,9 +1328,10 @@ async function openFile(
   });
   model = editor.model();
   // The walk-recording switch only for a tour that carries one (S-D10:
-  // the saved copy leaves it out unless asked, E2 plan review #4) - ticked
-  // when the photos could not be placed, so a lean copy does not lose the
-  // walk a later open could still place them from (`keepsWalkByDefault`).
+  // the saved copy leaves it out unless asked, E2 plan review #4).
+  // Ticked when the photos could not be placed, so a lean copy does not
+  // lose the walk a later open could still place them from
+  // (`keepsWalkByDefault`).
   keepWalkInput.checked = keepsWalkByDefault(outcome.photos);
   keepWalk.hidden =
     scanEntryNames(
