@@ -113,13 +113,14 @@ export function wireCreatorFinish(deps: {
         ).length,
       };
     }
-    // Ticked whenever the opened file carries a walk: until the walk can
-    // be saved apart from the tour, a lean copy would be the only one a
-    // creator may keep, without the walk. Set once per open, even while
-    // the row is hidden (an open inside AR): the Finish there reads it.
+    // Unticked at every open (M2 of the debug-captures plan, E2): the
+    // tour file people open leaves the debug data out, which the Done step
+    // then offers to save apart ("Save the debug data"); a tick keeps it,
+    // for a co-author. Set once per open, even while the row is hidden (an
+    // open inside AR): the Finish there reads it.
     if (defaultedFor !== current) {
       defaultedFor = current;
-      dom.keepScanInput.checked = scanMemo.count > 0;
+      dom.keepScanInput.checked = false;
     }
     // Chosen on the page before AR (UI round 1, U2): hidden in a session,
     // since the Finish there reads it.

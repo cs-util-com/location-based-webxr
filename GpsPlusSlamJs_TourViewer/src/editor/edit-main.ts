@@ -1380,18 +1380,18 @@ async function openFile(
     store,
   });
   model = editor.model();
-  // The walk-recording switch only for a tour that carries one (S-D10:
-  // the saved copy leaves it out unless asked, E2 plan review #4).
-  // Ticked whenever it does: until the walk can be saved apart from the
-  // tour, a lean copy would be the only one a creator may keep, without
-  // the walk.
+  // The debug data switch only for a tour that carries a walk (S-D10:
+  // the saved copy leaves it out unless asked, E2 plan review #4), and
+  // unticked (M2 of the debug-captures plan, E2): the walk is saved apart.
+  // A file opened to be written keeps its walk whatever the switch says
+  // (`keepsWalk`, `attachTarget`).
   const carriesWalk =
     scanEntryNames(
       outcome.session.entries.map((e) => e.filename),
       outcome.manifest,
       outcome.session.manifestWrap,
     ).length > 0;
-  keepWalkInput.checked = carriesWalk;
+  keepWalkInput.checked = false;
   keepWalk.hidden = !carriesWalk;
   renderTourName();
   element("tour-file").textContent = outcome.fileName;

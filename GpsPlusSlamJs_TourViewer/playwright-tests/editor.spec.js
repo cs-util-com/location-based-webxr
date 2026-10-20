@@ -1263,7 +1263,9 @@ test("a second tab that edits anyway keeps the walk, in its copy and in place", 
   // Why (E2b-1 review #1): the second tab saved a download without the
   // walk, and "Edit here anyway" then wrote that walk-less build over the
   // creator's only copy. A tour opened to be written keeps its walk from
-  // the start.
+  // the start - in every save, a download included: since M2 of the
+  // debug-captures plan any other copy leaves the walk out by default, so
+  // this rule alone keeps it (seen red with the rule switched off).
   await page.goto("/edit.html");
   await offerOpfsFile(page, await wrappedTour({ pin: true }), "wrapped.zip");
   await page.locator("#choose-btn").click();
@@ -1640,51 +1642,51 @@ test("an edit after a download is offered by the downloaded file: the tour carri
   );
 });
 
-test("a download of a tour that carries a walk keeps it by default, and leaves it out only when the switch is unticked", async ({
+test("a download of a tour that carries a walk leaves it out by default, and keeps it only when the switch is ticked", async ({
   page,
   context,
 }) => {
-  // Why (M1 of the debug-captures plan): until the walk can be saved apart
-  // from the tour, a lean copy would be the only one a creator may keep,
-  // without the walk - so the switch starts ticked whenever the file
-  // carries one, and only an untick leaves it out, which the toast says.
-  // The switch hides after a save, so the untick is tried on a second open
-  // of the same tour. Changed expectation: the switch was ticked only when
-  // the recorded photos could not be placed, and the toasts spoke of them.
+  // Why (M2 of the debug-captures plan, E2): the tour file people open
+  // does not carry the debug data unless the creator asks (a co-author's
+  // copy) - the walk is saved apart. The switch hides after a save, so the
+  // tick is tried on a second open of the same tour. Changed expectation:
+  // in M1 the switch started ticked whenever the file carried a walk, and
+  // only an untick left it out.
   const tour = await wrappedTour({ pin: true });
   await noSavePicker(page);
   await page.goto("/edit.html");
   await openThroughChooser(page, tour, "wrapped.zip");
   await expect(page.locator("#keep-walk")).toBeVisible();
-  await expect(page.locator("#keep-walk-input")).toBeChecked();
-  await editPin(page, "Wrapped pin", "Kept by default");
-  const kept = page.waitForEvent("download");
+  await expect(page.locator("#keep-walk")).toContainText(
+    "Keep the debug data in the tour file",
+  );
+  await expect(page.locator("#keep-walk-input")).not.toBeChecked();
+  await editPin(page, "Wrapped pin", "Lean by default");
+  const lean = page.waitForEvent("download");
   await page.locator("#save-btn").click();
-  const keptNames = await downloadedNames(await kept);
-  expect(keptNames).toContain("mytour/tour.json");
-  expect(keptNames).toContain("mytour/actions/000001.json");
-  expect(keptNames).toContain("mytour/session.json");
-  expect(keptNames).toContain("mytour/images/frame-000002.png");
-  await expect(
-    page.locator(".toast", { hasText: "leaves out the walk recording" }),
-  ).toHaveCount(0);
-  await page.close();
-  const next = await newEditorPage(context);
-  await openThroughChooser(next, tour, "wrapped.zip");
-  // Ticked again on the second open; uncheck() would not wait for it (it
-  // returns at once on a box that is still unchecked).
-  await expect(next.locator("#keep-walk-input")).toBeChecked();
-  await next.locator("#keep-walk-input").uncheck();
-  await editPin(next, "Wrapped pin", "Lean on request");
-  const lean = next.waitForEvent("download");
-  await next.locator("#save-btn").click();
   const leanNames = await downloadedNames(await lean);
+  expect(leanNames).toContain("mytour/tour.json");
   expect(leanNames).not.toContain("mytour/actions/000001.json");
   expect(leanNames).not.toContain("mytour/session.json");
   expect(leanNames).not.toContain("mytour/images/frame-000002.png");
   await expect(
-    next.locator(".toast", { hasText: "leaves out the walk recording" }),
+    page.locator(".toast", { hasText: "leaves out the walk recording" }),
   ).toHaveCount(1);
+  await page.close();
+  const next = await newEditorPage(context);
+  await openThroughChooser(next, tour, "wrapped.zip");
+  await expect(next.locator("#keep-walk")).toBeVisible();
+  await next.locator("#keep-walk-input").check();
+  await editPin(next, "Wrapped pin", "Kept on request");
+  const kept = next.waitForEvent("download");
+  await next.locator("#save-btn").click();
+  const keptNames = await downloadedNames(await kept);
+  expect(keptNames).toContain("mytour/actions/000001.json");
+  expect(keptNames).toContain("mytour/session.json");
+  expect(keptNames).toContain("mytour/images/frame-000002.png");
+  await expect(
+    next.locator(".toast", { hasText: "leaves out the walk recording" }),
+  ).toHaveCount(0);
 });
 
 test("a lean download of a recording tour: the original still offers, the lean copy opens without an offer", async ({
@@ -1703,10 +1705,10 @@ test("a lean download of a recording tour: the original still offers, the lean c
   await page.locator("#rail .row", { hasText: "Wrapped pin" }).click();
   await page.locator("#card textarea").fill("In the lean copy");
   await page.locator("#card textarea").blur();
-  // Ticked by default for a file carrying a walk (M1 of the debug-captures
-  // plan); this copy is lean on request.
-  await expect(page.locator("#keep-walk-input")).toBeChecked();
-  await page.locator("#keep-walk-input").uncheck();
+  // Lean by default (M2 of the debug-captures plan, E2). Changed: in M1
+  // the switch started ticked here and the test unticked it.
+  await expect(page.locator("#keep-walk")).toBeVisible();
+  await expect(page.locator("#keep-walk-input")).not.toBeChecked();
   const download = page.waitForEvent("download");
   await page.locator("#save-btn").click();
   const lean = readFileSync(await (await download).path());
@@ -2028,8 +2030,8 @@ test("an edit after a download, with the downloaded copy put in place, is offere
   // Why (E2c milestone review #4): each build adds its versions to the
   // draft's `written` list. Without it the copy's own version of the note
   // is one this browser never SAW in a file, so the later edit reads as
-  // "replaced by a newer one" and is dropped. A recording tour whose walk
-  // is kept has the same key in the copy as in the original.
+  // "replaced by a newer one" and is dropped. The copy is known by the
+  // tour's own id (Q-I), walk or not.
   await noSavePicker(page);
   await page.goto("/edit.html");
   await openThroughChooser(
@@ -2037,11 +2039,13 @@ test("an edit after a download, with the downloaded copy put in place, is offere
     await wrappedTour({ pin: true }),
     "wrapped.zip",
   );
-  // Changed expectation: the creator ticked the switch here; it starts
-  // ticked now for a file carrying a walk (M1 of the debug-captures plan).
-  // Asserted, not check()ed: check() reads the box before the open has
-  // ticked it and then clicks it off again.
-  await expect(page.locator("#keep-walk-input")).toBeChecked();
+  // Changed expectation: the walk was kept here (ticked by the creator,
+  // then by default in M1 of the debug-captures plan) because only that
+  // gave the copy the original's key. The tour carries its own id since
+  // Q-I, so the lean default copy - unticked since M2 - keeps the draft
+  // all the same.
+  await expect(page.locator("#keep-walk")).toBeVisible();
+  await expect(page.locator("#keep-walk-input")).not.toBeChecked();
   await page.locator("#rail .row", { hasText: "Wrapped pin" }).click();
   await page.locator("#card textarea").fill("In the download");
   await page.locator("#card textarea").blur();

@@ -1070,10 +1070,12 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
   // session.json and every frame - unless the switch keeps it. Both
   // halves matter: a walk shipped to visitors costs them megabytes and
   // publishes the creator's timestamped route; a walk left out of the
-  // only copy a creator keeps is gone. Until the walk can be saved apart
-  // from the tour, the switch therefore starts ticked whenever the opened
-  // file carries a walk (it started ticked only when the recorded photos
-  // could not be placed, and the frames a baked spot showed were kept).
+  // only copy a creator keeps is gone. The walk is saved apart from the
+  // tour now ("Save the debug data", M2 of the debug-captures plan, E2), so
+  // the switch starts unticked: a copy carries the walk only when the
+  // creator asks (for a co-author). It started ticked whenever the file
+  // carried a walk in M1, and before that only when the recorded photos
+  // could not be placed.
   createTourViewerStore();
   const FIXTURE = new URL(
     "../../GpsPlusSlamJs_PhysicsDemo/playwright-tests/fixtures/sample-recording.zip",
@@ -1122,24 +1124,21 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     return wired;
   }
 
-  it("keeps the walk by default for a file that carries one, frames and all", async () => {
+  it("leaves the walk out by default for a file that carries one, frames and all", async () => {
+    // Changed expectation (M2 of the debug-captures plan, E2): the switch
+    // started ticked for such a file in M1, so the default copy kept the
+    // walk. It starts unticked now, since the walk is saved apart.
     const { ctx, dom } = await wireRecordingTour("default");
-    expect(dom.keepScanInput.checked).toBe(true);
+    expect(dom.keepScanInput.checked).toBe(false);
     expect(ctx.finishError).toBeNull();
     const names = await entryNamesOf(ctx.rebuiltZip!.blob);
-    expect(names.filter((n) => WALK.includes(n)).sort()).toEqual(
-      [...WALK].sort(),
-    );
+    expect(names.filter((n) => WALK.includes(n))).toEqual([]);
     expect(names).toContain(`${WRAP}tour.json`);
     expect(names).toContain(`${WRAP}qr/${LEVEL_ID}.json`);
     expect(names).toContain(README);
-    expect(dom.finishStatus.textContent).not.toContain(
-      "leaves out the walk recording",
-    );
-    // Whatever the walk's era: an old one is ticked the same (it was
-    // ticked only because its photos could not be placed).
+    // Whatever the walk's era: an old one starts unticked the same.
     const old = await wireRecordingTour("default", 3);
-    expect(old.dom.keepScanInput.checked).toBe(true);
+    expect(old.dom.keepScanInput.checked).toBe(false);
   });
 
   it("leaves the whole walk out when the creator unticks the switch, frames and all, and says so", async () => {

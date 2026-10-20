@@ -177,7 +177,7 @@ module's sidecar states them as its contract.
   `tour.json` carries none and no station only they kept; the Finish
   replays nothing and assigns nothing.
 - **The published copy leaves the creator's walk out** (scan-pass plan
-  S1, S-D10): unless the creator ticks "Keep the walk recording in the tour
+  S1, S-D10): unless the creator ticks "Keep the debug data in the tour
   file" (`keepScanRow` / `keepScanInput`, on the page BEFORE AR since UI
   round 1, U2 - hidden in a session, since the Finish there reads it -,
   shown only for a tour that carries a walk, counted once per tour and
@@ -185,13 +185,12 @@ module's sidecar states them as its contract.
   `scanEntryNames` of the manifest it writes (`tour-read-set.ts`): the
   action stream, `session.json` and every recorded frame.
   A file the recording did not write (a README, credits) always stays.
-  **The switch starts TICKED whenever the opened file carries a walk**
-  (set once per open in `renderKeepScan`, keyed on the open's
-  `TourSession`, so a later render never undoes the creator's tick, and
-  set while the row is hidden too): until the walk can be saved apart
-  from the tour (the plan's M2), a lean copy would be the only one a
-  creator may keep, without the walk. (Until M1 it was ticked only when
-  the open's bake could not place the recorded photos.) The tick is
+  **The switch starts UNTICKED** (M2 of the debug-captures plan, E2; set
+  once per open in `renderKeepScan`, keyed on the open's `TourSession`,
+  so a later render never undoes the creator's tick, and set while the
+  row is hidden too): the walk is saved apart from the tour. (In M1 it
+  started ticked whenever the file carried a walk, and before that only
+  when the open's bake could not place the recorded photos.) The tick is
   cleared with the Finish step when the tour closes (review #9), and the
   next open sets its own default.
   The ready line then says so (`FINISH_LABELS.scanLeftOut`), because the
@@ -210,8 +209,8 @@ module's sidecar states them as its contract.
 Composed, through `wireCreatorSetup`: `creator-finish.test.ts` (what the
 rebuilt zip holds, the budget, the listed series, no debug camera
 capture written (also none a `tour.json` carried) and nothing replayed at
-the Finish, the walk left out, the switch's default per open - ticked,
-and the walk kept, for a file that carries one; an untick surviving the Finish's render - the save guard's inputs, a finished photo's bytes) and the e2e
+the Finish, the walk left out, the switch's default per open - unticked,
+and the walk left out, for a file that carries one; an untick surviving the Finish's render - the save guard's inputs, a finished photo's bytes) and the e2e
 finish specs; the entry list itself in `finish-entries.test.ts`. The
 sampled mutants of the region "finish"
 (`scripts/fixtures/creator-setup.mutants.json`) are killed.

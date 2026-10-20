@@ -114,11 +114,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   shows or why none (`#debug-status`). The "Show debug data" switch
   starts ticked and only shows or hides them: view state, never in the
   tour document, a save or the draft. Leaving the tour stops it.
-- **Save** builds the tour (`keepScan` from the "Keep the walk recording"
-  switch, shown only for a tour that carries a walk, and ticked at the
-  open whenever it does: until the walk can be saved apart from the
-  tour, a lean copy would be the only one a creator may keep, without
-  the walk; the creator can untick it) and downloads it
+- **Save** builds the tour (`keepScan` from the "Keep the debug data in
+  the tour file" switch, shown only for a tour that carries a walk and
+  unticked at the open (M2 of the debug-captures plan, E2: the walk is
+  saved apart); a file opened for writing keeps its walk in every save,
+  a download included - `keepsWalk`, the switch hidden) and downloads it
   through the framework's `downloadZip` under the session's `savedName()`
   (the page imports none of the Finish's rules; the walk's file is named
   after it too, `walkFileName`); the

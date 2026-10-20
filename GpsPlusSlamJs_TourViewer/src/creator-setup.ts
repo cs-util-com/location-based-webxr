@@ -145,9 +145,9 @@ export interface CreatorSetupDom {
   printPanel: HTMLDetailsElement;
   status: HTMLElement;
   finishButton: HTMLButtonElement;
-  /** "Keep the walk recording in the zip" (scan-pass plan S1, S-D10):
+  /** "Keep the debug data in the tour file" (scan-pass plan S1, S-D10):
    *  shown beside Finish only for a tour that carries entries visitors
-   *  never read; unticked, the Finish leaves them out. */
+   *  never read; unticked (the default), the Finish leaves them out. */
   keepScanRow: HTMLElement;
   keepScanInput: HTMLInputElement;
   /** Step 5 on the page (outside the overlay): where the download lands. */
