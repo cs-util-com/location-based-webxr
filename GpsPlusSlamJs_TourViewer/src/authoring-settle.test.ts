@@ -254,6 +254,10 @@ const DOM_KEYS = [
   "objectList",
   "keepScanRow",
   "keepScanInput",
+  "debugSave",
+  "debugSaveText",
+  "debugSaveButton",
+  "debugSaveStatus",
 ] as const;
 
 function el() {
@@ -1412,6 +1416,128 @@ async function finished(ctx: {
     if (ctx.rebuiltZip !== null || ctx.finishError !== null) return;
   }
 }
+
+describe(
+  "a station started in a visit settles with it",
+  { timeout: SLOW_MS },
+  () => {
+    // Why these tests matter: a station is anchored where its first item
+    // stood at the tap, through the alignment at the tap; the visit's
+    // settle then moves the item by the visit's correction. Left behind,
+    // the anchor sits off the item it was started for (by the size of the
+    // correction), and a correction near the found radius pushes the item
+    // out of its own station. Through the real setup: the station is
+    // re-posed with the visit's objects, and no item moves twice.
+    /** The pin labelled `label` and the station frame it stands in. */
+    function pinAndStation(a: ReturnType<typeof authoring>, label: string) {
+      const pin = a.ctx.tourDocument
+        .objects()
+        .find(
+          (o) => o.object.kind === "pin" && o.object.label === label,
+        )!.object;
+      const station = a.ctx.tourDocument
+        .state()
+        .stations.find((f) => f.id === pin.station)!;
+      return { pin, station };
+    }
+
+    // A shift and a turn of the size a settle corrects in the field; the
+    // anchor must follow at any size, so no value of either would change
+    // the verdict (the planner's own tests sweep both past the radius).
+    for (const [name, end] of [
+      // 10 m north and 1 m up: the anchor takes its item's height too.
+      ["a 10 m correction", yawAlignment(0, [10, 401, 0])],
+      ["a 10 degree correction", yawAlignment(10, [0, 400, 0])],
+    ] as const) {
+      it(`keeps the visit's station anchored at its first item after ${name}`, async () => {
+        const a = authoring();
+        await a.placePin("first", [12, 0, -5]);
+        await a.placePin("second", [20, 0, 3]);
+        const tap = pinAndStation(a, "first");
+        expect(pinAndStation(a, "second").station.id).toBe(tap.station.id);
+        a.setAlignment([...end]);
+
+        a.endVisit();
+
+        const { pin, station } = pinAndStation(a, "first");
+        expect(
+          worldOf(pin.geo).distanceTo(worldOf(tap.pin.geo)),
+          "the settle moved the item",
+        ).toBeGreaterThan(1);
+        expect(station.id).toBe(tap.station.id);
+        expect(station.geo).toMatchObject({
+          lat: pin.geo.lat,
+          lon: pin.geo.lon,
+          alt: pin.geo.alt,
+        });
+        // The second item stands where the settle puts it - once, not
+        // also shifted by its station's move - and still in the station.
+        const second = pinAndStation(a, "second");
+        expect(second.station.id).toBe(station.id);
+        expect(
+          worldOf(second.pin.geo).distanceTo(
+            new Vector3(
+              ...throughAlignment(
+                { position: [20, 0, 3], rotation: [0, 0, 0, 1] },
+                [...end],
+              )!.position,
+            ),
+          ),
+        ).toBeLessThan(1e-3);
+        expect(a.ctx.tourDocument.state().stations).toHaveLength(1);
+      });
+    }
+
+    it("leaves a station an earlier visit started where that visit settled it", async () => {
+      const a = authoring();
+      await a.placePin("first", [12, 0, -5]);
+      a.endVisit();
+      const before = pinAndStation(a, "first").station.geo;
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [10, 400, 0]));
+      await a.placePin("later", [40, 0, 40]);
+      a.endVisit();
+      expect(pinAndStation(a, "first").station.geo).toEqual(before);
+    });
+
+    it("leaves an item of the visit's station that this visit did not place where it stood", async () => {
+      // Why: the settle moves the visit's station rigidly with its items
+      // and then puts back only this visit's items at their settled
+      // spots. An item that joined the station from earlier work (moved
+      // into its radius here, a restored draft) is no item of this visit:
+      // the visit's correction says nothing about where it stands, so it
+      // must not be shifted with the station.
+      const a = authoring();
+      await a.placePin("old", [12, 0, -5]);
+      a.endVisit();
+      a.beginVisit();
+      await a.placePin("first", [40, 0, 40]);
+      const started = pinAndStation(a, "first").station.id;
+      const old = pinAndStation(a, "old").pin;
+      const near = pinAndStation(a, "first").pin.geo;
+      a.ctx.tourDocument.move(
+        { ...old, geo: { ...old.geo, lat: near.lat + 0.00003, lon: near.lon } },
+        "a note",
+      );
+      const joined = pinAndStation(a, "old");
+      expect(joined.station.id, "it joined the visit's station").toBe(started);
+      a.setAlignment(yawAlignment(0, [10, 401, 0]));
+
+      a.endVisit();
+
+      const after = pinAndStation(a, "old");
+      expect(after.station.id).toBe(started);
+      expect(
+        worldOf(after.pin.geo).distanceTo(worldOf(joined.pin.geo)),
+        "not shifted by the station's settle",
+      ).toBeLessThan(1e-3);
+      expect(
+        worldOf(pinAndStation(a, "first").pin.geo).distanceTo(worldOf(near)),
+        "the visit's own item did settle",
+      ).toBeGreaterThan(1);
+    });
+  },
+);
 
 describe(
   "each visit settles once, and what arrives late joins its visit's settle (M2c review #1, #6)",
@@ -2922,6 +3048,43 @@ describe(
       expect(a.dom.finishStatus.textContent).not.toMatch(/disagree by about/);
     });
 
+    // Why this test matters: a station this visit started stands at its
+    // first item, which the settle put through this visit's alignment -
+    // the improved code's already. Taken along by the code as well, it
+    // would move off its items, which the settle puts back.
+    it("leaves a station this visit started at its first item, though the improved code reaches it", async () => {
+      const { a } = await secondVisit({ yawDeg: 20, northM: 3, walkM: 30 });
+      // About 28 m from the code and 29 m from the near pin's station: a
+      // station of its own, within the code's reach.
+      await a.placePin("new", [-28, 0, -12]);
+
+      a.endVisit();
+      expect(codePosition(a)?.decision).toEqual({ kind: "replace" });
+      expect(codePosition(a)?.applied).toBe(true);
+      const pin = a.ctx.tourDocument
+        .objects()
+        .find(
+          (o) => o.object.kind === "pin" && o.object.label === "new",
+        )!.object;
+      const station = a.ctx.tourDocument
+        .state()
+        .stations.find((f) => f.id === pin.station)!;
+      const near = a.ctx.tourDocument
+        .objects()
+        .find(
+          (o) => o.object.kind === "pin" && o.object.label === "near",
+        )!.object;
+      expect(station.id).not.toBe(near.station);
+      expect(station.geo).toMatchObject({
+        lat: pin.geo.lat,
+        lon: pin.geo.lon,
+        alt: pin.geo.alt,
+      });
+      expect(codePosition(a)?.movedWithCode.map((m) => m.id)).toEqual([
+        near.id,
+      ]);
+    });
+
     it("says nothing of a turn when the visit fits the code within the threshold", async () => {
       const { a } = await secondVisit({ yawDeg: 20, northM: 3, walkM: 10 });
       await openFinishableTour(a);
@@ -2985,6 +3148,68 @@ describe(
       expect(after.get("far")).toEqual(before.get("far"));
       expect(codePosition(a)?.movedWithCode).toHaveLength(1);
     });
+
+    /** The station frame the pin labelled `label` stands in. */
+    function stationOf(a: ReturnType<typeof authoring>, label: string) {
+      const pin = a.ctx.tourDocument
+        .entries()
+        .find((p) => p.object.kind === "pin" && p.object.label === label)!;
+      return a.ctx.tourDocument
+        .state()
+        .stations.find((s) => s.id === pin.object.station)!;
+    }
+
+    // Why these tests matter (characterization before the codes move into
+    // the store, plan 2026-10-20-1159 M3a/M3b): a settle that improves a
+    // code saves the code in the code book (`saveLevel`,
+    // creator-settle.ts:1028-1031) and moves the stations it takes along
+    // through the document (`moveStationsAlong`, :1385-1398), whose undo
+    // history the code book is not part of. An undo of that settle's last
+    // step puts the station back - that half holds today and must keep
+    // holding.
+    it("an undo of the settle's station move puts the station back", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      const before = stationOf(a, "near").geo;
+      a.endVisit();
+      expect(codePosition(a)?.applied).toBe(true);
+      expect(a.codes.savedText(stored.id), "the code improved").not.toBe(
+        stored.json,
+      );
+      expect(stationOf(a, "near").geo, "the code took it along").not.toEqual(
+        before,
+      );
+      expect(a.ctx.tourDocument.undo().kind).toBe("undone");
+      expect(stationOf(a, "near").geo).toEqual(before);
+    });
+
+    // TODAY'S SPLIT, a known divergence (`it.fails`, the convention of
+    // tour-document-parity.test.ts): the same undo leaves the improved
+    // code in place, so the station is back at the old code's spot while
+    // the code book still holds - and the next Finish writes - the new
+    // one. The code in hand's text wins in the book (`setBook`,
+    // creator-codes.ts:173-185), so nothing short of the undo itself can
+    // put the earlier text back. M3b's one-step settle with its undo
+    // listener turns this row red; then the marker comes off, the
+    // assertion stays as it is.
+    it.fails(
+      "an undo of the settle's station move takes the code's improvement back too [DIVERGES until: M3b, one undo step per settle]",
+      async () => {
+        const { a, stored } = await secondVisit({
+          yawDeg: 20,
+          northM: 3,
+          walkM: 30,
+        });
+        a.endVisit();
+        expect(a.codes.savedText(stored.id)).not.toBe(stored.json);
+        a.ctx.tourDocument.undo();
+        a.setup.renderAuthorReadout();
+        expect(a.codes.savedText(stored.id)).toBe(stored.json);
+      },
+    );
 
     // Why this test matters (code book plan M4b, the owner's choice after
     // the M3 sweep): an improved code took every pin within 40 m along,
@@ -4824,9 +5049,19 @@ describe(
       return photo;
     }
 
+    /** A pin a metre from the camera, placed before anything is armed:
+     *  the station the rule alone would seat the photo in. */
+    async function stationNearby(a: ReturnType<typeof authoring>) {
+      await a.placePin("Nearby", [1, 0, 0]);
+      const station = a.ctx.tourDocument.entries().at(-1)!.object.station;
+      expect(station).toBeDefined();
+      return station;
+    }
+
     it("an armed photo starts its own station; the arm goes at the tap, not at the encode's end", async () => {
       const a = authoring();
       await a.mint();
+      const nearby = await stationNearby(a);
       a.dom.newStationButton.click();
       expect(a.ctx.tourDocument.newStationArmed()).toBe(true);
       a.encodes.hold = true;
@@ -4836,6 +5071,7 @@ describe(
       for (const land of a.encodes.waiting.splice(0)) land();
       await flush();
       expect(lastPhoto(a).station).toBeDefined();
+      expect(lastPhoto(a).station).not.toBe(nearby);
       expect(a.ctx.placementNote).toMatch(/^Photo placed/);
       expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
     });
@@ -4843,6 +5079,7 @@ describe(
     it("armed at the tap, the photo starts its station even when the AR visit ends during its encode", async () => {
       const a = authoring();
       await a.mint();
+      const nearby = await stationNearby(a);
       a.dom.newStationButton.click();
       a.encodes.hold = true;
       a.tapPhoto(CAMERA);
@@ -4850,6 +5087,7 @@ describe(
       for (const land of a.encodes.waiting.splice(0)) land();
       await flush();
       expect(lastPhoto(a).station).toBeDefined();
+      expect(lastPhoto(a).station).not.toBe(nearby);
       expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
     });
 
@@ -4862,12 +5100,18 @@ describe(
       expect(a.ctx.tourDocument.newStationArmed()).toBe(true);
       for (const land of a.encodes.waiting.splice(0)) land();
       await flush();
-      expect(lastPhoto(a).station).toBeUndefined();
+      // The photo is seated by the station rule (every object names a
+      // station), and the arm still waits.
+      const photoStation = lastPhoto(a).station;
+      expect(photoStation).toBeDefined();
       expect(a.ctx.tourDocument.newStationArmed()).toBe(true);
+      // A few metres from the photo, where the rule alone would put the pin
+      // into the photo's station: the arm makes it start its own.
       await a.placePin("Next", [3, 0, 1]);
       const next = a.ctx.tourDocument.entries().at(-1)!.object;
       expect(next.kind).toBe("pin");
       expect(next.station).toBeDefined();
+      expect(next.station).not.toBe(photoStation);
       expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
     });
 

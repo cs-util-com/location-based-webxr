@@ -32,22 +32,27 @@
  *   viewer pipeline, `qr-viewer-mode.ts`, D20), the one guard left since
  *   the lock-hold went (review 2 #5). Inside that window a visitor who
  *   scans a moved poster near another station may find it early.
- * - **Judged by the raw fixes' accuracy unless a code lined it up**
- *   (`station-bands.ts` `judgedAccuracy`, `judgedStationBands`): the
- *   median of the latest fixes, and for a lone fix standing in for the
+ * - **Judged by the framework's one precision rule** (`position-precision`,
+ *   the same in every app): an aligned position a code holds is `'code'`,
+ *   trusted whatever the fixes say (M5c review #1); any other is `'gps'`
+ *   by the device fixes' median, and for a lone fix standing in for the
  *   position the worse of that and the fix's own (r881 re-review M-A).
  *   Above the ceiling the line says the GPS is too weak and nothing is
- *   found (PR #640 review); the aligned position a code lined up is
- *   trusted whatever the fixes say (M5c review #1). Being aligned alone
- *   earns no trust: the library aligns a session from its first fix, at
- *   any accuracy.
+ *   found (PR #640 review). Being aligned alone earns no trust: the
+ *   library aligns a session from its first fix, at any accuracy. With no
+ *   code and no accuracy to judge by (`'none'`: without location once a
+ *   code's trust ended, or the next AR entry before a code locks in it)
+ *   nothing is found, presence holds (a station a code made present ends
+ *   with the code, as below), nothing points or measures by that
+ *   alignment (no HUD target, no approach, no trail, no "nearest"), and
+ *   the line asks for a code.
  * - **The HUD's arrival is the found radius** (`station-bands.ts`, §8 D9):
  *   each target's `distanceMin`/`distanceMax` are the station's found band at
  *   the measured accuracy, and the target sits at the visitor's own height so
  *   the HUD's distance is the horizontal one the run judges.
  * - **One gate for found and presence** (visitor plan 2026-10-18-2349 §3):
- *   the same judged position, judged accuracy, `tooWeakToGuide` and
- *   readiness decide the story's arrival and the station whose content
+ *   the same judged position, its precision (`tooWeak`) and readiness
+ *   decide the story's arrival and the station whose content
  *   shows (`station-presence.ts`), in one function (`judged`), so the two
  *   never disagree. Presence reads every station, not the offer (V-D5); it
  *   lives in the page's store (`visitor-guide-slice.ts`), dispatched only
@@ -78,11 +83,11 @@ import { Vector3 } from "three";
 import { objectPoseNue } from "./content-placement.js";
 import type { StagePose } from "./scene-stage.js";
 import {
-  judgedAccuracy,
-  judgedStationBands,
-  tooWeakToGuide,
-  type StationBands,
-} from "./station-bands.js";
+  positionPrecision,
+  type PositionPrecision,
+} from "gps-plus-slam-app-framework/state/position-precision";
+
+import { judgedStationBands, type StationBands } from "./station-bands.js";
 import {
   createStationRun,
   stationTitle,
@@ -123,7 +128,10 @@ export interface StationGuideDeps {
   zero(): LatLong | null;
   visitor(): VisitorPosition;
   /** Whether a code lined the alignment up (`tour-flow.ts` `codeLinedUp`):
-   *  its position is then trusted whatever the raw fixes' accuracy says. */
+   *  the guide's statement that a code holds it (`codeHold` of the
+   *  framework's precision rule), so its position is trusted whatever the
+   *  raw fixes' accuracy says. It ends only on events (a veto, an
+   *  odometry-frame change, leaving AR, another tour), never by the clock. */
   codeLinedUp(): boolean;
   /** Whether the alignment may be judged on now (`tour-flow.ts`
    *  `alignmentReady`: tracking ready, or a code lined it up; re-read each
@@ -224,6 +232,13 @@ export const SKIP_UNDO_MS = DEFAULT_TOAST_LINGER_MS;
  */
 export const FIX_MAX_AGE_MS = 5_000;
 
+/** The line's ask when nothing speaks for the position's precision
+ *  (`'none'`: no code holds it and no fix states an accuracy, as without
+ *  location once a code's trust ended): only a code can place the visitor
+ *  again. */
+const NO_PRECISION_HINT =
+  "scan one of the tour's codes so the guide knows where you are.";
+
 /**
  * How many stations the HUD marks at once: the nearest unfound offered
  * ones (visitor plan 2026-10-18-2349, the owner's "where the closest five
@@ -242,15 +257,13 @@ interface Measurement {
   readonly visitor: VisitorPosition;
   /** The best position this measurement judged by (`bestPosition`). */
   readonly best: readonly [number, number, number] | null;
-  /** The raw fixes' accuracy for `best`: their median, and for a lone
-   *  fix the worse of that and the fix's own (r881 re-review M-A: one
-   *  ±40 m fix after a ±5 m run hid behind the median). */
-  readonly rawAccuracyM: number | null;
-  /** A code lined the alignment up and `best` is the aligned position:
-   *  trusted whatever the raw fixes' accuracy (`judgedAccuracy`), through
-   *  a tracking drop too (r881 review L1: the line must not call it too
-   *  weak then); never for a lone raw fix (re-review L-A). */
-  readonly codeLinedUp: boolean;
+  /** How precise `best` is (`precisionOf`): `'code'` while a code holds
+   *  the aligned position, through a tracking drop too (r881 review L1:
+   *  the line must not call it too weak then), never for a lone raw fix
+   *  (re-review L-A); otherwise the device fixes', for a lone fix the
+   *  worse of their median and its own (re-review M-A: one ±40 m fix after
+   *  a ±5 m run hid behind the median). */
+  readonly precision: PositionPrecision;
   /** The camera position for what needs a heading (the HUD's arrows, the
    *  breadcrumbs, the figure's turn): once this AR entry's alignment was
    *  ready, null before (r881 re-review L-B: no flicker in a dip). */
@@ -262,8 +275,8 @@ interface Measurement {
 /** What one tick may judge (`judged`): the arrival and presence alike. */
 interface Judgement {
   readonly distances: ReadonlyMap<string, number>;
-  /** The judged accuracy (`judgedAccuracy`; null: a code lined it up). */
-  readonly accuracyM: number | null;
+  /** The judged position's precision: never too weak here. */
+  readonly precision: PositionPrecision;
 }
 
 /** What a tap on the skip button does (its label says which). */
@@ -341,7 +354,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  first run): the store's presence and its "show all" reset at the end
    *  of the tick. */
   let tourChangePending = false;
-  /** The present station was last judged on a position a code lined up:
+  /** The present station was last judged on a position a code held:
    *  once the code goes (a veto) and nothing else can judge, it ends. */
   let presentByCode = false;
 
@@ -384,7 +397,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  the worse of the median and its own accuracy (r881 review H1:
    *  readiness needs a walk with turns, and a visitor standing at a
    *  station had no guidance at all; re-review M-A). Only an aligned
-   *  position a code lined up is trusted (`codeLinedUp`). */
+   *  position a code holds is trusted (`precisionOf`). */
   function measure(): void {
     poseCache.clear();
     measuredZero = deps.zero();
@@ -399,8 +412,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     last = {
       visitor,
       best,
-      rawAccuracyM: rawAccuracyFor(visitor, position?.loneFix === true),
-      codeLinedUp: visitor.aligned && lined,
+      precision: precisionOf(visitor, position?.loneFix === true, lined),
       headingNue: headingReady ? seen.nue : null,
       distances: horizontalDistances(best),
     };
@@ -453,30 +465,22 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       : null;
   }
 
-  /** The accuracy that speaks for the position judged by
-   *  (`judgedAccuracy`): the raw fixes' (`rawAccuracyM`), null for an
-   *  aligned position a code lined up. Read by the line and the run
-   *  alike. */
-  function accuracyOf(m: Measurement): number | null {
-    return judgedAccuracy(m.rawAccuracyM, m.codeLinedUp);
-  }
-
   /** A station's bands at the position judged by, by the same rule
    *  (`judgedStationBands`, PR #642 review). Read by the prefetch, the
    *  HUD's targets and the breadcrumbs' stop alike. */
   function bandsOf(station: TourStation, m: Measurement): StationBands {
-    return judgedStationBands(station, m.rawAccuracyM, m.codeLinedUp);
+    return judgedStationBands(station, m.precision);
   }
 
   /** The one gate (visitor plan §3): what this tick may judge, for the
    *  run's arrival and the present station alike; null when nothing may
    *  be judged - no position, no GPS zero yet (no distance), or a
-   *  position too weak to guide by (`tooWeakToGuide`). */
+   *  position too weak to guide by (`PositionPrecision.tooWeak`: GPS above
+   *  the ceiling, or nothing to judge by). */
   function judged(m: Measurement): Judgement | null {
     if (m.best === null || m.distances.size === 0) return null;
-    const accuracyM = accuracyOf(m);
-    if (tooWeakToGuide(accuracyM)) return null;
-    return { distances: m.distances, accuracyM };
+    if (m.precision.tooWeak) return null;
+    return { distances: m.distances, precision: m.precision };
   }
 
   /** Whether the guide waits for a heading (D34), in the store; only a
@@ -489,23 +493,26 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     }
   }
 
-  /** What presence may read this tick: the gate's judgement, else a fix
-   *  too weak to guide by - which can only end presence (`presenceAfter`,
-   *  PR review S1) - else nothing (null: hold). */
+  /** What presence may read this tick: the gate's judgement, else a GPS
+   *  fix too weak to guide by - which can only end presence
+   *  (`presenceAfter`, PR review S1) - else nothing (null: hold; also for
+   *  `'none'`, which is no verdict on GPS). */
   function presenceJudgement(
     m: Measurement,
     j: Judgement | null,
   ): PresenceJudgement | null {
     if (runStations === null) return null;
-    const accuracyM = j?.accuracyM ?? accuracyOf(m);
-    const weak = j === null && m.best !== null && m.distances.size > 0;
-    if (j === null && !(weak && tooWeakToGuide(accuracyM))) return null;
+    const weakGps =
+      m.best !== null &&
+      m.distances.size > 0 &&
+      m.precision.source === "gps" &&
+      m.precision.tooWeak;
+    if (j === null && !weakGps) return null;
     return {
       candidates: presenceCandidates(runStations, m.distances, (station) =>
         bandsOf(station, m),
       ),
-      accuracyM,
-      codeLinedUp: m.codeLinedUp,
+      precision: m.precision,
     };
   }
 
@@ -527,14 +534,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     }
     if (m === null) return;
     const state = store.getState().visitorGuide;
-    if (j === null && presentByCode && !m.codeLinedUp) {
+    if (j === null && presentByCode && m.precision.source !== "code") {
       presentByCode = false;
       if (state.presentStationId !== null) store.dispatch(presenceCleared());
       return;
     }
     const judgement = presenceJudgement(m, j);
     if (judgement === null) return;
-    if (j !== null) presentByCode = m.codeLinedUp;
+    if (j !== null) presentByCode = m.precision.source === "code";
     if (presenceAfter(state, judgement) !== state.presentStationId) {
       store.dispatch(presenceJudged(judgement));
     }
@@ -580,10 +587,18 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     deps.onDone?.(id);
   }
 
-  /** The prefetch's view of the offer: each offered station's distance. */
+  /** Nothing vouches for this measurement's alignment (`'none'`): nothing
+   *  points or measures by it - no HUD target, no approach, no trail from
+   *  the visitor, no "nearest" in the line. */
+  function unjudged(m: Measurement): boolean {
+    return m.precision.source === "none";
+  }
+
+  /** The prefetch's view of the offer: each offered station's distance;
+   *  none while the position is `unjudged`. */
   function approach(m: Measurement): void {
     const { distances } = m;
-    if (deps.onApproach === undefined || run === null) return;
+    if (deps.onApproach === undefined || run === null || unjudged(m)) return;
     for (const id of run.offered()) {
       const d = distances.get(id);
       const station = stationById(id);
@@ -609,9 +624,11 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** The HUD's markers: the `HUD_NEAREST_STATIONS` nearest offered
    *  stations not yet found (a station with no distance yet counts as
    *  farthest), in the offer's order. A present station that is offered
-   *  is found already, so these are the stations whose content is hidden. */
+   *  is found already, so these are the stations whose content is hidden.
+   *  None while the position is `unjudged`. */
   function hudTargets(): WayfindingTarget[] {
     if (run === null || last === null || last.headingNue === null) return [];
+    if (unjudged(last)) return [];
     const eyeHeight = last.headingNue[1];
     const distances = last.distances;
     const targets: WayfindingTarget[] = [];
@@ -660,16 +677,20 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const station = stationById(focus)!;
     const title = stationTitle(station);
     const d = last?.distances.get(focus);
+    const offered = run.offered().length;
+    const which = offered > 1 ? `${String(offered)} stations to find` : null;
     const waiting =
-      run.offered().length > 1
-        ? `${String(run.offered().length)} stations to find - nearest: ${title}`
-        : `Next: ${title}`;
+      which === null ? `Next: ${title}` : `${which} - nearest: ${title}`;
     if (last === null) return `${lead}${waiting} - waiting for your position…`;
     // Before the position: a fix too weak to guide by is what the visitor
     // can act on (step into the open), with a position or still without.
-    const accuracyM = accuracyOf(last);
-    if (accuracyM !== null && tooWeakToGuide(accuracyM)) {
-      return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(accuracyM)}); step into the open.`;
+    const { precision } = last;
+    if (
+      precision.source === "gps" &&
+      precision.tooWeak &&
+      precision.accuracyM !== null
+    ) {
+      return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(precision.accuracyM)}); step into the open.`;
     }
     if (last.best === null) {
       return `${lead}${waiting} - waiting for your position…`;
@@ -678,6 +699,12 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     // yet means no session zero to measure it in yet.
     if (d === undefined) {
       return `${lead}${waiting} - waiting for your position…`;
+    }
+    // No code and no accuracy speaks for the position (without location
+    // once a code's trust ended): no distance that looks measured, no
+    // "nearest" by that position, and the one thing that helps.
+    if (unjudged(last)) {
+      return `${lead}${which ?? `Next: ${title}`} - ${NO_PRECISION_HINT}`;
     }
     return `${lead}${waiting}, ${distanceText(d)}`;
   }
@@ -696,7 +723,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function render(): void {
     // A code lock can find a station before the guide has ticked at all.
     if (last === null) measure();
-    deps.onGuide?.(last!.headingNue, guideTarget());
+    // An unjudged position lays no trail: with no visitor there is none.
+    deps.onGuide?.(unjudged(last!) ? null : last!.headingNue, guideTarget());
     const upcoming = run?.upcoming() ?? null;
     const next = upcoming === null ? undefined : stationById(upcoming);
     if (next !== undefined) deps.onUpcoming?.(next);
@@ -832,7 +860,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
           current.observe({
             distances: judgement.distances,
             nowMs: deps.now(),
-            accuracyM: judgement.accuracyM,
+            precision: judgement.precision,
           }),
         );
       }
@@ -911,20 +939,26 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   return guide;
 }
 
-/** The raw accuracy that speaks for a position: the median of the latest
- *  fixes, and for a lone fix the worse of that and its own. */
-function rawAccuracyFor(
+/**
+ * How precise the position judged by is, by the framework's one rule
+ * (`position-precision`). A lone fix is judged as one (the worse of the
+ * device fixes' median and its own accuracy); every other measurement as
+ * the session's alignment, a code holding it only while the visitor counts
+ * as aligned (`measure`: a lone fix never borrows a code's trust). With no
+ * position this tick (a tracking drop, a stale fix) the line and the HUD's
+ * bands still speak of that alignment's precision - GPS too weak to guide
+ * by is what the visitor can act on, with a position or still without -
+ * while the gate judges nothing (`judged`).
+ */
+function precisionOf(
   visitor: VisitorPosition,
   loneFix: boolean,
-): number | null {
-  return loneFix
-    ? worseAccuracy(visitor.accuracyM, visitor.fixAccuracyM)
-    : visitor.accuracyM;
-}
-
-/** The worse of two accuracies (m); an unknown one gives way to a known. */
-function worseAccuracy(a: number | null, b: number | null): number | null {
-  if (a === null) return b;
-  if (b === null) return a;
-  return Math.max(a, b);
+  lined: boolean,
+): PositionPrecision {
+  return positionPrecision({
+    position: loneFix ? "lone-fix" : "aligned",
+    codeHold: visitor.aligned && lined,
+    gpsPoints: visitor.gpsPoints,
+    loneFixAccuracyM: visitor.fixAccuracyM,
+  });
 }

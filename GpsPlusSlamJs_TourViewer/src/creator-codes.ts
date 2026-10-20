@@ -5,42 +5,44 @@
  * and the levels a Finish of this page wrote. Every creator module reads
  * and writes them through this module.
  *
+ * A facade over the page's store (debug-captures plan M3a): the tour's
+ * codes are the tour document's (`tourDocument`'s `codes`, whose reducers
+ * apply `code-book.ts`'s rules), the hand and the sightings the page's
+ * (`creatorCodes`, `creator-codes-slice.ts`). It dispatches their actions
+ * and reads their selectors; it holds no state of its own.
+ *
  * Its API is per code wherever the callers allow (`hasStoredPose`,
  * `references`); "in hand" is the one-code view today's callers need,
- * over the code book (`code-book.ts`) holding every code. All of it is
- * private here (code book plan M5d-2): the tour's close reaches it through
- * {@link CreatorCodes.reset}.
+ * over the code book holding every code. The tour's close reaches it
+ * through {@link CreatorCodes.reset}.
  *
  * @see creator-codes.ts.md
  */
 
+import type { UnknownAction } from "@reduxjs/toolkit";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import {
-  afterFinish,
-  codesNotHosted,
-  codesToWrite,
-  liveText,
-  withDraft,
-  withHosted,
-  withMeasurement,
-  withoutMeasurement,
-  withReference,
-  withSaved,
-  type CodeBook,
+  codeLiveText,
+  codeSavedText,
+  documentCodes,
+  hostedLevelTexts,
+  levelsNotHosted,
+  levelsToWrite,
+  selectTourDocument,
+  tourDocumentActions,
   type LevelText,
-} from "./code-book.js";
+} from "./tour-document.js";
+import {
+  creatorCodesActions,
+  selectCreatorCodes,
+  type StoredSighting,
+} from "./creator-codes-slice.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
 import {
   storedGeo,
   type CodeMeasurement,
   type CodeSighting,
 } from "./visit-settle.js";
-
-/** A stored code's latest sighting in a visit (the visit log reads it). */
-interface StoredSighting {
-  readonly visit: number;
-  readonly sighting: CodeSighting;
-}
 
 export interface CreatorCodes {
   /** The code in hand, or null. */
@@ -134,63 +136,31 @@ export function wireCreatorCodes(deps: {
   onIdsChanged?: () => void;
 }): CreatorCodes {
   const { ctx } = deps;
-  /**
-   * The latest stable sighting in the running visit of EVERY code with a
-   * stored pose - the level in hand or any level of the open tour - by
-   * level id (M3a/M3b review #6). Only the visit log reads it: each becomes
-   * that code's visit record, through the visit's plain alignment, so the
-   * tour's other codes gather visits too. It never makes a code the one in
-   * hand, and never corrects anything. Tagged with its visit, so a visit
-   * that ended without a settle cannot leak into the next one's log.
-   */
-  const storedCodeSightings = new Map<string, StoredSighting>();
-  /** The code in hand: the code taken last, ready to be written as
-   *  `qr/<id>.json`; null until the mint's async identity hash landed. */
-  let hand: LevelText | null = null;
-  /** The hand's measurement in this page (the fused pose, the size, the AR
-   *  visit), what the settle re-mints it from; null for a code taken as a
-   *  stored reference, even when the book still holds an earlier visit's
-   *  measurement of it (two readers do not filter by visit). */
-  let handMeasurement: CodeMeasurement | null = null;
-  /** The running visit's latest stable sighting of the code in hand (or
-   *  of a code seen while the hand was empty): what a later visit is
-   *  corrected through (D10b) and what hides the entry hint (§3.2a).
-   *  Cleared at each visit's end - odometry does not carry over. */
-  let visitSighting: CodeSighting | null = null;
-  /**
-   * Every code this page took, with its saved text, measurement and what
-   * the last Finish wrote (`code-book.ts`). Written only through
-   * {@link setBook}.
-   */
-  let book: CodeBook = new Map();
+  const { store } = ctx;
+  const doc = () => selectTourDocument(store.getState());
+  const mine = () => selectCreatorCodes(store.getState());
+  const book = () => documentCodes(doc());
+  const hand = (): LevelText | null => mine().hand;
 
   /**
-   * The one write of the book. The code in hand's text wins for its own
-   * code: a change that replaced it (a draft restored over a code with no
-   * live change, a dropped measurement) is undone, as the hand still
-   * holds it (code book plan M5d-2, the review's #1).
+   * Every change of the book goes through here: the print panel hears it
+   * exactly when a code joins, never for a new text of a known code (its
+   * listener reruns a spelling search over the codes).
    */
-  function setBook(next: CodeBook): void {
-    const before = book;
-    book =
-      hand === null || next.get(hand.id)?.saved === hand.json
-        ? next
-        : withReference(withSaved(next, hand), hand.id);
+  function changeBook(action: UnknownAction): void {
+    const before = new Set(book().map((c) => c.levelId));
+    store.dispatch(action);
+    const after = book();
     if (
-      book.size !== before.size ||
-      [...book.keys()].some((id) => !before.has(id))
+      after.length !== before.size ||
+      after.some((c) => !before.has(c.levelId))
     ) {
       deps.onIdsChanged?.();
     }
   }
 
-  /** The book with the hosted texts filled in (the Finish's baseline). */
-  function withHostedTexts(): CodeBook {
-    return withHosted(book, ctx.currentLevelTexts ?? new Map());
-  }
-
   function references(): { levelId: string; geo: QrGeoPose | null }[] {
-    const inHand = hand;
+    const inHand = hand();
     const out: { levelId: string; geo: QrGeoPose | null }[] =
       inHand === null
         ? []
@@ -198,7 +168,7 @@ export function wireCreatorCodes(deps: {
     const listed = new Set(out.map((r) => r.levelId));
     // The book's other codes (M4e): measured or kept by this page, at the
     // pose the next Finish writes - which replaces a hosted one.
-    for (const code of book.values()) {
+    for (const code of book()) {
       if (code.saved === null || listed.has(code.levelId)) continue;
       listed.add(code.levelId);
       out.push({ levelId: code.levelId, geo: storedGeo(code.saved) });
@@ -210,62 +180,63 @@ export function wireCreatorCodes(deps: {
     return out;
   }
 
+  const codeOf = (levelId: string) => book().find((c) => c.levelId === levelId);
+
   return {
-    inHand: () => hand,
-    measurement: () => handMeasurement,
-    sighting: () => visitSighting,
+    inHand: hand,
+    measurement: () => mine().handMeasurement,
+    sighting: () => mine().visitSighting,
     setInHand: (level, measurement) => {
-      hand = level;
-      handMeasurement = measurement;
-      if (level === null) return;
-      setBook(
-        measurement === null
-          ? withReference(withSaved(book, level), level.id)
-          : withMeasurement(book, level, measurement),
-      );
+      changeBook(tourDocumentActions.codeTaken({ level, measurement }));
     },
     restoreInHand: (level) => {
-      if (hand !== null) return false;
+      if (hand() !== null) return false;
       // Live work on the code is newer than the draft and wins, as in
       // `restoreLevels` (the M5d-2 review's #9a).
-      const live = liveText(book, level.id, ctx.currentLevelTexts ?? undefined);
-      hand = { id: level.id, json: live ?? level.json };
-      setBook(withReference(withSaved(book, hand), hand.id));
+      const live = codeLiveText(doc(), level.id);
+      changeBook(
+        tourDocumentActions.codeTakenFromDraft({
+          level: { id: level.id, json: live ?? level.json },
+        }),
+      );
       return true;
     },
     clearInHand: () => {
       // The code in hand is measured again (a new print size): its new
       // pose no longer counts, and its saved text falls back to the zip's.
-      const id = hand?.id;
-      hand = null;
-      handMeasurement = null;
-      if (id !== undefined) setBook(withoutMeasurement(book, id));
+      changeBook(
+        tourDocumentActions.codeLetGo({ levelId: hand()?.id ?? null }),
+      );
     },
     setSighting: (sighting) => {
-      visitSighting = sighting;
+      store.dispatch(creatorCodesActions.sightingSeen(sighting));
     },
     forgetSightings: (levelId) => {
-      storedCodeSightings.delete(levelId);
-      if (visitSighting?.levelId === levelId) visitSighting = null;
+      store.dispatch(creatorCodesActions.sightingsForgotten({ levelId }));
     },
     hasStoredPose: (levelId) => {
-      if (hand?.id === levelId) return true;
-      const saved = book.get(levelId)?.saved ?? null;
+      if (hand()?.id === levelId) return true;
+      const saved = codeSavedText(doc(), levelId);
       if (saved !== null && storedGeo(saved) !== null) return true;
       return ctx.currentLevels?.get(levelId)?.qr.geo !== undefined;
     },
-    savedText: (levelId) => book.get(levelId)?.saved ?? null,
+    savedText: (levelId) => codeSavedText(doc(), levelId),
     references,
     storedPoses: () =>
       references().flatMap((r) => (r.geo === null ? [] : [r.geo])),
     noteStoredSighting: (levelId, visit, sighting) => {
-      storedCodeSightings.set(levelId, { visit, sighting });
+      store.dispatch(
+        creatorCodesActions.storedCodeSighted({ levelId, visit, sighting }),
+      );
     },
-    storedSightings: () => storedCodeSightings.values(),
-    toWrite: () => codesToWrite(withHostedTexts()),
-    notHosted: () => codesNotHosted(withHostedTexts()),
+    storedSightings: () =>
+      mine()
+        .storedSightings.map((s) => s.seen)
+        .values(),
+    toWrite: () => levelsToWrite(doc()),
+    notHosted: () => levelsNotHosted(doc()),
     visitCodes: (visit) => {
-      const measured = [...book.values()].flatMap((c) =>
+      const measured = book().flatMap((c) =>
         c.measurement?.visit === visit && c.saved !== null
           ? [
               {
@@ -276,67 +247,71 @@ export function wireCreatorCodes(deps: {
           : [],
       );
       const taken = new Set(measured.map((c) => c.level.id));
-      const sighted = [...storedCodeSightings].flatMap(([id, seen]) => {
-        if (seen.visit !== visit || taken.has(id)) return [];
-        const json = book.get(id)?.saved ?? ctx.currentLevelTexts?.get(id);
-        return json === undefined || json === null
+      const hosted = hostedLevelTexts(doc());
+      const sighted = mine().storedSightings.flatMap(({ levelId, seen }) => {
+        if (seen.visit !== visit || taken.has(levelId)) return [];
+        const json = codeSavedText(doc(), levelId) ?? hosted?.get(levelId);
+        return json === undefined
           ? []
-          : [{ level: { id, json }, measurement: null }];
+          : [{ level: { id: levelId, json }, measurement: null }];
       });
       return [...measured, ...sighted];
     },
     saveLevel: (level) => {
-      if (hand?.id === level.id) hand = level;
-      setBook(withSaved(book, level));
+      const held = hand();
+      changeBook(
+        tourDocumentActions.codeSaved({
+          level,
+          hand: held?.id === level.id ? level : held,
+        }),
+      );
     },
     numbering: () => {
       const ids = [...(ctx.currentLevels?.keys() ?? [])];
       const listed = new Set(ids);
       // A code with no saved pose is not among the references the summary
       // numbers (M5b review #6).
-      for (const [id, code] of book) {
-        if (!listed.has(id) && code.saved !== null) ids.push(id);
+      for (const code of book()) {
+        if (!listed.has(code.levelId) && code.saved !== null) {
+          ids.push(code.levelId);
+        }
       }
       return ids;
     },
-    ids: () => [...book.keys()],
-    inBook: (levelId) => book.has(levelId),
+    ids: () => book().map((c) => c.levelId),
+    inBook: (levelId) => codeOf(levelId) !== undefined,
     dropMeasurement: (levelId) => {
-      setBook(withoutMeasurement(book, levelId));
+      changeBook(
+        tourDocumentActions.codeMeasurementDropped({ levelId, hand: hand() }),
+      );
     },
     measuredIn: (levelId, visit) =>
-      book.get(levelId)?.measurement?.visit === visit,
+      codeOf(levelId)?.measurement?.visit === visit,
     restoreLevels: (levels) => {
-      const hosted = ctx.currentLevelTexts ?? undefined;
+      const held = hand();
       // A code in hand this page only KEPT is no live work: the draft's
-      // newer text takes the hand too, or `setBook` would put the kept
-      // text straight back (PR #568 review).
+      // newer text takes the hand too, or the hand's text would win
+      // straight back (PR #568 review).
       const drafted =
-        hand === null
+        held === null
           ? undefined
-          : levels.filter((l) => l.id === hand?.id).at(-1);
-      if (
-        drafted !== undefined &&
-        liveText(book, drafted.id, hosted) === null
-      ) {
-        hand = { id: drafted.id, json: drafted.json };
-      }
-      setBook(withDraft(book, levels, hosted));
+          : levels.filter((l) => l.id === held.id).at(-1);
+      const next =
+        drafted !== undefined && codeLiveText(doc(), drafted.id) === null
+          ? { id: drafted.id, json: drafted.json }
+          : held;
+      changeBook(tourDocumentActions.codesRestored({ levels, hand: next }));
     },
     finished: (written) => {
-      setBook(afterFinish(withHostedTexts(), written));
+      changeBook(tourDocumentActions.codesFinished({ written, hand: hand() }));
     },
     endVisit: () => {
-      storedCodeSightings.clear();
-      visitSighting = null;
+      store.dispatch(creatorCodesActions.visitEnded());
     },
     reset: () => {
-      // The visit's sightings are left to the visit's end, as before: a
-      // tour cannot close inside a visit (scan-to-open never switches
-      // tours, and the open controls sit outside the AR overlay).
-      hand = null;
-      handMeasurement = null;
-      book = new Map();
+      // Not through `changeBook`: the print panel learns of a closed tour
+      // through its own `presentNoTour`, and is not renumbered here.
+      store.dispatch(tourDocumentActions.codesForgotten());
     },
   };
 }

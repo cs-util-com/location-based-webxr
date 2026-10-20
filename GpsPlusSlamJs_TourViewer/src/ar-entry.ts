@@ -53,12 +53,14 @@ import { contentStatus } from "./station-content.js";
 import { arStatusLine, type ArStatusInput } from "./tour-flow.js";
 import { scanCardShown } from "./scan-gate.js";
 import { visitorStatus } from "./visitor-status.js";
+import { tourUnfinished } from "./tour-unfinished.js";
 import {
   selectHeadingPending,
   selectPresentStationId,
 } from "./visitor-guide-slice.js";
 import type { LocationGate } from "./visitor-screen.js";
 import type { RecordingPanel } from "./recording-panel.js";
+import { onlyCreatorCodesChanged } from "./creator-codes-slice.js";
 import {
   endQrPipeline,
   isCodeIgnored,
@@ -220,12 +222,35 @@ export function wireArEntry(deps: {
    *  the status line steps aside meanwhile (kept with ?debug=1, whose
    *  technical line the card does not carry). */
   function renderScanCard(input: ArStatusInput, sentence: string): void {
-    const shown = scanCardShown(mode, input.arStatus, ctx.scanGate);
+    const shown = scanCardShown(
+      mode,
+      input.arStatus,
+      ctx.scanGate,
+      input.tour.kind === "open" && input.tour.unfinished !== undefined,
+    );
     if (dom.scanCard !== undefined) dom.scanCard.hidden = !shown;
     if (dom.scanCardLine !== undefined) {
       dom.scanCardLine.textContent = shown ? sentence : "";
     }
     dom.arStatus.hidden = shown && !ctx.debug;
+  }
+
+  /** A visitor's tour that is not finished yet (`tour-unfinished.ts`),
+   *  once its manifest settled; a creator's tour is the one being made. */
+  function unfinishedTour(): {
+    unfinished?: { readonly contact: string | undefined };
+  } {
+    if (mode !== "visitor" || ctx.tourManifestStatus !== "settled") return {};
+    const manifest = ctx.tourDocument.manifest();
+    return tourUnfinished(manifest)
+      ? { unfinished: { contact: manifest?.contact } }
+      : {};
+  }
+
+  /** A visitor's open tour has nothing to show yet: no Start is offered
+   *  (no location asked, no empty session) - the start page says why. */
+  function startWithheld(): boolean {
+    return ctx.session !== null && unfinishedTour().unfinished !== undefined;
   }
 
   function renderArStatus(): void {
@@ -242,6 +267,7 @@ export function wireArEntry(deps: {
           : {
               kind: "open",
               levelCount: ctx.currentLevels?.size ?? null,
+              ...unfinishedTour(),
             },
       qr: {
         status: ctx.viewerQrStatus,
@@ -282,7 +308,6 @@ export function wireArEntry(deps: {
         ? null
         : computeOnboardingGuidance(selectTrackingQuality(arStore.getState())),
       placement: ctx.placement,
-      planesError: ctx.viewerPlanesError,
       contentError: ctx.contentError,
       gate: ctx.scanGate,
       // The tour's items, counted for the stations shown now (visitor plan
@@ -446,8 +471,17 @@ export function wireArEntry(deps: {
     // instruction pinned over live video (milestone review, 2026-09-05).
     // A visitor's phone without AR gets no "once AR starts" hint: the
     // status line says what to do instead (polish round M4a, V4).
+    // A visitor's tour not finished yet gets neither the button nor its
+    // hint; during a session the button stays, as the way out.
+    const withheld = !sessionActive && startWithheld();
+    dom.enterArButton.hidden = withheld;
+    // The page's CSS reads it: "What happens?" describes a session this
+    // visitor cannot start, so it goes too (index.html).
+    dom.enterArButton.dataset["start"] = withheld ? "withheld" : "offered";
     dom.arHint.hidden =
-      sessionActive || (!authorMode && state.status === "unsupported");
+      withheld ||
+      sessionActive ||
+      (!authorMode && state.status === "unsupported");
     renderArStatus();
   }
 
@@ -473,8 +507,6 @@ export function wireArEntry(deps: {
     // The measured level SURVIVES the session end on purpose: finishing
     // ends the session itself (the download is a page-side tap). A new
     // measurement replaces it (mintGeneration).
-    ctx.imagePlanes?.dispose();
-    ctx.imagePlanes = null;
     ctx.reticle?.dispose();
     ctx.reticle = null;
     ctx.latestFrame = null;
@@ -504,21 +536,11 @@ export function wireArEntry(deps: {
     ctx.viewerReprojectionPx = null;
     ctx.viewerLastEvaluation = null;
     ctx.placement = { kind: "idle" };
-    ctx.viewerPlanesError = null;
-    ctx.imagePlanesLoading = false;
     // The placement trigger is session state (unsubscribed above, before
     // the guide's teardown): let the next entry attempt again once ITS
     // tracking reports ready (flows plan M4, review #12 - per-entry
     // re-placement by design).
     ctx.placementAttempted = false;
-    ctx.joinDeclined = false;
-    // Invalidate any join still awaiting: it cannot be cancelled, but every
-    // post-await guard checks this token, so a stale run frees its textures
-    // instead of planting planes into a dead scene and clobbering the next
-    // session's latch (milestone review, finding 6 — the join's
-    // tens-of-seconds decode turned this race from theoretical into
-    // expected).
-    ctx.planesRunGeneration += 1;
     if (depthRunning) {
       seams.stopDepthCapture();
       depthRunning = false;
@@ -703,8 +725,13 @@ export function wireArEntry(deps: {
     // predicate reads until the tracking-quality phase is `ready`, then
     // runs once.
     ctx.placementAttempted = false;
-    ctx.joinDeclined = false;
+    let seen = arStore.getState();
     ctx.placementUnsubscribe = arStore.subscribe(() => {
+      const before = seen;
+      seen = arStore.getState();
+      // Neither reads the creator's code state, whose sightings dispatch
+      // about once per stable QR frame (r902 review #1).
+      if (onlyCreatorCodesChanged(before, seen)) return;
       hooks.tryPlaceTour();
       // The stations (tour kit plan K4) are judged on every GPS fix too.
       hooks.tickStations();
@@ -737,6 +764,8 @@ export function wireArEntry(deps: {
       });
       return;
     }
+    // Hidden then; a tap that still arrives asks for nothing.
+    if (startWithheld()) return;
     if (!authorMode && arController.getState().status === "unsupported") {
       copyLink();
       return;

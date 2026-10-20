@@ -7,9 +7,14 @@ The one owner of the codes while authoring (code book refactor plan
 M4a; the M2 milestone review's #1): the code in hand, its measurement, the
 visit's sighting of it, the visit's latest sighting of every stored code,
 and the levels a Finish of this page wrote. Every creator module reads and
-writes these through it, and they are private to it (code book plan M5d-2:
-no session field holds any of them); its inside is the code book
-(`code-book.ts`) holding several codes.
+writes these through it. Since the debug-captures plan
+(`GpsPlusSlamJs_Docs/docs/2026-10-20-1159-debug-captures-and-codes-in-store-plan.md`,
+M3a) it is a FACADE over the page's store with the same API: the tour's
+codes are the tour document's (`tour-document.ts` `codes`: the code book,
+`code-book.ts`, whose rules its reducers apply, and the hosted texts held
+per open), the code in hand, its measurement and the sightings are the
+page's (`creatorCodes`, `creator-codes-slice.ts`). It dispatches their
+actions and reads their selectors, and holds no state of its own.
 
 ## Public API
 
@@ -71,17 +76,24 @@ sighting)` keeps the latest per code; `storedSightings()` lists them (the
 
 ## Invariants & assumptions
 
-- **Private storage** (M5d-2): the code in hand, its measurement and the
-  visit's sighting are closure variables; the composed tests reach them
-  through `CreatorSetup.codes`. The close reaches them through `reset()`.
-- **The code in hand's text wins for its own code**: every write of the
-  book goes through one `setBook`, which puts the hand's text back when a
-  change replaced it (a dropped measurement). The book therefore always
-  holds the code in hand, and reads never write.
+- **One writer** (M5d-2, then M3a): only this module dispatches the codes'
+  actions; the store is reached through `ctx.store`. The composed tests
+  reach the codes through `CreatorSetup.codes`. The close reaches them
+  through `reset()`.
+- **The code in hand's text wins for its own code**: every change of the
+  book names the hand after it, and the document's reducer ends in
+  `withHand`, which puts the hand's text back when a change replaced it (a
+  dropped measurement). The book therefore always holds the code in hand,
+  and reads never write.
+- **`onIdsChanged` is heard exactly when a code joins** (`changeBook`:
+  the ids before and after the dispatch), never for a new text of a known
+  code and not at a tour's close (`reset` empties the book outside it).
+- The hosted texts are the store's (`ctx.currentLevelTexts` is a view of
+  them): read as they stand at each call, as before the move.
 - **A draft's newer text takes a hand that only KEPT its code** (PR #568
   review): `restoreLevels` moves the hand to the draft's text when the
   page changed that code in no live way (`liveText` null), before
-  `setBook`; a hand with live work keeps it. (M5d-2 had kept the older
+  the change; a hand with live work keeps it. (M5d-2 had kept the older
   rule, under which the hand's kept text always won.)
 - **`measurement()` is the HAND's**, not the book entry's: a code taken as
   a stored reference has none, even when the book keeps an earlier
@@ -94,7 +106,7 @@ sighting)` keeps the latest per code; `storedSightings()` lists them (the
   sit outside the AR overlay).
 - A stored code's sighting is tagged with its visit; the visit log reads
   only its own visit's, and `endVisit` empties the map anyway.
-- Pure state, no I/O: every method is synchronous and total.
+- No I/O: every method is synchronous and total (a dispatch is).
 
 ## Examples
 
@@ -110,6 +122,25 @@ codes.saveLevel(remintedLevel); // the settle's re-mint, measurement kept
 the hand's own measurement against the book's; a null level's empty
 hand; the draft restore into an empty hand, at a live text and over a code
 only kept at its hosted pose; the hand's text over a draft's; the re-mint;
-the close; stored poses, the references' order, the visit's sightings). Composed, through `wireCreatorSetup`: every creator suite, and
+the close; stored poses, the references' order, the visit's sightings;
+and the characterization pinned before the codes move into the store
+(plan 2026-10-20-1159 M3a): the hand's text winning in the book (an
+example and a property), live work winning over both restores (a
+property), the two baselines kept apart, the hosted texts read lazily
+(levels arriving late, a failed level read, a Finish taking them in), what
+a visit's end and a tour's close clear, the visit's codes and
+`measuredIn`, and `onIdsChanged` heard exactly when a code joins (examples
+and a property)), all unchanged through the move.
+`creator-codes-store.property.test.ts` - every observable of the facade
+(the hand, its measurement and sighting, the ids, the numbering, the
+references, both baselines, the sightings, the visit's codes, each code's
+text, membership, stored pose and `measuredIn`, the hosted texts and
+whether they are unreadable, `restoreInHand`'s answer, the notices)
+against the module as it was (`test-support/creator-codes-reference.ts`),
+after every step of any sequence of the page's calls - the tour
+document's own opens, closes, edits and undos, and later opens whose
+predecessors answer late, among them; seen red against a broken
+`withHand`, a stored sighting put first, and the hosted levels' session
+guard removed. Composed, through `wireCreatorSetup`: every creator suite, and
 the sampled mutants (`scripts/fixtures/creator-setup.mutants.json`) whose
 text moved here.

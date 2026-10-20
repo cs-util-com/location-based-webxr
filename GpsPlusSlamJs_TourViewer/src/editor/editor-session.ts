@@ -16,8 +16,12 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import { tourCoverEntry } from "gps-plus-slam-app-framework/ar/tour-details";
-import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
-import { recordingEntryNames, scanEntryNames } from "../tour-read-set.js";
+import {
+  buildDebugBundle,
+  type DebugBundleBuilt,
+  type DebugBundleTour,
+} from "../debug-bundle.js";
+import { scanEntryNames } from "../tour-read-set.js";
 import type { DraftObjectWrites } from "../draft-actions.js";
 import type { TourSession } from "../tour-session.js";
 import {
@@ -47,12 +51,13 @@ import {
   type TourDocumentState,
 } from "../tour-document.js";
 import { followDocument } from "../tour-document-draft.js";
+import { newTourId } from "../tour-file-key.js";
 import {
   createTourSaves,
   dispatchThunk,
   TOUR_REPLACED,
-  type TourSaveBuilt,
 } from "../tour-document-save.js";
+import type { FinishedTour } from "../finish-rebuild.js";
 import {
   createTourViewerStore,
   type TourViewerStore,
@@ -100,54 +105,21 @@ export interface EditorSave {
   readonly filename: string;
   /** Entries visitors never read that the save left out. */
   readonly scanLeftOut: readonly string[];
-  /** Why the recorded photos could not be placed, when they could not. */
-  readonly notPlaced?: string;
   /** The manifest the zip carries (the draft's `written` versions, M6
    *  E2c). */
   readonly written: TourManifest;
 }
 
-/** The walk's own file, named after the tour's (W2, D19): `castle.zip`
- *  gives `castle-walk.zip`. */
-export function walkFileName(tourName: string): string {
-  return `${tourName.replace(/\.zip$/i, "")}-walk.zip`;
-}
-
-/** Said when "Move the walk out" finds no walk in the newest bytes. */
+/** Said when "Move the debug data out" finds no walk in the newest
+ *  bytes. */
 const NO_WALK = "This tour carries no walk recording to move out.";
 
-/** Said when the recorded photos the tour carries are still placed by the
- *  walk: moving it out would leave them nowhere (`finish-rebuild.ts`, S1
- *  milestone review #2). A walk that names no photo of the tour places
- *  nothing and moves out (the M4b milestone review #3). */
-function walkStaysReason(notPlaced: string | undefined): string {
-  return `The walk cannot be moved out: this tour's recorded photos can only be placed with it, and they could not be fixed in place without it${notPlaced === undefined ? "" : ` (${notPlaced})`}. The tour keeps its walk.`;
-}
-
-/** The note inside a moved-out walk's zip, at its root: which tour it came
- *  from (the M4b milestone review #8). */
-export const WALK_NOTE = "about-this-walk.txt";
-
-function walkNoteText(tour: {
-  readonly fileName: string;
-  readonly title: string | undefined;
-  readonly seriesId: string | null;
-}): string {
-  return [
-    "This is the walk recording of a tour: the GPS track of the walk, the depth the phone measured and the recorded photos.",
-    `It was moved out of the tour file ${tour.fileName}${tour.title === undefined ? "" : ` (the tour "${tour.title}")`} by the tour editor, so that the tour file people open does not carry it.`,
-    ...(tour.seriesId === null ? [] : [`The tour's series: ${tour.seriesId}.`]),
-    "Keep this file to yourself: the tour does not need it.",
-    "",
-  ].join("\n");
-}
-
 /**
- * A built move of the walk out of the tour (W2, D19): the walk's own zip
- * (the whole recording of the newest bytes - the frames the tour keeps for
- * its visitors included - byte for byte, under its own paths, and a note
- * naming the tour, `WALK_NOTE`) and the tour without the walk, with the
- * pending edits. Nothing of the
+ * A built move of the walk out of the tour (W2, D19): the debug bundle
+ * (`debug-bundle.ts`, M2 of the debug-captures plan: the whole recording
+ * of the newest bytes, byte for byte, under its own paths, with the
+ * identity and the note naming the tour) and the tour without the walk,
+ * with the pending edits. Nothing of the
  * session changes until `commit()`: the page writes the walk's zip first,
  * then the tour, and commits only when both landed - a commit before that
  * would let the next save rebuild from walk-free bytes the creator never
@@ -252,10 +224,11 @@ export interface EditorSession {
     id: string,
     text: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
-  /** Move a note on the map (its height and facing kept); refused for an
-   *  id the tour no longer carries, and for a spot further from its
-   *  station than a tour can carry (`TOO_FAR_FROM_STATION`). Throws for a
-   *  position nobody can draw (`moveObjectTo`). */
+  /** Move a note on the map (its height and facing kept): beyond its
+   *  station's found radius the station rule seats it anew - the station
+   *  holding its new spot, or a new one there - so no move is too far.
+   *  Refused for an id the tour no longer carries. Throws for a position
+   *  nobody can draw (`moveObjectTo`). */
   move(id: string, lat: number, lon: number): { kind: "moved" } | EditorRefusal;
   /** Delete (undone by `undo`, also after a save wrote it: a photo's
    *  picture is kept for that). Refused, deleting nothing, for an id the
@@ -306,14 +279,26 @@ export interface EditorSession {
    *  once it was moved out, or when the last save left it out. */
   walkEntries(): Promise<string[]>;
   /** Build the move of the walk out (`WalkMove`), queued with the saves;
-   *  refused, in words, when there is no walk or the recorded photos the
-   *  tour carries still need it (a walk that places nothing moves out).
-   *  Bringing a walk back is a later feature. */
+   *  refused, in words, when there is no walk. Bringing a walk back is a
+   *  later feature. */
   moveWalkOut(): Promise<WalkMove | EditorRefusal>;
+  /** The debug data of the OPENED file as a debug bundle (M2 of the
+   *  debug-captures plan: "Save the debug data" after a save
+   *  that left the walk out - the newest bytes then carry none, and the
+   *  move refuses), queued with the saves; refused, in words, when the
+   *  opened file carries no walk. Changes nothing of the session. */
+  debugData(): Promise<DebugBundleBuilt>;
+  /** The tour a debug bundle saved now names, and the one an added debug
+   *  data file is compared with (`bundleMatchesTour`, M2 step 5 of the
+   *  debug-captures plan): a listed tour's series, the title of the newest
+   *  written file (an edit not yet saved is not the file's), the file's
+   *  name. */
+  debugTour(): DebugBundleTour;
 }
 
 export function createEditorSession(input: {
   readonly session: TourSession;
+  /** The tour as opened (`openTourForEditing`). */
   readonly manifest: TourManifest;
   readonly levels: ReadonlyMap<string, QrLevel>;
   /** The file's name for the model's title (default: the session's). */
@@ -332,14 +317,20 @@ export function createEditorSession(input: {
 }): EditorSession {
   const { session, levels } = input;
   const store = input.store ?? createTourViewerStore();
-  store.dispatch(tourDocumentActions.opened({ manifest: input.manifest }));
+  // A tour without an id of its own is given one, once (Q-I).
+  store.dispatch(
+    tourDocumentActions.opened({
+      manifest: input.manifest,
+      newTourId: newTourId(),
+    }),
+  );
   /** This session's open: a later one in the same store makes every edit
    *  here refused and every save of it land nowhere. */
   const generation = doc().generation;
 
   // What follows is imperative resources only (root CLAUDE.md, "App state
   // lives in the Redux store"): the pictures' side table, and the saves'
-  // own (the newest bytes, the photo spots' cache, the queue) in the
+  // own (the newest bytes, the queue) in the
   // document's save (`tour-document-save.ts`), whose status is the slice's.
   /** Deleted photos' pictures, for an undo after a save took them out
    *  (the side table: Blobs are never state). */
@@ -607,9 +598,6 @@ export function createEditorSession(input: {
       if (state === null) return notInTour;
       const change = objectMoveChange(state, id, lat, lon);
       if (change.kind === "missing") return notInTour;
-      if (change.kind === "too-far") {
-        return { kind: "refused", reason: TOO_FAR_FROM_STATION };
-      }
       store.dispatch(
         tourDocumentActions.moved({
           object: change.after,
@@ -698,27 +686,20 @@ export function createEditorSession(input: {
           JSON.stringify(frame.geo) !== JSON.stringify(pose.geo)
         );
       });
-      const poses = new Map(stations.map((p) => [p.id, p.geo]));
-      const framed: TourDocumentState = {
-        ...state,
-        stations: state.stations.map((s) => {
-          const geo = poses.get(s.id);
-          return geo === undefined ? s : { ...s, geo };
-        }),
-      };
-      // An object too far from its station (a draft written before far
-      // moves were refused) is skipped as the reducer skips it
-      // (`objectFits`, the M5a milestone review L1) - measured in the
-      // frames the restore puts back.
+      // An object its station cannot carry (a draft written before far
+      // moves re-ran the station rule) is seated by the rule as the
+      // restore puts it back (`restored`), never skipped.
       const objects = work.objects.filter(
-        (object) =>
-          !live.has(object.id) &&
-          find(object.id) !== undefined &&
-          objectFits(framed, object),
+        (object) => !live.has(object.id) && find(object.id) !== undefined,
       );
       const deleted = work.deleted.filter(
         (id) => !live.has(id) && find(id) !== undefined,
       );
+      // The stations the draft's objects were seated in that the tour
+      // lacks (a far move started one), whole: back before the objects.
+      const created = settings?.createdStations ?? [];
+      const createdStations =
+        created.length === 0 ? {} : { createdStations: created };
       const needsNoGps =
         settings !== undefined &&
         !state.touched.needsNoGps &&
@@ -733,6 +714,7 @@ export function createEditorSession(input: {
           objects,
           deleted,
           ...(stations.length === 0 ? {} : { stations }),
+          ...createdStations,
           what: "",
         }),
       );
@@ -758,6 +740,7 @@ export function createEditorSession(input: {
             ...(needsNoGps === undefined ? {} : { needsNoGps }),
             ...(details === null ? {} : { details }),
             ...(stations.length === 0 ? {} : { stations }),
+            ...createdStations,
             what: "the restored changes",
           }),
         );
@@ -779,6 +762,28 @@ export function createEditorSession(input: {
     moveWalkOut() {
       return dispatchThunk(store, saves.queued(buildWalkMove));
     },
+    debugTour() {
+      // Compared by the id the opened file itself carries: the one its
+      // open minted is in no file until a save writes it, and a bundle
+      // naming that id was saved from such a copy, which the names still
+      // match (a reopened original would otherwise call it another's).
+      return debugTourOf(written(), input.manifest.tourId);
+    },
+    debugData() {
+      return dispatchThunk(
+        store,
+        saves.queued(async (): Promise<DebugBundleBuilt> => {
+          if (mine() === null)
+            return { kind: "refused", reason: TOUR_REPLACED };
+          // The opened file is untrusted: read under the session's budget.
+          return buildDebugBundle(
+            await session.readWholeArchive(),
+            debugTourOf(written(), written().tourId),
+            { budget: session.budget },
+          );
+        }),
+      );
+    },
   };
 
   /** The newest bytes' entry names: the last save's, else the opened
@@ -790,15 +795,30 @@ export function createEditorSession(input: {
       : zipBlobEntryNames(newest.blob);
   }
 
-  function saveOf({ finished, photos }: TourSaveBuilt): EditorSave {
+  function saveOf(finished: FinishedTour): EditorSave {
     return {
       blob: finished.blob,
       filename: savedName,
       scanLeftOut: finished.scanLeftOut,
       written: finished.written,
-      ...(photos.notPlaced === undefined
-        ? {}
-        : { notPlaced: photos.notPlaced }),
+    };
+  }
+
+  /** The tour a debug bundle names (`debug-bundle.json`): a listed
+   *  tour's series, `tourId`, the title the tour carries now and the
+   *  file's name. */
+  function debugTourOf(
+    manifest: TourManifest,
+    tourId: string | undefined,
+  ): DebugBundleTour {
+    return {
+      seriesId:
+        session.integrity.kind === "listed"
+          ? session.integrity.manifest.seriesId
+          : null,
+      ...(tourId === undefined ? {} : { tourId }),
+      title: manifest.title,
+      fileName: savedName,
     };
   }
 
@@ -812,51 +832,34 @@ export function createEditorSession(input: {
     if (scanEntryNames(names, snap.manifest, wrap).length === 0) {
       return { kind: "refused", reason: NO_WALK };
     }
-    const photos = await saves.photoSpots(snap.manifest);
-    // Without baked spots the walk is what places the recorded photos: the
-    // rebuild would keep it (`finish-rebuild.ts`), so the move refuses -
-    // unless the walk places nothing (the M4b milestone review #3).
-    if (photos.spots === undefined && photos.placesNothing !== true) {
-      return { kind: "refused", reason: walkStaysReason(photos.notPlaced) };
-    }
-    // The walk's own file is the whole recording (the M4b milestone review
-    // #8): the frames the tour keeps for its visitors too, so it is a
-    // complete recording on its own.
-    const recording = new Set(recordingEntryNames(names));
+    // The rebuild below replaces the bytes a picture may be read from.
+    await saves.picturesRead();
+    // The debug bundle is the whole recording (the M4b milestone review
+    // #8), so it is a complete recording on its own, and names the tour it
+    // came from (one format for both pages, M2 of the debug-captures plan).
     const source = base === null ? await session.readWholeArchive() : base.blob;
-    const walkBlob = await rebuildZipWithEntries(
+    const bundle = await buildDebugBundle(
       source,
-      [
-        {
-          path: WALK_NOTE,
-          data: walkNoteText({
-            fileName: savedName,
-            title: snap.manifest.title,
-            seriesId:
-              session.integrity.kind === "listed"
-                ? session.integrity.manifest.seriesId
-                : null,
-          }),
-        },
-      ],
+      debugTourOf(snap.manifest, snap.manifest.tourId),
       {
-        remove: names.filter((name) => !recording.has(name)),
         // The opened file is untrusted: read under the session's budget, as
         // the rebuild below reads it (K0 milestone review R1).
         ...(base === null ? { budget: session.budget } : {}),
       },
     );
+    if (bundle.kind === "refused") {
+      return { kind: "refused", reason: bundle.reason };
+    }
     // From the same bytes, read once (review #11).
     const finished = await saves.rebuild(
       snap,
-      photos,
       false,
       base === null ? source : undefined,
     );
     return {
       kind: "ready",
-      walk: { blob: walkBlob, filename: walkFileName(savedName) },
-      save: saveOf({ finished, photos }),
+      walk: { blob: bundle.blob, filename: bundle.filename },
+      save: saveOf(finished),
       current: () => saves.newest() === base,
       commit(inPlace) {
         if (saves.newest() !== base) {

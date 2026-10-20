@@ -274,11 +274,11 @@ export {
   type TourObject,
   type TourPin,
   type TourPhoto,
+  type TourModel,
   type TourObjectKind,
-  type TourCapture,
-  type TourCaptureSpots,
   type TourItem,
   type TourLocalPose,
+  type TourModelItem,
   type TourPhotoItem,
   type TourPinItem,
   TourManifestValidationError,
@@ -293,11 +293,13 @@ export {
   geoPoseRotation,
   itemGeoPose,
   localPoseOf,
-  tourCaptureGeos,
   tourObjects,
-  type TourCaptureGeo,
 } from './tour-station-pose.js';
-export { TOUR_ITEM_MAX_OFFSET_M } from './tour-items.js';
+export {
+  TOUR_ITEM_MAX_OFFSET_M,
+  TOUR_MODEL_MAX_SIZE_M,
+  TOUR_MODEL_MIN_SIZE_M,
+} from './tour-items.js';
 export {
   TOUR_CONTACT_MAX_CHARS,
   TOUR_DESCRIPTION_MAX_CHARS,

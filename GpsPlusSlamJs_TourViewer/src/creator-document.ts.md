@@ -18,11 +18,15 @@ copy of the tour.
   - `state()` - the slice.
   - `manifest()` - the open tour's manifest as it stands (`manifestNow`:
     its frames moved, its setting and details applied); null while no tour
-    file is open (none, or one without `tour.json`) and nothing was
-    written. The same object until the document changes.
+    is open (`open(null)`: a visitor's file without `tour.json`) and
+    nothing was written. A creator's recording opens as an empty tour
+    (`archive-open.ts`), so it reads a manifest from the start. The same object until the document changes.
   - `opened()` - the tour file as it was OPENED (the slice's `opened`):
     not what a Finish wrote since, nor this page's changes; null while no
     tour file is open. The phone's draft compares its records with it.
+    The open gives a tour without an id a fresh one (`newTourId()`, Q-I)
+    in what the writes start from - never in `opened()`, and never to
+    "no tour".
   - `entries()` - this page's entries (`PlacedEntry`: the object, its
     `blob`, its `placement`), in order; the same array until the document
     or a side table changes.
@@ -33,21 +37,28 @@ copy of the tour.
   draft write the change caused settled (true: all landed, or no draft
   follows):
   - `place(object, { blob?, placement?, ownStation? }, what)` -
-    `canPlace`; returns the change with `ownStation`: asked for it ("New
-    station here", owner decision D8 of `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`),
-    an object naming no station names a fresh station id of its own (one
-    the document does not use), so the write starts it there even within
-    R of another (`tour-content.ts`). It never reads or changes the arm:
+    `canPlace`; the slice's station rule seats an object naming no station
+    (the station holding it, or a new one anchored at it, under a fresh id
+    the document does not use); with `ownStation` ("New station here")
+    always a new one, even within another's radius. Returns the change,
+    `ownStation` as asked, and the `object` as the document seated it
+    (naming its station). It never reads or changes the arm:
     the caller takes it when the item is committed (a photo at its
     shutter tap, not when its encode lands) and gives it back if the item
     is not placed (`creator-placement.ts`);
   - `edit(object, what)` - `objectFits`; the AR placement is kept;
-  - `move(object, what, placement?)` - `objectFits`; `placement` replaces
-    the AR placement (a move in AR), else it is kept (a settle's re-pose);
+  - `move(object, what, placement?)` - null for an id the document
+    lacks; within its station's found radius the object stays there,
+    beyond it the station rule seats it anew (a fresh id for a station it
+    starts), and the station it left goes when that empties an automatic
+    one. `placement` replaces the AR placement (a move in AR), else it is
+    kept (a settle's re-pose);
   - `remove(id, what)` - null for an id the tour does not carry;
   - `moveStation(stationId, geo, what)` - D17, null for an unknown station;
-  - `restore({ objects, deleted, pictures, stations? }, what)` - a draft's
-    work, already filtered by the page, with its photos' pictures;
+  - `restore({ objects, deleted, pictures, stations?, createdStations? },
+what)` - a draft's work, already filtered by the page, with its
+    photos' pictures and the whole frames of the stations its objects were
+    seated in that the tour lacks;
   - `undo()` - `{ kind: "undone", what, backedUp }`, `{ kind: "nothing" }`,
     or refused: `"saving"` (`canStep`) or `"picture-gone"`
     (`picturesNeeded`, a photo whose picture this page does not hold).
@@ -71,6 +82,11 @@ generation, written, appliedDeletions, stationsAtStart })`,
 - `follow(draft)` - the draft follows the document: `followDocument`
   (`tour-document-draft.ts`) from a listener after each edit. Once per
   page (a second call throws: two drafts would write everything twice).
+- `stationPlacements()` - the AR anchors of the stations an object with
+  an AR placement started, by station id (`StationPlacement`: the
+  placement and the `item` it was started for), only stations the
+  document has now; see the invariants. `StationPlacement` is the
+  method's own shape, module-private.
 - `revision()`; the types `VisitPlacement`, `CreatorObject`,
   `DocumentChange`, `CreatorDocumentStore` (`PlacedEntry`,
   `PlacedChange`, `DocumentUndo` and `DocumentRename` are the methods' own shapes,
@@ -86,15 +102,31 @@ generation, written, appliedDeletions, stationsAtStart })`,
 
 - **No tour is an open, empty document.** The slice takes edits only into
   an open document, and the creator may place before any tour is open
-  (scan-to-open plan §9 #5) or in a tour whose file has no `tour.json`. So
-  "no tour" is an empty manifest the handle opened itself, told apart by
-  identity: `manifest()` reads null there, as the session field it replaces
-  did, until a write lands.
+  (scan-to-open plan §9 #5). So "no tour" is an empty manifest the handle
+  opened itself, told apart by identity: `manifest()` reads null there,
+  as the session field it replaces did, until a write lands. A creator's
+  file without `tour.json` is NOT "no tour": the page opens it as an
+  empty manifest of its own (a real, unnamed tour), whose stations the
+  HUD, the settle and the write read from the first placement.
 - **`open` carries only that work.** Objects placed with no tour open come
   into the opened tour as one restored step (their pictures and placements
-  with them); anything of another tour was dropped at its `close`, side
+  with them), each seated again by the station rule against the opened
+  tour's stations (`rerun`): the stations they stood in were the empty
+  document's, and none of them comes along; anything of another tour was dropped at its `close`, side
   tables included (M4 review #1: carried into another tour it would be
   written into ITS zip).
+- **A station's AR anchor is a side table too** (`stationPlacements()`,
+  `StationPlacement`): a station a placement, a move or carried work
+  started for an object with an AR placement is anchored at that
+  placement, with the object's id (`item`), whose moment the anchor
+  settles at - the station rule anchors the frame where its first item
+  stands, so the anchor's odometry pose is that item's. The visit's settle
+  re-poses such a station with the visit's objects (`creator-settle.ts`).
+  Only stations the document has now are listed (an undo hides one, a redo
+  brings it back with its anchor); a close drops them all, and a write
+  drops those of the stations it carried (they are the file's now, as its
+  items' placements go). A station started without an AR placement (a
+  draft's, a hosted one) has none.
 - **Side tables are set before the dispatch**, so the listener's
   `pictureOf` finds a new photo's picture. Pictures stay until the tour
   closes (an undo after a write needs them); a placement goes when a write
@@ -125,13 +157,17 @@ else void placed.backedUp.then((ok) => ok || draft.warnNoBackup());
 ## Tests
 
 - `creator-document.test.ts` - no tour and a tour opening (work carried,
+  carried work seated by the rule against the opened tour's stations,
   a file without `tour.json`, a close dropping everything), the identities
   readers memoize on (a new manifest when only the tombstones change,
   driven through a store that serves that state, since no reducer makes
   it), the guards (a known id, a move beyond reach, an
   unknown station), the placement kept or replaced, undo (refused while a
   write runs, refused without a picture), a write taking an entry and its
-  placement out, and the draft following (writes from the listener with
+  placement out, the stations' AR anchors (a placement's, a move's in AR
+  and by a settle, carried work's; none without an AR placement or for a
+  tour's station; kept through undo and redo; gone with the tour and for a
+  written station), and the draft following (writes from the listener with
   the picture, a failure reported to its change, the station poses'
   record, nothing for an open, a close or a landed write).
 - The composed phone: `authoring-settle.test.ts`, `creator-setup.test.ts`,

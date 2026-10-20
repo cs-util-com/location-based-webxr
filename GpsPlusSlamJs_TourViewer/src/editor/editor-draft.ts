@@ -93,7 +93,7 @@ import {
 } from "../draft-persistence.js";
 import { createKeyedChain } from "../keyed-chain.js";
 import type { EditorLock } from "./save-target.js";
-import type { StationPose } from "../tour-document.js";
+import type { StationFrame, StationPose } from "../tour-document.js";
 import {
   changedStations,
   parseSettingsRecord,
@@ -113,6 +113,10 @@ export interface EditorTourSettings {
    *  Absent: no opinion about them. A pose for a station the file does not
    *  carry is no change. */
   readonly stations?: readonly StationPose[];
+  /** The whole frames of the stations the page created (a far move
+   *  starts one): the draft's objects name them, so a restore puts them
+   *  back first. Not a change of their own. */
+  readonly createdStations?: readonly StationFrame[];
 }
 
 /** One of the details' fields (`tour-details-form.ts`), in the order the
@@ -137,8 +141,9 @@ function changedDetails(
   return DETAIL_FIELDS.filter((f) => wanted[f] !== against?.[f]);
 }
 
-/** Whether `wanted` changes anything `against` holds. */
-function differs(
+/** Whether `wanted` changes a setting, a detail or a station's pose that
+ *  `against` holds: what the offer names. */
+function changesSettings(
   wanted: EditorTourSettings,
   against: EditorTourSettings,
 ): boolean {
@@ -147,6 +152,25 @@ function differs(
     changedDetails(wanted.details, against.details).length > 0 ||
     changedStations(wanted.stations, against.stations).length > 0
   );
+}
+
+/** Whether `wanted` holds a station the page created that `against` does
+ *  not carry: the draft's notes name it, so the record is work to keep
+ *  (whole, its pose as it stands) even when nothing else changed. */
+function addsStations(
+  wanted: EditorTourSettings,
+  against: EditorTourSettings,
+): boolean {
+  const carried = new Set((against.stations ?? []).map((s) => s.id));
+  return (wanted.createdStations ?? []).some((f) => !carried.has(f.id));
+}
+
+/** Whether `wanted` holds anything `against` lacks. */
+function differs(
+  wanted: EditorTourSettings,
+  against: EditorTourSettings,
+): boolean {
+  return changesSettings(wanted, against) || addsStations(wanted, against);
 }
 
 /** Two records alike (null is "no record"). */
@@ -158,6 +182,9 @@ function sameRecord(
   if (a.needsNoGps !== b.needsNoGps) return false;
   if ((a.details === undefined) !== (b.details === undefined)) return false;
   if (JSON.stringify(a.stations) !== JSON.stringify(b.stations)) return false;
+  if (JSON.stringify(a.createdStations) !== JSON.stringify(b.createdStations)) {
+    return false;
+  }
   return changedDetails(a.details, b.details).length === 0;
 }
 
@@ -202,8 +229,7 @@ function offerText(
   settings: EditorTourSettings | undefined,
   manifest: TourManifest,
 ): string {
-  const changes =
-    settings === undefined ? null : settingsChanges(settings, manifest);
+  const changes = namedChanges(settings, manifest);
   const counted = restoreOfferText(0, false, {
     changed: notes + (changes === null ? 0 : settingsChangeCount(changes)),
     deleted,
@@ -222,6 +248,18 @@ function offerText(
 }
 
 type SettingsChanges = ReturnType<typeof settingsChanges>;
+
+/** What an offered record changes that the offer names; null without a
+ *  record, or for one holding only stations the page created (not a
+ *  change of their own). */
+function namedChanges(
+  settings: EditorTourSettings | undefined,
+  manifest: TourManifest,
+): SettingsChanges | null {
+  if (settings === undefined) return null;
+  const changes = settingsChanges(settings, manifest);
+  return settingsChangeCount(changes) === 0 ? null : changes;
+}
 
 /** How many changes a settings record counts as: the setting, each detail
  *  and each station one. */
@@ -246,11 +284,12 @@ function settingsParts(changes: SettingsChanges, noGps: string): string[] {
   return parts;
 }
 
-/** `settingsWhat` of an offer that holds `settings`. */
+/** `settingsWhat` of an offer that holds `settings`; undefined when it
+ *  names nothing (only stations the page created). */
 function settingsWhatOf(
   settings: EditorTourSettings,
   manifest: TourManifest,
-): string {
+): string | undefined {
   const changes = settingsChanges(settings, manifest);
   const kinds = [
     changes.noGps,
@@ -260,7 +299,7 @@ function settingsWhatOf(
   if (kinds > 1) return BOTH_WHAT;
   if (changes.details.length > 0) return DETAILS_WHAT;
   if (changes.stations.length > 0) return STATIONS_WHAT;
-  return NO_GPS_WHAT;
+  return changes.noGps ? NO_GPS_WHAT : undefined;
 }
 
 /**
@@ -282,10 +321,10 @@ export function restoredLine(
         : `${String(count)} earlier changes are`;
     return `${back} back - not saved yet.`;
   }
-  if (offer.settings === undefined) {
+  const what = offer.settings === undefined ? undefined : offer.settingsWhat;
+  if (what === undefined) {
     return "Nothing was restored: the notes those changes were for are edited here already.";
   }
-  const what = offer.settingsWhat ?? NO_GPS_WHAT;
   if (offer.objects.length + offer.deleted.length === 0) {
     return `Nothing was restored: ${what} ${what === NO_GPS_WHAT ? "is" : "are"} changed here already.`;
   }
@@ -374,7 +413,8 @@ export interface EditorDraftOffer {
    *  (QR-first M1b-2). */
   readonly settings?: EditorTourSettings;
   /** How the offer's settings part is named in plain words ("this tour's
-   *  details"), present with `settings` (`restoredLine`). */
+   *  details"), present with `settings` unless they name nothing - a
+   *  record holding only stations the page created (`restoredLine`). */
   readonly settingsWhat?: string;
   /** The offer's words: changes and deletions named apart
    *  (`restoreOfferText`); a changed setting, and each changed detail, is
@@ -409,6 +449,11 @@ export interface EditorTourDraft
   /** An in-place write of `written` landed, whose bytes have `fileKey`:
    *  what it carries clears, and the draft follows the key. */
   landed(written: TourManifest, fileKey: string): void;
+  /** A download landed whose bytes have `fileKey` (debug-captures plan,
+   *  Q-I: the first save of a tour without an id writes one): the draft
+   *  follows the key, carrying everything - nothing is spent, and the old
+   *  namespace keeps what it holds. A no-op for the key it has. */
+  moved(fileKey: string): void;
 }
 
 export interface EditorDraft extends DraftObjectWrites, DraftSettingsWrites {
@@ -430,6 +475,10 @@ export interface EditorDraft extends DraftObjectWrites, DraftSettingsWrites {
   /** Every queued write settled. */
   idle(): Promise<void>;
 }
+
+/** The draft with the save notes `writes()` binds to one open. */
+type DraftApi = EditorDraft &
+  Pick<EditorTourDraft, "built" | "landed" | "moved">;
 
 /** One namespace: its key, its store (after the lock), its rejections. */
 interface Space {
@@ -798,9 +847,65 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     backedUp: false,
   };
 
-  // `built` and `landed` are reached only through `writes()`, bound to the
-  // tour open when it was called.
-  const api: EditorDraft & Pick<EditorTourDraft, "built" | "landed"> = {
+  /**
+   * The draft follows `fileKey` (`landed`, `moved`): synchronously, so
+   * every write from here on goes to the new namespace; what is pending,
+   * the settings kept and an offer not yet answered are carried, and -
+   * with `emptyOld` - the old namespace is emptied once everything landed
+   * in the new one.
+   */
+  function moveTo(s: Space, fileKey: string, emptyOld: boolean): void {
+    const next = makeSpace(fileKey);
+    space = next;
+    const carried = [writeMeta(next)];
+    for (const [id, change] of pending) {
+      carried.push(carry(next, id, change, bases.get(id)));
+    }
+    if (settingsPending !== null) {
+      carried.push(writeSettingsIn(next, settingsPending));
+    }
+    // An offer not yet answered (or put off with "Not now") moves too.
+    if (offer !== null) {
+      for (const object of offer.objects) {
+        if (!touched.has(object.id)) {
+          carried.push(carry(next, object.id, object, bases.get(object.id)));
+        }
+      }
+      for (const id of offer.deleted) {
+        if (!touched.has(id)) carried.push(carry(next, id, null, undefined));
+      }
+      if (offer.settings !== undefined && settingsWanted === null) {
+        carried.push(writeSettingsIn(next, offer.settings));
+      }
+    }
+    // The old namespace goes only once the new one holds everything
+    // (E2c review #2): a tab closed right after "Saved to" - nothing
+    // asks, no change is pending - must not find both half written.
+    // When anything did not land the old one stays (its key is the
+    // overwritten file's, or the downloaded-from one's: reached only by
+    // that file or a copy of it).
+    const moved = Promise.all(carried)
+      .then(async (oks) => {
+        if (emptyOld && oks.every(Boolean)) await empty(s);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        s.lock?.release();
+      });
+    void track(moved);
+    // The next open waits for the old key's hold to go, as after
+    // `close()`: the pre-save file reopened in this tab must not find
+    // this tab's own hold and say "another tab" (PR #626 bot finding 2).
+    letGo = letGo
+      .then(() => moved)
+      .then(async () => {
+        await s.lock?.released;
+      });
+  }
+
+  // `built`, `landed` and `moved` are reached only through `writes()`,
+  // bound to the tour open when it was called.
+  const api: DraftApi = {
     async open(fileKey, manifest) {
       close();
       const mine = generation;
@@ -826,24 +931,36 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         readSettings === undefined
           ? undefined
           : heldAgainst(readSettings, manifest);
-      const settings =
-        storedSettings !== undefined &&
-        differs(storedSettings, settingsOf(manifest))
-          ? storedSettings
-          : undefined;
+      let settings: EditorTourSettings | undefined;
+      /** The record offered beside `notes` offered notes, or none - then
+       *  it goes. Stations the page created alone are kept only for the
+       *  notes that name them. */
+      const offerSettings = (notes: number): void => {
+        const file = settingsOf(manifest);
+        settings =
+          storedSettings !== undefined &&
+          (changesSettings(storedSettings, file) ||
+            (notes > 0 && addsStations(storedSettings, file)))
+            ? storedSettings
+            : undefined;
+        if (settingsText !== undefined && settings === undefined) {
+          void settingsIn(s, null);
+        }
+      };
       /** The offer's words, and how its settings part is named. */
       const offerWords = (
         notes: number,
         gone: number,
-      ): { text: string; settingsWhat?: string } => ({
-        text: offerText(notes, gone, settings, manifest),
-        ...(settings === undefined
-          ? {}
-          : { settingsWhat: settingsWhatOf(settings, manifest) }),
-      });
-      if (settingsText !== undefined && settings === undefined) {
-        void settingsIn(s, null);
-      }
+      ): { text: string; settingsWhat?: string } => {
+        const what =
+          settings === undefined
+            ? undefined
+            : settingsWhatOf(settings, manifest);
+        return {
+          text: offerText(notes, gone, settings, manifest),
+          ...(what === undefined ? {} : { settingsWhat: what }),
+        };
+      };
       // A photo note's bytes are in the opened file, never in the draft
       // (E2c review #1): its record is kept without them.
       const stored = await readDraft(store, { photoBytesRequired: false });
@@ -858,6 +975,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             if (!ok) say(s, s.refused ?? "storage");
           }),
         );
+        offerSettings(0);
         offer =
           settings === undefined
             ? null
@@ -892,6 +1010,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         (notHosted.length - waiting.length);
       const deleted = draftDeletionsNotYetHosted(stored.draft, manifest);
       const kept = new Set([...waiting.map((o) => o.id), ...deleted]);
+      offerSettings(waiting.length);
       // Everything else the read saw is in the file already, replaced, or
       // unreadable: it goes (no commit point needed - each leftover is
       // inert and goes again on the next open).
@@ -941,6 +1060,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         },
         landed: (written, fileKey) => {
           if (live()) api.landed(written, fileKey);
+        },
+        moved: (fileKey) => {
+          if (live()) api.moved(fileKey);
         },
       };
     },
@@ -1048,53 +1170,20 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         if (settingsChanged) void writeSettingsIn(s, settingsPending);
         return;
       }
-      // The key moves (a tour of notes alone): synchronously, so every
-      // write from here on goes to the new namespace.
-      const next = makeSpace(fileKey);
-      space = next;
-      const carried = [writeMeta(next)];
-      for (const [id, change] of pending) {
-        carried.push(carry(next, id, change, bases.get(id)));
-      }
-      if (settingsPending !== null) {
-        carried.push(writeSettingsIn(next, settingsPending));
-      }
-      // An offer not yet answered (or put off with "Not now") moves too.
-      if (offer !== null) {
-        for (const object of offer.objects) {
-          if (!touched.has(object.id)) {
-            carried.push(carry(next, object.id, object, bases.get(object.id)));
-          }
-        }
-        for (const id of offer.deleted) {
-          if (!touched.has(id)) carried.push(carry(next, id, null, undefined));
-        }
-        if (offer.settings !== undefined && settingsWanted === null) {
-          carried.push(writeSettingsIn(next, offer.settings));
-        }
-      }
-      // The old namespace goes only once the new one holds everything
-      // (E2c review #2): a tab closed right after "Saved to" - nothing
-      // asks, no change is pending - must not find both half written.
-      // When anything did not land the old one stays (its key is the
-      // overwritten file's, so it is reached only by a copy of that file).
-      const moved = Promise.all(carried)
-        .then(async (oks) => {
-          if (oks.every(Boolean)) await empty(s);
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          s.lock?.release();
-        });
-      void track(moved);
-      // The next open waits for the old key's hold to go, as after
-      // `close()`: the pre-save file reopened in this tab must not find
-      // this tab's own hold and say "another tab" (PR #626 bot finding 2).
-      letGo = letGo
-        .then(() => moved)
-        .then(async () => {
-          await s.lock?.released;
-        });
+      // The key moves (a tour of notes alone, or the first save that wrote
+      // the tour's own id); the overwritten file's namespace is emptied.
+      moveTo(s, fileKey, true);
+    },
+
+    moved(fileKey) {
+      const s = space;
+      if (s === null || editorDraftKey(fileKey) === s.key) return;
+      // Nothing is spent, and the old namespace keeps what it holds: a
+      // download is not known to be the file anyone opens ("a delivered
+      // download clears nothing", WHAT THE DRAFT HOLDS above), so the
+      // original opened again still offers what it did; an open of a file
+      // that carries an edit spends it there.
+      moveTo(s, fileKey, false);
     },
 
     backsUp() {

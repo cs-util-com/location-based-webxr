@@ -18,7 +18,6 @@ import {
   geoPoseRotation,
   itemGeoPose,
   localPoseOf,
-  tourCaptureGeos,
   tourObjects,
 } from './tour-station-pose';
 
@@ -290,25 +289,5 @@ describe('the world view', () => {
     expect(objects[0]).not.toHaveProperty('pose');
     expect(apart(objects[0]!.geo, at(STATION, 3, 4, 400))).toBeLessThan(1e-6);
     expect(objects[1]!.geo).toEqual(itemGeoPose(photo.pose, stations[1]!.geo));
-  });
-
-  it('tourCaptureGeos: the recorded photos in the world, in capture order; none without spots', () => {
-    expect(tourCaptureGeos({ stations })).toEqual([]);
-    const captures = tourCaptureGeos({
-      stations,
-      captureSpots: {
-        fixes: 3,
-        gpsAccuracyMedianM: null,
-        captures: [
-          { image: 'images/2.jpg', station: 'b', pose: photo.pose },
-          { image: 'images/1.jpg', station: 'a', pose: pin.pose },
-        ],
-      },
-    });
-    expect(captures.map((c) => [c.image, c.station])).toEqual([
-      ['images/2.jpg', 'b'],
-      ['images/1.jpg', 'a'],
-    ]);
-    expect(captures[0]!.geo).toEqual(itemGeoPose(photo.pose, stations[1]!.geo));
   });
 });

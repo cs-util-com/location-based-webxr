@@ -1462,8 +1462,11 @@
       }
 
       /* A phone without AR loses "What happens?": it describes a session
-         this phone cannot start (V4's recovery states). */
+         this phone cannot start (V4's recovery states). So does a tour
+         not finished yet, whose Start is withheld (`ar-entry.ts`). */
       body[data-mode="visitor"]:has(#enter-ar[data-ar-state="unsupported"])
+        #visitor-what,
+      body[data-mode="visitor"]:has(#enter-ar[data-start="withheld"])
         #visitor-what {
         display: none;
       }
@@ -3198,6 +3201,14 @@
                     hidden
                     >Try this tour as a visitor on this phone</a
                   >
+                  <!-- Shown while the hosted file is not finished yet: what
+                   a visitor reads then (main.ts, tour-unfinished.ts). -->
+                  <p
+                    id="visitor-link-note"
+                    class="hint--dim"
+                    data-testid="visitor-link-note"
+                    hidden
+                  ></p>
                 </div>
               </details>
             </li>
@@ -3359,8 +3370,8 @@
             <!-- What the published copy carries (scan-pass plan S1, S-D10),
              chosen BEFORE AR (UI round 1, U2, review #6: the Finish's
              rebuild reads it, so it cannot follow the Finish), shown only
-             for a tour that carries a walk; unticked, Finish leaves it
-             out. -->
+             for a tour that carries a walk; unticked (the default, debug
+             captures plan M2, E2), Finish leaves it out. -->
             <label
               class="switch"
               id="keep-scan-row"
@@ -3369,8 +3380,8 @@
             >
               <input type="checkbox" id="keep-scan" data-testid="keep-scan" />
               <span class="switch-track"></span>
-              Keep the walk recording in the tour file (for a co-author;
-              visitors never need it)
+              Keep the debug data in the tour file (for a co-author; visitors
+              never need it)
             </label>
             <div id="recording-block" data-testid="recording-block" hidden>
               <!-- A recording a killed tab left unsaved (M1b,
@@ -3952,6 +3963,32 @@
               >
                 Save the tour zip again
               </button>
+              <!-- The debug data the Finish left out of the tour file
+               (debug-captures plan M2, E2): saved apart on a tap, above the
+               replace steps, from the bytes the Finish read
+               (creator-debug-save.ts). -->
+              <div id="debug-save" data-testid="debug-save" hidden>
+                <p
+                  id="debug-save-text"
+                  class="step-copy"
+                  data-testid="debug-save-text"
+                ></p>
+                <button
+                  type="button"
+                  id="debug-save-btn"
+                  class="btn btn--prose"
+                  data-testid="debug-save-btn"
+                >
+                  Save the debug data
+                </button>
+                <p
+                  id="debug-save-status"
+                  class="step-copy hint--dim"
+                  data-testid="debug-save-status"
+                  role="status"
+                  aria-live="polite"
+                ></p>
+              </div>
               <!-- The summary after Finish (authoring plan 2026-09-28-0953 §3.3,
                M3b): each code's verdict, then a map of the visits, the
                codes with their facing lines, and the pins and photos -
