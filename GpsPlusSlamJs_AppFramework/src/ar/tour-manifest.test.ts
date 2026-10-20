@@ -199,8 +199,8 @@ describe('parseTourManifest', () => {
 });
 
 describe('the version policy (tour editor plan W3, D5)', () => {
-  it('is version 3, minor 0', () => {
-    expect([TOUR_MANIFEST_VERSION, TOUR_MANIFEST_MINOR]).toEqual([3, 0]);
+  it('is version 3, minor 1 (minor 1 adds the placed 3D model)', () => {
+    expect([TOUR_MANIFEST_VERSION, TOUR_MANIFEST_MINOR]).toEqual([3, 1]);
   });
 
   it.each([1, 2])(
@@ -228,7 +228,7 @@ describe('the version policy (tour editor plan W3, D5)', () => {
     }
   );
 
-  it('always writes version 3 at minor 0, with every station and its items', () => {
+  it('writes version 3 at minor 0 while the tour has no model, with every station and its items', () => {
     const written = JSON.parse(
       serializeTourManifest(parseTourManifest(tour()))
     ) as Record<string, unknown>;
@@ -348,6 +348,83 @@ describe('the version policy (tour editor plan W3, D5)', () => {
         serializeTourManifest(parseTourManifest(file(newer)))
       ).toThrow(/made with a newer version of the app/);
     });
+  });
+});
+
+describe('a placed 3D model (minor 1, a size in metres)', () => {
+  // Why: the model is the one item a 3.0 reader does not know, so a tour
+  // carrying one is written at minor 1 - a 3.0 reader then leaves the
+  // model out instead of refusing the tour - and a tour without one keeps
+  // minor 0, so every tour made before stays editable by a 3.0 reader. The size must come back exactly: it is the creator's
+  // number.
+  const model = {
+    id: 'm1',
+    kind: 'model',
+    asset: 'arch',
+    sizeM: 12.75,
+    label: 'The old arch',
+    createdAtIso: '2026-10-19T12:00:00.000Z',
+    pose: { position: [4, 0, -1], rotation: [0, 0.6, 0, 0.8] },
+  };
+  const withModel = () =>
+    tour({
+      assets: [{ id: 'arch', path: 'content/arch.glb' }],
+      stations: [station([pin, photo, model])],
+    });
+
+  it('writes a tour carrying a model at minor 1, and reads it back exactly', () => {
+    const manifest = parseTourManifest(withModel());
+    const json = serializeTourManifest(manifest);
+    expect(JSON.parse(json)).toMatchObject({ version: 3, minor: 1 });
+    const again = parseTourManifest(JSON.parse(json));
+    expect(again).toEqual({ ...manifest, minor: 1 });
+    expect(tourItems(again).find((i) => i.id === 'm1')).toEqual(model);
+  });
+
+  it('writes minor 0 again once the last model is gone', () => {
+    const manifest = parseTourManifest({ ...withModel(), minor: 1 });
+    const without = {
+      ...manifest,
+      stations: manifest.stations.map((s) => ({
+        ...s,
+        items: s.items.filter((i) => i.kind !== 'model'),
+      })),
+    };
+    expect(JSON.parse(serializeTourManifest(without))).toMatchObject({
+      minor: 0,
+    });
+  });
+
+  it("a newer minor's model beyond this reader's bound is left out", () => {
+    const manifest = parseTourManifest({
+      ...withModel(),
+      minor: TOUR_MANIFEST_MINOR + 1,
+      stations: [station([pin, { ...model, sizeM: 900 }])],
+    });
+    expect(tourItems(manifest).map((i) => i.id)).toEqual(['p1']);
+  });
+
+  // Why: items and assets share one id namespace - a model names an
+  // asset by id, so an item with an asset's id would make that reference
+  // ambiguous.
+  it('a model id may not be an asset id: one id namespace across items and assets', () => {
+    expect(() =>
+      parseTourManifest(
+        tour({
+          assets: [{ id: 'arch', path: 'content/arch.glb' }],
+          stations: [station([{ ...model, id: 'arch' }])],
+        })
+      )
+    ).toThrow(/"assets\[0\]\.id" "arch" is already an item id/);
+  });
+
+  it('the world view a draft keeps carries a model with its size', () => {
+    const { pose: _pose, ...fields } = model;
+    const world = { ...fields, geo: GEO, station: 'gate' };
+    expect(parseTourObject(world)).toEqual(world);
+    expect(() => parseTourObject({ ...world, sizeM: 0 })).toThrow(
+      /object\.sizeM/
+    );
   });
 });
 

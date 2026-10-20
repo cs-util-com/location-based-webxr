@@ -36,12 +36,32 @@ interface GateTile {
 }
 
 /**
- * Whether a tile set can draw the whole view: every top-level tile (the
- * root's children: an image-tiled set's coarsest level) that its last update
- * visited in view has loaded. Below that level the library keeps a parent
- * drawn until its children are ready, so only a missing top-level tile
- * leaves a hole. False before any top-level tile was visited (a set never
- * updated is not ready).
+ * Whether a tile set can draw the whole view: its last update visited its
+ * top level (the root's children: an image-tiled set's coarsest level), and
+ * every top-level tile it found in view has loaded. Below that level the
+ * library keeps a parent drawn until its children are ready, so only a
+ * missing top-level tile leaves a hole. A set with NO top-level tile in
+ * view is ready: nothing of it is missing from the view (a camera under
+ * the relief looking down sees none of it, because the library clears
+ * `inFrustum` on a tile none of whose children is in view, up to the top
+ * level; reading that as "not ready" kept the relief from ever taking the
+ * view, so the clearance never lifted the camera out). False when no
+ * top-level tile was visited by the last update (a set never updated is
+ * not ready).
+ *
+ * This makes the hand-over one-way while the relief's top level stays out
+ * of view: with the globe ready too, `nextDrawnShare` walks the share to a
+ * low camera's target (1), and nothing in the gate takes it back while the
+ * relief draws nothing. The loop closes outside the gate: the whole top
+ * level leaves the view only for a camera under every top-level volume in
+ * front of it, and the share at the relief is what lets its tiles load,
+ * so the clearance (which lifts the camera only where the relief draws)
+ * lifts the camera above the relief's ground, where its top level is in
+ * view again and the ordinary rule holds. Looking away from the ground,
+ * nothing of either carrier is missing. A bound on how long the share may
+ * sit at the relief while it draws nothing is not built: no case is known
+ * where the clearance does not close the loop
+ * (`globe-band-gate.test.ts` pins the pair).
  */
 export function topLevelReady(tiles: {
   root: unknown;
@@ -49,14 +69,33 @@ export function topLevelReady(tiles: {
 }): boolean {
   const root = tiles.root as GateTile | null;
   if (!root || !Array.isArray(root.children)) return false;
-  let seen = 0;
+  let visited = 0;
   for (const child of root.children as GateTile[]) {
     const t = child.traversal;
-    if (t?.lastFrameVisited !== tiles.frameCount || !t.inFrustum) continue;
-    seen++;
-    if (child.internal?.loadingState !== LOADED) return false;
+    if (t?.lastFrameVisited !== tiles.frameCount) continue;
+    visited++;
+    if (t.inFrustum && child.internal?.loadingState !== LOADED) return false;
   }
-  return seen > 0;
+  return visited > 0;
+}
+
+/**
+ * Whether a tile set's last update found any of its top-level tiles (the
+ * root's children) in view. With `topLevelReady`, "has drawn its whole
+ * view, and the view held some of it": the globe's first look ends on
+ * that, not on a frame that saw none of the globe.
+ */
+export function topLevelInView(tiles: {
+  root: unknown;
+  frameCount: number;
+}): boolean {
+  const root = tiles.root as GateTile | null;
+  if (!root || !Array.isArray(root.children)) return false;
+  return (root.children as GateTile[]).some(
+    (child) =>
+      child.traversal?.lastFrameVisited === tiles.frameCount &&
+      child.traversal.inFrustum === true,
+  );
 }
 
 /**

@@ -17,15 +17,10 @@ import type { CreatorHandoff } from "./creator-handoff.js";
 import type { CreatorMeasuring } from "./creator-measuring.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import type { CreatorSettle } from "./creator-settle.js";
-import {
-  captureSpotsForRebuild,
-  finishedFileName,
-  rebuildFinishedTour,
-  type RebuildPhotoSpots,
-} from "./finish-rebuild.js";
+import { finishedFileName, rebuildFinishedTour } from "./finish-rebuild.js";
 import { FINISH_LABELS, finishReadiness } from "./qr-author-mode.js";
 import { authoringFinished } from "./tour-authoring-actions.js";
-import { manifestNow } from "./tour-document.js";
+import { historyAssetIds, manifestNow } from "./tour-document.js";
 import { scanEntryNames } from "./tour-read-set.js";
 import type { TourSession } from "./tour-session.js";
 import type {
@@ -96,6 +91,9 @@ export function wireCreatorFinish(deps: {
     manifest: TourManifest | null;
     count: number;
   } | null = null;
+  /** The open the switch's default was last set for: set once per open,
+   *  so a later render never undoes the creator's own tick. */
+  let defaultedFor: TourSession | null = null;
 
   function renderKeepScan(): void {
     const current = ctx.session;
@@ -114,6 +112,14 @@ export function wireCreatorFinish(deps: {
           current.manifestWrap,
         ).length,
       };
+    }
+    // Ticked whenever the opened file carries a walk: until the walk can
+    // be saved apart from the tour, a lean copy would be the only one a
+    // creator may keep, without the walk. Set once per open, even while
+    // the row is hidden (an open inside AR): the Finish there reads it.
+    if (defaultedFor !== current) {
+      defaultedFor = current;
+      dom.keepScanInput.checked = scanMemo.count > 0;
     }
     // Chosen on the page before AR (UI round 1, U2): hidden in a session,
     // since the Finish there reads it.
@@ -138,22 +144,6 @@ export function wireCreatorFinish(deps: {
       baseMemo = { state, manifest: manifestNow(state)! };
     }
     return baseMemo.manifest;
-  }
-
-  /** The recorded photos' spots for this Finish: the shared rule
-   *  (`finish-rebuild.ts` `captureSpotsForRebuild`, M6 E0b) with this
-   *  page's progress line and its re-open check. */
-  function captureSpotsForFinish(
-    current: TourSession,
-    manifest: TourManifest,
-  ): Promise<RebuildPhotoSpots> {
-    return captureSpotsForRebuild(current, manifest, {
-      shouldContinue: () => ctx.session === current,
-      onChunk: (done, total) => {
-        ctx.finishProgress = FINISH_LABELS.placingPhotos(done, total);
-        deps.render();
-      },
-    });
   }
 
   function readiness(): ReturnType<typeof finishReadiness> {
@@ -246,8 +236,6 @@ export function wireCreatorFinish(deps: {
         // past `finishing = true` and freeze the panel.
         const manifest = finishBase();
         const stationsAtStart = tour.state().stations;
-        const photos = await captureSpotsForFinish(current, manifest);
-        if (ctx.session !== current) return; // re-opened meanwhile
         const deleted = [...tour.deleted()];
         // The Finish's rules, shared with the desktop editor (M6 E0,
         // `finish-rebuild.ts`): the edits applied, the files written and
@@ -259,12 +247,10 @@ export function wireCreatorFinish(deps: {
           // A snapshot: placements land in the document during the rebuild.
           placed: [...tour.entries()],
           deleted,
+          // What an undo after this Finish may still show (a cover).
+          keepAssets: historyAssetIds(tour.state()),
           levels,
-          ...(photos.spots === undefined ? {} : { captureSpots: photos.spots }),
           keepScan: dom.keepScanInput.checked,
-          // A walk that places nothing is left out too (the M4b milestone
-          // review #3: S-D10's default, also without spots).
-          walkPlacesNothing: photos.placesNothing === true,
           previous,
           shouldContinue: () => ctx.session === current,
           onProgress: (done, total) => {
@@ -290,9 +276,6 @@ export function wireCreatorFinish(deps: {
           ...(scanLeftOut.length === 0
             ? []
             : [FINISH_LABELS.scanLeftOut(scanLeftOut.length)]),
-          ...(photos.notPlaced === undefined
-            ? []
-            : [FINISH_LABELS.photosNotPlaced(photos.notPlaced)]),
           // What the settles decided for the code (UI round 1, U3): no
           // button announces it any more.
           deps.settle.positionSentence(),
@@ -323,12 +306,6 @@ export function wireCreatorFinish(deps: {
         });
         const kept = new Set(tour.entries().map((p) => p.object.id));
         const finishedEntries = before.filter((p) => !kept.has(p.object.id));
-        // The walk is decided for this open tour once its photos stand in
-        // `written` (or it places none): the creator's HUD drops its hedge
-        // (PR #642 review). Not after a declined bake: nothing was written,
-        // so the next Finish bakes again and may still re-sort the stations
-        // (PR #643 review).
-        if (photos.notPlaced === undefined) ctx.walkDecidedFor = current;
         // A photo that leaves keeps its bytes here for its preview: the
         // hosted zip does not have them until the creator uploads this one.
         for (const p of finishedEntries) {

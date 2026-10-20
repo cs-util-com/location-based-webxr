@@ -15,7 +15,12 @@ import { installTourViewerArFakes } from "./ar-fakes.js";
  */
 
 const SAMPLE = "http://127.0.0.1:5197/ranges-ok/sample-tour.zip";
-const BAKED = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
+/** A tour with placed photos and no cover chosen (the first is its cover). */
+const PHOTOS = "http://127.0.0.1:5197/ranges-ok/tour.zip";
+/** A tour.json carrying debug camera captures and no placed photo. */
+const CAPTURES = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
+const UNFINISHED = "http://127.0.0.1:5197/ranges-ok/unfinished-tour.zip";
+const PLAIN = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
 
 /** A visitor whose browser will still ask for the location. */
 async function openAsNewVisitor(page, url) {
@@ -124,7 +129,10 @@ test("a phone without AR copies the tour's link for one that has it", async ({
 test("a tour with photos shows one of them above its name", async ({
   page,
 }) => {
-  await openAsNewVisitor(page, BAKED);
+  // Why the tour changed: this test took the cover from the debug camera
+  // captures a tour.json carried, which a visitor no longer sees; a tour's
+  // first placed photo is its cover the same way.
+  await openAsNewVisitor(page, PHOTOS);
   const cover = page.getByTestId("visitor-cover");
   await expect(cover).toBeVisible({ timeout: 15000 });
   // The photo really loaded from the zip, not a broken image.
@@ -148,7 +156,7 @@ test("a tour with a photo still puts the button on a small phone's first screen"
   // Why (M4 review #8): the photo adds about a quarter of the screen above
   // the name; the layout tests above use the sample, which has none.
   await page.setViewportSize({ width: 360, height: 640 });
-  await openAsNewVisitor(page, BAKED);
+  await openAsNewVisitor(page, PHOTOS);
   await expect(page.getByTestId("visitor-cover")).toBeVisible({
     timeout: 15000,
   });
@@ -159,6 +167,22 @@ test("a tour with a photo still puts the button on a small phone's first screen"
   expect(l.button.top).toBeGreaterThanOrEqual(0);
   expect(l.button.bottom).toBeLessThanOrEqual(l.height);
   expect(l.title.bottom).toBeLessThanOrEqual(l.button.top);
+});
+
+test("a tour.json carrying debug camera captures takes no cover from them", async ({
+  page,
+}) => {
+  // Why: the frames a recording captured by itself are debug data, which a
+  // visitor never sees; a tour without a placed photo once showed its
+  // first captured frame as the cover.
+  await openAsNewVisitor(page, CAPTURES);
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    { timeout: 15000 },
+  );
+  await expect(page.getByTestId("visitor-title")).toHaveText("An AR tour");
+  await expect(page.getByTestId("visitor-cover")).toBeHidden();
 });
 
 test("five taps on the tour's name reload the page to record this visit", async ({
@@ -232,4 +256,45 @@ test("a tour's details: its name in the tab, its description, the cover it chose
       "";
   });
   await expect(contact).toBeHidden();
+});
+
+test("a tour not finished yet says so on its start page, with whom to ask", async ({
+  page,
+}) => {
+  // Why this matters: the printed code may point at the hosted file before
+  // its first Finish. A visitor who opens it reads that the tour is not
+  // finished, not "N places to discover" with nothing behind it, and is
+  // told whom to ask when the tour names a contact - without any error.
+  await openAsNewVisitor(page, UNFINISHED);
+  await expect(page.getByTestId("visitor-title")).toHaveText("Harbour Lights", {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("visitor-subline")).toHaveText(
+    "This tour is not finished yet.",
+  );
+  await expect(page.getByTestId("error")).toHaveText("");
+  const contact = page.getByTestId("error-contact");
+  await expect(contact).toBeVisible();
+  await expect(contact.locator("a")).toHaveText("guide@example.org");
+  // Nothing to start: no Start, and no line about one - nor "What
+  // happens?", which describes a session this visitor cannot start.
+  await expect(page.getByTestId("enter-ar")).toBeHidden();
+  await expect(page.getByTestId("ar-hint")).toBeHidden();
+  await expect(page.locator("#visitor-what")).toBeHidden();
+});
+
+test("a zip without tour.json says on its start page that the tour is not finished yet", async ({
+  page,
+}) => {
+  // Why this matters: a creator's first upload may be the starter zip or a
+  // recording, which carry no tour.json and so no contact to name.
+  await openAsNewVisitor(page, PLAIN);
+  await expect(page.getByTestId("visitor-subline")).toHaveText(
+    "This tour is not finished yet.",
+    { timeout: 15000 },
+  );
+  await expect(page.getByTestId("visitor-title")).toHaveText("An AR tour");
+  await expect(page.getByTestId("error-contact")).toBeHidden();
+  await expect(page.getByTestId("enter-ar")).toBeHidden();
+  await expect(page.locator("#visitor-what")).toBeHidden();
 });

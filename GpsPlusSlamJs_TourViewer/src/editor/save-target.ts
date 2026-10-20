@@ -289,9 +289,11 @@ export async function createSaveTarget(
       if (state !== "same") throw new InPlaceRefusal(state);
       await writeFileOrAbort(handle, blob);
       const written = await handle.getFile();
-      // The baseline moves only once the write landed.
+      // The baseline moves only once the write landed. Its size and tail
+      // are the bytes written (one source, so they describe one file); its
+      // time is the file's, which only a read gives.
       base = {
-        size: written.size,
+        size: blob.size,
         lastModified: written.lastModified,
         tail: await tailOf(blob),
       };

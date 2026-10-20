@@ -112,7 +112,7 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
     is legitimate and only the creator knows whether the measurement was
     worth keeping. What they must not have is silence.
 - `FINISH_LABELS` - the finish step's copy through its async cycle
-  (reading, placing photos, rebuilding N of M, failed) and the save's
+  (reading, rebuilding N of M, failed) and the save's
   (`savingTour(bytes)` while the Finish saves the zip by itself, the button's
   `saveAgain` and `saving`, `saved`, `savedToPhone`, `notSaved`,
   `saveFailed(reason)`). Since the

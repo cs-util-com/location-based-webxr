@@ -135,7 +135,8 @@ export function tourObjects(
   );
 }
 
-/** A recorded photo's spot in the world. */
+/** A recorded photo's spot in the world.
+ *  @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major. */
 export interface TourCaptureGeo {
   readonly image: string;
   readonly station: string;
@@ -144,7 +145,8 @@ export interface TourCaptureGeo {
 }
 
 /** The baked recorded photos in the world, in capture order; empty
- *  without baked spots. */
+ *  without baked spots.
+ *  @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major. */
 export function tourCaptureGeos(
   manifest: Pick<TourManifest, 'stations' | 'captureSpots'>
 ): TourCaptureGeo[] {

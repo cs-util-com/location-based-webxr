@@ -10,7 +10,10 @@
  * few seconds after a change (M6 E2b-2, `autosave.ts`). The tour's name in
  * the top bar opens its details (W2 of the tour editor plan,
  * `details-dialog.ts`); "Done" says where the changes are and what is
- * left to do, and moves the walk out (`done-dialog.ts`). Linked from the
+ * left to do, and moves the walk out (`done-dialog.ts`). A tour whose file
+ * carries a walk shows its debug camera captures on the map once it has
+ * opened (`debug-capture-layer.ts`; debug data, never the tour's
+ * content), behind a "Show debug data" switch. Linked from the
  * setup page's "You already have a tour?" box and its step 5 on a device
  * without AR.
  *
@@ -30,6 +33,8 @@ import {
   type TourSaveStatus,
 } from "../tour-document.js";
 import { describeIntegrityError } from "../open-errors.js";
+import { debugCapturesOf } from "../debug-captures.js";
+import { pictureProblem } from "../image-cap.js";
 import { scanEntryNames } from "../tour-read-set.js";
 import { openDraftStore } from "../draft-store-root.js";
 import {
@@ -43,6 +48,11 @@ import {
   type CardView,
 } from "./editor-card.js";
 import { createEditorMap } from "./editor-map.js";
+import {
+  createDebugCaptureLayer,
+  decodeDebugThumbnail,
+  type DebugLayer,
+} from "./debug-capture-layer.js";
 import {
   photoSource,
   type EditorItem,
@@ -240,6 +250,10 @@ const doneButton = element<HTMLButtonElement>("done-btn");
 const saveStatus = element("save-status");
 const keepWalk = element("keep-walk");
 const keepWalkInput = element<HTMLInputElement>("keep-walk-input");
+/** The debug layer's switch and its line (`debug-capture-layer.ts`). */
+const debugPanel = element("debug-panel");
+const debugInput = element<HTMLInputElement>("debug-data-input");
+const debugStatus = element("debug-status");
 /** The tour's "needs no GPS" setting and its warnings (QR-first M1b-2). */
 const noGpsInput = element<HTMLInputElement>("no-gps-input");
 /** Its warnings' live region: never hidden (an empty one is zero-height),
@@ -261,9 +275,6 @@ const photos = createPhotoCopies((file) => openTourFile(file));
 /** The open tour's draft writes, bound to it: a save of a tour closed
  *  meanwhile moves nothing of the next one's (E2b-2 milestone review #1). */
 let tourDraft: EditorTourDraft | null = null;
-/** The photos a save could not place were said for this tour (E2b-2
- *  milestone review #6): an autosave says it once. */
-let toldNotPlaced = false;
 /** The opened file itself, when it may be written in place (E2b-1). */
 let target: SaveTarget | null = null;
 /** This tab's hold on the opened file's name (E2b plan review #6), and
@@ -486,12 +497,10 @@ function placeCard(): void {
   card.place(map.anchorOf(selected), freeArea());
 }
 
-/** A pin or photo of the tour can be edited; codes, stations and the
- *  walk's recorded photos cannot (yet). */
+/** A pin or photo of the tour can be edited; codes and stations cannot
+ *  (yet). */
 function editable(item: EditorItem): boolean {
-  return (
-    (item.kind === "pin" || item.kind === "photo") && item.recorded !== true
-  );
+  return item.kind === "pin" || item.kind === "photo";
 }
 
 function viewOf(item: EditorItem): CardView {
@@ -827,9 +836,7 @@ const card = createEditorCard(
       if (open === null || source === null) {
         return Promise.reject(new Error("no tour is open"));
       }
-      return source.kind === "content"
-        ? open.loadContentEntry(source.path)
-        : open.loadEntry(source.path);
+      return open.loadContentEntry(source);
     },
     onClose: () => {
       select(null);
@@ -1155,12 +1162,57 @@ function leaveFile(): void {
   keepsWalk = false;
   for (const t of fileToasts.splice(0)) t.remove();
   photos.clear();
+  debugLayer?.stop();
+  debugLayer = null;
+  debugPanel.hidden = true;
+  debugStatus.textContent = "";
+}
+
+/** The open tour's debug layer: view state only, never in the tour
+ *  document, a save or the draft. */
+let debugLayer: DebugLayer | null = null;
+
+/**
+ * Show the walk's debug camera captures of a tour that carries a walk,
+ * after it opened: the join replays the walk once (`debugCapturesOf`),
+ * then a thumbnail per capture is decoded, one at a time. Shown by
+ * default; the switch hides them. A tour closed meanwhile stops it.
+ */
+function startDebugLayer(opened: TourSession): void {
+  debugPanel.hidden = false;
+  debugInput.checked = true;
+  const layer = createDebugCaptureLayer<HTMLElement>({
+    read: (options) => debugCapturesOf(opened, options),
+    // From the copy the page reads now: the opened file stops reading
+    // once a save rewrote it (as the card's photos, E2b plan review #2).
+    loadPicture: (image) => (photos.current() ?? opened).loadEntry(image),
+    pictureProblem,
+    thumbnail: decodeDebugThumbnail,
+    view: {
+      draw: (captures) => {
+        map.debugDraw(captures);
+      },
+      thumb: (image, picture) => {
+        map.debugThumb(image, picture);
+      },
+      visible: (on) => {
+        map.debugVisible(on);
+      },
+      clear: () => {
+        map.debugClear();
+      },
+    },
+    status: (line) => {
+      debugStatus.textContent = line;
+    },
+  });
+  debugLayer = layer;
+  void layer.start();
 }
 
 /** What this page keeps of the tour beside the store's document (whose
  *  save status an open or a close resets). */
 function resetEditing(): void {
-  toldNotPlaced = false;
   endUndo();
   moving = null;
   moved.clear();
@@ -1327,13 +1379,17 @@ async function openFile(
   model = editor.model();
   // The walk-recording switch only for a tour that carries one (S-D10:
   // the saved copy leaves it out unless asked, E2 plan review #4).
-  keepWalkInput.checked = false;
-  keepWalk.hidden =
+  // Ticked whenever it does: until the walk can be saved apart from the
+  // tour, a lean copy would be the only one a creator may keep, without
+  // the walk.
+  const carriesWalk =
     scanEntryNames(
       outcome.session.entries.map((e) => e.filename),
       outcome.manifest,
       outcome.session.manifestWrap,
-    ).length === 0;
+    ).length > 0;
+  keepWalkInput.checked = carriesWalk;
+  keepWalk.hidden = !carriesWalk;
   renderTourName();
   element("tour-file").textContent = outcome.fileName;
   topbar.hidden = false;
@@ -1356,6 +1412,8 @@ async function openFile(
   }
   if (drafted.offer !== null) offerDraft(editor, drafted.offer);
   if (handle !== null) void attachTarget(editor, handle, file);
+  // After the open, never before it: the replay must not hold up the tour.
+  if (carriesWalk) startDebugLayer(opened);
   return true;
 }
 
@@ -1756,18 +1814,7 @@ async function buildAndDeliver(
     // Quiet: an autosave says it saved in the status line only (it is
     // always in place, which keeps the walk, so the result has nothing
     // more to say).
-    if (arrived && mode === "auto" && save.notPlaced !== undefined) {
-      // The one thing an autosave says beyond the status line, once per
-      // tour (E2b-2 milestone review #6): nobody may ever press Save.
-      if (!toldNotPlaced) {
-        fileToasts.push(
-          toast(FINISH_LABELS.photosNotPlaced(save.notPlaced), undefined, null),
-        );
-      }
-      toldNotPlaced = true;
-    }
     if (arrived && mode === "explicit") {
-      if (save.notPlaced !== undefined) toldNotPlaced = true;
       // The Finish's own result sentences (E2a review #2).
       toast(
         [
@@ -1777,9 +1824,6 @@ async function buildAndDeliver(
           ...(save.scanLeftOut.length === 0
             ? []
             : [FINISH_LABELS.scanLeftOut(save.scanLeftOut.length)]),
-          ...(save.notPlaced === undefined
-            ? []
-            : [FINISH_LABELS.photosNotPlaced(save.notPlaced)]),
         ].join(" "),
         undefined,
         // The download's result carries an instruction; in place it does not.
@@ -1808,6 +1852,10 @@ async function buildAndDeliver(
 
 saveButton.addEventListener("click", () => {
   void runSave();
+});
+// The debug layer's switch: view state only - no edit, nothing pending.
+debugInput.addEventListener("change", () => {
+  debugLayer?.setVisible(debugInput.checked);
 });
 // A tour-level edit (QR-first M1b-2): pending like a note's, backed up by
 // the draft, saved by itself like any change.

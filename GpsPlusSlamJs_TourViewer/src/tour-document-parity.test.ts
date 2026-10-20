@@ -177,6 +177,24 @@ interface Page {
   /** A new page load over the same file and the same draft, restoring
    *  what the draft offers. */
   reopenRestored(): Promise<Page>;
+  /** The stations the page holds now that the opened tour lacks: id and
+   *  position, sorted by id. */
+  addedStations(): AddedStation[];
+}
+
+interface AddedStation {
+  readonly id: string;
+  readonly lat: number;
+  readonly lon: number;
+}
+
+/** `stations` minus the opened tour's, as `addedStations` reports them. */
+function addedOf(stations: readonly AddedStation[]): AddedStation[] {
+  const opened = new Set(tourOf(OPENED).stations.map((s) => s.id));
+  return stations
+    .filter((s) => !opened.has(s.id))
+    .map(({ id, lat, lon }) => ({ id, lat, lon }))
+    .sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /** The phone's Finish found nothing to save: it would not start. */
@@ -210,9 +228,10 @@ async function desktopPage(
   file: File,
   stores: (key: string) => Promise<DraftFileStore>,
   restore = false,
+  /** The tour.json the page opens (default: the table's tour). */
+  manifest: TourManifest = tourOf(OPENED),
 ): Promise<Page> {
   const session: TourSession = await openTourFile(file);
-  const manifest = tourOf(OPENED);
   const draft = createEditorDraft({
     openStore: stores,
     holdLock: freeLock,
@@ -281,6 +300,17 @@ async function desktopPage(
     save: async () => (await editor.save({ keepScan: false })).written,
     records: async () => readRecords(await stores(key), false),
     reopenRestored: () => desktopPage(file, stores, true),
+    addedStations: () =>
+      addedOf(
+        editor
+          .model()
+          .items.filter((item) => item.kind === "station")
+          .map((item) => ({
+            id: item.id.slice("station:".length),
+            lat: item.at?.lat ?? Number.NaN,
+            lon: item.at?.lng ?? Number.NaN,
+          })),
+      ),
   };
 }
 
@@ -347,11 +377,20 @@ function phoneElement() {
   };
 }
 
+/** What only the phone's page offers here: the file its last Finish
+ *  made, and the objects its document holds. */
+interface PhonePage extends Page {
+  lastFinished(): File;
+  objects(): TourObject[];
+}
+
 async function phonePage(
   file: File,
   stores: (key: string) => Promise<DraftFileStore>,
   restore = false,
-): Promise<Page> {
+  /** The tour.json the page opens (default: the table's tour). */
+  manifest: TourManifest = tourOf(OPENED),
+): Promise<PhonePage> {
   const session: TourSession = await openTourFile(file);
   const dom = Object.fromEntries(
     PHONE_DOM_KEYS.map((k) => [k, phoneElement()]),
@@ -362,7 +401,7 @@ async function phonePage(
   const ctx = createTourViewerSession(store);
   ctx.session = session;
   ctx.tourManifestStatus = "settled";
-  ctx.tourDocument.open(tourOf(OPENED));
+  ctx.tourDocument.open(manifest);
   let draftKey: string | null = null;
   const setup = wireCreatorSetup({
     ctx,
@@ -484,6 +523,22 @@ async function phonePage(
       return readRecords(await stores(draftKey), true);
     },
     reopenRestored: () => phonePage(file, stores, true),
+    lastFinished: () => {
+      const made = ctx.rebuiltZip;
+      if (made === null) throw new Error("the phone finished no tour");
+      return new File([made.blob], made.filename, {
+        type: "application/zip",
+      });
+    },
+    objects,
+    addedStations: () =>
+      addedOf(
+        (ctx.tourDocument.manifest()?.stations ?? []).map((s) => ({
+          id: s.id,
+          lat: s.geo.lat,
+          lon: s.geo.lon,
+        })),
+      ),
   };
 }
 
@@ -526,11 +581,19 @@ function itemsByStation(written: TourManifest): {
 } {
   const opened = new Set(tourOf(OPENED).stations.map((s) => s.id));
   const itemsOf = (stations: readonly TourStation[]) =>
-    stations.map((s) => s.items.map((i) => i.id));
+    stations.map((s) => s.items.map((i) => i.id).sort());
   return {
     opened: itemsOf(written.stations.filter((s) => opened.has(s.id))),
     added: itemsOf(written.stations.filter((s) => !opened.has(s.id))),
   };
+}
+
+/** The written station holding item `id`. */
+function stationHolding(
+  written: TourManifest,
+  id: string,
+): TourStation | undefined {
+  return written.stations.find((s) => s.items.some((i) => i.id === id));
 }
 
 const ROWS: readonly Row[] = [
@@ -554,11 +617,16 @@ const ROWS: readonly Row[] = [
     },
   },
   {
+    // Why: pin b is its station's only object, and the station has no
+    // title, story or route: deleting the pin drops the station with it.
     name: "delete a pin, save",
     records: true,
     run: async (p) => {
       await p.remove("b");
       return p;
+    },
+    each: ({ written }) => {
+      expect(written.stations.map((s) => s.id)).toEqual(["st-a", "st-f"]);
     },
   },
   {
@@ -615,19 +683,100 @@ const ROWS: readonly Row[] = [
     },
   },
   {
-    name: "move a note, save",
+    // Why: a move out of its station's found radius re-runs the station
+    // rule. About 57 m from its station and 36 m from the nearest other
+    // one (25 m radii): the note starts a station at its new spot, and the
+    // station it left, now empty and automatic, goes.
+    name: "move a note out of its station's radius, save",
     records: false,
     run: async (p) => {
       await p.move("a", NORTH, 9.0502);
       return p;
     },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["b"], ["f"]],
+        added: [["a"]],
+      });
+    },
   },
   {
-    name: "place a new pin, save",
+    // Why: the same rule, the other way: a note moved to about 11 m from
+    // another station (inside its 25 m radius) joins that station.
+    name: "move a note into another station's radius, save",
+    records: false,
+    run: async (p) => {
+      await p.move("a", 48.5203, 9.05);
+      return p;
+    },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["a", "b"], ["f"]],
+        added: [],
+      });
+    },
+  },
+  {
+    // Why: a new pin about 33 m from the nearest station is beyond every
+    // station's 25 m radius: it starts a station anchored where it stands.
+    name: "place a new pin beyond every station's radius, save",
     records: false,
     run: async (p) => {
       await p.place(pin("new", "A new pin", NORTH));
       return p;
+    },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["a"], ["b"], ["f"]],
+        added: [["new"]],
+      });
+      expect(stationHolding(written, "new")?.geo.lat).toBeCloseTo(NORTH, 9);
+      expect(stationHolding(written, "new")).toMatchObject({
+        foundRadiusM: 25,
+        activateRadiusM: 50,
+      });
+    },
+  },
+  {
+    // Why: the station a move started is the document's from that moment,
+    // not the next write's, so the draft must keep it: after a reload the
+    // note comes back in THAT station (same id, same spot), on both pages,
+    // not in one the rule seats it in again under a new id - which the
+    // written items alone cannot tell apart. (A placement's reload is the
+    // phone's alone - the desktop places nothing a draft offers back - and
+    // is held by the creator document's tests and the phone's end-to-end
+    // run.)
+    name: "move a note out of its station's radius, reload and restore the draft, save",
+    records: false,
+    run: async (p) => {
+      await p.move("a", NORTH, 9.0502);
+      const before = p.addedStations();
+      expect(before).toHaveLength(1);
+      const after = await p.reopenRestored();
+      expect(after.addedStations()).toEqual(before);
+      return after;
+    },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["b"], ["f"]],
+        added: [["a"]],
+      });
+    },
+  },
+  {
+    // Why: a new pin about 11 m from pin b's station, within its radius,
+    // joins it rather than starting one of its own.
+    name: "place a new pin within a station's radius, save",
+    records: false,
+    run: async (p) => {
+      await p.place(pin("near", "A near pin", 48.5203));
+      return p;
+    },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["a"], ["b", "near"], ["f"]],
+        added: [],
+      });
     },
   },
   {
@@ -862,4 +1011,99 @@ describe("the parity contract: the phone's and the desktop's paths write the sam
         : `${row.name} [DIVERGES until: ${row.diverges}]`;
     test(name, () => samePages(row), 60_000);
   }
+});
+
+describe("the parity contract: a file carrying debug camera captures", () => {
+  // Why this row matters: a file written while the walk's frames were
+  // baked into the tour carries them as captureSpots, one frame in a
+  // station of the tour and one in an automatic walk-1 station only it
+  // kept. Both pages open the same document from it (the frames dropped,
+  // walk-1 with them), so an edit and a save on either writes the same
+  // tour - and neither writes a frame or the empty station.
+  const withCaptures: TourManifest = {
+    ...tourOf(OPENED),
+    stations: [
+      ...tourOf(OPENED).stations,
+      {
+        id: "walk-1",
+        geo: { lat: 48.53, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+        activateRadiusM: 50,
+        foundRadiusM: 25,
+        hint: "arrow",
+        steps: [],
+        items: [],
+      },
+    ],
+    captureSpots: {
+      fixes: 3,
+      gpsAccuracyMedianM: 4,
+      captures: [
+        {
+          image: "images/frame-0.jpg",
+          station: tourOf(OPENED).stations[0]!.id,
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+        {
+          image: "images/frame-1.jpg",
+          station: "walk-1",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      ],
+    },
+  };
+
+  it("both pages write the same tour, without the captures and without walk-1", async () => {
+    const file = await tourFile();
+    const written = await Promise.all(
+      [desktopPage, phonePage].map(async (page) => {
+        const p = await page(file, memoryStores(), false, withCaptures);
+        await p.edit("a", "The gate");
+        return p.save();
+      }),
+    );
+    const [desktop, phone] = written;
+    expect(desktop).toEqual(phone);
+    for (const w of written) {
+      expect(w?.captureSpots).toBeUndefined();
+      expect(w?.stations.map((st) => st.id)).toEqual(
+        tourOf(OPENED).stations.map((st) => st.id),
+      );
+    }
+  }, 60_000);
+});
+
+describe("the phone's draft of a file-opened tour across Finishes", () => {
+  // MARKED `it.fails`: the defect is real and open. The phone keeps its
+  // draft under the key the tour was opened with until a re-open proves
+  // the Finish was put in place (`creator-finish.ts`, "NOT cleared
+  // here"), but the file that proof would come from has another key. The
+  // fix - moving or copying the namespace to the finished bytes' key as
+  // the desktop moves it on an in-place write (`editor-draft.ts`
+  // `landed`), or a key on an id the tour itself carries - is a decision
+  // about the draft's semantics on a download, filed rather than taken
+  // here. When it lands this test turns red and the marker comes off.
+  it.fails(
+    "a phone draft of a file-opened tour stays reachable across two Finishes",
+    async () => {
+      // Why this test matters: a tour opened from a FILE is known by a key
+      // taken from its content (`tour-file-key.ts`), and the draft is kept
+      // under it. A finished tour without a walk holds only what the tour
+      // kit writes, so that key hashes its tour.json - and every Finish
+      // writes a new one. The file a creator opens next is the one the last
+      // Finish made; an edit made after that Finish must be offered there,
+      // or it is lost with the page. (Fails today on the reopen: no offer.)
+      const stores = memoryStores();
+      const page = await phonePage(await tourFile(), stores);
+      await page.edit("a", "Before the first Finish");
+      await page.save();
+      await page.edit("b", "Before the second Finish");
+      const written = await page.save();
+      await page.edit("a", "After the second Finish");
+      const next = await phonePage(page.lastFinished(), stores, true, written);
+      expect(next.objects().find((o) => o.id === "a")).toMatchObject({
+        label: "After the second Finish",
+      });
+    },
+    60_000,
+  );
 });

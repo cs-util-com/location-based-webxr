@@ -12,6 +12,10 @@ import {
   type BoundedLocalCacheStore,
 } from "gps-plus-slam-app-framework/storage";
 import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
+import {
+  createEmptyTourManifest,
+  type TourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { pictureProblem } from "./image-cap.js";
 import { DEFAULT_ASSET_PREFIX } from "./code-tour.js";
@@ -169,12 +173,7 @@ export function wireArchiveOpen(deps: {
     // they would duplicate their own ids and break every later finish; an
     // id deleted from one tour means nothing in another.
     ctx.tourDocument.close();
-    // A reopened tour hedges its stations again (PR #642 review); and the
-    // closing session is not kept alive by the hint.
-    ctx.walkDecidedFor = null;
-    hooks.presentTourInfo(null, () =>
-      Promise.reject(new Error("no tour is open")),
-    );
+    hooks.presentTourInfo(null);
     // The closing tour's story and HUD (tour kit plan K4).
     hooks.stopStations();
     ctx.rebuiltZip = null;
@@ -210,8 +209,6 @@ export function wireArchiveOpen(deps: {
     // and the vote budget remembers which codes voted; the pipeline
     // outlives the switch, so both end with the tour here (M2b; review #6).
     endTourCodeVotes(ctx);
-    ctx.imagePlanes?.dispose();
-    ctx.imagePlanes = null;
     ctx.stationContent?.dispose();
     ctx.stationContent = null;
     ctx.contentAttempted = false;
@@ -222,13 +219,7 @@ export function wireArchiveOpen(deps: {
     for (const preview of ctx.placedPreviews.values()) preview.dispose();
     ctx.placedPreviews.clear();
     ctx.placementNote = null;
-    // Clear the latch HERE too (PR #367 review): the stale run's finally is
-    // generation-guarded and cannot clear it any more, and a latched
-    // imagePlanesLoading blocks every later placement in the session.
-    ctx.imagePlanesLoading = false;
-    ctx.planesRunGeneration += 1; // invalidate any in-flight placement run
     ctx.placementAttempted = false;
-    ctx.joinDeclined = false;
     // The QR line describes the CLOSING tour's codes (PR #434 review): a
     // lock, a vote count, an unknown or unusable code and a failed image
     // placement all belong to levels that just went away. Without this a
@@ -248,7 +239,6 @@ export function wireArchiveOpen(deps: {
     ctx.fusedTallies?.clear();
     // The print-size check measured the closing tour's codes (S3a).
     ctx.printSizeCheck?.reset();
-    ctx.viewerPlanesError = null;
     ctx.placement = { kind: "idle" };
     ctx.session = null;
     await closing.close().catch(() => undefined);
@@ -464,9 +454,9 @@ export function wireArchiveOpen(deps: {
       }
       ctx.session = opened;
       ctx.tourLabel = labelOf(source);
-      // Pending BEFORE the placement trigger below: the photos' baked spots
-      // live in tour.json, and a trigger that saw the teardown's "settled"
-      // with no manifest would decline them for the whole session (S1
+      // Pending BEFORE the placement trigger below: the tour's content
+      // lives in tour.json, and a trigger that saw the teardown's "settled"
+      // with no manifest would place nothing for the whole session (S1
       // milestone review #4; archive-open-order.test.ts).
       ctx.tourManifestStatus = "pending";
       renderStats();
@@ -481,47 +471,59 @@ export function wireArchiveOpen(deps: {
       // it back, so a re-measure never drops what an earlier session placed.
       // A broken manifest is an error the creator must see (the framework's
       // rule for this file), not a silently empty tour.
+      /** The tour settles: the document opens `document` (what the
+       *  creator edits) while the page reads the file's own `manifest`. */
+      const settle = (
+        manifest: TourManifest | null,
+        document: TourManifest | null,
+      ) => {
+        // The creator's work made before the manifest settled (or before
+        // any tour opened) comes along (scan-to-open plan §9 #5).
+        ctx.tourDocument.open(document);
+        ctx.tourManifestStatus = "settled";
+        hooks.presentTourInfo({
+          manifest,
+          loadImage: (path) =>
+            opened.loadEntry(`${opened.manifestWrap}${path}`),
+        });
+        ctx.scanEntries = new Set(
+          manifest === null
+            ? []
+            : scanEntryNames(
+                opened.entries.map((e) => e.filename),
+                manifest,
+                opened.manifestWrap,
+              ),
+        );
+        // The background download fetches the WHOLE file; a visitor of a
+        // copy that carries a walk reads entries on demand instead, and a
+        // visitor of a tour not finished yet reads nothing more.
+        // The archive's dispose aborts the download AND its recovery
+        // download for a host that stops honouring ranges mid-session
+        // (S1 milestone review #5): accepted for this copy only.
+        if (stopsVisitorDownload(deps.mode, manifest, ctx.scanEntries)) {
+          opened.archive.dispose();
+        }
+        // The gallery waits for the manifest, which says what it shows.
+        const filled = fillGallery(opened);
+        // Only now can a draft be judged: "already hosted" is a question
+        // about this manifest.
+        hooks.presentDraftForTour(tourKeyOf(source, opened));
+        hooks.renderAuthorReadout();
+        hooks.tryPlaceTour(); // a visitor's content may now be placeable
+        return filled;
+      };
       const manifestDone = opened.loadTourManifest().then(
         (manifest) => {
           if (ctx.session !== opened) return;
-          // The creator's work made before the manifest settled (or before
-          // any tour opened) comes along (scan-to-open plan §9 #5).
-          ctx.tourDocument.open(manifest);
-          ctx.tourManifestStatus = "settled";
-          hooks.presentTourInfo(manifest, (path) =>
-            opened.loadEntry(`${opened.manifestWrap}${path}`),
-          );
-          ctx.scanEntries = new Set(
-            manifest === null
-              ? []
-              : scanEntryNames(
-                  opened.entries.map((e) => e.filename),
-                  manifest,
-                  opened.manifestWrap,
-                ),
-          );
-          // The background download fetches the WHOLE file; a visitor of a
-          // baked copy that kept the walk reads entries on demand instead.
-          // The archive's dispose aborts the download AND its recovery
-          // download for a host that stops honouring ranges mid-session
-          // (S1 milestone review #5): accepted for this copy only.
-          if (
-            stopsVisitorDownload(
-              deps.mode,
-              ctx.scanEntries,
-              manifest?.captureSpots !== undefined,
-            )
-          ) {
-            opened.archive.dispose();
-          }
-          // The gallery waits for the manifest, which says what it shows.
-          const filled = fillGallery(opened);
-          // Only now can a draft be judged: "already hosted" is a question
-          // about this manifest.
-          hooks.presentDraftForTour(tourKeyOf(source, opened));
-          hooks.renderAuthorReadout();
-          hooks.tryPlaceTour(); // a visitor's content may now be placeable
-          return filled;
+          if (deps.mode !== "creator") return settle(manifest, manifest);
+          // A creator's zip without tour.json (a recording) opens as an
+          // empty unnamed tour, not as "no tour": its stations exist from
+          // the first placement, for the HUD, the settle and the write
+          // alike. A visitor's stays "no tour".
+          // The walk's camera captures are debug data: they start no
+          // station and the document drops any it reads (`opened`).
+          return settle(manifest, manifest ?? createEmptyTourManifest());
         },
         (err: unknown) => {
           if (ctx.session !== opened) return;
@@ -558,7 +560,6 @@ export function wireArchiveOpen(deps: {
           ctx.qrController?.reset();
           ctx.viewerUnknownCode = null;
           ctx.viewerUnusableCode = null;
-          ctx.viewerPlanesError = null;
           hooks.renderArStatus();
         })
         .catch((err: unknown) => {

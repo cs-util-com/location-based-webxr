@@ -12,6 +12,17 @@
   <body>
     <div id="map" aria-label="Tour map"></div>
 
+    <!-- The debug layer (debug-capture-layer.ts): the walk's camera
+         captures on the map, for a tour whose file carries a walk. Debug
+         data, never the tour's content. -->
+    <div id="debug-panel" class="panel debug-panel" hidden>
+      <label class="debug-data">
+        <input type="checkbox" id="debug-data-input" checked />
+        Show debug data
+      </label>
+      <span id="debug-status" role="status" aria-live="polite"></span>
+    </div>
+
     <header id="topbar" class="panel" hidden>
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">T</div>

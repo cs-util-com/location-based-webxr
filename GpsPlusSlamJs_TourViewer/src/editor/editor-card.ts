@@ -31,9 +31,6 @@ const CODE_LINE =
 const STATION_LINE =
   "A station of the story: visitors reach it here. Its steps are edited in a later version.";
 
-const RECORDED_LINE =
-  "Recorded on the walk and placed for visitors when the tour was finished.";
-
 export interface EditorCardDom {
   readonly card: HTMLElement;
   readonly inner: HTMLElement;
@@ -86,15 +83,14 @@ export interface EditorCard {
 function kindLabel(item: EditorItem): string {
   if (item.kind === "code") return item.title;
   if (item.kind === "station") return "Station";
-  if (item.recorded === true) return "Recorded photo";
   return item.kind === "photo" ? "Photo note" : "Pin note";
 }
 
 export function createEditorCard(
   dom: EditorCardDom,
   deps: {
-    /** A photo's bytes from the open tour (`TourSession.loadContentEntry`
-     *  for a placed photo, `loadEntry` for a recorded one). */
+    /** A photo's bytes from the open tour
+     *  (`TourSession.loadContentEntry`). */
     readonly loadImage: (item: EditorItem) => Promise<Blob>;
     readonly onClose: () => void;
     readonly onReveal: () => void;
@@ -313,9 +309,7 @@ export function createEditorCard(
             ? CODE_LINE
             : item.kind === "station"
               ? STATION_LINE
-              : item.recorded === true
-                ? RECORDED_LINE
-                : PRECISION_LINE,
+              : PRECISION_LINE,
         ),
         line(item.meta),
       );

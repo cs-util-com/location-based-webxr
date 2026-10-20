@@ -12,12 +12,18 @@
 import { describe, expect, it } from "vitest";
 import type {
   TourManifest,
+  TourModel,
   TourObject,
+  TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { serializeTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
+import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
+import { horizontalM } from "./move-with-code.js";
 import {
   canPlace,
+  placeRefusal,
   canStep,
   changeCount,
   documentObjects,
@@ -116,6 +122,57 @@ describe("tour document: the open", () => {
     expect(state.placed).toEqual([]);
     expect(state.past).toEqual([]);
     expect(documentObjects(state).map((o) => o.object.id)).toEqual(["z"]);
+  });
+
+  it("drops a file's debug camera captures and the stations only they kept, and writes none", () => {
+    // Why this test matters: a file written while the walk's frames were
+    // baked into the tour carries them as captureSpots, each frame in a
+    // station - an automatic walk-N station where no station held it. The
+    // frames are debug data now, which no station holds: the document
+    // opens without them, so a save writes none and the empty walk-N
+    // stations do not come back as stations a visitor is led to.
+    const withCaptures: TourManifest = {
+      ...tourOf([pin("a")]),
+      stations: [
+        ...tourOf([pin("a")]).stations,
+        {
+          id: "walk-1",
+          geo: { lat: 48.53, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+          activateRadiusM: 50,
+          foundRadiusM: 25,
+          hint: "arrow",
+          steps: [],
+          items: [],
+        },
+      ],
+      captureSpots: {
+        fixes: 3,
+        gpsAccuracyMedianM: 4,
+        captures: [
+          {
+            image: "images/frame-0.png",
+            station: stationIdOf("a"),
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+          },
+          {
+            image: "images/frame-1.png",
+            station: "walk-1",
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+          },
+        ],
+      },
+    };
+    const state = open(withCaptures);
+    for (const held of [state.opened, state.written, manifestNow(state)]) {
+      expect(held?.captureSpots).toBeUndefined();
+      expect(held?.stations.map((s) => s.id)).toEqual([stationIdOf("a")]);
+    }
+    expect(state.stations.map((s) => s.id)).toEqual([stationIdOf("a")]);
+    const written = manifestToWrite(state);
+    expect(written?.captureSpots).toBeUndefined();
+    expect(written?.stations.map((s) => s.id)).toEqual([stationIdOf("a")]);
+    // Nothing reads as unsaved: the drop is the open's, not an edit.
+    expect(changeCount(state)).toBe(0);
   });
 });
 
@@ -396,6 +453,465 @@ describe("tour document: a restore", () => {
   });
 });
 
+// --- every object belongs to a station -------------------------------------
+
+/** A point `north` m north and `east` m east of (48.6, 9.1), at 400 m: the
+ *  stations' tests build their own tour there, away from OPENED's. */
+function spot(north: number, east = 0): TourObject["geo"] {
+  const g = calcGpsCoords({ lat: 48.6, lon: 9.1 }, [north, 0, east]);
+  return { lat: g.lat, lon: g.lon, alt: 400, rotation: [0, 0, 0, 1] };
+}
+
+/** An empty station anchored at `north`/`east`, found within `radiusM`. */
+function stationAt(
+  id: string,
+  north: number,
+  radiusM = 25,
+  extra: Partial<TourStation> = {},
+): TourStation {
+  const { lat, lon, alt } = spot(north);
+  return {
+    id,
+    geo: { lat, lon, alt, rotation: [0, 0, 0, 1] },
+    activateRadiusM: 50,
+    foundRadiusM: radiusM,
+    hint: "arrow",
+    steps: [],
+    items: [],
+    ...extra,
+  };
+}
+
+/** A tour of `stations` (no objects yet): one pin each keeps them from
+ *  being automatic empties nobody placed into. */
+function tourWith(...stations: TourStation[]): TourDocumentState {
+  return open({ version: 3, minor: 0, order: "fixed", assets: [], stations });
+}
+
+function pinAt(id: string, geo: TourObject["geo"]): TourObject {
+  return { ...pin(id), geo };
+}
+
+function stationOf(state: TourDocumentState, id: string): string | undefined {
+  return objectOf(state, id).station;
+}
+
+function place(
+  state: TourDocumentState,
+  object: TourObject,
+  newStationId = `new-${object.id}`,
+  newStation = false,
+): TourDocumentState {
+  return reduce(
+    state,
+    act.placed({
+      object,
+      what: "p",
+      newStationId,
+      ...(newStation ? { newStation: true } : {}),
+    }),
+  );
+}
+
+function moveTo(
+  state: TourDocumentState,
+  id: string,
+  geo: TourObject["geo"],
+  newStationId = `moved-${id}`,
+): TourDocumentState {
+  return reduce(
+    state,
+    act.moved({
+      object: { ...objectOf(state, id), geo },
+      what: "m",
+      newStationId,
+    }),
+  );
+}
+
+// Why (everything belongs to a station, from the moment it is placed): the
+// station a pin or a photo is in is decided by the document's own reducer
+// when it is placed or moved - never later by a write - so the phone's HUD,
+// the settle, the desktop and the file all read one answer. These pin the
+// rule's edges at the slice: the station's OWN found radius (25 m by
+// default, a creator may change it), inclusive; a tie to the earlier
+// station; the nearest of two; a new station otherwise.
+describe("tour document: every object belongs to a station", () => {
+  it("a new object joins the station whose own found radius holds it, the radius itself inside", () => {
+    const at = spot(12, 5);
+    const exact = horizontalM(spot(0), at);
+    const holds = place(tourWith(stationAt("s", 0, exact)), pinAt("p", at));
+    expect(stationOf(holds, "p")).toBe("s");
+    expect(holds.stations.map((s) => s.id)).toEqual(["s"]);
+    // A micrometre less: the radius no longer holds it, a new station does.
+    const beyond = place(
+      tourWith(stationAt("s", 0, exact - 1e-6)),
+      pinAt("p", at),
+    );
+    expect(stationOf(beyond, "p")).toBe("new-p");
+  });
+
+  it("reads the station's own radius, not 25 m: 10 m from a 5 m station starts a new one, from a 40 m one 30 m away joins", () => {
+    expect(
+      stationOf(
+        place(tourWith(stationAt("s", 0, 5)), pinAt("p", spot(10))),
+        "p",
+      ),
+    ).toBe("new-p");
+    expect(
+      stationOf(
+        place(tourWith(stationAt("s", 0, 40)), pinAt("p", spot(30))),
+        "p",
+      ),
+    ).toBe("s");
+  });
+
+  it("a tie goes to the earlier station; of two that hold it, the nearer", () => {
+    const two = tourWith(stationAt("south", -10), stationAt("north", 10));
+    expect(stationOf(place(two, pinAt("p", spot(0))), "p")).toBe("south");
+    expect(stationOf(place(two, pinAt("p", spot(1))), "p")).toBe("north");
+    expect(stationOf(place(two, pinAt("p", spot(-1))), "p")).toBe("south");
+  });
+
+  it("beyond every radius it starts a station anchored at itself, with the automatic radii, in the document at once", () => {
+    let state = tourWith(stationAt("s", 0));
+    const at = spot(60, 3);
+    state = place(state, pinAt("p", at), "fresh");
+    expect(state.stations.at(-1)).toEqual({
+      id: "fresh",
+      geo: { lat: at.lat, lon: at.lon, alt: at.alt, rotation: [0, 0, 0, 1] },
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow",
+      steps: [],
+    });
+    expect(manifestNow(state)!.stations.map((s) => s.id)).toEqual([
+      "s",
+      "fresh",
+    ]);
+    expect(stationOf(state, "p")).toBe("fresh");
+    const written = manifestToWrite(state)!;
+    expect(written.stations[1]!.items.map((i) => i.id)).toEqual(["p"]);
+  });
+
+  it("'New station here' starts its own station even within another's radius", () => {
+    const state = place(
+      tourWith(stationAt("s", 0)),
+      pinAt("p", spot(3)),
+      "own",
+      true,
+    );
+    expect(stationOf(state, "p")).toBe("own");
+    expect(state.stations.map((s) => s.id)).toEqual(["s", "own"]);
+    expect(state.stations[1]!.geo.lat).toBe(spot(3).lat);
+  });
+
+  it("refuses a station id the document already uses, and an object naming a station it lacks", () => {
+    const state = tourWith(stationAt("s", 0));
+    // The rule needs a new station and is handed a taken id.
+    expect(place(state, pinAt("p", spot(100)), "s")).toEqual(state);
+    expect(place(state, pinAt("p", spot(1)), "s", true)).toEqual(state);
+    const dangling = { ...pinAt("p", spot(1)), station: "gone" };
+    expect(canPlace(state, dangling)).toBe(false);
+    expect(objectFits(state, dangling)).toBe(false);
+    expect(place(state, dangling)).toEqual(state);
+  });
+
+  it("an object naming a station the document carries is placed there", () => {
+    const state = place(tourWith(stationAt("s", 0), stationAt("t", 100)), {
+      ...pinAt("p", spot(1)),
+      station: "t",
+    });
+    expect(stationOf(state, "p")).toBe("t");
+  });
+
+  it("a move within its station's radius keeps it, even nearer another's anchor; out of it, it joins the station holding its new spot or starts one", () => {
+    let state = tourWith(stationAt("s", 0), stationAt("t", 30));
+    state = place(state, pinAt("p", spot(0)));
+    state = place(state, pinAt("q", spot(30)));
+    // 20 m north: 10 m from t's anchor, but still inside s's 25 m.
+    state = moveTo(state, "p", spot(20));
+    expect(stationOf(state, "p")).toBe("s");
+    // 26 m north: out of s (by 1 m), inside t.
+    state = moveTo(state, "p", spot(26));
+    expect(stationOf(state, "p")).toBe("t");
+    // Far away: a new station anchored there.
+    state = moveTo(state, "p", spot(200), "far");
+    expect(stationOf(state, "p")).toBe("far");
+    expect(state.stations.find((s) => s.id === "far")!.geo.lat).toBe(
+      spot(200).lat,
+    );
+  });
+
+  it("a move out of a station it alone held drops that station, and a move back joins the one holding the spot", () => {
+    let state = tourWith(stationAt("s", 0));
+    state = place(state, pinAt("q", spot(0)));
+    state = place(state, pinAt("p", spot(100)), "auto");
+    expect(state.stations.map((s) => s.id)).toEqual(["s", "auto"]);
+    state = moveTo(state, "p", spot(5));
+    expect(stationOf(state, "p")).toBe("s");
+    expect(state.stations.map((s) => s.id)).toEqual(["s"]);
+    state = moveTo(state, "p", spot(100), "again");
+    expect(stationOf(state, "p")).toBe("again");
+    expect(state.stations.map((s) => s.id)).toEqual(["s", "again"]);
+  });
+
+  // Why: a station's found radius has no upper bound (a hand-edited file
+  // may carry 50 km), but the format keeps an item within 10 km of its
+  // station per axis. Seated by the radius alone, the object stood beyond
+  // the format's reach and every later save failed.
+  it("never seats a new object in a station whose radius holds it beyond the format's reach: it starts its own", () => {
+    const huge = tourWith(stationAt("huge", 0, 50_000));
+    const state = place(huge, pinAt("p", spot(20_000)));
+    expect(stationOf(state, "p")).toBe("new-p");
+    expect(state.stations.map((s) => s.id)).toEqual(["huge", "new-p"]);
+    expect(manifestToWrite(state)).not.toBeNull();
+    // Within the reach, the same station still takes it (the control).
+    expect(stationOf(place(huge, pinAt("p", spot(9_000))), "p")).toBe("huge");
+  });
+
+  // Why: a move inside the station's radius but beyond the format's reach
+  // changed nothing, while the page reported the move as made.
+  it("a move within a huge radius but beyond the format's reach re-seats the object rather than changing nothing", () => {
+    let state = place(
+      tourWith(stationAt("huge", 0, 50_000)),
+      pinAt("p", spot(0)),
+    );
+    expect(stationOf(state, "p")).toBe("huge");
+    state = moveTo(state, "p", spot(15_000));
+    expect(objectOf(state, "p").geo.lat).toBe(spot(15_000).lat);
+    expect(stationOf(state, "p")).toBe("moved-p");
+  });
+
+  // Why: an object can stand outside its own station's found radius (the
+  // creator shrank the radius, or moved the station). A small nudge of it
+  // must not start a station of its own: it keeps its station unless the
+  // move takes it farther from the anchor than it was, or into another
+  // station's radius. The rule is strict - any move farther out, however
+  // small, re-seats it.
+  it("an object outside its station's radius keeps its station when nudged no farther out; farther out, or into another station's radius, the rule seats it", () => {
+    const outside = place(tourWith(stationAt("s", 0), stationAt("t", 60)), {
+      ...pinAt("p", spot(-40)),
+      station: "s",
+    });
+    expect(stationOf(outside, "p")).toBe("s");
+    const nudged = moveTo(outside, "p", spot(-39, 1));
+    expect(stationOf(nudged, "p")).toBe("s");
+    expect(nudged.stations.map((s) => s.id)).toEqual(["s", "t"]);
+    const sideways = moveTo(outside, "p", spot(-1, -39));
+    expect(stationOf(sideways, "p")).toBe("s");
+    const fartherOut = moveTo(outside, "p", spot(-41));
+    expect(stationOf(fartherOut, "p")).toBe("moved-p");
+    // Nearer s's anchor than before, and into t's radius: t holds it.
+    const intoT = place(tourWith(stationAt("s", 0), stationAt("t", 60)), {
+      ...pinAt("p", spot(45, 30)),
+      station: "s",
+    });
+    expect(stationOf(moveTo(intoT, "p", spot(40)), "p")).toBe("t");
+  });
+
+  // Why: radii overlap. An object of s that already stood inside t's
+  // radius (and outside s's) was re-seated into t by any nudge toward s:
+  // t held the spot before the move as much as after it, so the move did
+  // not take the object anywhere new.
+  it("an object of one station standing inside another's radius keeps its station when nudged toward its own anchor", () => {
+    const overlap = place(tourWith(stationAt("s", 0), stationAt("t", 60)), {
+      ...pinAt("p", spot(40)),
+      station: "s",
+    });
+    expect(stationOf(overlap, "p")).toBe("s");
+    const nudged = moveTo(overlap, "p", spot(38));
+    expect(stationOf(nudged, "p")).toBe("s");
+    expect(nudged.stations.map((s) => s.id)).toEqual(["s", "t"]);
+    // Farther from s's anchor it is the rule's again: t holds it.
+    expect(stationOf(moveTo(overlap, "p", spot(42)), "p")).toBe("t");
+  });
+
+  it("a delete that empties an automatic station drops it in the same step; an undo brings both back as they were", () => {
+    let state = tourWith(stationAt("s", 0));
+    state = place(state, pinAt("q", spot(0)));
+    state = place(state, pinAt("p", spot(100)), "auto");
+    const before = state;
+    state = reduce(state, act.deleted({ id: "p", what: "d" }));
+    expect(state.stations.map((s) => s.id)).toEqual(["s"]);
+    expect(manifestToWrite(state)!.stations.map((s) => s.id)).toEqual(["s"]);
+    state = reduce(state, act.undone());
+    expect(state.stations).toEqual(before.stations);
+    expect(stationOf(state, "p")).toBe("auto");
+  });
+
+  // (A fourth case, a station kept by a recorded photo, stood here: the
+  // walk's frames are debug camera captures now, which keep no station,
+  // and the document drops them at the open - "tour document: the open".)
+  it("a station with a title, a step or a route to it stays when its last object goes", () => {
+    const keeps: [string, TourDocumentState][] = [
+      ["a title", tourWith(stationAt("k", 0, 25, { title: "Gate" }))],
+      [
+        "a step",
+        tourWith(
+          stationAt("k", 0, 25, {
+            steps: [
+              {
+                id: "x",
+                block: { kind: "text", text: "Hi" },
+                advance: { mode: "tap" },
+              },
+            ],
+          }),
+        ),
+      ],
+      [
+        "a route to it",
+        tourWith(stationAt("k", 0), stationAt("r", 500, 25, { next: "k" })),
+      ],
+    ];
+    for (const [why, opened] of keeps) {
+      let state = place(opened, pinAt("p", spot(1)));
+      expect(stationOf(state, "p"), why).toBe("k");
+      state = reduce(state, act.deleted({ id: "p", what: "d" }));
+      expect(
+        state.stations.map((s) => s.id),
+        why,
+      ).toContain("k");
+    }
+    // ... and an automatic one does not (the control).
+    let state = place(tourWith(stationAt("k", 0)), pinAt("p", spot(1)));
+    state = reduce(state, act.deleted({ id: "p", what: "d" }));
+    expect(state.stations).toEqual([]);
+  });
+
+  it("an undo of a placement that started a station gives the stations back deep-equal", () => {
+    const opened = tourWith(stationAt("s", 0));
+    const placed = place(opened, pinAt("p", spot(90)));
+    expect(placed.stations).toHaveLength(2);
+    const undone = reduce(placed, act.undone());
+    expect(undone.stations).toEqual(opened.stations);
+    expect(documentObjects(undone)).toEqual([]);
+  });
+
+  // Why: a Finish snapshots the station frames when it starts; a pin placed
+  // while it runs starts a station the write does not carry. Read as a
+  // moved frame, the landing would throw that station away (the written
+  // frames replace the document's) and leave the pin naming nothing.
+  it("a placement while a save runs keeps the station it started when the save lands", () => {
+    let state = tourWith(stationAt("s", 0));
+    state = place(state, pinAt("q", spot(0)));
+    const written = manifestToWrite(state)!;
+    const stationsAtStart = state.stations;
+    state = place(state, pinAt("p", spot(300)), "late");
+    state = reduce(
+      state,
+      act.saved({
+        generation: state.generation,
+        written,
+        appliedDeletions: [],
+        stationsAtStart,
+      }),
+    );
+    expect(state.stations.map((s) => s.id)).toEqual(["s", "late"]);
+    expect(stationOf(state, "p")).toBe("late");
+    expect(unsavedEntries(state).map((p) => p.object.id)).toEqual(["p"]);
+    expect(manifestToWrite(state)!.stations.map((s) => s.id)).toEqual([
+      "s",
+      "late",
+    ]);
+  });
+
+  it("a restored object naming a station the document lacks joins by the rule, and a draft's created station comes back first", () => {
+    const state = tourWith(stationAt("s", 0));
+    const created = stationAt("made", 400);
+    const { items: _items, ...frame } = created;
+    const restored = reduce(
+      state,
+      act.restored({
+        objects: [
+          { ...pinAt("near", spot(2)), station: "gone" },
+          { ...pinAt("there", spot(401)), station: "made" },
+          { ...pinAt("lost", spot(800)), station: "gone2" },
+        ],
+        deleted: [],
+        createdStations: [frame],
+        newStationIds: ["m1", "m2", "m3"],
+        what: "r",
+      }),
+    );
+    expect(stationOf(restored, "near")).toBe("s");
+    expect(stationOf(restored, "there")).toBe("made");
+    expect(stationOf(restored, "lost")).toBe("m3");
+    expect(restored.stations.map((s) => s.id)).toEqual(["s", "made", "m3"]);
+  });
+
+  it("work carried into a newly opened tour re-runs the rule against its stations", () => {
+    const state = tourWith(stationAt("s", 0));
+    const restored = reduce(
+      state,
+      act.restored({
+        objects: [
+          { ...pinAt("a1", spot(3)), station: "pre-open" },
+          { ...pinAt("a2", spot(500)), station: "pre-open" },
+        ],
+        deleted: [],
+        rerun: true,
+        newStationIds: ["n1", "n2"],
+        what: "carried",
+      }),
+    );
+    expect(stationOf(restored, "a1")).toBe("s");
+    expect(stationOf(restored, "a2")).toBe("n2");
+    expect(restored.stations.map((s) => s.id)).toEqual(["s", "n2"]);
+  });
+
+  // Why: the rule reads the stations of the tour as the next write starts
+  // from it, and that includes a station the file carries which the
+  // document dropped since (emptied after the save that wrote it). An
+  // object seated there must bring the frame back into the document, or it
+  // would name a station the document does not carry - one an edit, a
+  // move and a reload could not find. Found by the station-rule property.
+  it("an object the rule seats in a written station the document dropped brings that station back", () => {
+    let state = tourWith(stationAt("s", 0));
+    state = reduce(
+      state,
+      act.restored({
+        objects: [{ ...pinAt("r", spot(100)), station: "gone" }],
+        deleted: [],
+        newStationIds: ["far"],
+        what: "r",
+      }),
+    );
+    state = save(state);
+    // Back into "s": "far" is emptied and goes from the document, while the
+    // file still carries it.
+    state = moveTo(state, "r", spot(3));
+    expect(state.stations.map((s) => s.id)).toEqual(["s"]);
+    expect(manifestNow(state)!.stations.map((s) => s.id)).toContain("far");
+    state = place(state, pinAt("q", spot(101)));
+    expect(stationOf(state, "q")).toBe("far");
+    expect(state.stations.map((s) => s.id)).toEqual(["s", "far"]);
+  });
+
+  // Why: as for a placement, the deletion of an id hides every object of
+  // that id, so restoring one over it would put back an object nobody
+  // sees - and a station started for it would stand empty. The pages give
+  // live deletions the win already; the reducer keeps the same rule.
+  it("a restore leaves out an object of an id the document deleted, starting no station for it", () => {
+    let state = tourWith(stationAt("s", 0));
+    state = place(state, pinAt("r", spot(3)));
+    state = save(state);
+    state = reduce(state, act.deleted({ id: "r", what: "d" }));
+    const after = reduce(
+      state,
+      act.restored({
+        objects: [{ ...pinAt("r", spot(200)), station: "gone" }],
+        deleted: [],
+        newStationIds: ["far"],
+        what: "r",
+      }),
+    );
+    expect(after.stations).toEqual(state.stations);
+    expect(after.placed).toEqual(state.placed);
+  });
+});
+
 describe("tour document: the save status", () => {
   it("is saving while rebuilds are queued, idle after, error after a failure", () => {
     let state = open();
@@ -588,17 +1104,21 @@ describe("tour document: the rules its reducers keep", () => {
     );
     expect(again).toEqual(state);
     expect(canPlace(state, a)).toBe(false);
+    // Each refusal named, so a page says the actual reason.
+    expect(placeRefusal(state, a)).toBe("exists");
     const tooFar: TourObject = {
       ...pin("n"),
       station: stationIdOf("a"),
       geo: { ...a.geo, lat: a.geo.lat + far },
     };
     expect(canPlace(state, tooFar)).toBe(false);
+    expect(placeRefusal(state, tooFar)).toBe("too-far");
     expect(reduce(state, act.placed({ object: tooFar, what: "p" }))).toEqual(
       state,
     );
     const near: TourObject = { ...tooFar, geo: a.geo };
     expect(canPlace(state, near)).toBe(true);
+    expect(placeRefusal(state, near)).toBeNull();
     expect(
       documentObjects(reduce(state, act.placed({ object: near, what: "p" })))
         .map((o) => o.object.id)
@@ -606,17 +1126,42 @@ describe("tour document: the rules its reducers keep", () => {
     ).toEqual(["a", "b", "f", "n"]);
   });
 
-  it("a move or an edit to a spot too far from its station changes nothing", () => {
+  it("placing the id of an object the file holds but the document deleted changes nothing", () => {
+    // Why: the deletion hides every object of that id, so the placement
+    // would be invisible - and a station started for it would stand empty.
+    // Pages mint fresh ids, so only a stale or replayed id comes here.
+    const state = reduce(open(), act.deleted({ id: "a", what: "d" }));
+    const again: TourObject = { ...pin("a"), geo: spot(200) };
+    expect(canPlace(state, again)).toBe(false);
+    expect(placeRefusal(state, again)).toBe("deleted");
+    expect(reduce(state, act.placed({ object: again, what: "p" }))).toEqual(
+      state,
+    );
+  });
+
+  // Why: an edit keeps its object's station, so a spot that station cannot
+  // carry would make every save fail; a MOVE that far re-runs the station
+  // rule instead (the object leaves its station's radius long before the
+  // format's bound), so it is never refused for its distance.
+  it("an edit to a spot too far from its station changes nothing; a move there starts a station at its new spot", () => {
     const state = open();
     const a = objectOf(state, "a");
     const moved = { ...a, geo: { ...a.geo, lat: a.geo.lat + far } };
     expect(objectFits(state, moved)).toBe(false);
-    expect(reduce(state, act.moved({ object: moved, what: "m" }))).toEqual(
-      state,
-    );
     expect(reduce(state, act.edited({ object: moved, what: "e" }))).toEqual(
       state,
     );
+    const after = reduce(
+      state,
+      act.moved({ object: moved, what: "m", newStationId: "far" }),
+    );
+    expect(objectOf(after, "a").station).toBe("far");
+    // The station it left held it alone, and goes with it.
+    expect(after.stations.map((s) => s.id)).toEqual([
+      stationIdOf("b"),
+      stationIdOf("f"),
+      "far",
+    ]);
   });
 
   it("no undo or redo while a save is queued or runs", () => {
@@ -642,7 +1187,10 @@ describe("tour document: the rules its reducers keep", () => {
     expect(reduce(again, act.redone())).toEqual(again);
   });
 
-  it("a restore skips an object whose spot its station cannot carry", () => {
+  // Why (the M5a milestone review L1, kept): a draft object its station
+  // cannot carry would make every save fail. It is no longer skipped: it
+  // is seated by the station rule, as a move there would be.
+  it("a restore seats an object its station cannot carry by the station rule", () => {
     const state = open();
     const a = objectOf(state, "a");
     const restored = reduce(
@@ -653,10 +1201,13 @@ describe("tour document: the rules its reducers keep", () => {
           { ...objectOf(state, "b"), label: "kept" },
         ],
         deleted: [],
+        newStationIds: ["far", "unused"],
         what: "r",
       }),
     );
-    expect(restored.placed.map((p) => p.object.id)).toEqual(["b"]);
+    expect(restored.placed.map((p) => p.object.id)).toEqual(["a", "b"]);
+    expect(objectOf(restored, "a").station).toBe("far");
+    expect(objectOf(restored, "b").station).toBe(stationIdOf("b"));
   });
 
   // Why (the a9368add class, the review's extra finding): what is pending
@@ -708,7 +1259,7 @@ describe("tour document: what an edit would change", () => {
     expect(pinTextChange(state, "gone", "x")).toEqual({ kind: "missing" });
   });
 
-  it("a move on the map: height and facing kept, too far from its station refused, an unknown id missing", () => {
+  it("a move on the map: height and facing kept, never too far (the station rule seats it), an unknown id missing", () => {
     const state = open();
     const a = objectOf(state, "a");
     expect(objectMoveChange(state, "a", 48.5205, 9.051)).toEqual({
@@ -717,8 +1268,8 @@ describe("tour document: what an edit would change", () => {
       after: { ...a, geo: { ...a.geo, lat: 48.5205, lon: 9.051 } },
     });
     const far = (TOUR_ITEM_MAX_OFFSET_M * 2) / 111_320;
-    expect(objectMoveChange(state, "a", a.geo.lat + far, 9.05)).toEqual({
-      kind: "too-far",
+    expect(objectMoveChange(state, "a", a.geo.lat + far, 9.05)).toMatchObject({
+      kind: "moved",
     });
     expect(objectMoveChange(state, "gone", 48.52, 9.05)).toEqual({
       kind: "missing",
@@ -928,5 +1479,62 @@ describe("tour document: a step across an in-place save (D33)", () => {
     expect(state.position).toBe(0);
     expect(redo(state).position).toBe(1);
     expect(reduce(state, act.opened({ manifest: OPENED })).position).toBe(0);
+  });
+});
+
+// Why: a placed 3D model (format minor 1) carries its size in metres, a
+// number no page can edit yet. The document must carry it through every
+// edit, station move and save untouched - a page that dropped it, or
+// rounded it, would rewrite the creator's file without a word.
+describe("tour document: a placed 3D model rides along unchanged", () => {
+  const model: TourModel = {
+    id: "m",
+    kind: "model",
+    asset: "statue",
+    sizeM: 12.345678901234,
+    label: "The fountain",
+    createdAtIso: "2026-10-19T12:00:00.000Z",
+    geo: { lat: 48.5203, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+  };
+  const withModel = tourOf([pin("a"), model], {
+    assets: [{ id: "statue", path: "content/statue.glb", kind: "model" }],
+  });
+
+  it("keeps the model, its asset and its size exactly through an edit, a station move and a save", () => {
+    let state = open(withModel);
+    const { geo: _geo, ...fields } = model;
+    expect(objectOf(state, "m")).toMatchObject({
+      ...fields,
+      station: stationIdOf("m"),
+    });
+    state = reduce(
+      state,
+      act.edited({ object: { ...pin("a"), label: "x" }, what: "e" }),
+    );
+    const station = stationIdOf("m");
+    const was = withModel.stations.find((s) => s.id === station)!;
+    state = reduce(
+      state,
+      act.stationMoved({
+        stationId: station,
+        geo: { ...was.geo, lat: was.geo.lat + 0.0001 },
+        what: "the move of the station",
+      }),
+    );
+    const written = manifestToWrite(state)!;
+    const item = written.stations.find((s) => s.id === station)!.items[0]!;
+    expect(item).toEqual(was.items[0]);
+    // The file the save writes carries it at minor 1, readable again.
+    const json = JSON.parse(serializeTourManifest(written)) as {
+      minor: number;
+    };
+    expect(json.minor).toBe(1);
+    const saved = save(state);
+    expect(objectOf(saved, "m")).toMatchObject({
+      kind: "model",
+      asset: "statue",
+      sizeM: model.sizeM,
+    });
+    expect(changeCount(saved)).toBe(0);
   });
 });

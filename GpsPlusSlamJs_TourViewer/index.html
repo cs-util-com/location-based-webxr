@@ -1462,8 +1462,11 @@
       }
 
       /* A phone without AR loses "What happens?": it describes a session
-         this phone cannot start (V4's recovery states). */
+         this phone cannot start (V4's recovery states). So does a tour
+         not finished yet, whose Start is withheld (`ar-entry.ts`). */
       body[data-mode="visitor"]:has(#enter-ar[data-ar-state="unsupported"])
+        #visitor-what,
+      body[data-mode="visitor"]:has(#enter-ar[data-start="withheld"])
         #visitor-what {
         display: none;
       }
@@ -3198,6 +3201,14 @@
                     hidden
                     >Try this tour as a visitor on this phone</a
                   >
+                  <!-- Shown while the hosted file is not finished yet: what
+                   a visitor reads then (main.ts, tour-unfinished.ts). -->
+                  <p
+                    id="visitor-link-note"
+                    class="hint--dim"
+                    data-testid="visitor-link-note"
+                    hidden
+                  ></p>
                 </div>
               </details>
             </li>

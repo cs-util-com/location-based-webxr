@@ -55,7 +55,8 @@ function tour(
   return tourOf(objects, rest);
 }
 
-/** A walk's recorded photos, each in a station of its own (version 3). */
+/** A walk's debug camera captures as a tour.json may carry them
+ *  (`captureSpots`, deprecated), each in a station of its own. */
 function recorded(images: readonly string[]): Partial<TourManifest> {
   const stations: TourStation[] = images.map((_, i) => ({
     id: `walk-${String(i)}`,
@@ -87,12 +88,14 @@ describe("visitorStartView", () => {
     );
   });
 
-  it("still reads as a tour without a name, or before the manifest arrives", () => {
+  it("still reads as a tour without a name, and says a zip without tour.json is not finished", () => {
     expect(visitorStartView(tour({})).title).toBe("An AR tour");
     expect(visitorStartView(tour({ title: "   " })).title).toBe("An AR tour");
+    // The printed code may point at the hosted file before its first
+    // Finish: the start page says so instead of an empty promise.
     expect(visitorStartView(null)).toEqual({
       title: "An AR tour",
-      subline: null,
+      subline: "This tour is not finished yet.",
       description: null,
       coverPath: null,
       pageTitle: "Tour Viewer",
@@ -107,7 +110,10 @@ describe("visitorStartView", () => {
     expect(visitorStartView(tour({ objects: [pin("a")] })).subline).toBe(
       "1 place to discover",
     );
-    expect(visitorStartView(tour({})).subline).toBeNull();
+    // A tour without stations is not finished: nothing to discover yet.
+    expect(visitorStartView(tour({ title: "Harbour" })).subline).toBe(
+      "This tour is not finished yet.",
+    );
     // A tour of stations (the sample) counts its stations.
     const station = recorded(["x"]).stations![0]!;
     expect(
@@ -161,29 +167,23 @@ describe("visitorStartView", () => {
     expect(visitorStartView(null).pageTitle).toBe("Tour Viewer");
   });
 
-  // A tour made from a recording carries its photos as baked capture
-  // spots, not as photo objects: they are its cover too, and the stations
-  // they sit in are places (version 3).
-  it("counts and covers a recorded tour by its capture spots", () => {
+  // Why: the frames a recording captured by itself are debug data, which
+  // a visitor never sees. A tour without a placed photo once took its first
+  // captured frame as the cover; it now has none, and a placed photo is
+  // the cover as before.
+  it("takes no cover from a debug camera capture", () => {
     const walk = recorded(["images/frame-0.png", "images/frame-1.png"]);
-    const withWalk = tour({ objects: [pin("a")], ...walk });
-    expect(visitorStartView(withWalk)).toEqual({
-      title: "An AR tour",
-      subline: "3 places to discover",
-      description: null,
-      coverPath: "images/frame-0.png",
-      pageTitle: "Tour Viewer",
-    });
-    // A placed photo still comes first.
+    expect(
+      visitorStartView(tour({ objects: [pin("a")], ...walk })).coverPath,
+    ).toBeNull();
     expect(
       visitorStartView(tour({ objects: [photo("b")], ...walk })).coverPath,
     ).toBe("content/b.jpg");
   });
 
   // The cover is read from the zip by its path: only the tour's own photos
-  // may be named - a photo object's image, else a capture spot's - never
-  // anything else the manifest holds (M4 review #8: capture spots were
-  // never generated here).
+  // may be named - a photo object's image - never anything else the
+  // manifest holds (M4 review #8), its debug camera captures included.
   it("only ever names one of the tour's own photos (property)", () => {
     fc.assert(
       fc.property(
@@ -209,12 +209,10 @@ describe("visitorStartView", () => {
             ...(captureCount === 0 ? {} : recorded(captures)),
           });
           const { coverPath } = visitorStartView(manifest);
-          const own = [
-            ...objects.flatMap((o) =>
-              o.kind === "photo" ? [(o as { image: string }).image] : [],
-            ),
-            ...captures,
-          ];
+          // The captures are never among them (debug data).
+          const own = objects.flatMap((o) =>
+            o.kind === "photo" ? [(o as { image: string }).image] : [],
+          );
           // The chosen photo when it is one of them, else the first of
           // them, in that order, or none when there is none.
           const chosen = objects.find(
@@ -313,7 +311,9 @@ describe("wireVisitorStart", () => {
     });
     start.clear();
     expect(dom.title.textContent).toBe("An AR tour");
+    // No tour open is not an unfinished tour: nothing is said about one.
     expect(dom.subline.hidden).toBe(true);
+    expect(dom.subline.textContent).toBe("");
     expect(dom.cover.hidden).toBe(true);
     expect(revoked).toEqual(["blob:1"]);
     expect(dom.page.title).toBe("Tour Viewer");

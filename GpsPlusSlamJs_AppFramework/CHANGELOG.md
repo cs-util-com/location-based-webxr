@@ -2,13 +2,28 @@
 
 ## [Unreleased]
 
+### Deprecated
+
+- **`captureSpots` and its types**: `TourManifest.captureSpots`,
+  `TourCaptureSpots`, `TourCapture`, `TourCaptureGeo` and
+  `tourCaptureGeos`. A walk's camera captures are debug data: no app writes them; removed in the next major.
+  The parser still reads the field and the writer still writes what it is
+  given, so files written earlier keep opening.
+
+### Fixed
+
+- **The NOTICE links the public repository**: it pointed at a repository a
+  public reader cannot open; it now names
+  https://github.com/cs-util-com/location-based-webxr, the repository the
+  package's `repository` field names.
+
 ## [1.30.0] - 2026-10-20
 
 ### ⚠️ Breaking changes
 
 - **`tour.json` format version 3** (`ar/tour-manifest`): every pin and
   photo is now an item of a station. `TOUR_MANIFEST_VERSION` is 3 and
-  `TOUR_MANIFEST_MINOR` starts again at 0. Version 1 and 2 files are not
+  version 3 starts at minor 0; minor 1 (below) adds the placed model. Version 1 and 2 files are not
   migrated: the reader refuses them with words ("this tour is in an older
   format ... it has to be made again"), and a version 2 reader refuses a
   version 3 file the same way ("update the app"), so neither opens the
@@ -17,6 +32,18 @@
 
 ### Added
 
+- **A placed 3D model, `tour.json` version 3 minor 1** (`ar/tour-items`,
+  `ar/tour-manifest`): a station item of kind `model` (`TourModelItem`; in
+  the world view `TourModel`) names a model asset of the tour (`asset`, a
+  `.glb` in `assets`) and carries its size in metres, `sizeM`: the scaled
+  model's largest side, from `TOUR_MODEL_MIN_SIZE_M` (0.05) to
+  `TOUR_MODEL_MAX_SIZE_M` (500), both inclusive. A size outside the bound
+  is refused, never clamped; a lenient read (a newer minor) leaves out a
+  model whose positive size lies beyond the bound, and nothing that is not
+  a positive finite number is a size at any minor. Pins and photos have no
+  size. `TOUR_MANIFEST_MINOR` is 1; the writer writes the lowest minor the
+  tour needs (1 only while it carries a model), so a tour without models is
+  written exactly as before. Nothing renders a placed model yet.
 - **Stations own their items at local poses** (`ar/tour-manifest`):
   `TourStation.items` holds the station's pins and photos (`TourItem`:
   `TourPinItem` or `TourPhotoItem`), each with a `TourLocalPose` relative
@@ -55,9 +82,96 @@
   exports `TOUR_ID_PATTERN`, the one id rule of the manifest's ids, its
   content files and the cover.
 
+- **The cloud slab's aerial strength**, opt-in:
+  `SkyAtmosphere.setCloudAerial(strength | null)` and
+  `setCloudSlabAerial(slab, strength | null)` (0..1): how much of the
+  slab's aerial fade (alpha x exp(-distance / 60 km)) applies, for a page
+  that draws the same clouds with another drawer; `cloudSlabMarch` takes
+  `aerial` too. The default (1, or null) is unchanged.
+
+- **The clouds' noise evaluated live, per octave**, opt-in:
+  `SkyAtmosphere.configure({ cloudNoise: 'tile' | 'hex' | 'live' })` and
+  `setCloudNoiseAnchor({ originKm, rotationRad })` / `cloudNoiseAnchor`
+  (`visualization/atmosphere/cloud-live-noise.ts`), so no pattern repeats
+  within thousands of kilometres. The default stays the baked tile;
+  `cloudHex` keeps its meaning. Each octave fades to its mean by the
+  footprint (from half a cell to four) while the field keeps its spread,
+  so the drawn cover holds to a 16 km footprint.
+
+- **The live noise's fine gain**: `configure({ cloudNoiseFineGain })` and
+  the `cloudNoiseFineGain` getter, the amplitude ratio from octave 2 on
+  (0.5 by default); more detail at the cloud edges above it, the spread
+  and the cover kept.
+
+- **Uniforms** `atmCloudLive`, `atmCloudLattice`, `atmCloudLiveBasis`,
+  `atmCloudLiveAmp` and `atmCloudLiveMarchOctaves` in `cloudUniforms`;
+  `CloudShadow.sync` follows them; the coverage chunk carries a third
+  table (`atmCoverThresholdsLive`) and its fourth argument is now the
+  noise mode (0 tile, 1 hex, 2 live).
+
+- **The cloud disc's centre**, opt-in: `setCloudSlabDiscCentre(slab,
+{ x, z } | null)`, `SkyAtmosphere.setCloudDiscCentre` and
+  `CloudShadow.setDiscCentre` centre the disc on a world point instead of
+  the camera (the default, unchanged), so a page can put the volume where
+  the view looks. `CloudDiscCentre` and `writeCloudDiscCentre` are
+  exported.
+
+- **The cloud slab's reach**, opt-in: `setCloudSlabReach(slab, reach |
+null)` and `SkyAtmosphere.setCloudReach(reach | null)` move the slab's
+  far fade and march cap out (and scale its mesh to match), so a camera
+  high over a wide deck sees the volume toward the horizon, not only
+  around itself. The default is the old fixed 14 to 21 km, so a page that
+  never calls it draws exactly what it drew. `cloudSlabInterval`,
+  `cloudSlabFarWeight` and `cloudSlabMarch` take the reach too;
+  `CLOUD_SLAB_REACH` and `assertCloudSlabReach` are exported.
+
+- **`SkyAtmosphere.setObserverAltitudeKm(km)`** and the `observerAltitudeKm`
+  getter: the sky follows the observer's height (0 to 100 km) after
+  construction, synchronously like `setSun` (globe F2 plan, F2b).
+
+- **`SkyAtmosphere`'s staged rebuild**: the constructor option
+  `rebuild: 'staged'`, `stepRebuild()` (returns a `RebuildStage`) and
+  `rebuildPending`, for a page that renders every frame. A setter records
+  the change and each `stepRebuild()` does one stage (the tables, an
+  asynchronous read, the bake into one reused target), so no frame carries
+  a whole rebuild. The default `'immediate'` path is unchanged.
+
+- **The cloud slab ends at the scene's depth**, opt-in:
+  `setCloudSlabSceneDepth(slab, depth | null)` and
+  `SkyAtmosphere.setCloudSceneDepth(depth | null)`; with a depth the march
+  stops at the scene and the slab's depth test is off, so a ridge in front
+  of a cloud deck no longer hides the cloud in front of it. Without one the
+  slab is unchanged. `cloudSlabInterval` gains an optional `sceneM`.
+
+- **The cloud slab and the cloud shadow can take their clouds from a map
+  and fade by distance**, opt-in: `setCloudSlabCoverage(slab, coverage |
+null)` (the caller defines `float atmCloudCoverageAt(vec2 xz)`; the local
+  cover becomes the column's threshold through the noise's quantiles),
+  `setCloudSlabRadius(slab, r | null)` (the clouds fade to clear from 0.7 r
+  to r around the camera), the matching `SkyAtmosphere.setCloudCoverage`
+  and `setCloudDiscRadius`, `CloudShadow.configureMap`, `setLiftM`,
+  `setDiscRadiusM` and `setCover`, the shared module `cloud-coverage.ts`
+  (`cloudCoverThresholds`, `cloudThresholdForCover`, `cloudDiscThreshold`,
+  `CLOUD_COVERAGE_GLSL`, `withCloudCoverage`), and `cloudSlabMarch`'s
+  optional `thresholdAt`. Without them the slab and the shadow are
+  unchanged.
+
+- **`AtmosphereDevice` gains two OPTIONAL members**,
+  `beginSkyViewRead()` (with the `SkyViewRead` type) and
+  `bakeEnvironmentReused(scene)`; an existing implementation keeps
+  compiling, and the staged rebuild falls back to the synchronous read and
+  a new target per bake without them.
+
 ### Changed
 
 - Requires `gps-plus-slam-js` ^1.26.2. In 1.26.2 a solve that stores a QR code sighting's votes keeps the code's rotation against the compass cold start when those votes span 5 m or more (see that package's changelog). `buildQrGpsVotes` stamps each call with `Date.now()`, and the core treats votes sharing one timestamp as one sighting: give each code's sighting its own call.
+
+- **The slab reads its noise through its footprint**
+  (`atmCloudNoiseFootprint`); the tile's level of detail is unchanged,
+  and live, the march reads the five coarsest octaves (the two finest
+  cost 7 % of the volume pass for 0.09 % of the variance).
+  `cloudCoverThresholds` and `cloudThresholdForCover` take a
+  `CloudNoiseMode` as well as the old boolean.
 
 ## [1.29.0] - 2026-10-15
 

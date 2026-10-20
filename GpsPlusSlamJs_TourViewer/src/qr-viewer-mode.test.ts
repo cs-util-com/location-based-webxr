@@ -13,7 +13,6 @@ import {
   buildViewerControllerConfig,
   createViewerKeepAlive,
   IGNORED_CODE_LINE,
-  imagePlaneRingNue,
   viewerStatusLine,
   type ViewerPipelineDeps,
 } from "./qr-viewer-mode";
@@ -689,22 +688,6 @@ describe("viewerStatusLine", () => {
       viewerStatusLine({ ...base, votedLocks: 2, lockedText: TEXT }),
     ).toMatch(/2 of \d+/);
     expect(viewerStatusLine({ ...base, status: null })).toBe("");
-  });
-});
-
-describe("imagePlaneRingNue", () => {
-  it("places count planes on a ring around the anchor at its height", () => {
-    const positions = imagePlaneRingNue([10, 2, -4], 3, 1.5);
-    expect(positions).toHaveLength(3);
-    for (const [n, u, e] of positions) {
-      expect(u).toBeCloseTo(2, 9);
-      expect(Math.hypot(n - 10, e - -4)).toBeCloseTo(1.5, 9);
-    }
-    // Distinct directions — not all stacked on one spot.
-    const unique = new Set(
-      positions.map(([n, , e]) => `${n.toFixed(3)}|${e.toFixed(3)}`),
-    );
-    expect(unique.size).toBe(3);
   });
 });
 

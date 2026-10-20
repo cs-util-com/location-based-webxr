@@ -56,11 +56,7 @@ import {
 import { wireCreatorMeasuring } from "./creator-measuring.js";
 import { wireCreatorSettle } from "./creator-settle.js";
 import { wireCreatorFinish } from "./creator-finish.js";
-import {
-  reticleNueOf,
-  walkPhotosPending,
-  wireCreatorStations,
-} from "./creator-stations.js";
+import { reticleNueOf, wireCreatorStations } from "./creator-stations.js";
 import { visitorPosition } from "./visitor-position.js";
 
 import { newObjectId } from "./content-placement.js";
@@ -651,8 +647,8 @@ export function wireCreatorSetup(deps: {
   }
 
   /** The creator's stations in AR (tour editor plan W3 "AR authoring"):
-   *  the open one's line and ring, read from the working copy through the
-   *  Finish's own writer - no state of their own. */
+   *  the open one's line and ring, read from the tour document's stations
+   *  as the next write carries them - no state of their own. */
   const stations = wireCreatorStations({
     tour: ctx.tourDocument,
     dom: { chip: dom.stationChip ?? { textContent: "", hidden: true } },
@@ -663,14 +659,13 @@ export function wireCreatorSetup(deps: {
         gpsPositions: [],
       }).nue,
     reticleNue: () => reticleNueOf(ctx.reticle),
-    walkPhotosPending: () =>
-      walkPhotosPending(
-        ctx.session,
-        ctx.tourDocument.manifest(),
-        ctx.walkDecidedFor,
-      ),
     zero: () => selectZeroReference(arStore.getState()),
     scene: () => (creator && sessionLive() ? seams.getScene() : null),
+    // On the creator's own line, which the AR overlay shows.
+    reportError: (message) => {
+      ctx.placementNote = message;
+      renderAuthorReadout();
+    },
   });
 
   /** Placing a pin or a photo in AR (`creator-placement.ts`). */
@@ -876,7 +871,8 @@ export function wireCreatorSetup(deps: {
       // (`creator-handoff.ts`).
       handoff.reset();
       // A "keep the walk" given for the closing tour is not given for the
-      // next one (S1 milestone review #9).
+      // next one (S1 milestone review #9): the next open sets its own
+      // default (`creator-finish.ts`).
       dom.keepScanInput.checked = false;
       // The rebuilt zip belonged to the tour that just closed, so the block
       // offering it goes away with it (M3 review #6) - otherwise a newly

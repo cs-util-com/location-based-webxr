@@ -445,9 +445,6 @@ export const MISSING_SIZE_MESSAGE = `Enter the printed code's side length in cen
 export const FINISH_LABELS = {
   reading: (bytes: number) =>
     `Finishing - reading the hosted zip (${(bytes / 1_000_000).toFixed(1)} MB)…`,
-  /** The recorded photos' spots, baked once (scan-pass plan S1). */
-  placingPhotos: (done: number, total: number) =>
-    `Finishing - placing the recorded photos (${String(done)} of ${String(total)} steps of the walk)…`,
   rebuilding: (done: number, total: number) =>
     `Finishing - rebuilding ${String(done)} of ${String(total)} entries…`,
   /** The line shown while the Finish saves the rebuilt zip by itself (the
@@ -461,11 +458,6 @@ export const FINISH_LABELS = {
    *  only copy of it. */
   scanLeftOut: (files: number) =>
     `This copy is for visitors: it leaves out the walk recording (${String(files)} ${files === 1 ? "file" : "files"}). Keep your original zip if you still need the walk.`,
-  /** Appended when the recording's photos could not be placed at this
-   *  Finish (S1 milestone review #2): the walk then stays in the zip, the
-   *  viewer places them itself or rings them, and the creator sees why. */
-  photosNotPlaced: (reason: string) =>
-    `The recorded photos could not be placed (${reason}), so the walk recording stays in the zip.`,
   failed: (reason: string) => `Finishing failed: ${reason}`,
   /** The one button left after a Finish: the same save again (owner
    *  decision D-F4b). */

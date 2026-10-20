@@ -35,7 +35,10 @@ import {
   tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { hostedObjects, objectContentKey } from "./authoring-draft.js";
+import { newObjectId } from "./content-placement.js";
 import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
+import { horizontalM } from "./move-with-code.js";
+import { stationHolding } from "./station-assign.js";
 import {
   authoringObjects,
   deleteObject,
@@ -53,7 +56,13 @@ import {
   type DetailsForm,
   type TourDetailFields,
 } from "./tour-details-form.js";
-import type { CaptureSpotsInWorld } from "./tour-content.js";
+import {
+  automaticStationFrame,
+  objectAssetIds,
+  routedTo,
+  stepAssetIds,
+  withoutDebugCaptures,
+} from "./tour-content.js";
 import { sameJson } from "./same-json.js";
 
 /** A station without its items: what the document edits of a station
@@ -251,14 +260,23 @@ export function framesOf(manifest: TourManifest): StationFrame[] {
   return manifest.stations.map(({ items: _items, ...frame }) => frame);
 }
 
+/** The frames of the stations this page created (the station rule, "New
+ *  station here"): the document's frames the tour as OPENED lacks. What a
+ *  draft keeps whole, so a reload brings a pin's station back with it. */
+export function createdStationFrames(state: TourDocumentState): StationFrame[] {
+  const opened = new Set((state.opened?.stations ?? []).map((s) => s.id));
+  return state.stations.filter((f) => !opened.has(f.id));
+}
+
 /**
  * `written` with the document's station frames: each frame carries the
  * written items of its station (none for a station the file lacks); a
- * frame the file lacks is kept only while an edit names it (an undo
- * brought back an object whose emptied station a save dropped - it comes
- * back where it stood, M5a review M2); a written station no frame names
- * (an automatic one a save added after the step went back) follows, so
- * its items keep their home until a write prunes it.
+ * frame the file lacks is kept only while an edit names it (a station a
+ * placement started, or an undo brought back an object whose emptied
+ * station a save dropped - it comes back where it stood, M5a review M2); a
+ * written station no frame names (an automatic one a save added after the
+ * step went back) follows, so its items keep their home until a write
+ * prunes it.
  */
 function withFrames(
   written: TourManifest,
@@ -363,9 +381,10 @@ export function pinTextChange(
 
 /** What a move of an object to `lat`/`lon` on the map would change
  *  (`moveObjectTo`: its height and facing kept): the object before and
- *  after (`moved`, to dispatch), `too-far` beyond its station's reach
- *  (`objectFits`), or `missing` for an id the tour does not carry.
- *  Throws for a position nobody can draw, as `moveObjectTo` does. */
+ *  after (`moved`, to dispatch), or `missing` for an id the tour does not
+ *  carry. No move is too far: one beyond its station's found radius
+ *  re-runs the station rule (`moved`). Throws for a position nobody can
+ *  draw, as `moveObjectTo` does. */
 export function objectMoveChange(
   state: TourDocumentState,
   id: string,
@@ -377,12 +396,10 @@ export function objectMoveChange(
       readonly before: TourObject;
       readonly after: TourObject;
     }
-  | { readonly kind: "too-far" }
   | { readonly kind: "missing" } {
   const found = documentObjects(state).find((o) => o.object.id === id);
   if (found === undefined) return { kind: "missing" };
   const after = moveObjectTo(found.object, lat, lon);
-  if (!objectFits(state, after)) return { kind: "too-far" };
   return { kind: "moved", before: found.object, after };
 }
 
@@ -406,34 +423,41 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
   );
 }
 
+/**
+ * The assets the undo and redo steps' views name - their stations' steps,
+ * their objects and their covers: a write keeps them (`keepAssets`), so
+ * a step back across a save finds them. Without it a cover image no step
+ * uses was dropped (with its file) by the save after a cover change, and
+ * the undo of that change had no image to show. Kept until the history no
+ * longer names them (a new edit drops the redo steps, the bound the
+ * oldest).
+ */
+export function historyAssetIds(state: TourDocumentState): Set<string> {
+  const ids = new Set<string>();
+  for (const { view } of [...state.past, ...state.future]) {
+    for (const frame of view.stations) {
+      for (const id of stepAssetIds(frame)) ids.add(id);
+    }
+    for (const object of view.objects) {
+      for (const id of objectAssetIds(object)) ids.add(id);
+    }
+    if (view.details.cover !== undefined) ids.add(view.details.cover);
+  }
+  return ids;
+}
+
 /** The manifest a write carries now (the Finish's rule,
- *  `finishedManifest`): what a save would write, without the zip.
- *  `captureSpots` is the save's own input (the walk's photo spots, which
- *  a page decides once per open, `captureSpotsForRebuild`): given the same,
- *  this is the manifest the save writes (the r875 milestone review #7). */
-export function manifestToWrite(
-  state: TourDocumentState,
-  captureSpots?: CaptureSpotsInWorld,
-  stationRule?: {
-    /** The id a new automatic station gets (a preview's own names). */
-    readonly newStationId?: () => string;
-    /** The automatic stations' radius. */
-    readonly radiusM?: number;
-  },
-): TourManifest | null {
+ *  `finishedManifest`): what a save would write, without the zip - the
+ *  same manifest (the r875 milestone review #7). The stations are the
+ *  document's as they are: a write assigns nothing. */
+export function manifestToWrite(state: TourDocumentState): TourManifest | null {
   const base = manifestNow(state);
   if (base === null) return null;
   return finishedManifest({
     manifest: base,
     placed: state.placed,
     deleted: state.deleted,
-    ...(captureSpots === undefined ? {} : { captureSpots }),
-    ...(stationRule?.newStationId === undefined
-      ? {}
-      : { newStationId: stationRule.newStationId }),
-    ...(stationRule?.radiusM === undefined
-      ? {}
-      : { radiusM: stationRule.radiusM }),
+    keepAssets: historyAssetIds(state),
   });
 }
 
@@ -451,24 +475,26 @@ export function unsavedEntries(state: TourDocumentState): EditEntry[] {
 // words by asking the same guard first.
 
 /** Whether `geo` fits the frame of the station `stationId` names, as the
- *  format bounds it (`TOUR_ITEM_MAX_OFFSET_M` per axis); true for a
- *  station the document does not carry (a write recreates that one where
- *  the object stands, `tour-content.ts`). Module-private: a page asks
- *  `objectFits` or `canPlace`. */
+ *  format bounds it (`TOUR_ITEM_MAX_OFFSET_M` per axis); false for a
+ *  station the document does not carry - no object may name one (every
+ *  object belongs to one of the document's stations). Module-private: a
+ *  page asks `objectFits` or `canPlace`. */
 function fitsStation(
   geo: TourObject["geo"],
-  stationId: string | undefined,
+  stationId: string,
   stations: readonly StationFrame[],
 ): boolean {
   const station = stations.find((s) => s.id === stationId);
-  if (station === undefined) return true;
+  if (station === undefined) return false;
   return localPoseOf(geo, station.geo).position.every(
     (v) => Math.abs(v) <= TOUR_ITEM_MAX_OFFSET_M,
   );
 }
 
 /** Whether `object` fits its station's frame - its own, or, without one,
- *  the station the document's object of that id stands in. */
+ *  the station the document's object of that id stands in. An object no
+ *  station holds yet (a new one naming none) fits: the station rule seats
+ *  it (`placed`). One naming a station the document lacks does not. */
 export function objectFits(
   state: TourDocumentState,
   object: TourObject,
@@ -477,19 +503,119 @@ export function objectFits(
     object.station ??
     documentObjects(state).find((o) => o.object.id === object.id)?.object
       .station;
+  if (home === undefined) return true;
   return fitsStation(object.geo, home, state.stations);
 }
 
-/** Whether `object` may be placed: an id the tour does not carry, at a
- *  spot its station can carry. */
+/** What a placement or a move hands the station rule: the id a station the
+ *  rule starts gets - minted outside the reducer (by the caller, or the
+ *  action's `prepare`), so the reducer stays pure - and, for "New station
+ *  here", that the object starts its own station even within another's
+ *  radius. */
+interface Seating {
+  readonly newStationId: string;
+  readonly newStation?: boolean;
+}
+
+/**
+ * The station rule (everything belongs to a station): `object`
+ * (naming no station) joins the nearest station of the document whose OWN
+ * found radius holds it (`stationHolding`: inclusive, a tie to the earlier
+ * station) and whose frame can carry it (`fitsStation`: a found radius
+ * has no upper bound, the format's reach does), or starts a new automatic one anchored where it stands
+ * (`automaticStationFrame`, 25 m / 50 m) under `seating.newStationId`;
+ * "New station here" starts one in any case. The stations read are
+ * `manifestNow`'s - the tour as the next write starts from it. Null when
+ * the id is taken (two stations under one id would merge their items) or
+ * no tour is open.
+ */
+function seatByRule(
+  state: TourDocumentState,
+  object: TourObject,
+  seating: Seating,
+): { object: TourObject; stations: readonly StationFrame[] } | null {
+  const base = manifestNow(state);
+  if (base === null) return null;
+  if (seating.newStation !== true) {
+    const frames = framesOf(base);
+    const holder = stationHolding(
+      base.stations.filter((s) => fitsStation(object.geo, s.id, frames)),
+      object.geo,
+    );
+    if (holder !== null) {
+      // A station the file carries that the document dropped since (it
+      // emptied after it was written) comes back with the object: every
+      // object names one of the document's frames.
+      const written = base.stations.find((s) => s.id === holder);
+      const known = state.stations.some((f) => f.id === holder);
+      return {
+        object: { ...object, station: holder },
+        stations:
+          known || written === undefined
+            ? state.stations
+            : [
+                ...state.stations,
+                ...framesOf({ ...base, stations: [written] }),
+              ],
+      };
+    }
+  }
+  const id = seating.newStationId;
+  if (base.stations.some((s) => s.id === id)) return null;
+  return {
+    object: { ...object, station: id },
+    stations: [...state.stations, automaticStationFrame(id, object.geo)],
+  };
+}
+
+/**
+ * `state`'s frames without those of `candidates` that are now EMPTY
+ * AUTOMATIC stations: no object of the document names them, and nothing
+ * else keeps them - no title, no story steps, no route from another
+ * station. Such a station existed only for its
+ * elements; left behind, a visitor's guide would still lead to it.
+ * The same array when nothing goes.
+ */
+function withoutEmptied(
+  state: TourDocumentState,
+  candidates: Iterable<string | undefined>,
+): readonly StationFrame[] {
+  const ids = new Set([...candidates].filter((id) => id !== undefined));
+  if (ids.size === 0) return state.stations;
+  const named = new Set(documentObjects(state).map((o) => o.object.station));
+  const routed = new Set(state.stations.flatMap(routedTo));
+  const gone = (frame: StationFrame): boolean =>
+    ids.has(frame.id) &&
+    !named.has(frame.id) &&
+    (frame.title ?? "").trim() === "" &&
+    frame.steps.length === 0 &&
+    !routed.has(frame.id);
+  return state.stations.some(gone)
+    ? state.stations.filter((f) => !gone(f))
+    : state.stations;
+}
+
+/** Why `object` may not be placed, or null when it may: an id the tour
+ *  deleted (its tombstone would hide the placement, and leave a station
+ *  started for it empty), an id the tour carries, or a spot its station
+ *  cannot carry. */
+export function placeRefusal(
+  state: TourDocumentState,
+  object: TourObject,
+): "deleted" | "exists" | "too-far" | null {
+  if (state.deleted.includes(object.id)) return "deleted";
+  if (documentObjects(state).some((o) => o.object.id === object.id)) {
+    return "exists";
+  }
+  return objectFits(state, object) ? null : "too-far";
+}
+
+/** Whether `object` may be placed (`placeRefusal` names none). */
 export function canPlace(
   state: TourDocumentState,
   object: TourObject,
 ): boolean {
-  return (
-    documentObjects(state).every((o) => o.object.id !== object.id) &&
-    objectFits(state, object)
-  );
+  return placeRefusal(state, object) === null;
 }
 
 /** Whether an undo or a redo may run: not while a rebuild is queued or
@@ -653,6 +779,20 @@ function stepCrossesInPlaceSave(
   );
 }
 
+/** Whether a frame both lists carry differs between them: a station
+ *  MOVED. A station the rule started or dropped is no move - the
+ *  objects it holds are the record of it. */
+function framesMoved(
+  a: readonly StationFrame[],
+  b: readonly StationFrame[],
+): boolean {
+  const byId = new Map(b.map((f) => [f.id, f]));
+  return a.some((f) => {
+    const other = byId.get(f.id);
+    return other !== undefined && !sameJson(f, other);
+  });
+}
+
 /** The document moved to `view` (an undo or a redo step). */
 function goTo(
   state: TourDocumentState,
@@ -663,7 +803,7 @@ function goTo(
   const detailsMoved = DETAIL_FIELDS.some(
     (f) => view.details[f] !== state.details[f],
   );
-  const stationsMoved = !sameJson(view.stations, state.stations);
+  const stationsMoved = framesMoved(view.stations, state.stations);
   return {
     ...state,
     ...contentAt(state.written, view),
@@ -714,6 +854,48 @@ interface TourRestore {
   /** Station poses: each frame of that id moves there (D17), before the
    *  objects - whose spots the moved frames carry - are put back. */
   readonly stations?: readonly StationPose[];
+  /** Whole frames of stations a page created that the document lacks (a
+   *  draft keeps them, so a reload brings a pin's station back with it):
+   *  added after the poses, before the objects. */
+  readonly createdStations?: readonly StationFrame[];
+  /** The objects were made in ANOTHER document (work carried into a tour
+   *  just opened): the station each named is not this tour's, so each is
+   *  seated afresh by the station rule against the opened tour's
+   *  stations. */
+  readonly rerun?: boolean;
+}
+
+/** `TourRestore` as the reducer reads it: with one minted id per object,
+ *  for a station the rule may start for it (`prepare` mints them). */
+interface TourRestorePayload extends TourRestore {
+  readonly what: string;
+  readonly newStationIds: readonly string[];
+}
+
+/** A placement as the reducer reads it (`Seating` minted by `prepare`). */
+interface PlacedPayload extends Seating {
+  readonly object: TourObject;
+  readonly what: string;
+}
+
+/** What a page dispatches for a placement or a move: the id is minted
+ *  for it when absent. */
+interface SeatingInput {
+  readonly object: TourObject;
+  readonly what: string;
+  readonly newStationId?: string;
+  readonly newStation?: boolean;
+}
+
+/** `input` with a station id minted for the rule when it carries none
+ *  (`newObjectId`: outside the reducer, so the reducer stays pure). */
+function prepareSeating(input: SeatingInput): { payload: PlacedPayload } {
+  return {
+    payload: {
+      ...input,
+      newStationId: input.newStationId ?? newObjectId(),
+    },
+  };
 }
 
 /** The written save that landed: the manifest the zip carries, the
@@ -737,36 +919,88 @@ function slotKept(save: TourSaveStatus): TourSaveStatus {
   return saveWith(IDLE, { by: save.by });
 }
 
-/** A new version of an object (or a new one): one entry per id. */
+/**
+ * A new version of an object (or a new one): one entry per id, with the
+ * station frames `stations` (the one a placement or a move started), and
+ * then without the station it left if that is now an empty automatic one
+ * (`withoutEmptied`) - all one step.
+ */
 function putObject(
   before: TourDocumentState,
-  action: PayloadAction<{ object: TourObject; what: string }>,
+  object: TourObject,
+  what: string,
+  stations: readonly StationFrame[] = before.stations,
+  left?: string,
 ): TourDocumentState {
   if (before.written === null) return before;
-  const { object, what } = action.payload;
   // A pending object put again unchanged (an AR settle re-poses every
   // object of a visit) is no step: it would withdraw a delete's Undo.
   const pending = before.placed.find((p) => p.object.id === object.id);
   if (
     pending !== undefined &&
+    stations === before.stations &&
     objectContentKey(pending.object) === objectContentKey(object)
   ) {
     return before;
   }
+  const placed = upsertPlaced(before.placed, { object });
   return edited(
     before,
-    { placed: upsertPlaced(before.placed, { object }) },
+    {
+      placed,
+      stations: withoutEmptied({ ...before, placed, stations }, [left]),
+    },
     what,
   );
+}
+
+/** `object` naming no station: what the station rule seats. */
+function unseated(object: TourObject): TourObject {
+  const { station: _station, ...rest } = object;
+  return rest;
+}
+
+/** Whether a move of `object` to its new spot keeps it in its station
+ *  `frame`: the station's own found radius holds the spot; or the object
+ *  stood outside that radius already, and the move takes it no farther
+ *  from the anchor (strict: a centimetre farther runs the rule) and into
+ *  no other station's radius - a station whose radius held the old spot
+ *  too (radii overlap) is not one it moved into. */
+function keepsHome(
+  state: TourDocumentState,
+  frame: StationFrame,
+  object: TourObject,
+): boolean {
+  if (stationHolding([frame], object.geo) !== null) return true;
+  const was = documentObjects(state).find((o) => o.object.id === object.id)
+    ?.object.geo;
+  if (was === undefined) return false;
+  if (horizontalM(frame.geo, object.geo) > horizontalM(frame.geo, was)) {
+    return false;
+  }
+  const base = manifestNow(state);
+  if (base === null) return false;
+  const movedInto = base.stations.filter(
+    (s) => stationHolding([s], was) === null,
+  );
+  return stationHolding(movedInto, object.geo) === null;
+}
+
+/** The station the document's object `id` stands in, if any. */
+function homeOf(state: TourDocumentState, id: string): string | undefined {
+  return documentObjects(state).find((o) => o.object.id === id)?.object.station;
 }
 
 const tourDocumentSlice = createSlice({
   name: "tourDocument",
   initialState: initialTourDocumentState,
   reducers: {
-    /** A tour opened: everything before it is gone. */
+    /** A tour opened: everything before it is gone. A file's debug
+     *  camera captures are not part of the tour: the document opens
+     *  without them and the stations only they kept
+     *  (`withoutDebugCaptures`), so no page shows or writes them. */
     opened(state, action: PayloadAction<{ manifest: TourManifest }>) {
-      const { manifest } = action.payload;
+      const manifest = withoutDebugCaptures(action.payload.manifest);
       return {
         ...initialTourDocumentState,
         generation: state.generation + 1,
@@ -779,26 +1013,70 @@ const tourDocumentSlice = createSlice({
       };
     },
     /** A new object (placed in AR, or on the map): not for an id the
-     *  tour carries, nor beyond its station's reach (`canPlace`). */
-    placed(state, action: PayloadAction<{ object: TourObject; what: string }>) {
-      const before = plain(state);
-      if (!canPlace(before, action.payload.object)) return before;
-      return putObject(before, action);
+     *  tour carries, nor naming a station the document lacks or beyond its
+     *  reach (`canPlace`). One naming no station is seated by the station
+     *  rule (`seatByRule`): the station that holds it, or a new one
+     *  anchored at it under the payload's `newStationId` - always one
+     *  under "New station here" (`newStation`). */
+    placed: {
+      reducer(state, action: PayloadAction<PlacedPayload>) {
+        const before = plain(state);
+        const { object, what } = action.payload;
+        if (!canPlace(before, object)) return before;
+        if (
+          action.payload.newStation !== true &&
+          object.station !== undefined
+        ) {
+          return putObject(before, object, what);
+        }
+        const seated = seatByRule(before, unseated(object), action.payload);
+        if (seated === null) return before;
+        return putObject(before, seated.object, what, seated.stations);
+      },
+      prepare: prepareSeating,
     },
-    /** A pin's text edited (`objectFits`, as a move). */
+    /** A pin's text edited (`objectFits`): it keeps its station. One
+     *  naming no station, of an id the document lacks, changes nothing: it
+     *  would be an object in no station. */
     edited(state, action: PayloadAction<{ object: TourObject; what: string }>) {
       const before = plain(state);
-      if (!objectFits(before, action.payload.object)) return before;
-      return putObject(before, action);
+      const { object, what } = action.payload;
+      if (!objectFits(before, object)) return before;
+      const station = object.station ?? homeOf(before, object.id);
+      if (station === undefined) return before;
+      return putObject(before, { ...object, station }, what);
     },
-    /** An object moved (on the map, or in AR): not beyond its station's
-     *  reach (`objectFits`). */
-    moved(state, action: PayloadAction<{ object: TourObject; what: string }>) {
-      const before = plain(state);
-      if (!objectFits(before, action.payload.object)) return before;
-      return putObject(before, action);
+    /** An object moved (on the map, or in AR). Within its station's own
+     *  found radius and the format's reach it keeps its station (whose
+     *  anchor stays put), and so does one already outside that radius
+     *  moved no farther out (`keepsHome`); otherwise the station rule
+     *  runs again (`seatByRule`): it joins the station holding its new
+     *  spot, or starts one there under the payload's `newStationId`, and
+     *  the station it left goes when that leaves it an empty automatic
+     *  one. An unknown id changes nothing. */
+    moved: {
+      reducer(state, action: PayloadAction<PlacedPayload>) {
+        const before = plain(state);
+        const { object, what } = action.payload;
+        const home = homeOf(before, object.id);
+        const frame = before.stations.find((s) => s.id === home);
+        if (home === undefined || frame === undefined) return before;
+        const kept = { ...object, station: home };
+        if (keepsHome(before, frame, object) && objectFits(before, kept)) {
+          return putObject(before, kept, what);
+        }
+        const seated = seatByRule(before, unseated(object), {
+          newStationId: action.payload.newStationId,
+        });
+        if (seated === null) return before;
+        return putObject(before, seated.object, what, seated.stations, home);
+      },
+      prepare: prepareSeating,
     },
-    /** An object deleted: its entry goes, a written one gets a tombstone. */
+    /** An object deleted: its entry goes, a written one gets a tombstone;
+     *  the station it leaves goes too when that leaves it an empty
+     *  automatic one (`withoutEmptied`) - in the same step, so an undo
+     *  brings both back. */
     deleted(state, action: PayloadAction<{ id: string; what: string }>) {
       const before = plain(state);
       const found = documentObjects(before).find(
@@ -806,9 +1084,14 @@ const tourDocumentSlice = createSlice({
       );
       if (found === undefined) return before;
       const gone = deleteObject(before, found);
+      const after = { ...before, placed: gone.placed, deleted: gone.deleted };
       return edited(
         before,
-        { placed: gone.placed, deleted: gone.deleted },
+        {
+          placed: gone.placed,
+          deleted: gone.deleted,
+          stations: withoutEmptied(after, [found.object.station]),
+        },
         action.payload.what,
       );
     },
@@ -893,53 +1176,98 @@ const tourDocumentSlice = createSlice({
       const before = plain(state);
       return canStep(before) ? step(before, "redo") : before;
     },
-    /** A draft's work put back: one step to undo. */
-    restored(state, action: PayloadAction<TourRestore & { what: string }>) {
-      const plainBefore = plain(state);
-      const work = action.payload;
-      const poses = new Map((work.stations ?? []).map((p) => [p.id, p.geo]));
-      // The frames first: the objects' spots stand in them.
-      const before: TourDocumentState = {
-        ...plainBefore,
-        stations: plainBefore.stations.map((s) => {
+    /** A draft's work put back: one step to undo. The frames first (the
+     *  poses, then the created stations the document lacks), then each
+     *  object: in its own station when the document carries it and it
+     *  fits there, else seated by the station rule under its minted id (a
+     *  station a draft no longer has, or work carried into another tour,
+     *  `rerun`); then the deletions. A station this leaves an empty
+     *  automatic one goes (`withoutEmptied`). */
+    restored: {
+      reducer(state, action: PayloadAction<TourRestorePayload>) {
+        const plainBefore = plain(state);
+        if (plainBefore.written === null) return plainBefore;
+        const work = action.payload;
+        const poses = new Map((work.stations ?? []).map((p) => [p.id, p.geo]));
+        const posed = plainBefore.stations.map((s) => {
           const geo = poses.get(s.id);
           return geo === undefined ? s : { ...s, geo };
-        }),
-      };
-      let placed = before.placed;
-      let deleted = before.deleted;
-      for (const object of work.objects) {
-        // A draft written before far moves were refused may offer one; it
-        // would make every save fail (the M5a milestone review L1).
-        if (!objectFits(before, object)) continue;
-        placed = upsertPlaced(placed, { object });
-      }
-      for (const id of work.deleted) {
-        const found = documentObjects({ ...before, placed, deleted }).find(
-          (o) => o.object.id === id,
+        });
+        const known = new Set(posed.map((f) => f.id));
+        const created: StationFrame[] = [];
+        for (const frame of work.createdStations ?? []) {
+          if (known.has(frame.id)) continue;
+          known.add(frame.id);
+          created.push(frame);
+        }
+        let next: TourDocumentState = {
+          ...plainBefore,
+          stations: [...posed, ...created],
+        };
+        /** Stations an object or a delete may have left empty. */
+        const left: (string | undefined)[] = created.map((f) => f.id);
+        for (const [i, given] of work.objects.entries()) {
+          // The deletion of its id would hide it (as for a placement,
+          // `canPlace`), and a station started for it would stand empty.
+          if (next.deleted.includes(given.id)) continue;
+          const home = homeOf(next, given.id);
+          left.push(home);
+          const named = work.rerun === true ? undefined : given.station;
+          const own = named ?? (work.rerun === true ? undefined : home);
+          const object =
+            own === undefined ? unseated(given) : { ...given, station: own };
+          const newStationId = work.newStationIds[i];
+          const seated =
+            own !== undefined && objectFits(next, object)
+              ? { object, stations: next.stations }
+              : newStationId === undefined
+                ? null
+                : seatByRule(next, unseated(given), { newStationId });
+          if (seated === null) continue;
+          next = {
+            ...next,
+            stations: seated.stations,
+            placed: upsertPlaced(next.placed, { object: seated.object }),
+          };
+        }
+        for (const id of work.deleted) {
+          const found = documentObjects(next).find((o) => o.object.id === id);
+          if (found === undefined) continue;
+          left.push(found.object.station);
+          const gone = deleteObject(next, found);
+          next = { ...next, placed: gone.placed, deleted: gone.deleted };
+        }
+        return edited(
+          plainBefore,
+          {
+            placed: next.placed,
+            deleted: next.deleted,
+            stations: withoutEmptied(next, left),
+            ...(work.stations === undefined ? {} : { stationsRecorded: true }),
+            ...(work.needsNoGps === undefined
+              ? {}
+              : { needsNoGps: work.needsNoGps }),
+            ...(work.details === undefined
+              ? {}
+              : { details: work.details, detailsRecorded: true }),
+          },
+          work.what,
         );
-        if (found === undefined) continue;
-        const gone = deleteObject({ placed, deleted }, found);
-        placed = gone.placed;
-        deleted = gone.deleted;
-      }
-      return edited(
-        plainBefore,
-        {
-          placed,
-          deleted,
-          ...(work.stations === undefined
-            ? {}
-            : { stations: before.stations, stationsRecorded: true }),
-          ...(work.needsNoGps === undefined
-            ? {}
-            : { needsNoGps: work.needsNoGps }),
-          ...(work.details === undefined
-            ? {}
-            : { details: work.details, detailsRecorded: true }),
+      },
+      prepare(
+        input: TourRestore & {
+          readonly what: string;
+          readonly newStationIds?: readonly string[];
         },
-        work.what,
-      );
+      ): { payload: TourRestorePayload } {
+        return {
+          payload: {
+            ...input,
+            newStationIds:
+              input.newStationIds ?? input.objects.map(() => newObjectId()),
+          },
+        };
+      },
     },
     /** A rebuild was queued: undo and redo wait until it ends. */
     saveStarted(state, action: PayloadAction<{ generation: number }>) {
@@ -959,9 +1287,18 @@ const tourDocumentSlice = createSlice({
       const { written, appliedDeletions, stationsAtStart, generation } =
         action.payload;
       if (generation !== before.generation) return before;
-      const unmoved = sameJson(before.stations, stationsAtStart);
-      // A frame moved while the write ran stays the document's: what the
-      // file holds is read through it, as `documentObjects` will read it.
+      // A station started while the write ran (a pin placed meanwhile) is
+      // not a moved frame: the write lacks it, and it stays the
+      // document's beside the written ones - or its pin would name nothing.
+      const atStart = new Set(stationsAtStart.map((f) => f.id));
+      const startedSince = before.stations.filter((f) => !atStart.has(f.id));
+      const unmoved = sameJson(
+        before.stations.filter((f) => atStart.has(f.id)),
+        stationsAtStart,
+      );
+      // A frame moved (or dropped) while the write ran stays the
+      // document's: what the file holds is read through it, as
+      // `documentObjects` will read it.
       const pending = pendingAfterRebuild(
         before,
         unmoved ? written : withFrames(written, before.stations, before.placed),
@@ -972,7 +1309,9 @@ const tourDocumentSlice = createSlice({
         written,
         placed: pending.placed,
         deleted: pending.deleted,
-        stations: unmoved ? framesOf(written) : before.stations,
+        stations: unmoved
+          ? [...framesOf(written), ...startedSince]
+          : before.stations,
         // An in-place write names its view once it arrives
         // (`saveDelivered`); a download leaves no in-place file.
         save: saveWith(

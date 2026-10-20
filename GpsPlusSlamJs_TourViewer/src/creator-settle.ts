@@ -64,7 +64,6 @@ import type { CreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorCodes } from "./creator-codes.js";
 import type { CreatorPreviews } from "./creator-previews.js";
-import { moveWithCode, takesAlong } from "./move-with-code.js";
 import { moveStationsWithCode } from "./station-code-move.js";
 import type { DocumentChange } from "./creator-document.js";
 import { correctionRefusedLine } from "./qr-author-mode.js";
@@ -72,6 +71,7 @@ import type { TourViewerSeams } from "./seams.js";
 import { buildSummaryModel, codeLabel } from "./summary-model.js";
 import type { SummaryPanel } from "./summary-panel.js";
 import { visitSettled } from "./tour-authoring-actions.js";
+import { manifestNow } from "./tour-document.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -760,9 +760,15 @@ export function wireCreatorSettle(deps: {
       }
     }
     const remint = position?.measurement ?? null;
+    // The stations this visit started: they settle with its objects.
+    const stations = [...ctx.tourDocument.stationPlacements()].flatMap(
+      ([id, { visit: at, local, item }]) =>
+        at === visit ? [{ id, placement: { visit: at, local }, item }] : [],
+    );
     const input = {
       visit,
       placed: ctx.tourDocument.entries(),
+      stations,
       alignment: visitAlignment,
       zero,
       mintedLevel: level,
@@ -918,6 +924,45 @@ export function wireCreatorSettle(deps: {
       }
       return;
     }
+    // The visit's own stations first, each to where its first item
+    // settles: a station moves its items rigidly, and each of the visit's
+    // items is then put at its own settled spot - so none is moved by the
+    // settle twice, and a station stays anchored at its first item. An
+    // item of such a station that this visit did not place (earlier work
+    // moved into it, a restored draft) is put back where it stood: the
+    // visit's correction says nothing about it (as the code move's `stay`).
+    const settling = new Set(plan.stations.map((s) => s.id));
+    const stay = ctx.tourDocument
+      .objects()
+      .filter(
+        (o) =>
+          o.placed?.placement?.visit !== visit &&
+          o.object.station !== undefined &&
+          settling.has(o.object.station),
+      );
+    const reposed = new Set<string>();
+    for (const { id, at } of plan.stations) {
+      const frame = ctx.tourDocument.state().stations.find((s) => s.id === id);
+      if (frame === undefined) continue;
+      const { lat, lon, alt } = frame.geo;
+      if (lat === at.lat && lon === at.lon && alt === at.alt) continue;
+      reposed.add(id);
+      noteUnlanded(
+        ctx.tourDocument.moveStation(
+          id,
+          { ...frame.geo, ...at },
+          `the settle of ${frame.title === undefined ? "a station" : `"${frame.title}"`}`,
+        ),
+      );
+    }
+    for (const o of stay) {
+      if (o.object.station === undefined || !reposed.has(o.object.station)) {
+        continue;
+      }
+      noteUnlanded(
+        ctx.tourDocument.move(o.object, `the settle of ${nameOf(o.object)}`),
+      );
+    }
     for (const { index, object } of plan.objects) {
       const entry = input.placed[index];
       if (entry === undefined || entry.object === object) continue;
@@ -990,7 +1035,11 @@ export function wireCreatorSettle(deps: {
     // they keep their place next to the poster (owner decision
     // 2026-10-06); a real move leaves them where they are (D19). Each
     // object goes with ONE code at most.
-    const claimed = new Set<string>();
+    // The stations this visit started were settled with it, through the
+    // improved code already: no code moves them again.
+    const claimed = new Set<string>(
+      stations.map((s) => `${STATION_CLAIM}${s.id}`),
+    );
     decisions.forEach((d, i) => {
       if (!d.applied || d.reapplied || d.plan.decision.kind !== "replace") {
         return;
@@ -1223,19 +1272,6 @@ export function wireCreatorSettle(deps: {
     ];
   }
 
-  /** A pose moved with its code; a pin keeps its orientation (it has
-   *  none: `mintPin` writes the identity). */
-  function withCode(
-    object: TourObject,
-    from: QrGeoPose,
-    to: QrGeoPose,
-  ): QrGeoPose {
-    const turned = moveWithCode(object.geo, from, to);
-    return object.kind === "pin"
-      ? { ...object.geo, lat: turned.lat, lon: turned.lon, alt: turned.alt }
-      : turned;
-  }
-
   /**
    * Move the earlier objects within reach of an improved code with it
    * (`move-with-code.ts`), as edits by id the Finish writes like any move.
@@ -1248,9 +1284,9 @@ export function wireCreatorSettle(deps: {
    *   their local poses; each becomes an edit at exactly the place its
    *   moved station now gives it, so the Finish writes its pose verbatim.
    *   An item this session already moved goes along rigidly instead.
-   * - **An object not yet in a station** (placed on this device, not yet
-   *   written) moves on its own when it is within 40 m of the code's OLD
-   *   position and no nearer another code (`takesAlong`).
+   * - Every object stands in a station (the tour document's station
+   *   rule), so nothing moves on its own; a station this visit started is
+   *   claimed before (`claimed`): the visit's settle moved it already.
    */
   function moveEarlierWithCode(
     visit: number,
@@ -1282,17 +1318,6 @@ export function wireCreatorSettle(deps: {
     // The objects as they stand BEFORE any station moves: where the code's
     // move starts from, and what the log names as before.
     const entries = ctx.tourDocument.objects();
-    const take = (entry: (typeof entries)[number], after: QrGeoPose) => {
-      claimed.add(entry.object.id);
-      const object = { ...entry.object, geo: after };
-      noteUnlanded(
-        ctx.tourDocument.move(
-          object,
-          `the move of ${nameOf(object)} with its code`,
-        ),
-      );
-      moved.push({ id: object.id, before: entry.object.geo, after });
-    };
     const homes = moveStationsAlong(from, to, others, claimed, visit);
     /** Where the moved stations' frames put their objects now. */
     const now = new Map(
@@ -1302,19 +1327,14 @@ export function wireCreatorSettle(deps: {
       if (entry.placed?.placement?.visit === visit) continue;
       if (claimed.has(entry.object.id)) continue;
       const home = entry.object.station;
-      if (home !== undefined && homes.stations.has(home)) {
-        // Moved with its station's frame (the document's `stationMoved`):
-        // rigidly, its local pose kept - an item this page had moved
-        // already too. Only logged here.
-        const after = now.get(entry.object.id);
-        if (after === undefined) continue;
-        claimed.add(entry.object.id);
-        moved.push({ id: entry.object.id, before: entry.object.geo, after });
-        continue;
-      }
-      if (home !== undefined && homes.known.has(home)) continue;
-      if (!takesAlong(entry.object.geo, from, others)) continue;
-      take(entry, withCode(entry.object, from, to));
+      if (home === undefined || !homes.has(home)) continue;
+      // Moved with its station's frame (the document's `stationMoved`):
+      // rigidly, its local pose kept - an item this page had moved already
+      // too. Only logged here.
+      const after = now.get(entry.object.id);
+      if (after === undefined) continue;
+      claimed.add(entry.object.id);
+      moved.push({ id: entry.object.id, before: entry.object.geo, after });
     }
     if (moved.length > 0) deps.previews.sync();
     return moved;
@@ -1323,8 +1343,7 @@ export function wireCreatorSettle(deps: {
   /**
    * Move the stations an improved code takes along, in the tour document
    * (D17, `stationMoved`: each frame moves, its items rigidly with it):
-   * their ids, and the ids of every station the tour has (an object in one
-   * of those is the station's to move, never its own). This visit's own
+   * the ids of those moved. This visit's own
    * objects in a moved station stay where they are: their spots came from
    * this visit's settle, through the improved code already.
    */
@@ -1334,13 +1353,11 @@ export function wireCreatorSettle(deps: {
     others: readonly QrGeoPose[],
     claimed: Set<string>,
     visit: number,
-  ): {
-    stations: ReadonlySet<string>;
-    known: ReadonlySet<string>;
-  } {
-    const manifest = ctx.tourDocument.manifest();
-    const known = new Set(manifest?.stations.map((s) => s.id) ?? []);
-    const none = { stations: new Set<string>(), known };
+  ): ReadonlySet<string> {
+    // The document as it stands, also before any tour file opened: its
+    // objects stand in its stations then too, and move with them.
+    const manifest = manifestNow(ctx.tourDocument.state());
+    const none = new Set<string>();
     if (manifest === null) return none;
     const result = moveStationsWithCode(manifest.stations, {
       from,
@@ -1380,7 +1397,7 @@ export function wireCreatorSettle(deps: {
         ctx.tourDocument.move(o.object, `the settle of ${nameOf(o.object)}`),
       );
     }
-    return { stations: movedIds, known };
+    return movedIds;
   }
 
   /** How a log of the document names `object`. */

@@ -253,7 +253,7 @@ describe("openTourSession", () => {
 // Why these tests matter (geo-join M-B): the join's inputs come through
 // these two accessors, and BOTH are null-tolerant by contract — a
 // hand-built tour zip (no recording) and a corrupt stream must read as
-// "keep the ring", never as a broken archive.
+// "no walk to bake", never as a broken archive.
 /** Exactly the given entries - no defaults; the recording tests need to
  *  control session.json themselves. */
 async function buildExactZip(
@@ -312,7 +312,7 @@ describe("loadRecordingActions / loadSessionMeta", () => {
     expect(wrapped.hasRecording).toBe(true);
   });
 
-  it("returns null for a hand-built zip without a recording — the ring path, not an error", async () => {
+  it("returns null for a hand-built zip without a recording - nothing to bake, not an error", async () => {
     const fetchImpl = rangeServer(
       await buildExactZip({ "qr/1.json": LEVEL_JSON }),
     );

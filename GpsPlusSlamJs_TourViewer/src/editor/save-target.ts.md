@@ -51,7 +51,9 @@ build plan, re-cut" and its cold review
     original past the cap it would open nowhere, E2b-1 review #2), checks
     again, then `writeFileOrAbort`. A refusal throws `InPlaceRefusal`
     (`kind`: `changed`, `gone`, `too-large`) and writes nothing; the
-    baseline moves only once the write landed.
+    baseline moves only once the write landed: its size and tail from the
+    bytes written (one source, so a lagging read back cannot make the next
+    check say "changed"), its modified time from the file read back.
 - `holdEditorLock(locks, fileName)` - an `EditorLock` (`granted`,
   `release`, `released`): an exclusive Web Lock
   `gps-plus-slam/tour-viewer-editor/<name>`, `ifAvailable`, held until `release` or the page goes. `released` settles

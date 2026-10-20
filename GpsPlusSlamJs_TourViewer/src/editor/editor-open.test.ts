@@ -6,7 +6,11 @@
  * plan review #8). Real zips, the viewer's real opener.
  */
 import { describe, expect, it } from "vitest";
-import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
+import {
+  packFilesAsZip,
+  rebuildZipWithEntries,
+} from "gps-plus-slam-app-framework/storage";
+import { sampleRecordingBytes } from "../test-support/sample-recording.js";
 import {
   createEmptyTourManifest,
   serializeTourManifest,
@@ -17,6 +21,7 @@ import {
   NOT_A_ZIP,
   openTourForEditing,
 } from "./editor-open.js";
+import { createEditorSession } from "./editor-session.js";
 
 async function zipFile(
   entries: { path: string; data: string }[],
@@ -108,5 +113,56 @@ describe("openTourForEditing", () => {
       new File(["not a zip at all"], "broken.zip", { type: "application/zip" }),
     );
     expect(out.kind).toBe("refused");
+  });
+});
+
+describe("openTourForEditing starts no station for the walk's debug camera captures", () => {
+  // Why this test matters: the walk's camera captures are debug data, not
+  // part of the tour. The open put them into stations once (a bake that
+  // started an automatic walk-N station for every frame no station held),
+  // so a save published them as the tour's content. A tour carrying a
+  // recording now opens as its file has it - the same on the desktop as on
+  // the phone - and the document the editor session opens holds no
+  // captures and no station for them.
+  it("opens a tour carrying a recording with no station and no captures", async () => {
+    const zip = await rebuildZipWithEntries(
+      new Blob([sampleRecordingBytes()]),
+      [
+        {
+          path: "tour.json",
+          data: serializeTourManifest(createEmptyTourManifest()),
+        },
+      ],
+    );
+    const out = await openTourForEditing(
+      new File([zip], "walked.zip", { type: "application/zip" }),
+    );
+    if (out.kind !== "opened") throw new Error(out.reason);
+    expect(out.manifest).toEqual(createEmptyTourManifest());
+    const editor = createEditorSession({
+      session: out.session,
+      manifest: out.manifest,
+      levels: out.levels,
+    });
+    expect(editor.model().items.filter((i) => i.kind === "station")).toEqual(
+      [],
+    );
+    const saved = await editor.save({ keepScan: true });
+    expect(saved.written.stations).toEqual([]);
+    expect(saved.written.captureSpots).toBeUndefined();
+    await out.session.close();
+  });
+
+  it("opens a tour without a recording as it is", async () => {
+    const file = await zipFile([
+      {
+        path: "tour.json",
+        data: serializeTourManifest(createEmptyTourManifest()),
+      },
+    ]);
+    const out = await openTourForEditing(file);
+    if (out.kind !== "opened") throw new Error(out.reason);
+    expect(out.manifest).toEqual(createEmptyTourManifest());
+    await out.session.close();
   });
 });

@@ -113,5 +113,5 @@ buildingView.setQuestBeacons(placements);
 ## Related
 
 - [`route-path.ts`](./route-path.ts.md) — the canonical lat/lng → scene example.
-- [`heightfield.ts`](./heightfield.ts.md) — `heightAt`, and the clamp this module
+- [`heightfield.ts`](../../GpsPlusSlamJs_Osm/src/elevation/heightfield.ts.md) (in the Osm library since 2026-10-06) — `heightAt`, and the clamp this module
   refuses to rely on.

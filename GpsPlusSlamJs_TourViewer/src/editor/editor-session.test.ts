@@ -56,6 +56,7 @@ import {
   withWorldObjects,
 } from "../test-support/v3-tour.js";
 import type { EditorModel } from "./editor-model.js";
+import { openTourForEditing } from "./editor-open.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -461,6 +462,9 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     expect(draft.calls).toEqual([
       "save a New",
       "save b pin b",
+      // About 1.3 km away the move starts a station of its own, whose
+      // frame the settings record keeps (a reload brings it back).
+      "settings needsNoGps=false",
       "tombstone a",
       "save a New",
       "untombstone a",
@@ -468,7 +472,7 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     // An unchanged text and a refused one write nothing.
     editor.editText("a", "New");
     editor.editText("a", " ");
-    expect(draft.calls).toHaveLength(5);
+    expect(draft.calls).toHaveLength(6);
     await session.close();
   });
 
@@ -563,42 +567,68 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     await session.close();
   });
 
-  // Why (the M5a milestone review L1): a note stays in its station however
-  // far it is moved, and the format refuses an item more than 10 km from
-  // its station. A far drag on the 2D map was taken, and from then on
-  // every save failed with the parser's technical message. The move is
-  // refused in words instead, changing nothing, and saving still works.
-  it("refuses a move further from the note's station than a tour can carry, in words", async () => {
+  // Why: the format refuses an item more than 10 km from its station, and
+  // a far drag on the 2D map once made every later save fail with the
+  // parser's technical message. A move out of its station's found radius
+  // now re-runs the station rule, so the note lands in a station at its
+  // new spot - never far from its station, however far it went - and the
+  // station it left, now empty, goes with the same step.
+  it("seats a note moved far beyond its station in a station at its new spot, and saving works", async () => {
     const { session, manifest } = await opened([pin("a"), pin("b")]);
-    const draft = loggedDraft();
     const editor = createEditorSession({
       session,
       manifest,
       levels: new Map(),
-      draft,
     });
-    // About 22 km north of its station.
-    expect(editor.move("a", 48.72, 9.05)).toEqual({
-      kind: "refused",
-      reason: TOO_FAR_FROM_STATION,
-    });
-    expect(TOO_FAR_FROM_STATION).toContain("10 km");
-    expect(editor.changeCount()).toBe(0);
-    expect(editor.undo()).toEqual({ kind: "nothing" });
-    expect(draft.calls).toEqual([]);
-    // About 5.5 km is far, but a tour can carry it.
-    expect(editor.move("b", 48.57, 9.05)).toEqual({ kind: "moved" });
+    // About 22 km north of its station: beyond the format's 10 km bound.
+    expect(editor.move("a", 48.72, 9.05)).toEqual({ kind: "moved" });
+    expect(editor.changeCount()).toBe(1);
     const saved = await carried((await editor.save({ keepScan: false })).blob);
-    expect(saved.objects.find((o) => o.id === "b")?.geo.lat).toBeCloseTo(
-      48.57,
-      6,
-    );
+    const a = saved.objects.find((o) => o.id === "a");
+    expect(a?.geo.lat).toBeCloseTo(48.72, 6);
+    expect(a?.station).not.toBe(stationIdOf("a"));
+    const stations = saved.stations;
+    const home = stations.find((s) => s.id === a?.station);
+    expect(home?.geo.lat).toBeCloseTo(48.72, 6);
+    expect(stations.map((s) => s.id)).not.toContain(stationIdOf("a"));
+    // The undo takes the note back into its old station.
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
     await session.close();
   });
 
-  // Why (L1, the same bound): a draft written before the move was refused
-  // can still offer such a move; restoring it would make every save fail.
-  it("skips a draft's object that stands further from its station than a tour can carry", async () => {
+  // Why: a station's found radius has no upper bound, and a move inside
+  // a huge one but beyond the format's 10 km reach changed nothing while
+  // the page was told the note had moved. A move reported as made must be
+  // one the document took, and one every later save can write.
+  it("a move reported as made is applied: inside a huge radius but beyond the format's reach, the note is re-seated and saving works", async () => {
+    const { session, manifest } = await opened([pin("a"), pin("b")]);
+    const huge = {
+      ...manifest,
+      stations: manifest.stations.map((s) => ({
+        ...s,
+        activateRadiusM: 50_000,
+        foundRadiusM: 50_000,
+      })),
+    };
+    const editor = createEditorSession({
+      session,
+      manifest: huge,
+      levels: new Map(),
+    });
+    expect(editor.move("a", 48.72, 9.05)).toEqual({ kind: "moved" });
+    expect(editor.changeCount()).toBe(1);
+    const saved = await carried((await editor.save({ keepScan: false })).blob);
+    const a = saved.objects.find((o) => o.id === "a");
+    expect(a?.geo.lat).toBeCloseTo(48.72, 6);
+    expect(a?.station).not.toBe(stationIdOf("a"));
+    await session.close();
+  });
+
+  // Why: a draft written before far moves re-ran the station rule can
+  // still hold a note its station cannot carry; restoring it as it was
+  // would make every save fail, and skipping it would lose the work. It is
+  // restored, seated by the rule where it stands.
+  it("restores a draft's note its station cannot carry into a station of the rule's", async () => {
     const { session, manifest } = await opened([pin("a"), pin("b")]);
     const editor = createEditorSession({
       session,
@@ -611,16 +641,22 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     };
     const near = inOwnStation(pin("b", "near"));
     expect(editor.restore({ objects: [far, near], deleted: [] })).toEqual({
-      changed: 1,
+      changed: 2,
       deleted: 0,
     });
     const saved = await carried((await editor.save({ keepScan: false })).blob);
     expect(
-      saved.objects.map((o) => [o.id, "label" in o ? o.label : ""]),
+      saved.objects
+        .map((o) => [o.id, "label" in o ? o.label : "", o.station])
+        .sort(),
     ).toEqual([
-      ["a", "pin a"],
-      ["b", "near"],
+      ["a", "far", expect.not.stringMatching(`^${stationIdOf("a")}$`)],
+      ["b", "near", stationIdOf("b")],
     ]);
+    expect(saved.objects.find((o) => o.id === "a")?.geo.lat).toBeCloseTo(
+      48.72,
+      6,
+    );
     await session.close();
   });
 });
@@ -958,6 +994,104 @@ describe("createEditorSession, the tour details (W2)", () => {
     const saved = await editor.save({ keepScan: false });
     expect(await writtenJson(saved.blob)).not.toHaveProperty("cover");
     expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
+  it("an undo across a save brings back a cover image only the cover named", async () => {
+    // Why: a write drops the assets nothing names (`withReferencedAssets`)
+    // and the rebuild removes their files. A cover image no step uses is
+    // named by the cover alone, so changing the cover and saving dropped
+    // it - and an undo after the save found no such image: the old cover
+    // was gone for good. An asset a step of the undo history still names
+    // is kept until the history no longer does.
+    const manifest = tourOf([pin("a")], {
+      assets: [
+        { id: "art1", path: "content/art1.png", kind: "image" },
+        { id: "art2", path: "content/art2.png", kind: "image" },
+      ],
+      cover: "art1",
+    });
+    const zip = await packFilesAsZip([
+      { path: "tour.json", data: serializeTourManifest(manifest) },
+      { path: "content/art1.png", data: "1" },
+      { path: "content/art2.png", data: "2" },
+    ]);
+    const session = await openTourFile(
+      new File([zip], "tour.zip", { type: "application/zip" }),
+    );
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.setDetails(form({ cover: "art2" }))).toEqual({
+      kind: "changed",
+    });
+    const first = await editor.save({ keepScan: false });
+    expect((await writtenJson(first.blob))["cover"]).toBe("art2");
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    expect(editor.details().cover).toBe("art1");
+    const second = await editor.save({ keepScan: false });
+    const written = await writtenJson(second.blob);
+    expect(written["cover"]).toBe("art1");
+    expect((written["assets"] as { id: string }[]).map((a) => a.id)).toContain(
+      "art1",
+    );
+    expect(
+      readStoredEntryBytes(
+        new Uint8Array(await second.blob.arrayBuffer()),
+        "content/art1.png",
+      ),
+      "and its file",
+    ).toBeDefined();
+    await session.close();
+  });
+
+  it("an undo across a save brings back a deleted model with its model file", async () => {
+    // Why: a placed model names its file as an asset. A save after the
+    // model's delete no longer names that asset in the written tour, and
+    // the write drops assets nothing names - but the undo history still
+    // holds the model, so the asset (and its file) must stay until the
+    // history no longer names it, or the undo restores a model without a
+    // file to draw.
+    const statue: TourObject = {
+      id: "m1",
+      kind: "model",
+      asset: "statue",
+      sizeM: 4,
+      createdAtIso: "2026-10-20T00:00:00.000Z",
+      geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+    };
+    const manifest = tourOf([pin("a"), statue], {
+      assets: [{ id: "statue", path: "content/statue.glb", kind: "model" }],
+    });
+    const zip = await packFilesAsZip([
+      { path: "tour.json", data: serializeTourManifest(manifest) },
+      { path: "content/statue.glb", data: "glTF" },
+    ]);
+    const session = await openTourFile(
+      new File([zip], "tour.zip", { type: "application/zip" }),
+    );
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.remove("m1")).toEqual({ kind: "deleted" });
+    const first = await editor.save({ keepScan: false });
+    expect((await carried(first.blob)).objects.map((o) => o.id)).toEqual(["a"]);
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    const second = await editor.save({ keepScan: false });
+    const written = await carried(second.blob);
+    expect(written.objects.map((o) => o.id)).toEqual(["a", "m1"]);
+    expect(written.assets.map((a) => a.id)).toEqual(["statue"]);
+    expect(
+      readStoredEntryBytes(
+        new Uint8Array(await second.blob.arrayBuffer()),
+        "content/statue.glb",
+      ),
+      "and its file",
+    ).toBeDefined();
     await session.close();
   });
 
@@ -1496,7 +1630,8 @@ describe("createEditorSession, undo and redo (W2)", () => {
   });
 });
 
-/** Spots that place the recorded photo without the walk (any valid ones). */
+/** Capture spots a file written while the walk's frames were baked into
+ *  the tour carries: the document drops them at the open. */
 const WALK_SPOTS: TourCaptureSpots = {
   fixes: 3,
   gpsAccuracyMedianM: 4,
@@ -1517,16 +1652,18 @@ const WALK_ENTRIES: Readonly<Record<string, string>> = {
   "images/frame-000001.jpg": "an unbaked frame",
 };
 
-/** A tour with a pin, a baked photo (`images/frame-000002.jpg`) and the
- *  walk; `baked: false` leaves the photos' spots to the walk. */
-async function walkTour(baked = true): Promise<{
+/** A tour with a pin and the walk, a second frame
+ *  (`images/frame-000002.jpg`) among it; `withCaptures`: the file
+ *  carries capture spots for that frame, as one written while the frames
+ *  were baked into the tour did. */
+async function walkTour(withCaptures = true): Promise<{
   session: TourSession;
   manifest: TourManifest;
   bytes: Uint8Array;
 }> {
   const manifest: TourManifest = tourOf(
     [pin("a")],
-    baked ? { captureSpots: WALK_SPOTS } : {},
+    withCaptures ? { captureSpots: WALK_SPOTS } : {},
   );
   const zip = await packFilesAsZip([
     { path: "tour.json", data: serializeTourManifest(manifest) },
@@ -1554,6 +1691,11 @@ describe("moving the walk out (W2, D19)", () => {
   // change nothing until the page has delivered both files: a move whose
   // write failed must leave the next save carrying the walk.
   const walkNames = Object.keys(WALK_ENTRIES).sort();
+  /** The whole recording: the walk's entries and every frame. A frame
+   *  the file's capture spots named was kept for the visitors once; it
+   *  is debug data like any other now (the document drops the spots), so
+   *  it is the walk too. */
+  const recording = [...walkNames, "images/frame-000002.jpg"].sort();
 
   it("names the walk's file after the tour's", () => {
     expect(walkFileName("castle.zip")).toBe("castle-walk.zip");
@@ -1568,15 +1710,14 @@ describe("moving the walk out (W2, D19)", () => {
       manifest,
       levels: new Map(),
     });
-    expect((await editor.walkEntries()).sort()).toEqual(walkNames);
+    // (Was walkNames: the frame the capture spots named stayed the tour's.)
+    expect((await editor.walkEntries()).sort()).toEqual(recording);
     editor.editText("a", "Moved with the walk");
     const move = await editor.moveWalkOut();
     if (move.kind !== "ready") throw new Error(move.reason);
     expect(move.walk.filename).toBe("tour-walk.zip");
-    // The whole recording (the M4b milestone review #8): the frame the
-    // baked spot shows too, which the tour keeps for its visitors - and a
-    // note naming the tour it came from.
-    const recording = [...walkNames, "images/frame-000002.jpg"].sort();
+    // The whole recording (the M4b milestone review #8), every frame
+    // included - and a note naming the tour it came from.
     expect(await namesIn(move.walk.blob)).toEqual(
       [...recording, WALK_NOTE].sort(),
     );
@@ -1590,8 +1731,10 @@ describe("moving the walk out (W2, D19)", () => {
       );
     }
     const tourNames = await namesIn(move.save.blob);
-    for (const name of walkNames) expect(tourNames).not.toContain(name);
-    expect(tourNames).toContain("images/frame-000002.jpg");
+    // (The second frame stayed in the tour while its capture spot named
+    // it; no frame is the tour's now.)
+    for (const name of recording) expect(tourNames).not.toContain(name);
+    expect((await carried(move.save.blob)).captureSpots).toBeUndefined();
     // The pending edit rides along, as in any save.
     expect((await carried(move.save.blob)).objects[0]).toMatchObject({
       label: "Moved with the walk",
@@ -1623,30 +1766,30 @@ describe("moving the walk out (W2, D19)", () => {
     expect(move.kind).toBe("ready");
     // Not committed: the page's write of either file failed.
     expect(editor.changeCount()).toBe(1);
-    expect((await editor.walkEntries()).sort()).toEqual(walkNames);
+    // (Was walkNames; the named frame is the walk too now.)
+    expect((await editor.walkEntries()).sort()).toEqual(recording);
     const saved = await editor.save({ keepScan: true });
     const names = await namesIn(saved.blob);
-    for (const name of walkNames) expect(names).toContain(name);
+    for (const name of recording) expect(names).toContain(name);
     await session.close();
   });
 
-  it("refuses while the recorded photos still need the walk, and for a tour without one", async () => {
+  it("moves the walk out of a tour whose file carries no capture spots, and refuses for a tour without one", async () => {
+    // Why: the move was refused while a visitor's viewer could still place
+    // the recorded photos from the walk; the walk of such a tour is the
+    // creator's like any other.
     const unbaked = await walkTour(false);
     const editor = createEditorSession({
       session: unbaked.session,
       manifest: unbaked.manifest,
       levels: new Map(),
     });
-    const refused = await editor.moveWalkOut();
-    expect(refused.kind).toBe("refused");
-    expect(refused.kind === "refused" && refused.reason).toMatch(
-      /recorded photos/,
-    );
-    // Refused: the tour keeps its walk (unbaked, its frames are the
-    // visitors' photo ring, not the walk).
-    expect(await editor.walkEntries()).toEqual(
-      expect.arrayContaining(["session.json", "actions/000001.json"]),
-    );
+    // The whole recording is the walk, its frames included.
+    expect((await editor.walkEntries()).sort()).toEqual(recording);
+    const move = await editor.moveWalkOut();
+    if (move.kind !== "ready") throw new Error(move.reason);
+    move.commit();
+    expect(await editor.walkEntries()).toEqual([]);
     await unbaked.session.close();
     const plain = await opened([pin("a")]);
     const none = createEditorSession({
@@ -1680,7 +1823,8 @@ describe("moving the walk out (W2, D19)", () => {
       move.commit();
     }).toThrow(/another save landed/);
     // Nothing of the move was taken: the newest bytes still carry the walk.
-    expect((await editor.walkEntries()).sort()).toEqual(walkNames);
+    // (Was walkNames; the named frame is the walk too now.)
+    expect((await editor.walkEntries()).sort()).toEqual(recording);
     await session.close();
   });
 
@@ -1747,7 +1891,7 @@ describe("moving the walk out (W2, D19)", () => {
     await session.close();
   });
 
-  it("moves out a walk that places nothing - one on which no photo of the tour was taken - and a lean save leaves it out too", async () => {
+  it("moves out a walk none of whose frames the tour carries, and a lean save leaves it out too", async () => {
     // Why (the M4b milestone review #3): such a walk was refused with "the
     // recorded photos are placed by it" - photos the tour does not carry -
     // so it could never leave a tour file a creator hosts.
@@ -1762,14 +1906,16 @@ describe("moving the walk out (W2, D19)", () => {
       ],
       { remove: [...SAMPLE_PHOTOS] },
     );
+    // Opened as the page opens it.
     const tour = async (): Promise<EditorSession> => {
-      const session = await openTourFile(
+      const out = await openTourForEditing(
         new File([zip], "walked.zip", { type: "application/zip" }),
       );
+      if (out.kind !== "opened") throw new Error(out.reason);
       return createEditorSession({
-        session,
-        manifest: (await session.loadTourManifest())!,
-        levels: new Map(),
+        session: out.session,
+        manifest: out.manifest,
+        levels: out.levels,
       });
     };
     const original = await namesIn(zip);
@@ -1781,10 +1927,10 @@ describe("moving the walk out (W2, D19)", () => {
     expect(await namesIn(move.walk.blob)).toEqual([...walk, WALK_NOTE].sort());
     expect(await namesIn(move.save.blob)).toEqual(["tour.json"]);
     // The lean save (the editor's download without "keep the walk") leaves
-    // it out as well, and says nothing about photos that do not exist.
+    // it out as well. (It also said nothing about photos that do not
+    // exist; a save says nothing about photos at all now.)
     const lean = await (await tour()).save({ keepScan: false });
     expect(await namesIn(lean.blob)).toEqual(["tour.json"]);
-    expect(lean.notPlaced).toBeUndefined();
     expect([...lean.scanLeftOut].sort()).toEqual(walk);
   });
 });
@@ -1912,6 +2058,30 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
     expect(editor.undo()).toMatchObject({ kind: "undone" });
     const undone = await carried((await editor.save({ keepScan: false })).blob);
     expect(undone.objects.map((o) => o.id)).toEqual(["a"]);
+    await session.close();
+  });
+
+  // Why: a note that NAMES its station keeps it, so the format's 10 km
+  // bound between an item and its station still applies to it - refused
+  // in words rather than taken and failing every later save.
+  it("refuses a new note naming a station further away than a tour can carry, in words", async () => {
+    const { session, manifest } = await opened([pin("a")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const far: TourObject = {
+      ...pin("n"),
+      station: stationIdOf("a"),
+      geo: { ...pin("n").geo, lat: 48.72 },
+    };
+    expect(editor.place(far)).toEqual({
+      kind: "refused",
+      reason: TOO_FAR_FROM_STATION,
+    });
+    expect(TOO_FAR_FROM_STATION).toContain("10 km");
+    expect(editor.changeCount()).toBe(0);
     await session.close();
   });
 
