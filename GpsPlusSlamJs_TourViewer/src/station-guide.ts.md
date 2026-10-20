@@ -30,7 +30,10 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
     (no heading yet; the stage waits, r881 re-review M-B).
 - Deps: `dom` (`line`, `skip`), `tour()` (stations, order),
   `placementAllowed()`, `zero()`, `visitor()` (`visitor-position.ts`),
-  `codeLinedUp()` (a code's votes lined the alignment up, `tour-flow.ts`),
+  `codeLinedUp()` (a code's votes lined the alignment up, `tour-flow.ts`;
+  the guide passes it to the framework's precision rule as `codeHold`, so
+  it ends only on events: a veto, an odometry-frame change, leaving AR,
+  another tour),
   `alignmentReady()` (the alignment may be judged on: tracking ready or a
   code, re-read each tick by the find, latched per AR entry by what needs
   a heading, `tour-flow.ts` `alignmentReady`), `trackingReady()` (the
@@ -60,13 +63,13 @@ activateM)` (each tick, each offered station with a distance: the
   steps" sentence.
 - **One gate for found and presence** (visitor plan M1, §3): `judged` is
   the one function that says what a tick may judge - the measured best
-  position's distances and the judged accuracy, or nothing (no position, no
-  GPS zero, `tooWeakToGuide`). The run's `observe` and the present station
+  position's distances and its precision, or nothing (no position, no GPS
+  zero, a precision that is `tooWeak`: GPS above the ceiling, or `'none'`). The run's `observe` and the present station
   both read only it, so a station is never found where presence would not
   count the visitor, nor present on a fix the arrival refused.
 - **The present station** (`station-presence.ts`): every station of the
   tour is a candidate, with its judged bands (`judgedStationBands`) and the
-  judged accuracy's margin (`takeoverMarginM`), whatever the order (V-D5).
+  precision's margin (`takeoverMarginM`), whatever the order (V-D5).
   The guide dispatches `presenceJudged` only when `presenceAfter` differs
   from the store's answer, and only at the END of its tick (the store's
   subscriber ticks again, and finds nothing to change). No position (a
@@ -111,14 +114,27 @@ activateM)` (each tick, each offered station with a distance: the
   inside its authored found radius: whatever the raw accuracy when a code
   lined the aligned position up (the accuracy is the raw fixes' and says
   nothing about a code's position, M5c review #1), and otherwise only
-  while the raw accuracy is within the ceiling (`tooWeakToGuide`, PR #640
-  review): the median of the latest fixes for the aligned position, the
-  worse of that and the fix's own (`fixAccuracyM`) for a lone fix (r881
-  re-review M-A: one ±40 m fix after a ±5 m run hid behind the median).
-  When neither the median nor the fix states an accuracy the radius alone
-  judges, as for any unknown accuracy: a real device fix always states one
-  (the Geolocation spec requires it), so only injected points (a test
-  page, a replay) lack it (third review L4).
+  while the raw accuracy is within the ceiling (PR #640 review): the
+  median of the latest device fixes for the aligned position, the worse of
+  that and the fix's own (`fixAccuracyM`) for a lone fix (r881 re-review
+  M-A: one ±40 m fix after a ±5 m run hid behind the median). Both are
+  the framework's one rule (`gps-plus-slam-app-framework/state/position-precision`,
+  `precisionOf` here), which the guide adopted in M2 of
+  `GpsPlusSlamJs_Docs/docs/2026-10-19-1345-shared-position-precision-plan.md`
+  behind a frozen parity oracle (`station-guide.parity.test.ts`).
+  **The one change it made (the plan's §12, S3):** a position no code holds
+  and no stated accuracy speaks for - without location once a code's trust
+  ended while the tracking report still reads ready on the code's
+  readings, the next AR entry before its own code locks, or fixes that
+  state no accuracy, aligned or alone - is `'none'`. Nothing is found on
+  it, presence holds (a station a code made present ends with the code),
+  and the line asks for a code instead of a distance ("... - scan one of
+  the tour's codes so the guide knows where you are."). Before, such a
+  position was judged by the radius alone with the widest bands, and
+  without location kept one exhibit present for 30 s while the visitor
+  stood at others. A real device fix always states an accuracy (the
+  Geolocation spec requires it), so the fix cases come only from injected
+  points (a test page, a replay; third review L4).
   The accuracy never widens the radius. With neither position nothing is
   reached. A GPS-only session whose tracking quality drops is not ready
   any more and falls back to the fresh fix; only a session that stays
@@ -209,10 +225,14 @@ activateM)` (each tick, each offered station with a distance: the
     a regular grid none up to 6. Five stays under one overlap in ten
     views; markers about 10° wide on a phone would favour four, a
     grid-like layout allows seven.
-- **One accuracy rule for every band** (PR #642 review): the prefetch's
-  activation, the HUD's band and the breadcrumbs' stop read the same rule
-  as the line and the run (`station-bands.ts` `judgedAccuracy` /
-  `judgedStationBands`, on the measurement's `codeLinedUp`). A visitor a
+- **One precision rule for every band** (PR #642 review): the prefetch's
+  activation, the HUD's band and the breadcrumbs' stop read the same
+  precision as the line and the run (`station-bands.ts`
+  `judgedStationBands`, on the measurement's `precision`). With no position
+  this tick (a tracking drop, a stale fix) the precision is still the
+  session's alignment's (a code's while it holds, else the device fixes'),
+  so the bands keep their width and the line can still say the GPS is too
+  weak, while the gate judges nothing. A visitor a
   code lined up takes the HUD's own band, so a ±40 m raw fix beside a
   code-placed position widens nothing; every other position - a raw fix,
   or an alignment no code lined up - keeps the raw accuracy's band. The HUD is started once per
@@ -250,11 +270,12 @@ activateM)` (each tick, each offered station with a distance: the
   format, and the button now covers it.
 - **The line:** "Next: <title>, N m", "N stations to find - nearest:
   <title>, N m", "... - waiting for your position…", "... - GPS too weak to
-  guide you (±N m); step into the open." (when no code lined the
-  position up and the raw fixes' accuracy is above the ceiling,
-  `tooWeakToGuide` - checked before "waiting", so it shows while the
-  alignment is not ready too; the run then judges no arrival either,
-  PR #640 review, M5c review #1),
+  guide you (±N m); step into the open." (a `'gps'` precision above the
+  ceiling - checked before "waiting", so it shows while the alignment is
+  not ready too; the run then judges no arrival either, PR #640 review,
+  M5c review #1), "... - scan one of the tour's codes so the guide knows
+  where you are." (a position with a distance whose precision is
+  `'none'`: no code holds it and no accuracy speaks for it),
   "Station found - its story is
   playing.", "Tour complete - every station visited." or "- N skipped.";
   under branch order "Tour complete - you reached the end of your path."
@@ -271,11 +292,13 @@ activateM)` (each tick, each offered station with a distance: the
 - **With no device fix ever (QR-first M1b-1, codes only):** the visitor's
   position (`visitor-position.ts`) is the camera through the code-placed
   alignment - null before a scan, odometry from the code after it - with
-  `accuracyM` and `fixNue` null. So nothing is reached before a scan,
-  and after it every station by the distance from the code-placed
-  position (D16), as with GPS; the line says "waiting for your
-  position..." before a scan and the distance after it - never "GPS too
-  weak", which needs an accuracy. Under `?relocate=here` the stations stay
+  no device fix among its readings and `fixNue` null. So nothing is
+  reached before a scan, and after it every station by the distance from
+  the code-placed position (D16), as with GPS; the line says "waiting for
+  your position..." before a scan and the distance after it - never "GPS
+  too weak", which needs an accuracy. Once the code's trust ends (an
+  odometry-frame change) the position is `'none'` (above): no find, and
+  the line asks for a code. Under `?relocate=here` the stations stay
   held back (the relocation waits for a first device fix that never comes).
 
 ## Examples
@@ -347,7 +370,9 @@ store.subscribe(() => guide.tick());
   cold-start harness feeds the raw signals (tracking, a code) and the
   page's readiness rule over them, so the latch tested is the guide's.
   `station-guide.property.test.ts` also pins that a lone-fix find means
-  the worse known accuracy is within the ceiling (L4).
+  the worse known accuracy is within the ceiling, and that a lone fix
+  with no accuracy anywhere finds nothing (L4; since the shared precision
+  rule).
 - `station-guide.test.ts` ("the present station", visitor plan M1) -
   enter at the found radius, leave past the exit, a dispatch only per
   change; a too-weak fix neither finds nor makes present, no position and a
@@ -357,6 +382,16 @@ store.subscribe(() => guide.tick());
   "show all" set before the first tick stays; a code's 1.5 m band; a later
   station of a fixed tour present but not found (V-D5); cleared at the
   session's end, reset with "show all" by another tour.
+- `station-guide.parity.test.ts` - the switch to the framework's
+  precision rule held to a golden oracle frozen before it
+  (`__golden__/station-guide-precision.golden.json`; regenerate only with
+  `GOLDEN_UPDATE=1`, refused in CI): ten streams (a code's hold, its fade,
+  an odometry-frame change, a veto, codes only, a GPS gap, lone outlier
+  fixes, a tracking drop, weak GPS, a re-entry on GPS) give the same line,
+  skip, finds, presence, HUD, approach and breadcrumbs at every tick; four
+  streams of the named exception agree up to its first tick, and on it
+  find nothing, hold or end presence, keep the widest bands and ask for a
+  code.
 - `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
   tracking-quality slice (L3).
 - `playwright-tests/stations.spec.js` - the whole flow on the page.

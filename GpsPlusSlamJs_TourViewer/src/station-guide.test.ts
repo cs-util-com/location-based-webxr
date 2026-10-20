@@ -14,6 +14,12 @@ import {
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 
+import {
+  positionPrecision,
+  type PositionPrecision,
+  type PrecisionGpsPoint,
+} from "gps-plus-slam-app-framework/state/position-precision";
+
 import { judgedStationBands, stationBands } from "./station-bands";
 import { skipSuggestAfterMs } from "./station-run";
 import {
@@ -44,6 +50,22 @@ import {
  * on demand and suggested after its clock, and the progress must survive
  * leaving AR and coming back.
  */
+
+/** The store's GPS readings as the shared precision rule reads them: one
+ *  device fix stating `accuracyM` (its median), or none for null. */
+function fixesAt(accuracyM: number | null): PrecisionGpsPoint[] {
+  return accuracyM === null ? [] : [{ latLongAccuracy: accuracyM }];
+}
+
+/** A GPS position's precision at this accuracy (within the ceiling). */
+function gps(accuracyM: number): PositionPrecision {
+  return { source: "gps", accuracyM, tooWeak: false };
+}
+const CODE: PositionPrecision = {
+  source: "code",
+  accuracyM: null,
+  tooWeak: false,
+};
 
 // The core's geodesy needs an activated store (the framework's factory).
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -83,7 +105,7 @@ function harness(
   let now = 1_000;
   let visitor: VisitorPosition = {
     nue: [0, 401.5, 0],
-    accuracyM: 4,
+    gpsPoints: fixesAt(4),
     fixNue: [0, 400, 0],
     aligned: true,
     fixAtMs: now,
@@ -186,7 +208,7 @@ function harness(
     at: (north: number, east: number, accuracyM: number | null = 4) => {
       visitor = {
         nue: [north, 401.5, east],
-        accuracyM,
+        gpsPoints: fixesAt(accuracyM),
         fixNue: [north, 400, east],
         aligned: true,
         fixAtMs: now,
@@ -207,7 +229,7 @@ function harness(
     ) => {
       visitor = {
         nue: [north, 401.5, east],
-        accuracyM,
+        gpsPoints: fixesAt(accuracyM),
         fixNue: [fixN, 400, fixE],
         aligned: true,
         fixAtMs: now,
@@ -226,7 +248,7 @@ function harness(
     ) => {
       visitor = {
         nue: null,
-        accuracyM,
+        gpsPoints: fixesAt(accuracyM),
         fixNue: [north, 400, east],
         aligned: false,
         fixAtMs: now - ageMs,
@@ -239,7 +261,7 @@ function harness(
     trackingLost: (fixN: number, fixE: number, accuracyM = 4) => {
       visitor = {
         nue: null,
-        accuracyM,
+        gpsPoints: fixesAt(accuracyM),
         fixNue: [fixN, 400, fixE],
         aligned: true,
         fixAtMs: now,
@@ -252,7 +274,7 @@ function harness(
       lined = true;
       visitor = {
         nue: [north, 401.5, east],
-        accuracyM: null,
+        gpsPoints: fixesAt(null),
         fixNue: null,
         aligned: true,
         fixAtMs: null,
@@ -262,7 +284,7 @@ function harness(
     lost: () => {
       visitor = {
         nue: null,
-        accuracyM: 4,
+        gpsPoints: fixesAt(4),
         fixNue: null,
         aligned: false,
         fixAtMs: null,
@@ -312,7 +334,7 @@ describe("wireStationGuide", () => {
     expect(gate.position.x).toBeCloseTo(50, 1);
     expect(gate.position.y).toBe(401.5);
     expect(gate.position.z).toBeCloseTo(20, 1);
-    const bands = judgedStationBands(s, 6, false);
+    const bands = judgedStationBands(s, gps(6));
     expect([gate.distanceMin, gate.distanceMax]).toEqual([
       bands.foundM,
       bands.foundExitM,
@@ -607,7 +629,7 @@ describe("wireStationGuide", () => {
     });
     h.at(0, 0);
     expect(h.approaches).toEqual([
-      ["gate", 0, judgedStationBands(s, 4, false).activateM],
+      ["gate", 0, judgedStationBands(s, gps(4)).activateM],
     ]);
     h.guide.storyEnded("gate");
     h.at(0, 0);
@@ -638,7 +660,7 @@ describe("wireStationGuide", () => {
     });
     h.at(0, 0);
     expect(h.guides.at(-1)).toBe(
-      `well@0,80/${judgedStationBands(s, 4, false).foundExitM}`,
+      `well@0,80/${judgedStationBands(s, gps(4)).foundExitM}`,
     );
     h.at(0, 79);
     expect(h.guides.at(-1)).toBeNull();
@@ -725,7 +747,7 @@ describe("arrival by the station radius alone (D16)", () => {
     expect(weak.found).toEqual(["well"]);
   });
 
-  // Why (M5c review #1): `accuracyM` is the raw fixes' median and says
+  // Why (M5c review #1): the raw fixes' median says
   // nothing about a position a code lined up. An indoor or courtyard tour
   // placed by one code with a ±40-60 m Wi-Fi fix was never found and was
   // told to step into the open, though its position was the code's.
@@ -766,7 +788,7 @@ describe("arrival by the station radius alone (D16)", () => {
     // An activation radius inside the widest band, so the prefetch shows it.
     const s = station("gate", 50, 0, { activateRadiusM: 6, foundRadiusM: 5 });
     const tour: StationTour = { stations: [s], order: "fixed" };
-    const coded = judgedStationBands(s, null, true);
+    const coded = judgedStationBands(s, CODE);
     expect(coded.foundExitM).toBe(5 + 1.5);
     for (const accuracyM of [5, 25, 40, 100, null]) {
       const h = harness(tour);
@@ -1013,7 +1035,15 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
     });
     expect(visitor.aligned).toBe(true);
     expect(visitor.nue).not.toBeNull();
-    expect(visitor.accuracyM).toBe(500);
+    // Changed (shared position-precision plan, M2): the median is the
+    // framework's rule now, read from the points the visitor carries.
+    expect(
+      positionPrecision({
+        position: "aligned",
+        codeHold: false,
+        gpsPoints: visitor.gpsPoints,
+      }),
+    ).toEqual({ source: "gps", accuracyM: 500, tooWeak: true });
   });
 
   it("a ±500 m first fix inside a 10 m station finds nothing and says the GPS is too weak, ready or not", () => {

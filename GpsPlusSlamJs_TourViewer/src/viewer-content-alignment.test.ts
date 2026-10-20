@@ -597,7 +597,7 @@ describe("after a code-set zero the content shows on the first voted lock (no co
         const placed = selectAlignmentMatrix(state) !== null && zero !== null;
         return {
           nue: placed ? objectPoseNue(levelGeo, zero).positionNue : null,
-          accuracyM: null,
+          gpsPoints: [],
           fixNue: null,
           aligned: placed,
           fixAtMs: null,

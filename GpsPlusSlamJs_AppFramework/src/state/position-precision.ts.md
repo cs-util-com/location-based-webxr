@@ -10,7 +10,9 @@ given distance apart.
 Deep import only: `gps-plus-slam-app-framework/state/position-precision`.
 It is not on the `state` barrel or the root barrel. It has no consumer in
 this package; apps adopt it (built per-file by `config/tsdown.config.ts`,
-and a knip entry until a consumer exists).
+and a knip entry, since knip sees no consumer of a file reached only
+through `dist`). The Tour Viewer's station guide is the first (M2 of
+`GpsPlusSlamJs_Docs/docs/2026-10-19-1345-shared-position-precision-plan.md`).
 
 ## Public API
 

@@ -7,7 +7,13 @@
  * (`gps-plus-slam-app-framework/state/position-precision`). The switch must
  * reproduce every tick: the line, the skip label, each find and done, the
  * present station, the wait for a heading, the HUD's targets and bands, the
- * prefetch's activation radii and the breadcrumbs' stop. An oracle frozen
+ * prefetch's activation radii and the breadcrumbs' stop - except on the ONE
+ * named exception of the plan (§12, S3, and the same rule for a lone fix):
+ * a position no code holds and no stated accuracy speaks for. The shared
+ * rule reads it as `'none'`: nothing is found there, presence holds (and a
+ * station a code made present ends with the code), and the line asks for a
+ * code. The exception streams are frozen too: they must match the old
+ * guide up to their first exception tick, and are then held to that. An oracle frozen
  * first, not a test written with the change (CLAUDE.md: tests written with
  * the code confirm its bugs).
  *
@@ -45,6 +51,7 @@ import {
 } from "gps-plus-slam-app-framework/test-utils/integrated-slam-drift";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 
+import { stationBands } from "./station-bands";
 import { FIX_MAX_AGE_MS, wireStationGuide } from "./station-guide";
 import { visitorGuideReducer } from "./visitor-guide-slice";
 import { visitorPosition } from "./visitor-position";
@@ -628,9 +635,87 @@ describe("the station guide's precision parity oracle (frozen before M2's switch
       const want = frozen[s.name]!;
       const got = now[s.name]!;
       expect(got).toHaveLength(want.length);
-      for (let t = 0; t < want.length; t += 1) {
+      // An exception stream is held to the old guide up to its first
+      // exception tick; from there the next test holds it.
+      const until = exceptionTicks(s)[0] ?? want.length;
+      for (let t = 0; t < until; t += 1) {
         expect(got[t], `${s.name} t=${String(t)}`).toEqual(want[t]);
       }
+    }
+  });
+
+  // Why this test matters (plan §12, S3): it is the ONE place the shared
+  // rule changes what a visitor gets, so it is pinned tick by tick. Before
+  // it, the old guide judged a position nothing vouched for with an
+  // unknown accuracy - the widest bands and a 25 m takeover margin - and
+  // without location, once a code's trust ended, kept showing one exhibit
+  // for 30 s while the visitor stood at others (the golden file's
+  // `codes-only-trust-ended`, 70-99 s).
+  it("on the named exception finds nothing, holds or ends presence, keeps the bands, and asks for a code", () => {
+    const frozen = JSON.parse(readFileSync(GOLDEN, "utf8")) as Record<
+      string,
+      TickRecord[]
+    >;
+    for (const s of EXCEPTION) {
+      const ticks = exceptionTicks(s);
+      const got = now[s.name]!;
+      const first = ticks[0]!;
+      // Up to here the old guide's ticks hold (the test above).
+      expect(got[first - 1] ?? null, s.name).toEqual(
+        frozen[s.name]![first - 1] ?? null,
+      );
+      for (const t of ticks) {
+        const at = `${s.name} t=${String(t)}`;
+        const tick = got[t]!;
+        // The bands are the widest, as an unknown accuracy always read:
+        // the HUD's arrival band and the prefetch's activation radius.
+        const widest = (id: string) =>
+          stationBands(
+            s.stations.find((st) => st.id === id)!,
+            null,
+          );
+        for (const entry of tick.hud) {
+          const [id, min, max] = entry.split(":");
+          const b = widest(id!);
+          expect([Number(min), Number(max)], at).toEqual([
+            b.foundM,
+            b.foundExitM,
+          ]);
+        }
+        for (const entry of tick.approach) {
+          const [id, , activate] = entry.split(":");
+          expect(Number(activate), at).toBe(widest(id!).activateM);
+        }
+        expect(tick.found, at).toEqual([]);
+        // Presence never enters or moves: it holds, or ends.
+        const before = got[t - 1]?.present ?? null;
+        expect([before, null], at).toContain(tick.present);
+        expect(tick.line, at).toMatch(
+          /- scan one of the tour's codes so the guide knows where you are\.$/,
+        );
+      }
+    }
+    // A station a code made present ends with the code; a rescan (100 s)
+    // brings guidance back.
+    const ended = now["codes-only-trust-ended"]!;
+    expect(ended[69]!.present).not.toBeNull();
+    expect(ended.slice(70, 100).every((r) => r.present === null)).toBe(true);
+    expect(ended.slice(100).some((r) => r.present !== null)).toBe(true);
+    // Leaving AR clears presence; the next entry judges nothing until its
+    // own code locks (85 s).
+    const reentry = now["codes-only-re-entry"]!;
+    expect(reentry.slice(60, 85).every((r) => r.present === null)).toBe(true);
+    expect(reentry.slice(85).some((r) => r.present !== null)).toBe(true);
+    // Fixes that state no accuracy, aligned or alone, judge nothing.
+    for (const name of ["gps-without-accuracy", "lone-fix-without-accuracy"]) {
+      expect(
+        now[name]!.every((r) => r.found.length === 0),
+        name,
+      ).toBe(true);
+      expect(
+        now[name]!.every((r) => r.present === null),
+        name,
+      ).toBe(true);
     }
   });
 });

@@ -13,11 +13,13 @@ import {
 } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
-import { ACCURACY_WINDOW_FIXES, visitorPosition } from "./visitor-position";
+import { positionPrecision } from "gps-plus-slam-app-framework/state/position-precision";
+
+import { visitorPosition } from "./visitor-position";
 
 /**
  * Why these tests matter: a station is found where this says the visitor
- * stands, and its radius widens with the accuracy this reports. The camera
+ * stands, and its precision is judged from the readings this carries. The camera
  * must come through the same alignment as the tour's content (else the HUD
  * says "arrived" where the station is not found), and a single code vote's
  * fixed accuracy must never make a phone in an urban canyon look precise.
@@ -222,7 +224,12 @@ describe("visitorPosition", () => {
     }
   });
 
-  it("reads the accuracy from the latest DEVICE fixes only, as their median", () => {
+  // Changed (shared position-precision plan, M2): the viewer's own median
+  // of the latest 10 device fixes was a copy of the framework's; the
+  // visitor now carries the store's readings and the framework's one rule
+  // judges them. This keeps the guarantee at the seam: what the visitor
+  // carries is judged by the DEVICE fixes alone.
+  it("carries the store's readings, which the shared rule judges by the latest DEVICE fixes only", () => {
     const fix = (accuracy: number | undefined, source?: string): GpsPoint =>
       ({
         latitude: 47.5,
@@ -240,24 +247,28 @@ describe("visitorPosition", () => {
       ),
       ...Array.from({ length: 20 }, () => fix(0.5, "synthetic-qr")),
     ];
-    expect(ACCURACY_WINDOW_FIXES).toBe(10);
     const p = visitorPosition({
       alignment: null,
       arPose: null,
       gpsPositions: points,
     });
-    expect(p.accuracyM).toBe(6);
-    // No usable accuracy at all: unknown, never 0.
+    expect(p.gpsPoints).toBe(points);
+    const judged = (gpsPoints: typeof p.gpsPoints) =>
+      positionPrecision({ position: "aligned", codeHold: false, gpsPoints });
+    expect(judged(p.gpsPoints).accuracyM).toBe(6);
+    // No usable accuracy at all: nothing to judge by, never 0.
     expect(
-      visitorPosition({
-        alignment: null,
-        arPose: null,
-        gpsPositions: [
-          fix(undefined, GPS_POINT_SOURCE_DEVICE),
-          fix(-1, GPS_POINT_SOURCE_DEVICE),
-        ],
-      }).accuracyM,
-    ).toBeNull();
+      judged(
+        visitorPosition({
+          alignment: null,
+          arPose: null,
+          gpsPositions: [
+            fix(undefined, GPS_POINT_SOURCE_DEVICE),
+            fix(-1, GPS_POINT_SOURCE_DEVICE),
+          ],
+        }).gpsPoints,
+      ).source,
+    ).toBe("none");
   });
 
   // Why (r881 re-review M-A): before the alignment is ready the latest fix
@@ -286,7 +297,13 @@ describe("visitorPosition", () => {
       gpsPositions: [...run, fix(40, 9_000), fix(1, 9_500, "synthetic-qr")],
       zero,
     });
-    expect(p.accuracyM).toBe(5);
+    expect(
+      positionPrecision({
+        position: "aligned",
+        codeHold: false,
+        gpsPoints: p.gpsPoints,
+      }).accuracyM,
+    ).toBe(5);
     // The latest DEVICE fix's own, never a vote's.
     expect(p.fixAccuracyM).toBe(40);
     // That fix states no usable accuracy: unknown, even with older ones.

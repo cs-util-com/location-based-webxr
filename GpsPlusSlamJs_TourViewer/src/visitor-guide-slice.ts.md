@@ -20,14 +20,18 @@ when the answer changes.
 showAllContent: boolean; headingPending: boolean }`, null/false/false at
   the start.
 - Actions:
-  - `presenceJudged({ candidates, accuracyM, codeLinedUp })` - a judged
-    position (`type PresenceJudgement`; `accuracyM` is the judged accuracy,
-    null for a code's position). `presentStationId` becomes:
-    - above the accuracy ceiling (`tooWeakToGuide`):
+  - `presenceJudged({ candidates, precision })` - a judged position
+    (`type PresenceJudgement`; `precision` is the framework's
+    `PositionPrecision`). `presentStationId` becomes:
+    - nothing to judge by (`'none'`): unchanged (the shared
+      position-precision plan's §12, S3; a station a code made present is
+      ended by the guide when the code goes);
+    - a `tooWeak` GPS precision (above the ceiling):
       `presentAfterWeakFix(present, candidates, accuracyM)` - the exit only,
-      never an entry or a takeover (PR review S1);
+      never an entry or a takeover (PR review S1); unchanged without a
+      number;
     - otherwise `nextPresentStation(present, candidates,
-takeoverMarginM(accuracyM, codeLinedUp))`;
+takeoverMarginM(precision))`;
     - null candidates hold.
   - `presenceCleared()` - the AR session ended, or a code's station lost
     its code with nothing else to judge by (`station-guide.ts`);
@@ -64,7 +68,10 @@ takeoverMarginM(accuracyM, codeLinedUp))`;
 
 ```ts
 store.dispatch(
-  presenceJudged({ candidates, accuracyM: null, codeLinedUp: true }),
+  presenceJudged({
+    candidates,
+    precision: { source: "code", accuracyM: 1, tooWeak: false },
+  }),
 );
 selectStationContentShown(store.getState(), "s2");
 ```
@@ -72,7 +79,7 @@ selectStationContentShown(store.getState(), "s2");
 ## Tests
 
 - `visitor-guide-slice.test.ts` - the page's store carries the slice; the
-  rule with the margin of the judged accuracy; a fix too weak to guide by
-  only ends presence; hold and clear; "show all" and the tour change; the
+  rule with the margin of the judged precision; a fix too weak to guide by
+  only ends presence; nothing to judge by (`'none'`) holds; hold and clear; "show all" and the tour change; the
   heading wait; the URL flag (only `1` counts).
 - `station-guide.test.ts` ("the present station") - the guide's dispatches.
