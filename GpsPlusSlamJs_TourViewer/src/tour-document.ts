@@ -11,6 +11,10 @@
  * rebuild can never disagree. Blobs (a photo's picture) are never state:
  * the page keeps them in a side table keyed by id.
  *
+ * It also holds the tour's codes (`codes`, debug-captures plan M3a): the
+ * code book (`code-book.ts`, whose rules only its reducers apply) and the
+ * hosted level texts it is judged against, held per open.
+ *
  * @see tour-document.ts.md
  */
 
@@ -35,6 +39,22 @@ import {
   tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { hostedObjects, objectContentKey } from "./authoring-draft.js";
+import {
+  afterFinish,
+  codesNotHosted,
+  codesToWrite,
+  liveText,
+  withDraft,
+  withHand,
+  withHosted,
+  withMeasurement,
+  withoutMeasurement,
+  withReference,
+  withSaved,
+  type CodeBook,
+  type LevelText,
+  type TourCode,
+} from "./code-book.js";
 import { newObjectId } from "./content-placement.js";
 import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
 import { horizontalM } from "./move-with-code.js";
@@ -63,6 +83,9 @@ import {
   stepAssetIds,
 } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
+import type { CodeMeasurement } from "./visit-settle.js";
+
+export type { LevelText } from "./code-book.js";
 
 /** A station without its items: what the document edits of a station
  *  (its pose, D17); the items stay with the written tour. */
@@ -196,6 +219,12 @@ export interface TourDocumentState {
    *  An authoring flag of the page, not of the tour - no edit, no undo
    *  step, no draft write; gone with the tour (`opened`, `closed`). */
   readonly newStationArmed: boolean;
+  /** The tour's codes and the hosted texts they are judged against
+   *  (debug-captures plan M3a): no history step and no draft write, and
+   *  not reset by `opened` or `closed` - the levels and `tour.json` are
+   *  read concurrently, so either may land first. Their own actions write
+   *  them; the book goes at a tour's close (`codesForgotten`). */
+  readonly codes: DocumentCodes;
 }
 
 /** How many steps are kept: enough for a working session, bounded. */
@@ -232,6 +261,146 @@ function saveWith(
   return { ...merged, status };
 }
 
+// --- the codes (debug-captures plan M3a) -----------------------------------
+
+/** The open tour's level files as its zip holds them, for one open. */
+interface HostedLevels {
+  /** The open they belong to (the page's open counter): an answer of an
+   *  older open is dropped, a newer open's replaces them. */
+  readonly session: number;
+  /** Each level's file text by id, in the zip's order, parseable or not;
+   *  null until they arrived, and after their read failed. */
+  readonly texts: readonly LevelText[] | null;
+  /** Their read failed: they never come for this open. Every saved code
+   *  then counts as one to write and one the draft keeps (there is no
+   *  hosted text to compare with). */
+  readonly unreadable: boolean;
+}
+
+/** The codes of the tour the creator edits (`code-book.ts`'s book) and the
+ *  hosted texts they are judged against. */
+interface DocumentCodes {
+  /** Every code this page took, in the order it took them: its saved
+   *  text, its hosted text from the first Finish on, its measurement in
+   *  this page, and what this page's last Finish wrote. */
+  readonly book: readonly TourCode[];
+  readonly hosted: HostedLevels;
+}
+
+const NO_CODES: DocumentCodes = {
+  book: [],
+  hosted: { session: 0, texts: null, unreadable: false },
+};
+
+/** The book as a map, one per array (the state is immutable, so a book
+ *  array is built into a map once however often it is read). */
+const bookMaps = new WeakMap<readonly TourCode[], CodeBook>();
+function bookOf(codes: DocumentCodes): CodeBook {
+  let book = bookMaps.get(codes.book);
+  if (book === undefined) {
+    book = new Map(codes.book.map((c) => [c.levelId, c]));
+    bookMaps.set(codes.book, book);
+  }
+  return book;
+}
+
+const hostedMaps = new WeakMap<
+  readonly LevelText[],
+  ReadonlyMap<string, string>
+>();
+
+/** The open tour's level texts by id as they arrived; null before they
+ *  arrived and when their read failed. The same map until they change. */
+export function hostedLevelTexts(
+  state: TourDocumentState,
+): ReadonlyMap<string, string> | null {
+  const texts = state.codes.hosted.texts;
+  if (texts === null) return null;
+  let map = hostedMaps.get(texts);
+  if (map === undefined) {
+    map = new Map(texts.map((l) => [l.id, l.json]));
+    hostedMaps.set(texts, map);
+  }
+  return map;
+}
+
+/** The open tour's levels could not be read: they never come. */
+export function hostedLevelsUnreadable(state: TourDocumentState): boolean {
+  return state.codes.hosted.unreadable;
+}
+
+/** Every code this page took, in the order it took them. */
+export function documentCodes(state: TourDocumentState): readonly TourCode[] {
+  return state.codes.book;
+}
+
+/** The book's saved level text for `levelId` (what the next Finish
+ *  writes); null when the book does not hold the code. */
+export function codeSavedText(
+  state: TourDocumentState,
+  levelId: string,
+): string | null {
+  return bookOf(state.codes).get(levelId)?.saved ?? null;
+}
+
+/** The code's saved text when this page changed it live (`liveText`),
+ *  judged against the hosted texts as they stand; null otherwise. */
+export function codeLiveText(
+  state: TourDocumentState,
+  levelId: string,
+): string | null {
+  return liveText(
+    bookOf(state.codes),
+    levelId,
+    hostedLevelTexts(state) ?? undefined,
+  );
+}
+
+/** The book with the hosted texts filled in (the Finish's baseline). */
+function withHostedTexts(state: TourDocumentState): CodeBook {
+  return withHosted(bookOf(state.codes), hostedLevelTexts(state) ?? new Map());
+}
+
+/** The codes a Finish writes now: every code whose saved text differs from
+ *  what the zip it rebuilds from holds (the last Finish's text, else the
+ *  hosted one), in the order they were taken. */
+export function levelsToWrite(state: TourDocumentState): LevelText[] {
+  return codesToWrite(withHostedTexts(state));
+}
+
+/** The codes the draft keeps: every code whose saved text the HOSTED zip
+ *  does not hold yet, a Finish's among them. */
+export function levelsNotHosted(state: TourDocumentState): LevelText[] {
+  return codesNotHosted(withHostedTexts(state));
+}
+
+/** `before` with the codes' book changed to `book`, the code in hand's
+ *  text winning for its own code (`withHand`). */
+function withBook(
+  before: TourDocumentState,
+  book: CodeBook,
+  hand: LevelText | null,
+): TourDocumentState {
+  return {
+    ...before,
+    codes: { ...before.codes, book: [...withHand(book, hand).values()] },
+  };
+}
+
+/** `before` with the hosted levels of `session` set to `hosted`, unless
+ *  they are an older open's. */
+function withHostedLevels(
+  before: TourDocumentState,
+  session: number,
+  hosted: Omit<HostedLevels, "session">,
+): TourDocumentState {
+  if (session < before.codes.hosted.session) return before;
+  return {
+    ...before,
+    codes: { ...before.codes, hosted: { session, ...hosted } },
+  };
+}
+
 export const initialTourDocumentState: TourDocumentState = {
   generation: 0,
   opened: null,
@@ -250,6 +419,7 @@ export const initialTourDocumentState: TourDocumentState = {
   position: 0,
   save: IDLE,
   newStationArmed: false,
+  codes: NO_CODES,
 };
 
 // --- the pure rules ---------------------------------------------------------
@@ -1014,6 +1184,7 @@ const tourDocumentSlice = createSlice({
         ...initialTourDocumentState,
         generation: state.generation + 1,
         save: slotKept(state.save),
+        codes: plain(state).codes,
         opened: manifest,
         written,
         stations: framesOf(manifest),
@@ -1441,7 +1612,158 @@ const tourDocumentSlice = createSlice({
         ...initialTourDocumentState,
         generation: state.generation + 1,
         save: slotKept(state.save),
+        codes: plain(state).codes,
       };
+    },
+    // --- the codes (debug-captures plan M3a) -------------------------------
+    // No history step, no draft write, and not reset by `opened` or
+    // `closed`: the hosted levels are held per open (`levelsArrived`), and
+    // the book goes at a tour's close (`codesForgotten`). Each change of the
+    // book names the code in hand after it (`hand`), whose text wins for
+    // its own code (`withHand`); `creatorCodes` takes the hand from the same
+    // action.
+    /** `level` taken in hand with its measurement (null: a stored
+     *  reference, saved and taken as one); no level: the hand empties, and
+     *  the book is as it was. */
+    codeTaken(
+      state,
+      action: PayloadAction<{
+        level: LevelText | null;
+        measurement: CodeMeasurement | null;
+      }>,
+    ) {
+      const before = plain(state);
+      const { level, measurement } = action.payload;
+      if (level === null) return before;
+      const book = bookOf(before.codes);
+      return withBook(
+        before,
+        measurement === null
+          ? withReference(withSaved(book, level), level.id)
+          : withMeasurement(book, level, measurement),
+        level,
+      );
+    },
+    /** A restored draft's level taken into the empty hand, at the text the
+     *  page gives (its live text where it has one, `codeLiveText`). */
+    codeTakenFromDraft(state, action: PayloadAction<{ level: LevelText }>) {
+      const before = plain(state);
+      const { level } = action.payload;
+      return withBook(
+        before,
+        withReference(withSaved(bookOf(before.codes), level), level.id),
+        level,
+      );
+    },
+    /** Nothing in hand (a new print size): the code it held (`levelId`) is
+     *  measured again, so its measurement goes and its saved text falls
+     *  back to the zip's. */
+    codeLetGo(state, action: PayloadAction<{ levelId: string | null }>) {
+      const before = plain(state);
+      const { levelId } = action.payload;
+      if (levelId === null) return before;
+      return withBook(
+        before,
+        withoutMeasurement(bookOf(before.codes), levelId),
+        null,
+      );
+    },
+    /** A code not in hand measured again: its measurement is dropped and
+     *  its saved text falls back to the zip's. */
+    codeMeasurementDropped(
+      state,
+      action: PayloadAction<{ levelId: string; hand: LevelText | null }>,
+    ) {
+      const before = plain(state);
+      const { levelId, hand } = action.payload;
+      return withBook(
+        before,
+        withoutMeasurement(bookOf(before.codes), levelId),
+        hand,
+      );
+    },
+    /** A code re-minted by the settle: saved; `hand` takes it only if it
+     *  already held that code. */
+    codeSaved(
+      state,
+      action: PayloadAction<{ level: LevelText; hand: LevelText | null }>,
+    ) {
+      const before = plain(state);
+      const { level, hand } = action.payload;
+      return withBook(before, withSaved(bookOf(before.codes), level), hand);
+    },
+    /** A restored draft's codes, saved and taken as references; a code
+     *  changed live in this page keeps its live text (`withDraft`, judged
+     *  against the hosted texts as they stand). */
+    codesRestored(
+      state,
+      action: PayloadAction<{
+        levels: readonly LevelText[];
+        hand: LevelText | null;
+      }>,
+    ) {
+      const before = plain(state);
+      const { levels, hand } = action.payload;
+      return withBook(
+        before,
+        withDraft(
+          bookOf(before.codes),
+          levels,
+          hostedLevelTexts(before) ?? undefined,
+        ),
+        hand,
+      );
+    },
+    /** A Finish wrote `written`: the hosted texts enter the book, and each
+     *  written text is what the next Finish builds on. */
+    codesFinished(
+      state,
+      action: PayloadAction<{
+        written: readonly LevelText[];
+        hand: LevelText | null;
+      }>,
+    ) {
+      const before = plain(state);
+      const { written, hand } = action.payload;
+      return withBook(
+        before,
+        afterFinish(withHostedTexts(before), written),
+        hand,
+      );
+    },
+    /** A tour closed: its book goes (the hosted levels are the open's,
+     *  `levelsCleared`). */
+    codesForgotten(state) {
+      const before = plain(state);
+      if (before.codes.book.length === 0) return before;
+      return { ...before, codes: { ...before.codes, book: [] } };
+    },
+    /** The open `session`'s level files arrived (`TourSession.levelTexts`):
+     *  in either order with `opened`, and dropped for an older open. */
+    levelsArrived(
+      state,
+      action: PayloadAction<{ session: number; texts: readonly LevelText[] }>,
+    ) {
+      const { session, texts } = action.payload;
+      return withHostedLevels(plain(state), session, {
+        texts,
+        unreadable: false,
+      });
+    },
+    /** The open `session`'s level files could not be read: they never
+     *  come. */
+    levelsUnreadable(state, action: PayloadAction<{ session: number }>) {
+      return withHostedLevels(plain(state), action.payload.session, {
+        texts: null,
+        unreadable: true,
+      });
+    },
+    /** A tour closed, and `session` opens next: no levels yet. */
+    levelsCleared(state, action: PayloadAction<{ session: number }>) {
+      return withHostedLevels(plain(state), action.payload.session, {
+        texts: null,
+        unreadable: false,
+      });
     },
   },
 });

@@ -101,7 +101,10 @@ module.exports = {
         ],
       },
       to: {
-        path: "^src/(object-edits|finish-rebuild|tour-content|authoring-draft)\\.ts$",
+        // `code-book.ts` since the codes moved into the store (debug-captures
+        // plan M3a): the document's codes reducers apply its rules, and the
+        // creator's codes module is a facade over them.
+        path: "^src/(object-edits|finish-rebuild|tour-content|authoring-draft|code-book)\\.ts$",
       },
     },
   ],

@@ -55,6 +55,7 @@ import {
   type TourViewerSession,
 } from "./tour-viewer-session.js";
 import type { ViewerMode } from "./mode.js";
+import { tourDocumentActions } from "./tour-document.js";
 import {
   entriesForVisitor,
   scanEntryNames,
@@ -164,8 +165,11 @@ export function wireArchiveOpen(deps: {
     // The viewer pipeline's level source and the placed planes belong to the
     // closing tour — a newly opened tour must not relocalize against them.
     ctx.currentLevels = null;
-    ctx.currentLevelTexts = null;
-    ctx.levelsUnreadable = false;
+    // The hosted texts are held per open in the store (debug-captures
+    // plan M3a): the open that runs this teardown holds them from here.
+    ctx.store.dispatch(
+      tourDocumentActions.levelsCleared({ session: ctx.openGeneration }),
+    );
     // The tour document goes with its tour: the manifest, and the
     // creator's placed objects and deletions (M4 review #1, plan
     // 2026-09-28-0953 §3.4) - carried into another tour they would be
@@ -549,7 +553,15 @@ export function wireArchiveOpen(deps: {
         .then((levels) => {
           if (ctx.session !== opened) return;
           ctx.currentLevels = levels;
-          ctx.currentLevelTexts = opened.levelTexts();
+          ctx.store.dispatch(
+            tourDocumentActions.levelsArrived({
+              session: generation,
+              texts: [...opened.levelTexts()].map(([id, json]) => ({
+                id,
+                json,
+              })),
+            }),
+          );
           hooks.presentTourCodes();
           hooks.presentTourLevels();
           hooks.renderAuthorReadout();
@@ -574,7 +586,9 @@ export function wireArchiveOpen(deps: {
           }`;
           // These levels never come: no code of this tour can place it
           // (r857 review #4), and the visitor's line says so.
-          ctx.levelsUnreadable = true;
+          ctx.store.dispatch(
+            tourDocumentActions.levelsUnreadable({ session: generation }),
+          );
           hooks.presentTourLevels();
           // The gate cannot wait for levels that never come (M5 review #1);
           // its own line names the failure inside the overlay.

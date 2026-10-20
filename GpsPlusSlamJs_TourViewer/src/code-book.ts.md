@@ -13,8 +13,8 @@ Pure and immutable.
 
 ## Public API
 
-- `TourCode` (module-private until M4 wires the book) `{ levelId, saved,
-hosted, measurement, reference, finished }`:
+- `TourCode` (exported since the tour document holds the book, debug-captures
+  plan M3a) `{ levelId, saved, hosted, measurement, reference, finished }`:
   - `saved` - the level text visitors get after the next Finish;
   - `hosted` - the hosted zip's text (`TourSession.levelTexts`, kept at
     open). Null means one of: the zip has no file for the code, the levels
@@ -57,6 +57,10 @@ hosted, measurement, reference, finished }`:
   hosted one; M1 review #1).
 - `afterFinish(book, written)` - those texts are in the zip now.
 - `referenceCodes(book)` - ids taken as references.
+- `withHand(book, hand)` - the code in hand's text wins for its own code:
+  a change that replaced it is undone (the hand still holds it). Every
+  change of the book in the tour document ends in it (it was
+  `creator-codes.ts`'s `setBook` before the move).
 
 ## Invariants & assumptions
 
@@ -69,9 +73,13 @@ hosted, measurement, reference, finished }`:
 - Every measured code is a reference.
 - Text identity, not parsed equality: a level re-serialized differently is
   written again (harmless: the Finish replaces the file in place).
-- Wired since M4 through `creator-codes.ts`, which starts from an EMPTY
-  book (codes enter as they are measured, kept or restored) and folds the
-  hosted texts in only when it asks (`withHosted`, one map copy per call).
+- Applied by the tour document's codes reducers (`tour-document.ts`,
+  debug-captures plan M3a; `creator-codes.ts` is a facade over them),
+  which start from an EMPTY book (codes enter as they are measured, kept
+  or restored) and fold the hosted texts in only when asked (`withHosted`,
+  one map copy per call). Only the document imports these rules
+  (dependency-cruiser `document-rules-through-tour-document`); a type
+  import (`LevelText`) is no dependency.
 - Test-only today (webxr PR #556 review): `openCodeBook` and
   `referenceCodes`; the `reference` field is written everywhere and read
   only by `referenceCodes`. They stay: the M5 design review (#2) makes

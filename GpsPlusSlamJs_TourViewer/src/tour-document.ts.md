@@ -66,6 +66,17 @@ reducers' building blocks, so a page cannot apply them differently.
   phone's handle mints the station id and consumes the flag
   (`creator-document.ts`).
 
+- `codes` - the tour's codes (debug-captures plan M3a): `book`, every
+  code this page took in the order it took them (`code-book.ts`'s
+  `TourCode`: saved text, hosted text from the first Finish on, the
+  measurement per code, what the last Finish wrote), and `hosted`, the
+  open tour's level files `{ session, texts, unreadable }` held per open
+  (`session` is the page's open counter). No history step, no draft write,
+  and NOT reset by `opened` or `closed`: the phone reads `tour.json` and
+  the levels concurrently, so either may land first. The code in hand and
+  the visit's sightings are the page's, in `creatorCodes`
+  (`creator-codes-slice.ts`).
+
 Blobs are never state: a photo's picture lives in the page's side table
 keyed by id (`editor-session.ts` `pictures`), handed to the draft by the
 listener (`tour-document-draft.ts`) and to the rebuild by the page.
@@ -185,9 +196,35 @@ and the phone's toast-only undo is the phone adoption's decision; the
 save is three actions because a write is queued, lands, and ends at
 different times (a walk's move lands only after the page wrote both files).
 
+- The codes (debug-captures plan M3a). Each change of the book names the
+  code in hand after it (`hand`), whose text wins for its own code
+  (`withHand`); `creatorCodes` takes the hand from the same action:
+  - `codeTaken({ level, measurement })` - taken in hand (a measurement, or
+    a kept reference with null; no level: the hand empties, the book stays);
+  - `codeTakenFromDraft({ level })` - a draft's level into the empty hand,
+    at the text the page gives (its live text where it has one);
+  - `codeLetGo({ levelId })` - nothing in hand: that code's measurement
+    goes and its text falls back to the zip's;
+  - `codeMeasurementDropped({ levelId, hand })`, `codeSaved({ level, hand
+})`, `codesRestored({ levels, hand })` (`withDraft`: live work wins,
+    judged against the hosted texts as they stand), `codesFinished({
+written, hand })` (the hosted texts enter the book);
+  - `codesForgotten()` - a tour's close: the book goes;
+  - `levelsArrived({ session, texts })`, `levelsUnreadable({ session })`,
+    `levelsCleared({ session })` - the open `session`'s levels: arrived,
+    unreadable (texts null), none yet. An older open's answer is dropped,
+    a newer one's replaces them; either order with `opened` holds them.
+
 ## Selectors and pure rules
 
 - `selectTourDocument(root)` - the slice in a store's state.
+- The codes: `documentCodes(state)` (the book, in order),
+  `codeSavedText(state, id)`, `codeLiveText(state, id)` (`liveText`
+  against the hosted texts as they stand), `levelsToWrite(state)` and
+  `levelsNotHosted(state)` (the two baselines kept apart: `finished ??
+hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
+  (a map, the same one until the levels change; null before they arrived
+  or after a failed read) and `hostedLevelsUnreadable(state)`.
 - `documentObjects(state)` - the objects now (`authoringObjects` over the
   written tour with the frames), each with its entry.
 - `manifestNow(state)` - the manifest the next write starts from: the
@@ -375,6 +412,11 @@ store.dispatch(tourDocumentActions.undone());
 
 ## Tests
 
+- `tour-document-codes.test.ts` - the hosted levels in both arrival
+  orders with `opened`, an older open's late levels dropped and a newer
+  one's replacing them, a failed read counting every saved code as new,
+  the same map handed out; the codes taking no history step and surviving
+  `opened`, `closed` and an undo; the hand's text winning.
 - `tour-document.test.ts` - the step across an in-place save (D33: an undo
   of a written delete, an undo of an edit no save wrote or made after it,
   the second undo below the save, a download, a redo across and not, the

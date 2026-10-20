@@ -112,8 +112,12 @@ DOM glue, its own module since the flows plan M6.
   reaches the gate either way (`hooks.reconsiderScanGate(levels)` or
   `"unavailable"` on a failed read, M5 review #1), and the visitor screen
   either way (`hooks.presentTourLevels()`, r857 review #5); a failed read
-  sets `ctx.levelsUnreadable` (no code of this tour can place it, r857
-  review #4);
+  says the levels unreadable (no code of this tour can place it, r857
+  review #4); the level texts and that failure go into the tour
+  document as `levelsArrived` / `levelsUnreadable` with this open's
+  generation, and the teardown's `levelsCleared` hands them to the open
+  that runs it (debug-captures plan M3a: an older open's late answer is
+  dropped in the store too);
   `teardownSession` clears tour state ONLY when a tour was open at its
   start (scan-to-open plan §9 #1): with none, nothing tour-scoped exists,
   and the creator's pre-open work (a measured level, placements, the

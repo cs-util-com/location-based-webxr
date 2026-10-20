@@ -42,7 +42,14 @@ lives here.
 - `interface TourViewerSession` - the fields, grouped by owner:
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
     `levelsUnreadable` (the levels' read failed: the tour has no usable
-    code, r857 review #4), `openGeneration`;
+    code, r857 review #4), `openGeneration`; `currentLevelTexts` and
+    `levelsUnreadable` are VIEWS of the store since the debug-captures
+    plan M3a (accessors over the tour document's hosted levels; assigning
+    one dispatches `levelsArrived` / `levelsCleared` / `levelsUnreadable`
+    for the current open - `archive-open.ts` dispatches them itself, with
+    its own open's generation); `store`, the page's store
+    (`TourViewerPageStore`), through which `creator-codes.ts` reaches the
+    codes;
   - shared AR session state (`ar-entry.ts`): `qrController`, `qrDebugView`,
     `cameraFrameCount`; `levelByText` is grouped here but OWNED by
     `viewer-placement.ts` (its only reader/writer) and cleared on tour
@@ -50,8 +57,8 @@ lives here.
   - the creator setup (`creator-setup.ts`): `lastDetectedText`,
     `activeSizeM`, `authorErrorText`, `gpsSamplesAtSessionStart`,
     `mintGeneration` (the code in hand, its measurement and the visit's
-    sighting of it are private to `creator-codes.ts` since code book plan
-    M5d-2),
+    sighting of it are the store's `creatorCodes`, written only through
+    `creator-codes.ts`),
     `finishing`, `rebuiltZip` (with the `manifest.json` list it carries,
     for the next Finish, K1 milestone review R7), `tourLabel` (set by
     archive-open); the open
@@ -96,8 +103,10 @@ lives here.
     `placementAttempted` (the wait ended, for this session and tour).
 - `createTourViewerSession(store?): TourViewerSession` - the initial
   values; `store` holds the tour document in the page's store (the
-  `tourDocument` slice the desktop editor uses too; a fresh
-  `createTourViewerStore()` when absent, for tests that need no other).
+  `tourDocument` slice the desktop editor uses too, and `creatorCodes`;
+  a fresh `createTourViewerStore()` when absent, for tests that need no
+  other). The session object is never spread or copied: two of its fields
+  are accessors.
 - `createTourViewerStore(recording?)` - with the creator's troubleshooting
   recording (`authoring-recording.ts`; authoring recording plan
   2026-09-28-0953, M1a) the store writes into its backend under its
@@ -111,8 +120,10 @@ lives here.
   `NullStorageBackend` as before.
   It also mounts the visitor's guide state (`visitorGuide`,
   `visitor-guide-slice.ts`: the present station and "show all", visitor
-  plan 2026-10-18-2349 M1; not persisted) and the tour document
-  (`tourDocument`, `tour-document.ts`, D29-D31; not persisted) and returns `listenToDocument`, its own listener
+  plan 2026-10-18-2349 M1; not persisted), the tour document
+  (`tourDocument`, `tour-document.ts`, D29-D31; not persisted) and the
+  creator's code state (`creatorCodes`, `creator-codes-slice.ts`,
+  debug-captures plan M3a; not persisted) and returns `listenToDocument`, its own listener
   middleware's `startListening`, where a page runs the document's side
   effects (the draft's writes, `tour-document-draft.ts`) after the
   reducer. Its own middleware rather than an `addListener` dispatch, which

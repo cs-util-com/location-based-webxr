@@ -186,7 +186,10 @@ describe("open a file", () => {
     const { dom, ctx } = wire();
     pick(dom, new File(["zip"], "tour.zip"));
     await vi.waitFor(() => expect(ctx.currentLevels).not.toBeNull());
-    expect(ctx.currentLevelTexts).toBe(texts);
+    // Changed expectation (debug-captures plan M3a): the texts are held in
+    // the store as plain data now, so the session hands out a map of the
+    // same texts, no longer the session's own map object.
+    expect(ctx.currentLevelTexts).toEqual(texts);
   });
 
   it("reports a failed file open and restores every button", async () => {

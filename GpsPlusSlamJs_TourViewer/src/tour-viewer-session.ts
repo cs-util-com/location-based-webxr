@@ -32,9 +32,17 @@ import {
 import { objectPlaced } from "./tour-authoring-actions.js";
 import { codeLocked } from "./tour-viewing-actions.js";
 import {
+  hostedLevelTexts,
+  hostedLevelsUnreadable,
+  selectTourDocument,
+  tourDocumentActions,
   tourDocumentReducer,
   type TourDocumentState,
 } from "./tour-document.js";
+import {
+  creatorCodesReducer,
+  type CreatorCodesState,
+} from "./creator-codes-slice.js";
 import { visitorGuideReducer } from "./visitor-guide-slice.js";
 
 import type {
@@ -92,6 +100,10 @@ type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
  * after the reducer, never from `store.subscribe`. Its own middleware,
  * not an `addListener` dispatch: that would land in whichever of the
  * framework's listener middlewares comes first.
+ *
+ * `creatorCodes` is the creator's code in hand and its visit's sightings
+ * (`creator-codes-slice.ts`, debug-captures plan M3a), not written into
+ * the recording either.
  */
 export function createTourViewerStore(recording?: {
   storageBackend: StorageBackend;
@@ -109,6 +121,7 @@ export function createTourViewerStore(recording?: {
       qrDetected: qrDetectedReducer,
       tourDocument: tourDocumentReducer,
       visitorGuide: visitorGuideReducer,
+      creatorCodes: creatorCodesReducer,
     },
     extraMiddleware: [documentListener.middleware],
     // Beyond the framework's built-ins (GPS with its paired poses, the
@@ -127,6 +140,15 @@ export function createTourViewerStore(recording?: {
   });
 }
 export type TourViewerStore = ReturnType<typeof createTourViewerStore>;
+
+/** The page's store as the session reaches it: the tour document with its
+ *  codes, and the creator's code state (`creatorCodes`). */
+export interface TourViewerPageStore extends CreatorDocumentStore {
+  getState(): {
+    readonly tourDocument: TourDocumentState;
+    readonly creatorCodes: CreatorCodesState;
+  };
+}
 export type ArController = ReturnType<typeof createEnableGpsArController>;
 
 /**
@@ -270,12 +292,22 @@ export interface TourViewerSession {
   currentLevels: ReadonlyMap<string, QrLevel> | null;
   /** The same levels' raw file texts, parseable or not
    *  (`TourSession.levelTexts`): what the hosted zip holds for each code
-   *  (code book plan M1). */
+   *  (code book plan M1). A view of the store: the tour document's hosted
+   *  levels (`hostedLevelTexts`, debug-captures plan M3a), which
+   *  `archive-open.ts` dispatches with its open's generation. Assigning it
+   *  dispatches the same for the current open (`levelsArrived`; null:
+   *  `levelsCleared`). */
   currentLevelTexts: ReadonlyMap<string, string> | null;
   /** The open tour's levels could not be read (their load rejected): they
    *  never come, so the tour has no usable code (`tourCodesUsable`, r857
-   *  review #4). Reset when the tour closes. */
+   *  review #4). Reset when the tour closes. A view of the store like
+   *  `currentLevelTexts` (`hostedLevelsUnreadable`); assigning true
+   *  dispatches `levelsUnreadable` for the current open, false clears a
+   *  failed read (`levelsCleared`). */
   levelsUnreadable: boolean;
+  /** The page's store: the tour document's codes and the creator's code
+   *  state live there (`creator-codes.ts` reads and writes them). */
+  readonly store: TourViewerPageStore;
   /** The tour as the page edits it: the shared `tourDocument` slice
    *  through the page's handle (`creator-document.ts`, D29-D31) - the
    *  open tour's `tour.json` (`manifest()`, null: none, or not loaded
@@ -539,13 +571,38 @@ export function isCodeIgnored(
 /** The page's session object; `store` holds its tour document (the
  *  page's store; a fresh one in tests that need no other). */
 export function createTourViewerSession(
-  store: CreatorDocumentStore = createTourViewerStore(),
+  store: TourViewerPageStore = createTourViewerStore(),
 ): TourViewerSession {
-  return {
+  const document = () => selectTourDocument(store.getState());
+  const ctx: TourViewerSession = {
     session: null,
     currentLevels: null,
-    currentLevelTexts: null,
-    levelsUnreadable: false,
+    get currentLevelTexts() {
+      return hostedLevelTexts(document());
+    },
+    set currentLevelTexts(texts) {
+      const session = ctx.openGeneration;
+      store.dispatch(
+        texts === null
+          ? tourDocumentActions.levelsCleared({ session })
+          : tourDocumentActions.levelsArrived({
+              session,
+              texts: [...texts].map(([id, json]) => ({ id, json })),
+            }),
+      );
+    },
+    get levelsUnreadable() {
+      return hostedLevelsUnreadable(document());
+    },
+    set levelsUnreadable(unreadable) {
+      const session = ctx.openGeneration;
+      if (unreadable) {
+        store.dispatch(tourDocumentActions.levelsUnreadable({ session }));
+      } else if (hostedLevelsUnreadable(document())) {
+        store.dispatch(tourDocumentActions.levelsCleared({ session }));
+      }
+    },
+    store,
     tourDocument: createCreatorDocument(store),
     tourManifestStatus: "settled",
     scanEntries: new Set(),
@@ -600,4 +657,5 @@ export function createTourViewerSession(
     stationContent: null,
     contentAttempted: false,
   };
+  return ctx;
 }
