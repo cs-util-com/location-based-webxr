@@ -1,7 +1,7 @@
 /**
  * The automatic-station rule (tour editor plan 2026-10-17-1816, W3, D20,
- * D21): which station a new element (a pin, a photo, a recorded photo,
- * later a model) belongs to. A version 3 tour has no loose items: each
+ * D21): which station a new element (a pin, a photo, later a model)
+ * belongs to. A version 3 tour has no loose items: each
  * lives in a station, its pose relative to the station's anchor.
  *
  * - A station's ANCHOR is fixed at its first element and is never
@@ -88,9 +88,9 @@ export interface HoldingStation {
 /**
  * The station that holds `at`: the nearest whose anchor is within ITS OWN
  * `foundRadiusM` (horizontally, inclusive; a tie goes to the earlier
- * station), else null. The rule every placement, move and recorded photo
- * of a tour runs (the tour document's `placed` and `moved`, the bake at
- * open): a station's own radius decides, so a radius set in the editor is
+ * station), else null. The rule every placement and move of a tour runs
+ * (the tour document's `placed` and `moved`): a station's own radius
+ * decides, so a radius set in the editor is
  * respected. A radius that is not a positive finite number holds nothing
  * (a broken hand-edited file must not swallow every object).
  */

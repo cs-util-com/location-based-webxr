@@ -376,7 +376,7 @@ export interface PickTrackerState {
   } | null;
 }
 
-/** Each recorded photo's alignment by D33's rule, built during the replay. */
+/** Each camera capture's alignment by D33's rule, built during the replay. */
 export interface CapturePickTracker {
   /** Feed every replayed action with the state it produced, in order. */
   observe(
@@ -397,7 +397,7 @@ function captureImageFile(payload: unknown): string | undefined {
 }
 
 /**
- * Picks each recorded photo's alignment as the replay runs (scan-pass plan
+ * Picks each camera capture's alignment as the replay runs (scan-pass plan
  * S-D11): the first alignment at or after the photo whose session GPS
  * extent reached the shared maturity floor (`state/alignment-maturity`,
  * the same rule as D33's authoring settle), else the last usable one when

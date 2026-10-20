@@ -2,8 +2,8 @@
 
 ## Purpose
 
-The tour's recorded photos as textured planes, each at its capture spot and
-facing as the camera faced, placed at the SCENE ROOT in raw GPS-world NUE.
+The tour's photos as textured planes, each at its spot and facing as the
+camera faced, placed at the SCENE ROOT in raw GPS-world NUE.
 
 ## Public API
 

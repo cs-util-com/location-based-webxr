@@ -76,8 +76,8 @@ function walkLine(name: string, carries: boolean | "unknown"): string | null {
   if (carries === false) return null;
   const moveOut = `Move the walk out to keep it to yourself: it goes into a separate file you keep, and ${name} keeps what visitors need.`;
   return carries === "unknown"
-    ? `Whether ${name} also carries your walk recording (the GPS track of your walk and the depth your phone measured) could not be checked. If it does and it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`
-    : `${name} also carries your walk recording: the GPS track of your walk and the depth your phone measured. If it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`;
+    ? `Whether ${name} also carries your walk recording (the GPS track of your walk, the depth your phone measured and the camera captures it took by itself) could not be checked. If it does and it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`
+    : `${name} also carries your walk recording: the GPS track of your walk, the depth your phone measured and the camera captures it took by itself. If it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`;
 }
 
 /** The dialog's words for `facts`. */

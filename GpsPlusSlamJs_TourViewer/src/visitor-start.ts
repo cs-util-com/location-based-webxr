@@ -25,8 +25,8 @@ export interface VisitorStartView {
    *  for none. */
   description: string | null;
   /** The cover: the one the creator chose (W2), else the tour's first
-   *  placed photo, else its first recorded photo (a baked capture spot),
-   *  as an archive path; or null. */
+   *  placed photo, as an archive path; or null - never a debug camera
+   *  capture. */
   coverPath: string | null;
   /** The tab's title, which a shared link's title shows too: the tour's
    *  name, else the app's. */

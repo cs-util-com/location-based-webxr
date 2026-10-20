@@ -124,7 +124,7 @@ function walkNoteText(tour: {
   readonly seriesId: string | null;
 }): string {
   return [
-    "This is the walk recording of a tour: the GPS track of the walk, the depth the phone measured and the recorded photos.",
+    "This is the walk recording of a tour: the GPS track of the walk, the depth the phone measured and the camera captures it took by itself.",
     `It was moved out of the tour file ${tour.fileName}${tour.title === undefined ? "" : ` (the tour "${tour.title}")`} by the tour editor, so that the tour file people open does not carry it.`,
     ...(tour.seriesId === null ? [] : [`The tour's series: ${tour.seriesId}.`]),
     "Keep this file to yourself: the tour does not need it.",

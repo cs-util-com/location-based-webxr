@@ -71,11 +71,16 @@ describe("doneWords", () => {
     expect(doneWords(IN_PLACE).publicLine).toMatch(/as soon as/);
   });
 
-  it("says the file carries the walk - the GPS track and the depth - only while it does", () => {
+  it("says the file carries the walk - the GPS track, the depth and the camera captures - only while it does", () => {
+    // (Changed, debug-captures M1: the line named the GPS track and the depth
+    // only, but the walk also carries every picture the camera took by
+    // itself, which visitors of the file at the link can download too.)
     const walk = doneWords(IN_PLACE).walk;
     expect(walk).toMatch(/castle\.zip/);
     expect(walk).toMatch(/GPS track/);
     expect(walk).toMatch(/depth/);
+    expect(walk).toMatch(/camera captures/);
+    expect(walk?.toLowerCase()).not.toContain("photo");
     expect(walk).toMatch(/file at your tour's link/);
     expect(doneWords({ ...IN_PLACE, carriesWalk: false }).walk).toBeNull();
   });

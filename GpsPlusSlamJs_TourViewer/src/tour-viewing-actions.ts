@@ -75,9 +75,9 @@ interface VotesCastLog extends ViewingMoment {
 interface PlacedLog extends ViewingMoment {
   /** What was placed: the tour's `tour.json` content. Logged per
    *  station, each time its content is drawn: only the shown stations'
-   *  content stands. `capture-spots` (the walk's recorded photos at their
-   *  capture spots) is written no more, since a visitor sees no debug
-   *  camera capture; it stays in the type for earlier logs and the tools
+   *  content stands. `capture-spots` (the walk's camera captures, which
+   *  earlier versions drew for a visitor) is written no more, since a
+   *  visitor sees no debug camera capture; it stays in the type for earlier logs and the tools
    *  that read them. */
   readonly what: "content" | "capture-spots";
   /** How it was placed: from geo positions through the zero and the

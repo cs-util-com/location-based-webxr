@@ -1,5 +1,5 @@
 /**
- * The tour's photo planes: recorded photos placed at the SCENE ROOT in raw
+ * The tour's photo planes: its photos placed at the SCENE ROOT in raw
  * GPS-world NUE - the framework's parenting rule for built-once geographic
  * content (`ar-scene-hierarchy.ts`: children of `arWorldGroup` would need
  * alignment-inverse coordinates instead, and writing raw NUE there
