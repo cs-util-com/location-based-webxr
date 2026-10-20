@@ -65,6 +65,15 @@ describe("nearestStationWithin", () => {
     expect(
       nearestStationWithin([seats[0]!], at(0, -10 + STATION_RADIUS_M + 0.01)),
     ).toBeNull();
+    // Why: the 1 cm margins above pass whether the rule says `<=` or `<`.
+    // Exactly on the radius - the distance the rule measures, passed as
+    // the radius - is inside; a hair less radius is outside.
+    const edge = at(3, 17);
+    const exact = horizontalM(seats[0]!.anchor, edge);
+    expect(nearestStationWithin([seats[0]!], edge, exact)).toBe("a");
+    expect(
+      nearestStationWithin([seats[0]!], edge, exact * (1 - 1e-9)),
+    ).toBeNull();
   });
 
   it("measures horizontally: a height difference does not push an element out", () => {
