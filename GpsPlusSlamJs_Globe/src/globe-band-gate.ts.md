@@ -36,6 +36,19 @@
       heights load, its volume shrinks to their measured range (padded by
       its geometric error), and only then can a camera under the volumes
       see none of them (all read in 3d-tiles-renderer 0.5.3's source).
+    - **So the hand-over is one-way while the relief's top level stays
+      out of view**: with the globe ready too, `nextDrawnShare` walks the
+      share to a low camera's target (1), and nothing in the gate takes it
+      back while the relief draws nothing. That is the intended escape,
+      not a consequence: the whole top level leaves the view only for a
+      camera under every top-level volume in front of it, the share at the
+      relief is what lets its tiles load, and the clearance (which lifts
+      the camera only where the relief draws) then lifts the camera above
+      the relief's ground, where the top level is in view again; looking
+      away from the ground, nothing of either carrier is missing. Not
+      built: a bound on how long the share may sit at the relief while it
+      draws nothing, falling back to the globe - it needs a case where the
+      clearance does not close the loop, and none is known.
   - `topLevelInView({ root, frameCount })`: whether the last update found
     any top-level tile in view. The globe's first look ends on
     `topLevelReady && topLevelInView` (`globe-surface.ts`), so a camera
@@ -63,7 +76,10 @@
 - Tests: `globe-band-gate.test.ts`: each rule, the refusals, the property
   over random states, and `topLevelReady` over in-view, out-of-view, stale
   and missing tiles, and a set visited with nothing in view (ready) against
-  one not visited this frame (not); `topLevelInView` over in-view,
+  one not visited this frame (not); the pair pinned as a decision (a
+  relief top level out of view and a globe in it, a low target: the share
+  walks to the relief at the bounded rate and stays there);
+  `topLevelInView` over in-view,
   out-of-view, stale and missing tiles. In the browser: the globe lab's
   `globe-editor-blocks.smoke.spec.mjs` "a steep first view from under the
   relief hands over and lifts the camera to eye height".

@@ -248,3 +248,55 @@ describe("topLevelReady over random top levels", () => {
     );
   });
 });
+
+describe("the hand-over with the relief's view empty", () => {
+  // Why this test matters: "nothing in view is ready" (above) makes the
+  // gate one-way for a camera under the relief: with the relief's top level
+  // out of the frustum the relief reads ready, so with the globe ready too
+  // the share walks to the altitude's target - 1 at a low altitude - and
+  // stays there, though the relief draws nothing yet. Nothing in the gate
+  // takes the share back, because the handover does not change what made
+  // the relief ready. That is the intended escape, pinned here as a
+  // decision rather than left as a consequence: the share at the relief is
+  // what lets its tiles load and refine under the camera, and the
+  // clearance (which lifts the camera only where the relief draws) then
+  // lifts the camera above the relief's ground, where its top level is in
+  // view again and the ordinary rule holds (`topLevelReady`'s comment says
+  // why that is the only way the whole top level leaves the view).
+  it("hands the whole view to a relief whose top level is out of view, at the bounded rate, and keeps it there", () => {
+    const relief = {
+      root: tile(true, 7, false, [tile(false, 7, false), tile(true, 7, false)]),
+      frameCount: 7,
+    };
+    const globe = { root: tile(true, 7, true, [tile(true, 7)]), frameCount: 7 };
+    const reliefReady = topLevelReady(relief);
+    const globeReady = topLevelReady(globe);
+    expect({ reliefReady, globeReady }).toEqual({
+      reliefReady: true,
+      globeReady: true,
+    });
+    // Enough 16 ms frames to cross the whole share at the bounded rate,
+    // and 50 more.
+    const frames = Math.ceil(1000 / (GLOBE_BAND_GATE.sharePerS * 16)) + 50;
+    let drawn = 0;
+    const shares: number[] = [];
+    for (let frame = 0; frame < frames; frame++) {
+      drawn = nextDrawnShare({
+        drawn,
+        target: 1,
+        reliefReady,
+        globeReady,
+        dtMs: 16,
+      });
+      shares.push(drawn);
+    }
+    // Never a jump: at most sharePerS a second (16 ms frames).
+    const perFrame = (GLOBE_BAND_GATE.sharePerS * 16) / 1000;
+    for (const [i, share] of shares.entries()) {
+      const before = i === 0 ? 0 : shares[i - 1]!;
+      expect(share - before).toBeLessThanOrEqual(perFrame + 1e-12);
+    }
+    // At 1 once the rate allows, and held there.
+    expect(shares.slice(-50).every((share) => share === 1)).toBe(true);
+  });
+});

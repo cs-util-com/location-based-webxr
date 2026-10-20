@@ -48,6 +48,20 @@ interface GateTile {
  * view, so the clearance never lifted the camera out). False when no
  * top-level tile was visited by the last update (a set never updated is
  * not ready).
+ *
+ * This makes the hand-over one-way while the relief's top level stays out
+ * of view: with the globe ready too, `nextDrawnShare` walks the share to a
+ * low camera's target (1), and nothing in the gate takes it back while the
+ * relief draws nothing. The loop closes outside the gate: the whole top
+ * level leaves the view only for a camera under every top-level volume in
+ * front of it, and the share at the relief is what lets its tiles load,
+ * so the clearance (which lifts the camera only where the relief draws)
+ * lifts the camera above the relief's ground, where its top level is in
+ * view again and the ordinary rule holds. Looking away from the ground,
+ * nothing of either carrier is missing. A bound on how long the share may
+ * sit at the relief while it draws nothing is not built: no case is known
+ * where the clearance does not close the loop
+ * (`globe-band-gate.test.ts` pins the pair).
  */
 export function topLevelReady(tiles: {
   root: unknown;
