@@ -42,8 +42,9 @@ module's sidecar states them as its contract.
   - Each Finish that made its zip tells `debugSave` (`creator-debug-save.ts`,
     debug-captures plan M2) of it: the bytes it read (`FinishedTour.source`,
     kept from the first Finish of the open tour), whether it left the walk
-    out, and the bundle's identity - so the Done step offers "Save the
-    debug data", also when a later step of the Finish fails.
+    out, and the bundle's identity (the written tour's id among it, r901
+    review #2) - so the Done step offers "Save the debug data", also when
+    a later step of the Finish fails.
   - A Finish that fails AFTER making its zip still hands that zip over the
     same way (review #1); an earlier Finish's zip stays saveable from the
     button. The button is disabled while a Finish runs, so a tap cannot

@@ -17,7 +17,9 @@ A bundle holds:
   legacy `frames/`, the Recorder's `sparse/` and `refPoints/`), byte for
   byte at their paths;
 - `debug-bundle.json` at the root:
-  `{format: 1, seriesId, tour, file, writtenAt}`;
+  `{format: 1, seriesId, tourId?, tour, file, writtenAt}` (`tourId`, the
+  tour's own id from `tour.json`, only when the tour has one: r901 review
+  #2);
 - `about-this-debug-data.txt` at the root, the note for a person (the
   walk's note of the old "Move the walk out" zip, reworded: debug data, and the
   recorded frames are "debug camera captures", never photos).
@@ -67,15 +69,19 @@ again by an OS's "compress folder" gains a folder.
   `castle-debug.zip` (case-insensitive `.zip`, trimmed); `tour-debug.zip`
   for an empty or missing name. It replaced `walkFileName` (`-walk`)
   when M2 moved the editor's move-out onto the bundle.
-- `readDebugBundle(entryNames, readEntry) -> Promise<DebugBundleRead>` -
-  never throws. In order:
+- `readDebugBundle(entryNames, readEntry, {sizeOf?}) -> Promise<DebugBundleRead>` -
+  never throws. `sizeOf(name)` is an entry's size as the zip's directory
+  declares it, if known. In order:
   - no action stream: `{kind: "refused", code: "no-recording"}`, with or
     without an identity (a bare identity is debug data of nothing);
   - more than one `debug-bundle.json`: `"ambiguous"`;
   - none: `{kind: "recording"}` (a plain Recorder zip, or a tour file that
     carries its walk);
-  - one: read through `readEntry` (a failure: `"unreadable"`), its size
-    checked before its text (`"too-large"` past 16 KiB), then validated:
+  - one: its declared size (`sizeOf`) checked before it is read, then
+    read through `readEntry` (a failure: `"unreadable"`) and the read's
+    own size checked before its text (a directory can understate it):
+    either past 16 KiB is `"too-large"` (r901 review #10). Then
+    validated:
     - not JSON, not an object, `format` not a number: `"malformed"`;
     - `format` another number: `"unknown-format"` (a newer writer);
     - `seriesId`, `tour`, `file` must each be present, null or a string;
@@ -83,12 +89,18 @@ again by an OS's "compress folder" gains a folder.
       `toISOString` writes it, a real day (`02-30` is refused):
       otherwise `"malformed"`;
     - `tour` or `file` past 512 code points: `"too-large"`;
+    - `tourId` is optional: absent, null or not one a tour carries
+      (`TOUR_ID_PATTERN`) reads as none, as the tour reader treats a bad
+      id - it costs the id, never the file;
     - unknown extra keys are ignored.
   - Each refusal carries `reason`, a sentence for the page.
 - `bundleMatchesTour(read, tour) -> "this-tour" | "other-tour" | "recording"`
   - pure, plan Q-C:
-  - a listed tour and a bundle that names a series: on the series id
-    alone;
+  - both the tour and the bundle carry the tour's own id: on that id
+    alone (r901 review #2: it survives a rename, a retitle and a
+    listing);
+  - otherwise, a listed tour and a bundle that names a series: on the
+    series id alone;
   - otherwise (an unlisted tour, or a listed tour's bundle saved before it
     was listed, which names no series): `"this-tour"` unless the title AND
     the file name both differ (plan section 10: changed when M2 wired the
@@ -96,7 +108,7 @@ again by an OS's "compress folder" gains a folder.
     untitled, unnamed tours are `"other-tour"`;
   - a plain recording: `"recording"` ("a recording, not saved from this
     tour").
-- Types: `DebugBundleTour {seriesId, title, fileName}` (what a bundle is
+- Types: `DebugBundleTour {seriesId, tourId?, title, fileName}` (what a bundle is
   saved from, and compared with), `DebugBundleIdentity`, `DebugBundlePlan`,
   `DebugBundleBuilt`, `DebugBundleRead`, `DebugBundleFound` (a read that
   is not a refusal: what `bundleMatchesTour` takes), `BundleMatch`,
@@ -116,7 +128,10 @@ again by an OS's "compress folder" gains a folder.
 - Round trip: for any tour and any date in years 0-9999,
   `readDebugBundle` of the written identity gives `plan.identity` back,
   and `bundleMatchesTour` of it with the same tour is `"this-tour"`
-  whenever the identity carries any of series, title or file.
+  whenever the identity carries any of tour id, series, title or file;
+  and whenever both sides carry a tour id, the match is decided by the
+  two ids alone. `debugBundlePlan` throws `RangeError` for a `tourId` a
+  tour cannot carry, as for the series id.
 - A tour's title is not capped by `tour.json`, so the writer clips rather
   than fails a save; the reader, which sees only files this module or a
   person wrote, refuses an oversized field instead.

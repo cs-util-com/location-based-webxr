@@ -1976,6 +1976,44 @@ describe("moving the walk out (W2, D19)", () => {
     await session.close();
   });
 
+  it("writes the saved file's own id into the debug data, and compares by the id the opened file carries", async () => {
+    // Why (r901 review #2): the id is the one name a tour keeps through a
+    // rename and a retitle, so a bundle carries the id of the copy it was
+    // saved beside, and an added bundle is matched on it first. The tour
+    // side is the id the OPENED file carries: the one its open minted is
+    // in no file until a save writes it, and comparing by it would call
+    // this session's own bundle "another tour's" once the original file
+    // (still without an id) is opened again.
+    const { session, manifest } = await walkTour();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(manifest.tourId).toBeUndefined();
+    expect(editor.debugTour().tourId).toBeUndefined();
+    editor.setDetails({ ...editor.details(), name: "A new name" });
+    const saved = await editor.save({ keepScan: false });
+    expect(saved.written.tourId).toMatch(/^[0-9a-f]{32}$/);
+    const built = await editor.debugData();
+    if (built.kind !== "built") throw new Error(built.reason);
+    expect(built.identity.tourId).toBe(saved.written.tourId);
+    expect(editor.debugTour().tourId).toBeUndefined();
+    const read = await bundleOf(built.blob);
+    if (read.kind === "refused") throw new Error(read.reason);
+    expect(bundleMatchesTour(read, editor.debugTour())).toBe("this-tour");
+    await session.close();
+    // Opened from a file that carries its id, the tour is compared by it.
+    const again = await walkTour();
+    const named = createEditorSession({
+      session: again.session,
+      manifest: { ...again.manifest, tourId: "carried_id" },
+      levels: new Map(),
+    });
+    expect(named.debugTour().tourId).toBe("carried_id");
+    await again.session.close();
+  });
+
   it("reads the opened file once for a move made before any save", async () => {
     // Why (the M4b milestone review #11): the walk's zip and the tour are
     // built from the same bytes; a listed tour's whole-file check ran twice.

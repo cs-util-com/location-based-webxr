@@ -296,6 +296,102 @@ describe("building the debug bundle", () => {
   });
 });
 
+describe("the tour's own id in the identity", () => {
+  // Why (r901 review #2): the tour's own id (`tour.json`'s `tourId`)
+  // survives a rename and a retitle, and an unlisted tour has nothing
+  // else that does - so a bundle that carries it is matched on it first.
+  // It is optional: a bundle written before it, or of a tour without one,
+  // reads as before.
+  const TOUR_ID = "0123456789abcdef0123456789abcdef";
+
+  /** The `debug-bundle.json` text a plan writes. */
+  function identityOf(plan: ReturnType<typeof debugBundlePlan>): string {
+    const json = plan?.added.find((e) => e.path === "debug-bundle.json")?.data;
+    if (typeof json !== "string") throw new Error("no identity written");
+    return json;
+  }
+
+  it("writes the tour's id when it has one, and reads it back", async () => {
+    const plan = debugBundlePlan(
+      ["actions/000001.json"],
+      { ...LISTED, tourId: TOUR_ID },
+      WHEN,
+    );
+    if (plan === null) throw new Error("no plan");
+    expect(plan.identity.tourId).toBe(TOUR_ID);
+    const json = identityOf(plan);
+    expect(JSON.parse(json)).toMatchObject({ tourId: TOUR_ID });
+    expect(await readWith(json)).toEqual({
+      kind: "bundle",
+      identity: plan.identity,
+    });
+  });
+
+  it("writes no id for a tour without one, and reads a bundle without it", async () => {
+    const plan = debugBundlePlan(
+      ["actions/000001.json"],
+      { ...LISTED, tourId: null },
+      WHEN,
+    );
+    const json = identityOf(plan);
+    expect("tourId" in (JSON.parse(json) as object)).toBe(false);
+    const read = await readWith(bundleJson({}));
+    expect(read.kind === "bundle" && "tourId" in read.identity).toBe(false);
+  });
+
+  it("reads a bundle whose id is not one a tour carries as having none", async () => {
+    // As the tour reader treats a bad tourId: it costs the id, never the
+    // file.
+    for (const tourId of [null, 7, "", "has space", "x".repeat(65)]) {
+      const read = await readWith(bundleJson({ tourId }));
+      expect(read.kind).toBe("bundle");
+      expect(read.kind === "bundle" && "tourId" in read.identity).toBe(false);
+    }
+  });
+
+  it("refuses to write an id a tour cannot carry, as a programmer error", () => {
+    expect(() =>
+      debugBundlePlan(["actions/1.json"], { ...LISTED, tourId: "a b" }, WHEN),
+    ).toThrow(RangeError);
+  });
+
+  it("matches on the tour's id first, when both sides carry one", () => {
+    const withoutId: DebugBundleIdentity = {
+      seriesId: SERIES,
+      tour: "Castle walk",
+      file: "castle.zip",
+      writtenAt: WHEN.toISOString(),
+    };
+    const bundle: DebugBundleFound = {
+      kind: "bundle",
+      identity: { ...withoutId, tourId: TOUR_ID },
+    };
+    // The same id: this tour's, though everything else differs.
+    expect(
+      bundleMatchesTour(bundle, {
+        seriesId: "OtherSeries_123456",
+        tourId: TOUR_ID,
+        title: "Other",
+        fileName: "other.zip",
+      }),
+    ).toBe("this-tour");
+    // Another id: another tour's, though everything else is the same.
+    expect(
+      bundleMatchesTour(bundle, { ...LISTED, tourId: "another_tour_id" }),
+    ).toBe("other-tour");
+    // One side without an id: the series, then the names decide.
+    expect(bundleMatchesTour(bundle, { ...LISTED, tourId: null })).toBe(
+      "this-tour",
+    );
+    expect(
+      bundleMatchesTour(
+        { kind: "bundle", identity: withoutId },
+        { ...LISTED, tourId: "another_tour_id" },
+      ),
+    ).toBe("this-tour");
+  });
+});
+
 describe("the bundle's file name", () => {
   it("is the tour's name with -debug before .zip, as the walk's was with -walk", () => {
     // Why: the creator finds the two files side by side by name.
@@ -436,6 +532,31 @@ describe("reading a bundle back", () => {
         code: "too-large",
       },
     );
+  });
+
+  it("refuses an identity whose declared size is past the cap, without reading it", async () => {
+    // Why (r901 review #10): a blob's size is known only once the entry was
+    // inflated; the zip's directory says it first, so an oversized identity
+    // is refused before any of it is read.
+    let reads = 0;
+    const read = await readDebugBundle(
+      ["actions/000001.json", "debug-bundle.json"],
+      () => {
+        reads += 1;
+        return Promise.resolve(new Blob([bundleJson({})]));
+      },
+      { sizeOf: (name) => (name === "debug-bundle.json" ? 17 * 1024 : 0) },
+    );
+    expect(read).toMatchObject({ kind: "refused", code: "too-large" });
+    expect(reads).toBe(0);
+    // A declared size within the cap is read; the read's own size is still
+    // checked, since a directory can understate it.
+    const small = await readDebugBundle(
+      ["actions/000001.json", "debug-bundle.json"],
+      () => Promise.resolve(new Blob([bundleJson({})])),
+      { sizeOf: () => 200 },
+    );
+    expect(small.kind).toBe("bundle");
   });
 
   it("refuses an identity that cannot be read, without throwing", async () => {

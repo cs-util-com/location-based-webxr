@@ -194,11 +194,16 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     "opened bytes" are a reference to that file (a `File`), read when
     this runs: valid only while the file on disk is unchanged - a copy put
     in its place first makes the read fail, which the caller shows.
-  - `debugTour()` - the tour a debug bundle saved now names, and the one
-    an added debug data file is compared with (`bundleMatchesTour`, "Add
-    debug data…"): a listed tour's series, the title of the newest
-    written file (an edit not yet saved is not the file's), the saved
-    file name.
+  - `debugTour()` - the tour an added debug data file is compared with
+    (`bundleMatchesTour`, "Add debug data…"): a listed tour's series, the
+    tour id the OPENED file carries (never the one its open minted, which
+    is in no file until a save writes it: comparing by it would call this
+    session's own bundle another tour's once the original, still without
+    an id, is opened again), the title of the newest written file (an
+    edit not yet saved is not the file's), the saved file name. A bundle
+    this session saves names the tour id of the newest written file
+    (`debugData`, the move), the copy it was saved beside (r901 review
+    #2).
   - `walkEntries()` - the walk recording's entries in the newest bytes
     (the last save's, else the opened file's; `scanEntryNames`): none once
     it was moved out, or when a save left it out.

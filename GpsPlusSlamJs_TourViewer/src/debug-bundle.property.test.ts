@@ -92,8 +92,11 @@ const text = fc.oneof(
   fc.constantFrom("   ", "　x　", ""),
 );
 
+const tourIdArb = fc.stringMatching(/^[A-Za-z0-9_-]{1,64}$/);
+
 const tour: fc.Arbitrary<DebugBundleTour> = fc.record({
   seriesId: fc.option(fc.stringMatching(/^[A-Za-z0-9_-]{1,128}$/)),
+  tourId: fc.oneof(fc.constant(undefined), fc.constant(null), tourIdArb),
   title: fc.oneof(fc.constant(undefined), fc.constant(null), text),
   fileName: fc.oneof(fc.constant(undefined), fc.constant(null), text),
 });
@@ -153,6 +156,7 @@ describe("debug bundle (properties)", () => {
         // With any evidence to go on, the bundle is this tour's; with none
         // (no series, no title, no file name), nothing can say so.
         const evidence =
+          plan.identity.tourId !== undefined ||
           plan.identity.seriesId !== null ||
           plan.identity.tour !== null ||
           plan.identity.file !== null;
@@ -161,6 +165,35 @@ describe("debug bundle (properties)", () => {
           evidence ? "this-tour" : "other-tour",
         );
       }),
+    );
+  });
+
+  it("decides on the tour ids alone whenever both sides carry one", async () => {
+    // Why (r901 review #2): the id is the one name a tour keeps through a
+    // rename, a retitle and a listing; once both sides have it, nothing
+    // else may outvote it.
+    await fc.assert(
+      fc.asyncProperty(
+        tour,
+        tour,
+        tourIdArb,
+        tourIdArb,
+        async (from, to, a, b) => {
+          const plan = debugBundlePlan(
+            ["actions/000001.json"],
+            { ...from, tourId: a },
+            WHEN,
+          );
+          if (plan === null) throw new Error("a recording gave no plan");
+          const json = plan.added.find((e) => e.path === IDENTITY)?.data;
+          if (typeof json !== "string") throw new Error("no identity written");
+          const read = await readBack(json);
+          if (read.kind === "refused") throw new Error(read.reason);
+          expect(bundleMatchesTour(read, { ...to, tourId: b })).toBe(
+            a === b ? "this-tour" : "other-tour",
+          );
+        },
+      ),
     );
   });
 
@@ -177,6 +210,7 @@ describe("debug bundle (properties)", () => {
             tour: field,
             file: field,
             writtenAt: field,
+            tourId: field,
           },
           { requiredKeys: [] },
         )

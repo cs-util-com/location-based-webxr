@@ -15,6 +15,8 @@ import {
   type ZipEntryInput,
 } from "gps-plus-slam-app-framework/storage";
 
+import { TOUR_ID_PATTERN } from "gps-plus-slam-app-framework/ar/tour-archive";
+
 import { recordingEntryNames } from "./tour-read-set.js";
 import { zipBlobEntryNames } from "./zip-blob.js";
 
@@ -44,6 +46,8 @@ const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 export interface DebugBundleTour {
   /** A listed tour's series id; null for an unlisted tour. */
   readonly seriesId: string | null;
+  /** The tour's own id (`tour.json`'s `tourId`), if it has one. */
+  readonly tourId?: string | null | undefined;
   /** The tour's title (`tour.json`), if it has one. */
   readonly title: string | null | undefined;
   /** The tour file's name, if known. */
@@ -53,6 +57,9 @@ export interface DebugBundleTour {
 /** What `debug-bundle.json` says, normalised: text trimmed, empty as null. */
 export interface DebugBundleIdentity {
   readonly seriesId: string | null;
+  /** The tour's own id, present only when the bundle carries one: a
+   *  bundle written before it, or of a tour without one, has none. */
+  readonly tourId?: string;
   readonly tour: string | null;
   readonly file: string | null;
   /** When it was written, as `toISOString` writes it. */
@@ -207,6 +214,10 @@ export function debugBundlePlan(
       "debug bundle: the series id is not one a tour carries",
     );
   }
+  const tourId = tour.tourId ?? null;
+  if (tourId !== null && !TOUR_ID_PATTERN.test(tourId)) {
+    throw new RangeError("debug bundle: the tour id is not one a tour carries");
+  }
   const when = Number.isNaN(writtenAt.getTime()) ? "" : writtenAt.toISOString();
   if (!isInstant(when)) {
     throw new RangeError(
@@ -217,6 +228,7 @@ export function debugBundlePlan(
   if (keep.length === 0) return null;
   const identity: DebugBundleIdentity = {
     seriesId: tour.seriesId,
+    ...(tourId === null ? {} : { tourId }),
     tour: identityText(tour.title),
     file: identityText(tour.fileName),
     writtenAt: when,
@@ -330,9 +342,20 @@ function parseIdentity(text: string): DebugBundleRead {
   if (!tour.ok) return refused(tour.code);
   const file = readText(record.file);
   if (!file.ok) return refused(file.code);
+  // Optional, and as the tour reader treats it: a bad one costs the id,
+  // never the file.
+  const { tourId } = record;
+  const carried =
+    typeof tourId === "string" && TOUR_ID_PATTERN.test(tourId) ? tourId : null;
   return {
     kind: "bundle",
-    identity: { seriesId, tour: tour.value, file: file.value, writtenAt },
+    identity: {
+      seriesId,
+      ...(carried === null ? {} : { tourId: carried }),
+      tour: tour.value,
+      file: file.value,
+      writtenAt,
+    },
   };
 }
 
@@ -345,6 +368,11 @@ function parseIdentity(text: string): DebugBundleRead {
 export async function readDebugBundle(
   entryNames: readonly string[],
   readEntry: (name: string) => Promise<Blob>,
+  options: {
+    /** An entry's size as the zip's directory declares it, if known:
+     *  checked before the entry is read. */
+    readonly sizeOf?: (name: string) => number | undefined;
+  } = {},
 ): Promise<DebugBundleRead> {
   if (recordingEntryNames(entryNames).length === 0) {
     return refused("no-recording");
@@ -353,6 +381,12 @@ export async function readDebugBundle(
   if (identities.length > 1) return refused("ambiguous");
   const [entry] = identities;
   if (entry === undefined) return { kind: "recording" };
+  // The directory's word first: an oversized entry is never inflated. The
+  // read's own size is checked too, since a directory can understate it.
+  const declared = options.sizeOf?.(entry);
+  if (declared !== undefined && declared > MAX_IDENTITY_BYTES) {
+    return refused("too-large");
+  }
   let text: string;
   try {
     const blob = await readEntry(entry);
@@ -365,7 +399,9 @@ export async function readDebugBundle(
 }
 
 /**
- * Whether a bundle is this tour's (plan Q-C): a bundle that names a series
+ * Whether a bundle is this tour's (plan Q-C): when both the bundle and the
+ * tour carry the tour's own id, on that id alone (it survives a rename, a
+ * retitle and a listing); otherwise a bundle that names a series
  * is a listed tour's on its series id alone; any other - an unlisted
  * tour's, or one saved before the tour was listed - is this tour's unless
  * its title AND its file name both differ (a text neither side knows is no
@@ -378,6 +414,10 @@ export function bundleMatchesTour(
 ): BundleMatch {
   if (read.kind === "recording") return "recording";
   const { identity } = read;
+  const tourId = tour.tourId ?? null;
+  if (tourId !== null && identity.tourId !== undefined) {
+    return identity.tourId === tourId ? "this-tour" : "other-tour";
+  }
   if (tour.seriesId !== null && identity.seriesId !== null) {
     return identity.seriesId === tour.seriesId ? "this-tour" : "other-tour";
   }

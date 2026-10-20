@@ -1362,6 +1362,9 @@ async function readAddedDebug(
   const read = await readDebugBundle(
     opened.entries.map((e) => e.filename),
     (name) => opened.loadEntry(name),
+    {
+      sizeOf: (name) => opened.entries.find((e) => e.filename === name)?.size,
+    },
   );
   if (read.kind === "refused") {
     void opened.close().catch(() => undefined);

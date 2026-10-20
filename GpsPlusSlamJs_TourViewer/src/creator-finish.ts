@@ -286,6 +286,7 @@ export function wireCreatorFinish(deps: {
               current.integrity.kind === "listed"
                 ? current.integrity.manifest.seriesId
                 : null,
+            ...(written.tourId === undefined ? {} : { tourId: written.tourId }),
             title: written.title,
             fileName: ctx.rebuiltZip.filename,
           },

@@ -66,6 +66,7 @@ import type { VisitPlacement } from "./creator-document.js";
 import { describeTourTrust } from "./tour-trust-view.js";
 import { linkTrustKey, type TrustStorage } from "./tour-trust.js";
 import { FINISH_LABELS } from "./qr-author-mode.js";
+import { readZipBlobEntry } from "./zip-blob.js";
 import { tourOf, withWorldObjects } from "./test-support/v3-tour.js";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
@@ -1198,6 +1199,17 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
       [...WALK].sort(),
     );
     expect(bundleNames).toContain("debug-bundle.json");
+    // It names the tour by the id the Finish wrote (r901 review #2): the
+    // one name that survives a rename and a retitle.
+    const writtenId = wired.ctx.rebuiltZip?.written.tourId;
+    expect(writtenId).toMatch(/^[0-9a-f]{32}$/);
+    expect(
+      JSON.parse(
+        await (
+          await readZipBlobEntry(handed[1]!.blob, "debug-bundle.json")
+        ).text(),
+      ),
+    ).toMatchObject({ tourId: writtenId });
     expect(bundleNames).not.toContain(README);
     expect(bundleNames).not.toContain(`${WRAP}tour.json`);
     // Read once, by the Finish: the bundle is never read from the tour.

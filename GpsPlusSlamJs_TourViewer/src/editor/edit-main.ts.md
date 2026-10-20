@@ -122,7 +122,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   plan; the panel shows it for every open tour; its file input, or a file
   dropped on the panel): a debug bundle or a plain Recorder zip, opened
   as any zip is (`openTourFile`: the archive caps; the picture cap for
-  its thumbnails) and read for whose it is (`readDebugBundle`,
+  its thumbnails) and read for whose it is (`readDebugBundle`, given the
+  entries' declared sizes so an oversized identity is never read;
   `bundleMatchesTour` against `EditorSession.debugTour()`). Shown, also
   when it is another tour's (Q-C), with `addedDebugLine`
   (`added-debug-data.ts`) ahead of the layer's line; a file that is no

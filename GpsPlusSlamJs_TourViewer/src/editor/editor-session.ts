@@ -763,7 +763,11 @@ export function createEditorSession(input: {
       return dispatchThunk(store, saves.queued(buildWalkMove));
     },
     debugTour() {
-      return debugTourOf(written());
+      // Compared by the id the opened file itself carries: the one its
+      // open minted is in no file until a save writes it, and a bundle
+      // naming that id was saved from such a copy, which the names still
+      // match (a reopened original would otherwise call it another's).
+      return debugTourOf(written(), input.manifest.tourId);
     },
     debugData() {
       return dispatchThunk(
@@ -774,7 +778,7 @@ export function createEditorSession(input: {
           // The opened file is untrusted: read under the session's budget.
           return buildDebugBundle(
             await session.readWholeArchive(),
-            debugTourOf(written()),
+            debugTourOf(written(), written().tourId),
             { budget: session.budget },
           );
         }),
@@ -801,13 +805,18 @@ export function createEditorSession(input: {
   }
 
   /** The tour a debug bundle names (`debug-bundle.json`): a listed
-   *  tour's series, the title the tour carries now and the file's name. */
-  function debugTourOf(manifest: TourManifest): DebugBundleTour {
+   *  tour's series, `tourId`, the title the tour carries now and the
+   *  file's name. */
+  function debugTourOf(
+    manifest: TourManifest,
+    tourId: string | undefined,
+  ): DebugBundleTour {
     return {
       seriesId:
         session.integrity.kind === "listed"
           ? session.integrity.manifest.seriesId
           : null,
+      ...(tourId === undefined ? {} : { tourId }),
       title: manifest.title,
       fileName: savedName,
     };
@@ -829,11 +838,15 @@ export function createEditorSession(input: {
     // #8), so it is a complete recording on its own, and names the tour it
     // came from (one format for both pages, M2 of the debug-captures plan).
     const source = base === null ? await session.readWholeArchive() : base.blob;
-    const bundle = await buildDebugBundle(source, debugTourOf(snap.manifest), {
-      // The opened file is untrusted: read under the session's budget, as
-      // the rebuild below reads it (K0 milestone review R1).
-      ...(base === null ? { budget: session.budget } : {}),
-    });
+    const bundle = await buildDebugBundle(
+      source,
+      debugTourOf(snap.manifest, snap.manifest.tourId),
+      {
+        // The opened file is untrusted: read under the session's budget, as
+        // the rebuild below reads it (K0 milestone review R1).
+        ...(base === null ? { budget: session.budget } : {}),
+      },
+    );
     if (bundle.kind === "refused") {
       return { kind: "refused", reason: bundle.reason };
     }
