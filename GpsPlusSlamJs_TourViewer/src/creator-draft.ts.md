@@ -57,8 +57,11 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     namespace keeps what it holds: the file is not known to be put
     anywhere ("NOT cleared here" in `creator-finish.ts`), so the opened
     file opened again offers what it did. True once the draft is under
-    `tourUrl` (or none is open); false when a listed file could not be
-    read or a write did not land, or another tour opened meanwhile.
+    `tourUrl` (or none is open) - also when another follow moved it to
+    the same key while this one waited for its open (two quick Finishes of
+    the same file; that follow's own copy reports its result); false when
+    a listed file could not be read or a write did not land, or another
+    tour opened or the draft moved to another key meanwhile.
     `creator-setup.ts` calls it from the hand-off's `onDelivered` with
     `tourFileKeyOfFile` of the delivered file, for a file-opened tour only,
     and on a false or failed move (still the same tour) says no backup is
@@ -360,7 +363,8 @@ notice), plus the draft e2e specs. `follow` in isolation:
 `creator-draft-follow.test.ts` (every file copied, a photo as a blob, the
 meta re-stated, later writes in the new namespace, the old one kept; a
 write issued during the copy never overwritten by it; an unreadable file
-reported; nothing opened for the same key); composed, two Finishes and the
+reported; nothing opened for the same key; two follows to the same key at
+once both true, to two keys the later one false); composed, two Finishes and the
 reopen of the saved file: `tour-document-parity.test.ts`. The pure rules are in
 `authoring-draft.test.ts` and the on-disk shape in
 `draft-persistence.test.ts`. The sampled mutants of the region "draft"

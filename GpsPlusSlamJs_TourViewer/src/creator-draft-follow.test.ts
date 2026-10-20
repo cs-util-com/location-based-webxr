@@ -194,4 +194,34 @@ describe("the phone draft follows the saved file's key", () => {
     expect(await draft.follow(OLD)).toBe(true);
     expect(ns.opened.length).toBe(opens);
   });
+
+  // Why this test matters (r902 review #6): two quick Finishes of the same
+  // file each follow it to the same key. The first moves the draft while
+  // the second still waits for its open; the second then found the draft
+  // moved and reported failure, and the page warned that no backup copy
+  // is kept - for a draft that sits exactly where it should.
+  it("reports success to a second follow whose draft the first already moved to the same key", async () => {
+    const ns = namespaces();
+    const { draft } = await wired(ns);
+    expect(await draft.writeObject(pin("a", "edited"))).toBe(true);
+    await flush();
+    const [first, second] = await Promise.all([
+      draft.follow(NEW),
+      draft.follow(NEW),
+    ]);
+    expect([first, second]).toEqual([true, true]);
+    expect(await draft.writeObject(pin("a", "after"))).toBe(true);
+    expect(String(ns.files(NEW).get(objectKey("a")))).toContain("after");
+  });
+
+  it("still reports failure when the draft moved meanwhile to ANOTHER key", async () => {
+    const ns = namespaces();
+    const { draft } = await wired(ns);
+    const elsewhere = "local-file:tour:fedcba9876543210fedcba9876543210";
+    const [first, second] = await Promise.all([
+      draft.follow(elsewhere),
+      draft.follow(NEW),
+    ]);
+    expect([first, second]).toEqual([true, false]);
+  });
 });

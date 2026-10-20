@@ -651,13 +651,18 @@ export function wireCreatorDraft(deps: {
     const generation = ctx.openGeneration;
     const opened = await deps.openDraftStore(draftKeyForTour(tourUrl));
     if (opened === undefined) return false;
-    // Another tour opened, or the draft moved meanwhile: not this move's.
+    // Another tour opened, or the draft moved meanwhile: not this move's -
+    // unless it moved where this one was going (a second quick Finish of
+    // the same file), which is the draft where it belongs.
     if (
       generation !== ctx.openGeneration ||
       draftStore !== from ||
       draftTourUrl !== fromUrl
     ) {
-      return false;
+      return (
+        draftTourUrl !== null &&
+        draftKeyForTour(draftTourUrl) === draftKeyForTour(tourUrl)
+      );
     }
     // Synchronously: every write issued from here on lands in the new one.
     draftStore = opened;
