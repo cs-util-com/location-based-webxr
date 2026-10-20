@@ -519,9 +519,17 @@ function reveal(id: string): void {
   );
 }
 
+/** The debug panel's box while it shows: the card keeps clear of it
+ *  (r901 review #4; the panel shares the window's lower right corner). */
+function debugPanelBox(): Box | null {
+  if (debugPanel.hidden) return null;
+  const r = debugPanel.getBoundingClientRect();
+  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+}
+
 function placeCard(): void {
   if (selected === null) return;
-  card.place(map.anchorOf(selected), freeArea());
+  card.place(map.anchorOf(selected), freeArea(), debugPanelBox());
 }
 
 /** A pin or photo of the tour can be edited; codes and stations cannot

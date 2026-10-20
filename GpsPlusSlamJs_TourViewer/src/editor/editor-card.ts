@@ -67,8 +67,13 @@ export interface EditorCard {
   show(item: EditorItem, view?: CardView): void;
   hide(): void;
   /** Follow the marker: `anchor` its ground point in window pixels (null
-   *  without one), `free` the window's free part. */
-  place(anchor: { x: number; y: number } | null, free: Box): void;
+   *  without one), `free` the window's free part, `avoid` a box in it the
+   *  card keeps clear of (`placePopover`). */
+  place(
+    anchor: { x: number; y: number } | null,
+    free: Box,
+    avoid?: Box | null,
+  ): void;
   /** The item shown, or null. */
   shown(): EditorItem | null;
   /** Set the outcome line in place - no rebuild, so a click that blurred
@@ -352,7 +357,7 @@ export function createEditorCard(
       dom.chip.hidden = true;
       dom.inner.replaceChildren();
     },
-    place(anchor, free) {
+    place(anchor, free, avoid) {
       if (current === null) return;
       // Never wider than the free area: on a phone a 320 px card covered
       // the folded rail (E1 review #7).
@@ -383,6 +388,7 @@ export function createEditorCard(
           height: dom.card.offsetHeight,
         },
         free,
+        avoid,
       });
       if (!placement.visible) {
         dom.card.hidden = true;

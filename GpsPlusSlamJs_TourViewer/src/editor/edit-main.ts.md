@@ -114,6 +114,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`#debug-switch`) shows only while there is a source, starts ticked and
   only shows or hides them: view state, never in the tour document, a
   save or the draft. Leaving the tour stops it.
+  - The note card keeps clear of the panel (`debugPanelBox()`, passed to
+    `card.place` as the box to avoid, r901 review #4): both share the
+    window's lower right corner, and whichever lay on top covered the
+    other's buttons. Pinned by the layout e2e "the note card never covers
+    the debug panel, whichever note is open".
   - `debugSource()` is the one seam the layer reads (and a point cloud
     will): debug data added beside the tour wins - the creator chose it -
     else the opened file when it carries a walk (`tourWalk`, its

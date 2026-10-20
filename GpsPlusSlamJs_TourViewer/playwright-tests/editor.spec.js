@@ -571,6 +571,49 @@ test("says why a walk shows no debug data, and shows no switch for a tour withou
   await expect(page.locator("#debug-add")).toHaveText("Add debug data…");
 });
 
+test("the note card never covers the debug panel, whichever note is open", async ({
+  page,
+}) => {
+  // Why (r901 review #4): the debug panel shows for every open tour, in
+  // the window's lower right corner - where the card of a low marker lands
+  // too. On top of the card it covered the card's buttons; under it, the
+  // panel's own. The card's placement keeps clear of the panel instead.
+  // A desktop window where every card fits above the panel: in a shorter
+  // one the tall photo card has no place clear of both the panel and the
+  // top bar, and stays drawn over the panel (`placePopover`'s `avoid`).
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/edit.html");
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  await expect(page.locator("#debug-panel")).toBeVisible();
+  const panel = await box(page.locator("#debug-panel"));
+  const card = page.locator("#card");
+  /** @param {{ x: number, y: number, width: number, height: number }} c */
+  const covers = (c) =>
+    c.x < panel.x + panel.width &&
+    c.x + c.width > panel.x &&
+    c.y < panel.y + panel.height &&
+    c.y + c.height > panel.y;
+  const rows = page.locator("#rail .row");
+  const count = await rows.count();
+  expect(count).toBeGreaterThan(0);
+  for (let i = 0; i < count; i += 1) {
+    await rows.nth(i).click();
+    await expect(card).toBeVisible();
+    // The reveal pans the map, and the card follows its marker: the
+    // placement it settles at is the one checked.
+    let last = "";
+    await expect
+      .poll(async () => {
+        const now = JSON.stringify(await box(card));
+        const settled = now === last;
+        last = now;
+        return settled;
+      })
+      .toBe(true);
+    expect(covers(await box(card)), `the card of row ${String(i)}`).toBe(false);
+  }
+});
+
 /**
  * Debug data as the Tour Viewer saves it apart (`debug-bundle.ts`): the
  * recording of recording-tour.zip - its tour and its code left out - and
