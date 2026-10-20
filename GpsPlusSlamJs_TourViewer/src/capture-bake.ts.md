@@ -9,8 +9,8 @@ recorded photo through the first settled alignment after it was taken, and
 return the spots in the world (`CaptureSpotsInWorld` of `tour-content.ts`).
 Both creator pages bake when they open a recording (`walkAtOpen` of
 `tour-document-bake.ts`), the tour holding them as `captureSpots` from then
-on, each photo in a station at a local pose (version 3, tour editor plan
-W3, D21; `withWalkPhotos` of `tour-content.ts`); the Finish writes them
+on, each photo in a station at a local pose (version 3,
+`withWalkPhotos` of `tour-content.ts`); the Finish writes them
 as they are. A visitor places them and never downloads or replays the
 walk. The viewer runs the same function over a tour never finished
 since S1, so a baked tour and an unbaked one show the photos at the same

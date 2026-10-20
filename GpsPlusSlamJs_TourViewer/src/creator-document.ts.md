@@ -36,8 +36,7 @@ copy of the tour.
   - `place(object, { blob?, placement?, ownStation? }, what)` -
     `canPlace`; the slice's station rule seats an object naming no station
     (the station holding it, or a new one anchored at it, under a fresh id
-    the document does not use); with `ownStation` ("New station here",
-    owner decision D8 of `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`)
+    the document does not use); with `ownStation` ("New station here")
     always a new one, even within another's radius. Returns the change,
     `ownStation` as asked, and the `object` as the document seated it
     (naming its station). It never reads or changes the arm:

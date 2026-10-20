@@ -1,5 +1,5 @@
 /**
- * The capture join, baked (scan-pass plan S1, S-D11): when a creator's
+ * The capture join, baked: when a creator's
  * page opens a recording, replay it ONCE, place each recorded photo
  * through the first settled alignment after it was taken
  * (`createCapturePickTracker`), and return the spots `tour.json` carries

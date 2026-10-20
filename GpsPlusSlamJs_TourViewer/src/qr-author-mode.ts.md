@@ -116,7 +116,8 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   recording's photos into stations…" while it runs (with "(N of M steps
   of the walk)" once the replay's progress is known), "The recording's
   photos are not in the tour: they could not be placed (reason)." after a
-  decline, and nothing once placed or with none to place (`placesNothing`)
+  decline (followed by "Open the recording again to try once more." when
+  the reason is a read that failed, `readFailed`), and nothing once placed or with none to place (`placesNothing`)
   or with no bake. `creator-setup.ts` shows it on the page beside the
   placement's note and in AR ahead of the readout.
 - `FINISH_LABELS` - the finish step's copy through its async cycle

@@ -667,6 +667,11 @@ export function wireCreatorSetup(deps: {
     reticleNue: () => reticleNueOf(ctx.reticle),
     zero: () => selectZeroReference(arStore.getState()),
     scene: () => (creator && sessionLive() ? seams.getScene() : null),
+    // On the creator's own line, which the AR overlay shows.
+    reportError: (message) => {
+      ctx.placementNote = message;
+      renderAuthorReadout();
+    },
   });
 
   /** Placing a pin or a photo in AR (`creator-placement.ts`). */

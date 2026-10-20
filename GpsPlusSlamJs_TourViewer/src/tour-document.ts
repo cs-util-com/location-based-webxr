@@ -55,7 +55,12 @@ import {
   type DetailsForm,
   type TourDetailFields,
 } from "./tour-details-form.js";
-import { automaticStationFrame, routedTo } from "./tour-content.js";
+import {
+  automaticStationFrame,
+  objectAssetIds,
+  routedTo,
+  stepAssetIds,
+} from "./tour-content.js";
 import { sameJson } from "./same-json.js";
 
 /** A station without its items: what the document edits of a station
@@ -416,6 +421,29 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
   );
 }
 
+/**
+ * The assets the undo and redo steps' views name - their stations' steps,
+ * their objects and their covers: a write keeps them (`keepAssets`), so
+ * a step back across a save finds them. Without it a cover image no step
+ * uses was dropped (with its file) by the save after a cover change, and
+ * the undo of that change had no image to show. Kept until the history no
+ * longer names them (a new edit drops the redo steps, the bound the
+ * oldest).
+ */
+export function historyAssetIds(state: TourDocumentState): Set<string> {
+  const ids = new Set<string>();
+  for (const { view } of [...state.past, ...state.future]) {
+    for (const frame of view.stations) {
+      for (const id of stepAssetIds(frame)) ids.add(id);
+    }
+    for (const object of view.objects) {
+      for (const id of objectAssetIds(object)) ids.add(id);
+    }
+    if (view.details.cover !== undefined) ids.add(view.details.cover);
+  }
+  return ids;
+}
+
 /** The manifest a write carries now (the Finish's rule,
  *  `finishedManifest`): what a save would write, without the zip - the
  *  same manifest (the r875 milestone review #7). The stations are the
@@ -428,6 +456,7 @@ export function manifestToWrite(state: TourDocumentState): TourManifest | null {
     manifest: base,
     placed: state.placed,
     deleted: state.deleted,
+    keepAssets: historyAssetIds(state),
   });
 }
 
@@ -488,7 +517,7 @@ interface Seating {
 }
 
 /**
- * The station rule (everything belongs to a station; D20, D21): `object`
+ * The station rule (everything belongs to a station): `object`
  * (naming no station) joins the nearest station of the document whose OWN
  * found radius holds it (`stationHolding`: inclusive, a tie to the earlier
  * station), or starts a new automatic one anchored where it stands
@@ -546,7 +575,7 @@ function captureStationIds(state: TourDocumentState): Set<string> {
  * AUTOMATIC stations: no object of the document names them, and nothing
  * else keeps them - no title, no story steps, no route from another
  * station, no recorded photo. Such a station existed only for its
- * elements (D20); left behind, a visitor's guide would still lead to it.
+ * elements; left behind, a visitor's guide would still lead to it.
  * The same array when nothing goes.
  */
 function withoutEmptied(
@@ -570,18 +599,27 @@ function withoutEmptied(
     : state.stations;
 }
 
-/** Whether `object` may be placed: an id the tour does not carry - nor
- *  one it deleted, whose tombstone would hide the placement (and leave a
- *  station started for it empty) - at a spot its station can carry. */
+/** Why `object` may not be placed, or null when it may: an id the tour
+ *  deleted (its tombstone would hide the placement, and leave a station
+ *  started for it empty), an id the tour carries, or a spot its station
+ *  cannot carry. */
+export function placeRefusal(
+  state: TourDocumentState,
+  object: TourObject,
+): "deleted" | "exists" | "too-far" | null {
+  if (state.deleted.includes(object.id)) return "deleted";
+  if (documentObjects(state).some((o) => o.object.id === object.id)) {
+    return "exists";
+  }
+  return objectFits(state, object) ? null : "too-far";
+}
+
+/** Whether `object` may be placed (`placeRefusal` names none). */
 export function canPlace(
   state: TourDocumentState,
   object: TourObject,
 ): boolean {
-  return (
-    !state.deleted.includes(object.id) &&
-    documentObjects(state).every((o) => o.object.id !== object.id) &&
-    objectFits(state, object)
-  );
+  return placeRefusal(state, object) === null;
 }
 
 /** Whether an undo or a redo may run: not while a rebuild is queued or
@@ -746,7 +784,7 @@ function stepCrossesInPlaceSave(
 }
 
 /** Whether a frame both lists carry differs between them: a station
- *  MOVED (D17). A station the rule started or dropped is no move - the
+ *  MOVED. A station the rule started or dropped is no move - the
  *  objects it holds are the record of it. */
 function framesMoved(
   a: readonly StationFrame[],

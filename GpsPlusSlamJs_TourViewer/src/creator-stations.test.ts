@@ -14,6 +14,7 @@ import {
   manifestToWrite,
   tourDocumentActions,
   tourDocumentReducer,
+  type TourDocumentState,
 } from "./tour-document.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import {
@@ -363,6 +364,52 @@ describe("wireCreatorStations", () => {
       },
     };
   }
+
+  it("hides the line and the ring and says it once when the stations cannot be read", () => {
+    // Why: the stations come from the document's write rule, which throws
+    // for an object in no station of the tour. The HUD reads them every
+    // camera frame; a throw there would escape the AR frame loop on every
+    // frame. It is caught: the line and the ring go, the page hears it
+    // once through its error channel, and the HUD comes back once the
+    // stations read again.
+    const scene = new Group();
+    const tour = createCreatorDocument(createTourViewerStore());
+    tour.open(tourOf([pin("gate", 0, 0)]));
+    tour.place(pin("far", 60, 0), {}, "a pin");
+    const good = tour.state();
+    const broken = {
+      ...good,
+      placed: good.placed.map((e) => ({
+        ...e,
+        object: { ...e.object, station: "nowhere" },
+      })),
+    };
+    let state: TourDocumentState = broken;
+    const chip = { textContent: "", hidden: true };
+    const said: string[] = [];
+    const stations = wireCreatorStations({
+      tour: { manifest: () => tour.manifest(), state: () => state },
+      dom: { chip },
+      creatorNue: () => [5, 401.5, 0],
+      zero: () => zero,
+      scene: () => scene,
+      reportError: (message) => said.push(message),
+    });
+    expect(() => {
+      stations.tick();
+    }).not.toThrow();
+    stations.tick();
+    expect(chip.hidden).toBe(true);
+    expect(scene.children.find((c) => c.name === STATION_RING_NAME)).toBe(
+      undefined,
+    );
+    expect(stations.placedIn("far")).toBeNull();
+    expect(said).toHaveLength(1);
+    expect(said[0]).toMatch(/station/i);
+    state = good;
+    stations.tick();
+    expect(chip.hidden).toBe(false);
+  });
 
   it("names the open station and rings its radius on the ground at its anchor", () => {
     const h = harness();

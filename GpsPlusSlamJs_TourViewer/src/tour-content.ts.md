@@ -46,14 +46,20 @@ geo, station? }[] }`; `station` is the station a bake put the photo
   taken, after the tour's own, under the id `walk-1`, `walk-2`, ...
   (skipping ids the tour has). The same manifest when it already has its
   photos or the walk has none.
-- `withReferencedAssets(manifest) -> TourManifest`: the manifest without
-  the assets it does not use, in their order; the same
-  manifest when every asset is in use. A write applies it after
+- `withReferencedAssets(manifest, alsoKeep?) -> TourManifest`: the
+  manifest without the assets it does not use, in their order; the same
+  manifest when every asset is in use. `alsoKeep` (the document's
+  `historyAssetIds`): ids an undo or redo step still names, kept though
+  the manifest does not, so that step finds them after the write. A write applies it after
   `withTourContent`, and the rebuild removes the dropped assets' files
   (`finish-rebuild.ts`). Used means (module-private
   `referencedAssetIds`): every step block's (an image, a character's image and voice,
   an audio, a video, a model) in any station, every item's (none for a pin
   or a photo today), and the cover.
+- `stepAssetIds(station)`, `objectAssetIds(object)`: the assets a
+  station's (or a frame's) steps name, and an object's in its world view
+  (none for a pin or a photo; a closed switch like `itemAssetIds`) - what
+  the document's history reads.
 
 ## Invariants & assumptions
 
@@ -102,6 +108,11 @@ geo, station? }[] }`; `station` is the station a bake put the photo
   an asset. The item kinds are a closed switch (`itemAssetIds`): a new
   kind of item (a model placed in a station) fails to compile there until
   it says which assets it keeps.
+- **Unless the undo history still names it.** A cover image no step uses
+  is named by the cover alone: a cover change saved would drop it with
+  its file, and the undo of that change would find no image. The writes
+  pass the history's ids (`alsoKeep`), so such an asset stays until no
+  undo or redo step names it.
 - Pure: no I/O. The geodesy it calls (`localPoseOf`, `itemGeoPose`) runs
   under the core's licence, which the app activates at boot.
 

@@ -33,13 +33,20 @@ placement went ("it starts Station 3" / "in Station 2") for its note.
   carry yet, else "in Station 2"; null when the object is in none.
 - `reticleNueOf(reticle) -> [n, u, e] | null` - a visible reticle's hit
   point in GPS-world NUE; null when hidden, absent or not finite.
-- `wireCreatorStations({ ctx, dom: { chip }, creatorNue, reticleNue?, zero, scene
-}) -> { tick, placedIn, nameOf, endVisit }` - `tick()` every camera
+- `wireCreatorStations({ ctx, dom: { chip }, creatorNue, reticleNue?, zero, scene,
+reportError? }) -> { tick, placedIn, nameOf, endVisit }` - `tick()` every camera
   frame of a creator's session: the line and the ring; `placedIn(id)` for
   a placement's note; `nameOf(id)` the name of the station object `id`
   is in, for a "New station here" placement's
   note; `endVisit()` hides both. The line reads the document's
   `newStationArmed` each frame.
+- **Never throws from the frame loop.** The stations come from the
+  document's write rule (`manifestToWrite`), which throws for an object
+  in no station of the tour. `tick()` runs in the AR frame loop, so such
+  a throw is caught: the line and the ring are hidden, `placedIn` and
+  `nameOf` answer null, and `reportError` (the creator page's own line,
+  `ctx.placementNote`) is told once - again only after the stations read
+  in between.
 
 ## Invariants & assumptions
 
@@ -58,7 +65,7 @@ placement went ("it starts Station 3" / "in Station 2") for its note.
   station again); the next element placed outside every station's radius
   starts a new one there, inside joins the nearest - which is what the
   document's station rule does with the placement, so "Place a pin" with
-  no station open creates a station holding it (D21). The ring is drawn
+  no station open creates a station holding it. The ring is drawn
   at that station's own radius. A photo lands about where
   the creator stands, so with the reticle hidden the creator's spot is
   the right one to judge; with it visible a photo is judged at the

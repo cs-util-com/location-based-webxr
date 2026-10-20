@@ -18,7 +18,7 @@
  *   Leaving the radius closes it: the next element placed outside every
  *   station's radius starts a new one there, inside one joins the
  *   nearest. "Place a pin" with no station open therefore creates a
- *   station holding it (D21).
+ *   station holding it.
  * - **The walk's photos** are in their stations from the open on (the
  *   bake at open, `walkAtOpen`), so no Finish adds or renumbers a
  *   station: the names the HUD shows are the ones written, with no hedge.
@@ -169,7 +169,7 @@ export interface CreatorStations {
   /** Where object `id` went, for its placement note (`placedInText`). */
   placedIn(id: string): string | null;
   /** The name of the station object `id` is in ("Station 2"), or null:
-   *  what a "New station here" placement's note names (D8). */
+   *  what a "New station here" placement's note names. */
   nameOf(id: string): string | null;
   /** The session ended: the line and the ring go. */
   endVisit(): void;
@@ -193,6 +193,9 @@ export function wireCreatorStations(deps: {
   zero(): LatLong | null;
   /** The scene root (GPS-world NUE), or null outside a session. */
   scene(): Object3D | null;
+  /** The page's error channel: told once when the stations cannot be
+   *  read (the write rule refused the document), until they read again. */
+  reportError?(message: string): void;
 }): CreatorStations {
   const ring: StationRing = createStationRing();
   /** The stations, kept until the document's parts they are made of
@@ -200,12 +203,18 @@ export function wireCreatorStations(deps: {
    *  frame, so never recomputed per frame. */
   let memo: {
     key: readonly unknown[];
-    stations: ArStation[];
+    /** Null: they could not be read for this key. */
+    stations: ArStation[] | null;
   } | null = null;
+  /** The failure was said, and not since the stations read again. */
+  let reported = false;
   /** The station the creator was in at the last frame inside one. */
   let lastOpen: string | null = null;
 
-  function stations(): ArStation[] {
+  /** The stations, or null when the write rule refuses the document (an
+   *  object in no station of it): read from the AR frame loop, so never
+   *  thrown - the page hears it once (`reportError`). */
+  function stations(): ArStation[] | null {
     const { tour } = deps;
     const state = tour.manifest() === null ? null : tour.state();
     const key =
@@ -219,7 +228,18 @@ export function wireCreatorStations(deps: {
     ) {
       return memo.stations;
     }
-    const list = stationsAsFinished({ state });
+    let list: ArStation[] | null;
+    try {
+      list = stationsAsFinished({ state });
+      reported = false;
+    } catch (err) {
+      list = null;
+      if (!reported) {
+        reported = true;
+        const why = err instanceof Error ? err.message : String(err);
+        deps.reportError?.(`The stations cannot be shown: ${why}`);
+      }
+    }
     memo = { key, stations: list };
     return list;
   }
@@ -242,7 +262,7 @@ export function wireCreatorStations(deps: {
         return;
       }
       const list = stations();
-      if (deps.tour.manifest() === null) {
+      if (list === null || deps.tour.manifest() === null) {
         show("");
         ring.hide();
         return;
@@ -286,10 +306,12 @@ export function wireCreatorStations(deps: {
       );
     },
     placedIn(id) {
-      return placedInText(stations(), id);
+      return placedInText(stations() ?? [], id);
     },
     nameOf(id) {
-      return stations().find((s) => s.itemIds.includes(id))?.name ?? null;
+      return (
+        (stations() ?? []).find((s) => s.itemIds.includes(id))?.name ?? null
+      );
     },
     endVisit() {
       show("");

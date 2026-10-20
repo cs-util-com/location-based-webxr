@@ -135,7 +135,7 @@ export function asStored(
 }
 
 /**
- * A new automatic station's frame (D20): anchored where its first element
+ * A new automatic station's frame: anchored where its first element
  * stands, turned like north, found within R (`STATION_RADIUS_M`, 25 m) and
  * guiding from twice that (`AUTO_STATION_ACTIVATE_M`), with no story.
  */
@@ -334,6 +334,24 @@ function itemAssetIds(item: TourItem): readonly string[] {
   }
 }
 
+/** The assets an object names, in its world view (an undo step's): none
+ *  for a pin or a photo, as `itemAssetIds` - a new kind fails to compile
+ *  here too until it says. */
+export function objectAssetIds(object: TourObject): readonly string[] {
+  switch (object.kind) {
+    case "pin":
+    case "photo":
+      return [];
+  }
+}
+
+/** The assets a station's steps name (a frame's: no items needed). */
+export function stepAssetIds(
+  station: Pick<TourStation, "steps">,
+): readonly string[] {
+  return station.steps.flatMap((step) => blockAssetIds(step.block));
+}
+
 /**
  * The ids of the assets `manifest` uses: every step block's of every
  * station, every item's, and the cover (which may name an image asset).
@@ -341,7 +359,7 @@ function itemAssetIds(item: TourItem): readonly string[] {
 function referencedAssetIds(manifest: TourManifest): Set<string> {
   return new Set([
     ...manifest.stations.flatMap((station) => [
-      ...station.steps.flatMap((step) => blockAssetIds(step.block)),
+      ...stepAssetIds(station),
       ...station.items.flatMap(itemAssetIds),
     ]),
     ...(manifest.cover === undefined ? [] : [manifest.cover]),
@@ -353,11 +371,18 @@ function referencedAssetIds(manifest: TourManifest): Set<string> {
  * their order: a visitor downloads every asset a tour lists, so one left
  * behind by a changed step or cover would ride along in every copy. The
  * same manifest when every asset is in use. The caller removes the dropped
- * assets' files (`rebuildFinishedTour`).
+ * assets' files (`rebuildFinishedTour`). `alsoKeep`: ids another view of
+ * the tour still names (an undo or redo step, `historyAssetIds`), kept
+ * though `manifest` does not, so that step finds them after the write.
  */
-export function withReferencedAssets(manifest: TourManifest): TourManifest {
+export function withReferencedAssets(
+  manifest: TourManifest,
+  alsoKeep: ReadonlySet<string> = new Set(),
+): TourManifest {
   const used = referencedAssetIds(manifest);
-  const assets = manifest.assets.filter((a) => used.has(a.id));
+  const assets = manifest.assets.filter(
+    (a) => used.has(a.id) || alsoKeep.has(a.id),
+  );
   return assets.length === manifest.assets.length
     ? manifest
     : { ...manifest, assets };

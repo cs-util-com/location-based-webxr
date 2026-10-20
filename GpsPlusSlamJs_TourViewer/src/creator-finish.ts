@@ -21,7 +21,7 @@ import { finishedFileName, rebuildFinishedTour } from "./finish-rebuild.js";
 import type { RebuildPhotoSpots } from "./tour-document-bake.js";
 import { FINISH_LABELS, finishReadiness } from "./qr-author-mode.js";
 import { authoringFinished } from "./tour-authoring-actions.js";
-import { manifestNow } from "./tour-document.js";
+import { historyAssetIds, manifestNow } from "./tour-document.js";
 import { scanEntryNames } from "./tour-read-set.js";
 import type { TourSession } from "./tour-session.js";
 import type {
@@ -246,6 +246,8 @@ export function wireCreatorFinish(deps: {
           // A snapshot: placements land in the document during the rebuild.
           placed: [...tour.entries()],
           deleted,
+          // What an undo after this Finish may still show (a cover).
+          keepAssets: historyAssetIds(tour.state()),
           levels,
           keepScan: dom.keepScanInput.checked,
           // A walk that places nothing is left out too (the M4b milestone

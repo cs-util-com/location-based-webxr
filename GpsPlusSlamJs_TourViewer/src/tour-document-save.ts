@@ -28,6 +28,7 @@ import {
 } from "./finish-rebuild.js";
 import type { RebuildPhotoSpots } from "./tour-document-bake.js";
 import {
+  historyAssetIds,
   manifestNow,
   tourDocumentActions,
   type StationFrame,
@@ -94,6 +95,8 @@ interface TourSaveSnapshot {
   readonly deleted: readonly string[];
   /** The manifest the write starts from (`manifestNow`). */
   readonly manifest: TourManifest;
+  /** The assets the history still names (`historyAssetIds`): kept. */
+  readonly keepAssets: ReadonlySet<string>;
   /** The frames it starts from: one moved while it runs stays the
    *  document's (`saved`). */
   readonly stationsAtStart: readonly StationFrame[];
@@ -192,6 +195,7 @@ export function createTourSaves(input: {
       }),
       deleted: [...state.deleted],
       manifest,
+      keepAssets: historyAssetIds(state),
       stationsAtStart: state.stations,
       position: state.position,
     };
@@ -269,6 +273,7 @@ export function createTourSaves(input: {
         manifest: snap.manifest,
         placed: snap.placed,
         deleted: snap.deleted,
+        keepAssets: snap.keepAssets,
         levels: [],
         keepScan,
         walkPlacesNothing: decided.placesNothing === true,

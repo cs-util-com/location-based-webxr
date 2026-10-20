@@ -375,7 +375,7 @@ export interface TourViewerSession {
     delivered?: boolean;
   } | null;
   /** The creator's bake of the open recording's walk (`walkAtOpen` of
-   *  `finish-rebuild.ts`): running, with the replay's progress, or what
+   *  `tour-document-bake.ts`): running, with the replay's progress, or what
    *  it decided (the Finish reads `placesNothing` and `notPlaced`; the
    *  status line says a decline). Null before an open settled it and for
    *  a visitor. */

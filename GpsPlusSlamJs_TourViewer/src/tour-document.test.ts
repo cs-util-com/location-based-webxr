@@ -21,6 +21,7 @@ import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 import { horizontalM } from "./move-with-code.js";
 import {
   canPlace,
+  placeRefusal,
   canStep,
   changeCount,
   documentObjects,
@@ -997,17 +998,21 @@ describe("tour document: the rules its reducers keep", () => {
     );
     expect(again).toEqual(state);
     expect(canPlace(state, a)).toBe(false);
+    // Each refusal named, so a page says the actual reason.
+    expect(placeRefusal(state, a)).toBe("exists");
     const tooFar: TourObject = {
       ...pin("n"),
       station: stationIdOf("a"),
       geo: { ...a.geo, lat: a.geo.lat + far },
     };
     expect(canPlace(state, tooFar)).toBe(false);
+    expect(placeRefusal(state, tooFar)).toBe("too-far");
     expect(reduce(state, act.placed({ object: tooFar, what: "p" }))).toEqual(
       state,
     );
     const near: TourObject = { ...tooFar, geo: a.geo };
     expect(canPlace(state, near)).toBe(true);
+    expect(placeRefusal(state, near)).toBeNull();
     expect(
       documentObjects(reduce(state, act.placed({ object: near, what: "p" })))
         .map((o) => o.object.id)
@@ -1022,6 +1027,7 @@ describe("tour document: the rules its reducers keep", () => {
     const state = reduce(open(), act.deleted({ id: "a", what: "d" }));
     const again: TourObject = { ...pin("a"), geo: spot(200) };
     expect(canPlace(state, again)).toBe(false);
+    expect(placeRefusal(state, again)).toBe("deleted");
     expect(reduce(state, act.placed({ object: again, what: "p" }))).toEqual(
       state,
     );

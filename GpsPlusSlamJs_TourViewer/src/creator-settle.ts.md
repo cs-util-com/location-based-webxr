@@ -199,7 +199,7 @@ M4 settles every code of the book, not only the one in hand.
     - An IMPROVED position moves the tour's other objects with it - by
       their stations, below (`moveEarlierWithCode`; hosted, restored and
       earlier visits' objects, as edits by id). A real MOVE leaves them
-      (D19) and marks the visit's move boundary.
+      and marks the visit's move boundary.
     - **Version 3: whole stations** (tour editor plan D17). The rule picks
       STATIONS by their anchor (`station-code-move.ts`), and each moves
       rigidly as the tour document's `stationMoved` (`moveStation`), the
@@ -221,8 +221,13 @@ M4 settles every code of the book, not only the one in hand.
       so no item is shifted twice and the station stays anchored at its
       first item, whatever the correction (a 10 m shift and a 10 degree
       turn are pinned). The code move leaves such a station alone: it was
-      settled through the improved code already. An earlier visit's item
-      in such a station (moved into it) moves rigidly with the station.
+      settled through the improved code already. An item of such a station
+      that this visit did not place (earlier work moved into it, a
+      restored draft) is put back where it stood before the settle, as the
+      code move's `stay` does: the visit's correction says nothing about
+      it. Put back by a move, so it stays in the station while the
+      item stays within the moved station's found radius (25 m by
+      default); further off, the move re-seats it by the station rule.
     - **The draft keeps the station's move** (tour editor plan §19 #1):
       the document's listener writes the moved poses into the draft's
       settings record (`creator-draft.ts`), and a restore moves the frame

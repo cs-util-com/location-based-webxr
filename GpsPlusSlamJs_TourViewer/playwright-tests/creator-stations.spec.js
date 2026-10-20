@@ -293,8 +293,13 @@ test("a recording without tour.json is a tour from the open: a fresh pin's stati
   // still change, and a reload could bring a pin back naming a station the
   // tour lacked. Every object now belongs to a station of the document
   // from the moment it is placed; the recording's photos are in stations
-  // from the open; and the station survives the visit's settle and a
-  // reload. Read from the store, not from the words on screen.
+  // from the open; and the station survives the visit's end and a reload.
+  // Read from the store, not from the words on screen. The fakes' visit
+  // needs no correction, so the settle leg proves that the station keeps
+  // its pin and stays anchored at it through the real end-of-visit path -
+  // not that a correction moves them together: `authoring-settle.test.ts`
+  // ("a station started in a visit settles with it") pins that with a
+  // 10 m shift and a 10 degree turn.
   await openRecording(page);
   await enterArAndMeasure(page);
   // The recording's two photos, 10 m apart, share one station of the
@@ -313,7 +318,7 @@ test("a recording without tour.json is a tour from the open: a fresh pin's stati
   expect(placed.frame.id).not.toBe("walk-1");
   expect(placed.frame.geo.lat).toBeCloseTo(placed.pin.geo.lat, 9);
 
-  // The visit ends: its settle re-poses the pin and its station together.
+  // The visit ends: the station still holds the pin, anchored at it.
   await page.evaluate((key) => {
     /** @type {any} */ (window)[key].endXrSession();
   }, TEST_KEY);

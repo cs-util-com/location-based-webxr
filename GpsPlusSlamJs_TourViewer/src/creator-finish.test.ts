@@ -953,7 +953,7 @@ describe("the finish settles the AR visit still running (authoring plan 2026-09-
   });
 });
 
-describe("the finish writes the recorded photos' spots baked at open (scan-pass plan S1, S-D11)", () => {
+describe("the finish writes the recorded photos' spots baked at open", () => {
   // Why these tests matter: the baked spots are what every visitor places
   // instead of replaying the walk, and their presence switches the
   // visitor's live join OFF. The bake runs once, when the recording

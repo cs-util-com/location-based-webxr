@@ -20,7 +20,7 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
     version 3 through `withTourContent` (`tour-content.ts`): the edits
     apply to its world view (`tourObjects`), and every pin and photo is
     written into the station it names - the stations are the manifest's
-    as they are (the tour document seated every object, D20), and the
+    as they are (the tour document seated every object), and the
     walk's photos are already in them (baked at open, `walkAtOpen` of
     `tour-document-bake.ts`).
   - `input.placed` - objects placed or edited (`{ object, blob? }`); a
@@ -79,7 +79,9 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
   removed (`contentEntriesToRemove`).
 - **Assets:** an asset nothing names any more (no step block, not the
   cover; `withReferencedAssets` of `tour-content.ts`) leaves the
-  written manifest, and its file leaves the zip.
+  written manifest, and its file leaves the zip - unless `keepAssets`
+  (the page's undo history, `historyAssetIds`) names it: an undo across
+  the save must still find it.
 - **Paths:** the manifest at `${manifestWrap}tour.json` (the session's own
   prefix, never derived again); a level the zip holds is replaced where it
   is, a new one inside a listed tour's folder or at the root

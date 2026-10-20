@@ -85,8 +85,11 @@ describe("captureSpotsForRebuild (M6 E0b: the photos' spots for a save)", () => 
       },
       manifestOf(),
     );
+    // Marked as a read that failed: another try may work (the open's
+    // line says so).
     expect(out).toEqual({
       notPlaced: "reading the recording failed: bad entry",
+      readFailed: true,
     });
   });
 
@@ -213,6 +216,8 @@ describe("walkAtOpen (the recording's photos baked when it is opened)", () => {
       );
       expect(opened.manifest).toBe(base);
       expect(opened.photos.notPlaced).toContain(error.message);
+      // Not a read another try would fix.
+      expect(opened.photos.readFailed).toBeUndefined();
     }
   });
 

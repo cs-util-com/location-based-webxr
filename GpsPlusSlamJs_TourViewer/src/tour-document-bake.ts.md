@@ -36,7 +36,8 @@ rules only through the document's modules (the
   photos' spots, in the world (`worldCaptureSpots`): the manifest's own, else baked from the
   recording (`capture-bake.ts`, `options` passes its `shouldContinue` and
   `onChunk`), else none (`{}`); a bake that declines or a recording that
-  cannot be read is `{ notPlaced: reason }`, except a walk that places
+  cannot be read is `{ notPlaced: reason }` (a read that failed also
+  carries `readFailed: true`: another open may work), except a walk that places
   nothing, which is `{ placesNothing: true }` with no reason (there are
   no photos to speak of; the M4b milestone review #3). The result type is
   `RebuildPhotoSpots`. `ArchiveLimitError` and

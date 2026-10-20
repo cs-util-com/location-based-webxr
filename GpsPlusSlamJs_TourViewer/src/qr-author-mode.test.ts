@@ -786,6 +786,18 @@ describe("walkBakeLine (the recording's photos baked at open)", () => {
     ).toBe(
       "The recording's photos are not in the tour: they could not be placed (too few GPS fixes).",
     );
+    // A read that failed may work the next time: the line says how.
+    expect(
+      walkBakeLine({
+        kind: "decided",
+        photos: {
+          notPlaced: "reading the recording failed: network",
+          readFailed: true,
+        },
+      }),
+    ).toBe(
+      "The recording's photos are not in the tour: they could not be placed (reading the recording failed: network). Open the recording again to try once more.",
+    );
     expect(walkBakeLine({ kind: "decided", photos: {} })).toBe("");
     expect(
       walkBakeLine({ kind: "decided", photos: { placesNothing: true } }),

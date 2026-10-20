@@ -157,7 +157,7 @@ export interface CreatorDocument {
   /** A new object (a tap in AR): null when refused (`canPlace`). The
    *  station rule seats one naming no station (`placed`): the station
    *  holding it, or a new one anchored at it; with `ownStation` ("New
-   *  station here", D8) always a new one, even within another's radius.
+   *  station here") always a new one, even within another's radius.
    *  The result's `object` names its station. The arm is the CALLER's to take and give back:
    *  it decides when an item took it (a photo at its shutter tap, not when
    *  its encode lands), so this never reads or changes it. */

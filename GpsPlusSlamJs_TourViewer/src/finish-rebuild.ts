@@ -72,6 +72,9 @@ export interface FinishInput {
   /** The tour's name as typed: one that says something becomes `title`,
    *  an emptied one removes it, null (or absent) keeps the tour's own. */
   readonly title?: string | null;
+  /** Assets the page's undo history still names (`historyAssetIds`):
+   *  kept, with their files, though the written tour does not name them. */
+  readonly keepAssets?: ReadonlySet<string>;
   /** Keep the entries visitors never read (the walk, S-D10). */
   readonly keepScan: boolean;
   /** The walk places nothing (the open's bake said so, `walkAtOpen`'s
@@ -122,6 +125,9 @@ export interface FinishedManifestInput {
   readonly deleted: readonly string[];
   /** The tour's name as typed (`FinishInput.title`). */
   readonly title?: string | null;
+  /** Assets another view of the tour still names (its undo history,
+   *  `historyAssetIds`): kept though the written tour does not. */
+  readonly keepAssets?: ReadonlySet<string>;
 }
 
 /**
@@ -130,7 +136,7 @@ export interface FinishedManifestInput {
  * the zip carried, with this device's records REPLACING theirs by id (an
  * edit or a move of a hosted object), the new ones appended and the
  * deleted ones filtered out (plan §3.4, M4), every pin and photo in the
- * station it names (tour editor plan W3, D20): the stations are the
+ * station it names: the stations are the
  * manifest's as they are (the tour document made them), so two calls on
  * the same input agree exactly. Throws for an object in no station of
  * the manifest (`withTourContent`).
@@ -158,7 +164,36 @@ export function finishedManifest(input: FinishedManifestInput): TourManifest {
         ),
       },
     ),
+    input.keepAssets,
   );
+}
+
+/** The zip entries a write removes: a deleted photo's content file, the
+ *  file of an asset the write dropped (as a deleted photo's), the entries
+ *  visitors never read that were left out, the old signatures, and a list
+ *  that does not continue (`listName`, undefined when it does or there is
+ *  none). */
+function entriesToRemove(input: {
+  readonly hosted: readonly TourObject[];
+  readonly deleted: readonly string[];
+  readonly wrap: string;
+  readonly before: TourManifest;
+  readonly written: TourManifest;
+  readonly scanLeftOut: readonly string[];
+  readonly signatureNames: readonly string[];
+  readonly listName: string | undefined;
+}): string[] {
+  const { wrap } = input;
+  const keptAssets = new Set(input.written.assets.map((a) => a.id));
+  return [
+    ...contentEntriesToRemove(input.hosted, input.deleted, wrap),
+    ...input.before.assets.flatMap((a) =>
+      keptAssets.has(a.id) ? [] : [`${wrap}${a.path}`],
+    ),
+    ...input.scanLeftOut,
+    ...input.signatureNames,
+    ...(input.listName === undefined ? [] : [input.listName]),
+  ];
 }
 
 /** A written entry's record for `manifest.json`: the SHA-256 and size of
@@ -220,18 +255,16 @@ export async function rebuildFinishedTour(
     input.keepScan || walkNeeded
       ? []
       : scanEntryNames(entryNames, written, wrap);
-  // An asset the write dropped takes its file with it, as a deleted
-  // photo does.
-  const keptAssets = new Set(written.assets.map((a) => a.id));
-  const removed = [
-    ...contentEntriesToRemove(hosted, deleted, wrap),
-    ...manifest.assets.flatMap((a) =>
-      keptAssets.has(a.id) ? [] : [`${wrap}${a.path}`],
-    ),
-    ...scanLeftOut,
-    ...signatureNames,
-    ...(listed === null && listName !== undefined ? [listName] : []),
-  ];
+  const removed = entriesToRemove({
+    hosted,
+    deleted,
+    wrap,
+    before: manifest,
+    written,
+    scanLeftOut,
+    signatureNames,
+    listName: listed === null ? listName : undefined,
+  });
   // The level replaced where the zip holds it (also wrapped), a new
   // one inside a listed tour's folder or at the root
   // (`finish-entries.ts`), then the manifest and the photos.

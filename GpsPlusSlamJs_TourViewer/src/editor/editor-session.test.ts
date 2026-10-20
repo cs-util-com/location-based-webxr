@@ -969,6 +969,56 @@ describe("createEditorSession, the tour details (W2)", () => {
     await session.close();
   });
 
+  it("an undo across a save brings back a cover image only the cover named", async () => {
+    // Why: a write drops the assets nothing names (`withReferencedAssets`)
+    // and the rebuild removes their files. A cover image no step uses is
+    // named by the cover alone, so changing the cover and saving dropped
+    // it - and an undo after the save found no such image: the old cover
+    // was gone for good. An asset a step of the undo history still names
+    // is kept until the history no longer does.
+    const manifest = tourOf([pin("a")], {
+      assets: [
+        { id: "art1", path: "content/art1.png", kind: "image" },
+        { id: "art2", path: "content/art2.png", kind: "image" },
+      ],
+      cover: "art1",
+    });
+    const zip = await packFilesAsZip([
+      { path: "tour.json", data: serializeTourManifest(manifest) },
+      { path: "content/art1.png", data: "1" },
+      { path: "content/art2.png", data: "2" },
+    ]);
+    const session = await openTourFile(
+      new File([zip], "tour.zip", { type: "application/zip" }),
+    );
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.setDetails(form({ cover: "art2" }))).toEqual({
+      kind: "changed",
+    });
+    const first = await editor.save({ keepScan: false });
+    expect((await writtenJson(first.blob))["cover"]).toBe("art2");
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    expect(editor.details().cover).toBe("art1");
+    const second = await editor.save({ keepScan: false });
+    const written = await writtenJson(second.blob);
+    expect(written["cover"]).toBe("art1");
+    expect((written["assets"] as { id: string }[]).map((a) => a.id)).toContain(
+      "art1",
+    );
+    expect(
+      readStoredEntryBytes(
+        new Uint8Array(await second.blob.arrayBuffer()),
+        "content/art1.png",
+      ),
+      "and its file",
+    ).toBeDefined();
+    await session.close();
+  });
+
   it("backs each change of the details up with the whole settings record", async () => {
     const { session, manifest } = await opened([pin("a")], { title: "Old" });
     const settings: EditorTourSettings[] = [];

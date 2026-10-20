@@ -32,13 +32,16 @@ type CaptureSpotTour = CaptureBakeSource & { readonly hasRecording: boolean };
 export interface RebuildPhotoSpots {
   readonly spots?: CaptureSpotsInWorld;
   readonly notPlaced?: string;
+  /** `notPlaced` is a read of the recording that failed (not a cap, an
+   *  integrity check or a bake's decline): another try may work. */
+  readonly readFailed?: true;
   /** The walk names no photo the tour carries (`CaptureBake`): a lean
    *  save may leave it out without spots (`walkPlacesNothing`). */
   readonly placesNothing?: true;
 }
 
 /**
- * The recorded photos' spots (scan-pass plan S1, S-D11; M6 E0b): the
+ * The recorded photos' spots: the
  * tour's own when it carries them, else baked from its recording, else
  * none - the tour then keeps the visitor's live join, and `notPlaced`
  * says why, unless the walk places nothing at all (`placesNothing`, no
@@ -67,6 +70,7 @@ export async function captureSpotsForRebuild(
       notPlaced: `reading the recording failed: ${
         err instanceof Error ? err.message : String(err)
       }`,
+      readFailed: true,
     };
   }
 }

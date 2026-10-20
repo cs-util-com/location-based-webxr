@@ -173,8 +173,8 @@ module's sidecar states them as its contract.
   what the zip carries WITH THE SAME CONTENT, and clears the applied
   deletions. The draft's tombstones stay until the hosted zip lacks the
   ids, the same proof the objects wait for.
-- **The Finish writes the recording's photo spots baked at open**
-  (scan-pass plan S1, S-D11): the recording was replayed once when it
+- **The Finish writes the recording's photo spots baked at open**:
+  the recording was replayed once when it
   opened (`walkAtOpen`, `archive-open.ts`) and its photos stand in the
   tour's stations, so `tour.json` carries them as the document holds
   them; the Finish neither bakes nor assigns. A bake that declined at the

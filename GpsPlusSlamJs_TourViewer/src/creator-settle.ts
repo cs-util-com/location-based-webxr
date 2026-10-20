@@ -927,18 +927,40 @@ export function wireCreatorSettle(deps: {
     // The visit's own stations first, each to where its first item
     // settles: a station moves its items rigidly, and each of the visit's
     // items is then put at its own settled spot - so none is moved by the
-    // settle twice, and a station stays anchored at its first item.
+    // settle twice, and a station stays anchored at its first item. An
+    // item of such a station that this visit did not place (earlier work
+    // moved into it, a restored draft) is put back where it stood: the
+    // visit's correction says nothing about it (as the code move's `stay`).
+    const settling = new Set(plan.stations.map((s) => s.id));
+    const stay = ctx.tourDocument
+      .objects()
+      .filter(
+        (o) =>
+          o.placed?.placement?.visit !== visit &&
+          o.object.station !== undefined &&
+          settling.has(o.object.station),
+      );
+    const reposed = new Set<string>();
     for (const { id, at } of plan.stations) {
       const frame = ctx.tourDocument.state().stations.find((s) => s.id === id);
       if (frame === undefined) continue;
       const { lat, lon, alt } = frame.geo;
       if (lat === at.lat && lon === at.lon && alt === at.alt) continue;
+      reposed.add(id);
       noteUnlanded(
         ctx.tourDocument.moveStation(
           id,
           { ...frame.geo, ...at },
           `the settle of ${frame.title === undefined ? "a station" : `"${frame.title}"`}`,
         ),
+      );
+    }
+    for (const o of stay) {
+      if (o.object.station === undefined || !reposed.has(o.object.station)) {
+        continue;
+      }
+      noteUnlanded(
+        ctx.tourDocument.move(o.object, `the settle of ${nameOf(o.object)}`),
       );
     }
     for (const { index, object } of plan.objects) {

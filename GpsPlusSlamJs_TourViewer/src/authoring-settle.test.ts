@@ -1495,6 +1495,43 @@ describe(
       a.endVisit();
       expect(pinAndStation(a, "first").station.geo).toEqual(before);
     });
+
+    it("leaves an item of the visit's station that this visit did not place where it stood", async () => {
+      // Why: the settle moves the visit's station rigidly with its items
+      // and then puts back only this visit's items at their settled
+      // spots. An item that joined the station from earlier work (moved
+      // into its radius here, a restored draft) is no item of this visit:
+      // the visit's correction says nothing about where it stands, so it
+      // must not be shifted with the station.
+      const a = authoring();
+      await a.placePin("old", [12, 0, -5]);
+      a.endVisit();
+      a.beginVisit();
+      await a.placePin("first", [40, 0, 40]);
+      const started = pinAndStation(a, "first").station.id;
+      const old = pinAndStation(a, "old").pin;
+      const near = pinAndStation(a, "first").pin.geo;
+      a.ctx.tourDocument.move(
+        { ...old, geo: { ...old.geo, lat: near.lat + 0.00003, lon: near.lon } },
+        "a note",
+      );
+      const joined = pinAndStation(a, "old");
+      expect(joined.station.id, "it joined the visit's station").toBe(started);
+      a.setAlignment(yawAlignment(0, [10, 401, 0]));
+
+      a.endVisit();
+
+      const after = pinAndStation(a, "old");
+      expect(after.station.id).toBe(started);
+      expect(
+        worldOf(after.pin.geo).distanceTo(worldOf(joined.pin.geo)),
+        "not shifted by the station's settle",
+      ).toBeLessThan(1e-3);
+      expect(
+        worldOf(pinAndStation(a, "first").pin.geo).distanceTo(worldOf(near)),
+        "the visit's own item did settle",
+      ).toBeGreaterThan(1);
+    });
   },
 );
 

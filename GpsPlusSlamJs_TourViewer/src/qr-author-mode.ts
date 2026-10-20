@@ -447,7 +447,9 @@ export const MISSING_SIZE_MESSAGE = `Enter the printed code's side length in cen
  * recording's photos are put into stations when it opens, which takes a
  * replay of the walk. While it runs the line says so (with the replay's
  * progress once known); a decline says why, since the tour then has no
- * walk photos. Nothing once they are placed, or when there are none.
+ * walk photos, and a read that failed says that opening the recording
+ * again tries once more. Nothing once they are placed, or when there are
+ * none.
  */
 export function walkBakeLine(bake: WalkBake | null): string {
   if (bake === null) return "";
@@ -457,9 +459,11 @@ export function walkBakeLine(bake: WalkBake | null): string {
       : `Placing the recording's photos into stations (${String(bake.done)} of ${String(bake.total)} steps of the walk)…`;
   }
   const reason = bake.photos.notPlaced;
-  return reason === undefined
-    ? ""
-    : `The recording's photos are not in the tour: they could not be placed (${reason}).`;
+  if (reason === undefined) return "";
+  const line = `The recording's photos are not in the tour: they could not be placed (${reason}).`;
+  return bake.photos.readFailed === true
+    ? `${line} Open the recording again to try once more.`
+    : line;
 }
 
 /** The finish step's labels through its async cycle (async-UI rule). */

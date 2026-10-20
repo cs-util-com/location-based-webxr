@@ -179,8 +179,14 @@ different times (a walk's move lands only after the page wrote both files).
   written tour with the frames (`withFrames`), the setting
   (`withNeedsNoGps`) and the details (`effectiveDetails`).
 - `manifestToWrite(state)` - what a write would carry:
-  `finishedManifest` (the Finish's own rule) over `manifestNow`, `placed`
-  and `deleted`. The stations are the document's as they are: the walk's
+  `finishedManifest` (the Finish's own rule) over `manifestNow`, `placed`,
+  `deleted` and `historyAssetIds`.
+- `historyAssetIds(state)` - the assets the undo and redo steps' views
+  name (their frames' steps, their objects, their covers). Every write
+  keeps them (`keepAssets`: this selector, the desktop's save snapshot,
+  the phone's Finish), so an undo across a save finds a cover image the
+  save would otherwise have dropped with its file; they go once the
+  history no longer names them. The stations are the document's as they are: the walk's
   photos were baked into them at the open (`walkAtOpen`), and a write
   assigns nothing. The creator's station HUD (`creator-stations.ts`)
   reads its stations from it.
@@ -230,7 +236,9 @@ object)` (within the format's `TOUR_ITEM_MAX_OFFSET_M` per axis of its
   own station, or of the one its id stands in; FALSE for a station the
   document does not carry, a dangling id; true for an object no station
   holds yet, which the rule seats), `canPlace(state, object)` (an id the
-  tour neither carries nor deleted, fitting) and `canStep(state)` (no save
+  tour neither carries nor deleted, fitting; `placeRefusal(state, object)`
+  names why not - `"deleted"`, `"exists"` or `"too-far"` - so a page
+  says the actual reason) and `canStep(state)` (no save
   queued or running). The per-station test under `objectFits` is
   module-private.
 
@@ -393,9 +401,9 @@ store.dispatch(tourDocumentActions.undone());
   names one of the document's stations and no empty automatic station
   stays; an undo of a placement gives the stations back exactly.
 - `tour-document-parity.test.ts` - the phone's and the desktop's paths
-  write the same tour and draft (D30), the station rule included (a pin
+  write the same tour and draft, the station rule included (a pin
   within a station's radius joins it, one beyond starts one, a move out of
   a radius and into another's, the only pin's delete dropping its
-  station); D8's "a pin that starts its own station" is a by-design row (the desktop lacks it until the 3D editor),
+  station); "a pin that starts its own station" is a by-design row (the desktop lacks it until the 3D editor),
   and the harness accepts a by-design row on either page lacking the
   operation.

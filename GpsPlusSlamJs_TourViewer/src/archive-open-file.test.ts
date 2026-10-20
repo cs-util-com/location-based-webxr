@@ -342,7 +342,11 @@ describe("a creator's recording is baked when it opens", () => {
     expect(ctx.tourDocument.opened()?.captureSpots).toBeUndefined();
     expect(ctx.walkBake).toEqual({
       kind: "decided",
-      photos: { notPlaced: "reading the recording failed: bad stream" },
+      // A read that failed: the line says another open tries again.
+      photos: {
+        notPlaced: "reading the recording failed: bad stream",
+        readFailed: true,
+      },
     });
   });
 
