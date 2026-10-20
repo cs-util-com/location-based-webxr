@@ -17,6 +17,8 @@ import {
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
+import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { rebuildFinishedTour } from "./finish-rebuild.js";
 import { type CaptureSpotsInWorld, withWalkPhotos } from "./tour-content.js";
 import { stationIdOf, tourOf } from "./test-support/v3-tour.js";
@@ -747,6 +749,75 @@ describe("tour document (properties): every object belongs to a station", () => 
           );
           fc.pre(after !== before);
           expect(reduce(after, act.undone()).stations).toEqual(before.stations);
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  it("whatever a station's found radius, a placed and then moved object stands within the format's reach of its station, where it was moved", () => {
+    // Why: a found radius has no upper bound (a hand-edited file may carry
+    // 50 km), while the format keeps an item within 10 km of its station
+    // per axis. Seated by the radius alone, an object stood beyond that
+    // reach and every later save failed; a move inside such a radius was
+    // dropped without a word. Radii from 1 m to 60 km, spots up to 30 km
+    // out on each axis.
+    const at = (north: number, east: number): TourObject["geo"] => {
+      const g = calcGpsCoords({ lat: 48.6, lon: 9.1 }, [north, 0, east]);
+      return { lat: g.lat, lon: g.lon, alt: 400, rotation: [0, 0, 0, 1] };
+    };
+    const km = fc.integer({ min: -30, max: 30 }).map((n) => n * 1000);
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 60_000 }),
+        km,
+        km,
+        km,
+        km,
+        (radius, n1, e1, n2, e2) => {
+          const manifest: TourManifest = {
+            version: 3,
+            minor: 0,
+            order: "fixed",
+            assets: [],
+            stations: [
+              {
+                id: "big",
+                geo: at(0, 0),
+                activateRadiusM: radius,
+                foundRadiusM: radius,
+                hint: "arrow",
+                steps: [],
+                items: [],
+              },
+            ],
+          };
+          let state = reduce(
+            initialTourDocumentState,
+            act.opened({ manifest }),
+          );
+          const placed = { ...pin("p", 0), geo: at(n1, e1) };
+          state = reduce(
+            state,
+            act.placed({ object: placed, what: "p", newStationId: "first" }),
+          );
+          state = reduce(
+            state,
+            act.moved({
+              object: { ...placed, geo: at(n2, e2) },
+              what: "m",
+              newStationId: "second",
+            }),
+          );
+          const p = documentObjects(state).find(
+            (o) => o.object.id === "p",
+          )!.object;
+          expect(p.geo.lat).toBeCloseTo(at(n2, e2).lat, 7);
+          expect(p.geo.lon).toBeCloseTo(at(n2, e2).lon, 7);
+          const frame = state.stations.find((f) => f.id === p.station)!;
+          for (const v of localPoseOf(p.geo, frame.geo).position) {
+            expect(Math.abs(v)).toBeLessThanOrEqual(TOUR_ITEM_MAX_OFFSET_M);
+          }
         },
       ),
       { numRuns: 300 },

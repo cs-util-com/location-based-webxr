@@ -88,7 +88,9 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   written station no frame names still counts) and seats an object naming
   no station in the NEAREST station whose OWN `foundRadiusM` holds it
   (`station-assign.ts` `stationHolding`: horizontal, the radius itself
-  inside, a tie to the earlier station), or starts a new automatic station
+  inside, a tie to the earlier station) and whose frame can carry it
+  (`TOUR_ITEM_MAX_OFFSET_M` per axis: a found radius has no upper bound,
+  so a 50 km radius never takes an object 20 km away), or starts a new automatic station
   anchored at it (`tour-content.ts` `automaticStationFrame`: found 25 m,
   activates 50 m, turned like north, arrow hint, no story), appended to
   `stations`. The new station's id is minted OUTSIDE the reducer: the
@@ -103,10 +105,14 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
     another's radius.
   - `edited`: keeps the object's station (`objectFits`); an object naming
     none, of an id the document lacks, changes nothing.
-  - `moved`: within its station's own found radius the object keeps its
-    station (whose anchor stays put); beyond it the rule runs again - the
-    station holding the new spot, or a new one there - so no move is ever
-    too far. The station it left goes in the same step when that leaves
+  - `moved`: within its station's own found radius (and the format's
+    reach) the object keeps its station (whose anchor stays put); beyond
+    it the rule runs again - the station holding the new spot, or a new
+    one there - so no move is ever too far, and none is silently dropped.
+    An object already outside its station's radius (the radius shrank,
+    the station moved) keeps its station when moved no farther from the
+    anchor and into no station's radius (`keepsHome`); the comparison is
+    strict, so a move a centimetre farther out runs the rule. The station it left goes in the same step when that leaves
     it an EMPTY AUTOMATIC station: no object names it, and no title,
     story step, route to it (`next`, a quiz's routes) or recorded photo
     keeps it. An unknown id changes nothing.

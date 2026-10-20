@@ -16,10 +16,12 @@ import {
   parseTourManifest,
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_ID_PATTERN } from "gps-plus-slam-app-framework/ar/tour-archive";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { objectContentKey } from "./authoring-draft.js";
 import type { DraftObjectWrites } from "./draft-actions.js";
 import type { EditEntry } from "./object-edits.js";
+import { automaticStationFrame } from "./tour-content.js";
 import { DETAIL_FIELDS, type TourDetailFields } from "./tour-details-form.js";
 import {
   createdStationFrames,
@@ -96,22 +98,61 @@ function parseStations(value: unknown): StationPose[] | undefined | null {
   return poses;
 }
 
-/** A stored record's created stations, read as the format reads a
- *  station (`parseTourManifest`, without items): undefined when absent or
- *  when they do not read - only they are lost then, and the objects that
- *  named them are seated by the station rule as they come back. */
+/** A stored record's created stations, each read on its own as the format
+ *  reads a station (`parseTourManifest`, without items): undefined when
+ *  absent; a frame that does not read is lost alone (the objects naming
+ *  it are seated by the station rule as they come back), and of two under
+ *  one id the first is kept. */
 function parseCreatedStations(value: unknown): StationFrame[] | undefined {
   if (!Array.isArray(value)) return undefined;
+  const entries = value as unknown[];
+  const ids = new Set(
+    entries
+      .map((entry) => idOf(entry))
+      .filter((id): id is string => id !== undefined),
+  );
+  const frames: StationFrame[] = [];
+  for (const entry of entries) {
+    const frame = parseCreatedStation(entry, ids);
+    if (frame !== undefined && !frames.some((f) => f.id === frame.id)) {
+      frames.push(frame);
+    }
+  }
+  return frames;
+}
+
+/** A stored frame's id, when it is one a station may carry. */
+function idOf(entry: unknown): string | undefined {
+  if (entry === null || typeof entry !== "object") return undefined;
+  const id = (entry as { id?: unknown }).id;
+  return typeof id === "string" && TOUR_ID_PATTERN.test(id) ? id : undefined;
+}
+
+/** Where the stand-ins for a frame's siblings stand: only their ids are
+ *  read (a route from the frame to a sibling). */
+const SIBLING_STAND_IN_AT = { lat: 0, lon: 0, alt: 0 };
+
+/** One created frame, read with a stand-in for each sibling id so that a
+ *  route between created stations still resolves; undefined when it does
+ *  not read. */
+function parseCreatedStation(
+  entry: unknown,
+  siblingIds: ReadonlySet<string>,
+): StationFrame | undefined {
+  const id = idOf(entry);
+  if (id === undefined) return undefined;
+  const standIns = [...siblingIds]
+    .filter((sibling) => sibling !== id)
+    .map((sibling) => ({
+      ...automaticStationFrame(sibling, SIBLING_STAND_IN_AT),
+      items: [],
+    }));
   try {
     const probe = parseTourManifest({
       ...createEmptyTourManifest(),
-      stations: (value as unknown[]).map((frame) =>
-        frame !== null && typeof frame === "object"
-          ? { ...frame, items: [] }
-          : frame,
-      ),
+      stations: [{ ...(entry as object), items: [] }, ...standIns],
     });
-    return framesOf(probe);
+    return framesOf(probe).find((frame) => frame.id === id);
   } catch {
     return undefined;
   }

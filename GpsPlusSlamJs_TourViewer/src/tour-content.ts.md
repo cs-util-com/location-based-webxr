@@ -42,7 +42,7 @@ geo, station? }[] }`; `station` is the station a bake put the photo
   in no station of the manifest.
 - `withWalkPhotos(manifest, spots) -> TourManifest`: the manifest with the
   walk's recorded photos in stations (the bake at open, `walkAtOpen` of
-  `finish-rebuild.ts`): in capture order, each joins the station whose own
+  `tour-document-bake.ts`): in capture order, each joins the station whose own
   found radius holds it, else starts a new automatic one where it was
   taken, after the tour's own, under the id `walk-1`, `walk-2`, ...
   (skipping ids the tour has). The same manifest when it already has its

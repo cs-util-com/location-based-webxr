@@ -369,6 +369,31 @@ describe("followDocument, the stations this page created", () => {
     expect(parseSettingsRecord(JSON.stringify(record))).toEqual(record);
   });
 
+  // Why: the created frames were read as one list, so one broken frame
+  // (a hand-edited record, a frame of a newer build) lost every station
+  // this browser made, and the objects in them were seated anew.
+  it("a broken created frame among good ones costs only itself; a repeated id keeps the first", () => {
+    const started = writesFor(
+      opened,
+      act.placed({ object: far, what: "p", newStationId: "made" }),
+    );
+    const frame = settingsRecord(started.after).createdStations![0]!;
+    const other = { ...frame, id: "made2", next: "made" };
+    const record = {
+      needsNoGps: false,
+      createdStations: [
+        frame,
+        { ...frame, id: "broken", foundRadiusM: -1 },
+        other,
+        { ...frame, id: "made", title: "A second made" },
+      ],
+    };
+    expect(parseSettingsRecord(JSON.stringify(record))).toEqual({
+      needsNoGps: false,
+      createdStations: [frame, other],
+    });
+  });
+
   it("a record whose created frames do not read keeps the rest", () => {
     const started = writesFor(
       opened,

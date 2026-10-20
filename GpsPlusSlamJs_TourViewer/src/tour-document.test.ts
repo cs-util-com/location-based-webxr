@@ -605,6 +605,60 @@ describe("tour document: every object belongs to a station", () => {
     expect(state.stations.map((s) => s.id)).toEqual(["s", "again"]);
   });
 
+  // Why: a station's found radius has no upper bound (a hand-edited file
+  // may carry 50 km), but the format keeps an item within 10 km of its
+  // station per axis. Seated by the radius alone, the object stood beyond
+  // the format's reach and every later save failed.
+  it("never seats a new object in a station whose radius holds it beyond the format's reach: it starts its own", () => {
+    const huge = tourWith(stationAt("huge", 0, 50_000));
+    const state = place(huge, pinAt("p", spot(20_000)));
+    expect(stationOf(state, "p")).toBe("new-p");
+    expect(state.stations.map((s) => s.id)).toEqual(["huge", "new-p"]);
+    expect(manifestToWrite(state)).not.toBeNull();
+    // Within the reach, the same station still takes it (the control).
+    expect(stationOf(place(huge, pinAt("p", spot(9_000))), "p")).toBe("huge");
+  });
+
+  // Why: a move inside the station's radius but beyond the format's reach
+  // changed nothing, while the page reported the move as made.
+  it("a move within a huge radius but beyond the format's reach re-seats the object rather than changing nothing", () => {
+    let state = place(
+      tourWith(stationAt("huge", 0, 50_000)),
+      pinAt("p", spot(0)),
+    );
+    expect(stationOf(state, "p")).toBe("huge");
+    state = moveTo(state, "p", spot(15_000));
+    expect(objectOf(state, "p").geo.lat).toBe(spot(15_000).lat);
+    expect(stationOf(state, "p")).toBe("moved-p");
+  });
+
+  // Why: an object can stand outside its own station's found radius (the
+  // creator shrank the radius, or moved the station). A small nudge of it
+  // must not start a station of its own: it keeps its station unless the
+  // move takes it farther from the anchor than it was, or into another
+  // station's radius. The rule is strict - any move farther out, however
+  // small, re-seats it.
+  it("an object outside its station's radius keeps its station when nudged no farther out; farther out, or into another station's radius, the rule seats it", () => {
+    const outside = place(tourWith(stationAt("s", 0), stationAt("t", 60)), {
+      ...pinAt("p", spot(-40)),
+      station: "s",
+    });
+    expect(stationOf(outside, "p")).toBe("s");
+    const nudged = moveTo(outside, "p", spot(-39, 1));
+    expect(stationOf(nudged, "p")).toBe("s");
+    expect(nudged.stations.map((s) => s.id)).toEqual(["s", "t"]);
+    const sideways = moveTo(outside, "p", spot(-1, -39));
+    expect(stationOf(sideways, "p")).toBe("s");
+    const fartherOut = moveTo(outside, "p", spot(-41));
+    expect(stationOf(fartherOut, "p")).toBe("moved-p");
+    // Nearer s's anchor than before, and inside t's radius: t holds it.
+    const intoT = place(tourWith(stationAt("s", 0), stationAt("t", 60)), {
+      ...pinAt("p", spot(40)),
+      station: "s",
+    });
+    expect(stationOf(moveTo(intoT, "p", spot(36)), "p")).toBe("t");
+  });
+
   it("a delete that empties an automatic station drops it in the same step; an undo brings both back as they were", () => {
     let state = tourWith(stationAt("s", 0));
     state = place(state, pinAt("q", spot(0)));

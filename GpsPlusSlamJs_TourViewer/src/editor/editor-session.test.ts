@@ -596,6 +596,34 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     await session.close();
   });
 
+  // Why: a station's found radius has no upper bound, and a move inside
+  // a huge one but beyond the format's 10 km reach changed nothing while
+  // the page was told the note had moved. A move reported as made must be
+  // one the document took, and one every later save can write.
+  it("a move reported as made is applied: inside a huge radius but beyond the format's reach, the note is re-seated and saving works", async () => {
+    const { session, manifest } = await opened([pin("a"), pin("b")]);
+    const huge = {
+      ...manifest,
+      stations: manifest.stations.map((s) => ({
+        ...s,
+        activateRadiusM: 50_000,
+        foundRadiusM: 50_000,
+      })),
+    };
+    const editor = createEditorSession({
+      session,
+      manifest: huge,
+      levels: new Map(),
+    });
+    expect(editor.move("a", 48.72, 9.05)).toEqual({ kind: "moved" });
+    expect(editor.changeCount()).toBe(1);
+    const saved = await carried((await editor.save({ keepScan: false })).blob);
+    const a = saved.objects.find((o) => o.id === "a");
+    expect(a?.geo.lat).toBeCloseTo(48.72, 6);
+    expect(a?.station).not.toBe(stationIdOf("a"));
+    await session.close();
+  });
+
   // Why: a draft written before far moves re-ran the station rule can
   // still hold a note its station cannot carry; restoring it as it was
   // would make every save fail, and skipping it would lose the work. It is

@@ -37,6 +37,7 @@ import {
 import { hostedObjects, objectContentKey } from "./authoring-draft.js";
 import { newObjectId } from "./content-placement.js";
 import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
+import { horizontalM } from "./move-with-code.js";
 import { stationHolding } from "./station-assign.js";
 import {
   authoringObjects,
@@ -520,7 +521,8 @@ interface Seating {
  * The station rule (everything belongs to a station): `object`
  * (naming no station) joins the nearest station of the document whose OWN
  * found radius holds it (`stationHolding`: inclusive, a tie to the earlier
- * station), or starts a new automatic one anchored where it stands
+ * station) and whose frame can carry it (`fitsStation`: a found radius
+ * has no upper bound, the format's reach does), or starts a new automatic one anchored where it stands
  * (`automaticStationFrame`, 25 m / 50 m) under `seating.newStationId`;
  * "New station here" starts one in any case. The stations read are
  * `manifestNow`'s - the tour as the next write starts from it. Null when
@@ -535,7 +537,11 @@ function seatByRule(
   const base = manifestNow(state);
   if (base === null) return null;
   if (seating.newStation !== true) {
-    const holder = stationHolding(base.stations, object.geo);
+    const frames = framesOf(base);
+    const holder = stationHolding(
+      base.stations.filter((s) => fitsStation(object.geo, s.id, frames)),
+      object.geo,
+    );
     if (holder !== null) {
       // A station the file carries that the document dropped since (it
       // emptied after it was written) comes back with the object: every
@@ -964,6 +970,27 @@ function unseated(object: TourObject): TourObject {
   return rest;
 }
 
+/** Whether a move of `object` to its new spot keeps it in its station
+ *  `frame`: the station's own found radius holds the spot; or the object
+ *  stood outside that radius already, and the move takes it no farther
+ *  from the anchor (strict: a centimetre farther runs the rule) and into
+ *  no station's radius. */
+function keepsHome(
+  state: TourDocumentState,
+  frame: StationFrame,
+  object: TourObject,
+): boolean {
+  if (stationHolding([frame], object.geo) !== null) return true;
+  const was = documentObjects(state).find((o) => o.object.id === object.id)
+    ?.object.geo;
+  if (was === undefined) return false;
+  if (horizontalM(frame.geo, object.geo) > horizontalM(frame.geo, was)) {
+    return false;
+  }
+  const base = manifestNow(state);
+  return base !== null && stationHolding(base.stations, object.geo) === null;
+}
+
 /** The station the document's object `id` stands in, if any. */
 function homeOf(state: TourDocumentState, id: string): string | undefined {
   return documentObjects(state).find((o) => o.object.id === id)?.object.station;
@@ -1022,11 +1049,13 @@ const tourDocumentSlice = createSlice({
       return putObject(before, { ...object, station }, what);
     },
     /** An object moved (on the map, or in AR). Within its station's own
-     *  found radius it keeps its station (whose anchor stays put); beyond
-     *  it the station rule runs again (`seatByRule`): it joins the station
-     *  holding its new spot, or starts one there under the payload's
-     *  `newStationId`, and the station it left goes when that leaves it
-     *  an empty automatic one. An unknown id changes nothing. */
+     *  found radius and the format's reach it keeps its station (whose
+     *  anchor stays put), and so does one already outside that radius
+     *  moved no farther out (`keepsHome`); otherwise the station rule
+     *  runs again (`seatByRule`): it joins the station holding its new
+     *  spot, or starts one there under the payload's `newStationId`, and
+     *  the station it left goes when that leaves it an empty automatic
+     *  one. An unknown id changes nothing. */
     moved: {
       reducer(state, action: PayloadAction<PlacedPayload>) {
         const before = plain(state);
@@ -1034,9 +1063,8 @@ const tourDocumentSlice = createSlice({
         const home = homeOf(before, object.id);
         const frame = before.stations.find((s) => s.id === home);
         if (home === undefined || frame === undefined) return before;
-        if (stationHolding([frame], object.geo) !== null) {
-          const kept = { ...object, station: home };
-          if (!objectFits(before, kept)) return before;
+        const kept = { ...object, station: home };
+        if (keepsHome(before, frame, object) && objectFits(before, kept)) {
           return putObject(before, kept, what);
         }
         const seated = seatByRule(before, unseated(object), {
