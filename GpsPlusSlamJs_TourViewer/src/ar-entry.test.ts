@@ -27,6 +27,7 @@ import {
   selectPresentStationId,
 } from "./visitor-guide-slice.js";
 import { RECORDING_DEPTH } from "./authoring-recording.js";
+import { creatorCodesActions } from "./creator-codes-slice.js";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourOf } from "./test-support/v3-tour.js";
 import {
@@ -275,6 +276,36 @@ describe("wireArEntry session end", () => {
     expect(attempts).toBe(0);
     expect(ticks).toBe(0);
     expect(h.ctx.placementUnsubscribe).toBeNull();
+  });
+
+  // Why this test matters (r902 review #1): the creator's code state lives
+  // in the same store, and its sightings dispatch about once per stable QR
+  // frame. Neither the placement nor the stations read that state, so a
+  // dispatch that changed only it must not re-run them; any other dispatch
+  // still does (the control half, which proves the probe can fire).
+  it("a dispatch that changed only the creator's code state places nothing and ticks no station", async () => {
+    const h = harness({ enableOk: true });
+    await h.enter();
+    let attempts = 0;
+    let ticks = 0;
+    h.hooks.tryPlaceTour = () => {
+      attempts += 1;
+    };
+    h.hooks.tickStations = () => {
+      ticks += 1;
+    };
+    h.arStore.dispatch(
+      creatorCodesActions.sightingSeen({
+        text: "code",
+        levelId: "lvl",
+        odomPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      }),
+    );
+    expect(attempts).toBe(0);
+    expect(ticks).toBe(0);
+    h.arStore.dispatch(presenceCleared());
+    expect(attempts).toBe(1);
+    expect(ticks).toBe(1);
   });
 
   // Why this test matters (code book plan M6 v5.1): the settle compares the

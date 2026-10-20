@@ -22,6 +22,12 @@ Finish wrote) are the tour document's (`tour-document.ts`, `codes`).
   `sightingsForgotten({ levelId })`, `storedCodeSighted({ levelId, visit,
 sighting })`, `visitEnded()`.
 - `StoredSighting` - `{ visit, sighting }`.
+- `onlyCreatorCodesChanged(before, after): boolean` - true when the
+  `creatorCodes` slice is a new object and every other root slice is the
+  same object (same set of keys); false for an unchanged state. The
+  page's store subscribers (`creator-setup.ts`'s readout, `ar-entry.ts`'s
+  visitor placement) skip such a dispatch: the sightings arrive about once
+  per stable QR frame, and these subscribers do not read them.
 
 ## Invariants & assumptions
 
@@ -38,7 +44,9 @@ sighting })`, `visitEnded()`.
   left to the visit's end, as before the move.
 - No history, no draft write, not persisted into the troubleshooting
   recording (not among `persistedExtraPrefixes`).
-- Only `creator-codes.ts` dispatches these actions and reads the slice.
+- Only `creator-codes.ts` dispatches these actions and reads the slice's
+  data for the page; `creator-setup.ts` compares three of its fields by
+  identity to decide whether its readout must re-render (see there).
 - Serializable state (arrays and plain objects), as the store's dev checks
   require.
 
@@ -57,3 +65,8 @@ selectCreatorCodes(store.getState()).storedSightings;
   the sightings, through the facade.
 - `creator-codes-store.property.test.ts` - every observable of the facade
   against the module as it was before the move, for any sequence of calls.
+- `creator-codes-slice.test.ts` - `onlyCreatorCodesChanged` over every
+  subset of changed slices (property), an unchanged state, a slice added.
+  Its callers: `creator-setup.test.ts` ("the readout and a dispatch that
+  changed only the creator's code state") and `ar-entry.test.ts` ("a
+  dispatch that changed only the creator's code state places nothing").

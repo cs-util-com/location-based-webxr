@@ -170,3 +170,23 @@ export function selectCreatorCodes(root: {
 }): CreatorCodesState {
   return root.creatorCodes;
 }
+
+/**
+ * Whether a dispatch moved the creator's code state and nothing else of
+ * the store: every other root slice is the same object as before (a
+ * reducer that changes nothing returns its state as it was). False for an
+ * unchanged state, so a dispatch no reducer answered still reaches the
+ * caller, as it did before the codes lived in the store. The sightings
+ * dispatch about once per stable QR frame; the page's store subscribers
+ * use this to skip what they do not read.
+ */
+export function onlyCreatorCodesChanged<
+  S extends { readonly creatorCodes: CreatorCodesState },
+>(before: S, after: S): boolean {
+  if (before.creatorCodes === after.creatorCodes) return false;
+  const keys = Object.keys(after) as (keyof S)[];
+  return (
+    keys.length === Object.keys(before).length &&
+    keys.every((key) => key === "creatorCodes" || before[key] === after[key])
+  );
+}

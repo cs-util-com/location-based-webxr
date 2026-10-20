@@ -168,7 +168,9 @@ entry; C7).
   tracking-quality phase is fed (flows plan M4).
 - On `running`, viewer mode installs the placement subscription
   (`ctx.placementUnsubscribe`) and attempts once; author mode renders the
-  readout instead.
+  readout instead. The subscription skips a dispatch that moved only the
+  creator's code state (`onlyCreatorCodesChanged`, `creator-codes-slice.ts`):
+  neither the placement nor the stations read it.
 - The runtime start is all-or-nothing (`startTourArRuntime`); its failure
   surfaces in the error box and disables back to `ready`.
 

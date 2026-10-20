@@ -139,7 +139,13 @@ were here. What stays is the Finish's side:
   - `CreatorSetup.renderAuthorReadout()` - the measuring readout
     (`authorStatusLine`) joined with the setup hint once measured
     (`setupHint`); a persistent pipeline error (`ctx.authorErrorText`) has
-    priority. No-op in visitor mode.
+    priority. No-op in visitor mode. A creator's store subscription
+    re-renders it on every dispatch except one that moved only the
+    creator's code state (`onlyCreatorCodesChanged`) and none of what the
+    readout reads of it: the hand, its measurement, and which code the
+    visit has seen. A held code's sightings dispatch about once per stable
+    QR frame; a new pose of the same code, or a stored code's sighting, is
+    shown at the next dispatch (as before the codes lived in the store).
   - `CreatorSetup.startAuthorPipeline(): boolean` - validates the printed
     size (opening step 2 when it is unusable), creates the author tracking
     controller into `ctx.qrController`; false keeps AR unstarted.

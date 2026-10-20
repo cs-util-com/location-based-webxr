@@ -314,6 +314,9 @@ function wire(
     onCodesChanged?: () => void;
     /** A store per draft namespace (by its key); `store` otherwise. */
     storeFor?: (key: string) => DraftFileStore;
+    /** One store for the session and the AR side, as the page wires it
+     *  (`main.ts`): the codes' dispatches then reach the subscriptions. */
+    oneStore?: boolean;
   } = {},
 ) {
   let opens = 0;
@@ -324,15 +327,18 @@ function wire(
   worldGroup.rotation.y = ((options.worldGroupYawDeg ?? 0) * Math.PI) / 180;
   worldGroup.updateMatrixWorld();
   const dom = fakeDom();
-  const ctx = createTourViewerSession();
+  const pageStore =
+    options.oneStore === true ? createTourViewerStore() : undefined;
+  const ctx = createTourViewerSession(pageStore);
   // Everything a placement needs beyond the store: a measured level, a
   // live session, a reticle with a surface, and an aligned AR state.
   if (options.placeable === true) {
     ctx.reticle = fakeReticle() as never;
   }
-  const arStore = (
-    options.placeable === true ? alignedArStore() : createTourViewerStore()
-  ) as { dispatched?: unknown[] };
+  const arStore = (pageStore ??
+    (options.placeable === true
+      ? alignedArStore()
+      : createTourViewerStore())) as { dispatched?: unknown[] };
   const setup = wireCreatorSetup({
     ctx,
     mode: "creator",
@@ -373,7 +379,13 @@ function wire(
   if (options.placeable === true) {
     setup.codes.setInHand({ id: "lvl", json: "{}" }, null);
   }
-  return { dom, ctx, setup, dispatched: arStore.dispatched ?? [] };
+  return {
+    dom,
+    ctx,
+    setup,
+    pageStore,
+    dispatched: arStore.dispatched ?? [],
+  };
 }
 
 /**
@@ -2801,3 +2813,85 @@ describe("'New station here' (D8)", () => {
 // (Tests that the status line said the bake at open - that it ran, and a
 // decline - stood here: the open bakes no walk any more, so the line has
 // nothing to say about it.)
+
+describe("the readout and a dispatch that changed only the creator's code state (r902 review #1)", () => {
+  // Why these tests matter: on the phone a held code's sightings reach the
+  // store about once per stable QR frame - the code in hand's and every
+  // stored code's - and each dispatch ran this readout in full (the size
+  // offer, the buttons, the object list, the refusal judge). Of that state
+  // the readout reads only the hand, its measurement and WHICH code the
+  // visit has seen (the entry hint), so a dispatch that changed nothing
+  // else of the store and none of those must not run it. The status line
+  // is the probe: every render writes it.
+  const UNTOUCHED = "(not rendered)";
+  const sighting = (levelId: string, x: number) => ({
+    text: `code ${levelId}`,
+    levelId,
+    odomPose: {
+      position: [x, 0, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    },
+  });
+
+  function wired() {
+    const wiring = wire(memoryStore().store, { oneStore: true });
+    const store = wiring.pageStore;
+    if (store === undefined) throw new Error("the harness made no store");
+    const rendered = (act: () => void): boolean => {
+      wiring.dom.status.textContent = UNTOUCHED;
+      act();
+      return wiring.dom.status.textContent !== UNTOUCHED;
+    };
+    return { ...wiring, store, rendered };
+  }
+
+  it("does not re-render for the same code seen again, nor for a stored code's sighting", () => {
+    const { setup, rendered } = wired();
+    setup.codes.setSighting(sighting("lvl", 0));
+    expect(
+      rendered(() => {
+        setup.codes.setSighting(sighting("lvl", 1));
+      }),
+    ).toBe(false);
+    expect(
+      rendered(() => {
+        setup.codes.noteStoredSighting("lvl", 0, sighting("lvl", 2));
+      }),
+    ).toBe(false);
+  });
+
+  it("re-renders when the visit sees a code first, another code, or none any more", () => {
+    const { setup, rendered } = wired();
+    expect(
+      rendered(() => {
+        setup.codes.setSighting(sighting("lvl", 0));
+      }),
+    ).toBe(true);
+    expect(
+      rendered(() => {
+        setup.codes.setSighting(sighting("other", 0));
+      }),
+    ).toBe(true);
+    expect(
+      rendered(() => {
+        setup.codes.endVisit();
+      }),
+    ).toBe(true);
+  });
+
+  it("re-renders for the hand, and for any dispatch that is not the codes' alone", () => {
+    const { setup, store, rendered } = wired();
+    expect(
+      rendered(() => {
+        setup.codes.setInHand({ id: "lvl", json: "{}" }, null);
+      }),
+    ).toBe(true);
+    // A dispatch no reducer answers changes nothing at all: it rendered
+    // before the codes moved into the store, and still does.
+    expect(
+      rendered(() => {
+        store.dispatch({ type: "test/unanswered" });
+      }),
+    ).toBe(true);
+  });
+});

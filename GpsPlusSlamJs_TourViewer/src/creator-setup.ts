@@ -94,6 +94,10 @@ import {
 } from "./tour-viewer-session.js";
 import type { Wizard } from "./wizard.js";
 import { writeSideM } from "./printed-side.js";
+import {
+  onlyCreatorCodesChanged,
+  type CreatorCodesState,
+} from "./creator-codes-slice.js";
 
 /** What a Done says while a code is being measured (PR #598 review); the
  *  save then starts by itself (r837 review #2). */
@@ -404,7 +408,21 @@ export function wireCreatorSetup(deps: {
     // Alignment arrives via GPS dispatches, not via controller state - the
     // readout must follow the store, or "waiting for GPS alignment" sticks.
     // So does the zero, which the previews from geo wait for.
+    let seen = arStore.getState();
     arStore.subscribe(() => {
+      const before = seen;
+      seen = arStore.getState();
+      // A held code's sightings dispatch about once per stable QR frame.
+      // Of the creator's code state the readout reads the hand, its
+      // measurement and which code the visit has seen (the entry hint); a
+      // dispatch that moved only the rest is shown at the next one, as it
+      // was while the codes lived outside the store (r902 review #1).
+      if (
+        onlyCreatorCodesChanged(before, seen) &&
+        sameForTheReadout(before.creatorCodes, seen.creatorCodes)
+      ) {
+        return;
+      }
       alignmentPicks.sync();
       if (
         previews.waitingForZero() &&
@@ -414,6 +432,19 @@ export function wireCreatorSetup(deps: {
       }
       renderAuthorReadout();
     });
+  }
+
+  /** Whether the readout reads the same of the creator's code state in
+   *  both (see the subscription above). */
+  function sameForTheReadout(
+    a: CreatorCodesState,
+    b: CreatorCodesState,
+  ): boolean {
+    return (
+      a.hand === b.hand &&
+      a.handMeasurement === b.handMeasurement &&
+      (a.visitSighting?.levelId ?? null) === (b.visitSighting?.levelId ?? null)
+    );
   }
 
   function authorAlignmentInfo(): MintAlignmentInfo {
