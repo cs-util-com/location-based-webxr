@@ -31,6 +31,9 @@ import type { TourSession } from "./tour-session.js";
 
 /** One debug camera capture: its picture's entry and where it stands. */
 export interface DebugCapture {
+  /** The picture's archive entry name (`loadEntry`), under the folder
+   *  the recording sits in (`mytour/images/frame-...` in a re-zipped
+   *  tour, where the recording names `images/frame-...`). */
   readonly image: string;
   readonly geo: QrGeoPose;
 }
@@ -68,6 +71,24 @@ export interface DebugCaptureOptions {
   readonly extentOf?: (state: PickTrackerState) => number;
 }
 
+/**
+ * The folder the recording's action stream sits under, with its trailing
+ * slash (`""` for a flat zip, `"mytour/"` for a re-zipped folder). A
+ * capture's `imageFile` is relative to the recording, so its entry is
+ * this folder plus that name. The action entries are found by the
+ * framework parser's own rule (an `actions/` path ending `.json`), so this
+ * reads the folder of exactly the stream that parser replays.
+ */
+function recordingFolderOf(entries: DebugCaptureSource["entries"]): string {
+  const stream = entries
+    .map((e) => e.filename)
+    .filter((name) => name.includes("actions/") && name.endsWith(".json"))
+    .sort((a, b) => a.localeCompare(b))[0];
+  return stream === undefined
+    ? ""
+    : stream.slice(0, stream.indexOf("actions/"));
+}
+
 /** Replay the recording and place its camera captures, or say why not. */
 export async function debugCapturesOf(
   source: DebugCaptureSource,
@@ -103,10 +124,12 @@ export async function debugCapturesOf(
   // would name a wrong reason.
   if (stopped) return { kind: "declined", reason: "stopped" };
   // Only captures the zip carries as images: one naming no file would
-  // show nothing.
+  // show nothing. Each is looked up under the recording's own folder.
+  const folder = recordingFolderOf(source.entries);
   const images = new Set(
     source.entries.filter((e) => e.isImage).map((e) => e.filename),
   );
+  const entryOf = (imageFile: string): string => `${folder}${imageFile}`;
   // Decided before the GPS verdict, which does not change it: a walk that
   // names no capture file of the tour shows none, and the reason says
   // which way. "Contains none" only for a recording of a known era that
@@ -116,7 +139,10 @@ export async function debugCapturesOf(
   // is NARROWED, never cast (PR #640 review): a hand-edited string
   // version compares as a number in JavaScript ("3" <= 5).
   const taken = state.gpsData?.odometryPath.points;
-  if (taken !== undefined && !taken.some((p) => images.has(p.imageFile))) {
+  if (
+    taken !== undefined &&
+    !taken.some((p) => images.has(entryOf(p.imageFile)))
+  ) {
     const knownEra =
       typeof meta?.odomCoordVersion === "number" &&
       meta.odomCoordVersion <= NEWEST_KNOWN_ODOM_COORD_VERSION;
@@ -135,12 +161,12 @@ export async function debugCapturesOf(
   if (!verdict.ok) return { kind: "declined", reason: verdict.reason };
   const poses = computeCaptureGeoJoin(state, (file) =>
     tracker.alignmentFor(file),
-  ).filter((pose) => images.has(pose.imageFile));
+  ).filter((pose) => images.has(entryOf(pose.imageFile)));
   // One per file: a file captured again keeps its LAST pose, as the zip
   // keeps its last write.
   const lastPoseOf = new Map(poses.map((pose) => [pose.imageFile, pose]));
   const captures = [...lastPoseOf.values()].map((pose) => ({
-    image: pose.imageFile,
+    image: entryOf(pose.imageFile),
     geo: {
       lat: pose.geo.lat,
       lon: pose.geo.lon,

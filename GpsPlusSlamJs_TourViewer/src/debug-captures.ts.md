@@ -24,7 +24,7 @@ stations at the open (`capture-bake.ts`); that half went with M1.
     (`createCapturePickTracker`'s own option); production leaves it unset.
   - Result: `{ kind: "placed", captures }` (`DebugCaptures`: `fixes`,
     `gpsAccuracyMedianM`, and `captures`, each `{ image, geo }` in capture
-    order) or `{ kind: "declined", reason }`.
+    order; `image` is the picture's archive entry name) or `{ kind: "declined", reason }`.
 - Types: `DebugCapture`, `DebugCaptures`, `DebugCapturesRead`,
   `DebugCaptureSource`, `DebugCaptureOptions`.
 
@@ -50,6 +50,13 @@ stations at the open (`capture-bake.ts`); that half went with M1.
     names).
 - **Only captures the zip carries as images are placed**: one naming no
   file would show nothing.
+- **A capture's file is looked up under the recording's own folder**: the
+  folder of its action stream (the framework parser's rule: an
+  `actions/` path ending `.json`), `""` for a flat zip, `mytour/` for a
+  re-zipped one. A capture's `imageFile` is relative to the recording,
+  so an exact-name lookup found none in a wrapped tour; a file of the
+  same name in another folder is never taken for it. `image` names the
+  entry itself.
 - **One per file**: a file captured again keeps its last pose, as the zip
   keeps its last write (S1 milestone review #7).
 - `fixes` and `gpsAccuracyMedianM` are the walk's (the final assessment's);
@@ -78,7 +85,9 @@ the places move off the end-of-walk join, which a join ignoring the picks
 cannot do - the sample walk alone never settles and could not tell them
 apart); a file captured twice named once; a missing file dropped and none
 left declined, also when the only file left is the frame the recording
-never placed; a walk with no capture taken, with GPS that solves and with
+never placed; a recording wrapped in a folder placing the same captures
+under their wrapped entry names, and a frame of another folder never taken
+for a capture's; a walk with no capture taken, with GPS that solves and with
 no fix at all; a newer era and captures the replay placed none of; the
 join's own declines (no recording, an old era, an absent or string era, a
 stopped replay).

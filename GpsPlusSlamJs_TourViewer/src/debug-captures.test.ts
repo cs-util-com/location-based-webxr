@@ -185,6 +185,57 @@ describe("debugCapturesOf over the real sample recording", () => {
   });
 });
 
+describe("debugCapturesOf over a recording wrapped in a folder", () => {
+  it("finds every capture's file under the folder the recording sits in, and names its entry", async () => {
+    // Why this test matters: a tour re-zipped from its folder ("compress
+    // this folder") puts every entry under `mytour/`, while a capture's
+    // `imageFile` stays relative to the recording (`images/frame-...`).
+    // Matched by exact name, no capture of such a tour named a file, so
+    // the debug layer showed none and said the tour carried no capture
+    // file. The layer reads a picture by its entry name, so each capture
+    // must name the wrapped entry.
+    const flat = await sampleSource();
+    const wrapped: DebugCaptureSource = {
+      ...flat,
+      entries: flat.entries.map((e) => ({
+        ...e,
+        filename: `mytour/${e.filename}`,
+      })),
+    };
+    const fromFlat = await debugCapturesOf(flat);
+    const read = await debugCapturesOf(wrapped);
+    if (fromFlat.kind !== "placed") throw new Error("expected a placement");
+    expect(read).toEqual({
+      kind: "placed",
+      captures: {
+        ...fromFlat.captures,
+        captures: fromFlat.captures.captures.map((c) => ({
+          ...c,
+          image: `mytour/${c.image}`,
+        })),
+      },
+    });
+  });
+
+  it("never takes a file of another folder for a capture's", async () => {
+    // Why: only the recording's own folder holds its frames. A frame of
+    // the same name elsewhere in the zip (a second recording, a copy) is
+    // not this walk's capture, so a recording at the root whose frames
+    // are all under another folder names none.
+    const flat = await sampleSource();
+    const elsewhere: DebugCaptureSource = {
+      ...flat,
+      entries: flat.entries.map((e) =>
+        e.isImage ? { ...e, filename: `copy/${e.filename}` } : e,
+      ),
+    };
+    expect(await debugCapturesOf(elsewhere)).toEqual({
+      kind: "declined",
+      reason: "no camera capture file in this tour",
+    });
+  });
+});
+
 describe("debugCapturesOf says why a walk it cannot read shows no capture", () => {
   // Why: "the recording contains no camera captures" is a claim about the
   // walk. Only a recording of a known era that really took none may make
