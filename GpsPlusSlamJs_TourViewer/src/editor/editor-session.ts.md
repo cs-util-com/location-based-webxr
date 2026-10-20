@@ -190,7 +190,10 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     with the saves; refused in words for a file without a walk. For "Save
     the debug data" after a save that left the walk out (M2 of the
     debug-captures plan): the newest bytes then carry none.
-    Changes nothing of the session.
+    Changes nothing of the session. For a tour opened from a file the
+    "opened bytes" are a reference to that file (a `File`), read when
+    this runs: valid only while the file on disk is unchanged - a copy put
+    in its place first makes the read fail, which the caller shows.
   - `debugTour()` - the tour a debug bundle saved now names, and the one
     an added debug data file is compared with (`bundleMatchesTour`, "Add
     debug data…"): a listed tour's series, the title of the newest

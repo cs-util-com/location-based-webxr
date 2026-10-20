@@ -144,6 +144,16 @@ describe("doneWords", () => {
     expect(doneWords(IN_PLACE).debugSave).toBeNull();
   });
 
+  it("says to save the debug data BEFORE the copy is put in place", () => {
+    // Why (r901 review #1): "Save the debug data" reads the opened file,
+    // so a creator who first puts the lean copy in its place (over that
+    // file) has nothing left to save it from: the order is the point.
+    const line = doneWords(LEAN).debugSave ?? "";
+    expect(line).toMatch(
+      /Save the debug data before you put this copy in place/,
+    );
+  });
+
   it("keeps the Drive-mount tip hidden by default, and the switch shows it for a Drive tour saved in place only", () => {
     // Review #10: the tip waits for the owner's check that a write through
     // the mount keeps the Drive file id. The switch is off in the module.

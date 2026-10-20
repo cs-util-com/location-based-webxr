@@ -115,7 +115,10 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   (reading, rebuilding N of M, failed) and the save's
   (`savingTour(bytes)` while the Finish saves the zip by itself, the button's
   `saveAgain` and `saving`, `saved`, `savedToPhone`, `notSaved`,
-  `saveFailed(reason)`). Since the
+  `saveFailed(reason)`), `scanLeftOut(files)` (the copy left the walk out;
+  names "Save the debug data") and `leanCopy(files)` (its first sentence
+  alone, which the desktop's lean download toast puts before its own next
+  step, `editor/save-toast.ts`). Since the
   2026-10-08 field test (F4; owner decisions D-F4a, D-F4b) the Finish saves
   the rebuilt zip itself and the one button saves it again the same way:
   no share route, no "press the button" ready line. `saved` and

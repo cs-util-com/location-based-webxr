@@ -441,6 +441,10 @@ export function archiveSizeNote(bytes: number): string {
  */
 export const MISSING_SIZE_MESSAGE = `Enter the printed code's side length in centimetres (e.g. ${String(Math.round(AUTHOR_DEFAULT_SIZE_M * 1000) / 10)}) in step 3 before starting.`;
 
+function leanCopyLine(files: number): string {
+  return `This copy is for visitors: it leaves out the debug data (the walk recording, ${String(files)} ${files === 1 ? "file" : "files"}).`;
+}
+
 /** The finish step's labels through its async cycle (async-UI rule). */
 export const FINISH_LABELS = {
   reading: (bytes: number) =>
@@ -459,7 +463,10 @@ export const FINISH_LABELS = {
    *  phone's Done step and the editor's Done dialog (debug-captures plan
    *  M2). */
   scanLeftOut: (files: number) =>
-    `This copy is for visitors: it leaves out the debug data (the walk recording, ${String(files)} ${files === 1 ? "file" : "files"}). Use "Save the debug data" to keep it in a file of its own.`,
+    `${leanCopyLine(files)} Use "Save the debug data" to keep it in a file of its own.`,
+  /** What a copy without the walk is, alone: the desktop's lean download
+   *  says it before its own next step (`editor/save-toast.ts`). */
+  leanCopy: leanCopyLine,
   failed: (reason: string) => `Finishing failed: ${reason}`,
   /** The one button left after a Finish: the same save again (owner
    *  decision D-F4b). */

@@ -92,7 +92,7 @@ function walkLine(name: string, carries: boolean | "unknown"): string | null {
 
 function debugSaveLine(facts: DoneFacts): string | null {
   if (!facts.debugLeftOut || facts.carriesWalk !== false) return null;
-  return `${facts.saved.name} leaves out your debug data, the walk you recorded: the GPS track of your walk, the depth your phone measured and the camera captures it took by itself. The file you opened still carries it. Save the debug data to keep it in a separate file of your own - the tour does not need it.`;
+  return `${facts.saved.name} leaves out your debug data, the walk you recorded: the GPS track of your walk, the depth your phone measured and the camera captures it took by itself. The file you opened still carries it, and it is saved from there. Save the debug data before you put this copy in place, to keep it in a separate file of your own - the tour does not need it.`;
 }
 
 /** The dialog's words for `facts`. */
@@ -140,6 +140,20 @@ export type DebugSaveOutcome =
   | { readonly kind: "cancelled" };
 
 const NOTHING_SAVED = "Nothing was saved: the debug data's file was not saved.";
+
+/** What a save of the debug data came to, in words: the Done dialog's
+ *  status line, and the toast a lean download's "Save the debug data"
+ *  ends with (`edit-main.ts`). */
+export function debugSaveResultLine(outcome: DebugSaveOutcome): string {
+  switch (outcome.kind) {
+    case "saved":
+      return `The debug data is in ${outcome.name} - keep that file.`;
+    case "refused":
+      return outcome.reason;
+    case "cancelled":
+      return NOTHING_SAVED;
+  }
+}
 
 /** What the page's move came to: done (with where the changes are now),
  *  refused in words, nothing moved because the walk's file was not saved
@@ -269,19 +283,12 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
   }
 
   function settleSave(outcome: DebugSaveOutcome): void {
-    switch (outcome.kind) {
-      case "saved":
-        dom.moveStatus.textContent = `The debug data is in ${outcome.name} - keep that file.`;
-        saveButton(SAVE_DEBUG_LABELS.again);
-        return;
-      case "refused":
-        dom.moveStatus.textContent = outcome.reason;
-        saveButton(SAVE_DEBUG_LABELS.idle);
-        return;
-      case "cancelled":
-        dom.moveStatus.textContent = NOTHING_SAVED;
-        saveButton(SAVE_DEBUG_LABELS.idle);
-    }
+    dom.moveStatus.textContent = debugSaveResultLine(outcome);
+    saveButton(
+      outcome.kind === "saved"
+        ? SAVE_DEBUG_LABELS.again
+        : SAVE_DEBUG_LABELS.idle,
+    );
   }
 
   function close(force = false): void {

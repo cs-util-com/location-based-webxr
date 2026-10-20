@@ -3802,6 +3802,49 @@ test("after a lean download, Done offers to save the debug data from the opened 
   await expect(save).toBeEnabled();
 });
 
+test("after a lean download, its toast says to save the debug data first, and its button saves it", async ({
+  page,
+}) => {
+  // Why (r901 review #1): "Save the debug data" reads the opened file, so
+  // a toast that first said "put it in place of the old file" led the
+  // creator to overwrite the only copy of the walk before saving it. The
+  // toast now puts the debug-data step first and offers the save itself.
+  await autosaveOutOfTheWay(page);
+  await noSavePicker(page);
+  await page.goto("/edit.html");
+  await openThroughChooser(
+    page,
+    await wrappedTour({ pin: true }),
+    "wrapped.zip",
+  );
+  await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
+  await editPin(page, "Wrapped pin", "Saved lean");
+  const lean = page.waitForEvent("download");
+  await page.locator("#save-btn").click();
+  await lean;
+  const saved = page.locator(".toast", {
+    hasText: "leaves out the debug data",
+  });
+  await expect(saved).toContainText(
+    "Save the debug data first, before you put this copy in place",
+  );
+  const download = page.waitForEvent("download");
+  await saved
+    .getByRole("button", { name: "Save the debug data", exact: true })
+    .click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe("wrapped-debug.zip");
+  expect(await downloadedNames(file)).toContain("debug-bundle.json");
+  await expect(
+    page.locator(".toast", {
+      hasText: "The debug data is in wrapped-debug.zip - keep that file.",
+    }),
+  ).toHaveCount(1);
+  await expect(
+    saved.getByRole("button", { name: "Save the debug data again" }),
+  ).toBeEnabled();
+});
+
 test("Save the debug data asks for its file on the click, and writes the bundle there", async ({
   page,
 }) => {

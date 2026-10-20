@@ -43,7 +43,9 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
     `source` is the bytes the rebuild read (the open tour's own for the
     first, the previous rebuild's after it): the phone's "Save the debug
     data" keeps the first one's (`creator-debug-save.ts`, debug-captures
-    plan M2).
+    plan M2). For a tour opened from a file, the open tour's own bytes are
+    a reference to that file (a `File`), not a copy: what is kept stays
+    readable only while the file is unchanged on the device.
   - Throws what the manifest serializer (a duplicate id), the writer (an
     object in no station of the manifest), the read and the rebuild throw
     (`ArchiveLimitError`, `TourIntegrityError`); the caller shows it.

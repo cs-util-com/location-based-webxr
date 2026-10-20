@@ -44,7 +44,12 @@ the move (`edit-main.ts`, `EditorSession.moveWalkOut`).
   out: while the newest bytes carry none (`carriesWalk: false`), the walk
   section says the copy leaves out the debug data and that the opened
   file still carries it, and offers "Save the debug data" in place of the
-  move (never both).
+  move (never both). It says to save it BEFORE the copy is put in place:
+  the save reads the opened file, which the copy then overwrites (r901
+  review #1).
+- `debugSaveResultLine(outcome)` - what a save of the debug data came
+  to, in words: the dialog's status line, and the toast the lean
+  download's own "Save the debug data" ends with (`edit-main.ts`).
 - `SAVE_DEBUG_LABELS` - its button's idle, in-progress and after-a-save
   labels; `DebugSaveOutcome` - `saved` (the name it was saved as),
   `refused` (a reason in words) or `cancelled` (nothing saved).

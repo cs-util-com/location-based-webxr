@@ -24,7 +24,6 @@ import {
   downloadZip,
   writeFileOrAbort,
 } from "gps-plus-slam-app-framework/storage";
-import { FINISH_LABELS } from "../qr-author-mode.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import {
   selectTourDocument,
@@ -71,9 +70,12 @@ import {
   type NoBackupReason,
 } from "./editor-draft.js";
 import { createPhotoCopies } from "./photo-copy.js";
+import { savedToastWords } from "./save-toast.js";
 import { wireDetailsDialog } from "./details-dialog.js";
 import {
   DRIVE_MOUNT_TIP_SHOWN,
+  SAVE_DEBUG_LABELS,
+  debugSaveResultLine,
   wireDoneDialog,
   type DebugSaveOutcome,
   type DoneSaved,
@@ -446,7 +448,8 @@ function openedSummary(opened: EditorModel): string {
 
 interface ToastAction {
   readonly label: string;
-  readonly run: () => void;
+  /** Called in the click, with the action's own button. */
+  readonly run: (button: HTMLButtonElement) => void;
 }
 
 /**
@@ -471,7 +474,9 @@ function toast(
     b.type = "button";
     b.className = "btn small";
     b.textContent = a.label;
-    b.addEventListener("click", a.run);
+    b.addEventListener("click", () => {
+      a.run(b);
+    });
     t.append(b);
   }
   if (holdMs === null && closable) {
@@ -1991,20 +1996,24 @@ async function buildAndDeliver(
     // always in place, which keeps the walk, so the result has nothing
     // more to say).
     if (arrived && mode === "explicit") {
-      // The Finish's own result sentences (E2a review #2).
-      toast(
-        [
-          inPlace
-            ? `Saved to ${into?.name ?? save.filename}.`
-            : `Saved as ${save.filename}. Put it in place of the old file, under the same name, so the printed codes keep opening it.`,
-          ...(save.scanLeftOut.length === 0
-            ? []
-            : [FINISH_LABELS.scanLeftOut(save.scanLeftOut.length)]),
-        ].join(" "),
-        undefined,
+      // The Finish's own result sentences (E2a review #2). A download
+      // that left the walk out says to save it first, and offers that
+      // save: it reads the opened file, which putting the copy in its
+      // place overwrites (r901 review #1).
+      const words = savedToastWords({
+        inPlace,
+        name: inPlace ? (into?.name ?? save.filename) : save.filename,
+        leftOut: save.scanLeftOut.length,
+      });
+      const saved = toast(
+        words.text,
+        words.offerDebugSave
+          ? { label: SAVE_DEBUG_LABELS.idle, run: saveDebugFromToast }
+          : undefined,
         // The download's result carries an instruction; in place it does not.
         inPlace ? UNDO_MS : null,
       );
+      if (words.offerDebugSave) fileToasts.push(saved);
     }
     releaseSave();
     refresh();
@@ -2323,6 +2332,30 @@ function saveDebugData(): Promise<DebugSaveOutcome> {
     if (!(await download(built))) return { kind: "cancelled" };
     return { kind: "saved", name: built.filename };
   })();
+}
+
+/** The lean download toast's "Save the debug data": the same save as
+ *  the Done dialog's, its progress on the button, its result in a toast
+ *  (the async-UI rule). Called in the click: the save dialog needs it. */
+function saveDebugFromToast(button: HTMLButtonElement): void {
+  if (button.disabled) return;
+  button.disabled = true;
+  button.textContent = SAVE_DEBUG_LABELS.saving;
+  const mine = editor;
+  void saveDebugData()
+    .catch((err: unknown): DebugSaveOutcome => ({
+      kind: "refused",
+      reason: `The debug data was not saved: ${err instanceof Error ? err.message : String(err)}.`,
+    }))
+    .then((outcome) => {
+      button.disabled = false;
+      button.textContent =
+        outcome.kind === "saved"
+          ? SAVE_DEBUG_LABELS.again
+          : SAVE_DEBUG_LABELS.idle;
+      if (editor !== mine) return;
+      fileToasts.push(toast(debugSaveResultLine(outcome), undefined, null));
+    });
 }
 
 const SAVE_RUNS: WalkMoveOutcome = {

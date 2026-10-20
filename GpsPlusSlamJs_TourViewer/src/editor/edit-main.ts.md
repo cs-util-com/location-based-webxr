@@ -141,7 +141,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   named after it too, `debugBundleFileName`); the
   status reads "N changes not saved" / "Saving…" / "Saved as <name>" /
   the error, with the Finish's result sentences (the walk left out,
-  photos not placed) in the toast. Save is on whenever a tour is open
+  photos not placed) in the toast (`savedToastWords`, `save-toast.ts`). A
+  download that left the walk out puts the debug-data step FIRST and
+  offers "Save the debug data" as the toast's action
+  (`saveDebugFromToast`: the same `saveDebugData`, "Saving the debug
+  data…" on its button meanwhile, the result in a toast): the save reads
+  the opened file, so the copy must not be put in its place first (r901
+  review #1). Save is on whenever a tour is open
   and commits the card's typing first ("Nothing to save" when there is
   none - in the status line and, since plan 2026-10-15-0348 M0, in a toast:
   the status line already read "No changes", so the swap alone looked like
@@ -280,6 +286,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`pickSaveFile`), the bundle built from the opened file
   (`EditorSession.debugData`) and written there, or downloaded where
   there is no save dialog. It holds no save: nothing of the tour changes.
+  The opened file is read when the save runs, not when the tour opened:
+  the page keeps a reference to it (a `File`), valid only while the file
+  on disk is unchanged, so a copy put in its place first leaves nothing
+  to read (`EditorSession.debugData`).
 - **Move the debug data out (D19)** (`moveWalk`; the walk written as the
   debug bundle, `debug-bundle.ts`, since M2 of the debug-captures plan,
   and the dialog's and the refusals' words name it as debug data): each
