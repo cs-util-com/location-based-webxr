@@ -217,6 +217,31 @@ describe("debugCapturesOf over a recording wrapped in a folder", () => {
     });
   });
 
+  it("takes the folder at an actions/ segment, never from a sibling folder whose name ends in it", async () => {
+    // Why (r901 review): the folder was cut at the first
+    // "actions/" anywhere in the first stream entry's name, so a sibling
+    // folder `mytour/aactions/` sorting first gave the folder "mytour/a"
+    // and every capture lookup missed.
+    const flat = await sampleSource();
+    const wrapped: DebugCaptureSource = {
+      ...flat,
+      entries: [
+        { filename: "mytour/aactions/000001.json", isImage: false },
+        ...flat.entries.map((e) => ({
+          ...e,
+          filename: `mytour/${e.filename}`,
+        })),
+      ],
+    };
+    const fromFlat = await debugCapturesOf(flat);
+    if (fromFlat.kind !== "placed") throw new Error("expected a placement");
+    const read = await debugCapturesOf(wrapped);
+    expect(read.kind).toBe("placed");
+    expect(
+      read.kind === "placed" ? read.captures.captures.map((c) => c.image) : [],
+    ).toEqual(fromFlat.captures.captures.map((c) => `mytour/${c.image}`));
+  });
+
   it("never takes a file of another folder for a capture's", async () => {
     // Why: only the recording's own folder holds its frames. A frame of
     // the same name elsewhere in the zip (a second recording, a copy) is

@@ -56,7 +56,10 @@ stations at the open (`capture-bake.ts`); that half went with M1.
 - **A capture's file is looked up under the recording's own folder**: the
   folder of its action stream (the framework parser's rule: an
   `actions/` path ending `.json`), `""` for a flat zip, `mytour/` for a
-  re-zipped one. A capture's `imageFile` is relative to the recording,
+  re-zipped one - cut at the first of those entries whose `actions/` is a
+  path segment (`(^|/)actions/`, `tour-read-set.ts`'s rule; r901 review),
+  so a sibling folder whose name ends in it (`mytour/myactions/`) sorting
+  first never gives the folder. A capture's `imageFile` is relative to the recording,
   so an exact-name lookup found none in a wrapped tour; a file of the
   same name in another folder is never taken for it. `image` names the
   entry itself.
@@ -89,8 +92,9 @@ cannot do - the sample walk alone never settles and could not tell them
 apart); a file captured twice named once; a missing file dropped and none
 left declined, also when the only file left is the frame the recording
 never placed; a recording wrapped in a folder placing the same captures
-under their wrapped entry names, the replay's progress reported to the
-caller's `onChunk`, and a frame of another folder never taken
+under their wrapped entry names (also beside a sibling folder whose name
+ends in `actions/`), the replay's progress reported to the caller's
+`onChunk`, and a frame of another folder never taken
 for a capture's; a walk with no capture taken, with GPS that solves and with
 no fix at all; a newer era and captures the replay placed none of; the
 join's own declines (no recording, an old era, an absent or string era, a

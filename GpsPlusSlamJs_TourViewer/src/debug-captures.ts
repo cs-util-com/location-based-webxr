@@ -71,22 +71,32 @@ export interface DebugCaptureOptions {
   readonly extentOf?: (state: PickTrackerState) => number;
 }
 
+/** An `actions/` path segment: at the start, or after a slash. */
+const ACTIONS_SEGMENT = /(^|\/)actions\//;
+
 /**
  * The folder the recording's action stream sits under, with its trailing
  * slash (`""` for a flat zip, `"mytour/"` for a re-zipped folder). A
  * capture's `imageFile` is relative to the recording, so its entry is
  * this folder plus that name. The action entries are found by the
  * framework parser's own rule (an `actions/` path ending `.json`), so this
- * reads the folder of exactly the stream that parser replays.
+ * reads the folder of exactly the stream that parser replays - cut at an
+ * `actions/` path SEGMENT (`ACTIONS_SEGMENT`, `tour-read-set.ts`'s rule):
+ * a sibling folder whose name ends in it (`mytour/myactions/`) never
+ * gives the folder.
  */
 function recordingFolderOf(entries: DebugCaptureSource["entries"]): string {
-  const stream = entries
+  const at = entries
     .map((e) => e.filename)
+    // The framework parser's selection, in its order...
     .filter((name) => name.includes("actions/") && name.endsWith(".json"))
-    .sort((a, b) => a.localeCompare(b))[0];
-  return stream === undefined
+    .sort((a, b) => a.localeCompare(b))
+    // ...and of it, the first whose `actions/` is a path segment.
+    .map((name) => ACTIONS_SEGMENT.exec(name))
+    .find((match) => match !== null);
+  return at === undefined
     ? ""
-    : stream.slice(0, stream.indexOf("actions/"));
+    : at.input.slice(0, at.index + (at[1] ?? "").length);
 }
 
 /** Replay the recording and place its camera captures, or say why not. */
