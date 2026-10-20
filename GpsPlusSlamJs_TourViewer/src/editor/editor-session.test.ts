@@ -1019,6 +1019,54 @@ describe("createEditorSession, the tour details (W2)", () => {
     await session.close();
   });
 
+  it("an undo across a save brings back a deleted model with its model file", async () => {
+    // Why: a placed model names its file as an asset. A save after the
+    // model's delete no longer names that asset in the written tour, and
+    // the write drops assets nothing names - but the undo history still
+    // holds the model, so the asset (and its file) must stay until the
+    // history no longer names it, or the undo restores a model without a
+    // file to draw.
+    const statue: TourObject = {
+      id: "m1",
+      kind: "model",
+      asset: "statue",
+      sizeM: 4,
+      createdAtIso: "2026-10-20T00:00:00.000Z",
+      geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+    };
+    const manifest = tourOf([pin("a"), statue], {
+      assets: [{ id: "statue", path: "content/statue.glb", kind: "model" }],
+    });
+    const zip = await packFilesAsZip([
+      { path: "tour.json", data: serializeTourManifest(manifest) },
+      { path: "content/statue.glb", data: "glTF" },
+    ]);
+    const session = await openTourFile(
+      new File([zip], "tour.zip", { type: "application/zip" }),
+    );
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.remove("m1")).toEqual({ kind: "deleted" });
+    const first = await editor.save({ keepScan: false });
+    expect((await carried(first.blob)).objects.map((o) => o.id)).toEqual(["a"]);
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    const second = await editor.save({ keepScan: false });
+    const written = await carried(second.blob);
+    expect(written.objects.map((o) => o.id)).toEqual(["a", "m1"]);
+    expect(written.assets.map((a) => a.id)).toEqual(["statue"]);
+    expect(
+      readStoredEntryBytes(
+        new Uint8Array(await second.blob.arrayBuffer()),
+        "content/statue.glb",
+      ),
+      "and its file",
+    ).toBeDefined();
+    await session.close();
+  });
+
   it("backs each change of the details up with the whole settings record", async () => {
     const { session, manifest } = await opened([pin("a")], { title: "Old" });
     const settings: EditorTourSettings[] = [];

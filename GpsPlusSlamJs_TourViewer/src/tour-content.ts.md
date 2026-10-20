@@ -149,6 +149,9 @@ const written = withTourContent(opened, {
   names it, a block in any station counted, the tour's asset order kept,
   and the same manifest when every asset is used.
 - Through `finish-rebuild.test.ts` (a Finish writing the photos baked at
-  open, a micrometre stored copy counted as written), `tour-document-bake.test.ts` (`walkAtOpen`),
+  open, a micrometre stored copy counted as written, a placed model's file
+  kept and a model asset nothing names dropped, read from the zip's
+  bytes), `editor/editor-session.test.ts` (an undo across a save brings a
+  deleted model back with its file: the history's keep set), `tour-document-bake.test.ts` (`walkAtOpen`),
   `authoring-draft.test.ts`, `creator-finish.test.ts` and
   `capture-bake.test.ts`.

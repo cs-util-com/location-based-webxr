@@ -292,8 +292,9 @@ newest first and redone; a new edit dropping the redo; the revision; an
 undo after a save being a change the next save writes; a saved photo
 delete coming back with its picture, and refused in words (the step kept)
 when the picture could not be read; refused while a save runs; every step
-backed up in the draft; a cover coming back with its photo; a restore as
-one step; an undo after a save that dropped the emptied station putting the
+backed up in the draft; a cover coming back with its photo; a deleted
+placed model coming back across a save with its model file (the history
+keeps the asset); a restore as one step; an undo after a save that dropped the emptied station putting the
 note back into that station (the M5a milestone review M2,
 `tour-content.ts`).
 The tour document (D29-D31): a later open on the same store disowning the

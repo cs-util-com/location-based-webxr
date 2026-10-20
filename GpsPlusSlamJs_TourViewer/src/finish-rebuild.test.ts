@@ -572,6 +572,43 @@ describe("rebuildFinishedTour drops the assets nothing uses", () => {
     );
     expect(written.assets.map((a) => a.id)).toEqual(["used", "cover-art"]);
   });
+
+  it("writes a placed model's file, and leaves out a model asset no item or step names", async () => {
+    // Why: a placed model names its model file as an asset, not as a
+    // content file of its own. Were the item not counted as naming it, the
+    // write would delete the model's file from every copy; were every model
+    // asset kept, a model the creator replaced would ride along for good.
+    const statue: TourObject = {
+      id: "m1",
+      kind: "model",
+      asset: "statue",
+      sizeM: 4,
+      createdAtIso: "2026-10-20T00:00:00.000Z",
+      geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+    };
+    const manifest = tourOf([statue], {
+      assets: [
+        { id: "statue", path: "content/statue.glb", kind: "model" },
+        { id: "spare", path: "content/spare.glb", kind: "model" },
+      ],
+    });
+    const tour = await open(
+      await packFilesAsZip([
+        { path: `${WRAP}tour.json`, data: serializeTourManifest(manifest) },
+        { path: `${WRAP}content/statue.glb`, data: "glTF-statue" },
+        { path: `${WRAP}content/spare.glb`, data: "glTF-spare" },
+      ]),
+    );
+    const result = await rebuildFinishedTour({ tour, manifest, ...NO_EDITS });
+    const names = await namesOf(result!.blob);
+    expect(names).toContain(`${WRAP}content/statue.glb`);
+    expect(names).not.toContain(`${WRAP}content/spare.glb`);
+    const written = parseTourManifest(
+      JSON.parse((await textOf(result!.blob, `${WRAP}tour.json`))!),
+    );
+    expect(written.assets.map((a) => a.id)).toEqual(["statue"]);
+    expect(withWorldObjects(written).objects.map((o) => o.id)).toEqual(["m1"]);
+  });
 });
 
 describe("pendingAfterRebuild (M6 E0b: what is still to save after a write)", () => {

@@ -126,7 +126,8 @@ if (finished !== null) save(finished.blob);
 `finish-rebuild.test.ts` on real zips: the edits (in place, appended, a
 deleted photo's file removed, the level replaced inside the wrap), an
 asset nothing uses dropped from the manifest and the zip while a step's
-asset and the cover stay, the
+asset and the cover stay, a placed model's file kept while a model asset
+nothing names is dropped, the
 title rule, a listed tour's series continued (reopened: listed, next
 version, whole-archive check passes), the previous rebuild as input (no
 read), `shouldContinue` stopping before the rebuild, the walk left out
