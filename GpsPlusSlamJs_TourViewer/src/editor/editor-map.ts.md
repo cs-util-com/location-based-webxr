@@ -41,6 +41,12 @@ plan review #4).
   (no `leaflet-interactive` class, no tabindex), no tooltip, a zero-size
   icon box the element centres itself on. A thumbnail's blob URL is
   revoked when its marker is dropped or its picture replaced.
+- A tour with nothing to frame opens at the world view, and its debug
+  captures, once drawn, are framed instead: once per open, and never
+  after the creator moved the view (r901 review #9). The move is read from
+  the map element's own input (`pointerdown`, `wheel`, `keydown`), not
+  from Leaflet's `movestart`/`zoomstart`, which fire for the page's own
+  `setView` and `fitBounds` too (and an animated zoom a frame later).
 
 - Markers are `divIcon`s built from ELEMENTS (`textContent` for a code's
   number), never HTML strings: a label comes from a zip anyone can write.
@@ -56,7 +62,9 @@ plan review #4).
 
 ## Tests
 
-No unit test (Leaflet in a DOM); `playwright-tests/editor.spec.js` counts
+`editor-map.test.ts` (Leaflet replaced by a recording fake): the debug
+captures framed once per open, and not after a pointer, wheel or key input
+moved the view. `playwright-tests/editor.spec.js` counts
 the markers, selects through them and measures the card against the
 selected marker, and counts the debug markers (no tabindex, not
 interactive, no tooltip, hidden and shown by the switch).

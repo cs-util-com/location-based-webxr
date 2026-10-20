@@ -151,6 +151,21 @@ export function createEditorMap(
    *  captures, once drawn, are framed instead - once. Null otherwise. */
   let framedEmpty: { left: number; top: number } | null = null;
 
+  // The creator moved the view (a drag, the wheel, a key, a zoom button):
+  // the captures no longer frame it (r901 review #9). Read from their own
+  // input on the map's element: Leaflet's movestart and zoomstart fire for
+  // the page's own setView and fitBounds too, and an animated zoom starts
+  // a frame later, so those events cannot tell the two apart.
+  for (const type of ["pointerdown", "wheel", "keydown"]) {
+    container.addEventListener(
+      type,
+      () => {
+        framedEmpty = null;
+      },
+      { passive: true },
+    );
+  }
+
   function fit(
     points: readonly { lat: number; lng: number }[],
     padding: { left: number; top: number },
@@ -315,8 +330,9 @@ export function createEditorMap(
       }
       if (debugShown) debugGroup.addTo(map);
       // A tour with nothing to frame showed the world: the captures are
-      // then all there is to look at (debug-captures M1). Once per open, so a
-      // view the creator moved is never taken from them.
+      // then all there is to look at (debug-captures M1). Once per open, and
+      // not after the creator moved the view (`framedEmpty` cleared above),
+      // so a view they chose is never taken from them.
       if (framedEmpty !== null && captures.length > 0) {
         const padding = framedEmpty;
         framedEmpty = null;
