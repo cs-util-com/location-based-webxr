@@ -16,10 +16,11 @@
  * writer re-validates through the reader so a programming error fails
  * loud here instead of producing a file a visitor cannot open.
  *
- * Items (DEC-N9): a text `pin` and a captured `photo`, as a discriminated
- * union so a renderer never has to assert a field the parser already
- * guaranteed (M1 review #6). A reader that meets an unknown kind rejects
- * the document (at its own minor).
+ * Items (DEC-N9): a text `pin`, a captured `photo` and (minor 1) a placed
+ * 3D `model` with its size in metres, as a discriminated union so a
+ * renderer never has to assert a field the parser already guaranteed (M1
+ * review #6). A reader that meets an unknown kind rejects the document (at
+ * its own minor).
  *
  * VERSION POLICY:
  * - `version` is the format's major number. Version 3 is the only one this
@@ -35,6 +36,10 @@
  *   optional field reads as absent - but the WRITER refuses a tour of a
  *   newer minor than its own: rewriting it would silently drop what this
  *   version cannot read.
+ * - MINOR 1 adds the placed 3D model (`tour-items.ts`). The writer writes
+ *   the LOWEST minor the tour needs: 1 while it carries a model, else 0, so
+ *   a tour without one stays editable by a 3.0 reader, and a 3.0 reader of a tour with a model leaves the model out (its
+ *   lenient read) instead of refusing the tour.
  * - A newer minor may also add VALUES to a closed list (K1 milestone
  *   review R4): an item kind, an order, and the lists of
  *   `tour-stations.ts`. Read from a file of a newer minor, an unknown value
@@ -64,6 +69,7 @@ import {
   parseTourLocalPose,
   type TourItem,
   type TourLocalPose,
+  type TourModelFields,
   type TourPhotoFields,
   type TourPinFields,
 } from './tour-items.js';
@@ -91,6 +97,7 @@ export type {
 export type {
   TourItem,
   TourLocalPose,
+  TourModelItem,
   TourPhotoItem,
   TourPinItem,
 } from './tour-items.js';
@@ -99,9 +106,9 @@ export type {
 export const TOUR_MANIFEST_VERSION = 3;
 
 /** The newest additive revision of version 3 this module knows. */
-export const TOUR_MANIFEST_MINOR = 0;
+export const TOUR_MANIFEST_MINOR = 1;
 
-/** Where a pin or photo stands in the WORLD: the view the viewer places
+/** Where a pin, photo or model stands in the WORLD: the view the viewer places
  *  and the creator's drafts hold (`tour-station-pose.ts` `tourObjects`). */
 interface TourPlacement {
   /** Exact pose: lat/lon, absolute altitude, rotation against north. */
@@ -115,7 +122,9 @@ interface TourPlacement {
 export type TourPin = TourPinFields & TourPlacement;
 /** A captured photo, in the world, placed as a plane. */
 export type TourPhoto = TourPhotoFields & TourPlacement;
-export type TourObject = TourPin | TourPhoto;
+/** A placed 3D model, in the world. */
+export type TourModel = TourModelFields & TourPlacement;
+export type TourObject = TourPin | TourPhoto | TourModel;
 export type TourObjectKind = TourObject['kind'];
 
 /** One recorded photo's spot, baked at the creator's Finish, held by a
@@ -211,9 +220,11 @@ export function tourItems(tour: {
 }
 
 /**
- * Validate one WORLD-VIEW object (a pin or photo with a geo pose, and the
- * station holding it if any): the records a creator's on-device draft
- * keeps between sessions. Throws {@link TourManifestValidationError}.
+ * Validate one WORLD-VIEW object (a pin, photo or model with a geo pose,
+ * and the station holding it if any): the records a creator's on-device
+ * draft keeps between sessions. Throws {@link TourManifestValidationError}.
+ * A model's asset is checked for its shape only: a draft record has no
+ * assets beside it, and the manifest's write re-validates the reference.
  */
 export function parseTourObject(value: unknown, at = 'object'): TourObject {
   const fields = parseTourContentFields(value, at, { fail });
@@ -358,8 +369,10 @@ function orderOf(value: unknown, lenient: boolean): TourOrder {
   return value as TourOrder;
 }
 
-/** Item ids are unique across the whole tour, and no asset has one: both
- *  name a content file by id (`content/<id>.<ext>`). */
+/** One id namespace across the tour's items and assets: an item id is
+ *  unique, and no asset has one. A photo's and an asset's ids are their
+ *  content files' stems (`content/<id>.<ext>`), and a model names an asset
+ *  by id, so a shared id would make a reference ambiguous. */
 function checkContentIds(
   stations: readonly TourStation[],
   assets: readonly TourAsset[]
@@ -448,7 +461,7 @@ export function parseTourManifest(
  * instead of producing a broken file a creator uploads. A manifest of a
  * NEWER minor than {@link TOUR_MANIFEST_MINOR} is refused: it was read with
  * its unknown fields dropped, and writing it back would lose them. Written
- * at minor 0: version 3 has no additive revision yet.
+ * at the lowest minor the tour needs (see the version policy).
  *
  * Of the details, only a cover whose image went (a deleted photo, the
  * drop's `cause` `image-gone`) is left out, reported through
@@ -471,5 +484,10 @@ export function serializeTourManifest(
       `this tour was made with a newer version of the app (format ${String(TOUR_MANIFEST_VERSION)}.${String(parsed.minor)}); saving it here would drop what this version cannot read`
     );
   }
-  return JSON.stringify({ ...parsed, minor: TOUR_MANIFEST_MINOR }, null, 2);
+  return JSON.stringify({ ...parsed, minor: minorNeeded(parsed) }, null, 2);
+}
+
+/** The lowest minor that carries the tour: 1 with a model, else 0. */
+function minorNeeded(manifest: TourManifest): number {
+  return tourItems(manifest).some((item) => item.kind === 'model') ? 1 : 0;
 }

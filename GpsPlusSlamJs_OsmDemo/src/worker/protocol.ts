@@ -41,7 +41,7 @@ import type { RoutePoint } from "../agent-route.js";
 import type { DemoSnapshot } from "../demo-pipeline.js";
 import type { WorkerStageTimings } from "../click-timings.js";
 import type { GeoEventStats } from "../geo-event-stats.js";
-import type { HeightfieldData } from "../heightfield.js";
+import type { HeightfieldData } from "gps-plus-slam-osm";
 
 /**
  * A built mesh plus the counters the status line reports.
@@ -654,24 +654,33 @@ export function isWorkerReply(value: unknown): value is WorkerReply {
   return typeof candidate.ok === "boolean";
 }
 
-/** Every kind the worker accepts, as a runtime-checkable set. */
-const CALL_KINDS = new Set<string>([
-  "init",
-  "update",
-  "explain",
-  "geoEvent",
-  "terrain",
-  "cellMesh",
-  "planRoute",
-] satisfies WorkerCallKind[]);
+/**
+ * Every kind the worker accepts, as a runtime-checkable set. A `Record` over
+ * the union, not a `satisfies WorkerCallKind[]` list: the list form only
+ * checked that each entry WAS a kind, never that every kind was present, and
+ * `terrainUpgrade` went missing that way (every upgrade silently dropped,
+ * 2026-10-06).
+ */
+const CALL_KINDS = new Set<string>(
+  Object.keys({
+    init: true,
+    update: true,
+    explain: true,
+    geoEvent: true,
+    terrain: true,
+    terrainUpgrade: true,
+    cellMesh: true,
+    planRoute: true,
+  } satisfies Record<WorkerCallKind, true>),
+);
 
 /**
  * True for a value shaped like a request. Guards the worker's `message` event.
  *
- * The `satisfies` above is what keeps this honest: adding a kind to
+ * The `Record` above is what keeps this honest: adding a kind to
  * {@link WorkerCalls} without adding it here would be a request the worker
  * silently ignores — a promise that never settles rather than a type error — so
- * the set is checked against the union at compile time.
+ * the set is checked against the whole union at compile time.
  */
 export function isWorkerEnvelope(value: unknown): value is WorkerEnvelope {
   if (typeof value !== "object" || value === null) return false;

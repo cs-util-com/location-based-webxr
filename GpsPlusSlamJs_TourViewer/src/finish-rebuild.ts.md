@@ -77,8 +77,8 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
   deleted ones filtered out (`applyObjectChanges`; never an id twice, the
   serializer rejects duplicates). A deleted photo's content file is
   removed (`contentEntriesToRemove`).
-- **Assets:** an asset nothing names any more (no step block, not the
-  cover; `withReferencedAssets` of `tour-content.ts`) leaves the
+- **Assets:** an asset nothing names any more (no step block, no placed
+  model, not the cover; `withReferencedAssets` of `tour-content.ts`) leaves the
   written manifest, and its file leaves the zip - unless `keepAssets`
   (the page's undo history, `historyAssetIds`) names it: an undo across
   the save must still find it.

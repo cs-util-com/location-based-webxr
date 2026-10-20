@@ -322,26 +322,18 @@ function blockAssetIds(block: TourBlock): readonly string[] {
   }
 }
 
-/** The assets `item` names: none for a pin or a photo (a photo's image is
- *  its own content file, not an asset). A new kind of item fails to compile
- *  here until it says which assets it keeps - a model item will name its
- *  model. */
-function itemAssetIds(item: TourItem): readonly string[] {
-  switch (item.kind) {
-    case "pin":
-    case "photo":
-      return [];
-  }
-}
-
-/** The assets an object names, in its world view (an undo step's): none
- *  for a pin or a photo, as `itemAssetIds` - a new kind fails to compile
- *  here too until it says. */
-export function objectAssetIds(object: TourObject): readonly string[] {
+/** The assets a pin, photo or model names, as a station's item or in its
+ *  world view (an undo step's): none for a pin or a photo (a photo's image
+ *  is its own content file, not an asset); a model its model file (a
+ *  `.glb` is self-contained, the one asset it needs). A new kind fails to
+ *  compile here until it says which assets it keeps. */
+export function objectAssetIds(object: TourContentFields): readonly string[] {
   switch (object.kind) {
     case "pin":
     case "photo":
       return [];
+    case "model":
+      return [object.asset];
   }
 }
 
@@ -360,7 +352,7 @@ function referencedAssetIds(manifest: TourManifest): Set<string> {
   return new Set([
     ...manifest.stations.flatMap((station) => [
       ...stepAssetIds(station),
-      ...station.items.flatMap(itemAssetIds),
+      ...station.items.flatMap(objectAssetIds),
     ]),
     ...(manifest.cover === undefined ? [] : [manifest.cover]),
   ]);

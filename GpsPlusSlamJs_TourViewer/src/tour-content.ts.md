@@ -55,11 +55,12 @@ geo, station? }[] }`; `station` is the station a bake put the photo
   (`finish-rebuild.ts`). Used means (module-private
   `referencedAssetIds`): every step block's (an image, a character's image and voice,
   an audio, a video, a model) in any station, every item's (none for a pin
-  or a photo today), and the cover.
+  or a photo; a placed model its model file), and the cover.
 - `stepAssetIds(station)`, `objectAssetIds(object)`: the assets a
-  station's (or a frame's) steps name, and an object's in its world view
-  (none for a pin or a photo; a closed switch like `itemAssetIds`) - what
-  the document's history reads.
+  station's (or a frame's) steps name, and a pin's, photo's or model's,
+  as a station's item or in its world view (none for a pin or a photo, a
+  model's own model file; a closed switch) - what the write and the
+  document's history read.
 
 ## Invariants & assumptions
 
@@ -105,9 +106,10 @@ geo, station? }[] }`; `station` is the station a bake put the photo
 - **An asset nothing names is not written.** A visitor downloads every
   asset a tour lists, so one a changed step or cover left behind would
   ride along in every copy. A photo's image is its own content file, not
-  an asset. The item kinds are a closed switch (`itemAssetIds`): a new
-  kind of item (a model placed in a station) fails to compile there until
-  it says which assets it keeps.
+  an asset; a placed model names its model file (a `.glb` is
+  self-contained, so that one asset is all it needs). The item kinds are a
+  closed switch (`objectAssetIds`): a new kind of item fails to compile
+  there until it says which assets it keeps.
 - **Unless the undo history still names it.** A cover image no step uses
   is named by the cover alone: a cover change saved would drop it with
   its file, and the undo of that change would find no image. The writes

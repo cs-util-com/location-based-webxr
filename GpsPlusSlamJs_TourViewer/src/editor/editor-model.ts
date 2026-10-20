@@ -119,19 +119,24 @@ export function buildEditorModel(input: {
   // list without a mark, so it can still be found (E1 review #9). The
   // summary keeps only the drawable ones.
   const drawable = new Map(summary.objects.map((s) => [s.id, s]));
-  const notes: EditorItem[] = objects.map((object) => {
+  // Pins and photos only: this 2D editor lists no placed 3D model (format
+  // minor 1) rather than a mislabelled note; the tour keeps it untouched.
+  const notes: EditorItem[] = objects.flatMap((object): EditorItem[] => {
+    if (object.kind === "model") return [];
     const mark = drawable.get(object.id);
-    return {
-      id: object.id,
-      kind: object.kind,
-      title: objectTitle(object),
-      meta:
-        mark === undefined
-          ? `${object.kind === "pin" ? "Text note" : "Photo note"} · no position`
-          : noteMeta(object, stored),
-      at: mark === undefined ? null : { lat: mark.lat, lng: mark.lng },
-      ...(object.kind === "photo" ? { image: object.image } : {}),
-    };
+    return [
+      {
+        id: object.id,
+        kind: object.kind,
+        title: objectTitle(object),
+        meta:
+          mark === undefined
+            ? `${object.kind === "pin" ? "Text note" : "Photo note"} · no position`
+            : noteMeta(object, stored),
+        at: mark === undefined ? null : { lat: mark.lat, lng: mark.lng },
+        ...(object.kind === "photo" ? { image: object.image } : {}),
+      },
+    ];
   });
   const recorded: EditorItem[] = tourCaptureGeos(manifest)
     .map((c) => ({ capture: c, at: { lat: c.geo.lat, lng: c.geo.lon } }))

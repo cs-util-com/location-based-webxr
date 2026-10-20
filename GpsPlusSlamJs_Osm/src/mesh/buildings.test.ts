@@ -11,7 +11,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import { enuFrameAt, ringToEnu } from "./enu.js";
+import {
+  ENU_METRES_PER_DEG_LAT,
+  ENU_METRES_PER_DEG_LNG_EQUATOR,
+  enuFrameAt,
+  ringToEnu,
+} from "./enu.js";
 import type { EnuPoint } from "./enu.js";
 import {
   DEFAULT_BUILDING_HEIGHT_M,
@@ -52,10 +57,13 @@ describe("the ENU frame", () => {
     const east = frame.toEnu({ lat: ORIGIN.lat, lng: ORIGIN.lng + 0.001 });
     const north = frame.toEnu({ lat: ORIGIN.lat + 0.001, lng: ORIGIN.lng });
 
-    expect(north.y).toBeCloseTo(111.32, 1);
+    // The AR core's numbers (one ruler with the phone, D-K7, 2026-10-06):
+    // 110.946 m north and 111.319 m x cos(lat) east for a thousandth of a
+    // degree. They were 111.32 both ways before.
+    expect(north.y).toBeCloseTo(110.946, 2);
     expect(east.x).toBeCloseTo(
-      111.32 * Math.cos((ORIGIN.lat * Math.PI) / 180),
-      1,
+      111.3195 * Math.cos((ORIGIN.lat * Math.PI) / 180),
+      2,
     );
     // ~63 % of the northward distance at this latitude — the anisotropy itself.
     expect(east.x / north.y).toBeCloseTo(0.63, 2);
@@ -71,8 +79,10 @@ describe("the ENU frame", () => {
   it("makes a square footprint square in metres", () => {
     // 20 m of latitude and 20 m of longitude. In degrees these differ by ~36 %;
     // in the ENU frame they must not.
-    const dLat = 20 / 111_320;
-    const dLng = dLat / Math.cos((ORIGIN.lat * Math.PI) / 180);
+    const dLat = 20 / ENU_METRES_PER_DEG_LAT;
+    const dLng =
+      20 /
+      (ENU_METRES_PER_DEG_LNG_EQUATOR * Math.cos((ORIGIN.lat * Math.PI) / 180));
     const ring = ringToEnu(
       [
         ORIGIN,

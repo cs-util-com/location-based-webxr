@@ -36,12 +36,18 @@ interface GateTile {
 }
 
 /**
- * Whether a tile set can draw the whole view: every top-level tile (the
- * root's children: an image-tiled set's coarsest level) that its last update
- * visited in view has loaded. Below that level the library keeps a parent
- * drawn until its children are ready, so only a missing top-level tile
- * leaves a hole. False before any top-level tile was visited (a set never
- * updated is not ready).
+ * Whether a tile set can draw the whole view: its last update visited its
+ * top level (the root's children: an image-tiled set's coarsest level), and
+ * every top-level tile it found in view has loaded. Below that level the
+ * library keeps a parent drawn until its children are ready, so only a
+ * missing top-level tile leaves a hole. A set with NO top-level tile in
+ * view is ready: nothing of it is missing from the view (a camera under
+ * the relief looking down sees none of it, because the library clears
+ * `inFrustum` on a tile none of whose children is in view, up to the top
+ * level; reading that as "not ready" kept the relief from ever taking the
+ * view, so the clearance never lifted the camera out). False when no
+ * top-level tile was visited by the last update (a set never updated is
+ * not ready).
  */
 export function topLevelReady(tiles: {
   root: unknown;
@@ -49,14 +55,33 @@ export function topLevelReady(tiles: {
 }): boolean {
   const root = tiles.root as GateTile | null;
   if (!root || !Array.isArray(root.children)) return false;
-  let seen = 0;
+  let visited = 0;
   for (const child of root.children as GateTile[]) {
     const t = child.traversal;
-    if (t?.lastFrameVisited !== tiles.frameCount || !t.inFrustum) continue;
-    seen++;
-    if (child.internal?.loadingState !== LOADED) return false;
+    if (t?.lastFrameVisited !== tiles.frameCount) continue;
+    visited++;
+    if (t.inFrustum && child.internal?.loadingState !== LOADED) return false;
   }
-  return seen > 0;
+  return visited > 0;
+}
+
+/**
+ * Whether a tile set's last update found any of its top-level tiles (the
+ * root's children) in view. With `topLevelReady`, "has drawn its whole
+ * view, and the view held some of it": the globe's first look ends on
+ * that, not on a frame that saw none of the globe.
+ */
+export function topLevelInView(tiles: {
+  root: unknown;
+  frameCount: number;
+}): boolean {
+  const root = tiles.root as GateTile | null;
+  if (!root || !Array.isArray(root.children)) return false;
+  return (root.children as GateTile[]).some(
+    (child) =>
+      child.traversal?.lastFrameVisited === tiles.frameCount &&
+      child.traversal.inFrustum === true,
+  );
 }
 
 /**

@@ -182,7 +182,8 @@ different times (a walk's move lands only after the page wrote both files).
   `finishedManifest` (the Finish's own rule) over `manifestNow`, `placed`,
   `deleted` and `historyAssetIds`.
 - `historyAssetIds(state)` - the assets the undo and redo steps' views
-  name (their frames' steps, their objects, their covers). Every write
+  name (their frames' steps, their objects - a placed model's file - and
+  their covers). Every write
   keeps them (`keepAssets`: this selector, the desktop's save snapshot,
   the phone's Finish), so an undo across a save finds a cover image the
   save would otherwise have dropped with its file; they go once the
@@ -407,3 +408,7 @@ store.dispatch(tourDocumentActions.undone());
   station); "a pin that starts its own station" is a by-design row (the desktop lacks it until the 3D editor),
   and the harness accepts a by-design row on either page lacking the
   operation.
+- `tour-document.test.ts` also carries a placed 3D model (format minor 1)
+  through a pin edit, its station's move and a save: its asset, its size in
+  metres and its local pose come back exactly, and the write is at minor 1.
+  The slice is kind-agnostic; this pins that it stays so.

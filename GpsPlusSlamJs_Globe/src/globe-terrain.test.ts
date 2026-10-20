@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 
 import * as THREE from "three";
 import { TilesRenderer } from "3d-tiles-renderer";
+import * as plugins from "3d-tiles-renderer/plugins";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -35,6 +36,7 @@ import {
   DETAIL_FRAGMENT,
   createGlobeDetailUniforms,
 } from "./globe-detail.js";
+import { reliefCacheBudget } from "./globe-relief-cache.js";
 
 const DEG = Math.PI / 180;
 /** Normalised Web Mercator y (0 south, 1 north) of a latitude. */
@@ -359,6 +361,52 @@ describe("litTerrainMaterial", () => {
       ),
     ).toThrow("#include <map_fragment>");
   });
+
+  // Why (G0 spikes 2026-10-17, Q5): a second imagery overlay through the
+  // library's ImageOverlayPlugin wraps each tile's material: its compile
+  // hook declares the layers under `#if ... < LAYER_COUNT`, and the count
+  // is a DEFINE on the material. The lit copy carried the hook but not the
+  // defines, so the shader failed to compile ("LAYER_COUNT: unexpected
+  // token") and the relief vanished. The copy must carry the tile's defines
+  // (its own object: the plugin later writes to the material the mesh
+  // wears, which is the lit copy), next to the standard material's own.
+  it("carries the overlay plugin's defines next to the material's own", () => {
+    const template = new THREE.MeshStandardMaterial();
+    const own = new THREE.MeshLambertMaterial();
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), own);
+    const model = new THREE.Group();
+    model.add(mesh);
+    const overlays = new plugins.ImageOverlayPlugin({
+      overlays: [],
+      renderer: {} as THREE.WebGLRenderer,
+    }) as unknown as {
+      _wrapMaterials(scene: THREE.Object3D): void;
+    };
+    overlays._wrapMaterials(model);
+    // What the plugin's layer update writes once a layer's texture is in.
+    own.defines!.LAYER_COUNT = 1;
+    own.defines!.LAYER_0_EXISTS = 1;
+    const lit = litTerrainMaterial(template, own, {
+      west: 0.1,
+      south: 0.7,
+      east: 0.2,
+      north: 0.8,
+    });
+    expect(lit.defines).toEqual({
+      STANDARD: "",
+      LAYER_COUNT: 1,
+      LAYER_0_EXISTS: 1,
+    });
+    expect(lit.defines).not.toBe(own.defines);
+    expect(lit.defines).not.toBe(template.defines);
+    // A tile without the plugin keeps exactly the standard material's.
+    const plain = litTerrainMaterial(
+      template,
+      new THREE.MeshLambertMaterial(),
+      { west: 0.1, south: 0.7, east: 0.2, north: 0.8 },
+    );
+    expect(plain.defines).toEqual({ STANDARD: "" });
+  });
 });
 
 describe("bathymetry clamped at the surface", () => {
@@ -470,6 +518,7 @@ describe("createGlobeTerrain", () => {
       imagery,
       template,
       heightScale: 2,
+      device: "phone" as const,
     });
     expect(terrain.plugin.heightScale).toBe(2);
     // The per-frame clearance reads the drawn height through the plugin's
@@ -557,7 +606,8 @@ describe("createGlobeTerrain", () => {
   // the band both carriers load into it, the cache filled and refused
   // every request: at 1,900 km the relief never settled and the globe's
   // loaded tiles fell from 178 to 70. The relief has a cache of its own,
-  // with the globe's budget and the library's unload order.
+  // with the device's budget (the phone's 256 px one is the globe's 64/48
+  // MB, unchanged) and the library's unload order.
   it("keeps the relief's tiles in a cache and queues of its own", () => {
     const defaults = new TilesRenderer();
     const shared = defaults.lruCache;
@@ -573,13 +623,12 @@ describe("createGlobeTerrain", () => {
       },
       template: new THREE.MeshStandardMaterial(),
       heightScale: 1,
+      device: "phone" as const,
     });
     const own = terrain.tiles.lruCache;
     expect(own).not.toBe(shared);
-    expect(own.maxBytesSize).toBe(GLOBE_TERRAIN.cacheBytes);
-    expect(own.minBytesSize).toBe(GLOBE_TERRAIN.cacheFloorBytes);
-    expect(GLOBE_TERRAIN.cacheBytes).toBe(64 * 1024 * 1024);
-    expect(GLOBE_TERRAIN.cacheFloorBytes).toBe(48 * 1024 * 1024);
+    expect(own.maxBytesSize).toBe(64 * 1024 * 1024);
+    expect(own.minBytesSize).toBe(48 * 1024 * 1024);
     expect(own.unloadPriorityCallback).toBe(shared.unloadPriorityCallback);
     expect(own.unloadPriorityCallback).toBeTypeOf("function");
     // The queues too (F1): a relief not updated outside the band left its
@@ -626,6 +675,7 @@ describe("createGlobeTerrain", () => {
           },
           template: new THREE.MeshStandardMaterial(),
           heightScale: 1,
+          device: "phone" as const,
         }).plugin,
       ),
     ) as { _updateHeightScale: () => void };
@@ -642,6 +692,7 @@ describe("createGlobeTerrain", () => {
       },
       template: new THREE.MeshStandardMaterial(),
       heightScale: 1,
+      device: "phone" as const,
     });
     // The plugin's own init may set its scale once, on an empty tree,
     // before the deferred refresh is installed; only the steps count.
@@ -670,6 +721,7 @@ describe("createGlobeTerrain", () => {
       },
       template: new THREE.MeshStandardMaterial(),
       heightScale: 1,
+      device: "phone" as const,
     };
     const proto = Object.getPrototypeOf(
       Object.getPrototypeOf(createGlobeTerrain(options).plugin),
@@ -688,6 +740,298 @@ describe("createGlobeTerrain", () => {
     terrain.dispose();
   });
 
+  // Why (owner decision 2026-10-04, DEC-N1): a return into the band must
+  // find its decoded heights, not fetch them again. The relief keeps the
+  // grids its tiles release within a budget (16 MiB by default, 0 off), and
+  // the terrain's dispose gives them back.
+  it("keeps released height grids within a budget, and exposes the keeper's counters", () => {
+    const options = {
+      url: "/heights/{z}/{x}/{y}.png",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+      device: "phone" as const,
+    };
+    expect(GLOBE_TERRAIN.keepHeightsBytes).toBe(16 * 2 ** 20);
+    const terrain = createGlobeTerrain(options);
+    expect(terrain.heightKeeperStats()).toEqual({
+      kept: 0,
+      keptBytes: 0,
+      evicted: 0,
+    });
+    // Wrapped on the instance: the plugin's own method is no longer the
+    // prototype's.
+    const plugin = terrain.plugin as unknown as Record<string, unknown>;
+    const proto = Object.getPrototypeOf(
+      Object.getPrototypeOf(terrain.plugin),
+    ) as Record<string, unknown>;
+    expect(plugin["_releaseGrid"]).not.toBe(proto["_releaseGrid"]);
+    terrain.dispose();
+    expect(() =>
+      createGlobeTerrain({ ...options, keepHeightsBytes: -1 }),
+    ).toThrow(RangeError);
+  });
+
+  // Why (G0 spikes 2026-10-17, Q1): Mapterhorn serves 512 px tiles. The
+  // library reads the size from its own option (default 256), and a 512 px
+  // tile read as 256 px loads a quarter of the tile at every level: the
+  // relief stood at the wrong place. The factory must pass it through, and
+  // refuse a size the source tiling cannot have.
+  it("passes the source's tile size to the plugin, 256 px by default", () => {
+    const options = {
+      url: "/heights/{z}/{x}/{y}.webp",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+      device: "phone" as const,
+    };
+    const plain = createGlobeTerrain(options);
+    expect(
+      (plain.plugin as unknown as { tileDimension: number }).tileDimension,
+    ).toBe(256);
+    expect(GLOBE_TERRAIN.tileDimension).toBe(256);
+    plain.dispose();
+    const fine = createGlobeTerrain({ ...options, tileDimension: 512 });
+    expect(
+      (fine.plugin as unknown as { tileDimension: number }).tileDimension,
+    ).toBe(512);
+    fine.dispose();
+    for (const bad of [0, 100, 256.5, 8192, -256, Number.NaN]) {
+      expect(() =>
+        createGlobeTerrain({ ...options, tileDimension: bad }),
+      ).toThrow(RangeError);
+    }
+  });
+
+  // Why (G0 spikes 2026-10-17, the headline finding): 512 px heights filled
+  // the 64 MB relief cache at 49 tiles and the tree silently stopped at
+  // level 2. The budget follows the tile size by default (G1 review M1:
+  // a 512 px source set up without a `cache` kept the 64 MiB and stalled
+  // again), the app may set its own, and a full cache that turns tiles
+  // away is SEEN: the terrain's `reliefCache()` reads the library's own
+  // refusals. Driven here through the terrain's real cache and the
+  // renderer's real queue step.
+  it("budgets its cache by tile size and device, takes the app's own, and reports a stall", () => {
+    const options = {
+      url: "/heights/{z}/{x}/{y}.webp",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+      device: "phone" as const,
+    };
+    // By default, the device's budget for the source's tile size.
+    for (const [tileDimension, device] of [
+      [256, "phone"],
+      [512, "phone"],
+      [512, "desktop"],
+    ] as const) {
+      const t = createGlobeTerrain({ ...options, tileDimension, device });
+      const want = reliefCacheBudget(tileDimension, device);
+      expect(t.tiles.lruCache.maxBytesSize).toBe(want.maxBytes);
+      expect(t.tiles.lruCache.minBytesSize).toBe(want.minBytes);
+      t.dispose();
+    }
+    // No device class, no default (G1 review M3), even with a budget.
+    expect(() =>
+      createGlobeTerrain({ ...options, device: undefined as never }),
+    ).toThrow(RangeError);
+    const budget = { maxBytes: 3_000_000, minBytes: 2_000_000 };
+    expect(() =>
+      createGlobeTerrain({
+        ...options,
+        device: undefined as never,
+        cache: budget,
+      }),
+    ).toThrow(RangeError);
+    const terrain = createGlobeTerrain({ ...options, cache: budget });
+    const cache = terrain.tiles.lruCache;
+    expect(cache.maxBytesSize).toBe(budget.maxBytes);
+    expect(cache.minBytesSize).toBe(budget.minBytes);
+    expect(terrain.reliefCache()).toEqual({
+      usedBytes: 0,
+      inUseBytes: 0,
+      maxBytes: budget.maxBytes,
+      full: false,
+      refusedRequests: 0,
+      refusedLoads: 0,
+      stalled: false,
+    });
+    // Fill it, then run an update's queue step as the library does.
+    const tile = { internal: { loadingState: 3 } };
+    cache.add(tile, () => {});
+    cache.setLoaded(tile, true);
+    cache.setMemoryUsage(tile, budget.maxBytes);
+    const tiles = terrain.tiles as unknown as {
+      stats: { refused: number };
+      frameCount: number;
+      queueTileForDownload(t: unknown): void;
+      dispatchEvent(e: { type: string }): void;
+    };
+    tiles.stats.refused = 0;
+    tiles.frameCount++;
+    tiles.queueTileForDownload({ internal: { loadingState: 0 } });
+    tiles.dispatchEvent({ type: "update-after" });
+    expect(terrain.reliefCache()).toMatchObject({
+      full: true,
+      refusedRequests: 1,
+      stalled: true,
+    });
+    terrain.dispose();
+    for (const bad of [
+      { maxBytes: 0, minBytes: 0 },
+      { maxBytes: 1_000, minBytes: 2_000 },
+      { maxBytes: Number.NaN, minBytes: 1 },
+      { maxBytes: 1_000, minBytes: -1 },
+    ]) {
+      expect(() => createGlobeTerrain({ ...options, cache: bad })).toThrow(
+        RangeError,
+      );
+    }
+  });
+
+  // Why (G0 spikes 2026-10-17, "Mapterhorn DRAWN depends on mesh density"):
+  // z14 drawn at the library's default depth (level 15, about 25.5 m
+  // between vertices) is good enough only on flat ground; at level 17
+  // (about 6.5 m) it passes everywhere from 0.75 m. The tree's depth is the
+  // library's max(source levels + 1, the overlay tiling's maxLevel), so
+  // `meshMaxLevel` deepens it through the overlay the plugin reads; the
+  // tree only refines there near the camera (screen-space error).
+  it("deepens the relief's tree to meshMaxLevel, and leaves it alone without", async () => {
+    const options = {
+      url: "/heights/{z}/{x}/{y}.webp",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+      device: "phone" as const,
+      maxZoom: 14,
+      tileDimension: 512,
+    };
+    type Rooted = {
+      loadRootTileset(): Promise<unknown>;
+      _tiling: { maxLevel: number };
+    };
+    // The library resolves its tileset's base path against the page.
+    vi.stubGlobal("window", { location: { href: "http://127.0.0.1/" } });
+    const plain = createGlobeTerrain(options);
+    await (plain.plugin as unknown as Rooted).loadRootTileset();
+    expect((plain.plugin as unknown as Rooted)._tiling.maxLevel).toBe(15);
+    plain.dispose();
+    const dense = createGlobeTerrain({ ...options, meshMaxLevel: 17 });
+    await (dense.plugin as unknown as Rooted).loadRootTileset();
+    expect((dense.plugin as unknown as Rooted)._tiling.maxLevel).toBe(17);
+    dense.dispose();
+    for (const bad of [-1, 16.5, 25, Number.NaN]) {
+      expect(() =>
+        createGlobeTerrain({ ...options, meshMaxLevel: bad }),
+      ).toThrow(RangeError);
+    }
+  });
+
+  // Why (G0 spikes, "Coverage"; G1 review M2): Mapterhorn answers 404 at
+  // z14 outside national coverage. Driven through the REAL plugin and
+  // image source (only the network is a fake): for the tile the library
+  // asks for, by its own token order and url, the relief walks up the SAME
+  // source's pyramid through its download queue, and names the status
+  // that stopped it.
+  it("walks up its own source for a tile the source answers 404 for", async () => {
+    // The library resolves its tileset's base path against the page.
+    vi.stubGlobal("window", { location: { href: "http://127.0.0.1/" } });
+    // The download queue schedules its jobs a frame later.
+    vi.stubGlobal("requestAnimationFrame", (cb: () => void) =>
+      setTimeout(cb, 0),
+    );
+    const requests: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        requests.push(url);
+        return Promise.resolve(
+          url.startsWith("https://primary/14/")
+            ? new Response(null, { status: 404 })
+            : new Response(null, { status: 503 }),
+        );
+      }),
+    );
+    const terrain = createGlobeTerrain({
+      url: "https://primary/{z}/{x}/{y}.webp",
+      ancestorFallback: true,
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+      device: "phone" as const,
+      maxZoom: 14,
+      tileDimension: 512,
+    });
+    const plugin = terrain.plugin as unknown as {
+      loadRootTileset(): Promise<unknown>;
+      _source: {
+        fetchItem(tokens: number[], signal?: AbortSignal): Promise<unknown>;
+      };
+    };
+    await plugin.loadRootTileset();
+    await expect(plugin._source.fetchItem([8712, 5678, 14])).rejects.toThrow(
+      "https://primary/13/4356/2839.webp: HTTP 503",
+    );
+    expect(requests).toEqual([
+      "https://primary/14/8712/5678.webp",
+      "https://primary/13/4356/2839.webp",
+    ]);
+    expect(terrain.reliefFallback()).toEqual({ fallbacks: 0, failures: 1 });
+    terrain.dispose();
+    // Without a fallback the library's own fetch stays in place.
+    const plain = createGlobeTerrain({
+      url: "https://primary/{z}/{x}/{y}.webp",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+      device: "phone" as const,
+    });
+    expect(plain.reliefFallback()).toBeNull();
+    plain.dispose();
+  });
+
   it("refuses a missing url or a height scale that is not finite and >= 0", () => {
     const template = new THREE.MeshStandardMaterial();
     const imagery = {
@@ -699,7 +1043,13 @@ describe("createGlobeTerrain", () => {
       releaseTexture: () => {},
     };
     expect(() =>
-      createGlobeTerrain({ url: "", imagery, template, heightScale: 1 }),
+      createGlobeTerrain({
+        url: "",
+        imagery,
+        template,
+        heightScale: 1,
+        device: "phone",
+      }),
     ).toThrow(RangeError);
     expect(() =>
       createGlobeTerrain({
@@ -707,6 +1057,7 @@ describe("createGlobeTerrain", () => {
         imagery,
         template,
         heightScale: -1,
+        device: "phone",
       }),
     ).toThrow(RangeError);
   });

@@ -10,6 +10,19 @@
     `{ kind: "file", file, typescript }` or `{ kind: "forbidden" }`.
     `routes` are `{ prefix, dir, typescript }`; a `typescript` route maps
     `<prefix><p>.js` to `<dir>/<p>.ts`. A trailing `/` gets `index.html`.
+  - **The worker view** (globe city plan 2026-10-05-0040 §12.4 R1):
+    `WORKER_VIEW` (`/w/`); `resolveRequest("/w/<p>")` resolves as `<p>`
+    would and adds `worker: true`. `workerModule(code, fromUrl, imports =
+WORKER_IMPORTS)` returns a module's source with every import specifier
+    (static, side-effect, re-export, dynamic) made a URL inside the view: a
+    bare name through `imports` (exact, or the longest `prefix/` entry), a
+    route path moved under `/w/`, a relative one left alone; an Error names
+    a bare name `imports` does not map. `WORKER_IMPORTS` maps `h3-js`,
+    `gps-plus-slam-osm` and `gps-plus-slam-app-framework/osm-bridge` the way
+    the globe page's import map does (a test holds them equal). Why: import
+    maps do not apply inside a worker, so a worker whose modules import a
+    package by name (the Osm library imports `h3-js`) cannot load through
+    the plain routes; the view lets it, in dev and deploy alike.
   - `contentType(file, typescript)` — stripped TypeScript and `.js`/`.mjs`
     are `text/javascript`; `.jpg`/`.jpeg`/`.webp` are images (the globe's
     imagery); unknown extensions are octet-stream.
@@ -40,4 +53,10 @@
   attempts (plain, nested, percent-encoded, encoded slash, NUL), MIME types;
   on the real table: `/osm-lib/` reaches the Osm library, `/osm/` still
   reaches OsmDemo, an escape out of `/osm-lib/` is refused, and
-  `/vendor/h3-js/` serves the browser ES build with its LICENSE as a notice.
+  `/vendor/h3-js/` serves the browser ES build with its LICENSE as a notice;
+  the worker view: `/w/` resolution, escapes through it refused, every kind
+  of specifier rewritten, other strings untouched, an unknown bare name
+  refused by name, and `WORKER_IMPORTS` equal to the globe page's import
+  map. `labs/globe/globe-worker-view.smoke.spec.mjs` loads the Osm library
+  in a real worker through the view, and fails to through the plain route
+  (the negative control).

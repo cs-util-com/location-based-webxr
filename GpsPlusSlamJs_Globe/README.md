@@ -6,6 +6,32 @@ served no-build to the design system's globe lab
 (`GpsPlusSlamJs_DesignSystem/labs/globe/`). OsmDemo consumes it in phase 5.
 Design: the private repo's `GpsPlusSlamJs_Docs/docs/2026-09-26-0539-globe-intro-start-scene-plan.md` §7.
 
+## As a dependency of a Vite app
+
+The package exports one entry, `gps-plus-slam-globe/editor`
+(`src/globe-editor.ts`, the 3D editor's building blocks), as TypeScript
+SOURCE: there is no build. A consumer adds `"gps-plus-slam-globe":
+"workspace:*"` and imports from that name; Vite transpiles the source, and
+the consumer's `tsc` type-checks it under the consumer's own compiler
+options. The Tour Viewer is the first consumer; its
+`src/globe-dependency.test.ts` builds an entry that imports the blocks and
+holds what a consumer must keep:
+
+- one three in the bundle (pnpm links both packages' `three` to the same
+  installed copy while their versions match, which the repo-config test
+  `globe-three-version.test.js` checks for the framework);
+- every third-party package the build pulls in named in the consumer's
+  `NOTICE` (3d-tiles-renderer is Apache-2.0, Copyright 2020 California
+  Institute of Technology);
+- the licence text of every bundled Apache-2.0 package shipped with the
+  app, verbatim (Apache 2.0 section 4(a)): the Tour Viewer keeps it in
+  `public/third-party-licenses/<package>-LICENSE.txt`, which its build
+  copies into the site;
+- every bundled package the workspace patches (`patchedDependencies` in
+  `pnpm-workspace.yaml`) said in the `NOTICE` to be modified, naming its
+  patch (section 4(b)): the bundled 3d-tiles-renderer is 0.5.3 with
+  `patches/3d-tiles-renderer@0.5.3.patch` applied.
+
 ## The dependency exception (DEC-PRG-4)
 
 The workspace keeps production code dependency-free. `3d-tiles-renderer`
@@ -46,6 +72,28 @@ readers, the same line in `src/`. The globe lab's smoke proves it: with
 every level 2-3 tile answering 404, no probe is black (81 of 81 were
 without the patch). Upstream it stays to be reported; an upgrade must
 re-check whether the patch still applies.
+
+## The 3D editor's building blocks (G1)
+
+`src/globe-editor.ts` is the one module an app imports for the tour
+editor's globe (tour editor plan 2026-10-17-1816 §13, in the private
+repo's docs): the relief with a tile size, a cache budget per tile format
+and device class (the app names the class; there is no default) that
+reports a stall, and Mapterhorn as a source drawing its own nearest
+ancestor where it answers 404, credited with Copernicus GLO-30
+(`globe-relief-*.ts`); GPS heights to
+drawn heights through a geoid passed in (`globe-heights.ts`); picking the
+ground under a ray (`globe-ground-hit.ts`); the first-person camera's
+rules (`globe-eye-camera.ts`); and OpenStreetMap tiles near the camera
+under the tile usage policy's limits (`globe-osm-overlay.ts`; it needs the
+relief at z15 or finer near the camera, so the denser mesh,
+`meshMaxLevel` 15 or more). Each has
+its sidecar; the globe lab shows them all (`eye=1`, `osm=1`,
+`reliefMeshLevel=17`, `reliefSource=mapterhorn`, `reliefDevice=desktop`: the
+relief cache's budget is per device class, and Mapterhorn on the phone's
+budget stalls on a desktop window), and its `globe-editor-blocks` smoke holds
+them on the real page. The package depends on neither the framework nor
+the Osm library: their URLs, attributions and geoid are passed in.
 
 ## How it is served
 

@@ -296,6 +296,30 @@ describe("buildEditorModel", () => {
     expect(m.fitPoints).toEqual([]);
   });
 
+  // Why: this 2D editor knows pins and photos only; a placed 3D model
+  // (format minor 1) is listed nowhere here rather than as a mislabelled
+  // note. The tour keeps it untouched; the 3D editor is where it shows.
+  it("lists no placed 3D model, and counts none as a pin or a photo", () => {
+    const m = buildEditorModel({
+      manifest: manifest(),
+      objects: [
+        pin("p", "The town hall"),
+        {
+          id: "m",
+          kind: "model",
+          asset: "statue",
+          sizeM: 3,
+          createdAtIso: "2026-10-19T00:00:00.000Z",
+          geo: { ...AT, headingDeg: 0 },
+        },
+      ],
+      levels: new Map(),
+      fileName: "tour.zip",
+    });
+    expect(m.items.map((i) => i.id)).toEqual(["p"]);
+    expect(m.counts).toEqual({ code: 0, pin: 1, photo: 0, station: 0 });
+  });
+
   it("titles the tour with its own name, else the file's", () => {
     const named = buildEditorModel({
       manifest: manifest({ title: "Altstadt walk" }),
