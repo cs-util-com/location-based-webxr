@@ -120,9 +120,8 @@ describe("captureSpotsForRebuild (M6 E0b: the photos' spots for a save)", () => 
   });
 
   it("says a walk that names no photo of the tour places nothing, and gives no reason a Finish would show", async () => {
-    // Why (the M4b milestone review #3): such a walk was kept by every
-    // lean Finish with "the recorded photos could not be placed ... so the
-    // walk recording stays" - about photos that do not exist.
+    // Why: a reason would tell the creator "the recorded photos could not
+    // be placed" - about photos that do not exist.
     const bytes = sampleRecordingBytes();
     const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
     const out = await captureSpotsForRebuild(
@@ -137,7 +136,7 @@ describe("captureSpotsForRebuild (M6 E0b: the photos' spots for a save)", () => 
       },
       manifestOf(),
     );
-    expect(out).toEqual({ placesNothing: true });
+    expect(out).toEqual({});
   });
 });
 

@@ -179,7 +179,7 @@ module's sidecar states them as its contract.
   tour's stations, so `tour.json` carries them as the document holds
   them; the Finish neither bakes nor assigns. A bake that declined at the
   open is final for that open: the Finish writes no spots and replays
-  nothing (the tour keeps the visitor's live join, as before).
+  nothing (a visitor then sees no recorded photo).
 - **The published copy leaves the creator's walk out** (scan-pass plan
   S1, S-D10): unless the creator ticks "Keep the walk recording in the tour
   file" (`keepScanRow` / `keepScanInput`, on the page BEFORE AR since UI
@@ -189,13 +189,12 @@ module's sidecar states them as its contract.
   `scanEntryNames` of the manifest it writes (`tour-read-set.ts`): the
   action stream, `session.json` and the recorded frames no visitor sees.
   A file the recording did not write (a README, credits) always stays.
-  **Never without baked spots** (S1 milestone review #2): a recording the
-  bake declined or could not read keeps its walk, and the ready line says
-  why (`FINISH_LABELS.photosNotPlaced`); the walk is then the only way a
-  viewer can place the photos - unless the walk places nothing (it names
-  no recorded photo the tour carries, `placesNothing`, passed on as
-  `walkPlacesNothing`): it is then left out like any walk, with no word
-  about photos (the M4b milestone review #3). The tick is cleared with the Finish step
+  **With or without baked spots**: a visitor never reads the walk, so a
+  recording the bake declined or could not read loses its walk too, and
+  the ready line also says the photos could not be placed and that
+  visitors will not see them (`FINISH_LABELS.photosNotPlaced`); a walk
+  that names no recorded photo the tour carries says nothing about
+  photos. The tick is cleared with the Finish step
   when the tour closes (review #9).
   The ready line then says so (`FINISH_LABELS.scanLeftOut`), because the
   hosted file may be the creator's only copy of the walk.

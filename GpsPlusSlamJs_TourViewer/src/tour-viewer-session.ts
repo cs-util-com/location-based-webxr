@@ -380,7 +380,7 @@ export interface TourViewerSession {
   } | null;
   /** The creator's bake of the open recording's walk (`walkAtOpen` of
    *  `tour-document-bake.ts`): running, with the replay's progress, or what
-   *  it decided (the Finish reads `placesNothing` and `notPlaced`; the
+   *  it decided (the Finish reads `notPlaced`; the
    *  status line says a decline). Null before an open settled it and for
    *  a visitor. */
   walkBake: WalkBake | null;

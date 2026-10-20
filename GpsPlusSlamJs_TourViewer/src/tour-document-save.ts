@@ -276,7 +276,6 @@ export function createTourSaves(input: {
         keepAssets: snap.keepAssets,
         levels: [],
         keepScan,
-        walkPlacesNothing: decided.placesNothing === true,
         previous: newest,
       });
       if (finished === null) throw new Error("the save was stopped");

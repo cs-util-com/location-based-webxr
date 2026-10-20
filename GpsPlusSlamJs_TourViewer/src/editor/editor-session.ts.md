@@ -199,11 +199,9 @@ written }` (`written`: the manifest the zip carries, for the draft's
     `walkFileName`, `castle.zip` -> `castle-walk.zip`) and the tour
     rebuilt without the walk (`keepScan: false`, with the pending edits
     and the photo spots, from the same bytes: the opened file is read
-    once, review #11), or a refusal in words: `NO_WALK`, or the recorded
-    photos the tour carries still placed by the walk (no baked spots in
-    the tour, the open's bake placed none - they would be left nowhere,
-    `finish-rebuild.ts`). A walk that places
-    nothing (`placesNothing`) moves out (review #3). **Nothing changes until
+    once), or a refusal in words: `NO_WALK`. A tour
+    without baked spots moves its walk out too: a visitor never reads it.
+    **Nothing changes until
     `commit()`**: the page writes the walk's zip first, then the tour,
     and commits only when both landed; `current()` says no other save
     landed since the build (asked before the tour is written, so a stale

@@ -954,9 +954,9 @@ describe("the finish settles the AR visit still running (authoring plan 2026-09-
 });
 
 describe("the finish writes the recorded photos' spots baked at open", () => {
-  // Why these tests matter: the baked spots are what every visitor places
-  // instead of replaying the walk, and their presence switches the
-  // visitor's live join OFF. The bake runs once, when the recording
+  // Why these tests matter: the baked spots are the only recorded photos
+  // a visitor places; a visitor never replays the walk. The bake runs
+  // once, when the recording
   // opens, and puts the photos in stations the page shows from then on;
   // so the Finish must write exactly those, never bake or assign again,
   // never write the marker for nothing, and never let a recording that
@@ -1182,23 +1182,31 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     );
   });
 
-  it("keeps the walk when the photos could not be placed, and says why", async () => {
-    // Why (S1 milestone review #2): without baked spots the walk is the
-    // only way a visitor's viewer can place the photos - and the hosted
-    // file may be the creator's only copy of it. A recording this build
-    // cannot join (an old era here; a network blip reading it, a wrapped
-    // zip) must leave the copy as it was, with the reason on screen.
+  it("leaves the walk out also when the photos could not be placed, and says why", async () => {
+    // Why: the walk once stayed in such a copy, for a visitor's viewer to
+    // place the photos from it. A visitor shows baked photos only, so the
+    // walk would only weigh the copy down; the creator reads that the
+    // photos are not in it, and that the hosted file may be their only
+    // copy of the walk. A recording this build cannot join: an old era.
     const { ctx, dom } = await wireRecordingTour(false, 3);
     expect(ctx.finishError).toBeNull();
     const names = await entryNamesOf(ctx.rebuiltZip!.blob);
-    expect(names.filter((n) => WALK.includes(n)).sort()).toEqual(
-      [...WALK].sort(),
-    );
-    expect(dom.finishStatus.textContent).not.toContain(
+    expect(names.filter((n) => WALK.includes(n))).toEqual([]);
+    expect(names).toContain(README);
+    expect(dom.finishStatus.textContent).toContain(
       "leaves out the walk recording",
     );
     expect(dom.finishStatus.textContent).toContain(
-      "The recorded photos could not be placed",
+      "The recorded photos could not be placed (",
+    );
+    expect(dom.finishStatus.textContent).toContain(
+      "visitors will not see them",
+    );
+    // Kept when asked, frames and all.
+    const kept = await wireRecordingTour(true, 3);
+    const keptNames = await entryNamesOf(kept.ctx.rebuiltZip!.blob);
+    expect(keptNames.filter((n) => WALK.includes(n)).sort()).toEqual(
+      [...WALK].sort(),
     );
   });
 
@@ -1260,6 +1268,20 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     });
     withWalk.setup.renderAuthorReadout();
     expect(withWalk.dom.keepScanRow.hidden).toBe(false);
+    // A recording whose photos are not baked: its frames are the walk too,
+    // and the choice is offered.
+    const unbaked = await wireFinishable({
+      hosted: [],
+      placed: [],
+      hostedContent: [
+        { path: "session.json", data: "{}" },
+        { path: "actions/000001.json", data: "[]" },
+        { path: "images/frame-000001.jpg", data: "x" },
+      ],
+      arStatus: "ready",
+    });
+    unbaked.setup.renderAuthorReadout();
+    expect(unbaked.dom.keepScanRow.hidden).toBe(false);
     // In AR it is gone: the Finish there reads it.
     withWalk.arStatus.value = "running";
     withWalk.setup.renderAuthorReadout();

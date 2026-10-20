@@ -38,8 +38,8 @@ rules only through the document's modules (the
   `onChunk`), else none (`{}`); a bake that declines or a recording that
   cannot be read is `{ notPlaced: reason }` (a read that failed also
   carries `readFailed: true`: another open may work), except a walk that places
-  nothing, which is `{ placesNothing: true }` with no reason (there are
-  no photos to speak of; the M4b milestone review #3). The result type is
+  nothing (the bake's `placesNothing`), which is `{}` with no reason (there
+  are no photos to speak of). The result type is
   `RebuildPhotoSpots`. `ArchiveLimitError` and
   `TourIntegrityError` are rethrown (`walkAtOpen` makes them a
   reason). Called once per open, through `walkAtOpen`.
@@ -79,5 +79,5 @@ integrity failure as the reason and never a failed open, no recording)
 and `captureSpotsForRebuild` (own spots without a read, none without a
 recording, a read failure as the reason, a cap and an integrity failure
 rethrown, a decline as the reason, a walk naming no photo of the tour as
-`placesNothing` with no reason). The pages' use is pinned in
+`{}` with no reason). The pages' use is pinned in
 `archive-open-file.test.ts` and `editor/editor-open.test.ts`.

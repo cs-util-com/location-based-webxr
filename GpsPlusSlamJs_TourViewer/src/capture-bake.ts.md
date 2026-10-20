@@ -28,13 +28,13 @@ walk; a tour without them shows a visitor no recorded photo.
   - Result: `{ kind: "baked", spots }` or `{ kind: "declined", reason,
 placesNothing? }`. `placesNothing: true` when the replayed walk names
     no recorded photo the tour carries (no photo was taken, or none of
-    their files is in the zip): it places nothing, live or baked, whatever
-    its GPS came to, so a lean Finish may leave it out and the editor may
-    move it out (the M4b milestone review #3). Only a recording of a known
+    their files is in the zip): it places nothing, whatever its GPS came
+    to, so no note says the photos could not be placed (a lean Finish
+    leaves every walk out either way). Only a recording of a known
     era (`NEWEST_KNOWN_ODOM_COORD_VERSION`) may say so, and "no photo was
     taken" means no `CAPTURE_ACTION` at all: a newer era, or photos the
     replay turned into no spot (taken before the GPS zero), decline WITHOUT
-    `placesNothing` and keep the walk (PR #638 review). The era is NARROWED
+    `placesNothing`, and their note says why. The era is NARROWED
     (a number at most the newest known), never cast: a hand-edited string
     version compares as a number in JavaScript ("3" <= 5; PR #640 review).
     Today the preflight already declines such a version before the replay;

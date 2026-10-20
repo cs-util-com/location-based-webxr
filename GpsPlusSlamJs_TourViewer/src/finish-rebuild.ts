@@ -77,9 +77,6 @@ export interface FinishInput {
   readonly keepAssets?: ReadonlySet<string>;
   /** Keep the entries visitors never read (the walk, S-D10). */
   readonly keepScan: boolean;
-  /** The walk places nothing (the open's bake said so, `walkAtOpen`'s
-   *  `placesNothing`): without spots it may still be left out. */
-  readonly walkPlacesNothing?: boolean;
   /** The last rebuild of this open tour; null or absent for the first,
    *  which reads the tour and inflates it under its budget. */
   readonly previous?: PreviousFinish | null;
@@ -245,16 +242,12 @@ export async function rebuildFinishedTour(
       : null;
   // The published copy carries only what visitors read unless the
   // creator keeps the walk (S-D10): the walk, its unbaked frames, depth.
-  // Never without baked spots (S1 milestone review #2): the walk is
-  // then the only way a viewer can place the photos, and the hosted
-  // file may be the creator's only copy of it - unless the walk places
-  // nothing (it names no photo of the tour, the M4b milestone review #3).
-  const walkNeeded =
-    written.captureSpots === undefined && input.walkPlacesNothing !== true;
-  const scanLeftOut =
-    input.keepScan || walkNeeded
-      ? []
-      : scanEntryNames(entryNames, written, wrap);
+  // With or without baked spots: a visitor shows baked photos only and
+  // never reads the walk. The hosted file may be the creator's only copy
+  // of it, which the Finish says (`FINISH_LABELS.scanLeftOut`).
+  const scanLeftOut = input.keepScan
+    ? []
+    : scanEntryNames(entryNames, written, wrap);
   const removed = entriesToRemove({
     hosted,
     deleted,

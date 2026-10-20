@@ -13,8 +13,8 @@
  * recorded photo that could be placed. A declined bake writes nothing, and
  * a visitor then sees no recorded photo. A walk that names no photo the
  * tour carries places nothing at all: its decline
- * says so (`placesNothing`), and a lean Finish may then leave the walk out
- * (the M4b milestone review #3).
+ * says so (`placesNothing`): there are then no photos to speak of, and no
+ * note says they could not be placed.
  *
  * @see capture-bake.ts.md
  */

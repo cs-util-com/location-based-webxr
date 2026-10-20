@@ -33,9 +33,6 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
     plan 2026-10-17-1816: it used to keep the old title silently); null or
     omitted keeps the tour's own.
   - `input.keepScan` - keep the entries visitors never read.
-  - `input.walkPlacesNothing` - the walk places nothing (the open's
-    bake said so, `walkAtOpen`'s `placesNothing`): it is then left out
-    without `captureSpots` too, unless `keepScan`.
   - `input.previous` - the last rebuild of this open tour
     (`{ blob, signedManifest? }`); null or omitted for the first, which
     reads the tour and inflates it under `tour.budget`.
@@ -96,8 +93,8 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
   `previous.signedManifest`, the written ones hashed here). An unlisted
   tour carrying the name drops it.
 - **The walk:** entries visitors never read are left out unless
-  `keepScan`, and never without `captureSpots` (the walk is then the only
-  way to place the photos) - unless `walkPlacesNothing`.
+  `keepScan`, with or without `captureSpots`: a visitor shows baked
+  photos only and never reads the walk.
 - **Newest bytes:** `previous.blob` when given, else
   (null or omitted, one expression for both the read and the budget)
   `tour.readWholeArchive()` - rebuilding from the hosted zip again would

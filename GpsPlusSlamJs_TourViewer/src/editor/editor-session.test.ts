@@ -1736,23 +1736,24 @@ describe("moving the walk out (W2, D19)", () => {
     await session.close();
   });
 
-  it("refuses while the recorded photos still need the walk, and for a tour without one", async () => {
+  it("moves the walk out of a tour whose photos are not baked, and refuses for a tour without one", async () => {
+    // Why: the move was refused while a visitor's viewer could still place
+    // the recorded photos from the walk; a visitor shows baked photos only,
+    // so the walk of such a tour is the creator's like any other.
     const unbaked = await walkTour(false);
     const editor = createEditorSession({
       session: unbaked.session,
       manifest: unbaked.manifest,
       levels: new Map(),
     });
-    const refused = await editor.moveWalkOut();
-    expect(refused.kind).toBe("refused");
-    expect(refused.kind === "refused" && refused.reason).toMatch(
-      /recorded photos/,
+    // Unbaked, the whole recording is the walk, its frame included.
+    expect((await editor.walkEntries()).sort()).toEqual(
+      [...walkNames, "images/frame-000002.jpg"].sort(),
     );
-    // Refused: the tour keeps its walk (unbaked, its frames are the
-    // visitors' photo ring, not the walk).
-    expect(await editor.walkEntries()).toEqual(
-      expect.arrayContaining(["session.json", "actions/000001.json"]),
-    );
+    const move = await editor.moveWalkOut();
+    if (move.kind !== "ready") throw new Error(move.reason);
+    move.commit();
+    expect(await editor.walkEntries()).toEqual([]);
     await unbaked.session.close();
     const plain = await opened([pin("a")]);
     const none = createEditorSession({

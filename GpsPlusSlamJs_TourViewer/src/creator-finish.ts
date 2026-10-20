@@ -250,9 +250,6 @@ export function wireCreatorFinish(deps: {
           keepAssets: historyAssetIds(tour.state()),
           levels,
           keepScan: dom.keepScanInput.checked,
-          // A walk that places nothing is left out too (the M4b milestone
-          // review #3: S-D10's default, also without spots).
-          walkPlacesNothing: photos.placesNothing === true,
           previous,
           shouldContinue: () => ctx.session === current,
           onProgress: (done, total) => {

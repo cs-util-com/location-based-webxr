@@ -799,9 +799,6 @@ describe("walkBakeLine (the recording's photos baked at open)", () => {
       "The recording's photos are not in the tour: they could not be placed (reading the recording failed: network). Open the recording again to try once more.",
     );
     expect(walkBakeLine({ kind: "decided", photos: {} })).toBe("");
-    expect(
-      walkBakeLine({ kind: "decided", photos: { placesNothing: true } }),
-    ).toBe("");
     expect(walkBakeLine(null)).toBe("");
   });
 });

@@ -359,10 +359,11 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
     await tour.close();
   });
 
-  it("leaves the walk out of a tour with photo spots, keeps it when asked, and never without spots", async () => {
-    // S-D10: visitors download the published copy; the walk is the
-    // creator's, and without baked spots it is the only way to place the
-    // photos (S1 milestone review #2).
+  it("leaves the walk out with or without photo spots, and keeps it only when asked", async () => {
+    // Why: visitors download the published copy, and the walk is the
+    // creator's. It once stayed in a copy without baked spots, for a
+    // visitor's viewer to place the photos from it; a visitor shows baked
+    // photos only, so no copy keeps the walk unless the creator asks.
     const walk = [`${WRAP}session.json`, `${WRAP}actions/000001.json`];
     const tour = await plainTour([], {
       "session.json": "{}",
@@ -379,45 +380,14 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
       });
       return { left: r!.scanLeftOut, names: await namesOf(r!.blob) };
     };
-    const out = await run(false, true);
-    expect([...out.left].sort()).toEqual([...walk].sort());
-    for (const name of walk) expect(out.names).not.toContain(name);
-    for (const [keepScan, spots] of [
-      [true, true],
-      [false, false],
-    ] as const) {
-      const kept = await run(keepScan, spots);
+    for (const spots of [true, false]) {
+      const out = await run(false, spots);
+      expect([...out.left].sort()).toEqual([...walk].sort());
+      for (const name of walk) expect(out.names).not.toContain(name);
+      const kept = await run(true, spots);
       expect(kept.left).toEqual([]);
       for (const name of walk) expect(kept.names).toContain(name);
     }
-    await tour.close();
-  });
-
-  it("leaves out a walk that places nothing also without spots, and keeps it when asked", async () => {
-    // Why (the M4b milestone review #3): a walk whose recording names no
-    // photo the tour carries places nothing for any visitor - the phone's
-    // lean Finish leaves it out by default (S-D10) like any walk.
-    const walk = [`${WRAP}session.json`, `${WRAP}actions/000001.json`];
-    const tour = await plainTour([], {
-      "session.json": "{}",
-      "actions/000001.json": "[]",
-    });
-    const run = async (keepScan: boolean) => {
-      const r = await rebuildFinishedTour({
-        ...NO_EDITS,
-        tour,
-        manifest: manifestOf([]),
-        keepScan,
-        walkPlacesNothing: true,
-      });
-      return { left: r!.scanLeftOut, names: await namesOf(r!.blob) };
-    };
-    const lean = await run(false);
-    expect([...lean.left].sort()).toEqual([...walk].sort());
-    for (const name of walk) expect(lean.names).not.toContain(name);
-    const kept = await run(true);
-    expect(kept.left).toEqual([]);
-    for (const name of walk) expect(kept.names).toContain(name);
     await tour.close();
   });
 

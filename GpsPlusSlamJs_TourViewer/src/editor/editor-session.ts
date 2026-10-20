@@ -117,14 +117,6 @@ export function walkFileName(tourName: string): string {
 /** Said when "Move the walk out" finds no walk in the newest bytes. */
 const NO_WALK = "This tour carries no walk recording to move out.";
 
-/** Said when the recorded photos the tour carries are still placed by the
- *  walk: moving it out would leave them nowhere (`finish-rebuild.ts`, S1
- *  milestone review #2). A walk that names no photo of the tour places
- *  nothing and moves out (the M4b milestone review #3). */
-function walkStaysReason(notPlaced: string | undefined): string {
-  return `The walk cannot be moved out: this tour's recorded photos can only be placed with it, and they could not be fixed in place without it${notPlaced === undefined ? "" : ` (${notPlaced})`}. The tour keeps its walk.`;
-}
-
 /** The note inside a moved-out walk's zip, at its root: which tour it came
  *  from (the M4b milestone review #8). */
 export const WALK_NOTE = "about-this-walk.txt";
@@ -812,17 +804,8 @@ export function createEditorSession(input: {
     if (scanEntryNames(names, snap.manifest, wrap).length === 0) {
       return { kind: "refused", reason: NO_WALK };
     }
+    // The rebuild below writes what the open's bake decided.
     const photos = await saves.photoSpots();
-    // Without baked spots in the tour (the open's bake placed none) the
-    // walk is what places the recorded photos: the rebuild would keep it
-    // (`finish-rebuild.ts`), so the move refuses - unless the walk places
-    // nothing (the M4b milestone review #3).
-    if (
-      snap.manifest.captureSpots === undefined &&
-      photos.placesNothing !== true
-    ) {
-      return { kind: "refused", reason: walkStaysReason(photos.notPlaced) };
-    }
     // The walk's own file is the whole recording (the M4b milestone review
     // #8): the frames the tour keeps for its visitors too, so it is a
     // complete recording on its own.

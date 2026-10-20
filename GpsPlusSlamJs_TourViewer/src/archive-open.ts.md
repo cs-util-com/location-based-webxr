@@ -180,7 +180,7 @@ DOM glue, its own module since the flows plan M6.
   draft offer and the AR placement wait), and work placed meanwhile is
   carried into the opened tour by the rule. Then `walkBake` holds what it
   decided (`{ kind: "decided", photos }`: the Finish reads
-  `placesNothing` and `notPlaced`; a decline is said on the status
+  `notPlaced`; a decline is said on the status
   line). The bake never fails the open. A tour without a recording, or
   with its photos already baked, settles at once (`photos: {}`). A
   visitor's open never bakes. Tests: `archive-open-file.test.ts` ("a

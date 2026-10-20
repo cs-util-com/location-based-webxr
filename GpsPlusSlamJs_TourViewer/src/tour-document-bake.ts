@@ -27,24 +27,21 @@ import {
 /** The tour as the photo-spot rule reads it. */
 type CaptureSpotTour = CaptureBakeSource & { readonly hasRecording: boolean };
 
-/** The photos' spots of an open: the spots, or why the photos stay with
- *  the walk (`notPlaced`), or that the walk places nothing at all. */
+/** The photos' spots of an open: the spots, or why the photos could not
+ *  be placed (`notPlaced`); neither when there are none to speak of. */
 export interface RebuildPhotoSpots {
   readonly spots?: CaptureSpotsInWorld;
   readonly notPlaced?: string;
   /** `notPlaced` is a read of the recording that failed (not a cap, an
    *  integrity check or a bake's decline): another try may work. */
   readonly readFailed?: true;
-  /** The walk names no photo the tour carries (`CaptureBake`): a lean
-   *  save may leave it out without spots (`walkPlacesNothing`). */
-  readonly placesNothing?: true;
 }
 
 /**
  * The recorded photos' spots: the
  * tour's own when it carries them, else baked from its recording, else
- * none - the tour then keeps the visitor's live join, and `notPlaced`
- * says why, unless the walk places nothing at all (`placesNothing`, no
+ * none - a visitor then sees no recorded photo, and `notPlaced` says why,
+ * unless the walk places nothing at all (the bake's `placesNothing`, no
  * reason: there are no photos to speak of). A recording that cannot be
  * read or joined is a reason; a cap's refusal and a failed integrity check
  * throw, as every read's does (`walkAtOpen` makes them a reason too).
@@ -60,9 +57,7 @@ export async function captureSpotsForRebuild(
   try {
     const bake = await bakeCaptureSpots(tour, options);
     if (bake.kind === "baked") return { spots: bake.spots };
-    return bake.placesNothing === true
-      ? { placesNothing: true }
-      : { notPlaced: bake.reason };
+    return bake.placesNothing === true ? {} : { notPlaced: bake.reason };
   } catch (err) {
     if (err instanceof ArchiveLimitError) throw err;
     if (err instanceof TourIntegrityError) throw err;
@@ -86,8 +81,8 @@ export interface WalkAtOpen {
   /** The tour with the walk's photos in its stations (`withWalkPhotos`),
    *  or as it was when they were not placed. */
   readonly manifest: TourManifest;
-  /** What the bake decided: what a save needs to know (`walkPlacesNothing`)
-   *  and what the page says (`notPlaced`). */
+  /** What the bake decided: what the page and a save say
+   *  (`notPlaced`). */
   readonly photos: RebuildPhotoSpots;
 }
 

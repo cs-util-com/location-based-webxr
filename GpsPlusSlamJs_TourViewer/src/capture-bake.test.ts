@@ -144,8 +144,8 @@ describe("bakeCaptureSpots over the real sample recording", () => {
       ...source,
       entries: source.entries.filter((e) => !e.isImage),
     });
-    // The walk then places nothing (the M4b milestone review #3): a lean
-    // Finish may leave it out, and the editor may move it out.
+    // The walk then places nothing: there are no photos to speak of, so
+    // no note says they could not be placed.
     expect(bake).toEqual({
       kind: "declined",
       reason: "no recorded photo file in this tour",
@@ -154,9 +154,8 @@ describe("bakeCaptureSpots over the real sample recording", () => {
   });
 
   it("places nothing for a walk on which no photo was taken, whatever its GPS came to", async () => {
-    // Why (the M4b milestone review #3): a walk recorded without photos
-    // was kept in every lean Finish and could never be moved out of the
-    // editor's tour, though it places nothing for any visitor.
+    // Why: a walk recorded without photos places nothing for any visitor;
+    // the creator must not be told its photos could not be placed.
     const source = await sampleSource();
     const actions = (await source.loadRecordingActions())!;
     const without = actions.filter((a) => a.type !== "gpsData/add2dImage");
@@ -203,15 +202,14 @@ describe("bakeCaptureSpots over the real sample recording", () => {
   });
 });
 
-describe("bakeCaptureSpots keeps a walk it cannot read (PR #638 review)", () => {
-  // Why: "places nothing" lets a lean Finish drop the walk from the tour
-  // file for good. Only a recording that really took no photo, or whose
+describe("bakeCaptureSpots says why a walk it cannot read places no photo", () => {
+  // Why: "places nothing" silences the note that the recorded photos could
+  // not be placed. Only a recording that really took no photo, or whose
   // photos are none of the tour's files, may say so. A replay that turns
   // the recording's photos into no spot at all - a newer recording era
   // this build cannot read, or capture actions it could not place - is a
-  // decline that keeps the walk, as the join's "no captured photos"
-  // decline does.
-  it("keeps the walk of a newer-era recording that shows this build no photo", async () => {
+  // decline with its reason, as the join's "no captured photos" decline is.
+  it("says why for a newer-era recording that shows this build no photo", async () => {
     const source = await sampleSource();
     const actions = (await source.loadRecordingActions())!;
     // A newer era may name its photo actions differently: this build sees
@@ -230,7 +228,7 @@ describe("bakeCaptureSpots keeps a walk it cannot read (PR #638 review)", () => 
     expect(bake).not.toHaveProperty("placesNothing");
   });
 
-  it("keeps the walk when the recording took photos the replay placed none of", async () => {
+  it("says why when the recording took photos the replay placed none of", async () => {
     const source = await sampleSource();
     const actions = (await source.loadRecordingActions())!;
     // Every photo before the GPS zero: the replay gives none a spot.
