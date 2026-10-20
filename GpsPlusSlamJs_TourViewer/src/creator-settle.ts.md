@@ -290,7 +290,10 @@ the earlier visits' frame, the visit log; a station the visit started
 staying anchored at its first item after a 10 m and a 10 degree
 correction with no item moved twice, an earlier visit's station left
 alone, and the code move leaving this visit's station where the settle
-put it), `creator-finish.test.ts` (a
+put it; an undo of the settle's station move putting the station back,
+and, as a known divergence marked `it.fails` until the codes-in-store
+plan's M3b, the same undo leaving the improved code in place),
+`creator-finish.test.ts` (a
 Finish's settle and the summary) and the e2e authoring specs; the decisions
 themselves in `visit-settle.test.ts`, `code-position-settle.test.ts` and
 `visit-settle.golden.test.ts` (the one-code oracle). The sampled mutants

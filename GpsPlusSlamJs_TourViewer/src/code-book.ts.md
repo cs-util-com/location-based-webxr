@@ -94,4 +94,8 @@ book = afterFinish(book, entries);
 restore before the levels arrive, measuring one and two codes, references,
 the settle's update, the Finish, a code reverting to its hosted text after
 a Finish, a draft restored after live work, a measurement dropped, and
-three properties against the model of the zip.
+properties against the model of the zip, among them the two baselines
+kept apart (`codesToWrite` against the last Finish's zip,
+`codesNotHosted` against the hosted file; one baseline before any
+Finish), pinned before the codes move into the store (plan
+2026-10-20-1159 M3a).

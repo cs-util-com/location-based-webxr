@@ -330,6 +330,47 @@ describe("properties, against a model of the zip", () => {
     );
   });
 
+  // Why this test matters (characterization before the codes move into the
+  // store, plan 2026-10-20-1159 M3a): the book answers two questions from
+  // two DIFFERENT baselines - what the next Finish writes is judged against
+  // the zip it rebuilds from (`baseline`: the last Finish's text, else the
+  // hosted one, code-book.ts:83-85, :201-207), and what the draft keeps is
+  // judged against the HOSTED file only (code-book.ts:213-219), because a
+  // Finish's zip reaches visitors only with the upload. The store's two
+  // selectors must keep them apart: merged, either a Finish rewrites files
+  // or a crash after a Finish loses a measurement. Each is checked here
+  // against its own independent model, after any sequence, mid-way too.
+  it("judges what to write against the last Finish's zip, and what the draft keeps against the hosted file", () => {
+    fc.assert(
+      fc.property(fc.array(op, { maxLength: 24 }), (ops) => {
+        const r = run(ops);
+        const saved = [...r.book.values()].filter((c) => c.saved !== null);
+        const expectToWrite = saved.flatMap((c) =>
+          c.saved === (r.zip.get(c.levelId) ?? null)
+            ? []
+            : [{ id: c.levelId, json: c.saved! }],
+        );
+        const expectNotHosted = saved.flatMap((c) =>
+          c.saved === (zipHosted.get(c.levelId) ?? null)
+            ? []
+            : [{ id: c.levelId, json: c.saved! }],
+        );
+        expect(codesToWrite(r.book)).toEqual(expectToWrite);
+        expect(codesNotHosted(r.book)).toEqual(expectNotHosted);
+      }),
+    );
+  });
+
+  it("before any Finish, judges both against the one hosted baseline", () => {
+    const noFinish = op.filter((o) => o.kind !== "finish");
+    fc.assert(
+      fc.property(fc.array(noFinish, { maxLength: 24 }), (ops) => {
+        const { book } = run(ops);
+        expect(codesToWrite(book)).toEqual(codesNotHosted(book));
+      }),
+    );
+  });
+
   it("every measured code is a reference", () => {
     fc.assert(
       fc.property(fc.array(op, { maxLength: 24 }), (ops) => {

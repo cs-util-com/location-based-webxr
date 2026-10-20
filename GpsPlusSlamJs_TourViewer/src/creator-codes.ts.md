@@ -110,6 +110,14 @@ codes.saveLevel(remintedLevel); // the settle's re-mint, measurement kept
 the hand's own measurement against the book's; a null level's empty
 hand; the draft restore into an empty hand, at a live text and over a code
 only kept at its hosted pose; the hand's text over a draft's; the re-mint;
-the close; stored poses, the references' order, the visit's sightings). Composed, through `wireCreatorSetup`: every creator suite, and
+the close; stored poses, the references' order, the visit's sightings;
+and the characterization pinned before the codes move into the store
+(plan 2026-10-20-1159 M3a): the hand's text winning in the book (an
+example and a property), live work winning over both restores (a
+property), the two baselines kept apart, the hosted texts read lazily
+(levels arriving late, a failed level read, a Finish taking them in), what
+a visit's end and a tour's close clear, the visit's codes and
+`measuredIn`, and `onIdsChanged` heard exactly when a code joins (examples
+and a property)). Composed, through `wireCreatorSetup`: every creator suite, and
 the sampled mutants (`scripts/fixtures/creator-setup.mutants.json`) whose
 text moved here.

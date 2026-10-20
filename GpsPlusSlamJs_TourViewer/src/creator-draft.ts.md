@@ -342,7 +342,12 @@ record to a reopen through the same url padded; an edit over an offered
 deletion not offered as deleted again, and one whose record did not land
 keeping the tombstone; Restore's note counting what it put back, beside a
 code measured here and beside visits the log already held; a draft object
-whose id equals a visit id restored), `creator-finish.test.ts` and
+whose id equals a visit id restored; the waiting draft's codes re-stated
+after the page's, the page's winning, kept through "Not now" and dropped
+by "Delete it", and the spent rule judging each code by the hosted zip's
+content - spent when it holds the same text, kept and offered when it holds
+another, none, or cannot be read - pinned before the codes move into the
+store, plan 2026-10-20-1159 M3a), `creator-finish.test.ts` and
 `authoring-settle.test.ts` (the meta a mint or settle writes, the backup
 notice), plus the draft e2e specs. `follow` in isolation:
 `creator-draft-follow.test.ts` (every file copied, a photo as a blob, the
