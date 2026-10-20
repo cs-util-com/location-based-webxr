@@ -486,7 +486,7 @@ test("shows a walk's camera captures as debug data: a thumbnail each, out of rea
   );
   const markers = page.locator(".mk-debug-wrap");
   await expect(markers).toHaveCount(2);
-  await expect(page.locator(".mk-debug canvas")).toHaveCount(2);
+  await expect(page.locator(".mk-debug img")).toHaveCount(2);
   await expect(page.locator(".mk-debug-wrap[tabindex]")).toHaveCount(0);
   await expect(page.locator(".mk-debug-wrap.leaflet-interactive")).toHaveCount(
     0,

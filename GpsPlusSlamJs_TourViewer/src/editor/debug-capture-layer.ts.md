@@ -38,10 +38,14 @@ save or the draft. The phone has no such layer
   ("No debug data shown: <reason>."), `debugShownLine` ("Debug data: N
   camera captures on the map.").
 - `DEBUG_THUMB_WIDTH_PX` (32) - a thumbnail's CSS width.
-- `decodeDebugThumbnail(blob): Promise<HTMLCanvasElement>` - the browser's
+- `decodeDebugThumbnail(blob): Promise<HTMLImageElement>` - the browser's
   downscaled decode (`createImageBitmap` with `resizeWidth`, twice the
-  width on a high-density screen), drawn into a canvas, the bitmap closed
-  at once.
+  width on a high-density screen), drawn once into a scratch canvas,
+  re-encoded as a small JPEG and shown as a decorative `<img>` (`alt=""`)
+  from a blob URL; the bitmap and the canvas are freed at once. Rejects
+  when the decode or the encode fails.
+- `revokeDebugThumbnail(picture)` - frees a thumbnail's blob URL (the
+  editor map calls it for every thumbnail it drops or replaces).
 - Types: `DebugLayer`, `DebugLayerDeps`, `DebugLayerView`.
 
 ## Invariants & assumptions
@@ -54,7 +58,11 @@ save or the draft. The phone has no such layer
   and `pointer-events: none` on the pane and the marker.
 - **One decode at a time**, so a walk of a thousand frames never holds
   more than one full-size picture decoded at once; each thumbnail keeps
-  only its small canvas.
+  only a small image (about 32 x 75 CSS pixels).
+- **Images, not canvases, on the map** (measured in the layer-cost
+  results, M1 of the debug-captures plan, headless Chromium on a desktop):
+  with 1035 thumbnails a pan frame took 133-150 ms at the median as
+  canvases against 50 ms as images (33 ms with plain dots, 17 ms empty).
 - **Measured before decoded**: a picture over the tour's pixel cap, or
   one whose size cannot be read, keeps a plain marker (a dot); so does
   one whose read or decode fails - one frame lost, never the layer.

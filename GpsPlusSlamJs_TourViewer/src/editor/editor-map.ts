@@ -16,6 +16,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { addOsmTileLayer } from "gps-plus-slam-app-framework/visualization/osm-tile-layer";
 import type { DebugCapture } from "../debug-captures.js";
+import { revokeDebugThumbnail } from "./debug-capture-layer.js";
 import type { EditorItem, EditorModel } from "./editor-model.js";
 
 /** Codes stay above notes where they overlap (the owner's default for
@@ -130,6 +131,15 @@ export function createEditorMap(
   const debugGroup = L.layerGroup();
   const debugMarkers = new Map<string, HTMLElement>();
   let debugShown = true;
+
+  /** Every debug marker goes, and its thumbnail's blob URL with it. */
+  function dropDebugMarkers(): void {
+    for (const dot of debugMarkers.values()) {
+      for (const child of dot.children) revokeDebugThumbnail(child);
+    }
+    debugGroup.clearLayers();
+    debugMarkers.clear();
+  }
 
   function baseZ(item: EditorItem): number {
     if (item.onCode === true) return STATION_ON_CODE_Z;
@@ -268,8 +278,7 @@ export function createEditorMap(
       });
     },
     debugDraw(captures) {
-      debugGroup.clearLayers();
-      debugMarkers.clear();
+      dropDebugMarkers();
       for (const c of captures) {
         const dot = document.createElement("div");
         dot.className = "mk-debug";
@@ -295,6 +304,7 @@ export function createEditorMap(
     debugThumb(image, picture) {
       const dot = debugMarkers.get(image);
       if (dot === undefined) return;
+      for (const child of dot.children) revokeDebugThumbnail(child);
       dot.classList.add("has-thumb");
       dot.replaceChildren(picture);
     },
@@ -304,9 +314,8 @@ export function createEditorMap(
       else debugGroup.remove();
     },
     debugClear() {
-      debugGroup.clearLayers();
+      dropDebugMarkers();
       debugGroup.remove();
-      debugMarkers.clear();
     },
     destroy() {
       map.remove();

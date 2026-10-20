@@ -138,26 +138,58 @@ export function createDebugCaptureLayer<T>(
 }
 
 /**
- * The browser's downscaled decode of a capture's picture: a canvas
- * `DEBUG_THUMB_WIDTH_PX` wide (the height keeps the aspect), the decoded
- * bitmap closed at once. Call it only after `pictureProblem` passed.
+ * The browser's downscaled decode of a capture's picture, as a small
+ * `<img>` `DEBUG_THUMB_WIDTH_PX` wide (the height keeps the aspect): the
+ * picture is decoded at that size (`createImageBitmap` with
+ * `resizeWidth`, twice it on a high-density screen), drawn once into a
+ * scratch canvas, re-encoded as a small JPEG and shown from a blob URL;
+ * the bitmap and the canvas are freed at once. An image, not the canvas
+ * itself: measured, a thousand canvases on the map made each frame of a
+ * pan three times as long as a thousand images (the layer-cost results,
+ * M1 of the debug-captures plan). The URL is the caller's to revoke
+ * (`revokeDebugThumbnail`). Call it only after `pictureProblem` passed.
  */
 export async function decodeDebugThumbnail(
   blob: Blob,
-): Promise<HTMLCanvasElement> {
+): Promise<HTMLImageElement> {
   const ratio = window.devicePixelRatio > 1 ? 2 : 1;
   const bitmap = await createImageBitmap(blob, {
     resizeWidth: DEBUG_THUMB_WIDTH_PX * ratio,
     resizeQuality: "low",
   });
+  const canvas = document.createElement("canvas");
+  let small: Blob | null;
   try {
-    const canvas = document.createElement("canvas");
     canvas.width = bitmap.width;
     canvas.height = bitmap.height;
-    canvas.style.width = `${String(DEBUG_THUMB_WIDTH_PX)}px`;
     canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
-    return canvas;
+    small = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/jpeg", 0.8);
+    });
   } finally {
     bitmap.close();
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+  if (small === null) throw new Error("the thumbnail could not be encoded");
+  const img = document.createElement("img");
+  // Decorative: the capture is debug data, never announced.
+  img.alt = "";
+  img.width = DEBUG_THUMB_WIDTH_PX;
+  img.src = URL.createObjectURL(small);
+  try {
+    await img.decode();
+  } catch (err) {
+    revokeDebugThumbnail(img);
+    throw err;
+  }
+  return img;
+}
+
+/** Free a thumbnail's blob URL (`decodeDebugThumbnail`); anything else is
+ *  left alone. */
+export function revokeDebugThumbnail(picture: Element): void {
+  if (picture instanceof HTMLImageElement && picture.src.startsWith("blob:")) {
+    URL.revokeObjectURL(picture.src);
   }
 }

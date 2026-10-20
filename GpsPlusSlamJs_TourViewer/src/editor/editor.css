@@ -1142,8 +1142,9 @@ kbd {
   opacity: 0.85;
 }
 
-.mk-debug canvas {
+.mk-debug img {
   display: block;
+  height: auto;
 }
 
 .keep-walk {

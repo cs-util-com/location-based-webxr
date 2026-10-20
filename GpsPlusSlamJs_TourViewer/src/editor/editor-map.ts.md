@@ -39,7 +39,8 @@ plan review #4).
   (`debugCaptures`, z-index 550, below the marker pane's 600, with
   `pointer-events: none`), `interactive: false` and `keyboard: false`
   (no `leaflet-interactive` class, no tabindex), no tooltip, a zero-size
-  icon box the element centres itself on.
+  icon box the element centres itself on. A thumbnail's blob URL is
+  revoked when its marker is dropped or its picture replaced.
 
 - Markers are `divIcon`s built from ELEMENTS (`textContent` for a code's
   number), never HTML strings: a label comes from a zip anyone can write.
