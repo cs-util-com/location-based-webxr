@@ -106,6 +106,14 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   copy at a time, so those checks never overlap: while one runs, the
   newest copy waits and replaces any copy waiting before it (E2b-2
   milestone review #3).
+- **The debug layer** (`debug-capture-layer.ts`, M1 of the
+  debug-captures plan): for a tour whose file carries a walk, once the
+  tour is on screen, the walk's camera captures are placed
+  (`debugCapturesOf`) and drawn as thumbnails, read from the copy the
+  page reads now, with "Reading the debug data..." and then how many it
+  shows or why none (`#debug-status`). The "Show debug data" switch
+  starts ticked and only shows or hides them: view state, never in the
+  tour document, a save or the draft. Leaving the tour stops it.
 - **Save** builds the tour (`keepScan` from the "Keep the walk recording"
   switch, shown only for a tour that carries a walk, and ticked at the
   open whenever it does: until the walk can be saved apart from the

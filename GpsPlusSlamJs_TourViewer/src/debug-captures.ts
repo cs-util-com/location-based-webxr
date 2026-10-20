@@ -5,7 +5,7 @@
  * where each one stands (a geo pose). They are debug data: no station
  * holds them, a visitor never sees them, and no page writes them into
  * the tour. The desktop editor draws them as its debug layer, once the
- * tour has opened.
+ * tour has opened (`editor/debug-capture-layer.ts`).
  *
  * Every decline is the join's own (`preflightCaptureJoin`,
  * `assessReplayedJoin`), plus two more: no capture file the tour carries,

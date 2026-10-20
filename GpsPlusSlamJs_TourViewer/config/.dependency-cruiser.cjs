@@ -34,6 +34,17 @@ module.exports = {
       to: { path: "^src/editor/" },
     },
 
+    // The walk's camera captures are debug data, shown only in the desktop
+    // editor's debug layer (`src/editor/debug-capture-layer.ts`, M1 of the
+    // debug-captures plan): no phone or visitor module places them, so
+    // none reaches the join that does.
+    {
+      name: "debug-captures-editor-only",
+      severity: "error",
+      from: { path: "^src/[^/]+\\.ts$", pathNot: "\\.test\\.ts$" },
+      to: { path: "^src/debug-captures\\.ts$" },
+    },
+
     // The tour a creator edits has ONE copy: the tour document
     // (`tour-document.ts`, D29-D31). Its rules - the object edits, the
     // Finish's manifest, the stations' content, the objects a written file

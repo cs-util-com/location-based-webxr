@@ -4,7 +4,10 @@
  * pads for no rail and hides its map; M6 E1 plan review #4), a marker per
  * code, pin and photo, selection and hover, and the pixel position a card
  * is anchored to. Markers are built from elements, never HTML strings: a
- * label comes from a zip anyone can write (plan review #2).
+ * label comes from a zip anyone can write (plan review #2). The debug
+ * layer's camera captures (`debug-capture-layer.ts`) sit in a pane of
+ * their own below the tour's markers: never interactive, never
+ * focusable, no tooltip.
  *
  * @see editor-map.ts.md
  */
@@ -12,6 +15,7 @@
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { addOsmTileLayer } from "gps-plus-slam-app-framework/visualization/osm-tile-layer";
+import type { DebugCapture } from "../debug-captures.js";
 import type { EditorItem, EditorModel } from "./editor-model.js";
 
 /** Codes stay above notes where they overlap (the owner's default for
@@ -20,6 +24,11 @@ const CODE_Z = 500;
 /** A station beside its code is drawn over the code's edge. */
 const STATION_ON_CODE_Z = 600;
 const SELECTED_Z = 1000;
+
+/** The debug captures' pane: below Leaflet's marker pane (600), above
+ *  its overlays (400), and never under the pointer. */
+const DEBUG_PANE = "debugCaptures";
+const DEBUG_PANE_Z = "550";
 
 /** Where a whole tour is framed when it has nothing with a position:
  *  the map still shows, at a world view. */
@@ -50,6 +59,15 @@ export interface EditorMap {
     id: string,
     padding: { topLeft: [number, number]; bottomRight: [number, number] },
   ): void;
+  /** The debug layer (`debug-capture-layer.ts`): a marker per capture,
+   *  without a picture yet, replacing any drawn before. */
+  debugDraw(captures: readonly DebugCapture[]): void;
+  /** A capture's thumbnail into its marker. */
+  debugThumb(image: string, picture: HTMLElement): void;
+  /** Show or hide the debug markers. */
+  debugVisible(on: boolean): void;
+  /** Remove every debug marker. */
+  debugClear(): void;
   destroy(): void;
 }
 
@@ -106,6 +124,12 @@ export function createEditorMap(
   });
   const markers = new Map<string, { marker: L.Marker; item: EditorItem }>();
   let selected: string | null = null;
+  const debugPane = map.createPane(DEBUG_PANE);
+  debugPane.style.zIndex = DEBUG_PANE_Z;
+  debugPane.style.pointerEvents = "none";
+  const debugGroup = L.layerGroup();
+  const debugMarkers = new Map<string, HTMLElement>();
+  let debugShown = true;
 
   function baseZ(item: EditorItem): number {
     if (item.onCode === true) return STATION_ON_CODE_Z;
@@ -242,6 +266,47 @@ export function createEditorMap(
         paddingTopLeft: padding.topLeft,
         paddingBottomRight: padding.bottomRight,
       });
+    },
+    debugDraw(captures) {
+      debugGroup.clearLayers();
+      debugMarkers.clear();
+      for (const c of captures) {
+        const dot = document.createElement("div");
+        dot.className = "mk-debug";
+        debugGroup.addLayer(
+          L.marker([c.geo.lat, c.geo.lon], {
+            // A zero box at the point; the element centres itself on it
+            // (its size is the thumbnail's, unknown until decoded).
+            icon: L.divIcon({
+              className: "mk-debug-wrap",
+              html: dot,
+              iconSize: [0, 0],
+              iconAnchor: [0, 0],
+            }),
+            interactive: false,
+            keyboard: false,
+            pane: DEBUG_PANE,
+          }),
+        );
+        debugMarkers.set(c.image, dot);
+      }
+      if (debugShown) debugGroup.addTo(map);
+    },
+    debugThumb(image, picture) {
+      const dot = debugMarkers.get(image);
+      if (dot === undefined) return;
+      dot.classList.add("has-thumb");
+      dot.replaceChildren(picture);
+    },
+    debugVisible(on) {
+      debugShown = on;
+      if (on) debugGroup.addTo(map);
+      else debugGroup.remove();
+    },
+    debugClear() {
+      debugGroup.clearLayers();
+      debugGroup.remove();
+      debugMarkers.clear();
     },
     destroy() {
       map.remove();

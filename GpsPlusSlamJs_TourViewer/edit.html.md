@@ -18,6 +18,10 @@ AR (tour editor plan 2026-10-17-1816, W1).
 ## Structure
 
 - `#map` - the full-window map (`src/editor/editor-map.ts`).
+- `#debug-panel` - the debug layer's "Show debug data" switch
+  (`#debug-data-input`, ticked) and its line (`#debug-status`, a live
+  region), shown only for a tour whose file carries a walk
+  (`src/editor/debug-capture-layer.ts`).
 - `#topbar` - the tour's title (`#tour-name`, a button that opens the
   tour's details, W2) and file name, the "Keep the walk recording"
   switch (`#keep-walk`, only for a tour carrying a walk), `#save-status`,

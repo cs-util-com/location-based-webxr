@@ -131,7 +131,8 @@ export function buildEditorModel(input: {
     ];
   });
   // The walk's debug camera captures are never items: they are debug
-  // data, not the tour's content.
+  // data, not the tour's content (the map's debug layer draws them,
+  // `debug-capture-layer.ts`).
   // The stations (tour kit plan K4; version 3: each at its own position,
   // the frame of its pins and photos, D9). A story tour may carry nothing
   // else (the committed sample).

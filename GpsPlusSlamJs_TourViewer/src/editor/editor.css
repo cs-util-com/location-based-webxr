@@ -1095,6 +1095,57 @@ kbd {
   font-size: 12px;
 }
 
+/* The debug layer: the walk's camera captures, debug data only. A dot
+   until its thumbnail is decoded; centred on its point; never under the
+   pointer (its pane takes no events either). */
+.debug-panel {
+  position: fixed;
+  right: 12px;
+  bottom: 28px;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+.debug-panel[hidden] {
+  display: none;
+}
+
+.debug-data {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mk-debug {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 85%);
+  border: 1px solid rgb(0 0 0 / 55%);
+  pointer-events: none;
+}
+
+.mk-debug.has-thumb {
+  width: auto;
+  height: auto;
+  border-radius: 2px;
+  background: none;
+  line-height: 0;
+  opacity: 0.85;
+}
+
+.mk-debug canvas {
+  display: block;
+}
+
 .keep-walk {
   display: inline-flex;
   align-items: center;

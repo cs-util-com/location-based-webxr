@@ -8,7 +8,9 @@ it was taken, and return where each one stands. They are debug data (the
 plan `2026-10-20-1159-debug-captures-and-codes-in-store-plan`, M1): no
 station holds them, a visitor never sees them, and no page writes them into
 `tour.json`. The desktop editor draws them as its debug layer, once the
-tour has opened. The module began as the bake that seated the captures in
+tour has opened (`editor/debug-capture-layer.ts`); no phone or visitor
+module may import this one (`config/.dependency-cruiser.cjs`,
+`debug-captures-editor-only`). The module began as the bake that seated the captures in
 stations at the open (`capture-bake.ts`); that half went with M1.
 
 ## Public API

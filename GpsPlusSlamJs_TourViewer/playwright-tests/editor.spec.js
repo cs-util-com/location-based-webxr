@@ -464,6 +464,71 @@ test("lists no debug camera capture of a wrapped zip, and shows a code without a
   await expect(page.locator("#offscreen-chip")).toBeHidden();
 });
 
+test("shows a walk's camera captures as debug data: a thumbnail each, out of reach of the pointer and the keyboard, behind a switch", async ({
+  page,
+}) => {
+  // Why (M1 of the debug-captures plan): the frames a recording captured
+  // by itself are debug data. The desktop editor shows them, after the
+  // open, as small thumbnails a creator can look at but never select,
+  // move, tab to or save: no row, no card, no tabindex, no pointer
+  // events, no tooltip, nothing pending. The switch hides and shows them.
+  const recording = Buffer.from(
+    await (
+      await fetch("http://127.0.0.1:5197/ranges-ok/recording-tour.zip")
+    ).arrayBuffer(),
+  );
+  await page.goto("/edit.html");
+  await openThroughChooser(page, recording, "recording.zip");
+  await expect(page.locator("#debug-panel")).toBeVisible();
+  await expect(page.locator("#debug-data-input")).toBeChecked();
+  await expect(page.locator("#debug-status")).toHaveText(
+    "Debug data: 2 camera captures on the map.",
+  );
+  const markers = page.locator(".mk-debug-wrap");
+  await expect(markers).toHaveCount(2);
+  await expect(page.locator(".mk-debug canvas")).toHaveCount(2);
+  await expect(page.locator(".mk-debug-wrap[tabindex]")).toHaveCount(0);
+  await expect(page.locator(".mk-debug-wrap.leaflet-interactive")).toHaveCount(
+    0,
+  );
+  await expect(page.locator(".mk-debug-wrap[title]")).toHaveCount(0);
+  await expect(page.locator(".leaflet-tooltip")).toHaveCount(0);
+  expect(
+    await markers
+      .first()
+      .evaluate((el) => getComputedStyle(el.parentElement ?? el).pointerEvents),
+  ).toBe("none");
+  // Not the tour's content: the rail lists the code only.
+  await expect(page.locator("#rail .row")).toHaveCount(1);
+  await page.locator("#debug-data-input").uncheck();
+  await expect(markers).toHaveCount(0);
+  await page.locator("#debug-data-input").check();
+  await expect(markers).toHaveCount(2);
+  await expect(page.locator("#save-status")).toHaveText("No changes");
+});
+
+test("says why a walk shows no debug data, and shows no switch for a tour without a walk", async ({
+  page,
+}) => {
+  // Why (the async-UI rule): the debug layer's work ends in a final state
+  // the creator can read - here a walk whose stream places nothing. A
+  // tour without a walk has no debug data and no switch for it.
+  await page.goto("/edit.html");
+  await openThroughChooser(page, await wrappedTour(), "wrapped.zip");
+  await expect(page.locator("#debug-panel")).toBeVisible();
+  await expect(page.locator("#debug-status")).toContainText(
+    "No debug data shown: ",
+  );
+  await expect(page.locator(".mk-debug-wrap")).toHaveCount(0);
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+  await page.locator("#open-another").click();
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  await expect(page.locator("#tour-name")).not.toHaveText("Wrapped fixture");
+  await expect(page.locator("#debug-panel")).toBeHidden();
+});
+
 test("says the sample is being fetched while it is, and why it failed when it does", async ({
   page,
 }) => {
