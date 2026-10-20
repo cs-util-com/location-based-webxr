@@ -297,6 +297,131 @@ describe("the creator's document: changes through the slice's guards", () => {
   });
 });
 
+describe("the creator's document: the AR anchors of the stations it starts", () => {
+  // Why these tests matter: a station started in an AR visit is anchored
+  // where its first item stood at the tap, through the tap's alignment;
+  // the visit's settle then moves that item. Unless the settle can re-pose
+  // the station too, its anchor drifts off the item it was started for.
+  // The settle can only do that with the anchor's odometry pose in that
+  // visit, which never enters the tour state: it is kept beside it, like
+  // an object's AR placement.
+  const ELSEWHERE = {
+    visit: 2,
+    local: {
+      position: [40, 0, 9] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    },
+  };
+  const stationOf = (doc: ReturnType<typeof fresh>, id: string) =>
+    doc.objects().find((o) => o.object.id === id)!.object.station!;
+
+  it("anchors a station a placement starts at that item's AR placement; a later item changes nothing", () => {
+    const doc = fresh();
+    doc.open(tourOf([]));
+    doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
+    doc.place(pin("q"), { placement: ELSEWHERE }, "a pin");
+    const station = stationOf(doc, "p");
+    expect(stationOf(doc, "q")).toBe(station);
+    expect([...doc.stationPlacements()]).toEqual([
+      [station, { ...PLACEMENT, item: "p" }],
+    ]);
+  });
+
+  it("anchors nothing for an item placed without an AR placement, nor a station the tour carries", () => {
+    const doc = fresh();
+    doc.open(tourOf([pin("a")]));
+    // 1.1 km from "a": a station of its own, with no AR placement.
+    doc.place(pin("p", 48.53), {}, "a pin");
+    // Next to "a": the tour's station takes it.
+    doc.place(pin("q"), { placement: PLACEMENT }, "a pin");
+    expect(stationOf(doc, "q")).toBe(stationOf(doc, "a"));
+    expect(doc.stationPlacements().size).toBe(0);
+  });
+
+  it("anchors the station a move starts: in AR at the new placement, by a settle at the placement the item keeps", () => {
+    const doc = fresh();
+    doc.open(tourOf([]));
+    doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
+    const first = stationOf(doc, "p");
+    doc.move(pin("p", 48.53), "a move in AR", ELSEWHERE);
+    const second = stationOf(doc, "p");
+    expect(second).not.toBe(first);
+    // The station it left emptied and went, and its anchor with it.
+    expect([...doc.stationPlacements()]).toEqual([
+      [second, { ...ELSEWHERE, item: "p" }],
+    ]);
+    doc.move(pin("p", 48.54), "the settle");
+    const third = stationOf(doc, "p");
+    expect([...doc.stationPlacements()]).toEqual([
+      [third, { ...ELSEWHERE, item: "p" }],
+    ]);
+  });
+
+  it("anchors the stations the rule starts for work carried into the tour that opens", () => {
+    const doc = fresh();
+    doc.place(pin("q", 48.53), { placement: PLACEMENT }, "a pin");
+    doc.place(pin("r", 48.5301), { placement: ELSEWHERE }, "a pin");
+    doc.open(tourOf([pin("a")]));
+    const station = stationOf(doc, "q");
+    expect(stationOf(doc, "r")).toBe(station);
+    expect([...doc.stationPlacements()]).toEqual([
+      [station, { ...PLACEMENT, item: "q" }],
+    ]);
+  });
+
+  it("keeps an anchor through an undo and a redo of its station", () => {
+    const store = createTourViewerStore();
+    const doc = createCreatorDocument(store);
+    doc.open(tourOf([]));
+    doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
+    const station = stationOf(doc, "p");
+    doc.undo();
+    expect(doc.stationPlacements().size).toBe(0);
+    store.dispatch(tourDocumentActions.redone());
+    expect([...doc.stationPlacements()]).toEqual([
+      [station, { ...PLACEMENT, item: "p" }],
+    ]);
+  });
+
+  it("drops the anchors with the tour: a draft restored into it again brings none", () => {
+    const doc = fresh();
+    doc.open(tourOf([]));
+    doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
+    const station = stationOf(doc, "p");
+    const frame = doc.state().stations.find((f) => f.id === station)!;
+    const object = doc.objects()[0]!.object;
+    doc.close();
+    doc.open(tourOf([]));
+    doc.restore(
+      {
+        objects: [object],
+        deleted: [],
+        pictures: new Map(),
+        createdStations: [frame],
+      },
+      "the draft",
+    );
+    expect(stationOf(doc, "p")).toBe(station);
+    expect(doc.stationPlacements().size).toBe(0);
+  });
+
+  it("drops the anchor of a station a write carried, keeping one the write did not", () => {
+    const doc = fresh();
+    doc.open(tourOf([]));
+    doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
+    const generation = doc.saveStarted();
+    const written = manifestToWrite(doc.state())!;
+    const stationsAtStart = doc.state().stations;
+    // Placed while the write ran: its station is not in the write.
+    doc.place(pin("q", 48.53), { placement: ELSEWHERE }, "a pin");
+    doc.saved({ generation, written, appliedDeletions: [], stationsAtStart });
+    doc.saveEnded(generation);
+    expect([...doc.stationPlacements()]).toEqual([
+      [stationOf(doc, "q"), { ...ELSEWHERE, item: "q" }],
+    ]);
+  });
+});
+
 describe("the creator's document: the draft follows it", () => {
   it("writes each change from the listener, with the photo's picture", async () => {
     const doc = fresh();

@@ -775,6 +775,31 @@ function settledObject(
   }
 }
 
+/** `local` through `alignment` as a point on the earth (a station's
+ *  anchor: its orientation is the station's own, not the item's). */
+function settledPoint(
+  local: NuePose,
+  alignment: readonly number[],
+  zero: LatLong,
+): SettledStation["at"] | null {
+  const world = throughAlignment(local, alignment);
+  if (world === null) return null;
+  try {
+    const geo = mintQrGeoPose({
+      worldNuePosition: {
+        x: world.position[0],
+        y: world.position[1],
+        z: world.position[2],
+      },
+      worldNueRotation: [0, 0, 0, 1],
+      zero,
+    });
+    return { lat: geo.lat, lon: geo.lon, alt: geo.alt };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * One code of a visit with several (code book refactor plan M4b): its
  * level - the stored one, or for a code measured here the level in hand
@@ -805,6 +830,12 @@ export interface VisitSettleInput extends SettleAlignmentInput {
     readonly object: TourObject;
     readonly placement?: { readonly visit: number; readonly local: NuePose };
   }[];
+  /** Stations a visit started, each anchored where its first item was
+   *  placed (`placement`, that item's odometry pose) and settled at that
+   *  item's moment (`item`, its id in the picks): those of this visit
+   *  settle with its objects, so a station stays anchored at its first
+   *  item whatever the settle moves. Absent: none. */
+  readonly stations?: readonly VisitStation[];
   /** The mint gate's view of the alignment at the visit's end, for the
    *  re-minted level's quality block when the level goes through the end
    *  alignment (no measurement pick, or one kept without its info). */
@@ -816,6 +847,24 @@ export interface VisitSettleInput extends SettleAlignmentInput {
   readonly nowIso: string;
 }
 
+/** A station a visit started, as the settle reads it. */
+export interface VisitStation {
+  readonly id: string;
+  readonly placement: { readonly visit: number; readonly local: NuePose };
+  /** The item it was anchored at: the anchor settles at its moment. */
+  readonly item: string;
+}
+
+/** Where a station of the visit is anchored after the settle. */
+export interface SettledStation {
+  readonly id: string;
+  readonly at: {
+    readonly lat: number;
+    readonly lon: number;
+    readonly alt: number;
+  };
+}
+
 export interface VisitSettle {
   /** The choice for an object placed at the visit's end (the latest
    *  sighting): what a photo that lands after the settle goes through. */
@@ -825,6 +874,9 @@ export interface VisitSettle {
   /** The settled records, by their index in `placed`, each with its own
    *  choice (D33). */
   readonly objects: ({ index: number; object: TourObject } & SettleChoice)[];
+  /** The visit's stations (`input.stations` of this visit), each anchor
+   *  settled through the choice its first item gets, in input order. */
+  readonly stations: SettledStation[];
   /** The code re-minted from this visit's measurement, when this visit
    *  measured it; null otherwise (or when the re-mint was refused). */
   readonly level: { id: string; json: string } | null;
@@ -930,8 +982,17 @@ export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
       ? [{ index, object: entry.object, local: entry.placement.local }]
       : [],
   );
+  const stations = (input.stations ?? []).filter(
+    (s) => s.placement.visit === input.visit,
+  );
   const views = codeViews(input);
-  if (targets.length === 0 && !views.some(measuredHere)) return null;
+  if (
+    targets.length === 0 &&
+    stations.length === 0 &&
+    !views.some(measuredHere)
+  ) {
+    return null;
+  }
   const end = readAlignment(input.alignment);
   const zero = input.zero;
   if (end === null || zero === null) return null;
@@ -945,18 +1006,28 @@ export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
   // A photo that lands after the settle is at the visit's end: the code
   // seen last (with one code, the code in hand, as before).
   const choice = endChoiceOf(views, input, end, zero);
-  const objects = targets.flatMap(({ index, object, local }) => {
-    const timed = input.picks?.objects.get(object.id) ?? null;
+  /** The choice an object settles through, by its id (its pick). */
+  const choiceOf = (id: string): SettleChoice => {
+    const timed = input.picks?.objects.get(id) ?? null;
     const own = readAlignment(timed?.alignment ?? null) ?? end;
     const code = codes[nearestCode(views, timed)];
-    const mine =
-      code === undefined
-        ? choiceFor(input, end, zero, timed, own)
-        : code.measured
-          ? measuredChoice(code.view, end, zero, timed, own, code.reminted)
-          : choiceFor(code.view, end, zero, timed, own);
+    return code === undefined
+      ? choiceFor(input, end, zero, timed, own)
+      : code.measured
+        ? measuredChoice(code.view, end, zero, timed, own, code.reminted)
+        : choiceFor(code.view, end, zero, timed, own);
+  };
+  const objects = targets.flatMap(({ index, object, local }) => {
+    const mine = choiceOf(object.id);
     const settled = settledObject(object, local, mine.alignment, zero);
     return settled === null ? [] : [{ index, object: settled, ...mine }];
+  });
+  // A station through its first item's choice: the item and its anchor
+  // share one odometry pose and one alignment, so the anchor lands exactly
+  // where the item does (a later item of the station keeps its own).
+  const settledStations = stations.flatMap(({ id, placement, item }) => {
+    const at = settledPoint(placement.local, choiceOf(item).alignment, zero);
+    return at === null ? [] : [{ id, at }];
   });
   const levels = codes.flatMap((c) =>
     c.reminted === null
@@ -968,6 +1039,7 @@ export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
     basis: choice.basis,
     alignment: choice.alignment,
     objects,
+    stations: settledStations,
     level: first?.level ?? null,
     levelAlignment: first?.alignment ?? null,
     levels,

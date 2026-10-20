@@ -80,7 +80,11 @@ generation, written, appliedDeletions, stationsAtStart })`,
 - `follow(draft)` - the draft follows the document: `followDocument`
   (`tour-document-draft.ts`) from a listener after each edit. Once per
   page (a second call throws: two drafts would write everything twice).
-- `revision()`; the types `VisitPlacement`, `CreatorObject`,
+- `stationPlacements()` - the AR anchors of the stations an object with
+  an AR placement started, by station id (`StationPlacement`: the
+  placement and the `item` it was started for), only stations the
+  document has now; see the invariants.
+- `revision()`; the types `VisitPlacement`, `StationPlacement`, `CreatorObject`,
   `DocumentChange`, `CreatorDocumentStore` (`PlacedEntry`,
   `PlacedChange`, `DocumentUndo` and `DocumentRename` are the methods' own shapes,
   module-private).
@@ -108,6 +112,18 @@ generation, written, appliedDeletions, stationsAtStart })`,
   document's, and none of them comes along; anything of another tour was dropped at its `close`, side
   tables included (M4 review #1: carried into another tour it would be
   written into ITS zip).
+- **A station's AR anchor is a side table too** (`stationPlacements()`,
+  `StationPlacement`): a station a placement, a move or carried work
+  started for an object with an AR placement is anchored at that
+  placement, with the object's id (`item`), whose moment the anchor
+  settles at - the station rule anchors the frame where its first item
+  stands, so the anchor's odometry pose is that item's. The visit's settle
+  re-poses such a station with the visit's objects (`creator-settle.ts`).
+  Only stations the document has now are listed (an undo hides one, a redo
+  brings it back with its anchor); a close drops them all, and a write
+  drops those of the stations it carried (they are the file's now, as its
+  items' placements go). A station started without an AR placement (a
+  draft's, a hosted one) has none.
 - **Side tables are set before the dispatch**, so the listener's
   `pictureOf` finds a new photo's picture. Pictures stay until the tour
   closes (an undo after a write needs them); a placement goes when a write
@@ -145,7 +161,10 @@ else void placed.backedUp.then((ok) => ok || draft.warnNoBackup());
   it), the guards (a known id, a move beyond reach, an
   unknown station), the placement kept or replaced, undo (refused while a
   write runs, refused without a picture), a write taking an entry and its
-  placement out, and the draft following (writes from the listener with
+  placement out, the stations' AR anchors (a placement's, a move's in AR
+  and by a settle, carried work's; none without an AR placement or for a
+  tour's station; kept through undo and redo; gone with the tour and for a
+  written station), and the draft following (writes from the listener with
   the picture, a failure reported to its change, the station poses'
   record, nothing for an open, a close or a landed write).
 - The composed phone: `authoring-settle.test.ts`, `creator-setup.test.ts`,

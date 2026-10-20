@@ -57,6 +57,17 @@ export interface VisitPlacement {
   readonly local: NuePose;
 }
 
+/**
+ * Where a station a visit started is anchored in that visit's odometry:
+ * the AR placement of the item it was started for (the station's anchor
+ * stands where that item stood), and the item's id, whose moment the
+ * anchor settles at. The settle re-poses such a station together with its
+ * visit's objects, so it stays anchored at its first item.
+ */
+export interface StationPlacement extends VisitPlacement {
+  readonly item: string;
+}
+
 /** One of this page's entries: the object as the document holds it, with
  *  its picture and its AR placement from the side tables. */
 interface PlacedEntry {
@@ -128,6 +139,12 @@ export interface CreatorDocument {
   objects(): CreatorObject[];
   /** A photo's picture from the side table. */
   pictureOf(id: string): Blob | undefined;
+  /** The AR anchors of the document's stations that an object with an AR
+   *  placement started (a placement, a move or carried work): by station
+   *  id, only stations the document has now. A station started without an
+   *  AR placement (a draft's, a hosted one) has none. Gone with the tour,
+   *  and for a station a write carried (as its items' placements are). */
+  stationPlacements(): ReadonlyMap<string, StationPlacement>;
   /** Keep a photo's picture (a deleted photo's, for an undo after a
    *  write took it out). */
   keepPicture(id: string, blob: Blob): void;
@@ -236,6 +253,7 @@ export function createCreatorDocument(
   /** Photos' pictures and AR placements, by object id: never state. */
   const pictures = new Map<string, Blob>();
   const placements = new Map<string, VisitPlacement>();
+  const stationAnchors = new Map<string, StationPlacement>();
   /** Bumped when a side table changes: the entries are joined again. */
   let sideVersion = 0;
   /** The draft writes the dispatch under way issued, while one is
@@ -339,9 +357,34 @@ export function createCreatorDocument(
     return id;
   }
 
+  /**
+   * Anchor each station that the change from `before` started at the AR
+   * placement of the first of `ids` (in order) now in it: the object it
+   * was started for. An object without an AR placement anchors nothing.
+   */
+  function anchorStarted(
+    before: TourDocumentState,
+    ids: readonly string[],
+  ): void {
+    const known = new Set(before.stations.map((s) => s.id));
+    const now = new Map(
+      documentObjects(state()).map((o) => [o.object.id, o.object.station]),
+    );
+    for (const id of ids) {
+      const station = now.get(id);
+      if (station === undefined || known.has(station)) continue;
+      known.add(station);
+      const placement = placements.get(id);
+      if (placement !== undefined) {
+        stationAnchors.set(station, { ...placement, item: id });
+      }
+    }
+  }
+
   function reopen(manifestToOpen: TourManifest): void {
     pictures.clear();
     placements.clear();
+    stationAnchors.clear();
     sideVersion += 1;
     store.dispatch(tourDocumentActions.opened({ manifest: manifestToOpen }));
   }
@@ -361,6 +404,10 @@ export function createCreatorDocument(
         placed: o.placed === null ? null : join(o.placed.object),
       })),
     pictureOf: (id) => pictures.get(id),
+    stationPlacements: () => {
+      const current = new Set(state().stations.map((s) => s.id));
+      return new Map([...stationAnchors].filter(([id]) => current.has(id)));
+    },
     keepPicture: setPicture,
     open(opened) {
       const before = state();
@@ -380,6 +427,7 @@ export function createCreatorDocument(
         if (side.placement !== undefined) placements.set(id, side.placement);
       }
       if (carried.length > 0) {
+        const opening = state();
         change(
           tourDocumentActions.restored({
             objects: carried,
@@ -389,6 +437,10 @@ export function createCreatorDocument(
             rerun: true,
             what: "the work made before the tour opened",
           }),
+        );
+        anchorStarted(
+          opening,
+          carried.map((o) => o.id),
         );
       }
     },
@@ -412,6 +464,7 @@ export function createCreatorDocument(
           ...(ownStation ? { newStation: true } : {}),
         }),
       );
+      anchorStarted(before, [given.id]);
       // The object as the station rule seated it.
       const object =
         documentObjects(state()).find((o) => o.object.id === given.id)
@@ -432,13 +485,15 @@ export function createCreatorDocument(
         return null;
       }
       if (placement !== undefined) setPlacement(object.id, placement);
-      return change(
+      const moved = change(
         tourDocumentActions.moved({
           object,
           what,
           newStationId: freshStationId(before),
         }),
       );
+      anchorStarted(before, [object.id]);
+      return moved;
     },
     remove(id, what) {
       if (!documentObjects(state()).some((o) => o.object.id === id)) {
@@ -511,6 +566,11 @@ export function createCreatorDocument(
       const kept = new Set(state().placed.map((p) => p.object.id));
       for (const id of [...placements.keys()]) {
         if (!kept.has(id)) placements.delete(id);
+      }
+      // A station the write carried is the file's from now on, as its
+      // written items are: a later settle re-poses it no more.
+      for (const station of save.written.stations) {
+        stationAnchors.delete(station.id);
       }
       sideVersion += 1;
     },
