@@ -25,6 +25,8 @@ AR (tour editor plan 2026-10-17-1816, W1).
   debug data…" (`#debug-add`, with its hidden `#debug-add-input`; a file
   dropped on the panel too; M2 step 5 of the debug-captures plan)
   (`src/editor/debug-capture-layer.ts`, `src/editor/added-debug-data.ts`).
+  It stacks under the note card (`editor.css`), which may open over the
+  same corner.
 - `#topbar` - the tour's title (`#tour-name`, a button that opens the
   tour's details, W2) and file name, the "Keep the debug data in
   the tour file" switch (`#keep-walk`, only for a tour carrying a walk,
