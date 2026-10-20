@@ -334,7 +334,6 @@ function viewer(level: QrLevel = LEVEL, withCodeB = false) {
     },
     readiness: null,
     placement: ctx.placement,
-    planesError: null,
     contentError: null,
     gate: ctx.scanGate,
     content: { kind: "none" },

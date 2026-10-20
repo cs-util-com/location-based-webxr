@@ -184,7 +184,8 @@ export interface TourStation {
   readonly steps: readonly TourStep[];
   /** For `branch` order: the default next station. */
   readonly next?: string;
-  /** The pins and photos placed at this station, at local poses. */
+  /** The items placed at this station (pins, photos, models), at local
+   *  poses. */
   readonly items: readonly TourItem[];
 }
 
@@ -755,11 +756,36 @@ function parseStation(
     ...(value.next === undefined
       ? {}
       : { next: requireId(value.next, `${at}.next`, fail) }),
-    items: parseTourItems(value.items, `${at}.items`, {
-      fail,
-      lenient: ctx.lenient,
-    }),
+    items: withResolvedModels(
+      parseTourItems(value.items, `${at}.items`, {
+        fail,
+        lenient: ctx.lenient,
+      }),
+      `${at}.items`,
+      ctx
+    ),
   };
+}
+
+/**
+ * A placed model names a model asset of the tour (`tour-items.ts` checks
+ * only the id's shape: it does not see the assets). A lenient reader leaves
+ * out a model whose asset it does not have - one it left out as a newer
+ * minor's media type, or one of a kind it cannot draw as a model - as it
+ * skips a step naming one; a strict reader refuses the file.
+ */
+function withResolvedModels(
+  items: readonly TourItem[],
+  at: string,
+  ctx: BlockContext
+): TourItem[] {
+  return items.flatMap((item, i): TourItem[] => {
+    if (item.kind !== 'model' || ctx.assets.get(item.asset)?.kind === 'model') {
+      return [item];
+    }
+    if (ctx.lenient) return [];
+    return ctx.fail(`"${at}[${String(i)}].asset" must name a model asset`);
+  });
 }
 
 /** Every reference between steps and stations resolves. */

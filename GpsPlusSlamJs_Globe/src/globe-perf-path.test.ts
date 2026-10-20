@@ -179,10 +179,13 @@ describe("perfWheelDeltaY, the controls-driven mode", () => {
 describe("PERF_E_CHECK_KM", () => {
   it("lies inside the exaggeration's ramp, where a small move changes E", () => {
     const m = PERF_E_CHECK_KM * 1000;
-    const e = exaggerationAt(m);
+    // With the exaggerated law a link asks for (`reliefNear=3`): at the
+    // default E 1 (true heights, D-K1) there is no step to time.
+    const near = { near: 3 };
+    const e = exaggerationAt(m, near);
     expect(e).toBeGreaterThan(1);
-    expect(e).toBeLessThan(exaggerationAt(0));
+    expect(e).toBeLessThan(exaggerationAt(0, near));
     // A 30 % descent from the check altitude crosses at least one 0.1 step.
-    expect(exaggerationAt(m * 0.7)).toBeGreaterThan(e);
+    expect(exaggerationAt(m * 0.7, near)).toBeGreaterThan(e);
   });
 });

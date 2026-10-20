@@ -22,7 +22,9 @@ reducers' building blocks, so a page cannot apply them differently.
 - `opened`, `written` - the tour as opened, and as last written (the
   opened one until a save landed); null before an open.
 - `stations: StationFrame[]` - every station without its items (`geo`,
-  radii, title, steps): the frames as they stand, moved by `stationMoved`.
+  radii, title, steps): the frames as they stand, moved by `stationMoved`,
+  started by the station rule (below) and dropped with the last object of
+  an automatic one, in the order they were made.
 - `placed: EditEntry[]` - objects placed, edited or moved, in the world,
   one entry per id; pending while the written file, read through the
   document's frames, does not hold them by content (`unsavedEntries`): a
@@ -70,20 +72,64 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
 
 ## Actions (`tourDocumentActions`)
 
-- `opened({ manifest })` - everything before it is gone; `generation` + 1.
+- `opened({ manifest, newTourId? })` - everything before it is gone;
+  `generation` + 1. A tour without an id of its own takes `newTourId` into
+  `written` (debug-captures plan, Q-I): minted by the page that opens it
+  (`newTourId()` of `tour-file-key.ts`; a reducer draws no random
+  numbers), so every write carries it; `opened` stays the file's tour as
+  read, and the id reads as no change. A tour's own id is never replaced.
+  The manifest opens without a file's debug camera captures and the
+  stations only they kept (`withoutDebugCaptures` of `tour-content.ts`):
+  no page shows, keeps or writes them, and nothing reads as unsaved for
+  it (`opened` and `written` are both the dropped manifest).
   Only who holds the page's save slot (`save.by`) is kept: the slot is
   the page's, and the save holding it lets it go once it sees its tour
   gone (as the page's own flag behaved).
-- `placed` / `edited` / `moved({ object, what })` - one entry per id
-  (`upsertPlaced`): a new object, a pin's text, a move on the map or in AR.
-  Three names so a log reads as what happened. `placed` changes nothing
-  for an id the tour carries (`canPlace`); none of the three for a spot
-  beyond its station's reach (`objectFits`), nor for a pending object put
-  again with the same content (`objectContentKey`): the AR settle
-  re-poses every object of a visit, and an unchanged one is no step - it
-  would withdraw a delete's Undo.
+- `placed` / `edited` / `moved({ object, what, newStationId?, newStation? })`
+  - one entry per id (`upsertPlaced`): a new object, a pin's text, a move
+    on the map or in AR. Three names so a log reads as what happened. None
+    changes anything for a pending object put again with the same content
+    and the same stations (`objectContentKey`): the AR settle re-poses
+    every object of a visit, and an unchanged one is no step - it would
+    withdraw a delete's Undo.
+- **Every object belongs to a station from the moment it is placed** (the
+  station rule, `seatByRule`). It reads the stations of `manifestNow` (a
+  written station no frame names still counts) and seats an object naming
+  no station in the NEAREST station whose OWN `foundRadiusM` holds it
+  (`station-assign.ts` `stationHolding`: horizontal, the radius itself
+  inside, a tie to the earlier station) and whose frame can carry it
+  (`TOUR_ITEM_MAX_OFFSET_M` per axis: a found radius has no upper bound,
+  so a 50 km radius never takes an object 20 km away), or starts a new automatic station
+  anchored at it (`tour-content.ts` `automaticStationFrame`: found 25 m,
+  activates 50 m, turned like north, arrow hint, no story), appended to
+  `stations`. The new station's id is minted OUTSIDE the reducer: the
+  caller passes `newStationId`, or the action's `prepare` mints one
+  (`newObjectId`), so the reducer stays pure and a test can pin it; a
+  taken id changes nothing.
+  - `placed`: refused for an id the document carries or deleted (its
+    tombstone would hide the placement), or naming a station it lacks or
+    too far from it (`canPlace`). An object naming a station keeps it;
+    one naming none is seated by the rule; "New station here"
+    (`newStation: true`) always starts a new station, even within
+    another's radius.
+  - `edited`: keeps the object's station (`objectFits`); an object naming
+    none, of an id the document lacks, changes nothing.
+  - `moved`: within its station's own found radius (and the format's
+    reach) the object keeps its station (whose anchor stays put); beyond
+    it the rule runs again - the station holding the new spot, or a new
+    one there - so no move is ever too far, and none is silently dropped.
+    An object already outside its station's radius (the radius shrank,
+    the station moved) keeps its station when moved no farther from the
+    anchor and into no other station's radius (`keepsHome`); a station
+    whose radius already held the old spot (overlapping radii) is not one
+    it moved into, so a nudge toward its own anchor keeps it. The comparison is
+    strict, so a move a centimetre farther out runs the rule. The station it left goes in the same step when that leaves
+    it an EMPTY AUTOMATIC station: no object names it, and no title,
+    story step or route to it (`next`, a quiz's routes) keeps it. An unknown id changes nothing.
+  - One step each: an undo gives the stations back exactly as they were.
 - `deleted({ id, what })` - `deleteObject`: the entry goes, a written
-  object gets a tombstone; an unknown id changes nothing.
+  object gets a tombstone, and its station goes too when that leaves it an
+  empty automatic station (as for a move); an unknown id changes nothing.
 - `stationMoved({ stationId, geo, what })` - D17: the frame moves, and every
   object of the station becomes an edit at the spot the moved frame gives
   it (its local pose kept), as the phone's settle leaves its lists; an
@@ -98,13 +144,22 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   keeps at a local pose under a frame the view moved stands elsewhere, so it
   stays an entry (a save under a moved frame, then an undo of the move -
   found by the "undoing everything" property). A save that lands after a
-  frame moved prunes the same way.
-- `restored({ objects, deleted, needsNoGps?, details?, stations?, what })` -
-  a draft's work, already filtered by the page's rules: the station poses
-  first (each named station's frame takes its pose, `stationsRecorded` set),
-  then the objects under those frames (one beyond its station's reach is
-  skipped here too, `objectFits`): one step to undo; not live work
-  (`touched` unchanged).
+  frame moved prunes the same way. A step marks the station poses as the
+  draft's to keep (`stationsRecorded`, `touched.stations`) only when a
+  frame both views carry differs: a station the rule started or dropped
+  is no moved station.
+- `restored({ objects, deleted, needsNoGps?, details?, stations?,
+createdStations?, rerun?, what, newStationIds? })` - a draft's work,
+  already filtered by the page's rules, as one step to undo; not live work
+  (`touched` unchanged). In order: the station poses (each named
+  station's frame takes its pose, `stationsRecorded` set); the CREATED
+  stations' whole frames the document lacks (a draft keeps them, so a
+  reload brings a pin's station back with it); then each object - in its
+  own station when the document carries it and it fits there, else seated
+  by the station rule under its minted id (`newStationIds[i]`, one per
+  object, minted by `prepare`). `rerun` (work carried into a tour just
+  opened) seats every object afresh by the rule: the stations they named
+  were another document's. The stations left emptied go as for a move.
 - `saveStarted({ generation })`, `saved({ generation, written,
 appliedDeletions, stationsAtStart, inPlaceAt? })`, `saveEnded({ generation, error? })`
   - a rebuild queued, landed (the written file replaced; `pendingAfterRebuild` keeps what the
@@ -139,13 +194,21 @@ different times (a walk's move lands only after the page wrote both files).
 - `manifestNow(state)` - the manifest the next write starts from: the
   written tour with the frames (`withFrames`), the setting
   (`withNeedsNoGps`) and the details (`effectiveDetails`).
-- `manifestToWrite(state, captureSpots?, stationRule?)` - what a write
-  would carry: `finishedManifest` (the Finish's own rule) over
-  `manifestNow`, `placed`, `deleted` and the save's photo spots (the
-  walk's recorded photos, which a page decides once per open; the r875
-  milestone review #7). `stationRule` (`newStationId`, `radiusM`) is for
-  a reader that previews the write: the creator's station HUD
-  (`creator-stations.ts`) names the stations it would start its own way.
+- `manifestToWrite(state)` - what a write would carry:
+  `finishedManifest` (the Finish's own rule) over `manifestNow`, `placed`,
+  `deleted` and `historyAssetIds`.
+- `historyAssetIds(state)` - the assets the undo and redo steps' views
+  name (their frames' steps, their objects - a placed model's file - and
+  their covers). Every write
+  keeps them (`keepAssets`: this selector, the desktop's save snapshot,
+  the phone's Finish), so an undo across a save finds a cover image the
+  save would otherwise have dropped with its file; they go once the
+  history no longer names them. The stations are the document's as they
+  are, and a write assigns nothing. The creator's station HUD (`creator-stations.ts`)
+  reads its stations from it.
+- `createdStationFrames(state)` - the frames of the stations this page
+  created (those the tour as opened lacks): what the draft's settings
+  record keeps whole (`tour-document-draft.ts`).
 - `changeCount(state)` - each pending entry, deletion, moved frame, the
   setting and each detail field differing from the written file. A frame
   is compared by its data, never by the order its keys were built in
@@ -163,8 +226,8 @@ different times (a walk's move lands only after the page wrote both files).
   for an id the tour does not carry.
 - `objectMoveChange(state, id, lat, lon)` - a move on the map
   (`moveObjectTo`, height and facing kept): `moved` with the object
-  `before` and `after`, `too-far` beyond its station's reach
-  (`objectFits`), or `missing`; throws for a position nobody can draw.
+  `before` and `after` (however far: the `moved` action seats it by the
+  station rule), or `missing`; throws for a position nobody can draw.
   These two (with `detailsChange`) are why a page imports no rule of
   `object-edits.ts` itself (`config/.dependency-cruiser.cjs`).
 - `tourFieldChanges(state)` - `changeCount` less the objects': the moved
@@ -173,6 +236,13 @@ different times (a walk's move lands only after the page wrote both files).
   step that brings back a photo the written file has no picture for needs
   the page's picture.
 - `framesOf(manifest)`.
+- `tourAsOpened(manifest)` - a file's tour as `opened` takes it:
+  without its debug camera captures and the stations only they kept
+  (`withoutDebugCaptures`). The visitor's page reads a file's tour through
+  it (`archive-open.ts`), so its start page, scan set and download stop
+  count what the document holds (debug-captures M1); a page outside the
+  document never imports `tour-content.ts`
+  (D31).
 - Module-internal (not exported: nothing outside the slice needs them, and
   the root dead-code check holds exports to their importers):
   `contentAt(written, view)`, `withFrames(written, frames, placed)`,
@@ -186,10 +256,14 @@ different times (a walk's move lands only after the page wrote both files).
 - The rules the reducers keep, exported so a page asks first and says why
   in its own words (`editor-session.ts`'s refusals): `objectFits(state,
 object)` (within the format's `TOUR_ITEM_MAX_OFFSET_M` per axis of its
-  own station, or of the one its id stands in; true for a station the
-  document does not carry), `canPlace(state, object)` (an id the tour does
-  not carry, within reach) and `canStep(state)` (no save queued or
-  running). The per-station test under `objectFits` is module-private.
+  own station, or of the one its id stands in; FALSE for a station the
+  document does not carry, a dangling id; true for an object no station
+  holds yet, which the rule seats), `canPlace(state, object)` (an id the
+  tour neither carries nor deleted, fitting; `placeRefusal(state, object)`
+  names why not - `"deleted"`, `"exists"` or `"too-far"` - so a page
+  says the actual reason) and `canStep(state)` (no save
+  queued or running). The per-station test under `objectFits` is
+  module-private.
 
 ## A step across an in-place save (D33)
 
@@ -255,17 +329,29 @@ once. The slice says when; the page writes (`editor/edit-main.ts`
   bring an emptied, pruned station back where it stood).
 - **What the state writes is what the rebuild writes**: `manifestToWrite`
   is `finishedManifest`, the function `rebuildFinishedTour` itself calls,
-  over the same inputs, the photo spots included (property-tested against
-  real zips, with spots and without, and across a second save). It is the
+  over the same inputs (property-tested against real zips, for a tour
+  opened from a file with debug camera captures and without, and across a
+  second save; neither write carries them). It is the
   same rule computed twice, not one call: the save does not read the
   selector, so the property is what holds the two together.
 - Reducers are pure: each computes from a plain snapshot (`current`) and
-  returns the next state; nothing reads a clock or a random source except
-  the automatic station ids `withTourContent` mints inside
-  `manifestToWrite` (selectors only, never stored).
+  returns the next state; nothing reads a clock or a random source. A
+  station id the rule may need is minted by the caller or the action's
+  `prepare`, before the reducer.
+- **Every object names one of the document's stations**, and no empty
+  automatic station stays (property-tested over placements inside, on the
+  edge of and beyond the radius, "New station here", moves, deletes,
+  station moves, restored drafts, carried work, saves, undos and redos).
+  The rule's values: each station's own found radius (25 m for the ones
+  it starts; the radius itself is inside, a tie goes to the earlier
+  station); a new station activates at 50 m. A radius that is not a
+  positive finite number holds nothing. What would change a verdict: a
+  different automatic radius moves the line between joining and starting
+  a station by exactly that much, and nothing else.
 - **The reducers keep the document's rules** (the r875 milestone review
-  #3): a placement of an id the tour carries, a spot beyond its station's
-  reach, an undo or redo while a save runs - each changes nothing, so a
+  #3): a placement of an id the tour carries or deleted, a spot beyond the
+  reach of a station it names, a station it names that the document
+  lacks, an undo or redo while a save runs - each changes nothing, so a
   second page dispatching the same actions cannot break them. An unknown id
   or station changes nothing either, and NO edit changes anything before a
   tour is open (`written === null`): the setting and the details included
@@ -311,6 +397,18 @@ store.dispatch(tourDocumentActions.undone());
   reducers keep (each confirmed to fail with its guard turned off), a note
   pending after its station moved and it moved back, and what a pin's text
   and a move on the map would change (`pinTextChange`, `objectMoveChange`).
+  "Every object belongs to a station": the found radius itself inside (and
+  a micrometre beyond it outside), a station's own radius (5 m and 40 m),
+  a tie to the earlier station and two that hold to the nearer, the new
+  station's frame, "New station here" within a radius, a taken id and a
+  dangling station refused, a move within, out of and back into a radius,
+  an object outside its radius nudged (also inside another station's
+  overlapping radius, which it then keeps out of),
+  the station it left dropped, a delete dropping an emptied automatic
+  station and its undo bringing it back exactly, the stations a title, a
+  step or a route keeps, a placement during a save, a
+  restore re-creating its created frames and seating a dangling object,
+  carried work re-seated.
 - The save, a thunk against this slice: `tour-document-save.ts.md`.
 - `tour-document.property.test.ts` - D33's rule against a model that reads
   the SET of edits each view carries (over random edits, steps, in-place
@@ -321,10 +419,22 @@ store.dispatch(tourDocumentActions.undone());
   moves, deletes, placements, station moves, settings, details, undos,
   redos and saves: undo then redo is identity; undoing everything gives the
   opened tour; `manifestToWrite` equals `rebuildFinishedTour`'s written
-  manifest on a real zip, with the walk's photo spots and without, and
-  again for a second save after the first landed.
+  manifest on a real zip, opened from a file with debug camera captures
+  and without (no write carrying them), and again for a second save after
+  the first landed. And the station rule:
+  after every step of a random mix of placements (12.5 m steps, so inside,
+  on the edge of and beyond the 25 m radius), moves, deletes, station
+  moves, restores, carried work, saves, undos and redos, every object
+  names one of the document's stations and no empty automatic station
+  stays; an undo of a placement gives the stations back exactly.
 - `tour-document-parity.test.ts` - the phone's and the desktop's paths
-  write the same tour and draft (D30); D8's "a pin that starts its own
-  station" is a by-design row (the desktop lacks it until the 3D editor),
+  write the same tour and draft, the station rule included (a pin
+  within a station's radius joins it, one beyond starts one, a move out of
+  a radius and into another's, the only pin's delete dropping its
+  station); "a pin that starts its own station" is a by-design row (the desktop lacks it until the 3D editor),
   and the harness accepts a by-design row on either page lacking the
   operation.
+- `tour-document.test.ts` also carries a placed 3D model (format minor 1)
+  through a pin edit, its station's move and a save: its asset, its size in
+  metres and its local pose come back exactly, and the write is at minor 1.
+  The slice is kind-agnostic; this pins that it stays so.

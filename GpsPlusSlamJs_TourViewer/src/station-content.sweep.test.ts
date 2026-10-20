@@ -23,7 +23,6 @@ const WALK_M_PER_S = 1.4;
 
 function part(): ContentPart {
   return {
-    kind: "content",
     render(parent) {
       const mesh = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial());
       parent.add(mesh);

@@ -57,7 +57,6 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import { objectPoseNue } from "./content-placement.js";
-import { walkPhotosPending } from "./creator-stations.js";
 import {
   buildListedTourFixture,
   buildSignedTourFixture,
@@ -143,6 +142,10 @@ const DOM_KEYS = [
   "objectList",
   "keepScanRow",
   "keepScanInput",
+  "debugSave",
+  "debugSaveText",
+  "debugSaveButton",
+  "debugSaveStatus",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {
@@ -296,6 +299,8 @@ async function wireFinishable(options: {
   }) as never;
   ctx.tourManifestStatus = "settled";
   const tour = ctx.tourDocument;
+  // Opened as the page opens a creator's tour (`archive-open.ts`); a
+  // recording's camera captures start no station.
   tour.open(tourOf([...options.hosted], options.manifestExtras));
   for (const id of options.deleted ?? []) {
     if (tour.remove(id, "a deletion") === null) {
@@ -945,12 +950,15 @@ describe("the finish settles the AR visit still running (authoring plan 2026-09-
   });
 });
 
-describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)", () => {
-  // Why these tests matter: the baked spots are what every visitor places
-  // instead of replaying the walk, and their presence switches the
-  // visitor's live join OFF. So the Finish must bake exactly when the tour
-  // carries a recording it can join, never write the marker for nothing,
-  // and never let a recording it cannot join stop the creator's Finish.
+describe("the finish writes no debug camera captures", () => {
+  // Why these tests matter: the walk's camera captures are debug data, not
+  // the tour's content. The open baked them into stations once and the
+  // Finish wrote them into tour.json, so every visitor's copy published
+  // them; a visitor no longer shows them either. The Finish must write
+  // none - for a recording, and for a tour.json that carried them - and
+  // replay nothing. (This block pinned that the Finish wrote the baked
+  // spots, baked once, and finished without them when the bake declined
+  // or the read failed; those cases went with the bake.)
   createTourViewerStore();
   const FIXTURE = new URL(
     "../../GpsPlusSlamJs_PhysicsDemo/playwright-tests/fixtures/sample-recording.zip",
@@ -999,7 +1007,7 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     >;
   }
 
-  it("writes the spots of a tour that carries a recording, each photo in a station", async () => {
+  it("writes no captures for a tour that carries a recording, and replays nothing", async () => {
     const recording = await recordingExtras();
     const { dom, ctx } = await wireFinishable({
       hosted: [],
@@ -1011,22 +1019,14 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     expect(ctx.finishError).toBeNull();
     const written = await writtenManifest(ctx);
     expect(written).toMatchObject({ version: 3, minor: 0 });
-    const read = parseTourManifest(written);
-    const spots = read.captureSpots;
-    const stations = new Set(read.stations.map((s) => s.id));
-    for (const c of spots?.captures ?? []) {
-      expect(stations.has(c.station)).toBe(true);
-    }
-    // 5 of 6: the fixture's first photo precedes the GPS zero.
-    expect(spots?.captures).toHaveLength(5);
-    // The in-memory manifest advances with it, as with objects.
-    expect(ctx.tourDocument.manifest()?.captureSpots).toEqual(spots);
-    // This page knows the walk is decided (the creator's HUD drops its
-    // hedge, PR #642 review).
-    expect(ctx.walkDecidedFor).toBe(ctx.session);
+    expect(written).not.toHaveProperty("captureSpots");
+    // One station: the pin's. None for a frame.
+    expect(parseTourManifest(written).stations).toHaveLength(1);
+    expect(ctx.tourDocument.manifest()?.captureSpots).toBeUndefined();
+    expect(recording.replays()).toBe(0);
   });
 
-  it("does not bake again when the tour already carries its spots", async () => {
+  it("drops the captures a tour.json carried, and the station only they kept", async () => {
     const recording = await recordingExtras();
     const spots: TourCaptureSpots = {
       fixes: 9,
@@ -1060,65 +1060,26 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     });
     dom.finishButton.click();
     await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    const written = parseTourManifest(await writtenManifest(ctx));
+    expect(written.captureSpots).toBeUndefined();
+    expect(written.stations.map((st) => st.id)).not.toContain("walk");
     expect(recording.replays()).toBe(0);
-    expect(parseTourManifest(await writtenManifest(ctx)).captureSpots).toEqual(
-      spots,
-    );
-  });
-
-  it("finishes WITHOUT the marker when the recording cannot be joined", async () => {
-    const recording = await recordingExtras(3);
-    const { dom, ctx } = await wireFinishable({
-      hosted: [],
-      placed: [pin("new-one")],
-      sessionExtras: recording.extras,
-    });
-    // Why (PR #643 review, replacing the PR #642 choice): a declined bake
-    // writes no spots, and the phone's next Finish bakes again - so its
-    // station names may still change, and the HUD keeps its hedge. Only a
-    // Finish that settled the walk (spots written, or a walk that places
-    // nothing) drops it.
-    const pending = () =>
-      walkPhotosPending(
-        ctx.session,
-        ctx.tourDocument.manifest(),
-        ctx.walkDecidedFor,
-      );
-    expect(pending()).toBe(true);
-    dom.finishButton.click();
-    await settle(ctx);
-    expect(ctx.finishError).toBeNull();
-    expect(await writtenManifest(ctx)).not.toHaveProperty("captureSpots");
-    expect(ctx.tourDocument.manifest()?.captureSpots).toBeUndefined();
-    expect(ctx.walkDecidedFor).toBeNull();
-    expect(pending()).toBe(true);
-  });
-
-  it("finishes without the marker when reading the recording fails", async () => {
-    const recording = await recordingExtras();
-    const { dom, ctx } = await wireFinishable({
-      hosted: [],
-      placed: [pin("new-one")],
-      sessionExtras: {
-        ...recording.extras,
-        loadRecordingActions: () => Promise.reject(new Error("bad stream")),
-      },
-    });
-    dom.finishButton.click();
-    await settle(ctx);
-    expect(ctx.finishError).toBeNull();
-    expect(await writtenManifest(ctx)).not.toHaveProperty("captureSpots");
   });
 });
 
 describe("the published copy carries only what visitors need (scan-pass plan S1, S-D10)", () => {
   // Why these tests matter: the hosted zip is what every visitor downloads.
-  // By default the Finish leaves the creator's walk out of it - the action
-  // stream, session.json and the frames no baked spot shows - and keeps it
-  // only when the creator ticks the box (for a co-author). Both halves
-  // matter: a walk shipped to visitors costs them megabytes and publishes
-  // the creator's timestamped route; content dropped from the copy is a
-  // broken tour nobody notices until the field.
+  // The Finish leaves the creator's walk out of it - the action stream,
+  // session.json and every frame - unless the switch keeps it. Both
+  // halves matter: a walk shipped to visitors costs them megabytes and
+  // publishes the creator's timestamped route; a walk left out of the
+  // only copy a creator keeps is gone. The walk is saved apart from the
+  // tour now ("Save the debug data", M2 of the debug-captures plan, E2), so
+  // the switch starts unticked: a copy carries the walk only when the
+  // creator asks (for a co-author). It started ticked whenever the file
+  // carried a walk in M1, and before that only when the recorded photos
+  // could not be placed.
   createTourViewerStore();
   const FIXTURE = new URL(
     "../../GpsPlusSlamJs_PhysicsDemo/playwright-tests/fixtures/sample-recording.zip",
@@ -1132,8 +1093,10 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
   // A file of the creator's own that no viewer reads: never the walk.
   const README = `${WRAP}README.txt`;
 
+  /** `keepScan`: the creator's tick, or "default" to finish with the
+   *  switch as the page sets it for the open tour. */
   async function wireRecordingTour(
-    keepScan: boolean,
+    keepScan: boolean | "default",
     odomCoordVersion = 5,
     walk: readonly string[] = WALK,
   ) {
@@ -1157,71 +1120,127 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
         loadRecordingActions: () => Promise.resolve(actions),
       },
     });
-    wired.dom.keepScanInput.checked = keepScan;
+    // The page renders once the open settled; the creator ticks after.
+    wired.setup.renderAuthorReadout();
+    if (keepScan !== "default") wired.dom.keepScanInput.checked = keepScan;
     wired.dom.finishButton.click();
     await settle(wired.ctx);
     return wired;
   }
 
-  it("leaves the walk out by default and keeps every photo a baked spot shows", async () => {
+  it("leaves the walk out by default for a file that carries one, frames and all", async () => {
+    // Changed expectation (M2 of the debug-captures plan, E2): the switch
+    // started ticked for such a file in M1, so the default copy kept the
+    // walk. It starts unticked now, since the walk is saved apart.
+    const { ctx, dom } = await wireRecordingTour("default");
+    expect(dom.keepScanInput.checked).toBe(false);
+    expect(ctx.finishError).toBeNull();
+    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
+    expect(names.filter((n) => WALK.includes(n))).toEqual([]);
+    expect(names).toContain(`${WRAP}tour.json`);
+    expect(names).toContain(`${WRAP}qr/${LEVEL_ID}.json`);
+    expect(names).toContain(README);
+    // Whatever the walk's era: an old one starts unticked the same.
+    const old = await wireRecordingTour("default", 3);
+    expect(old.dom.keepScanInput.checked).toBe(false);
+  });
+
+  it("leaves the whole walk out when the creator unticks the switch, frames and all, and says so", async () => {
+    // The page's later renders (the Finish renders too) keep the untick.
     const { ctx, dom } = await wireRecordingTour(false);
     expect(ctx.finishError).toBeNull();
     const names = await entryNamesOf(ctx.rebuiltZip!.blob);
-    // The first frame precedes the GPS zero, so no spot shows it.
-    expect(names.filter((n) => WALK.includes(n)).sort()).toEqual(
-      FRAMES.slice(1).sort(),
-    );
-    expect(names).toContain(`${WRAP}tour.json`);
-    expect(names).toContain(`${WRAP}qr/${LEVEL_ID}.json`);
+    // No frame stays: none is the tour's content.
+    expect(names.filter((n) => WALK.includes(n))).toEqual([]);
     // A first version dropped every file a visitor does not read, which
     // would have taken a creator's README or licence out of the copy.
     expect(names).toContain(README);
-    // The creator is told, because the hosted file may be their only copy.
-    expect(dom.finishStatus.textContent).toContain(
-      "leaves out the walk recording",
-    );
+    // The creator is told, because the hosted file may be their only copy,
+    // and where to save it apart. (Changed words, M2 of the debug-captures
+    // plan: it said "the walk recording" and to keep the original zip.)
+    expect(dom.finishStatus.textContent).toContain("leaves out the debug data");
+    expect(dom.finishStatus.textContent).toContain("Save the debug data");
+    // (It also said the recorded photos could not be placed; nothing
+    // places them now, so nothing says so.)
+    expect(dom.finishStatus.textContent).not.toContain("photos");
   });
 
-  it("keeps the walk when the photos could not be placed, and says why", async () => {
-    // Why (S1 milestone review #2): without baked spots the walk is the
-    // only way a visitor's viewer can place the photos - and the hosted
-    // file may be the creator's only copy of it. A recording this build
-    // cannot join (an old era here; a network blip reading it, a wrapped
-    // zip) must leave the copy as it was, with the reason on screen.
-    const { ctx, dom } = await wireRecordingTour(false, 3);
-    expect(ctx.finishError).toBeNull();
-    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
-    expect(names.filter((n) => WALK.includes(n)).sort()).toEqual(
+  // (A test that a walk placing nothing was left out without a word about
+  // photos stood here: every walk is now just the walk, which the two
+  // tests above cover, ticked and unticked.)
+
+  it("offers the debug data the Finish left out, built from the bytes it read, and hands it over on a tap", async () => {
+    // Why (M2 of the debug-captures plan, steps 3 and 8): the
+    // tour file the creator puts at the link leaves the walk out, so the
+    // Done step offers it as a file of its own - from the Finish's own
+    // bytes: a link's tour read again after a replace on Drive is another
+    // file. The tour is read once, by the Finish.
+    const bytes = new Uint8Array(readFileSync(FIXTURE));
+    const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
+    let reads = 0;
+    const handed: { blob: Blob; filename: string }[] = [];
+    const wired = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      hostedContent: [...WALK, README].map((path) => ({ path, data: "x" })),
+      hostedName: "castle.zip",
+      seamsExtras: {
+        downloadZip: (blob: Blob, filename: string) => {
+          handed.push({ blob, filename });
+          return Promise.resolve(true);
+        },
+      },
+      sessionExtras: {
+        hasRecording: true,
+        entries: [
+          { filename: `${WRAP}tour.json` },
+          { filename: `${WRAP}qr/${LEVEL_ID}.json` },
+          ...[...WALK, README].map((filename) => ({
+            filename,
+            isImage: filename.endsWith(".jpg"),
+          })),
+        ],
+        loadSessionMeta: () => Promise.resolve({ odomCoordVersion: 5 }),
+        loadRecordingActions: () => Promise.resolve(actions),
+      },
+    });
+    const session = wired.ctx.session as unknown as {
+      readWholeArchive: () => Promise<Blob>;
+    };
+    const read = session.readWholeArchive.bind(session);
+    session.readWholeArchive = () => {
+      reads += 1;
+      return read();
+    };
+    wired.setup.renderAuthorReadout();
+    expect(wired.dom.debugSave.hidden).toBe(true);
+    wired.dom.finishButton.click();
+    await settle(wired.ctx);
+    expect(wired.ctx.finishError).toBeNull();
+    // The tour zip the Finish saved (by itself) leaves the walk out ...
+    expect(handed).toHaveLength(1);
+    const tourNames = await entryNamesOf(handed[0]!.blob);
+    expect(tourNames.filter((n) => WALK.includes(n))).toEqual([]);
+    // ... and the Done step offers the walk as the debug data.
+    expect(wired.dom.debugSave.hidden).toBe(false);
+    wired.dom.debugSaveButton.click();
+    for (let i = 0; i < 200 && handed.length < 2; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(handed).toHaveLength(2);
+    expect(handed[1]!.filename).toBe("castle-debug.zip");
+    const bundleNames = await entryNamesOf(handed[1]!.blob);
+    expect(bundleNames.filter((n) => WALK.includes(n)).sort()).toEqual(
       [...WALK].sort(),
     );
-    expect(dom.finishStatus.textContent).not.toContain(
-      "leaves out the walk recording",
-    );
-    expect(dom.finishStatus.textContent).toContain(
-      "The recorded photos could not be placed",
-    );
-  });
-
-  it("leaves out a walk that places nothing - its photos are not in the tour - and says nothing of photos", async () => {
-    // Why (the M4b milestone review #3): such a walk was kept with "the
-    // recorded photos could not be placed", about photos the tour does not
-    // carry; it places nothing for any visitor, so S-D10's default holds.
-    const walk = ["session.json", "actions/000001.json"];
-    const { ctx, dom } = await wireRecordingTour(false, 5, walk);
-    expect(ctx.finishError).toBeNull();
-    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
-    for (const name of walk) expect(names).not.toContain(name);
-    expect(names).toContain(README);
-    expect(dom.finishStatus.textContent).toContain(
-      "leaves out the walk recording",
-    );
-    expect(dom.finishStatus.textContent).not.toContain(
-      "The recorded photos could not be placed",
-    );
-    // Kept when asked, as any walk.
-    const kept = await wireRecordingTour(true, 5, walk);
-    const keptNames = await entryNamesOf(kept.ctx.rebuiltZip!.blob);
-    for (const name of walk) expect(keptNames).toContain(name);
+    expect(bundleNames).toContain("debug-bundle.json");
+    expect(bundleNames).not.toContain(README);
+    expect(bundleNames).not.toContain(`${WRAP}tour.json`);
+    // Read once, by the Finish: the bundle is never read from the tour.
+    expect(reads).toBe(1);
+    // The tour closes: the offer goes with it.
+    wired.setup.resetFinishStep();
+    expect(wired.dom.debugSave.hidden).toBe(true);
   });
 
   it("forgets the creator's tick with the tour it was given for", async () => {
@@ -1239,7 +1258,7 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
       [...WALK].sort(),
     );
     expect(dom.finishStatus.textContent).not.toContain(
-      "leaves out the walk recording",
+      "leaves out the debug data",
     );
   });
 
@@ -1260,6 +1279,19 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     });
     withWalk.setup.renderAuthorReadout();
     expect(withWalk.dom.keepScanRow.hidden).toBe(false);
+    // A recording: its frames are the walk too, and the choice is offered.
+    const unbaked = await wireFinishable({
+      hosted: [],
+      placed: [],
+      hostedContent: [
+        { path: "session.json", data: "{}" },
+        { path: "actions/000001.json", data: "[]" },
+        { path: "images/frame-000001.jpg", data: "x" },
+      ],
+      arStatus: "ready",
+    });
+    unbaked.setup.renderAuthorReadout();
+    expect(unbaked.dom.keepScanRow.hidden).toBe(false);
     // In AR it is gone: the Finish there reads it.
     withWalk.arStatus.value = "running";
     withWalk.setup.renderAuthorReadout();

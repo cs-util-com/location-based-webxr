@@ -7,8 +7,10 @@ plan 2026-10-17-1816, W2, D18, D19): where the changes are, how the tour
 at its link is updated for the host it lives on, that a file at a shared
 link is public as soon as it is uploaded, and - while the file still
 carries the walk recording - that the walk goes public with it unless it
-is moved out. "Move the walk out" is offered here; the page does the move
-(`edit-main.ts`, `EditorSession.moveWalkOut`).
+is moved out. "Move the debug data out" is offered here (M2 of the
+debug-captures plan: the moved-out file is the debug bundle,
+`debug-bundle.ts`, and every text names it as debug data); the page does
+the move (`edit-main.ts`, `EditorSession.moveWalkOut`).
 
 ## Public API
 
@@ -37,9 +39,20 @@ is moved out. "Move the walk out" is offered here; the page does the move
   downloaded on the second click - the M4b fix re-review #2), `refused`
   (a reason in words) or
   `cancelled` (the walk's file was not saved).
-- `wireDoneDialog({ dom, moveWalk, onClose })` - `open(facts)`,
-  `close(force?)`, `isOpen()`. The host picker re-renders the update steps; the move button
-  runs `moveWalk` once at a time.
+- `DoneFacts.debugLeftOut`, `DoneWords.debugSave` (M2 of the
+  debug-captures plan) - a save as a new file left the opened file's walk
+  out: while the newest bytes carry none (`carriesWalk: false`), the walk
+  section says the copy leaves out the debug data and that the opened
+  file still carries it, and offers "Save the debug data" in place of the
+  move (never both).
+- `SAVE_DEBUG_LABELS` - its button's idle, in-progress and after-a-save
+  labels; `DebugSaveOutcome` - `saved` (the name it was saved as),
+  `refused` (a reason in words) or `cancelled` (nothing saved).
+- `wireDoneDialog({ dom, moveWalk, saveDebugData, onClose })` -
+  `open(facts)`, `close(force?)`, `isOpen()`. The host picker
+  re-renders the update steps; the move button runs `moveWalk` and the
+  save button `saveDebugData`, one at a time (`dom.saveDebugButton`; the
+  section's status line is shared).
 
 ## Invariants & assumptions
 
@@ -47,6 +60,11 @@ is moved out. "Move the walk out" is offered here; the page does the move
   disabled while `moveWalk` runs; then `moved` hides the button and the
   walk's words and says where the walk went, while `refused`, `cancelled`
   and a thrown error say why and give the button back.
+- The save of the debug data follows the same rule: "Saving the debug
+  data…" and disabled while `saveDebugData` runs, the dialog held open,
+  then where it went ("Save the debug data again") or why not, with the
+  button back. It changes nothing of the tour, so no fact changes after
+  it.
 - A second click while a move runs starts nothing. The click calls
   `moveWalk` (or the pending `confirm`) synchronously, so the page can
   open the browser's save dialog inside it (review #2).
@@ -85,7 +103,9 @@ done.open({
   moved (with the first line following), downloaded-then-confirmed,
   walk-saved-then-downloaded,
   refused, cancelled and thrown states; the dialog held open while a move
-  runs and closed by force.
+  runs and closed by force; the save of the debug data offered only after
+  a save left it out (never with the move), and its in-progress, saved,
+  refused, cancelled and thrown states.
 - `playwright-tests/editor.spec.js` - Done saves first and opens the
   dialog; the save dialog is asked for on the click and the walk lands in
   the chosen file; without one, the walk is downloaded and the tour is

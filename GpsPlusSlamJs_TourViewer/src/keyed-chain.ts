@@ -24,14 +24,26 @@ export interface KeyedChain {
   run<T>(key: string, task: () => Promise<T>): Promise<T>;
   /** How many keys have a task queued or running. */
   pendingKeys(): number;
+  /**
+   * Run `task` ALONE: once every task queued so far, under any key, has
+   * settled (a failure included), and before any task queued after this
+   * call starts. Resolves or rejects with the task's own outcome; a
+   * failure does not stall what waits behind it.
+   */
+  exclusive<T>(task: () => Promise<T>): Promise<T>;
 }
 
 export function createKeyedChain(): KeyedChain {
   const tails = new Map<string, Promise<unknown>>();
+  /** The last `exclusive` task: every task queued after it waits for it. */
+  let barrier: Promise<unknown> = Promise.resolve();
   return {
     run<T>(key: string, task: () => Promise<T>): Promise<T> {
       const previous = tails.get(key) ?? Promise.resolve();
-      const next = previous.catch(() => undefined).then(task);
+      const next = Promise.all([
+        previous.catch(() => undefined),
+        barrier.catch(() => undefined),
+      ]).then(task);
       tails.set(key, next);
       // Forget the key once its last task settled, and only then: a task
       // queued meanwhile is the new tail and must stay.
@@ -42,5 +54,11 @@ export function createKeyedChain(): KeyedChain {
       return next;
     },
     pendingKeys: () => tails.size,
+    exclusive<T>(task: () => Promise<T>): Promise<T> {
+      const before = Promise.allSettled([...tails.values(), barrier]);
+      const next = before.then(task);
+      barrier = next;
+      return next;
+    },
   };
 }

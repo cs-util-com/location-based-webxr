@@ -2,15 +2,17 @@
 
 - Purpose: round-5 plan
   `2026-10-01-0945-globe-round-5-fly-in-and-terrain-blend-plan.md` §3.6
-  step 1. When the globe lab's pin dives to a place, OsmDemo's arrival
-  prefetch warms that place's city data. This module gives the lab the two
+  step 1. When the globe lab's pin dives to a place, the city's own load
+  (the Osm library's `loadCityData` in the lab's city worker, round-4 plan
+  2026-10-11-0122 §5; OsmDemo's arrival prefetch until then) brings in that
+  place's city data. This module gives the lab the two
   things it shows and times from it: the status line beside the pin, and
   the dive's clock (paced by the prefetch through `flight-pace.ts`, or
   fixed by `diveMs`). Pure, apart from the clock's own state.
 - Public API:
   - `ArrivalJobs` `{ total, warm, fetched, failed }`, `ArrivalSnapshot`
     `{ outcome, counts: { overpass, dem } }`: the prefetch's counts,
-    declared structurally (this package does not depend on OsmDemo).
+    declared structurally (this package does not depend on the Osm library).
     `outcome` is the prefetch's (`settled`, `aborted`,
     `no-persistent-store`, `store-unwritable`, `invalid-target`), the lab's
     `unavailable` (its module did not load), or null while it runs.

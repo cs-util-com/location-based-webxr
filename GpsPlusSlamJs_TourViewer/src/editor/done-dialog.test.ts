@@ -15,9 +15,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DRIVE_MOUNT_TIP_SHOWN,
   MOVE_LABELS,
+  SAVE_DEBUG_LABELS,
   doneWords,
   wireDoneDialog,
   type DoneDialogDom,
+  type DebugSaveOutcome,
   type DoneFacts,
   type WalkMoveOutcome,
 } from "./done-dialog.js";
@@ -27,7 +29,17 @@ const IN_PLACE: DoneFacts = {
   saved: { kind: "in-place", name: "castle.zip" },
   host: "drive",
   carriesWalk: true,
+  debugLeftOut: false,
   driveMountTip: false,
+};
+
+/** A download that left the opened file's walk out (M2 of the
+ *  debug-captures plan). */
+const LEAN: DoneFacts = {
+  ...IN_PLACE,
+  saved: { kind: "downloaded", name: "castle (1).zip" },
+  carriesWalk: false,
+  debugLeftOut: true,
 };
 
 describe("doneWords", () => {
@@ -71,12 +83,21 @@ describe("doneWords", () => {
     expect(doneWords(IN_PLACE).publicLine).toMatch(/as soon as/);
   });
 
-  it("says the file carries the walk - the GPS track and the depth - only while it does", () => {
+  it("says the file carries the walk - the GPS track, the depth and the camera captures - only while it does", () => {
+    // (Changed, debug-captures M1: the line named the GPS track and the depth
+    // only, but the walk also carries every picture the camera took by
+    // itself, which visitors of the file at the link can download too.)
     const walk = doneWords(IN_PLACE).walk;
     expect(walk).toMatch(/castle\.zip/);
     expect(walk).toMatch(/GPS track/);
     expect(walk).toMatch(/depth/);
+    expect(walk).toMatch(/camera captures/);
+    expect(walk?.toLowerCase()).not.toContain("photo");
     expect(walk).toMatch(/file at your tour's link/);
+    // Named as the debug data it is, and moved out as such (M2 of the
+    // debug-captures plan: the moved-out file is the debug bundle).
+    expect(walk).toMatch(/debug data/);
+    expect(walk).toMatch(/Move the debug data out/);
     expect(doneWords({ ...IN_PLACE, carriesWalk: false }).walk).toBeNull();
   });
 
@@ -86,7 +107,41 @@ describe("doneWords", () => {
     const walk = doneWords({ ...IN_PLACE, carriesWalk: "unknown" }).walk;
     expect(walk).toMatch(/could not be checked/);
     expect(walk).toMatch(/GPS track/);
-    expect(walk).toMatch(/Move the walk out/);
+    // (Changed, M2 of the debug-captures plan: "Move the walk out".)
+    expect(walk).toMatch(/Move the debug data out/);
+  });
+
+  it("names the move's steps as the debug data's", () => {
+    // Why (M2 of the debug-captures plan): the moved-out file is the debug
+    // bundle, so every label says what the creator gets - the words were
+    // the walk's.
+    expect(MOVE_LABELS).toEqual({
+      idle: "Move the debug data out",
+      moving: "Moving the debug data out…",
+      confirm: "Take the debug data out of the tour",
+      download: "Download the tour without the debug data",
+    });
+  });
+
+  it("offers to save the debug data apart only when a save left it out of a file that carried it", () => {
+    // Why (M2 of the debug-captures plan): a save as a new file
+    // leaves the walk out by default, so the copy the creator keeps may be
+    // the only one - the opened file still carries the walk, and Done is
+    // where the creator is told to keep it apart.
+    const words = doneWords(LEAN);
+    expect(words.walk).toBeNull();
+    expect(words.debugSave).toMatch(
+      /castle \(1\)\.zip leaves out your debug data/,
+    );
+    expect(words.debugSave).toMatch(/GPS track/);
+    expect(words.debugSave).toMatch(/camera captures/);
+    expect(words.debugSave).toMatch(/file you opened still carries it/);
+    expect(words.debugSave).toMatch(/Save the debug data/);
+    expect(doneWords({ ...LEAN, debugLeftOut: false }).debugSave).toBeNull();
+    // A file that still carries the walk is offered the move, not this.
+    expect(doneWords({ ...LEAN, carriesWalk: true }).debugSave).toBeNull();
+    expect(doneWords({ ...LEAN, carriesWalk: "unknown" }).debugSave).toBeNull();
+    expect(doneWords(IN_PLACE).debugSave).toBeNull();
   });
 
   it("keeps the Drive-mount tip hidden by default, and the switch shows it for a Drive tour saved in place only", () => {
@@ -121,7 +176,11 @@ function el() {
   };
 }
 
-function wire(move: () => Promise<WalkMoveOutcome>) {
+function wire(
+  move: () => Promise<WalkMoveOutcome>,
+  saveDebug: () => Promise<DebugSaveOutcome> = () =>
+    Promise.resolve({ kind: "cancelled" }),
+) {
   const dom = {
     backdrop: el(),
     where: el(),
@@ -131,11 +190,16 @@ function wire(move: () => Promise<WalkMoveOutcome>) {
     walk: el(),
     walkText: el(),
     moveButton: el(),
+    saveDebugButton: el(),
     moveStatus: el(),
     driveTip: el(),
     close: el(),
   };
-  const deps = { moveWalk: vi.fn(move), onClose: vi.fn() };
+  const deps = {
+    moveWalk: vi.fn(move),
+    saveDebugData: vi.fn(saveDebug),
+    onClose: vi.fn(),
+  };
   const dialog = wireDoneDialog({
     dom: dom as unknown as DoneDialogDom,
     ...deps,
@@ -144,6 +208,90 @@ function wire(move: () => Promise<WalkMoveOutcome>) {
 }
 
 describe("wireDoneDialog", () => {
+  it("shows the save of the debug data, not the move, after a save that left it out", () => {
+    const { dom, dialog } = wire(() => Promise.resolve({ kind: "cancelled" }));
+    dialog.open(LEAN);
+    expect(dom.walk.hidden).toBe(false);
+    expect(dom.walkText.textContent).toBe(doneWords(LEAN).debugSave);
+    expect(dom.moveButton.hidden).toBe(true);
+    expect(dom.saveDebugButton.hidden).toBe(false);
+    expect(dom.saveDebugButton.textContent).toBe(SAVE_DEBUG_LABELS.idle);
+    dialog.close();
+    // A file that carries the walk: the move, and no save.
+    dialog.open(IN_PLACE);
+    expect(dom.moveButton.hidden).toBe(false);
+    expect(dom.saveDebugButton.hidden).toBe(true);
+  });
+
+  it("saves the debug data: in progress while it runs, then says where it went, and offers it again", async () => {
+    // Why (the async-UI rule): the save reads the opened file and writes a
+    // second zip, which takes a while; the dialog may not close under it.
+    let finish!: (outcome: DebugSaveOutcome) => void;
+    const { dom, deps, dialog } = wire(
+      () => Promise.resolve({ kind: "cancelled" }),
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    dialog.open(LEAN);
+    dom.saveDebugButton.fire("click");
+    expect(deps.saveDebugData).toHaveBeenCalledTimes(1);
+    expect(dom.saveDebugButton.disabled).toBe(true);
+    expect(dom.saveDebugButton.textContent).toBe(SAVE_DEBUG_LABELS.saving);
+    expect(dom.close.disabled).toBe(true);
+    dialog.close();
+    expect(dom.backdrop.hidden).toBe(false);
+    // A second click while it runs starts nothing.
+    dom.saveDebugButton.fire("click");
+    expect(deps.saveDebugData).toHaveBeenCalledTimes(1);
+    finish({ kind: "saved", name: "castle-debug.zip" });
+    await vi.waitFor(() => {
+      expect(dom.moveStatus.textContent).toBe(
+        "The debug data is in castle-debug.zip - keep that file.",
+      );
+    });
+    expect(dom.saveDebugButton.disabled).toBe(false);
+    expect(dom.saveDebugButton.textContent).toBe(SAVE_DEBUG_LABELS.again);
+    expect(dom.close.disabled).toBe(false);
+    expect(deps.moveWalk).not.toHaveBeenCalled();
+  });
+
+  it("says a refusal, a dismissed save and a thrown save, and gives the button back", async () => {
+    // Factories: a rejection made before its turn would go unhandled.
+    for (const [outcome, said] of [
+      [
+        () =>
+          Promise.resolve<DebugSaveOutcome>({
+            kind: "refused",
+            reason: "The file you opened can no longer be read.",
+          }),
+        "The file you opened can no longer be read.",
+      ],
+      [
+        () => Promise.resolve<DebugSaveOutcome>({ kind: "cancelled" }),
+        "Nothing was saved: the debug data's file was not saved.",
+      ],
+      [
+        () => Promise.reject<DebugSaveOutcome>(new Error("disk full")),
+        "The debug data was not saved: disk full",
+      ],
+    ] as const) {
+      const { dom, dialog } = wire(
+        () => Promise.resolve({ kind: "cancelled" }),
+        outcome,
+      );
+      dialog.open(LEAN);
+      dom.saveDebugButton.fire("click");
+      await vi.waitFor(() => {
+        expect(dom.moveStatus.textContent).toBe(said);
+      });
+      expect(dom.saveDebugButton.disabled).toBe(false);
+      expect(dom.saveDebugButton.textContent).toBe(SAVE_DEBUG_LABELS.idle);
+      expect(dom.close.disabled).toBe(false);
+    }
+  });
+
   it("opens with the facts' words, the host chosen, and the walk section only while the file carries it", () => {
     const { dom, dialog } = wire(() => Promise.resolve({ kind: "cancelled" }));
     dialog.open(IN_PLACE);
@@ -188,13 +336,16 @@ describe("wireDoneDialog", () => {
     expect(deps.moveWalk).toHaveBeenCalledTimes(1);
     finish({
       kind: "moved",
-      walkName: "castle-walk.zip",
+      walkName: "castle-debug.zip",
       tourName: "castle.zip",
       saved: { kind: "in-place", name: "castle.zip" },
     });
     await vi.waitFor(() => {
-      expect(dom.moveStatus.textContent).toMatch(/castle-walk\.zip/);
+      expect(dom.moveStatus.textContent).toMatch(/castle-debug\.zip/);
     });
+    expect(dom.moveStatus.textContent).toMatch(
+      /The debug data is in castle-debug\.zip/,
+    );
     expect(dom.moveStatus.textContent).toMatch(
       /castle\.zip no longer carries it/,
     );
@@ -275,7 +426,7 @@ describe("wireDoneDialog", () => {
     const confirm = vi.fn(() =>
       Promise.resolve<WalkMoveOutcome>({
         kind: "moved",
-        walkName: "castle-walk.zip",
+        walkName: "castle-debug.zip",
         tourName: "castle.zip",
         saved: { kind: "in-place", name: "castle.zip" },
       }),
@@ -283,7 +434,7 @@ describe("wireDoneDialog", () => {
     const { dom, deps, dialog } = wire(() =>
       Promise.resolve({
         kind: "downloaded",
-        walkName: "castle-walk.zip",
+        walkName: "castle-debug.zip",
         confirm,
       }),
     );
@@ -293,7 +444,7 @@ describe("wireDoneDialog", () => {
       expect(dom.moveButton.textContent).toBe(MOVE_LABELS.confirm);
     });
     expect(dom.moveStatus.textContent).toMatch(
-      /downloaded as castle-walk\.zip/,
+      /downloaded as castle-debug\.zip/,
     );
     expect(dom.moveStatus.textContent).toMatch(/the tour file keeps it/);
     expect(dom.moveButton.disabled).toBe(false);
@@ -328,7 +479,7 @@ describe("wireDoneDialog", () => {
     const confirm = vi.fn(() =>
       Promise.resolve<WalkMoveOutcome>({
         kind: "moved",
-        walkName: "castle-walk.zip",
+        walkName: "castle-debug.zip",
         tourName: "castle.zip",
         saved: { kind: "downloaded", name: "castle.zip" },
       }),
@@ -336,7 +487,7 @@ describe("wireDoneDialog", () => {
     const { dom, deps, dialog } = wire(() =>
       Promise.resolve({
         kind: "walk-saved",
-        walkName: "castle-walk.zip",
+        walkName: "castle-debug.zip",
         confirm,
       }),
     );
@@ -345,7 +496,7 @@ describe("wireDoneDialog", () => {
     await vi.waitFor(() => {
       expect(dom.moveButton.textContent).toBe(MOVE_LABELS.download);
     });
-    expect(dom.moveStatus.textContent).toMatch(/castle-walk\.zip/);
+    expect(dom.moveStatus.textContent).toMatch(/castle-debug\.zip/);
     expect(dom.moveStatus.textContent).toMatch(/keep that file/);
     expect(dom.moveStatus.textContent).toMatch(/still carries it/);
     expect(dom.walkText.hidden).toBe(false);
@@ -364,7 +515,7 @@ describe("wireDoneDialog", () => {
     const { dom, dialog } = wire(() =>
       Promise.resolve({
         kind: "moved",
-        walkName: "castle-walk.zip",
+        walkName: "castle-debug.zip",
         tourName: "castle.zip",
         saved: { kind: "downloaded", name: "castle (1).zip" },
       }),
@@ -382,7 +533,7 @@ describe("wireDoneDialog", () => {
     // The walk's words go; its section stays to say where the walk went.
     expect(dom.walkText.hidden).toBe(true);
     expect(dom.walk.hidden).toBe(false);
-    expect(dom.moveStatus.textContent).toMatch(/castle-walk\.zip/);
+    expect(dom.moveStatus.textContent).toMatch(/castle-debug\.zip/);
   });
 
   it("closes from its button and tells the page; an open clears the last move's line", () => {

@@ -2,8 +2,8 @@
  * A station's frame in `tour.json` version 3 (tour editor plan
  * 2026-10-17-1816, W3): converts an item's LOCAL pose (relative to its
  * station) to its world geo pose and back, and gives the WORLD VIEW of a
- * tour - every pin, photo and recorded photo with its geo pose and the
- * station holding it - which a viewer places and a creator's drafts hold.
+ * tour - every pin, photo and model with its geo pose and the station
+ * holding it - which a viewer places and a creator's drafts hold.
  *
  * THE FRAME. A station's geo pose is the origin of a local tangent frame:
  * North, Up and East metres from its latitude and longitude (Up is the
@@ -135,16 +135,18 @@ export function tourObjects(
   );
 }
 
-/** A recorded photo's spot in the world. */
+/** A baked camera capture's spot in the world.
+ *  @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major. */
 export interface TourCaptureGeo {
   readonly image: string;
   readonly station: string;
-  /** Always carries a rotation (photos face as captured). */
+  /** Always carries a rotation (a capture faces as the camera did). */
   readonly geo: QrGeoPose;
 }
 
-/** The baked recorded photos in the world, in capture order; empty
- *  without baked spots. */
+/** The baked camera captures in the world, in capture order; empty
+ *  without baked spots.
+ *  @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major. */
 export function tourCaptureGeos(
   manifest: Pick<TourManifest, 'stations' | 'captureSpots'>
 ): TourCaptureGeo[] {

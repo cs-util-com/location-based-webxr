@@ -149,7 +149,17 @@ draft and logs `tourAuthoring/settled`.
   `level` re-minted through the measurement's pick (else the end alignment;
   `levelAlignment` says which) when the basis is `measured-here` (through `mintQrLevelFromWorld`, the code's
   pose converted with the same `odomNueFromWebXr`). Null when the visit
-  placed and measured nothing, or when `settleAlignment` is null.
+  placed, started and measured nothing, or when `settleAlignment` is null.
+- **Stations a visit started: `input.stations` and `stations`.** Each
+  `VisitStation` (`id`, `placement` - the odometry pose of the item it
+  was started for - and that `item`'s id) of THIS visit is settled through
+  the choice its item gets (its pick, its nearest code), as a point
+  (`SettledStation`: lat, lon, alt; the station's orientation is its own):
+  the anchor and its first item share one odometry pose and one
+  alignment, so the anchor lands exactly where that item does, at any
+  correction. Both shapes are module-private (`VisitSettleInput` and
+  `VisitSettle` carry them). Another visit's stations are left out (that visit's settle
+  placed them).
 - **Several codes (code book refactor plan M4b): `codes` and `levels`.**
   `input.codes` (`VisitCode[]`: a level, this page's measurement or null,
   the measurement's pick) lists the visit's codes. Each object settles
@@ -391,7 +401,14 @@ const plan = planVisitSettle({
   re-minted. Its five sampled mutants are in
   `scripts/fixtures/creator-setup.mutants.json` ("settle per code").
 - `visit-settle.golden.test.ts` - the one-code oracle; since M4b it
-  compares the legacy fields and checks `levels` is the legacy `level`.
+  compares the legacy fields and checks `levels` is the legacy `level`;
+  its visits start no station, so `stations` must come back empty.
+- `visit-settle.test.ts` ("a station started in the visit settles with
+  it") - the anchor lands exactly on its first item after a 10 m shift, a
+  10 degree turn, a 30 m shift beyond the found radius and a small mixed
+  correction; through its item's own pick, not the visit's end; another
+  visit's station left out; a visit that only started a station still
+  settles it.
 - `visit-settle.test.ts` - B2 (code and pin through different tap-time
   alignments disagree; settled they agree), a pin's record and facing, a
   photo's rotation, the re-minted code's quality block (the settle

@@ -27,9 +27,20 @@ plan review #4).
   - `reveal(id, padding)` - pans the marker inside the window minus
     `padding` (`popover-place.ts` `revealPadding`, which keeps the box
     from turning inside out on a narrow window).
+  - `debugDraw(captures)`, `debugThumb(image, picture)`,
+    `debugVisible(on)`, `debugClear()` - the debug layer's markers
+    (`debug-capture-layer.ts`): one per capture, a dot until its
+    thumbnail lands, in a layer group the switch adds and removes.
   - `destroy()`.
 
 ## Invariants & assumptions
+
+- The debug layer's markers are never the tour's: a pane of their own
+  (`debugCaptures`, z-index 550, below the marker pane's 600, with
+  `pointer-events: none`), `interactive: false` and `keyboard: false`
+  (no `leaflet-interactive` class, no tabindex), no tooltip, a zero-size
+  icon box the element centres itself on. A thumbnail's blob URL is
+  revoked when its marker is dropped or its picture replaced.
 
 - Markers are `divIcon`s built from ELEMENTS (`textContent` for a code's
   number), never HTML strings: a label comes from a zip anyone can write.
@@ -47,4 +58,5 @@ plan review #4).
 
 No unit test (Leaflet in a DOM); `playwright-tests/editor.spec.js` counts
 the markers, selects through them and measures the card against the
-selected marker.
+selected marker, and counts the debug markers (no tabindex, not
+interactive, no tooltip, hidden and shown by the switch).

@@ -44,9 +44,11 @@ import {
 } from "./finish-guard.js";
 
 import { wireCreatorHandoff } from "./creator-handoff.js";
+import { wireCreatorDebugSave } from "./creator-debug-save.js";
 import type { TourHost } from "./tour-host.js";
 import { wireCreatorCodes, type CreatorCodes } from "./creator-codes.js";
 import { wireCreatorDraft } from "./creator-draft.js";
+import { tourFileKeyOfFile } from "./tour-session.js";
 import { wireCreatorPreviews } from "./creator-previews.js";
 import { wireCreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import {
@@ -56,11 +58,7 @@ import {
 import { wireCreatorMeasuring } from "./creator-measuring.js";
 import { wireCreatorSettle } from "./creator-settle.js";
 import { wireCreatorFinish } from "./creator-finish.js";
-import {
-  reticleNueOf,
-  walkPhotosPending,
-  wireCreatorStations,
-} from "./creator-stations.js";
+import { reticleNueOf, wireCreatorStations } from "./creator-stations.js";
 import { visitorPosition } from "./visitor-position.js";
 
 import { newObjectId } from "./content-placement.js";
@@ -135,6 +133,12 @@ export interface CreatorSetupDom {
   replaceHelpDrive: HTMLElement;
   /** Step 6's Drive address button (`creator-handoff.ts`). */
   replaceDriveCopy: HTMLButtonElement;
+  /** Step 6's "Save the debug data" (`creator-debug-save.ts`): its block,
+   *  line, button and status. */
+  debugSave: HTMLElement;
+  debugSaveText: HTMLElement;
+  debugSaveButton: HTMLButtonElement;
+  debugSaveStatus: HTMLElement;
   /** The question after a download-only Finish (F19, `creator-handoff.ts`). */
   uploadAsk: HTMLElement;
   uploadAskText: HTMLElement;
@@ -148,9 +152,9 @@ export interface CreatorSetupDom {
   printPanel: HTMLDetailsElement;
   status: HTMLElement;
   finishButton: HTMLButtonElement;
-  /** "Keep the walk recording in the zip" (scan-pass plan S1, S-D10):
+  /** "Keep the debug data in the tour file" (scan-pass plan S1, S-D10):
    *  shown beside Finish only for a tour that carries entries visitors
-   *  never read; unticked, the Finish leaves them out. */
+   *  never read; unticked (the default), the Finish leaves them out. */
   keepScanRow: HTMLElement;
   keepScanInput: HTMLInputElement;
   /** Step 5 on the page (outside the overlay): where the download lands. */
@@ -651,8 +655,8 @@ export function wireCreatorSetup(deps: {
   }
 
   /** The creator's stations in AR (tour editor plan W3 "AR authoring"):
-   *  the open one's line and ring, read from the working copy through the
-   *  Finish's own writer - no state of their own. */
+   *  the open one's line and ring, read from the tour document's stations
+   *  as the next write carries them - no state of their own. */
   const stations = wireCreatorStations({
     tour: ctx.tourDocument,
     dom: { chip: dom.stationChip ?? { textContent: "", hidden: true } },
@@ -663,14 +667,13 @@ export function wireCreatorSetup(deps: {
         gpsPositions: [],
       }).nue,
     reticleNue: () => reticleNueOf(ctx.reticle),
-    walkPhotosPending: () =>
-      walkPhotosPending(
-        ctx.session,
-        ctx.tourDocument.manifest(),
-        ctx.walkDecidedFor,
-      ),
     zero: () => selectZeroReference(arStore.getState()),
     scene: () => (creator && sessionLive() ? seams.getScene() : null),
+    // On the creator's own line, which the AR overlay shows.
+    reportError: (message) => {
+      ctx.placementNote = message;
+      renderAuthorReadout();
+    },
   });
 
   /** Placing a pin or a photo in AR (`creator-placement.ts`). */
@@ -768,7 +771,28 @@ export function wireCreatorSetup(deps: {
     ...(deps.host === undefined ? {} : { host: deps.host }),
     // A yes to "did you upload it?" (F19) is noted in the draft.
     onUploaded: (written) => draft.uploaded(written),
+    // A tour opened from a FILE is known by its file's key, and the first
+    // save that wrote the tour's own id gives the saved file another one
+    // (Q-I): the draft follows the file the creator now has. A link's
+    // tour keeps its link's key. The old key's draft stays as it was, so a
+    // copy that did not land loses nothing the opened file offers.
+    onDelivered: (rebuilt) => {
+      const session = ctx.session;
+      if (session === null || !session.fromFile) return;
+      const saved = new File([rebuilt.blob], rebuilt.filename, {
+        type: "application/zip",
+      });
+      void tourFileKeyOfFile(saved)
+        .then((key) =>
+          ctx.session === session ? draft.follow(key) : undefined,
+        )
+        .catch(() => undefined);
+    },
   });
+
+  /** The debug data a Finish left out, saved apart on a tap in the Done
+   *  step (`creator-debug-save.ts`). */
+  const debugSave = wireCreatorDebugSave({ ctx, seams, dom });
 
   /** Finish: the rebuilt zip and what it changes (`creator-finish.ts`). */
   const finish = wireCreatorFinish({
@@ -783,6 +807,7 @@ export function wireCreatorSetup(deps: {
     handoff,
     previews,
     draft,
+    debugSave,
     sessionLive,
     render: () => {
       renderAuthorReadout();
@@ -875,8 +900,11 @@ export function wireCreatorSetup(deps: {
       // The download button, its line and the replace steps
       // (`creator-handoff.ts`).
       handoff.reset();
+      // ... and the debug data's offer, with the bytes it kept.
+      debugSave.reset();
       // A "keep the walk" given for the closing tour is not given for the
-      // next one (S1 milestone review #9).
+      // next one (S1 milestone review #9): the next open sets its own
+      // default (`creator-finish.ts`).
       dom.keepScanInput.checked = false;
       // The rebuilt zip belonged to the tour that just closed, so the block
       // offering it goes away with it (M3 review #6) - otherwise a newly
