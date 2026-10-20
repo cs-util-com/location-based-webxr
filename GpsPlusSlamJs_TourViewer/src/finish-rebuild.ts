@@ -98,7 +98,7 @@ export interface FinishedTour {
   readonly scanLeftOut: readonly string[];
   /** The bytes this rebuild read: the open tour's own (`readWholeArchive`)
    *  for the first, the previous rebuild's after it. The phone's "Save the
-   *  debug data" keeps the first one's (debug-captures plan M2, review #9:
+   *  debug data" keeps the first one's (debug-captures plan M2:
    *  never read again - a link's file may have been replaced). */
   readonly source: Blob;
 }

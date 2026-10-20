@@ -31,7 +31,7 @@ be blocked outside a tap).
 - **The bytes of the FIRST Finish of an open tour are kept**, never read
   again: a later Finish rebuilds from the previous Finish's file, which may
   lack the walk, and a tour opened from a link reads its cache or its URL,
-  which after a replace on Drive is another file (the plan's review #9).
+  which after a replace on Drive is another file (plan M2 step 3).
   Kept until the tour closes (`creator-setup.ts` `resetFinishStep`);
   memory: one reference to a blob the page already held.
 - The tour's bytes are untrusted: the bundle inflates them under the open

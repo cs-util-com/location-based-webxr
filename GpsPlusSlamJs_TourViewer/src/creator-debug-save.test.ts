@@ -4,7 +4,7 @@
  * step offers it as a file of its own - built from the bytes the first
  * Finish of the open tour read, never by reading the tour again: a tour
  * opened from a link reads its cache or its URL, which after a replace on
- * Drive is another file (the plan's review #9).
+ * Drive is another file (plan M2 step 3).
  *
  * Why these tests matter: the tour file a creator puts at the link may be
  * the only copy they keep. A bundle built from the wrong bytes, a button

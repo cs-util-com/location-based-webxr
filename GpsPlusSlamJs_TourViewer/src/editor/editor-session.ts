@@ -283,7 +283,7 @@ export interface EditorSession {
    *  later feature. */
   moveWalkOut(): Promise<WalkMove | EditorRefusal>;
   /** The debug data of the OPENED file as a debug bundle (M2 of the
-   *  debug-captures plan, review #9: "Save the debug data" after a save
+   *  debug-captures plan: "Save the debug data" after a save
    *  that left the walk out - the newest bytes then carry none, and the
    *  move refuses), queued with the saves; refused, in words, when the
    *  opened file carries no walk. Changes nothing of the session. */

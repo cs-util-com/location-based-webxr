@@ -1893,7 +1893,7 @@ describe("moving the walk out (W2, D19)", () => {
   });
 
   it("builds the debug data from the opened file, also after a save that left the walk out", async () => {
-    // Why (M2 of the debug-captures plan, review #9): after a walk-free
+    // Why (M2 of the debug-captures plan): after a walk-free
     // save the newest bytes carry no walk, and the move refuses - but the
     // opened file still does, and "Save the debug data" keeps it apart.
     const { session, manifest, bytes } = await walkTour();

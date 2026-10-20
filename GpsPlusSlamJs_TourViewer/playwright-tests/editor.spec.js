@@ -3792,7 +3792,7 @@ async function doneAfterLeanDownload(page) {
 test("after a lean download, Done offers to save the debug data from the opened file, and downloads it as the debug bundle", async ({
   page,
 }) => {
-  // Why (M2 of the debug-captures plan, review #9): the copy a creator
+  // Why (M2 of the debug-captures plan): the copy a creator
   // keeps leaves the walk out by default, so the walk may be in the opened
   // file only - Done says so and saves it apart, read from that file (the
   // newest bytes carry none, and the move would refuse).

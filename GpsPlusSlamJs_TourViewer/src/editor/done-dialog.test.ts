@@ -124,7 +124,7 @@ describe("doneWords", () => {
   });
 
   it("offers to save the debug data apart only when a save left it out of a file that carried it", () => {
-    // Why (M2 of the debug-captures plan, review #9): a save as a new file
+    // Why (M2 of the debug-captures plan): a save as a new file
     // leaves the walk out by default, so the copy the creator keeps may be
     // the only one - the opened file still carries the walk, and Done is
     // where the creator is told to keep it apart.

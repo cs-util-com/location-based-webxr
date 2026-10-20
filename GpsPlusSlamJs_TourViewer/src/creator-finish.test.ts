@@ -1170,7 +1170,7 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
   // tests above cover, ticked and unticked.)
 
   it("offers the debug data the Finish left out, built from the bytes it read, and hands it over on a tap", async () => {
-    // Why (M2 of the debug-captures plan, steps 3 and 8, review #9): the
+    // Why (M2 of the debug-captures plan, steps 3 and 8): the
     // tour file the creator puts at the link leaves the walk out, so the
     // Done step offers it as a file of its own - from the Finish's own
     // bytes: a link's tour read again after a replace on Drive is another

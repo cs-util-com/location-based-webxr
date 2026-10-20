@@ -189,7 +189,7 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     bundle (`buildDebugBundle`, the same identity as the move's), queued
     with the saves; refused in words for a file without a walk. For "Save
     the debug data" after a save that left the walk out (M2 of the
-    debug-captures plan, review #9): the newest bytes then carry none.
+    debug-captures plan): the newest bytes then carry none.
     Changes nothing of the session.
   - `debugTour()` - the tour a debug bundle saved now names, and the one
     an added debug data file is compared with (`bundleMatchesTour`, "Add

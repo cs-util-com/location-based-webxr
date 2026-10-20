@@ -7,7 +7,7 @@
  * tap). The bundle is built from the bytes the FIRST Finish of the open
  * tour read, kept here until the tour closes - never by reading the tour
  * again: a tour opened from a link reads its cache or its URL, which after
- * a replace on Drive is another file (the plan's review #9).
+ * a replace on Drive is another file (plan M2 step 3).
  *
  * @see creator-debug-save.ts.md
  */
