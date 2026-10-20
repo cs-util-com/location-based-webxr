@@ -16,6 +16,7 @@ import {
   saveFinePrint,
   InPlaceRefusal,
   type WritableFileHandle,
+  isSameFile,
 } from "./save-target.js";
 
 /** A file on a fake disk: its bytes and modified time, and the calls. */
@@ -278,6 +279,36 @@ describe("SaveTarget.isSame", () => {
     );
     expect(await throwing.isSame(named("castle.zip"))).toBe(true);
     expect(await throwing.isSame(named("castle-walk.zip"))).toBe(false);
+  });
+});
+
+describe("isSameFile", () => {
+  // Why (r901 review #5): "Save the debug data" reads the opened file, so
+  // a bundle written over it loses the walk from both. A file opened
+  // without a handle (the file input, a drop) can only be told by its
+  // name - which then decides, as for the move's target.
+  const named = (name: string) => ({ kind: "file", name }) as FileSystemHandle;
+
+  it("is the browser's answer where the opened file has a handle that gives one", async () => {
+    const handle = Object.assign(named("castle.zip"), {
+      isSameEntry: (other: FileSystemHandle) =>
+        Promise.resolve(other.name === "elsewhere.zip"),
+    });
+    const opened = { name: "castle.zip", handle };
+    expect(await isSameFile(opened, named("castle.zip"))).toBe(false);
+    expect(await isSameFile(opened, named("elsewhere.zip"))).toBe(true);
+  });
+
+  it("counts the same name as the same file without a handle, or with one that cannot tell", async () => {
+    const cannotTell = Object.assign(named("castle.zip"), {
+      isSameEntry: () =>
+        Promise.reject(new DOMException("no", "SecurityError")),
+    }) as FileSystemHandle;
+    for (const handle of [null, named("castle.zip"), cannotTell]) {
+      const opened = { name: "castle.zip", handle };
+      expect(await isSameFile(opened, named("castle.zip"))).toBe(true);
+      expect(await isSameFile(opened, named("castle-debug.zip"))).toBe(false);
+    }
   });
 });
 

@@ -118,6 +118,7 @@ import {
   createSaveTarget,
   holdEditorDraftLock,
   holdEditorLock,
+  isSameFile,
   pickSaveFile,
   pickTourFile,
   saveFinePrint,
@@ -296,6 +297,13 @@ const photos = createPhotoCopies((file) => openTourFile(file));
 let tourDraft: EditorTourDraft | null = null;
 /** The opened file itself, when it may be written in place (E2b-1). */
 let target: SaveTarget | null = null;
+/** The opened tour's file: its name, and the handle it was picked through
+ *  (writable or not; null from the file input, a drop or a link). "Save
+ *  the debug data" reads it, so never writes over it (r901 review #5). */
+let openedFile: {
+  readonly name: string;
+  readonly handle: FileSystemHandle | null;
+} | null = null;
 /** This tab's hold on the opened file's name (E2b plan review #6), and
  *  when the last one let go: the same name asked again before that is
  *  refused (E2b-1 review #3). */
@@ -1191,6 +1199,7 @@ function leaveFile(): void {
   was?.release();
   letGo = was?.released ?? Promise.resolve();
   target = null;
+  openedFile = null;
   autosave.stop();
   stopResaveTimer();
   refusalToast = null;
@@ -1487,6 +1496,8 @@ async function attachTarget(
 async function openFile(
   file: File,
   handle: WritableFileHandle | null = null,
+  /** The handle the file was picked through, writable or not. */
+  picked: FileSystemHandle | null = handle,
 ): Promise<boolean> {
   if (busy) return false;
   openError.hidden = true;
@@ -1531,6 +1542,7 @@ async function openFile(
   void previous?.close().catch(() => undefined);
   resetEditing();
   leaveFile();
+  openedFile = { name: outcome.fileName, handle: picked };
   fileKey = outcome.session.archive.url;
   const writes = draft.writes();
   tourDraft = writes;
@@ -1666,6 +1678,7 @@ async function chooseTour(): Promise<void> {
   const opened = await openFile(
     outcome.file,
     outcome.writable ? outcome.handle : null,
+    outcome.handle,
   );
   // Said about the tour just opened, never over the one that stayed.
   if (opened && !outcome.writable) {
@@ -2296,6 +2309,7 @@ function saveDebugData(): Promise<DebugSaveOutcome> {
   if (mine === null) {
     return Promise.resolve({ kind: "refused", reason: "No tour is open." });
   }
+  const source = openedFile;
   // First, before any await: the dialog needs the click.
   const pick = pickSaveFile(
     window as unknown as SavePickerWindow,
@@ -2306,6 +2320,20 @@ function saveDebugData(): Promise<DebugSaveOutcome> {
     if (editor !== mine || picked.kind === "cancelled") {
       return { kind: "cancelled" };
     }
+    // The opened file chosen: the bundle would land over the file it is
+    // read from, and the walk would be in neither (r901 review #5, the
+    // move's rule). Refused before anything is read or written.
+    if (
+      picked.kind === "picked" &&
+      source !== null &&
+      (await isSameFile(source, picked.handle))
+    ) {
+      return {
+        kind: "refused",
+        reason: `${picked.handle.name} has the name of the tour file you opened - save the debug data under another name, so it cannot land over the tour. Nothing was written.`,
+      };
+    }
+    if (editor !== mine) return { kind: "cancelled" };
     const unused =
       picked.kind === "picked"
         ? ` Nothing was written into ${picked.handle.name}; if the save dialog created it as a new, empty file, delete it.`

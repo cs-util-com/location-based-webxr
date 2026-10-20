@@ -294,6 +294,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`pickSaveFile`), the bundle built from the opened file
   (`EditorSession.debugData`) and written there, or downloaded where
   there is no save dialog. It holds no save: nothing of the tour changes.
+  The opened tour file itself chosen as its target is refused before
+  anything is written (`isSameFile` against `openedFile`, the name and the
+  handle it was picked through; r901 review #5): the bundle would land
+  over the file it is read from.
   The opened file is read when the save runs, not when the tour opened:
   the page keeps a reference to it (a `File`), valid only while the file
   on disk is unchanged, so a copy put in its place first leaves nothing

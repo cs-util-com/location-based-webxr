@@ -191,6 +191,28 @@ export class InPlaceRefusal extends Error {
   }
 }
 
+/**
+ * Whether `other` is the file `opened` names: the browser's answer
+ * (`isSameEntry`) where a handle can give one, else the same name -
+ * refusing a target costs a retry, writing over the tour costs the tour
+ * (the M4b fix re-review #1). `handle` is null for a file opened without
+ * one (the file input, a drop, a link).
+ */
+export async function isSameFile(
+  opened: { readonly name: string; readonly handle: FileSystemHandle | null },
+  other: FileSystemHandle,
+): Promise<boolean> {
+  const { handle } = opened;
+  try {
+    if (handle !== null && typeof handle.isSameEntry === "function") {
+      return await handle.isSameEntry(other);
+    }
+  } catch {
+    // Unknown: decided by the name below.
+  }
+  return other.name === opened.name;
+}
+
 export interface SaveTarget {
   /** The file's name, as the picker gave it. */
   readonly name: string;
@@ -269,16 +291,7 @@ export async function createSaveTarget(
   return {
     name: handle.name,
     check,
-    async isSame(other) {
-      try {
-        if (typeof handle.isSameEntry === "function") {
-          return await handle.isSameEntry(other);
-        }
-      } catch {
-        // Unknown: decided by the name below.
-      }
-      return other.name === handle.name;
-    },
+    isSame: (other) => isSameFile({ name: handle.name, handle }, other),
     async write(blob) {
       // The rebuild stores entries uncompressed, so a deflated tour grows.
       if (blob.size > maxBytes) throw new InPlaceRefusal("too-large");

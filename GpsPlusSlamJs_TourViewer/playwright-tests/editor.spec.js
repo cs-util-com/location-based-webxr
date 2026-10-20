@@ -3921,6 +3921,31 @@ test("Save the debug data asks for its file on the click, and writes the bundle 
   });
 });
 
+test("Save the debug data refuses the opened tour's own file as its target, and writes nothing", async ({
+  page,
+}) => {
+  // Why (r901 review #5): the debug data is read from the opened file, so
+  // a bundle written over it would leave the walk in neither file. As the
+  // move does, the save refuses it before anything is written; opened
+  // through the file input, the file is told by its name.
+  await doneAfterLeanDownload(page);
+  await clickBoundSavePicker(page, "wrapped.zip");
+  const save = page.locator("#done-save-debug");
+  await save.click();
+  await expect(page.locator("#done-move-status")).toContainText(
+    "wrapped.zip has the name of the tour file you opened",
+  );
+  await expect(save).toHaveText("Save the debug data");
+  await expect(save).toBeEnabled();
+  // The stand-in dialog's file stayed as it made it: empty.
+  expect(
+    await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      return (await (await root.getFileHandle("wrapped.zip")).getFile()).size;
+    }),
+  ).toBe(0);
+});
+
 test("a tour with no file to write into is downloaded without the walk on a second click, once the walk is in its file", async ({
   page,
 }) => {

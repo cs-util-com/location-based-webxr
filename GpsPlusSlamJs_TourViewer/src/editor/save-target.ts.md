@@ -27,7 +27,12 @@ build plan, re-cut" and its cold review
   (`isSameEntry`); where the browser cannot tell (no `isSameEntry`, or it
   throws), the same name counts as the same file: refusing a move costs a
   retry, writing the walk over the tour costs the tour (the M4b fix
-  re-review #1).
+  re-review #1). The rule itself is `isSameFile`.
+- `isSameFile({ name, handle }, other): Promise<boolean>` - the same
+  question for any opened file: the browser's answer where `handle` (null
+  for a file opened without one: the file input, a drop, a link) gives
+  one, else the same name. "Save the debug data" asks it of the opened
+  tour file (r901 review #5).
 - `pickSaveFile(win, suggestedName): Promise<SaveFilePick>` - the
   browser's save dialog (`showSaveFilePicker`) for a new `.zip`, opened
   BEFORE the call returns: the caller calls it in the click, before any
@@ -108,5 +113,7 @@ refused and not written, a touched file accepted, a gone file, a failed
 write keeping the baseline, and the lock (granted, refused, released,
 without Web Locks); the save dialog opened before `pickSaveFile` returns,
 cancelled only by a dismissal, unavailable without one or on any other
-refusal; `isSame` by the browser's answer, else by the name. The page's e2e (`playwright-tests/editor.spec.js`)
+refusal; `isSame` by the browser's answer, else by the name; `isSameFile`
+by the handle's answer, and by the name without a handle or with one that
+cannot tell. The page's e2e (`playwright-tests/editor.spec.js`)
 writes a real origin-private file through it.
