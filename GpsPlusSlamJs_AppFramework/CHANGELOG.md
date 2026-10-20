@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **The NOTICE links the public repository**: it pointed at a repository a
+  public reader cannot open; it now names
+  https://github.com/cs-util-com/location-based-webxr, the repository the
+  package's `repository` field names.
+
 ## [1.30.0] - 2026-10-20
 
 ### ⚠️ Breaking changes
