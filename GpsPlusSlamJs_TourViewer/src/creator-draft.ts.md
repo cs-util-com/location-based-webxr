@@ -20,10 +20,11 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     visit is recorded into it, and `notLive` keeps this page's visits out
     of any sweep.
 - `CreatorDraft`:
-  - The base (M6 E2p, its review and re-review): `present` snapshots the
-    tour AS OPENED (`opened`; a Finish later advances `ctx.tourManifest`
-    to what this page wrote, which is not hosted until the creator uploads
-    it), and every hosted comparison of `present` uses that snapshot. Every
+  - The base (M6 E2p, its review and re-review): `present` compares with
+    the tour AS OPENED, which the document keeps (`opened()`; a Finish
+    later advances the document's written tour to what this page wrote,
+    which is not hosted until the creator uploads it) - no copy of its own
+    (the r880 milestone review LOW-5). Every
     draft write of an object adds the opened tour's version of it as seen,
     taken when the write is queued (a queued write can run after another
     open, whose tour is not the one edited); `finished(ids, written)` adds a
@@ -33,8 +34,15 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     records are not offered, one line says so (combined with the AR note
     when in AR, never overwritten by it), and their files are removed -
     unless this page changed them again first (`notLive`).
-  - `writeObject(object, blob?)` - the object list's awaited record write,
-    with its seen version (`creator-setup.ts`'s `saveDraftObject`).
+  - `writeObject(object, blob?)` - the awaited record write, with its
+    seen version: the tour document's listener writes every change through
+    it (`creator-setup.ts` hands `draftObjectWrites(draft)` to
+    `ctx.tourDocument.follow`).
+  - `saveSettings(record)` - writes the document's settings record (the
+    tour's setting, details and moved stations; `SETTINGS_KEY`, the
+    desktop's file name and shape, `tour-document-draft.ts`) whole, in its
+    own queue; true before the namespace opens (`present` writes this
+    page's then), false where the tour has no store.
   - `finished(ids, written)` - `creator-finish.ts` after a Finish wrote
     these objects: their versions in `written` are this device's own work.
     The ids (all of this load's Finishes) are kept for `uploaded`.
@@ -79,7 +87,8 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     write may reject, as before the split.
   - `recordPlacement(object, blob?)`, `recordVisit(entry)` -
     fire-and-forget, in the id's queue; before the namespace opens they are
-    written when it does.
+    written when it does (`present` writes the document's live work with
+    `recordPlacement`).
   - `write(id, write)` - one AWAITED write for the object list's actions.
   - `forgetObject(id)` - remove an id's files after any write queued for
     it.
@@ -183,10 +192,90 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   it** (M4 review #2): an edit or a deletion keeps its id, so the draft
   may hold an older change of the same id, and writing only ids the draft
   lacked left that older change for a crash to bring back.
+- **Live work is every id changed since the open, also once a Finish
+  wrote it** (`touchedIds`; the r880 fix re-review, P1). The document's lists
+  (its entries and deletions) lose what a Finish wrote, while the offer
+  stays on screen; judged by those alone, Restore after a Finish brought
+  back an older version of a note changed or deleted here, and "Delete it"
+  rejected the live record of a changed one. Every id the document's
+  writes name (`write`, `writeObject`, `forgetObject`) joins the set, which
+  only `reset` clears - the desktop editor's `touched`. Restore skips
+  those ids, and "Delete it" never rejects them (`liveObjectIds`,
+  `notLive`). The sweep also spares this page's visit ids (`notLive`); the
+  restore filters by object ids alone, so a draft object whose id equals a
+  visit id is still put back.
+  Restore's note counts what it put back (`restoreWork` returns it), not
+  the offer: a skipped edit is never claimed as restored. The same for the
+  rest of the note: the draft's code position is claimed only when
+  `restoreInHand` took it (a code measured here keeps its place), and
+  visits only those whose ids the log did not hold already.
+- **A live record takes its id's tombstone away, after it, once it
+  landed** (`writeDraftLiveRecord` in `draft-persistence.ts`, shared with
+  the desktop editor's `saveObject`; for `writeObject` and
+  `recordPlacement`): an older
+  draft's tombstone outranks a record in `readDraft`, and an edited id is
+  live work that "Delete it" does not sweep - so an edit made over an
+  offered deletion was offered as deleted again at the next reload, and
+  a crash after the edit brought it back deleted. Record first, then the
+  tombstone, as an undo of a delete writes them: a crash between the two
+  leaves the object deleted, never half restored.
 - **A draft is deleted only on PROOF**: a re-opened tour whose `tour.json`
   already carries its ids. Not on the download tap - on Android that
   resolves true the moment a download starts, and the creator still has to
   upload the file by hand afterwards.
+
+## The settings record (tour editor plan §19 #1)
+
+The tour document's settings record (`tour-document-draft.ts`: the
+setting, the details once set, every station's pose once one moved) is
+one file, `settings` (`SETTINGS_KEY`), in the tour's namespace - the
+desktop's name and shape (`editor/editor-draft.ts`), read by the same
+`parseSettingsRecord`. The document's listener writes it whole on each
+change, in its own queue. The phone reads only its STATION POSES back:
+
+- **Offered**: the poses that differ from the opened tour's
+  (`changedStations`) are work like any object - the draft is not spent
+  while one waits, and each moved station counts as one change in the
+  offer.
+- **Restored** frames first (the slice's `restored` moves them before the
+  objects), so the moved items' records land inside their moved stations -
+  unless a station was moved here meanwhile: live work wins.
+- **Read first, in the record's own queue**, before this page writes it:
+  settings changed here before the draft opened (`touched`) are written
+  after the read. Only a station moved HERE outranks the stored poses; a
+  name (the kept name re-applied at every open, `tour-name-field.ts`) or
+  another setting does not.
+- **Undecided poses ride along** (the r880 milestone review HIGH-2): while
+  the stored poses are neither restored nor discarded (offered, or "Not
+  now"), every record this page writes WITHOUT poses carries them
+  (`undecided`, applied when the write runs), so a rename never costs a
+  moved station. The poses sit in a holder made PER OPEN by `present` and
+  dropped by `reset`; every `writeSettings` call names the holder of the
+  open it writes FOR (`present` and the spent sweep their own open's,
+  `saveSettings` the open tour's at its call, "Delete it" the one captured
+  at its tap), so a write still queued when the tour closes or another
+  opens carries its own tour's poses, never none and never the next
+  tour's (the r880 fix re-review, L2; a holder read when the write was
+  issued was not enough, since "Delete it" issues its write only after
+  its commit lands). "Delete it" drops them only once its rejection
+  landed: a rejection that did not land leaves the draft, poses and all,
+  for a later rename to carry (L3).
+- **Removed** with a spent draft (after its meta commit) and by "Delete
+  it" (after the rejection lands), unless this page changed the settings
+  since the open - then "Delete it" rewrites the live record without the
+  rejected poses. The rewrite only while the tour is still the open one
+  (the document is another tour's after a close). A commit that lands
+  after a close removes the record at once, unless the tour was reopened
+  (that open read the record and owns it), the settings were live at the
+  tap, or a record was issued for the tour since the tap (a rename before
+  the close: `settingsPuts`, counted per namespace key, as the reopen is
+  compared, `draftKeyForTour`) - then the record is kept,
+  rejected poses and all, because nothing is left to rewrite it from: the
+  safe side. An interrupted removal is safe: a record the opened tour
+  carries is spent again at the next open.
+- The record's details and setting are not offered on the phone (it edits
+  only the tour's name, plan W2; its "needs no GPS" is the editor's,
+  Q-QF-1).
 
 ## Visits in the draft (authoring plan 2026-09-28-0953 M3b)
 
@@ -207,8 +296,17 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
 ## Tests
 
 Composed, through `wireCreatorSetup` and unchanged by the split:
-`creator-setup.test.ts` (the offer, its three answers, the ordered writes,
-the claims and sweeps), `creator-finish.test.ts` and
+`creator-setup.test.ts` (the offer, its three answers after a Finish too,
+the ordered writes, the claims and sweeps; "the draft keeps a moved
+station's pose" for the settings record, a write queued across a close, a
+"Delete it" that did not land and one that landed after another tour
+opened among them, one that landed after a close removing the record and
+ones keeping a rename made before or after the tap, and one leaving the
+record to a reopen through the same url padded; an edit over an offered
+deletion not offered as deleted again, and one whose record did not land
+keeping the tombstone; Restore's note counting what it put back, beside a
+code measured here and beside visits the log already held; a draft object
+whose id equals a visit id restored), `creator-finish.test.ts` and
 `authoring-settle.test.ts` (the meta a mint or settle writes, the backup
 notice), plus the draft e2e specs. The pure rules are in
 `authoring-draft.test.ts` and the on-disk shape in

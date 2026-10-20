@@ -6,6 +6,8 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 
 import {
+  HOST_REFUSED_TEXT,
+  describeOpenCause,
   describeOpenError,
   isDriveUrl,
   OPEN_FILE_ADVICE_LABEL,
@@ -186,5 +188,28 @@ describe("describeOpenError - a refused Drive file for a visitor (U1 milestone r
     );
     expect(text).not.toMatch(/shared publicly/);
     expect(text).toMatch(/tell the person who put up the poster/i);
+  });
+});
+
+/**
+ * Why this matters: the "You already have a tour?" box holds only the
+ * outcome's cause; it must get the same sentence `describeOpenError` gives
+ * for that cause, and nothing for a cause whose sentence needs the error
+ * (or for a name an object inherits).
+ */
+describe("describeOpenCause", () => {
+  it("gives the fixed sentence of a fixed cause, as describeOpenError does", () => {
+    for (const cause of ["missing", "corrupt", "cors", "offline"] as const) {
+      expect(describeOpenCause(cause)).toBe(
+        describeOpenError(new OpenRemoteArchiveError("x", cause)),
+      );
+    }
+    expect(describeOpenCause("cors")?.split("\n")[0]).toBe(HOST_REFUSED_TEXT);
+  });
+
+  it("gives nothing for a cause that needs the error, or an unknown name", () => {
+    expect(describeOpenCause("too-large")).toBeUndefined();
+    expect(describeOpenCause("other")).toBeUndefined();
+    expect(describeOpenCause("toString")).toBeUndefined();
   });
 });

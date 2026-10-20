@@ -40,11 +40,21 @@ author flag.
    camera; keep the code in view until the panel says it is measured
    (walking a few metres with GPS reception lets the phone align to the
    map, and the panel shows the accuracy). At the spots you choose,
-   "Place a pin here" (a text label on the surface under the ring) and
+   "Place a pin here" (a text label on the surface under the ring; the
+   ring follows a mesh the phone builds of the surroundings from its depth
+   sensor, easing over the surface and lying flat to it, and falls back to
+   the phone's own surface detection where there is no mesh - a phone
+   without depth, the first seconds, gaps; a troubleshooting recording
+   samples depth more sparsely, so its mesh is thinner; `?mesh=0` turns
+   the mesh off) and
    "Capture a photo" (the camera frame, placed where you stood). Placing
    needs only the GPS alignment, never the code: it works anywhere along
    the walk, also before the code is measured or after its print size
-   changed. "Finish"
+   changed. Each new pin or photo joins the nearest station within 25 m
+   of where it lands, else starts a new one there; "New station here" makes
+   the next one start its own station even within that radius (for places
+   closer together than any radius can separate; a second tap cancels it).
+   "Finish"
    ends the session, and the same step then saves and shows:
    - **the rebuilt zip** - the page rebuilds the archive in the browser:
      the original entries byte for byte, plus `qr/<id>.json` (the measured

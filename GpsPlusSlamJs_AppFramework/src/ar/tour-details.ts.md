@@ -1,0 +1,105 @@
+# tour-details.ts
+
+**Purpose:** the checks for a tour's details - `description`, `cover` and
+`contact` (tour editor plan 2026-10-17-1816, W2, decision D15) - shared by
+the manifest's reader and writer (`tour-manifest.ts`, minor 3) and by an
+app's own fields (the Tour Viewer editor's "Tour details" dialog), so what
+an editor accepts is exactly what a reader keeps (DEC-H3). Kept apart from
+`tour-manifest.ts` so a later format version (stations as parents, the
+plan's W3, version 3) reads the same fields with the same parsers
+unchanged (plan review 2 #10).
+
+## Public API
+
+- `TourDetails` - `{ description?, cover?, contact? }`; `TourManifest`
+  extends it.
+- `checkTourTitle(value): TourDetailCheck` - a tour's name as an EDITOR
+  takes it: text, trimmed, non-empty, at most `TOUR_TITLE_MAX_CHARS` (80)
+  characters counted as code points (the phone's poster title's length).
+  Both Tour Viewer pages' name fields check with it, so the phone and the
+  desktop count alike (the tour editor's parity contract, D30). The
+  manifest's reader does NOT apply it: a longer title (a tour named by
+  hand) is kept, trimmed, and an editor keeps such a name while it is left
+  as it is.
+- `checkTourDescription(value): TourDetailCheck` - text, trimmed,
+  non-empty, at most `TOUR_DESCRIPTION_MAX_CHARS` (2000) characters
+  counted as code points (an emoji is one); line breaks kept.
+- `checkTourContact(value): TourDetailCheck` - text, trimmed, at most
+  `TOUR_CONTACT_MAX_CHARS` (320), and either an e-mail address (bare or
+  `mailto:`, any case) or an `http:`/`https:` link with a host and no user
+  name or password (a link carrying a user name reads as one host and
+  opens another). Kept as typed (trimmed).
+- `checkTourCover(value, imageIds): TourDetailCheck` - a path-safe id
+  (`tour-archive.ts`'s `TOUR_ID_PATTERN`, the manifest's own id rule)
+  that is one of `imageIds`. A refused contact's reason names the rule:
+  an e-mail address or a link starting with http:// or https://.
+- `tourContactHref(contact): string | null` - where a contact leads:
+  `mailto:<address>` (with `% ? # &` in the address percent-escaped, RFC 6068) for an e-mail address, the link as the URL parser reads it otherwise
+  (`new URL(text).href`: `https:example.org` passes the check, and as
+  typed an `<a href>` resolved it against the page itself, M4a review
+  #4), null for a value the check refuses. A page shows the same value as
+  the link's text.
+- `tourImageIds(tour): Set<string>` - the ids a cover may name: the
+  placed photos' (`kind: 'photo'`) and the image assets' (`kind:
+'image'`). `tour` is structural (`TourImages`: `objects`, `assets`), so a
+  later format version passes its own records.
+- `tourCoverEntry(tour): string | null` - the archive entry the cover
+  shows (a photo's `image`, an asset's `path`), or null without a cover
+  that names an image (the visitor's start page falls back to its own
+  choice then).
+- `parseTourDetails(data, { imageIds }): { details, dropped }` - the three
+  fields of a document record, each checked; an absent (undefined) field is
+  absent, a failing one is dropped as `TourDetailsDrop { field, reason,
+cause? }`. Never throws.
+- `TourDetailCheck` (`{ ok: true, value } | { ok: false, reason, cause? }`),
+  `TourDetailsDrop`, `TourDetailsField`.
+  - `cause: 'image-gone'` marks a cover that is a well-formed id naming no
+    image of the tour (a deleted photo). It is the one drop the writer
+    (`serializeTourManifest`) accepts quietly. A drop without a cause is a
+    malformed value (PR #638 review).
+
+## Invariants & assumptions
+
+- **A detail costs itself, never the tour.** Readers drop a failing value
+  with a reason instead of throwing, at every minor: the details are
+  cosmetic, and a cover photo deleted on the phone must not stop the tour
+  opening. The manifest's writer is stricter (see `tour-manifest.ts.md`).
+- **Idempotent.** A kept value passes its own check again unchanged, so a
+  written tour reads back the same (property-tested).
+- **A kept contact leads only to `mailto:` or an http(s) page**, never a
+  script or a data URL (property-tested); it is shown as a link by the
+  visitor's error messages.
+- The e-mail rule accepts RFC 5322's dot-atom local part (letters, digits
+  and `!#$%&'*+-/=?^_\`{|}~.`), not a quoted one, and a dotted domain of
+  letters (any script), digits and hyphens with a final label of two or
+  more. Not a full RFC validator: a mistyped but well-formed address passes.
+- `imageIds` is the caller's: `tour-manifest.ts` passes its placed photos'
+  ids and its image assets' ids. A later version passes its own.
+
+## Examples
+
+```ts
+checkTourContact(' guide@example.org '); // { ok: true, value: 'guide@example.org' }
+checkTourContact('javascript:alert(1)'); // { ok: false, reason: '"contact" must be ...' }
+tourContactHref('guide@example.org'); // 'mailto:guide@example.org'
+parseTourDetails({ cover: 'gone' }, { imageIds: new Set(['f1']) });
+// { details: {}, dropped: [{ field: 'cover', reason: '"cover" names no image of this tour', cause: 'image-gone' }] }
+```
+
+## Tests
+
+- `tour-details.test.ts` - each check's accepted and refused values (the
+  contact's script, data, ftp, user-name and query forms among them), the
+  character count by code point, the href forms and the escaping of `&`
+  and `?`, a document without details, and a failing value dropped with
+  its reason beside the kept ones; the image ids (photos and image assets,
+  never a pin or an audio asset) and the cover's entry; the title's 80
+  characters by code point (80 emoji kept, 81 refused).
+- `tour-details.property.test.ts` - over any input: never throws, every
+  given field is kept or dropped, a kept value passes its check unchanged;
+  a kept contact leads only to `mailto:` or http(s); every generated e-mail
+  address and https link within the cap is kept; a name is kept exactly
+  when its trimmed text is non-empty and at most 80 characters, and a kept
+  name passes again unchanged.
+- `tour-manifest.test.ts` / `tour-manifest.property.test.ts` - the fields
+  in `tour.json` (minor 3).

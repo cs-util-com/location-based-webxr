@@ -1,5 +1,5 @@
 /**
- * Why these tests matter: two things in `index.html` are load-bearing in a
+ * Why these tests matter: things in `index.html` and `edit.html` are load-bearing in a
  * way no other test can see, because they are properties of the MARKUP that
  * the stylesheet depends on. Both fail silently - the page still renders,
  * just wrong - and both are the kind of thing a formatter or a well-meaning
@@ -9,6 +9,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  checkTourTitle,
+  TOUR_CONTACT_MAX_CHARS,
+  TOUR_DESCRIPTION_MAX_CHARS,
+  TOUR_TITLE_MAX_CHARS,
+} from "gps-plus-slam-app-framework/ar/tour-details";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const html = readFileSync(resolve(packageRoot, "index.html"), "utf8");
@@ -58,5 +64,41 @@ describe("the AR overlay root is not clipped", () => {
     expect(html).toMatch(
       /body\[data-ar-active="true"\]\s+#step-measure\s*>\s*summary\s*\{\s*display:\s*none/,
     );
+  });
+});
+
+describe("the desktop's details fields hold every value the format accepts", () => {
+  // The r875 milestone review #8: `maxlength` counts UTF-16 code units,
+  // the format (`checkTourTitle` and its siblings) counts code points, and
+  // a character outside the Basic Multilingual Plane - an emoji, a rare
+  // CJK ideograph - is two units and one point. A field capped at the
+  // format's number therefore stopped a name of 80 such characters at 40,
+  // a name the format accepts. The cap is twice the format's, so the
+  // browser never refuses what the format keeps; the save's check
+  // (`checkDetailsForm`) decides, and says why in words.
+  const edit = readFileSync(resolve(packageRoot, "edit.html"), "utf8");
+  function maxLengthOf(id: string): number {
+    const tag = new RegExp(
+      String.raw`<(?:input|textarea)\s[^>]*id="${id}"[^>]*>`,
+    ).exec(edit)?.[0];
+    const cap = tag === undefined ? undefined : /maxlength="(\d+)"/.exec(tag);
+    if (cap?.[1] === undefined) throw new Error(`#${id} has no maxlength`);
+    return Number(cap[1]);
+  }
+
+  it.each([
+    ["details-name", TOUR_TITLE_MAX_CHARS],
+    ["details-description", TOUR_DESCRIPTION_MAX_CHARS],
+    ["details-contact", TOUR_CONTACT_MAX_CHARS],
+  ])("#%s fits %d characters of two code units each", (id, max) => {
+    expect(maxLengthOf(id)).toBeGreaterThanOrEqual(2 * max);
+  });
+
+  it("fits a name of 80 emoji, which the format accepts", () => {
+    const name = "\u{1F5FA}".repeat(TOUR_TITLE_MAX_CHARS);
+    expect(checkTourTitle(name).ok).toBe(true);
+    expect(name.length).toBeLessThanOrEqual(maxLengthOf("details-name"));
+    // One more and the format refuses: the cap is not where it stops.
+    expect(checkTourTitle(`${name}\u{1F5FA}`).ok).toBe(false);
   });
 });

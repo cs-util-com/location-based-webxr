@@ -53,25 +53,34 @@ export type PlacementState =
       kind: "nothing-to-place";
     }
   | {
+      /** `loading-photos`: the photos no station holds, decoded up front
+       *  (`done` of `total` decoded so far). */
       kind: "placing";
       phase: "reading-walk" | "loading-photos";
       done: number;
       total: number;
     }
   | {
+      /** `count`: the photos standing (decoded and drawn, held by no
+       *  station); `atStations`: the photos waiting at their stations,
+       *  drawn only while one shows (absent: 0). */
       kind: "placed";
       placedKind: "capture-spots";
       count: number;
+      atStations?: number;
       fixes: number;
       gpsAccuracyMedianM: number | null;
     }
   | {
       /** The ring around a locked code - the fallback for a tour without
        *  a recording (milestone review #2: a placed ring used to keep the
-       *  decline copy, indistinguishable from "a ring is pending"). */
+       *  decline copy, indistinguishable from "a ring is pending").
+       *  `count` and `atStations` as for the capture spots: a ring is
+       *  either standing or held by the code's station. */
       kind: "placed";
       placedKind: "ring";
       count: number;
+      atStations?: number;
     }
   | {
       /** The join declined (taxonomy reason) - the ring is the fallback and
@@ -124,6 +133,15 @@ export interface ArStatusInput {
   /** The tour's placed content (`tour.json`), once rendered. */
   content:
     { kind: "none" } | { kind: "placed"; count: number; skipped: number };
+  /** The visitor guide has stations to point at and waits for a heading
+   *  (D34 of the tour editor plan 2026-10-17-1816; the store's
+   *  `visitorGuide.headingPending`): the visitor's line asks for a few
+   *  steps. Absent: false. */
+  stationsAwaitHeading?: boolean;
+  /** The tour is placed and every piece of its content waits at a station
+   *  not shown now (`StationContent.showsAny` false): nothing is in view,
+   *  so the visitor's line asks for a station. Absent: false. */
+  awayFromStations?: boolean;
 }
 
 /** The content segment: how many of the tour's objects stand. */
@@ -140,13 +158,62 @@ export function contentSegment(content: ArStatusInput["content"]): string {
  *  coaching copy stay one contract (DEC-H3). At the first GPS fix the
  *  alignment is the identity - no heading - so an earlier trigger would
  *  start the scene up to 180° wrong. One exemption (QR-first M1): a code
- *  that placed the tour (`viewer-placement.ts` `codePlacedTour()`) places
+ *  that placed the tour (`codePlacedTour` below) places
  *  before this gate, and cannot be 180° wrong - a voted lock's ring
  *  carries the code's saved heading, unlike a single GPS fix. */
 export function isPlacementReady(
   report: TrackingQualityReport | null,
 ): boolean {
   return computeOnboardingGuidance(report).phase === "ready";
+}
+
+/** A code lined the tour up: its votes were cast (after the escape too -
+ *  the gate stays "skipped" when a later lock votes). Read by the visitor's
+ *  status line and by the station guide, whose position is then the
+ *  code's, not the raw fixes'. */
+export function codeLinedUp(
+  qr: Pick<ArStatusInput["qr"], "lockedText" | "votedLocks">,
+): boolean {
+  return qr.lockedText !== null && qr.votedLocks > 0;
+}
+
+/** Whether a code's votes placed this tour: the gate passed on a voted
+ *  lock of a trusted code (M5). The walk's placement trigger then runs
+ *  whatever the tracking-quality phase reads (`viewer-placement.ts`, §7
+ *  #9). The voted count goes back to 0 when a veto takes every vote back
+ *  (r881 review M1), so a gate another code passed no longer counts, and
+ *  when an odometry-frame change ends the code's trust
+ *  (`viewer-placement.ts` `endCodeTrust`): its votes name places in the
+ *  old frame until its next voted lock. */
+export function codePlacedTour(ctx: {
+  readonly scanGate: ScanGate;
+  readonly viewerVotedLocks: number;
+}): boolean {
+  return (
+    ctx.scanGate.kind === "passed" &&
+    ctx.scanGate.via === "code" &&
+    ctx.viewerVotedLocks > 0
+  );
+}
+
+/**
+ * Whether the visitor's stations may be judged on the session's alignment
+ * - its position found by, the HUD's arrows and the breadcrumbs pointed on
+ * it: tracking ready (`isPlacementReady`) or a code lined it up
+ * (`codeLinedUp`; a voted lock after the gate's escape too, which places
+ * the walk's photos by itself, `onVotedLock`). Before it the alignment is
+ * the identity at the first fix, which can be 180° wrong. The guide's
+ * find re-reads this each tick, and while it is false judges by the fresh
+ * device fix instead (r881 review H1); what needs a heading (the arrows,
+ * the breadcrumbs, the figure) latches its first `true` per AR entry, as
+ * the photos' trigger does, so a degraded dip does not take it away (r881
+ * re-review L-B).
+ */
+export function alignmentReady(
+  report: TrackingQualityReport | null,
+  qr: Pick<ArStatusInput["qr"], "lockedText" | "votedLocks">,
+): boolean {
+  return isPlacementReady(report) || codeLinedUp(qr);
 }
 
 /** The printed-code line: the viewer pipeline's status, with the no-codes
@@ -191,8 +258,11 @@ export function placementSegment(
         ? `reading the walk ${String(placement.done)}/${String(placement.total)}…`
         : `loading photos ${String(placement.done)}/${String(placement.total)}…`;
     case "placed": {
+      const atStations = placement.atStations ?? 0;
       if (placement.placedKind === "ring") {
-        return `${String(placement.count)} photos in a ring around the code`;
+        return atStations > 0
+          ? `${String(atStations)} photos in a ring around the code, at its station`
+          : `${String(placement.count)} photos in a ring around the code`;
       }
       // HONEST label (geo-join review, finding 5): fixes and their median
       // GPS accuracy are what the numbers are - never a claimed placement
@@ -201,7 +271,15 @@ export function placementSegment(
         placement.gpsAccuracyMedianM === null
           ? ""
           : `, median GPS ±${placement.gpsAccuracyMedianM.toFixed(1)}m`;
-      return `${String(placement.count)} photos at capture spots (${String(placement.fixes)} fixes${accuracy})`;
+      // Standing photos and photos waiting at their stations, each named
+      // only when there are some (a tour of loose photos reads as before).
+      const where =
+        atStations === 0
+          ? `${String(placement.count)} photos at capture spots`
+          : placement.count === 0
+            ? `${String(atStations)} photos at their stations`
+            : `${String(placement.count)} photos at capture spots and ${String(atStations)} at their stations`;
+      return `${where} (${String(placement.fixes)} fixes${accuracy})`;
     }
     case "declined":
       return `photo ring (${placement.reason})`;

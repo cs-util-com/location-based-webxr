@@ -19,6 +19,26 @@ wired into its logic: every interaction is faked.
   `editor-3-bottom-strip/` - the desktop editor (M6, before E1), all "full
   map, floating panels", differing in where the list and the editing card
   sit; made 2026-10-13. The app takes `editor-1-left-rail`.
+- `editor3d-1-studio/`, `editor3d-2-walk-it/`, `editor3d-3-storyboard/`,
+  `editor3d-4-map-tilt/` - the 3D editor on the globe (stations as groups
+  of items, codes apart), four directions on a faked town; made
+  2026-10-18, before the build. They load three.js from unpkg by an import
+  map. When a station moves, the four drafts re-ground its items on the
+  fake terrain (an item keeps its height above the ground), while tour.json
+  version 3 keeps an item's local pose rigid with its station: the real
+  editor must choose between the two deliberately.
+- `editor3d-1-studio-r2/` ... `editor3d-4-map-tilt-r2/` - round 2 of the
+  same four after the owner tried them (made 2026-10-19): one shared frame
+  (a docked story-card tree and inspector, one set of handles, a top view,
+  a two-finger guard), each keeping its own idea. They move a station's items rigidly with it
+  and offer "Put items on the ground", as decided after round 1. The
+  round-1 pages stay.
+- `editor3d-1-studio-r3/` and `editor3d-4-map-r3/` - round 3 (made
+  2026-10-19): two converged pages with one set of rules, Studio opening in
+  a tilted 3D view and Map opening from above. Both take a `#morph=A-B` or
+  `#morph=snapN` flag for how pins and photos lie flat by camera angle
+  (their defaults differ: Studio 3-22 degrees, Map 8-42), and
+  `#stations=1000` for a large generated tour. The earlier rounds stay.
 
 **Kept, the chosen and the unchosen** (owner, 2026-10-11 evening): another
 developer may prefer a variant the owner did not choose and ask their own
@@ -27,7 +47,7 @@ coding agent to build that one. The verdicts are in the polish-round plan
 
 **What goes with them:** the `public/prototypes/` lines in the package's
 `.prettierignore` and `.stylelintignore`, and the `landing-5-map-path`
-entry of `tests/repo-config/slider-pages-load-the-guard.test.js` (`EXEMPT`).
+and the `editor3d-*` entries of `tests/repo-config/slider-pages-load-the-guard.test.js` (`EXEMPT`).
 The drafts are not held to the app's lint and format rules.
 
 **Owner rule applied after the build:** the three HUD drafts first blocked

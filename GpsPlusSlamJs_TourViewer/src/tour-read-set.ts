@@ -9,7 +9,10 @@
 
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
-import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  tourItems,
+  type TourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourMediaTypeOfEntry } from "gps-plus-slam-app-framework/ar/tour-media";
 import { signedManifestFilesOf } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
@@ -34,7 +37,7 @@ export function visitorEntryNames(
   const named = new Set<string>([
     `${wrap}${TOUR_MANIFEST_ENTRY}`,
     ...signedManifestFilesOf(entryNames),
-    ...manifest.objects.flatMap((o) =>
+    ...tourItems(manifest).flatMap((o) =>
       o.kind === "photo" ? [`${wrap}${o.image}`] : [],
     ),
     ...manifest.assets.map((a) => `${wrap}${a.path}`),
@@ -83,6 +86,19 @@ function isRecordingEntry(name: string): boolean {
 }
 
 /**
+ * The walk recording's own entries in this archive, in archive order -
+ * every one, the frames a visitor sees included: what makes the walk a
+ * complete recording in a file of its own (the editor's "Move the walk
+ * out", the M4b milestone review #8). None without an action stream.
+ */
+export function recordingEntryNames(entryNames: readonly string[]): string[] {
+  // No action stream, no walk: a session.json or frame-named image of the
+  // tour's own is then just a file.
+  if (!entryNames.some((name) => ACTION_ENTRY.test(name))) return [];
+  return entryNames.filter(isRecordingEntry);
+}
+
+/**
  * The creator's walk in this archive, in archive order: the recording's own
  * entries (`session.json`, `actions/`, recorded frames) that a visitor
  * never reads - a baked photo, or a frame the photo ring shows, stays. What
@@ -94,11 +110,10 @@ export function scanEntryNames(
   manifest: TourManifest,
   wrap: string,
 ): string[] {
-  // No action stream, no walk: a session.json or frame-named image of the
-  // tour's own is then just a file.
-  if (!entryNames.some((name) => ACTION_ENTRY.test(name))) return [];
+  const recording = recordingEntryNames(entryNames);
+  if (recording.length === 0) return [];
   const read = visitorEntryNames(entryNames, manifest, wrap);
-  return entryNames.filter((name) => isRecordingEntry(name) && !read.has(name));
+  return recording.filter((name) => !read.has(name));
 }
 
 /** The entries a visitor's page shows: all of them except the walk. */

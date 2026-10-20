@@ -3,10 +3,12 @@ import { expect, test } from "@playwright/test";
 
 import {
   enterArAndMeasure,
+  forceTrackingReady,
   installTourViewerArFakes,
   openFixtureTour,
   seedAlignment,
   tapFinish,
+  worldManifest,
 } from "./ar-fakes.js";
 import {
   E2E_QR_ARCHIVE,
@@ -16,7 +18,6 @@ import {
 } from "./qr-fixture.mjs";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
-import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   BlobReader,
   TextWriter,
@@ -74,17 +75,49 @@ const NO_GPS_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/no-gps-tour.zip";
 
 /** The visitor's way in (DEC-N1): a `?qr=` launch, which opens the tour on
  *  boot and shows the visitor screen instead of the setup. */
-async function openAsVisitor(page, url, { debug = false } = {}) {
+async function openAsVisitor(
+  page,
+  url,
+  { debug = false, allStations = false } = {},
+) {
   // `debug`: the technical status line (frames, votes, fixes) a visitor
   // reads only with ?debug=1 since UI round 1; tests of the pipeline's
   // internals read it there, the plain line has its own test.
-  await page.goto(`/?qr=${encodeURIComponent(url)}${debug ? "&debug=1" : ""}`);
+  // `allStations`: every station's content shows (?allstations=1). The
+  // page draws only the present station's content, and these fakes give
+  // the station guide no camera pose unless a test sets one, so a test
+  // about the gate, the votes or the ring (not about presence, which
+  // stations.spec.js walks) turns it on to see the content it places.
+  await page.goto(
+    `/?qr=${encodeURIComponent(url)}${debug ? "&debug=1" : ""}${allStations ? "&allstations=1" : ""}`,
+  );
   // Open (follow-up F14): a visitor's page no longer fills its hidden
   // gallery, so the count of its images is no readiness signal.
   await expect(page.locator("body")).toHaveAttribute(
     "data-tour-open",
     "settled",
     { timeout: 15000 },
+  );
+}
+
+/** How many station groups stand in the fake scene, after one camera frame
+ *  (which advances the content's fades and mounts). */
+function drawnGroups(page) {
+  return page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    t.emitFrames(1);
+    return t.fakeScene.children.length;
+  });
+}
+
+/** The ring's photo planes: meshes standing directly in a station's group
+ *  (a station's own items hang one level deeper, under its frame). */
+function ringPlanes(page) {
+  return page.evaluate(
+    () =>
+      /** @type {any} */ (window).__tourViewerTest.fakeScene.children
+        .flatMap((/** @type {any} */ g) => g.children)
+        .filter((/** @type {any} */ o) => o.isMesh === true).length,
   );
 }
 
@@ -194,7 +227,10 @@ test("a visitor who refuses the location starts the tour on codes alone: no loca
       t.locationOutcome = "denied";
     }
   });
-  await openAsVisitor(page, RANGES_ARCHIVE);
+  // Every station's content shows: away from every station the placed
+  // line asks for one instead (stations.spec.js), and these
+  // fakes put the guide at no station.
+  await openAsVisitor(page, RANGES_ARCHIVE, { allStations: true });
   const button = page.getByTestId("enter-ar");
   await expect(button).toHaveText("Allow location", { timeout: 10000 });
   await button.click();
@@ -393,9 +429,11 @@ test("visitor mode boots to running: session started, alignment bound, capture a
     };
   });
   // Camera frames must be wired AT initAR time (the source is built there),
-  // with the M2 isolation flags: camera + texture ON, depth OFF. A VISITOR
-  // does not request hit-test (only the creator's reticle needs it), and
-  // hands initAR no depth callback (only a recorded creator entry does).
+  // with the M2 isolation flags: camera + texture ON, and for an unrecorded
+  // VISITOR depth OFF. A visitor does not request hit-test (only the
+  // creator's reticle needs it), and hands initAR no depth callback: that
+  // is every creator entry's (the mesh cursor, unless ?mesh=0) and a
+  // recorded entry's (at the recording's 16 x 16 / 1 Hz).
   expect(wiring.initAR).toEqual([
     {
       hasCameraFrame: true,
@@ -766,7 +804,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   expect(level.qr.mintQuality).toBeUndefined();
   // The pin the hosted zip already carried SURVIVES the rebuild - the
   // whole reason the manifest is loaded at open (M3 review #5/#7).
-  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const manifest = worldManifest(rebuilt.entries["tour.json"]);
   // The fixture's own pin SURVIVES the rebuild (M3 review #5/#7), and the
   // two objects placed above are appended after it.
   expect(manifest.objects).toHaveLength(3);
@@ -864,9 +902,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   const second = await readDownloadedZip(page, 2);
-  const secondManifest = parseTourManifest(
-    JSON.parse(second.entries["tour.json"]),
-  );
+  const secondManifest = worldManifest(second.entries["tour.json"]);
   // The fixture's pin, batch one's pin and photo, batch two's pin.
   expect(secondManifest.objects.map((o) => o.kind)).toEqual([
     "pin",
@@ -1006,7 +1042,7 @@ test("a first measurement of a code the tour does not store is minted into the r
   // SETTLE"). 3 would mean the tap's level reached the zip unsettled.
   expect(level.qr.mintQuality?.alignmentSampleCount).toBe(6);
   expect(level.qr.mintQuality?.gpsAccuracyM).toBe(5);
-  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const manifest = worldManifest(rebuilt.entries["tour.json"]);
   expect(
     manifest.objects.map((o) => (o.kind === "pin" ? o.label : o.kind)),
   ).toEqual(["First code's pin"]);
@@ -1133,7 +1169,7 @@ test("two new codes 20 m apart, measured in one visit, both reach the zip with o
   // Each code keeps ITS OWN pose: 20 m apart, as measured. One pose written
   // under both names would read 0 m.
   expect(geoDistanceM(geoOf(first), geoOf(second))).toBeCloseTo(20, 0);
-  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const manifest = worldManifest(rebuilt.entries["tour.json"]);
   expect(
     manifest.objects.map((o) => (o.kind === "pin" ? o.label : o.kind)).sort(),
   ).toEqual(["Pin at the first code", "Pin at the second code"]);
@@ -1201,7 +1237,7 @@ test("the creator's AR visit first asks for the tour's code, and stops asking on
   );
   await enterAr(page);
   await expect(page.getByTestId("setup-status")).toHaveText(
-    /^First, point the camera at the code you scanned to open this tour\./,
+    /^First, point the camera at this tour's printed code:/,
   );
   // It asks; it does not block (D5): the readout is there beside it.
   await expect(page.getByTestId("setup-status")).toHaveText(
@@ -1386,11 +1422,11 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
   await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
 
   // Further locks AFTER the placement refine the alignment under the
-  // planes - they do not place a second time (review #4/#5).
-  const planesBefore = await page.evaluate(
-    () =>
-      /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
-  );
+  // planes - they do not place a second time (review #4/#5). The photos are
+  // decoded after the line says they are placed (visitor plan M2: decoded
+  // when their station is drawn), so wait for them to stand first.
+  await expect.poll(() => drawnGroups(page)).toBeGreaterThan(0);
+  const planesBefore = await drawnGroups(page);
   await expect
     .poll(
       async () => {
@@ -1440,34 +1476,14 @@ test("a tour whose photo spots were baked at its Finish places them without any 
       },
       { timeout: 20000 },
     )
-    .toMatch(/2 photos at capture spots \(7 fixes/);
+    // Baked photos keep their stations, so they are counted where they
+    // wait, drawn only while their station shows.
+    .toMatch(/2 photos at their stations \(7 fixes/);
   await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
   // A visitor's page decodes no photo for its hidden gallery at all
   // (follow-up F14), so the walk's frame is not read either.
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(0);
 });
-
-/** Force the tracking-quality slice to `ok` (→ onboarding `ready`). The
- *  fake initAR never dispatches poses, and `reportUpdated` is the slice's
- *  own action (not a middleware input), so it is not recomputed away. */
-async function forceTrackingReady(page) {
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
-      type: "trackingQuality/reportUpdated",
-      payload: {
-        state: "ok",
-        confidence: 0.9,
-        subScores: {
-          convergence: 1,
-          residualConsensus: 1,
-          gpsAccuracy: 1,
-          coverage: 1,
-        },
-        diagnostics: {},
-      },
-    });
-  });
-}
 
 test("a tour with no recording and no printed codes says so, instead of scanning", async ({
   page,
@@ -1513,7 +1529,7 @@ test("the visitor's content and ring wait for the lock; the escape after its clo
   // and the ring follows the vote. A second visitor never locks: the clock
   // (fired by the fake, no frames needed) offers the escape, which places
   // by GPS and says so.
-  await openAsVisitor(page, RANGES_ARCHIVE, { debug: true });
+  await openAsVisitor(page, RANGES_ARCHIVE, { debug: true, allStations: true });
   await enterAr(page);
   await seedAlignment(page);
   await forceTrackingReady(page);
@@ -1541,12 +1557,10 @@ test("the visitor's content and ring wait for the lock; the escape after its clo
       { timeout: 20000 },
     )
     .toMatch(/photos in a ring/);
-  expect(
-    await page.evaluate(
-      () =>
-        /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
-    ),
-  ).toBeGreaterThan(1);
+  // The ring goes with the station nearest its code, the pin's: its three
+  // planes stand in that station's group, drawn once decoded.
+  await expect.poll(() => ringPlanes(page)).toBe(3);
+  expect(await drawnGroups(page)).toBe(1);
   // The escape clock was cancelled by the lock: firing it changes nothing.
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.fireTimers();
@@ -1635,8 +1649,10 @@ test("a visitor reads one plain sentence per state, never the debug readout (UI 
   // Why this matters (usability review F1, F15): the visitor's status line
   // used to be a debug readout - a frame counter, "vote batches", "Pose
   // error px". Without ?debug=1 a visitor now reads one sentence per
-  // state, and the line's data-state names the state for the page.
-  await openAsVisitor(page, RANGES_ARCHIVE);
+  // state, and the line's data-state names the state for the page. Every
+  // station's content shows, so the placed line is the one at a station
+  // (away from every station it asks for one, stations.spec.js).
+  await openAsVisitor(page, RANGES_ARCHIVE, { allStations: true });
   await enterAr(page);
   await seedAlignment(page);
   await forceTrackingReady(page);
@@ -1784,11 +1800,10 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
         { timeout: 20000 },
       )
       .toMatch(/photos at capture spots/);
-    const planes = await page.evaluate(
-      () =>
-        /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
-    );
-    expect(planes, `entry ${String(entry)}`).toBeGreaterThan(0);
+    // Drawn once decoded, after the line (visitor plan M2).
+    await expect
+      .poll(() => drawnGroups(page), { message: `entry ${String(entry)}` })
+      .toBeGreaterThan(0);
     await page.evaluate(() => {
       /** @type {any} */ (window).__tourViewerTest.endXrSession();
     });
@@ -1821,7 +1836,7 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
       refusedAdds.push(message.text());
     }
   });
-  await openAsVisitor(page, ARCHIVE, { debug: true });
+  await openAsVisitor(page, ARCHIVE, { debug: true, allStations: true });
 
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
@@ -1859,6 +1874,8 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
       { timeout: 20000 },
     )
     .toMatch(/the code holds the placement/i);
+  // The ring and the pin are drawn once decoded (one station, one group).
+  await expect.poll(() => ringPlanes(page)).toBe(3);
 
   const afterBudget = await page.evaluate(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;
@@ -1866,9 +1883,16 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
       gpsCount:
         t.alignmentStore.getState().gpsData.gpsEvents.gpsPositions.length,
       markerUpdates: t.qrDebugUpdates,
-      planes: t.fakeScene.children.length,
+      groups: t.fakeScene.children.length,
+      planes: t.fakeScene.children
+        .flatMap((/** @type {any} */ g) => g.children)
+        .filter((/** @type {any} */ o) => o.isMesh === true).length,
+      // The station's group -> the station's frame at its pose (tour
+      // editor plan W3: playback as station groups) -> the station's items.
       pinLabels: t.fakeScene.children
         .flatMap((/** @type {any} */ c) => (c.isGroup ? c.children : []))
+        .flatMap((/** @type {any} */ s) => (s.isGroup ? s.children : []))
+        .flatMap((/** @type {any} */ g) => (g.isGroup ? g.children : []))
         .filter((/** @type {any} */ o) => o.isSprite === true).length,
     };
   });
@@ -1876,9 +1900,11 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
   // authoring plan M2b; 16 per lock since owner decision D13) = 163.
   expect(afterBudget.gpsCount).toBe(163);
   expect(afterBudget.markerUpdates).toBeGreaterThan(0);
-  // The image ring (3 planes), placed once, plus the group of the tour.json
-  // content placed after the lock (M5)...
-  expect(afterBudget.planes).toBe(4);
+  // One station drawn: the image ring (3 planes), placed once, with the
+  // station nearest its code, and that station's tour.json content placed
+  // after the lock (M5), in one group...
+  expect(afterBudget.groups).toBe(1);
+  expect(afterBudget.planes).toBe(3);
   // ...which really holds the fixture pin's label sprite: a label three
   // refused still counted in the placement but was never drawn.
   expect(afterBudget.pinLabels).toBe(1);
@@ -1982,7 +2008,7 @@ test("the print panel draws one tile per poster at the declared size, and prints
     "AR tour starts here",
   );
   await expect(page.getByTestId("print-tile").first()).toContainText(
-    "Scan with your phone camera",
+    "Scan with Chrome on Android",
   );
   // The defaults sit behind "Settings" (r820 feedback R7).
   await expect(page.getByTestId("author-size")).toBeHidden();
@@ -2332,7 +2358,8 @@ test("the print step builds a real PDF of numbered codes", async ({ page }) => {
   expect(text).not.toMatch(/\(Code \d+ - /);
   // The poster text around every code (polish round D-P7), defaults.
   expect(text).toContain("(AR tour starts here) Tj");
-  expect(text).toContain("(Scan with your phone camera) Tj");
+  // One line under the code (D8: it names the phone a tour needs).
+  expect(text).toContain("(Scan with Chrome on Android) Tj");
   // Every page actually carries ink.
   expect((text.match(/ re f/g) ?? []).length).toBeGreaterThan(100);
 
@@ -2594,7 +2621,7 @@ test("a crash does not lose the walk: placed content survives a reload and lands
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   const rebuilt = await readDownloadedZip(page, 0);
-  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const manifest = worldManifest(rebuilt.entries["tour.json"]);
   const labels = manifest.objects.flatMap((o) =>
     o.kind === "pin" ? [o.label] : [],
   );
@@ -3146,7 +3173,7 @@ test("a draft accumulates ACROSS finishes: both batches land in the zip", async 
   // record of downloads. The draft survived it because OPFS is not page
   // state - which is the whole point.
   const rebuilt = await readDownloadedZip(page, 0);
-  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const manifest = worldManifest(rebuilt.entries["tour.json"]);
   const labels = manifest.objects.flatMap((o) =>
     o.kind === "pin" ? [o.label] : [],
   );
@@ -3731,7 +3758,8 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
   await expect(page.getByTestId("recording-block")).toBeHidden();
   await expect(page.getByTestId("record-session")).toBeHidden();
 
-  await page.goto(`/?qr=${encodeURIComponent(ARCHIVE)}&debug=1`);
+  // Every station's content shows (see `openAsVisitor`'s `allStations`).
+  await page.goto(`/?qr=${encodeURIComponent(ARCHIVE)}&debug=1&allstations=1`);
   await expect(page.locator("body")).toHaveAttribute(
     "data-tour-open",
     "settled",
@@ -3749,7 +3777,10 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
   await expect(page.getByTestId("recording-marker")).toHaveText(
     "Recording this session",
   );
-  // Depth while recording, as the creator's recording (decision D4).
+  // Depth while recording, as the creator's recording (decision D4), and
+  // at the recording's rate (r867 review #6): a visitor has no mesh cursor,
+  // so this entry's depth is the recording's alone, and the capture call
+  // pins that density rather than only that depth was asked for.
   expect(
     await page.evaluate(
       () =>
@@ -3757,6 +3788,13 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
           .hasDepth,
     ),
   ).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => /** @type {any} */ (window).__tourViewerTest.depthCaptureCalls,
+      ),
+    )
+    .toEqual([{ intervalMs: 1000, gridSize: 16, rgb: false }]);
 
   await seedAlignment(page);
   await forceTrackingReady(page);
@@ -3778,16 +3816,10 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
       { timeout: 20000 },
     )
     .toMatch(/the code holds the placement/i);
-  // The ring (3 planes) and the fixture pin's label.
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          /** @type {any} */ (window).__tourViewerTest.fakeScene.children
-            .length,
-      ),
-    )
-    .toBe(4);
+  // The ring (3 planes) and the fixture pin's label, in the one station's
+  // group.
+  await expect.poll(() => ringPlanes(page)).toBe(3);
+  expect(await drawnGroups(page)).toBe(1);
 
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.endXrSession();
@@ -3860,7 +3892,7 @@ test("a code hung far from its saved spot is ignored after a minute of walking: 
   const degPerMLat = 8.9832e-6;
   const degPerMLon = 1.32966e-5; // at lat 47.5
   const CODE = { n: 11, e: 50 };
-  await openAsVisitor(page, RANGES_ARCHIVE, { debug: true });
+  await openAsVisitor(page, RANGES_ARCHIVE, { debug: true, allStations: true });
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   const t0 = Date.now();
@@ -3978,13 +4010,14 @@ test("a code hung far from its saved spot is ignored after a minute of walking: 
   await expect(status).toContainText("seems to have been moved");
 });
 
-test("with ?mesh=1 a creator's ring follows a mesh: depth at the mesh density, one mesh per session (polish round M5)", async ({
+test("a creator's ring follows a mesh by default: depth at the mesh density, one mesh per session, none with ?mesh=0 (polish round M5)", async ({
   page,
 }) => {
-  // Why: the mesh cursor is behind ?mesh=1 until the owner likes it on the
-  // phone (Q-Mesh); the e2e scene has no depth to mesh, so this pins the
-  // wiring - the depth request, the mesh's life, the ring given its pick -
-  // and that without the flag nothing of it runs.
+  // Why: the mesh cursor is the creator default since the owner tried it
+  // on the phone (2026-10-15, mesh-cursor smoothing plan); the e2e scene has no
+  // depth to mesh, so this pins the wiring - the depth request, the mesh's
+  // life, the ring given its pick - and that with ?mesh=0 nothing of it
+  // runs (the hit-test ring alone, as before M5).
   const state = () =>
     page.evaluate(() => {
       const t = /** @type {any} */ (window).__tourViewerTest;
@@ -3995,7 +4028,7 @@ test("with ?mesh=1 a creator's ring follows a mesh: depth at the mesh density, o
         pick: t.reticleSurfacePick,
       };
     });
-  await page.goto("/?mesh=1");
+  await page.goto("/");
   await openMeasureStep(page);
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();
@@ -4011,10 +4044,24 @@ test("with ?mesh=1 a creator's ring follows a mesh: depth at the mesh density, o
   await expect(page.getByTestId("enter-ar")).toHaveText("Start creating");
   expect((await state()).disposed).toBe(1);
 
-  await page.goto("/");
+  await page.goto("/?mesh=0");
   await openMeasureStep(page);
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();
   await expect(page.getByTestId("enter-ar")).toHaveText("Done");
   expect(await state()).toMatchObject({ depth: [], meshes: 0, pick: false });
+
+  // The old opt-in links (?mesh=1, from the phone test) keep the mesh on
+  // through the composed page, not only in the flag's parser (r867 review
+  // #7: the plan's verification named this case).
+  await page.goto("/?mesh=1");
+  await openMeasureStep(page);
+  await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("enter-ar").click();
+  await expect(page.getByTestId("enter-ar")).toHaveText("Done");
+  await expect.poll(async () => (await state()).meshes).toBe(1);
+  expect(await state()).toMatchObject({
+    depth: [{ intervalMs: 200, gridSize: 24 }],
+    pick: true,
+  });
 });

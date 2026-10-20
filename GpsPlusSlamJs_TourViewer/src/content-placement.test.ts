@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { Object3D, Quaternion, Texture, Vector3 } from "three";
+import { Group, Object3D, Quaternion, Texture, Vector3 } from "three";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
-import { deriveVerticalHeading } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
+import {
+  deriveVerticalHeading,
+  mintQrGeoPose,
+} from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
+import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import {
   mintPhoto,
@@ -14,6 +19,7 @@ import {
   newObjectId,
   objectPoseNue,
   renderTourObjects,
+  renderTourStation,
   rotationFromHeading,
 } from "./content-placement";
 
@@ -323,5 +329,305 @@ describe("renderTourObjects", () => {
     expect(plane?.quaternion.angleTo(new Quaternion(...turned))).toBeLessThan(
       1e-9,
     );
+  });
+});
+
+describe("renderTourStation", () => {
+  // Why these tests matter (tour editor plan 2026-10-17-1816, W3): a
+  // version 3 tour stores each pin and photo RELATIVE to its station, and
+  // the viewer plays it as one group per station with the items as its
+  // children - so a station's move (D17) moves its items by construction.
+  // The local poses come from each object's settled geo pose at the
+  // Finish; these tests pin that the station frame reproduces the pose
+  // the viewer placed each object at before (`objectPoseNue` of its geo),
+  // within a stated tolerance, wherever the session's zero is.
+
+  const labelStub = (text: string) => {
+    const object = new Object3D();
+    object.name = `label:${text}`;
+    return { object, dispose: () => undefined };
+  };
+
+  /** A geo pose `n`, `u`, `e` metres from `at`, turned by `q`. */
+  function geoAt(
+    at: { lat: number; lon: number; alt: number },
+    n: number,
+    u: number,
+    e: number,
+    q: [number, number, number, number],
+  ) {
+    return mintQrGeoPose({
+      worldNuePosition: { x: n, y: at.alt + u, z: e },
+      worldNueRotation: q,
+      zero: { lat: at.lat, lon: at.lon },
+    });
+  }
+
+  function yaw(deg: number): [number, number, number, number] {
+    const half = (deg * Math.PI) / 360;
+    return [0, Math.sin(half), 0, Math.cos(half)];
+  }
+
+  function stationAt(
+    id: string,
+    geo: TourStation["geo"],
+    items: TourStation["items"],
+  ): TourStation {
+    return {
+      id,
+      geo,
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow",
+      steps: [],
+      items,
+    };
+  }
+
+  it("places each station as a group at its pose, with its pins and photos as children at their local poses", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 30, 0, -20, yaw(90));
+    const pinPose = {
+      position: [2, 1.5, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const photoPose = {
+      position: [0, 1.4, 3] as [number, number, number],
+      rotation: yaw(45),
+    };
+    const deps = {
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    };
+    // A station without items places nothing.
+    const empty = await renderTourStation(
+      stationAt("empty", stationGeo, []),
+      deps,
+    );
+    expect(empty.count).toBe(0);
+    empty.dispose();
+    const rendered = await renderTourStation(
+      stationAt("gate", stationGeo, [
+        {
+          id: "p",
+          kind: "pin",
+          label: "Gate",
+          createdAtIso: NOW,
+          pose: pinPose,
+        },
+        {
+          id: "g",
+          kind: "photo",
+          image: "content/g.jpg",
+          imageWidth: 4,
+          imageHeight: 3,
+          createdAtIso: NOW,
+          pose: photoPose,
+        },
+      ]),
+      deps,
+    );
+    expect(rendered.count).toBe(2);
+    expect(scene.children).toEqual([rendered.root]);
+    const frame = rendered.root;
+    const at = objectPoseNue(stationGeo, ZERO);
+    expect(frame.position.toArray()).toEqual([...at.positionNue]);
+    expect(frame.quaternion.angleTo(new Quaternion(...yaw(90)))).toBeLessThan(
+      1e-6,
+    );
+    const label = frame.getObjectByName("label:Gate")!;
+    expect(label.position.toArray()).toEqual(pinPose.position);
+    rendered.dispose();
+    expect(scene.children).toHaveLength(0);
+  });
+
+  /**
+   * The largest gap, over generated objects within 40 m of a station
+   * whose zero is `zeroDistanceM` away, between where the station frame
+   * puts an object and where its settled geo pose puts it directly.
+   */
+  async function worstGap(zeroDistanceM: number, runs: number) {
+    let positionM = 0;
+    let angleRad = 0;
+    await fc.assert(
+      fc.asyncProperty(
+        fc.double({ min: 0, max: 360, noNaN: true }),
+        fc.double({ min: 0, max: 360, noNaN: true }),
+        fc.double({ min: -40, max: 40, noNaN: true }),
+        fc.double({ min: -5, max: 5, noNaN: true }),
+        fc.double({ min: -40, max: 40, noNaN: true }),
+        fc.double({ min: 0, max: 360, noNaN: true }),
+        fc.double({ min: -60, max: 60, noNaN: true }),
+        async (bearing, stationYaw, n, u, e, itemYaw, tiltDeg) => {
+          const b = (bearing * Math.PI) / 180;
+          const stationGeo = geoAt(
+            { ...ZERO, alt: 400 },
+            zeroDistanceM * Math.cos(b),
+            3,
+            zeroDistanceM * Math.sin(b),
+            yaw(stationYaw),
+          );
+          // A tilted photo: a turn about North after the yaw.
+          const t = (tiltDeg * Math.PI) / 360;
+          const tilt = new Quaternion(Math.sin(t), 0, 0, Math.cos(t));
+          const turn = new Quaternion(...yaw(itemYaw)).multiply(tilt);
+          const settled = geoAt(stationGeo, n, u, e, [
+            turn.x,
+            turn.y,
+            turn.z,
+            turn.w,
+          ]);
+          const scene = new Group();
+          const rendered = await renderTourStation(
+            stationAt("s", stationGeo, [
+              {
+                id: "g",
+                kind: "photo",
+                image: "content/g.jpg",
+                imageWidth: 4,
+                imageHeight: 3,
+                createdAtIso: NOW,
+                pose: localPoseOf(settled, stationGeo),
+              },
+            ]),
+            {
+              scene,
+              zero: ZERO,
+              makeLabel: labelStub,
+              loadPhotoTexture: () => Promise.resolve(new Texture()),
+            },
+          );
+          scene.updateMatrixWorld(true);
+          const frame = rendered.root;
+          const plane = frame.children[0]!.children[0]!;
+          const position = new Vector3();
+          const rotation = new Quaternion();
+          plane.matrixWorld.decompose(position, rotation, new Vector3());
+          const direct = objectPoseNue(settled, ZERO);
+          positionM = Math.max(
+            positionM,
+            position.distanceTo(new Vector3(...direct.positionNue)),
+          );
+          angleRad = Math.max(
+            angleRad,
+            rotation.angleTo(new Quaternion(...direct.rotationNue)),
+          );
+          rendered.dispose();
+        },
+      ),
+      { numRuns: runs },
+    );
+    return { positionM, angleRad };
+  }
+
+  it("decodes no further photo once the result is no longer wanted (alive turns false)", async () => {
+    // Why this matters (visitor plan M2): a visitor who walks on while a
+    // station's photos decode must not pay for the rest of them.
+    const photo = (id: string) => ({
+      id,
+      kind: "photo" as const,
+      image: `content/${id}.jpg`,
+      imageWidth: 4,
+      imageHeight: 3,
+      createdAtIso: NOW,
+      pose: {
+        position: [0, 1.4, 3] as [number, number, number],
+        rotation: yaw(0),
+      },
+    });
+    const geo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 0, yaw(0));
+    let alive = true;
+    const loaded: string[] = [];
+    const rendered = await renderTourStation(
+      stationAt("s", geo, [photo("a"), photo("b"), photo("c")]),
+      {
+        scene: new Group(),
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: (name) => {
+          loaded.push(name);
+          alive = false;
+          return Promise.resolve(new Texture());
+        },
+        alive: () => alive,
+      },
+    );
+    expect(loaded).toEqual(["content/a.jpg"]);
+    expect(rendered.count).toBe(1);
+  });
+
+  it("frees what it made before a throw: the decoded photo and the label made so far, and rejects", async () => {
+    // Why this matters: a station is drawn and freed again
+    // and again as the visitor walks; a label constructor that throws half
+    // way used to strand the textures decoded before it.
+    const geo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 0, yaw(0));
+    const disposed: string[] = [];
+    const texture = new Texture();
+    texture.dispose = () => {
+      disposed.push("texture");
+    };
+    let labels = 0;
+    const pin = (id: string) => ({
+      id,
+      kind: "pin" as const,
+      label: id,
+      createdAtIso: NOW,
+      pose: {
+        position: [0, 1.5, 0] as [number, number, number],
+        rotation: yaw(0),
+      },
+    });
+    const photo = {
+      id: "f",
+      kind: "photo" as const,
+      image: "content/f.jpg",
+      imageWidth: 4,
+      imageHeight: 3,
+      createdAtIso: NOW,
+      pose: {
+        position: [0, 1.4, 3] as [number, number, number],
+        rotation: yaw(0),
+      },
+    };
+    const scene = new Group();
+    await expect(
+      renderTourStation(stationAt("s", geo, [pin("p1"), photo, pin("p2")]), {
+        scene,
+        zero: ZERO,
+        makeLabel: (text) => {
+          labels += 1;
+          if (labels === 2) throw new Error("no canvas");
+          return {
+            object: new Object3D(),
+            dispose: () => {
+              disposed.push(`label:${text}`);
+            },
+          };
+        },
+        loadPhotoTexture: () => Promise.resolve(texture),
+      }),
+    ).rejects.toThrow("no canvas");
+    expect(disposed.sort()).toEqual(["label:p1", "texture"]);
+    expect(scene.children).toHaveLength(0);
+  });
+
+  it("reproduces each object's settled pose within 1.2 cm per km between the zero and the station (property, swept)", async () => {
+    // Measured 2026-10-18, max over 150 runs each, objects within 40 m of
+    // their station: 0 m at the station's own zero; 0.7 mm at 100 m;
+    // 6.9 mm at 1 km; 3.4 cm at 5 km; 13.8 cm at 20 km - linear in the
+    // zero's distance (the station's tangent plane is not the zero's), so
+    // the bound is a rate. The turn is reproduced to float precision
+    // (under 1e-5 degrees) at every distance.
+    for (const d of [0, 100, 1000, 5000]) {
+      const gap = await worstGap(d, 150);
+      expect(gap.positionM, `zero ${String(d)} m away`).toBeLessThan(
+        0.001 + (0.012 * d) / 1000,
+      );
+      expect(gap.angleRad, `zero ${String(d)} m away`).toBeLessThan(
+        (0.001 * Math.PI) / 180,
+      );
+    }
   });
 });

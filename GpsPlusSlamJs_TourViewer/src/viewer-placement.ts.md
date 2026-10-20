@@ -20,8 +20,9 @@ recording. Its own module since the flows plan M6.
     hooks - `detection` after each recorded detection (with the status before
     it), `vote` after each dispatched vote, `votedLock` first in
     `onVotedLock`, `placed` after the content, the capture-spot and the ring
-    placements (the ring's count comes back from `placeDecodedPlanes`, 0 when
-    it bailed), and `keepAlive` wrapping each AR entry's code keep-alive so
+    placements - since visitor plan 2026-10-18-2349 M2 once per station
+    each time that station is drawn (`station` names it; content no
+    station holds logs without), with the count that stood - and `keepAlive` wrapping each AR entry's code keep-alive so
     its state changes are logged (M1b review #5; the wrapper is what
     `ctx.viewerKeepAlive` holds, so the AR exit's and the tour close's
     `stop()` are logged too). Silent unless a recording runs; absent,
@@ -51,8 +52,15 @@ recording. Its own module since the flows plan M6.
     lock, so the first `onVotedLock` arrives while the gate still scans).
   - The tour's content (`tour.json`, M5) is rendered once per session as
     soon as the gate allows it and the GPS zero exists
-    (`renderTourObjects`; labels through `seams.createLabel`, photos
-    decoded through `session.loadContentEntry`, which joins the archive's
+    (`renderTourStation`: a group per station at its geo pose, its
+    pins and photos as children at their local poses, version 3; each
+    station one "items" part of the side table, see below; labels
+    through `seams.createLabel`, photos
+    decoded through `deps.loadContent` when given (the stations' prefetch
+    cache, `visitor-stations.ts`, which holds story media only: an item
+    photo is read from the archive again on each return until item photos
+    join the prefetch), else `session.loadContentEntry`, which
+    joins the archive's
     manifest prefix - a re-zipped tour keeps its photos under
     `mytour/content/…` while the record names `content/…` (PR #435
     review) - at the capture planes' divisor); a
@@ -78,7 +86,12 @@ recording. Its own module since the flows plan M6.
     (`ctx.viewerKeepAlive`, authoring plan M2b) with one store
     subscription that stops it when the odometry frame changes
     (`qrDetected.frameEpoch`: the kept pose names a place in the old frame,
-    M2b review #1) and removes itself once that keep-alive is no longer the
+    M2b review #1) - and ends the code's trust there too
+    (`endCodeTrust`: `viewerLockedText` null and `viewerVotedLocks` 0, so
+    `codeLinedUp` reads false for the stations, the status line and the
+    placement trigger; unlike a veto the code is not ignored, its votes
+    stay, and its next voted lock lines the tour up again) - and removes
+    itself once that keep-alive is no longer the
     session's (`endQrPipeline`, the next entry); its votes are cast by
     `recordDeviceFix`. A lock's votes reach the sink all at once
     (`dispatchVotes`): one batch per lock. It creates the entry's vote
@@ -111,10 +124,11 @@ recording. Its own module since the flows plan M6.
     because the core's 9-solve compass window gave the first compass reading
     full weight over a short scan and the content turned by about the
     compass's error. The owner raised that as a bug of its own: once a code
-    is recognised, its rotation must stand at once. The entry's overrides
-    now carry a 1-solve compass window (`viewer-vote-sink.ts`
-    `VIEWER_SOFT_TRIM`), so the compass weight is 0 from the first voted
-    lock, and everything shows on that lock: harness `CODE_YAW_PROBE=scan`
+    is recognised, its rotation must stand at once. The core's cold start
+    restarts on a solve that stores a wide sighting's votes (core 1.26.2;
+    from r863 to r868 the entry's overrides carried a 1-solve compass window
+    for it), so the compass
+    weight is 0 from the first voted lock, and everything shows on that lock: harness `CODE_YAW_PROBE=scan`
     (`code-yaw-compass-overwrite.test.ts`) measured at most 0.27 deg seen
     within 30 s of showing over compass bias 0-30 deg, a drifting compass,
     the first fix in the scan, 0-8 s late or before it, GPS noise 0 and 2 m
@@ -161,7 +175,10 @@ recording. Its own module since the flows plan M6.
   so the content moves ONCE, to the GPS answer; the vote budget is reset
   (M5c review M2: every code's votes are gone, so another code, even a
   spent one the keep-alive holds, votes again on its next lock; the vetoed
-  code stays blocked by `isIgnored`); the viewing log records
+  code stays blocked by `isIgnored`); `viewerVotedLocks` goes to 0 and
+  `viewerLockedText` to null (r881 review M1: nothing reads the tour as
+  lined up by a code - `codeLinedUp`, `codePlacedTour`, the stations'
+  trust - until a code votes again); the viewing log records
   `codeIgnored` with the evidence and the recovery; `viewerIgnoredText` is
   set; the gate passes `ignored` (`markGateIgnored`: a scanning gate, or
   one the code itself passed; an escape or a waived gate stays).
@@ -204,8 +221,10 @@ recording. Its own module since the flows plan M6.
 !imagePlanesLoading`, review #4); a lock after a placement changes the
   status only.
 - **The photos' spots come from `tour.json` when the creator's Finish
-  baked them** (`captureSpots`, scan-pass plan S1, S-D11): no download of
-  the walk, no replay, and the status line reports the baked fixes. A tour
+  baked them** (`captureSpots`, scan-pass plan S1, S-D11; read in the
+  world through `worldCaptureSpots`, since version 3 keeps them in
+  stations): no download of the walk, no replay, and the status line
+  reports the baked fixes. A tour
   without them runs the SAME bake here (`capture-bake.ts`: each photo
   through the first settled alignment after it was taken), so both show
   the photos at the same spots.
@@ -302,7 +321,7 @@ recording. Its own module since the flows plan M6.
      core refused the keys and broke, as designed, on core 1.26.
 - **The tour's content follows the live alignment - no per-note GPS anchors
   (owner decision D10a, authoring plan 2026-09-28-0953 §3.2, M2d).**
-  `tryPlaceContent` hands `renderTourObjects` the scene root
+  `tryPlaceContent` hands the side table the scene root
   (`seams.getScene()`), so every alignment change - a scan's votes above
   all - moves the content in the visitor's view in the same dispatch. A
   GPS anchor (`FW/visualization/gps-anchor.ts`) moves only off screen and by
@@ -312,6 +331,43 @@ recording. Its own module since the flows plan M6.
   QR controller (which also pins the votes-before-lock order the gate
   relies on: the content is placed on the first voted lock, through that
   lock's votes); revisit only with that decision.
+- **Drawn per station** (visitor plan 2026-10-18-2349 §3, M2;
+  `station-content.ts`): everything placed is a part of its station in
+  the session's side table (`ctx.stationContent`, created with the first
+  part): the tour's items ("items", one per station that has some), the
+  walk's photos ("walk", grouped by `station-captures.ts`: a baked photo
+  keeps its station, a live one goes to the nearest station within 25 m)
+  and the ring ("ring", with the nearest station whose own found radius
+  holds its code, where a visitor at the code is present). Only the stations the store shows - the present one, or every one
+  under "show all" - are decoded and stand in the scene, one station group
+  at a time with a 400 ms fade; content no station holds (live photos
+  beyond every station, a ring whose code no found radius holds) is the
+  loose group `loose:always`, the table's `alwaysShown`: always shown,
+  in its own render lane, so a present station never waits behind it.
+  `syncContent()` tells the table the shown set on every store dispatch
+  and camera frame (`main.ts` `hooks.tickStations`); `tryPlaceTour` ends
+  with it.
+  - **What the status line says** (the async-UI rule): the
+    loose photos decode up front, so the line says "loading photos k/N"
+    (a progress callback into their decode), then `placed` with the count
+    that DECODED once their part is drawn. Photos held by stations are not
+    standing: they are counted as `atStations` ("5 photos at their
+    stations"), never as placed. A walk or ring part that is drawn with no
+    photo at all, or whose planes cannot be built, sets
+    `ctx.viewerPlanesError` ("Some photos could not load."); a plane
+    constructor's throw frees the photos decoded for it first.
+  - A walk none of whose photos is readable shows them as skipped where it
+    used to fall back to the ring - only a walk with no photo at all ("no
+    readable capture photos") falls back.
+  - **A code's trust ends on events only**: a veto, an odometry-frame
+    change, an AR exit, a new tour - never by the clock, a count of fixes
+    or a distance (measured across clock, fix-count and distance rules in
+    a museum-sized layout: every clock rule kept the right station far
+    less often than "never by the clock").
+  - Tracking alone shows nothing: a code's votes feed the tracking-quality report;
+    nothing here is shown or kept alive on tracking alone - the shown set
+    comes from presence (`station-guide.ts`'s one gate), and a veto still
+    stops every keep-alive. M2 reads `codeLinedUp` nowhere new.
 - Planes live at the SCENE ROOT in raw GPS-world NUE (the framework's
   built-once parenting rule); the alignment moves the odometry group under
   them, which is why a later lock needs no re-placement.
@@ -353,6 +409,14 @@ ctx.placementUnsubscribe = arStore.subscribe(() => viewer.tryPlaceTour());
 
 ## Tests
 
+`viewer-placement-photos.test.ts` - through the real
+controller config, the bake and the decoder faked: a walk no station holds
+says "loading photos" with its progress, then the count that decoded; a
+walk or ring none of whose photos loads sets the photos' error; a walk or
+ring whose planes cannot be built frees its decoded photos and says so; a
+code beyond every station's radius shows its ring after the lock; a ring or
+a walk held by a station is counted `atStations` and decodes nothing.
+
 `viewer-placement-viewing-log.test.ts` - the `tourViewing/*` hooks through the
 real viewer controller config (a lock, then its votes as one batch; no
 second lock for the next tracked frame), and exactly today's dispatches
@@ -373,6 +437,12 @@ keep-alive casts exactly one ring per device fix from the kept pose,
 answers no synthetic point, stops at AR exit, and starts fresh per entry;
 a code re-scanned 20 minutes later votes from where it reads now and the
 keep-alive re-votes from there, a frame change ends the hold (review #1);
+a frame change ends the code's trust (no code lines the tour up, neither
+line says it places the tour, the visitor's line asks for the code, and
+the tour is no longer code-placed until the next voted lock:
+`codePlacedTour`) but keeps what a veto takes (the code not
+ignored, its votes, the gate), a re-scan lines the tour up again, a store
+change without a frame change keeps it, and codes only behaves the same;
 the hold hands over by arrival with the fix clock skewed by 5 s or 1 h
 either way (review #4); a tour reopened in the same entry waits for a real
 vote and holds again (review #6). M2e: a lock's ring is ONE batch, a
@@ -383,6 +453,12 @@ core, the composed GPS handler (`recordFix`) routes here; and the
 per-entry overrides through this module (soft on right before the first
 vote, a plain-AR entry and a re-entry start cleared, a tour switch turns
 them off until the next tour's first vote).
+
+`viewer-moved-code.test.ts` (M5c) - the wired veto: the keep-alive stops
+(also when another code holds it: no ring goes into the fixes after the
+veto, and that code's next lock votes again), every vote is taken back and
+the tour moves once, later locks of the code are free, the log, the gate,
+the line, the re-judged veto.
 
 `viewer-vote-sink.test.ts` (M2e) - the sink against the real store: the
 clear at entry start, the merge before the first vote and once only, a

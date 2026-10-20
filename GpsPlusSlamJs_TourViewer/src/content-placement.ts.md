@@ -34,6 +34,21 @@ texture fails is skipped and named in `skipped`; `dispose()`removes and
 frees everything.`root` is the one group every rendered object hangs
 under - what a tap in AR is cast against to name the object
 (`object-pick.ts`, authoring plan 2026-09-28-0953 M4).
+- `renderTourStation(station, { scene, zero, makeLabel, loadPhotoTexture, alive? })
+-> Promise<RenderedTourObjects>` - the visitor's playback of ONE station of
+  a version 3 tour (tour editor plan 2026-10-17-1816, W3; one call per
+  station since visitor plan 2026-10-18-2349 M2, so each station is drawn
+  and freed on its own, `station-content.ts`): a `Group` at the station's
+  geo pose in the session's NUE (`objectPoseNue`), its pins and photos as
+  children at their LOCAL poses (`[north, up, east]` and a rotation
+  relative to the station), added to `scene` once every photo decoded;
+  `root` is that group. A station without items gives an empty one. The
+  same rendering (`renderContent`) as `renderTourObjects`, so labels,
+  photo planes, `skipped` and `dispose` behave the same. `alive()`
+  turning false stops the decode loop: no further photo is decoded, and the
+  caller disposes what came back. A throw part-way (a label or plane
+  constructor) frees the labels and decoded photos made so far, then goes
+  on (the caller gets the rejection and nothing to dispose).
 
 ## Invariants & assumptions
 
@@ -53,6 +68,15 @@ under - what a tap in AR is cast against to name the object
   alignment twice; `makeLabel` and `loadPhotoTexture` are injected because node has
   no canvas and the photo bytes live in different places for the creator
   (a Blob in memory) and the visitor (an archive entry).
+
+- **A station's frame against the session's.** A station's group stands
+  in the session's tangent plane, its items in the station's own. The two
+  differ by the Earth's curvature between the session's zero and the
+  station. Measured: 0 at the zero, 0.7 mm at 100 m, 6.9 mm at 1 km,
+  3.4 cm at 5 km, growing linearly. The test asserts 1 mm + 12 mm per km
+  of the zero's distance and the turn within 0.001 degrees. A visitor's
+  zero is their first GPS fix, normally within a few hundred metres of a
+  station.
 
 ## Examples
 
@@ -87,5 +111,11 @@ and 0.1 m, measured 24 mm).
 `content-placement.test.ts` - the pin round trip (mint → NUE) as a property
 over positions; the photo's frame direction pinned by bearing against the
 framework's basis constant; refusals without zero/alignment; the id shape
-(property); rendering with a fake scene: counts, a skipped photo, disposal, and a
-caller's own pose and frame (`poseOf`) for pins and photos.
+(property); rendering with a fake scene: counts, a skipped photo, disposal,
+what a throw part-way frees (the decoded photo and the label made so far), and a
+caller's own pose and frame (`poseOf`) for pins and photos. For
+`renderTourStation`: the group structure (the station's group, the items
+as its children), no further decode once `alive()` is false, and the
+property that the local poses
+taken from the settled geo reproduce each object's direct AR pose within
+the stated bound, swept over zero distances of 0, 100, 1000 and 5000 m.

@@ -5,23 +5,71 @@
 The desktop editor's open tour and its edits (M6 E2a): the phone's object
 rules (`object-edits.ts`) over the opened tour, and a Save built by the
 phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
-`model()`, calls the edits and downloads what `save()` returns. Design:
+`model()`, calls the edits and downloads what `save()` returns.
+
+**The tour itself is not here** (D29-D31, root rule "App state lives in the
+Redux store"): the open tour, its edits, the history and the save status
+are the store's `tourDocument` slice (`../tour-document.ts`), shared with
+the phone's creator in a later milestone. The session is the page's facade
+over it: it asks the document's own guards first (`objectFits`,
+`canPlace`, `canStep` - the reducers keep the same rules, so a refusal
+here is only the page's words for one) and checks what only the page can
+(a photo's picture for an undo), then dispatches. An edit's payload is
+shaped by the document too (`pinTextChange`, `objectMoveChange`), and the
+save is the document's (`../tour-document-save.ts`): thunks dispatched
+into the store, whose handle keeps the newest bytes, the photo spots'
+decision and the save queue, while the slice's save status says whether
+a save runs, landed or failed. The session imports none of the shared
+rules itself (`config/.dependency-cruiser.cjs`). Its closure keeps
+imperative resources only - that handle and the pictures' side table
+(Blobs are never state). Design:
 `GpsPlusSlamJs_Docs/docs/2026-10-13-0832-tour-desktop-editor-and-scan-data-design.md`
 §9 ("E2 as revised").
 
 ## Public API
 
-- `createEditorSession({ session, manifest, levels, fileName?, draft? }): EditorSession`
+- `createEditorSession({ session, manifest, levels, fileName?, draft?, loadPhoto?, store? }): EditorSession`
+  - `store` - the page's `createTourViewerStore()`; a fresh one when
+    absent (tests). Creating the session dispatches `opened`: whatever
+    the store's document held is gone, and an older session on the same
+    store is disowned (`generation`) - its edits are refused with
+    `NOT_IN_TOUR`, a save it started before lands nowhere, a save or a
+    move of the walk asked of it after refuses ("Another tour was
+    opened since"), and everything it reads (`model`, the counts, the
+    details) is its own tour as it stood when replaced - never the new
+    one's (the r875 milestone review #4). "As it stood" follows the store
+    (a listener on `listenToDocument` keeps the newest state of this open
+    after every action that changed the document), so an edit or a landed
+    save that no read followed is part of it. This relies on Redux
+    Toolkit's listener middleware calling the effect synchronously after
+    the reducer, inside the dispatch (its `notifyListener` calls the
+    effect before its first await): a read right after a dispatch never
+    finds `last` behind.
   - `draft` (M6 E2c) - the `EditorSessionDraft` every edit, move,
-    delete and undo is backed up through (`editor-draft.ts`): the four
-    `DraftObjectWrites`, whose delete and undo sequences are
-    `draft-actions.ts`'s as the phone runs them, plus `saveSettings` for
-    the tour-level settings (QR-first M1b-2).
+    delete, undo and redo is backed up through (`editor-draft.ts`): the
+    four `DraftObjectWrites`, whose delete sequence is `draft-actions.ts`'s
+    as the phone runs it, plus `saveSettings` for the tour-level settings
+    (QR-first M1b-2). The draft follows the document's STATE, not the
+    gesture: a listener on the store's `listenToDocument` runs
+    `followDocument` (`../tour-document-draft.ts`) after each edit, undo,
+    redo or restore - per id whose standing against the saved file
+    changed, the record, its tombstone, or their removal, and the settings
+    record when it changed.
+  - `loadPhoto` (W2) - reads a placed photo's picture by its image name
+    (default: the opened zip's `loadContentEntry`); the page passes the
+    copy last written, since a save replaces the file. When it fails, the
+    picture is read from the session's own last saved bytes
+    (`zip-blob.ts`; right after an in-place write the page's copy may not
+    read yet, M4a review #5). A save waits for the pictures being read.
   - `model()` - the `EditorModel` of the tour with the edits applied.
   - `changeCount()` - edits and deletions not yet in a saved file, by
     content (a text edited back is no change), plus one while the "needs no
-    GPS" setting differs from the saved file; `pendingIds()` - the notes
-    with an edit or a move not yet saved.
+    GPS" setting differs from the saved file, plus one per detail that
+    differs from it (W2); `pendingIds()` - the notes
+    with an edit or a move not yet saved; `savedName()` - the name every
+    save of this open is written under (`finishedFileName`), which the page
+    names the walk's file after before a save ran (the r875 milestone
+    review #6: the page no longer imports the Finish's rules).
   - `needsNoGps()` / `setNeedsNoGps(on)` (QR-first M1b-2, owner Q-QF-1) -
     the tour's "needs no GPS" setting as it stands with the edits, and its
     edit: `changed` (backed up through `draft.saveSettings`) or
@@ -30,60 +78,173 @@ phone's own Finish rules (`finish-rebuild.ts`). Page-free: the page draws
     writer puts at minor 2) or leaves the field out (false is never
     written). The phone's Finish keeps the flag the same way: the rebuild
     spreads the opened manifest (`finish-rebuild.ts`).
+  - `details()` / `setDetails(form)` / `coverChoices()` (W2 of the tour
+    editor plan 2026-10-17-1816) - the tour's name, description, cover and
+    contact as a `DetailsForm` (`../tour-details-form.ts`), with the edits;
+    their edit, all at once: checked by `checkDetailsForm` through the
+    document's `detailsChange` (shared with the phone's rename)
+    (`../tour-details-form.ts`: the format's rules, `tour-details.ts` in
+    the framework; the name by `checkTourTitle`, trimmed, at most
+    `TOUR_TITLE_MAX_CHARS` = 80 characters counted as code points -
+    a name kept as it stands passes whatever its length, so a tour named
+    longer elsewhere can still have its other details edited, M4a review
+    #10),
+    refused in plain words for what the format would drop (never its field
+    names in quotes), `unchanged` for the same values, else `changed` and
+    backed up through `draft.saveSettings` with the whole record. An
+    emptied field REMOVES the detail. The cover choices are the tour's
+    images as they stand (its placed photos and image assets,
+    `tourImageIds`) with their zip entry (`tourCoverEntry`); a recorded
+    walk photo has no id and is no choice.
   - `noGpsCheck()` - `no-gps-check.ts`'s `checkNoGps` over the open
     tour's stations and codes: what the setting's warnings are about (the
-    code-less stations, the stations on a code the viewer cannot use, and
-    whether a code can place the tour).
-  - `editText(id, text)` - `pinTextEdit`'s outcome (`edited`, `unchanged`,
-    `refused` with the phone's sentence; `refused` with `NOT_IN_TOUR` for an
-    id the tour no longer carries).
-  - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept):
+    stations farther than 40 m from every code that can place the tour,
+    and whether a code can place it).
+  - `editText(id, text)` - `pinTextEdit`'s outcome, through the document's
+    `pinTextChange` (`edited`, `unchanged`, `refused` with the phone's
+    sentence; `refused` with `NOT_IN_TOUR` for an id the tour no longer
+    carries).
+  - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept),
+    through the document's `objectMoveChange`:
     `{ kind: "moved" }`, or `EditorRefusal` (module-private: `refused` with `NOT_IN_TOUR`)
-    for an id the tour no longer carries (PR #622 bot finding C); throws
-    for a position the tour cannot hold.
-  - `remove(id)` - `deleteObject`; `{ kind: "deleted", undo }` with the
-    undo (`undoDelete`), which
-    refuses (`false`) once a save that writes the delete has started (its snapshot
-    taken after the delete), not for one already running when it was made
-    (E2b plan review #2, the third E2p review #6). For an id the tour no
-    longer carries it changes nothing and returns the same `EditorRefusal`
-    as `editText` and `move`, so the page shows no "Deleted" toast and no
-    Undo that would answer "too late" (finding C). The undo of a
-    delete of an edited note writes the record to the draft again.
+    for an id the tour no longer carries (PR #622 bot finding C), and
+    `refused` with `TOO_FAR_FROM_STATION` for a spot further from the
+    note's station than a tour can carry (`TOUR_ITEM_MAX_OFFSET_M`, 10 km per
+    axis of the station's frame; the M5a milestone review L1: the format
+    refused the tour, so every later save failed with the parser's words);
+    throws for a position nobody can draw.
+  - `remove(id)` - `deleteObject`; `{ kind: "deleted" }`, undone like any
+    edit (`undo()`). A deleted photo's picture is kept for that undo - the
+    one its entry carries, else read once through `loadPhoto` - since a
+    save that writes the delete leaves it out of the file. For an id the
+    tour no longer carries it changes nothing and returns the same
+    `EditorRefusal` as `editText` and `move`, so the page shows no
+    "Deleted" toast and no Undo (finding C). The undo of a delete of an
+    edited note writes the record to the draft again.
+  - `place(object)` - a new object (`placed`): refused for an id the
+    tour carries and for a spot further from its station than a tour can
+    carry. The desktop has no placing gesture yet; the parity contract
+    drives it, as the phone places in AR.
+  - `moveStation(stationId, geo)` - D17 (`stationMoved`): the frame moves
+    and every object of the station moves rigidly with it, each an edit at
+    its new spot (its local pose kept), as the phone's settle leaves its
+    lists. Refused for a station the tour does not carry. No gesture yet
+    either (the parity contract drives it).
+  - `undo()` / `redo()` (W2 of the tour editor plan 2026-10-17-1816) - one
+    step of the edit stack: `{ kind: "undone" | "redone", what }` (`what`
+    names the step: `the text of "<label>"`, `the move of …`, `the delete
+of …`, `the "needs no GPS" setting`, `the tour details`, `the restored
+changes`; a label is cut at 40 characters, a label-less note is "a
+    photo" / "a note"), `{ kind: "nothing" }` at either end, or `refused`
+    in words: while a save runs (`SAVE_RUNNING`), and for a photo whose
+    delete a save wrote and whose picture could not be read
+    (`PICTURE_GONE`; the step stays). Every edit kind is one step - a
+    text, a move, a delete, the setting, the details (all at once), a
+    restore (all of it); a new edit drops what could be redone; at most
+    200 steps are kept (`TOUR_HISTORY_LIMIT`). The history is the
+    document's, over all of it - the station frames included - so an undo
+    after a save that dropped an emptied station brings it back WHERE IT
+    STOOD in the order (the M5a review M2 deviation, settled).
+  - `revision()` (W2) - counts every edit, undo and redo: the page's
+    delete toast runs its Undo only while its delete is still the newest
+    step.
+  - `pictureOf(id)` (W2) - the kept picture of a photo brought back by an
+    undo after a save; the card draws it, since the file no longer carries
+    it.
   - `restore({ objects, deleted, settings? })` (M6 E2c) - a draft's work
     put back by the session's own rules: an object the tour carries takes
     the draft's version (`upsertPlaced`), a deletion its tombstone
     (`deleteObject`); live work on an id wins; an id the tour no longer
-    carries is skipped; the settings are applied unless the setting was
-    changed here since the open (counted among `changed`); what was
-    applied is written to the draft again. Returns the counts.
-  - `save({ keepScan })` - `rebuildFinishedTour` with `levels: []`, the
-    photo spots decided once per open (`captureSpotsForRebuild`, its result
-    kept), `previous` = the last save's bytes; returns `{ blob, filename,
-scanLeftOut, notPlaced?, written }` (`written`: the manifest the zip
-    carries, for the draft's bases) and advances to what was written
-    (`pendingAfterRebuild`).
-- `EditorSession`, `EditorSave`, `EditorSessionDraft`.
+    carries is skipped, and so is an object further from its station than a
+    tour can carry (a draft written before such moves were refused, L1);
+    the settings are applied unless the setting was
+    changed here since the open (counted among `changed`), and the
+    record's details likewise unless they were (each changed field counted;
+    a cover naming no image of the tour - a photo deleted since - is
+    dropped and the rest restored, M4a review #1; other details the format
+    would drop leave them as they are); the record's station poses unless a
+    station was moved here (each station whose pose differs counted; applied
+    before the objects, so an item restores under the frame it was placed
+    under, and its reach is checked there - review #1 of the tour document
+    milestone); what was applied
+    is written to the draft again. Returns the counts.
+  - `save({ keepScan, inPlace? })` - the document's save thunk
+    (`../tour-document-save.ts` `save`, through `dispatchThunk`):
+    `rebuildFinishedTour` with `levels: []`, the photo spots decided once
+    per open (`captureSpotsForRebuild`, its result kept), from the last
+    save's bytes; returns `{ blob, filename, scanLeftOut, notPlaced?,
+written }` (`written`: the manifest the zip carries, for the draft's
+    bases) and advances to what was written (`saved`,
+    `pendingAfterRebuild`). `inPlace`: the page writes it over the opened
+    file, and the document learns where in its history that file stands
+    (`saved`'s `inPlaceAt`): an undo or a redo across it is then due a
+    resave (D33, `../tour-document.ts.md`).
+  - `walkEntries()` - the walk recording's entries in the newest bytes
+    (the last save's, else the opened file's; `scanEntryNames`): none once
+    it was moved out, or when a save left it out.
+  - `moveWalkOut()` - "Move the walk out" (W2, D19), queued with the
+    saves: a `WalkMove` with the walk's own zip (the whole recording of
+    the newest bytes, `recordingEntryNames` - the frames the tour keeps
+    for its visitors included, so it is a complete recording on its own -
+    byte for byte, under its own paths, plus `WALK_NOTE`
+    (`about-this-walk.txt`) naming the tour's file, its name and, for a
+    listed tour, its series; the M4b milestone review #8; named by
+    `walkFileName`, `castle.zip` -> `castle-walk.zip`) and the tour
+    rebuilt without the walk (`keepScan: false`, with the pending edits
+    and the photo spots, from the same bytes: the opened file is read
+    once, review #11), or a refusal in words: `NO_WALK`, or the recorded
+    photos the tour carries still placed by the walk (no baked spots -
+    they would be left nowhere, `finish-rebuild.ts`). A walk that places
+    nothing (`placesNothing`) moves out (review #3). **Nothing changes until
+    `commit()`**: the page writes the walk's zip first, then the tour,
+    and commits only when both landed; `current()` says no other save
+    landed since the build (asked before the tour is written, so a stale
+    move writes nothing); `commit(inPlace?)` (`inPlace`: the tour was written
+    over the opened file, as for `save`) then makes the
+    walk-free bytes the newest (the save handle's `land`; the series
+    version advances as in any
+    save), so no later save - an in-place autosave keeps "the walk" of the
+    bytes it rebuilds from - can bring the walk back. It throws when
+    another save landed since the move was built (the page holds saves
+    while a move runs). Bringing a moved-out walk back into a tour is a
+    later feature; nothing reads the walk's zip yet.
+- `walkFileName`, `WALK_NOTE`; the module-private `WalkMove` and `NO_WALK` are read through `moveWalkOut()`.
+- `EditorSession`, `EditorSave`, `EditorSessionDraft`, `TOO_FAR_FROM_STATION`; the module-private `CoverChoice` (an image id and its zip entry) and `UndoOutcome` (`undo()` / `redo()`'s result) are read through the session's methods.
 
 ## Invariants & assumptions
 
 - `find()` never throws (E2c plan review #11, decided): an id the tour no
   longer carries - a card outliving its object - is refused in words.
-- A restored deletion has no Undo (named).
+- A restore is one step to undo, the deletions it applied with it.
+- **An undo is an edit** (W2): a step is a snapshot of the edits' effect
+  (the objects as they stand, the setting, the details), and going back
+  to it is measured against the file as saved NOW - so an undo after the
+  save that wrote its step is a change of its own, pending until the next
+  save writes it. Written to the draft too - but a note an undo brings
+  back after a save wrote its delete is not offered by a later open (the
+  draft places nothing new), so such an undo lasts this tab; the page
+  therefore holds autosave while a delete's Undo toast is offered (M4a
+  review #2, correcting W2's "backed up by the draft").
+- Undo and redo are refused while a save runs: the save's end moves the
+  saved file the step is measured against.
 
-- Saves run one after another: one called while another runs starts when
-  it ends (E2a review #9).
+- Saves (and moves of the walk) run one after another: one called while
+  another runs starts when it ends (E2a review #9).
 - The edits are snapshotted before the save's first await: an edit made
   while it runs stays for the next save, by content.
 - `filename` is `finishedFileName(session)` (the opened file's name, made
   safe); the model's title falls back to `fileName` (the shown name).
-- A delete's undo works on the lists as they stand: after a save that
-  wrote the delete, the object is no longer in the zip, so the page ends
-  the undo when a save starts.
 - The editor places nothing new yet: every entry is an edit or a move of
   an object the tour carries.
 - The setting is snapshotted with the edits: a toggle made while a save
-  runs is the next save's.
+  runs is the next save's; the details likewise.
+- **A cover follows its image** (W2): the cover as chosen is kept, but
+  shown and written only while its image is in the tour - a deleted photo
+  takes the cover with it (no change lingers once that is saved), and an
+  undo of the delete brings it back.
+- The settings record carries the details only once they were set or
+  restored here: a record without them has no opinion about them
+  (`editor-draft.ts`).
 
 ## Tests
 
@@ -92,9 +253,41 @@ the saved `tour.json`; an empty pin refused; a delete undone in place; an
 edit made during a save kept for the next; the saved file's name; the
 draft's calls (an edited note's delete undone writes its record again),
 a restore (live work winning, unknown ids skipped), an unknown id refused,
+a move too far from its station refused in words and a draft offering one
+skipped (L1),
 and a saved zip keyed as opening it would (`tourFileKeyOfFile`). The
 "needs no GPS" setting (QR-first M1b-2): written at minor 2 when on and
 left out when off (the raw `tour.json`), a toggle back being no change, a
 flagged tour opening on and keeping the flag through another edit's save, a
 toggle during a save waiting for the next, its draft writes, a restore
-(live change winning), and `noGpsCheck`.
+(live change winning), and `noGpsCheck`. The tour details (W2): written
+at minor 3, each a change until saved; an emptied field removing the
+detail and the same values no change; plain-words refusals changing
+nothing; the cover choices (photos only, never a pin); the cover going with
+its photo; the whole record backed up once per change; a draft's details
+restored unless changed here; a draft naming a deleted cover restoring
+the rest; a long stored name not blocking other edits; the walk-through
+with the real draft (cover chosen, saved, its photo deleted, saved,
+reopened: no offer, M4a review #1); a deleted photo's picture read from
+the session's last bytes when the page's copy does not read (#5). Moving
+the walk out (W2, D19): the walk's zip carrying the whole recording byte
+for byte (the baked frame too) and the note, and the tour none of the
+walk, also after the next save with `keepScan`; nothing changed before
+`commit()`; `commit()` refused once another save landed; refused while
+the photos need the walk and for a tour without one; the note naming a
+listed tour's file, name and series; the opened file read once; a walk
+that places nothing (the real sample recording without its photos) moved
+out, and left out by a lean save with no `notPlaced`; the walk's file name. Undo and redo (W2): every edit kind undone
+newest first and redone; a new edit dropping the redo; the revision; an
+undo after a save being a change the next save writes; a saved photo
+delete coming back with its picture, and refused in words (the step kept)
+when the picture could not be read; refused while a save runs; every step
+backed up in the draft; a cover coming back with its photo; a restore as
+one step; an undo after a save that dropped the emptied station putting the
+note back into that station (the M5a milestone review M2,
+`tour-content.ts`).
+The tour document (D29-D31): a later open on the same store disowning the
+session (its edits refused, a save begun before landing nowhere, one asked
+for after refused, its reads its own tour), and a replaced session reading
+its tour as it stood when replaced, an edit no read followed included. The
+save thunk itself: `../tour-document-save.test.ts`.

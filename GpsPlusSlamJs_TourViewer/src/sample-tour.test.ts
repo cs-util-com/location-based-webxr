@@ -51,13 +51,15 @@ function metres(
 }
 
 describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
-  it("is a valid version 2 tour with three geo stations in a fixed order", async () => {
+  it("is a valid version 3 tour with three geo stations in a fixed order", async () => {
     const files = await entries();
     const raw = files.get("tour.json");
     expect(raw).toBeDefined();
-    const manifest = parseTourManifest(
-      JSON.parse(new TextDecoder().decode(raw)) as unknown,
-    );
+    const json = JSON.parse(new TextDecoder().decode(raw)) as unknown;
+    // Written at version 3 (tour editor plan W3): an older build refuses
+    // it with "update the app" rather than misreading it.
+    expect(json).toMatchObject({ version: 3, minor: 0 });
+    const manifest = parseTourManifest(json);
     expect(manifest.order).toBe("fixed");
     expect(manifest.stations.map((s) => s.id)).toEqual([
       "column",
@@ -65,7 +67,7 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
       "steps",
     ]);
     for (const station of manifest.stations) {
-      expect(station.anchor.geo).toBeDefined();
+      expect(station.geo).toBeDefined();
       expect(station.steps.length).toBeGreaterThan(0);
     }
   });
@@ -75,7 +77,7 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     const manifest = parseTourManifest(
       JSON.parse(new TextDecoder().decode(files.get("tour.json"))) as unknown,
     );
-    const geos = manifest.stations.map((s) => s.anchor.geo!);
+    const geos = manifest.stations.map((s) => s.geo);
     // The column of Marienplatz, Munich (a public place, S-D9).
     expect(metres(geos[0]!, { lat: 48.137393, lon: 11.575493 })).toBeLessThan(
       1,

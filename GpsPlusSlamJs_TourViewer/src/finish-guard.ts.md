@@ -12,8 +12,10 @@ the page knows.
 ## Public API
 
 - `type FinishGuardInput` - `{ sessionLive, arAvailable, placedCount,
-deletedCount, codeCount, rebuilt: { delivered } | null, draftPersists,
-finishFailed }`. `codeCount` (code book plan M4c-1): codes measured or
+deletedCount, tourChanged, codeCount, rebuilt: { delivered } | null,
+draftPersists, finishFailed }`. `tourChanged`: the tour's own fields
+  (its name, a station's frame) changed since the last Finish - work like
+  a placement, so a rename alone can be saved (the parity contract). `codeCount` (code book plan M4c-1): codes measured or
   improved that no Finish has written yet - unsaved work like a placement.
 - `unsavedWork(input)` - changes since the last Finish, or a rebuilt file
   not saved.

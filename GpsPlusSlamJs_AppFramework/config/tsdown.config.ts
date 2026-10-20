@@ -62,12 +62,19 @@ const entryFiles = [
   // `tour.json` schema + archive convention (guided-setup plan M1) - deep-
   // imported by the Tour Viewer via the `./ar/*` wildcard, so per-file.
   'src/ar/tour-manifest.ts',
+  // The tour details' checks (W2), deep-imported by the Tour Viewer's
+  // editor and visitor page.
+  'src/ar/tour-details.ts',
   'src/ar/tour-archive.ts',
   // The tour media allowlist (tour kit plan K0), deep-imported the same way.
   'src/ar/tour-media.ts',
   // The v2 game content, the signed manifest and its signature (tour kit
   // plan K1), deep-imported by the Tour Viewer the same way.
   'src/ar/tour-stations.ts',
+  // Version 3's station items and the station frame (tour editor plan
+  // W3), deep-imported by the Tour Viewer the same way.
+  'src/ar/tour-items.ts',
+  'src/ar/tour-station-pose.ts',
   'src/ar/tour-signed-manifest.ts',
   'src/ar/tour-signature.ts',
   'src/ar/frame-loop.ts',
@@ -172,6 +179,10 @@ const entryFiles = [
   // The maturity floor and the first-mature-alignment pick (D28 revised,
   // D33), deep-imported by the Tour Viewer's authoring settle.
   'src/state/alignment-maturity.ts',
+  // One judgement of position precision for every app ("code", GPS with a
+  // number, or none) and whether it can tell two targets apart; deep-
+  // imported by apps via the `./state/*` wildcard.
+  'src/state/position-precision.ts',
 
   // storage/
   'src/storage/index.ts',

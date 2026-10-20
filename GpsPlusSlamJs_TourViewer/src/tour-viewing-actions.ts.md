@@ -29,7 +29,10 @@ altitude, accuracyM, odomPosition }` as the fusion received it),
   from geo positions through the zero and the alignment at the scene root;
   `code`: around a locked code's geo), `count`, `zero`, `alignmentMatrix`,
   and per kind `code` (`text`, `geo`, `centerNue`), `join` (`fixes`,
-  `gpsAccuracyMedianM`) or `skipped` (content ids that could not render).
+  `gpsAccuracyMedianM`) or `skipped` (what could not render: content ids,
+  or the photos left out). `station` names the station whose part was
+  drawn (a placed log per station, each time it is drawn; absent for
+  content no station holds).
 - `keepAliveChanged(payload)` - `tourViewing/keepAlive` (M1b review #5): the
   code keep-alive's state changes. `event` (`armed` - a voted lock handed it
   the code and its stable pose, carried as `kept { qrPoseWorld, qrGeo, sizeM

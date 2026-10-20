@@ -63,7 +63,7 @@ photo is decoded from.
   bytes a Finish kept), else the hosted zip's through the session
   (`loadContentEntry`), decoded under the tour pixel cap
   (`TOUR_MAX_IMAGE_PIXELS`, tour kit K4 review R2). A Finish takes a photo
-  out of `placedObjects` while the hosted zip lacks its bytes until the
+  out of the page's entries while the hosted zip lacks its bytes until the
   upload, which is why it hands them here.
 - **A preview from geo waits for the zero** (M2c review #4): on the
   first visit of a page load (a restored draft) the zero arrives with the

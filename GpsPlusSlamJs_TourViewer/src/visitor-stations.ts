@@ -10,16 +10,18 @@
 import {
   selectAlignmentMatrix,
   selectGpsPositions,
+  selectTrackingQuality,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
 import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-stations";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
+import { registerFrameUpdate } from "gps-plus-slam-app-framework/ar/frame-loop";
 
 import type { ViewerMode } from "./mode.js";
+import { selectStationContentShown } from "./visitor-guide-slice.js";
 import { pictureProblem } from "./image-cap.js";
 import { createKeyedChain } from "./keyed-chain.js";
-import { checkHadItsWindow } from "./moved-code-check.js";
 import { createBreadcrumbTrail } from "./breadcrumbs.js";
 import { gateAllowsPlacement } from "./scan-gate.js";
 import { createSceneAudio } from "./scene-audio.js";
@@ -29,6 +31,7 @@ import type { TourViewerSeams } from "./seams.js";
 import { wireStationGuide, type StationGuideDom } from "./station-guide.js";
 import { createStationPrefetch, decodeFigure } from "./station-prefetch.js";
 import { createStationRelocator, firstDeviceFix } from "./tour-relocation.js";
+import { alignmentReady, codeLinedUp, isPlacementReady } from "./tour-flow.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -36,11 +39,15 @@ import type {
 import { visitorPosition } from "./visitor-position.js";
 
 /**
- * Whether the visitor's stations may be found, offered and pointed at now:
- * a visitor's running session whose scan gate allows placement. (Until
- * r863 the stations also waited for the compass wait; a code's rotation
- * now stands from its first lock, `viewer-vote-sink.ts` `VIEWER_SOFT_TRIM`,
- * so nothing is left to wait for.)
+ * Whether the visitor's stations may be offered now: a visitor's running
+ * session whose scan gate allows placement. (Until r863 the stations also
+ * waited for the compass wait; a code's rotation now stands from its first
+ * lock, `viewer-vote-sink.ts` `VIEWER_SOFT_TRIM`.) Offered, they are found
+ * on the alignment's position while it is ready (`tour-flow.ts`
+ * `alignmentReady`, re-read by the guide each tick) and on the fresh
+ * device fix while it is not, since the alignment is the identity from the
+ * first fix. Pointed at, guided to and given a figure they are only once
+ * the AR entry's alignment was ready (a heading; the guide latches it).
  */
 export function stationPlacementAllowed(
   ctx: Pick<TourViewerSession, "placementUnsubscribe" | "scanGate">,
@@ -53,10 +60,43 @@ export function stationPlacementAllowed(
   );
 }
 
+/**
+ * What the station guide reads of the alignment each tick: whether a code
+ * lined it up (the viewer pipeline's voted locks this AR entry,
+ * `tour-flow.ts` `codeLinedUp`), whether it is ready to be judged by
+ * (`alignmentReady`, the readiness the walk's photos wait for), and
+ * whether the tracking report reads ready (`isPlacementReady`; a lined-up
+ * code's votes feed it too, so the guide latches its heading on it only
+ * while no code is lined up).
+ */
+export function stationAlignmentSignals(
+  ctx: Pick<TourViewerSession, "viewerLockedText" | "viewerVotedLocks">,
+  arStore: Pick<TourViewerStore, "getState">,
+): {
+  codeLinedUp: () => boolean;
+  alignmentReady: () => boolean;
+  trackingReady: () => boolean;
+} {
+  const votes = () => ({
+    lockedText: ctx.viewerLockedText,
+    votedLocks: ctx.viewerVotedLocks,
+  });
+  return {
+    codeLinedUp: () => codeLinedUp(votes()),
+    alignmentReady: () =>
+      alignmentReady(selectTrackingQuality(arStore.getState()), votes()),
+    trackingReady: () =>
+      isPlacementReady(selectTrackingQuality(arStore.getState())),
+  };
+}
+
 /** Properties, not methods: they are handed to the hooks object unbound. */
 export interface VisitorStations {
   /** Re-judge (a store change, a camera frame). */
   tick: () => void;
+  /** Read one of the open tour's entries through the stations' cache: the
+   *  station content's photos (`viewer-placement.ts`) share it. */
+  loadContent: (path: string) => Promise<Blob>;
   codeLocked: (levelId: string) => void;
   /** Inside the "Start the tour" tap. */
   unlockAudio: () => void;
@@ -116,7 +156,7 @@ export function wireVisitorStations(deps: {
   let indexed: { manifest: unknown; byId: Map<string, TourAsset> } | null =
     null;
   const assetsById = (): ReadonlyMap<string, TourAsset> => {
-    const manifest = ctx.tourManifest;
+    const manifest = ctx.tourDocument.manifest();
     if (indexed?.manifest !== manifest) {
       indexed = {
         manifest,
@@ -131,7 +171,7 @@ export function wireVisitorStations(deps: {
   // the tour closes or another opens (K4 review R15).
   const prefetch = createStationPrefetch({
     assets: assetsById,
-    tour: () => ctx.tourManifest,
+    tour: () => ctx.tourDocument.manifest(),
     read: (path) => {
       const session = ctx.session;
       if (session === null) return Promise.reject(new Error("no tour open"));
@@ -143,7 +183,9 @@ export function wireVisitorStations(deps: {
   const breadcrumbs = createBreadcrumbTrail({
     getScene: () => seams.getScene(),
   });
-  // The guide is created below; the stage reads its poses late.
+  // The guide is created below; the stage reads its poses late. The
+  // figure's pose waits for a heading (`figurePoseOf`, r881 re-review
+  // M-B): the stage parks the figure and the story says so.
   let poseOf: (id: string) => ReturnType<typeof guide.poseOf> = () => null;
   const stage = createSceneStage({
     getScene: () => seams.getScene(),
@@ -159,6 +201,9 @@ export function wireVisitorStations(deps: {
         ),
       ),
     loadModel: (blob) => seams.loadGlbModel(blob),
+    // The figure fades with its station's content (`follow` below).
+    now: deps.now,
+    registerFrame: registerFrameUpdate,
   });
   const view = createSceneView({
     dom: dom.scene,
@@ -188,22 +233,15 @@ export function wireVisitorStations(deps: {
   const guide = wireStationGuide({
     dom: dom.guide,
     tour: () => {
-      const manifest = ctx.tourManifest;
+      const manifest = ctx.tourDocument.manifest();
       if (ctx.tourManifestStatus !== "settled" || manifest === null) {
         return null;
       }
       const stations = relocator(manifest.stations, firstFix());
       if (stations === null) return null;
-      return {
-        stations,
-        order: manifest.order,
-        levels: ctx.currentLevels,
-      };
+      return { stations, order: manifest.order };
     },
     placementAllowed: () => stationPlacementAllowed(ctx, deps.mode),
-    // Without location a station without a code is reached by the
-    // visitor's own "I'm here" (owner decision after the M1b-1 review).
-    codesOnly: () => ctx.codesOnly,
     zero: () => selectZeroReference(arStore.getState()),
     visitor: () => {
       const state = arStore.getState();
@@ -214,16 +252,12 @@ export function wireVisitorStations(deps: {
         zero: selectZeroReference(state),
       });
     },
-    isIgnoredCode: (levelId) => ctx.ignoredCodes.has(levelId),
-    // The moved-code check's evidence for a held code lock (K4 review R1).
-    codeCheck: (levelId) => {
-      const check = ctx.movedCodeChecks
-        ?.snapshot()
-        .find((v) => v.levelId === levelId);
-      return check === undefined ? null : { judged: checkHadItsWindow(check) };
-    },
+    ...stationAlignmentSignals(ctx, arStore),
     startHud: (getTargets) => seams.createWayfindingHud({ getTargets }),
     now: deps.now,
+    // The present station (visitor plan 2026-10-18-2349 M1): judged here,
+    // drawn per station from M2 on.
+    guideStore: arStore,
     onFound: (station) => {
       view.offer(station);
     },
@@ -246,7 +280,7 @@ export function wireVisitorStations(deps: {
       breadcrumbs.update(visitor, target);
     },
   });
-  poseOf = (id) => guide.poseOf(id);
+  poseOf = (id) => guide.figurePoseOf(id);
 
   dom.skipButton.addEventListener("click", () => {
     guide.skipTapped();
@@ -261,9 +295,13 @@ export function wireVisitorStations(deps: {
   return {
     tick: () => {
       guide.tick();
+      // The figure shows only where its station's content does.
+      stage.follow((id) => selectStationContentShown(arStore.getState(), id));
     },
-    codeLocked: (levelId) => {
-      guide.codeLocked(levelId);
+    loadContent: (path) => prefetch.load(path),
+    // A lock only improved the position (D16): the guide re-judges now.
+    codeLocked: () => {
+      guide.codeLocked();
     },
     unlockAudio: () => {
       audio.unlock();

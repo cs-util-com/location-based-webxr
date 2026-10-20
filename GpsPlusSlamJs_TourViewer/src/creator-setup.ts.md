@@ -42,9 +42,10 @@ input, and the hooks, which fan out to each module's `endVisit` / `reset`.
 
 ## Crash-safe authoring and the Finish's file
 
-The object list's draft writes (`saveDraftObject`) go through
-`draft.writeObject`, which records the base from the tour as opened
-(M6 E2p; the rule is in `creator-draft.ts.md`).
+The draft follows the tour document (`ctx.tourDocument.follow`, wired
+once here): every change's writes go through `draft.writeObject`, which
+records the base from the tour as opened (M6 E2p; the rule is in
+`creator-draft.ts.md`).
 
 The on-device draft (second testing session, F13) is `creator-draft.ts`
 since the code book plan's M2 split; its sidecar holds the rules that
@@ -67,16 +68,28 @@ were here. What stays is the Finish's side:
     `onIdsChanged`): `main.ts` re-presents the print step's codes (F16).
   - `host()` - the host chosen in step 1, handed to the hand-off for step
     6's replace steps (polish round M2).
+  - `beforeFinish()` (optional) - handed to the Finish as its
+    `beforeStart`: `main.ts` commits the tour name field there.
+  - `renameTour(name)` (returned) - step 3's name field renames the tour
+    document (`CreatorDocument.rename`): null when taken or the same,
+    else the refusal in words; a draft write that did not land is said
+    once (`warnNoBackup`).
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
     and the e2e can supply one without OPFS; `main.ts` passes
     `draft-store-root.ts`'s `openDraftStore(navigator, key)`. The object
     list's four draft writes are `draft-actions.ts`'s `draftObjectWrites`
     over the creator draft (M6 E2c).
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; newStationButton?; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; stationChip?; }`
     - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
       `object-list.ts` view (`bind`, `render`); `main.ts` builds it over
       `#object-list` inside the panel.
+    - `stationChip` (optional; tour editor plan 2026-10-17-1816, W3 "AR
+      authoring") - the open station's line, `#creator-station` just
+      above the chips; absent (node tests), a detached stand-in.
+    - `newStationButton` (optional; owner decision D8 of `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`) -
+      "New station here", `#setup-new-station` after "Take a photo";
+      handled by `creator-placement.ts`; absent (node tests), no chip.
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not
@@ -92,7 +105,13 @@ were here. What stays is the Finish's side:
     so nothing reset after it reads the closing tour's codes), `presentDraftForTour` (a tour
     opened AND its manifest settled - "spent" is a question about that
     manifest, so it cannot be asked earlier), `beginAuthorVisit`,
-    `endAuthorVisit`, `finishNow` (polish round M3, Q-Done: the creator's
+    `endAuthorVisit` (it also ends the stations' line and ring, and
+    disarms "New station here": the chip is the session's, D8),
+    `tickStations` (every camera frame in a creator's session: the open
+    station's line and ring through `creator-stations.ts` (judged where
+    the reticle points while it is visible, else at the creator), which reads the
+    working copy through the Finish's own writer and keeps no state of its
+    own; a visitor's page does nothing), `finishNow` (polish round M3, Q-Done: the creator's
     Done in AR starts a Finish through `CreatorFinish.start`, or, while a
     code is being measured, keeps the session, LEADS the status with "the
     tour saves as soon as it is measured" (first, so AR's two-line clamp
@@ -226,9 +245,10 @@ were here. What stays is the Finish's side:
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
   `authorErrorText`, `mintGeneration`, `finishing`,
-  `rebuiltZip`, `placedObjects`, `placedPreviews`, `placementNote`; reads
-  `gpsSamplesAtSessionStart`, `reticle`, `latestFrame` (written by
-  `ar-entry.ts`), `session`, `currentLevels`, `tourManifest`.
+  `rebuiltZip`, `placedPreviews`, `placementNote`; changes the tour
+  document (`tourDocument`) and makes the draft follow it (`follow`, once
+  per page); reads `gpsSamplesAtSessionStart`, `reticle`, `latestFrame`
+  (written by `ar-entry.ts`), `session`, `currentLevels`.
 
 ## Examples
 

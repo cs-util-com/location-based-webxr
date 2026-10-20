@@ -11,7 +11,9 @@ import {
   createSaveTarget,
   holdEditorDraftLock,
   holdEditorLock,
+  pickSaveFile,
   pickTourFile,
+  saveFinePrint,
   InPlaceRefusal,
   type WritableFileHandle,
 } from "./save-target.js";
@@ -203,6 +205,63 @@ describe("createSaveTarget", () => {
   });
 });
 
+/**
+ * Why (the M4b fix re-review #1): the walk's save dialog can be pointed at
+ * the opened tour file itself. The walk's zip then lands over the tour,
+ * the tour's own write is refused as "changed", and the tour's content
+ * exists nowhere. The page asks the target first, before anything is
+ * written; where the browser cannot tell, the same name counts as the same
+ * file - refusing a move costs a retry, writing over the tour costs it.
+ */
+describe("SaveTarget.isSame", () => {
+  function withSameEntry(
+    handle: WritableFileHandle,
+    same: (other: FileSystemHandle) => Promise<boolean>,
+  ): WritableFileHandle {
+    return Object.assign(handle, { isSameEntry: same });
+  }
+
+  it("is the browser's answer where it has one", async () => {
+    const { handle } = fakeHandle("version one", "castle.zip");
+    const other = { kind: "file", name: "castle.zip" } as FileSystemHandle;
+    const seen: FileSystemHandle[] = [];
+    const target = await createSaveTarget(
+      withSameEntry(handle, (h) => {
+        seen.push(h);
+        return Promise.resolve(false);
+      }),
+      await handle.getFile(),
+    );
+    // Same name, another folder: not the tour.
+    expect(await target.isSame(other)).toBe(false);
+    expect(seen).toEqual([other]);
+    const same = await createSaveTarget(
+      withSameEntry(fakeHandle("v", "castle.zip").handle, () =>
+        Promise.resolve(true),
+      ),
+      new File(["v"], "castle.zip"),
+    );
+    expect(await same.isSame(other)).toBe(true);
+  });
+
+  it("counts the same name as the same file where the browser cannot tell", async () => {
+    const { handle } = fakeHandle("version one", "castle.zip");
+    const target = await createSaveTarget(handle, await handle.getFile());
+    const named = (name: string) =>
+      ({ kind: "file", name }) as FileSystemHandle;
+    expect(await target.isSame(named("castle.zip"))).toBe(true);
+    expect(await target.isSame(named("castle-walk.zip"))).toBe(false);
+    const throwing = await createSaveTarget(
+      withSameEntry(fakeHandle("v", "castle.zip").handle, () =>
+        Promise.reject(new DOMException("no", "SecurityError")),
+      ),
+      new File(["v"], "castle.zip"),
+    );
+    expect(await throwing.isSame(named("castle.zip"))).toBe(true);
+    expect(await throwing.isSame(named("castle-walk.zip"))).toBe(false);
+  });
+});
+
 describe("holdEditorLock", () => {
   /** A Web Locks stand-in: exclusive, `ifAvailable`, released on demand. */
   function fakeLocks() {
@@ -274,5 +333,102 @@ describe("holdEditorLock", () => {
       request: () => Promise.reject(new Error("no locks here")),
     } as unknown as LockManager;
     expect((await holdEditorLock(failing, "tour.zip")).granted).toBe(true);
+  });
+});
+
+/**
+ * Why (tour editor plan 2026-10-17-1816, W2): the open dialog's fine print
+ * said "Save gives you a new copy" in every browser, which is wrong where
+ * the file picker lets Save write the chosen file itself (and autosave
+ * does). The words follow what this browser can do. And (W6): it said
+ * "nothing is uploaded" while the map's tiles come from OpenStreetMap -
+ * it now says what does leave the computer.
+ */
+describe("saveFinePrint", () => {
+  it("says Save writes the chosen file where the picker exists", () => {
+    const text = saveFinePrint({
+      showOpenFilePicker: () => Promise.resolve([]),
+    });
+    expect(text).toContain("The map comes from OpenStreetMap.");
+    expect(text).not.toContain("nothing is uploaded");
+    expect(text).toContain("saved into that file");
+    expect(text).toContain("from a link");
+    expect(text).not.toContain("Save gives you a new copy");
+  });
+
+  it("says Save gives a new copy where it does not", () => {
+    const text = saveFinePrint({});
+    expect(text).toContain("The map comes from OpenStreetMap.");
+    expect(text).not.toContain("nothing is uploaded");
+    expect(text).toContain("Save gives you a new copy");
+    expect(text).not.toContain("saved into that file");
+  });
+});
+
+/**
+ * Why (the M4b milestone review #2): the walk's file was asked for with
+ * the framework's download, after the move's build - by then Chromium's
+ * click window had passed, the save dialog was refused, and the download
+ * it fell back to counted as saved before the tour was rewritten without
+ * the walk. The dialog must be opened IN the click, and only a dismissal
+ * means "nothing to write"; anything else lets the page download instead.
+ */
+describe("pickSaveFile", () => {
+  const handle = { kind: "file", name: "castle-walk.zip" };
+
+  it("opens the save dialog before it returns, with the suggested name", async () => {
+    const calls: string[] = [];
+    const picked = pickSaveFile(
+      {
+        showSaveFilePicker: (options) => {
+          calls.push(options.suggestedName);
+          return Promise.resolve(handle as unknown as FileSystemFileHandle);
+        },
+      },
+      "castle-walk.zip",
+    );
+    // Called synchronously: no await came between the click and the dialog.
+    expect(calls).toEqual(["castle-walk.zip"]);
+    await expect(picked).resolves.toEqual({ kind: "picked", handle });
+  });
+
+  it("is cancelled only when the creator dismissed the dialog", async () => {
+    await expect(
+      pickSaveFile(
+        {
+          showSaveFilePicker: () =>
+            Promise.reject(new DOMException("dismissed", "AbortError")),
+        },
+        "w.zip",
+      ),
+    ).resolves.toEqual({ kind: "cancelled" });
+  });
+
+  it("is unavailable without a dialog, or when the browser refuses one", async () => {
+    await expect(pickSaveFile({}, "w.zip")).resolves.toEqual({
+      kind: "unavailable",
+    });
+    for (const refusal of [
+      new DOMException("no click", "SecurityError"),
+      new DOMException("busy", "NotAllowedError"),
+      new TypeError("not here"),
+    ]) {
+      await expect(
+        pickSaveFile(
+          { showSaveFilePicker: () => Promise.reject(refusal) },
+          "w.zip",
+        ),
+      ).resolves.toEqual({ kind: "unavailable" });
+    }
+    await expect(
+      pickSaveFile(
+        {
+          showSaveFilePicker: () => {
+            throw new TypeError("thrown, not rejected");
+          },
+        },
+        "w.zip",
+      ),
+    ).resolves.toEqual({ kind: "unavailable" });
   });
 });

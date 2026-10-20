@@ -11,8 +11,17 @@ PDF writer lays them out around every code (`qr-print-pdf.ts`, option
 ## Public API
 
 - `DEFAULT_EXPLANATION` = "AR tour starts here", `DEFAULT_CALL_TO_ACTION`
-  = "Scan with your phone camera" - the owner's wording on r820 (the S1
-  design's poster).
+  = "Scan with Chrome on Android" - the owner's wording on r820
+  (the S1 design's poster), the call to action naming the phone a tour
+  needs since D8 of tour editor plan 2026-10-17-1816 (it was "Scan with
+  your phone camera", then "Scan with an Android phone"), and the browser
+  since the PR #637 review. It stays one line on the poster: "Scan with an
+  Android phone (Chrome)" added a second; this wording wraps exactly where
+  "Scan with an Android phone" did (`planPrintPdf` swept over A4, Letter
+  and A3, 1, 3 and 12 codes, 2 to 26 cm and three title lengths: 306
+  layouts, the same line counts in all, one line in 288, two in the 18
+  at 2 cm on A4 and Letter, where the text is held at its smallest size). A poster text stored for a tour before keeps its old line
+  until the creator edits it.
 - `type PosterFields = { title, explanation, callToAction }` (strings).
 - `defaultPosterFields(tourTitle)` - the tour's name (its `manifest.json`
   `title`, trimmed; empty when it has none) and the two defaults.

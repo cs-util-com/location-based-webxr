@@ -84,7 +84,7 @@ describe('readTourManifestFromEntries', () => {
   });
 
   it('parses the manifest the writer named', async () => {
-    const text = '{"version":1,"objects":[]}';
+    const text = '{"version":3,"stations":[]}';
     await expect(
       readTourManifestFromEntries(
         [TOUR_MANIFEST_ENTRY],
@@ -94,7 +94,7 @@ describe('readTourManifestFromEntries', () => {
         },
         parseTourManifest
       )
-      // A version 1 file is read MIGRATED to version 2 (tour kit plan K1).
+      // The empty version 3 tour (tour editor plan W3).
     ).resolves.toEqual(createEmptyTourManifest());
   });
 

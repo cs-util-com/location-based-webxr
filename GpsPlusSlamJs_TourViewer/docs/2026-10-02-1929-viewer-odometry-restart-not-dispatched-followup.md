@@ -27,7 +27,7 @@ GpsPlusSlamJs_TourViewer/src` finds nothing outside tests). Its own
 
 The AR config now passes the framework's `tracking.onRestarted`
 (`ar-mode.ts` `onTrackingRestarted`, polish-round follow-up F11), which
-clears the `?mesh=1` cursor's grid. It deliberately does NOT dispatch
+clears the mesh cursor's grid (a creator's default since 2026-10-15). It deliberately does NOT dispatch
 `odometryTrackingRestarted`: that is still this document's decision.
 Step 2 below needs more than a dispatch in that callback: `ar-mode.ts`
 drops the restart's payload and hands the app a `() => void`, so the

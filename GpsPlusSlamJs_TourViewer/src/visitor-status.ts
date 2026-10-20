@@ -10,7 +10,7 @@
  * @see visitor-status.ts.md
  */
 
-import type { ArStatusInput } from "./tour-flow.js";
+import { codeLinedUp, type ArStatusInput } from "./tour-flow.js";
 /** The in-AR scan line without location (QR-first M1b-1), under the scan
  *  card's title ("Scan the code again so the tour can start"): what the
  *  absence of location means, not a second "scan". */
@@ -48,8 +48,10 @@ type VisitorStatusState =
   | "warming-up"
   | "placing"
   | "placed"
+  | "to-station"
   | "placed-gps"
   | "tracking-lost"
+  | "finding-direction"
   | "needs-code"
   | "nothing";
 
@@ -61,7 +63,32 @@ export interface VisitorStatus {
 }
 
 const LOOK_AROUND = "Look around.";
+/** Placed, every piece of content waiting at a station the visitor is not
+ *  at: nothing is in view to look at. */
+const TO_STATION = "Walk to a station to see its content.";
 const GPS_PLACED = "Tour placed by GPS (less exact)";
+/** The one hint that can still help a tour no code lines up now. */
+const FIND_CODE = "Find the poster's code to line it up.";
+
+/** The guide waits for a heading (D34): the arrows, the breadcrumbs and a
+ *  story's figure need one, and a few steps give it. */
+const WALK = "Walk a few steps so the guide knows the direction.";
+
+/** Whether the line asks for a few steps (D34): the guide waits for a
+ *  heading, tracking runs - not while it initializes (the coaching says
+ *  hold steady) nor once it is lost (its own hint is the cure) - and
+ *  walking can earn one: never without location, where only a code gives a
+ *  heading (after a veto, too). */
+function asksForSteps(input: ArStatusInput): boolean {
+  const phase = input.readiness?.phase;
+  return (
+    input.stationsAwaitHeading === true &&
+    input.codesOnly !== true &&
+    phase !== undefined &&
+    phase !== "initializing" &&
+    phase !== "ar-lost"
+  );
+}
 
 /** Why AR did not start, from the controller's error message (the
  *  framework keeps only the message, not the exception's name): the causes
@@ -77,7 +104,7 @@ function startFailureText(error: string | null | undefined): string {
     return "Camera access was blocked. Allow the camera for this site in the browser settings, then tap Try again.";
   }
   if (error != null && /NotSupportedError|not supported/i.test(error)) {
-    return "This phone can't start AR for this tour. Open this page in Chrome on an Android phone that supports AR.";
+    return "This phone can't start AR for this tour, which needs an Android phone with Chrome. Open this page there.";
   }
   return "AR could not start. Tap Try again.";
 }
@@ -102,7 +129,7 @@ function beforeRunning(
       return {
         state: "unsupported",
         // The button under it copies the link (polish round M4a, V4).
-        text: "This phone or browser can't show the tour in AR. Copy the link and open it in Chrome on an Android phone that supports AR.",
+        text: "This tour needs an Android phone with Chrome, and this phone or browser can't show it in AR. Copy the link and open it in Chrome on an Android phone.",
       };
     case "error":
       return { state: "error", text: startFailureText(arError) };
@@ -135,12 +162,6 @@ function gpsOnly(gate: ArStatusInput["gate"]): boolean {
   );
 }
 
-/** A code lined the tour up: its votes were cast (after the escape too -
- *  the gate stays "skipped" when a later lock votes). */
-function codeLinedUp(input: ArStatusInput): boolean {
-  return input.qr.lockedText !== null && input.qr.votedLocks > 0;
-}
-
 /** The tour has no code that can lock (the photo ring needs one). */
 function noUsableCodes(input: ArStatusInput): boolean {
   const { tour, gate } = input;
@@ -158,31 +179,86 @@ function isPlaced(input: ArStatusInput): boolean {
 
 /** Placed: through the code, or by GPS - with the one hint that can still
  *  help (find the code) only after the escape, never when the code cannot
- *  line the tour up. */
-function placedSentence(input: ArStatusInput): VisitorStatus {
+ *  line the tour up. While the guide waits for a heading (`walk`, D34) the
+ *  bare placed line gives way to the request; a GPS placement keeps its
+ *  reason, the request in place of "Look around.". Away from every
+ *  station (`awayFromStations`) "Look around." gives way to the station
+ *  request; the request for steps still comes first, since walking
+ *  answers both. A tour a code placed whose trust has ended (an
+ *  odometry-frame change: the gate stays passed on the code, its count goes
+ *  back to 0) asks for the code after it (`codeTrustEnded`). */
+function placedSentence(input: ArStatusInput, walk: boolean): VisitorStatus {
   const { gate } = input;
-  if (!gpsOnly(gate) || codeLinedUp(input)) {
-    return { state: "placed", text: `Tour placed. ${LOOK_AROUND}` };
+  const away = input.awayFromStations === true;
+  if (!gpsOnly(gate) || codeLinedUp(input.qr)) {
+    if (codeTrustEnded(input)) return trustEndedSentence(input, walk, away);
+    if (walk) return { state: "finding-direction", text: WALK };
+    return away
+      ? { state: "to-station", text: TO_STATION }
+      : { state: "placed", text: `Tour placed. ${LOOK_AROUND}` };
   }
+  const next = walk ? WALK : away ? TO_STATION : LOOK_AROUND;
   if (gate.kind === "not-required" && gate.reason === "no-detector") {
     return {
       state: "placed-gps",
-      text: `${GPS_PLACED}: this browser can't read codes. ${LOOK_AROUND}`,
+      text: `${GPS_PLACED}: this browser can't read codes. ${next}`,
     };
   }
   if (gate.kind === "passed" && gate.via === "ignored") {
     return {
       state: "placed-gps",
-      text: `${GPS_PLACED}: its code seems to have been moved. ${LOOK_AROUND}`,
+      text: `${GPS_PLACED}: its code seems to have been moved. ${next}`,
     };
   }
   if (gate.kind === "passed" && gate.via === "skipped") {
     return {
       state: "placed-gps",
-      text: `${GPS_PLACED}. ${LOOK_AROUND} Find the poster's code to line it up.`,
+      text: `${GPS_PLACED}. ${next} ${FIND_CODE}`,
     };
   }
-  return { state: "placed-gps", text: `${GPS_PLACED}. ${LOOK_AROUND}` };
+  return { state: "placed-gps", text: `${GPS_PLACED}. ${next}` };
+}
+
+/** The gate passed on a code that no longer lines the tour up: its trust
+ *  ended on an odometry-frame change (`viewer-placement.ts`
+ *  `endCodeTrust`). A veto passes the gate as "ignored" instead. */
+function codeTrustEnded(input: ArStatusInput): boolean {
+  return (
+    input.gate.kind === "passed" &&
+    input.gate.via === "code" &&
+    !codeLinedUp(input.qr)
+  );
+}
+
+/** The placed line with the code asked for after it. Without location
+ *  only a code judges presence, so the present station has ended
+ *  (`station-guide.ts`) while the visitor may still stand at it: no walk
+ *  can help, and the line asks for the code alone. */
+function trustEndedSentence(
+  input: ArStatusInput,
+  walk: boolean,
+  away: boolean,
+): VisitorStatus {
+  if (walk) return { state: "finding-direction", text: `${WALK} ${FIND_CODE}` };
+  if (!away) {
+    return {
+      state: "placed",
+      text: `Tour placed. ${LOOK_AROUND} ${FIND_CODE}`,
+    };
+  }
+  return input.codesOnly === true
+    ? { state: "needs-code", text: `Tour placed. ${FIND_CODE}` }
+    : { state: "to-station", text: `${TO_STATION} ${FIND_CODE}` };
+}
+
+/** The code is in view and its pose still settles (plan §66's hint):
+ *  guidance a visitor can act on, until its first vote. The page passes
+ *  no hint for the code the moved-code check ignores (`ar-entry.ts`),
+ *  only for the code evaluated, so a veto never hides another code's
+ *  (r881 re-review L1). */
+function measuringHint(qr: ArStatusInput["qr"]): string | null {
+  if (qr.votedLocks > 0) return null;
+  return qr.fusedHint ?? null;
 }
 
 /** The code situations that come before placement: they need the visitor
@@ -205,11 +281,8 @@ function codeSentence(input: ArStatusInput): VisitorStatus | null {
         : "This code can't line up the tour. Point your phone at another of the tour's codes.",
     };
   }
-  // The code is in view and its pose still settles (plan §66's hint):
-  // guidance a visitor can act on, until its first vote.
-  if (qr.fusedHint != null && qr.votedLocks === 0) {
-    return { state: "measuring-code", text: qr.fusedHint };
-  }
+  const hint = measuringHint(qr);
+  if (hint !== null) return { state: "measuring-code", text: hint };
   if (gate.kind === "scanning") {
     // Without location the codes are the only way in (QR-first M1b-1).
     if (input.codesOnly === true) {
@@ -299,9 +372,27 @@ function runningSentence(input: ArStatusInput): VisitorStatus {
     if (input.readiness?.phase === "ar-lost") {
       return { state: "tracking-lost", text: input.readiness.hint };
     }
-    return placedSentence(input);
+    return placedSentence(input, asksForSteps(input));
   }
-  return codeSentence(input) ?? placementSentence(input);
+  // A code situation needs the visitor to point elsewhere first; any other
+  // sentence keeps what it says, the guide's wait for a heading after it
+  // (D34).
+  const code = codeSentence(input);
+  if (code !== null) return code;
+  return withWalkRequest(input, placementSentence(input));
+}
+
+/** The placing line, with the walk request after it while the guide waits
+ *  for a heading - except at a dead end: no step makes a tour with nothing
+ *  to show, or one that only a code can place, appear. */
+function withWalkRequest(
+  input: ArStatusInput,
+  placing: VisitorStatus,
+): VisitorStatus {
+  const deadEnd = placing.state === "nothing" || placing.state === "needs-code";
+  return asksForSteps(input) && !deadEnd
+    ? { state: placing.state, text: `${placing.text} ${WALK}` }
+    : placing;
 }
 
 /** The visitor's status for a state of the page. */

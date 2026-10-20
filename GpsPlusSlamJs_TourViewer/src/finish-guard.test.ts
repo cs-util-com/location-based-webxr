@@ -23,6 +23,7 @@ function input(overrides: Partial<FinishGuardInput> = {}): FinishGuardInput {
     arAvailable: true,
     placedCount: 0,
     deletedCount: 0,
+    tourChanged: false,
     codeCount: 0,
     rebuilt: null,
     draftPersists: true,
@@ -36,6 +37,9 @@ describe("unsavedWork", () => {
     ["nothing done", {}, false],
     ["a pin placed", { placedCount: 1 }, true],
     ["a deletion", { deletedCount: 1 }, true],
+    // Why (the parity contract): a renamed tour is work like a moved pin -
+    // the phone used to count a name alone as nothing to save.
+    ["the tour renamed", { tourChanged: true }, true],
     // Why (code book plan M4c-1): a code measured or improved and not yet
     // written by a Finish is work the creator would lose.
     ["a code measured, not finished", { codeCount: 1 }, true],

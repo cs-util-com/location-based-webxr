@@ -31,15 +31,6 @@ export interface EditLists<P extends EditEntry> {
   readonly deleted: readonly string[];
 }
 
-/** What a delete took away, for its undo. */
-export interface DeletedRecord<P extends EditEntry> {
-  readonly object: TourObject;
-  readonly placed: P | null;
-  /** Its place among the entries, so the Finish order is kept. */
-  readonly index: number;
-  readonly hosted: boolean;
-}
-
 /**
  * The tour's objects now: the manifest's, this page's replacing them by
  * id, new ones appended, deleted ones gone - the Finish's own rule
@@ -111,38 +102,15 @@ export function pinTextEdit(
 export function deleteObject<P extends EditEntry>(
   lists: EditLists<P>,
   found: AuthoringObject<P>,
-): { placed: P[]; deleted: string[]; record: DeletedRecord<P> } {
+): { placed: P[]; deleted: string[] } {
   const id = found.object.id;
-  const index = lists.placed.findIndex((p) => p.object.id === id);
   return {
     placed: lists.placed.filter((p) => p.object.id !== id),
     deleted:
       found.hosted && !lists.deleted.includes(id)
         ? [...lists.deleted, id]
         : [...lists.deleted],
-    record: {
-      object: found.object,
-      placed: found.placed,
-      index,
-      hosted: found.hosted,
-    },
   };
-}
-
-/** Undo a delete: the tombstone goes, the entry returns to its place. */
-export function undoDelete<P extends EditEntry>(
-  lists: EditLists<P>,
-  record: DeletedRecord<P>,
-): { placed: P[]; deleted: string[] } {
-  const id = record.object.id;
-  const deleted = record.hosted
-    ? lists.deleted.filter((x) => x !== id)
-    : [...lists.deleted];
-  const placed = [...lists.placed];
-  if (record.placed !== null && !placed.some((p) => p.object.id === id)) {
-    placed.splice(Math.min(record.index, placed.length), 0, record.placed);
-  }
-  return { placed, deleted };
 }
 
 /**

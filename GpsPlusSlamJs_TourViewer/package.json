@@ -31,6 +31,7 @@
     "node": ">=26.0.0"
   },
   "dependencies": {
+    "@reduxjs/toolkit": "^2.12.0",
     "@zip.js/zip.js": "^2.11.2",
     "gps-plus-slam-app-framework": "workspace:*",
     "leaflet": "^1.9.4",

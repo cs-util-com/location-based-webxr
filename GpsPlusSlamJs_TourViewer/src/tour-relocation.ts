@@ -1,10 +1,11 @@
 /**
  * Test-only relocation of a tour's stations to the phone's position (owner
  * decision S-D9, 2026-10-05): the sample tour sits at a public place, and
- * `?relocate=here` moves every station with a geo pose so that the first one
- * stands a few metres north of the phone's first GPS fix, keeping the
- * stations' layout (distances, relative heights, headings). Stations
- * anchored only to a printed code stay where the code is.
+ * `?relocate=here` moves every station so that the first one stands a few
+ * metres north of the phone's first GPS fix, keeping the stations' layout
+ * (distances, relative heights, headings). A station's pins and photos are
+ * relative to it (tour editor plan W3), so they would move with it; only
+ * the guide reads the moved stations today.
  *
  * Nothing about the phone's position is stored or sent: the move happens in
  * memory, for the open tour only.
@@ -55,10 +56,10 @@ export function relocationRequested(search: string): boolean {
 }
 
 /**
- * The stations moved so the first station with a geo pose stands
+ * The stations moved so the first station stands
  * {@link RELOCATE_LEAD_NORTH_M} north of `target`, at the target's altitude;
- * every other geo station keeps its north/east/up offset from that first
- * one. Code-only stations are returned as they are. Offsets are taken on a
+ * every other station keeps its north/east/up offset from that first one.
+ * Offsets are taken on a
  * local flat earth at the first station, which holds to about 1 % over the
  * few hundred metres a tour spans.
  */
@@ -66,28 +67,24 @@ export function relocateStations(
   stations: readonly TourStation[],
   target: RelocationTarget,
 ): TourStation[] {
-  const origin = stations.find((s) => s.anchor.geo !== undefined)?.anchor.geo;
-  if (origin === undefined) return [...stations];
+  const origin = stations[0]?.geo;
+  if (origin === undefined) return [];
   const cosOrigin = Math.cos(origin.lat * (Math.PI / 180));
   const firstLat = target.lat + RELOCATE_LEAD_NORTH_M / M_PER_DEG;
   const cosFirst = Math.cos(firstLat * (Math.PI / 180));
   return stations.map((station) => {
-    const geo = station.anchor.geo;
-    if (geo === undefined) return station;
+    const geo = station.geo;
     const northM = (geo.lat - origin.lat) * M_PER_DEG;
     const eastM = (geo.lon - origin.lon) * M_PER_DEG * cosOrigin;
     const upM = geo.alt - origin.alt;
     return {
       ...station,
-      anchor: {
-        ...station.anchor,
-        geo: {
-          ...geo,
-          lat: firstLat + northM / M_PER_DEG,
-          lon: target.lon + eastM / (M_PER_DEG * cosFirst),
-          // A fix without an altitude keeps the stations' own heights.
-          alt: Number.isFinite(target.alt) ? target.alt + upM : geo.alt,
-        },
+      geo: {
+        ...geo,
+        lat: firstLat + northM / M_PER_DEG,
+        lon: target.lon + eastM / (M_PER_DEG * cosFirst),
+        // A fix without an altitude keeps the stations' own heights.
+        alt: Number.isFinite(target.alt) ? target.alt + upM : geo.alt,
       },
     };
   });

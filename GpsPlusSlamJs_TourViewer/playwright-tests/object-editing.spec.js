@@ -70,6 +70,57 @@ test("the list edits a hosted pin on the page - no AR needed - and the Finish wr
   expect(pins[0]?.kind === "pin" && pins[0].label).toBe("The renamed pin");
 });
 
+test("the tour's name typed in step 3 is the title the Finish writes", async ({
+  page,
+}) => {
+  // Why (the r880 milestone review LOW-3): the name is a change of the
+  // tour document, handed over when the field is left. A Finish started
+  // while the name is still in its field (a tap that never blurs it, or a
+  // key) fires no "change", so the Finish commits the field itself
+  // (`main.ts`'s `beforeFinish`). The unit tests prove the rename and that
+  // hook's call; only the composed page shows the typed name reaching the
+  // written tour through it. The name must reach the Finish WITHOUT its
+  // "change": with one, the test passes with the hook removed (the r880
+  // fix re-review, L4). The wizard keeps one step open at a time, so the
+  // field (step 3) and the Finish (step 4) are never visible together, and
+  // switching steps by hand leaves the field. So the Finish is clicked as
+  // a creator clicks it, in an open step 4, and the field holds a name
+  // typed and never committed: its "input" events, no "change" - the
+  // state a Finish that starts before the field's change finds.
+  test.setTimeout(90_000);
+  await openTour(page);
+  await row(page, "Fixture pin").getByTestId("object-edit").click();
+  await page.getByTestId("object-edit-input").fill("Renamed at the desk");
+  await page.getByTestId("object-edit-save").click();
+  await expect(page.getByTestId("object-list-note")).toHaveText(
+    /Saved "Renamed at the desk"/,
+  );
+  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
+  const finish = page.getByTestId("setup-finish");
+  await expect(finish).toBeVisible();
+  await expect(finish).toBeEnabled();
+  await page.getByTestId("tour-name-input").evaluate((field) => {
+    const input = /** @type {HTMLInputElement} */ (field);
+    input.value = "Castle walk";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await finish.click();
+  // As long as `finishAndDownload` waits: a Finish rebuilds the zip.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          (key) => /** @type {any} */ (window)[key].downloads.length,
+          TEST_KEY,
+        ),
+      { timeout: 30_000 },
+    )
+    .toBe(1);
+  await expect(page.getByTestId("tour-name-error")).toBeHidden();
+  const zip = await downloadedZip(page, 0);
+  expect(zip.manifest.title).toBe("Castle walk");
+});
+
 test("a desk edit is finished without entering AR, and the hosted code's level is not rewritten (code book plan M4e, §9 D4)", async ({
   page,
 }) => {

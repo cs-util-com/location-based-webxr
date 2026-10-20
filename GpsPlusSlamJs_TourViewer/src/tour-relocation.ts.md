@@ -15,9 +15,14 @@ anywhere. Nothing about the phone's position is stored or sent.
   station stands.
 - `relocationRequested(search): boolean` - true only for `relocate=here`.
 - `relocateStations(stations, target): TourStation[]` - the first station
-  with a geo pose moves to 15 m north of `target`, at the target's altitude;
-  every other geo station keeps its north / east / up offset from that one
-  (heading included). Code-only stations are returned as they are. A
+  moves to 15 m north of `target`, at the target's altitude; every other
+  station keeps its north / east / up offset from that one (heading
+  included). Since version 3 every station has a geo pose, so every one
+  moves. An empty list stays empty. The moved list feeds the station guide
+  only (`visitor-stations.ts`); the content playback
+  (`viewer-placement.ts`) draws the file's stations, so a relocated
+  tour's pins and photos stay where the file puts them. The switch is
+  test-only and the sample tour has no items. A
   target altitude that is not finite (a fix without altitude) keeps the
   stations' own heights.
 - `firstDeviceFix(points): RelocationTarget | null` - the first point of a
@@ -56,7 +61,6 @@ const stations = relocate(manifest.stations, firstFix()); // null until a fix
 ## Tests
 
 `tour-relocation.test.ts` (unit and property: distances kept for any layout
-and target, code-only stations untouched, the fix kept, the same list
-returned); `playwright-tests/sample-tour.spec.js` (the sample tour moved to
+and target, every station moved, an empty tour left empty, the fix kept); `playwright-tests/sample-tour.spec.js` (the sample tour moved to
 the fakes' first fix offers its first station about 15 m away and shows the
 note; without the switch it stays about 230 km away).

@@ -31,6 +31,9 @@ import {
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+
+import { asStored } from "./tour-content.js";
 
 /**
  * What one draft holds.
@@ -138,18 +141,66 @@ export function draftObjectsNotYetHosted(
   // #8): an edit or a move of a hosted object keeps its id, so "the zip has
   // this id" said the edit was already published - the restore dropped it
   // and the spent rule deleted the draft that held it.
-  const hosted = hostedKeys(manifest);
+  const hosted = hostedObjects(manifest);
   return draft.objects.filter(
     (o) =>
-      hosted.get(o.id) !== objectContentKey(o) &&
+      !hosted.holds(o) &&
       !(manifest !== null && superseded(draft, hosted, o.id)),
   );
 }
 
-function hostedKeys(manifest: TourManifest | null): Map<string, string> {
-  return new Map(
-    (manifest?.objects ?? []).map((o) => [o.id, objectContentKey(o)]),
-  );
+/** The hosted file's pins and photos, as a draft and a save compare
+ *  against them. */
+export interface HostedObjects {
+  /** The world view of the file's pins and photos, in station order. */
+  readonly objects: readonly TourObject[];
+  /** The hosted version of `id` as a content key, or undefined. */
+  key(id: string): string | undefined;
+  /**
+   * Whether the file stores `object` as it is: the same content, or the
+   * same once stored in its station. A placement and its saved copy
+   * differ by the micrometres of the round trip through the station's
+   * frame (tour editor plan W3; `tour-content.ts` `asStored`), and must
+   * still compare equal - else a saved placement read as unsaved forever.
+   * An object naming ANOTHER station of the file is never held, however
+   * close it stands: that is a re-assignment. A station the file does not
+   * have is no move (the writer keeps such an object where it is).
+   */
+  holds(object: TourObject): boolean;
+}
+
+/** The hosted file's pins and photos; none without a file. */
+export function hostedObjects(manifest: TourManifest | null): HostedObjects {
+  const objects = manifest === null ? [] : tourObjects(manifest);
+  const byId = new Map(objects.map((o) => [o.id, o]));
+  const keys = new Map(objects.map((o) => [o.id, objectContentKey(o)]));
+  const stations = new Map((manifest?.stations ?? []).map((s) => [s.id, s]));
+  return {
+    objects,
+    key: (id) => keys.get(id),
+    holds(object) {
+      const key = keys.get(object.id);
+      if (key === undefined) return false;
+      if (key === objectContentKey(object)) return true;
+      const home = byId.get(object.id)?.station;
+      // Compared BEFORE the round trip, which writes the hosted station
+      // into the object and would hide a re-assignment (M5a review L2).
+      // Only to a station the file has, as the writer reads it
+      // (`withTourContent`): a station it does not have is no move.
+      if (
+        object.station !== undefined &&
+        object.station !== home &&
+        stations.has(object.station)
+      ) {
+        return false;
+      }
+      const station = home === undefined ? undefined : stations.get(home);
+      return (
+        station !== undefined &&
+        key === objectContentKey(asStored(object, station))
+      );
+    },
+  };
 }
 
 /** A newer edit elsewhere won (M6 E2p): the hosted version is one this
@@ -159,12 +210,12 @@ function hostedKeys(manifest: TourManifest | null): Map<string, string> {
  *  elsewhere": its Finish may simply not be uploaded yet. */
 function superseded(
   draft: AuthoringDraft,
-  hosted: ReadonlyMap<string, string>,
+  hosted: HostedObjects,
   id: string,
 ): boolean {
   const base = draft.bases?.get(id);
   if (base === undefined) return false;
-  const now = hosted.get(id);
+  const now = hosted.key(id);
   if (now === undefined) return base.seen.length > 0;
   return !base.seen.includes(now) && !base.written.includes(now);
 }
@@ -183,11 +234,9 @@ export function draftObjectsSuperseded(
   // a wrong upload or another file answering must not read as "everything
   // deleted elsewhere".
   if (manifest === null) return [];
-  const hosted = hostedKeys(manifest);
+  const hosted = hostedObjects(manifest);
   return draft.objects.filter(
-    (o) =>
-      hosted.get(o.id) !== objectContentKey(o) &&
-      superseded(draft, hosted, o.id),
+    (o) => !hosted.holds(o) && superseded(draft, hosted, o.id),
   );
 }
 
@@ -195,17 +244,19 @@ export function draftObjectsSuperseded(
  * The draft's objects the hosted zip carries with the same content, not
  * yet in their base's `seen` list: they reached the file the world sees,
  * so the page records that - a later delete elsewhere is then not undone
- * by this draft (M6 E2p).
+ * by this draft (M6 E2p). The key to record is the hosted one
+ * (`hostedObjects(manifest).key`), which a stored copy reads back as.
  */
 export function draftObjectsPublished(
   draft: AuthoringDraft,
   manifest: TourManifest | null,
 ): readonly TourObject[] {
-  const hosted = hostedKeys(manifest);
+  const hosted = hostedObjects(manifest);
   return draft.objects.filter((o) => {
-    const key = objectContentKey(o);
+    const key = hosted.key(o.id);
     return (
-      hosted.get(o.id) === key &&
+      key !== undefined &&
+      hosted.holds(o) &&
       !(draft.bases?.get(o.id)?.seen.includes(key) ?? false)
     );
   });
@@ -220,8 +271,8 @@ export function draftDeletionsNotYetHosted(
   draft: AuthoringDraft,
   manifest: TourManifest | null,
 ): readonly string[] {
-  const hosted = new Set((manifest?.objects ?? []).map((o) => o.id));
-  return draft.deleted.filter((id) => hosted.has(id));
+  const hosted = hostedObjects(manifest);
+  return draft.deleted.filter((id) => hosted.key(id) !== undefined);
 }
 
 /**
@@ -441,7 +492,11 @@ export function restoredText(
   const visits = other.visits ?? 0;
   const visitWords = counted(visits, "AR visit", "AR visits");
   if (total === 0 && visits === 0) {
-    return `The code's measured position was restored - Finish is ready without walking to the poster again.`;
+    // Live work on every id outranked the draft: nothing came back, and
+    // no code unless one did.
+    return hasLevel
+      ? `The code's measured position was restored - Finish is ready without walking to the poster again.`
+      : "Nothing was restored - the changes made here are newer than the saved draft.";
   }
   const measured = hasLevel
     ? " The code's measured position came back too, so Finish is ready without walking to the poster again."

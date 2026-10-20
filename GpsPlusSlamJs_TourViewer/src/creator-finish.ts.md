@@ -51,6 +51,10 @@ module's sidecar states them as its contract.
   (polish round M3, Q-Done, through `creator-setup.ts`'s `finishNow`)
   share it. When a finish ends, `deps.renderArEntry` re-renders the AR
   button (it reads "Saving…" / "Close AR" from the finish).
+- `deps.beforeStart` (optional) - runs first in `start()`, before the
+  readiness is read: the page commits what is still in a field (the tour
+  name, whose "change" a tap may not fire; the r880 milestone review
+  LOW-3), so a name that is the only change still has its Finish.
 - `CreatorFinish.readiness()` / `canStart()` - whether a Finish could run
   (the readout's hint), and whether a tap starts one now: ready, no
   measurement in flight, none running. The ONE rule the button's state and
@@ -63,10 +67,39 @@ module's sidecar states them as its contract.
 
 ## Invariants & assumptions
 
-- **The tour's title** (polish round M4a): the name typed in step 3 for
-  the posters (`deps.tourTitle`, trimmed) becomes the manifest's `title`
-  when it says something; otherwise the tour keeps the title it had. The
-  visitor's start page (V4) leads with it.
+- **A named deviation from the root rule "App state lives in the Redux
+  store"** (the r880 milestone review MEDIUM-1): the phone's save status
+  stays in the session object (`TourViewerSession`) beside the slice's
+  own (`save.rebuilds`, `save.error`) - `ctx.finishing` (a Finish
+  runs), `ctx.finishError` (why the last one failed),
+  `ctx.finishProgress` (its progress line) and `ctx.rebuiltZip` (the
+  file it made, a Blob - which stays outside the store either way). Two
+  places say whether a save runs, so a reader must know which one it
+  reads: the undo reads the slice (`canStep`); the object list's lock,
+  the readout, the Finish button and the AR button read `ctx`. Follow-up:
+  the Finish moves onto the tour document's save thunk
+  (`tour-document-save.ts`, the desktop editor's save since it was built;
+  the same follow-up as this file's TEMPORARY boundary entry,
+  `config/.dependency-cruiser.cjs`), which takes the status into the store
+  and leaves only the Blob beside it. Not done with the desktop's, because
+  it would change this page's behaviour: the Finish reads its entries
+  after the photo bake (the thunk, before its first await), ends the
+  document's save only after the AR session's end and the wizard's step
+  (the thunk ends it at the landing, so an undo would be let in earlier),
+  and rebuilds with the code levels, a progress line and a stop check the
+  thunk does not take - each a decision to take, not a refactor
+  (`tour-document-save.ts.md`, "Not here yet"). As the desktop's
+  selection was recorded (`editor/edit-main.ts.md`).
+
+- **The tour's title** (polish round M4a; W2 of the tour editor plan
+  2026-10-17-1816) is the tour document's: step 3's "Tour name" field
+  renames the tour (`renameTour`, `tour-name-field.ts`; checked as the
+  desktop checks it - at most 80 characters, counted as a reader counts
+  them - and trimmed), so the Finish writes it with the document's other
+  changes (`manifestNow` applies the details); an emptied name removes
+  it; a name never typed keeps the title the tour had. A rename alone is
+  work (`hasWork`: `tourChanged`). The visitor's start page (V4) leads
+  with it.
 
 - **Finish** (`finishReadiness`): needs something to write (`hasWork`,
   code book plan M4d: a code the book would write, a changed or deleted
@@ -87,9 +120,9 @@ module's sidecar states them as its contract.
   The size note next to the button says what the rebuild will copy. Entries: each level the code
   book says changed (`creator-codes.ts` `toWrite()`, captured after the
   settle; since M4c-1 - a code the zip already holds unchanged is not
-  written again) at `qrLevelEntryName(id)` and `tour.json` from `ctx.tourManifest` (what the
-  zip already carried, so a re-measure never drops placed content) or an
-  empty manifest, plus each placed photo's bytes under
+  written again) at `qrLevelEntryName(id)` and `tour.json` from the page's tour document
+  (`ctx.tourDocument`, `creator-document.ts`: what the zip already carried,
+  so a re-measure never drops placed content, or an empty manifest), plus each placed photo's bytes under
   `session.manifestWrap` (the session's own prefix, never re-derived).
   The input is the **newest bytes for this tour**: `ctx.rebuiltZip` when a
   previous finish produced one, else `session.readWholeArchive()` (the
@@ -97,9 +130,17 @@ module's sidecar states them as its contract.
   rebuild inflates under the session's own budget (`session.budget`, K0
   milestone review R1) and a deflate bomb fails the Finish with the cap's
   sentence; a previous Finish's zip is this page's own stored output and
-  gets the rebuild's default budget. On success `ctx.rebuiltZip` is set,
-  `ctx.tourManifest` **advances to what was just written** and
-  `ctx.placedObjects` is cleared, the AR session is ended through the
+  gets the rebuild's default budget. The write is the document's:
+  `saveStarted` before the snapshot (an undo waits while it runs),
+  `saved` when the zip is built, `saveEnded` in every outcome. On success
+  `ctx.rebuiltZip` is set, the document's written tour **advances to what
+  was just written** (`saved`),
+  `ctx.walkDecidedFor` is set to the open session when the walk is
+  settled - its spots written, or no photo to place - so the creator's
+  station HUD drops its hedge (PR #642 review); NOT after a declined bake
+  (`notPlaced`), which writes nothing, so the next Finish bakes again
+  (PR #643 review) - and
+  the written work leaves the page's entries (`saved`), the AR session is ended through the
   controller (the framework's session-end path runs the app teardown) and
   the wizard opens step 6, "done" (polish round M2, B9: a completion step
   of its own), and its finish block is revealed - AFTER the `disable()`, so it cannot
@@ -132,7 +173,7 @@ module's sidecar states them as its contract.
   warns that this copy is not signed. A NEW level file of a listed tour
   is written inside the tour's folder (`manifestWrap`), where its list
   can name it (a root `qr/` beside a wrapped list would be unlisted).
-  Afterwards it drops from `placedObjects` only
+  Afterwards the document (`saved`) drops from the page's entries only
   what the zip carries WITH THE SAME CONTENT, and clears the applied
   deletions. The draft's tombstones stay until the hosted zip lacks the
   ids, the same proof the objects wait for.
@@ -156,7 +197,10 @@ module's sidecar states them as its contract.
   **Never without baked spots** (S1 milestone review #2): a recording the
   bake declined or could not read keeps its walk, and the ready line says
   why (`FINISH_LABELS.photosNotPlaced`); the walk is then the only way a
-  viewer can place the photos. The tick is cleared with the Finish step
+  viewer can place the photos - unless the walk places nothing (it names
+  no recorded photo the tour carries, `placesNothing`, passed on as
+  `walkPlacesNothing`): it is then left out like any walk, with no word
+  about photos (the M4b milestone review #3). The tick is cleared with the Finish step
   when the tour closes (review #9).
   The ready line then says so (`FINISH_LABELS.scanLeftOut`), because the
   hosted file may be the creator's only copy of the walk.

@@ -16,7 +16,6 @@ import {
   deleteObject,
   moveObjectTo,
   pinTextEdit,
-  undoDelete,
   upsertPlaced,
 } from "./object-edits.js";
 
@@ -69,14 +68,13 @@ describe("pinTextEdit", () => {
   });
 });
 
-describe("deleteObject and undoDelete", () => {
+describe("deleteObject", () => {
   it("tombstones a hosted object and drops this device's entry for it", () => {
     const placed: Entry[] = [{ object: pin("a", "edited") }];
     const [entry] = authoringObjects([pin("a")], placed, []);
     const out = deleteObject({ placed, deleted: [] }, entry!);
     expect(out.placed).toEqual([]);
     expect(out.deleted).toEqual(["a"]);
-    expect(out.record).toMatchObject({ hosted: true, index: 0 });
   });
 
   it("drops a local object without a tombstone", () => {
@@ -87,7 +85,7 @@ describe("deleteObject and undoDelete", () => {
     expect(out.deleted).toEqual([]);
   });
 
-  it("undo puts it back where it was, with its bytes (property)", () => {
+  it("takes exactly the one entry, keeps the others' order, and tombstones only a hosted object (property)", () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 6 }),
@@ -97,20 +95,15 @@ describe("deleteObject and undoDelete", () => {
         (n, pick, hostedToo, earlier) => {
           const placed: Entry[] = Array.from({ length: n }, (_, i) => ({
             object: i % 2 === 0 ? pin(`o${String(i)}`) : photo(`o${String(i)}`),
-            ...(i % 2 === 0 ? {} : { blob: new Blob([String(i)]) }),
           }));
           const manifest = hostedToo ? placed.map((p) => p.object) : [];
           const entries = authoringObjects(manifest, placed, []);
           const target = entries[pick % entries.length]!;
+          const out = deleteObject({ placed, deleted: [...earlier] }, target);
+          const id = target.object.id;
+          expect(out.placed).toEqual(placed.filter((p) => p.object.id !== id));
           // Deletions made before this one stay as they were (E2a review #12).
-          const before = { placed, deleted: [...earlier] };
-          const gone = deleteObject(before, target);
-          const back = undoDelete(
-            { placed: gone.placed, deleted: gone.deleted },
-            gone.record,
-          );
-          expect(back.placed).toEqual(before.placed);
-          expect(back.deleted).toEqual(before.deleted);
+          expect(out.deleted).toEqual(hostedToo ? [...earlier, id] : earlier);
         },
       ),
     );

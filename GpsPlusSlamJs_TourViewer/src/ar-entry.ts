@@ -49,13 +49,19 @@ import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { debugReadoutLines, visitorFusedHint } from "./qr-debug-readout.js";
 import type { TourViewerSeams } from "./seams.js";
+import { contentStatus } from "./station-content.js";
 import { arStatusLine, type ArStatusInput } from "./tour-flow.js";
 import { scanCardShown } from "./scan-gate.js";
 import { visitorStatus } from "./visitor-status.js";
+import {
+  selectHeadingPending,
+  selectPresentStationId,
+} from "./visitor-guide-slice.js";
 import type { LocationGate } from "./visitor-screen.js";
 import type { RecordingPanel } from "./recording-panel.js";
 import {
   endQrPipeline,
+  isCodeIgnored,
   type ArController,
   type TourViewerHooks,
   type TourViewerSession,
@@ -107,8 +113,8 @@ export function wireArEntry(deps: {
   /** The creator's troubleshooting recording (authoring recording plan
    *  2026-09-28-0953, M1a): asked at each entry whether it records. */
   recording?: Pick<RecordingPanel, "beginOnArEntry">;
-  /** `?mesh=1`: a creator's ring follows a mesh of the surroundings
-   *  (polish round M5, Q-Mesh). */
+  /** A creator's ring follows a mesh of the surroundings (polish round
+   *  M5, Q-Mesh; `main.ts` turns it on unless `?mesh=0`). */
   meshCursor?: boolean;
 }): ArEntry {
   const {
@@ -133,7 +139,7 @@ export function wireArEntry(deps: {
   /** Whether that sampler serves a recorded entry (the readout's line);
    *  the mesh cursor runs it too (polish round M5). */
   let depthRecorded = false;
-  /** The creator's mesh of the surroundings, with `?mesh=1` (M5). */
+  /** The creator's mesh of the surroundings (M5; off with `?mesh=0`). */
   let meshSurface: MeshSurface | null = null;
   /** The device fixes' extent, for the ?debug=1 GPS line (polish round C4). */
   const gpsExtent = createGpsExtentTracker();
@@ -164,8 +170,8 @@ export function wireArEntry(deps: {
   }
 
   /** The depth this entry asks for: a recorded entry's at the recording's
-   *  density (its byte estimate assumes it), else a creator's with
-   *  `?mesh=1` at the mesh's (polish round M5), else none - depth stays
+   *  density (its byte estimate assumes it), else a creator's with the
+   *  mesh cursor at the mesh's (polish round M5), else none - depth stays
    *  off otherwise (QD-5). Either feeds the store's latest depth sample. */
   function entryDepth(): {
     hooks: Pick<ArEnableHooks, "onDepthSample">;
@@ -253,13 +259,21 @@ export function wireArEntry(deps: {
         ignoredCode: ctx.viewerIgnoredText,
         // Read from the last evaluation, never re-evaluated here: this runs
         // per camera frame, past the budget's short-circuit (plan §67 #5).
-        fusedHint: authorMode
-          ? null
-          : visitorFusedHint({
-              last: ctx.viewerLastEvaluation,
-              status: ctx.viewerQrStatus,
-              nowMs: performance.now(),
-            }),
+        // Never an ignored code's: its veto set the votes back to 0, and
+        // "placing the tour" is a promise it cannot keep; another code's
+        // hint still shows (r881 re-review L-F, L1). Ignored is the veto
+        // memory (every vetoed code of the tour, across AR entries), not
+        // the line's latest veto.
+        fusedHint:
+          authorMode ||
+          (ctx.viewerLastEvaluation !== null &&
+            isCodeIgnored(ctx, ctx.viewerLastEvaluation.text))
+            ? null
+            : visitorFusedHint({
+                last: ctx.viewerLastEvaluation,
+                status: ctx.viewerQrStatus,
+                nowMs: performance.now(),
+              }),
       },
       // The onboarding mapping of the tracking-quality report - `null`
       // before the slice reports maps to the `initializing` hint, which is
@@ -271,14 +285,21 @@ export function wireArEntry(deps: {
       planesError: ctx.viewerPlanesError,
       contentError: ctx.contentError,
       gate: ctx.scanGate,
-      content:
-        ctx.contentRendered === null
-          ? { kind: "none" }
-          : {
-              kind: "placed",
-              count: ctx.contentRendered.count,
-              skipped: ctx.contentRendered.skipped.length,
-            },
+      // The tour's items, counted for the stations shown now (visitor plan
+      // 2026-10-18-2349 §3: the present station's, not the tour's).
+      content: contentStatus(ctx.stationContent),
+      // The visitor guide waits for a heading (D34): the store's flag. No
+      // creator guard: the guide never runs for a creator (its placement
+      // needs visitor mode, `stationPlacementAllowed`), and only
+      // `visitorStatus` reads the flag, whose sentence a creator never sees.
+      stationsAwaitHeading: selectHeadingPending(arStore.getState()),
+      // Content drawn per station leaves nothing in view between them.
+      // A present station may draw nothing (only a story or a figure):
+      // the visitor is at a station then, never away.
+      awayFromStations:
+        ctx.stationContent !== null &&
+        !ctx.stationContent.showsAny() &&
+        selectPresentStationId(arStore.getState()) === null,
     };
     // A visitor reads one plain sentence (UI round 1, U1); the technical
     // line stays for the creator and for a visitor's `?debug=1`. The state
@@ -356,7 +377,8 @@ export function wireArEntry(deps: {
       // A recorded entry's sampler (the mesh cursor's is not a recording).
       recordingOn: depthRecorded,
     })
-      // With ?mesh=1, the frame time the owner judges the mesh by (Q-Mesh).
+      // With the mesh running, the frame time the owner judges it by
+      // (Q-Mesh; ?mesh=0 has no line - F13).
       .concat(
         meshSurface === null ? [] : [meshSurfaceLine(meshSurface.stats())],
       )
@@ -462,10 +484,15 @@ export function wireArEntry(deps: {
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
     ctx.scanGate = { kind: "idle" };
-    ctx.contentRendered?.dispose();
-    ctx.contentRendered = null;
+    ctx.stationContent?.dispose();
+    ctx.stationContent = null;
     ctx.contentAttempted = false;
     ctx.contentError = null;
+    // The placement trigger goes first: the guide's teardown below may
+    // still publish (a gate or presence change), and a live trigger would
+    // answer it with a placement attempt into the dying session.
+    ctx.placementUnsubscribe?.();
+    ctx.placementUnsubscribe = null;
     // The story stops with the session; the station progress stays.
     hooks.stopStations();
     dom.escapeButton.hidden = true;
@@ -479,11 +506,10 @@ export function wireArEntry(deps: {
     ctx.placement = { kind: "idle" };
     ctx.viewerPlanesError = null;
     ctx.imagePlanesLoading = false;
-    // The placement trigger is session state: unsubscribe, and let the next
-    // entry attempt again once ITS tracking reports ready (flows plan M4,
-    // review #12 - per-entry re-placement by design).
-    ctx.placementUnsubscribe?.();
-    ctx.placementUnsubscribe = null;
+    // The placement trigger is session state (unsubscribed above, before
+    // the guide's teardown): let the next entry attempt again once ITS
+    // tracking reports ready (flows plan M4, review #12 - per-entry
+    // re-placement by design).
     ctx.placementAttempted = false;
     ctx.joinDeclined = false;
     // Invalidate any join still awaiting: it cannot be cancelled, but every
@@ -648,8 +674,8 @@ export function wireArEntry(deps: {
       // selects the object under it (authoring plan 2026-09-28-0953 M4;
       // taps on the panel are cancelled there, `beforexrselect`).
       if (authorMode) {
-        // With ?mesh=1 the ring follows a mesh of the surroundings where
-        // there is one, the hit-test elsewhere (polish round M5).
+        // The ring follows a mesh of the surroundings where there is one,
+        // the hit-test elsewhere (polish round M5; off with ?mesh=0).
         meshSurface =
           deps.meshCursor === true ? startMeshSurfaceSafely(worldGroup) : null;
         const surface = meshSurface;

@@ -17,8 +17,15 @@ import {
   createTourViewerSession,
   createTourViewerStore,
   createUnwiredHooks,
+  type TourViewerSession,
 } from "./tour-viewer-session.js";
 import type { TourViewerSeams } from "./seams.js";
+import {
+  headingPendingSet,
+  presenceCleared,
+  presenceJudged,
+  selectPresentStationId,
+} from "./visitor-guide-slice.js";
 import { RECORDING_DEPTH } from "./authoring-recording.js";
 import {
   endSession,
@@ -26,6 +33,8 @@ import {
   selectGpsPositions,
   resetGpsSessionData,
   setZeroPos,
+  reportUpdated,
+  type TrackingQualityReport,
 } from "gps-plus-slam-app-framework/state";
 
 /** A stand-in element: the fields `wireArEntry` writes, and click handlers. */
@@ -222,6 +231,35 @@ describe("wireArEntry session end", () => {
     expect(settle).toBeLessThan(order.indexOf(resetGpsSessionData.type));
   });
 
+  // Why this test matters: the station guide's end of session
+  // dispatches into the store (its presence cleared). While the placement
+  // trigger was still subscribed, that dispatch re-entered the placement
+  // and the guide's tick mid-teardown - harmless only because the gate had
+  // been set idle first. The trigger now ends before the guide's teardown,
+  // so no order of the resets can place or re-publish presence.
+  it("ends the placement trigger before the guide's teardown: a dispatch from it places nothing and ticks no station", async () => {
+    const h = harness({ enableOk: true });
+    await h.enter();
+    expect(h.ctx.placementUnsubscribe).not.toBeNull();
+    let attempts = 0;
+    let ticks = 0;
+    h.hooks.tryPlaceTour = () => {
+      attempts += 1;
+    };
+    h.hooks.tickStations = () => {
+      ticks += 1;
+    };
+    h.hooks.stopStations = () => {
+      // A gate that still allows placement, whatever the reset order.
+      h.ctx.scanGate = { kind: "passed", via: "code" };
+      h.arStore.dispatch(presenceCleared());
+    };
+    h.enabledConfig()!.callbacks?.onSessionEnd?.({ requestedByApp: false });
+    expect(attempts).toBe(0);
+    expect(ticks).toBe(0);
+    expect(h.ctx.placementUnsubscribe).toBeNull();
+  });
+
   // Why this test matters (code book plan M6 v5.1): the settle compares the
   // odometry frame's epoch with the one at the visit's start, and decides no
   // automatic code move in a visit whose frame changed (two frames mixed).
@@ -387,7 +425,93 @@ describe("wireArEntry QR readout and visitor hint", () => {
       "Measuring the code: keep moving slowly, still measuring.",
     );
   });
+
+  // Why (r881 re-review L-F, L1): after a veto the voted count is 0, so
+  // the code-measuring hint would show again. For the ignored code it
+  // promised "Code measured - placing the tour.", which it cannot keep;
+  // but a veto must not hide the hint of ANOTHER code (B) the visitor now
+  // measures - the ignored text stays set until a code votes again.
+  it("after a veto hides the ignored code's hint, never another code's", () => {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.viewerQrStatus = "tracking";
+    veto(h.ctx, "a");
+    h.ctx.viewerLastEvaluation = {
+      text: "https://gps.csutil.com/tour/?qr=b",
+      result: { status: "measuring", notStableReason: "fit" } as never,
+      atMs: performance.now(),
+    };
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toContain(
+      "Measuring the code: keep moving slowly, still measuring.",
+    );
+    h.ctx.viewerLastEvaluation = {
+      text: "https://gps.csutil.com/tour/?qr=a",
+      result: { status: "stable" } as never,
+      atMs: performance.now(),
+    };
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).not.toContain("Code measured");
+    expect(h.dom.arStatus.textContent).not.toContain("Measuring the code");
+  });
+
+  // Why: the status line names only the LATEST veto, and forgets it at
+  // each AR entry, while the veto memory keeps every vetoed code for the
+  // tour. Guarding the hint by the line's text let an earlier vetoed code,
+  // or a vetoed code in a later AR entry, promise "placing the tour" again
+  // although its votes are never counted.
+  it("hides the hint of a code vetoed before the latest veto", () => {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.viewerQrStatus = "tracking";
+    veto(h.ctx, "a");
+    veto(h.ctx, "b");
+    h.ctx.viewerLastEvaluation = stableEvaluation("a");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).not.toContain("Code measured");
+  });
+
+  it("hides the hint of a vetoed code in a later AR entry", () => {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.viewerQrStatus = "tracking";
+    veto(h.ctx, "a");
+    // A new AR entry forgets the line's text; the memory stays.
+    h.ctx.viewerIgnoredText = null;
+    h.ctx.viewerLastEvaluation = stableEvaluation("a");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).not.toContain("Code measured");
+    // The control: a code nobody vetoed still promises it.
+    h.ctx.viewerLastEvaluation = stableEvaluation("c");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toContain("Code measured");
+  });
 });
+
+/** The moved-code check's veto of `?qr=<id>`, as the placement records it:
+ *  the memory by level id, and the line's text. */
+function veto(
+  ctx: Pick<
+    TourViewerSession,
+    "levelIdByText" | "ignoredCodes" | "viewerIgnoredText"
+  >,
+  id: string,
+): void {
+  const text = `https://gps.csutil.com/tour/?qr=${id}`;
+  ctx.levelIdByText.set(text, id);
+  ctx.ignoredCodes.set(id, { text, vetoSpreadM: 1 });
+  ctx.viewerIgnoredText = text;
+}
+
+function stableEvaluation(
+  id: string,
+): TourViewerSession["viewerLastEvaluation"] {
+  return {
+    text: `https://gps.csutil.com/tour/?qr=${id}`,
+    result: { status: "stable" } as never,
+    atMs: performance.now(),
+  };
+}
 
 // The creator's troubleshooting recording (authoring recording plan
 // 2026-09-28-0953, M1a, decision D4): a recorded entry carries depth samples
@@ -752,10 +876,10 @@ describe("a creator's one way out of AR (polish round M3, Q-Done)", () => {
   });
 });
 
-describe("the creator's mesh cursor behind ?mesh=1 (polish round M5)", () => {
-  // Why: with the flag the creator's ring follows a mesh of the
+describe("the creator's mesh cursor (polish round M5; main.ts's default unless ?mesh=0)", () => {
+  // Why: with `meshCursor` the creator's ring follows a mesh of the
   // surroundings: depth at the reconstruction density, the mesh under the
-  // world group, its pick preferred by the reticle; without the flag
+  // world group, its pick preferred by the reticle; without it (?mesh=0)
   // nothing changes (depth stays off unless the entry is recorded), and a
   // recorded entry keeps the recording's own density (its byte estimate
   // assumes it).
@@ -785,7 +909,7 @@ describe("the creator's mesh cursor behind ?mesh=1 (polish round M5)", () => {
     expect(h.seams.startMeshSurface).toHaveBeenCalledTimes(1);
   });
 
-  it("changes nothing without the flag", async () => {
+  it("changes nothing with the mesh off (?mesh=0)", async () => {
     const h = harness({ mode: "creator", enableOk: true });
     await h.enter();
     expect(h.seams.startDepthCapture).not.toHaveBeenCalled();
@@ -893,5 +1017,134 @@ describe("a visitor without location starts on codes alone (QR-first M1b-1)", ()
     await h.enter();
     expect(h.enabledConfig()?.location).toBeUndefined();
     expect(h.ctx.codesOnly).toBe(false);
+  });
+});
+
+// Why (D34 of the tour editor plan 2026-10-17-1816): the visitor's line
+// asks for a few steps while the guide waits for a heading, read from the
+// store the guide writes; once the heading exists the placed line is back.
+// Not before tracking reports at all (the coaching's hold steady, N8).
+describe("wireArEntry: the wait for a heading (D34)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function trackingReport(
+    state: TrackingQualityReport["state"],
+  ): TrackingQualityReport {
+    return {
+      state,
+      confidence: 0.3,
+      subScores: {
+        convergence: 1,
+        residualConsensus: 1,
+        gpsAccuracy: 1,
+        coverage: 0.5,
+      },
+      diagnostics: {},
+    } as TrackingQualityReport;
+  }
+
+  function placedVisitor() {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.scanGate = { kind: "passed", via: "code" };
+    // The code that passed the gate lines the tour up with its votes.
+    h.ctx.viewerLockedText = "c";
+    h.ctx.viewerVotedLocks = 3;
+    h.ctx.stationContent = {
+      has: () => true,
+      shown: () => ({ count: 2, skipped: [] }),
+      showsAny: () => true,
+    } as never;
+    return h;
+  }
+
+  // Why: between the stations nothing is drawn, so the line
+  // must not say "Look around."; the page reads that from the side table.
+  it("asks for a station while nothing shown holds content, and is the placed line again at one", () => {
+    const h = placedVisitor();
+    let showsAny = false;
+    h.ctx.stationContent = {
+      has: () => true,
+      shown: () => ({ count: 0, skipped: [] }),
+      showsAny: () => showsAny,
+    } as never;
+    h.ctx.placement = {
+      kind: "placed",
+      placedKind: "ring",
+      count: 0,
+      atStations: 3,
+    };
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("to-station");
+    expect(h.dom.arStatus.textContent).toBe(
+      "Walk to a station to see its content.",
+    );
+    showsAny = true;
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("placed");
+  });
+
+  // Why: a station whose only content is a story or a figure draws nothing
+  // in the side table, so "nothing shown" alone sent a visitor standing at
+  // that station away to walk to one. Away means no content shown AND no
+  // station present.
+  it("does not ask for a station while one is present, even with nothing drawn", () => {
+    const h = placedVisitor();
+    h.ctx.stationContent = {
+      has: () => true,
+      shown: () => ({ count: 0, skipped: [] }),
+      showsAny: () => false,
+    } as never;
+    h.ctx.placement = {
+      kind: "placed",
+      placedKind: "ring",
+      count: 0,
+      atStations: 3,
+    };
+    h.arStore.dispatch(
+      presenceJudged({
+        candidates: [{ id: "a", distanceM: 1, foundM: 5, foundExitM: 9 }],
+        accuracyM: 4,
+        codeLinedUp: false,
+      }),
+    );
+    expect(selectPresentStationId(h.arStore.getState())).toBe("a");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("placed");
+    expect(h.dom.arStatus.textContent).toBe("Tour placed. Look around.");
+    h.arStore.dispatch(presenceCleared());
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("to-station");
+  });
+
+  it("holds the placed line while tracking has not reported yet (initializing)", () => {
+    const h = placedVisitor();
+    h.arStore.dispatch(headingPendingSet(true));
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("placed");
+  });
+
+  it("shows the walk line while the store says the guide waits, and the placed line once it does not", () => {
+    const h = placedVisitor();
+    h.arStore.dispatch(reportUpdated(trackingReport("warming-up")));
+    h.arStore.dispatch(headingPendingSet(true));
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("finding-direction");
+    expect(h.dom.arStatus.textContent).toBe(
+      "Walk a few steps so the guide knows the direction.",
+    );
+    h.arStore.dispatch(headingPendingSet(false));
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("placed");
+  });
+
+  it("never says it to a creator", () => {
+    const h = harness({ arStatus: "running", mode: "creator" });
+    h.ctx.session = {} as never;
+    h.arStore.dispatch(headingPendingSet(true));
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).not.toContain("Walk a few steps");
   });
 });

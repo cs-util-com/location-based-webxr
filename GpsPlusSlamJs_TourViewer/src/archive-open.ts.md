@@ -57,9 +57,10 @@ DOM glue, its own module since the flows plan M6.
     copies (`?nocache=1`, no Cache API); the Storage section then hides.
   - `ArchiveOpen.boot()` - the `?qr=` launch (bare-name payloads resolve
     under the GeoTales raw-GitHub prefix); the caller catches into the
-    error box. The only returned entry point (M6 review #6): the
-    interactive open is the form listener, and both run the module-private
-    `openUrl` - tear down the previous session (which also clears
+    error box. Step 2's interactive open is the form listener, not a
+    returned handle (M6 review #6); beside `boot` the page gets
+    `scanOpen`, `openLink` and `openFile` (below). All of them run the
+    module-private `openTour` (`openUrl` for a link) - tear down the previous session (which also clears
     `levelByText`), open, render stats, stream the gallery, call
     `hooks.tryPlaceTour()` and `hooks.presentTourForPrint(url, origin)` -
     the origin says which form submitted, so an open started in step 4
@@ -70,6 +71,16 @@ DOM glue, its own module since the flows plan M6.
     session is torn down (the visitor's start page, polish round M4a). It resolves an `OpenOutcome` (`opened`,
     `superseded`, or `failed` with the reject cause) and keeps a real
     in-flight flag; a successful open sets `ctx.tourLabel`.
+  - `ArchiveOpen.openLink(url)` / `ArchiveOpen.openFile(file)` - the
+    "You already have a tour?" box on a phone (`have-tour.ts`, tour editor
+    plan 2026-10-17-1816, W1) opens through this same path: `openLink`
+    opens the link, and only once it opened writes it into `linkInput` as
+    the link of record with step 2's "found" line; a link that did not
+    open leaves step 2 alone - never the unverified hand-off to printing,
+    which a bad link pasted into the box used to trigger (PR #637 review)
+    - and the error box keeps the open's own words for the box. `openFile`
+      runs the file open. Both resolve the `OpenOutcome`, so the box can ask its question
+      only once the tour is really open.
   - `ArchiveOpen.scanOpen` - step 4's scan-to-open (`scan-open.ts`)
     over this open path: it writes the link of record, opens with origin
     `measure-step`, and re-renders the creator panel when it settles.
@@ -106,8 +117,9 @@ DOM glue, its own module since the flows plan M6.
   print-size check) is kept for the tour about to open. When a tour closes,
   it stops the visitor's stations (`hooks.stopStations`, tour kit plan
   K4: the story and the HUD; the next tour's stations start a new run),
-  drops the creator's placed objects, their deletions
-  (`deletedObjectIds`, authoring plan 2026-09-28-0953 M4) and previews,
+  closes the tour document (`ctx.tourDocument.close()`: the creator's
+  placed objects, their deletions - authoring plan 2026-09-28-0953 M4 - and
+  their pictures and AR placements) and drops the previews,
   resets the gate (`hooks.resetScanGate`), the seven
   viewer QR/line fields (a lock, its vote count, an unknown or unusable
   code and a failed image placement describe the CLOSING tour - PR #434
@@ -118,12 +130,15 @@ DOM glue, its own module since the flows plan M6.
   code does not keep voting into the next tour's alignment, and every
   code's vote budget starts again, so a reopened tour's gate waits for a
   real vote - M2b review #6) and the placement fields the
-  closing tour owned (`imagePlanes`, `imagePlanesLoading`,
+  closing tour owned (`stationContent`, disposed with every station's
+  parts, `imagePlanes`, `imagePlanesLoading`,
   `planesRunGeneration` bump, `placementAttempted`, `joinDeclined`,
   `placement`) and the QR controller's level cache (the compass wait it
   also ended, r857 review #9, is gone since r863), `levelsUnreadable`,
   and a failed
-  finish (`finishError`, which keeps Save off - scan-to-open plan §9 #8).
+  finish (`finishError`, which keeps Save off - scan-to-open plan §9 #8),
+  and `walkDecidedFor` (a reopened tour hedges its stations again, PR #642
+  review).
   The measured level goes with the tour, and so does its measurement (the
   settle's raw inputs, authoring plan 2026-09-28-0953 M2c) - a closing
   tour's measurement must never be re-minted into the next tour's level:
@@ -206,7 +221,9 @@ stand-ins: the in-progress state on both outcomes, the file named, the
 local hook instead of the print prefill, the content key reaching the
 draft, and a closed picker doing nothing; its "step 2's link check" block
 covers the unverified hand-off on `missing`, none on `cors`, and the
-auto-check on paste and change, once per link. `archive-open.test.ts` drives the real submit handler through
+auto-check on paste and change, once per link; its `openLink` / `openFile`
+block pins the outcome each returns, the link of record `openLink` writes,
+and that a link that did not open (offline, missing) is never handed on. `archive-open.test.ts` drives the real submit handler through
 a failed open: the tour switch clears the fused-pose hint state, the
 failed levels read and the voted-lock count (r857 review #9). Its "the levels' settle reaches the visitor
 screen" block (in `archive-open-file.test.ts`) holds `presentTourLevels`

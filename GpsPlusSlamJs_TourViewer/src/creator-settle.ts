@@ -65,7 +65,8 @@ import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorCodes } from "./creator-codes.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import { moveWithCode, takesAlong } from "./move-with-code.js";
-import { authoringObjects, upsertPlaced } from "./object-edits.js";
+import { moveStationsWithCode } from "./station-code-move.js";
+import type { DocumentChange } from "./creator-document.js";
 import { correctionRefusedLine } from "./qr-author-mode.js";
 import type { TourViewerSeams } from "./seams.js";
 import { buildSummaryModel, codeLabel } from "./summary-model.js";
@@ -91,6 +92,10 @@ import {
   readAlignment,
   type VisitAlignmentPicks,
 } from "./visit-settle.js";
+
+/** The prefix of a station's key among the ids an improved code took
+ *  along (D17): objects are claimed by id, stations by this and theirs. */
+const STATION_CLAIM = "station:";
 
 /** What a visit settled through (`visitSettles`). */
 interface VisitSettleRecord {
@@ -244,7 +249,7 @@ export function wireCreatorSettle(deps: {
   seams: Pick<TourViewerSeams, "getScene">;
   previews: Pick<CreatorPreviews, "inVisit" | "placeEarlier" | "sync">;
   alignmentPicks: Pick<CreatorAlignmentPicks, "sync" | "picks" | "gpsExtent">;
-  draft: Pick<CreatorDraft, "saveMeta" | "recordPlacement" | "recordVisit">;
+  draft: Pick<CreatorDraft, "saveMeta" | "warnNoBackup" | "recordVisit">;
   /** The codes: in hand, its measurement and sightings, every stored
    *  pose, the visit's stored-code sightings. */
   codes: Pick<
@@ -757,7 +762,7 @@ export function wireCreatorSettle(deps: {
     const remint = position?.measurement ?? null;
     const input = {
       visit,
-      placed: ctx.placedObjects,
+      placed: ctx.tourDocument.entries(),
       alignment: visitAlignment,
       zero,
       mintedLevel: level,
@@ -914,11 +919,13 @@ export function wireCreatorSettle(deps: {
       return;
     }
     for (const { index, object } of plan.objects) {
-      const entry = ctx.placedObjects[index];
-      if (entry === undefined) continue;
-      ctx.placedObjects[index] = { ...entry, object };
-      // The record only: a photo's bytes did not change.
-      deps.draft.recordPlacement(object);
+      const entry = input.placed[index];
+      if (entry === undefined || entry.object === object) continue;
+      // Its AR placement is kept: a later settle of this visit recomputes
+      // it from there (a Finish's tap settle, then the visit's end).
+      noteUnlanded(
+        ctx.tourDocument.move(object, `the settle of ${nameOf(object)}`),
+      );
     }
     // Every code's pose BEFORE this settle re-mints any: each earlier
     // object belongs to one code, judged against these (M5 design review
@@ -1216,13 +1223,34 @@ export function wireCreatorSettle(deps: {
     ];
   }
 
+  /** A pose moved with its code; a pin keeps its orientation (it has
+   *  none: `mintPin` writes the identity). */
+  function withCode(
+    object: TourObject,
+    from: QrGeoPose,
+    to: QrGeoPose,
+  ): QrGeoPose {
+    const turned = moveWithCode(object.geo, from, to);
+    return object.kind === "pin"
+      ? { ...object.geo, lat: turned.lat, lon: turned.lon, alt: turned.alt }
+      : turned;
+  }
+
   /**
    * Move the earlier objects within reach of an improved code with it
-   * (`move-with-code.ts`): every object of the tour this visit did not
-   * place - the hosted ones, a restored draft's, an earlier visit's -
-   * within 40 m of the code's OLD position, as an edit by id (the Finish
-   * writes it like any move). A pin keeps its orientation: it has none
-   * (`mintPin` writes the identity).
+   * (`move-with-code.ts`), as edits by id the Finish writes like any move.
+   * Earlier means every object of the tour this visit did not place: the
+   * hosted ones, a restored draft's, an earlier visit's.
+   *
+   * - **A station moves whole** (version 3, tour editor plan D17): every
+   *   station whose ANCHOR the code takes along moves rigidly with it
+   *   (`station-code-move.ts`), in the page's manifest. Its items keep
+   *   their local poses; each becomes an edit at exactly the place its
+   *   moved station now gives it, so the Finish writes its pose verbatim.
+   *   An item this session already moved goes along rigidly instead.
+   * - **An object not yet in a station** (placed on this device, not yet
+   *   written) moves on its own when it is within 40 m of the code's OLD
+   *   position and no nearer another code (`takesAlong`).
    */
   function moveEarlierWithCode(
     visit: number,
@@ -1231,8 +1259,9 @@ export function wireCreatorSettle(deps: {
     afterJson: string,
     /** Every code's pose before the settle re-minted any (M5c). */
     poseBefore: readonly { levelId: string; geo: QrGeoPose | null }[],
-    /** Objects another improved code already took along: skipped, and
-     *  this code's are added (one code per object, M5 design review #7). */
+    /** Objects (by id) and stations (by `station:<id>`) another improved
+     *  code already took along: skipped, and this code's are added (one
+     *  code per object, M5 design review #7). */
     claimed: Set<string>,
     /** Known spots other than the codes' current ones (M6 v5.1): second
      *  prints and the spots automatic moves left. */
@@ -1250,31 +1279,120 @@ export function wireCreatorSettle(deps: {
       ...elsewhere,
     ];
     const moved: { id: string; before: QrGeoPose; after: QrGeoPose }[] = [];
-    for (const entry of authoringObjects(
-      ctx.tourManifest?.objects ?? [],
-      ctx.placedObjects,
-      ctx.deletedObjectIds,
-    )) {
+    // The objects as they stand BEFORE any station moves: where the code's
+    // move starts from, and what the log names as before.
+    const entries = ctx.tourDocument.objects();
+    const take = (entry: (typeof entries)[number], after: QrGeoPose) => {
+      claimed.add(entry.object.id);
+      const object = { ...entry.object, geo: after };
+      noteUnlanded(
+        ctx.tourDocument.move(
+          object,
+          `the move of ${nameOf(object)} with its code`,
+        ),
+      );
+      moved.push({ id: object.id, before: entry.object.geo, after });
+    };
+    const homes = moveStationsAlong(from, to, others, claimed, visit);
+    /** Where the moved stations' frames put their objects now. */
+    const now = new Map(
+      ctx.tourDocument.objects().map((o) => [o.object.id, o.object.geo]),
+    );
+    for (const entry of entries) {
       if (entry.placed?.placement?.visit === visit) continue;
       if (claimed.has(entry.object.id)) continue;
-      const before = entry.object.geo;
-      if (!takesAlong(before, from, others)) continue;
-      claimed.add(entry.object.id);
-      const turned = moveWithCode(before, from, to);
-      const after: QrGeoPose =
-        entry.object.kind === "pin"
-          ? { ...before, lat: turned.lat, lon: turned.lon, alt: turned.alt }
-          : turned;
-      const object = { ...entry.object, geo: after };
-      ctx.placedObjects = upsertPlaced(ctx.placedObjects, {
-        ...(entry.placed ?? {}),
-        object,
-      });
-      deps.draft.recordPlacement(object);
-      moved.push({ id: object.id, before, after });
+      const home = entry.object.station;
+      if (home !== undefined && homes.stations.has(home)) {
+        // Moved with its station's frame (the document's `stationMoved`):
+        // rigidly, its local pose kept - an item this page had moved
+        // already too. Only logged here.
+        const after = now.get(entry.object.id);
+        if (after === undefined) continue;
+        claimed.add(entry.object.id);
+        moved.push({ id: entry.object.id, before: entry.object.geo, after });
+        continue;
+      }
+      if (home !== undefined && homes.known.has(home)) continue;
+      if (!takesAlong(entry.object.geo, from, others)) continue;
+      take(entry, withCode(entry.object, from, to));
     }
     if (moved.length > 0) deps.previews.sync();
     return moved;
+  }
+
+  /**
+   * Move the stations an improved code takes along, in the tour document
+   * (D17, `stationMoved`: each frame moves, its items rigidly with it):
+   * their ids, and the ids of every station the tour has (an object in one
+   * of those is the station's to move, never its own). This visit's own
+   * objects in a moved station stay where they are: their spots came from
+   * this visit's settle, through the improved code already.
+   */
+  function moveStationsAlong(
+    from: QrGeoPose,
+    to: QrGeoPose,
+    others: readonly QrGeoPose[],
+    claimed: Set<string>,
+    visit: number,
+  ): {
+    stations: ReadonlySet<string>;
+    known: ReadonlySet<string>;
+  } {
+    const manifest = ctx.tourDocument.manifest();
+    const known = new Set(manifest?.stations.map((s) => s.id) ?? []);
+    const none = { stations: new Set<string>(), known };
+    if (manifest === null) return none;
+    const result = moveStationsWithCode(manifest.stations, {
+      from,
+      to,
+      others,
+      claimed: new Set(
+        [...claimed].flatMap((key) =>
+          key.startsWith(STATION_CLAIM)
+            ? [key.slice(STATION_CLAIM.length)]
+            : [],
+        ),
+      ),
+    });
+    if (result.moved.length === 0) return none;
+    const movedIds = new Set(result.moved);
+    const stay = ctx.tourDocument
+      .objects()
+      .filter(
+        (o) =>
+          o.placed?.placement?.visit === visit &&
+          o.object.station !== undefined &&
+          movedIds.has(o.object.station),
+      );
+    for (const station of result.stations) {
+      if (!movedIds.has(station.id)) continue;
+      noteUnlanded(
+        ctx.tourDocument.moveStation(
+          station.id,
+          station.geo,
+          `the move of ${station.title === undefined ? "a station" : `"${station.title}"`} with its code`,
+        ),
+      );
+      claimed.add(`${STATION_CLAIM}${station.id}`);
+    }
+    for (const o of stay) {
+      noteUnlanded(
+        ctx.tourDocument.move(o.object, `the settle of ${nameOf(o.object)}`),
+      );
+    }
+    return { stations: movedIds, known };
+  }
+
+  /** How a log of the document names `object`. */
+  function nameOf(object: TourObject): string {
+    return object.kind === "pin" ? `"${object.label}"` : "a photo";
+  }
+
+  /** A change's draft writes, a failure said once (as a placement's). */
+  function noteUnlanded(change: DocumentChange | null): void {
+    void change?.backedUp.then((ok) => {
+      if (!ok) deps.draft.warnNoBackup();
+    });
   }
 
   /** The result screen's line about the codes' positions since the last
@@ -1392,7 +1510,7 @@ export function wireCreatorSettle(deps: {
             deps.codes.references(),
             deps.codes.numbering(),
           ),
-          objects: ctx.tourManifest?.objects ?? [],
+          objects: ctx.tourDocument.objects().map((o) => o.object),
         }),
       );
     } catch {

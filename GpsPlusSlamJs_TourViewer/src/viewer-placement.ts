@@ -9,6 +9,14 @@
  * code scanned before any GPS fix sets the session zero itself (QR-first
  * M1, `zeroFromCode`).
  *
+ * What is placed is DRAWN per station (visitor plan 2026-10-18-2349 M2): the tour's items, the walk's photos (grouped by
+ * `station-captures.ts`) and the ring (with the station nearest its code)
+ * become parts of their station in the side table (`station-content.ts`),
+ * and only the stations the store says are shown - the present one, or all
+ * under "show all" - are decoded and stand in the scene; content no station
+ * holds stands always. `syncContent` follows the store on every dispatch
+ * and camera frame.
+ *
  * A scanned code is also CHECKED after the scan (authoring plan
  * 2026-09-28-0953 §3.6, D20, M5c; `moved-code-check.ts`): on each new device
  * fix in the store. A code read as moved is VETOED - its keep-alive stops,
@@ -38,12 +46,14 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { Texture } from "three";
 
-import type { TourCaptureSpots } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { registerFrameUpdate } from "gps-plus-slam-app-framework/ar/frame-loop";
+import { tourItems } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { bakeCaptureSpots, posesOfCaptureSpots } from "./capture-bake.js";
 import { entriesForVisitor } from "./tour-read-set.js";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type { CaptureWorldPose } from "./capture-geo-join.js";
-import { renderTourObjects } from "./content-placement.js";
+import { renderTourStation } from "./content-placement.js";
+import { type CaptureSpotsInWorld, worldCaptureSpots } from "./tour-content.js";
 import { placeCapturedImagePlanes, placeImagePlanes } from "./image-planes.js";
 import type { ViewerMode } from "./mode.js";
 import {
@@ -69,23 +79,54 @@ import {
 } from "./qr-viewer-mode.js";
 import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { TourViewerSeams } from "./seams.js";
-import { isPlacementReady } from "./tour-flow.js";
+import {
+  codePlacedTour,
+  isPlacementReady,
+  type PlacementState,
+} from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
-import type {
-  ArController,
-  TourViewerHooks,
-  TourViewerSession,
-  TourViewerStore,
+import {
+  isCodeIgnored,
+  type ArController,
+  type TourViewerHooks,
+  type TourViewerSession,
+  type TourViewerStore,
 } from "./tour-viewer-session.js";
 import { startEntryVoteSink } from "./viewer-vote-sink.js";
 import type { ViewingLog } from "./viewing-log.js";
+import {
+  createStationContent,
+  type ContentPart,
+  type RenderedPart,
+  type StationContent,
+} from "./station-content.js";
+import { capturesByStation, nearestStationId } from "./station-captures.js";
+import {
+  selectPresentStationId,
+  selectShowAllContent,
+} from "./visitor-guide-slice.js";
 
 /** The display downscale for capture planes — the framework decoder's
  *  documented OOM mitigation (the recorder defaults to 2 for the same
- *  reason): D4 places ALL captures, and full-res textures for a long walk
- *  are a GPU-memory hazard the owner's decision did not include
- *  (milestone review, finding 4). */
+ *  reason): full-res textures are a GPU-memory hazard (milestone review,
+ *  finding 4). Since M2 only the shown station's photos are decoded, so
+ *  the divisor is a margin, no longer the only bound. */
 const CAPTURE_PLANE_DECODE_DIVISOR = 2;
+
+/**
+ * The side-table id of content no station holds (`station-captures.ts`): a
+ * walk photo beyond every station's radius, the ring around a code beyond
+ * every station's radius. Always shown (the table's `alwaysShown`, in its
+ * own render lane). Never a tour id (tour
+ * ids are path-safe ids without ":").
+ */
+const LOOSE_STATION = "loose:always";
+
+/** What a drawn part logs (`placed`), less what its render reports. */
+type PlacedBase = Omit<
+  Parameters<ViewingLog["placed"]>[0],
+  "count" | "skipped" | "station"
+>;
 
 type Scene = NonNullable<ReturnType<TourViewerSeams["getScene"]>>;
 
@@ -98,8 +139,12 @@ export interface ViewerPlacement {
    *  `recordFix`): with the code keep-alive holding, the fix and its ring
    *  as ONE batch (D18); otherwise the plain `recordGpsEvent`. */
   recordDeviceFix: (fix: RecordGpsEventPayload) => void;
-  /** The ready-triggered placement; cheap enough to run on every dispatch. */
+  /** The ready-triggered placement; cheap enough to run on every dispatch.
+   *  Ends with `syncContent`. */
   tryPlaceTour: () => void;
+  /** Draw the stations the store says are shown (the present one, or all),
+   *  and advance their fades; every camera frame and dispatch. */
+  syncContent: () => void;
   /** The session reached running, or a tour opened into a running
    *  session: derive the scan gate (M5) and arm its escape clock while it
    *  scans. Idle when no session runs. */
@@ -129,9 +174,15 @@ export function createViewerPlacement(deps: {
   viewingLog?: ViewingLog;
   /** The page clock: the QR controller's detection times and the moment a
    *  GPS fix ARRIVES, the one clock the keep-alive's hold runs on (M2b
-   *  review #4). Absent: `Date.now` - the controller's own default and
-   *  what the status line reads the hold with. */
+   *  review #4), and the content's fades. Absent: `Date.now` - the
+   *  controller's own default and what the status line reads the hold with. */
   now?: () => number;
+  /** How a station's item photo is read: through the stations' prefetch
+   *  cache in the page. That cache holds story media
+   *  only, so an item photo is read from the archive again on every return
+   *  until item photos join the prefetch. Absent: the
+   *  open tour's own read. */
+  loadContent?: (path: string) => Promise<Blob>;
 }): ViewerPlacement {
   const {
     ctx,
@@ -246,15 +297,12 @@ export function createViewerPlacement(deps: {
     arStore.dispatch(setZeroPos({ lat: geo.lat, lon: geo.lon }));
   }
 
-  /** Whether a code's votes placed this tour: the gate passed on a voted
-   *  lock of a trusted code (M5). The placement trigger then runs whatever
-   *  the tracking-quality phase reads (§7 #9) - which changes only a scan
-   *  whose one voted lock opened the gate, since every later voted lock
-   *  starts the placement itself (`onVotedLock`). */
-  const codePlacedTour = (): boolean =>
-    ctx.scanGate.kind === "passed" &&
-    ctx.scanGate.via === "code" &&
-    ctx.viewerVotedLocks > 0;
+  /** Whether a code's votes placed this tour (`tour-flow.ts`). The
+   *  placement trigger then runs whatever the tracking-quality phase reads
+   *  (§7 #9) - which changes only a scan whose one voted lock opened the
+   *  gate, since every later voted lock starts the placement itself
+   *  (`onVotedLock`). */
+  const placedByCode = (): boolean => codePlacedTour(ctx);
 
   const ignoredLevelIds = (): ReadonlySet<string> =>
     new Set(ctx.ignoredCodes.keys());
@@ -376,10 +424,7 @@ export function createViewerPlacement(deps: {
     const checks = startMovedCodeChecks();
     /** Whether the moved-code check made the viewer ignore this text's
      *  level (by level id: the memory outlives the per-text caches). */
-    const isIgnored = (text: string): boolean => {
-      const id = ctx.levelIdByText.get(text);
-      return id !== undefined && ctx.ignoredCodes.has(id);
-    };
+    const isIgnored = (text: string): boolean => isCodeIgnored(ctx, text);
     /** The scan gate's part of a lock. */
     const gateOnLock = (level: QrLevel, hasVoted: boolean): void => {
       // The gate passes on the LOCK of a lockable level (M5; plan review
@@ -575,11 +620,12 @@ export function createViewerPlacement(deps: {
    * M2b), and the one store subscription that stops it when the odometry
    * frame changes: a frame change (`qrDetected.frameEpoch`: an odometry
    * restart or loop closure) leaves the kept pose naming a place in the old
-   * frame, so the hold ends there (M2b review #1); the code's next scan
-   * votes afresh in the new one. The subscription ends itself once the
-   * entry's keep-alive is no longer the session's (`endQrPipeline` at AR
-   * exit, or the next entry's pipeline). Its votes are cast per device fix
-   * by {@link recordDeviceFix}.
+   * frame, so the hold ends there (M2b review #1), and so does the code's
+   * trust ({@link endCodeTrust}); the code's next scan votes afresh in the
+   * new one and lines the tour up again. The subscription ends itself once
+   * the entry's keep-alive is no longer the session's (`endQrPipeline` at
+   * AR exit, or the next entry's pipeline). Its votes are cast per device
+   * fix by {@link recordDeviceFix}.
    */
   function startKeepAlive(): QrVoteKeepAlive {
     ctx.viewerKeepAlive?.stop();
@@ -599,9 +645,27 @@ export function createViewerPlacement(deps: {
       if (epoch !== keptFrameEpoch) {
         keptFrameEpoch = epoch;
         keepAlive.stop();
+        endCodeTrust();
       }
     });
     return keepAlive;
+  }
+
+  /**
+   * A code's trust ends on events only: a veto ({@link vetoMovedCode}),
+   * an odometry-frame change (here), an AR exit and a new tour (the
+   * session's resets) - never by the clock, a count of fixes or a distance. After a frame change the votes
+   * name places in the old frame, so nothing may read the tour as lined up
+   * by a code: the stations' trust (`codeLinedUp`, the 1 m takeover
+   * margin), the status line, the placement trigger. Unlike the veto the
+   * code is not ignored and its votes stay; its next voted lock lines the
+   * tour up again.
+   */
+  function endCodeTrust(): void {
+    if (ctx.viewerLockedText === null && ctx.viewerVotedLocks === 0) return;
+    ctx.viewerVotedLocks = 0;
+    ctx.viewerLockedText = null;
+    hooks.renderArStatus();
   }
 
   /**
@@ -658,7 +722,8 @@ export function createViewerPlacement(deps: {
 
   /**
    * The veto (owner decision 2026-10-02; re-judged since polish round C5,
-   * `restoreMovedCode`): the code is ignored; its keep-alive stops; every vote is taken back - the GPS
+   * `restoreMovedCode`): the code is ignored; the keep-alive stops, whichever
+   * code it holds; every vote is taken back - the GPS
    * history reset and the device fixes re-fed with the soft keys off (the
    * M5a arm that lands on the GPS answer), so the content moves ONCE; the
    * gate and the line say the code is ignored; the viewing log records the
@@ -670,19 +735,20 @@ export function createViewerPlacement(deps: {
       text: verdict.text,
       vetoSpreadM: verdict.evidence.spreadM,
     });
-    const keepAlive = ctx.viewerKeepAlive;
-    const hold = keepAlive?.phase(now());
-    if (
-      hold !== undefined &&
-      hold.kind !== "none" &&
-      hold.text === verdict.text
-    ) {
-      keepAlive?.stop();
-    }
+    // Whichever code it holds: every vote is taken back below, and a ring
+    // of another code would go on feeding the GPS history - and the
+    // tracking report read from it - while nothing reads the tour as lined
+    // up by a code. That code's next lock votes again (the budget reset).
+    ctx.viewerKeepAlive?.stop();
     const recovery = ctx.viewerVoteSink?.retractVotes() ?? {
       refedFixes: 0,
       batches: 0,
     };
+    // No vote stands now: nothing reads the tour as lined up by a code -
+    // the stations' trust, the status line, the placement trigger - until
+    // a code votes again (r881 review M1).
+    ctx.viewerVotedLocks = 0;
+    ctx.viewerLockedText = null;
     // Every code's votes are gone, so every code may vote again by lock
     // (M5c review M2): a spent code the keep-alive holds would otherwise
     // cast nothing on its next lock. The vetoed code stays blocked by
@@ -759,6 +825,11 @@ export function createViewerPlacement(deps: {
    * declined. Author mode never places.
    */
   function tryPlaceTour(): void {
+    placeTour();
+    syncContent();
+  }
+
+  function placeTour(): void {
     if (authorMode || ctx.placementUnsubscribe === null) return;
     const current = ctx.session;
     if (current === null) {
@@ -773,7 +844,7 @@ export function createViewerPlacement(deps: {
     if (ctx.imagePlanesLoading) return;
     if (
       !isPlacementReady(selectTrackingQuality(arStore.getState())) &&
-      !codePlacedTour()
+      !placedByCode()
     ) {
       // Only over idle/waiting: a pre-ready lock whose ring failed leaves a
       // decline reason that the next dispatch must not overwrite
@@ -791,7 +862,10 @@ export function createViewerPlacement(deps: {
     // recording. The manifest's settle calls this trigger again.
     if (ctx.tourManifestStatus === "pending") return;
     ctx.placementAttempted = true;
-    if (!current.hasRecording && ctx.tourManifest?.captureSpots === undefined) {
+    if (
+      !current.hasRecording &&
+      ctx.tourDocument.manifest()?.captureSpots === undefined
+    ) {
       // No walk to place; the ring (if the tour has codes) waits for a lock.
       ctx.joinDeclined = true;
       ctx.placement = { kind: "declined", reason: "no recording in this tour" };
@@ -802,7 +876,7 @@ export function createViewerPlacement(deps: {
     // declines falls back to the ring in the same run (r857 review #3).
     // Without it the run's loading latch dropped the ring of the lock that
     // placed the tour, and a glance gets no later lock to retry.
-    const lockedText = codePlacedTour() ? ctx.viewerLockedText : null;
+    const lockedText = placedByCode() ? ctx.viewerLockedText : null;
     void placeTourImagePlanes(lockedText).catch((err: unknown) => {
       ctx.viewerPlanesError = describeOpenError(err, current.archive.url);
       hooks.renderArStatus();
@@ -810,62 +884,153 @@ export function createViewerPlacement(deps: {
     hooks.renderArStatus();
   }
 
+  /** What each drawn part logs, by part (`onMounted`). */
+  const partLogs = new WeakMap<ContentPart, PlacedBase>();
+  /** What the status line learns when a part settles: its render, or null
+   *  when it could not be built (the walk's and the ring's loose parts,
+   *  whose decode the line waits for). */
+  const partSettled = new WeakMap<
+    ContentPart,
+    (rendered: RenderedPart | null) => void
+  >();
+
+  /** A walk or ring part none of whose photos could be decoded: said on
+   *  the photos' channel, so the line does not claim them. */
+  function notePhotosFailed(part: ContentPart, rendered: RenderedPart): void {
+    if (
+      part.kind === "content" ||
+      rendered.count > 0 ||
+      rendered.skipped.length === 0
+    ) {
+      return;
+    }
+    const n = rendered.skipped.length;
+    ctx.viewerPlanesError = `${String(n)} ${n === 1 ? "photo" : "photos"} could not be decoded`;
+  }
+
+  /** This session's side table (`station-content.ts`), created with the
+   *  first part; disposed at the session's end and with its tour. */
+  function stationContentFor(scene: Scene): StationContent {
+    if (ctx.stationContent === null) {
+      ctx.stationContent = createStationContent({
+        scene,
+        now,
+        // Smooth fades on a phone: every rendered frame of the AR session.
+        registerFrame: (fn) => registerFrameUpdate(fn),
+        // Logged per station, each time it is drawn (visitor plan §3).
+        onMounted: (stationId, rendered, part) => {
+          notePhotosFailed(part, rendered);
+          partSettled.get(part)?.(rendered);
+          const base = partLogs.get(part);
+          if (base !== undefined) {
+            deps.viewingLog?.placed({
+              ...base,
+              count: rendered.count,
+              skipped: [...rendered.skipped],
+              ...(stationId === LOOSE_STATION ? {} : { station: stationId }),
+            });
+          }
+          hooks.renderArStatus();
+        },
+        // A part that could not be built (a label or plane constructor
+        // throw) is said on the content's own channel (M5 review #5).
+        // A walk or ring part that could not be built is said on the
+        // photos' channel instead.
+        onFailed: (_stationId, part, error) => {
+          const said = describeOpenError(error, ctx.session?.archive.url);
+          if (part.kind === "content") ctx.contentError = said;
+          else ctx.viewerPlanesError = said;
+          partSettled.get(part)?.(null);
+          hooks.renderArStatus();
+        },
+        // Content no station holds stands whatever the presence says, and
+        // decodes in its own lane: a present station never waits behind it.
+        alwaysShown: (stationId) => stationId === LOOSE_STATION,
+      });
+    }
+    return ctx.stationContent;
+  }
+
+  /** The stations shown now: the present one, or every one under "show
+   *  all" (the store, `visitor-guide-slice.ts`). Content no station holds
+   *  is the table's own (`alwaysShown`). */
+  function shownStationIds(): Set<string> {
+    const state = arStore.getState();
+    const ids = new Set<string>();
+    if (selectShowAllContent(state)) {
+      for (const station of ctx.tourDocument.manifest()?.stations ?? []) {
+        ids.add(station.id);
+      }
+      return ids;
+    }
+    const present = selectPresentStationId(state);
+    if (present !== null) ids.add(present);
+    return ids;
+  }
+
+  /** What the side table was last told, to tell it only changes. */
+  let shownKey: string | null = null;
+  let shownTo: StationContent | null = null;
+
+  function syncContent(): void {
+    const content = ctx.stationContent;
+    if (content === null) return;
+    const ids = shownStationIds();
+    const key = [...ids].join("\n");
+    if (key !== shownKey || content !== shownTo) {
+      shownKey = key;
+      shownTo = content;
+      content.show(ids);
+    }
+    content.update(now());
+  }
+
   /**
-   * The tour's placed content (`tour.json`, M5): rendered once per session
-   * as soon as the gate allows it and the GPS zero exists - its geo → NUE
+   * The tour's placed content (`tour.json`, M5), once per session as soon
+   * as the gate allows it and the GPS zero exists - its geo → NUE
    * conversion needs only the zero, and after a lock with votes the
-   * alignment under it is corrected within a dispatch (plan §2.2).
+   * alignment under it is corrected within a dispatch (plan §2.2). Each
+   * station with items becomes a part of the side table: decoded and drawn
+   * only while its content shows (visitor plan M2).
    */
   function tryPlaceContent(current: TourSession): void {
     if (ctx.contentAttempted || ctx.tourManifestStatus !== "settled") return;
-    const manifest = ctx.tourManifest;
-    if (manifest === null || manifest.objects.length === 0) return;
+    const manifest = ctx.tourDocument.manifest();
+    if (manifest === null || tourItems(manifest).length === 0) return;
     const zero = selectZeroReference(arStore.getState());
     const scene = seams.getScene();
     if (zero === null || scene === null) return;
-    // Latched before the await on purpose (M5 review #5 weighed the
-    // give-back): the only failures below are a label or plane constructor
-    // throw, which is deterministic - giving the attempt back would retry
-    // it on every dispatch at the frame cadence.
     ctx.contentAttempted = true;
-    const generation = ctx.planesRunGeneration;
-    void renderTourObjects(manifest.objects, {
-      scene,
-      zero,
-      makeLabel: (text) => seams.createLabel(text),
-      // Through the session, which knows the folder the manifest sits
-      // under: in a re-zipped (wrapped) archive the bytes are at
-      // `mytour/content/…` while the manifest names `content/…`
-      // (PR #435 review).
-      loadPhotoTexture: async (entryName) =>
-        // Measured before it is decoded (tour kit K4 review R2).
-        decodeFrameTexture(
-          await current.loadContentEntry(entryName),
-          CAPTURE_PLANE_DECODE_DIVISOR,
-          { maxPixels: TOUR_MAX_IMAGE_PIXELS },
-        ),
-    }).then(
-      (rendered) => {
-        // A run the session outlived must not plant into a dead scene.
-        if (generation !== ctx.planesRunGeneration || ctx.session !== current) {
-          rendered.dispose();
-          return;
-        }
-        ctx.contentRendered = rendered;
-        deps.viewingLog?.placed({
-          what: "content",
-          basis: "geo",
-          count: rendered.count,
-          zero,
-          skipped: rendered.skipped,
-        });
-        hooks.renderArStatus();
-      },
-      (err: unknown) => {
-        ctx.contentError = describeOpenError(err, current.archive.url);
-        hooks.renderArStatus();
-      },
-    );
+    const content = stationContentFor(scene);
+    // Through the session, which knows the folder the manifest sits under:
+    // in a re-zipped (wrapped) archive the bytes are at `mytour/content/…`
+    // while the manifest names `content/…` (PR #435 review).
+    const loadContent =
+      deps.loadContent ?? ((path: string) => current.loadContentEntry(path));
+    for (const station of manifest.stations) {
+      if (station.items.length === 0) continue;
+      // One group per station, its pins and photos as children at their
+      // local poses (tour editor plan W3).
+      const part: ContentPart = {
+        kind: "content",
+        render: (parent, alive) =>
+          renderTourStation(station, {
+            scene: parent,
+            zero,
+            alive,
+            makeLabel: (text) => seams.createLabel(text),
+            loadPhotoTexture: async (entryName) =>
+              // Measured before it is decoded (tour kit K4 review R2).
+              decodeFrameTexture(
+                await loadContent(entryName),
+                CAPTURE_PLANE_DECODE_DIVISOR,
+                { maxPixels: TOUR_MAX_IMAGE_PIXELS },
+              ),
+          }),
+      };
+      partLogs.set(part, { what: "content", basis: "geo", zero });
+      content.setPart(station.id, "items", part);
+    }
   }
 
   /** QD-3's payoff, once per session — capture-first (geo-join plan Rev 2):
@@ -946,14 +1111,10 @@ export function createViewerPlacement(deps: {
           0,
         );
         const ringCenter = [centerNue[0], centerNue[1], centerNue[2]] as const;
-        const ringed = await placeDecodedPlanes(current, scene, ringCenter);
-        if (ringed > 0 && lockedText !== null) {
-          deps.viewingLog?.placed({
-            what: "ring",
-            basis: "code",
-            count: ringed,
-            zero,
-            code: { text: lockedText, geo, centerNue: ringCenter },
+        if (lockedText !== null) {
+          placeRing(current, scene, zero, ringCenter, {
+            text: lockedText,
+            geo,
           });
         }
       }
@@ -985,8 +1146,9 @@ export function createViewerPlacement(deps: {
   async function captureSpotsForRun(
     current: TourSession,
     generation: number,
-  ): Promise<TourCaptureSpots | null> {
-    const baked = ctx.tourManifest?.captureSpots;
+  ): Promise<CaptureSpotsInWorld | null> {
+    const manifest = ctx.tourDocument.manifest();
+    const baked = manifest === null ? undefined : worldCaptureSpots(manifest);
     if (baked !== undefined) return baked;
     const bake = await bakeCaptureSpots(current, {
       // Same bail contract as `decodeJoinedPoses` below. `onChunk` alone
@@ -1013,8 +1175,12 @@ export function createViewerPlacement(deps: {
 
   /**
    * The capture-time geo join's viewer glue: the photos' spots (baked or
-   * baked here) → per-capture placement. Returns false whenever the ring
-   * should be placed instead.
+   * baked here) → one walk part per station (baked spots keep their
+   * station, spots joined live get the Finish's rule, `station-captures.ts`),
+   * decoded only while that station shows. Returns false whenever the ring
+   * should be placed instead. The count is the photos placed in the tour; a
+   * photo that will not decode is left out when its station is drawn (the
+   * viewing log's `skipped`).
    */
   async function placeJoinedCapturePlanes(
     current: TourSession,
@@ -1024,99 +1190,177 @@ export function createViewerPlacement(deps: {
   ): Promise<boolean> {
     const spots = await captureSpotsForRun(current, generation);
     if (spots === null) return false;
-    const paired = await decodeJoinedPoses(
-      current,
-      posesOfCaptureSpots(spots),
-      viewerZero,
-      generation,
+    const grouped = capturesByStation(
+      spots.captures,
+      ctx.tourDocument.manifest()?.stations ?? [],
     );
-    // Re-checked AFTER the awaits — same bail contract as the ring path
-    // (M4 milestone review #4) plus the GENERATION token (finding 6): every
-    // loser frees its textures, and a run the session outlived must not
-    // plant planes into a dead scene.
-    if (
-      paired.length === 0 ||
-      generation !== ctx.planesRunGeneration ||
-      ctx.imagePlanes !== null ||
-      ctx.session !== current ||
-      !sessionLive()
-    ) {
-      for (const entry of paired) entry.texture.dispose();
-      if (paired.length === 0 && generation === ctx.planesRunGeneration) {
+    const groups = [
+      ...grouped.byStation,
+      [LOOSE_STATION, grouped.loose] as const,
+    ]
+      .map(([id, captures]) => ({
+        id,
+        poses: posesOfCaptureSpots({ ...spots, captures }),
+      }))
+      .filter((group) => group.poses.length > 0);
+    const total = groups.reduce((sum, group) => sum + group.poses.length, 0);
+    if (total === 0) {
+      if (generation === ctx.planesRunGeneration) {
         ctx.placement = {
           kind: "declined",
           reason: "no readable capture photos",
         };
       }
-      return paired.length === 0 ? false : true;
+      return false;
     }
-    ctx.imagePlanes = placeCapturedImagePlanes({
-      scene,
-      poses: paired,
-      textures: paired.map((entry) => entry.texture),
-    });
+    // Re-checked AFTER the awaits — same bail contract as the ring path
+    // (M4 milestone review #4) plus the GENERATION token (finding 6): a run
+    // the session outlived must not plant planes into a dead scene.
+    if (
+      generation !== ctx.planesRunGeneration ||
+      ctx.imagePlanes !== null ||
+      ctx.session !== current ||
+      !sessionLive()
+    ) {
+      return true;
+    }
+    const content = stationContentFor(scene);
+    const join = {
+      fixes: spots.fixes,
+      gpsAccuracyMedianM: spots.gpsAccuracyMedianM,
+    };
+    const handle = {
+      count: total,
+      dispose: () => {
+        for (const group of groups) content.setPart(group.id, "walk", null);
+      },
+    };
+    ctx.imagePlanes = handle;
+    const owns = (): boolean => ctx.imagePlanes === handle;
+    const looseCount =
+      groups.find((group) => group.id === LOOSE_STATION)?.poses.length ?? 0;
     // HONEST label (finding 5): the replayed state exposes no solve-error
     // metric (meanAlignmentError is model-internal), so the line reports
     // what the numbers actually are — fixes and their median GPS accuracy
     // — never a claimed placement error (the copy lives in tour-flow).
-    ctx.placement = {
+    // The count is what STANDS: the loose photos once
+    // decoded; the ones at their stations are counted where they wait.
+    const placed = (count: number): PlacementState => ({
       kind: "placed",
       placedKind: "capture-spots",
-      count: ctx.imagePlanes.count,
+      count,
+      atStations: total - looseCount,
       fixes: spots.fixes,
       gpsAccuracyMedianM: spots.gpsAccuracyMedianM,
-    };
-    deps.viewingLog?.placed({
-      what: "capture-spots",
-      basis: "geo",
-      count: ctx.imagePlanes.count,
-      zero: viewerZero,
-      join: {
-        fixes: spots.fixes,
-        gpsAccuracyMedianM: spots.gpsAccuracyMedianM,
-      },
     });
+    ctx.placement =
+      looseCount > 0
+        ? {
+            kind: "placing",
+            phase: "loading-photos",
+            done: 0,
+            total: looseCount,
+          }
+        : placed(0);
+    for (const group of groups) {
+      const loose = group.id === LOOSE_STATION;
+      const part = walkPart(
+        current,
+        group.poses,
+        viewerZero,
+        loose ? loadingProgress(owns) : undefined,
+      );
+      partLogs.set(part, {
+        what: "capture-spots",
+        basis: "geo",
+        zero: viewerZero,
+        join,
+      });
+      if (loose) {
+        partSettled.set(part, (rendered) => {
+          if (owns()) ctx.placement = placed(rendered?.count ?? 0);
+        });
+      }
+      content.setPart(group.id, "walk", part);
+    }
     hooks.renderArStatus();
     return true;
   }
 
+  /** The line's "loading photos k/N" while content no station holds
+   *  decodes up front, as long as this run's planes still stand. */
+  function loadingProgress(
+    owns: () => boolean,
+  ): (done: number, total: number) => void {
+    return (done, total) => {
+      if (!owns()) return;
+      ctx.placement = { kind: "placing", phase: "loading-photos", done, total };
+      hooks.renderArStatus();
+    };
+  }
+
+  /** One station's walk photos as a part: decoded when the station is
+   *  drawn, each a plane facing as the camera faced (`image-planes.ts`).
+   *  `onProgress` hears each photo tried (decoded or skipped). */
+  function walkPart(
+    current: TourSession,
+    poses: readonly CaptureWorldPose[],
+    viewerZero: { lat: number; lon: number },
+    onProgress?: (done: number, total: number) => void,
+  ): ContentPart {
+    return {
+      kind: "capture-spots",
+      render: async (parent, alive) => {
+        const { paired, skipped } = await decodeJoinedPoses(
+          current,
+          poses,
+          viewerZero,
+          alive,
+          onProgress,
+        );
+        const textures = paired.map((entry) => entry.texture);
+        const planes = withTexturesFreedOnThrow(textures, () =>
+          placeCapturedImagePlanes({ scene: parent, poses: paired, textures }),
+        );
+        return {
+          count: planes.count,
+          skipped,
+          dispose: () => {
+            planes.dispose();
+          },
+        };
+      },
+    };
+  }
+
   /** Decode each joined capture's photo and express its geo in the VIEWER's
-   *  NUE frame; a broken image just leaves that capture out. The geo
-   *  conversion runs BEFORE the decode so a conversion throw cannot leak an
-   *  already-decoded texture (finding 7), and the decode — the slowest
-   *  phase — reports progress (finding 4's async-UI half). */
+   *  NUE frame; a broken image just leaves that capture out (named in
+   *  `skipped`). The geo conversion runs BEFORE the decode so a conversion
+   *  throw cannot leak an already-decoded texture (finding 7). Stops once
+   *  the station is no longer drawn (`alive`, PR #367 review: decoding
+   *  into a dead scene burned tens of seconds of GPU uploads). */
   async function decodeJoinedPoses(
     current: TourSession,
     poses: readonly CaptureWorldPose[],
     viewerZero: { lat: number; lon: number },
-    generation: number,
-  ): Promise<
-    {
+    alive: () => boolean,
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<{
+    paired: {
       positionNue: readonly [number, number, number];
       rotationNue: readonly [number, number, number, number];
       texture: Texture;
-    }[]
-  > {
+    }[];
+    skipped: string[];
+  }> {
     const paired: {
       positionNue: readonly [number, number, number];
       rotationNue: readonly [number, number, number, number];
       texture: Texture;
     }[] = [];
-    let index = 0;
-    for (const pose of poses) {
-      index += 1;
-      // A bumped token means the session ended or a newer run won: STOP
-      // decoding into a dead scene (PR #367 review — noticing the token
-      // only for the status text kept burning tens of seconds of decode +
-      // GPU uploads the caller would immediately dispose).
-      if (generation !== ctx.planesRunGeneration) break;
-      ctx.placement = {
-        kind: "placing",
-        phase: "loading-photos",
-        done: index,
-        total: poses.length,
-      };
-      hooks.renderArStatus();
+    const skipped: string[] = [];
+    for (const [index, pose] of poses.entries()) {
+      if (!alive()) break;
       try {
         const nue = calcRelativeCoordsInMeters(
           viewerZero,
@@ -1129,7 +1373,10 @@ export function createViewerPlacement(deps: {
           CAPTURE_PLANE_DECODE_DIVISOR,
           { maxPixels: TOUR_MAX_IMAGE_PIXELS },
         );
-        if (texture === null) continue;
+        if (texture === null) {
+          skipped.push(pose.imageFile);
+          continue;
+        }
         paired.push({
           positionNue: [nue[0], nue[1], nue[2]],
           rotationNue: pose.rotationNue,
@@ -1137,74 +1384,150 @@ export function createViewerPlacement(deps: {
         });
       } catch {
         // A broken image (or a degenerate geo) just leaves that capture out.
+        skipped.push(pose.imageFile);
+      } finally {
+        onProgress?.(index + 1, poses.length);
       }
     }
-    return paired;
+    return { paired, skipped };
   }
 
-  /** The ring around a code; resolves how many planes it placed (0: none,
-   *  its textures freed). */
-  async function placeDecodedPlanes(
+  /** Run a plane constructor over decoded textures; if it throws, the
+   *  textures it was handed are freed before the throw goes on (nothing
+   *  else holds them). */
+  function withTexturesFreedOnThrow<T>(
+    textures: readonly Texture[],
+    build: () => T,
+  ): T {
+    try {
+      return build();
+    } catch (error) {
+      for (const texture of textures) texture.dispose();
+      throw error;
+    }
+  }
+
+  /**
+   * The ring around a code (a tour without a usable walk), with the station
+   * nearest the code within the station radius (beyond every one, or with
+   * no station, it stands always): the first three streamed images, decoded
+   * when that station is drawn. One that will not decode leaves a gap (the
+   * viewing log's `skipped`).
+   */
+  function placeRing(
     current: TourSession,
     scene: Scene,
+    zero: { lat: number; lon: number },
     centerNue: readonly [number, number, number],
-  ): Promise<number> {
-    const textures = await decodeTourTextures(current);
-    // Re-checked AFTER the awaits: the tour may have closed, the AR session
-    // may have ended, or a sibling run may have won — every bail path must
-    // FREE its textures, not leak them (M4 milestone review #4).
+    code: { text: string; geo: NonNullable<QrLevel["qr"]["geo"]> },
+  ): void {
+    const images = entriesForVisitor(current.entries, ctx.scanEntries)
+      .filter((candidate) => candidate.isImage)
+      .slice(0, 3);
+    // The tour may have closed, the AR session ended, or a sibling run won.
     if (
-      textures.length === 0 ||
+      images.length === 0 ||
       ctx.imagePlanes !== null ||
       ctx.session !== current ||
       !sessionLive()
     ) {
-      for (const texture of textures) texture.dispose();
-      return 0;
+      return;
     }
-    ctx.imagePlanes = placeImagePlanes({
-      scene,
-      positionsNue: imagePlaneRingNue(centerNue, textures.length),
-      textures,
-      centerNue,
-    });
-    // Confirm the ring (milestone review #2): the async-UI rule wants the
-    // durable end state, and the decline copy alone read as "pending". The
-    // count is the SCENE's (M6 review #7), not the texture list's.
-    ctx.placement = {
-      kind: "placed",
-      placedKind: "ring",
-      count: ctx.imagePlanes.count,
+    const stationId =
+      nearestStationId(ctx.tourDocument.manifest()?.stations ?? [], code.geo) ??
+      LOOSE_STATION;
+    const loose = stationId === LOOSE_STATION;
+    const content = stationContentFor(scene);
+    const handle = {
+      count: images.length,
+      dispose: () => {
+        content.setPart(stationId, "ring", null);
+      },
     };
-    hooks.renderArStatus();
-    return ctx.imagePlanes.count;
-  }
-
-  /** First three streamed images → upright textures; a broken image just
-   *  leaves a gap in the ring. */
-  async function decodeTourTextures(current: TourSession): Promise<Texture[]> {
-    const textures: Texture[] = [];
-    for (const entry of entriesForVisitor(current.entries, ctx.scanEntries)
-      .filter((candidate) => candidate.isImage)
-      .slice(0, 3)) {
-      try {
-        const texture = await decodeFrameTexture(
-          await current.loadEntry(entry.filename),
-          1,
-          { maxPixels: TOUR_MAX_IMAGE_PIXELS },
+    const owns = (): boolean => ctx.imagePlanes === handle;
+    const progress = loose ? loadingProgress(owns) : undefined;
+    const part: ContentPart = {
+      kind: "ring",
+      render: async (parent, alive) => {
+        const textures: Texture[] = [];
+        const skipped: string[] = [];
+        for (const [index, entry] of images.entries()) {
+          if (!alive()) break;
+          try {
+            const texture = await decodeFrameTexture(
+              await current.loadEntry(entry.filename),
+              1,
+              { maxPixels: TOUR_MAX_IMAGE_PIXELS },
+            );
+            if (texture === null) skipped.push(entry.filename);
+            else textures.push(texture);
+          } catch {
+            // A broken image just leaves a gap in the ring.
+            skipped.push(entry.filename);
+          } finally {
+            progress?.(index + 1, images.length);
+          }
+        }
+        const planes = withTexturesFreedOnThrow(textures, () =>
+          placeImagePlanes({
+            scene: parent,
+            positionsNue: imagePlaneRingNue(centerNue, textures.length),
+            textures,
+            centerNue,
+          }),
         );
-        if (texture !== null) textures.push(texture);
-      } catch {
-        // A broken image just leaves a gap in the ring.
-      }
+        return {
+          count: planes.count,
+          skipped,
+          dispose: () => {
+            planes.dispose();
+          },
+        };
+      },
+    };
+    partLogs.set(part, {
+      what: "ring",
+      basis: "code",
+      zero,
+      code: { text: code.text, geo: code.geo, centerNue },
+    });
+    // The durable end state (the async-UI rule): a ring no station holds
+    // says its decode, then the photos that stand once it is drawn; a ring
+    // held by a station is counted there, drawn only while it shows.
+    ctx.imagePlanes = handle;
+    if (loose) {
+      partSettled.set(part, (rendered) => {
+        if (!owns()) return;
+        ctx.placement = {
+          kind: "placed",
+          placedKind: "ring",
+          count: rendered?.count ?? 0,
+          atStations: 0,
+        };
+      });
+      ctx.placement = {
+        kind: "placing",
+        phase: "loading-photos",
+        done: 0,
+        total: images.length,
+      };
+    } else {
+      ctx.placement = {
+        kind: "placed",
+        placedKind: "ring",
+        count: 0,
+        atStations: images.length,
+      };
     }
-    return textures;
+    content.setPart(stationId, "ring", part);
+    hooks.renderArStatus();
   }
 
   return {
     startViewerPipeline,
     recordDeviceFix,
     tryPlaceTour,
+    syncContent,
     startScanGate,
     resetScanGate,
     reconsiderScanGate,

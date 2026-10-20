@@ -17,6 +17,9 @@ export interface FinishGuardInput {
   readonly placedCount: number;
   /** Objects deleted since the last Finish. */
   readonly deletedCount: number;
+  /** The tour's own fields (its name, a station's frame) changed since the
+   *  last Finish. */
+  readonly tourChanged: boolean;
   /** Codes measured or improved that no Finish has written yet (the code
    *  book's `toWrite`, code book plan M4c-1). */
   readonly codeCount: number;
@@ -45,7 +48,12 @@ export function leaveQuestion(input: FinishGuardInput): string {
 }
 
 export function changedSinceFinish(input: FinishGuardInput): boolean {
-  return input.placedCount > 0 || input.deletedCount > 0 || input.codeCount > 0;
+  return (
+    input.placedCount > 0 ||
+    input.deletedCount > 0 ||
+    input.tourChanged ||
+    input.codeCount > 0
+  );
 }
 
 /** Work that has not reached a saved tour file. */

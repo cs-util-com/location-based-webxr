@@ -16,15 +16,25 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
   (Whether the zip has a recording is NOT an input: a decline already says
   the recording path is out - M6 review #1.)
 - `type PlacementState` - what the photo placement did: `idle` ·
-  `placing { phase: "reading-walk" | "loading-photos"; done; total }` ·
-  `placed { placedKind: "capture-spots"; count; fixes; gpsAccuracyMedianM }`
+  `placing { phase: "reading-walk" | "loading-photos"; done; total }`
+  (`loading-photos`: the photos no station holds, decoding up front) ·
+  `placed { placedKind: "capture-spots"; count; atStations?; fixes; gpsAccuracyMedianM }`
+  · `placed { placedKind: "ring"; count; atStations? }` (`count`: the
+  photos standing, decoded and drawn; `atStations`: the photos waiting at
+  their stations, drawn only while one shows; absent: 0. Rendered "N photos
+  at capture spots", "N photos at their stations", "A photos at capture
+  spots and B at their stations", "N photos in a ring around the code[, at
+  its station]")
   · `declined { reason }` (the join's taxonomy reason; the ring is the
   fallback and the reason stays visible while it stands).
 - `interface ArStatusInput` - mode, controller status, camera-frame count,
   the tour, the viewer pipeline's QR inputs (the `viewerStatusLine` shape),
   the `readiness` (the framework's `OnboardingGuidance` for the current
-  tracking-quality report; null in creator mode), the placement, and a
-  placement error string.
+  tracking-quality report; null in creator mode), the placement, a
+  placement error string, `stationsAwaitHeading?` (the visitor guide
+  waits for a heading, D34; read only by `visitorStatus`) and
+  `awayFromStations?` (the tour placed, every piece of its content waiting
+  at a station not shown now; read only by `visitorStatus`).
 - `isPlacementReady(report): boolean` - the placement trigger (flows plan
   M4, DEC-F3): true when `computeOnboardingGuidance(report).phase ===
 "ready"`, i.e. the tracking-quality `ok` state. At the first GPS fix the
@@ -35,6 +45,25 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
   It cannot be 180° wrong: a voted lock's ring carries the code's saved
   heading, unlike a single GPS fix (`viewer-content-alignment.test.ts`
   places the pin to under 1 cm on votes alone).
+- `codeLinedUp(qr): boolean` - a code's votes lined the tour up
+  (`qr.lockedText` set and `qr.votedLocks > 0`; after the escape too, the
+  gate staying "skipped"). Read by the visitor's status line and, through
+  `visitor-stations.ts`, by the station guide, which then trusts the
+  position whatever the raw fixes' accuracy.
+- `codePlacedTour(ctx): boolean` - the gate passed via a code and
+  `ctx.viewerVotedLocks > 0`: the walk's placement trigger runs whatever
+  the tracking phase reads (`viewer-placement.ts`). Since r881 the veto
+  sets the count to 0, so a tour whose votes were all taken back is no
+  longer code-placed (review M1); an odometry-frame change sets it to 0 as
+  well (`endCodeTrust`), until the code's next voted lock.
+- `alignmentReady(report, qr): boolean` - `isPlacementReady(report) ||
+codeLinedUp(qr)`: whether the station guide judges on the aligned frame
+  (its position, the HUD's arrows, the breadcrumbs, the figure). The find
+  re-reads it each tick, and while it is false judges by the fresh device
+  fix instead (r881 review H1; readiness needs a walk with turns and may
+  never come for a visitor standing or walking straight). What needs a
+  heading latches its first `true` per AR entry, as the photos' trigger
+  does, so a degraded dip does not take the arrows away (re-review L-B).
 - `PlacementState` also carries `waiting-ready` (renders the readiness
   hint, or "Waiting for tracking to warm up…" without one) and
   `nothing-to-place` (a tour with neither a recording nor printed codes).
@@ -124,7 +153,8 @@ arStatusLine({
 ## Tests
 
 - `tour-flow.test.ts` - every branch of the line, string-exact, including
-  the e2e-pinned prefix and the no-codes rule's scope.
+  the e2e-pinned prefix and the no-codes rule's scope; the placed wording
+  with photos standing, at their stations, or both.
 - `tour-flow.property.test.ts` - the no-codes rule for every open-tour
   state and its absence with no tour; decline reasons verbatim; no
   non-idle placement renders as silence.
