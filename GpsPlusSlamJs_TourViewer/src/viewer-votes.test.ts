@@ -773,18 +773,13 @@ describe(
           reprojectionErrorPx: null,
         },
         readiness: null,
-        placement: {
-          kind: "placed",
-          placedKind: "capture-spots",
-          count: 3,
-          fixes: 4,
-          gpsAccuracyMedianM: null,
-        },
-        planesError: null,
+        // The tour placed: its content (the walk's recorded photos stood
+        // here once; a visitor no longer sees them).
+        placement: { kind: "idle" },
         contentError: null,
         gate: v.ctx.scanGate,
         codesOnly: v.ctx.codesOnly,
-        content: { kind: "none" },
+        content: { kind: "placed", count: 3, skipped: 0 },
       }).text;
 
     it("ends the line-up: no code lines the tour up, and neither line says it places the tour", () => {

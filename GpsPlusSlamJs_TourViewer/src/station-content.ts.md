@@ -36,13 +36,13 @@ under "show all"); this module never reads the store.
     waited for like the others: the station enters with it, from 0.
   - `show(ids)` - the stations whose content should show.
   - `update(nowMs)` - advance the fades and let ready stations enter.
-  - `has(kind)` / `shown(kind)` - whether any station holds a part of that
-    kind; the count and skipped ids standing for the stations shown now.
+  - `has()` / `shown()` - whether any station holds a part; the count and
+    skipped ids standing for the stations shown now.
   - `showsAny()` - whether a station shown now holds a part: false while
     every part waits at a station not shown (the visitor's "walk to a
     station" line).
   - `dispose()` - everything out and freed; later calls do nothing.
-- `ContentPart { kind: "content" | "capture-spots"; render(parent, alive) }`
+- `ContentPart { render(parent, alive) }`
   and `RenderedPart { count, skipped, dispose }`.
 - `contentStatus(content | null)` - the status line's view of the tour's
   items: `{ kind: "none" }` until a station holds one, then
@@ -95,7 +95,6 @@ under "show all"); this module never reads the store.
 ```ts
 const content = createStationContent({ scene, now: Date.now, registerFrame });
 content.setPart("gate", "items", {
-  kind: "content",
   render: (parent, alive) =>
     renderTourStation(gate, { ...deps, scene: parent, alive }),
 });
@@ -108,8 +107,8 @@ content.update(Date.now());
 - `station-content.test.ts` - mounting only the shown station, the fades,
   textures freed after the fade-out, a late render dropped, one station at
   a time, a return during the fade-out without a re-render, show all, a
-  late part's opacity, replace/remove disposal, one render at a time, counts
-  per kind, `contentStatus`, `onMounted` once, a throwing render; a throwing
+  late part's opacity, replace/remove disposal, one render at a time, the
+  counts for the stations shown, `contentStatus`, `onMounted` once, a throwing render; a throwing
   part tried once over enter/leave/enter, a throwing mount callback, no
   material write once a fade settled, `showsAny`.
 - `station-content.property.test.ts` - over generated sequences of show /

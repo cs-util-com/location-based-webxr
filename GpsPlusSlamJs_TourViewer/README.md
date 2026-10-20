@@ -96,9 +96,9 @@ sentence on it and the GPS-only skip at the bottom after 10 s; it closes
 by itself once the code is read. Once it locks and its votes have
 corrected the placement, the tour's
 `tour.json` content appears (pins as labels, photos as planes at their
-capture spots), and a tour that carries a recording also places its
-photos at the spots they were taken. A tour whose zip carries no measured
-code is placed by GPS at once, and says so.
+capture spots). The frames a recording captured by itself are debug data:
+a visitor never sees them. A tour whose zip carries no measured code is
+placed by GPS at once, and says so.
 
 A sample station tour ships with the app: `/tour/samples/marienplatz-tour.zip`
 (three stations at Marienplatz in Munich, a knight, a choice, an arch).

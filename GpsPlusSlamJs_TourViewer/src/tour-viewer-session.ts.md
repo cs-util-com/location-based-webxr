@@ -95,9 +95,9 @@ lives here.
     `endTourCodeVotes`), `viewerVoteSink` (the entry's vote sink,
     `viewer-vote-sink.ts`: created at every visitor entry's start, which
     clears the solver overrides; forgotten by `endQrPipeline`; turned off
-    by `endTourCodeVotes`), `placement`,
-    `viewerPlanesError`, `imagePlanes`, `placementUnsubscribe`,
-    `placementAttempted`.
+    by `endTourCodeVotes`), `placement` (whether the placement still
+    waits for readiness), `placementUnsubscribe`,
+    `placementAttempted` (the wait ended, for this session and tour).
 - `createTourViewerSession(store?): TourViewerSession` - the initial
   values; `store` holds the tour document in the page's store (the
   `tourDocument` slice the desktop editor uses too; a fresh

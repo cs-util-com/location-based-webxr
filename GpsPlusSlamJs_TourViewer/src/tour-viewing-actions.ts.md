@@ -25,10 +25,11 @@ altitude, accuracyM, odomPosition }` as the fusion received it),
   `alignmentMatrix` (after the votes).
 - `tourPlaced(payload)` - `tourViewing/placed`: `what` (`content` - the
   tour's `tour.json` objects; `capture-spots` - the recording's photos at
-  their capture spots), `basis` (always `geo`: from geo positions through
+  their capture spots, in earlier logs only: nothing writes it since a
+  visitor sees no debug camera capture), `basis` (always `geo`: from geo positions through
   the zero and the alignment at the scene root; kept so earlier logs and
   the tools that read them keep their shape), `count`, `zero`,
-  `alignmentMatrix`, `join` (`fixes`, `gpsAccuracyMedianM`; capture spots)
+  `alignmentMatrix`, `join` (`fixes`, `gpsAccuracyMedianM`; capture spots, earlier logs)
   and `skipped` (what could not render: content ids, or the photos left
   out). `station` names the station whose part was drawn (a placed log per
   station, each time it is drawn; always present, since everything placed

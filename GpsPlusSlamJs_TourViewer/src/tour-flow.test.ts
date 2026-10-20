@@ -36,7 +36,6 @@ const RUNNING_BASE: ArStatusInput = {
   },
   readiness: null,
   placement: { kind: "idle" },
-  planesError: null,
   contentError: null,
   gate: { kind: "idle" },
   content: { kind: "none" },
@@ -147,21 +146,24 @@ describe("the scan gate and the content in the composed line (M5)", () => {
       ...RUNNING_BASE,
       tour: { kind: "open", levelCount: null },
       gate: { kind: "not-required", reason: "levels-unavailable" },
-      placement: { kind: "declined", reason: "no readable capture photos" },
+      // (A declined photo placement stood here, with its segment at the
+      // end; a visitor no longer sees the walk's photos.)
+      placement: { kind: "idle" },
     });
     expect(line).toBe(
-      "Visitor mode — AR running · 3 camera frames · The tour's printed-code file could not be read - placing by GPS. · photos not shown (no readable capture photos)",
+      "Visitor mode — AR running · 3 camera frames · The tour's printed-code file could not be read - placing by GPS.",
     );
   });
 
-  it("a failed content render has its own segment, next to a failed image placement (M5 review #5)", () => {
+  // (The image placement's own failure, "images failed: ...", went with
+  // the walk's recorded photos; the content's failure keeps its segment.)
+  it("a failed content render has its own segment (M5 review #5)", () => {
     const line = arStatusLine({
       ...RUNNING_BASE,
-      planesError: "ring",
       contentError: "labels",
     });
-    expect(line).toContain("images failed: ring");
     expect(line).toContain("placed content failed: labels");
+    expect(line).not.toContain("images failed");
   });
 });
 
@@ -270,36 +272,14 @@ describe("qrSegment - the printed-code line", () => {
   });
 });
 
-describe("placementSegment - what the photo placement did", () => {
-  // Why: the line counts the photos that wait at their stations, with what
-  // their spots rest on, never a claimed placement error; a tour whose
-  // photos cannot be shown says why.
+describe("placementSegment - what the placement says", () => {
+  // Why: once the wait for readiness ended, the placement says nothing; the
+  // content's own segment counts what stands. (The walk's recorded photos'
+  // "N photos at their stations" and "photos not shown" went with them: a
+  // visitor no longer sees a debug camera capture.)
   const cases: [PlacementState, string][] = [
     [{ kind: "idle" }, ""],
-    [
-      {
-        kind: "placed",
-        placedKind: "capture-spots",
-        count: 7,
-        fixes: 4,
-        gpsAccuracyMedianM: 5,
-      },
-      "7 photos at their stations (4 fixes, median GPS ±5.0m)",
-    ],
-    [
-      {
-        kind: "placed",
-        placedKind: "capture-spots",
-        count: 7,
-        fixes: 4,
-        gpsAccuracyMedianM: null,
-      },
-      "7 photos at their stations (4 fixes)",
-    ],
-    [
-      { kind: "declined", reason: "no readable capture photos" },
-      "photos not shown (no readable capture photos)",
-    ],
+    [{ kind: "waiting-ready" }, "Waiting for tracking to warm up…"],
   ];
 
   it.each(cases)("renders %j", (placement, expected) => {
@@ -357,18 +337,9 @@ describe("readiness - the placement trigger and its waiting copy (F3, flows plan
     );
   });
 
-  it("a declined placement stands as written, whatever the tour's codes", () => {
-    // Why: a tour once derived "nothing to place" from a decline on a tour
-    // without codes; the decline is now the one thing the line says.
-    const declined: ArStatusInput = {
-      ...RUNNING_BASE,
-      tour: { kind: "open", levelCount: 0 },
-      placement: { kind: "declined", reason: "no readable capture photos" },
-    };
-    expect(arStatusLine(declined)).toBe(
-      "Visitor mode — AR running · 3 camera frames · photos not shown (no readable capture photos)",
-    );
-  });
+  // (A test of a declined photo placement on a tour without codes stood
+  // here; the placement has no declined state since a visitor no longer
+  // sees the walk's recorded photos.)
 });
 
 describe("clearCacheLabel - the Clear-cache confirmation (F1)", () => {
@@ -383,7 +354,10 @@ describe("clearCacheLabel - the Clear-cache confirmation (F1)", () => {
 });
 
 describe("arStatusLine - composition", () => {
-  it("joins prefix, QR line, placement and the images error with middle dots", () => {
+  // (The placement's segment here was a declined photo placement, and the
+  // images error came after it; both went with the walk's recorded photos,
+  // so the content's segments stand in for them.)
+  it("joins prefix, QR line, content and the content error with middle dots", () => {
     expect(
       arStatusLine({
         ...RUNNING_BASE,
@@ -394,11 +368,11 @@ describe("arStatusLine - composition", () => {
             ArStatusInput["qr"]["status"]
           >,
         },
-        placement: { kind: "declined", reason: "no readable capture photos" },
-        planesError: "That file does not exist.",
+        content: { kind: "placed", count: 2, skipped: 0 },
+        contentError: "That file does not exist.",
       }),
     ).toBe(
-      "Visitor mode — AR running · 3 camera frames · Scanning for the printed code… · photos not shown (no readable capture photos) · images failed: That file does not exist.",
+      "Visitor mode — AR running · 3 camera frames · Scanning for the printed code… · 2 placed objects · placed content failed: That file does not exist.",
     );
   });
 

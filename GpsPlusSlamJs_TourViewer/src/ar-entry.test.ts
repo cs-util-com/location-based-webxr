@@ -1179,13 +1179,9 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
       shown: () => ({ count: 0, skipped: [] }),
       showsAny: () => showsAny,
     } as never;
-    h.ctx.placement = {
-      kind: "placed",
-      placedKind: "capture-spots",
-      count: 3,
-      fixes: 4,
-      gpsAccuracyMedianM: null,
-    };
+    // (The walk's recorded photos were placed here too; a visitor no
+    // longer sees them, and the content in the side table is what places
+    // the tour.)
     h.entry.renderArStatus();
     expect(h.dom.arStatus.dataset["state"]).toBe("to-station");
     expect(h.dom.arStatus.textContent).toBe(
@@ -1207,13 +1203,9 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
       shown: () => ({ count: 0, skipped: [] }),
       showsAny: () => false,
     } as never;
-    h.ctx.placement = {
-      kind: "placed",
-      placedKind: "capture-spots",
-      count: 3,
-      fixes: 4,
-      gpsAccuracyMedianM: null,
-    };
+    // (The walk's recorded photos were placed here too; a visitor no
+    // longer sees them, and the content in the side table is what places
+    // the tour.)
     h.arStore.dispatch(
       presenceJudged({
         candidates: [{ id: "a", distanceM: 1, foundM: 5, foundExitM: 9 }],

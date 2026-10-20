@@ -147,7 +147,6 @@ function loadNotes(input: ArStatusInput): string[] {
     const n = input.content.skipped;
     notes.push(`${String(n)} ${n === 1 ? "item" : "items"} could not load.`);
   }
-  if (input.planesError !== null) notes.push("Some photos could not load.");
   if (input.contentError !== null) {
     notes.push("Some of the tour's content could not load.");
   }
@@ -164,19 +163,8 @@ function gpsOnly(gate: ArStatusInput["gate"]): boolean {
   );
 }
 
-/** The tour has no code that can lock. */
-function noUsableCodes(input: ArStatusInput): boolean {
-  const { tour, gate } = input;
-  return (
-    (tour.kind === "open" && tour.levelCount === 0) ||
-    (gate.kind === "not-required" &&
-      (gate.reason === "no-lockable-level" ||
-        gate.reason === "levels-unavailable"))
-  );
-}
-
 function isPlaced(input: ArStatusInput): boolean {
-  return input.placement.kind === "placed" || input.content.kind === "placed";
+  return input.content.kind === "placed";
 }
 
 /** Placed: through the code, or by GPS - with the one hint that can still
@@ -312,19 +300,6 @@ function placementSentence(input: ArStatusInput): VisitorStatus {
         "Move the phone slowly so it can see the surroundings.",
     };
   }
-  const declined = placement.kind === "declined";
-  // Photos that cannot be shown yet (no GPS zero): with no code to lock
-  // there is nothing to show; after the escape, a code would still give
-  // the zero the photos need.
-  if (declined && noUsableCodes(input)) {
-    return { state: "nothing", text: "This tour has nothing to show here." };
-  }
-  if (declined && gate.kind === "passed" && gate.via === "skipped") {
-    return {
-      state: "needs-code",
-      text: "Nothing to show by GPS alone. Point your phone at the tour's code to show the photos.",
-    };
-  }
   if (qr.ignoredCode != null) {
     return {
       state: "code-moved",
@@ -382,14 +357,12 @@ function runningSentence(input: ArStatusInput): VisitorStatus {
 }
 
 /** The placing line, with the walk request after it while the guide waits
- *  for a heading - except at a dead end: no step makes a tour with nothing
- *  to show, or one that only a code can place, appear. */
+ *  for a heading. */
 function withWalkRequest(
   input: ArStatusInput,
   placing: VisitorStatus,
 ): VisitorStatus {
-  const deadEnd = placing.state === "nothing" || placing.state === "needs-code";
-  return asksForSteps(input) && !deadEnd
+  return asksForSteps(input)
     ? { state: placing.state, text: `${placing.text} ${WALK}` }
     : placing;
 }

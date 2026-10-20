@@ -212,8 +212,6 @@ export function wireArchiveOpen(deps: {
     // and the vote budget remembers which codes voted; the pipeline
     // outlives the switch, so both end with the tour here (M2b; review #6).
     endTourCodeVotes(ctx);
-    ctx.imagePlanes?.dispose();
-    ctx.imagePlanes = null;
     ctx.stationContent?.dispose();
     ctx.stationContent = null;
     ctx.contentAttempted = false;
@@ -244,7 +242,6 @@ export function wireArchiveOpen(deps: {
     ctx.fusedTallies?.clear();
     // The print-size check measured the closing tour's codes (S3a).
     ctx.printSizeCheck?.reset();
-    ctx.viewerPlanesError = null;
     ctx.placement = { kind: "idle" };
     ctx.session = null;
     await closing.close().catch(() => undefined);
@@ -587,7 +584,6 @@ export function wireArchiveOpen(deps: {
           ctx.qrController?.reset();
           ctx.viewerUnknownCode = null;
           ctx.viewerUnusableCode = null;
-          ctx.viewerPlanesError = null;
           hooks.renderArStatus();
         })
         .catch((err: unknown) => {

@@ -307,7 +307,6 @@ export function wireArEntry(deps: {
         ? null
         : computeOnboardingGuidance(selectTrackingQuality(arStore.getState())),
       placement: ctx.placement,
-      planesError: ctx.viewerPlanesError,
       contentError: ctx.contentError,
       gate: ctx.scanGate,
       // The tour's items, counted for the stations shown now (visitor plan
@@ -507,8 +506,6 @@ export function wireArEntry(deps: {
     // The measured level SURVIVES the session end on purpose: finishing
     // ends the session itself (the download is a page-side tap). A new
     // measurement replaces it (mintGeneration).
-    ctx.imagePlanes?.dispose();
-    ctx.imagePlanes = null;
     ctx.reticle?.dispose();
     ctx.reticle = null;
     ctx.latestFrame = null;
@@ -538,7 +535,6 @@ export function wireArEntry(deps: {
     ctx.viewerReprojectionPx = null;
     ctx.viewerLastEvaluation = null;
     ctx.placement = { kind: "idle" };
-    ctx.viewerPlanesError = null;
     // The placement trigger is session state (unsubscribed above, before
     // the guide's teardown): let the next entry attempt again once ITS
     // tracking reports ready (flows plan M4, review #12 - per-entry

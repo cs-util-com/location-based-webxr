@@ -11,8 +11,7 @@ Both creator pages bake when they open a recording (`walkAtOpen` of
 `tour-document-bake.ts`), the tour holding them as `captureSpots` from then
 on, each photo in a station at a local pose (version 3,
 `withWalkPhotos` of `tour-content.ts`); the Finish writes them
-as they are. A visitor places them and never downloads or replays the
-walk; a tour without them shows a visitor no recorded photo.
+as they are. A visitor never sees them: they are debug data.
 
 ## Public API
 
@@ -41,9 +40,6 @@ placesNothing? }`. `placesNothing: true` when the replayed walk names
     the narrowing keeps this branch safe on its own. Absent for a decline before
     the replay (unknown) and for photos the tour carries that the solve
     could not place.
-- `posesOfCaptureSpots(spots: CaptureSpotsInWorld) -> CaptureWorldPose[]`: the spots as the
-  join's poses for the viewer's one placing path (`alt` becomes
-  `altitude`); a spot without a rotation is left out.
 
 ## Invariants & assumptions
 
@@ -95,9 +91,7 @@ nothing, also when the only file left is the photo the recording never
 placed; a walk with no photo taken placing nothing, with GPS that solves
 and with no fix at all; the live
 join's declines (no recording, an old era, a stopped replay); an absent or
-string era declining and keeping the walk (PR #640 review); and the pose
-conversion. The open's use is pinned in `archive-open-file.test.ts`,
+string era declining and keeping the walk (PR #640 review). The open's use is pinned in `archive-open-file.test.ts`,
 `editor/editor-open.test.ts` and `tour-document-bake.test.ts`,
-the Finish writing its result in `creator-finish.test.ts`, the
-viewer's in `playwright-tests/ar-mode.spec.js` (a baked tour without a
-recording) and `replay-abort-wiring.test.ts`.
+the Finish writing its result in `creator-finish.test.ts`, and
+`replay-abort-wiring.test.ts`.

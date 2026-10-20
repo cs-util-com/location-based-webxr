@@ -46,17 +46,15 @@ visitor's `?debug=1`.
   the code the moved-code check ignores, whose veto set its votes back to
   0, but still one for any other code (`ar-entry.ts`; r881 re-review L-F,
   L1) - the gate scanning); then what is
-  happening (tracking warming up, nothing to show, needs the code, a
-  moved code, the code found, placing).
-- **U1 milestone review fixes (2026-10-06):** a tour with no usable code
-  whose photo join declined says "This tour has nothing to show here." (the
-  F3 case; the old line derived it inside `arStatusLine`), and after the
-  GPS escape it asks for the code ("needs-code") instead of "Placing"
-  forever; a passing product code never replaces a placed tour; "Find the
+  happening (tracking warming up, a moved code, the code found,
+  placing).
+- **U1 milestone review fixes (2026-10-06):** a passing product code never replaces a placed tour; "Find the
   poster's code to line it up" only after the escape and only until a code
   lock voted (the gate stays "skipped" after a later lock); the unusable
-  code mentions the GPS escape only while it is offered. (The photos'
-  loading progress is gone: the photos decode per station as it shows.)
+  code mentions the GPS escape only while it is offered. (The two dead
+  ends of a declined photo join - "This tour has nothing to show here."
+  and, after the escape, "Nothing to show by GPS alone" - went with the
+  walk's recorded photos, which a visitor no longer sees.)
 - **The wait for a heading is said** (D34 of the tour editor plan
   2026-10-17-1816; PR review S6, N8): "Walk a few steps so the guide knows
   the direction." is asked while `stationsAwaitHeading` is true (the guide
@@ -67,11 +65,10 @@ visitor's `?debug=1`.
   REPLACES only the bare placed line ("Tour placed. Look around.", state
   `finding-direction`); a GPS placement keeps its reason with the request
   in place of "Look around." (state `placed-gps`), and before placement it
-  follows whatever the line says (a moved code, the photos loading, the
-  coaching), the state unchanged. The code situations come first, without
-  it, and so do the dead ends - "nothing" (nothing to show here) and
-  "needs-code" (nothing by GPS alone) - which no step can change. It goes
-  as soon as the flag clears.
+  follows whatever the line says (a moved code, the coaching), the state
+  unchanged. The code situations come first, without it, and so does the
+  codes-only dead end ("nothing"), which no step can change. It goes as
+  soon as the flag clears.
 - **Away from every station, the line asks for one**:
   content is drawn per station, so with every piece of it waiting at a
   station the visitor is not at (`awayFromStations`) "Look around." points

@@ -1,14 +1,12 @@
 /**
- * The tour's recorded photos, placed per station through the viewer
- * placement with the framework's controller config captured (as
- * `viewer-placement-viewing-log` does), the photo decoder faked.
+ * The viewer placement and a tour's debug camera captures, with the
+ * framework's controller config captured (as `viewer-placement-viewing-log`
+ * does), the photo decoder faked.
  *
- * Why these tests matter: a visitor sees only what the creator's open
- * baked into `tour.json`: each recorded photo at its spot, held by its
- * station and decoded only while that station shows. The status line says
- * how many wait at their stations, never more; a station none of whose
- * photos loads says so; and a tour without baked spots places no photo at
- * all, whatever the zip carries - not its walk, not its images.
+ * Why this test matters: a visitor sees the tour's own content only. The
+ * frames a recording captured by itself are debug data, which a tour.json
+ * may still carry as `captureSpots` (the format keeps them, deprecated);
+ * the viewer must draw none of them and read none of their files.
  */
 import { describe, expect, it, vi } from "vitest";
 import { Scene, Texture } from "three";
@@ -24,7 +22,6 @@ import {
   type RecordGpsEventPayload,
 } from "gps-plus-slam-app-framework/state";
 
-import type * as ImagePlanes from "./image-planes.js";
 import type { TourViewerSeams } from "./seams.js";
 import { stationIdOf, tourOf } from "./test-support/v3-tour.js";
 import type { TourSession } from "./tour-session.js";
@@ -34,22 +31,19 @@ import {
   createUnwiredHooks,
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
-import { presenceJudged, showAllContentSet } from "./visitor-guide-slice.js";
+import { showAllContentSet } from "./visitor-guide-slice.js";
 
 interface Fakes {
   configs: QrTrackingControllerConfig[];
   /** The decoder's answer per photo name; a promise holds it back. */
   decode: (name: string) => unknown;
   names: WeakMap<object, string>;
-  /** Whether the plane constructor throws (a GPU-side failure). */
-  planesThrow: boolean;
 }
 
 const fake = vi.hoisted((): Fakes => ({
   configs: [],
   decode: () => null,
   names: new WeakMap<object, string>(),
-  planesThrow: false,
 }));
 
 vi.mock("gps-plus-slam-app-framework/ar/qr/qr-tracking-controller", () => ({
@@ -64,18 +58,6 @@ vi.mock("gps-plus-slam-app-framework/ar/qr/qr-tracking-controller", () => ({
     };
   },
 }));
-vi.mock("./image-planes.js", async (importOriginal) => {
-  const real = await importOriginal<typeof ImagePlanes>();
-  return {
-    ...real,
-    placeCapturedImagePlanes: (
-      ...args: Parameters<typeof real.placeCapturedImagePlanes>
-    ) => {
-      if (fake.planesThrow) throw new Error("no GPU memory");
-      return real.placeCapturedImagePlanes(...args);
-    },
-  };
-});
 vi.mock(
   "gps-plus-slam-app-framework/visualization/frame-texture-decoder",
   () => ({
@@ -154,14 +136,13 @@ const flush = async (): Promise<void> => {
 function harness(input: {
   /** The tour's objects (each its own station, `st-<id>`). */
   objects?: TourObject[];
-  /** Recorded photos baked into the tour, each held by the station of the
-   *  object it names. */
+  /** Debug camera captures the tour.json carries (`captureSpots`), each
+   *  held by the station of the object it names. */
   baked?: { holder: string }[];
-  /** The zip carries a walk recording and images (never shown). */
+  /** The zip carries a walk recording and its frames. */
   walkInZip?: boolean;
 }) {
   fake.configs.length = 0;
-  fake.planesThrow = false;
   const ctx = createTourViewerSession();
   ctx.levelByText.set(TEXT, level(0, 0));
   const store = createTourViewerStore();
@@ -256,8 +237,14 @@ function harness(input: {
   return { ctx, store, scene, placement, lock, showAll, groups, loaded };
 }
 
-describe("the tour's recorded photos, said as they stand", () => {
-  it("counts baked photos at their stations, and decodes none until a station shows", async () => {
+describe("a visitor never sees a debug camera capture", () => {
+  it("draws no frame of a tour.json that carries capture spots, and reads none", async () => {
+    // Why: the frames a recording captures by itself are debug data, shown
+    // only in the desktop editor's debug layer. They were once drawn for a
+    // visitor as photo planes at their stations, from the `captureSpots` a
+    // creator's open baked into tour.json; a visitor now draws none of
+    // them, reads none of their files, and the line says nothing of them,
+    // whatever the file carries (the zip's walk and images included).
     const decoded: string[] = [];
     fake.decode = (name) => {
       decoded.push(name);
@@ -266,103 +253,20 @@ describe("the tour's recorded photos, said as they stand", () => {
     const h = harness({
       objects: [pin("a", 0, 0), pin("b", 100, 0)],
       baked: [{ holder: "a" }, { holder: "a" }, { holder: "b" }],
+      walkInZip: true,
     });
     await h.lock();
-    expect(h.ctx.placement).toEqual({
-      kind: "placed",
-      placedKind: "capture-spots",
-      count: 3,
-      fixes: 4,
-      gpsAccuracyMedianM: 3,
-    });
-    expect(decoded).toEqual([]);
-    expect(h.ctx.stationContent?.showsAny()).toBe(false);
-    // Every station shown: each photo in its own station's group.
+    // The session's placement trigger, as the AR entry subscribes it.
+    h.ctx.placementUnsubscribe = () => undefined;
+    h.placement.tryPlaceTour();
     await h.showAll();
-    expect(decoded.sort()).toEqual([
-      "images/frame-0.png",
-      "images/frame-1.png",
-      "images/frame-2.png",
-    ]);
+    expect(h.ctx.placement).toEqual({ kind: "idle" });
+    expect(decoded).toEqual([]);
+    expect(h.loaded).toEqual([]);
+    // The pins stand at their stations: the tour's own content still shows.
     expect(h.groups().sort()).toEqual([
       "station-content:st-a",
       "station-content:st-b",
     ]);
-  });
-
-  it("places no photo for a tour without baked spots, whatever its zip carries", async () => {
-    // Why: the walk and the zip's images were once shown to a visitor (a
-    // live replay of the walk, or a ring of images around the code); a
-    // visitor now sees only what the creator's open baked into the tour.
-    fake.decode = () => new Texture();
-    const h = harness({ objects: [pin("a", 0, 0)], walkInZip: true });
-    await h.lock();
-    await h.showAll();
-    expect(h.ctx.placement).toEqual({ kind: "idle" });
-    expect(h.ctx.imagePlanes).toBeNull();
-    expect(h.loaded).toEqual([]);
-    expect(h.ctx.viewerPlanesError).toBeNull();
-  });
-
-  it("a station none of whose photos loads says so", async () => {
-    fake.decode = () => null;
-    const h = harness({
-      objects: [pin("a", 0, 0)],
-      baked: [{ holder: "a" }, { holder: "a" }],
-    });
-    await h.lock();
-    await h.showAll();
-    expect(h.ctx.viewerPlanesError).toBe("2 photos could not be decoded");
-  });
-
-  // Why: a station whose planes cannot be built must not leak the photos
-  // it decoded, and must say so.
-  it("a station whose planes cannot be built frees its decoded photos and says so", async () => {
-    const textures: Texture[] = [];
-    const disposed = new Set<Texture>();
-    fake.decode = () => {
-      const texture = new Texture();
-      textures.push(texture);
-      texture.addEventListener("dispose", () => disposed.add(texture));
-      return texture;
-    };
-    const h = harness({
-      objects: [pin("a", 0, 0)],
-      baked: [{ holder: "a" }, { holder: "a" }],
-    });
-    fake.planesThrow = true;
-    await h.lock();
-    await h.showAll();
-    expect(textures).toHaveLength(2);
-    expect(disposed.size).toBe(2);
-    expect(h.ctx.viewerPlanesError).not.toBeNull();
-  });
-
-  it("a station whose photos all fail says so only until a later station's photos stand", async () => {
-    // Why: the walk's parts mount per station visit, and a part none of
-    // whose photos decodes says so on the photos' channel. Nothing cleared
-    // it within a session, so one bad station left "could not be decoded"
-    // on the line at every station after it, whose photos stood fine.
-    fake.decode = (name) =>
-      name === "images/frame-0.png" ? null : new Texture();
-    const h = harness({
-      objects: [pin("s1", 0, 0), pin("s2", 100, 0)],
-      baked: [{ holder: "s1" }, { holder: "s2" }],
-    });
-    await h.lock();
-    // The visitor at the first station: its photo fails.
-    h.store.dispatch(
-      presenceJudged({
-        candidates: [{ id: "st-s1", distanceM: 0, foundM: 25, foundExitM: 30 }],
-        accuracyM: null,
-        codeLinedUp: true,
-      }),
-    );
-    h.placement.syncContent();
-    await flush();
-    expect(h.ctx.viewerPlanesError).not.toBeNull();
-    // The second station shows too, and its photo stands.
-    await h.showAll();
-    expect(h.ctx.viewerPlanesError).toBeNull();
   });
 });

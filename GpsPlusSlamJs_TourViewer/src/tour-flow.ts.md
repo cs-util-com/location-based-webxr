@@ -20,17 +20,16 @@ unfinished?: { contact } }`.
   when the tour names one), no scan, gate or placement segment.
   (Whether the zip has a recording is NOT an input: a visitor never sees
   a walk.)
-- `type PlacementState` - what the photo placement did: `idle` ·
-  `placed { placedKind: "capture-spots"; count; fixes; gpsAccuracyMedianM }`
-  (`count`: the baked photos waiting at their stations, each drawn only
-  while its station shows; rendered "N photos at their stations (F fixes[,
-  median GPS ±A m])") · `declined { reason }` (rendered "photos not shown
-  (reason)").
+- `type PlacementState` - whether the placement still waits for the
+  tracking: `idle` · `waiting-ready` (renders the readiness hint, or
+  "Waiting for tracking to warm up…" without one). A visitor never sees a
+  debug camera capture, so no state names photos (the `placed` and
+  `declined` states, of the walk's recorded photos, are gone).
 - `interface ArStatusInput` - mode, controller status, camera-frame count,
   the tour, the viewer pipeline's QR inputs (the `viewerStatusLine` shape),
   the `readiness` (the framework's `OnboardingGuidance` for the current
-  tracking-quality report; null in creator mode), the placement, a
-  placement error string, `stationsAwaitHeading?` (the visitor guide
+  tracking-quality report; null in creator mode), the placement, the
+  content error string, `stationsAwaitHeading?` (the visitor guide
   waits for a heading, D34; read only by `visitorStatus`) and
   `awayFromStations?` (the tour placed, every piece of its content waiting
   at a station not shown now; read only by `visitorStatus`).
@@ -50,8 +49,8 @@ unfinished?: { contact } }`.
   `visitor-stations.ts`, by the station guide, which then trusts the
   position whatever the raw fixes' accuracy.
 - `codePlacedTour(ctx): boolean` - the gate passed via a code and
-  `ctx.viewerVotedLocks > 0`: the walk's placement trigger runs whatever
-  the tracking phase reads (`viewer-placement.ts`). Since r881 the veto
+  `ctx.viewerVotedLocks > 0`: the placement trigger ends the wait for
+  readiness whatever the tracking phase reads (`viewer-placement.ts`). Since r881 the veto
   sets the count to 0, so a tour whose votes were all taken back is no
   longer code-placed (review M1); an odometry-frame change sets it to 0 as
   well (`endCodeTrust`), until the code's next voted lock.
@@ -61,10 +60,8 @@ codeLinedUp(qr)`: whether the station guide judges on the aligned frame
   re-reads it each tick, and while it is false judges by the fresh device
   fix instead (r881 review H1; readiness needs a walk with turns and may
   never come for a visitor standing or walking straight). What needs a
-  heading latches its first `true` per AR entry, as the photos' trigger
-  does, so a degraded dip does not take the arrows away (re-review L-B).
-- `PlacementState` also carries `waiting-ready` (renders the readiness
-  hint, or "Waiting for tracking to warm up…" without one).
+  heading latches its first `true` per AR entry, as the placement
+  trigger does, so a degraded dip does not take the arrows away (re-review L-B).
 - `contentSegment(content)` - "N placed objects (K could not load)" once
   the tour's `tour.json` content is rendered (M5).
 - The composed line carries the scan gate's segment (`gateSegment`, from
@@ -103,8 +100,6 @@ frames"` is asserted literally by `playwright-tests/ar-mode.spec.js`.
   runs from session start so a tour opened later still resolves.
 - Segments are joined with `" · "`; empty segments are dropped, so the line
   never carries a dangling separator.
-- The placement strings are the geo-join results doc's wording; the e2e
-  specs match them by regex (`photos at their stations (4 fixes`).
 - Pure: no DOM, no store; `ar-entry.ts` builds the input from the session
   object and writes the result into `#ar-status`.
 
@@ -125,10 +120,12 @@ arStatusLine({
     reprojectionErrorPx: null,
   },
   readiness: null,
-  placement: { kind: "declined", reason: "no readable capture photos" },
-  planesError: null,
+  placement: { kind: "idle" },
+  contentError: null,
+  gate: { kind: "idle" },
+  content: { kind: "placed", count: 2, skipped: 0 },
 });
-// "Visitor mode — AR running · 3 camera frames · This tour has no printed codes. · photos not shown (no readable capture photos)"
+// "Visitor mode — AR running · 3 camera frames · This tour has no printed codes. · 2 placed objects"
 ```
 
 - `ArStatusInput.qr.fusedHint` carries the visitor hint through to
@@ -143,12 +140,10 @@ arStatusLine({
 
 - `tour-flow.test.ts` - every branch of the line, string-exact, including
   the e2e-pinned prefix, an unfinished tour's line (the prefix and its
-  sentence alone) and the no-codes rule's scope; the placed wording
-  (photos at their stations, with and without a GPS median) and the
-  declined wording.
+  sentence alone) and the no-codes rule's scope; the waiting wording.
 - `tour-flow.property.test.ts` - the no-codes rule for every open-tour
-  state and its absence with no tour; decline reasons verbatim; no
-  non-idle placement renders as silence.
+  state and its absence with no tour; no non-idle placement renders as
+  silence.
 
 ## UI round 1 (2026-10-06)
 

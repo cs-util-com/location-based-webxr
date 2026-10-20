@@ -16,8 +16,7 @@ plus a small wiring that writes the page and loads the photo from the zip.
   - `title`: the manifest's `title`, trimmed; `"An AR tour"` when it has
     none, an empty one, or no manifest.
   - `subline`: `"N places to discover"` (`"1 place …"`): the tour's
-    stations (the pins, photos and recorded photos they hold are not
-    places of their own; since version 3 every one of them is in a
+    stations (the pins and photos they hold are not places of their own; since version 3 every one of them is in a
     station). `"This tour is not finished yet."`
     for a tour that is not (`tour-unfinished.ts`: no `tour.json`, or no
     station): the printed code may point at the hosted file before its
@@ -26,8 +25,9 @@ plus a small wiring that writes the page and loads the photo from the zip.
     plan 2026-10-17-1816), trimmed; `null` for none.
   - `coverPath`: the cover the creator chose (`cover`, W2; its entry by
     the framework's `tourCoverEntry`), else the first placed photo's
-    `image` (in station order, `tourItems`), else the first capture spot's `image` (a tour made
-    from a recording), else `null`.
+    `image` (in station order, `tourItems`), else `null`. Never a debug
+    camera capture (a `tour.json`'s deprecated `captureSpots`): a visitor
+    never sees one.
   - `pageTitle`: the tab's title, which a shared link's title shows too:
     the tour's name, else "Tour Viewer".
 - `wireVisitorStart({ dom, createObjectUrl, revokeObjectUrl, checkPicture }): VisitorStart`
@@ -46,11 +46,11 @@ plus a small wiring that writes the page and loads the photo from the zip.
 ## Invariants & assumptions
 
 - **Only the tour's own images can be the cover:** the path always comes
-  from a photo object, an image asset the tour names as its cover, or a
-  capture spot, never from anything else the zip holds (a property test
-  over pins, photos, capture spots and chosen covers - a photo, a pin, an
-  unknown id - pins the choice: the chosen photo, else the first own photo,
-  placed photos first).
+  from a photo object or an image asset the tour names as its cover, never
+  from anything else the zip holds, its debug camera captures included (a
+  property test over pins, photos, capture spots and chosen covers - a
+  photo, a pin, an unknown id - pins the choice: the chosen photo, else the
+  first placed photo).
 - **Open-graph previews are not covered:** a crawler reads the static
   `<title>` of `index.html` and runs no script, so a shared link's
   preview card still says "Tour Viewer"; the tab's title (and a link
@@ -85,8 +85,8 @@ hooks.presentTourInfo = (tour) =>
 ## Tests
 
 - `visitor-start.test.ts` - the view (name, fallback, the unfinished
-  sentence for no `tour.json` and for no station, counts including
-  stations and capture spots, cover choice and the chosen cover, the
+  sentence for no `tour.json` and for no station, counts of stations, cover
+  choice and the chosen cover, no cover from a debug camera capture, the
   description, the page title, a property test that the cover is always a
   photo's own image) and the wiring (description, page title, cover shown after load,
   rejected by the picture check, a newer tour's cover kept over an older

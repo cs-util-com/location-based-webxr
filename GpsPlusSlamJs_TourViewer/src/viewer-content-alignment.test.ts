@@ -633,8 +633,6 @@ describe("after a code-set zero the content shows on the first voted lock (no co
       s.ctx.stationContent?.dispose();
       s.ctx.stationContent = null;
       s.ctx.contentAttempted = false;
-      s.ctx.imagePlanes?.dispose();
-      s.ctx.imagePlanes = null;
       s.ctx.scanGate = { kind: "idle" };
       s.ctx.viewerVotedLocks = 0;
       s.ctx.viewerLockedText = null;
@@ -654,8 +652,6 @@ describe("after a code-set zero the content shows on the first voted lock (no co
       s.ctx.levelByText.clear();
       s.ctx.levelIdByText.clear();
       endTourCodeVotes(s.ctx);
-      s.ctx.imagePlanes?.dispose();
-      s.ctx.imagePlanes = null;
       s.ctx.stationContent?.dispose();
       s.ctx.stationContent = null;
       s.ctx.contentAttempted = false;

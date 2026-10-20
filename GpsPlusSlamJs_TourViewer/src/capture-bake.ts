@@ -3,15 +3,14 @@
  * page opens a recording, replay it ONCE, place each recorded photo
  * through the first settled alignment after it was taken
  * (`createCapturePickTracker`), and return the spots `tour.json` carries
- * as `captureSpots`. A visitor then places those and never downloads or
- * replays the walk. The spots come back in the world (geo poses); the
- * open puts them into stations (`walkAtOpen`, `withWalkPhotos` of
+ * as `captureSpots`. A visitor never sees them (debug data). The spots
+ * come back in the world (geo poses); the open puts them into stations (`walkAtOpen`, `withWalkPhotos` of
  * `tour-content.ts`, tour editor plan W3).
  *
  * Every decline is the join's own (`preflightCaptureJoin`,
  * `assessReplayedJoin`), plus two more: no photo file left to show, and no
- * recorded photo that could be placed. A declined bake writes nothing, and
- * a visitor then sees no recorded photo. A walk that names no photo the
+ * recorded photo that could be placed. A declined bake writes nothing. A
+ * walk that names no photo the
  * tour carries places nothing at all: its decline
  * says so (`placesNothing`): there are then no photos to speak of, and no
  * note says they could not be placed.
@@ -26,7 +25,6 @@ import {
   CAPTURE_ACTION,
   computeCaptureGeoJoin,
   createCapturePickTracker,
-  type CaptureWorldPose,
   NEWEST_KNOWN_ODOM_COORD_VERSION,
   preflightCaptureJoin,
   type PickTrackerState,
@@ -168,23 +166,4 @@ export async function bakeCaptureSpots(
       captures,
     },
   };
-}
-
-/** The baked spots as the join's poses, for the viewer's one placing path.
- *  A spot without a rotation is left out; the bake and a tour's own spots
- *  (`worldCaptureSpots`, minted poses) never yield one. */
-export function posesOfCaptureSpots(
-  spots: CaptureSpotsInWorld,
-): CaptureWorldPose[] {
-  return spots.captures.flatMap(({ image, geo }) =>
-    geo.rotation === undefined
-      ? []
-      : [
-          {
-            imageFile: image,
-            geo: { lat: geo.lat, lon: geo.lon, altitude: geo.alt },
-            rotationNue: geo.rotation,
-          },
-        ],
-  );
 }

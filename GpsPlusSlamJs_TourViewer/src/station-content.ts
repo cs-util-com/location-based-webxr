@@ -4,9 +4,8 @@
  * The store says WHICH (the present station, or every one under "show
  * all", `visitor-guide-slice.ts`); this module never reads the store.
  *
- * - **Parts.** A station holds named parts (its `tour.json` items, its
- *   recorded photos), each a recipe that decodes and places
- *   its objects under the station's group. Nothing is decoded until the
+ * - **Parts.** A station holds named parts (its `tour.json` items), each a
+ *   recipe that decodes and places its objects under the station's group. Nothing is decoded until the
  *   station is shown.
  * - **Shown.** A shown station renders its parts into a detached group;
  *   once every part settled, the group enters the scene at opacity 0 and
@@ -57,9 +56,6 @@ export interface RenderedPart {
 
 /** One station's part: a recipe run each time the station is shown. */
 export interface ContentPart {
-  /** What it places: the tour's own items, or its recorded photos.
-   *  Counts are kept per kind. */
-  readonly kind: "content" | "capture-spots";
   /** Decode and place under `parent` (the station's group). `alive()` turns
    *  false once the result would be dropped: a long decode may stop early. */
   render(parent: Object3D, alive: () => boolean): Promise<RenderedPart>;
@@ -95,13 +91,13 @@ export interface StationContent {
   show(stationIds: ReadonlySet<string>): void;
   /** Advance the fades and let ready stations enter, at `nowMs`. */
   update(nowMs: number): void;
-  /** Whether any station holds a part of this kind. */
-  has(kind: ContentPart["kind"]): boolean;
+  /** Whether any station holds a part. */
+  has(): boolean;
   /** Whether anything shown now (a shown station) holds a part: false
    *  while every part waits at a station not shown. */
   showsAny(): boolean;
-  /** What stands, of this kind, for the stations shown now. */
-  shown(kind: ContentPart["kind"]): { count: number; skipped: string[] };
+  /** What stands for the stations shown now. */
+  shown(): { count: number; skipped: string[] };
   /** Take everything out and free it; later calls do nothing. */
   dispose(): void;
 }
@@ -121,8 +117,8 @@ export function contentStatus(
       readonly count: number;
       readonly skipped: number;
     } {
-  if (content === null || !content.has("content")) return { kind: "none" };
-  const shown = content.shown("content");
+  if (content === null || !content.has()) return { kind: "none" };
+  const shown = content.shown();
   return { kind: "placed", count: shown.count, skipped: shown.skipped.length };
 }
 
@@ -369,21 +365,18 @@ export function createStationContent(deps: StationContentDeps): StationContent {
       }
     },
     update,
-    has(kind) {
+    has() {
       for (const entry of entries.values()) {
-        for (const part of entry.parts.values()) {
-          if (part.kind === kind) return true;
-        }
+        if (entry.parts.size > 0) return true;
       }
       return false;
     },
-    shown(kind) {
+    shown() {
       let count = 0;
       const skipped: string[] = [];
       for (const entry of entries.values()) {
         if (!isWanted(entry.id)) continue;
-        for (const { part, result } of entry.rendered.values()) {
-          if (part.kind !== kind) continue;
+        for (const { result } of entry.rendered.values()) {
           count += result.count;
           skipped.push(...result.skipped);
         }

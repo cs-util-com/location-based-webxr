@@ -1391,16 +1391,17 @@ test("a visitor of a zip without tour.json reads that the tour is not finished y
   }
 });
 
-test("a tour whose photo spots were baked at its Finish places them without any recording (scan-pass S1)", async ({
+test("a tour.json carrying debug camera captures shows a visitor its own content and none of the frames", async ({
   page,
 }) => {
-  // Why this matters (scan-pass plan S1, S-D11): a published tour carries
-  // its photos' spots in tour.json and no walk at all, so the viewer must
-  // place from the baked spots - never replay the walk the copy kept for
-  // a co-author - and report the BAKED quality (7 fixes; the walk has
-  // none).
+  // Why this matters: the frames a recording captured by itself are debug
+  // data, shown only in the desktop editor's debug layer. This test once
+  // pinned the opposite (the visitor drew the frames a creator's open had
+  // baked into tour.json as `captureSpots`, "2 photos at their stations
+  // (7 fixes"); the format still reads that field, so a file carrying it
+  // must show the visitor its pin and no frame, in every station.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
-  await openAsVisitor(page, ARCHIVE, { debug: true });
+  await openAsVisitor(page, ARCHIVE, { debug: true, allStations: true });
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   await page.evaluate(() => {
@@ -1421,9 +1422,11 @@ test("a tour whose photo spots were baked at its Finish places them without any 
       },
       { timeout: 20000 },
     )
-    // Baked photos keep their stations, so they are counted where they
-    // wait, drawn only while their station shows.
-    .toMatch(/2 photos at their stations \(7 fixes/);
+    .toMatch(/1 placed object/);
+  // The pin's station is drawn, and no frame stands in any station.
+  await expect.poll(() => drawnGroups(page)).toBe(1);
+  expect(await photoPlanes(page)).toBe(0);
+  await expect(page.getByTestId("ar-status")).not.toContainText("photo");
   // A visitor's page decodes no photo for its hidden gallery at all
   // (follow-up F14), so the walk's frame is not read either.
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(0);
@@ -1674,18 +1677,20 @@ test("a visitor's plain line says when GPS placed the tour", async ({
   );
 });
 
-test("without a QR detector the baked photos still stand at their stations", async ({
+test("without a QR detector the tour's content still stands at its stations", async ({
   page,
 }) => {
   // The join's old liveness guard was `qrController === null`, which is the
   // permanent state on a browser without BarcodeDetector - every decoded
-  // photo was thrown away. Liveness is the controller status now.
+  // photo was thrown away. Liveness is the controller status now. (Why
+  // the tour changed: this test placed the debug camera captures a
+  // tour.json carried, which a visitor no longer sees; the tour's own
+  // photos and pin stand without a detector the same way.)
   await page.addInitScript(() => {
     const seams = /** @type {any} */ (window).__tourViewerSeams;
     seams.createQrFrontEnd = () => null;
   });
-  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
-  await openAsVisitor(page, ARCHIVE, { debug: true });
+  await openAsVisitor(page, RANGES_ARCHIVE, { debug: true, allStations: true });
   await enterAr(page);
   await seedAlignment(page);
   await forceTrackingReady(page);
@@ -1699,15 +1704,21 @@ test("without a QR detector the baked photos still stand at their stations", asy
       },
       { timeout: 20000 },
     )
-    .toMatch(/photos at their stations/);
+    .toMatch(/4 placed objects/);
+  // Its three photos decoded and stand.
+  await expect.poll(() => photoPlanes(page)).toBe(3);
 });
 
 test("a re-entered session places the tour again once ITS tracking is ready (review #12)", async ({
   page,
 }) => {
-  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
-  // Every station drawn: the photos wait at theirs.
-  await openAsVisitor(page, ARCHIVE, { debug: true, allStations: true });
+  // Every station drawn. (Why the tour changed: this test placed the
+  // debug camera captures a tour.json carried, which a visitor no longer
+  // sees; the tour's own content is placed per session the same way.)
+  await openAsVisitor(page, RANGES_ARCHIVE, {
+    debug: true,
+    allStations: true,
+  });
   for (const entry of [1, 2]) {
     await enterAr(page);
     await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
@@ -1725,7 +1736,7 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
         },
         { timeout: 20000 },
       )
-      .toMatch(/photos at their stations/);
+      .toMatch(/4 placed objects/);
     // Drawn once decoded, after the line (visitor plan M2).
     await expect
       .poll(() => drawnGroups(page), { message: `entry ${String(entry)}` })

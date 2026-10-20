@@ -27,11 +27,10 @@ import {
 const FADE = 400;
 
 /** A part that places one textured plane, its texture and render spied. */
-function planePart(kind: ContentPart["kind"] = "content") {
+function planePart() {
   const textures: Texture[] = [];
   const disposed: Texture[] = [];
   const part: ContentPart & { renders: number } = {
-    kind,
     renders: 0,
     render(parent) {
       part.renders += 1;
@@ -65,7 +64,6 @@ function pendingPart() {
   let release: () => void = () => undefined;
   let disposed = 0;
   const part: ContentPart = {
-    kind: "content",
     render(parent) {
       return new Promise<RenderedPart>((resolve) => {
         release = () => {
@@ -262,12 +260,12 @@ describe("station content: one side table, drawn by presence", () => {
     h.content.show(new Set(["a"]));
     await h.at(1000);
     await h.at(1000 + FADE / 2);
-    const walk = planePart("capture-spots");
-    h.content.setPart("a", "walk", walk.part);
+    const added = planePart();
+    h.content.setPart("a", "more", added.part);
     // Settled, with no frame since: the new plane must not flash at its
     // own full opacity until the next update.
     await new Promise((r) => setTimeout(r, 0));
-    expect(walk.part.renders).toBe(1);
+    expect(added.part.renders).toBe(1);
     const group = h.scene.children[0]!;
     const opacities: number[] = [];
     group.traverse((o) => {
@@ -301,7 +299,6 @@ describe("station content: one side table, drawn by presence", () => {
     let running = 0;
     let most = 0;
     const slow = (): ContentPart => ({
-      kind: "content",
       async render() {
         running += 1;
         most = Math.max(most, running);
@@ -317,26 +314,28 @@ describe("station content: one side table, drawn by presence", () => {
     expect(most).toBe(1);
   });
 
-  it("counts what stands for the shown stations, per kind", async () => {
+  // Why the counts are no longer per kind: a station's parts were the
+  // tour's items and the walk's recorded photos, counted apart; a visitor
+  // no longer sees the walk's frames, so every part is the tour's content
+  // and the count is every part's of the shown stations.
+  it("counts what stands for the shown stations, every part of them", async () => {
     const h = harness();
-    expect(h.content.has("content")).toBe(false);
+    expect(h.content.has()).toBe(false);
     const skipping: ContentPart = {
-      kind: "content",
       render: () =>
         Promise.resolve({ count: 2, skipped: ["x"], dispose: () => undefined }),
     };
     h.content.setPart("a", "items", skipping);
-    h.content.setPart("a", "walk", planePart("capture-spots").part);
+    h.content.setPart("a", "more", planePart().part);
     h.content.setPart("b", "items", planePart().part);
-    expect(h.content.has("content")).toBe(true);
-    expect(h.content.shown("content")).toEqual({ count: 0, skipped: [] });
+    expect(h.content.has()).toBe(true);
+    expect(h.content.shown()).toEqual({ count: 0, skipped: [] });
     h.content.show(new Set(["a"]));
     await h.at(1000);
-    expect(h.content.shown("content")).toEqual({ count: 2, skipped: ["x"] });
-    expect(h.content.shown("capture-spots")).toEqual({ count: 1, skipped: [] });
+    expect(h.content.shown()).toEqual({ count: 3, skipped: ["x"] });
     // Left: it no longer counts, though it still fades out.
     h.content.show(new Set());
-    expect(h.content.shown("content")).toEqual({ count: 0, skipped: [] });
+    expect(h.content.shown()).toEqual({ count: 0, skipped: [] });
   });
 
   it("a fade starts when the station is left, however long since the last frame", async () => {
@@ -355,12 +354,10 @@ describe("station content: one side table, drawn by presence", () => {
   it("tells the status line the shown stations' items: none before any, then a count that is 0 away from every station", async () => {
     const h = harness();
     expect(contentStatus(null)).toEqual({ kind: "none" });
-    expect(contentStatus(h.content)).toEqual({ kind: "none" });
-    h.content.setPart("a", "walk", planePart("capture-spots").part);
-    // Walk photos are not the tour's items.
+    // (A walk-photo part once stood here, not counted as the tour's items;
+    // a visitor no longer draws the walk's frames, so every part counts.)
     expect(contentStatus(h.content)).toEqual({ kind: "none" });
     h.content.setPart("a", "items", {
-      kind: "content",
       render: () =>
         Promise.resolve({ count: 3, skipped: ["x"], dispose: () => undefined }),
     });
@@ -414,14 +411,13 @@ describe("station content: one side table, drawn by presence", () => {
     const onFailed = vi.fn();
     const h = harness({ onFailed });
     h.content.setPart("a", "items", {
-      kind: "content",
       render: () => Promise.reject(new Error("broken")),
     });
-    h.content.setPart("a", "walk", planePart("capture-spots").part);
+    h.content.setPart("a", "more", planePart().part);
     h.content.show(new Set(["a"]));
     await h.at(1000);
     expect(h.names()).toEqual(["station-content:a"]);
-    expect(h.content.shown("capture-spots").count).toBe(1);
+    expect(h.content.shown().count).toBe(1);
     expect(onFailed).toHaveBeenCalledTimes(1);
     expect(onFailed.mock.calls[0]![0]).toBe("a");
   });
@@ -438,14 +434,13 @@ describe("station content: failures and fades", () => {
     const h = harness({ onFailed });
     let attempts = 0;
     h.content.setPart("a", "items", {
-      kind: "content",
       render: () => {
         attempts += 1;
         return Promise.reject(new Error("broken"));
       },
     });
-    const walk = planePart("capture-spots");
-    h.content.setPart("a", "walk", walk.part);
+    const healthy = planePart();
+    h.content.setPart("a", "more", healthy.part);
     for (let round = 0; round < 2; round += 1) {
       h.content.show(new Set(["a"]));
       await h.at(1000 + round * 10 * FADE);
@@ -456,8 +451,8 @@ describe("station content: failures and fades", () => {
     expect(attempts).toBe(1);
     expect(onFailed).toHaveBeenCalledTimes(1);
     // The healthy part rendered on each entry and freed each time.
-    expect(walk.part.renders).toBe(2);
-    expect(walk.disposed).toEqual(walk.textures);
+    expect(healthy.part.renders).toBe(2);
+    expect(healthy.disposed).toEqual(healthy.textures);
   });
 
   it("a mount callback that throws still lets the station enter", async () => {
@@ -519,7 +514,6 @@ describe("station content: stale failures, the one-at-a-time rule, late parts", 
     let attempts = 0;
     let fail: (() => void) | null = null;
     h.content.setPart("a", "items", {
-      kind: "content",
       render: (parent) => {
         attempts += 1;
         if (attempts === 1) {
@@ -550,7 +544,6 @@ describe("station content: stale failures, the one-at-a-time rule, late parts", 
     const h = harness();
     // "b" first in the table: `show` reaches it before "a".
     h.content.setPart("b", "items", {
-      kind: "content",
       render: () => Promise.reject(new Error("broken")),
     });
     h.content.setPart("a", "items", planePart().part);

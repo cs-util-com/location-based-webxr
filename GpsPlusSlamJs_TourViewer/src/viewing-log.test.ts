@@ -185,25 +185,28 @@ describe("the viewer's tourViewing log", () => {
     ).toHaveLength(1);
   });
 
+  // Why it logs content: it logged the walk's recorded photos
+  // (`capture-spots`, with the spots' `join`), which a visitor no longer
+  // sees; the tour's own content is what the viewer places now.
   it("logs a placement with what it used", () => {
     const h = harness();
     h.log.placed({
-      what: "capture-spots",
+      what: "content",
       basis: "geo",
       count: 3,
       zero: { lat: 47.5, lon: 8.7 },
-      join: { fixes: 12, gpsAccuracyMedianM: 4 },
+      skipped: ["pin-x"],
       station: "st-a",
     });
     expect(h.dispatched).toEqual([
       {
         type: "tourViewing/placed",
         payload: {
-          what: "capture-spots",
+          what: "content",
           basis: "geo",
           count: 3,
           zero: { lat: 47.5, lon: 8.7 },
-          join: { fixes: 12, gpsAccuracyMedianM: 4 },
+          skipped: ["pin-x"],
           station: "st-a",
           alignmentMatrix: MATRIX,
           arVisitIndex: 0,
@@ -219,11 +222,11 @@ describe("the viewer's tourViewing log", () => {
     h.log.vote(vote(0));
     h.log.votedLock("code-a", 1);
     h.log.placed({
-      what: "capture-spots",
+      what: "content",
       basis: "geo",
       count: 6,
       zero: { lat: 47.5, lon: 8.7 },
-      join: { fixes: 12, gpsAccuracyMedianM: 4 },
+      skipped: ["pin-x"],
       station: "st-a",
     });
     for (const action of h.dispatched) {

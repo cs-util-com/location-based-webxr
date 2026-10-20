@@ -73,9 +73,12 @@ interface VotesCastLog extends ViewingMoment {
 }
 
 interface PlacedLog extends ViewingMoment {
-  /** What was placed: the tour's `tour.json` content, or its recorded
-   *  photos at their capture spots. Logged per station, each time its
-   *  content is drawn: only the shown stations' content stands. */
+  /** What was placed: the tour's `tour.json` content. Logged per
+   *  station, each time its content is drawn: only the shown stations'
+   *  content stands. `capture-spots` (the walk's recorded photos at their
+   *  capture spots) is written no more, since a visitor sees no debug
+   *  camera capture; it stays in the type for earlier logs and the tools
+   *  that read them. */
   readonly what: "content" | "capture-spots";
   /** How it was placed: from geo positions through the zero and the
    *  alignment at the scene root (the one way; kept as a field so earlier
@@ -86,13 +89,13 @@ interface PlacedLog extends ViewingMoment {
   readonly zero: { readonly lat: number; readonly lon: number };
   /** The store's alignment at the placement. */
   readonly alignmentMatrix: AlignmentMatrix;
-  /** `capture-spots`: what the spots rested on. */
+  /** `capture-spots` (earlier logs only): what the spots rested on. */
   readonly join?: {
     readonly fixes: number;
     readonly gpsAccuracyMedianM: number | null;
   };
   /** What could not be rendered: object ids (`content`), photo entry
-   *  names (`capture-spots`). */
+   *  names (`capture-spots`, earlier logs). */
   readonly skipped?: readonly string[];
   /** The station whose content this is. */
   readonly station: string;

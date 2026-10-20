@@ -15,7 +15,10 @@ import { installTourViewerArFakes } from "./ar-fakes.js";
  */
 
 const SAMPLE = "http://127.0.0.1:5197/ranges-ok/sample-tour.zip";
-const BAKED = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
+/** A tour with placed photos and no cover chosen (the first is its cover). */
+const PHOTOS = "http://127.0.0.1:5197/ranges-ok/tour.zip";
+/** A tour.json carrying debug camera captures and no placed photo. */
+const CAPTURES = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
 const UNFINISHED = "http://127.0.0.1:5197/ranges-ok/unfinished-tour.zip";
 const PLAIN = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
 
@@ -126,7 +129,10 @@ test("a phone without AR copies the tour's link for one that has it", async ({
 test("a tour with photos shows one of them above its name", async ({
   page,
 }) => {
-  await openAsNewVisitor(page, BAKED);
+  // Why the tour changed: this test took the cover from the debug camera
+  // captures a tour.json carried, which a visitor no longer sees; a tour's
+  // first placed photo is its cover the same way.
+  await openAsNewVisitor(page, PHOTOS);
   const cover = page.getByTestId("visitor-cover");
   await expect(cover).toBeVisible({ timeout: 15000 });
   // The photo really loaded from the zip, not a broken image.
@@ -150,7 +156,7 @@ test("a tour with a photo still puts the button on a small phone's first screen"
   // Why (M4 review #8): the photo adds about a quarter of the screen above
   // the name; the layout tests above use the sample, which has none.
   await page.setViewportSize({ width: 360, height: 640 });
-  await openAsNewVisitor(page, BAKED);
+  await openAsNewVisitor(page, PHOTOS);
   await expect(page.getByTestId("visitor-cover")).toBeVisible({
     timeout: 15000,
   });
@@ -161,6 +167,22 @@ test("a tour with a photo still puts the button on a small phone's first screen"
   expect(l.button.top).toBeGreaterThanOrEqual(0);
   expect(l.button.bottom).toBeLessThanOrEqual(l.height);
   expect(l.title.bottom).toBeLessThanOrEqual(l.button.top);
+});
+
+test("a tour.json carrying debug camera captures takes no cover from them", async ({
+  page,
+}) => {
+  // Why: the frames a recording captured by itself are debug data, which a
+  // visitor never sees; a tour without a placed photo once showed its
+  // first captured frame as the cover.
+  await openAsNewVisitor(page, CAPTURES);
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    { timeout: 15000 },
+  );
+  await expect(page.getByTestId("visitor-title")).toHaveText("An AR tour");
+  await expect(page.getByTestId("visitor-cover")).toBeHidden();
 });
 
 test("five taps on the tour's name reload the page to record this visit", async ({

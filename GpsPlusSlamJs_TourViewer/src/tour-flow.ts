@@ -41,8 +41,9 @@ type TourFlowTour =
       unfinished?: { readonly contact: string | undefined };
     };
 
-/** What the photo placement did or is doing. The strings are rendered by
- *  {@link placementSegment} - callers never compose copy. */
+/** Whether the placement still waits for the tracking to be ready. The
+ *  strings are rendered by {@link placementSegment} - callers never compose
+ *  copy. */
 export type PlacementState =
   | { kind: "idle" }
   | {
@@ -50,22 +51,6 @@ export type PlacementState =
        *  `ready` (flows plan M4, DEC-F3) - the segment shows the phase's
        *  coaching hint. */
       kind: "waiting-ready";
-    }
-  | {
-      /** The tour's recorded photos at their baked capture spots:
-       *  `count` of them, each waiting at its station, drawn only while
-       *  that station shows; `fixes` and their median GPS accuracy are
-       *  what the spots rest on. */
-      kind: "placed";
-      placedKind: "capture-spots";
-      count: number;
-      fixes: number;
-      gpsAccuracyMedianM: number | null;
-    }
-  | {
-      /** The photos cannot be shown (the reason is the line's). */
-      kind: "declined";
-      reason: string;
     };
 
 export interface ArStatusInput {
@@ -103,8 +88,6 @@ export interface ArStatusInput {
    *  slice produced a report (or in author mode, which never reads it). */
   readiness: OnboardingGuidance | null;
   placement: PlacementState;
-  /** A failed image-plane placement (the Drive-aware open error text). */
-  planesError: string | null;
   /** A failed `tour.json` content render (its own channel, M5 review #5). */
   contentError: string | null;
   /** The visitor's scan gate (M5); `idle` outside a session. */
@@ -157,8 +140,8 @@ export function codeLinedUp(
 }
 
 /** Whether a code's votes placed this tour: the gate passed on a voted
- *  lock of a trusted code (M5). The walk's placement trigger then runs
- *  whatever the tracking-quality phase reads (`viewer-placement.ts`, §7
+ *  lock of a trusted code (M5). The placement trigger then ends the wait
+ *  for readiness whatever the tracking-quality phase reads (`viewer-placement.ts`, §7
  *  #9). The voted count goes back to 0 when a veto takes every vote back
  *  (r881 review M1), so a gate another code passed no longer counts, and
  *  when an odometry-frame change ends the code's trust
@@ -179,13 +162,13 @@ export function codePlacedTour(ctx: {
  * Whether the visitor's stations may be judged on the session's alignment
  * - its position found by, the HUD's arrows and the breadcrumbs pointed on
  * it: tracking ready (`isPlacementReady`) or a code lined it up
- * (`codeLinedUp`; a voted lock after the gate's escape too, which places
- * the walk's photos by itself, `onVotedLock`). Before it the alignment is
+ * (`codeLinedUp`; a voted lock after the gate's escape too, which ends
+ * the wait for readiness by itself, `onVotedLock`). Before it the alignment is
  * the identity at the first fix, which can be 180° wrong. The guide's
  * find re-reads this each tick, and while it is false judges by the fresh
  * device fix instead (r881 review H1); what needs a heading (the arrows,
  * the breadcrumbs, the figure) latches its first `true` per AR entry, as
- * the photos' trigger does, so a degraded dip does not take it away (r881
+ * the placement trigger does, so a degraded dip does not take it away (r881
  * re-review L-B).
  */
 export function alignmentReady(
@@ -230,17 +213,6 @@ export function placementSegment(
       return readiness === null
         ? "Waiting for tracking to warm up…"
         : readiness.hint;
-    case "placed": {
-      // An honest label: fixes and their median GPS accuracy are what the
-      // numbers are - never a claimed placement error.
-      const accuracy =
-        placement.gpsAccuracyMedianM === null
-          ? ""
-          : `, median GPS ±${placement.gpsAccuracyMedianM.toFixed(1)}m`;
-      return `${String(placement.count)} photos at their stations (${String(placement.fixes)} fixes${accuracy})`;
-    }
-    case "declined":
-      return `photos not shown (${placement.reason})`;
   }
 }
 
@@ -301,7 +273,6 @@ export function arStatusLine(input: ArStatusInput): string {
       : gateSegment(input.gate, input.codesOnly === true),
     gateScanning ? "" : placementSegment(placement, input.readiness),
     contentSegment(input.content),
-    input.planesError === null ? "" : `images failed: ${input.planesError}`,
     input.contentError === null
       ? ""
       : `placed content failed: ${input.contentError}`,

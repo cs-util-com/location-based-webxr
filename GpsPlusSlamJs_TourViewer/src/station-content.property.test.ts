@@ -73,7 +73,6 @@ interface Made {
 
 function partOf(made: Made[], ownOpacity: number, delay: number): ContentPart {
   return {
-    kind: "content",
     async render(parent) {
       for (let i = 0; i < delay; i += 1) await Promise.resolve();
       const material = new MeshBasicMaterial({

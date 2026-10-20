@@ -12,11 +12,7 @@ import {
   readZipEntries,
 } from "gps-plus-slam-app-framework/storage";
 
-import {
-  bakeCaptureSpots,
-  posesOfCaptureSpots,
-  type CaptureBakeSource,
-} from "./capture-bake";
+import { bakeCaptureSpots, type CaptureBakeSource } from "./capture-bake";
 import {
   SAMPLE_PHOTOS,
   sampleRecordingBytes,
@@ -306,47 +302,5 @@ describe("bakeCaptureSpots declines where the join declines", () => {
       shouldContinue: () => false,
     });
     expect(bake).toEqual({ kind: "declined", reason: "stopped" });
-  });
-});
-
-describe("posesOfCaptureSpots", () => {
-  // Why: the viewer places baked spots as the join's poses; the altitude
-  // field changes name on the
-  // way (`alt` in the file, `altitude` in the join), so a mix-up would put
-  // every photo at sea level.
-  it("turns each baked spot into the join's pose, altitude and rotation included", () => {
-    expect(
-      posesOfCaptureSpots({
-        fixes: 9,
-        gpsAccuracyMedianM: null,
-        captures: [
-          {
-            image: "images/a.jpg",
-            geo: { lat: 48.1, lon: 11.5, alt: 520.5, rotation: [0, 1, 0, 0] },
-          },
-        ],
-      }),
-    ).toEqual([
-      {
-        imageFile: "images/a.jpg",
-        geo: { lat: 48.1, lon: 11.5, altitude: 520.5 },
-        rotationNue: [0, 1, 0, 0],
-      },
-    ]);
-  });
-
-  it("leaves out a spot without a rotation rather than guessing one", () => {
-    expect(
-      posesOfCaptureSpots({
-        fixes: 9,
-        gpsAccuracyMedianM: 1,
-        captures: [
-          {
-            image: "images/a.jpg",
-            geo: { lat: 48, lon: 11, alt: 0, headingDeg: 0 },
-          },
-        ],
-      }),
-    ).toEqual([]);
   });
 });

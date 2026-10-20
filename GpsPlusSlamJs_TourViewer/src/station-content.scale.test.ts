@@ -93,7 +93,6 @@ function harness() {
   });
   for (const station of tourOf(STATIONS)) {
     const part: ContentPart = {
-      kind: "content",
       render: (parent, alive) =>
         renderTourStation(station, {
           scene: parent,
@@ -150,7 +149,7 @@ describe("a generated 100-station tour in the scene", () => {
     expect(h.groups()).toBe(1);
     expect(one).toBe(7);
     expect(h.live.size).toBe(2);
-    expect(h.content.shown("content").count).toBe(4);
+    expect(h.content.shown().count).toBe(4);
 
     // Walking on: the left station fades out first, then the next mounts;
     // never two groups, and the left station's textures are freed. The next

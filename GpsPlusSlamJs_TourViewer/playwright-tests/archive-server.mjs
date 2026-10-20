@@ -435,12 +435,12 @@ async function buildRecordingZip() {
 }
 
 /**
- * A tour zip whose recorded photos' spots were BAKED at a Finish (scan-pass
- * plan S1): `tour.json` carries `captureSpots` (7 fixes, unlike the
- * recording zip's 4, so a status line proves which source placed them),
- * the two photos and a level - plus a walk a copy kept for a co-author
- * (`session.json`, an action and a frame no spot shows), which a visitor
- * must neither show in the gallery nor replay (scan-pass plan S1).
+ * A tour zip whose `tour.json` carries debug camera captures
+ * (`captureSpots`, 7 fixes, the format's deprecated field: an earlier app
+ * wrote them at a creator's open) in stations of their own, one of which
+ * also holds a pin; the captured frames, a level, and a walk
+ * (`session.json`, an action). A visitor draws the pin and none of the
+ * frames, and takes no cover from one.
  */
 async function buildBakedZip() {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
@@ -456,7 +456,15 @@ async function buildBakedZip() {
         version: 3,
         minor: 0,
         stations: [
-          stationAt("walk-0", { lat: 47.50002, lon: 8.7, alt: 400 }),
+          stationAt("walk-0", { lat: 47.50002, lon: 8.7, alt: 400 }, [
+            {
+              id: "bakedpin01",
+              kind: "pin",
+              createdAtIso: "2026-09-08T12:00:00.000Z",
+              label: "A pin beside the captures",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+          ]),
           stationAt("walk-1", { lat: 47.50011, lon: 8.7, alt: 400 }),
         ],
         captureSpots: {

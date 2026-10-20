@@ -57,8 +57,8 @@ const NO_TOUR: VisitorStartView = {
   pageTitle: APP_TITLE,
 };
 
-/** The chosen cover, else the first placed photo, else the first
- *  recorded one. */
+/** The chosen cover, else the first placed photo; never a debug camera
+ *  capture (a visitor never sees one). */
 function coverPathOf(manifest: TourManifest): string | null {
   const items = tourItems(manifest);
   const chosen = tourCoverEntry({
@@ -70,7 +70,7 @@ function coverPathOf(manifest: TourManifest): string | null {
   for (const object of items) {
     if (object.kind === "photo") return object.image;
   }
-  return manifest.captureSpots?.captures[0]?.image ?? null;
+  return null;
 }
 
 /** What the start page shows for an open tour: `manifest` is its

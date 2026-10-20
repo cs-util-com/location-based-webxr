@@ -51,7 +51,6 @@ import type { MovedCodeChecks } from "./moved-code-check.js";
 import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { ViewerVoteSink } from "./viewer-vote-sink.js";
 import type { ScanGate } from "./scan-gate.js";
-import type { PlacedImagePlanes } from "./image-planes.js";
 import type { StationContent } from "./station-content.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { PlacementState } from "./tour-flow.js";
@@ -455,24 +454,18 @@ export interface TourViewerSession {
   scanGateCodeText: string | null;
 
   // --- placement (viewer-placement.ts) ------------------------------------
-  /** What the photo placement did — rendered by tour-flow. */
+  /** Whether the placement still waits for readiness - rendered by
+   *  tour-flow. */
   placement: PlacementState;
-  /** A failed image-plane placement, surfaced in the AR status line —
-   *  `#error` is a sibling of `#ar-root` and invisible during the session
-   *  (the milestone-review-#4 trap; PR #366 review). */
-  viewerPlanesError: string | null;
-  /** A failed `tour.json` content render, on its own channel: the
-   *  capture-plane paths write `viewerPlanesError`, and whichever failed
-   *  second used to erase the other's message (M5 review #5). */
+  /** A failed `tour.json` content render, surfaced in the AR status line
+   *  on its own channel (M5 review #5) - `#error` is a sibling of
+   *  `#ar-root` and invisible during the session (the milestone-review-#4
+   *  trap; PR #366 review). */
   contentError: string | null;
-  /** The tour's recorded photos, placed in the tour as parts of their
-   *  stations in `stationContent` (decoded only while shown); its
-   *  `dispose` takes those parts out. */
-  imagePlanes: PlacedImagePlanes | null;
   /** The store subscription while a viewer session runs (flows plan M4). */
   placementUnsubscribe: (() => void) | null;
-  /** Whether this session+tour already attempted the ready-triggered
-   *  placement. */
+  /** Whether this session+tour's wait for readiness ended (tracking ready,
+   *  or a code lined the tour up): the coaching does not come back. */
   placementAttempted: boolean;
 
   // --- the scan gate and the placed content (viewer-placement.ts, M5) ------
@@ -483,8 +476,8 @@ export interface TourViewerSession {
   /** Cancels the escape clock while the gate scans. */
   cancelEscapeClock: (() => void) | null;
   /** The visitor's content per station (`station-content.ts`): the
-   *  tour's items and its recorded photos as
-   *  parts of their stations, drawn only while the store shows them.
+   *  tour's items as parts of their stations, drawn only while the store
+   *  shows them.
    *  Created with the first part after the gate; disposed at the session's
    *  end and when its tour closes. */
   stationContent: StationContent | null;
@@ -606,9 +599,7 @@ export function createTourViewerSession(
     viewerIgnoredText: null,
     scanGateCodeText: null,
     placement: { kind: "idle" },
-    viewerPlanesError: null,
     contentError: null,
-    imagePlanes: null,
     placementUnsubscribe: null,
     placementAttempted: false,
     codesOnly: false,
