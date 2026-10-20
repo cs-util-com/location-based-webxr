@@ -134,9 +134,13 @@ and a property)), all unchanged through the move.
 `creator-codes-store.property.test.ts` - every observable of the facade
 (the hand, its measurement and sighting, the ids, the numbering, the
 references, both baselines, the sightings, the visit's codes, each code's
-text, membership, stored pose and `measuredIn`, the hosted texts, the
-notices) against the module as it was (`test-support/creator-codes-reference.ts`),
-after every step of any sequence of the page's calls; seen red against a
-broken `withHand` and a stored sighting put first. Composed, through `wireCreatorSetup`: every creator suite, and
+text, membership, stored pose and `measuredIn`, the hosted texts and
+whether they are unreadable, `restoreInHand`'s answer, the notices)
+against the module as it was (`test-support/creator-codes-reference.ts`),
+after every step of any sequence of the page's calls - the tour
+document's own opens, closes, edits and undos, and later opens whose
+predecessors answer late, among them; seen red against a broken
+`withHand`, a stored sighting put first, and the hosted levels' session
+guard removed. Composed, through `wireCreatorSetup`: every creator suite, and
 the sampled mutants (`scripts/fixtures/creator-setup.mutants.json`) whose
 text moved here.

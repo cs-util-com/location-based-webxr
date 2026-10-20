@@ -64,7 +64,9 @@ selectCreatorCodes(store.getState()).storedSightings;
 - `creator-codes.test.ts` - the characterization tests of the resets and
   the sightings, through the facade.
 - `creator-codes-store.property.test.ts` - every observable of the facade
-  against the module as it was before the move, for any sequence of calls.
+  against the module as it was before the move, for any sequence of calls
+  (the tour document's opens, closes and undos, and late answers of older
+  opens, among them).
 - `creator-codes-slice.test.ts` - `onlyCreatorCodesChanged` over every
   subset of changed slices (property), an unchanged state, a slice added.
   Its callers: `creator-setup.test.ts` ("the readout and a dispatch that
