@@ -53,6 +53,7 @@ import {
   TOUR_REPLACED,
   type TourSaveBuilt,
 } from "../tour-document-save.js";
+import type { RebuildPhotoSpots } from "../tour-document-bake.js";
 import {
   createTourViewerStore,
   type TourViewerStore,
@@ -315,7 +316,12 @@ export interface EditorSession {
 
 export function createEditorSession(input: {
   readonly session: TourSession;
+  /** The tour as opened, its walk's photos baked into its stations
+   *  (`openTourForEditing`). */
   readonly manifest: TourManifest;
+  /** What the open's bake decided about the walk's photos (`walkAtOpen`);
+   *  absent: nothing to say. */
+  readonly photos?: RebuildPhotoSpots;
   readonly levels: ReadonlyMap<string, QrLevel>;
   /** The file's name for the model's title (default: the session's). */
   readonly fileName?: string;
@@ -355,6 +361,7 @@ export function createEditorSession(input: {
     generation,
     pictureOf: (id) => pictures.get(id),
     picturesRead: () => Promise.all(pictureReads),
+    ...(input.photos === undefined ? {} : { photos: input.photos }),
   });
   /** The saved file's name: the opened one's, made safe (the Finish's rule). */
   const savedName = saves.fileName;
@@ -805,11 +812,15 @@ export function createEditorSession(input: {
     if (scanEntryNames(names, snap.manifest, wrap).length === 0) {
       return { kind: "refused", reason: NO_WALK };
     }
-    const photos = await saves.photoSpots(snap.manifest);
-    // Without baked spots the walk is what places the recorded photos: the
-    // rebuild would keep it (`finish-rebuild.ts`), so the move refuses -
-    // unless the walk places nothing (the M4b milestone review #3).
-    if (photos.spots === undefined && photos.placesNothing !== true) {
+    const photos = await saves.photoSpots();
+    // Without baked spots in the tour (the open's bake placed none) the
+    // walk is what places the recorded photos: the rebuild would keep it
+    // (`finish-rebuild.ts`), so the move refuses - unless the walk places
+    // nothing (the M4b milestone review #3).
+    if (
+      snap.manifest.captureSpots === undefined &&
+      photos.placesNothing !== true
+    ) {
       return { kind: "refused", reason: walkStaysReason(photos.notPlaced) };
     }
     // The walk's own file is the whole recording (the M4b milestone review

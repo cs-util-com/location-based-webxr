@@ -57,7 +57,7 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import { objectPoseNue } from "./content-placement.js";
-import { walkPhotosPending } from "./creator-stations.js";
+import { walkAtOpen } from "./tour-document-bake.js";
 import {
   buildListedTourFixture,
   buildSignedTourFixture,
@@ -296,7 +296,15 @@ async function wireFinishable(options: {
   }) as never;
   ctx.tourManifestStatus = "settled";
   const tour = ctx.tourDocument;
-  tour.open(tourOf([...options.hosted], options.manifestExtras));
+  // Opened as the page opens a creator's tour (`archive-open.ts`): a
+  // recording's photos are baked into stations at the open.
+  const opened = tourOf([...options.hosted], options.manifestExtras);
+  const walk =
+    (ctx.session as { hasRecording?: boolean }).hasRecording === true
+      ? await walkAtOpen(ctx.session, opened)
+      : { manifest: opened, photos: {} };
+  ctx.walkBake = { kind: "decided", photos: walk.photos };
+  tour.open(walk.manifest);
   for (const id of options.deleted ?? []) {
     if (tour.remove(id, "a deletion") === null) {
       throw new Error(`the tour does not carry ${id} to delete`);
@@ -945,12 +953,14 @@ describe("the finish settles the AR visit still running (authoring plan 2026-09-
   });
 });
 
-describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)", () => {
+describe("the finish writes the recorded photos' spots baked at open (scan-pass plan S1, S-D11)", () => {
   // Why these tests matter: the baked spots are what every visitor places
   // instead of replaying the walk, and their presence switches the
-  // visitor's live join OFF. So the Finish must bake exactly when the tour
-  // carries a recording it can join, never write the marker for nothing,
-  // and never let a recording it cannot join stop the creator's Finish.
+  // visitor's live join OFF. The bake runs once, when the recording
+  // opens, and puts the photos in stations the page shows from then on;
+  // so the Finish must write exactly those, never bake or assign again,
+  // never write the marker for nothing, and never let a recording that
+  // cannot be joined stop the creator's Finish.
   createTourViewerStore();
   const FIXTURE = new URL(
     "../../GpsPlusSlamJs_PhysicsDemo/playwright-tests/fixtures/sample-recording.zip",
@@ -1021,9 +1031,8 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     expect(spots?.captures).toHaveLength(5);
     // The in-memory manifest advances with it, as with objects.
     expect(ctx.tourDocument.manifest()?.captureSpots).toEqual(spots);
-    // This page knows the walk is decided (the creator's HUD drops its
-    // hedge, PR #642 review).
-    expect(ctx.walkDecidedFor).toBe(ctx.session);
+    // Baked once, at the open: the Finish replayed nothing.
+    expect(recording.replays()).toBe(1);
   });
 
   it("does not bake again when the tour already carries its spots", async () => {
@@ -1073,25 +1082,16 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
       placed: [pin("new-one")],
       sessionExtras: recording.extras,
     });
-    // Why (PR #643 review, replacing the PR #642 choice): a declined bake
-    // writes no spots, and the phone's next Finish bakes again - so its
-    // station names may still change, and the HUD keeps its hedge. Only a
-    // Finish that settled the walk (spots written, or a walk that places
-    // nothing) drops it.
-    const pending = () =>
-      walkPhotosPending(
-        ctx.session,
-        ctx.tourDocument.manifest(),
-        ctx.walkDecidedFor,
-      );
-    expect(pending()).toBe(true);
+    // Why: a declined bake at the open is final for that open - the
+    // Finish neither bakes again nor writes spots, so no station appears
+    // or moves at the Finish.
+    const atOpen = recording.replays();
     dom.finishButton.click();
     await settle(ctx);
     expect(ctx.finishError).toBeNull();
     expect(await writtenManifest(ctx)).not.toHaveProperty("captureSpots");
     expect(ctx.tourDocument.manifest()?.captureSpots).toBeUndefined();
-    expect(ctx.walkDecidedFor).toBeNull();
-    expect(pending()).toBe(true);
+    expect(recording.replays()).toBe(atOpen);
   });
 
   it("finishes without the marker when reading the recording fails", async () => {

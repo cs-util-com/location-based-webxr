@@ -58,11 +58,14 @@ module.exports = {
           // named one by one: a new `tour-document-*` module is not exempt
           // until it is listed here. `tour-document-draft.ts` is the draft's
           // follower; `tour-document-save.ts` is the document's save - I/O,
-          // the rebuild and the photo bake - whose snapshot and landing
-          // read the rules.
+          // the rebuild - whose snapshot and landing read the rules;
+          // `tour-document-bake.ts` is the document's bake at open - I/O,
+          // the recording replayed once and its photos seated by the
+          // station rule.
           "^src/tour-document\\.ts$",
           "^src/tour-document-draft\\.ts$",
           "^src/tour-document-save\\.ts$",
+          "^src/tour-document-bake\\.ts$",
           "^src/(object-edits|finish-rebuild|tour-content|authoring-draft|capture-bake)\\.ts$",
           // Read-only helpers, permanent: the visitor's photo spots
           // (`worldCaptureSpots`), the AR placement's world view
@@ -78,8 +81,7 @@ module.exports = {
           // `hostedObjects`); it reads the tour only through the document.
           "^src/creator-draft\\.ts$",
           // TEMPORARY - the phone's Finish: its rebuild I/O
-          // (`rebuildFinishedTour`, `captureSpotsForRebuild`,
-          // `finishedFileName`) - until it saves through the document's
+          // (`rebuildFinishedTour`, `finishedFileName`) - until it saves through the document's
           // save (`tour-document-save.ts`, the desktop editor's already;
           // follow-up of D30). The phone's tour itself is the document
           // since its adoption (`creator-document.ts`).

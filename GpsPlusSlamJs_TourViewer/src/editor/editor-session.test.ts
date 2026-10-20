@@ -56,6 +56,7 @@ import {
   withWorldObjects,
 } from "../test-support/v3-tour.js";
 import type { EditorModel } from "./editor-model.js";
+import { openTourForEditing } from "./editor-open.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -1769,14 +1770,18 @@ describe("moving the walk out (W2, D19)", () => {
       ],
       { remove: [...SAMPLE_PHOTOS] },
     );
+    // Opened as the page opens it: the bake at open says the walk
+    // places nothing.
     const tour = async (): Promise<EditorSession> => {
-      const session = await openTourFile(
+      const out = await openTourForEditing(
         new File([zip], "walked.zip", { type: "application/zip" }),
       );
+      if (out.kind !== "opened") throw new Error(out.reason);
       return createEditorSession({
-        session,
-        manifest: (await session.loadTourManifest())!,
-        levels: new Map(),
+        session: out.session,
+        manifest: out.manifest,
+        photos: out.photos,
+        levels: out.levels,
       });
     };
     const original = await namesIn(zip);

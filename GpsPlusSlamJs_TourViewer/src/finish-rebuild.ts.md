@@ -19,8 +19,10 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
     earlier rebuild; an empty one for a tour without). It is written at
     version 3 through `withTourContent` (`tour-content.ts`): the edits
     apply to its world view (`tourObjects`), and every pin and photo is
-    then in a station (a new one joins the nearest within R or starts
-    one, D20).
+    written into the station it names - the stations are the manifest's
+    as they are (the tour document seated every object, D20), and the
+    walk's photos are already in them (baked at open, `walkAtOpen` of
+    `tour-document-bake.ts`).
   - `input.placed` - objects placed or edited (`{ object, blob? }`); a
     photo with bytes writes them as its content file. Read synchronously
     at the call: pass a snapshot, not a list the page keeps changing.
@@ -30,14 +32,9 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
     becomes `title`; an emptied one removes it (W2 of the tour editor
     plan 2026-10-17-1816: it used to keep the old title silently); null or
     omitted keeps the tour's own.
-  - `input.captureSpots` - the recorded photos' spots in the world
-    (`CaptureSpotsInWorld`), when there are any. When the tour has no
-    spots of its own yet, the Finish assigns each photo to a station, in
-    capture order and before the new objects (D20, D21); a tour that
-    already has spots keeps them.
   - `input.keepScan` - keep the entries visitors never read.
-  - `input.walkPlacesNothing` - the walk places nothing
-    (`captureSpotsForRebuild`'s `placesNothing`): it is then left out
+  - `input.walkPlacesNothing` - the walk places nothing (the open's
+    bake said so, `walkAtOpen`'s `placesNothing`): it is then left out
     without `captureSpots` too, unless `keepScan`.
   - `input.previous` - the last rebuild of this open tour
     (`{ blob, signedManifest? }`); null or omitted for the first, which
@@ -47,20 +44,18 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
     false returns null and rebuilds nothing (the tour was closed).
   - `input.onProgress(done, total)` - the rebuild's progress.
   - Resolves `{ blob, written, signedManifest?, scanLeftOut }`.
-  - Throws what the manifest serializer (a duplicate id), the read and
-    the rebuild throw (`ArchiveLimitError`, `TourIntegrityError`); the
-    caller shows it.
+  - Throws what the manifest serializer (a duplicate id), the writer (an
+    object in no station of the manifest), the read and the rebuild throw
+    (`ArchiveLimitError`, `TourIntegrityError`); the caller shows it.
 
-- `finishedManifest({ manifest, placed, deleted, title?, captureSpots?,
-newStationId?, radiusM? })` (the last two: the automatic-station rule's
-  id and radius, `withTourContent`, for a preview of the write)
+- `finishedManifest({ manifest, placed, deleted, title? })`
   - the manifest a Finish writes, without the zip: the rule
     `rebuildFinishedTour` applies (records replacing theirs by id, new ones
-    appended, deleted ones out, every object in a station by
+    appended, deleted ones out, every object in the station it names by
     `withTourContent`), exported pure so the tour document's
     `manifestToWrite` (`tour-document.ts`) and the rebuild cannot disagree
-    (property-tested there against real zips). New automatic stations get
-    fresh ids on each call.
+    (property-tested there against real zips). Deterministic: it starts
+    no station and mints no id.
 
 - `pendingAfterRebuild({ placed, deleted }, written, appliedDeletions)`
   (M6 E0b) - what is still to save after a write, from the page's lists
@@ -70,17 +65,6 @@ newStationId?, radiusM? })` (the last two: the automatic-station rule's
   written),
   `finished` (the caller's own entries that left, so a photo's bytes
   travel with them), `deleted` (the deletions not applied). Pure.
-- `captureSpotsForRebuild(tour, manifest, options?)` (M6 E0b) - the
-  photos' spots for a save, in the world (`worldCaptureSpots`): the manifest's own, else baked from the
-  recording (`capture-bake.ts`, `options` passes its `shouldContinue` and
-  `onChunk`), else none (`{}`); a bake that declines or a recording that
-  cannot be read is `{ notPlaced: reason }`, except a walk that places
-  nothing, which is `{ placesNothing: true }` with no reason (there are
-  no photos to speak of; the M4b milestone review #3). The result type is
-  `RebuildPhotoSpots`. `ArchiveLimitError` and
-  `TourIntegrityError` are rethrown. A decline is the caller's to keep, so
-  a page that saves often does not replay the recording each time (E2).
-
 - `finishedFileName(tour)` (M6 E2a) - the name a finished tour is saved
   under: the hosted file's own (Drive offers "Replace" only for the same
   name), made safe where a download would change it
@@ -147,12 +131,9 @@ listed tour staying at the open-time version + 1. Every check reads the
 zip's bytes (`tour.json`, the level), never only the returned
 `written`. The same file pins `pendingAfterRebuild` (an edit made during the save
 waits, a placement waits, only applied deletions clear, the caller's
-objects come back, a stored copy micrometres off counts as written), the
-Finish putting the walk's photos into stations in capture order and
-keeping them there on the next, and `captureSpotsForRebuild` (own spots without a
-read, none without a recording, a read failure as the reason, a cap and
-an integrity failure rethrown, a decline as the reason, a walk naming no
-photo of the tour as `placesNothing` with no reason).
+objects come back, a stored copy micrometres off counts as written), and a
+Finish writing the walk's photos as they were baked at open
+(`tour-document-bake.ts`) and the next keeping them.
 `finish-rebuild.property.test.ts` sweeps mixes of edits,
 additions and deletions: each id once, edits in place, a deleted
 photo's file gone, kept ones present, the zip opens again. The phone's

@@ -18,7 +18,7 @@ import {
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { rebuildFinishedTour } from "./finish-rebuild.js";
-import type { CaptureSpotsInWorld } from "./tour-content.js";
+import { type CaptureSpotsInWorld, withWalkPhotos } from "./tour-content.js";
 import { stationIdOf, tourOf } from "./test-support/v3-tour.js";
 import { openTourFile } from "./tour-session.js";
 import {
@@ -55,9 +55,8 @@ function photo(id: string, lat: number): TourObject {
   };
 }
 
-/** The walk's photo spots a save is given: one beside the tour's photo,
- *  one a kilometre away, which the save puts into a station of its own
- *  (an automatic id, minted by the write). */
+/** The walk's photo spots baked at open: one beside the tour's photo,
+ *  one a kilometre away, which the bake puts into a station of its own. */
 const SPOTS: CaptureSpotsInWorld = {
   fixes: 3,
   gpsAccuracyMedianM: 4,
@@ -288,12 +287,11 @@ describe("tour document (properties)", () => {
     );
   });
 
-  it("the manifest the state would write is the one the Finish rebuild writes, with photo spots and across a second save", async () => {
-    // The r875 milestone review #7: the selector takes the save's own
-    // inputs (the photo spots, decided once per open), so it is checked
-    // with them and without, and once more after a save landed in the
-    // middle - the second write starts from the first one's file, whose
-    // automatic stations the spots minted.
+  it("the manifest the state would write is the one the Finish rebuild writes, with the walk baked at open and across a second save", async () => {
+    // The r875 milestone review #7: what the page shows as the next write
+    // must be what a save writes, for a tour opened with its walk's photos
+    // baked into stations and without, and once more after a save landed
+    // in the middle - the second write starts from the first one's file.
     const zip = await packFilesAsZip([
       { path: "tour.json", data: serializeTourManifest(OPENED) },
       { path: "content/f.jpg", data: "f" },
@@ -308,9 +306,13 @@ describe("tour document (properties)", () => {
         fc.array(noSave, { maxLength: 8 }),
         fc.boolean(),
         async (first, second, withSpots) => {
-          const spots = withSpots ? SPOTS : undefined;
-          const extra = spots === undefined ? {} : { captureSpots: spots };
-          let state = first.reduce(apply, opened);
+          const start = withSpots
+            ? reduce(
+                initialTourDocumentState,
+                act.opened({ manifest: withWalkPhotos(OPENED, SPOTS) }),
+              )
+            : opened;
+          let state = first.reduce(apply, start);
           const one = await rebuildFinishedTour({
             tour,
             manifest: manifestNow(state)!,
@@ -319,14 +321,8 @@ describe("tour document (properties)", () => {
             levels: [],
             keepScan: false,
             previous: null,
-            ...extra,
           });
-          expect(
-            difference(
-              renamed(one!.written),
-              renamed(manifestToWrite(state, spots)!),
-            ),
-          ).toBeNull();
+          expect(difference(one!.written, manifestToWrite(state)!)).toBeNull();
           state = reduce(
             state,
             act.saved({
@@ -345,14 +341,8 @@ describe("tour document (properties)", () => {
             levels: [],
             keepScan: false,
             previous: { blob: one!.blob },
-            ...extra,
           });
-          expect(
-            difference(
-              renamed(two!.written),
-              renamed(manifestToWrite(state, spots)!),
-            ),
-          ).toBeNull();
+          expect(difference(two!.written, manifestToWrite(state)!)).toBeNull();
         },
       ),
       { numRuns: 25 },

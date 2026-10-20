@@ -21,25 +21,16 @@ import {
   serializeSignedTourManifest,
   signedManifestFilesOf,
   successorManifest,
-  TourIntegrityError,
   type SignedTourManifest,
   type TourFileRecord,
 } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
-import {
-  ArchiveLimitError,
-  rebuildZipWithEntries,
-} from "gps-plus-slam-app-framework/storage";
+import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
 import {
   applyObjectChanges,
   contentEntriesToRemove,
   hostedObjects,
 } from "./authoring-draft.js";
-import {
-  bakeCaptureSpots,
-  type CaptureBakeOptions,
-  type CaptureBakeSource,
-} from "./capture-bake.js";
 import type { LevelText } from "./code-book.js";
 import { finishEntries, type FinishEntry } from "./finish-entries.js";
 import { scanEntryNames } from "./tour-read-set.js";
@@ -47,11 +38,7 @@ import {
   downloadSafeName,
   nameSurvivesDownload,
 } from "./content-disposition.js";
-import {
-  type CaptureSpotsInWorld,
-  withTourContent,
-  worldCaptureSpots,
-} from "./tour-content.js";
+import { withTourContent } from "./tour-content.js";
 import { archiveFileName, type TourSession } from "./tour-session.js";
 
 /** The open tour, as far as a rebuild reads it. */
@@ -85,12 +72,9 @@ export interface FinishInput {
   /** The tour's name as typed: one that says something becomes `title`,
    *  an emptied one removes it, null (or absent) keeps the tour's own. */
   readonly title?: string | null;
-  /** The recorded photos' spots in the world, when the tour has them:
-   *  placed into stations when the manifest carries none yet (W3). */
-  readonly captureSpots?: CaptureSpotsInWorld;
   /** Keep the entries visitors never read (the walk, S-D10). */
   readonly keepScan: boolean;
-  /** The walk places nothing (`captureSpotsForRebuild`'s
+  /** The walk places nothing (the open's bake said so, `walkAtOpen`'s
    *  `placesNothing`): without spots it may still be left out. */
   readonly walkPlacesNothing?: boolean;
   /** The last rebuild of this open tour; null or absent for the first,
@@ -138,13 +122,6 @@ export interface FinishedManifestInput {
   readonly deleted: readonly string[];
   /** The tour's name as typed (`FinishInput.title`). */
   readonly title?: string | null;
-  /** The recorded photos' spots, when the tour has them. */
-  readonly captureSpots?: CaptureSpotsInWorld;
-  /** The automatic-station rule's id for a new station and its radius
-   *  (`withTourContent`): a reader that only previews the write (the
-   *  creator's station HUD) names the new ones its own way. */
-  readonly newStationId?: () => string;
-  readonly radiusM?: number;
 }
 
 /**
@@ -152,18 +129,19 @@ export interface FinishedManifestInput {
  * pure, so the tour document's selector and the rebuild share it): what
  * the zip carried, with this device's records REPLACING theirs by id (an
  * edit or a move of a hosted object), the new ones appended and the
- * deleted ones filtered out (plan §3.4, M4), every pin and photo in a
- * station (tour editor plan W3, D20). New automatic stations get fresh
- * ids, so two calls agree up to those.
+ * deleted ones filtered out (plan §3.4, M4), every pin and photo in the
+ * station it names (tour editor plan W3, D20): the stations are the
+ * manifest's as they are (the tour document made them), so two calls on
+ * the same input agree exactly. Throws for an object in no station of
+ * the manifest (`withTourContent`).
  */
 export function finishedManifest(input: FinishedManifestInput): TourManifest {
   const { manifest } = input;
   const title = finishTitle(manifest.title, input.title ?? null);
   const untitled = { ...manifest };
   delete untitled.title;
-  // The unmoved ones keep their local poses, the new ones and the
-  // recorded photos are assigned by the automatic-station rule
-  // (`tour-content.ts`).
+  // The unmoved ones keep their local poses; every object is written
+  // into the station it names (`tour-content.ts`).
   return withTourContent(
     { ...untitled, ...(title === undefined ? {} : { title }) },
     {
@@ -176,13 +154,6 @@ export function finishedManifest(input: FinishedManifestInput): TourManifest {
         input.placed.map((p) => p.object),
         input.deleted,
       ),
-      ...(input.captureSpots === undefined
-        ? {}
-        : { captureSpots: input.captureSpots }),
-      ...(input.newStationId === undefined
-        ? {}
-        : { newStationId: input.newStationId }),
-      ...(input.radiusM === undefined ? {} : { radiusM: input.radiusM }),
     },
   );
 }
@@ -355,55 +326,6 @@ export function pendingAfterRebuild<P extends { readonly object: TourObject }>(
     (id) => !appliedDeletions.includes(id),
   );
   return { placed, finished, deleted };
-}
-
-/** The tour as the photo-spot rule reads it. */
-type CaptureSpotTour = CaptureBakeSource & { readonly hasRecording: boolean };
-
-/** The photos' spots for a save: the spots, or why the photos stay with
- *  the walk (`notPlaced`), or that the walk places nothing at all. */
-export interface RebuildPhotoSpots {
-  readonly spots?: CaptureSpotsInWorld;
-  readonly notPlaced?: string;
-  /** The walk names no photo the tour carries (`CaptureBake`): a lean
-   *  save may leave it out without spots (`walkPlacesNothing`). */
-  readonly placesNothing?: true;
-}
-
-/**
- * The recorded photos' spots for a save (scan-pass plan S1, S-D11; M6
- * E0b): the tour's own when it carries them, else baked from its
- * recording, else none - the tour then keeps the visitor's live join, and
- * `notPlaced` says why, unless the walk places nothing at all
- * (`placesNothing`, no reason: there are no photos to speak of). A
- * recording that cannot be read or joined never fails the save; a cap's
- * refusal and a failed integrity check do, as every read's does. A
- * decline is the caller's to keep: re-baking it on every save would replay
- * the whole recording each time (E2).
- */
-export async function captureSpotsForRebuild(
-  tour: CaptureSpotTour,
-  manifest: TourManifest,
-  options: CaptureBakeOptions = {},
-): Promise<RebuildPhotoSpots> {
-  const own = worldCaptureSpots(manifest);
-  if (own !== undefined) return { spots: own };
-  if (!tour.hasRecording) return {};
-  try {
-    const bake = await bakeCaptureSpots(tour, options);
-    if (bake.kind === "baked") return { spots: bake.spots };
-    return bake.placesNothing === true
-      ? { placesNothing: true }
-      : { notPlaced: bake.reason };
-  } catch (err) {
-    if (err instanceof ArchiveLimitError) throw err;
-    if (err instanceof TourIntegrityError) throw err;
-    return {
-      notPlaced: `reading the recording failed: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    };
-  }
 }
 
 /**

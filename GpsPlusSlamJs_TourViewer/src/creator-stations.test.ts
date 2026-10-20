@@ -9,6 +9,7 @@ import { Group, Mesh, type RingGeometry, type Vector3 } from "three";
 
 import { createCreatorDocument } from "./creator-document.js";
 import { tourOf } from "./test-support/v3-tour.js";
+import { withWalkPhotos } from "./tour-content.js";
 import {
   manifestToWrite,
   tourDocumentActions,
@@ -21,8 +22,6 @@ import {
   reticleNueOf,
   stationChipText,
   stationsAsFinished,
-  WALK_HEDGE,
-  walkPhotosPending,
   wireCreatorStations,
   type ArStation,
 } from "./creator-stations.js";
@@ -301,33 +300,6 @@ describe("the words", () => {
   });
 });
 
-describe("walkPhotosPending", () => {
-  // Why (M5c review #2, PR #642 review): the HUD hedges exactly while a
-  // Finish might still sort the walk's photos in - a recording and no baked
-  // spots - unless a Finish in THIS page already decided about the walk. A
-  // declined bake writes no spots, and the file cannot say it declined, so
-  // a tour reopened after one reads as pending again: hedged, never silent.
-  it("is true for a recording without photo spots, until a Finish in this page decided", () => {
-    const tour = tourOf([pin("gate", 0, 0)]);
-    const spots = {
-      ...tour,
-      captureSpots: { fixes: 4, gpsAccuracyMedianM: null, captures: [] },
-    } as TourManifest;
-    const session = { hasRecording: true };
-    // Never finished, or reopened after a declined bake (a new session):
-    // pending.
-    expect(walkPhotosPending(session, tour)).toBe(true);
-    expect(walkPhotosPending(session, tour, { hasRecording: true })).toBe(true);
-    // Baked: the spots are in the tour.
-    expect(walkPhotosPending(session, spots)).toBe(false);
-    // A Finish of this open tour, in this page, decided (baked or declined).
-    expect(walkPhotosPending(session, tour, session)).toBe(false);
-    expect(walkPhotosPending({ hasRecording: false }, tour)).toBe(false);
-    expect(walkPhotosPending(null, tour)).toBe(false);
-    expect(walkPhotosPending(session, null)).toBe(false);
-  });
-});
-
 describe("reticleNueOf", () => {
   // Why: the open station is judged where the reticle points only while it
   // is visible; a hidden or broken reticle must fall back to the creator.
@@ -345,14 +317,15 @@ describe("reticleNueOf", () => {
 });
 
 describe("wireCreatorStations", () => {
-  function harness(
-    options: { radiusM?: number; walkPhotosPending?: () => boolean } = {},
-  ) {
+  function harness(options: { radiusM?: number; opened?: TourManifest } = {}) {
     const scene = new Group();
     // The page's tour document, changed as the creator changes it (a
     // placement, a settle's re-pose, a delete, a Finish's write).
     const tour = createCreatorDocument(createTourViewerStore());
-    tour.open(withRadius(tourOf([pin("gate", 0, 0)]), options.radiusM));
+    tour.open(
+      options.opened ??
+        withRadius(tourOf([pin("gate", 0, 0)]), options.radiusM),
+    );
     const chip = { textContent: "", hidden: true };
     let creator: [number, number, number] | null = [5, 401.5, 0];
     let reticle: [number, number, number] | null = null;
@@ -364,9 +337,6 @@ describe("wireCreatorStations", () => {
       reticleNue: () => reticle,
       zero: () => zero,
       scene: () => sceneNow,
-      ...(options.walkPhotosPending === undefined
-        ? {}
-        : { walkPhotosPending: options.walkPhotosPending }),
     });
     const ring = () =>
       scene.children.find((c) => c.name === STATION_RING_NAME) as
@@ -620,34 +590,33 @@ describe("wireCreatorStations", () => {
     );
   });
 
-  // Why (M5c review #2, PR #642 review): a tour's first Finish sorts the
-  // walk's recorded photos in BEFORE the objects, and the HUD cannot see
-  // them (they are baked at the Finish), so its station names and numbers
-  // may change. Naming none left a tour reopened after a declined bake -
-  // which reads as pending for good - with a dead HUD. It names them,
-  // hedged, and drops the hedge once nothing is pending.
-  it("names the stations with a hedge while the walk's photos may still be sorted in", () => {
-    let pending = true;
-    const h = harness({ walkPhotosPending: () => pending });
-    h.stand(5, 0);
+  // Why this test matters: the walk's photos once went into stations at
+  // the first Finish, so the HUD could not see them and hedged every name
+  // ("may change at Finish"). They are baked into stations when the
+  // recording opens now: the HUD names the walk's own stations from the
+  // start, and a pin placed in one is told the station it will be written
+  // in, with no hedge.
+  it("names a station the walk's photos started, from the open on, without a hedge", () => {
+    const photoAt = pin("photo", 100, 0).geo;
+    const h = harness({
+      opened: withWalkPhotos(tourOf([pin("gate", 0, 0)]), {
+        fixes: 9,
+        gpsAccuracyMedianM: 4,
+        captures: [
+          {
+            image: "images/frame-1.jpg",
+            geo: { ...photoAt, rotation: [0, 0, 0, 1] },
+          },
+        ],
+      }),
+    });
+    h.stand(100, 0);
     expect(h.chip.textContent).toBe(
-      "In Station 1 - what you place here joins it. " + WALK_HEDGE,
+      "In Station 2 - what you place here joins it.",
     );
-    h.stand(60, 0);
-    expect(h.chip.textContent).toBe(
-      "You left Station 1 - what you place next starts a new station. " +
-        WALK_HEDGE,
-    );
-    h.tour.place(pin("near", 5, 0), {}, "a pin");
-    expect(h.stations.placedIn("near")).toBe(
-      "in Station 1 (may change at Finish, when the walk's photos are sorted in)",
-    );
-    pending = false;
-    h.stand(5, 0);
-    expect(h.chip.textContent).toBe(
-      "In Station 1 - what you place here joins it.",
-    );
-    expect(h.stations.placedIn("near")).toBe("in Station 1");
+    h.tour.place(pin("near", 101, 0), {}, "a pin");
+    expect(h.stations.placedIn("near")).toBe("in Station 2");
+    expect(h.stations.nameOf("near")).toBe("Station 2");
   });
 
   // Why (M5c review #4): the HUD once read stations a Finish would start

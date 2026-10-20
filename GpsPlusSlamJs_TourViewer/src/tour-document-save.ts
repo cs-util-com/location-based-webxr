@@ -22,12 +22,11 @@ import type {
 import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import { hostedObjects } from "./authoring-draft.js";
 import {
-  captureSpotsForRebuild,
   finishedFileName,
   rebuildFinishedTour,
   type FinishedTour,
-  type RebuildPhotoSpots,
 } from "./finish-rebuild.js";
+import type { RebuildPhotoSpots } from "./tour-document-bake.js";
 import {
   manifestNow,
   tourDocumentActions,
@@ -135,10 +134,10 @@ interface TourSaves {
   queued<T>(start: () => Promise<T>): TourDocumentThunk<Promise<T>>;
   /** The document as a save reads it now. */
   snapshot(): TourDocumentThunk<TourSaveSnapshot>;
-  /** The recorded photos' spots, decided once per open (a decline is not
-   *  re-baked on every save, E1 review #11), after the pictures being read
+  /** What the open's bake decided about the walk's photos (`walkAtOpen`:
+   *  once per open, never at a save), after the pictures being read
    *  (before a rebuild replaces the bytes they may be read from). */
-  photoSpots(manifest: TourManifest): Promise<RebuildPhotoSpots>;
+  photoSpots(): Promise<RebuildPhotoSpots>;
   /** The file rebuilt from the newest bytes - or from `whole`, the opened
    *  file as the caller already read it, so it is not read twice. Throws
    *  what the rebuild throws. */
@@ -168,10 +167,14 @@ export function createTourSaves(input: {
   readonly pictureOf: (id: string) => Blob | undefined;
   /** Settles once the pictures being read are read. */
   readonly picturesRead: () => Promise<unknown>;
+  /** What the open's bake decided (`walkAtOpen`); absent: nothing to say
+   *  (no recording, or the tour had its photos). */
+  readonly photos?: RebuildPhotoSpots;
 }): TourSaves {
   const { tour, generation } = input;
   let newest: NewestBytes | null = null;
-  let spots: Promise<RebuildPhotoSpots> | null = null;
+  /** What the open's bake decided (`walkAtOpen`). */
+  const atOpen = input.photos ?? {};
   /** The end of the last queued run, for the next to start after. */
   let tail: Promise<unknown> = Promise.resolve();
 
@@ -206,7 +209,7 @@ export function createTourSaves(input: {
               throw new Error(TOUR_REPLACED);
             }
             const snap = snapshotOf(state);
-            const photos = await saves.photoSpots(snap.manifest);
+            const photos = await saves.photoSpots();
             const finished = await saves.rebuild(
               snap,
               photos,
@@ -247,12 +250,11 @@ export function createTourSaves(input: {
     snapshot() {
       return (_dispatch, getState) => snapshotOf(getState().tourDocument);
     },
-    async photoSpots(manifest) {
+    async photoSpots() {
       await input.picturesRead();
-      spots ??= captureSpotsForRebuild(tour, manifest);
-      return spots;
+      return atOpen;
     },
-    async rebuild(snap, photos, keepScan, whole) {
+    async rebuild(snap, decided, keepScan, whole) {
       const finished = await rebuildFinishedTour({
         tour:
           whole === undefined
@@ -269,8 +271,7 @@ export function createTourSaves(input: {
         deleted: snap.deleted,
         levels: [],
         keepScan,
-        ...(photos.spots === undefined ? {} : { captureSpots: photos.spots }),
-        walkPlacesNothing: photos.placesNothing === true,
+        walkPlacesNothing: decided.placesNothing === true,
         previous: newest,
       });
       if (finished === null) throw new Error("the save was stopped");

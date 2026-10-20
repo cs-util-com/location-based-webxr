@@ -55,11 +55,7 @@ import {
   type DetailsForm,
   type TourDetailFields,
 } from "./tour-details-form.js";
-import {
-  automaticStationFrame,
-  routedTo,
-  type CaptureSpotsInWorld,
-} from "./tour-content.js";
+import { automaticStationFrame, routedTo } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
 
 /** A station without its items: what the document edits of a station
@@ -421,21 +417,17 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
 }
 
 /** The manifest a write carries now (the Finish's rule,
- *  `finishedManifest`): what a save would write, without the zip.
- *  `captureSpots` is the save's own input (the walk's photo spots, which
- *  a page decides once per open, `captureSpotsForRebuild`): given the same,
- *  this is the manifest the save writes (the r875 milestone review #7). */
-export function manifestToWrite(
-  state: TourDocumentState,
-  captureSpots?: CaptureSpotsInWorld,
-): TourManifest | null {
+ *  `finishedManifest`): what a save would write, without the zip - the
+ *  same manifest (the r875 milestone review #7). The stations are the
+ *  document's as they are: the walk's photos were baked at open, and a
+ *  write assigns nothing. */
+export function manifestToWrite(state: TourDocumentState): TourManifest | null {
   const base = manifestNow(state);
   if (base === null) return null;
   return finishedManifest({
     manifest: base,
     placed: state.placed,
     deleted: state.deleted,
-    ...(captureSpots === undefined ? {} : { captureSpots }),
   });
 }
 

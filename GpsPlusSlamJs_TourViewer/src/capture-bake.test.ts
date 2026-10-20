@@ -4,7 +4,7 @@ import {
   parseTourManifest,
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { withTourContent, worldCaptureSpots } from "./tour-content.js";
+import { withWalkPhotos, worldCaptureSpots } from "./tour-content.js";
 import { MATURE_GPS_EXTENT_M } from "gps-plus-slam-app-framework/state/alignment-maturity";
 import { tourMediaTypeOfEntry } from "gps-plus-slam-app-framework/ar/tour-media";
 import {
@@ -59,12 +59,9 @@ describe("bakeCaptureSpots over the real sample recording", () => {
     // joinable position (the integration test of the live join says why).
     expect(bake.spots.captures).toHaveLength(5);
     expect(bake.spots.fixes).toBeGreaterThan(0);
-    // Placed into stations as the Finish does (version 3), the reader
+    // Placed into stations as the open does (version 3), the reader
     // takes them, and their world view is where the bake put them.
-    const tour = withTourContent(createEmptyTourManifest(), {
-      objects: [],
-      captureSpots: bake.spots,
-    });
+    const tour = withWalkPhotos(createEmptyTourManifest(), bake.spots);
     const read = parseTourManifest(JSON.parse(serializeTourManifest(tour)));
     const world = worldCaptureSpots(read)!;
     expect(world.captures.map((c) => c.image)).toEqual(
@@ -120,10 +117,7 @@ describe("bakeCaptureSpots over the real sample recording", () => {
       parseTourManifest(
         JSON.parse(
           serializeTourManifest(
-            withTourContent(createEmptyTourManifest(), {
-              objects: [],
-              captureSpots: bake.spots,
-            }),
+            withWalkPhotos(createEmptyTourManifest(), bake.spots),
           ),
         ),
       ),

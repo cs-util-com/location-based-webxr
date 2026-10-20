@@ -53,10 +53,11 @@ lives here.
     sighting of it are private to `creator-codes.ts` since code book plan
     M5d-2),
     `finishing`, `rebuiltZip` (with the `manifest.json` list it carries,
-    for the next Finish, K1 milestone review R7), `walkDecidedFor` (the
-    open tour whose Finish in this page settled the walk's photos - not a
-    declined bake, PR #643 review; a per-page view hint for the creator's
-    station HUD, cleared at tour teardown, PR #642 review), `tourLabel` (set by
+    for the next Finish, K1 milestone review R7), `walkBake` (the
+    creator's bake of the open recording's walk, `WalkBake` of
+    `tour-document-bake.ts`: running with its progress, or what it decided -
+    set by `archive-open.ts`, read by the Finish and the status line,
+    cleared at tour teardown), `tourLabel` (set by
     archive-open); the open
     tour's document `tourDocument` (`creator-document.ts`: the shared
     `tourDocument` slice of the store the session was made with, plus the

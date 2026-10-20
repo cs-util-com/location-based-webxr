@@ -19,16 +19,13 @@
  *   station's radius starts a new one there, inside one joins the
  *   nearest. "Place a pin" with no station open therefore creates a
  *   station holding it (D21).
- * - **The walk's photos:** the FIRST Finish of a tour with a recording and
- *   no photo spots places the recorded photos before the objects; the HUD
- *   cannot see them (they are baked at the Finish), so until then it names
- *   the stations with a hedge (`walkPhotosPending`, M5c review #2, PR
- *   #642 review).
+ * - **The walk's photos** are in their stations from the open on (the
+ *   bake at open, `walkAtOpen`), so no Finish adds or renumbers a
+ *   station: the names the HUD shows are the ones written, with no hedge.
  *
  * @see creator-stations.ts.md
  */
 
-import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { calcGpsCoords, type LatLong } from "gps-plus-slam-app-framework/core";
 import { Vector3, type Object3D } from "three";
 
@@ -136,40 +133,6 @@ export function placedInText(
     : `in ${station.name}`;
 }
 
-/** Why the names may change, while the walk's recorded photos may still
- *  be sorted in (M5c review #2, PR #642 review). */
-const HEDGE = "may change at Finish, when the walk's photos are sorted in";
-
-/** The hedge the station line ends with while the walk is pending. */
-export const WALK_HEDGE = `${HEDGE[0]!.toUpperCase()}${HEDGE.slice(1)}.`;
-
-/**
- * Whether a Finish may still sort the walk's recorded photos in: the tour
- * carries a recording and no baked photo spots (`withTourContent` places
- * them BEFORE the objects, `finish-rebuild.ts`), and no Finish of this
- * open tour in this page has decided about the walk yet (`decidedFor`,
- * the page's `walkDecidedFor`). The HUD cannot see the photos, so its
- * station names and numbers may change: it hedges them.
- *
- * A declined bake writes no spots, and the file has no way to say it
- * declined, so a tour reopened after one reads as pending again - the
- * hedge comes back, the names stay. Conservative: a recording that took
- * no photos also reads as pending until a Finish in this page.
- */
-export function walkPhotosPending<S extends { readonly hasRecording: boolean }>(
-  session: S | null,
-  manifest: TourManifest | null,
-  decidedFor: S | null = null,
-): boolean {
-  return (
-    session !== null &&
-    session !== decidedFor &&
-    session.hasRecording &&
-    manifest !== null &&
-    manifest.captureSpots === undefined
-  );
-}
-
 /** A visible reticle's hit point in the scene's GPS-world NUE, else null.
  *  One scratch vector: read every frame. */
 const reticleScratch = new Vector3();
@@ -205,9 +168,8 @@ export interface CreatorStations {
   tick(): void;
   /** Where object `id` went, for its placement note (`placedInText`). */
   placedIn(id: string): string | null;
-  /** The name of the station object `id` is in ("Station 2", hedged
-   *  while the walk's photos are pending), or null: what a "New station
-   *  here" placement's note names (D8). */
+  /** The name of the station object `id` is in ("Station 2"), or null:
+   *  what a "New station here" placement's note names (D8). */
   nameOf(id: string): string | null;
   /** The session ended: the line and the ring go. */
   endVisit(): void;
@@ -228,10 +190,6 @@ export function wireCreatorStations(deps: {
    *  there, else at the creator (M5c review #3); the ring always at the
    *  creator (PR #642 review). Absent: always at the creator. */
   reticleNue?(): readonly [number, number, number] | null;
-  /** The walk's photos may still be sorted in (`walkPhotosPending`): the
-   *  line and a placement's note name the station with a hedge. Absent:
-   *  never. */
-  walkPhotosPending?(): boolean;
   zero(): LatLong | null;
   /** The scene root (GPS-world NUE), or null outside a session. */
   scene(): Object3D | null;
@@ -312,9 +270,7 @@ export function wireCreatorStations(deps: {
         left,
         deps.tour.state().newStationArmed,
       );
-      show(
-        deps.walkPhotosPending?.() === true ? `${line} ${WALK_HEDGE}` : line,
-      );
+      show(line);
       if (standing === null) {
         ring.hide();
         return;
@@ -330,17 +286,10 @@ export function wireCreatorStations(deps: {
       );
     },
     placedIn(id) {
-      const where = placedInText(stations(), id);
-      return where !== null && deps.walkPhotosPending?.() === true
-        ? `${where} (${HEDGE})`
-        : where;
+      return placedInText(stations(), id);
     },
     nameOf(id) {
-      const station = stations().find((s) => s.itemIds.includes(id));
-      if (station === undefined) return null;
-      return deps.walkPhotosPending?.() === true
-        ? `${station.name} (${HEDGE})`
-        : station.name;
+      return stations().find((s) => s.itemIds.includes(id))?.name ?? null;
     },
     endVisit() {
       show("");

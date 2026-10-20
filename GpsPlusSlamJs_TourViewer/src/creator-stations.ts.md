@@ -29,21 +29,15 @@ placement went ("it starts Station 3" / "in Station 2") for its note.
   while "New station here" is armed (owner decision D8): "What you place
   next starts a new station here."
 - `placedInText(stations, objectId) -> string | null` - "it starts
-  Station 3" for the first element of a station the next Finish starts,
-  else "in Station 2"; null when the object is in none.
-- `walkPhotosPending(session, manifest, decidedFor?) -> boolean` - the
-  tour has a recording and no baked photo spots, and `session` is not
-  `decidedFor` (the page's `walkDecidedFor`: a Finish of this open tour,
-  in this page, already settled the walk: its spots written, or none to
-  place; a declined bake settles nothing). `WALK_HEDGE` ("May change
-  at Finish, when the walk's photos are sorted in.") ends the line then.
+  Station 3" for the first element of a station the tour file does not
+  carry yet, else "in Station 2"; null when the object is in none.
 - `reticleNueOf(reticle) -> [n, u, e] | null` - a visible reticle's hit
   point in GPS-world NUE; null when hidden, absent or not finite.
 - `wireCreatorStations({ ctx, dom: { chip }, creatorNue, reticleNue?, zero, scene
 }) -> { tick, placedIn, nameOf, endVisit }` - `tick()` every camera
   frame of a creator's session: the line and the ring; `placedIn(id)` for
   a placement's note; `nameOf(id)` the name of the station object `id`
-  is in (hedged like `placedIn`), for a "New station here" placement's
+  is in, for a "New station here" placement's
   note; `endVisit()` hides both. The line reads the document's
   `newStationArmed` each frame.
 
@@ -84,31 +78,13 @@ placement went ("it starts Station 3" / "in Station 2") for its note.
 - **The radius** is each station's own `foundRadiusM`; the stations the
   rule starts take `STATION_RADIUS_M` (25 m, provisional until the sweep
   over recorded walks).
-- **The walk's photos:** a tour's FIRST Finish with a recording and no
-  photo spots places the walk's recorded photos before the objects
-  (`withTourContent`); they are baked at the Finish, so the HUD cannot see
-  them and its names and numbers may change until then. While that holds
-  (`walkPhotosPending`) the line names the station as usual and ends with
-  `WALK_HEDGE`, and a placement's note names it with the same hedge ("in
-  Station 1 (may change at Finish, when the walk's photos are sorted
-  in)"); the ring is unchanged (M5c review #2, PR #642 review). Naming no
-  station, as first built, left a dead HUD for good on a tour whose bake
-  DECLINED: a decline writes no spots, so the file reads as pending on
-  every reopen. Conservative: a recording that took no photos reads as
-  pending until a Finish. Feeding the live join's spots in instead was not
-  chosen: the bake is an async replay of the whole recording.
-- **The hedge drops after a Finish in this page settled the walk**: its
-  photos' spots written, or a walk that places no photo
-  (`ctx.walkDecidedFor`, set by `creator-finish.ts` only when the bake
-  gave no `notPlaced` reason, cleared at tour teardown). A DECLINED bake
-  keeps the hedge (PR #643 review, replacing the PR #642 choice): it
-  writes nothing, so the next Finish bakes again and may still re-sort the
-  stations - a decline from a transient read failure included. It is a
-  **per-page view hint, not document state**: a declined bake has no field
-  in tour.json (an empty `captureSpots` is refused by the parser, and its
-  presence would switch off the visitor's live join), and adding one was
-  declined as a format change for a hint. So a reopened tour hedges again
-  until a Finish settles its walk.
+- **The walk's photos are in their stations from the open on**: the
+  recording is baked when the creator opens it (`walkAtOpen` of
+  `tour-document-bake.ts`), its photos joining the tour's stations or
+  starting `walk-N` ones by the same rule, and a Finish assigns nothing.
+  So the names the HUD shows are the ones written, with no hedge. (Until
+  the bake moved to the open, the HUD could not see the photos and
+  hedged every name "may change at Finish".)
 - **Cost:** the stations are recomputed only when the manifest, any
   placed object or the deletions change. Placed objects are compared entry
   by entry, because the settle re-poses them by replacing entries IN the
@@ -147,9 +123,8 @@ note(`Pin placed - ${stations.placedIn(pin.id) ?? ""}`);
   radius swept); a settle's re-pose beyond the radius followed; `reticleNueOf`; the
   words (the armed line too); "New station here" through the wiring
   (the line while armed, the ring kept, the new station named); the
-  line and the note hedged (stations still named) while the
-  walk's photos are pending, and `walkPhotosPending` (never finished or
-  reopened after a decline: pending; baked or decided in this page: not); the station left, remembered across a
+  station the walk's photos started named from the open on, with no
+  hedge; the station left, remembered across a
   deletion that renumbers it and across the Finish that writes it (a real
   tour document, changed as the creator changes it); the
   wiring: the line, the ring at the anchor on

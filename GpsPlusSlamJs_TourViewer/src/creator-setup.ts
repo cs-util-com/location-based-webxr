@@ -56,11 +56,7 @@ import {
 import { wireCreatorMeasuring } from "./creator-measuring.js";
 import { wireCreatorSettle } from "./creator-settle.js";
 import { wireCreatorFinish } from "./creator-finish.js";
-import {
-  reticleNueOf,
-  walkPhotosPending,
-  wireCreatorStations,
-} from "./creator-stations.js";
+import { reticleNueOf, wireCreatorStations } from "./creator-stations.js";
 import { visitorPosition } from "./visitor-position.js";
 
 import { newObjectId } from "./content-placement.js";
@@ -83,6 +79,7 @@ import {
   codeTourLine,
   entryHint,
   setupHint,
+  walkBakeLine,
 } from "./qr-author-mode.js";
 
 import { createPrintSizeCheck } from "./print-size-check.js";
@@ -563,8 +560,12 @@ export function wireCreatorSetup(deps: {
     // the phone on the printed code so it fills the screen" on a desktop
     // page with no session running is an instruction for a situation the
     // creator is not in.
+    // The bake at open runs, or declined: said on the page and in AR.
+    const walkLine = walkBakeLine(ctx.walkBake);
     if (!sessionLive()) {
-      dom.status.textContent = ctx.placementNote ?? "";
+      dom.status.textContent = [walkLine, ctx.placementNote ?? ""]
+        .filter((line) => line !== "")
+        .join(" · ");
       return;
     }
     // A placement's outcome (or a draft notice) stands until the next tap
@@ -577,6 +578,7 @@ export function wireCreatorSetup(deps: {
         ? `${DONE_WAITS_FOR_MEASURING} · `
         : "") +
       entryLead() +
+      (walkLine === "" ? "" : `${walkLine} · `) +
       settle.refusalLead() +
       (ctx.placementNote === null ? "" : `${ctx.placementNote} · `);
     // evaluate, not last: a cache hit unless the detections changed - and
@@ -663,12 +665,6 @@ export function wireCreatorSetup(deps: {
         gpsPositions: [],
       }).nue,
     reticleNue: () => reticleNueOf(ctx.reticle),
-    walkPhotosPending: () =>
-      walkPhotosPending(
-        ctx.session,
-        ctx.tourDocument.manifest(),
-        ctx.walkDecidedFor,
-      ),
     zero: () => selectZeroReference(arStore.getState()),
     scene: () => (creator && sessionLive() ? seams.getScene() : null),
   });

@@ -3,23 +3,22 @@
  * 2026-10-17-1816, W3, D20, D21): the pages place, move and compare a
  * WORLD view - every pin and photo with its geo pose, as the framework's
  * `tourObjects` reads it - and write through this module, which puts every
- * object into a station at a local pose. A version 3 tour has no loose
- * pins.
+ * object into the station it names, at a local pose. A version 3 tour has
+ * no loose pins.
  *
+ * - Every object belongs to a station from the moment it is placed (the
+ *   tour document's station rule): the writer assigns nothing and starts
+ *   no station. It writes the stations as they are, in their order, each
+ *   object in the one it names (or, naming none, the one the tour holds
+ *   it in), and refuses an object in no station of the tour.
  * - An object nobody moved keeps its local pose VERBATIM (its world pose
  *   reads back as the very numbers it has): a save never nudges an item,
  *   which D17's rigid station moves rely on.
- * - A moved object stays in its station, re-expressed there
- *   (`localPoseOf`), however far it went: re-assigning an existing item is
- *   the editor's (M5b), never a side effect of a save.
- * - A new object, and the walk's recorded photos when the tour has no
- *   spots yet, are assigned by the automatic-station rule
- *   (`station-assign.ts`): the recorded photos first, in capture order
- *   (the walk came before the tour was edited), then the objects in the
- *   caller's order. A new station is anchored where its first element
- *   stands, turned like north, with no story. A station an object starts
- *   of its own is there for every recorded photo, but for the other
- *   objects only from its own object on.
+ * - A moved object is re-expressed in its station (`localPoseOf`).
+ * - The walk's recorded photos are put into stations once, when the
+ *   recording is opened (`withWalkPhotos`), by the rule a placement
+ *   follows: in capture order, the station whose own found radius holds
+ *   the photo, else a new automatic one anchored there.
  * - A station this write EMPTIED (it held items, it holds none) goes when
  *   nothing else keeps it: no title, no story steps, no recorded photo,
  *   and no other station routing to it. It existed for its elements
@@ -35,7 +34,6 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourContentFields } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
   TourCapture,
-  TourCaptureSpots,
   TourItem,
   TourManifest,
   TourObject,
@@ -47,12 +45,10 @@ import {
   tourCaptureGeos,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
-import { newObjectId } from "./content-placement.js";
 import {
-  assignToStations,
   STATION_RADIUS_M,
+  stationHolding,
   type StationPoint,
-  type StationSeat,
 } from "./station-assign.js";
 
 /**
@@ -63,7 +59,7 @@ import {
 export const AUTO_STATION_ACTIVATE_M = 2 * STATION_RADIUS_M;
 
 /** The walk's recorded photos in the world, before they are in stations:
- *  what the Finish's bake produces (`capture-bake.ts`) and what a viewer
+ *  what the bake at open produces (`capture-bake.ts`) and what a viewer
  *  places. */
 export interface CaptureSpotsInWorld {
   readonly fixes: number;
@@ -158,20 +154,18 @@ function automaticStation(id: string, at: StationPoint): TourStation {
 }
 
 /**
- * `manifest` with `objects` as its pins and photos, each in a station,
- * and the recorded photos placed when the tour has none yet. Throws what
- * the rule throws: a RangeError for a radius that is not positive, an
- * Error for a new station id already taken.
+ * `manifest` with `objects` as its pins and photos, each in the station
+ * it names (or, naming none, the one the manifest holds it in), the
+ * stations kept as they are and in their order. Throws an Error naming
+ * the object for one in no station of `manifest`: the tour document
+ * seats every object, so one reaching here unseated is a broken document,
+ * never a reason to start a station nobody was shown.
  */
 export function withTourContent(
   manifest: TourManifest,
   content: {
     /** Every pin and photo the tour is to carry, in order. */
     readonly objects: readonly TourObject[];
-    /** The walk's recorded photos; used only when the tour has none. */
-    readonly captureSpots?: CaptureSpotsInWorld;
-    readonly newStationId?: () => string;
-    readonly radiusM?: number;
   },
 ): TourManifest {
   const stationById = new Map(manifest.stations.map((s) => [s.id, s]));
@@ -186,25 +180,16 @@ export function withTourContent(
   const items = new Map<string, TourItem[]>(
     manifest.stations.map((s) => [s.id, []]),
   );
-  const bake =
-    manifest.captureSpots === undefined ? content.captureSpots : undefined;
-  const placedByRule: TourObject[] = [];
   for (const object of content.objects) {
     const stationId = object.station ?? stationOfItem.get(object.id);
     const station =
       stationId === undefined ? undefined : stationById.get(stationId);
     if (station === undefined) {
-      // A new object, or one naming a station the tour lacks: the rule
-      // places it, the latter in a station of that very id (an OWN
-      // station), anchored where the first object naming it stands -
-      // never merged into a neighbour, and in the objects' order like the
-      // rule's own new stations. Two cases name one: an undo that brought
-      // an object back after a save dropped its emptied station (the M5a
-      // milestone review M2), and the phone's "New station here" (owner
-      // decision D8 of the editor round-2 plan), which starts a station
-      // even within R.
-      placedByRule.push(object);
-      continue;
+      throw new Error(
+        `The tour's object "${object.id}" is in no station of the tour${
+          stationId === undefined ? "" : ` (it names "${stationId}")`
+        }.`,
+      );
     }
     const old = itemById.get(object.id);
     const unmoved =
@@ -216,88 +201,73 @@ export function withTourContent(
       pose: unmoved ? old.pose : localPoseOf(object.geo, station.geo),
     });
   }
-  // Two passes of the rule. The recorded photos first, in capture order
-  // (the walk came before the tour was edited), with the own stations
-  // already seated where their objects stand, so a photo taken at an own
-  // station's spot joins it rather than a neighbour or a duplicate. Then
-  // the objects, in the caller's order, WITHOUT those seats: an own station
-  // starts when its object comes, so an object placed before it is never
-  // taken into it.
-  const ownSeats = new Map<string, StationSeat>();
-  for (const object of placedByRule) {
-    const own = object.station;
-    if (own !== undefined && !ownSeats.has(own)) {
-      ownSeats.set(own, { id: own, anchor: object.geo });
-    }
-  }
-  const rule = {
-    newStationId: content.newStationId ?? (() => newObjectId()),
-    ...(content.radiusM === undefined ? {} : { radiusM: content.radiusM }),
-  };
-  const captureElements = bake?.captures ?? [];
-  const byPhotos = assignToStations({
-    ...rule,
-    stations: [
-      ...manifest.stations.map((s) => ({ id: s.id, anchor: s.geo })),
-      ...ownSeats.values(),
-    ],
-    elements: captureElements,
-    positionOf: (c) => c.geo,
-  });
-  const assigned = assignToStations({
-    ...rule,
-    stations: byPhotos.stations.filter((seat) => !ownSeats.has(seat.id)),
-    elements: placedByRule,
-    positionOf: (o) => o.geo,
-    ownStationOf: (o) => o.station,
-  });
-  const stations = new Map(stationById);
-  for (const seat of assigned.stations) {
-    if (!stations.has(seat.id)) {
-      stations.set(seat.id, automaticStation(seat.id, seat.anchor));
-      items.set(seat.id, []);
-    }
-  }
-  const captures: TourCapture[] = captureElements.map((capture, i) => {
-    const id = byPhotos.stationOf[i]!;
-    return {
-      image: capture.image,
-      station: id,
-      pose: localPoseOf(capture.geo, stations.get(id)!.geo),
-    };
-  });
-  for (const [i, object] of placedByRule.entries()) {
-    const id = assigned.stationOf[i]!;
-    items.get(id)?.push({
-      ...fieldsOf(object),
-      pose: localPoseOf(object.geo, stations.get(id)!.geo),
-    });
-  }
-  const spots: TourCaptureSpots | undefined =
-    manifest.captureSpots ??
-    (bake === undefined || captures.length === 0
-      ? undefined
-      : {
-          fixes: bake.fixes,
-          gpsAccuracyMedianM: bake.gpsAccuracyMedianM,
-          captures,
-        });
-  const filled = assigned.stations.map((seat) => ({
-    ...stations.get(seat.id)!,
-    items: items.get(seat.id) ?? [],
+  const filled = manifest.stations.map((station) => ({
+    ...station,
+    items: items.get(station.id) ?? [],
   }));
   const kept = new Set([
-    ...(spots?.captures ?? []).map((c) => c.station),
+    ...(manifest.captureSpots?.captures ?? []).map((c) => c.station),
     ...filled.flatMap(routedTo),
   ]);
-  const written: TourManifest = {
+  return {
     ...manifest,
     stations: filled.filter(
       (s) => !emptiedAndBare(s, stationById.get(s.id), kept),
     ),
   };
-  if (spots === undefined) return written;
-  return { ...written, captureSpots: spots };
+}
+
+/**
+ * `manifest` with the walk's recorded photos in stations: the bake at
+ * open (`capture-bake.ts`), run once when a creator opens a recording.
+ * In capture order, each photo joins the station whose OWN found radius
+ * holds it (`stationHolding`: horizontal, inclusive, the nearest), else
+ * starts a new automatic station anchored where it was taken, after the
+ * tour's own stations. Their ids are `walk-1`, `walk-2`, ... (skipping
+ * ids the tour has), so a reload's bake of the same recording gives the
+ * same ids the page's records name. The same manifest when it already has
+ * its photos (they are baked once) or the walk has none.
+ */
+export function withWalkPhotos(
+  manifest: TourManifest,
+  spots: CaptureSpotsInWorld,
+): TourManifest {
+  if (manifest.captureSpots !== undefined) return manifest;
+  if (spots.captures.length === 0) return manifest;
+  const taken = new Set(manifest.stations.map((s) => s.id));
+  let n = 0;
+  const nextId = (): string => {
+    let id: string;
+    do {
+      n += 1;
+      id = `walk-${String(n)}`;
+    } while (taken.has(id));
+    taken.add(id);
+    return id;
+  };
+  const stations: TourStation[] = [...manifest.stations];
+  const captures: TourCapture[] = spots.captures.map((capture) => {
+    const holder = stationHolding(stations, capture.geo);
+    let station = stations.find((s) => s.id === holder);
+    if (station === undefined) {
+      station = automaticStation(nextId(), capture.geo);
+      stations.push(station);
+    }
+    return {
+      image: capture.image,
+      station: station.id,
+      pose: localPoseOf(capture.geo, station.geo),
+    };
+  });
+  return {
+    ...manifest,
+    stations,
+    captureSpots: {
+      fixes: spots.fixes,
+      gpsAccuracyMedianM: spots.gpsAccuracyMedianM,
+      captures,
+    },
+  };
 }
 
 /** Whether this write emptied `station` (`before` held items) and

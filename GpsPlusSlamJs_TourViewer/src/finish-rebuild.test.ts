@@ -10,11 +10,8 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
-  ArchiveLimitError,
   DecompressionBudget,
-  loadActionsFromZip,
   packFilesAsZip,
-  readZipEntries,
 } from "gps-plus-slam-app-framework/storage";
 import {
   readStoredCentralDirectory,
@@ -25,14 +22,13 @@ import {
   serializeTourManifest,
   type TourManifest,
   type TourObject,
+  type TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
-  captureSpotsForRebuild,
   finishedFileName,
   pendingAfterRebuild,
   rebuildFinishedTour,
 } from "./finish-rebuild.js";
-import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import { openTourFile, type TourSession } from "./tour-session.js";
 import {
   buildListedTourFixture,
@@ -40,14 +36,14 @@ import {
   generateFixtureKey,
 } from "./test-support/tour-signing-fixture.js";
 import {
-  SAMPLE_PHOTOS,
-  sampleRecordingBytes,
-} from "./test-support/sample-recording.js";
-import { tourOf, withWorldObjects } from "./test-support/v3-tour.js";
+  stationIdOf,
+  tourOf,
+  withWorldObjects,
+} from "./test-support/v3-tour.js";
 import {
   type CaptureSpotsInWorld,
   withTourContent,
-  worldCaptureSpots,
+  withWalkPhotos,
 } from "./tour-content.js";
 
 const WRAP = "mytour/";
@@ -77,6 +73,28 @@ function photo(id: string): TourObject {
 
 function manifestOf(objects: readonly TourObject[]): TourManifest {
   return tourOf([...objects]);
+}
+
+/** A station for the objects a test places: the tour document seats every
+ *  object before a write, and the writer assigns none. */
+const HERE: TourStation = {
+  id: "here",
+  geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+  activateRadiusM: 50,
+  foundRadiusM: 25,
+  hint: "arrow",
+  steps: [],
+  items: [],
+};
+
+/** An empty tour with `HERE`. */
+function hereTour(): TourManifest {
+  return tourOf([], { stations: [HERE] });
+}
+
+/** `object` as the tour document seats it, in station `id`. */
+function seated(object: TourObject, id = HERE.id): TourObject {
+  return { ...object, station: id };
 }
 
 async function open(blob: Blob): Promise<TourSession> {
@@ -163,14 +181,17 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
       ...NO_EDITS,
       tour,
       manifest,
-      placed: [{ object: pin("a", "new text") }, { object: pin("b") }],
+      placed: [
+        { object: pin("a", "new text") },
+        { object: seated(pin("b"), stationIdOf("a")) },
+      ],
       deleted: ["gone"],
       levels: [{ id: LEVEL_ID, json: '{"new":true}' }],
     });
     expect(result).not.toBeNull();
     const carried = await zipManifest(result!.blob);
-    // In station order (version 3): the new "b" joined the nearest
-    // station within R, a's (the automatic-station rule, D20).
+    // In station order (version 3): the new "b" in the station it names,
+    // a's.
     expect(carried.objects.map((o) => o.id)).toEqual(["a", "b", "kept"]);
     expect(carried.objects[0]).toMatchObject({ label: "new text" });
     // What it reports writing is what the zip carries.
@@ -234,7 +255,7 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
       ...NO_EDITS,
       tour,
       manifest: manifestOf([pin("a")]),
-      placed: [{ object: pin("b") }],
+      placed: [{ object: seated(pin("b"), stationIdOf("a")) }],
       now: () => new Date("2026-10-13T18:00:00.000Z"),
     });
     expect(result!.signedManifest).toMatchObject({
@@ -260,15 +281,15 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
     const first = await rebuildFinishedTour({
       ...NO_EDITS,
       tour,
-      manifest: manifestOf([]),
-      placed: [{ object: photo("p1"), blob: new Blob(["jpg"]) }],
+      manifest: hereTour(),
+      placed: [{ object: seated(photo("p1")), blob: new Blob(["jpg"]) }],
     });
     const read = vi.spyOn(tour, "readWholeArchive");
     const second = await rebuildFinishedTour({
       ...NO_EDITS,
       tour,
       manifest: first!.written,
-      placed: [{ object: pin("b") }],
+      placed: [{ object: seated(pin("b")) }],
       previous: { blob: first!.blob },
     });
     expect(read).not.toHaveBeenCalled();
@@ -280,11 +301,11 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
     await tour.close();
   });
 
-  it("puts the walk's recorded photos into stations at the Finish, in capture order, and keeps them there on the next (D20, D21)", async () => {
-    // Why (tour editor plan W3): a version 3 tour has no loose photos; the
-    // phone's Finish bakes the walk's photos in the world and the rule
-    // assigns each, in the order they were taken, to the nearest station
-    // within R or a new one - and a later save never re-assigns them.
+  // Why: the walk's photos are put into stations when the recording is
+  // opened (`walkAtOpen`), so the stations a creator was shown are the
+  // ones written. A Finish writes them as they are, and never assigns
+  // them again.
+  it("writes the walk's photos as they were baked at open, and a later Finish keeps them", async () => {
     const tour = await plainTour([], {});
     const walk: CaptureSpotsInWorld = {
       fixes: 5,
@@ -299,26 +320,26 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
         },
       })),
     };
+    const baked = withWalkPhotos(manifestOf([]), walk);
     const first = await rebuildFinishedTour({
       ...NO_EDITS,
       tour,
-      manifest: manifestOf([]),
-      captureSpots: walk,
+      manifest: baked,
     });
-    const spots = first!.written.captureSpots!;
-    const [s0, s1, s2] = spots.captures.map((c) => c.station);
-    expect(s1).toBe(s0);
-    expect(s2).not.toBe(s0);
-    expect(first!.written.stations.map((s) => s.id)).toEqual([s0, s2]);
+    expect(first!.written.captureSpots).toEqual(baked.captureSpots);
+    expect(first!.written.stations).toEqual(baked.stations);
     const second = await rebuildFinishedTour({
       ...NO_EDITS,
       tour,
       manifest: first!.written,
-      placed: [{ object: pin("b") }],
-      captureSpots: walk,
+      placed: [{ object: seated(pin("b"), "walk-1") }],
       previous: { blob: first!.blob },
     });
-    expect(second!.written.captureSpots).toEqual(spots);
+    expect(second!.written.captureSpots).toEqual(baked.captureSpots);
+    expect(second!.written.stations.map((st) => st.id)).toEqual([
+      "walk-1",
+      "walk-2",
+    ]);
     await tour.close();
   });
 
@@ -328,8 +349,8 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
     const result = await rebuildFinishedTour({
       ...NO_EDITS,
       tour,
-      manifest: manifestOf([]),
-      placed: [{ object: pin("b") }],
+      manifest: hereTour(),
+      placed: [{ object: seated(pin("b")) }],
       shouldContinue: () => false,
       onProgress: progress,
     });
@@ -351,9 +372,10 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
       const r = await rebuildFinishedTour({
         ...NO_EDITS,
         tour,
-        manifest: manifestOf([]),
+        manifest: spots
+          ? withWalkPhotos(manifestOf([]), SPOTS)
+          : manifestOf([]),
         keepScan,
-        ...(spots ? { captureSpots: SPOTS } : {}),
       });
       return { left: r!.scanLeftOut, names: await namesOf(r!.blob) };
     };
@@ -409,8 +431,8 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
     const result = await rebuildFinishedTour({
       ...NO_EDITS,
       tour,
-      manifest: manifestOf([]),
-      placed: [{ object: pin("b") }],
+      manifest: hereTour(),
+      placed: [{ object: seated(pin("b")) }],
     });
     expect(await namesOf(result!.blob)).not.toContain(
       `${WRAP}manifest.sig.json`,
@@ -481,14 +503,14 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
     const first = await rebuildFinishedTour({
       ...NO_EDITS,
       tour,
-      manifest: manifestOf([]),
-      placed: [{ object: photo("p1"), blob: new Blob(["jpg"]) }],
+      manifest: hereTour(),
+      placed: [{ object: seated(photo("p1")), blob: new Blob(["jpg"]) }],
     });
     const second = await rebuildFinishedTour({
       ...NO_EDITS,
       tour,
       manifest: first!.written,
-      placed: [{ object: pin("b") }],
+      placed: [{ object: seated(pin("b")) }],
       previous: {
         blob: first!.blob,
         ...(first!.signedManifest === undefined
@@ -553,7 +575,7 @@ describe("pendingAfterRebuild (M6 E0b: what is still to save after a write)", ()
       },
     };
     const saved = withTourContent(manifestOf([pin("a")]), {
-      objects: [pin("a"), near],
+      objects: [pin("a"), seated(near, stationIdOf("a"))],
     });
     expect(saved.stations.map((s) => s.items.map((i) => i.id))).toEqual([
       ["a", "near"],
@@ -576,102 +598,6 @@ describe("pendingAfterRebuild (M6 E0b: what is still to save after a write)", ()
       [],
     );
     expect(out.finished[0]).toBe(shot);
-  });
-});
-
-describe("captureSpotsForRebuild (M6 E0b: the photos' spots for a save)", () => {
-  // Why: the tour's own spots, else baked from its recording, else none -
-  // and only a cap or a failed integrity check fails the save. The phone's
-  // Finish had this inline; a desktop save of an older tour with a
-  // recording must publish the same file the phone would (E0 review #5).
-  /** A tour whose spots are already in its stations. */
-  const own = withTourContent(manifestOf([]), {
-    objects: [],
-    captureSpots: SPOTS,
-  });
-  const noRecording = {
-    hasRecording: false,
-    entries: [],
-    loadSessionMeta: () => Promise.resolve(null),
-    loadRecordingActions: () => Promise.resolve(null),
-  };
-
-  it("takes the tour's own spots without reading the recording", async () => {
-    const read = vi.fn(() => Promise.resolve(null));
-    await expect(
-      captureSpotsForRebuild(
-        { ...noRecording, hasRecording: true, loadRecordingActions: read },
-        own,
-      ),
-    ).resolves.toEqual({ spots: worldCaptureSpots(own) });
-    expect(read).not.toHaveBeenCalled();
-  });
-
-  it("has none for a tour without a recording", async () => {
-    await expect(
-      captureSpotsForRebuild(noRecording, manifestOf([])),
-    ).resolves.toEqual({});
-  });
-
-  it("says why when the recording cannot be read, and does not fail the save", async () => {
-    const out = await captureSpotsForRebuild(
-      {
-        ...noRecording,
-        hasRecording: true,
-        loadRecordingActions: () => Promise.reject(new Error("bad entry")),
-      },
-      manifestOf([]),
-    );
-    expect(out).toEqual({
-      notPlaced: "reading the recording failed: bad entry",
-    });
-  });
-
-  it("fails the save on a cap or a failed integrity check", async () => {
-    for (const error of [
-      new ArchiveLimitError("archive-bytes", 1, 2),
-      new TourIntegrityError("bad-signature", "the signature does not match"),
-    ]) {
-      await expect(
-        captureSpotsForRebuild(
-          {
-            ...noRecording,
-            hasRecording: true,
-            loadRecordingActions: () => Promise.reject(error),
-          },
-          manifestOf([]),
-        ),
-      ).rejects.toBe(error);
-    }
-  });
-
-  it("passes on a bake that declines as the reason", async () => {
-    const out = await captureSpotsForRebuild(
-      { ...noRecording, hasRecording: true },
-      manifestOf([]),
-    );
-    expect(out).toEqual({ notPlaced: "no recording in this tour" });
-  });
-
-  it("says a walk that names no photo of the tour places nothing, and gives no reason a Finish would show", async () => {
-    // Why (the M4b milestone review #3): such a walk was kept by every
-    // lean Finish with "the recorded photos could not be placed ... so the
-    // walk recording stays" - about photos that do not exist.
-    const bytes = sampleRecordingBytes();
-    const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
-    const out = await captureSpotsForRebuild(
-      {
-        hasRecording: true,
-        // The recording's photos are not in this tour.
-        entries: (await readZipEntries(bytes))
-          .filter((e) => !e.directory && !SAMPLE_PHOTOS.includes(e.filename))
-          .map((e) => ({ filename: e.filename, isImage: false })),
-        loadSessionMeta: () => Promise.resolve({ odomCoordVersion: 5 }),
-        loadRecordingActions: () => Promise.resolve(actions),
-      },
-      manifestOf([]),
-    );
-    expect(out).toEqual({ placesNothing: true });
   });
 });
 

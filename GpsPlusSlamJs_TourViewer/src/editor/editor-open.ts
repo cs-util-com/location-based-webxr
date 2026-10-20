@@ -20,13 +20,19 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-details";
 import type { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import { describeOpenError } from "../open-errors.js";
+import { type RebuildPhotoSpots, walkAtOpen } from "../tour-document-bake.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 
 export type EditorOpen =
   | {
       readonly kind: "opened";
       readonly session: TourSession;
+      /** The tour, its recording's photos baked into its stations
+       *  (`walkAtOpen`): the stations shown are the ones a save writes. */
       readonly manifest: TourManifest;
+      /** What the bake decided (a decline's reason, a walk that places
+       *  nothing): what a save needs. */
+      readonly photos: RebuildPhotoSpots;
       readonly levels: ReadonlyMap<string, QrLevel>;
       readonly fileName: string;
       /** The details the reader left out (a hand-edited file): the next
@@ -108,10 +114,18 @@ export async function openTourForEditing(
       await session.close();
       return { kind: "refused", reason: NOT_A_TOUR };
     }
+    // The recording's photos go into stations now, once per open, by the
+    // station rule: a save assigns nothing. A bake that cannot place them
+    // never refuses the open (`walkAtOpen`).
+    const walk = await walkAtOpen(
+      session,
+      manifest ?? createEmptyTourManifest(),
+    );
     return {
       kind: "opened",
       session,
-      manifest: manifest ?? createEmptyTourManifest(),
+      manifest: walk.manifest,
+      photos: walk.photos,
       levels,
       fileName: file.name,
       dropped,

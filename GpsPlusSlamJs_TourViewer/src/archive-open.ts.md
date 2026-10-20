@@ -137,8 +137,9 @@ DOM glue, its own module since the flows plan M6.
   also ended, r857 review #9, is gone since r863), `levelsUnreadable`,
   and a failed
   finish (`finishError`, which keeps Save off - scan-to-open plan §9 #8),
-  and `walkDecidedFor` (a reopened tour hedges its stations again, PR #642
-  review).
+  and `walkBake` (the next open bakes its own walk; a decline kept
+  across a switch would be said of, and read by the Finish of, the next
+  tour).
   The measured level goes with the tour, and so does its measurement (the
   settle's raw inputs, authoring plan 2026-09-28-0953 M2c) - a closing
   tour's measurement must never be re-minted into the next tour's level:
@@ -170,6 +171,21 @@ DOM glue, its own module since the flows plan M6.
   "no tour" (null). The gallery, the scan entries and the tour info still
   read the file's own (null) manifest. Tests: `archive-open-file.test.ts`
   ("a recording without tour.json").
+- **The bake at open** (creator only): a tour carrying a recording and no
+  baked photo spots is baked before it settles (`walkAtOpen` of
+  `tour-document-bake.ts`), and the document opens on the baked tour - the
+  walk's photos already in stations, joined to the tour's own or in new
+  `walk-N` ones by the station rule. While it runs `ctx.walkBake` is
+  `{ kind: "baking", done, total }` (the status line says so,
+  `walkBakeLine`), `tourManifestStatus` stays "pending" (the Finish, the
+  draft offer and the AR placement wait), and work placed meanwhile is
+  carried into the opened tour by the rule. Then `walkBake` holds what it
+  decided (`{ kind: "decided", photos }`: the Finish reads
+  `placesNothing` and `notPlaced`; a decline is said on the status
+  line). The bake never fails the open. A tour without a recording, or
+  with its photos already baked, settles at once (`photos: {}`). A
+  visitor's open never bakes. Tests: `archive-open-file.test.ts` ("a
+  creator's recording is baked when it opens").
 - **The gallery waits for `tour.json` and leaves out the creator's walk**
   (scan-pass plan S1, `tour-read-set.ts`): the settle sets
   `ctx.scanEntries` (empty without a manifest, as before) and then fills

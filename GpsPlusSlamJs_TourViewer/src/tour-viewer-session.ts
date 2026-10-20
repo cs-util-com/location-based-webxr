@@ -56,6 +56,7 @@ import type { StationContent } from "./station-content.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { PlacementState } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
+import type { WalkBake } from "./tour-document-bake.js";
 import {
   createCreatorDocument,
   type CreatorDocument,
@@ -373,13 +374,12 @@ export interface TourViewerSession {
     /** A save delivered it (UI round 1, U2: the leave guard). */
     delivered?: boolean;
   } | null;
-  /** The open tour whose Finish, in THIS page, settled the walk's recorded
-   *  photos (their spots written, or none to place - not a declined bake,
-   *  which the next Finish tries again, PR #643 review): the creator's
-   *  station HUD drops its hedge for it (`creator-stations.ts`
-   *  `walkPhotosPending`, PR #642 review). A per-page view hint, not
-   *  document state: a reopened tour (a new session) hedges again. */
-  walkDecidedFor: TourSession | null;
+  /** The creator's bake of the open recording's walk (`walkAtOpen` of
+   *  `finish-rebuild.ts`): running, with the replay's progress, or what
+   *  it decided (the Finish reads `placesNothing` and `notPlaced`; the
+   *  status line says a decline). Null before an open settled it and for
+   *  a visitor. */
+  walkBake: WalkBake | null;
   /** What the panel calls the open tour (`tourLabel`); null with none. */
   tourLabel: string | null;
   /** The creator's hit-test reticle for the running session. */
@@ -590,7 +590,7 @@ export function createTourViewerSession(
     finishProgress: "",
     finishError: null,
     rebuiltZip: null,
-    walkDecidedFor: null,
+    walkBake: null,
     tourLabel: null,
     arSessionGeneration: 0,
     reticle: null,

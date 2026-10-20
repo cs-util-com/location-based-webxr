@@ -28,7 +28,9 @@ imperative resources only - that handle and the pictures' side table
 
 ## Public API
 
-- `createEditorSession({ session, manifest, levels, fileName?, draft?, loadPhoto?, store? }): EditorSession`
+- `createEditorSession({ session, manifest, photos?, levels, fileName?, draft?, loadPhoto?, store? }): EditorSession`
+  (`manifest` as `openTourForEditing` opened it, the walk's photos baked
+  into its stations; `photos` what that bake decided)
   - `store` - the page's `createTourViewerStore()`; a fresh one when
     absent (tests). Creating the session dispatches `opened`: whatever
     the store's document held is gone, and an older session on the same
@@ -174,8 +176,9 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     is written to the draft again. Returns the counts.
   - `save({ keepScan, inPlace? })` - the document's save thunk
     (`../tour-document-save.ts` `save`, through `dispatchThunk`):
-    `rebuildFinishedTour` with `levels: []`, the photo spots decided once
-    per open (`captureSpotsForRebuild`, its result kept), from the last
+    `rebuildFinishedTour` with `levels: []`, what the open's bake decided
+    about the walk (`input.photos`, `walkAtOpen`; a save never bakes),
+    from the last
     save's bytes; returns `{ blob, filename, scanLeftOut, notPlaced?,
 written }` (`written`: the manifest the zip carries, for the draft's
     bases) and advances to what was written (`saved`,
@@ -197,8 +200,9 @@ written }` (`written`: the manifest the zip carries, for the draft's
     rebuilt without the walk (`keepScan: false`, with the pending edits
     and the photo spots, from the same bytes: the opened file is read
     once, review #11), or a refusal in words: `NO_WALK`, or the recorded
-    photos the tour carries still placed by the walk (no baked spots -
-    they would be left nowhere, `finish-rebuild.ts`). A walk that places
+    photos the tour carries still placed by the walk (no baked spots in
+    the tour, the open's bake placed none - they would be left nowhere,
+    `finish-rebuild.ts`). A walk that places
     nothing (`placesNothing`) moves out (review #3). **Nothing changes until
     `commit()`**: the page writes the walk's zip first, then the tour,
     and commits only when both landed; `current()` says no other save

@@ -178,11 +178,12 @@ different times (a walk's move lands only after the page wrote both files).
 - `manifestNow(state)` - the manifest the next write starts from: the
   written tour with the frames (`withFrames`), the setting
   (`withNeedsNoGps`) and the details (`effectiveDetails`).
-- `manifestToWrite(state, captureSpots?)` - what a write would carry:
-  `finishedManifest` (the Finish's own rule) over `manifestNow`, `placed`,
-  `deleted` and the save's photo spots (the walk's recorded photos, which
-  a page decides once per open). The creator's station HUD
-  (`creator-stations.ts`) reads its stations from it.
+- `manifestToWrite(state)` - what a write would carry:
+  `finishedManifest` (the Finish's own rule) over `manifestNow`, `placed`
+  and `deleted`. The stations are the document's as they are: the walk's
+  photos were baked into them at the open (`walkAtOpen`), and a write
+  assigns nothing. The creator's station HUD (`creator-stations.ts`)
+  reads its stations from it.
 - `createdStationFrames(state)` - the frames of the stations this page
   created (those the tour as opened lacks): what the draft's settings
   record keeps whole (`tour-document-draft.ts`).
@@ -297,8 +298,8 @@ once. The slice says when; the page writes (`editor/edit-main.ts`
   bring an emptied, pruned station back where it stood).
 - **What the state writes is what the rebuild writes**: `manifestToWrite`
   is `finishedManifest`, the function `rebuildFinishedTour` itself calls,
-  over the same inputs, the photo spots included (property-tested against
-  real zips, with spots and without, and across a second save). It is the
+  over the same inputs (property-tested against real zips, for a tour
+  opened with its walk baked and without, and across a second save). It is the
   same rule computed twice, not one call: the save does not read the
   selector, so the property is what holds the two together.
 - Reducers are pure: each computes from a plain snapshot (`current`) and
@@ -384,7 +385,7 @@ store.dispatch(tourDocumentActions.undone());
   moves, deletes, placements, station moves, settings, details, undos,
   redos and saves: undo then redo is identity; undoing everything gives the
   opened tour; `manifestToWrite` equals `rebuildFinishedTour`'s written
-  manifest on a real zip, with the walk's photo spots and without, and
+  manifest on a real zip, opened with the walk baked and without, and
   again for a second save after the first landed. And the station rule:
   after every step of a random mix of placements (12.5 m steps, so inside,
   on the edge of and beyond the 25 m radius), moves, deletes, station
