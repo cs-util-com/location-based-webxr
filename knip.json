@@ -50,6 +50,7 @@
         "src/test-utils/**/*.ts",
         "src/state/replay-session.ts",
         "src/state/replay-occupancy-subscriber.ts",
+        "src/state/position-precision.ts",
         "src/utils/escape-html.ts",
         "src/utils/compass-influence-mapping.ts",
         "src/utils/format-distance.ts",

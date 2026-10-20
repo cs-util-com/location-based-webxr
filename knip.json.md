@@ -48,7 +48,11 @@ entirely after confirming they were only transitively pulled in.
   and would otherwise flag them as unused files (an `error`-severity
   gate). There is intentionally **no** `src/ref-points/index.ts` entry —
   that module does not exist in this package; a stale entry produced a
-  "no matches" configuration hint. `dpdm` is in `ignoreDependencies` because the framework's
+  "no matches" configuration hint. The single-file entries
+  (`src/state/position-precision.ts`, `src/utils/format-distance.ts` and the
+  like) are deep-import public modules: apps import them through the
+  package's `exports` map, which points at `dist/`, so knip never sees that
+  use and would report their public exports as unused. `dpdm` is in `ignoreDependencies` because the framework's
   `check:cycles` command moved from an inline package.json script into
   `scripts/test-timing/projects.mjs` (2026-07-21 gate wiring), where
   knip's package.json-script analysis cannot see it — the standard
