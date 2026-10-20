@@ -421,11 +421,13 @@ interface PhonePage extends Page {
   objects(): TourObject[];
   offer(): string;
   draftKey(): string | null;
+  /** The placement line, where the page says it keeps no backup. */
+  placementNote(): string | null;
 }
 
 async function phonePage(
   file: File,
-  stores: (key: string) => Promise<DraftFileStore>,
+  stores: (key: string) => Promise<DraftFileStore | undefined>,
   restore = false,
   /** The tour.json the page opens (default: the table's tour). */
   manifest: TourManifest = tourOf(OPENED),
@@ -559,7 +561,10 @@ async function phonePage(
     },
     records: async () => {
       if (draftKey === null) throw new Error("the phone opened no draft");
-      return readRecords(await stores(draftKey), true);
+      const store = await stores(draftKey);
+      if (store === undefined)
+        throw new Error("the phone's draft did not open");
+      return readRecords(store, true);
     },
     reopenRestored: () => phonePage(file, stores, true),
     lastFinished: () => {
@@ -572,6 +577,7 @@ async function phonePage(
     objects,
     offer: () => dom.draftOfferText.textContent,
     draftKey: () => draftKey,
+    placementNote: () => ctx.placementNote,
     addedStations: () =>
       addedOf(
         (ctx.tourDocument.manifest()?.stations ?? []).map((s) => ({
@@ -1151,6 +1157,26 @@ describe("a draft of a file-opened tour across saves", () => {
     const next = await phonePage(page.lastFinished(), stores, true, written);
     expect(next.objects().find((o) => o.id === "a")).toMatchObject({
       label: "After the second Finish",
+    });
+  }, 60_000);
+
+  it("says the phone keeps no backup when the draft could not follow the saved file", async () => {
+    // Why (r901 review #7): the file a Finish saved opens under the tour's
+    // own id, so the draft moves to that key. A move that did not land
+    // leaves the saved file without the draft it should offer: the page
+    // must say it keeps no backup rather than promise one (the opened
+    // file's draft stays as it was, so it still offers its edits).
+    const stores = memoryStores();
+    const refusingTheIdKey = (key: string) =>
+      key.includes(":tour:") ? Promise.resolve(undefined) : stores(key);
+    const page = await phonePage(await tourFile(), refusingTheIdKey);
+    await page.edit("a", "Before the Finish");
+    expect(page.placementNote() ?? "").not.toContain("backup");
+    await page.save();
+    await vi.waitFor(() => {
+      expect(page.placementNote()).toContain(
+        "This device is not saving a backup copy",
+      );
     });
   }, 60_000);
 

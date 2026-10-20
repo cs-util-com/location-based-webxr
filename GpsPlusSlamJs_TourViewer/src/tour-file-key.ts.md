@@ -84,6 +84,16 @@ Consequences:
   `creator-draft.ts` `follow`), and a download leaves the opened file's
   draft as it was. Named cost: the opened id-less file, opened again after
   that save, offers only what its draft held then.
+  - **Two copies of one tour share one draft on one browser** (r901
+    review #8): the id is the tour's, not the file's, so every file that
+    carries it - a duplicated template, a co-author's copy, a backup next
+    to the working file - opens under the same key and offers the same
+    draft. The draft is offered against the open manifest (only what it
+    does not already carry), never applied silently, so an edit made in
+    one copy can be offered in the other; nothing is lost, but a creator
+    who keeps two copies apart on one browser sees both copies' work.
+    Filed for a decision if it bites (the debug-captures plan's
+    follow-ups).
   - **One gap until K2:** a Finish drops `manifest.json` (the rewritten
     files would no longer match it), so the FINISHED zip opened from a
     file is keyed by content, and the draft made under the series key is

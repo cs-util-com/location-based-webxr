@@ -55,7 +55,9 @@ were here. What stays is the Finish's side:
   a tour opened from a FILE, the hand-off's `onDelivered` takes the draft
   to the key the delivered file opens under (`tourFileKeyOfFile`,
   `draft.follow`) - a new key only after the first save of a tour without
-  an id; a link's tour keeps its link's key.
+  an id; a link's tour keeps its link's key. A move that did not land
+  (false, or a failed key) says once that no backup is kept
+  (`draft.warnNoBackup`, r901 review #7), while the same tour is open.
 - **The Finish's file** (what it writes, the baked photo spots, the walk
   left out, the listed series continued): `creator-finish.ts`, its rules
   in `finish-rebuild.ts` (M6 E0, shared with the desktop editor).

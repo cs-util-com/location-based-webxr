@@ -60,7 +60,14 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     `tourUrl` (or none is open); false when a listed file could not be
     read or a write did not land, or another tour opened meanwhile.
     `creator-setup.ts` calls it from the hand-off's `onDelivered` with
-    `tourFileKeyOfFile` of the delivered file, for a file-opened tour only.
+    `tourFileKeyOfFile` of the delivered file, for a file-opened tour only,
+    and on a false or failed move (still the same tour) says no backup is
+    kept (`warnNoBackup`, r901 review #7): the saved file then opens under
+    a key that holds no draft. Named cost: a move never clears the old
+    namespace, so after a move that landed the draft's files - a placed
+    photo's bytes among them - are stored twice on the phone, each copy
+    until it is cleared where its own file is opened ("Delete it", or the
+    spent-draft sweep); the browser's storage quota bounds it.
   - `uploaded(written)` (follow-up F19, owner decision 2026-10-14) - the
     creator answered yes to "did you upload it?" (`creator-handoff.ts`),
     and `written` is the tour.json of the file the question was asked

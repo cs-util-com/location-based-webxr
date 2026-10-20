@@ -782,11 +782,15 @@ export function wireCreatorSetup(deps: {
       const saved = new File([rebuilt.blob], rebuilt.filename, {
         type: "application/zip",
       });
+      // A move that did not land leaves the saved file without the draft
+      // it should offer: said as "no backup" (r901 review #7), for this
+      // tour only.
       void tourFileKeyOfFile(saved)
-        .then((key) =>
-          ctx.session === session ? draft.follow(key) : undefined,
-        )
-        .catch(() => undefined);
+        .then((key) => (ctx.session === session ? draft.follow(key) : true))
+        .catch(() => false)
+        .then((followed) => {
+          if (!followed && ctx.session === session) draft.warnNoBackup();
+        });
     },
   });
 
