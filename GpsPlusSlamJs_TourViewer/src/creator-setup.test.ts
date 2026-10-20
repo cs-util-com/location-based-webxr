@@ -134,6 +134,10 @@ const DOM_KEYS = [
   "objectList",
   "keepScanRow",
   "keepScanInput",
+  "debugSave",
+  "debugSaveText",
+  "debugSaveButton",
+  "debugSaveStatus",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {

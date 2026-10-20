@@ -1,5 +1,6 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
+import { Uint8ArrayReader, ZipReader } from "@zip.js/zip.js";
 
 import {
   downloadedZip,
@@ -358,6 +359,59 @@ test("a recording without tour.json is a tour from the open: a fresh pin's stati
   const restored = await pinInStore(page, "Far");
   expect(restored.frame).toEqual(settled.frame);
   expect(restored.opened).toEqual([]);
+});
+
+test("a Finish leaves the walk out of the tour file, and the Done step saves it apart as the debug data on a tap", async ({
+  page,
+}) => {
+  // Why (M2 of the debug-captures plan, E2, Q-F): the tour file people
+  // open does not carry the walk by default, and the file at the link may
+  // be the creator's only copy - so the Done step offers it as a file of
+  // its own, above the replace steps, behind a button (a second automatic
+  // download may be blocked), built from the bytes the Finish read.
+  await openRecording(page);
+  await enterArAndMeasure(page);
+  await stand(page, 10, 0);
+  await placePin(page, "Kept", 10, 0);
+  await finishAndDownload(page, 0);
+  const tour = await downloadedZip(page, 0);
+  expect(tour.names.filter((n) => n.startsWith("actions/"))).toEqual([]);
+  await expect(page.getByTestId("finish-status")).toContainText(
+    "leaves out the debug data",
+  );
+  const offer = page.getByTestId("debug-save");
+  await expect(offer).toBeVisible();
+  await expect(page.getByTestId("debug-save-text")).toContainText(
+    "leaves out your debug data",
+  );
+  // Above the host's replace steps.
+  const offerBox = await box(page, "debug-save");
+  const replaceBox = await box(page, "replace-help");
+  expect(offerBox.bottom).toBeLessThanOrEqual(replaceBox.top);
+  await page.getByTestId("debug-save-btn").click();
+  await expect(page.getByTestId("debug-save-status")).toContainText(
+    "The debug data is saved as",
+  );
+  await expect(page.getByTestId("debug-save-btn")).toHaveText(
+    "Save the debug data again",
+  );
+  const bundle = await page.evaluate(async () => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads[1];
+    return {
+      filename: d.filename,
+      bytes: Array.from(new Uint8Array(await d.blob.arrayBuffer())),
+    };
+  });
+  expect(bundle.filename).toMatch(/-debug\.zip$/);
+  const reader = new ZipReader(
+    new Uint8ArrayReader(new Uint8Array(bundle.bytes)),
+  );
+  const names = (await reader.getEntries()).map((e) => e.filename);
+  await reader.close();
+  expect(names).toContain("debug-bundle.json");
+  expect(names).toContain("about-this-debug-data.txt");
+  expect(names.some((n) => n.startsWith("actions/"))).toBe(true);
+  expect(names).not.toContain("tour.json");
 });
 
 /** The box of a test id, in viewport pixels. */

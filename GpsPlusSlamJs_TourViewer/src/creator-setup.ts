@@ -44,6 +44,7 @@ import {
 } from "./finish-guard.js";
 
 import { wireCreatorHandoff } from "./creator-handoff.js";
+import { wireCreatorDebugSave } from "./creator-debug-save.js";
 import type { TourHost } from "./tour-host.js";
 import { wireCreatorCodes, type CreatorCodes } from "./creator-codes.js";
 import { wireCreatorDraft } from "./creator-draft.js";
@@ -132,6 +133,12 @@ export interface CreatorSetupDom {
   replaceHelpDrive: HTMLElement;
   /** Step 6's Drive address button (`creator-handoff.ts`). */
   replaceDriveCopy: HTMLButtonElement;
+  /** Step 6's "Save the debug data" (`creator-debug-save.ts`): its block,
+   *  line, button and status. */
+  debugSave: HTMLElement;
+  debugSaveText: HTMLElement;
+  debugSaveButton: HTMLButtonElement;
+  debugSaveStatus: HTMLElement;
   /** The question after a download-only Finish (F19, `creator-handoff.ts`). */
   uploadAsk: HTMLElement;
   uploadAskText: HTMLElement;
@@ -783,6 +790,10 @@ export function wireCreatorSetup(deps: {
     },
   });
 
+  /** The debug data a Finish left out, saved apart on a tap in the Done
+   *  step (`creator-debug-save.ts`). */
+  const debugSave = wireCreatorDebugSave({ ctx, seams, dom });
+
   /** Finish: the rebuilt zip and what it changes (`creator-finish.ts`). */
   const finish = wireCreatorFinish({
     ctx,
@@ -796,6 +807,7 @@ export function wireCreatorSetup(deps: {
     handoff,
     previews,
     draft,
+    debugSave,
     sessionLive,
     render: () => {
       renderAuthorReadout();
@@ -888,6 +900,8 @@ export function wireCreatorSetup(deps: {
       // The download button, its line and the replace steps
       // (`creator-handoff.ts`).
       handoff.reset();
+      // ... and the debug data's offer, with the bytes it kept.
+      debugSave.reset();
       // A "keep the walk" given for the closing tour is not given for the
       // next one (S1 milestone review #9): the next open sets its own
       // default (`creator-finish.ts`).

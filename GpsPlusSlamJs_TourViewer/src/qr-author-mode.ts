@@ -455,9 +455,11 @@ export const FINISH_LABELS = {
     `The tour zip is ready (${(bytes / 1_000_000).toFixed(1)} MB) and is being saved to this phone…`,
   /** Appended to the ready line when the Finish left the walk out of
    *  the copy (scan-pass plan S-D10): the hosted file may be the creator's
-   *  only copy of it. */
+   *  only copy of it, so it names the button that saves it apart - in the
+   *  phone's Done step and the editor's Done dialog (debug-captures plan
+   *  M2). */
   scanLeftOut: (files: number) =>
-    `This copy is for visitors: it leaves out the walk recording (${String(files)} ${files === 1 ? "file" : "files"}). Keep your original zip if you still need the walk.`,
+    `This copy is for visitors: it leaves out the debug data (the walk recording, ${String(files)} ${files === 1 ? "file" : "files"}). Use "Save the debug data" to keep it in a file of its own.`,
   failed: (reason: string) => `Finishing failed: ${reason}`,
   /** The one button left after a Finish: the same save again (owner
    *  decision D-F4b). */

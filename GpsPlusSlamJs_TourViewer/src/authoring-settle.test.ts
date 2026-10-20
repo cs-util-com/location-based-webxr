@@ -254,6 +254,10 @@ const DOM_KEYS = [
   "objectList",
   "keepScanRow",
   "keepScanInput",
+  "debugSave",
+  "debugSaveText",
+  "debugSaveButton",
+  "debugSaveStatus",
 ] as const;
 
 function el() {

@@ -213,7 +213,10 @@ setup page in a new tab, polish round A8), `visitor-safety`, `visitor-privacy`,
 `have-tour-link`, `have-tour-open`, `have-tour-status`, `have-tour-ask`,
 `have-tour-play`, `have-tour-continue`),
 `step-done` (owns `done-pending`, `finish-block`,
-`finish-status`, `finish-download`, `summary` (the summary after Finish,
+`finish-status`, `finish-download`, `debug-save` ("Save the debug data"
+after a Finish that left the walk out, above the replace steps:
+`debug-save-text`, `debug-save-btn`, `debug-save-status`;
+`creator-debug-save.ts`), `summary` (the summary after Finish,
 authoring plan 2026-09-28-0953 M3b: owns `summary-codes`, `summary-map`,
 `summary-map-status`, `summary-start-ar`; written by `summary-panel.ts`,
 its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns

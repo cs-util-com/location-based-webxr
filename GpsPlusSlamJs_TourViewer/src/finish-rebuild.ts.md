@@ -40,7 +40,11 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
   - `input.shouldContinue` - checked after the read, before the rebuild:
     false returns null and rebuilds nothing (the tour was closed).
   - `input.onProgress(done, total)` - the rebuild's progress.
-  - Resolves `{ blob, written, signedManifest?, scanLeftOut }`.
+  - Resolves `{ blob, written, signedManifest?, scanLeftOut, source }`;
+    `source` is the bytes the rebuild read (the open tour's own for the
+    first, the previous rebuild's after it): the phone's "Save the debug
+    data" keeps the first one's (`creator-debug-save.ts`, debug-captures
+    plan M2).
   - Throws what the manifest serializer (a duplicate id), the writer (an
     object in no station of the manifest), the read and the rebuild throw
     (`ArchiveLimitError`, `TourIntegrityError`); the caller shows it.

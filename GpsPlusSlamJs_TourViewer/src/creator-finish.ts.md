@@ -39,6 +39,11 @@ module's sidecar states them as its contract.
     it?" question left from the previous Finish's file goes, so its yes is
     never read as this Finish's (F19 review #2). The rebuilt zip carries
     its `written` tour.json, which a yes notes.
+  - Each Finish that made its zip tells `debugSave` (`creator-debug-save.ts`,
+    debug-captures plan M2) of it: the bytes it read (`FinishedTour.source`,
+    kept from the first Finish of the open tour), whether it left the walk
+    out, and the bundle's identity - so the Done step offers "Save the
+    debug data", also when a later step of the Finish fails.
   - A Finish that fails AFTER making its zip still hands that zip over the
     same way (review #1); an earlier Finish's zip stays saveable from the
     button. The button is disabled while a Finish runs, so a tap cannot

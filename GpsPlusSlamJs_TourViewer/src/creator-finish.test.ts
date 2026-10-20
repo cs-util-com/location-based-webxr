@@ -142,6 +142,10 @@ const DOM_KEYS = [
   "objectList",
   "keepScanRow",
   "keepScanInput",
+  "debugSave",
+  "debugSaveText",
+  "debugSaveButton",
+  "debugSaveStatus",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {
@@ -1151,10 +1155,11 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     // A first version dropped every file a visitor does not read, which
     // would have taken a creator's README or licence out of the copy.
     expect(names).toContain(README);
-    // The creator is told, because the hosted file may be their only copy.
-    expect(dom.finishStatus.textContent).toContain(
-      "leaves out the walk recording",
-    );
+    // The creator is told, because the hosted file may be their only copy,
+    // and where to save it apart. (Changed words, M2 of the debug-captures
+    // plan: it said "the walk recording" and to keep the original zip.)
+    expect(dom.finishStatus.textContent).toContain("leaves out the debug data");
+    expect(dom.finishStatus.textContent).toContain("Save the debug data");
     // (It also said the recorded photos could not be placed; nothing
     // places them now, so nothing says so.)
     expect(dom.finishStatus.textContent).not.toContain("photos");
@@ -1163,6 +1168,80 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
   // (A test that a walk placing nothing was left out without a word about
   // photos stood here: every walk is now just the walk, which the two
   // tests above cover, ticked and unticked.)
+
+  it("offers the debug data the Finish left out, built from the bytes it read, and hands it over on a tap", async () => {
+    // Why (M2 of the debug-captures plan, steps 3 and 8, review #9): the
+    // tour file the creator puts at the link leaves the walk out, so the
+    // Done step offers it as a file of its own - from the Finish's own
+    // bytes: a link's tour read again after a replace on Drive is another
+    // file. The tour is read once, by the Finish.
+    const bytes = new Uint8Array(readFileSync(FIXTURE));
+    const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
+    let reads = 0;
+    const handed: { blob: Blob; filename: string }[] = [];
+    const wired = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      hostedContent: [...WALK, README].map((path) => ({ path, data: "x" })),
+      hostedName: "castle.zip",
+      seamsExtras: {
+        downloadZip: (blob: Blob, filename: string) => {
+          handed.push({ blob, filename });
+          return Promise.resolve(true);
+        },
+      },
+      sessionExtras: {
+        hasRecording: true,
+        entries: [
+          { filename: `${WRAP}tour.json` },
+          { filename: `${WRAP}qr/${LEVEL_ID}.json` },
+          ...[...WALK, README].map((filename) => ({
+            filename,
+            isImage: filename.endsWith(".jpg"),
+          })),
+        ],
+        loadSessionMeta: () => Promise.resolve({ odomCoordVersion: 5 }),
+        loadRecordingActions: () => Promise.resolve(actions),
+      },
+    });
+    const session = wired.ctx.session as unknown as {
+      readWholeArchive: () => Promise<Blob>;
+    };
+    const read = session.readWholeArchive.bind(session);
+    session.readWholeArchive = () => {
+      reads += 1;
+      return read();
+    };
+    wired.setup.renderAuthorReadout();
+    expect(wired.dom.debugSave.hidden).toBe(true);
+    wired.dom.finishButton.click();
+    await settle(wired.ctx);
+    expect(wired.ctx.finishError).toBeNull();
+    // The tour zip the Finish saved (by itself) leaves the walk out ...
+    expect(handed).toHaveLength(1);
+    const tourNames = await entryNamesOf(handed[0]!.blob);
+    expect(tourNames.filter((n) => WALK.includes(n))).toEqual([]);
+    // ... and the Done step offers the walk as the debug data.
+    expect(wired.dom.debugSave.hidden).toBe(false);
+    wired.dom.debugSaveButton.click();
+    for (let i = 0; i < 200 && handed.length < 2; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(handed).toHaveLength(2);
+    expect(handed[1]!.filename).toBe("castle-debug.zip");
+    const bundleNames = await entryNamesOf(handed[1]!.blob);
+    expect(bundleNames.filter((n) => WALK.includes(n)).sort()).toEqual(
+      [...WALK].sort(),
+    );
+    expect(bundleNames).toContain("debug-bundle.json");
+    expect(bundleNames).not.toContain(README);
+    expect(bundleNames).not.toContain(`${WRAP}tour.json`);
+    // Read once, by the Finish: the bundle is never read from the tour.
+    expect(reads).toBe(1);
+    // The tour closes: the offer goes with it.
+    wired.setup.resetFinishStep();
+    expect(wired.dom.debugSave.hidden).toBe(true);
+  });
 
   it("forgets the creator's tick with the tour it was given for", async () => {
     // Why (S1 milestone review #9): a "keep the walk" for one tour must not
@@ -1179,7 +1258,7 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
       [...WALK].sort(),
     );
     expect(dom.finishStatus.textContent).not.toContain(
-      "leaves out the walk recording",
+      "leaves out the debug data",
     );
   });
 

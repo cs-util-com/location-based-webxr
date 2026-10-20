@@ -1670,7 +1670,7 @@ test("a download of a tour that carries a walk leaves it out by default, and kee
   expect(leanNames).not.toContain("mytour/session.json");
   expect(leanNames).not.toContain("mytour/images/frame-000002.png");
   await expect(
-    page.locator(".toast", { hasText: "leaves out the walk recording" }),
+    page.locator(".toast", { hasText: "leaves out the debug data" }),
   ).toHaveCount(1);
   await page.close();
   const next = await newEditorPage(context);
@@ -1685,7 +1685,7 @@ test("a download of a tour that carries a walk leaves it out by default, and kee
   expect(keptNames).toContain("mytour/session.json");
   expect(keptNames).toContain("mytour/images/frame-000002.png");
   await expect(
-    next.locator(".toast", { hasText: "leaves out the walk recording" }),
+    next.locator(".toast", { hasText: "leaves out the debug data" }),
   ).toHaveCount(0);
 });
 

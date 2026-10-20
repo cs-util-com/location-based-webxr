@@ -96,6 +96,11 @@ export interface FinishedTour {
   readonly signedManifest?: SignedTourManifest;
   /** The entries visitors never read that were left out. */
   readonly scanLeftOut: readonly string[];
+  /** The bytes this rebuild read: the open tour's own (`readWholeArchive`)
+   *  for the first, the previous rebuild's after it. The phone's "Save the
+   *  debug data" keeps the first one's (debug-captures plan M2, review #9:
+   *  never read again - a link's file may have been replaced). */
+  readonly source: Blob;
 }
 
 /** The title a finished tour carries (polish round M4a: the visitor's
@@ -329,6 +334,7 @@ export async function rebuildFinishedTour(
     written,
     ...(signedManifest === undefined ? {} : { signedManifest }),
     scanLeftOut,
+    source,
   };
 }
 

@@ -12,6 +12,7 @@
 
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { CreatorCodes } from "./creator-codes.js";
+import type { CreatorDebugSave } from "./creator-debug-save.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorHandoff } from "./creator-handoff.js";
 import type { CreatorMeasuring } from "./creator-measuring.js";
@@ -74,6 +75,9 @@ export function wireCreatorFinish(deps: {
   handoff: Pick<CreatorHandoff, "save" | "offer" | "finishStarted">;
   previews: Pick<CreatorPreviews, "keepFinishedPhoto" | "sync">;
   draft: Pick<CreatorDraft, "saveMeta" | "finished">;
+  /** The Done step's "Save the debug data" (`creator-debug-save.ts`): told
+   *  of each Finish's file and the bytes it read. */
+  debugSave?: Pick<CreatorDebugSave, "finished">;
   sessionLive: () => boolean;
   render: () => void;
   /** Re-render the AR button when a finish ends (polish round M3). */
@@ -271,6 +275,21 @@ export function wireCreatorFinish(deps: {
           filename: finishedFileName(current),
         };
         madeZip = ctx.rebuiltZip;
+        // The debug data this file left out, offered in the Done step from
+        // the bytes this Finish read (debug-captures plan M2, E2).
+        deps.debugSave?.finished({
+          session: current,
+          source: finished.source,
+          leftOut: scanLeftOut.length > 0,
+          tour: {
+            seriesId:
+              current.integrity.kind === "listed"
+                ? current.integrity.manifest.seriesId
+                : null,
+            title: written.title,
+            fileName: ctx.rebuiltZip.filename,
+          },
+        });
         // The Finish's result sentences: they stay on the line under the
         // save's status (`creator-handoff.ts`).
         notes = [

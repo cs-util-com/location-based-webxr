@@ -195,6 +195,11 @@ were here. What stays is the Finish's side:
   here); `finishReadiness` gates the button from the readout.
 - **Hand-off and the Drive steps:** `creator-handoff.ts` (split out in
   the code book plan's M2; its sidecar holds what was here).
+- **Save the debug data** (debug-captures plan M2): `creator-debug-save.ts`,
+  wired before the Finish, which tells it of each file and the bytes it
+  read (`debugSave`); `resetFinishStep` resets it with the hand-off. Its
+  elements are `debugSave`, `debugSaveText`, `debugSaveButton` and
+  `debugSaveStatus` of `CreatorSetupDom`.
 - **Placement (M4, DEC-N9):** the gate, the pin and the photo are
   `creator-placement.ts` (its sidecar holds the rules that were here).
   The outcome of a placement is `ctx.placementNote`, shown until
