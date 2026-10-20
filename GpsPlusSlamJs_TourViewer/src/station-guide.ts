@@ -43,7 +43,9 @@
  *   code and no accuracy to judge by (`'none'`: without location once a
  *   code's trust ended, or the next AR entry before a code locks in it)
  *   nothing is found, presence holds (a station a code made present ends
- *   with the code, as below), and the line asks for a code.
+ *   with the code, as below), nothing points or measures by that
+ *   alignment (no HUD target, no approach, no trail, no "nearest"), and
+ *   the line asks for a code.
  * - **The HUD's arrival is the found radius** (`station-bands.ts`, §8 D9):
  *   each target's `distanceMin`/`distanceMax` are the station's found band at
  *   the measured accuracy, and the target sits at the visitor's own height so
@@ -585,10 +587,18 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     deps.onDone?.(id);
   }
 
-  /** The prefetch's view of the offer: each offered station's distance. */
+  /** Nothing vouches for this measurement's alignment (`'none'`): nothing
+   *  points or measures by it - no HUD target, no approach, no trail from
+   *  the visitor, no "nearest" in the line. */
+  function unjudged(m: Measurement): boolean {
+    return m.precision.source === "none";
+  }
+
+  /** The prefetch's view of the offer: each offered station's distance;
+   *  none while the position is `unjudged`. */
   function approach(m: Measurement): void {
     const { distances } = m;
-    if (deps.onApproach === undefined || run === null) return;
+    if (deps.onApproach === undefined || run === null || unjudged(m)) return;
     for (const id of run.offered()) {
       const d = distances.get(id);
       const station = stationById(id);
@@ -614,9 +624,11 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** The HUD's markers: the `HUD_NEAREST_STATIONS` nearest offered
    *  stations not yet found (a station with no distance yet counts as
    *  farthest), in the offer's order. A present station that is offered
-   *  is found already, so these are the stations whose content is hidden. */
+   *  is found already, so these are the stations whose content is hidden.
+   *  None while the position is `unjudged`. */
   function hudTargets(): WayfindingTarget[] {
     if (run === null || last === null || last.headingNue === null) return [];
+    if (unjudged(last)) return [];
     const eyeHeight = last.headingNue[1];
     const distances = last.distances;
     const targets: WayfindingTarget[] = [];
@@ -665,10 +677,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const station = stationById(focus)!;
     const title = stationTitle(station);
     const d = last?.distances.get(focus);
+    const offered = run.offered().length;
+    const which = offered > 1 ? `${String(offered)} stations to find` : null;
     const waiting =
-      run.offered().length > 1
-        ? `${String(run.offered().length)} stations to find - nearest: ${title}`
-        : `Next: ${title}`;
+      which === null ? `Next: ${title}` : `${which} - nearest: ${title}`;
     if (last === null) return `${lead}${waiting} - waiting for your position…`;
     // Before the position: a fix too weak to guide by is what the visitor
     // can act on (step into the open), with a position or still without.
@@ -689,10 +701,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       return `${lead}${waiting} - waiting for your position…`;
     }
     // No code and no accuracy speaks for the position (without location
-    // once a code's trust ended): no distance that looks measured, and the
-    // one thing that helps.
-    if (precision.source === "none") {
-      return `${lead}${waiting} - ${NO_PRECISION_HINT}`;
+    // once a code's trust ended): no distance that looks measured, no
+    // "nearest" by that position, and the one thing that helps.
+    if (unjudged(last)) {
+      return `${lead}${which ?? `Next: ${title}`} - ${NO_PRECISION_HINT}`;
     }
     return `${lead}${waiting}, ${distanceText(d)}`;
   }
@@ -711,7 +723,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function render(): void {
     // A code lock can find a station before the guide has ticked at all.
     if (last === null) measure();
-    deps.onGuide?.(last!.headingNue, guideTarget());
+    // An unjudged position lays no trail: with no visitor there is none.
+    deps.onGuide?.(unjudged(last!) ? null : last!.headingNue, guideTarget());
     const upcoming = run?.upcoming() ?? null;
     const next = upcoming === null ? undefined : stationById(upcoming);
     if (next !== undefined) deps.onUpcoming?.(next);

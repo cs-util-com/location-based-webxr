@@ -25,7 +25,11 @@ showAllContent: boolean; headingPending: boolean }`, null/false/false at
     `PositionPrecision`). `presentStationId` becomes:
     - nothing to judge by (`'none'`): unchanged (the shared
       position-precision plan's §12, S3; a station a code made present is
-      ended by the guide when the code goes);
+      ended by the guide when the code goes). In the guide today this hold
+      is never reached: a presence alive when `'none'` starts was made by
+      a code and ends at once, and a GPS-made presence needs a stored
+      device accuracy, which then never goes away (so `'none'` never
+      follows it);
     - a `tooWeak` GPS precision (above the ceiling):
       `presentAfterWeakFix(present, candidates, accuracyM)` - the exit only,
       never an entry or a takeover (PR review S1); unchanged without a
@@ -70,7 +74,7 @@ takeoverMarginM(precision))`;
 store.dispatch(
   presenceJudged({
     candidates,
-    precision: { source: "code", accuracyM: 1, tooWeak: false },
+    precision: { source: "code", accuracyM: null, tooWeak: false },
   }),
 );
 selectStationContentShown(store.getState(), "s2");

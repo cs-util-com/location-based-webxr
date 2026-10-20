@@ -784,7 +784,7 @@ describe("arrival by the station radius alone (D16)", () => {
   // stopped. One rule decides all of them. Swept over the raw accuracy
   // (and none at all), with a code, without one, and with no alignment.
   // Changed (r881): "aligned" used to be the condition; a code is now.
-  it("widens nothing for a visitor a code lined up however weak the raw fix; any other position keeps the raw accuracy's band", () => {
+  it("widens nothing for a visitor a code lined up however weak the raw fix; any other position keeps the raw accuracy's band, and one with no accuracy shows nothing", () => {
     // An activation radius inside the widest band, so the prefetch shows it.
     const s = station("gate", 50, 0, { activateRadiusM: 6, foundRadiusM: 5 });
     const tour: StationTour = { stations: [s], order: "fixed" };
@@ -801,6 +801,8 @@ describe("arrival by the station radius alone (D16)", () => {
         coded.foundM,
         coded.foundExitM,
       ]);
+    }
+    for (const accuracyM of [5, 25, 40, 100]) {
       // Aligned with no code: the raw accuracy's band, as a raw fix's.
       const own = stationBands(s, accuracyM);
       const gpsOnly = harness(tour);
@@ -819,6 +821,19 @@ describe("arrival by the station radius alone (D16)", () => {
       expect(raw.guides.at(-1)).toBe(`gate@50,0/${own.foundExitM}`);
       // The HUD needs a camera position: none from a raw fix alone.
       expect(raw.huds[0]?.getTargets() ?? []).toEqual([]);
+    }
+    // No code and no accuracy at all (`'none'`), aligned or a raw fix
+    // alone: nothing points or measures on that position - no approach, no
+    // HUD target, no trail from the visitor (shared position-precision
+    // plan, §13).
+    const gpsOnly = harness(tour);
+    gpsOnly.at(0, 0, null);
+    const raw = harness(tour);
+    raw.fixOnly(0, 0, null);
+    for (const h of [gpsOnly, raw]) {
+      expect(h.approaches).toEqual([]);
+      expect(h.crumbsFrom.at(-1)).toBeNull();
+      expect(h.huds[0]?.getTargets() ?? []).toEqual([]);
     }
   });
 

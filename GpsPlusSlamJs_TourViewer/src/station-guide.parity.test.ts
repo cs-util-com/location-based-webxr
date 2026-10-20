@@ -56,7 +56,6 @@ import {
 } from "gps-plus-slam-app-framework/test-utils/integrated-slam-drift";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 
-import { stationBands } from "./station-bands";
 import { FIX_MAX_AGE_MS, wireStationGuide } from "./station-guide";
 import { visitorGuideReducer } from "./visitor-guide-slice";
 import { visitorPosition } from "./visitor-position";
@@ -720,8 +719,10 @@ describe("the station guide's precision parity oracle (frozen before M2's switch
   // unknown accuracy - the widest bands and a 25 m takeover margin - and
   // without location, once a code's trust ended, kept showing one exhibit
   // for 30 s while the visitor stood at others (the golden file's
-  // `codes-only-trust-ended`, 70-99 s).
-  it("on the named exception finds nothing, holds or ends presence, keeps the bands, and asks for a code", () => {
+  // `codes-only-trust-ended`, 70-99 s). Its arrows, distances, approach,
+  // trail and "nearest" name went on pointing by that same alignment while
+  // the line refused to give a distance; none of them is shown now.
+  it("on the named exception finds nothing, holds or ends presence, points at nothing, and asks for a code", () => {
     const frozen = JSON.parse(readFileSync(GOLDEN, "utf8")) as Record<
       string,
       TickRecord[]
@@ -737,25 +738,16 @@ describe("the station guide's precision parity oracle (frozen before M2's switch
       for (const t of ticks) {
         const at = `${s.name} t=${String(t)}`;
         const tick = got[t]!;
-        // The bands are the widest, as an unknown accuracy always read:
-        // the HUD's arrival band and the prefetch's activation radius.
-        const widest = (id: string) =>
-          stationBands(
-            s.stations.find((st) => st.id === id)!,
-            null,
-          );
-        for (const entry of tick.hud) {
-          const [id, min, max] = entry.split(":");
-          const b = widest(id!);
-          expect([Number(min), Number(max)], at).toEqual([
-            b.foundM,
-            b.foundExitM,
-          ]);
-        }
-        for (const entry of tick.approach) {
-          const [id, , activate] = entry.split(":");
-          expect(Number(activate), at).toBe(widest(id!).activateM);
-        }
+        // Nothing points or measures on an alignment nothing vouches for:
+        // no HUD target (arrows, distances), no prefetch approach, no
+        // breadcrumb trail from the visitor (a target with no visitor
+        // draws none), and the line names no "nearest" station.
+        expect(tick.hud, at).toEqual([]);
+        expect(tick.approach, at).toEqual([]);
+        expect(tick.crumbs === null || tick.crumbs.startsWith("->"), at).toBe(
+          true,
+        );
+        expect(tick.line, at).not.toMatch(/nearest/);
         expect(tick.found, at).toEqual([]);
         // Presence never enters or moves: it holds, or ends.
         const before = got[t - 1]?.present ?? null;

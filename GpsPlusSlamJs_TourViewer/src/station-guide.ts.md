@@ -128,8 +128,13 @@ activateM)` (each tick, each offered station with a distance: the
   readings, the next AR entry before its own code locks, or fixes that
   state no accuracy, aligned or alone - is `'none'`. Nothing is found on
   it, presence holds (a station a code made present ends with the code),
-  and the line asks for a code instead of a distance ("... - scan one of
-  the tour's codes so the guide knows where you are."). Before, such a
+  nothing points or measures by it (no HUD target, so no arrow or
+  distance; no prefetch approach; no breadcrumb trail from the visitor),
+  and the line asks for a code instead of a distance, naming no
+  "nearest" station ("Next: <title> - scan one of the tour's codes so the
+  guide knows where you are." or "N stations to find - scan one of the
+  tour's codes so the guide knows where you are."). The skip still
+  follows the nearest unfound station by that position. Before, such a
   position was judged by the radius alone with the widest bands, and
   without location kept one exhibit present for 30 s while the visitor
   stood at others. A real device fix always states an accuracy (the
@@ -273,9 +278,11 @@ activateM)` (each tick, each offered station with a distance: the
   guide you (±N m); step into the open." (a `'gps'` precision above the
   ceiling - checked before "waiting", so it shows while the alignment is
   not ready too; the run then judges no arrival either, PR #640 review,
-  M5c review #1), "... - scan one of the tour's codes so the guide knows
-  where you are." (a position with a distance whose precision is
-  `'none'`: no code holds it and no accuracy speaks for it),
+  M5c review #1), "Next: <title> - scan one of the tour's codes so the
+  guide knows where you are." or "N stations to find - scan one of the
+  tour's codes so the guide knows where you are." (a position with a
+  distance whose precision is `'none'`: no code holds it and no accuracy
+  speaks for it; no "nearest", which that position would have chosen),
   "Station found - its story is
   playing.", "Tour complete - every station visited." or "- N skipped.";
   under branch order "Tour complete - you reached the end of your path."
@@ -341,7 +348,8 @@ store.subscribe(() => guide.tick());
   that is not offered; a code-lined-up visitor's prefetch, HUD band and
   breadcrumb stop not widened by a raw fix of ±5-100 m or none, an aligned
   visitor with no code and a raw fix alone keeping the raw accuracy's band
-  (swept, PR #642 review; changed r881); a code-lined-up visitor found
+  (swept, PR #642 review; changed r881), and with no accuracy at all
+  (`'none'`) showing no approach, HUD target or trail; a code-lined-up visitor found
   however weak the fix, one without a code not (r881); the cold start on
   the real store (r881): one fix aligns the session with no rotation, a
   ±500 m first fix inside a 10 m station finds nothing and says the GPS
@@ -392,8 +400,8 @@ store.subscribe(() => guide.tick());
   presence, HUD, approach and breadcrumbs at every tick; five streams of
   the named exception agree on every tick outside its window, and on it
   find nothing (one with exhibits still unfound when the code's trust
-  ends, which the old guide found there), hold or end presence, keep the
-  widest bands and ask for a code. The two streams added after the switch
+  ends, which the old guide found there), hold or end presence, show no
+  HUD target, approach or trail, and ask for a code without a "nearest". The two streams added after the switch
   were recorded from the pre-switch sources (183f03d2), which reproduced
   every earlier stream exactly.
 - `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
