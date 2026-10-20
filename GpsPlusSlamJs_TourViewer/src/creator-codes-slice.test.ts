@@ -13,9 +13,11 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
+  creatorCodesActions,
   creatorCodesReducer,
   onlyCreatorCodesChanged,
 } from "./creator-codes-slice.js";
+import { createTourViewerStore } from "./tour-viewer-session.js";
 
 const ROOT_KEYS = ["gpsData", "tourDocument", "visitorGuide"] as const;
 
@@ -63,5 +65,43 @@ describe("onlyCreatorCodesChanged", () => {
     } = { ...before, creatorCodes: { ...before.creatorCodes } };
     after["added"] = {};
     expect(onlyCreatorCodesChanged(before, after)).toBe(false);
+  });
+});
+
+describe("what enters the creator's code state is frozen", () => {
+  // Why this test matters (r902 review #8): the sidecar promises callers
+  // that a sighting handed to the store - its pose included - is frozen
+  // with it, so a caller that mutated one in place (say, to smooth a pose)
+  // would throw rather than silently rewrite the stored visit. This pins
+  // that promise to the store as the page builds it.
+  it("freezes a sighting and its pose, the visit's and a stored code's", () => {
+    const store = createTourViewerStore();
+    const pose = {
+      position: [1, 2, 3] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const sighting = { text: "code", levelId: "lvl", odomPose: pose };
+    store.dispatch(creatorCodesActions.sightingSeen(sighting));
+    store.dispatch(
+      creatorCodesActions.storedCodeSighted({
+        levelId: "lvl",
+        visit: 0,
+        sighting: { ...sighting, odomPose: { ...pose } },
+      }),
+    );
+    const held = store.getState().creatorCodes;
+    const stored = held.storedSightings[0]?.seen.sighting;
+    for (const value of [
+      held.visitSighting,
+      held.visitSighting?.odomPose,
+      held.visitSighting?.odomPose.position,
+      stored,
+      stored?.odomPose.rotation,
+    ]) {
+      expect(value).toBeDefined();
+      expect(Object.isFrozen(value)).toBe(true);
+    }
+    // The caller's own object is the stored one, frozen too.
+    expect(Object.isFrozen(pose.position)).toBe(true);
   });
 });

@@ -49,6 +49,14 @@ sighting })`, `visitEnded()`.
   identity to decide whether its readout must re-render (see there).
 - Serializable state (arrays and plain objects), as the store's dev checks
   require.
+- **Everything that enters the store is deep-frozen** (Immer, inside
+  `createSlice`), the payloads' objects included: a sighting and its
+  `odomPose`, a measurement, a level text. A caller must not mutate an
+  object after handing it to an action, nor one it read back (the facade
+  returns the stored objects themselves); a pose to change is copied
+  first. In place, the write throws in strict mode - every ES module is.
+  No such caller exists today; `creator-codes-slice.test.ts` pins the
+  freeze.
 
 ## Examples
 
@@ -68,7 +76,9 @@ selectCreatorCodes(store.getState()).storedSightings;
   (the tour document's opens, closes and undos, and late answers of older
   opens, among them).
 - `creator-codes-slice.test.ts` - `onlyCreatorCodesChanged` over every
-  subset of changed slices (property), an unchanged state, a slice added.
+  subset of changed slices (property), an unchanged state, a slice added;
+  and the freeze of what enters the slice (a sighting, its pose, the
+  caller's own object).
   Its callers: `creator-setup.test.ts` ("the readout and a dispatch that
   changed only the creator's code state") and `ar-entry.test.ts` ("a
   dispatch that changed only the creator's code state places nothing").

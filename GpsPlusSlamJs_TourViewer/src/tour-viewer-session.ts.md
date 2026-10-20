@@ -46,8 +46,13 @@ lives here.
     `levelsUnreadable` are VIEWS of the store since the debug-captures
     plan M3a (accessors over the tour document's hosted levels; assigning
     one dispatches `levelsArrived` / `levelsCleared` / `levelsUnreadable`
-    for the current open - `archive-open.ts` dispatches them itself, with
-    its own open's generation); `store`, the page's store
+    for the current open). **The setters are a test seam with no
+    production writer:** `archive-open.ts` dispatches those actions
+    itself, with its own open's generation (an open's answer must name the
+    open it belongs to, and a setter can only name the current one), and
+    production code only reads the getters. The setters keep the tests
+    that assign these fields, and the codes' model-based property, as they
+    were; `store`, the page's store
     (`TourViewerPageStore`), through which `creator-codes.ts` reaches the
     codes;
   - shared AR session state (`ar-entry.ts`): `qrController`, `qrDebugView`,
