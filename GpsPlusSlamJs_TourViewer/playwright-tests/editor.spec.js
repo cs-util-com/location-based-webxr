@@ -375,13 +375,14 @@ test("the sample tour opens with its story's stations on the map", async ({
   await expect(page.locator(".mk-station")).toHaveCount(3);
 });
 
-/** A tour in the wrapped shape ("compress this folder"): a recorded photo
- *  whose image is the archive's entry name, and a code with no stored
- *  position. */
+/** A tour in the wrapped shape ("compress this folder") carrying a walk
+ *  recording, and a code with no stored position. By default its
+ *  `tour.json` also carries a debug camera capture of the walk's frame in
+ *  a station of its own (`captureSpots`, as an earlier app wrote it),
+ *  which the editor drops at the open. */
 /** @param {{ pin: boolean, extra?: boolean, spots?: boolean }} options -
  *  `extra`: a second pin, as another program's edit of the same tour would
- *  add; `spots: false`: no stored photo spots, so a save bakes them from
- *  the (empty) walk recording, which cannot place them */
+ *  add; `spots: false`: no capture spots and no station for them */
 async function wrappedTour(options = { pin: false }) {
   const id = await qrCodeId("https://gps.csutil.com/tour/?qr=wrapped");
   const manifest = {
@@ -440,17 +441,24 @@ async function wrappedTour(options = { pin: false }) {
   ]);
 }
 
-test("shows a recorded photo of a wrapped zip, and a code without a position in a card of its own", async ({
+test("lists no debug camera capture of a wrapped zip, and shows a code without a position in a card of its own", async ({
   page,
 }) => {
-  // Why (E1 review #1, #3): a recorded photo's image is already the entry
-  // name, so joining the tour's folder to it read every one from the wrong
-  // path; and a code without a position got an "off the map view" chip
-  // whose "Show it" could do nothing.
+  // Why (E1 review #3; M1 of the debug-captures plan): a code without a
+  // position got an "off the map view" chip whose "Show it" could do
+  // nothing. Changed expectation: this test also opened the walk's frame
+  // as a "Recorded photo" row (E1 review #1, its path read under the
+  // tour's folder). The frames are debug data now: no row, no card, and
+  // no station for the one only the capture kept.
   await page.goto("/edit.html");
   await openThroughChooser(page, await wrappedTour(), "wrapped.zip");
-  await page.locator("#rail .row", { hasText: "Recorded photo" }).click();
-  await expect(page.locator("#card img.card-photo")).toBeVisible();
+  await expect(
+    page.locator("#rail .row", { hasText: "The code" }),
+  ).toBeVisible();
+  await expect(
+    page.locator("#rail .row", { hasText: "Recorded photo" }),
+  ).toHaveCount(0);
+  await expect(page.locator(".mk-station")).toHaveCount(0);
   await page.locator("#rail .row", { hasText: "The code" }).click();
   await expect(page.locator("#card")).toContainText("no position stored yet");
   await expect(page.locator("#offscreen-chip")).toBeHidden();
@@ -1006,9 +1014,12 @@ test("saves in place to the file it opened, and keeps the walk recording", async
   const texts = await readOpfsTour(page, "wrapped.zip");
   expect(texts["mytour/tour.json"]).toContain("Saved in place");
   expect(Object.keys(texts)).toContain("mytour/actions/000001.json");
-  // The photos now read from the written file.
-  await page.locator("#rail .row", { hasText: "Recorded photo" }).click();
-  await expect(page.locator("#card img.card-photo")).toBeVisible();
+  expect(Object.keys(texts)).toContain("mytour/images/frame-000002.png");
+  // Changed expectation: this test once opened the walk's frame as a
+  // "Recorded photo" read from the written file. The frames are debug
+  // data now, so the write carries no capture spots, and the frame stays
+  // only as part of the walk.
+  expect(texts["mytour/tour.json"]).not.toContain("captureSpots");
 });
 
 test("refuses to write over a file that changed meanwhile, and offers the download", async ({
@@ -1474,17 +1485,18 @@ test("a delivered download clears nothing: the original reopened still offers th
   await expect(next.locator(".toast.draft-offer")).toContainText("1 change");
 });
 
-test("a download of a tour whose photos could not be placed keeps the walk by default, and leaves it out only when the switch is unticked", async ({
+test("a download of a tour that carries a walk keeps it by default, and leaves it out only when the switch is unticked", async ({
   page,
   context,
 }) => {
-  // Why: a visitor shows baked photos only. A lean copy of a tour whose
-  // photos could not be placed (a wrapped zip never bakes) held neither
-  // the photos nor the walk a later open could place them from, so the
-  // switch starts ticked there; the toast says what the copy keeps. The
-  // switch hides after a save, so the untick is tried on a second open of
-  // the same tour.
-  const tour = await wrappedTour({ pin: true, spots: false });
+  // Why (M1 of the debug-captures plan): until the walk can be saved apart
+  // from the tour, a lean copy would be the only one a creator may keep,
+  // without the walk - so the switch starts ticked whenever the file
+  // carries one, and only an untick leaves it out, which the toast says.
+  // The switch hides after a save, so the untick is tried on a second open
+  // of the same tour. Changed expectation: the switch was ticked only when
+  // the recorded photos could not be placed, and the toasts spoke of them.
+  const tour = await wrappedTour({ pin: true });
   await noSavePicker(page);
   await page.goto("/edit.html");
   await openThroughChooser(page, tour, "wrapped.zip");
@@ -1497,9 +1509,10 @@ test("a download of a tour whose photos could not be placed keeps the walk by de
   expect(keptNames).toContain("mytour/tour.json");
   expect(keptNames).toContain("mytour/actions/000001.json");
   expect(keptNames).toContain("mytour/session.json");
+  expect(keptNames).toContain("mytour/images/frame-000002.png");
   await expect(
-    page.locator(".toast", { hasText: "The walk stays in this copy" }),
-  ).toHaveCount(1);
+    page.locator(".toast", { hasText: "leaves out the walk recording" }),
+  ).toHaveCount(0);
   await page.close();
   const next = await newEditorPage(context);
   await openThroughChooser(next, tour, "wrapped.zip");
@@ -1513,10 +1526,9 @@ test("a download of a tour whose photos could not be placed keeps the walk by de
   const leanNames = await downloadedNames(await lean);
   expect(leanNames).not.toContain("mytour/actions/000001.json");
   expect(leanNames).not.toContain("mytour/session.json");
+  expect(leanNames).not.toContain("mytour/images/frame-000002.png");
   await expect(
-    next.locator(".toast", {
-      hasText: "leaves out the walk they could be placed from later",
-    }),
+    next.locator(".toast", { hasText: "leaves out the walk recording" }),
   ).toHaveCount(1);
 });
 
@@ -1534,7 +1546,10 @@ test("a lean download of a recording tour: the original still offers, the lean c
   await page.locator("#rail .row", { hasText: "Wrapped pin" }).click();
   await page.locator("#card textarea").fill("In the lean copy");
   await page.locator("#card textarea").blur();
-  await expect(page.locator("#keep-walk-input")).not.toBeChecked();
+  // Ticked by default for a file carrying a walk (M1 of the debug-captures
+  // plan); this copy is lean on request.
+  await expect(page.locator("#keep-walk-input")).toBeChecked();
+  await page.locator("#keep-walk-input").uncheck();
   const download = page.waitForEvent("download");
   await page.locator("#save-btn").click();
   const lean = readFileSync(await (await download).path());
@@ -1865,7 +1880,11 @@ test("an edit after a download, with the downloaded copy put in place, is offere
     await wrappedTour({ pin: true }),
     "wrapped.zip",
   );
-  await page.locator("#keep-walk-input").check();
+  // Changed expectation: the creator ticked the switch here; it starts
+  // ticked now for a file carrying a walk (M1 of the debug-captures plan).
+  // Asserted, not check()ed: check() reads the box before the open has
+  // ticked it and then clicks it off again.
+  await expect(page.locator("#keep-walk-input")).toBeChecked();
   await page.locator("#rail .row", { hasText: "Wrapped pin" }).click();
   await page.locator("#card textarea").fill("In the download");
   await page.locator("#card textarea").blur();
@@ -2673,35 +2692,11 @@ test("a Save that fails does not start an autosave at once", async ({
   expect(await writes(page)).toBe(1);
 });
 
-test("the photos a save could not place are said once, also when only autosave saves", async ({
-  page,
-}) => {
-  // Why (E2b-2 milestone review #6): an autosave shows no toast, and the
-  // explicit Save's toast was the only place that said the recorded photos
-  // could not be placed - a creator who never pressed Save never heard it.
-  await page.clock.install();
-  await page.goto("/edit.html");
-  await offerOpfsFile(
-    page,
-    await wrappedTour({ pin: true, spots: false }),
-    "wrapped.zip",
-  );
-  await page.locator("#choose-btn").click();
-  await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
-  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
-  await editPin(page, "Wrapped pin", "By itself");
-  await page.clock.runFor(3_500);
-  await expect(page.locator("#save-status")).toHaveText("Saved to wrapped.zip");
-  const said = page.locator(".toast", { hasText: "could not be placed" });
-  await expect(said).toHaveCount(1);
-  await editPin(page, "By itself", "By itself again");
-  await page.clock.runFor(3_500);
-  await expect(page.locator("#save-status")).toHaveText("Saved to wrapped.zip");
-  expect(
-    (await readOpfsTour(page, "wrapped.zip"))["mytour/tour.json"],
-  ).toContain("By itself again");
-  await expect(said).toHaveCount(1);
-});
+// (The test "the photos a save could not place are said once, also when
+// only autosave saves" stood here. Nothing places the walk's frames since
+// M1 of the debug-captures plan - they are debug data - so no save has
+// such a sentence to say; the autosave's quiet status line is pinned by
+// the autosave tests above.)
 
 test("a Ctrl+S pressed while the last tour's save still ran is not run later, unasked", async ({
   page,
@@ -3085,8 +3080,8 @@ test("Done saves what is pending, says where it is and how to update the tour, a
   await move.click();
   const walkFile = await download;
   expect(walkFile.suggestedFilename()).toBe("wrapped-walk.zip");
-  // The whole recording - the frame the tour keeps for its visitors too -
-  // and the note naming the tour (the M4b milestone review #8).
+  // The whole recording - every frame - and the note naming the tour (the
+  // M4b milestone review #8).
   expect(await downloadedNames(walkFile)).toEqual([
     "about-this-walk.txt",
     "mytour/actions/000001.json",
@@ -3111,8 +3106,9 @@ test("Done saves what is pending, says where it is and how to update the tour, a
   const tour = Object.keys(await readOpfsTour(page, "wrapped.zip"));
   expect(tour).not.toContain("mytour/actions/000001.json");
   expect(tour).not.toContain("mytour/session.json");
-  // The baked photo stays: visitors see it.
-  expect(tour).toContain("mytour/images/frame-000002.png");
+  // Changed expectation: the frame a capture spot named stayed for the
+  // visitors. The frames are debug data now, so the walk takes it along.
+  expect(tour).not.toContain("mytour/images/frame-000002.png");
   await page.locator("#done-close").click();
   await expect(done).toBeHidden();
   await expect(page.locator("#done-btn")).toBeFocused();
@@ -3338,7 +3334,9 @@ test("the walk's file is asked for on the click, so a long build cannot cost the
   expect(walk["about-this-walk.txt"]).toContain("wrapped.zip");
   const tour = Object.keys(await readOpfsTour(page, "wrapped.zip"));
   expect(tour).not.toContain("mytour/actions/000001.json");
-  expect(tour).toContain("mytour/images/frame-000002.png");
+  // Changed expectation: the frame stayed for the visitors while a capture
+  // spot named it; the frames are debug data now and go with the walk.
+  expect(tour).not.toContain("mytour/images/frame-000002.png");
 });
 
 test("Done stays shut and the dialog stays open while the walk is moved out", async ({
@@ -3435,5 +3433,7 @@ test("a tour with no file to write into is downloaded without the walk on a seco
   const names = (await reader.getEntries()).map((e) => e.filename);
   await reader.close();
   expect(names).not.toContain("mytour/actions/000001.json");
-  expect(names).toContain("mytour/images/frame-000002.png");
+  // Changed expectation: the frame stayed while a capture spot named it;
+  // the frames are debug data now and go with the walk.
+  expect(names).not.toContain("mytour/images/frame-000002.png");
 });

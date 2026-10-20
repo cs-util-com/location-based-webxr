@@ -192,25 +192,8 @@ describe("a tour switch forgets the closing tour's failed finish", () => {
   });
 });
 
-describe("a tour switch forgets the closing tour's walk", () => {
-  it("clears the closing tour's bake, so its decline is not said of the next tour", async () => {
-    // Why this test matters: the bake at open decides about one tour's
-    // walk. A decline kept across a switch would be shown, and read by the
-    // next tour's Finish, as if it were that tour's.
-    const ctx = createTourViewerSession();
-    ctx.session = openTour();
-    ctx.walkBake = {
-      kind: "decided",
-      photos: { notPlaced: "too few GPS fixes" },
-    };
-    const dom = openAnotherTour(ctx);
-    await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
-    expect(ctx.walkBake).not.toEqual({
-      kind: "decided",
-      photos: { notPlaced: "too few GPS fixes" },
-    });
-  });
-});
+// (A test that a tour switch forgot the closing tour's bake stood here: the
+// open bakes no walk any more, so there is no bake to carry across.)
 
 describe("the teardown clears tour-scoped state only when a tour closes", () => {
   // Why these tests matter (TourViewer scan-to-open plan §5 #1, §9 #1): a

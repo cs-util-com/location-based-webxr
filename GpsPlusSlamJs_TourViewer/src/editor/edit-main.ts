@@ -22,7 +22,6 @@ import {
   writeFileOrAbort,
 } from "gps-plus-slam-app-framework/storage";
 import { FINISH_LABELS } from "../qr-author-mode.js";
-import { keepsWalkByDefault } from "../tour-document-bake.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import {
   selectTourDocument,
@@ -262,9 +261,6 @@ const photos = createPhotoCopies((file) => openTourFile(file));
 /** The open tour's draft writes, bound to it: a save of a tour closed
  *  meanwhile moves nothing of the next one's (E2b-2 milestone review #1). */
 let tourDraft: EditorTourDraft | null = null;
-/** The photos a save could not place were said for this tour (E2b-2
- *  milestone review #6): an autosave says it once. */
-let toldNotPlaced = false;
 /** The opened file itself, when it may be written in place (E2b-1). */
 let target: SaveTarget | null = null;
 /** This tab's hold on the opened file's name (E2b plan review #6), and
@@ -487,12 +483,10 @@ function placeCard(): void {
   card.place(map.anchorOf(selected), freeArea());
 }
 
-/** A pin or photo of the tour can be edited; codes, stations and the
- *  walk's recorded photos cannot (yet). */
+/** A pin or photo of the tour can be edited; codes and stations cannot
+ *  (yet). */
 function editable(item: EditorItem): boolean {
-  return (
-    (item.kind === "pin" || item.kind === "photo") && item.recorded !== true
-  );
+  return item.kind === "pin" || item.kind === "photo";
 }
 
 function viewOf(item: EditorItem): CardView {
@@ -828,9 +822,7 @@ const card = createEditorCard(
       if (open === null || source === null) {
         return Promise.reject(new Error("no tour is open"));
       }
-      return source.kind === "content"
-        ? open.loadContentEntry(source.path)
-        : open.loadEntry(source.path);
+      return open.loadContentEntry(source);
     },
     onClose: () => {
       select(null);
@@ -1161,7 +1153,6 @@ function leaveFile(): void {
 /** What this page keeps of the tour beside the store's document (whose
  *  save status an open or a close resets). */
 function resetEditing(): void {
-  toldNotPlaced = false;
   endUndo();
   moving = null;
   moved.clear();
@@ -1313,7 +1304,6 @@ async function openFile(
   editor = createEditorSession({
     session: outcome.session,
     manifest: outcome.manifest,
-    photos: outcome.photos,
     levels: outcome.levels,
     fileName: outcome.fileName,
     // A deleted photo's picture, from the copy the page reads now (the
@@ -1329,16 +1319,17 @@ async function openFile(
   model = editor.model();
   // The walk-recording switch only for a tour that carries one (S-D10:
   // the saved copy leaves it out unless asked, E2 plan review #4).
-  // Ticked when the photos could not be placed, so a lean copy does not
-  // lose the walk a later open could still place them from
-  // (`keepsWalkByDefault`).
-  keepWalkInput.checked = keepsWalkByDefault(outcome.photos);
-  keepWalk.hidden =
+  // Ticked whenever it does: until the walk can be saved apart from the
+  // tour, a lean copy would be the only one a creator may keep, without
+  // the walk.
+  const carriesWalk =
     scanEntryNames(
       outcome.session.entries.map((e) => e.filename),
       outcome.manifest,
       outcome.session.manifestWrap,
-    ).length === 0;
+    ).length > 0;
+  keepWalkInput.checked = carriesWalk;
+  keepWalk.hidden = !carriesWalk;
   renderTourName();
   element("tour-file").textContent = outcome.fileName;
   topbar.hidden = false;
@@ -1761,25 +1752,7 @@ async function buildAndDeliver(
     // Quiet: an autosave says it saved in the status line only (it is
     // always in place, which keeps the walk, so the result has nothing
     // more to say).
-    if (arrived && mode === "auto" && save.notPlaced !== undefined) {
-      // The one thing an autosave says beyond the status line, once per
-      // tour (E2b-2 milestone review #6): nobody may ever press Save.
-      if (!toldNotPlaced) {
-        fileToasts.push(
-          toast(
-            FINISH_LABELS.photosNotPlaced(
-              save.notPlaced,
-              save.scanLeftOut.length === 0,
-            ),
-            undefined,
-            null,
-          ),
-        );
-      }
-      toldNotPlaced = true;
-    }
     if (arrived && mode === "explicit") {
-      if (save.notPlaced !== undefined) toldNotPlaced = true;
       // The Finish's own result sentences (E2a review #2).
       toast(
         [
@@ -1789,14 +1762,6 @@ async function buildAndDeliver(
           ...(save.scanLeftOut.length === 0
             ? []
             : [FINISH_LABELS.scanLeftOut(save.scanLeftOut.length)]),
-          ...(save.notPlaced === undefined
-            ? []
-            : [
-                FINISH_LABELS.photosNotPlaced(
-                  save.notPlaced,
-                  save.scanLeftOut.length === 0,
-                ),
-              ]),
         ].join(" "),
         undefined,
         // The download's result carries an instruction; in place it does not.

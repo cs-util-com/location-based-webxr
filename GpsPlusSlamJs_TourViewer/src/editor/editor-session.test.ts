@@ -1630,7 +1630,8 @@ describe("createEditorSession, undo and redo (W2)", () => {
   });
 });
 
-/** Spots that place the recorded photo without the walk (any valid ones). */
+/** Capture spots a file written while the walk's frames were baked into
+ *  the tour carries: the document drops them at the open. */
 const WALK_SPOTS: TourCaptureSpots = {
   fixes: 3,
   gpsAccuracyMedianM: 4,
@@ -1651,16 +1652,18 @@ const WALK_ENTRIES: Readonly<Record<string, string>> = {
   "images/frame-000001.jpg": "an unbaked frame",
 };
 
-/** A tour with a pin, a baked photo (`images/frame-000002.jpg`) and the
- *  walk; `baked: false` leaves the photos' spots to the walk. */
-async function walkTour(baked = true): Promise<{
+/** A tour with a pin and the walk, a second frame
+ *  (`images/frame-000002.jpg`) among it; `withCaptures`: the file
+ *  carries capture spots for that frame, as one written while the frames
+ *  were baked into the tour did. */
+async function walkTour(withCaptures = true): Promise<{
   session: TourSession;
   manifest: TourManifest;
   bytes: Uint8Array;
 }> {
   const manifest: TourManifest = tourOf(
     [pin("a")],
-    baked ? { captureSpots: WALK_SPOTS } : {},
+    withCaptures ? { captureSpots: WALK_SPOTS } : {},
   );
   const zip = await packFilesAsZip([
     { path: "tour.json", data: serializeTourManifest(manifest) },
@@ -1688,6 +1691,11 @@ describe("moving the walk out (W2, D19)", () => {
   // change nothing until the page has delivered both files: a move whose
   // write failed must leave the next save carrying the walk.
   const walkNames = Object.keys(WALK_ENTRIES).sort();
+  /** The whole recording: the walk's entries and every frame. A frame
+   *  the file's capture spots named was kept for the visitors once; it
+   *  is debug data like any other now (the document drops the spots), so
+   *  it is the walk too. */
+  const recording = [...walkNames, "images/frame-000002.jpg"].sort();
 
   it("names the walk's file after the tour's", () => {
     expect(walkFileName("castle.zip")).toBe("castle-walk.zip");
@@ -1702,15 +1710,14 @@ describe("moving the walk out (W2, D19)", () => {
       manifest,
       levels: new Map(),
     });
-    expect((await editor.walkEntries()).sort()).toEqual(walkNames);
+    // (Was walkNames: the frame the capture spots named stayed the tour's.)
+    expect((await editor.walkEntries()).sort()).toEqual(recording);
     editor.editText("a", "Moved with the walk");
     const move = await editor.moveWalkOut();
     if (move.kind !== "ready") throw new Error(move.reason);
     expect(move.walk.filename).toBe("tour-walk.zip");
-    // The whole recording (the M4b milestone review #8): the frame the
-    // baked spot shows too, which the tour keeps for its visitors - and a
-    // note naming the tour it came from.
-    const recording = [...walkNames, "images/frame-000002.jpg"].sort();
+    // The whole recording (the M4b milestone review #8), every frame
+    // included - and a note naming the tour it came from.
     expect(await namesIn(move.walk.blob)).toEqual(
       [...recording, WALK_NOTE].sort(),
     );
@@ -1724,8 +1731,10 @@ describe("moving the walk out (W2, D19)", () => {
       );
     }
     const tourNames = await namesIn(move.save.blob);
-    for (const name of walkNames) expect(tourNames).not.toContain(name);
-    expect(tourNames).toContain("images/frame-000002.jpg");
+    // (The second frame stayed in the tour while its capture spot named
+    // it; no frame is the tour's now.)
+    for (const name of recording) expect(tourNames).not.toContain(name);
+    expect((await carried(move.save.blob)).captureSpots).toBeUndefined();
     // The pending edit rides along, as in any save.
     expect((await carried(move.save.blob)).objects[0]).toMatchObject({
       label: "Moved with the walk",
@@ -1757,27 +1766,26 @@ describe("moving the walk out (W2, D19)", () => {
     expect(move.kind).toBe("ready");
     // Not committed: the page's write of either file failed.
     expect(editor.changeCount()).toBe(1);
-    expect((await editor.walkEntries()).sort()).toEqual(walkNames);
+    // (Was walkNames; the named frame is the walk too now.)
+    expect((await editor.walkEntries()).sort()).toEqual(recording);
     const saved = await editor.save({ keepScan: true });
     const names = await namesIn(saved.blob);
-    for (const name of walkNames) expect(names).toContain(name);
+    for (const name of recording) expect(names).toContain(name);
     await session.close();
   });
 
-  it("moves the walk out of a tour whose photos are not baked, and refuses for a tour without one", async () => {
+  it("moves the walk out of a tour whose file carries no capture spots, and refuses for a tour without one", async () => {
     // Why: the move was refused while a visitor's viewer could still place
-    // the recorded photos from the walk; a visitor shows baked photos only,
-    // so the walk of such a tour is the creator's like any other.
+    // the recorded photos from the walk; the walk of such a tour is the
+    // creator's like any other.
     const unbaked = await walkTour(false);
     const editor = createEditorSession({
       session: unbaked.session,
       manifest: unbaked.manifest,
       levels: new Map(),
     });
-    // Unbaked, the whole recording is the walk, its frame included.
-    expect((await editor.walkEntries()).sort()).toEqual(
-      [...walkNames, "images/frame-000002.jpg"].sort(),
-    );
+    // The whole recording is the walk, its frames included.
+    expect((await editor.walkEntries()).sort()).toEqual(recording);
     const move = await editor.moveWalkOut();
     if (move.kind !== "ready") throw new Error(move.reason);
     move.commit();
@@ -1815,7 +1823,8 @@ describe("moving the walk out (W2, D19)", () => {
       move.commit();
     }).toThrow(/another save landed/);
     // Nothing of the move was taken: the newest bytes still carry the walk.
-    expect((await editor.walkEntries()).sort()).toEqual(walkNames);
+    // (Was walkNames; the named frame is the walk too now.)
+    expect((await editor.walkEntries()).sort()).toEqual(recording);
     await session.close();
   });
 
@@ -1882,7 +1891,7 @@ describe("moving the walk out (W2, D19)", () => {
     await session.close();
   });
 
-  it("moves out a walk that places nothing - one on which no photo of the tour was taken - and a lean save leaves it out too", async () => {
+  it("moves out a walk none of whose frames the tour carries, and a lean save leaves it out too", async () => {
     // Why (the M4b milestone review #3): such a walk was refused with "the
     // recorded photos are placed by it" - photos the tour does not carry -
     // so it could never leave a tour file a creator hosts.
@@ -1897,8 +1906,7 @@ describe("moving the walk out (W2, D19)", () => {
       ],
       { remove: [...SAMPLE_PHOTOS] },
     );
-    // Opened as the page opens it: the bake at open says the walk
-    // places nothing.
+    // Opened as the page opens it.
     const tour = async (): Promise<EditorSession> => {
       const out = await openTourForEditing(
         new File([zip], "walked.zip", { type: "application/zip" }),
@@ -1907,7 +1915,6 @@ describe("moving the walk out (W2, D19)", () => {
       return createEditorSession({
         session: out.session,
         manifest: out.manifest,
-        photos: out.photos,
         levels: out.levels,
       });
     };
@@ -1920,10 +1927,10 @@ describe("moving the walk out (W2, D19)", () => {
     expect(await namesIn(move.walk.blob)).toEqual([...walk, WALK_NOTE].sort());
     expect(await namesIn(move.save.blob)).toEqual(["tour.json"]);
     // The lean save (the editor's download without "keep the walk") leaves
-    // it out as well, and says nothing about photos that do not exist.
+    // it out as well. (It also said nothing about photos that do not
+    // exist; a save says nothing about photos at all now.)
     const lean = await (await tour()).save({ keepScan: false });
     expect(await namesIn(lean.blob)).toEqual(["tour.json"]);
-    expect(lean.notPlaced).toBeUndefined();
     expect([...lean.scanLeftOut].sort()).toEqual(walk);
   });
 });

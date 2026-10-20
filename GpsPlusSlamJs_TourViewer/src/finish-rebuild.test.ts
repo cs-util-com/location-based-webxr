@@ -40,11 +40,7 @@ import {
   tourOf,
   withWorldObjects,
 } from "./test-support/v3-tour.js";
-import {
-  type CaptureSpotsInWorld,
-  withTourContent,
-  withWalkPhotos,
-} from "./tour-content.js";
+import { withTourContent } from "./tour-content.js";
 
 const WRAP = "mytour/";
 const LEVEL_ID = "abc123";
@@ -148,18 +144,6 @@ async function zipManifest(
   expect(text, "the zip must carry tour.json").toBeDefined();
   return withWorldObjects(parseTourManifest(JSON.parse(text!)));
 }
-
-/** Spots that let the walk go (any valid ones), as the bake gives them. */
-const SPOTS: CaptureSpotsInWorld = {
-  fixes: 3,
-  gpsAccuracyMedianM: 4,
-  captures: [
-    {
-      image: "images/frame-000002.jpg",
-      geo: { lat: 48, lon: 11, alt: 500, rotation: [0, 0, 0, 1] },
-    },
-  ],
-};
 
 /** The edits a test does not care about. */
 const NO_EDITS = {
@@ -301,47 +285,9 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
     await tour.close();
   });
 
-  // Why: the walk's photos are put into stations when the recording is
-  // opened (`walkAtOpen`), so the stations a creator was shown are the
-  // ones written. A Finish writes them as they are, and never assigns
-  // them again.
-  it("writes the walk's photos as they were baked at open, and a later Finish keeps them", async () => {
-    const tour = await plainTour([], {});
-    const walk: CaptureSpotsInWorld = {
-      fixes: 5,
-      gpsAccuracyMedianM: 3,
-      captures: [0, 10, 40].map((north, i) => ({
-        image: `images/frame-00000${String(i + 1)}.jpg`,
-        geo: {
-          lat: 47.5 + north / 111_320,
-          lon: 8.7,
-          alt: 400,
-          rotation: [0, 0, 0, 1],
-        },
-      })),
-    };
-    const baked = withWalkPhotos(manifestOf([]), walk);
-    const first = await rebuildFinishedTour({
-      ...NO_EDITS,
-      tour,
-      manifest: baked,
-    });
-    expect(first!.written.captureSpots).toEqual(baked.captureSpots);
-    expect(first!.written.stations).toEqual(baked.stations);
-    const second = await rebuildFinishedTour({
-      ...NO_EDITS,
-      tour,
-      manifest: first!.written,
-      placed: [{ object: seated(pin("b"), "walk-1") }],
-      previous: { blob: first!.blob },
-    });
-    expect(second!.written.captureSpots).toEqual(baked.captureSpots);
-    expect(second!.written.stations.map((st) => st.id)).toEqual([
-      "walk-1",
-      "walk-2",
-    ]);
-    await tour.close();
-  });
+  // (A test that a Finish wrote the walk's photos as the open baked them,
+  // and a later Finish kept them, stood here: the open bakes none, and
+  // the document drops a file's - `withoutDebugCaptures`.)
 
   it("stops without rebuilding when the caller no longer wants the result", async () => {
     const tour = await plainTour([]);
@@ -359,35 +305,31 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
     await tour.close();
   });
 
-  it("leaves the walk out with or without photo spots, and keeps it only when asked", async () => {
+  it("leaves the walk out, and keeps it only when asked", async () => {
     // Why: visitors download the published copy, and the walk is the
-    // creator's. It once stayed in a copy without baked spots, for a
-    // visitor's viewer to place the photos from it; a visitor shows baked
-    // photos only, so no copy keeps the walk unless the creator asks.
+    // creator's: no copy keeps it unless the creator asks. (This ran with
+    // and without baked photo spots too, which once decided it; nothing
+    // writes spots now.)
     const walk = [`${WRAP}session.json`, `${WRAP}actions/000001.json`];
     const tour = await plainTour([], {
       "session.json": "{}",
       "actions/000001.json": "[]",
     });
-    const run = async (keepScan: boolean, spots: boolean) => {
+    const run = async (keepScan: boolean) => {
       const r = await rebuildFinishedTour({
         ...NO_EDITS,
         tour,
-        manifest: spots
-          ? withWalkPhotos(manifestOf([]), SPOTS)
-          : manifestOf([]),
+        manifest: manifestOf([]),
         keepScan,
       });
       return { left: r!.scanLeftOut, names: await namesOf(r!.blob) };
     };
-    for (const spots of [true, false]) {
-      const out = await run(false, spots);
-      expect([...out.left].sort()).toEqual([...walk].sort());
-      for (const name of walk) expect(out.names).not.toContain(name);
-      const kept = await run(true, spots);
-      expect(kept.left).toEqual([]);
-      for (const name of walk) expect(kept.names).toContain(name);
-    }
+    const out = await run(false);
+    expect([...out.left].sort()).toEqual([...walk].sort());
+    for (const name of walk) expect(out.names).not.toContain(name);
+    const kept = await run(true);
+    expect(kept.left).toEqual([]);
+    for (const name of walk) expect(kept.names).toContain(name);
     await tour.close();
   });
 

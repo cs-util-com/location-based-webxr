@@ -20,7 +20,6 @@ import {
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { rebuildFinishedTour } from "./finish-rebuild.js";
-import { type CaptureSpotsInWorld, withWalkPhotos } from "./tour-content.js";
 import { stationIdOf, tourOf } from "./test-support/v3-tour.js";
 import { openTourFile } from "./tour-session.js";
 import {
@@ -57,29 +56,47 @@ function photo(id: string, lat: number): TourObject {
   };
 }
 
-/** The walk's photo spots baked at open: one beside the tour's photo,
- *  one a kilometre away, which the bake puts into a station of its own. */
-const SPOTS: CaptureSpotsInWorld = {
-  fixes: 3,
-  gpsAccuracyMedianM: 4,
-  captures: [
-    {
-      image: "content/f.jpg",
-      geo: { lat: 48.5204, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
-    },
-    {
-      image: "content/far.jpg",
-      geo: { lat: 48.53, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
-    },
-  ],
-};
-
 const IDS = ["a", "b", "f"] as const;
 const OPENED: TourManifest = tourOf([
   pin("a", 48.52),
   pin("b", 48.5202),
   photo("f", 48.5204),
 ]);
+
+/** OPENED as a file written while the walk's frames were baked into the
+ *  tour: one frame in the photo's station, one a kilometre away in an
+ *  automatic walk-1 station only it kept. */
+const WITH_CAPTURES: TourManifest = {
+  ...OPENED,
+  stations: [
+    ...OPENED.stations,
+    {
+      id: "walk-1",
+      geo: { lat: 48.53, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow",
+      steps: [],
+      items: [],
+    },
+  ],
+  captureSpots: {
+    fixes: 3,
+    gpsAccuracyMedianM: 4,
+    captures: [
+      {
+        image: "content/f.jpg",
+        station: stationIdOf("f"),
+        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      },
+      {
+        image: "content/far.jpg",
+        station: "walk-1",
+        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      },
+    ],
+  },
+};
 
 type Op =
   | { kind: "edit"; id: string; label: string }
@@ -289,10 +306,12 @@ describe("tour document (properties)", () => {
     );
   });
 
-  it("the manifest the state would write is the one the Finish rebuild writes, with the walk baked at open and across a second save", async () => {
+  it("the manifest the state would write is the one the Finish rebuild writes, for a file with debug camera captures and across a second save", async () => {
     // The r875 milestone review #7: what the page shows as the next write
-    // must be what a save writes, for a tour opened with its walk's photos
-    // baked into stations and without, and once more after a save landed
+    // must be what a save writes, for a tour opened from a file that
+    // carries debug camera captures (written while the walk's frames were
+    // baked into stations; the document drops them, so neither write may
+    // carry them) and from one without, and once more after a save landed
     // in the middle - the second write starts from the first one's file.
     const zip = await packFilesAsZip([
       { path: "tour.json", data: serializeTourManifest(OPENED) },
@@ -311,7 +330,7 @@ describe("tour document (properties)", () => {
           const start = withSpots
             ? reduce(
                 initialTourDocumentState,
-                act.opened({ manifest: withWalkPhotos(OPENED, SPOTS) }),
+                act.opened({ manifest: WITH_CAPTURES }),
               )
             : opened;
           let state = first.reduce(apply, start);
@@ -325,6 +344,10 @@ describe("tour document (properties)", () => {
             previous: null,
           });
           expect(difference(one!.written, manifestToWrite(state)!)).toBeNull();
+          expect(one!.written.captureSpots).toBeUndefined();
+          expect(one!.written.stations.some((s) => s.id === "walk-1")).toBe(
+            false,
+          );
           state = reduce(
             state,
             act.saved({
@@ -345,6 +368,7 @@ describe("tour document (properties)", () => {
             previous: { blob: one!.blob },
           });
           expect(difference(two!.written, manifestToWrite(state)!)).toBeNull();
+          expect(two!.written.captureSpots).toBeUndefined();
         },
       ),
       { numRuns: 25 },

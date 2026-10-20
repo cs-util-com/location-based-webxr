@@ -1,8 +1,9 @@
 /**
  * What a visitor of a tour reads, and the creator's walk a visitor never
- * reads (scan-pass plan S1, S-D10): the walk recording's own files minus
- * the photos a visitor sees. The Finish leaves the walk out of the
- * published copy by default, and a visitor's page leaves it out too.
+ * reads (scan-pass plan S1, S-D10): the walk recording's own files, every
+ * frame among them (debug data: a visitor sees none). A Finish leaves the
+ * walk out of the published copy unless kept, and a visitor's page leaves
+ * it out too.
  *
  * @see tour-read-set.ts.md
  */
@@ -24,9 +25,10 @@ import { tourUnfinished } from "./tour-unfinished.js";
 
 /**
  * The entries of `entryNames` a visitor reads: `tour.json`, every code
- * level, the signed list and its signature, the content files the manifest
- * names (under `wrap`, the tour's folder), and the recorded photos it baked
- * spots for. Nothing else: a visitor never shows the zip's other images.
+ * level, the signed list and its signature, and the content files the
+ * manifest names (under `wrap`, the tour's folder). Nothing else: a
+ * visitor never shows the zip's other images, nor a recorded frame - not
+ * even one a file's debug capture spots name.
  */
 export function visitorEntryNames(
   entryNames: readonly string[],
@@ -40,7 +42,6 @@ export function visitorEntryNames(
       o.kind === "photo" ? [`${wrap}${o.image}`] : [],
     ),
     ...manifest.assets.map((a) => `${wrap}${a.path}`),
-    ...(manifest.captureSpots?.captures.map((c) => c.image) ?? []),
   ]);
   return new Set(
     entryNames.filter(
@@ -82,7 +83,7 @@ function isRecordingEntry(name: string): boolean {
 
 /**
  * The walk recording's own entries in this archive, in archive order -
- * every one, the frames a visitor sees included: what makes the walk a
+ * every one, every frame included: what makes the walk a
  * complete recording in a file of its own (the editor's "Move the walk
  * out", the M4b milestone review #8). None without an action stream.
  */
@@ -96,7 +97,7 @@ export function recordingEntryNames(entryNames: readonly string[]): string[] {
 /**
  * The creator's walk in this archive, in archive order: the recording's own
  * entries (`session.json`, `actions/`, recorded frames) that a visitor
- * never reads - a baked photo stays. What
+ * never reads. What
  * a lean Finish removes and a visitor's page leaves out. Never a file the
  * recording did not write: a README, credits or a licence file stays.
  */
@@ -124,7 +125,7 @@ export function entriesForVisitor<E extends { filename: string }>(
  * stop: a tour not finished yet (`tour-unfinished.ts`: no `tour.json`,
  * `manifest` null, or no station), of which a visitor reads nothing; or a
  * copy that carries a walk (kept for a co-author, or never left out),
- * which no visitor reads - a visitor shows baked photos only. A finished
+ * which no visitor reads - every recording entry is walk. A finished
  * copy without a walk is all visitor content, and stopping would only lose
  * the offline copy. A creator's working copy is still cached whole.
  */

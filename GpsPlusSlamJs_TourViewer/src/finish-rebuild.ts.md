@@ -20,9 +20,9 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
     version 3 through `withTourContent` (`tour-content.ts`): the edits
     apply to its world view (`tourObjects`), and every pin and photo is
     written into the station it names - the stations are the manifest's
-    as they are (the tour document seated every object), and the
-    walk's photos are already in them (baked at open, `walkAtOpen` of
-    `tour-document-bake.ts`).
+    as they are (the tour document seated every object). The tour
+    document hands it no debug camera captures (`withoutDebugCaptures`);
+    a manifest that carried some would be written as it is.
   - `input.placed` - objects placed or edited (`{ object, blob? }`); a
     photo with bytes writes them as its content file. Read synchronously
     at the call: pass a snapshot, not a list the page keeps changing.
@@ -136,9 +136,8 @@ listed tour staying at the open-time version + 1. Every check reads the
 zip's bytes (`tour.json`, the level), never only the returned
 `written`. The same file pins `pendingAfterRebuild` (an edit made during the save
 waits, a placement waits, only applied deletions clear, the caller's
-objects come back, a stored copy micrometres off counts as written), and a
-Finish writing the walk's photos as they were baked at open
-(`tour-document-bake.ts`) and the next keeping them.
+objects come back, a stored copy micrometres off counts as written), and
+the walk left out unless kept.
 `finish-rebuild.property.test.ts` sweeps mixes of edits,
 additions and deletions: each id once, edits in place, a deleted
 photo's file gone, kept ones present, the zip opens again. The phone's

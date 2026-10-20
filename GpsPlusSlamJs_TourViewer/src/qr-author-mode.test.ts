@@ -26,7 +26,6 @@ import {
   adoptedSizeNote,
   codeTourLine,
   correctionRefusedLine,
-  walkBakeLine,
   type AuthorPipelineDeps,
 } from "./qr-author-mode";
 
@@ -763,42 +762,5 @@ describe("driveFileAddress (polish round M2, step 6)", () => {
   });
 });
 
-describe("walkBakeLine (the recording's photos baked at open)", () => {
-  // Why this test matters: the recording's photos are put into stations
-  // when the creator opens it, which can take a while on a long walk, and
-  // a bake that cannot place them leaves the tour without walk photos. The
-  // creator must see both: that it runs, and that it declined and why.
-  it("says the bake runs, with the walk's progress once known", () => {
-    expect(walkBakeLine({ kind: "baking", done: 0, total: 0 })).toBe(
-      "Placing the recording's photos into stations…",
-    );
-    expect(walkBakeLine({ kind: "baking", done: 3, total: 12 })).toBe(
-      "Placing the recording's photos into stations (3 of 12 steps of the walk)…",
-    );
-  });
-
-  it("says a decline and its reason, and nothing once placed or with nothing to place", () => {
-    expect(
-      walkBakeLine({
-        kind: "decided",
-        photos: { notPlaced: "too few GPS fixes" },
-      }),
-    ).toBe(
-      "The recording's photos are not in the tour: they could not be placed (too few GPS fixes).",
-    );
-    // A read that failed may work the next time: the line says how.
-    expect(
-      walkBakeLine({
-        kind: "decided",
-        photos: {
-          notPlaced: "reading the recording failed: network",
-          readFailed: true,
-        },
-      }),
-    ).toBe(
-      "The recording's photos are not in the tour: they could not be placed (reading the recording failed: network). Open the recording again to try once more.",
-    );
-    expect(walkBakeLine({ kind: "decided", photos: {} })).toBe("");
-    expect(walkBakeLine(null)).toBe("");
-  });
-});
+// (The tests of `walkBakeLine`, the line about the bake at open, stood
+// here: the open bakes no walk any more, and the line went with it.)

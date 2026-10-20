@@ -51,9 +51,8 @@ import {
   createTourSaves,
   dispatchThunk,
   TOUR_REPLACED,
-  type TourSaveBuilt,
 } from "../tour-document-save.js";
-import type { RebuildPhotoSpots } from "../tour-document-bake.js";
+import type { FinishedTour } from "../finish-rebuild.js";
 import {
   createTourViewerStore,
   type TourViewerStore,
@@ -101,8 +100,6 @@ export interface EditorSave {
   readonly filename: string;
   /** Entries visitors never read that the save left out. */
   readonly scanLeftOut: readonly string[];
-  /** Why the recorded photos could not be placed, when they could not. */
-  readonly notPlaced?: string;
   /** The manifest the zip carries (the draft's `written` versions, M6
    *  E2c). */
   readonly written: TourManifest;
@@ -300,20 +297,16 @@ export interface EditorSession {
    *  once it was moved out, or when the last save left it out. */
   walkEntries(): Promise<string[]>;
   /** Build the move of the walk out (`WalkMove`), queued with the saves;
-   *  refused, in words, when there is no walk or the recorded photos the
-   *  tour carries still need it (a walk that places nothing moves out).
-   *  Bringing a walk back is a later feature. */
+   *  refused, in words, when there is no walk. Bringing a walk back is a
+   *  later feature. */
   moveWalkOut(): Promise<WalkMove | EditorRefusal>;
 }
 
 export function createEditorSession(input: {
   readonly session: TourSession;
-  /** The tour as opened, its walk's photos baked into its stations
-   *  (`openTourForEditing`). */
+  /** The tour as opened (`openTourForEditing`); the document drops a
+   *  file's debug camera captures (`withoutDebugCaptures`). */
   readonly manifest: TourManifest;
-  /** What the open's bake decided about the walk's photos (`walkAtOpen`);
-   *  absent: nothing to say. */
-  readonly photos?: RebuildPhotoSpots;
   readonly levels: ReadonlyMap<string, QrLevel>;
   /** The file's name for the model's title (default: the session's). */
   readonly fileName?: string;
@@ -338,7 +331,7 @@ export function createEditorSession(input: {
 
   // What follows is imperative resources only (root CLAUDE.md, "App state
   // lives in the Redux store"): the pictures' side table, and the saves'
-  // own (the newest bytes, the photo spots' cache, the queue) in the
+  // own (the newest bytes, the queue) in the
   // document's save (`tour-document-save.ts`), whose status is the slice's.
   /** Deleted photos' pictures, for an undo after a save took them out
    *  (the side table: Blobs are never state). */
@@ -353,7 +346,6 @@ export function createEditorSession(input: {
     generation,
     pictureOf: (id) => pictures.get(id),
     picturesRead: () => Promise.all(pictureReads),
-    ...(input.photos === undefined ? {} : { photos: input.photos }),
   });
   /** The saved file's name: the opened one's, made safe (the Finish's rule). */
   const savedName = saves.fileName;
@@ -782,15 +774,12 @@ export function createEditorSession(input: {
       : zipBlobEntryNames(newest.blob);
   }
 
-  function saveOf({ finished, photos }: TourSaveBuilt): EditorSave {
+  function saveOf(finished: FinishedTour): EditorSave {
     return {
       blob: finished.blob,
       filename: savedName,
       scanLeftOut: finished.scanLeftOut,
       written: finished.written,
-      ...(photos.notPlaced === undefined
-        ? {}
-        : { notPlaced: photos.notPlaced }),
     };
   }
 
@@ -804,8 +793,8 @@ export function createEditorSession(input: {
     if (scanEntryNames(names, snap.manifest, wrap).length === 0) {
       return { kind: "refused", reason: NO_WALK };
     }
-    // The rebuild below writes what the open's bake decided.
-    const photos = await saves.photoSpots();
+    // The rebuild below replaces the bytes a picture may be read from.
+    await saves.picturesRead();
     // The walk's own file is the whole recording (the M4b milestone review
     // #8): the frames the tour keeps for its visitors too, so it is a
     // complete recording on its own.
@@ -836,14 +825,13 @@ export function createEditorSession(input: {
     // From the same bytes, read once (review #11).
     const finished = await saves.rebuild(
       snap,
-      photos,
       false,
       base === null ? source : undefined,
     );
     return {
       kind: "ready",
       walk: { blob: walkBlob, filename: walkFileName(savedName) },
-      save: saveOf({ finished, photos }),
+      save: saveOf(finished),
       current: () => saves.newest() === base,
       commit(inPlace) {
         if (saves.newest() !== base) {

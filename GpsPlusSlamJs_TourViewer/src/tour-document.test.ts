@@ -123,6 +123,57 @@ describe("tour document: the open", () => {
     expect(state.past).toEqual([]);
     expect(documentObjects(state).map((o) => o.object.id)).toEqual(["z"]);
   });
+
+  it("drops a file's debug camera captures and the stations only they kept, and writes none", () => {
+    // Why this test matters: a file written while the walk's frames were
+    // baked into the tour carries them as captureSpots, each frame in a
+    // station - an automatic walk-N station where no station held it. The
+    // frames are debug data now, which no station holds: the document
+    // opens without them, so a save writes none and the empty walk-N
+    // stations do not come back as stations a visitor is led to.
+    const withCaptures: TourManifest = {
+      ...tourOf([pin("a")]),
+      stations: [
+        ...tourOf([pin("a")]).stations,
+        {
+          id: "walk-1",
+          geo: { lat: 48.53, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+          activateRadiusM: 50,
+          foundRadiusM: 25,
+          hint: "arrow",
+          steps: [],
+          items: [],
+        },
+      ],
+      captureSpots: {
+        fixes: 3,
+        gpsAccuracyMedianM: 4,
+        captures: [
+          {
+            image: "images/frame-0.png",
+            station: stationIdOf("a"),
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+          },
+          {
+            image: "images/frame-1.png",
+            station: "walk-1",
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+          },
+        ],
+      },
+    };
+    const state = open(withCaptures);
+    for (const held of [state.opened, state.written, manifestNow(state)]) {
+      expect(held?.captureSpots).toBeUndefined();
+      expect(held?.stations.map((s) => s.id)).toEqual([stationIdOf("a")]);
+    }
+    expect(state.stations.map((s) => s.id)).toEqual([stationIdOf("a")]);
+    const written = manifestToWrite(state);
+    expect(written?.captureSpots).toBeUndefined();
+    expect(written?.stations.map((s) => s.id)).toEqual([stationIdOf("a")]);
+    // Nothing reads as unsaved: the drop is the open's, not an edit.
+    expect(changeCount(state)).toBe(0);
+  });
 });
 
 describe("tour document: edits and their history", () => {
@@ -689,7 +740,10 @@ describe("tour document: every object belongs to a station", () => {
     expect(stationOf(state, "p")).toBe("auto");
   });
 
-  it("a station with a title, a step, a route to it or a recorded photo stays when its last object goes", () => {
+  // (A fourth case, a station kept by a recorded photo, stood here: the
+  // walk's frames are debug camera captures now, which keep no station,
+  // and the document drops them at the open - "tour document: the open".)
+  it("a station with a title, a step or a route to it stays when its last object goes", () => {
     const keeps: [string, TourDocumentState][] = [
       ["a title", tourWith(stationAt("k", 0, 25, { title: "Gate" }))],
       [
@@ -709,27 +763,6 @@ describe("tour document: every object belongs to a station", () => {
       [
         "a route to it",
         tourWith(stationAt("k", 0), stationAt("r", 500, 25, { next: "k" })),
-      ],
-      [
-        "a recorded photo",
-        open({
-          version: 3,
-          minor: 0,
-          order: "fixed",
-          assets: [],
-          stations: [stationAt("k", 0)],
-          captureSpots: {
-            fixes: 3,
-            gpsAccuracyMedianM: 4,
-            captures: [
-              {
-                image: "images/frame-0.png",
-                station: "k",
-                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-              },
-            ],
-          },
-        }),
       ],
     ];
     for (const [why, opened] of keeps) {

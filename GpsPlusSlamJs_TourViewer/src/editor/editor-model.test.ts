@@ -108,7 +108,7 @@ function walk(
   };
 }
 
-/** The items besides the stations the recorded photos sit in. */
+/** The items besides the stations (a file's capture spots sit in some). */
 function notStations(m: EditorModel) {
   return m.items.filter((i) => i.kind !== "station");
 }
@@ -166,7 +166,12 @@ describe("buildEditorModel", () => {
     expect(m.counts).toEqual({ code: 1, pin: 1, photo: 1, station: 0 });
   });
 
-  it("lists the walk's recorded photos with the placed ones, marked as recorded", () => {
+  // Why: the walk's camera captures were listed as read-only "Recorded
+  // photo" items, in the rail, the counts and the map's item marks (two
+  // tests pinned that, one for a fix that cannot be drawn). They are debug
+  // data now, drawn on a debug layer of their own and never an item: a
+  // file's capture spots give none, and count as no photo.
+  it("lists no debug camera capture: a file's capture spots give no item and count as no photo", () => {
     const m = buildEditorModel({
       manifest: manifest(
         walk([
@@ -174,30 +179,6 @@ describe("buildEditorModel", () => {
             image: "images/frame-000002.jpg",
             geo: { ...AT, rotation: [0, 0, 0, 1] },
           },
-        ]),
-      ),
-      objects: [],
-      levels: new Map(),
-      fileName: "tour.zip",
-    });
-    expect(notStations(m)).toEqual([
-      expect.objectContaining({
-        kind: "photo",
-        title: "Recorded photo",
-        image: "images/frame-000002.jpg",
-        recorded: true,
-      }),
-    ]);
-    expect(m.counts.photo).toBe(1);
-  });
-
-  // Why (PR #609 review): a recorded photo whose fix cannot be drawn was
-  // dropped from the list and the counts; like a note's, its row stays so
-  // the creator can see the walk produced a photo the map cannot place.
-  it("keeps a recorded photo whose fix cannot be drawn, without a position", () => {
-    const m = buildEditorModel({
-      manifest: manifest(
-        walk([
           {
             image: "images/frame-000003.jpg",
             geo: { ...AT, lat: 123, rotation: [0, 0, 0, 1] },
@@ -208,15 +189,8 @@ describe("buildEditorModel", () => {
       levels: new Map(),
       fileName: "tour.zip",
     });
-    expect(notStations(m)).toEqual([
-      expect.objectContaining({
-        kind: "photo",
-        at: null,
-        recorded: true,
-        meta: expect.stringMatching(/no position/),
-      }),
-    ]);
-    expect(m.counts.photo).toBe(1);
+    expect(notStations(m)).toEqual([]);
+    expect(m.counts.photo).toBe(0);
   });
 
   it("lists the story's stations at their own positions (version 3, D9)", () => {
@@ -363,32 +337,18 @@ describe("filterItems", () => {
 
 describe("photoSource (E1 review #1)", () => {
   // Why: a placed photo's image is a content path inside the tour's
-  // folder; a recorded photo's is already the archive's entry name. Joining
-  // the folder to both read every recorded photo from the wrong path in a
-  // zip made by compressing a folder.
-  it("reads a placed photo as content and a recorded one by its entry name", () => {
+  // folder, read through it (`loadContentEntry`). (A recorded photo's was
+  // the archive's own entry name, and joining the folder to both read it
+  // from the wrong path; no item is a recorded photo now, so every photo
+  // source is content.)
+  it("reads a placed photo as content", () => {
     const m = buildEditorModel({
-      manifest: manifest(
-        walk([
-          {
-            image: "mytour/images/frame-000002.jpg",
-            geo: { ...AT, rotation: [0, 0, 0, 1] },
-          },
-        ]),
-      ),
+      manifest: manifest(),
       objects: [photo("f")],
       levels: new Map(),
       fileName: "tour.zip",
     });
-    const [placed, recorded] = notStations(m);
-    expect(photoSource(placed!)).toEqual({
-      kind: "content",
-      path: "content/f.jpg",
-    });
-    expect(photoSource(recorded!)).toEqual({
-      kind: "entry",
-      path: "mytour/images/frame-000002.jpg",
-    });
+    expect(photoSource(notStations(m)[0]!)).toBe("content/f.jpg");
   });
 
   it("is null for an item without a photo", () => {

@@ -55,7 +55,6 @@ import type { StationContent } from "./station-content.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { PlacementState } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
-import type { WalkBake } from "./tour-document-bake.js";
 import {
   createCreatorDocument,
   type CreatorDocument,
@@ -377,12 +376,6 @@ export interface TourViewerSession {
     /** A save delivered it (UI round 1, U2: the leave guard). */
     delivered?: boolean;
   } | null;
-  /** The creator's bake of the open recording's walk (`walkAtOpen` of
-   *  `tour-document-bake.ts`): running, with the replay's progress, or what
-   *  it decided (the Finish reads `notPlaced`; the
-   *  status line says a decline). Null before an open settled it and for
-   *  a visitor. */
-  walkBake: WalkBake | null;
   /** What the panel calls the open tour (`tourLabel`); null with none. */
   tourLabel: string | null;
   /** The creator's hit-test reticle for the running session. */
@@ -576,7 +569,6 @@ export function createTourViewerSession(
     finishProgress: "",
     finishError: null,
     rebuiltZip: null,
-    walkBake: null,
     tourLabel: null,
     arSessionGeneration: 0,
     reticle: null,

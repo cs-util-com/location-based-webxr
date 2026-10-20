@@ -79,7 +79,6 @@ import {
   codeTourLine,
   entryHint,
   setupHint,
-  walkBakeLine,
 } from "./qr-author-mode.js";
 
 import { createPrintSizeCheck } from "./print-size-check.js";
@@ -560,12 +559,8 @@ export function wireCreatorSetup(deps: {
     // the phone on the printed code so it fills the screen" on a desktop
     // page with no session running is an instruction for a situation the
     // creator is not in.
-    // The bake at open runs, or declined: said on the page and in AR.
-    const walkLine = walkBakeLine(ctx.walkBake);
     if (!sessionLive()) {
-      dom.status.textContent = [walkLine, ctx.placementNote ?? ""]
-        .filter((line) => line !== "")
-        .join(" · ");
+      dom.status.textContent = ctx.placementNote ?? "";
       return;
     }
     // A placement's outcome (or a draft notice) stands until the next tap
@@ -578,7 +573,6 @@ export function wireCreatorSetup(deps: {
         ? `${DONE_WAITS_FOR_MEASURING} · `
         : "") +
       entryLead() +
-      (walkLine === "" ? "" : `${walkLine} · `) +
       settle.refusalLead() +
       (ctx.placementNote === null ? "" : `${ctx.placementNote} · `);
     // evaluate, not last: a cache hit unless the detections changed - and
@@ -877,7 +871,8 @@ export function wireCreatorSetup(deps: {
       // (`creator-handoff.ts`).
       handoff.reset();
       // A "keep the walk" given for the closing tour is not given for the
-      // next one (S1 milestone review #9).
+      // next one (S1 milestone review #9): the next open sets its own
+      // default (`creator-finish.ts`).
       dom.keepScanInput.checked = false;
       // The rebuilt zip belonged to the tour that just closed, so the block
       // offering it goes away with it (M3 review #6) - otherwise a newly

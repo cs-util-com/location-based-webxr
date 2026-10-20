@@ -8,8 +8,8 @@
  * by the document (`saveStarted` / `saveEnded`): its save status is the
  * one place that says a save runs, landed or failed, and an undo waits
  * for it (`canStep`). What a save keeps between saves is imperative only -
- * the newest bytes, the photo spots' decision, the queue's tail - and
- * lives in the handle `createTourSaves` returns, one per open.
+ * the newest bytes and the queue's tail - and lives in the handle
+ * `createTourSaves` returns, one per open.
  *
  * @see tour-document-save.ts.md
  */
@@ -26,7 +26,6 @@ import {
   rebuildFinishedTour,
   type FinishedTour,
 } from "./finish-rebuild.js";
-import type { RebuildPhotoSpots } from "./tour-document-bake.js";
 import {
   historyAssetIds,
   manifestNow,
@@ -105,12 +104,6 @@ interface TourSaveSnapshot {
   readonly position: number;
 }
 
-/** A save that landed: the file it built and the photo spots it used. */
-export interface TourSaveBuilt {
-  readonly finished: FinishedTour;
-  readonly photos: RebuildPhotoSpots;
-}
-
 interface TourSaves {
   /** The name every save of this open is written under: the opened
    *  file's, made safe (the Finish's rule, `finishedFileName`). */
@@ -119,7 +112,8 @@ interface TourSaves {
    *  (a rebuild then reads the opened file). */
   newest(): NewestBytes | null;
   /** One save, queued behind the ones before it: the snapshot taken when
-   *  it starts, the photo spots, the rebuild, the landing. Rejects with
+   *  it starts, the pictures' reads, the rebuild, the landing; it resolves
+   *  to the file built. Rejects with
    *  `TOUR_REPLACED` when another open replaced this one before it
    *  started, and with the rebuild's own error; the slice says either
    *  (`saveEnded`'s `error`). */
@@ -129,7 +123,7 @@ interface TourSaves {
      *  place): the document then knows where in its history the file on
      *  disk stands (D33). Default: a download. */
     readonly inPlace?: boolean;
-  }): TourDocumentThunk<Promise<TourSaveBuilt>>;
+  }): TourDocumentThunk<Promise<FinishedTour>>;
   /** Run `start` after the saves queued before it (at once when none
    *  runs: its first steps run inside the dispatch), counted by the
    *  document - ended BEFORE the caller hears the end, so an undo asked
@@ -137,16 +131,14 @@ interface TourSaves {
   queued<T>(start: () => Promise<T>): TourDocumentThunk<Promise<T>>;
   /** The document as a save reads it now. */
   snapshot(): TourDocumentThunk<TourSaveSnapshot>;
-  /** What the open's bake decided about the walk's photos (`walkAtOpen`:
-   *  once per open, never at a save), after the pictures being read
-   *  (before a rebuild replaces the bytes they may be read from). */
-  photoSpots(): Promise<RebuildPhotoSpots>;
+  /** Settles once the pictures being read are read: a rebuild waits for
+   *  it, since it replaces the bytes they may be read from. */
+  picturesRead(): Promise<void>;
   /** The file rebuilt from the newest bytes - or from `whole`, the opened
    *  file as the caller already read it, so it is not read twice. Throws
    *  what the rebuild throws. */
   rebuild(
     snap: TourSaveSnapshot,
-    photos: RebuildPhotoSpots,
     keepScan: boolean,
     whole?: Blob,
   ): Promise<FinishedTour>;
@@ -170,14 +162,9 @@ export function createTourSaves(input: {
   readonly pictureOf: (id: string) => Blob | undefined;
   /** Settles once the pictures being read are read. */
   readonly picturesRead: () => Promise<unknown>;
-  /** What the open's bake decided (`walkAtOpen`); absent: nothing to say
-   *  (no recording, or the tour had its photos). */
-  readonly photos?: RebuildPhotoSpots;
 }): TourSaves {
   const { tour, generation } = input;
   let newest: NewestBytes | null = null;
-  /** What the open's bake decided (`walkAtOpen`). */
-  const atOpen = input.photos ?? {};
   /** The end of the last queued run, for the next to start after. */
   let tail: Promise<unknown> = Promise.resolve();
 
@@ -213,14 +200,10 @@ export function createTourSaves(input: {
               throw new Error(TOUR_REPLACED);
             }
             const snap = snapshotOf(state);
-            const photos = await saves.photoSpots();
-            const finished = await saves.rebuild(
-              snap,
-              photos,
-              options.keepScan,
-            );
+            await saves.picturesRead();
+            const finished = await saves.rebuild(snap, options.keepScan);
             dispatch(saves.land(finished, snap, options.inPlace === true));
-            return { finished, photos };
+            return finished;
           }),
         );
     },
@@ -254,11 +237,10 @@ export function createTourSaves(input: {
     snapshot() {
       return (_dispatch, getState) => snapshotOf(getState().tourDocument);
     },
-    async photoSpots() {
+    async picturesRead() {
       await input.picturesRead();
-      return atOpen;
     },
-    async rebuild(snap, decided, keepScan, whole) {
+    async rebuild(snap, keepScan, whole) {
       const finished = await rebuildFinishedTour({
         tour:
           whole === undefined

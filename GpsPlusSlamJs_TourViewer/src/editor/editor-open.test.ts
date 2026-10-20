@@ -21,6 +21,7 @@ import {
   NOT_A_ZIP,
   openTourForEditing,
 } from "./editor-open.js";
+import { createEditorSession } from "./editor-session.js";
 
 async function zipFile(
   entries: { path: string; data: string }[],
@@ -115,13 +116,15 @@ describe("openTourForEditing", () => {
   });
 });
 
-describe("openTourForEditing bakes the recording's photos at open", () => {
-  // Why this test matters: the desktop editor shows a tour's stations and
-  // saves them as they are; a save no longer bakes or assigns. A tour that
-  // carries a recording and no baked photos must therefore open with its
-  // walk's photos already in stations, the same rule and the same ids the
-  // phone's open gives (so both pages show the same stations).
-  it("opens a tour carrying a recording with its photos in stations", async () => {
+describe("openTourForEditing starts no station for the walk's debug camera captures", () => {
+  // Why this test matters: the walk's camera captures are debug data, not
+  // part of the tour. The open put them into stations once (a bake that
+  // started an automatic walk-N station for every frame no station held),
+  // so a save published them as the tour's content. A tour carrying a
+  // recording now opens as its file has it - the same on the desktop as on
+  // the phone - and the document the editor session opens holds no
+  // captures and no station for them.
+  it("opens a tour carrying a recording with no station and no captures", async () => {
     const zip = await rebuildZipWithEntries(
       new Blob([sampleRecordingBytes()]),
       [
@@ -135,13 +138,18 @@ describe("openTourForEditing bakes the recording's photos at open", () => {
       new File([zip], "walked.zip", { type: "application/zip" }),
     );
     if (out.kind !== "opened") throw new Error(out.reason);
-    const spots = out.manifest.captureSpots;
-    expect(spots?.captures.length).toBeGreaterThan(0);
-    expect(out.photos.spots?.captures.length).toBe(spots?.captures.length);
-    const ids = new Set(out.manifest.stations.map((s) => s.id));
-    for (const c of spots?.captures ?? [])
-      expect(ids.has(c.station)).toBe(true);
-    expect([...ids].every((id) => id.startsWith("walk-"))).toBe(true);
+    expect(out.manifest).toEqual(createEmptyTourManifest());
+    const editor = createEditorSession({
+      session: out.session,
+      manifest: out.manifest,
+      levels: out.levels,
+    });
+    expect(editor.model().items.filter((i) => i.kind === "station")).toEqual(
+      [],
+    );
+    const saved = await editor.save({ keepScan: true });
+    expect(saved.written.stations).toEqual([]);
+    expect(saved.written.captureSpots).toBeUndefined();
     await out.session.close();
   });
 
@@ -155,7 +163,6 @@ describe("openTourForEditing bakes the recording's photos at open", () => {
     const out = await openTourForEditing(file);
     if (out.kind !== "opened") throw new Error(out.reason);
     expect(out.manifest).toEqual(createEmptyTourManifest());
-    expect(out.photos).toEqual({});
     await out.session.close();
   });
 });

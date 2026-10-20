@@ -228,9 +228,10 @@ async function desktopPage(
   file: File,
   stores: (key: string) => Promise<DraftFileStore>,
   restore = false,
+  /** The tour.json the page opens (default: the table's tour). */
+  manifest: TourManifest = tourOf(OPENED),
 ): Promise<Page> {
   const session: TourSession = await openTourFile(file);
-  const manifest = tourOf(OPENED);
   const draft = createEditorDraft({
     openStore: stores,
     holdLock: freeLock,
@@ -380,6 +381,8 @@ async function phonePage(
   file: File,
   stores: (key: string) => Promise<DraftFileStore>,
   restore = false,
+  /** The tour.json the page opens (default: the table's tour). */
+  manifest: TourManifest = tourOf(OPENED),
 ): Promise<Page> {
   const session: TourSession = await openTourFile(file);
   const dom = Object.fromEntries(
@@ -391,7 +394,7 @@ async function phonePage(
   const ctx = createTourViewerSession(store);
   ctx.session = session;
   ctx.tourManifestStatus = "settled";
-  ctx.tourDocument.open(tourOf(OPENED));
+  ctx.tourDocument.open(manifest);
   let draftKey: string | null = null;
   const setup = wireCreatorSetup({
     ctx,
@@ -993,4 +996,63 @@ describe("the parity contract: the phone's and the desktop's paths write the sam
         : `${row.name} [DIVERGES until: ${row.diverges}]`;
     test(name, () => samePages(row), 60_000);
   }
+});
+
+describe("the parity contract: a file carrying debug camera captures", () => {
+  // Why this row matters: a file written while the walk's frames were
+  // baked into the tour carries them as captureSpots, one frame in a
+  // station of the tour and one in an automatic walk-1 station only it
+  // kept. Both pages open the same document from it (the frames dropped,
+  // walk-1 with them), so an edit and a save on either writes the same
+  // tour - and neither writes a frame or the empty station.
+  const withCaptures: TourManifest = {
+    ...tourOf(OPENED),
+    stations: [
+      ...tourOf(OPENED).stations,
+      {
+        id: "walk-1",
+        geo: { lat: 48.53, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+        activateRadiusM: 50,
+        foundRadiusM: 25,
+        hint: "arrow",
+        steps: [],
+        items: [],
+      },
+    ],
+    captureSpots: {
+      fixes: 3,
+      gpsAccuracyMedianM: 4,
+      captures: [
+        {
+          image: "images/frame-0.jpg",
+          station: tourOf(OPENED).stations[0]!.id,
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+        {
+          image: "images/frame-1.jpg",
+          station: "walk-1",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      ],
+    },
+  };
+
+  it("both pages write the same tour, without the captures and without walk-1", async () => {
+    const file = await tourFile();
+    const written = await Promise.all(
+      [desktopPage, phonePage].map(async (page) => {
+        const p = await page(file, memoryStores(), false, withCaptures);
+        await p.edit("a", "The gate");
+        return p.save();
+      }),
+    );
+    const [desktop, phone] = written;
+    expect(desktop).toEqual(phone);
+    for (const w of written) {
+      expect(w?.captureSpots).toBeUndefined();
+      expect(w?.stations.map((st) => st.id)).toEqual(
+        tourOf(OPENED).stations.map((st) => st.id),
+      );
+    }
+  }, 60_000);
 });

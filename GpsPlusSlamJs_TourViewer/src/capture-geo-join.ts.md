@@ -6,16 +6,18 @@ The capture-time geo join's pure core (plan
 `2026-08-26-1130-capture-time-geo-join`, Rev 2): decide whether a REPLAYED
 recording supports trustworthy photo placement, and compute a world pose
 for every captured photo — so the AR view places photos where they were
-taken. Its one caller is the creator's bake (`capture-bake.ts`); a visitor
-places the baked spots and never runs a join.
+taken. Its one caller is the desktop editor's debug layer
+(`debug-captures.ts`, `debugCapturesOf`); a visitor never sees a camera
+capture and never runs a join.
 
 ## Public API
 
 - `CAPTURE_ACTION` (`"gpsData/add2dImage"`), the recorder's photo action,
   and `NEWEST_KNOWN_ODOM_COORD_VERSION` (**5**), the newest era this viewer
-  knows. The preflight lets a NEWER era replay, so `capture-bake.ts` uses
-  both to decide whether an empty replay may be read as "the walk took no
-  photo" (only for a known era with no capture action; PR #638 review).
+  knows. The preflight lets a NEWER era replay, so `debug-captures.ts`
+  uses both to decide whether an empty replay may be read as "the walk
+  took no camera capture" (only for a known era with no capture action;
+  PR #638 review) - else its decline says none could be placed.
 - `preflightCaptureJoin(meta, actionTypes)` — the BEFORE-replay half (the era
   gate and the segmenting-action scan) so a declined zip never pays the
   seconds-long replay.
@@ -26,7 +28,7 @@ places the baked spots and never runs a join.
     said `=== 5` until the PR #368 review caught it, which had it declining
     era-4 zips on paper while the code accepted them.
 - `assessReplayedJoin(state): JoinAssessment` — the AFTER-replay half; every
-  `ok: false` carries a plain-words reason and means "bake no spot".
+  `ok: false` carries a plain-words reason and means "place no capture".
   - Preflight declines: wrong/unknown era, or a segmenting action present
     (`odometryTrackingRestarted` / `arLoopClosureDetected` — a restart
     WIPES and a loop closure DEFORMS the alignment's odometry history
@@ -85,7 +87,7 @@ places the baked spots and never runs a join.
     under an inland visitor, while the status line still claimed
     "N photos at capture spots". Zero is a VALID altitude, so the drop keys
     on missing-or-non-finite, never on falsy. When nothing survives, the
-    bake declines.
+    join declines.
   - **A capture's own `rotation` is dropped on the same terms** (PR #378
     review): length-4, finite, and unit-norm, via the same
     `renormalizeUnitQuaternion`. A non-unit quaternion survives
@@ -133,7 +135,7 @@ places the baked spots and never runs a join.
   alignment's error. Quality is reported, not guessed.
   - Since scan-pass S1 (owner decision S-D11) the viewer and the Finish
     pass each photo's own pick (`createCapturePickTracker`, through
-    `capture-bake.ts`), so the constellation is rigid only among photos
+    `debug-captures.ts`), so the constellation is rigid only among photos
     sharing a pick; `computeCaptureGeoJoin(state)` without the argument
     keeps the old end-of-walk behaviour.
 - This module never touches the zip: the caller feeds it `loadSessionMeta()`,
@@ -147,15 +149,15 @@ const pre = preflightCaptureJoin(
   await session.loadSessionMeta(),
   actions?.map((a) => a.type) ?? [],
 );
-// As the creator's bake at open does (`capture-bake.ts`): a declined
-// preflight or verdict is the reason the photos are not placed.
+// As the editor's debug layer does (`debug-captures.ts`): a declined
+// preflight or verdict is the reason the captures are not shown.
 if (!pre.ok) return { kind: "declined", reason: pre.reason };
 if (actions === null) return { kind: "declined", reason: "no walk" };
 const state = await replayActions(actions, { onChunk: showProgress });
 const verdict = assessReplayedJoin(state);
 if (!verdict.ok) return { kind: "declined", reason: verdict.reason };
 const poses = computeCaptureGeoJoin(state);
-// each pose's geo becomes a baked spot in tour.json
+// each pose's geo is where the debug layer draws that capture
 ```
 
 ## Tests

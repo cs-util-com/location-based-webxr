@@ -15,34 +15,30 @@ phone's Finish does not yet: see "Not here yet" below.
 
 ## Public API
 
-- `createTourSaves({ tour, generation, pictureOf, picturesRead, photos? }): TourSaves`
+- `createTourSaves({ tour, generation, pictureOf, picturesRead }): TourSaves`
   - one handle per open; it keeps the imperative resources only - the
     newest bytes (a Blob), the queue's tail.
   - `tour` - the open `TourSession` (the rebuild's reads, the file's
     name).
-  - `photos` - what the open's bake decided about the walk's photos
-    (`walkAtOpen` of `tour-document-bake.ts`); absent: nothing to say. A
-    save never bakes: the photos are in the tour's stations from the
-    open on.
   - `generation` - the open the saves belong to
     (`TourDocumentState.generation`).
   - `pictureOf(id)` - a photo's picture the page keeps (an undo brought
     the photo back after a save took it out of the file); a snapshot
     carries it for a photo the written file has no picture for.
-  - `picturesRead()` - settles once the pictures being read are read: the
-    photo spots wait for it, so a picture is read before a rebuild
-    replaces the bytes it may be read from.
+  - `picturesRead()` - settles once the pictures being read are read: a
+    save waits for it, so a picture is read before a rebuild replaces the
+    bytes it may be read from.
 - `TourSaves`
   - `fileName` - the name every save of this open is written under
     (`finishedFileName`: the opened file's, made safe).
   - `newest()` - the newest bytes this open's saves wrote; null before
     one landed (a rebuild then reads the opened file, under its budget).
-  - `save({ keepScan, inPlace? })` - thunk; resolves with `{ finished, photos }`
-    (`TourSaveBuilt`). Queued behind the saves before it; when it starts,
+  - `save({ keepScan, inPlace? })` - thunk; resolves with the
+    `FinishedTour` it built. Queued behind the saves before it; when it starts,
     the snapshot (`TourSaveSnapshot`: the entries with their kept
     pictures, the deletions, `manifestNow`, the frames, the history
     `position`) is taken before
-    any await, then the photo spots, the rebuild, the landing. Rejects
+    any await, then the pictures' reads, the rebuild, the landing. Rejects
     with `TOUR_REPLACED` when another open replaced this one before it
     started, and with the rebuild's own error; either way the slice says
     it (`saveEnded`'s `error`, status `error`). `inPlace`: the page writes
@@ -55,10 +51,10 @@ phone's Finish does not yet: see "Not here yet" below.
     undo asked for right after an awaited save is not refused. The
     desktop's move of the walk out runs in the same queue.
   - `snapshot()` - thunk; the document as a save reads it now.
-  - `photoSpots()` - the open's decision (`photos`), after
-    `picturesRead()` (before a rebuild replaces the bytes a picture may be
-    read from).
-  - `rebuild(snap, photos, keepScan, whole?)` - `rebuildFinishedTour`
+  - `picturesRead()` - settles after the input's `picturesRead()`
+    (before a rebuild replaces the bytes a picture may be read from; the
+    desktop's move of the walk waits for it too).
+  - `rebuild(snap, keepScan, whole?)` - `rebuildFinishedTour`
     from the newest bytes, or from `whole` (the opened file as the caller
     already read it, so it is not read twice); `levels: []`. Throws what
     the rebuild throws, and "the save was stopped" for a stopped one.
@@ -74,8 +70,9 @@ phone's Finish does not yet: see "Not here yet" below.
   "Actions must be plain objects").
 - `TOUR_REPLACED` - "Another tour was opened since: this one is no longer
   open here." (also the desktop's refusal of a move of the walk).
-- Types: `TourSaveBuilt` (the module-private `TourDocumentThunk<R>`,
-  `TourSaveSnapshot` and `TourSaves` are read through the handle).
+- Types: the module-private `TourDocumentThunk<R>`, `TourSaveSnapshot`
+  and `TourSaves` are read through the handle. (`TourSaveBuilt`, the
+  file built with what the open's bake decided, went with the bake.)
 
 ## Invariants & assumptions
 

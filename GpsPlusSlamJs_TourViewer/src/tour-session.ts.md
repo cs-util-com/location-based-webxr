@@ -153,8 +153,8 @@ not-checked`): a link's complete copies are checked through
   review R9): `loadRecordingActions` and `loadSessionMeta` still read a
   corrupt stream or file as null (the join declines, the tour works), but
   REJECT with the `ArchiveLimitError` when a cap refuses them, so their
-  one caller, the creator's bake (`capture-bake.ts`), says why instead of
-  silently baking nothing.
+  one caller, the editor's debug layer (`debug-captures.ts`), says why
+  instead of silently showing nothing.
 - **Opening a FILE (`openTourFile`, tour kit plan K0).** The same session
   over the file's own bytes (`LocalCacheByteSource`): the same caps (the
   transport cap from `file.size`, cause `'too-large'`), no network, no

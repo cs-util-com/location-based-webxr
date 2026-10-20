@@ -190,12 +190,6 @@ were here. What stays is the Finish's side:
   here); `finishReadiness` gates the button from the readout.
 - **Hand-off and the Drive steps:** `creator-handoff.ts` (split out in
   the code book plan's M2; its sidecar holds what was here).
-- **The bake at open on the status line:** while the recording's photos
-  are baked into stations at the open (`ctx.walkBake`, `archive-open.ts`),
-  and after a bake that declined, the line says so (`walkBakeLine`): on
-  the page before the placement's note, in AR ahead of the readout.
-  Tests: `creator-setup.test.ts` ("the status line says the bake at
-  open").
 - **Placement (M4, DEC-N9):** the gate, the pin and the photo are
   `creator-placement.ts` (its sidecar holds the rules that were here).
   The outcome of a placement is `ctx.placementNote`, shown until

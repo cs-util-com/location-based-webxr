@@ -16,7 +16,6 @@ import {
   createEmptyTourManifest,
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { walkAtOpen } from "./tour-document-bake.js";
 
 import { pictureProblem } from "./image-cap.js";
 import { DEFAULT_ASSET_PREFIX } from "./code-tour.js";
@@ -174,8 +173,6 @@ export function wireArchiveOpen(deps: {
     // they would duplicate their own ids and break every later finish; an
     // id deleted from one tour means nothing in another.
     ctx.tourDocument.close();
-    // The next open bakes its own walk.
-    ctx.walkBake = null;
     hooks.presentTourInfo(null);
     // The closing tour's story and HUD (tour kit plan K4).
     hooks.stopStations();
@@ -457,9 +454,9 @@ export function wireArchiveOpen(deps: {
       }
       ctx.session = opened;
       ctx.tourLabel = labelOf(source);
-      // Pending BEFORE the placement trigger below: the photos' baked spots
-      // live in tour.json, and a trigger that saw the teardown's "settled"
-      // with no manifest would decline them for the whole session (S1
+      // Pending BEFORE the placement trigger below: the tour's content
+      // lives in tour.json, and a trigger that saw the teardown's "settled"
+      // with no manifest would place nothing for the whole session (S1
       // milestone review #4; archive-open-order.test.ts).
       ctx.tourManifestStatus = "pending";
       renderStats();
@@ -524,30 +521,9 @@ export function wireArchiveOpen(deps: {
           // empty unnamed tour, not as "no tour": its stations exist from
           // the first placement, for the HUD, the settle and the write
           // alike. A visitor's stays "no tour".
-          const base = manifest ?? createEmptyTourManifest();
-          if (!opened.hasRecording || base.captureSpots !== undefined) {
-            ctx.walkBake = { kind: "decided", photos: {} };
-            return settle(manifest, base);
-          }
-          // The recording's photos are baked once, now, into the tour's
-          // stations by the station rule (`walkAtOpen`): the tour opens
-          // with them, so no station appears or moves at the Finish. The
-          // open settles when the bake has run; work placed meanwhile
-          // comes along by the rule.
-          ctx.walkBake = { kind: "baking", done: 0, total: 0 };
-          hooks.renderAuthorReadout();
-          return walkAtOpen(opened, base, {
-            shouldContinue: () => ctx.session === opened,
-            onChunk: (done, total) => {
-              if (ctx.session !== opened) return;
-              ctx.walkBake = { kind: "baking", done, total };
-              hooks.renderAuthorReadout();
-            },
-          }).then((walk) => {
-            if (ctx.session !== opened) return;
-            ctx.walkBake = { kind: "decided", photos: walk.photos };
-            return settle(manifest, walk.manifest);
-          });
+          // The walk's camera captures are debug data: they start no
+          // station and the document drops any it reads (`opened`).
+          return settle(manifest, manifest ?? createEmptyTourManifest());
         },
         (err: unknown) => {
           if (ctx.session !== opened) return;

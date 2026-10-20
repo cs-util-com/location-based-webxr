@@ -54,8 +54,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   on blur or Ctrl+Enter; an empty pin is refused in the phone's words),
   Move (the marker made draggable, Done applies the drop, Cancel or Esc
   puts it back; the card then says the height was kept), Delete with an
-  Undo toast for 8 s (the phone's hold, which holds autosave too). Codes, stations and the
-  walk's recorded photos stay read-only.
+  Undo toast for 8 s (the phone's hold, which holds autosave too). Codes and stations
+  stay read-only; the walk's debug camera captures are not items.
   The toast's Undo is the edit stack's (below): it runs while its delete
   is still the newest step (`editor.revision()` unchanged), also after a
   save wrote the delete, and a newer edit ends the toast. A delete or a move of a note the tour no longer carries
@@ -108,9 +108,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   milestone review #3).
 - **Save** builds the tour (`keepScan` from the "Keep the walk recording"
   switch, shown only for a tour that carries a walk, and ticked at the
-  open when the photos could not be placed - `keepsWalkByDefault` of
-  `tour-document-bake.ts` - so a lean copy keeps the walk a later open
-  can place them from unless the creator unticks it) and downloads it
+  open whenever it does: until the walk can be saved apart from the
+  tour, a lean copy would be the only one a creator may keep, without
+  the walk; the creator can untick it) and downloads it
   through the framework's `downloadZip` under the session's `savedName()`
   (the page imports none of the Finish's rules; the walk's file is named
   after it too, `walkFileName`); the
@@ -155,10 +155,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     delete now reaches the file only once its Undo lapsed. Ctrl+Z still
     undoes it after that, in the live tab.
   - **Quiet:** the status line says "Saving…" and then "Saved to <name>",
-    with no toast - except, once per tour, the photos a save could not
-    place (`FINISH_LABELS.photosNotPlaced`), which an explicit Save's toast
-    carries too: a creator who never presses Save hears it once (E2b-2
-    milestone review #6); a refusal or a failed write shows the in-place refusal
+    with no toast (it also said, once per tour, that the recorded photos
+    could not be placed; nothing places them since the walk's camera
+    captures are debug data); a refusal or a failed write shows the in-place refusal
     toast (one at a time: a new one replaces the last) and PAUSES autosave -
     the status adds "not saved by itself until you Save" - until an
     explicit Save or a download lands (no write loop).

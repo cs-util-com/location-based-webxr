@@ -19,9 +19,10 @@
  *   station's radius starts a new one there, inside one joins the
  *   nearest. "Place a pin" with no station open therefore creates a
  *   station holding it.
- * - **The walk's photos** are in their stations from the open on (the
- *   bake at open, `walkAtOpen`), so no Finish adds or renumbers a
- *   station: the names the HUD shows are the ones written, with no hedge.
+ * - **No Finish adds or renumbers a station**: every station exists in
+ *   the document from its first element on (the walk's debug camera
+ *   captures start none), so the names the HUD shows are the ones
+ *   written, with no hedge.
  *
  * @see creator-stations.ts.md
  */

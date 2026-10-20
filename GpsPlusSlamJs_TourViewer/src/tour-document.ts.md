@@ -73,6 +73,10 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
 ## Actions (`tourDocumentActions`)
 
 - `opened({ manifest })` - everything before it is gone; `generation` + 1.
+  The manifest opens without a file's debug camera captures and the
+  stations only they kept (`withoutDebugCaptures` of `tour-content.ts`):
+  no page shows, keeps or writes them, and nothing reads as unsaved for
+  it (`opened` and `written` are both the dropped manifest).
   Only who holds the page's save slot (`save.by`) is kept: the slot is
   the page's, and the save holding it lets it go once it sees its tour
   gone (as the page's own flag behaved).
@@ -116,8 +120,7 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
     it moved into, so a nudge toward its own anchor keeps it. The comparison is
     strict, so a move a centimetre farther out runs the rule. The station it left goes in the same step when that leaves
     it an EMPTY AUTOMATIC station: no object names it, and no title,
-    story step, route to it (`next`, a quiz's routes) or recorded photo
-    keeps it. An unknown id changes nothing.
+    story step or route to it (`next`, a quiz's routes) keeps it. An unknown id changes nothing.
   - One step each: an undo gives the stations back exactly as they were.
 - `deleted({ id, what })` - `deleteObject`: the entry goes, a written
   object gets a tombstone, and its station goes too when that leaves it an
@@ -195,9 +198,8 @@ different times (a walk's move lands only after the page wrote both files).
   keeps them (`keepAssets`: this selector, the desktop's save snapshot,
   the phone's Finish), so an undo across a save finds a cover image the
   save would otherwise have dropped with its file; they go once the
-  history no longer names them. The stations are the document's as they are: the walk's
-  photos were baked into them at the open (`walkAtOpen`), and a write
-  assigns nothing. The creator's station HUD (`creator-stations.ts`)
+  history no longer names them. The stations are the document's as they
+  are, and a write assigns nothing. The creator's station HUD (`creator-stations.ts`)
   reads its stations from it.
 - `createdStationFrames(state)` - the frames of the stations this page
   created (those the tour as opened lacks): what the draft's settings
@@ -316,7 +318,8 @@ once. The slice says when; the page writes (`editor/edit-main.ts`
 - **What the state writes is what the rebuild writes**: `manifestToWrite`
   is `finishedManifest`, the function `rebuildFinishedTour` itself calls,
   over the same inputs (property-tested against real zips, for a tour
-  opened with its walk baked and without, and across a second save). It is the
+  opened from a file with debug camera captures and without, and across a
+  second save; neither write carries them). It is the
   same rule computed twice, not one call: the save does not read the
   selector, so the property is what holds the two together.
 - Reducers are pure: each computes from a plain snapshot (`current`) and
@@ -391,7 +394,7 @@ store.dispatch(tourDocumentActions.undone());
   overlapping radius, which it then keeps out of),
   the station it left dropped, a delete dropping an emptied automatic
   station and its undo bringing it back exactly, the stations a title, a
-  step, a route or a recorded photo keeps, a placement during a save, a
+  step or a route keeps, a placement during a save, a
   restore re-creating its created frames and seating a dangling object,
   carried work re-seated.
 - The save, a thunk against this slice: `tour-document-save.ts.md`.
@@ -404,8 +407,9 @@ store.dispatch(tourDocumentActions.undone());
   moves, deletes, placements, station moves, settings, details, undos,
   redos and saves: undo then redo is identity; undoing everything gives the
   opened tour; `manifestToWrite` equals `rebuildFinishedTour`'s written
-  manifest on a real zip, opened with the walk baked and without, and
-  again for a second save after the first landed. And the station rule:
+  manifest on a real zip, opened from a file with debug camera captures
+  and without (no write carrying them), and again for a second save after
+  the first landed. And the station rule:
   after every step of a random mix of placements (12.5 m steps, so inside,
   on the edge of and beyond the 25 m radius), moves, deletes, station
   moves, restores, carried work, saves, undos and redos, every object

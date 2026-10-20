@@ -51,7 +51,6 @@ import {
 import type { TourRelation } from "./code-tour.js";
 import { driveFileId } from "gps-plus-slam-app-framework/utils/drive-file-id";
 import type { CodeTourStatus } from "./scan-open.js";
-import type { WalkBake } from "./tour-document-bake.js";
 
 /**
  * Geo-less until minted (QD-4): `syntheticAccuracyM` is required by the
@@ -442,30 +441,6 @@ export function archiveSizeNote(bytes: number): string {
  */
 export const MISSING_SIZE_MESSAGE = `Enter the printed code's side length in centimetres (e.g. ${String(Math.round(AUTHOR_DEFAULT_SIZE_M * 1000) / 10)}) in step 3 before starting.`;
 
-/**
- * The creator's line about the bake at open (`walkAtOpen`): the
- * recording's photos are put into stations when it opens, which takes a
- * replay of the walk. While it runs the line says so (with the replay's
- * progress once known); a decline says why, since the tour then has no
- * walk photos, and a read that failed says that opening the recording
- * again tries once more. Nothing once they are placed, or when there are
- * none.
- */
-export function walkBakeLine(bake: WalkBake | null): string {
-  if (bake === null) return "";
-  if (bake.kind === "baking") {
-    return bake.total === 0
-      ? "Placing the recording's photos into stations…"
-      : `Placing the recording's photos into stations (${String(bake.done)} of ${String(bake.total)} steps of the walk)…`;
-  }
-  const reason = bake.photos.notPlaced;
-  if (reason === undefined) return "";
-  const line = `The recording's photos are not in the tour: they could not be placed (${reason}).`;
-  return bake.photos.readFailed === true
-    ? `${line} Open the recording again to try once more.`
-    : line;
-}
-
 /** The finish step's labels through its async cycle (async-UI rule). */
 export const FINISH_LABELS = {
   reading: (bytes: number) =>
@@ -483,16 +458,6 @@ export const FINISH_LABELS = {
    *  only copy of it. */
   scanLeftOut: (files: number) =>
     `This copy is for visitors: it leaves out the walk recording (${String(files)} ${files === 1 ? "file" : "files"}). Keep your original zip if you still need the walk.`,
-  /** Appended when the recording's photos could not be placed at this
-   *  Finish: a visitor shows baked photos only, so the creator reads why
-   *  and that visitors will not see them - and whether the copy kept the
-   *  walk a later open can still place them from (`walkKept`: nothing of
-   *  the walk was left out; the switch keeps it by default then,
-   *  `keepsWalkByDefault`). */
-  photosNotPlaced: (reason: string, walkKept: boolean) =>
-    walkKept
-      ? `The recorded photos could not be placed (${reason}): visitors will not see them. The walk stays in this copy, so opening it again can still place them.`
-      : `The recorded photos could not be placed (${reason}): visitors will not see them, and this copy leaves out the walk they could be placed from later.`,
   failed: (reason: string) => `Finishing failed: ${reason}`,
   /** The one button left after a Finish: the same save again (owner
    *  decision D-F4b). */

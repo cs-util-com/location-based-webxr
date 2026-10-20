@@ -111,15 +111,6 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   - **It warns rather than refuses**, because re-printing under a new link
     is legitimate and only the creator knows whether the measurement was
     worth keeping. What they must not have is silence.
-- `walkBakeLine(bake)` - the creator's status line about the bake at
-  open (`ctx.walkBake`, `WalkBake` of `tour-document-bake.ts`): "Placing the
-  recording's photos into stations…" while it runs (with "(N of M steps
-  of the walk)" once the replay's progress is known), "The recording's
-  photos are not in the tour: they could not be placed (reason)." after a
-  decline (followed by "Open the recording again to try once more." when
-  the reason is a read that failed, `readFailed`), and nothing once placed or with none to place (`{}`)
-  or with no bake. `creator-setup.ts` shows it on the page beside the
-  placement's note and in AR ahead of the readout.
 - `FINISH_LABELS` - the finish step's copy through its async cycle
   (reading, rebuilding N of M, failed) and the save's
   (`savingTour(bytes)` while the Finish saves the zip by itself, the button's

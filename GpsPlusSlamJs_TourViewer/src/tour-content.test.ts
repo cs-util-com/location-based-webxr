@@ -1,16 +1,17 @@
 /**
  * Why these tests matter: a version 3 tour (tour editor plan
- * 2026-10-17-1816, W3) has no loose pins: every pin, photo and recorded
- * photo the creator saves must land in a station, at a local pose, by the
+ * 2026-10-17-1816, W3) has no loose pins: every pin and photo the creator
+ * saves must land in a station, at a local pose, by the
  * automatic-station rule (D20, D21). The Tour Viewer edits a world view
  * (each object with its geo pose) and writes through `withTourContent`, so
  * these tests pin the write: an object nobody moved keeps its local pose
  * bit for bit (D17's "never changes a child's local pose" starts here), a
  * moved one is re-expressed in its own station, every object goes into the
- * station it names (the writer starts none), the recorded photos are put
- * into stations at the open by the station rule (`withWalkPhotos`), and a
- * saved object compares equal to its stored copy (`asStored`), which is
- * what keeps a draft from being offered back after its save.
+ * station it names (the writer starts none), a file's debug camera
+ * captures leave the tour with the stations only they kept
+ * (`withoutDebugCaptures`), and a saved object compares equal to its
+ * stored copy (`asStored`), which is what keeps a draft from being
+ * offered back after its save.
  */
 
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
@@ -28,14 +29,11 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { objectContentKey } from "./authoring-draft.js";
-import { STATION_RADIUS_M } from "./station-assign.js";
 import {
-  AUTO_STATION_ACTIVATE_M,
   asStored,
+  withoutDebugCaptures,
   withReferencedAssets,
   withTourContent,
-  withWalkPhotos,
-  worldCaptureSpots,
 } from "./tour-content.js";
 
 // The core's geodesy runs only under an activated licence.
@@ -195,14 +193,17 @@ describe("withTourContent", () => {
     expect(next.stations.map((s) => s.items.map((i) => i.id))).toEqual([["b"]]);
   });
 
-  it("a station emptied by this write goes when it carries nothing else; a titled, storied or photographed one stays", () => {
+  it("a station emptied by this write goes when it carries nothing else; a titled or storied one stays", () => {
     // Why this test matters (tour editor plan D20): an automatic station
     // exists for the elements it holds. Deleting its last pin used to
     // leave an untitled, empty station behind, which the visitor's guide
     // still offered ("Next: Station 2, 30 m") - a walk to nothing. A
-    // station with its own title, story steps or recorded photos is the
-    // creator's, one another station routes to stays so the route still
-    // resolves, and an empty station the tour already had is left alone.
+    // station with its own title or story steps is the creator's, one
+    // another station routes to stays so the route still resolves, and an
+    // empty station the tour already had is left alone. (A "photographed"
+    // station, kept by the walk's recorded photos, stood here too: those
+    // are debug camera captures now, which keep no station and which the
+    // document drops at the open, withoutDebugCaptures.)
     const titled = { ...station("titled", 100, 0), title: "Old well" };
     const storied: TourStation = {
       ...station("storied", 200, 0),
@@ -219,129 +220,163 @@ describe("withTourContent", () => {
       station("auto", 0, 0),
       titled,
       storied,
-      station("photographed", 300, 0),
       station("was-empty", 400, 0),
       station("routed", 500, 0),
     ];
-    const base = withTourContent(
-      withWalkPhotos(tour(stations), {
-        fixes: 3,
-        gpsAccuracyMedianM: 4,
-        captures: [{ image: "images/frame-1.jpg", geo: geo(302, 0, 521) }],
-      }),
-      {
-        objects: [
-          inStation(pin("a", 1, 0), "auto"),
-          inStation(pin("b", 101, 0), "titled"),
-          inStation(pin("c", 201, 0), "storied"),
-          inStation(pin("d", 301, 0), "photographed"),
-          inStation(pin("e", 501, 0), "routed"),
-        ],
-      },
-    );
-    expect(base.captureSpots?.captures[0]?.station).toBe("photographed");
+    const base = withTourContent(tour(stations), {
+      objects: [
+        inStation(pin("a", 1, 0), "auto"),
+        inStation(pin("b", 101, 0), "titled"),
+        inStation(pin("c", 201, 0), "storied"),
+        inStation(pin("e", 501, 0), "routed"),
+      ],
+    });
     const next = withTourContent(base, { objects: [] });
     expect(next.stations.map((s) => s.id)).toEqual([
       "titled",
       "storied",
-      "photographed",
       "was-empty",
       "routed",
     ]);
   });
 
-  it("keeps the tour's recorded photos verbatim", () => {
-    const baked = withWalkPhotos(tour([]), {
-      fixes: 9,
-      gpsAccuracyMedianM: 4,
-      captures: [{ image: "images/frame-1.jpg", geo: geo(0, 0, 521) }],
-    });
-    const later = withTourContent(baked, { objects: [] });
-    expect(later.captureSpots).toBe(baked.captureSpots);
-  });
+  // (A test that a write kept the tour's recorded photos verbatim stood
+  // here: a tour the document holds carries none since the open drops
+  // them, withoutDebugCaptures below.)
 });
 
-describe("withWalkPhotos", () => {
-  // Why these tests matter: the recording's photos are put into stations
-  // once, when the creator opens the recording, by the same rule a
-  // placement follows (a station whose own found radius holds the spot,
-  // else a new one there). Their stations then exist from the open on,
-  // under ids a reload gives again, so nothing the page showed moves at
-  // the Finish.
-  const spotsAt = (...north: number[]) => ({
-    fixes: 9,
-    gpsAccuracyMedianM: 4,
-    captures: north.map((n, i) => ({
-      image: `images/frame-${String(i + 1)}.jpg`,
-      geo: geo(n, 0, 521),
-    })),
+describe("withoutDebugCaptures", () => {
+  // Why these tests matter: a file written before the debug camera
+  // captures left the tour carries them as captureSpots, each in a
+  // station, and the bake started an automatic walk-N station for every
+  // frame no station held. Such a station holds no item: the capture
+  // reference alone kept it, so a write that drops the captures but keeps
+  // it would leave the visitor's guide leading to an empty station. The
+  // open drops both; a station anything else keeps stays, and so does an
+  // empty one no capture named (the creator's own).
+  const capture = (image: string, stationId: string) => ({
+    image,
+    station: stationId,
+    pose: {
+      position: [0, 0, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    },
+  });
+  const storied = (s: TourStation): TourStation => ({
+    ...s,
+    steps: [
+      {
+        id: "t",
+        block: { kind: "text", text: "Hi" },
+        advance: { mode: "tap" },
+      },
+    ],
   });
 
-  // Both sides of each boundary: the gate's own 10 m radius (10 m joins,
-  // 10.5 m does not) and the new station's 25 m (25.5 m from its anchor
-  // starts the next one, 24.5 m joins the nearer of two).
-  it("puts each photo, in capture order, in the station whose own radius holds it, else in a new one where it stands", () => {
-    const next = withWalkPhotos(
-      tour([station("gate", 0, 0)]),
-      spotsAt(10, 10.5, 36, 35),
-    );
-    expect(next.captureSpots?.captures.map((c) => c.station)).toEqual([
+  it("drops the captures and every station only they kept", () => {
+    const gate = withTourContent(tour([station("gate", 0, 0)]), {
+      objects: [inStation(pin("a", 1, 0), "gate")],
+    }).stations[0]!;
+    const manifest: TourManifest = {
+      ...tour([
+        gate,
+        station("walk-1", 100, 0),
+        { ...station("walk-2", 200, 0), title: "Old well" },
+        storied(station("walk-3", 300, 0)),
+        { ...station("walk-4", 400, 0), next: "walk-5" },
+        station("walk-5", 500, 0),
+        station("own-empty", 600, 0),
+        station("walk-6", 700, 0),
+      ]),
+      captureSpots: {
+        fixes: 3,
+        gpsAccuracyMedianM: 4,
+        captures: [
+          capture("images/frame-1.jpg", "gate"),
+          capture("images/frame-2.jpg", "walk-1"),
+          capture("images/frame-3.jpg", "walk-2"),
+          capture("images/frame-4.jpg", "walk-3"),
+          capture("images/frame-5.jpg", "walk-4"),
+          capture("images/frame-6.jpg", "walk-5"),
+          capture("images/frame-7.jpg", "walk-6"),
+          capture("images/frame-8.jpg", "walk-6"),
+        ],
+      },
+    };
+    const out = withoutDebugCaptures(manifest);
+    expect("captureSpots" in out).toBe(false);
+    // Kept: an item, a title, steps, a route of its own (walk-4), routed
+    // to (walk-5, by walk-4), and an empty station no capture named. Gone: walk-1 and walk-6 (captures
+    // only), however many captures named them.
+    expect(out.stations.map((s) => s.id)).toEqual([
       "gate",
-      "walk-1",
-      "walk-2",
-      "walk-2",
-    ]);
-    expect(next.stations.map((s) => s.id)).toEqual([
-      "gate",
-      "walk-1",
-      "walk-2",
-    ]);
-    const started = next.stations[1]!;
-    // Anchored at its first photo, turned like north, automatic.
-    expect(started).toMatchObject({
-      geo: { ...geo(10.5, 0, 521), rotation: [0, 0, 0, 1] },
-      foundRadiusM: STATION_RADIUS_M,
-      activateRadiusM: AUTO_STATION_ACTIVATE_M,
-      hint: "arrow",
-      steps: [],
-      items: [],
-    });
-    expect(next.captureSpots).toMatchObject({
-      fixes: 9,
-      gpsAccuracyMedianM: 4,
-    });
-  });
-
-  it("names its stations the same on every open, skipping ids the tour has", () => {
-    const base = tour([station("walk-1", 500, 0)]);
-    const once = withWalkPhotos(base, spotsAt(0, 100));
-    expect(once.stations.map((s) => s.id)).toEqual([
-      "walk-1",
       "walk-2",
       "walk-3",
+      "walk-4",
+      "walk-5",
+      "own-empty",
     ]);
-    expect(withWalkPhotos(base, spotsAt(0, 100))).toEqual(once);
+    // What stays is the very station, untouched.
+    expect(out.stations[0]).toBe(manifest.stations[0]);
   });
 
-  it("reads back where the photos were taken", () => {
-    const captures = spotsAt(0, 30, 60).captures;
-    const world = worldCaptureSpots(
-      withWalkPhotos(tour([]), spotsAt(0, 30, 60)),
-    )!;
-    expect(world.captures.map((c) => c.image)).toEqual(
-      captures.map((c) => c.image),
+  it("returns the very manifest when it carries no captures", () => {
+    const manifest = tour([station("own-empty", 0, 0)]);
+    expect(withoutDebugCaptures(manifest)).toBe(manifest);
+  });
+
+  it("drops exactly the bare stations a capture named, keeping the order (property)", () => {
+    // Why: the rule is one of exclusion; over any mix of stations and
+    // capture references, what goes must be exactly the bare stations a
+    // capture named, and the rest must keep their order.
+    const stationArb = fc.record({
+      title: fc.boolean(),
+      steps: fc.boolean(),
+      routedTo: fc.boolean(),
+      captured: fc.nat({ max: 2 }),
+    });
+    fc.assert(
+      fc.property(fc.array(stationArb, { maxLength: 8 }), (specs) => {
+        const ids = specs.map((_, i) => `s${String(i)}`);
+        const stations = specs.map((spec, i): TourStation => {
+          let s = station(ids[i]!, i * 100, 0);
+          if (spec.title) s = { ...s, title: "T" };
+          if (spec.steps) s = storied(s);
+          return s;
+        });
+        // A route to each station marked routedTo, from the station
+        // before it (the first is routed to from the last).
+        const routed = stations.map((s, i) => {
+          const j = (i + 1) % stations.length;
+          return specs[j]?.routedTo === true ? { ...s, next: ids[j]! } : s;
+        });
+        const captures = specs.flatMap((spec, i) =>
+          Array.from({ length: spec.captured }, (_, k) =>
+            capture(`images/f-${String(i)}-${String(k)}.jpg`, ids[i]!),
+          ),
+        );
+        const manifest: TourManifest = {
+          ...tour(routed),
+          captureSpots: { fixes: 1, gpsAccuracyMedianM: null, captures },
+        };
+        const out = withoutDebugCaptures(manifest);
+        expect("captureSpots" in out).toBe(false);
+        const expected = ids.filter((_, i) => {
+          const spec = specs[i]!;
+          // A station routes on (`next`) when the one after it is
+          // routed to, as built above.
+          const routesOn = specs[(i + 1) % specs.length]?.routedTo === true;
+          return (
+            spec.title ||
+            spec.steps ||
+            spec.routedTo ||
+            routesOn ||
+            spec.captured === 0
+          );
+        });
+        expect(out.stations.map((s) => s.id)).toEqual(expected);
+      }),
     );
-    for (const [i, c] of world.captures.entries()) {
-      expect(c.geo.lat).toBeCloseTo(captures[i]!.geo.lat, 9);
-      expect(c.geo.alt).toBeCloseTo(521, 3);
-    }
-  });
-
-  it("leaves a tour that has its photos, and a walk without photos, as they are", () => {
-    const baked = withWalkPhotos(tour([]), spotsAt(0));
-    expect(withWalkPhotos(baked, spotsAt(100))).toBe(baked);
-    const empty = tour([station("gate", 0, 0)]);
-    expect(withWalkPhotos(empty, spotsAt())).toBe(empty);
   });
 });
 

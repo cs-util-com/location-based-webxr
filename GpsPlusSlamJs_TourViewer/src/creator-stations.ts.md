@@ -85,13 +85,13 @@ reportError? }) -> { tick, placedIn, nameOf, endVisit }` - `tick()` every camera
 - **The radius** is each station's own `foundRadiusM`; the stations the
   rule starts take `STATION_RADIUS_M` (25 m, provisional until the sweep
   over recorded walks).
-- **The walk's photos are in their stations from the open on**: the
-  recording is baked when the creator opens it (`walkAtOpen` of
-  `tour-document-bake.ts`), its photos joining the tour's stations or
-  starting `walk-N` ones by the same rule, and a Finish assigns nothing.
-  So the names the HUD shows are the ones written, with no hedge. (Until
-  the bake moved to the open, the HUD could not see the photos and
-  hedged every name "may change at Finish".)
+- **No Finish adds or renumbers a station**: every station is in the
+  document from its first element on, and the walk's debug camera
+  captures start none (the document drops a file's capture spots and the
+  `walk-N` stations only they kept). So the names the HUD shows are the
+  ones written, with no hedge. (The HUD once hedged every name "may change
+  at Finish", while the Finish seated the walk's photos; then the open
+  baked them into stations, until M1 of the debug-captures plan.)
 - **Cost:** the stations are recomputed only when the manifest, any
   placed object or the deletions change. Placed objects are compared entry
   by entry, because the settle re-poses them by replacing entries IN the

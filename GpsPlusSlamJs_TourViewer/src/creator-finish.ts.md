@@ -14,10 +14,9 @@ Since M6 E0 the page-free rules below - the manifest with the edits, the
 title, the files written and removed, the series successor, the newest
 bytes as input, the session's budget - run in `finish-rebuild.ts`
 (`rebuildFinishedTour`), shared with the desktop editor; since E0b also
-the bookkeeping after a write (`pendingAfterRebuild`). The walk's photos
-are baked when the recording opens (`walkAtOpen`, `archive-open.ts`),
-not here: the Finish reads what that bake decided (`ctx.walkBake`). This
-file keeps the page: readiness, the settle, progress, the
+the bookkeeping after a write (`pendingAfterRebuild`). The walk's camera
+captures are debug data: no open bakes them and no Finish writes them.
+This file keeps the page: readiness, the settle, progress, the
 re-checks of `ctx.session`, what the written zip changes on the page, and
 the hand-off. The rules are described here as the Finish's behaviour; the
 module's sidecar states them as its contract.
@@ -173,13 +172,10 @@ module's sidecar states them as its contract.
   what the zip carries WITH THE SAME CONTENT, and clears the applied
   deletions. The draft's tombstones stay until the hosted zip lacks the
   ids, the same proof the objects wait for.
-- **The Finish writes the recording's photo spots baked at open**:
-  the recording was replayed once when it
-  opened (`walkAtOpen`, `archive-open.ts`) and its photos stand in the
-  tour's stations, so `tour.json` carries them as the document holds
-  them; the Finish neither bakes nor assigns. A bake that declined at the
-  open is final for that open: the Finish writes no spots and replays
-  nothing (a visitor then sees no recorded photo).
+- **The Finish writes no debug camera captures**: the document drops a
+  file's capture spots at the open (`withoutDebugCaptures`), so
+  `tour.json` carries none and no station only they kept; the Finish
+  replays nothing and assigns nothing.
 - **The published copy leaves the creator's walk out** (scan-pass plan
   S1, S-D10): unless the creator ticks "Keep the walk recording in the tour
   file" (`keepScanRow` / `keepScanInput`, on the page BEFORE AR since UI
@@ -187,21 +183,17 @@ module's sidecar states them as its contract.
   shown only for a tour that carries a walk, counted once per tour and
   manifest), the Finish removes
   `scanEntryNames` of the manifest it writes (`tour-read-set.ts`): the
-  action stream, `session.json` and the recorded frames no visitor sees.
+  action stream, `session.json` and every recorded frame.
   A file the recording did not write (a README, credits) always stays.
-  **The switch's default follows the open's bake** (`keepsWalkByDefault`
-  of `tour-document-bake.ts`, set once per open in `renderKeepScan`,
-  keyed on `ctx.walkBake`, so a later render never undoes the creator's
-  tick, and set while the row is hidden too): unticked when the photos
-  were placed or there are none; TICKED when the bake declined or could
-  not read the recording (a wrapped zip, another era, a failed read) -
-  a lean copy would hold neither the photos nor the walk a later open
-  could place them from. The ready line then says the photos could not
-  be placed, that visitors will not see them, and whether the copy kept
-  the walk (`FINISH_LABELS.photosNotPlaced(reason, walkKept)`, `walkKept`
-  = nothing of the walk left out). A walk that names no recorded photo
-  the tour carries says nothing about photos. The tick is cleared with the Finish step
-  when the tour closes (review #9).
+  **The switch starts TICKED whenever the opened file carries a walk**
+  (set once per open in `renderKeepScan`, keyed on the open's
+  `TourSession`, so a later render never undoes the creator's tick, and
+  set while the row is hidden too): until the walk can be saved apart
+  from the tour (the plan's M2), a lean copy would be the only one a
+  creator may keep, without the walk. (Until M1 it was ticked only when
+  the open's bake could not place the recorded photos.) The tick is
+  cleared with the Finish step when the tour closes (review #9), and the
+  next open sets its own default.
   The ready line then says so (`FINISH_LABELS.scanLeftOut`), because the
   hosted file may be the creator's only copy of the walk.
 - The finish's append is **id-deduplicating**, because the serializer
@@ -216,10 +208,10 @@ module's sidecar states them as its contract.
 ## Tests
 
 Composed, through `wireCreatorSetup`: `creator-finish.test.ts` (what the
-rebuilt zip holds, the budget, the listed series, the spots baked at
-open written and nothing replayed at the Finish, the walk
-left out, the switch's default per open - ticked, and the walk kept, when the
-photos could not be placed; an untick surviving the Finish's render - the save guard's inputs, a finished photo's bytes) and the e2e
+rebuilt zip holds, the budget, the listed series, no debug camera
+capture written (also none a `tour.json` carried) and nothing replayed at
+the Finish, the walk left out, the switch's default per open - ticked,
+and the walk kept, for a file that carries one; an untick surviving the Finish's render - the save guard's inputs, a finished photo's bytes) and the e2e
 finish specs; the entry list itself in `finish-entries.test.ts`. The
 sampled mutants of the region "finish"
 (`scripts/fixtures/creator-setup.mutants.json`) are killed.

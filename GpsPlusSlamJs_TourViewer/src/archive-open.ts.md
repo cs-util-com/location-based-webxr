@@ -136,10 +136,7 @@ DOM glue, its own module since the flows plan M6.
   parts, `placementAttempted`, `placement`) and the QR controller's level cache (the compass wait it
   also ended, r857 review #9, is gone since r863), `levelsUnreadable`,
   and a failed
-  finish (`finishError`, which keeps Save off - scan-to-open plan §9 #8),
-  and `walkBake` (the next open bakes its own walk; a decline kept
-  across a switch would be said of, and read by the Finish of, the next
-  tour).
+  finish (`finishError`, which keeps Save off - scan-to-open plan §9 #8).
   The measured level goes with the tour, and so does its measurement (the
   settle's raw inputs, authoring plan 2026-09-28-0953 M2c) - a closing
   tour's measurement must never be re-minted into the next tour's level:
@@ -171,21 +168,16 @@ DOM glue, its own module since the flows plan M6.
   "no tour" (null). The gallery, the scan entries and the tour info still
   read the file's own (null) manifest. Tests: `archive-open-file.test.ts`
   ("a recording without tour.json").
-- **The bake at open** (creator only): a tour carrying a recording and no
-  baked photo spots is baked before it settles (`walkAtOpen` of
-  `tour-document-bake.ts`), and the document opens on the baked tour - the
-  walk's photos already in stations, joined to the tour's own or in new
-  `walk-N` ones by the station rule. While it runs `ctx.walkBake` is
-  `{ kind: "baking", done, total }` (the status line says so,
-  `walkBakeLine`), `tourManifestStatus` stays "pending" (the Finish, the
-  draft offer and the AR placement wait), and work placed meanwhile is
-  carried into the opened tour by the rule. Then `walkBake` holds what it
-  decided (`{ kind: "decided", photos }`: the Finish reads
-  `notPlaced`; a decline is said on the status
-  line). The bake never fails the open. A tour without a recording, or
-  with its photos already baked, settles at once (`photos: {}`). A
-  visitor's open never bakes. Tests: `archive-open-file.test.ts` ("a
-  creator's recording is baked when it opens").
+- **No bake at open**: the walk's camera captures are debug data (plan
+  `2026-10-20-1159-debug-captures-and-codes-in-store-plan`, M1). A
+  creator's open settles as soon as `tour.json` is read, starts no
+  station for a frame and replays no walk; the document drops a file's
+  capture spots and the stations only they kept (`withoutDebugCaptures`
+  of `tour-content.ts`, in the document's `opened`). (Until M1 the open
+  replayed the walk and seated its frames in stations, `walk-N` ones
+  where no station held them, before it settled.) Tests:
+  `archive-open-file.test.ts` ("a creator's recording opens without its
+  debug camera captures").
 - **The gallery waits for `tour.json` and leaves out the creator's walk**
   (scan-pass plan S1, `tour-read-set.ts`): the settle sets
   `ctx.scanEntries` (empty without a manifest, as before) and then fills
@@ -209,8 +201,7 @@ DOM glue, its own module since the flows plan M6.
   `hooks.confirmLeaveTour()` is false.
 - **The manifest is marked pending BEFORE the open's placement trigger**
   (S1 milestone review #4): a tour opened into a running AR session would
-  otherwise be judged before its `tour.json` (with the baked photo spots)
-  was read, and declined for the whole session.
+  otherwise be judged before its `tour.json` was read, and declined for the whole session.
   `archive-open-order.test.ts` pins the order.
 - **Clear-cache settles once the store is durably empty, without waiting
   for the warm download** (flows plan M2): `size()` is read FIRST (the open

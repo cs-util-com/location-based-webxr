@@ -2622,41 +2622,6 @@ describe("'New station here' (D8)", () => {
   });
 });
 
-describe("the status line says the bake at open", () => {
-  // Why this test matters: the recording's photos are put into stations
-  // when the creator opens it, which can take a while, and a bake that
-  // cannot place them leaves the tour without walk photos. Either would be
-  // silent without this line: on the page, and in AR ahead of the
-  // measuring readout.
-  it("says it runs, then says a decline, beside the placement's note", () => {
-    const { dom, ctx, setup } = wire(memoryStore({}).store);
-    ctx.walkBake = { kind: "baking", done: 2, total: 9 };
-    setup.renderAuthorReadout();
-    expect(dom.status.textContent).toBe(
-      "Placing the recording's photos into stations (2 of 9 steps of the walk)…",
-    );
-    ctx.walkBake = {
-      kind: "decided",
-      photos: { notPlaced: "too few GPS fixes" },
-    };
-    ctx.placementNote = "Pin placed.";
-    setup.renderAuthorReadout();
-    expect(dom.status.textContent).toBe(
-      "The recording's photos are not in the tour: they could not be placed (too few GPS fixes). · Pin placed.",
-    );
-    ctx.walkBake = { kind: "decided", photos: {} };
-    setup.renderAuthorReadout();
-    expect(dom.status.textContent).toBe("Pin placed.");
-  });
-
-  it("leads the readout in AR", () => {
-    const { dom, ctx, setup } = wire(memoryStore({}).store, {
-      placeable: true,
-    });
-    ctx.walkBake = { kind: "baking", done: 0, total: 0 };
-    setup.renderAuthorReadout();
-    expect(dom.status.textContent).toMatch(
-      /^Placing the recording's photos into stations… · /,
-    );
-  });
-});
+// (Tests that the status line said the bake at open - that it ran, and a
+// decline - stood here: the open bakes no walk any more, so the line has
+// nothing to say about it.)

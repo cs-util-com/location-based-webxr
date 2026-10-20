@@ -58,19 +58,13 @@ module.exports = {
           // named one by one: a new `tour-document-*` module is not exempt
           // until it is listed here. `tour-document-draft.ts` is the draft's
           // follower; `tour-document-save.ts` is the document's save - I/O,
-          // the rebuild - whose snapshot and landing read the rules;
-          // `tour-document-bake.ts` is the document's bake at open - I/O,
-          // the recording replayed once and its photos seated by the
-          // station rule.
+          // the rebuild - whose snapshot and landing read the rules.
           "^src/tour-document\\.ts$",
           "^src/tour-document-draft\\.ts$",
           "^src/tour-document-save\\.ts$",
-          "^src/tour-document-bake\\.ts$",
-          "^src/(object-edits|finish-rebuild|tour-content|authoring-draft|capture-bake)\\.ts$",
-          // Read-only helpers, permanent: the visitor's photo spots
-          // (`worldCaptureSpots`), the AR placement's world view
+          "^src/(object-edits|finish-rebuild|tour-content|authoring-draft)\\.ts$",
+          // Read-only helper, permanent: the AR placement's world view
           // (`tourObjectsOf`).
-          "^src/viewer-placement\\.ts$",
           "^src/creator-placement\\.ts$",
           // The draft's own modules, permanent: its storage (`withBaseKey`,
           // the draft's types) and the desktop's draft store (the offer

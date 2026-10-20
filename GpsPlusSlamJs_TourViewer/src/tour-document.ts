@@ -61,6 +61,7 @@ import {
   objectAssetIds,
   routedTo,
   stepAssetIds,
+  withoutDebugCaptures,
 } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
 
@@ -448,8 +449,7 @@ export function historyAssetIds(state: TourDocumentState): Set<string> {
 /** The manifest a write carries now (the Finish's rule,
  *  `finishedManifest`): what a save would write, without the zip - the
  *  same manifest (the r875 milestone review #7). The stations are the
- *  document's as they are: the walk's photos were baked at open, and a
- *  write assigns nothing. */
+ *  document's as they are: a write assigns nothing. */
 export function manifestToWrite(state: TourDocumentState): TourManifest | null {
   const base = manifestNow(state);
   if (base === null) return null;
@@ -568,19 +568,11 @@ function seatByRule(
   };
 }
 
-/** The station ids the captured photos of the tour (its baked spots)
- *  stand in. */
-function captureStationIds(state: TourDocumentState): Set<string> {
-  return new Set(
-    (state.written?.captureSpots?.captures ?? []).map((c) => c.station),
-  );
-}
-
 /**
  * `state`'s frames without those of `candidates` that are now EMPTY
  * AUTOMATIC stations: no object of the document names them, and nothing
  * else keeps them - no title, no story steps, no route from another
- * station, no recorded photo. Such a station existed only for its
+ * station. Such a station existed only for its
  * elements; left behind, a visitor's guide would still lead to it.
  * The same array when nothing goes.
  */
@@ -592,14 +584,12 @@ function withoutEmptied(
   if (ids.size === 0) return state.stations;
   const named = new Set(documentObjects(state).map((o) => o.object.station));
   const routed = new Set(state.stations.flatMap(routedTo));
-  const captured = captureStationIds(state);
   const gone = (frame: StationFrame): boolean =>
     ids.has(frame.id) &&
     !named.has(frame.id) &&
     (frame.title ?? "").trim() === "" &&
     frame.steps.length === 0 &&
-    !routed.has(frame.id) &&
-    !captured.has(frame.id);
+    !routed.has(frame.id);
   return state.stations.some(gone)
     ? state.stations.filter((f) => !gone(f))
     : state.stations;
@@ -1005,9 +995,12 @@ const tourDocumentSlice = createSlice({
   name: "tourDocument",
   initialState: initialTourDocumentState,
   reducers: {
-    /** A tour opened: everything before it is gone. */
+    /** A tour opened: everything before it is gone. A file's debug
+     *  camera captures are not part of the tour: the document opens
+     *  without them and the stations only they kept
+     *  (`withoutDebugCaptures`), so no page shows or writes them. */
     opened(state, action: PayloadAction<{ manifest: TourManifest }>) {
-      const { manifest } = action.payload;
+      const manifest = withoutDebugCaptures(action.payload.manifest);
       return {
         ...initialTourDocumentState,
         generation: state.generation + 1,

@@ -18,10 +18,6 @@ import type { CreatorMeasuring } from "./creator-measuring.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import type { CreatorSettle } from "./creator-settle.js";
 import { finishedFileName, rebuildFinishedTour } from "./finish-rebuild.js";
-import {
-  keepsWalkByDefault,
-  type RebuildPhotoSpots,
-} from "./tour-document-bake.js";
 import { FINISH_LABELS, finishReadiness } from "./qr-author-mode.js";
 import { authoringFinished } from "./tour-authoring-actions.js";
 import { historyAssetIds, manifestNow } from "./tour-document.js";
@@ -95,23 +91,15 @@ export function wireCreatorFinish(deps: {
     manifest: TourManifest | null;
     count: number;
   } | null = null;
-  /** The open's bake the switch's default was last set for: set once per
-   *  open, so a later render never undoes the creator's own tick. */
-  let defaultedFor: TourViewerSession["walkBake"] | undefined;
+  /** The open the switch's default was last set for: set once per open,
+   *  so a later render never undoes the creator's own tick. */
+  let defaultedFor: TourSession | null = null;
 
   function renderKeepScan(): void {
     const current = ctx.session;
     if (current === null || ctx.tourManifestStatus !== "settled") {
       dom.keepScanRow.hidden = true;
       return;
-    }
-    // Ticked when the photos could not be placed (`keepsWalkByDefault`):
-    // a lean copy would lose the walk a later open could place them from.
-    // Set even while the row is hidden (an open inside AR): the Finish
-    // there reads it.
-    if (ctx.walkBake !== defaultedFor) {
-      defaultedFor = ctx.walkBake;
-      dom.keepScanInput.checked = keepsWalkByDefault(walkDecision());
     }
     const manifest = finishBase();
     if (scanMemo?.session !== current || scanMemo.manifest !== manifest) {
@@ -124,6 +112,14 @@ export function wireCreatorFinish(deps: {
           current.manifestWrap,
         ).length,
       };
+    }
+    // Ticked whenever the opened file carries a walk: until the walk can
+    // be saved apart from the tour, a lean copy would be the only one a
+    // creator may keep, without the walk. Set once per open, even while
+    // the row is hidden (an open inside AR): the Finish there reads it.
+    if (defaultedFor !== current) {
+      defaultedFor = current;
+      dom.keepScanInput.checked = scanMemo.count > 0;
     }
     // Chosen on the page before AR (UI round 1, U2): hidden in a session,
     // since the Finish there reads it.
@@ -148,15 +144,6 @@ export function wireCreatorFinish(deps: {
       baseMemo = { state, manifest: manifestNow(state)! };
     }
     return baseMemo.manifest;
-  }
-
-  /** What the open's bake decided about the walk's photos
-   *  (`walkAtOpen`): their stations are in the tour already, so a Finish
-   *  only needs to know why photos were not placed (its result line, and
-   *  the keep-the-walk switch's default). Nothing to say before an open
-   *  settled it. */
-  function walkDecision(): RebuildPhotoSpots {
-    return ctx.walkBake?.kind === "decided" ? ctx.walkBake.photos : {};
   }
 
   function readiness(): ReturnType<typeof finishReadiness> {
@@ -249,7 +236,6 @@ export function wireCreatorFinish(deps: {
         // past `finishing = true` and freeze the panel.
         const manifest = finishBase();
         const stationsAtStart = tour.state().stations;
-        const photos = walkDecision();
         const deleted = [...tour.deleted()];
         // The Finish's rules, shared with the desktop editor (M6 E0,
         // `finish-rebuild.ts`): the edits applied, the files written and
@@ -290,14 +276,6 @@ export function wireCreatorFinish(deps: {
           ...(scanLeftOut.length === 0
             ? []
             : [FINISH_LABELS.scanLeftOut(scanLeftOut.length)]),
-          ...(photos.notPlaced === undefined
-            ? []
-            : [
-                FINISH_LABELS.photosNotPlaced(
-                  photos.notPlaced,
-                  scanLeftOut.length === 0,
-                ),
-              ]),
           // What the settles decided for the code (UI round 1, U3): no
           // button announces it any more.
           deps.settle.positionSentence(),

@@ -8,31 +8,21 @@ W3, D20, D21). The pages place, move and compare a WORLD view: every pin and
 photo with its geo pose, as the framework's `tourObjects` reads it. They
 write through `withTourContent`, which puts every object into the station
 it names at a LOCAL pose. A version 3 tour has no loose pins. The walk's
-recorded photos are put into stations once, when a recording is opened
-(`withWalkPhotos`).
+camera captures are debug data, never in a station: a file that carries
+them opens without them (`withoutDebugCaptures`).
 
 ## Public API
 
 - `AUTO_STATION_ACTIVATE_M` (= 2 x `STATION_RADIUS_M`, so 50 m): how far out
   an automatic station starts guiding. It is provisional, like R itself:
   chosen, not measured.
-- `CaptureSpotsInWorld`: `{ fixes, gpsAccuracyMedianM, captures: { image,
-geo, station? }[] }`; `station` is the station a bake put the photo
-  into, passed through by `worldCaptureSpots` so the viewer draws it with
-  that station (`viewer-placement.ts`; a capture without one is not
-  drawn). These are the walk's recorded
-  photos in the world, before they are in stations: what the bake
-  produces (`capture-bake.ts`) and what a viewer places.
-- `worldCaptureSpots(manifest) -> CaptureSpotsInWorld | undefined`: the
-  tour's own recorded photos in the world (`tourCaptureGeos`).
 - `asStored(object, station) -> TourObject`: the object as `station` stores
   it and the world view reads it back, its geo taken through the station's
   frame and back. A saved object differs from the placed one by the
   micrometres of that round trip, so a page comparing a placement with the
   saved file compares this one (the authoring draft's `hostedObjects`).
 - `automaticStationFrame(id, at)`: a new automatic station's frame
-  (below), the one the tour document's station rule and the walk's bake
-  start.
+  (below), the one the tour document's station rule starts.
 - `routedTo(station)`: the stations `station` routes to (its `next` and
   its quizzes' routes): what keeps an emptied station from being dropped.
 - `withTourContent(manifest, { objects }) -> TourManifest`: the manifest
@@ -40,13 +30,15 @@ geo, station? }[] }`; `station` is the station a bake put the photo
   naming none, the one the manifest holds it in), the stations kept as
   they are and in their order. Throws an `Error` naming the object for one
   in no station of the manifest.
-- `withWalkPhotos(manifest, spots) -> TourManifest`: the manifest with the
-  walk's recorded photos in stations (the bake at open, `walkAtOpen` of
-  `tour-document-bake.ts`): in capture order, each joins the station whose own
-  found radius holds it, else starts a new automatic one where it was
-  taken, after the tour's own, under the id `walk-1`, `walk-2`, ...
-  (skipping ids the tour has). The same manifest when it already has its
-  photos or the walk has none.
+- `withoutDebugCaptures(manifest) -> TourManifest`: the manifest without
+  the walk's debug camera captures (`captureSpots`, written while they
+  were baked into the tour) and without the stations ONLY they kept: a
+  station a capture names that holds no item, has no title, no steps and
+  no route of its own (`next`), and that no station routes to (the
+  bake's automatic `walk-N` stations). Every other station stays,
+  untouched and in its order; an empty one no capture names is the
+  creator's. The same manifest when it carries no captures. The tour
+  document applies it at the open (`opened`).
 - `withReferencedAssets(manifest, alsoKeep?) -> TourManifest`: the
   manifest without the assets it does not use, in their order; the same
   manifest when every asset is in use. `alsoKeep` (the document's
@@ -80,21 +72,19 @@ geo, station? }[] }`; `station` is the station a bake put the photo
   D17's rigid station moves rely on that.
 - **A moved object is re-expressed in its station** with `localPoseOf`.
 - **The stations' order is the manifest's**: the tour's own first, then
-  the ones created after them, in the order they were created (the walk's
-  at the open, then the creator's placements).
-- **The walk's photos are baked once, at the open** (`withWalkPhotos`), by
-  the rule a placement follows (`stationHolding` of `station-assign.ts`:
-  a station's OWN found radius, horizontal, inclusive, the nearest; a tie
-  to the earlier station). A new station is anchored where its first
-  photo was taken, turned like north (identity rotation), with activate
-  50 m, found 25 m, the arrow hint, no steps and no title. Its id is
-  deterministic (`walk-N`), so a reload's bake of the same recording gives
-  the ids the page's records name. A tour that already has its photos is
-  left as it is (they are baked once).
+  the ones created after them, in the order the creator's placements
+  created them.
+- **The walk's debug camera captures keep no station.** Until M1 of the
+  debug-captures plan the open seated them (`withWalkPhotos`), starting an
+  automatic `walk-N` station for every frame no station held; a file
+  written then carries such stations, which only the capture reference
+  kept. `withoutDebugCaptures` drops exactly those - the exclusion is
+  explicit, since `withTourContent`'s rule drops only a station a write
+  emptied - and a station anything else keeps (an item, a title, steps, a
+  route from or to it) stays with what it holds.
 - An object missing from `objects` leaves its station. A station this
   write EMPTIED (it held items and holds none now) goes when nothing else
-  keeps it: no title, no steps, no recorded photo in it, and no other
-  station routing to it (`next`, a quiz route). It existed for its
+  keeps it: no title, no steps, and no other station routing to it (`next`, a quiz route). It existed for its
   elements (D20); left behind, it was an untitled spot the visitor's
   guide still led to. A titled or storied station stays, and so does an
   empty station the tour already had (a later editor may add a station
@@ -122,8 +112,8 @@ geo, station? }[] }`; `station` is the station a bake put the photo
 ## Examples
 
 ```ts
-// At the open: the recording's photos into stations, once.
-const opened = withWalkPhotos(manifest, bake.spots);
+// At the open (the tour document's `opened`): no debug camera capture.
+const opened = withoutDebugCaptures(manifest);
 // At a write: every object in the station the document seated it in.
 const written = withTourContent(opened, {
   objects: applyObjectChanges(tourObjects(opened), placed, deleted),
@@ -137,22 +127,21 @@ const written = withTourContent(opened, {
   into the station it names however far from it, and one naming none kept
   in its own; an object in no station of the tour refused in words; the
   stations' order kept; removal; an emptied station dropped unless titled,
-  storied, photographed or routed to; the tour's recorded photos kept
-  verbatim; `withWalkPhotos` putting photos in capture order into the
-  station whose own radius holds them or new `walk-N` ones (both sides of
-  a 10 m own radius and of the 25 m automatic one), the same ids on every
-  open skipping taken ones, the world view read back, and a tour with
-  photos or a walk without them left as they are; and the `asStored`
+  storied or routed to; `withoutDebugCaptures` dropping the captures and
+  the stations only they kept (one named twice, one never named kept,
+  each kind of keeping), the very manifest without captures, and a
+  property over any mix of stations and capture references; and the `asStored`
   property (it is what a written tour holds, by content key);
   `withReferencedAssets` keeping each block kind's assets (an image, a
   character with and without a voice, an audio, a video, a model; a text
   block names none) and dropping the rest, the cover kept though no step
   names it, a block in any station counted, the tour's asset order kept,
   and the same manifest when every asset is used.
-- Through `finish-rebuild.test.ts` (a Finish writing the photos baked at
-  open, a micrometre stored copy counted as written, a placed model's file
+- Through `finish-rebuild.test.ts` (a micrometre stored copy counted as
+  written, a placed model's file
   kept and a model asset nothing names dropped, read from the zip's
   bytes), `editor/editor-session.test.ts` (an undo across a save brings a
-  deleted model back with its file: the history's keep set), `tour-document-bake.test.ts` (`walkAtOpen`),
-  `authoring-draft.test.ts`, `creator-finish.test.ts` and
-  `capture-bake.test.ts`.
+  deleted model back with its file: the history's keep set),
+  `tour-document.test.ts` and `tour-document.property.test.ts` (the open
+  dropping a file's captures, and no write carrying them),
+  `authoring-draft.test.ts` and `creator-finish.test.ts`.

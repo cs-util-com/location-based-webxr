@@ -15,13 +15,13 @@
  *   reads back as the very numbers it has): a save never nudges an item,
  *   which D17's rigid station moves rely on.
  * - A moved object is re-expressed in its station (`localPoseOf`).
- * - The walk's recorded photos are put into stations once, when the
- *   recording is opened (`withWalkPhotos`), by the rule a placement
- *   follows: in capture order, the station whose own found radius holds
- *   the photo, else a new automatic one anchored there.
+ * - The walk's camera captures are debug data, never in a station: a
+ *   file that carries them (`captureSpots`, written while they were
+ *   baked into the tour) opens without them and without the stations
+ *   only they kept (`withoutDebugCaptures`).
  * - A station this write EMPTIED (it held items, it holds none) goes when
- *   nothing else keeps it: no title, no story steps, no recorded photo,
- *   and no other station routing to it. It existed for its elements
+ *   nothing else keeps it: no title, no story steps, and no other
+ *   station routing to it. It existed for its elements
  *   (D20); left behind, the visitor's guide would still lead to it. An
  *   empty station the tour already had is left alone.
  * - An asset nothing names any more is dropped (`withReferencedAssets`):
@@ -37,7 +37,6 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourContentFields } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
   TourBlock,
-  TourCapture,
   TourItem,
   TourManifest,
   TourObject,
@@ -46,14 +45,9 @@ import type {
 import {
   itemGeoPose,
   localPoseOf,
-  tourCaptureGeos,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
-import {
-  STATION_RADIUS_M,
-  stationHolding,
-  type StationPoint,
-} from "./station-assign.js";
+import { STATION_RADIUS_M, type StationPoint } from "./station-assign.js";
 
 /**
  * How far out an automatic station starts guiding (m): twice R, so a
@@ -61,39 +55,6 @@ import {
  * itself: chosen, not measured.
  */
 export const AUTO_STATION_ACTIVATE_M = 2 * STATION_RADIUS_M;
-
-/** The walk's recorded photos in the world, before they are in stations:
- *  what the bake at open produces (`capture-bake.ts`) and what a viewer
- *  places. */
-export interface CaptureSpotsInWorld {
-  readonly fixes: number;
-  readonly gpsAccuracyMedianM: number | null;
-  readonly captures: readonly {
-    readonly image: string;
-    readonly geo: QrGeoPose;
-    /** The station a baked spot is held by (`worldCaptureSpots`); absent
-     *  for a bake's own output, before its photos are put in stations.
-     *  The viewer draws a photo only with its station. */
-    readonly station?: string;
-  }[];
-}
-
-/** The tour's own recorded photos in the world, or undefined without. */
-export function worldCaptureSpots(
-  manifest: TourManifest,
-): CaptureSpotsInWorld | undefined {
-  const spots = manifest.captureSpots;
-  if (spots === undefined) return undefined;
-  return {
-    fixes: spots.fixes,
-    gpsAccuracyMedianM: spots.gpsAccuracyMedianM,
-    captures: tourCaptureGeos(manifest).map(({ image, geo, station }) => ({
-      image,
-      geo,
-      station,
-    })),
-  };
-}
 
 /** The same geo pose, field by field (=== on numbers, so -0 is 0): an
  *  object nobody moved, compared with what its stored item reads as. */
@@ -153,10 +114,6 @@ export function automaticStationFrame(
   };
 }
 
-function automaticStation(id: string, at: StationPoint): TourStation {
-  return { ...automaticStationFrame(id, at), items: [] };
-}
-
 /**
  * `manifest` with `objects` as its pins and photos, each in the station
  * it names (or, naming none, the one the manifest holds it in), the
@@ -209,10 +166,7 @@ export function withTourContent(
     ...station,
     items: items.get(station.id) ?? [],
   }));
-  const kept = new Set([
-    ...(manifest.captureSpots?.captures ?? []).map((c) => c.station),
-    ...filled.flatMap(routedTo),
-  ]);
+  const kept = new Set(filled.flatMap(routedTo));
   return {
     ...manifest,
     stations: filled.filter(
@@ -222,55 +176,32 @@ export function withTourContent(
 }
 
 /**
- * `manifest` with the walk's recorded photos in stations: the bake at
- * open (`capture-bake.ts`), run once when a creator opens a recording.
- * In capture order, each photo joins the station whose OWN found radius
- * holds it (`stationHolding`: horizontal, inclusive, the nearest), else
- * starts a new automatic station anchored where it was taken, after the
- * tour's own stations. Their ids are `walk-1`, `walk-2`, ... (skipping
- * ids the tour has), so a reload's bake of the same recording gives the
- * same ids the page's records name. The same manifest when it already has
- * its photos (they are baked once) or the walk has none.
+ * `manifest` without the walk's debug camera captures (`captureSpots`,
+ * written while they were baked into the tour) and without the stations
+ * ONLY they kept: a station a capture names that holds no item, has no
+ * title, no story steps and no route of its own (`next`), and that no
+ * station routes to (the bake's automatic `walk-N` stations). Every other station stays, untouched
+ * and in its order - an empty one no capture names is the creator's. The
+ * same manifest when it carries no captures. The tour document applies
+ * it at the open (`opened`), so no page shows, keeps or writes them.
  */
-export function withWalkPhotos(
-  manifest: TourManifest,
-  spots: CaptureSpotsInWorld,
-): TourManifest {
-  if (manifest.captureSpots !== undefined) return manifest;
-  if (spots.captures.length === 0) return manifest;
-  const taken = new Set(manifest.stations.map((s) => s.id));
-  let n = 0;
-  const nextId = (): string => {
-    let id: string;
-    do {
-      n += 1;
-      id = `walk-${String(n)}`;
-    } while (taken.has(id));
-    taken.add(id);
-    return id;
-  };
-  const stations: TourStation[] = [...manifest.stations];
-  const captures: TourCapture[] = spots.captures.map((capture) => {
-    const holder = stationHolding(stations, capture.geo);
-    let station = stations.find((s) => s.id === holder);
-    if (station === undefined) {
-      station = automaticStation(nextId(), capture.geo);
-      stations.push(station);
-    }
-    return {
-      image: capture.image,
-      station: station.id,
-      pose: localPoseOf(capture.geo, station.geo),
-    };
-  });
+export function withoutDebugCaptures(manifest: TourManifest): TourManifest {
+  const spots = manifest.captureSpots;
+  if (spots === undefined) return manifest;
+  const named = new Set(spots.captures.map((c) => c.station));
+  const routed = new Set(manifest.stations.flatMap(routedTo));
+  const { captureSpots: _captures, ...rest } = manifest;
   return {
-    ...manifest,
-    stations,
-    captureSpots: {
-      fixes: spots.fixes,
-      gpsAccuracyMedianM: spots.gpsAccuracyMedianM,
-      captures,
-    },
+    ...rest,
+    stations: manifest.stations.filter(
+      (s) =>
+        !named.has(s.id) ||
+        s.items.length > 0 ||
+        (s.title ?? "").trim() !== "" ||
+        s.steps.length > 0 ||
+        s.next !== undefined ||
+        routed.has(s.id),
+    ),
   };
 }
 

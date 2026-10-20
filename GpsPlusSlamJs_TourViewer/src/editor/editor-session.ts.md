@@ -28,9 +28,9 @@ imperative resources only - that handle and the pictures' side table
 
 ## Public API
 
-- `createEditorSession({ session, manifest, photos?, levels, fileName?, draft?, loadPhoto?, store? }): EditorSession`
-  (`manifest` as `openTourForEditing` opened it, the walk's photos baked
-  into its stations; `photos` what that bake decided)
+- `createEditorSession({ session, manifest, levels, fileName?, draft?, loadPhoto?, store? }): EditorSession`
+  (`manifest` as `openTourForEditing` opened it; the document drops a
+  file's debug camera captures)
   - `store` - the page's `createTourViewerStore()`; a fresh one when
     absent (tests). Creating the session dispatches `opened`: whatever
     the store's document held is gone, and an older session on the same
@@ -176,11 +176,8 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     is written to the draft again. Returns the counts.
   - `save({ keepScan, inPlace? })` - the document's save thunk
     (`../tour-document-save.ts` `save`, through `dispatchThunk`):
-    `rebuildFinishedTour` with `levels: []`, what the open's bake decided
-    about the walk (`input.photos`, `walkAtOpen`; a save never bakes),
-    from the last
-    save's bytes; returns `{ blob, filename, scanLeftOut, notPlaced?,
-written }` (`written`: the manifest the zip carries, for the draft's
+    `rebuildFinishedTour` with `levels: []`, from the last
+    save's bytes; returns `{ blob, filename, scanLeftOut, written }` (`written`: the manifest the zip carries, for the draft's
     bases) and advances to what was written (`saved`,
     `pendingAfterRebuild`). `inPlace`: the page writes it over the opened
     file, and the document learns where in its history that file stands
@@ -198,9 +195,9 @@ written }` (`written`: the manifest the zip carries, for the draft's
     listed tour, its series; the M4b milestone review #8; named by
     `walkFileName`, `castle.zip` -> `castle-walk.zip`) and the tour
     rebuilt without the walk (`keepScan: false`, with the pending edits
-    and the photo spots, from the same bytes: the opened file is read
-    once), or a refusal in words: `NO_WALK`. A tour
-    without baked spots moves its walk out too: a visitor never reads it.
+    from the same bytes: the opened file is read once), or a refusal in
+    words: `NO_WALK`. Every recorded frame moves with the walk, also one
+    a file's capture spots named: a visitor never reads it.
     **Nothing changes until
     `commit()`**: the page writes the walk's zip first, then the tour,
     and commits only when both landed; `current()` says no other save
@@ -279,13 +276,15 @@ with the real draft (cover chosen, saved, its photo deleted, saved,
 reopened: no offer, M4a review #1); a deleted photo's picture read from
 the session's last bytes when the page's copy does not read (#5). Moving
 the walk out (W2, D19): the walk's zip carrying the whole recording byte
-for byte (the baked frame too) and the note, and the tour none of the
+for byte (the frame a file's capture spots named too) and the note, and the tour none of the
 walk, also after the next save with `keepScan`; nothing changed before
-`commit()`; `commit()` refused once another save landed; refused while
-the photos need the walk and for a tour without one; the note naming a
-listed tour's file, name and series; the opened file read once; a walk
-that places nothing (the real sample recording without its photos) moved
-out, and left out by a lean save with no `notPlaced`; the walk's file name. Undo and redo (W2): every edit kind undone
+`commit()`; `commit()` refused once another save landed; every frame
+the walk's (also one a file's capture spots named, which the document
+drops); a tour whose file carries no capture spots moved out the same,
+and one without a walk refused; the note naming a listed tour's file,
+name and series; the opened file read once; a walk none of whose frames
+the tour carries (the real sample recording without its photos) moved
+out, and left out by a lean save; the walk's file name. Undo and redo (W2): every edit kind undone
 newest first and redone; a new edit dropping the redo; the revision; an
 undo after a save being a change the next save writes; a saved photo
 delete coming back with its picture, and refused in words (the step kept)

@@ -239,8 +239,8 @@ test("'New station here' makes the next pin start its own station within the rad
 const RECORDING = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
 
 /**
- * Open the recording on the creator's page and wait for the open to settle
- * (the bake of its photos included), with step 4 open.
+ * Open the recording on the creator's page and wait for the open to settle,
+ * with step 4 open.
  * @param {import("@playwright/test").Page} page
  */
 async function openRecording(page) {
@@ -298,8 +298,9 @@ test("a recording without tour.json is a tour from the open: a fresh pin's stati
   // by the Finish, so before it the page showed stations a write could
   // still change, and a reload could bring a pin back naming a station the
   // tour lacked. Every object now belongs to a station of the document
-  // from the moment it is placed; the recording's photos are in stations
-  // from the open; and the station survives the visit's end and a reload.
+  // from the moment it is placed; the recording's camera captures start
+  // none (they are debug data); and the station survives the visit's end
+  // and a reload.
   // Read from the store, not from the words on screen. The fakes' visit
   // needs no correction, so the settle leg proves that the station keeps
   // its pin and stays anchored at it through the real end-of-visit path -
@@ -308,20 +309,21 @@ test("a recording without tour.json is a tour from the open: a fresh pin's stati
   // 10 m shift and a 10 degree turn.
   await openRecording(page);
   await enterArAndMeasure(page);
-  // The recording's two photos, 10 m apart, share one station of the
-  // walk, made at the open.
-  expect((await pinInStore(page, "none")).opened).toEqual(["walk-1"]);
+  // Changed expectation: the open once seated the recording's two frames
+  // in a station of their own ("walk-1", so the pin started Station 2).
+  // The frames are debug data now, so the open starts no station and the
+  // pin starts the first one.
+  expect((await pinInStore(page, "none")).opened).toEqual([]);
 
-  // 100 m north: far from the walk's station, so the pin starts its own.
+  // 100 m north of the zero.
   await stand(page, 100, 0);
   await placePin(page, "Far", 100, 0);
   await expect(page.getByTestId("setup-status")).toContainText(
-    'Pin "Far" placed - it starts Station 2',
+    'Pin "Far" placed - it starts Station 1',
   );
   const placed = await pinInStore(page, "Far");
   expect(placed.pin?.station).toBeDefined();
   expect(placed.frame).not.toBeNull();
-  expect(placed.frame.id).not.toBe("walk-1");
   expect(placed.frame.geo.lat).toBeCloseTo(placed.pin.geo.lat, 9);
 
   // The visit ends: the station still holds the pin, anchored at it.
@@ -355,7 +357,7 @@ test("a recording without tour.json is a tour from the open: a fresh pin's stati
     .toBe(placed.pin.station);
   const restored = await pinInStore(page, "Far");
   expect(restored.frame).toEqual(settled.frame);
-  expect(restored.opened).toEqual(["walk-1"]);
+  expect(restored.opened).toEqual([]);
 });
 
 /** The box of a test id, in viewport pixels. */

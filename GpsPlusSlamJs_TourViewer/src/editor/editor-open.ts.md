@@ -10,13 +10,11 @@ and the codes, or the reason the file cannot be edited, worded by
 ## Public API
 
 - `openTourForEditing(file, { onIntegrityFailure?, open? }): Promise<EditorOpen>`
-  - `{ kind: "opened", session, manifest, photos, levels, fileName, dropped }` -
-    `manifest` is an empty one for a tour with codes but no `tour.json`,
-    with the recording's photos baked into its stations
-    (`walkAtOpen` of `tour-document-bake.ts`: once per open, by the station
-    rule, the same `walk-N` ids the phone's open gives; a save never
-    bakes); `photos` is what that bake decided (a decline's reason, a
-    walk that places nothing);
+  - `{ kind: "opened", session, manifest, levels, fileName, dropped }` -
+    `manifest` is the file's, an empty one for a tour with codes but no
+    `tour.json`; the walk's debug camera captures start no station (the
+    document drops a file's capture spots, `withoutDebugCaptures`; until
+    M1 of the debug-captures plan the open baked them into stations);
     `dropped` lists the details the format's reader left out (a
     hand-edited description, contact or cover; M4a review #6).
   - `{ kind: "refused", reason }`:
@@ -40,9 +38,7 @@ and the codes, or the reason the file cannot be edited, worded by
 ## Invariants & assumptions
 
 - A refused open closes the session it made.
-- Never throws: every failure is a `refused` with a sentence. The bake
-  never refuses an open: a recording it cannot place opens the tour
-  without its walk photos, the reason in `photos.notPlaced`.
+- Never throws: every failure is a `refused` with a sentence.
 
 ## Tests
 

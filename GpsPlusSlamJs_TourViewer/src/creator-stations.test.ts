@@ -9,7 +9,6 @@ import { Group, Mesh, type RingGeometry, type Vector3 } from "three";
 
 import { createCreatorDocument } from "./creator-document.js";
 import { tourOf } from "./test-support/v3-tour.js";
-import { withWalkPhotos } from "./tour-content.js";
 import {
   manifestToWrite,
   tourDocumentActions,
@@ -637,33 +636,57 @@ describe("wireCreatorStations", () => {
     );
   });
 
-  // Why this test matters: the walk's photos once went into stations at
-  // the first Finish, so the HUD could not see them and hedged every name
-  // ("may change at Finish"). They are baked into stations when the
-  // recording opens now: the HUD names the walk's own stations from the
-  // start, and a pin placed in one is told the station it will be written
-  // in, with no hedge.
-  it("names a station the walk's photos started, from the open on, without a hedge", () => {
-    const photoAt = pin("photo", 100, 0).geo;
+  // Why this test matters: the walk's camera captures were baked into
+  // stations when the recording opened, so the HUD named an automatic
+  // walk-N station where a frame was taken (this test pinned it, as
+  // "Station 2"). They are debug data now: a file that carries them opens
+  // without them and without the stations only they kept, so the HUD
+  // shows no station there, and a pin placed there starts the tour's own.
+  it("shows no station where only a debug camera capture was, and a pin there starts one", () => {
+    const at = pin("photo", 100, 0).geo;
+    const gate = tourOf([pin("gate", 0, 0)]);
     const h = harness({
-      opened: withWalkPhotos(tourOf([pin("gate", 0, 0)]), {
-        fixes: 9,
-        gpsAccuracyMedianM: 4,
-        captures: [
+      opened: {
+        ...gate,
+        stations: [
+          ...gate.stations,
           {
-            image: "images/frame-1.jpg",
-            geo: { ...photoAt, rotation: [0, 0, 0, 1] },
+            id: "walk-1",
+            geo: {
+              lat: at.lat,
+              lon: at.lon,
+              alt: at.alt,
+              rotation: [0, 0, 0, 1],
+            },
+            activateRadiusM: 50,
+            foundRadiusM: 25,
+            hint: "arrow",
+            steps: [],
+            items: [],
           },
         ],
-      }),
+        captureSpots: {
+          fixes: 9,
+          gpsAccuracyMedianM: 4,
+          captures: [
+            {
+              image: "images/frame-1.jpg",
+              station: "walk-1",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+          ],
+        },
+      },
     });
     h.stand(100, 0);
     expect(h.chip.textContent).toBe(
-      "In Station 2 - what you place here joins it.",
+      "No station here - what you place next starts a new one.",
     );
     h.tour.place(pin("near", 101, 0), {}, "a pin");
-    expect(h.stations.placedIn("near")).toBe("in Station 2");
-    expect(h.stations.nameOf("near")).toBe("Station 2");
+    expect(h.stations.placedIn("near")).toBe("it starts Station 2");
+    expect(h.tour.manifest()?.stations.map((st) => st.id)).not.toContain(
+      "walk-1",
+    );
   });
 
   // Why (M5c review #4): the HUD once read stations a Finish would start
