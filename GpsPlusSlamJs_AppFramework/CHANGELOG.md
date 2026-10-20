@@ -22,6 +22,24 @@
   otherwise, at every minor; the writer refuses a bad one. No new minor:
   older readers ignore the field and older writers drop it, which costs
   only that key.
+- **`state/position-precision`** (deep import): one judgement, for every
+  app, of how precise the position it works with is now.
+  `positionPrecision(input)` takes the position the app judges
+  (`'aligned'`, `'lone-fix'` or null), `codeHold`, the store's GPS points
+  and optionally the lone fix's accuracy and a ceiling, and gives
+  `{ source, accuracyM, tooWeak }`: `'code'` (no number) for an aligned
+  position a code holds by the app's own statement, `'gps'` with the median accuracy of the latest
+  10 DEVICE fixes (a code's synthetic readings never count; a lone fix is
+  judged by the worse of that and its own), `'none'` with no position or
+  no evidence. Too weak above 25 m (`POSITION_PRECISION_CEILING_M`), and
+  always for `'none'` (a fail-safe, not a GPS verdict: branch on
+  `source` first). An undefined position reads as null; an unknown kind
+  throws. `canTellApart(precision, spacingM, { factor? })` says whether
+  it can tell apart two targets that far apart: factor x error length
+  within half the spacing, `TELL_APART_FACTOR` 1.5 from a sweep (every
+  yes at least 90 % right on an honest raw-fix accuracy report, in a row,
+  a square grid and a hex grid of targets), a code judged as 1 m
+  (`CODE_HELD_ERROR_M`). Reads no clock.
 
 ### Fixed
 

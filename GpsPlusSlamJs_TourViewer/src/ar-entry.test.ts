@@ -1240,8 +1240,7 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     h.arStore.dispatch(
       presenceJudged({
         candidates: [{ id: "a", distanceM: 1, foundM: 5, foundExitM: 9 }],
-        accuracyM: 4,
-        codeLinedUp: false,
+        precision: { source: "gps", accuracyM: 4, tooWeak: false },
       }),
     );
     expect(selectPresentStationId(h.arStore.getState())).toBe("a");

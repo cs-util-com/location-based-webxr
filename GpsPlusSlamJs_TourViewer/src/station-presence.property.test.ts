@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
+import type { PositionPrecision } from "gps-plus-slam-app-framework/state/position-precision";
+
 import { HUD_ARRIVAL_BAND_M, judgedStationBands } from "./station-bands";
 import {
   nextPresentStation,
@@ -181,8 +183,13 @@ describe("nextPresentStation (properties)", () => {
             ...s,
             activateRadiusM: s.foundRadiusM * 2,
           }));
+          // The precision the guide judges by: a code's, or GPS at the
+          // raw accuracy (within the ceiling here).
+          const precision: PositionPrecision = code
+            ? { source: "code", accuracyM: null, tooWeak: false }
+            : { source: "gps", accuracyM: rawAccuracyM, tooWeak: false };
           const bandOf = (s: (typeof stations)[number]) =>
-            judgedStationBands(s, rawAccuracyM, code);
+            judgedStationBands(s, precision);
           const band = code
             ? HUD_ARRIVAL_BAND_M
             : Math.max(rawAccuracyM, HUD_ARRIVAL_BAND_M);
@@ -205,7 +212,7 @@ describe("nextPresentStation (properties)", () => {
             const next = nextPresentStation(
               present,
               c,
-              takeoverMarginM(code ? null : rawAccuracyM, code),
+              takeoverMarginM(precision),
             );
             const problem = stepProblem(present, next, c);
             if (problem !== null) problems.push(problem);
