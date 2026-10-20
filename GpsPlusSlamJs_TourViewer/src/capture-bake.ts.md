@@ -63,7 +63,9 @@ placesNothing? }`. `placesNothing: true` when the replayed walk names
   its last pose, as the zip keeps its last write (S1 milestone review #7).
 - A wrapped Recorder zip (`mytour/actions/...`) never bakes: the recorded
   `imageFile` names are unwrapped. The open then says the photos were not
-  placed and the Finish keeps the walk, which leaves a later fix possible.
+  placed, and the keep-the-walk switch starts ticked for such a tour
+  (`tour-document-bake.ts` `keepsWalkByDefault`): the Finish keeps the
+  walk unless the creator unticks it, which leaves a later fix possible.
 - `fixes` and `gpsAccuracyMedianM` are the walk's (the final assessment's),
   as the visitor's status line reports them; `null` stays `null`.
 - Errors thrown by the session's reads (a cap's refusal, a failed

@@ -18,7 +18,10 @@ import type { CreatorMeasuring } from "./creator-measuring.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import type { CreatorSettle } from "./creator-settle.js";
 import { finishedFileName, rebuildFinishedTour } from "./finish-rebuild.js";
-import type { RebuildPhotoSpots } from "./tour-document-bake.js";
+import {
+  keepsWalkByDefault,
+  type RebuildPhotoSpots,
+} from "./tour-document-bake.js";
 import { FINISH_LABELS, finishReadiness } from "./qr-author-mode.js";
 import { authoringFinished } from "./tour-authoring-actions.js";
 import { historyAssetIds, manifestNow } from "./tour-document.js";
@@ -92,12 +95,23 @@ export function wireCreatorFinish(deps: {
     manifest: TourManifest | null;
     count: number;
   } | null = null;
+  /** The open's bake the switch's default was last set for: set once per
+   *  open, so a later render never undoes the creator's own tick. */
+  let defaultedFor: TourViewerSession["walkBake"] | undefined;
 
   function renderKeepScan(): void {
     const current = ctx.session;
     if (current === null || ctx.tourManifestStatus !== "settled") {
       dom.keepScanRow.hidden = true;
       return;
+    }
+    // Ticked when the photos could not be placed (`keepsWalkByDefault`):
+    // a lean copy would lose the walk a later open could place them from.
+    // Set even while the row is hidden (an open inside AR): the Finish
+    // there reads it.
+    if (ctx.walkBake !== defaultedFor) {
+      defaultedFor = ctx.walkBake;
+      dom.keepScanInput.checked = keepsWalkByDefault(walkDecision());
     }
     const manifest = finishBase();
     if (scanMemo?.session !== current || scanMemo.manifest !== manifest) {
@@ -138,8 +152,9 @@ export function wireCreatorFinish(deps: {
 
   /** What the open's bake decided about the walk's photos
    *  (`walkAtOpen`): their stations are in the tour already, so a Finish
-   *  only needs to know whether the walk places nothing and why photos
-   *  were not placed. Nothing to say before an open settled it. */
+   *  only needs to know why photos were not placed (its result line, and
+   *  the keep-the-walk switch's default). Nothing to say before an open
+   *  settled it. */
   function walkDecision(): RebuildPhotoSpots {
     return ctx.walkBake?.kind === "decided" ? ctx.walkBake.photos : {};
   }
@@ -277,7 +292,12 @@ export function wireCreatorFinish(deps: {
             : [FINISH_LABELS.scanLeftOut(scanLeftOut.length)]),
           ...(photos.notPlaced === undefined
             ? []
-            : [FINISH_LABELS.photosNotPlaced(photos.notPlaced)]),
+            : [
+                FINISH_LABELS.photosNotPlaced(
+                  photos.notPlaced,
+                  scanLeftOut.length === 0,
+                ),
+              ]),
           // What the settles decided for the code (UI round 1, U3): no
           // button announces it any more.
           deps.settle.positionSentence(),

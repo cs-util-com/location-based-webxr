@@ -22,6 +22,7 @@ import {
   writeFileOrAbort,
 } from "gps-plus-slam-app-framework/storage";
 import { FINISH_LABELS } from "../qr-author-mode.js";
+import { keepsWalkByDefault } from "../tour-document-bake.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import {
   selectTourDocument,
@@ -1327,8 +1328,10 @@ async function openFile(
   });
   model = editor.model();
   // The walk-recording switch only for a tour that carries one (S-D10:
-  // the saved copy leaves it out unless asked, E2 plan review #4).
-  keepWalkInput.checked = false;
+  // the saved copy leaves it out unless asked, E2 plan review #4) - ticked
+  // when the photos could not be placed, so a lean copy does not lose the
+  // walk a later open could still place them from (`keepsWalkByDefault`).
+  keepWalkInput.checked = keepsWalkByDefault(outcome.photos);
   keepWalk.hidden =
     scanEntryNames(
       outcome.session.entries.map((e) => e.filename),
@@ -1762,7 +1765,14 @@ async function buildAndDeliver(
       // tour (E2b-2 milestone review #6): nobody may ever press Save.
       if (!toldNotPlaced) {
         fileToasts.push(
-          toast(FINISH_LABELS.photosNotPlaced(save.notPlaced), undefined, null),
+          toast(
+            FINISH_LABELS.photosNotPlaced(
+              save.notPlaced,
+              save.scanLeftOut.length === 0,
+            ),
+            undefined,
+            null,
+          ),
         );
       }
       toldNotPlaced = true;
@@ -1780,7 +1790,12 @@ async function buildAndDeliver(
             : [FINISH_LABELS.scanLeftOut(save.scanLeftOut.length)]),
           ...(save.notPlaced === undefined
             ? []
-            : [FINISH_LABELS.photosNotPlaced(save.notPlaced)]),
+            : [
+                FINISH_LABELS.photosNotPlaced(
+                  save.notPlaced,
+                  save.scanLeftOut.length === 0,
+                ),
+              ]),
         ].join(" "),
         undefined,
         // The download's result carries an instruction; in place it does not.

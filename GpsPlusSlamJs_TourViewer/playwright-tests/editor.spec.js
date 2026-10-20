@@ -1474,40 +1474,50 @@ test("a delivered download clears nothing: the original reopened still offers th
   await expect(next.locator(".toast.draft-offer")).toContainText("1 change");
 });
 
-test("a download of a tour whose photos could not be placed leaves the walk out, and keeps it only when the switch asks", async ({
+test("a download of a tour whose photos could not be placed keeps the walk by default, and leaves it out only when the switch is unticked", async ({
   page,
   context,
 }) => {
-  // Why: a visitor never reads the walk, so the switch's default leaves it
-  // out also when the recorded photos could not be placed; the toast still
-  // says so. Only the creator's tick keeps it. The switch hides after a
-  // save, so the tick is tried on a second open of the same tour.
+  // Why: a visitor shows baked photos only. A lean copy of a tour whose
+  // photos could not be placed (a wrapped zip never bakes) held neither
+  // the photos nor the walk a later open could place them from, so the
+  // switch starts ticked there; the toast says what the copy keeps. The
+  // switch hides after a save, so the untick is tried on a second open of
+  // the same tour.
   const tour = await wrappedTour({ pin: true, spots: false });
   await noSavePicker(page);
   await page.goto("/edit.html");
   await openThroughChooser(page, tour, "wrapped.zip");
   await expect(page.locator("#keep-walk")).toBeVisible();
-  await expect(page.locator("#keep-walk-input")).not.toBeChecked();
-  await editPin(page, "Wrapped pin", "Lean without spots");
-  const lean = page.waitForEvent("download");
+  await expect(page.locator("#keep-walk-input")).toBeChecked();
+  await editPin(page, "Wrapped pin", "Kept by default");
+  const kept = page.waitForEvent("download");
   await page.locator("#save-btn").click();
-  const leanNames = await downloadedNames(await lean);
-  expect(leanNames).toContain("mytour/tour.json");
-  expect(leanNames).not.toContain("mytour/actions/000001.json");
-  expect(leanNames).not.toContain("mytour/session.json");
+  const keptNames = await downloadedNames(await kept);
+  expect(keptNames).toContain("mytour/tour.json");
+  expect(keptNames).toContain("mytour/actions/000001.json");
+  expect(keptNames).toContain("mytour/session.json");
   await expect(
-    page.locator(".toast", { hasText: "could not be placed" }),
+    page.locator(".toast", { hasText: "The walk stays in this copy" }),
   ).toHaveCount(1);
   await page.close();
   const next = await newEditorPage(context);
   await openThroughChooser(next, tour, "wrapped.zip");
-  await next.locator("#keep-walk-input").check();
-  await editPin(next, "Wrapped pin", "Kept on request");
-  const kept = next.waitForEvent("download");
+  // Ticked again on the second open; uncheck() would not wait for it (it
+  // returns at once on a box that is still unchecked).
+  await expect(next.locator("#keep-walk-input")).toBeChecked();
+  await next.locator("#keep-walk-input").uncheck();
+  await editPin(next, "Wrapped pin", "Lean on request");
+  const lean = next.waitForEvent("download");
   await next.locator("#save-btn").click();
-  expect(await downloadedNames(await kept)).toContain(
-    "mytour/actions/000001.json",
-  );
+  const leanNames = await downloadedNames(await lean);
+  expect(leanNames).not.toContain("mytour/actions/000001.json");
+  expect(leanNames).not.toContain("mytour/session.json");
+  await expect(
+    next.locator(".toast", {
+      hasText: "leaves out the walk they could be placed from later",
+    }),
+  ).toHaveCount(1);
 });
 
 test("a lean download of a recording tour: the original still offers, the lean copy opens without an offer", async ({

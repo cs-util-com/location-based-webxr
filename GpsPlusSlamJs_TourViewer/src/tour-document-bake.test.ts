@@ -17,7 +17,11 @@ import {
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
-import { captureSpotsForRebuild, walkAtOpen } from "./tour-document-bake.js";
+import {
+  captureSpotsForRebuild,
+  keepsWalkByDefault,
+  walkAtOpen,
+} from "./tour-document-bake.js";
 import {
   SAMPLE_PHOTOS,
   sampleRecordingBytes,
@@ -225,5 +229,28 @@ describe("walkAtOpen (the recording's photos baked when it is opened)", () => {
     await expect(
       walkAtOpen(await sampleSource({ hasRecording: false }), base),
     ).resolves.toEqual({ manifest: base, photos: {} });
+  });
+});
+
+describe("keepsWalkByDefault (the keep-the-walk switch's default)", () => {
+  // Why: a Finish leaves the walk out unless kept, and a visitor shows
+  // baked photos only. After a declined bake (a read that failed, a
+  // wrapped zip, a recording of another era) a lean copy held neither
+  // the photos nor the walk they could be baked from, so re-opening it
+  // could never place them. Such a tour keeps its walk unless the creator
+  // says otherwise; a tour whose photos were placed, or that has none to
+  // place, leaves it out.
+  it("keeps the walk when the photos could not be placed", () => {
+    expect(keepsWalkByDefault({ notPlaced: "too few GPS fixes" })).toBe(true);
+    expect(
+      keepsWalkByDefault({ notPlaced: "reading failed", readFailed: true }),
+    ).toBe(true);
+  });
+
+  it("leaves it out when they were placed, or there are none to speak of", () => {
+    expect(keepsWalkByDefault({ spots: { captures: [] } as never })).toBe(
+      false,
+    );
+    expect(keepsWalkByDefault({})).toBe(false);
   });
 });

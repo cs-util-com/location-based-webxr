@@ -32,6 +32,14 @@ rules only through the document's modules (the
   `editor/editor-open.ts`); a save never bakes. `WalkBake` is the
   phone's view of it (`ctx.walkBake`: `{ kind: "baking", done, total }`
   or `{ kind: "decided", photos }`).
+- `keepsWalkByDefault(photos) -> boolean` - the keep-the-walk switch's
+  default for an open that decided `photos`: true exactly when they could
+  not be placed (`notPlaced`). A Finish or a Save leaves the walk out
+  unless kept and a visitor shows baked photos only, so a lean copy of
+  such a tour would hold neither the photos nor the walk a later open
+  could bake them from. The phone's Finish (`creator-finish.ts`) and the
+  desktop's Save (`editor/edit-main.ts`) start their switch from it; the
+  creator may untick it.
 - `captureSpotsForRebuild(tour, manifest, options?)` (M6 E0b) - the
   photos' spots, in the world (`worldCaptureSpots`): the manifest's own, else baked from the
   recording (`capture-bake.ts`, `options` passes its `shouldContinue` and
@@ -79,5 +87,6 @@ integrity failure as the reason and never a failed open, no recording)
 and `captureSpotsForRebuild` (own spots without a read, none without a
 recording, a read failure as the reason, a cap and an integrity failure
 rethrown, a decline as the reason, a walk naming no photo of the tour as
-`{}` with no reason). The pages' use is pinned in
+`{}` with no reason) and `keepsWalkByDefault` (ticked for a decline or a
+failed read, unticked for placed photos or none). The pages' use is pinned in
 `archive-open-file.test.ts` and `editor/editor-open.test.ts`.

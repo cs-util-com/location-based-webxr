@@ -38,6 +38,18 @@ export interface RebuildPhotoSpots {
 }
 
 /**
+ * Whether the keep-the-walk switch starts ticked for a tour whose open
+ * decided `photos`: when the photos could not be placed. A Finish leaves
+ * the walk out unless kept, and a visitor shows baked photos only, so a
+ * lean copy of such a tour would hold neither the photos nor the walk a
+ * later open could bake them from. The creator can untick it. Both
+ * creator pages read it (the phone's Finish, the desktop's Save).
+ */
+export function keepsWalkByDefault(photos: RebuildPhotoSpots): boolean {
+  return photos.notPlaced !== undefined;
+}
+
+/**
  * The recorded photos' spots: the
  * tour's own when it carries them, else baked from its recording, else
  * none - a visitor then sees no recorded photo, and `notPlaced` says why,

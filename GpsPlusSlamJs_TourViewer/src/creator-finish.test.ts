@@ -1132,8 +1132,10 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
   // A file of the creator's own that no viewer reads: never the walk.
   const README = `${WRAP}README.txt`;
 
+  /** `keepScan`: the creator's tick, or "default" to finish with the
+   *  switch as the page sets it for the open tour. */
   async function wireRecordingTour(
-    keepScan: boolean,
+    keepScan: boolean | "default",
     odomCoordVersion = 5,
     walk: readonly string[] = WALK,
   ) {
@@ -1157,14 +1159,18 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
         loadRecordingActions: () => Promise.resolve(actions),
       },
     });
-    wired.dom.keepScanInput.checked = keepScan;
+    // The page renders once the open settled; the creator ticks after.
+    wired.setup.renderAuthorReadout();
+    if (keepScan !== "default") wired.dom.keepScanInput.checked = keepScan;
     wired.dom.finishButton.click();
     await settle(wired.ctx);
     return wired;
   }
 
   it("leaves the walk out by default and keeps every photo a baked spot shows", async () => {
-    const { ctx, dom } = await wireRecordingTour(false);
+    const { ctx, dom } = await wireRecordingTour("default");
+    // The photos were placed: the switch starts unticked.
+    expect(dom.keepScanInput.checked).toBe(false);
     expect(ctx.finishError).toBeNull();
     const names = await entryNamesOf(ctx.rebuiltZip!.blob);
     // The first frame precedes the GPS zero, so no spot shows it.
@@ -1182,12 +1188,31 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     );
   });
 
-  it("leaves the walk out also when the photos could not be placed, and says why", async () => {
-    // Why: the walk once stayed in such a copy, for a visitor's viewer to
-    // place the photos from it. A visitor shows baked photos only, so the
-    // walk would only weigh the copy down; the creator reads that the
-    // photos are not in it, and that the hosted file may be their only
-    // copy of the walk. A recording this build cannot join: an old era.
+  it("keeps the walk by default when the photos could not be placed, and says a later open can still place them", async () => {
+    // Why: a visitor shows baked photos only. A lean copy of a tour whose
+    // bake declined held neither the photos nor the walk they could be
+    // baked from, so re-opening it could never place them. A recording
+    // this build cannot join: an old era.
+    const { ctx, dom } = await wireRecordingTour("default", 3);
+    expect(dom.keepScanInput.checked).toBe(true);
+    expect(ctx.finishError).toBeNull();
+    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
+    expect(names.filter((n) => WALK.includes(n)).sort()).toEqual(
+      [...WALK].sort(),
+    );
+    expect(dom.finishStatus.textContent).not.toContain(
+      "leaves out the walk recording",
+    );
+    expect(dom.finishStatus.textContent).toContain(
+      "The recorded photos could not be placed (",
+    );
+    expect(dom.finishStatus.textContent).toContain(
+      "visitors will not see them. The walk stays in this copy, so opening it again can still place them.",
+    );
+  });
+
+  it("leaves that walk out when the creator unticks the switch, and says the photos cannot be placed from the copy", async () => {
+    // The page's later renders (the Finish renders too) keep the untick.
     const { ctx, dom } = await wireRecordingTour(false, 3);
     expect(ctx.finishError).toBeNull();
     const names = await entryNamesOf(ctx.rebuiltZip!.blob);
@@ -1197,16 +1222,7 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
       "leaves out the walk recording",
     );
     expect(dom.finishStatus.textContent).toContain(
-      "The recorded photos could not be placed (",
-    );
-    expect(dom.finishStatus.textContent).toContain(
-      "visitors will not see them",
-    );
-    // Kept when asked, frames and all.
-    const kept = await wireRecordingTour(true, 3);
-    const keptNames = await entryNamesOf(kept.ctx.rebuiltZip!.blob);
-    expect(keptNames.filter((n) => WALK.includes(n)).sort()).toEqual(
-      [...WALK].sort(),
+      "visitors will not see them, and this copy leaves out the walk they could be placed from later.",
     );
   });
 

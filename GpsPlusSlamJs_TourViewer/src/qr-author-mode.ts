@@ -485,9 +485,14 @@ export const FINISH_LABELS = {
     `This copy is for visitors: it leaves out the walk recording (${String(files)} ${files === 1 ? "file" : "files"}). Keep your original zip if you still need the walk.`,
   /** Appended when the recording's photos could not be placed at this
    *  Finish: a visitor shows baked photos only, so the creator reads why
-   *  and that visitors will not see them. */
-  photosNotPlaced: (reason: string) =>
-    `The recorded photos could not be placed (${reason}): visitors will not see them.`,
+   *  and that visitors will not see them - and whether the copy kept the
+   *  walk a later open can still place them from (`walkKept`: nothing of
+   *  the walk was left out; the switch keeps it by default then,
+   *  `keepsWalkByDefault`). */
+  photosNotPlaced: (reason: string, walkKept: boolean) =>
+    walkKept
+      ? `The recorded photos could not be placed (${reason}): visitors will not see them. The walk stays in this copy, so opening it again can still place them.`
+      : `The recorded photos could not be placed (${reason}): visitors will not see them, and this copy leaves out the walk they could be placed from later.`,
   failed: (reason: string) => `Finishing failed: ${reason}`,
   /** The one button left after a Finish: the same save again (owner
    *  decision D-F4b). */

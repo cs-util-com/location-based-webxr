@@ -189,13 +189,19 @@ module's sidecar states them as its contract.
   `scanEntryNames` of the manifest it writes (`tour-read-set.ts`): the
   action stream, `session.json` and the recorded frames no visitor sees.
   A file the recording did not write (a README, credits) always stays.
-  **With or without baked spots**: a visitor never reads the walk, so a
-  recording the bake declined or could not read loses its walk too, and
-  the ready line also says the photos could not be placed and that
-  visitors will not see them (`FINISH_LABELS.photosNotPlaced`); a walk
-  that names no recorded photo the tour carries says nothing about
-  photos. The tick is cleared with the Finish step
-  when the tour closes (review #9).
+  **The switch's default follows the open's bake** (`keepsWalkByDefault`
+  of `tour-document-bake.ts`, set once per open in `renderKeepScan`,
+  keyed on `ctx.walkBake`, so a later render never undoes the creator's
+  tick, and set while the row is hidden too): unticked when the photos
+  were placed or there are none; TICKED when the bake declined or could
+  not read the recording (a wrapped zip, another era, a failed read) -
+  a lean copy would hold neither the photos nor the walk a later open
+  could place them from. The ready line then says the photos could not
+  be placed, that visitors will not see them, and whether the copy kept
+  the walk (`FINISH_LABELS.photosNotPlaced(reason, walkKept)`, `walkKept`
+  = nothing of the walk left out). A walk that names no recorded photo
+  the tour carries says nothing about photos. The tick is cleared with
+  the Finish step when the tour closes (review #9).
   The ready line then says so (`FINISH_LABELS.scanLeftOut`), because the
   hosted file may be the creator's only copy of the walk.
 - The finish's append is **id-deduplicating**, because the serializer
@@ -212,7 +218,8 @@ module's sidecar states them as its contract.
 Composed, through `wireCreatorSetup`: `creator-finish.test.ts` (what the
 rebuilt zip holds, the budget, the listed series, the spots baked at
 open written and nothing replayed at the Finish, the walk
-left out, the save guard's inputs, a finished photo's bytes) and the e2e
+left out, the switch's default per open - ticked, and the walk kept, when the
+photos could not be placed; an untick surviving the Finish's render - the save guard's inputs, a finished photo's bytes) and the e2e
 finish specs; the entry list itself in `finish-entries.test.ts`. The
 sampled mutants of the region "finish"
 (`scripts/fixtures/creator-setup.mutants.json`) are killed.
