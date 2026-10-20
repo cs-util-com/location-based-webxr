@@ -271,13 +271,16 @@ describe("what a visitor's page shows and downloads", () => {
     ]);
   });
 
+  /** A tour with something to show (`tour-unfinished.ts`). */
+  const finished = manifest({ objects: [photo] });
+
   it("stops a visitor's background download for every copy that carries a walk", () => {
-    expect(stopsVisitorDownload("visitor", scan)).toBe(true);
+    expect(stopsVisitorDownload("visitor", finished, scan)).toBe(true);
     // A copy without a walk is all visitor content: stopping would only
     // lose the offline copy.
-    expect(stopsVisitorDownload("visitor", new Set())).toBe(false);
+    expect(stopsVisitorDownload("visitor", finished, new Set())).toBe(false);
     // The creator's working copy is theirs to cache whole.
-    expect(stopsVisitorDownload("creator", scan)).toBe(false);
+    expect(stopsVisitorDownload("creator", finished, scan)).toBe(false);
   });
 
   it("stops it for a tour without baked spots too: no visitor replays a walk", () => {
@@ -285,8 +288,23 @@ describe("what a visitor's page shows and downloads", () => {
     // its walk by range reads; a visitor now shows baked photos only, so
     // the walk is never read.
     const walk = new Set(
-      scanEntryNames(["tour.json", ...RECORDING], manifest(), ""),
+      scanEntryNames(["tour.json", ...RECORDING], finished, ""),
     );
-    expect(stopsVisitorDownload("visitor", walk)).toBe(true);
+    expect(stopsVisitorDownload("visitor", finished, walk)).toBe(true);
+  });
+
+  it("stops it for a tour not finished yet, with or without a walk", () => {
+    // Why: a visitor of such a tour reads nothing of it (the start page
+    // says it is not finished). A zip without tour.json has no read set
+    // to compute a walk from, so the walk's rule never stopped it and
+    // every visitor downloaded a creator's whole recording.
+    for (const unfinished of [null, manifest()]) {
+      expect(stopsVisitorDownload("visitor", unfinished, new Set())).toBe(true);
+      expect(stopsVisitorDownload("visitor", unfinished, scan)).toBe(true);
+      // The creator is making it: their copy is cached whole.
+      expect(stopsVisitorDownload("creator", unfinished, new Set())).toBe(
+        false,
+      );
+    }
   });
 });

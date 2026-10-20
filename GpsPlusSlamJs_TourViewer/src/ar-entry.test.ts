@@ -85,6 +85,7 @@ function harness(
     locationPending?: () => boolean;
     codesOnly?: () => boolean;
     recheck?: () => Promise<void>;
+    request?: () => Promise<unknown>;
     copyText?: (text: string) => Promise<void>;
     meshCursor?: boolean;
   } = {},
@@ -178,7 +179,7 @@ function harness(
       busy: () => false,
       codesOnly: options.codesOnly ?? (() => false),
       recheck: options.recheck ?? (() => Promise.resolve()),
-      request: () => Promise.resolve(),
+      request: options.request ?? (() => Promise.resolve()),
     } as never,
     dom: dom as unknown as ArEntryDom,
     hooks,
@@ -665,6 +666,70 @@ describe("the visitor's step marker (polish round M4a, the owner's V4)", () => {
   it("carries no marker when the location was already allowed", () => {
     const h = harness();
     expect(h.dom.enterArButton.dataset["step"]).toBeUndefined();
+  });
+});
+
+describe("a visitor of a tour not finished yet gets no Start", () => {
+  // Why: such a tour has nothing to show. A Start there asked for the
+  // location (and, denied on a tour without codes, told the visitor to
+  // change a browser setting) and opened an empty AR session; the start
+  // page's sentence is the visitor's whole answer.
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function unfinishedVisitor(manifest: "no stations" | "no tour.json") {
+    const request = vi.fn(() => Promise.resolve("granted"));
+    const h = harness({ locationPending: () => true, request });
+    h.ctx.session = {} as never;
+    h.ctx.tourDocument.close();
+    h.ctx.tourDocument.open(manifest === "no stations" ? tourOf([]) : null);
+    h.entry.renderArEntry();
+    return { h, request };
+  }
+
+  it.each(["no stations", "no tour.json"] as const)(
+    "hides the button and its hint (%s), and a tap asks for nothing",
+    async (manifest) => {
+      const { h, request } = unfinishedVisitor(manifest);
+      expect(h.dom.enterArButton.hidden).toBe(true);
+      expect(h.dom.arHint.hidden).toBe(true);
+      await h.enter();
+      expect(request).not.toHaveBeenCalled();
+      expect(h.arController.enable).not.toHaveBeenCalled();
+    },
+  );
+
+  it("shows them while the tour.json is still being read, and for a finished tour", () => {
+    // Tapped before the manifest settles, the session's status line says
+    // the tour is not finished (`unfinishedTour`).
+    const { h } = unfinishedVisitor("no tour.json");
+    h.ctx.tourManifestStatus = "pending";
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.hidden).toBe(false);
+    expect(h.dom.arHint.hidden).toBe(false);
+    h.ctx.tourManifestStatus = "settled";
+    h.ctx.tourDocument.close();
+    h.ctx.tourDocument.open(FINISHED_TOUR);
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.hidden).toBe(false);
+    expect(h.dom.arHint.hidden).toBe(false);
+  });
+
+  it("keeps the button while a session runs: it is the way out", () => {
+    const { h } = unfinishedVisitor("no stations");
+    h.setArStatus("running");
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.hidden).toBe(false);
+  });
+
+  it("never hides a creator's button: the tour is the one being made", () => {
+    const h = harness({ mode: "creator" });
+    h.ctx.session = {} as never;
+    h.ctx.tourDocument.close();
+    h.ctx.tourDocument.open(tourOf([]));
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.hidden).toBe(false);
   });
 });
 

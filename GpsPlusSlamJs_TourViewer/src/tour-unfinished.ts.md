@@ -30,9 +30,13 @@ what a visitor of the hosted file reads now. Pure.
 
 ## Invariants & assumptions
 
-- One rule for every place that asks: the start page, the AR status line,
-  the scan card (never shown for an unfinished tour, `scan-gate.ts`) and
-  the creator's note all go through `tourUnfinished`.
+- One rule for every place that asks: the start page, the visitor's Start
+  (withheld for an unfinished tour, `ar-entry.ts`), the AR status line
+  (for a session started while the file was still being read), the scan
+  card (never shown for an unfinished tour, `scan-gate.ts`), the
+  visitor's background download (stopped, `tour-read-set.ts`
+  `stopsVisitorDownload`) and the creator's note all go through
+  `tourUnfinished`.
 - A visitor's tour is judged by the file's own manifest once it settled
   (`ar-entry.ts`, `main.ts`); a `tour.json` that cannot be read is an
   error the page shows, not an unfinished tour. A creator's tour is the
@@ -54,8 +58,12 @@ notFinishedSentence("mailto:guide@example.org");
 - `tour-unfinished.test.ts` - the rule, the sentence with and without a
   followable contact, the creator's note.
 - `visitor-start.test.ts`, `visitor-status.test.ts`, `tour-flow.test.ts`,
-  `scan-gate.test.ts` - each place that says it.
+  `scan-gate.test.ts` - each place that says it; `ar-entry.test.ts` - the
+  withheld Start; `tour-read-set.test.ts`, `archive-open-file.test.ts` -
+  the stopped download.
 - `playwright-tests/visitor-start.spec.js` - the start page of a tour
-  without stations (with its contact) and of a zip without `tour.json`;
-  `playwright-tests/ar-mode.spec.js` - the AR status line of both, the
+  without stations (with its contact) and of a zip without `tour.json`,
+  neither with a Start; `playwright-tests/ar-mode.spec.js` - no Start and
+  no location request for a recording or a zip of images, the AR status
+  line of a session started while the file was still being read, the
   scan card never shown, and the creator's note beside the visitor link.

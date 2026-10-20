@@ -190,14 +190,18 @@ DOM glue, its own module since the flows plan M6.
   `ctx.scanEntries` (empty without a manifest, as before) and then fills
   the gallery; a broken manifest fills it unfiltered. A copy that kept the
   walk therefore never decodes its frames; every other file still shows.
-- **A visitor's page stops the background download of a BAKED copy that
-  kept the walk** (`stopsVisitorDownload`, visitor mode only; an unbaked
-  one replays its walk and keeps the download): `archive.dispose()`
-  aborts the warm, and the tour reads its entries by range instead. The
-  costs, for that copy only: tier 3 (the whole-archive check), the offline
-  copy, and - because dispose aborts the archive's one controller - the
-  recovery download for a host that stops honouring ranges mid-session
-  (S1 milestone review #5).
+- **A visitor's page stops the background download of a copy that kept
+  the walk, and of a tour not finished yet** (`stopsVisitorDownload`,
+  visitor mode only, judged on the file's own manifest at the settle; a
+  zip without `tour.json` is such a tour, so a creator's recording hosted
+  before its first Finish is not fetched whole by every visitor):
+  `archive.dispose()` aborts the warm, and the tour reads its entries by
+  range instead. The costs, for that copy only: tier 3 (the whole-archive
+  check), the offline copy, and - because dispose aborts the archive's
+  one controller - the recovery download for a host that stops honouring
+  ranges mid-session (S1 milestone review #5). Tests:
+  `archive-open-file.test.ts` ("stops a visitor's download of a
+  recording without tour.json").
 - **Another tour asks before replacing one with an unsaved rebuilt file**
   (UI round 1, U2): `openTour` returns `{ kind: "cancelled" }` when
   `hooks.confirmLeaveTour()` is false.

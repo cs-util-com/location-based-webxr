@@ -21,6 +21,12 @@ downloading the whole file first.
   first, so the button counts "1 of 2" and "2 of 2"), enters AR, and
   places nothing until the phone has recognised the hung code. After 10 s
   without a lock the page offers "Continue with GPS only (less accurate)".
+  A tour that is not finished yet - a zip without `tour.json` (the
+  starter zip, a recording) or a tour without stations, hosted before
+  its first Finish - opens to a start page that says "This tour is not
+  finished yet." (with the tour's contact, when it names one) and offers
+  no Start: no location is asked for, no AR session opens, and the page
+  stops downloading the file, of which a visitor reads nothing.
 
 The mode is the launch parameter's presence and nothing else; there is no
 author flag.

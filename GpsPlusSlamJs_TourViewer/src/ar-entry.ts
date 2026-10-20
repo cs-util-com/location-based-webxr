@@ -246,6 +246,12 @@ export function wireArEntry(deps: {
       : {};
   }
 
+  /** A visitor's open tour has nothing to show yet: no Start is offered
+   *  (no location asked, no empty session) - the start page says why. */
+  function startWithheld(): boolean {
+    return ctx.session !== null && unfinishedTour().unfinished !== undefined;
+  }
+
   function renderArStatus(): void {
     renderDebugReadout();
     const input: ArStatusInput = {
@@ -465,8 +471,14 @@ export function wireArEntry(deps: {
     // instruction pinned over live video (milestone review, 2026-09-05).
     // A visitor's phone without AR gets no "once AR starts" hint: the
     // status line says what to do instead (polish round M4a, V4).
+    // A visitor's tour not finished yet gets neither the button nor its
+    // hint; during a session the button stays, as the way out.
+    const withheld = !sessionActive && startWithheld();
+    dom.enterArButton.hidden = withheld;
     dom.arHint.hidden =
-      sessionActive || (!authorMode && state.status === "unsupported");
+      withheld ||
+      sessionActive ||
+      (!authorMode && state.status === "unsupported");
     renderArStatus();
   }
 
@@ -746,6 +758,8 @@ export function wireArEntry(deps: {
       });
       return;
     }
+    // Hidden then; a tap that still arrives asks for nothing.
+    if (startWithheld()) return;
     if (!authorMode && arController.getState().status === "unsupported") {
       copyLink();
       return;

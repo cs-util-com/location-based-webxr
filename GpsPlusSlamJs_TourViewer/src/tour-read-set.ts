@@ -20,6 +20,7 @@ import {
 } from "gps-plus-slam-app-framework/storage/file-system-utils";
 
 import type { ViewerMode } from "./mode.js";
+import { tourUnfinished } from "./tour-unfinished.js";
 
 /**
  * The entries of `entryNames` a visitor reads: `tour.json`, every code
@@ -120,14 +121,17 @@ export function entriesForVisitor<E extends { filename: string }>(
 
 /**
  * True when a VISITOR's background download of the whole archive should
- * stop: a copy that carries a walk (kept for a co-author, or never left
- * out), which no visitor reads - a visitor shows baked photos only. A copy
- * without a walk is all visitor content, and stopping would only lose the
- * offline copy. A creator's working copy is still cached whole.
+ * stop: a tour not finished yet (`tour-unfinished.ts`: no `tour.json`,
+ * `manifest` null, or no station), of which a visitor reads nothing; or a
+ * copy that carries a walk (kept for a co-author, or never left out),
+ * which no visitor reads - a visitor shows baked photos only. A finished
+ * copy without a walk is all visitor content, and stopping would only lose
+ * the offline copy. A creator's working copy is still cached whole.
  */
 export function stopsVisitorDownload(
   mode: ViewerMode,
+  manifest: TourManifest | null,
   scan: ReadonlySet<string>,
 ): boolean {
-  return mode === "visitor" && scan.size > 0;
+  return mode === "visitor" && (tourUnfinished(manifest) || scan.size > 0);
 }

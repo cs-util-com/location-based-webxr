@@ -73,7 +73,8 @@ function fakeSession(url: string) {
   return {
     entries: [],
     fromFile: url.startsWith("local-file:"),
-    archive: { url, size: 10 },
+    // `dispose` ends the archive's background download of the whole file.
+    archive: { url, size: 10, dispose: vi.fn() },
     stats: () => ({
       networkBytes: 0,
       networkRequests: 0,
@@ -360,6 +361,31 @@ describe("a creator's recording is baked when it opens", () => {
     );
     expect(read).not.toHaveBeenCalled();
     expect(ctx.walkBake).toBeNull();
+  });
+
+  it("stops a visitor's download of a recording without tour.json, and keeps the creator's", async () => {
+    // Why: such a zip is a tour not finished yet, which a visitor reads
+    // nothing of; without a manifest no walk was ever computed for it, so
+    // every visitor fetched the creator's whole recording.
+    const visitorSession = await recording();
+    mocks.openTourFile.mockResolvedValueOnce(visitorSession);
+    const visitor = wire("visitor");
+    pick(visitor.dom, new File(["zip"], "walk.zip"));
+    await vi.waitFor(() =>
+      expect(visitor.hooks.presentDraftForTour).toHaveBeenCalled(),
+    );
+    const archive = visitorSession["archive"] as { dispose: () => void };
+    expect(archive.dispose).toHaveBeenCalledTimes(1);
+
+    const creatorSession = await recording();
+    mocks.openTourFile.mockResolvedValueOnce(creatorSession);
+    const creator = wire("creator");
+    pick(creator.dom, new File(["zip"], "walk.zip"));
+    await vi.waitFor(() =>
+      expect(creator.hooks.presentDraftForTour).toHaveBeenCalled(),
+    );
+    const own = creatorSession["archive"] as { dispose: () => void };
+    expect(own.dispose).not.toHaveBeenCalled();
   });
 });
 

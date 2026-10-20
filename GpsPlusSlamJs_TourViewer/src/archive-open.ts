@@ -502,11 +502,12 @@ export function wireArchiveOpen(deps: {
               ),
         );
         // The background download fetches the WHOLE file; a visitor of a
-        // copy that carries a walk reads entries on demand instead.
+        // copy that carries a walk reads entries on demand instead, and a
+        // visitor of a tour not finished yet reads nothing more.
         // The archive's dispose aborts the download AND its recovery
         // download for a host that stops honouring ranges mid-session
         // (S1 milestone review #5): accepted for this copy only.
-        if (stopsVisitorDownload(deps.mode, ctx.scanEntries)) {
+        if (stopsVisitorDownload(deps.mode, manifest, ctx.scanEntries)) {
           opened.archive.dispose();
         }
         // The gallery waits for the manifest, which says what it shows.

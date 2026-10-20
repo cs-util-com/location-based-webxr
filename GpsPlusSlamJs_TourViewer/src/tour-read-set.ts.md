@@ -38,10 +38,14 @@ out too.
   walk's own file (the M4b milestone review #8).
 - `entriesForVisitor(entries, scan) -> entries` - every entry except the
   walk, in archive order. The gallery uses it.
-- `stopsVisitorDownload(mode, scan) -> boolean` - true for a visitor of a
-  copy that carries a walk, baked spots or not: no visitor reads a walk,
-  so `archive-open.ts` aborts the whole-file download. A copy without a
-  walk is all visitor content and keeps its offline copy.
+- `stopsVisitorDownload(mode, manifest, scan) -> boolean` - true for a
+  visitor of a tour not finished yet (`tourUnfinished(manifest)`: no
+  `tour.json`, or no station), of which a visitor reads nothing; and for
+  a visitor of a copy that carries a walk, baked spots or not: no visitor
+  reads a walk. `archive-open.ts` then aborts the whole-file download. A
+  zip without `tour.json` has no read set, so its scan set is empty - the
+  first rule is what stops a recording's download there. A finished copy
+  without a walk is all visitor content and keeps its offline copy.
 
 ## Invariants & assumptions
 
@@ -78,5 +82,7 @@ a recording never writes (README, credits, other folders, a non-frame
 image) never in it, the whole recording as the walk without baked spots,
 no recording no walk; the whole recording (frames included, none without actions,
 always holding the walk); the visitor filter and when the download stops (visitor mode
-only, only with a walk, a tour without baked spots included). The Finish's use is in `creator-finish.test.ts`
+only; with a walk, a tour without baked spots included; and for a tour not finished
+yet, with or without a walk). The open's use is in `archive-open-file.test.ts` (a
+visitor's recording without `tour.json` is not downloaded whole, a creator's is). The Finish's use is in `creator-finish.test.ts`
 ("the published copy carries only what visitors need", a README kept).

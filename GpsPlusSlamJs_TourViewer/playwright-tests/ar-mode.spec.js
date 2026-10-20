@@ -1359,32 +1359,35 @@ test("a visitor of a zip without tour.json reads that the tour is not finished y
 }) => {
   // Why this matters: the printed code may point at the hosted file before
   // its first Finish. A recording (an action stream, frames) and a zip of
-  // images alone are both tours not finished yet: the AR status line says
-  // so, instead of placing a creator's walk or scanning for a code.
+  // images alone are both tours not finished yet: the start page says so,
+  // and offers no Start - a Start asked for the location (whose denial, on
+  // a tour without codes, sent the visitor to the browser's settings) and
+  // opened an empty AR session.
+  await page.addInitScript(() => {
+    // A visitor the browser would ask: the first tap would be a location
+    // request.
+    /** @type {any} */ (window).__tourViewerTest.locationPermission = "prompt";
+  });
   for (const archive of ["recording-tour.zip", "plain-tour.zip"]) {
     await openAsVisitor(page, `http://127.0.0.1:5197/ranges-ok/${archive}`, {
       debug: true,
     });
-    await enterAr(page);
-    await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
-    await seedAlignment(page);
-    await forceTrackingReady(page);
-    await expect
-      .poll(
-        async () => {
-          await page.evaluate(() => {
-            /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-          });
-          return page.getByTestId("ar-status").textContent();
-        },
-        { timeout: 20000, message: archive },
-      )
-      .toMatch(/camera frames · This tour is not finished yet\.$/);
-    await expect(page.getByTestId("ar-status")).not.toContainText("Scanning");
-    await page.evaluate(() => {
-      /** @type {any} */ (window).__tourViewerTest.endXrSession();
-    });
-    await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
+    await expect(page.getByTestId("visitor-subline"), archive).toHaveText(
+      "This tour is not finished yet.",
+    );
+    await expect(page.getByTestId("enter-ar"), archive).toBeHidden();
+    await expect(page.getByTestId("ar-hint"), archive).toBeHidden();
+    expect(
+      await page.evaluate(() => {
+        const t = /** @type {any} */ (window).__tourViewerTest;
+        return {
+          locationRequests: t.locationRequests,
+          permissionRequests: t.geolocationPermissionRequests,
+          initAR: t.initARCalls.length,
+        };
+      }),
+      archive,
+    ).toEqual({ locationRequests: 0, permissionRequests: 0, initAR: 0 });
   }
 });
 
@@ -1432,10 +1435,27 @@ test("a visitor of a tour without stations reads that it is not finished, with w
   // Why this matters: a creator may hang the code and host the file before
   // placing anything. The tour carries its code, but nothing to show: the
   // scan card would ask for the code and hide the one sentence the visitor
-  // needs.
+  // needs. The start page offers no Start for such a tour, so the session
+  // is one started while the file was still being read (a slow network).
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/unfinished-tour.zip";
-  await openAsVisitor(page, ARCHIVE);
+  /** @type {() => void} */
+  let release = () => undefined;
+  const held = new Promise((resolve) => {
+    release = () => resolve(undefined);
+  });
+  await page.route(ARCHIVE, async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto(`/?qr=${encodeURIComponent(ARCHIVE)}`);
   await enterAr(page);
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
+  release();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    { timeout: 15000 },
+  );
   await seedAlignment(page);
   await forceTrackingReady(page);
   await expect
@@ -1454,6 +1474,11 @@ test("a visitor of a tour without stations reads that it is not finished, with w
   );
   await expect(page.getByTestId("ar-status")).toBeVisible();
   await expect(page.getByTestId("scan-card")).toBeHidden();
+  // Out of the session, the page offers no Start again.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.endXrSession();
+  });
+  await expect(page.getByTestId("enter-ar")).toBeHidden();
 });
 
 test("the visitor's content waits for the lock; the escape after its clock places by GPS instead", async ({
@@ -1614,36 +1639,13 @@ test("a visitor reads one plain sentence per state, never the debug readout (UI 
   }
 });
 
-test("a visitor's plain line says when a tour is not finished yet, and when GPS placed it", async ({
+test("a visitor's plain line says when GPS placed the tour", async ({
   page,
 }) => {
-  // Why this matters: the first plain line read "Placing the tour…"
-  // forever on a tour with nothing to place (the F3 case, now without
-  // ?debug=1): a zip without tour.json is a tour not finished yet, and
-  // says so. The GPS escape needs its own honest sentence.
-  await openAsVisitor(page, PLAIN_ARCHIVE);
-  await enterAr(page);
-  await seedAlignment(page);
-  await forceTrackingReady(page);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("ar-status").getAttribute("data-state");
-      },
-      { timeout: 20000 },
-    )
-    .toBe("unfinished");
-  await expect(page.getByTestId("ar-status")).toHaveText(
-    "This tour is not finished yet.",
-  );
-
-  // A tour with a code, the visitor taking the GPS escape.
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.endXrSession();
-  });
+  // Why this matters: the GPS escape needs its own honest sentence on the
+  // plain line (without ?debug=1). The plain line of a tour not finished
+  // yet is asserted where such a session can still start: a Start tapped
+  // while the file was being read.
   await openAsVisitor(page, RANGES_ARCHIVE);
   await enterAr(page);
   await seedAlignment(page);
