@@ -100,25 +100,34 @@ function parseStations(value: unknown): StationPose[] | undefined | null {
 
 /** A stored record's created stations, each read on its own as the format
  *  reads a station (`parseTourManifest`, without items): undefined when
- *  absent; a frame that does not read is lost alone (the objects naming
- *  it are seated by the station rule as they come back), and of two under
- *  one id the first is kept. */
+ *  absent; of two under one id the first is kept. A frame that does not
+ *  read is lost (the objects naming it are seated by the station rule as
+ *  they come back), and so is every frame whose route names a lost one:
+ *  the siblings a frame's routes are read against are only the frames
+ *  that read, so the frames are read again against those until no more
+ *  drop. No kept frame routes to a created station the record lost. */
 function parseCreatedStations(value: unknown): StationFrame[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const entries = value as unknown[];
-  const ids = new Set(
+  let ids = new Set(
     entries
       .map((entry) => idOf(entry))
       .filter((id): id is string => id !== undefined),
   );
-  const frames: StationFrame[] = [];
-  for (const entry of entries) {
-    const frame = parseCreatedStation(entry, ids);
-    if (frame !== undefined && !frames.some((f) => f.id === frame.id)) {
-      frames.push(frame);
+  // Fewer siblings never make a frame read that did not, so each pass
+  // keeps a subset of the last one's ids: this ends within one pass per
+  // entry, at the first pass that drops none.
+  for (;;) {
+    const frames: StationFrame[] = [];
+    for (const entry of entries) {
+      const frame = parseCreatedStation(entry, ids);
+      if (frame !== undefined && !frames.some((f) => f.id === frame.id)) {
+        frames.push(frame);
+      }
     }
+    if (frames.length === ids.size) return frames;
+    ids = new Set(frames.map((f) => f.id));
   }
-  return frames;
 }
 
 /** A stored frame's id, when it is one a station may carry. */

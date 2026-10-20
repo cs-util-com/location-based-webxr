@@ -27,6 +27,7 @@ import {
   tourDocumentReducer as reduce,
   type TourDocumentState,
 } from "./tour-document.js";
+import { routedTo } from "./tour-content.js";
 import { tourOf } from "./test-support/v3-tour.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 
@@ -392,6 +393,52 @@ describe("followDocument, the stations this page created", () => {
       needsNoGps: false,
       createdStations: [frame, other],
     });
+  });
+
+  // Why: each frame's routes were read against stand-ins for EVERY stored
+  // id, the frames that then failed to read among them. A frame routing
+  // to a sibling that does not read therefore read fine, the sibling was
+  // dropped, and the document kept a route to a station it no longer
+  // carried, which reached the written tour.json. A frame whose route
+  // names a lost sibling is lost with it (its objects are seated by the
+  // station rule as they come back), and so is one routing to that frame:
+  // no surviving frame routes to a station the record lost.
+  it("a frame routing to a created sibling that does not read is lost with it, and so is a frame routing to it", () => {
+    const started = writesFor(
+      opened,
+      act.placed({ object: far, what: "p", newStationId: "made" }),
+    );
+    const frame = settingsRecord(started.after).createdStations![0]!;
+    // B's latitude is stored as a string: B does not read.
+    const b = { ...frame, id: "b", geo: { ...frame.geo, lat: "48.53" } };
+    // A's quiz sends a right answer to B.
+    const a = {
+      ...frame,
+      id: "a",
+      steps: [
+        {
+          id: "q",
+          block: {
+            kind: "quiz",
+            question: "Which way?",
+            points: 1,
+            answer: { type: "number", value: 1, tolerance: 0 },
+            route: { correct: "b" },
+          },
+          advance: { mode: "tap" },
+        },
+      ],
+    };
+    // C goes on to A.
+    const c = { ...frame, id: "c", next: "a" };
+    const parsed = parseSettingsRecord(
+      JSON.stringify({ needsNoGps: false, createdStations: [frame, a, b, c] }),
+    );
+    expect(parsed).toEqual({ needsNoGps: false, createdStations: [frame] });
+    const kept = new Set(parsed?.createdStations?.map((f) => f.id));
+    for (const f of parsed?.createdStations ?? []) {
+      for (const target of routedTo(f)) expect(kept.has(target)).toBe(true);
+    }
   });
 
   it("a record whose created frames do not read keeps the rest", () => {

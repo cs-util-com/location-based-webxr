@@ -26,10 +26,12 @@ createdStations? }` (`stations`: `StationPose[]`, each station's
   not read (a bad station pose or detail costs the record, never the
   objects beside it). The created frames are read one by one as the
   format reads a station (`parseTourManifest`, without items, with a
-  stand-in for each sibling id so a route between them resolves); a frame
-  that does not read costs only itself - the objects naming it are seated
-  by the station rule as they come back - and of two under one id the
-  first is kept.
+  stand-in for each sibling that reads, so a route between them
+  resolves); of two under one id the first is kept. A frame that does not
+  read is lost - the objects naming it are seated by the station rule as
+  they come back - and so is every frame whose route names a lost one:
+  the frames are read again against the ones that read until none more
+  drops, so no kept frame routes to a created station the record lost.
 - `changedStations(wanted, against)` - the ids of `wanted`'s stations
   whose pose differs from `against`'s (by data, whatever its key order:
   `same-json.ts`); none without an opinion, none for a station `against`
@@ -97,7 +99,9 @@ const stop = store.listenToDocument({
   or across an open; the created stations' frames written by a placement
   that starts one (none for one that joins), read back as they were, and
   a record whose frames do not read keeping the rest, and one broken frame
-  among good ones costing only itself.
+  among good ones costing only itself; a frame routing to a broken
+  sibling lost with it, and one routing to that frame too, so no kept
+  frame routes to a lost station.
 - The record's reading and comparing, through both drafts:
   `editor/editor-draft.test.ts` and `creator-setup.test.ts` "the draft
   keeps a moved station's pose".
