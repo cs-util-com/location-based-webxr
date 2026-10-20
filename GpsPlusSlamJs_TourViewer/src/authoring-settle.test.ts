@@ -3145,6 +3145,68 @@ describe(
       expect(codePosition(a)?.movedWithCode).toHaveLength(1);
     });
 
+    /** The station frame the pin labelled `label` stands in. */
+    function stationOf(a: ReturnType<typeof authoring>, label: string) {
+      const pin = a.ctx.tourDocument
+        .entries()
+        .find((p) => p.object.kind === "pin" && p.object.label === label)!;
+      return a.ctx.tourDocument
+        .state()
+        .stations.find((s) => s.id === pin.object.station)!;
+    }
+
+    // Why these tests matter (characterization before the codes move into
+    // the store, plan 2026-10-20-1159 M3a/M3b): a settle that improves a
+    // code saves the code in the code book (`saveLevel`,
+    // creator-settle.ts:1028-1031) and moves the stations it takes along
+    // through the document (`moveStationsAlong`, :1385-1398), whose undo
+    // history the code book is not part of. An undo of that settle's last
+    // step puts the station back - that half holds today and must keep
+    // holding.
+    it("an undo of the settle's station move puts the station back", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      const before = stationOf(a, "near").geo;
+      a.endVisit();
+      expect(codePosition(a)?.applied).toBe(true);
+      expect(a.codes.savedText(stored.id), "the code improved").not.toBe(
+        stored.json,
+      );
+      expect(stationOf(a, "near").geo, "the code took it along").not.toEqual(
+        before,
+      );
+      expect(a.ctx.tourDocument.undo().kind).toBe("undone");
+      expect(stationOf(a, "near").geo).toEqual(before);
+    });
+
+    // TODAY'S SPLIT, a known divergence (`it.fails`, the convention of
+    // tour-document-parity.test.ts): the same undo leaves the improved
+    // code in place, so the station is back at the old code's spot while
+    // the code book still holds - and the next Finish writes - the new
+    // one. The code in hand's text wins in the book (`setBook`,
+    // creator-codes.ts:173-185), so nothing short of the undo itself can
+    // put the earlier text back. M3b's one-step settle with its undo
+    // listener turns this row red; then the marker comes off, the
+    // assertion stays as it is.
+    it.fails(
+      "an undo of the settle's station move takes the code's improvement back too [DIVERGES until: M3b, one undo step per settle]",
+      async () => {
+        const { a, stored } = await secondVisit({
+          yawDeg: 20,
+          northM: 3,
+          walkM: 30,
+        });
+        a.endVisit();
+        expect(a.codes.savedText(stored.id)).not.toBe(stored.json);
+        a.ctx.tourDocument.undo();
+        a.setup.renderAuthorReadout();
+        expect(a.codes.savedText(stored.id)).toBe(stored.json);
+      },
+    );
+
     // Why this test matters (code book plan M4b, the owner's choice after
     // the M3 sweep): an improved code took every pin within 40 m along,
     // including pins that belong to ANOTHER code nearby - dragging them off
