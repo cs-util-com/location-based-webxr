@@ -51,6 +51,7 @@ import { createEditorMap } from "./editor-map.js";
 import {
   createDebugCaptureLayer,
   decodeDebugThumbnail,
+  revokeDebugThumbnail,
   type DebugLayer,
 } from "./debug-capture-layer.js";
 import {
@@ -1205,6 +1206,7 @@ function startDebugLayer(opened: TourSession): void {
     status: (line) => {
       debugStatus.textContent = line;
     },
+    discard: revokeDebugThumbnail,
   });
   debugLayer = layer;
   void layer.start();

@@ -255,6 +255,15 @@ export const initialTourDocumentState: TourDocumentState = {
 
 // --- the pure rules ---------------------------------------------------------
 
+/** A file's tour as the document opens it (`opened`): without its debug
+ *  camera captures and the stations only they kept
+ *  (`withoutDebugCaptures`). The visitor's page reads a file's tour
+ *  through it too (`archive-open.ts`), so its start page, scan set and
+ *  download stop count what the document holds (debug-captures M1). */
+export function tourAsOpened(manifest: TourManifest): TourManifest {
+  return withoutDebugCaptures(manifest);
+}
+
 /** A manifest's stations without their items. */
 export function framesOf(manifest: TourManifest): StationFrame[] {
   return manifest.stations.map(({ items: _items, ...frame }) => frame);
@@ -1000,7 +1009,7 @@ const tourDocumentSlice = createSlice({
      *  without them and the stations only they kept
      *  (`withoutDebugCaptures`), so no page shows or writes them. */
     opened(state, action: PayloadAction<{ manifest: TourManifest }>) {
-      const manifest = withoutDebugCaptures(action.payload.manifest);
+      const manifest = tourAsOpened(action.payload.manifest);
       return {
         ...initialTourDocumentState,
         generation: state.generation + 1,

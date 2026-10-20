@@ -48,7 +48,11 @@ import { createEditorDraft } from "./editor/editor-draft.js";
 import { createEditorSession } from "./editor/editor-session.js";
 import type { EditorLock } from "./editor/save-target.js";
 import type { ObjectListHandlers } from "./object-list.js";
-import { openTourFile, type TourSession } from "./tour-session.js";
+import {
+  openTourFile,
+  tourFileKeyOfFile,
+  type TourSession,
+} from "./tour-session.js";
 import {
   createTourViewerSession,
   createTourViewerStore,
@@ -378,10 +382,13 @@ function phoneElement() {
 }
 
 /** What only the phone's page offers here: the file its last Finish
- *  made, and the objects its document holds. */
+ *  made, the objects its document holds, the draft offer's words (empty
+ *  while it offers nothing) and the key its draft is kept under. */
 interface PhonePage extends Page {
   lastFinished(): File;
   objects(): TourObject[];
+  offer(): string;
+  draftKey(): string | null;
 }
 
 async function phonePage(
@@ -531,6 +538,8 @@ async function phonePage(
       });
     },
     objects,
+    offer: () => dom.draftOfferText.textContent,
+    draftKey: () => draftKey,
     addedStations: () =>
       addedOf(
         (ctx.tourDocument.manifest()?.stations ?? []).map((s) => ({
@@ -1106,4 +1115,27 @@ describe("the phone's draft of a file-opened tour across Finishes", () => {
     },
     60_000,
   );
+
+  it("today: the second Finish's file is known by another key, so its open offers nothing", async () => {
+    // Why (debug-captures M1): the marked row above says only that the edit
+    // is not offered; this one pins WHY, plainly, so a change of the
+    // mechanism is seen here and not only as the marked row turning red.
+    // The file a Finish makes holds only what the tour kit writes, so its
+    // key hashes its tour.json, which every Finish rewrites.
+    const stores = memoryStores();
+    const file = await tourFile();
+    const page = await phonePage(file, stores);
+    await page.edit("a", "Before the first Finish");
+    await page.save();
+    await page.edit("b", "Before the second Finish");
+    const written = await page.save();
+    await page.edit("a", "After the second Finish");
+    const finished = page.lastFinished();
+    expect(await tourFileKeyOfFile(finished)).not.toBe(
+      await tourFileKeyOfFile(file),
+    );
+    const next = await phonePage(finished, stores, false, written);
+    expect(next.draftKey()).not.toBe(page.draftKey());
+    expect(next.offer()).toBe("");
+  }, 60_000);
 });

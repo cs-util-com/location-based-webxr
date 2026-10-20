@@ -22,6 +22,10 @@ import {
   sampleRecordingBytes,
 } from "./test-support/sample-recording.js";
 import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
+import {
+  createEmptyTourManifest,
+  type TourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { wireArchiveOpen, type ArchiveOpenDom } from "./archive-open.js";
 import {
@@ -340,6 +344,61 @@ describe("a creator's recording opens without its debug camera captures", () => 
     );
     const own = creatorSession["archive"] as { dispose: () => void };
     expect(own.dispose).not.toHaveBeenCalled();
+  });
+
+  it("shows a visitor the tour without the stations only its debug camera captures kept", async () => {
+    // Why (debug-captures M1): the document drops a file's debug camera
+    // captures and the automatic stations only they kept, but the
+    // visitor's start page, the scan set and the download stop read the
+    // file's own tour.json. A tour whose only station is such a one read
+    // as "1 place to discover" and kept downloading, while the visitor's
+    // AR found nothing to show: one rule for all three now.
+    const baked: TourManifest = {
+      ...createEmptyTourManifest(),
+      title: "Baked",
+      stations: [
+        {
+          id: "walk-1",
+          geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+          activateRadiusM: 40,
+          foundRadiusM: 10,
+          hint: "arrow",
+          steps: [],
+          items: [],
+        },
+      ],
+      captureSpots: {
+        fixes: 4,
+        gpsAccuracyMedianM: 3,
+        captures: [
+          {
+            image: "images/frame-0.png",
+            station: "walk-1",
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+          },
+        ],
+      },
+    };
+    const session = {
+      ...fakeSession("local-file:abc"),
+      loadTourManifest: () => Promise.resolve(baked),
+    };
+    mocks.openTourFile.mockResolvedValueOnce(session);
+    const { dom, hooks } = wire("visitor");
+    const shown: (TourManifest | null)[] = [];
+    hooks.presentTourInfo = (tour) => {
+      shown.push(tour?.manifest ?? null);
+    };
+    pick(dom, new File(["zip"], "baked.zip"));
+    await vi.waitFor(() =>
+      expect(hooks.presentDraftForTour).toHaveBeenCalled(),
+    );
+    expect(shown).toHaveLength(1);
+    expect(shown[0]?.title).toBe("Baked");
+    expect(shown[0]?.stations).toEqual([]);
+    expect(shown[0]?.captureSpots).toBeUndefined();
+    // A tour with no station left is not finished: nothing to download.
+    expect(session.archive.dispose).toHaveBeenCalledTimes(1);
   });
 });
 

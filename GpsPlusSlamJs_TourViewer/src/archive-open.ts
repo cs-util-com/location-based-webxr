@@ -60,6 +60,7 @@ import {
   scanEntryNames,
   stopsVisitorDownload,
 } from "./tour-read-set.js";
+import { tourAsOpened } from "./tour-document.js";
 
 /** The label on every button that opens a tour. "Open" until the second
  *  testing session (F6): nobody wants to open the zip, they want to know
@@ -472,11 +473,17 @@ export function wireArchiveOpen(deps: {
       // A broken manifest is an error the creator must see (the framework's
       // rule for this file), not a silently empty tour.
       /** The tour settles: the document opens `document` (what the
-       *  creator edits) while the page reads the file's own `manifest`. */
+       *  creator edits) while the page reads the file's own `manifest` -
+       *  without its debug camera captures and the stations only they
+       *  kept, as the document reads it (`tourAsOpened`, debug-captures
+       *  M1): the start page, the scan set and the download stop must not
+       *  count a station the visitor's AR never shows. */
       const settle = (
-        manifest: TourManifest | null,
+        fileManifest: TourManifest | null,
         document: TourManifest | null,
       ) => {
+        const manifest =
+          fileManifest === null ? null : tourAsOpened(fileManifest);
         // The creator's work made before the manifest settled (or before
         // any tour opened) comes along (scan-to-open plan §9 #5).
         ctx.tourDocument.open(document);

@@ -507,6 +507,60 @@ test("shows a walk's camera captures as debug data: a thumbnail each, out of rea
   await expect(page.locator("#save-status")).toHaveText("No changes");
 });
 
+test("frames the camera captures of a recording that has nothing else on the map", async ({
+  page,
+}) => {
+  // Why (debug-captures M1): a recording whose one code has no position yet
+  // (measured nowhere) has nothing to frame, so the map opened at the world
+  // view - and its debug captures, ten metres apart, drew as one dot
+  // somewhere over Europe. The map now frames the captures once they are
+  // drawn. (The code stays: the editor opens no zip without a tour.json or
+  // a code.)
+  const full = new ZipReader(
+    new Uint8ArrayReader(
+      new Uint8Array(
+        await (
+          await fetch("http://127.0.0.1:5197/ranges-ok/recording-tour.zip")
+        ).arrayBuffer(),
+      ),
+    ),
+  );
+  const entries = [];
+  for (const entry of await full.getEntries()) {
+    if (entry.directory) continue;
+    if (entry.filename.startsWith("qr/")) {
+      // The code without its stored position.
+      const level = JSON.parse(await entry.getData(new TextWriter()));
+      delete level.qr.geo;
+      entries.push({ path: entry.filename, data: JSON.stringify(level) });
+      continue;
+    }
+    entries.push({
+      path: entry.filename,
+      data: await entry.getData(new Uint8ArrayWriter()),
+    });
+  }
+  await full.close();
+  await page.goto("/edit.html");
+  await openThroughChooser(page, await zip(entries), "no-code.zip");
+  await expect(page.locator("#debug-status")).toHaveText(
+    "Debug data: 2 camera captures on the map.",
+  );
+  const markers = page.locator(".mk-debug-wrap");
+  await expect(markers).toHaveCount(2);
+  // At the world view the two would share a pixel; framed, they stand
+  // apart on the screen.
+  await expect
+    .poll(async () => {
+      const [a, b] = await Promise.all([
+        markers.nth(0).boundingBox(),
+        markers.nth(1).boundingBox(),
+      ]);
+      return a === null || b === null ? 0 : Math.hypot(a.x - b.x, a.y - b.y);
+    })
+    .toBeGreaterThan(20);
+});
+
 test("says why a walk shows no debug data, and shows no switch for a tour without a walk", async ({
   page,
 }) => {

@@ -231,6 +231,13 @@ different times (a walk's move lands only after the page wrote both files).
   step that brings back a photo the written file has no picture for needs
   the page's picture.
 - `framesOf(manifest)`.
+- `tourAsOpened(manifest)` - a file's tour as `opened` takes it:
+  without its debug camera captures and the stations only they kept
+  (`withoutDebugCaptures`). The visitor's page reads a file's tour through
+  it (`archive-open.ts`), so its start page, scan set and download stop
+  count what the document holds (debug-captures M1); a page outside the
+  document never imports `tour-content.ts`
+  (D31).
 - Module-internal (not exported: nothing outside the slice needs them, and
   the root dead-code check holds exports to their importers):
   `contentAt(written, view)`, `withFrames(written, frames, placed)`,

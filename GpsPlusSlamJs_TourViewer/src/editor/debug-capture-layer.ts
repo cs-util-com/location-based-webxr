@@ -62,6 +62,9 @@ export interface DebugLayerDeps<T> {
   readonly view: DebugLayerView<T>;
   /** The layer's status line. */
   status(line: string): void;
+  /** Free a thumbnail that reached no marker (its decode ended after the
+   *  tour closed): `revokeDebugThumbnail` in the page. */
+  discard(picture: T): void;
 }
 
 export interface DebugLayer {
@@ -121,7 +124,12 @@ export function createDebugCaptureLayer<T>(
       // more than one full-size picture decoded at once.
       for (const c of captures) {
         const picture = await thumbnailOf(c.image);
-        if (stopped) return;
+        if (stopped) {
+          // Decoded for a tour that closed meanwhile: no marker takes it,
+          // so nothing else would ever free its blob URL.
+          if (picture !== null) deps.discard(picture);
+          return;
+        }
         if (picture !== null) deps.view.thumb(c.image, picture);
       }
     },

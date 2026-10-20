@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 
 import type { DebugCapture, DebugCapturesRead } from "../debug-captures";
@@ -7,6 +7,7 @@ import {
   DEBUG_READING_LINE,
   debugDeclinedLine,
   debugShownLine,
+  revokeDebugThumbnail,
   type DebugLayerDeps,
 } from "./debug-capture-layer";
 
@@ -79,6 +80,9 @@ function harness(
     },
     status: (line) => {
       log.push(`status ${line}`);
+    },
+    discard: (picture) => {
+      log.push(`discard ${picture}`);
     },
     ...overrides,
   };
@@ -210,9 +214,48 @@ describe("the debug camera capture layer", () => {
     layerRef = layer;
     await layer.start();
     expect(decoded).toEqual(["images/frame-000000.jpg"]);
-    // The one in flight when it stopped lands nowhere either.
+    // The one in flight when it stopped lands nowhere either - and is
+    // discarded, so its blob URL does not outlive the tour. (Changed
+    // expectation, debug-captures M1: the last entry was the clear; the
+    // discard of the stranded thumbnail now follows it.)
     expect(log.filter((l) => l.startsWith("thumb"))).toEqual([]);
-    expect(log.at(-1)).toBe("clear");
+    expect(log.slice(-2)).toEqual([
+      "clear",
+      "discard thumb:images/frame-000000.jpg",
+    ]);
+  });
+
+  it("discards a thumbnail whose decode ends after the tour closed, and nothing else", async () => {
+    // Why (debug-captures M1): a thumbnail is a small image shown from a blob
+    // URL, which is the caller's to revoke. One still decoding when the
+    // tour closed was dropped with its URL alive for the page's life, so
+    // every tour closed during a long walk's decode leaked one.
+    let release: (() => void) | null = null;
+    const { layer, log } = harness(() => Promise.resolve(placed(2)), {
+      thumbnail: async (blob) => {
+        const text = await blob.text();
+        if (text.endsWith("000001.jpg")) {
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        }
+        return `thumb:${text}`;
+      },
+    });
+    const started = layer.start();
+    await vi.waitFor(() => {
+      expect(release).not.toBeNull();
+    });
+    layer.stop();
+    release!();
+    await started;
+    expect(log.filter((l) => l.startsWith("discard"))).toEqual([
+      "discard thumb:images/frame-000001.jpg",
+    ]);
+    // The first thumbnail reached the map, whose clear revokes it.
+    expect(log).toContain(
+      "thumb images/frame-000000.jpg thumb:images/frame-000000.jpg",
+    );
   });
 
   it("shows and hides its markers on the switch, also before they are drawn", async () => {
@@ -273,6 +316,39 @@ describe("the debug camera capture layer", () => {
         },
       ),
     );
+  });
+});
+
+describe("a thumbnail's blob URL", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** A stand-in image element: the one class `revokeDebugThumbnail` frees. */
+  class FakeImage {
+    src = "";
+  }
+
+  it("is revoked for a thumbnail image, and nothing else is touched", () => {
+    // Why (debug-captures M1): the map revokes a thumbnail's URL when its
+    // marker goes; a revoke that freed the wrong thing, or nothing, would
+    // leak one URL per capture per opened tour.
+    vi.stubGlobal("HTMLImageElement", FakeImage);
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {
+      // Nothing to free in a test.
+    });
+    const thumb = new FakeImage();
+    thumb.src = "blob:http://localhost/abc";
+    revokeDebugThumbnail(thumb as unknown as Element);
+    expect(revoke).toHaveBeenCalledWith("blob:http://localhost/abc");
+    revoke.mockClear();
+    // An image from anywhere else, and an element that is no image.
+    const other = new FakeImage();
+    other.src = "https://example.org/a.jpg";
+    revokeDebugThumbnail(other as unknown as Element);
+    revokeDebugThumbnail({ src: "blob:x" } as unknown as Element);
+    expect(revoke).not.toHaveBeenCalled();
   });
 });
 

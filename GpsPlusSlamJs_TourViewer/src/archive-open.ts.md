@@ -66,8 +66,11 @@ DOM glue, its own module since the flows plan M6.
     the origin says which form submitted, so an open started in step 4
     does not answer by collapsing step 4 - load the
     levels (with a `.catch`). Once the manifest settles,
-    `hooks.presentTourInfo({ manifest, loadImage })` gets it (`manifest`
-    null for a zip without `tour.json`) with a loader that reads an
+    `hooks.presentTourInfo({ manifest, loadImage })` gets it as the tour
+    document opens it (`tourAsOpened`: without the file's debug camera
+    captures and the stations only they kept, debug-captures M1;
+    `manifest` null for a zip without `tour.json`) with a loader that
+    reads an
     archive path from the open zip, and `null` when the session is torn
     down (the visitor's start page, which leads with the tour's name and
     cover). It resolves an `OpenOutcome` (`opened`,
@@ -185,7 +188,9 @@ DOM glue, its own module since the flows plan M6.
   walk therefore never decodes its frames; every other file still shows.
 - **A visitor's page stops the background download of a copy that kept
   the walk, and of a tour not finished yet** (`stopsVisitorDownload`,
-  visitor mode only, judged on the file's own manifest at the settle; a
+  visitor mode only, judged on the manifest as the document opens it at
+  the settle - a tour whose only stations were kept by debug camera
+  captures is not finished; a
   zip without `tour.json` is such a tour, so a creator's recording hosted
   before its first Finish is not fetched whole by every visitor):
   `archive.dispose()` aborts the warm, and the tour reads its entries by

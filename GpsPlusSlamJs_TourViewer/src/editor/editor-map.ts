@@ -146,19 +146,33 @@ export function createEditorMap(
     return item.kind === "code" ? CODE_Z : 0;
   }
 
+  /** The padding of a tour framed at the world view because nothing of it
+   *  has a position (a recording without codes or stations): its debug
+   *  captures, once drawn, are framed instead - once. Null otherwise. */
+  let framedEmpty: { left: number; top: number } | null = null;
+
+  function fit(
+    points: readonly { lat: number; lng: number }[],
+    padding: { left: number; top: number },
+  ): void {
+    map.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lng])), {
+      paddingTopLeft: [padding.left + 30, padding.top + 30],
+      paddingBottomRight: [60, 40],
+      maxZoom: 19,
+    });
+  }
+
   function frame(
     model: EditorModel,
     padding: { left: number; top: number },
   ): void {
     if (model.fitPoints.length === 0) {
+      framedEmpty = padding;
       map.setView(EMPTY_VIEW, 2);
       return;
     }
-    map.fitBounds(L.latLngBounds(model.fitPoints.map((p) => [p.lat, p.lng])), {
-      paddingTopLeft: [padding.left + 30, padding.top + 30],
-      paddingBottomRight: [60, 40],
-      maxZoom: 19,
-    });
+    framedEmpty = null;
+    fit(model.fitPoints, padding);
   }
 
   function addMarker(item: EditorItem, at: { lat: number; lng: number }): void {
@@ -300,10 +314,25 @@ export function createEditorMap(
         debugMarkers.set(c.image, dot);
       }
       if (debugShown) debugGroup.addTo(map);
+      // A tour with nothing to frame showed the world: the captures are
+      // then all there is to look at (debug-captures M1). Once per open, so a
+      // view the creator moved is never taken from them.
+      if (framedEmpty !== null && captures.length > 0) {
+        const padding = framedEmpty;
+        framedEmpty = null;
+        fit(
+          captures.map((c) => ({ lat: c.geo.lat, lng: c.geo.lon })),
+          padding,
+        );
+      }
     },
     debugThumb(image, picture) {
       const dot = debugMarkers.get(image);
-      if (dot === undefined) return;
+      // No marker to take it (the layer was cleared): its URL goes now.
+      if (dot === undefined) {
+        revokeDebugThumbnail(picture);
+        return;
+      }
       for (const child of dot.children) revokeDebugThumbnail(child);
       dot.classList.add("has-thumb");
       dot.replaceChildren(picture);

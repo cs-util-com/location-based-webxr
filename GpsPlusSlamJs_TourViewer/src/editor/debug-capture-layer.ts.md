@@ -24,6 +24,9 @@ save or the draft. The phone has no such layer
   - `deps.view` - `draw(captures)`, `thumb(image, picture)`,
     `visible(on)`, `clear()` (the editor map's `debug*` methods).
   - `deps.status(line)` - the layer's status line.
+  - `deps.discard(picture)` - frees a thumbnail no marker took: one whose
+    decode ended after `stop()` (the page passes `revokeDebugThumbnail`;
+    debug-captures M1).
   - `DebugLayer.start()` - says `DEBUG_READING_LINE`, reads, then draws
     one marker per capture, applies the switch, says `debugShownLine(n)`,
     and decodes a thumbnail per capture, one at a time, in capture order.
@@ -32,8 +35,9 @@ save or the draft. The phone has no such layer
     Settles when done or stopped; never rejects.
   - `DebugLayer.setVisible(on)` - the switch (also before the draw).
   - `DebugLayer.stop()` - the tour closed: the replay stops, no further
-    picture is read or decoded, nothing more lands in the view, and its
-    markers are removed. Idempotent.
+    picture is read or decoded, nothing more lands in the view (a
+    thumbnail decoded meanwhile goes to `discard`), and its markers are
+    removed. Idempotent.
 - `DEBUG_READING_LINE` ("Reading the debug data..."), `debugDeclinedLine`
   ("No debug data shown: <reason>."), `debugShownLine` ("Debug data: N
   camera captures on the map.").
@@ -44,8 +48,11 @@ save or the draft. The phone has no such layer
   re-encoded as a small JPEG and shown as a decorative `<img>` (`alt=""`)
   from a blob URL; the bitmap and the canvas are freed at once. Rejects
   when the decode or the encode fails.
-- `revokeDebugThumbnail(picture)` - frees a thumbnail's blob URL (the
-  editor map calls it for every thumbnail it drops or replaces).
+- `revokeDebugThumbnail(picture)` - frees a thumbnail's blob URL (an
+  `<img>` whose `src` is a `blob:` URL; anything else is left alone). The
+  editor map calls it for every thumbnail it drops, replaces or has no
+  marker for, and the layer's `discard` for one decoded after a stop: no
+  path leaves a thumbnail's URL alive past its tour.
 - Types: `DebugLayer`, `DebugLayerDeps` (its `view` is the module-internal
   `DebugLayerView`).
 
@@ -71,6 +78,10 @@ save or the draft. The phone has no such layer
   captures", "debug data".
 - **After the open**: the page starts it only once the tour is on screen,
   for a file that carries a walk, so the replay never holds up the open.
+- **Framed when nothing else is**: a tour with nothing on the map to frame
+  (a recording whose code has no position yet) opens at the world view;
+  the editor map frames the captures once they are drawn, once per open
+  (`editor-map.ts`, debug-captures M1).
 
 ## Examples
 
@@ -87,6 +98,7 @@ const layer = createDebugCaptureLayer<HTMLElement>({
     clear: map.debugClear,
   },
   status: (line) => (statusEl.textContent = line),
+  discard: revokeDebugThumbnail,
 });
 void layer.start();
 // later: layer.setVisible(false); layer.stop();
@@ -99,10 +111,13 @@ a thumbnail each) with at most one decode in flight; a decline and a
 throwing read ending in a decline line with nothing drawn; a picture over
 the cap and an unreadable one never decoded, their markers kept; a failing
 decode kept to its frame; a stop while reading (the replay told to stop,
-nothing drawn) and while decoding (no further decode, nothing lands); the
+nothing drawn) and while decoding (no further decode, nothing lands, the
+stranded thumbnail discarded); `revokeDebugThumbnail` freeing a blob
+thumbnail and nothing else; the
 switch before and after the draw; a property over any mix of readable,
 over-cap, unreadable and undecodable pictures (one marker each, a
 thumbnail for exactly the readable ones, in order); the lines never
 saying "photo". The page's use: `playwright-tests/editor.spec.js` ("shows
-a walk's camera captures as debug data ...", "says why a walk shows no
-debug data ...").
+a walk's camera captures as debug data ...", "frames the camera captures
+of a recording that has nothing else on the map", "says why a walk shows
+no debug data ...").

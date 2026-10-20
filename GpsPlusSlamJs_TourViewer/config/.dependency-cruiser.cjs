@@ -37,12 +37,19 @@ module.exports = {
     // The walk's camera captures are debug data, shown only in the desktop
     // editor's debug layer (`src/editor/debug-capture-layer.ts`, M1 of the
     // debug-captures plan): no phone or visitor module places them, so
-    // none reaches the join that does.
+    // none reaches the join that does - neither its entry
+    // (`debug-captures.ts`) nor the join underneath it
+    // (`capture-geo-join.ts`), which only that entry imports (a phone
+    // module importing the join directly passed the rule before it named
+    // both).
     {
       name: "debug-captures-editor-only",
       severity: "error",
-      from: { path: "^src/[^/]+\\.ts$", pathNot: "\\.test\\.ts$" },
-      to: { path: "^src/debug-captures\\.ts$" },
+      from: {
+        path: "^src/[^/]+\\.ts$",
+        pathNot: ["\\.test\\.ts$", "^src/debug-captures\\.ts$"],
+      },
+      to: { path: "^src/(debug-captures|capture-geo-join)\\.ts$" },
     },
 
     // The tour a creator edits has ONE copy: the tour document
