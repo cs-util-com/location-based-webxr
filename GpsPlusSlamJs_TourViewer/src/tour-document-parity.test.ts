@@ -177,6 +177,24 @@ interface Page {
   /** A new page load over the same file and the same draft, restoring
    *  what the draft offers. */
   reopenRestored(): Promise<Page>;
+  /** The stations the page holds now that the opened tour lacks: id and
+   *  position, sorted by id. */
+  addedStations(): AddedStation[];
+}
+
+interface AddedStation {
+  readonly id: string;
+  readonly lat: number;
+  readonly lon: number;
+}
+
+/** `stations` minus the opened tour's, as `addedStations` reports them. */
+function addedOf(stations: readonly AddedStation[]): AddedStation[] {
+  const opened = new Set(tourOf(OPENED).stations.map((s) => s.id));
+  return stations
+    .filter((s) => !opened.has(s.id))
+    .map(({ id, lat, lon }) => ({ id, lat, lon }))
+    .sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /** The phone's Finish found nothing to save: it would not start. */
@@ -281,6 +299,17 @@ async function desktopPage(
     save: async () => (await editor.save({ keepScan: false })).written,
     records: async () => readRecords(await stores(key), false),
     reopenRestored: () => desktopPage(file, stores, true),
+    addedStations: () =>
+      addedOf(
+        editor
+          .model()
+          .items.filter((item) => item.kind === "station")
+          .map((item) => ({
+            id: item.id.slice("station:".length),
+            lat: item.at?.lat ?? Number.NaN,
+            lon: item.at?.lng ?? Number.NaN,
+          })),
+      ),
   };
 }
 
@@ -484,6 +513,14 @@ async function phonePage(
       return readRecords(await stores(draftKey), true);
     },
     reopenRestored: () => phonePage(file, stores, true),
+    addedStations: () =>
+      addedOf(
+        (ctx.tourDocument.manifest()?.stations ?? []).map((s) => ({
+          id: s.id,
+          lat: s.geo.lat,
+          lon: s.geo.lon,
+        })),
+      ),
   };
 }
 
@@ -685,15 +722,21 @@ const ROWS: readonly Row[] = [
   {
     // Why: the station a move started is the document's from that moment,
     // not the next write's, so the draft must keep it: after a reload the
-    // note comes back in its own station at its own spot, on both pages.
-    // (A placement's reload is the phone's alone - the desktop places
-    // nothing a draft offers back - and is held by the creator document's
-    // tests and the phone's end-to-end run.)
+    // note comes back in THAT station (same id, same spot), on both pages,
+    // not in one the rule seats it in again under a new id - which the
+    // written items alone cannot tell apart. (A placement's reload is the
+    // phone's alone - the desktop places nothing a draft offers back - and
+    // is held by the creator document's tests and the phone's end-to-end
+    // run.)
     name: "move a note out of its station's radius, reload and restore the draft, save",
     records: false,
     run: async (p) => {
       await p.move("a", NORTH, 9.0502);
-      return p.reopenRestored();
+      const before = p.addedStations();
+      expect(before).toHaveLength(1);
+      const after = await p.reopenRestored();
+      expect(after.addedStations()).toEqual(before);
+      return after;
     },
     each: ({ written }) => {
       expect(itemsByStation(written)).toEqual({

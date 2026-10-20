@@ -271,6 +271,16 @@ phone reads its STATION POSES and its CREATED STATIONS back:
   its commit lands). "Delete it" drops them only once its rejection
   landed: a rejection that did not land leaves the draft, poses and all,
   for a later rename to carry (L3).
+- **Undecided created stations ride along too**, in the same holder
+  (`created`: the stored record's created stations the opened tour
+  lacks). A live record names only this page's own created stations, and
+  a page holding one writes its record live (`settingsLive`) - so without
+  this a placement that starts a station, or the open's own live write,
+  replaced the stored record's created stations before the draft was
+  restored, and a later Restore seated its objects by the rule under new
+  ids. Each write adds the stored frames whose ids the record lacks (the
+  page's own frame of an id wins, `withCreated`); Restore, a landed
+  "Delete it" and a spent draft's sweep clear them.
 - **Removed** with a spent draft (after its meta commit) and by "Delete
   it" (after the rejection lands), unless this page changed the settings
   since the open - then "Delete it" rewrites the live record without the

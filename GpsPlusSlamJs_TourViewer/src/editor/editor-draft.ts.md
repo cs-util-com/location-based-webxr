@@ -34,6 +34,15 @@ editor's own namespace, one tab at a time. Design:
     tour document milestone's review #1) as they stand now: the
     `settings` record is written while it differs from the file on disk
     (or from a build's value), removed once it does not; whether it landed.
+    The record may also hold `createdStations`: a station the page created
+    (whole frames at their current poses: a note moved beyond its station's
+    radius starts one) that the compared file does not carry counts as a
+    difference, so a record holding nothing else is kept: the draft's
+    notes name it, and without it a reload would seat them again by the
+    station rule under a new id. Such a record is offered only beside a
+    note it can seat, names nothing in the offer's words (it is not a
+    change of its own; `settingsWhat` is then absent, and `restoredLine`
+    speaks of the notes alone), and goes at an open with no note to offer.
   - `writes(): EditorTourDraft` - those five, and `built` and `landed`
     below, bound to the tour open NOW, which the page gives the editor
     session and its saves: once another tour opens they are dropped

@@ -2437,6 +2437,51 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
 
     expect(storedPose(files), "the pose is still the draft's").toEqual(MOVED);
   });
+
+  it("keeps the stored draft's created stations through a live write before it is restored", async () => {
+    // Why: a placement beyond every station's radius starts a station the
+    // opened tour lacks, and the draft keeps it whole (`createdStations`)
+    // so a reload puts the pin back in THAT station. A live write before
+    // the offer is answered ("Not now", or working on) rewrote the record
+    // from the page's own document, which knows only ITS created
+    // stations - the stored ones were gone from disk, and the next
+    // reload's Restore seated the pins by the rule under new ids.
+    const far = (id: string, lat: number): TourObject => ({
+      ...pin(id),
+      geo: { ...pin(id).geo, lat },
+    });
+    const stationOf = (page: ReturnType<typeof wire>, id: string) =>
+      page.ctx.tourDocument.objects().find((o) => o.object.id === id)?.object
+        .station;
+    const createdIds = (files: Map<string, unknown>) =>
+      (
+        JSON.parse(String(files.get(SETTINGS_KEY))) as {
+          createdStations?: { id: string }[];
+        }
+      ).createdStations?.map((f) => f.id) ?? [];
+    const { store, files } = memoryStore(metaOnly());
+    const first = await opened(store);
+    first.ctx.tourDocument.place(far("far1", 47.51), {}, "a pin");
+    await settle();
+    const s1 = stationOf(first, "far1");
+    expect(s1, "the pin started a station").toBeDefined();
+    expect(createdIds(files)).toEqual([s1]);
+
+    // A reload: the offer stands unanswered while a new pin starts another
+    // station - a live write of the settings record.
+    const second = await opened(store);
+    expect(second.dom.draftOffer.hidden, "the pin is offered").toBe(false);
+    second.ctx.tourDocument.place(far("far3", 47.52), {}, "a pin");
+    await settle();
+    const s3 = stationOf(second, "far3");
+    expect([...createdIds(files)].sort()).toEqual([s1, s3].sort());
+
+    // Another reload, and Restore: the first pin is back in its station.
+    const third = await opened(store);
+    third.dom.draftRestore.click();
+    await settle();
+    expect(stationOf(third, "far1")).toBe(s1);
+  });
 });
 
 // Why (owner decision D8 of the editor round-2 plan, 2026-10-18): places
