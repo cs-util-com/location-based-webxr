@@ -13,9 +13,9 @@
  * rule reads it as `'none'`: nothing is found there, presence holds (and a
  * station a code made present ends with the code), and the line asks for a
  * code. The exception streams are frozen too: they must match the old
- * guide up to their first exception tick, and are then held to that. An oracle frozen
- * first, not a test written with the change (CLAUDE.md: tests written with
- * the code confirm its bugs).
+ * guide on every tick outside their exception window, and inside it are
+ * held to that rule. An oracle frozen first, not a test written with the
+ * change (CLAUDE.md: tests written with the code confirm its bugs).
  *
  * The streams drive the guide through the page's own `visitorPosition`
  * (the store's GPS points, the alignment, the AR pose, the zero) and the
@@ -24,11 +24,16 @@
  * does not end by the clock, P-D6), an odometry-frame change and a veto
  * (the code's trust ends), codes-only, a GPS gap (a stale fix), lone fixes
  * (one outlier hiding behind the median), a tracking drop with and without
- * a code (the review's S2), GPS too weak to guide by, and leaving AR. A
- * code's synthetic readings are mixed into the store wherever a code
- * votes, so a rule that read them as device fixes would differ.
+ * a code (the review's S2), GPS too weak to guide by, a code holding while
+ * GPS is above the ceiling (a courtyard), and leaving AR. A code's
+ * synthetic readings are mixed into the store wherever a code votes, so a
+ * rule that read them as device fixes would differ.
  *
  * The outputs live in `__golden__/station-guide-precision.golden.json`.
+ * Two streams came after the switch (`courtyard-code-weak-gps`,
+ * `codes-only-trust-ended-early`); their outputs were recorded by running
+ * this file against the guide's sources as they were before it (commit
+ * 183f03d2), which reproduced every earlier stream exactly.
  * Regenerate ONLY when a guide output is meant to change, say why in the
  * commit, and never in CI:
  * `GOLDEN_UPDATE=1 pnpm run test:unit src/station-guide.parity.test.ts`.
@@ -469,6 +474,22 @@ const PARITY: readonly Scenario[] = [
       endSession: t === 60,
     }),
   },
+  {
+    // A courtyard: a code holds the museum while every device fix reads
+    // ±35 m, above the ceiling. The code's position is trusted and guides
+    // (the device fixes never make it too weak); when its trust ends (an
+    // odometry-frame change at 100 s) the same GPS is too weak to guide by.
+    name: "courtyard-code-weak-gps",
+    stations: MUSEUM,
+    seconds: 140,
+    input: (t) => ({
+      ...base(museumPath(t)),
+      fixAccuracyM: 35,
+      votes: t >= 3 && t < 100 ? 2 : 0,
+      lined: t >= 3 && t < 100,
+      tracking: t >= 20,
+    }),
+  },
 ];
 
 /**
@@ -556,6 +577,21 @@ const EXCEPTION: readonly Scenario[] = [
       tracking: false,
     }),
   },
+  {
+    // As `codes-only-trust-ended`, but the code's trust ends at 30 s with
+    // exhibits still unfound (m3, m4): a guide that judged the position
+    // nothing vouches for would find them by the radius alone.
+    name: "codes-only-trust-ended-early",
+    stations: MUSEUM,
+    seconds: 90,
+    input: (t) => ({
+      ...base(museumPath(t)),
+      fixAccuracyM: null,
+      aligned: t >= 3,
+      votes: t >= 3 && t < 30 ? 2 : 0,
+      lined: t >= 3 && t < 30,
+    }),
+  },
 ];
 
 describe("the station guide's precision parity oracle (frozen before M2's switch)", () => {
@@ -614,6 +650,21 @@ describe("the station guide's precision parity oracle (frozen before M2's switch
     const weak = now["weak-gps"]!;
     expect(weak.slice(30, 45).some((r) => r.present !== null)).toBe(true);
     expect(weak.slice(55, 70).every((r) => r.present === null)).toBe(true);
+    // A code guides through GPS above the ceiling (a courtyard): it finds
+    // exhibits and never calls the GPS too weak; once its trust ends the
+    // same GPS is too weak to guide by.
+    const courtyard = now["courtyard-code-weak-gps"]!;
+    expect(
+      courtyard.slice(3, 100).flatMap((r) => r.found).length,
+    ).toBeGreaterThanOrEqual(3);
+    expect(
+      anyMatch(lines("courtyard-code-weak-gps").slice(3, 100), /too weak/),
+    ).toBe(false);
+    expect(
+      lines("courtyard-code-weak-gps")
+        .slice(100)
+        .every((l) => /GPS too weak to guide you \(±35 m\)/.test(l)),
+    ).toBe(true);
   });
 
   it(`reproduces every tick of ${String(PARITY.length + EXCEPTION.length)} frozen streams`, () => {
@@ -631,17 +682,36 @@ describe("the station guide's precision parity oracle (frozen before M2's switch
     expect(Object.keys(frozen).sort()).toEqual(
       [...PARITY, ...EXCEPTION].map((s) => s.name).sort(),
     );
+    let afterWindow = 0;
     for (const s of [...PARITY, ...EXCEPTION]) {
       const want = frozen[s.name]!;
       const got = now[s.name]!;
       expect(got).toHaveLength(want.length);
       // An exception stream is held to the old guide up to its first
-      // exception tick; from there the next test holds it.
-      const until = exceptionTicks(s)[0] ?? want.length;
+      // exception tick; the window itself is the next test's.
+      const ticks = exceptionTicks(s);
+      const until = ticks[0] ?? want.length;
       for (let t = 0; t < until; t += 1) {
         expect(got[t], `${s.name} t=${String(t)}`).toEqual(want[t]);
       }
+      if (ticks.length === 0) continue;
+      // After the window every tick is the old guide's again, presence
+      // included. Presence is the one field the window could carry over:
+      // the old guide kept a station a code made present through it, the
+      // shared rule ends that station there. On these streams the code's
+      // return (a rescan, a new entry's lock) re-judges both from the same
+      // position at once, so they meet on the first tick after the window;
+      // a stream where they did not would need its own named exception.
+      for (let t = ticks.at(-1)! + 1; t < want.length; t += 1) {
+        expect(got[t], `${s.name} t=${String(t)} (after the window)`).toEqual(
+          want[t],
+        );
+        afterWindow += 1;
+      }
     }
+    // Two streams come back from the exception (a rescan, a new entry's
+    // lock): the comparison after the window is not vacuous.
+    expect(afterWindow).toBeGreaterThan(0);
   });
 
   // Why this test matters (plan §12, S3): it is the ONE place the shared
@@ -695,6 +765,15 @@ describe("the station guide's precision parity oracle (frozen before M2's switch
         );
       }
     }
+    // "Finds nothing" can fail: when the early stream's trust ends two
+    // exhibits are still unfound, and the old guide found both on the
+    // position nothing vouched for, by the radius alone.
+    const early = EXCEPTION.find(
+      (s) => s.name === "codes-only-trust-ended-early",
+    )!;
+    expect(
+      exceptionTicks(early).flatMap((t) => frozen[early.name]![t]!.found),
+    ).toEqual(["m3", "m4"]);
     // A station a code made present ends with the code; a rescan (100 s)
     // brings guidance back.
     const ended = now["codes-only-trust-ended"]!;

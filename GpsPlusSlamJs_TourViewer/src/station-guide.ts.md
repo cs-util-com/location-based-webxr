@@ -385,13 +385,17 @@ store.subscribe(() => guide.tick());
 - `station-guide.parity.test.ts` - the switch to the framework's
   precision rule held to a golden oracle frozen before it
   (`__golden__/station-guide-precision.golden.json`; regenerate only with
-  `GOLDEN_UPDATE=1`, refused in CI): ten streams (a code's hold, its fade,
-  an odometry-frame change, a veto, codes only, a GPS gap, lone outlier
-  fixes, a tracking drop, weak GPS, a re-entry on GPS) give the same line,
-  skip, finds, presence, HUD, approach and breadcrumbs at every tick; four
-  streams of the named exception agree up to its first tick, and on it
-  find nothing, hold or end presence, keep the widest bands and ask for a
-  code.
+  `GOLDEN_UPDATE=1`, refused in CI): eleven streams (a code's hold, its
+  fade, an odometry-frame change, a veto, codes only, a GPS gap, lone
+  outlier fixes, a tracking drop, weak GPS, a re-entry on GPS, a code
+  holding while GPS is above the ceiling) give the same line, skip, finds,
+  presence, HUD, approach and breadcrumbs at every tick; five streams of
+  the named exception agree on every tick outside its window, and on it
+  find nothing (one with exhibits still unfound when the code's trust
+  ends, which the old guide found there), hold or end presence, keep the
+  widest bands and ask for a code. The two streams added after the switch
+  were recorded from the pre-switch sources (183f03d2), which reproduced
+  every earlier stream exactly.
 - `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
   tracking-quality slice (L3).
 - `playwright-tests/stations.spec.js` - the whole flow on the page.
