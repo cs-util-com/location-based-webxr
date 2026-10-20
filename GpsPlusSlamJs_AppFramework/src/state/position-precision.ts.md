@@ -51,9 +51,10 @@ number | null, tooWeak: boolean }`.
   a lone fix, the worse of that median and the fix's own. A code never
   vouches for a lone raw fix.
   - Known: `'gps'`, too weak when above the ceiling (equal still guides).
-  - Unknown (no device fix states an accuracy): `'none'` - with no code
-    nothing speaks for the position's precision (codes-only mode once a
-    code's hold ended).
+  - Unknown (no stored device fix states an accuracy and, for a lone fix,
+    neither does the fix itself): `'none'` - with no code nothing speaks for
+    the position's precision (codes-only mode once a code's hold ended). A
+    lone fix stating its own accuracy is `'gps'` by it.
 - `tooWeak` is true for `'none'` too, so a reader that checks only
   `tooWeak` never guides on nothing. **On `'none'` it is a fail-safe, not
   a verdict on GPS:** a tracking drop or location permission off reads the

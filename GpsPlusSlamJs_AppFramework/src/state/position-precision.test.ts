@@ -239,6 +239,21 @@ describe('position precision: one judgement of how precise a position is', () =>
       ).toEqual(NONE);
     }
   });
+
+  // Why this test matters: "none" needs BOTH missing - no stored device fix
+  // stating an accuracy AND, for a lone fix, none of its own. A lone fix
+  // that states its own accuracy is judged by it (the module's header said
+  // otherwise at first; this pins the rule the code follows).
+  it('judges a lone fix by its own accuracy when no stored device fix states one', () => {
+    expect(
+      positionPrecision({
+        position: 'lone-fix',
+        codeHold: false,
+        gpsPoints: [synthetic(0.5), device(undefined)],
+        loneFixAccuracyM: 7,
+      })
+    ).toEqual({ source: 'gps', accuracyM: 7, tooWeak: false });
+  });
 });
 
 describe('canTellApart: can a position tell two targets this far apart', () => {

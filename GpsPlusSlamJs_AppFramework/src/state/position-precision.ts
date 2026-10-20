@@ -16,8 +16,10 @@
  *   their own, and mixed in they would report a phone in an urban canyon as
  *   precise. A lone raw fix standing in for the position is judged by the
  *   worse of that median and its own accuracy.
- * - **Nothing to judge** is `'none'`: no position, or no code and no device
- *   fix that states an accuracy (codes-only mode once a code's hold ended).
+ * - **Nothing to judge** is `'none'`: no position, or no code and no
+ *   accuracy to judge by - no stored device fix states one and, for a lone
+ *   fix, neither does the fix itself (codes-only mode once a code's hold
+ *   ended).
  *
  * Which position an app judges (the aligned camera, a fresh lone fix, or
  * none) and its targets' geometry stay the app's; this module knows nothing
