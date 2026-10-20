@@ -2,17 +2,7 @@
 
 ## [Unreleased]
 
-### Added
-
-- **`TourManifest.tourId`**: an optional id a tour carries in its
-  `tour.json`, minted once by the app that first saves the tour and kept
-  by every save, so a tour opened from a file keeps one key across saves.
-  Read when it follows the one id rule (`TOUR_ID_PATTERN`) and dropped
-  otherwise, at every minor; the writer refuses a bad one. No new minor:
-  older readers ignore the field and older writers drop it, which costs
-  only that key.
-
-### Removed
+### ⚠️ Breaking changes
 
 - **`captureSpots` and its types**: `TourManifest.captureSpots`,
   `TourCaptureSpots`, `TourCapture`, `TourCaptureGeo` and
@@ -22,6 +12,16 @@
   shape; the stations it named stay as written), and the writer never
   writes it. This breaks the API and still ships in a minor release, by
   decision, because no tours exist yet that carry the field.
+
+### Added
+
+- **`TourManifest.tourId`**: an optional id a tour carries in its
+  `tour.json`, minted once by the app that first saves the tour and kept
+  by every save, so a tour opened from a file keeps one key across saves.
+  Read when it follows the one id rule (`TOUR_ID_PATTERN`) and dropped
+  otherwise, at every minor; the writer refuses a bad one. No new minor:
+  older readers ignore the field and older writers drop it, which costs
+  only that key.
 
 ### Fixed
 
