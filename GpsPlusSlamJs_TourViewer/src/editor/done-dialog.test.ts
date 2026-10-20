@@ -15,9 +15,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DRIVE_MOUNT_TIP_SHOWN,
   MOVE_LABELS,
+  SAVE_DEBUG_LABELS,
   doneWords,
   wireDoneDialog,
   type DoneDialogDom,
+  type DebugSaveOutcome,
   type DoneFacts,
   type WalkMoveOutcome,
 } from "./done-dialog.js";
@@ -27,7 +29,17 @@ const IN_PLACE: DoneFacts = {
   saved: { kind: "in-place", name: "castle.zip" },
   host: "drive",
   carriesWalk: true,
+  debugLeftOut: false,
   driveMountTip: false,
+};
+
+/** A download that left the opened file's walk out (M2 of the
+ *  debug-captures plan). */
+const LEAN: DoneFacts = {
+  ...IN_PLACE,
+  saved: { kind: "downloaded", name: "castle (1).zip" },
+  carriesWalk: false,
+  debugLeftOut: true,
 };
 
 describe("doneWords", () => {
@@ -111,6 +123,27 @@ describe("doneWords", () => {
     });
   });
 
+  it("offers to save the debug data apart only when a save left it out of a file that carried it", () => {
+    // Why (M2 of the debug-captures plan, review #9): a save as a new file
+    // leaves the walk out by default, so the copy the creator keeps may be
+    // the only one - the opened file still carries the walk, and Done is
+    // where the creator is told to keep it apart.
+    const words = doneWords(LEAN);
+    expect(words.walk).toBeNull();
+    expect(words.debugSave).toMatch(
+      /castle \(1\)\.zip leaves out your debug data/,
+    );
+    expect(words.debugSave).toMatch(/GPS track/);
+    expect(words.debugSave).toMatch(/camera captures/);
+    expect(words.debugSave).toMatch(/file you opened still carries it/);
+    expect(words.debugSave).toMatch(/Save the debug data/);
+    expect(doneWords({ ...LEAN, debugLeftOut: false }).debugSave).toBeNull();
+    // A file that still carries the walk is offered the move, not this.
+    expect(doneWords({ ...LEAN, carriesWalk: true }).debugSave).toBeNull();
+    expect(doneWords({ ...LEAN, carriesWalk: "unknown" }).debugSave).toBeNull();
+    expect(doneWords(IN_PLACE).debugSave).toBeNull();
+  });
+
   it("keeps the Drive-mount tip hidden by default, and the switch shows it for a Drive tour saved in place only", () => {
     // Review #10: the tip waits for the owner's check that a write through
     // the mount keeps the Drive file id. The switch is off in the module.
@@ -143,7 +176,11 @@ function el() {
   };
 }
 
-function wire(move: () => Promise<WalkMoveOutcome>) {
+function wire(
+  move: () => Promise<WalkMoveOutcome>,
+  saveDebug: () => Promise<DebugSaveOutcome> = () =>
+    Promise.resolve({ kind: "cancelled" }),
+) {
   const dom = {
     backdrop: el(),
     where: el(),
@@ -153,11 +190,16 @@ function wire(move: () => Promise<WalkMoveOutcome>) {
     walk: el(),
     walkText: el(),
     moveButton: el(),
+    saveDebugButton: el(),
     moveStatus: el(),
     driveTip: el(),
     close: el(),
   };
-  const deps = { moveWalk: vi.fn(move), onClose: vi.fn() };
+  const deps = {
+    moveWalk: vi.fn(move),
+    saveDebugData: vi.fn(saveDebug),
+    onClose: vi.fn(),
+  };
   const dialog = wireDoneDialog({
     dom: dom as unknown as DoneDialogDom,
     ...deps,
@@ -166,6 +208,90 @@ function wire(move: () => Promise<WalkMoveOutcome>) {
 }
 
 describe("wireDoneDialog", () => {
+  it("shows the save of the debug data, not the move, after a save that left it out", () => {
+    const { dom, dialog } = wire(() => Promise.resolve({ kind: "cancelled" }));
+    dialog.open(LEAN);
+    expect(dom.walk.hidden).toBe(false);
+    expect(dom.walkText.textContent).toBe(doneWords(LEAN).debugSave);
+    expect(dom.moveButton.hidden).toBe(true);
+    expect(dom.saveDebugButton.hidden).toBe(false);
+    expect(dom.saveDebugButton.textContent).toBe(SAVE_DEBUG_LABELS.idle);
+    dialog.close();
+    // A file that carries the walk: the move, and no save.
+    dialog.open(IN_PLACE);
+    expect(dom.moveButton.hidden).toBe(false);
+    expect(dom.saveDebugButton.hidden).toBe(true);
+  });
+
+  it("saves the debug data: in progress while it runs, then says where it went, and offers it again", async () => {
+    // Why (the async-UI rule): the save reads the opened file and writes a
+    // second zip, which takes a while; the dialog may not close under it.
+    let finish!: (outcome: DebugSaveOutcome) => void;
+    const { dom, deps, dialog } = wire(
+      () => Promise.resolve({ kind: "cancelled" }),
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    dialog.open(LEAN);
+    dom.saveDebugButton.fire("click");
+    expect(deps.saveDebugData).toHaveBeenCalledTimes(1);
+    expect(dom.saveDebugButton.disabled).toBe(true);
+    expect(dom.saveDebugButton.textContent).toBe(SAVE_DEBUG_LABELS.saving);
+    expect(dom.close.disabled).toBe(true);
+    dialog.close();
+    expect(dom.backdrop.hidden).toBe(false);
+    // A second click while it runs starts nothing.
+    dom.saveDebugButton.fire("click");
+    expect(deps.saveDebugData).toHaveBeenCalledTimes(1);
+    finish({ kind: "saved", name: "castle-debug.zip" });
+    await vi.waitFor(() => {
+      expect(dom.moveStatus.textContent).toBe(
+        "The debug data is in castle-debug.zip - keep that file.",
+      );
+    });
+    expect(dom.saveDebugButton.disabled).toBe(false);
+    expect(dom.saveDebugButton.textContent).toBe(SAVE_DEBUG_LABELS.again);
+    expect(dom.close.disabled).toBe(false);
+    expect(deps.moveWalk).not.toHaveBeenCalled();
+  });
+
+  it("says a refusal, a dismissed save and a thrown save, and gives the button back", async () => {
+    // Factories: a rejection made before its turn would go unhandled.
+    for (const [outcome, said] of [
+      [
+        () =>
+          Promise.resolve<DebugSaveOutcome>({
+            kind: "refused",
+            reason: "The file you opened can no longer be read.",
+          }),
+        "The file you opened can no longer be read.",
+      ],
+      [
+        () => Promise.resolve<DebugSaveOutcome>({ kind: "cancelled" }),
+        "Nothing was saved: the debug data's file was not saved.",
+      ],
+      [
+        () => Promise.reject<DebugSaveOutcome>(new Error("disk full")),
+        "The debug data was not saved: disk full",
+      ],
+    ] as const) {
+      const { dom, dialog } = wire(
+        () => Promise.resolve({ kind: "cancelled" }),
+        outcome,
+      );
+      dialog.open(LEAN);
+      dom.saveDebugButton.fire("click");
+      await vi.waitFor(() => {
+        expect(dom.moveStatus.textContent).toBe(said);
+      });
+      expect(dom.saveDebugButton.disabled).toBe(false);
+      expect(dom.saveDebugButton.textContent).toBe(SAVE_DEBUG_LABELS.idle);
+      expect(dom.close.disabled).toBe(false);
+    }
+  });
+
   it("opens with the facts' words, the host chosen, and the walk section only while the file carries it", () => {
     const { dom, dialog } = wire(() => Promise.resolve({ kind: "cancelled" }));
     dialog.open(IN_PLACE);

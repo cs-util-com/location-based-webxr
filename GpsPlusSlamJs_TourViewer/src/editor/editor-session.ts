@@ -16,7 +16,11 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import { tourCoverEntry } from "gps-plus-slam-app-framework/ar/tour-details";
-import { buildDebugBundle, type DebugBundleTour } from "../debug-bundle.js";
+import {
+  buildDebugBundle,
+  type DebugBundleBuilt,
+  type DebugBundleTour,
+} from "../debug-bundle.js";
 import { scanEntryNames } from "../tour-read-set.js";
 import type { DraftObjectWrites } from "../draft-actions.js";
 import type { TourSession } from "../tour-session.js";
@@ -278,6 +282,12 @@ export interface EditorSession {
    *  refused, in words, when there is no walk. Bringing a walk back is a
    *  later feature. */
   moveWalkOut(): Promise<WalkMove | EditorRefusal>;
+  /** The debug data of the OPENED file as a debug bundle (M2 of the
+   *  debug-captures plan, review #9: "Save the debug data" after a save
+   *  that left the walk out - the newest bytes then carry none, and the
+   *  move refuses), queued with the saves; refused, in words, when the
+   *  opened file carries no walk. Changes nothing of the session. */
+  debugData(): Promise<DebugBundleBuilt>;
 }
 
 export function createEditorSession(input: {
@@ -746,6 +756,21 @@ export function createEditorSession(input: {
     },
     moveWalkOut() {
       return dispatchThunk(store, saves.queued(buildWalkMove));
+    },
+    debugData() {
+      return dispatchThunk(
+        store,
+        saves.queued(async (): Promise<DebugBundleBuilt> => {
+          if (mine() === null)
+            return { kind: "refused", reason: TOUR_REPLACED };
+          // The opened file is untrusted: read under the session's budget.
+          return buildDebugBundle(
+            await session.readWholeArchive(),
+            debugTour(written()),
+            { budget: session.budget },
+          );
+        }),
+      );
     },
   };
 

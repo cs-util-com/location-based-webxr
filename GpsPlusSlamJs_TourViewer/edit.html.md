@@ -60,7 +60,9 @@ AR (tour editor plan 2026-10-17-1816, W1).
   `edit-main.ts`) with `#done-update`, `#done-public`, `#done-drive-tip`
   (hidden: `DRIVE_MOUNT_TIP_SHOWN` is off until the owner's check),
   `#done-walk` (only while the file carries the walk: `#done-walk-text`,
-  `#done-move` "Move the debug data out", `#done-move-status`), a Privacy link
+  `#done-move` "Move the debug data out", `#done-save-debug` "Save the
+  debug data" after a save that left it out, `#done-move-status`), a
+  Privacy link
   (`legal.html#privacy`) and Close. Above the toasts (z-index).
 - `#toasts` - "Opened <file>: N codes, M notes".
 

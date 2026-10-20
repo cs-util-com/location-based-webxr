@@ -75,6 +75,7 @@ import { wireDetailsDialog } from "./details-dialog.js";
 import {
   DRIVE_MOUNT_TIP_SHOWN,
   wireDoneDialog,
+  type DebugSaveOutcome,
   type DoneSaved,
   type WalkMoveOutcome,
 } from "./done-dialog.js";
@@ -290,6 +291,10 @@ let picking = false;
 /** The tour was opened to be saved in place: its saves keep the walk, even
  *  after a refusal turned them into downloads (E2b plan review #1). */
 let keepsWalk = false;
+/** The opened file carries a walk, and none of it was moved out since:
+ *  a save that leaves it out offers "Save the debug data" (M2 of the
+ *  debug-captures plan). */
+let openedWalk = false;
 let editor: EditorSession | null = null;
 /** The open tour's draft key: its opened file's, then the key of each
  *  in-place write that landed (M6 E2c) and of a download whose key differs
@@ -1162,6 +1167,7 @@ function leaveFile(): void {
   stopResaveTimer();
   refusalToast = null;
   keepsWalk = false;
+  openedWalk = false;
   for (const t of fileToasts.splice(0)) t.remove();
   photos.clear();
   debugLayer?.stop();
@@ -1393,6 +1399,7 @@ async function openFile(
     ).length > 0;
   keepWalkInput.checked = false;
   keepWalk.hidden = !carriesWalk;
+  openedWalk = carriesWalk;
   renderTourName();
   element("tour-file").textContent = outcome.fileName;
   topbar.hidden = false;
@@ -2045,6 +2052,10 @@ async function finishEditing(): Promise<void> {
     saved: doneSaved(),
     host: doneHost(),
     carriesWalk: walk === null ? "unknown" : walk.length > 0,
+    // A file opened for writing keeps its walk (`keepsWalk`): only a save
+    // as a new file can leave it out.
+    debugLeftOut:
+      openedWalk && !keepsWalk && walk !== null && walk.length === 0,
     driveMountTip: DRIVE_MOUNT_TIP_SHOWN,
   });
   releaseOutside = holdOutside(element("done-modal"));
@@ -2076,6 +2087,62 @@ function moveWalk(): Promise<WalkMoveOutcome> {
     debugBundleFileName(mine.savedName()),
   );
   return holdForMove(mine, () => buildMove(mine, pick));
+}
+
+/**
+ * "Save the debug data" (M2 of the debug-captures plan): after a save as a
+ * new file left the walk out, the opened file still carries it, and the
+ * debug bundle is built from it (`EditorSession.debugData`) - the newest
+ * bytes have none. The file is asked for IN the click, as the move's
+ * (`pickSaveFile`); without a save dialog it is downloaded. Nothing of the
+ * tour changes, so it holds no save.
+ */
+function saveDebugData(): Promise<DebugSaveOutcome> {
+  const mine = editor;
+  if (mine === null) {
+    return Promise.resolve({ kind: "refused", reason: "No tour is open." });
+  }
+  // First, before any await: the dialog needs the click.
+  const pick = pickSaveFile(
+    window as unknown as SavePickerWindow,
+    debugBundleFileName(mine.savedName()),
+  );
+  return (async (): Promise<DebugSaveOutcome> => {
+    const picked = await pick;
+    if (editor !== mine || picked.kind === "cancelled") {
+      return { kind: "cancelled" };
+    }
+    const unused =
+      picked.kind === "picked"
+        ? ` Nothing was written into ${picked.handle.name}; if the save dialog created it as a new, empty file, delete it.`
+        : "";
+    let built: Awaited<ReturnType<EditorSession["debugData"]>>;
+    try {
+      built = await mine.debugData();
+    } catch (err) {
+      return {
+        kind: "refused",
+        reason: `The debug data was not saved: ${err instanceof Error ? err.message : String(err)}.${unused}`,
+      };
+    }
+    if (editor !== mine) return { kind: "cancelled" };
+    if (built.kind === "refused") {
+      return { kind: "refused", reason: `${built.reason}${unused}` };
+    }
+    if (picked.kind === "picked") {
+      try {
+        await writeFileOrAbort(picked.handle, built.blob);
+      } catch (err) {
+        return {
+          kind: "refused",
+          reason: `The debug data could not be written into ${picked.handle.name} (${err instanceof Error ? err.message : String(err)}).`,
+        };
+      }
+      return { kind: "saved", name: picked.handle.name };
+    }
+    if (!(await download(built))) return { kind: "cancelled" };
+    return { kind: "saved", name: built.filename };
+  })();
 }
 
 const SAVE_RUNS: WalkMoveOutcome = {
@@ -2238,6 +2305,8 @@ async function writeMovedTour(
     };
   }
   move.commit(inPlace);
+  // Moved out into a file of its own: nothing is left to offer to save.
+  openedWalk = false;
   store.dispatch(tourDocumentActions.saveBuilt());
   keepWalk.hidden = true;
   undelivered = null;
@@ -2263,11 +2332,13 @@ const done = wireDoneDialog({
     walk: element("done-walk"),
     walkText: element("done-walk-text"),
     moveButton: element<HTMLButtonElement>("done-move"),
+    saveDebugButton: element<HTMLButtonElement>("done-save-debug"),
     moveStatus: element("done-move-status"),
     driveTip: element("done-drive-tip"),
     close: element<HTMLButtonElement>("done-close"),
   },
   moveWalk,
+  saveDebugData,
   onClose: () => {
     releaseOutside?.();
     releaseOutside = null;

@@ -255,6 +255,14 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   move runs - and focus goes back to Done. Done waits for saves with
   `savesSettled()`, which can never spin: a claim still set on an ended
   `saveEnd` stops the wait.
+- **Save the debug data** (`saveDebugData`, M2 of the debug-captures
+  plan): offered by Done after a save as a new file left the walk out
+  (`debugLeftOut`: the opened file carried a walk - `openedWalk`, cleared
+  by a move that landed and at a close -, it is not opened for writing,
+  and the newest bytes carry none). The file is asked for IN the click
+  (`pickSaveFile`), the bundle built from the opened file
+  (`EditorSession.debugData`) and written there, or downloaded where
+  there is no save dialog. It holds no save: nothing of the tour changes.
 - **Move the debug data out (D19)** (`moveWalk`; the walk written as the
   debug bundle, `debug-bundle.ts`, since M2 of the debug-captures plan,
   and the dialog's and the refusals' words name it as debug data): each

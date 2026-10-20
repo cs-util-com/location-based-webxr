@@ -3566,6 +3566,93 @@ test("the tour file itself is refused as the walk's file, before anything is wri
   expect(Object.keys(before)).toContain("mytour/actions/000001.json");
 });
 
+/**
+ * A tour carrying a walk opened from a file the page may not write, with
+ * one edit saved as a lean download - the default (M2 of the
+ * debug-captures plan) - and Done open on it.
+ * @param {import("@playwright/test").Page} page
+ */
+async function doneAfterLeanDownload(page) {
+  await autosaveOutOfTheWay(page);
+  await noSavePicker(page);
+  await page.goto("/edit.html");
+  await openThroughChooser(
+    page,
+    await wrappedTour({ pin: true }),
+    "wrapped.zip",
+  );
+  await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
+  await editPin(page, "Wrapped pin", "Saved lean");
+  const lean = page.waitForEvent("download");
+  await page.locator("#save-btn").click();
+  expect(await downloadedNames(await lean)).not.toContain(
+    "mytour/actions/000001.json",
+  );
+  await page.locator("#done-btn").click();
+  await expect(page.locator("#done-modal")).toBeVisible();
+}
+
+test("after a lean download, Done offers to save the debug data from the opened file, and downloads it as the debug bundle", async ({
+  page,
+}) => {
+  // Why (M2 of the debug-captures plan, review #9): the copy a creator
+  // keeps leaves the walk out by default, so the walk may be in the opened
+  // file only - Done says so and saves it apart, read from that file (the
+  // newest bytes carry none, and the move would refuse).
+  await doneAfterLeanDownload(page);
+  await expect(page.locator("#done-walk-text")).toContainText(
+    "wrapped.zip leaves out your debug data",
+  );
+  await expect(page.locator("#done-move")).toBeHidden();
+  const save = page.locator("#done-save-debug");
+  await expect(save).toHaveText("Save the debug data");
+  const download = page.waitForEvent("download");
+  await save.click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe("wrapped-debug.zip");
+  expect(await downloadedNames(file)).toEqual([
+    "about-this-debug-data.txt",
+    "debug-bundle.json",
+    "mytour/actions/000001.json",
+    "mytour/images/frame-000002.png",
+    "mytour/session.json",
+  ]);
+  await expect(page.locator("#done-move-status")).toHaveText(
+    "The debug data is in wrapped-debug.zip - keep that file.",
+  );
+  await expect(save).toHaveText("Save the debug data again");
+  await expect(save).toBeEnabled();
+});
+
+test("Save the debug data asks for its file on the click, and writes the bundle there", async ({
+  page,
+}) => {
+  // Why: as the move's, the save dialog must open within the click - the
+  // bundle's build takes longer than Chromium waits - and a dismissed one
+  // saves nothing.
+  await doneAfterLeanDownload(page);
+  await clickBoundSavePicker(page, "wrapped-debug.zip");
+  await page.locator("#done-save-debug").click();
+  await expect(page.locator("#done-move-status")).toHaveText(
+    "The debug data is in wrapped-debug.zip - keep that file.",
+  );
+  // @ts-expect-error - counted by the stand-in.
+  expect(await page.evaluate(() => window.__walkPicks)).toBe(1);
+  const bundle = await readOpfsTour(page, "wrapped-debug.zip");
+  expect(Object.keys(bundle).sort()).toEqual([
+    "about-this-debug-data.txt",
+    "debug-bundle.json",
+    "mytour/actions/000001.json",
+    "mytour/images/frame-000002.png",
+    "mytour/session.json",
+  ]);
+  expect(JSON.parse(bundle["debug-bundle.json"] ?? "")).toMatchObject({
+    format: 1,
+    tour: "Wrapped fixture",
+    file: "wrapped.zip",
+  });
+});
+
 test("a tour with no file to write into is downloaded without the walk on a second click, once the walk is in its file", async ({
   page,
 }) => {

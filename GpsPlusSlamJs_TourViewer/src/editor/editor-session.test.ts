@@ -1892,6 +1892,54 @@ describe("moving the walk out (W2, D19)", () => {
     await session.close();
   });
 
+  it("builds the debug data from the opened file, also after a save that left the walk out", async () => {
+    // Why (M2 of the debug-captures plan, review #9): after a walk-free
+    // save the newest bytes carry no walk, and the move refuses - but the
+    // opened file still does, and "Save the debug data" keeps it apart.
+    const { session, manifest, bytes } = await walkTour();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    editor.editText("a", "Lean");
+    const lean = await editor.save({ keepScan: false });
+    for (const name of recording) {
+      expect(await namesIn(lean.blob)).not.toContain(name);
+    }
+    expect(await editor.walkEntries()).toEqual([]);
+    const built = await editor.debugData();
+    if (built.kind !== "built") throw new Error(built.reason);
+    expect(built.filename).toBe("tour-debug.zip");
+    expect(await namesIn(built.blob)).toEqual(
+      [...recording, ...BUNDLE_ENTRIES].sort(),
+    );
+    const bundleBytes = new Uint8Array(await built.blob.arrayBuffer());
+    for (const name of recording) {
+      expect(readStoredEntryBytes(bundleBytes, name)).toBeDefined();
+      expect(readStoredEntryBytes(bundleBytes, name)).toEqual(
+        readStoredEntryBytes(bytes, name),
+      );
+    }
+    expect(await bundleOf(built.blob)).toMatchObject({
+      kind: "bundle",
+      identity: { seriesId: null, file: "tour.zip" },
+    });
+    // Nothing of the session changed: no save, no pending edit taken.
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+    // A tour without a walk has none to save.
+    const plain = await opened([pin("a")]);
+    const none = createEditorSession({
+      session: plain.session,
+      manifest: plain.manifest,
+      levels: new Map(),
+    });
+    const nothing = await none.debugData();
+    expect(nothing.kind).toBe("refused");
+    await plain.session.close();
+  });
+
   it("reads the opened file once for a move made before any save", async () => {
     // Why (the M4b milestone review #11): the walk's zip and the tour are
     // built from the same bytes; a listed tour's whole-file check ran twice.

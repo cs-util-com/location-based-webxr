@@ -184,6 +184,13 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     file, and the document learns where in its history that file stands
     (`saved`'s `inPlaceAt`): an undo or a redo across it is then due a
     resave (D33, `../tour-document.ts.md`).
+  - `debugData()` - the debug data of the OPENED file
+    (`session.readWholeArchive()` under the session's budget) as a debug
+    bundle (`buildDebugBundle`, the same identity as the move's), queued
+    with the saves; refused in words for a file without a walk. For "Save
+    the debug data" after a save that left the walk out (M2 of the
+    debug-captures plan, review #9): the newest bytes then carry none.
+    Changes nothing of the session.
   - `walkEntries()` - the walk recording's entries in the newest bytes
     (the last save's, else the opened file's; `scanEntryNames`): none once
     it was moved out, or when a save left it out.
