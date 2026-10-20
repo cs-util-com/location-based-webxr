@@ -109,6 +109,15 @@ export type JoinAssessment =
 const MIN_SUPPORTED_ODOM_COORD_VERSION = 4;
 
 /**
+ * The newest recording era this viewer knows (the recorder's
+ * `session-metadata-record.ts` writes 5). A newer era replays, as
+ * `preflightCaptureJoin` only refuses older ones, but what its replay
+ * does NOT show proves nothing: its photo actions may be named or framed
+ * in a way this build cannot read (PR #638 review).
+ */
+export const NEWEST_KNOWN_ODOM_COORD_VERSION = 5;
+
+/**
  * The BEFORE-replay half of the decision: era and segment gates run on the
  * cheap inputs (meta + action types) so a declined zip never pays the
  * seconds-long replay. Every `ok: false` means: keep the ring.
@@ -378,7 +387,8 @@ export interface CapturePickTracker {
   alignmentFor(imageFile: string): CaptureAlignment | undefined;
 }
 
-const CAPTURE_ACTION = "gpsData/add2dImage";
+/** The recorder's photo action: what a capture of this era is. */
+export const CAPTURE_ACTION = "gpsData/add2dImage";
 
 function captureImageFile(payload: unknown): string | undefined {
   if (typeof payload !== "object" || payload === null) return undefined;

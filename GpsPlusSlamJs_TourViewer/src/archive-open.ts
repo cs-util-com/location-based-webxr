@@ -105,15 +105,25 @@ export interface ArchiveOpenDom {
   clearCacheButton: HTMLButtonElement;
 }
 
-/** The one entry point the composition root needs; the interactive open
- *  is reached through the form listener (M6 review #6: an `openUrl` handle
- *  was returned and never called). */
+/** The composition root's entry points; step 2's open is reached through
+ *  the form listener (M6 review #6: an `openUrl` handle was returned and
+ *  never called). */
 export interface ArchiveOpen {
   /** The `?qr=` launch: resolve the payload and open. Rejections reach the
    *  error box - a printed code is the one flow with no retry. */
   boot: () => Promise<void>;
   /** Step 4's scan-to-open, fed by the creator's AR pipeline (plan §9). */
   scanOpen: ScanOpen;
+  /** The "You already have a tour?" box (tour editor plan 2026-10-17-1816,
+   *  W1): `url` is opened through the one open path; once it opened it
+   *  is the link of record (step 2's field and "found" line). A link that
+   *  did not open leaves step 2 alone - no unverified hand-off to
+   *  printing (PR #637 review); the outcome, and the error box's words,
+   *  are the box's to show. */
+  openLink: (url: string) => Promise<OpenOutcome>;
+  /** The same box's file: opened as step 1's "Open it from this device"
+   *  opens one. */
+  openFile: (file: File) => Promise<OpenOutcome>;
 }
 
 export function wireArchiveOpen(deps: {
@@ -152,7 +162,16 @@ export function wireArchiveOpen(deps: {
     ctx.currentLevels = null;
     ctx.currentLevelTexts = null;
     ctx.levelsUnreadable = false;
-    ctx.tourManifest = null;
+    // The tour document goes with its tour: the manifest, and the
+    // creator's placed objects and deletions (M4 review #1, plan
+    // 2026-09-28-0953 §3.4) - carried into another tour they would be
+    // written into ITS zip, and into the same tour re-opened after a finish
+    // they would duplicate their own ids and break every later finish; an
+    // id deleted from one tour means nothing in another.
+    ctx.tourDocument.close();
+    // A reopened tour hedges its stations again (PR #642 review); and the
+    // closing session is not kept alive by the hint.
+    ctx.walkDecidedFor = null;
     hooks.presentTourInfo(null, () =>
       Promise.reject(new Error("no tour is open")),
     );
@@ -193,21 +212,13 @@ export function wireArchiveOpen(deps: {
     endTourCodeVotes(ctx);
     ctx.imagePlanes?.dispose();
     ctx.imagePlanes = null;
-    ctx.contentRendered?.dispose();
-    ctx.contentRendered = null;
+    ctx.stationContent?.dispose();
+    ctx.stationContent = null;
     ctx.contentAttempted = false;
     ctx.contentError = null;
     // The gate belongs to the closing tour too (M5 review #8): a gate
     // waived for a code-less tour must not carry into one with a code.
     hooks.resetScanGate();
-    // The creator's placed objects belong to the closing tour (M4 review
-    // #1): carried into another tour they would be written into ITS zip,
-    // and into the same tour re-opened after a finish they would duplicate
-    // their own ids and break every later finish.
-    ctx.placedObjects = [];
-    // ...and so do its deletions (authoring plan 2026-09-28-0953 §3.4):
-    // an id deleted from one tour means nothing in another.
-    ctx.deletedObjectIds = [];
     for (const preview of ctx.placedPreviews.values()) preview.dispose();
     ctx.placedPreviews.clear();
     ctx.placementNote = null;
@@ -473,7 +484,9 @@ export function wireArchiveOpen(deps: {
       const manifestDone = opened.loadTourManifest().then(
         (manifest) => {
           if (ctx.session !== opened) return;
-          ctx.tourManifest = manifest;
+          // The creator's work made before the manifest settled (or before
+          // any tour opened) comes along (scan-to-open plan §9 #5).
+          ctx.tourDocument.open(manifest);
           ctx.tourManifestStatus = "settled";
           hooks.presentTourInfo(manifest, (path) =>
             opened.loadEntry(`${opened.manifestWrap}${path}`),
@@ -631,7 +644,7 @@ export function wireArchiveOpen(deps: {
    *  outcome in the status line. A link whose file is not there yet, or
    *  that could not be asked offline, still goes on to printing - marked
    *  unverified - so the creator gives the link once. */
-  async function checkLinkStep(url: string): Promise<void> {
+  async function checkLinkStep(url: string): Promise<OpenOutcome> {
     lastChecked = url;
     checking = url;
     showLinkStatus({ kind: "checking" });
@@ -657,6 +670,7 @@ export function wireArchiveOpen(deps: {
       dom.linkStatus.hidden = true;
     }
     // superseded: the newer check owns the line.
+    return outcome;
   }
 
   function showLinkStatus(status: LinkStatus, url?: string): void {
@@ -701,6 +715,19 @@ export function wireArchiveOpen(deps: {
 
   return {
     scanOpen,
+    openLink: async (url) => {
+      // Not step 2's check (PR #637 review): a link the box could not open
+      // is never handed on to printing, nor made step 2's link - step 2
+      // hears of it once it opened. The open's own error stays for the box.
+      const outcome = await openUrl(url);
+      if (outcome.kind === "opened") {
+        dom.linkInput.value = url;
+        lastChecked = url;
+        showLinkStatus({ kind: "found" });
+      }
+      return outcome;
+    },
+    openFile: (file) => openTour({ kind: "file", file }),
     boot: async () => {
       const payload = new URLSearchParams(location.search).get("qr");
       if (payload === null) return;

@@ -4,33 +4,46 @@
  * through the first settled alignment after it was taken
  * (`createCapturePickTracker`), and return the spots `tour.json` carries
  * as `captureSpots`. A visitor then places those and never downloads or
- * replays the walk.
+ * replays the walk. The spots come back in the world (geo poses); the
+ * Finish puts them into stations (`tour-content.ts`, tour editor plan W3).
  *
  * Every decline is the live join's own (`preflightCaptureJoin`,
- * `assessReplayedJoin`), plus one more: no photo file left to show. A
- * declined bake writes nothing, so the tour keeps the live join, exactly
- * as before S1.
+ * `assessReplayedJoin`), plus two more: no photo file left to show, and no
+ * recorded photo that could be placed. A declined bake writes nothing, so
+ * the tour keeps the live join, exactly as before S1. A walk that names no
+ * photo the tour carries places nothing at all, live or baked: its decline
+ * says so (`placesNothing`), and a lean Finish may then leave the walk out
+ * (the M4b milestone review #3).
  *
  * @see capture-bake.ts.md
  */
 
-import type { TourCaptureSpots } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { replayActions } from "gps-plus-slam-app-framework/state";
 
 import {
   assessReplayedJoin,
+  CAPTURE_ACTION,
   computeCaptureGeoJoin,
   createCapturePickTracker,
   type CaptureWorldPose,
+  NEWEST_KNOWN_ODOM_COORD_VERSION,
   preflightCaptureJoin,
   type PickTrackerState,
   type ReplayedJoinState,
 } from "./capture-geo-join.js";
+import type { CaptureSpotsInWorld } from "./tour-content.js";
 import type { TourSession } from "./tour-session.js";
 
 export type CaptureBake =
-  | { kind: "baked"; spots: TourCaptureSpots }
-  | { kind: "declined"; reason: string };
+  | { kind: "baked"; spots: CaptureSpotsInWorld }
+  | {
+      kind: "declined";
+      reason: string;
+      /** The walk names no recorded photo this tour carries: it places
+       *  nothing, whatever its GPS came to. Absent when that is not
+       *  known (a decline before the replay) or not so. */
+      placesNothing?: true;
+    };
 
 /** What the bake reads of a tour session. */
 export type CaptureBakeSource = Pick<
@@ -84,13 +97,43 @@ export async function bakeCaptureSpots(
   // A stopped replay's state is partial by construction; assessing it
   // would name a wrong reason.
   if (stopped) return { kind: "declined", reason: "stopped" };
-  const verdict = assessReplayedJoin(state);
-  if (!verdict.ok) return { kind: "declined", reason: verdict.reason };
   // Only photos the zip carries as images: the live join's decode skips a
   // missing frame, and a spot naming no file would show nothing.
   const images = new Set(
     source.entries.filter((e) => e.isImage).map((e) => e.filename),
   );
+  // A walk that names no photo the tour carries places nothing, live or
+  // baked - decided before the GPS verdict, which does not change that.
+  // "Places nothing" lets a lean Finish drop the walk for good, so only
+  // a recording of a known era may say it, and only when it took no photo
+  // at all or none of its placed photos is a file of the tour. Photos the
+  // replay turned into no spot (a newer era, or captures before the GPS
+  // zero) are a decline that keeps the walk (PR #638 review).
+  const taken = state.gpsData?.odometryPath.points;
+  if (taken !== undefined && !taken.some((p) => images.has(p.imageFile))) {
+    // Narrowed, never cast (PR #640 review): a hand-edited string version
+    // compares as a number in JavaScript ("3" <= 5).
+    const knownEra =
+      typeof meta?.odomCoordVersion === "number" &&
+      meta.odomCoordVersion <= NEWEST_KNOWN_ODOM_COORD_VERSION;
+    const tookPhotos = actions.some((a) => a.type === CAPTURE_ACTION);
+    if (!knownEra || (taken.length === 0 && tookPhotos)) {
+      return {
+        kind: "declined",
+        reason: "none of the recorded photos could be placed",
+      };
+    }
+    return {
+      kind: "declined",
+      reason:
+        taken.length === 0
+          ? "the recording contains no captured photos"
+          : "no recorded photo file in this tour",
+      placesNothing: true,
+    };
+  }
+  const verdict = assessReplayedJoin(state);
+  if (!verdict.ok) return { kind: "declined", reason: verdict.reason };
   const poses = computeCaptureGeoJoin(state, (file) =>
     tracker.alignmentFor(file),
   ).filter((pose) => images.has(pose.imageFile));
@@ -107,7 +150,12 @@ export async function bakeCaptureSpots(
     },
   }));
   if (captures.length === 0) {
-    return { kind: "declined", reason: "no recorded photo file in this tour" };
+    // Photo files the tour carries, none of which the solve could place:
+    // the walk names them, so it is not one that places nothing.
+    return {
+      kind: "declined",
+      reason: "none of the recorded photos could be placed",
+    };
   }
   return {
     kind: "baked",
@@ -122,9 +170,10 @@ export async function bakeCaptureSpots(
 }
 
 /** The baked spots as the join's poses, for the viewer's one placing path.
- *  A spot without a rotation is left out; the reader never yields one. */
+ *  A spot without a rotation is left out; the bake and a tour's own spots
+ *  (`worldCaptureSpots`, minted poses) never yield one. */
 export function posesOfCaptureSpots(
-  spots: TourCaptureSpots,
+  spots: CaptureSpotsInWorld,
 ): CaptureWorldPose[] {
   return spots.captures.flatMap(({ image, geo }) =>
     geo.rotation === undefined

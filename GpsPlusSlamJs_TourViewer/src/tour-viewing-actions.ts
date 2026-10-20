@@ -74,7 +74,9 @@ interface VotesCastLog extends ViewingMoment {
 
 interface PlacedLog extends ViewingMoment {
   /** What was placed: the tour's `tour.json` content, the recording's
-   *  photos at their capture spots, or the photos ringed around a code. */
+   *  photos at their capture spots, or the photos ringed around a code.
+   *  Logged per station, each time its content is drawn (visitor plan
+   *  2026-10-18-2349 M2: only the present station's content stands). */
   readonly what: "content" | "capture-spots" | "ring";
   /** `geo`: placed from geo positions through the zero and the alignment
    *  at the scene root. `code`: placed around a locked code's geo. */
@@ -96,8 +98,13 @@ interface PlacedLog extends ViewingMoment {
     readonly fixes: number;
     readonly gpsAccuracyMedianM: number | null;
   };
-  /** `content`: ids that could not be rendered. */
+  /** What could not be rendered: object ids (`content`), photo entry
+   *  names (`capture-spots`, `ring`). */
   readonly skipped?: readonly string[];
+  /** The station whose content this is; absent for content no station
+   *  holds (shown always: a walk photo beyond every station, the ring of a
+   *  tour without stations). */
+  readonly station?: string;
 }
 
 interface KeepAliveLog extends ViewingMoment {

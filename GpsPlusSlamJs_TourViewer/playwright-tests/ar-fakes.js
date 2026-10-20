@@ -1,6 +1,9 @@
 // @ts-check
 import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
 import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
+import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import { expect } from "@playwright/test";
 
 import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
@@ -602,14 +605,50 @@ export async function enterArAndMeasure(page) {
 }
 
 /**
+ * Force the tracking-quality slice to `ok` (→ onboarding `ready`): the
+ * alignment is then ready (`tour-flow.ts` `isPlacementReady`), so the walk's
+ * photos place and the visitor's stations are judged without a code. The
+ * fake initAR never dispatches poses, and `reportUpdated` is the slice's
+ * own action (not a middleware input), so it is not recomputed away. Shared
+ * by `ar-mode.spec.js` and `sample-tour.spec.js`.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+export async function forceTrackingReady(page) {
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
+      type: "trackingQuality/reportUpdated",
+      payload: {
+        state: "ok",
+        confidence: 0.9,
+        subScores: {
+          convergence: 1,
+          residualConsensus: 1,
+          gpsAccuracy: 1,
+          coverage: 1,
+        },
+        diagnostics: {},
+      },
+    });
+  });
+}
+
+/**
  * The session zero plus three consistent fixes - the alignment a placement
  * is expressed against (and that the votes refine). Shared by the specs
  * that place, edit or lay out the AR panel; it was copied into two of them.
  *
+ * The fixes are the phone's own, so they are where the phone WAS: since a
+ * station is reached by the phone's best position alone (tour editor plan
+ * D16), the walk can reach one. By default it goes 15 m north, then 15 m
+ * east; `southWest` walks 15 m south, then 15 m west instead, for a spec
+ * whose station stands 15 m north of the zero.
+ *
  * @param {import("@playwright/test").Page} page
+ * @param {{ southWest?: boolean }} [options]
  */
-export async function seedAlignment(page) {
-  await page.evaluate(() => {
+export async function seedAlignment(page, { southWest = false } = {}) {
+  await page.evaluate((southWest) => {
     const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
     store.dispatch({
       type: "gpsData/setZeroPos",
@@ -617,8 +656,15 @@ export async function seedAlignment(page) {
     });
     const pairs = [
       { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
-      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
-      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
+      ...(southWest
+        ? [
+            { odom: [0, 0, 15], lat: 47.499865, lon: 8.7 },
+            { odom: [-15, 0, 0], lat: 47.5, lon: 8.6998 },
+          ]
+        : [
+            { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
+            { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
+          ]),
     ];
     for (const [i, p] of pairs.entries()) {
       store.dispatch({
@@ -637,7 +683,7 @@ export async function seedAlignment(page) {
         },
       });
     }
-  });
+  }, southWest);
 }
 
 /** Metres to degrees at the fakes' zero (47.5, 8.7). */
@@ -707,6 +753,25 @@ export async function levelTexts(bytes) {
   );
 }
 
+/** The world view needs the core geodesy, which runs under an activated
+ *  licence: activated once, as the app does at boot. */
+let licensed = false;
+
+/**
+ * A `tour.json` text parsed, with its pins and photos in the world as
+ * `objects` (version 3 keeps them in stations at local poses, tour editor
+ * plan W3) - what the specs read back from a written tour.
+ * @param {string} text
+ */
+export function worldManifest(text) {
+  if (!licensed) {
+    createSlamAppStore({ storageBackend: new NullStorageBackend() });
+    licensed = true;
+  }
+  const manifest = parseTourManifest(JSON.parse(text));
+  return { ...manifest, objects: tourObjects(manifest) };
+}
+
 /** Entry names, the manifest and the level files of the n-th downloaded zip. */
 export async function downloadedZip(page, index) {
   const data = await page.evaluate(async (i) => {
@@ -717,7 +782,7 @@ export async function downloadedZip(page, index) {
   const { names, json } = await readZip(bytes);
   return {
     names,
-    manifest: parseTourManifest(JSON.parse(json["tour.json"])),
+    manifest: worldManifest(json["tour.json"]),
     levels: await levelTexts(bytes),
   };
 }

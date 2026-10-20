@@ -21,8 +21,17 @@ editor's own namespace, one tab at a time. Design:
     `"other-tab"`: another tab holds the draft); `onWriting(true|false)` -
     writes started / all settled (the page's `data-draft` mark).
 - `EditorDraft` - the four `DraftObjectWrites` (`draft-actions.ts`), plus:
+  - `saveObject` writes through `writeDraftLiveRecord`
+    (`draft-persistence.ts`, shared with the phone's draft): a record that
+    landed takes its id's tombstone away, so a note edited over an offered
+    deletion (whose tombstone stays until "Delete it") is offered as the
+    edit at the next open, never as deleted again. A key move's carried
+    records go through it too: the new key's namespace may hold an older
+    session's tombstone for an id it carries.
   - `saveSettings(settings)` (QR-first M1b-2) - the tour's settings
-    (`EditorTourSettings`, today `{ needsNoGps }`) as they stand now: the
+    (`EditorTourSettings`: `{ needsNoGps, details?, stations? }`, the
+    details since W2 of the tour editor plan, the station poses since the
+    tour document milestone's review #1) as they stand now: the
     `settings` record is written while it differs from the file on disk
     (or from a build's value), removed once it does not; whether it landed.
   - `writes(): EditorTourDraft` - those five, and `built` and `landed`
@@ -39,7 +48,13 @@ editor's own namespace, one tab at a time. Design:
     `text` from `restoreOfferText`, changes and deletions named apart, a
     changed setting counted as a change and NAMED with its value - "It is
     "This tour needs no GPS" turned on." alone, "One of the changes is
-    ..." beside notes, M1b-2 milestone review #3) or null; `superseded` -
+    ..." beside notes, M1b-2 milestone review #3; changed details counted
+    one per field and named by field - "Changed: the tour's details (name,
+    contact)." - W2; moved stations counted one each and named "the
+    position of a station" / "the positions of N stations"),
+    `settingsWhat` (how `restoredLine` names the settings part: the
+    setting, "this tour's details", "this tour's station positions", or
+    "this tour's settings" for more than one kind), or null; `superseded` -
     `supersededLine(n, "in this browser")` or null. Awaited before the
     tour shows.
   - `restored()` - the session applied the offer (its writes rewrote what
@@ -69,6 +84,15 @@ editor's own namespace, one tab at a time. Design:
   module-private).
 
 ## Invariants & assumptions
+
+- **A recorded cover is measured against the file** (M4a review #1): a
+  settings record whose cover names no image of the file it is compared
+  with (a deleted photo) has no opinion about the cover - the file's own
+  stands (`heldAgainst`) - at the open's offer, and when a build or a
+  landed write decides the keep. Before, the record kept the deleted
+  photo's cover, so the file written without it never spent the record and
+  every later open offered "the tour's details (cover)", whose Restore then
+  restored nothing.
 
 - **Scope: since the OPENED FILE, not since the last save** (review #2).
   Only an in-place write that landed clears a record (and only one whose
@@ -132,8 +156,9 @@ editor's own namespace, one tab at a time. Design:
   that did not land - no longer hides the next edit of such an id (PR #622
   bot finding A).
 - **The settings record (QR-first M1b-2, the draft gap).** One file,
-  `settings`, in the editor's namespace (not a prefix the phone's
-  `readDraft` reads, so the shared reader skips it), in its own queue. The
+  `settings`, in the editor's namespace (`SETTINGS_KEY` and its reader
+  `parseSettingsRecord` are `tour-document-draft.ts`'s, shared with the
+  phone's draft; not a prefix `readDraft` reads), in its own queue. The
   objects' rules, for a boolean: kept while the file on disk differs, or a
   build wrote the other value (a build never put in place); offered by a
   later open whose file does not carry it - read whether or not a meta
@@ -149,6 +174,21 @@ editor's own namespace, one tab at a time. Design:
   file and its record goes - the build's "on" then brings it back, so the
   file says on, the draft says off, and a closed tab keeps "off" (in place,
   on a key move, and as a download alike).
+  **The details (W2)** join the record by the same rules: `details` holds
+  the manifest's `title`, `description`, `cover` and `contact` as they
+  stand (each present only when set); a record WITHOUT `details` (written
+  before they existed, or before any was changed) has no opinion about
+  them, so it never offers to change or blank them. "Differs from the
+  file" compares the setting and, when the record has details, each of
+  them (`differs`); the builds' values are kept whole (`built`). A record
+  whose details do not read (a field that is not a string) is unreadable
+  and goes, like any.
+  **The station poses (review #1 of the tour document milestone)** join it
+  the same way: `stations` holds every station's `{ id, geo }` once a
+  station was moved here; a record without them has no opinion about the
+  frames; "differs" compares each named station's pose with the file's
+  (`changedStations`, ids the file does not carry ignored); a pose that does
+  not read (`parseGeoPose`) makes the record unreadable, and it goes.
   **No base, and what that costs** (milestone review #3; the first build of
   this bullet claimed the other value was always one "this browser saw or
   wrote", which does not hold): a file that differs from the record holds
@@ -168,7 +208,10 @@ editor's own namespace, one tab at a time. Design:
   empty directory stays behind each moved namespace; a hold whose queued
   write never settles keeps the next open of the same tour in this tab
   waiting; storage in a private
-  window may go with the window; a restored delete has no Undo.
+  window may go with the window; a restored delete has no Undo toast of
+  its own (the whole restore is one Ctrl+Z step, W2); an object an undo
+  re-adds after a save wrote its delete is backed up, but this draft's
+  "places nothing new" rule (above) does not offer it after a closed tab.
 
 ## Examples
 
@@ -194,14 +237,19 @@ made meanwhile; the key move (the later edit under the new key, the old
 namespace emptied); a key move carrying a during-save edit and an
 unanswered offer; "Delete it" sparing a live edit and a later edit of a
 rejected id; the pruned rejection list; the undo of a delete of an edited
-note; a second tab; no storage and a failed write said once; the settings
+note; a note edited over an offered deletion offered as the edit, and one
+carried by a key move onto an old deletion of it; a second tab; no storage and a failed write said once; the settings
 record (offered as a change, counted with the notes', spent when put back
 or when the file carries it, a build never put in place, a landed write
 clearing it and one made during it kept, key moves, "Delete it", a closed
 tour's write dropped, an unreadable record, a failed write said); the
 settings record's edge walks (M1b-2 milestone review: a setting turned back
 while a save builds, in place, on a key move and as a download; the offer
-naming the setting and its value, alone and beside notes; "Delete it"
+naming the setting and its value, alone and beside notes; the details
+(W2: offered and named by field, put back to the file's leaving nothing,
+spent by a file that carries them, an old record offering only its
+setting, both named together, an unreadable details part, a cover naming
+a photo the file lacks spent and never offered, M4a review #1); "Delete it"
 done only once the record went, failing when its removal does not land,
 and re-arming the offer so a key move still carries it); `restoredLine`'s
 words for notes, the setting, and both; the same tour

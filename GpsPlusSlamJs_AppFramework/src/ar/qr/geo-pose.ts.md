@@ -11,7 +11,7 @@ cannot drift on the heading/rotation consistency rule.
 
 - `parseGeoPose(value: unknown, options: { path: string; fail: (message) => never }): QrGeoPose`
   - `path` is the document path used verbatim in messages (`"qr.geo"`,
-    `"objects[3].geo"`); `fail` builds and throws the caller's error type.
+    `"stations[3].geo"`); `fail` builds and throws the caller's error type.
   - Validates `lat ∈ [-90, 90]`, `lon ∈ [-180, 180]`, finite `alt`;
     normalises `headingDeg` into `[0, 360)`; renormalises a `rotation`
     within the shared tolerance (`renormalizeUnitQuaternion`); requires
@@ -34,7 +34,7 @@ cannot drift on the heading/rotation consistency rule.
 
 ```ts
 const geo = parseGeoPose(raw, {
-  path: 'objects[0].geo',
+  path: 'stations[0].geo',
   fail: (m) => {
     throw new TourManifestValidationError(m);
   },

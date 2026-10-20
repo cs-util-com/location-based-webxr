@@ -39,6 +39,14 @@ function input(overrides: Partial<ArStatusInput> = {}): ArStatusInput {
 
 const qr = (o: Partial<ArStatusInput["qr"]>) => ({ ...input().qr, ...o });
 
+/** A code's votes lining the tour up, as they do once the gate passed on
+ *  it (until a frame change ends its trust, tested at the end). */
+const LINED_UP = {
+  status: "tracking",
+  lockedText: "c",
+  votedLocks: 3,
+} as const;
+
 describe("visitorStatus - one plain sentence per state", () => {
   it.each<[string, Partial<ArStatusInput>, string, string]>([
     [
@@ -52,7 +60,7 @@ describe("visitorStatus - one plain sentence per state", () => {
       "an unsupported phone",
       { arStatus: "unsupported" },
       "unsupported",
-      "This phone or browser can't show the tour in AR. Copy the link and open it in Chrome on an Android phone that supports AR.",
+      "This tour needs an Android phone with Chrome, and this phone or browser can't show it in AR. Copy the link and open it in Chrome on an Android phone.",
     ],
     [
       "AR failed to start",
@@ -159,6 +167,7 @@ describe("visitorStatus - one plain sentence per state", () => {
       "placed through the code",
       {
         gate: { kind: "passed", via: "code" },
+        qr: qr(LINED_UP),
         placement: {
           kind: "placed",
           placedKind: "capture-spots",
@@ -174,6 +183,7 @@ describe("visitorStatus - one plain sentence per state", () => {
       "only the tour's content placed",
       {
         gate: { kind: "passed", via: "code" },
+        qr: qr(LINED_UP),
         content: { kind: "placed", count: 4, skipped: 0 },
       },
       "placed",
@@ -235,7 +245,7 @@ describe("visitorStatus - why AR did not start, in plain words (review F5)", () 
     [
       "a session the browser refuses",
       "NotSupportedError: The specified session configuration is not supported.",
-      "This phone can't start AR for this tour. Open this page in Chrome on an Android phone that supports AR.",
+      "This phone can't start AR for this tour, which needs an Android phone with Chrome. Open this page there.",
     ],
     [
       "anything else",
@@ -289,7 +299,7 @@ describe("visitorStatus - states the first version got wrong (U1 milestone revie
       visitorStatus(
         input({
           gate: { kind: "passed", via: "code" },
-          qr: qr({ unknownCode: "https://shop.example/product" }),
+          qr: qr({ ...LINED_UP, unknownCode: "https://shop.example/product" }),
           placement: { kind: "placed", placedKind: "ring", count: 3 },
         }),
       ),
@@ -448,6 +458,7 @@ describe("visitorStatus - what must never reach a visitor", () => {
       visitorStatus(
         input({
           gate: { kind: "passed", via: "code" },
+          qr: qr(LINED_UP),
           content: { kind: "placed", count: 4, skipped: 2 },
           planesError: "HTTP 404",
         }),
@@ -533,5 +544,373 @@ describe("visitorStatus - codes only, and no code can place the tour (M1b-1 revi
       }),
     );
     expect(status).toEqual({ state: "nothing", text });
+  });
+});
+
+// Why (D34 of the tour editor plan 2026-10-17-1816): until the AR entry has
+// a heading the guide's arrows, breadcrumbs and a story's figure wait. A
+// visitor who never walks never gets one, so the line must say what earns
+// it - and go once a heading exists. It replaces only the bare "placed"
+// line: every other sentence keeps its reason (a moved code, the GPS
+// escape's "find the code") with the request after it. It is never said
+// while tracking still initializes (the coaching says hold steady), nor
+// without location, where walking cannot earn a heading.
+describe("visitorStatus - away from every station", () => {
+  // Why: content drawn per station leaves nothing in view between the
+  // stations; "Tour placed. Look around." then sends the visitor looking
+  // for nothing. The line says what to do instead, and keeps a GPS
+  // placement's reason.
+  const TO_STATION = "Walk to a station to see its content.";
+  const placedAway = {
+    gate: { kind: "passed", via: "code" } as const,
+    qr: qr(LINED_UP),
+    placement: {
+      kind: "placed",
+      placedKind: "ring",
+      count: 0,
+      atStations: 3,
+    } as const,
+    awayFromStations: true,
+  };
+
+  it("a tour placed by its code asks for a station", () => {
+    expect(visitorStatus(input(placedAway))).toEqual({
+      state: "to-station",
+      text: TO_STATION,
+    });
+  });
+
+  it("is the placed line again at a station", () => {
+    expect(
+      visitorStatus(input({ ...placedAway, awayFromStations: false })),
+    ).toEqual({ state: "placed", text: "Tour placed. Look around." });
+  });
+
+  it("a GPS placement keeps its reason, the station request in place of Look around", () => {
+    expect(
+      visitorStatus(
+        input({
+          ...placedAway,
+          gate: { kind: "passed", via: "skipped" },
+          qr: input().qr,
+        }),
+      ),
+    ).toEqual({
+      state: "placed-gps",
+      text: `Tour placed by GPS (less exact). ${TO_STATION} Find the poster's code to line it up.`,
+    });
+  });
+
+  it("the request for a few steps comes first (walking answers both)", () => {
+    expect(
+      visitorStatus(
+        input({
+          ...placedAway,
+          stationsAwaitHeading: true,
+          readiness: {
+            phase: "move-around",
+            percentReady: 0.4,
+            hint: "Move the phone slowly.",
+          } as never,
+        }),
+      ),
+    ).toEqual({
+      state: "finding-direction",
+      text: "Walk a few steps so the guide knows the direction.",
+    });
+  });
+});
+
+describe("visitorStatus - the guide waits for a heading (D34)", () => {
+  const WALK = "Walk a few steps so the guide knows the direction.";
+  const tracking = {
+    phase: "move-around",
+    percentReady: 0.4,
+    hint: "Move the phone slowly.",
+  } as never;
+  const initializing = {
+    phase: "initializing",
+    percentReady: 0,
+    hint: "Hold the phone steady.",
+  } as never;
+  const lost = {
+    phase: "ar-lost",
+    percentReady: 0,
+    hint: "Tracking lost - move slowly.",
+  } as never;
+  const content = { kind: "placed", count: 3, skipped: 0 } as const;
+  const placedByCode = {
+    gate: { kind: "passed", via: "code" } as const,
+    qr: qr(LINED_UP),
+    content,
+    readiness: tracking,
+  };
+
+  it("replaces the placed line, which comes back once a heading exists", () => {
+    expect(
+      visitorStatus(input({ ...placedByCode, stationsAwaitHeading: true })),
+    ).toEqual({ state: "finding-direction", text: WALK });
+    expect(
+      visitorStatus(input({ ...placedByCode, stationsAwaitHeading: false })),
+    ).toEqual({ state: "placed", text: "Tour placed. Look around." });
+  });
+
+  it.each<[string, ArStatusInput["gate"], string]>([
+    [
+      "the GPS escape",
+      { kind: "passed", via: "skipped" },
+      `Tour placed by GPS (less exact). ${WALK} Find the poster's code to line it up.`,
+    ],
+    [
+      "a moved code",
+      { kind: "passed", via: "ignored" },
+      `Tour placed by GPS (less exact): its code seems to have been moved. ${WALK}`,
+    ],
+    [
+      "no code reader",
+      { kind: "not-required", reason: "no-detector" },
+      `Tour placed by GPS (less exact): this browser can't read codes. ${WALK}`,
+    ],
+  ])(
+    "placed by GPS after %s: the reason stays, the request follows",
+    (_, gate, text) => {
+      expect(
+        visitorStatus(
+          input({
+            gate,
+            content,
+            readiness: tracking,
+            stationsAwaitHeading: true,
+          }),
+        ),
+      ).toEqual({ state: "placed-gps", text });
+    },
+  );
+
+  it("follows the sentence before placement too, keeping what could not load", () => {
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "code" },
+          placement: { kind: "waiting-ready" },
+          readiness: tracking,
+          planesError: "boom",
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({
+      state: "warming-up",
+      text: `Move the phone slowly. ${WALK} Some photos could not load.`,
+    });
+  });
+
+  it("keeps the moved code's sentence before placement, the request after it", () => {
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "ignored" },
+          qr: qr({ ignoredCode: "https://example.test/moved" }),
+          readiness: tracking,
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({
+      state: "code-moved",
+      text: `This code seems to have been moved, so the tour is placed by GPS (less exact). ${WALK}`,
+    });
+  });
+
+  it("is never said while tracking initializes: the coaching's hold steady stays", () => {
+    expect(
+      visitorStatus(
+        input({
+          ...placedByCode,
+          readiness: initializing,
+          stationsAwaitHeading: true,
+        }),
+      ).state,
+    ).toBe("placed");
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "code" },
+          placement: { kind: "waiting-ready" },
+          readiness: initializing,
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({ state: "warming-up", text: "Hold the phone steady." });
+  });
+
+  it("is never said without location: only a code gives a heading there (after a veto too)", () => {
+    expect(
+      visitorStatus(
+        input({
+          ...placedByCode,
+          codesOnly: true,
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({ state: "placed", text: "Tour placed. Look around." });
+    const vetoed = visitorStatus(
+      input({
+        gate: { kind: "passed", via: "ignored" },
+        qr: qr({ ignoredCode: "https://example.test/moved" }),
+        readiness: tracking,
+        codesOnly: true,
+        stationsAwaitHeading: true,
+      }),
+    );
+    expect(vetoed.text).not.toContain(WALK);
+  });
+
+  it("yields to a code that needs pointing elsewhere, and to tracking lost", () => {
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "code" },
+          qr: qr({ unknownCode: "https://example.test/other" }),
+          readiness: tracking,
+          stationsAwaitHeading: true,
+        }),
+      ).state,
+    ).toBe("code-other-tour");
+    expect(
+      visitorStatus(
+        input({ ...placedByCode, readiness: lost, stationsAwaitHeading: true }),
+      ).state,
+    ).toBe("tracking-lost");
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "code" },
+          placement: { kind: "waiting-ready" },
+          readiness: lost,
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({ state: "warming-up", text: "Tracking lost - move slowly." });
+  });
+
+  // Why: walking earns a heading for a guide that has
+  // something to show; after "nothing to show here" or "nothing to show by
+  // GPS alone" it sends the visitor walking for nothing.
+  it("is not added to a dead end: nothing to show here, or nothing by GPS alone", () => {
+    expect(
+      visitorStatus(
+        input({
+          tour: { kind: "open", levelCount: 0 },
+          gate: { kind: "not-required", reason: "no-lockable-level" },
+          placement: { kind: "declined", reason: "no recording in this tour" },
+          readiness: tracking,
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({
+      state: "nothing",
+      text: "This tour has nothing to show here.",
+    });
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "skipped" },
+          placement: { kind: "declined", reason: "no recording in this tour" },
+          readiness: tracking,
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({
+      state: "needs-code",
+      text: "Nothing to show by GPS alone. Point your phone at the tour's code to show the photos.",
+    });
+  });
+
+  it("is never said before AR runs or without a tour", () => {
+    expect(
+      visitorStatus(
+        input({
+          arStatus: "starting",
+          readiness: tracking,
+          stationsAwaitHeading: true,
+        }),
+      ).state,
+    ).toBe("starting");
+    expect(
+      visitorStatus(
+        input({
+          tour: { kind: "none" },
+          readiness: tracking,
+          stationsAwaitHeading: true,
+        }),
+      ).state,
+    ).toBe("no-tour");
+  });
+});
+
+// Why: a code's trust ends on an odometry-frame change - its votes name
+// places in the old frame - while the gate stays passed on the code. The
+// line kept saying "Tour placed. Look around." and never asked for the
+// code, the one thing that lines the tour up again.
+describe("visitorStatus - a code's trust ended (an odometry-frame change)", () => {
+  const RESCAN = "Find the poster's code to line it up.";
+  const ended = {
+    gate: { kind: "passed", via: "code" } as const,
+    // The gate passed on the code; the frame change reset its count.
+    qr: qr({ status: "tracking", lockedText: null, votedLocks: 0 }),
+    placement: { kind: "placed", placedKind: "ring", count: 3 } as const,
+  };
+
+  it("asks for the code after the placed line", () => {
+    expect(visitorStatus(input(ended))).toEqual({
+      state: "placed",
+      text: `Tour placed. Look around. ${RESCAN}`,
+    });
+  });
+
+  it("asks for the code after the station request and the request for steps", () => {
+    expect(visitorStatus(input({ ...ended, awayFromStations: true }))).toEqual({
+      state: "to-station",
+      text: `Walk to a station to see its content. ${RESCAN}`,
+    });
+    expect(
+      visitorStatus(
+        input({
+          ...ended,
+          stationsAwaitHeading: true,
+          readiness: {
+            phase: "move-around",
+            percentReady: 0.4,
+            hint: "Move the phone slowly.",
+          } as never,
+        }),
+      ),
+    ).toEqual({
+      state: "finding-direction",
+      text: `Walk a few steps so the guide knows the direction. ${RESCAN}`,
+    });
+  });
+
+  it("is the placed line again once the code's next lock lines the tour up", () => {
+    expect(
+      visitorStatus(
+        input({ ...ended, qr: qr({ lockedText: "c", votedLocks: 3 }) }),
+      ),
+    ).toEqual({ state: "placed", text: "Tour placed. Look around." });
+  });
+
+  // Why: without location only a code judges presence, so once its trust
+  // ends the present station is cleared (`station-guide.ts`) while the
+  // visitor still stands there. "Walk to a station" then sends them away
+  // from where they are, and no walk can help: the code is the only cure.
+  it("without location asks for the code alone, never to walk to a station", () => {
+    expect(
+      visitorStatus(
+        input({ ...ended, codesOnly: true, awayFromStations: true }),
+      ),
+    ).toEqual({ state: "needs-code", text: `Tour placed. ${RESCAN}` });
+    expect(visitorStatus(input({ ...ended, codesOnly: true }))).toEqual({
+      state: "placed",
+      text: `Tour placed. Look around. ${RESCAN}`,
+    });
   });
 });

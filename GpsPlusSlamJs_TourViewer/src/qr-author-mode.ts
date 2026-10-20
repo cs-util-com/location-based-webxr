@@ -296,14 +296,16 @@ export function codeTourLine(status: CodeTourStatus): string {
  * this visit has seen it. A later visit's notes are corrected through the
  * code only when the code was seen in that visit (D10b); the owner chose a
  * hint over a rule, so nothing is blocked while it shows. Empty with no
- * tour open - there is no "code of this tour" yet.
+ * tour open - there is no "code of this tour" yet. It names the PRINTED
+ * code, not "the code you scanned to open this tour": a tour opened from a
+ * file or a link was opened by no scan (plan 2026-10-15-0348 M0, T8).
  */
 export function entryHint(state: {
   tourOpen: boolean;
   codeSeen: boolean;
 }): string {
   if (!state.tourOpen || state.codeSeen) return "";
-  return "First, point the camera at the code you scanned to open this tour.";
+  return "First, point the camera at this tour's printed code: pins and photos placed before it is seen are less exact.";
 }
 
 /**

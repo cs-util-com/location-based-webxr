@@ -17,6 +17,7 @@ import type { QrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-bud
 import type { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
+import { createListenerMiddleware } from "@reduxjs/toolkit";
 import {
   createSlamAppStore,
   qrDetectedReducer,
@@ -30,6 +31,11 @@ import {
 
 import { objectPlaced } from "./tour-authoring-actions.js";
 import { codeLocked } from "./tour-viewing-actions.js";
+import {
+  tourDocumentReducer,
+  type TourDocumentState,
+} from "./tour-document.js";
+import { visitorGuideReducer } from "./visitor-guide-slice.js";
 
 import type {
   HitTestReticleHandle,
@@ -37,7 +43,6 @@ import type {
 } from "gps-plus-slam-app-framework/ar";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
 import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import type { RenderedTourObjects } from "./content-placement.js";
 import type { FusedTallies, LastEvaluation } from "./qr-debug-readout.js";
@@ -47,29 +52,21 @@ import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { ViewerVoteSink } from "./viewer-vote-sink.js";
 import type { ScanGate } from "./scan-gate.js";
 import type { PlacedImagePlanes } from "./image-planes.js";
+import type { StationContent } from "./station-content.js";
 import type { TourViewerSeams } from "./seams.js";
-import type { NuePose } from "./visit-anchoring.js";
 import type { PlacementState } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
+import {
+  createCreatorDocument,
+  type CreatorDocument,
+  type CreatorDocumentStore,
+} from "./creator-document.js";
 
 // Reached through the session object's fields; standalone exports count as
 // dead (knip).
 type QrController = ReturnType<typeof createQrTrackingController>;
 type FusedPoseSource = ReturnType<typeof createFusedQrPoseSource>;
 type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
-
-/**
- * Where an object was placed in AR, kept for the settle (authoring plan
- * 2026-09-28-0953 §3.2, M2c): its pose in the world group's frame
- * (odometry-NUE, `visit-anchoring.ts`) and the AR visit that frame belongs
- * to - odometry from another visit is meaningless. Absent for an object
- * that came back from a draft: it has only its geo.
- */
-interface VisitPlacement {
-  /** `arSessionGeneration` at the tap. */
-  readonly visit: number;
-  readonly local: NuePose;
-}
 
 /**
  * The page's store: the framework store with the opt-in `qrDetected` slice
@@ -84,17 +81,37 @@ interface VisitPlacement {
  * done on the page outside AR would never be written. The numbering runs
  * across those sessions for the same reason. Without it (tests) the store
  * writes into a `NullStorageBackend` as before.
+ *
+ * `visitorGuide` is the visitor's present station and its "show all"
+ * override (`visitor-guide-slice.ts`, visitor plan 2026-10-18-2349 §3),
+ * not written into the recording either.
+ *
+ * It also holds the tour a creator edits (`tourDocument`,
+ * `tour-document.ts`, D29-D31) - not written into the recording - and
+ * `listenToDocument`, its own listener middleware's `startListening`: a
+ * page's side effects of the document (its draft's writes) run there,
+ * after the reducer, never from `store.subscribe`. Its own middleware,
+ * not an `addListener` dispatch: that would land in whichever of the
+ * framework's listener middlewares comes first.
  */
 export function createTourViewerStore(recording?: {
   storageBackend: StorageBackend;
   persistWhile: () => boolean;
 }) {
-  return createSlamAppStore({
+  const documentListener = createListenerMiddleware<{
+    tourDocument: TourDocumentState;
+  }>();
+  const store = createSlamAppStore({
     storageBackend: recording?.storageBackend ?? new NullStorageBackend(),
     ...(recording === undefined
       ? {}
       : { persistWhile: recording.persistWhile, continuousActionIndex: true }),
-    extraReducers: { qrDetected: qrDetectedReducer },
+    extraReducers: {
+      qrDetected: qrDetectedReducer,
+      tourDocument: tourDocumentReducer,
+      visitorGuide: visitorGuideReducer,
+    },
+    extraMiddleware: [documentListener.middleware],
     // Beyond the framework's built-ins (GPS with its paired poses, the
     // recording lifecycle, diagnostics): the QR detections the votes and
     // the mint were computed from, the creator's own log actions, and a
@@ -105,6 +122,9 @@ export function createTourViewerStore(recording?: {
       slicePrefixOf(objectPlaced.type),
       slicePrefixOf(codeLocked.type),
     ],
+  });
+  return Object.assign(store, {
+    listenToDocument: documentListener.startListening,
   });
 }
 export type TourViewerStore = ReturnType<typeof createTourViewerStore>;
@@ -253,10 +273,13 @@ export interface TourViewerSession {
    *  never come, so the tour has no usable code (`tourCodesUsable`, r857
    *  review #4). Reset when the tour closes. */
   levelsUnreadable: boolean;
-  /** The open tour's `tour.json` (null: none, or not loaded yet). The
-   *  finish step writes it back, so content already in the zip survives a
-   *  re-measure. */
-  tourManifest: TourManifest | null;
+  /** The tour as the page edits it: the shared `tourDocument` slice
+   *  through the page's handle (`creator-document.ts`, D29-D31) - the
+   *  open tour's `tour.json` (`manifest()`, null: none, or not loaded
+   *  yet), the creator's placed, edited and deleted objects, their pictures
+   *  and AR placements. The finish step writes it back, so content already
+   *  in the zip survives a re-measure. Not replaced: one per page. */
+  readonly tourDocument: CreatorDocument;
   /** Whether the manifest load settled: the finish step refuses while it
    *  is pending or broken, or it would overwrite the creator's placement
    *  with an empty list (M3 review #5). */
@@ -350,29 +373,20 @@ export interface TourViewerSession {
     /** A save delivered it (UI round 1, U2: the leave guard). */
     delivered?: boolean;
   } | null;
+  /** The open tour whose Finish, in THIS page, settled the walk's recorded
+   *  photos (their spots written, or none to place - not a declined bake,
+   *  which the next Finish tries again, PR #643 review): the creator's
+   *  station HUD drops its hedge for it (`creator-stations.ts`
+   *  `walkPhotosPending`, PR #642 review). A per-page view hint, not
+   *  document state: a reopened tour (a new session) hedges again. */
+  walkDecidedFor: TourSession | null;
   /** What the panel calls the open tour (`tourLabel`); null with none. */
   tourLabel: string | null;
-  /** Content placed in THIS setup session (M4): the records the finish
-   *  step appends to `tour.json`, with the photo bytes that become
-   *  `content/<id>.jpg`. Survives a session end like the level does. */
-  placedObjects: {
-    object: TourObject;
-    blob?: Blob;
-    placement?: VisitPlacement;
-  }[];
   /** The creator's hit-test reticle for the running session. */
   reticle: HitTestReticleHandle | null;
   /** The most recent camera frame - what "Capture a photo" encodes, with
    *  the pose it was captured at (the photo is placed with THAT pose). */
   latestFrame: CapturedCameraFrame | null;
-  /**
-   * Ids of objects the open tour's manifest carries that the creator
-   * deleted (tombstones, authoring plan 2026-09-28-0953 §3.4): the Finish
-   * filters them out and removes a deleted photo's content file. Emptied by
-   * a Finish (the manifest no longer carries them) and when the tour
-   * closes.
-   */
-  deletedObjectIds: string[];
   /** The live previews in the running AR visit, one per object id - this
    *  device's and the hosted zip's (rendered as each lands; re-rendering
    *  everything per placement raced itself and re-decoded every photo, M4
@@ -447,6 +461,9 @@ export interface TourViewerSession {
    *  capture-plane paths write `viewerPlanesError`, and whichever failed
    *  second used to erase the other's message (M5 review #5). */
   contentError: string | null;
+  /** The walk's photos or the ring, placed in the tour (since visitor plan
+   *  M2 as parts of their stations in `stationContent`, decoded only while
+   *  shown); its `dispose` takes those parts out. */
   imagePlanes: PlacedImagePlanes | null;
   /** In-flight guard: without it every voted lock during the decode window
    *  started ANOTHER placement run (M4 milestone review #4). */
@@ -472,8 +489,12 @@ export interface TourViewerSession {
   scanGate: ScanGate;
   /** Cancels the escape clock while the gate scans. */
   cancelEscapeClock: (() => void) | null;
-  /** The tour's `tour.json` objects, rendered after the gate. */
-  contentRendered: RenderedTourObjects | null;
+  /** The visitor's content per station (`station-content.ts`, visitor plan
+   *  2026-10-18-2349 M2): the tour's items, the walk's photos and the ring
+   *  as parts of their stations, drawn only while the store shows them.
+   *  Created with the first part after the gate; disposed at the session's
+   *  end and when its tour closes. */
+  stationContent: StationContent | null;
   /** Whether this session already attempted the content placement. */
   contentAttempted: boolean;
 }
@@ -521,13 +542,32 @@ export function endTourCodeVotes(ctx: TourViewerSession): void {
   ctx.viewerIgnoredText = null;
 }
 
-export function createTourViewerSession(): TourViewerSession {
+/**
+ * Whether the moved-code check made the viewer ignore this decoded text's
+ * code: its level id is in the veto memory (`ignoredCodes`, per tour, kept
+ * across AR entries). The one reading of that memory: the viewer pipeline's
+ * `isIgnored` and the status line's hint guard both use it, never
+ * `viewerIgnoredText`, which names only the latest veto of this AR entry.
+ */
+export function isCodeIgnored(
+  ctx: Pick<TourViewerSession, "levelIdByText" | "ignoredCodes">,
+  text: string,
+): boolean {
+  const id = ctx.levelIdByText.get(text);
+  return id !== undefined && ctx.ignoredCodes.has(id);
+}
+
+/** The page's session object; `store` holds its tour document (the
+ *  page's store; a fresh one in tests that need no other). */
+export function createTourViewerSession(
+  store: CreatorDocumentStore = createTourViewerStore(),
+): TourViewerSession {
   return {
     session: null,
     currentLevels: null,
     currentLevelTexts: null,
     levelsUnreadable: false,
-    tourManifest: null,
+    tourDocument: createCreatorDocument(store),
     tourManifestStatus: "settled",
     scanEntries: new Set(),
     openGeneration: 0,
@@ -550,12 +590,11 @@ export function createTourViewerSession(): TourViewerSession {
     finishProgress: "",
     finishError: null,
     rebuiltZip: null,
+    walkDecidedFor: null,
     tourLabel: null,
     arSessionGeneration: 0,
-    placedObjects: [],
     reticle: null,
     latestFrame: null,
-    deletedObjectIds: [],
     placedPreviews: new Map(),
     placementNote: null,
     viewerQrStatus: null,
@@ -585,7 +624,7 @@ export function createTourViewerSession(): TourViewerSession {
     codesOnly: false,
     scanGate: { kind: "idle" },
     cancelEscapeClock: null,
-    contentRendered: null,
+    stationContent: null,
     contentAttempted: false,
   };
 }

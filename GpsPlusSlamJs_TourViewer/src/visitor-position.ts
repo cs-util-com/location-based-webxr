@@ -48,6 +48,19 @@ export interface VisitorPosition {
    *  part is the fix's altitude), or null without a zero or a device fix:
    *  never moved by a code's votes (K4 review R1). */
   readonly fixNue: readonly [number, number, number] | null;
+  /** The session has a solved alignment: `nue` is null then only while
+   *  the AR pose is (a tracking drop), never for want of an alignment
+   *  (M5a review M3: the station guide's fix stands in only without one). */
+  readonly aligned: boolean;
+  /** The latest device fix's own time (its Geolocation timestamp, epoch
+   *  ms): how old the fix is. Null when `fixNue` is, or when that fix's
+   *  time is missing or not finite (external data: no time, never NaN). */
+  readonly fixAtMs: number | null;
+  /** The latest device fix's own reported accuracy (m), or null when
+   *  `fixNue` is or that fix states none: where the fix alone is the
+   *  position, one outlier fix must not hide behind the median
+   *  (`accuracyM`; r881 re-review M-A). */
+  readonly fixAccuracyM: number | null;
 }
 
 /** A WebXR pose's position (`getCurrentArPose`'s shape). */
@@ -66,17 +79,25 @@ export function visitorPosition(input: {
   /** The session's GPS zero (for `fixNue`); absent or null: no `fixNue`. */
   readonly zero?: LatLong | null;
 }): VisitorPosition {
+  const fix = latestFix(input.gpsPositions, input.zero ?? null);
   return {
     nue: cameraNue(input.alignment, input.arPose),
     accuracyM: deviceAccuracy(input.gpsPositions),
-    fixNue: latestFixNue(input.gpsPositions, input.zero ?? null),
+    fixNue: fix?.nue ?? null,
+    aligned: usableAlignment(input.alignment),
+    fixAtMs: fix?.atMs ?? null,
+    fixAccuracyM: fix?.accuracyM ?? null,
   };
 }
 
-function latestFixNue(
+function latestFix(
   points: readonly GpsPoint[],
   zero: LatLong | null,
-): readonly [number, number, number] | null {
+): {
+  nue: readonly [number, number, number];
+  atMs: number | null;
+  accuracyM: number | null;
+} | null {
   if (zero === null) return null;
   for (let i = points.length - 1; i >= 0; i -= 1) {
     const p = points[i]!;
@@ -91,9 +112,22 @@ function latestFixNue(
       alt,
       0,
     );
-    return [nue[0], nue[1], nue[2]];
+    return {
+      nue: [nue[0], nue[1], nue[2]],
+      atMs: Number.isFinite(p.timestamp) ? p.timestamp : null,
+      accuracyM: usableAccuracy(p.latLongAccuracy),
+    };
   }
   return null;
+}
+
+/** A 4x4 matrix of finite numbers: what `throughAlignment` can apply. */
+function usableAlignment(alignment: ArrayLike<number> | null): boolean {
+  if (alignment === null || alignment.length !== 16) return false;
+  for (let i = 0; i < 16; i += 1) {
+    if (!Number.isFinite(alignment[i])) return false;
+  }
+  return true;
 }
 
 function cameraNue(
@@ -112,19 +146,22 @@ function cameraNue(
   return [n, u, e];
 }
 
+/** A reported accuracy a fix can be judged by: finite and positive. */
+function usableAccuracy(accuracy: unknown): number | null {
+  return typeof accuracy === "number" &&
+    Number.isFinite(accuracy) &&
+    accuracy > 0
+    ? accuracy
+    : null;
+}
+
 function deviceAccuracy(points: readonly GpsPoint[]): number | null {
   const recent: number[] = [];
   for (let i = points.length - 1; i >= 0; i -= 1) {
     const p = points[i]!;
     if (gpsPointSourceOf(p) !== GPS_POINT_SOURCE_DEVICE) continue;
-    const accuracy = p.latLongAccuracy;
-    if (
-      typeof accuracy !== "number" ||
-      !Number.isFinite(accuracy) ||
-      accuracy <= 0
-    ) {
-      continue;
-    }
+    const accuracy = usableAccuracy(p.latLongAccuracy);
+    if (accuracy === null) continue;
     recent.push(accuracy);
     if (recent.length === ACCURACY_WINDOW_FIXES) break;
   }

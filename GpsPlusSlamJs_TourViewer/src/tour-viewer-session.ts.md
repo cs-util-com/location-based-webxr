@@ -32,6 +32,13 @@ lives here.
   `viewerIgnoredText`): per tour, cleared at a tour switch (D20 M5c, §7j
   #13).
   `archive-open.ts`'s teardown calls it.
+- `isCodeIgnored(ctx, text)` - whether the moved-code check made the
+  viewer ignore this decoded text's code: its level id
+  (`levelIdByText`) is in the veto memory (`ignoredCodes`). The one
+  reading of that memory, shared by the viewer pipeline's `isIgnored`
+  (`viewer-placement.ts`) and the status line's hint guard
+  (`ar-entry.ts`); `viewerIgnoredText` names only the latest veto of
+  this AR entry and is never the test of "ignored".
 - `interface TourViewerSession` - the fields, grouped by owner:
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
     `levelsUnreadable` (the levels' read failed: the tour has no usable
@@ -46,16 +53,18 @@ lives here.
     sighting of it are private to `creator-codes.ts` since code book plan
     M5d-2),
     `finishing`, `rebuiltZip` (with the `manifest.json` list it carries,
-    for the next Finish, K1 milestone review R7), `tourLabel` (set by
+    for the next Finish, K1 milestone review R7), `walkDecidedFor` (the
+    open tour whose Finish in this page settled the walk's photos - not a
+    declined bake, PR #643 review; a per-page view hint for the creator's
+    station HUD, cleared at tour teardown, PR #642 review), `tourLabel` (set by
     archive-open); the open
-    tour's `tourManifest` (archive-open.ts) and `scanEntries` (the creator's
-    walk, from `tour-read-set.ts`; empty without a manifest); the placement layer (M4):
-    `placedObjects` (each with an optional `placement`: the odometry-NUE
-    pose in the world group and the AR visit it belongs to, authoring plan
-    2026-09-28-0953 M2c; an edit or a move of a hosted object is an entry
-    with the SAME id, M4), `deletedObjectIds` (tombstones of objects the
-    manifest carries, applied by the Finish and reset when the tour
-    closes, M4), `placedPreviews` (a `Map` by object id - this device's
+    tour's document `tourDocument` (`creator-document.ts`: the shared
+    `tourDocument` slice of the store the session was made with, plus the
+    pictures and AR placements beside it - the manifest, `manifest()`,
+    opened by archive-open.ts; the creator's placed, edited and deleted
+    objects; one per page, never replaced) and `scanEntries` (the
+    creator's walk, from `tour-read-set.ts`; empty without a manifest);
+    the placement layer (M4): `placedPreviews` (a `Map` by object id - this device's
     objects AND the hosted zip's in the running visit, so an edit, a move
     or a delete finds its preview and a tap in AR names what it hit, M4),
     `placementNote`, `reticle`,
@@ -64,7 +73,10 @@ lives here.
   - the scan gate and the placed content (viewer-placement.ts, M5):
     `codesOnly`, `scanGate`, `cancelEscapeClock` (the compass wait's two
     fields went in r863: a code's rotation now stands from its first lock,
-    `viewer-vote-sink.ts`), `contentRendered`, `contentAttempted`,
+    `viewer-vote-sink.ts`), `stationContent` (the side table of the
+    visitor's content per station, `station-content.ts`: created with the
+    first part after the gate, disposed at the session's end and when its
+    tour closes), `contentAttempted`,
     `contentError`; the hooks `startScanGate` / `resetScanGate` /
     `reconsiderScanGate(levels | "unavailable")`;
   - the visitor's stations (tour kit plan K4, `visitor-stations.ts`):
@@ -86,7 +98,10 @@ lives here.
     `viewerPlanesError`, `imagePlanes`, `imagePlanesLoading`,
     `planesRunGeneration`, `placementUnsubscribe`, `placementAttempted`,
     `joinDeclined`.
-- `createTourViewerSession(): TourViewerSession` - the initial values.
+- `createTourViewerSession(store?): TourViewerSession` - the initial
+  values; `store` holds the tour document in the page's store (the
+  `tourDocument` slice the desktop editor uses too; a fresh
+  `createTourViewerStore()` when absent, for tests that need no other).
 - `createTourViewerStore(recording?)` - with the creator's troubleshooting
   recording (`authoring-recording.ts`; authoring recording plan
   2026-09-28-0953, M1a) the store writes into its backend under its
@@ -98,6 +113,15 @@ lives here.
   built-ins: `qrDetected`, `tourAuthoring` and `tourViewing` (M1b), all derived from real action
   creators (`slicePrefixOf`). Without `recording` (tests) it writes into a
   `NullStorageBackend` as before.
+  It also mounts the visitor's guide state (`visitorGuide`,
+  `visitor-guide-slice.ts`: the present station and "show all", visitor
+  plan 2026-10-18-2349 M1; not persisted) and the tour document
+  (`tourDocument`, `tour-document.ts`, D29-D31; not persisted) and returns `listenToDocument`, its own listener
+  middleware's `startListening`, where a page runs the document's side
+  effects (the draft's writes, `tour-document-draft.ts`) after the
+  reducer. Its own middleware rather than an `addListener` dispatch, which
+  would land in whichever of the framework's listener middlewares came
+  first.
 - `type TourViewerStore` / `type ArController` -
   the store factory both modes share (with the opt-in `qrDetected` slice)
   and the two handle types the wiring modules take.
@@ -155,7 +179,7 @@ loadImage)` (the open tour's manifest settled, or null on teardown: the
 ## Examples
 
 ```ts
-const ctx = createTourViewerSession();
+const ctx = createTourViewerSession(arStore);
 wireArchiveOpen({ ctx, ... });
 wireArEntry({ ctx, ... });
 ```
@@ -174,7 +198,8 @@ wireArEntry({ ctx, ... });
 `tour-viewer-session.test.ts`: `endQrPipeline` disposes and forgets the
 QR controller, is harmless without one, and stops and forgets the
 keep-alive and the vote budget; `endTourCodeVotes` stops the hold and
-re-arms every code while keeping both objects. `viewer-votes.test.ts`
+re-arms every code while keeping both objects; `isCodeIgnored` reads
+the memory by level id. `viewer-votes.test.ts`
 drives a reopened tour through it. Otherwise no logic to test;
 the fields' behaviour is pinned by the owning modules' tests and the e2e suite (`playwright-tests/*.spec.js`), which runs
 unchanged across the split (the split's behaviour-neutrality proof).

@@ -98,11 +98,12 @@ const station = (id: string) =>
       }
       return {
         id,
-        anchor: { geo: { lat: 47, lon: 8, alt: 400, headingDeg: 10 } },
+        geo: { lat: 47, lon: 8, alt: 400, headingDeg: 10 },
         activateRadiusM: activate,
         foundRadiusM: activate * ratio,
         hint: 'arrow',
         steps,
+        items: [],
       };
     });
 
@@ -113,7 +114,7 @@ const stations = fc
   );
 
 function parseAll(data: unknown) {
-  const assets = parseTourAssets(ASSETS, { objectIds: new Set(), fail });
+  const assets = parseTourAssets(ASSETS, { fail });
   return parseTourStations(data, { assets, fail });
 }
 
@@ -169,7 +170,6 @@ describe('unknown values of a newer minor (properties, K1 milestone review R4)',
         >[0];
         injectUnknown(copy, pick);
         const assets = parseTourAssets(assetsWithUnknown, {
-          objectIds: new Set(),
           fail,
           lenient: true,
         });
@@ -201,7 +201,7 @@ describe('unknown values of a newer minor (properties, K1 milestone review R4)',
         }
         expect(() =>
           parseTourStations(copy, {
-            assets: parseTourAssets(ASSETS, { objectIds: new Set(), fail }),
+            assets: parseTourAssets(ASSETS, { fail }),
             fail,
           })
         ).toThrow(Invalid);

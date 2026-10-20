@@ -51,7 +51,9 @@ import {
   VIEWER_VOTE_COUNT,
 } from "./qr-viewer-mode.js";
 import { SCAN_GATE_ESCAPE_MS } from "./scan-gate.js";
-import { isPlacementReady } from "./tour-flow.js";
+import { codeLinedUp, codePlacedTour, isPlacementReady } from "./tour-flow.js";
+import { viewerStatusLine } from "./qr-viewer-mode.js";
+import { visitorStatus } from "./visitor-status.js";
 import type { TourViewerSeams } from "./seams.js";
 import {
   createTourViewerSession,
@@ -722,6 +724,135 @@ describe(
       v.clickEscape();
       expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "skipped" });
       expect(v.escapeButton.hidden).toBe(true);
+    });
+  },
+);
+
+// Why: a code's trust ends
+// only on events - a veto, an odometry-frame change, an AR exit, a new
+// tour - never by the clock. The frame change stopped the keep-alive but
+// left the code "lining the tour up": the stations kept a position judged
+// at a code's precision (the takeover margin's 1 m floor) that now names a
+// place in the old frame, and the line kept saying the code places the
+// tour. A frame change ends the trust as a veto ends it for the line-up,
+// without the veto's other effects: the code is not ignored, its votes
+// are not taken back, and its next scan lines the tour up again.
+describe(
+  "an odometry-frame change ends a code's trust",
+  { timeout: 30_000 },
+  () => {
+    const trusted = (v: ReturnType<typeof viewer>): boolean =>
+      codeLinedUp({
+        lockedText: v.ctx.viewerLockedText,
+        votedLocks: v.ctx.viewerVotedLocks,
+      });
+    const debugLine = (v: ReturnType<typeof viewer>): string =>
+      viewerStatusLine({
+        status: "tracking",
+        unknownCode: null,
+        votedLocks: v.ctx.viewerVotedLocks,
+        lockedText: v.ctx.viewerLockedText,
+        hold: v.ctx.viewerKeepAlive?.phase(T0 + 3000) ?? null,
+        deviceFixes: 1,
+      });
+    /** The visitor's line for the session's own gate (the code passed it):
+     *  the line asks for the code again once the code no longer lines the
+     *  tour up. */
+    const visitorLine = (v: ReturnType<typeof viewer>): string =>
+      visitorStatus({
+        mode: "visitor",
+        arStatus: "running",
+        cameraFrames: 10,
+        tour: { kind: "open", levelCount: 1 },
+        qr: {
+          status: "tracking",
+          unknownCode: null,
+          unusableCode: null,
+          votedLocks: v.ctx.viewerVotedLocks,
+          lockedText: v.ctx.viewerLockedText,
+          reprojectionErrorPx: null,
+        },
+        readiness: null,
+        placement: { kind: "placed", placedKind: "ring", count: 3 },
+        planesError: null,
+        contentError: null,
+        gate: v.ctx.scanGate,
+        codesOnly: v.ctx.codesOnly,
+        content: { kind: "none" },
+      }).text;
+
+    it("ends the line-up: no code lines the tour up, and neither line says it places the tour", () => {
+      const v = scanned();
+      expect(trusted(v)).toBe(true);
+      expect(debugLine(v)).toMatch(/^Relocalized/);
+      expect(visitorLine(v)).toBe("Tour placed. Look around.");
+      v.arStore.dispatch(qrFrameChanged());
+      expect(trusted(v)).toBe(false);
+      expect(debugLine(v)).not.toMatch(/Relocaliz/);
+      expect(visitorLine(v)).toBe(
+        "Tour placed. Look around. Find the poster's code to line it up.",
+      );
+    });
+
+    // Why: the walk's placement trigger runs whatever the tracking phase
+    // reads only while a code placed the tour (`codePlacedTour`, which
+    // reads the voted count). The frame change must zero that count, or a
+    // re-entered placement would trust votes that name the old frame.
+    it("the tour no longer counts as code-placed, until the code's next voted lock", () => {
+      const v = scanned();
+      expect(codePlacedTour(v.ctx)).toBe(true);
+      v.arStore.dispatch(qrFrameChanged());
+      expect(codePlacedTour(v.ctx)).toBe(false);
+      v.lock(T0 + 4000);
+      expect(codePlacedTour(v.ctx)).toBe(true);
+      expect(visitorLine(v)).toBe("Tour placed. Look around.");
+    });
+
+    it("keeps what a veto would take: the code is not ignored, its votes stay, the gate stays passed", () => {
+      const v = scanned();
+      const stored = v.positions().length;
+      const gate = v.ctx.scanGate;
+      v.arStore.dispatch(qrFrameChanged());
+      expect(v.ctx.ignoredCodes.size).toBe(0);
+      expect(v.ctx.viewerIgnoredText).toBeNull();
+      expect(v.positions()).toHaveLength(stored);
+      expect(v.ctx.scanGate).toEqual(gate);
+    });
+
+    it("a re-scan after the frame change lines the tour up again", () => {
+      const v = scanned();
+      v.arStore.dispatch(qrFrameChanged());
+      expect(trusted(v)).toBe(false);
+      v.lock(T0 + 4000);
+      expect(trusted(v)).toBe(true);
+      expect(v.ctx.viewerLockedText).toBe(TEXT);
+    });
+
+    it("a store change with no frame change keeps the trust", () => {
+      const v = scanned();
+      v.fix(T0 + 3000);
+      v.arStore.dispatch(setAlignmentOverrides(null));
+      expect(trusted(v)).toBe(true);
+    });
+
+    it("codes only: the same, and nothing else changes", () => {
+      const v = viewer();
+      v.ctx.codesOnly = true;
+      v.placement.startScanGate();
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 500 + i * 125);
+      }
+      expect(trusted(v)).toBe(true);
+      const gate = v.ctx.scanGate;
+      v.arStore.dispatch(qrFrameChanged());
+      expect(trusted(v)).toBe(false);
+      expect(v.ctx.scanGate).toEqual(gate);
+      expect(visitorLine(v)).toBe(
+        "Tour placed. Look around. Find the poster's code to line it up.",
+      );
+      v.lock(T0 + 4000);
+      expect(trusted(v)).toBe(true);
+      expect(visitorLine(v)).toBe("Tour placed. Look around.");
     });
   },
 );

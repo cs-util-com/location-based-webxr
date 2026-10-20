@@ -2,6 +2,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  forceTrackingReady,
   installTourViewerArFakes,
   seedAlignment,
   standAt,
@@ -32,10 +33,16 @@ test("the sample tour, moved to the phone, offers its first station about 15 m a
   const button = page.getByTestId("enter-ar");
   await expect(button).toBeEnabled({ timeout: 15000 });
   await button.click();
-  // The seeded fixes start at (47.5, 8.7): the phone's first fix.
-  await seedAlignment(page);
+  // The seeded fixes start at (47.5, 8.7): the phone's first fix. They
+  // walk south and west, away from the column (15 m north): a fix is
+  // where the phone was, and its best position alone reaches a station
+  // (tour editor plan D16), so the default walk north would reach it.
+  await seedAlignment(page, { southWest: true });
   // The phone stands at the zero: its fix and its AR pose agree.
   await standAt(page, 0, 0, 0);
+  // No code is scanned here: the stations wait for a ready alignment, as
+  // the walk's photos do (the identity at the first fix has no heading).
+  await forceTrackingReady(page);
 
   await expect(page.getByTestId("relocate-note")).toBeVisible({
     timeout: 15000,
@@ -58,6 +65,7 @@ test("without the switch, the sample tour stays at Marienplatz, far from the pho
   await seedAlignment(page);
   // The phone stands at the zero: its fix and its AR pose agree.
   await standAt(page, 0, 0, 0);
+  await forceTrackingReady(page);
   const line = page.getByTestId("station-line");
   // The fakes' zero is near Zurich: Marienplatz is about 230 km away.
   await expect(line).toHaveText(/^Next: The column, [\d.]+ km$/, {

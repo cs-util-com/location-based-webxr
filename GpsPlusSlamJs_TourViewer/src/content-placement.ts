@@ -26,6 +26,12 @@
  * object in that parent's frame (`poseOf`): the creator's previews of
  * THIS visit sit under the AR world group at their odometry pose, so they
  * stay rigid while GPS re-solves (authoring plan 2026-09-28-0953 §3.2, M2c).
+ *
+ * A version 3 tour (tour editor plan 2026-10-17-1816, W3) is played one
+ * station at a time by `renderTourStation`: a group at the station's geo
+ * pose, its pins and photos children at their LOCAL poses, so a station
+ * moves them all. The visitor's page renders a station only while its
+ * content shows (visitor plan 2026-10-18-2349 M2, `station-content.ts`).
  */
 
 import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -33,10 +39,12 @@ import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-min
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import { tourContentEntryName } from "gps-plus-slam-app-framework/ar/tour-archive";
+import type { TourContentFields } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
   TourObject,
   TourPhoto,
   TourPin,
+  TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
@@ -199,9 +207,75 @@ export interface RenderedTourObjects {
  * decoded first (async); a failed decode leaves that object out and names
  * it in `skipped` (the null-tolerance rule of the levels, made visible).
  */
-export async function renderTourObjects(
+export function renderTourObjects(
   objects: readonly TourObject[],
   deps: TourObjectRendererDeps,
+): Promise<RenderedTourObjects> {
+  const { poseOf } = deps;
+  return renderContent(objects, {
+    ...deps,
+    poseOf: (object) =>
+      poseOf?.(object) ?? objectPoseNue(object.geo, deps.zero),
+  });
+}
+
+/** What `renderTourStation` needs: the renderer's, without a pose rule
+ *  (a station's items carry their own), and whether the result is still
+ *  wanted: once `alive()` turns false the photos left are not decoded (the
+ *  caller disposes what came back). */
+export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
+  readonly alive?: () => boolean;
+};
+
+/**
+ * Play one station of a version 3 tour (tour editor plan W3): a group at
+ * the station's geo pose in the session's NUE (`objectPoseNue`), its pins
+ * and photos as children at their local poses, added to `deps.scene` once
+ * every photo decoded (M5 review #6's rule). The result's `root` is that
+ * group; a station without items gives an empty one.
+ *
+ * The station's group stands in the session's tangent plane, the items in
+ * the station's: for a zero within a kilometre the two agree to well under
+ * a centimetre (`content-placement.test.ts`, swept).
+ */
+export async function renderTourStation(
+  station: TourStation,
+  deps: TourStationRendererDeps,
+): Promise<RenderedTourObjects> {
+  const frame = new Group();
+  const at = objectPoseNue(station.geo, deps.zero);
+  frame.position.set(...at.positionNue);
+  frame.quaternion.set(...at.rotationNue);
+  const poses = new Map(station.items.map((item) => [item.id, item.pose]));
+  const part = await renderContent(station.items, {
+    ...deps,
+    scene: frame,
+    poseOf: (item) => {
+      const pose = poses.get(item.id)!;
+      return { positionNue: pose.position, rotationNue: pose.rotation };
+    },
+  });
+  deps.scene.add(frame);
+  return {
+    count: part.count,
+    skipped: part.skipped,
+    root: frame,
+    dispose: () => {
+      frame.removeFromParent();
+      deps.scene.remove(frame);
+      part.dispose();
+    },
+  };
+}
+
+/** The one renderer: pins as labels, photos as planes, each at `poseOf`
+ *  in `scene`'s frame, under one group added once everything decoded. */
+async function renderContent<T extends TourContentFields>(
+  objects: readonly T[],
+  deps: Omit<TourObjectRendererDeps, "poseOf"> & {
+    poseOf: (object: T) => ObjectPoseNue;
+    alive?: () => boolean;
+  },
 ): Promise<RenderedTourObjects> {
   const labels: { object: Object3D; dispose(): void }[] = [];
   const photoPoses: ObjectPoseNue[] = [];
@@ -213,30 +287,43 @@ export async function renderTourObjects(
   // decode one at a time on purpose - a long tour's textures are a
   // GPU-memory hazard, and decoding them all at once doubles the peak.
   const group = new Group();
-  for (const object of objects) {
-    const pose = deps.poseOf?.(object) ?? objectPoseNue(object.geo, deps.zero);
-    if (object.kind === "pin") {
-      const label = deps.makeLabel(object.label);
-      label.object.position.set(...pose.positionNue);
-      group.add(label.object);
-      labels.push(label);
-      continue;
+  let planes: ReturnType<typeof placeCapturedImagePlanes>;
+  try {
+    for (const object of objects) {
+      // Dropped meanwhile (the station's content no longer shows): decode
+      // nothing more; the caller disposes what came back.
+      if (deps.alive?.() === false) break;
+      const pose = deps.poseOf(object);
+      if (object.kind === "pin") {
+        const label = deps.makeLabel(object.label);
+        label.object.position.set(...pose.positionNue);
+        group.add(label.object);
+        labels.push(label);
+        continue;
+      }
+      const texture = await deps
+        .loadPhotoTexture(object.image)
+        .catch((): Texture | null => null);
+      if (texture === null) {
+        skipped.push(object.id);
+        continue;
+      }
+      photoPoses.push(pose);
+      textures.push(texture);
     }
-    const texture = await deps
-      .loadPhotoTexture(object.image)
-      .catch((): Texture | null => null);
-    if (texture === null) {
-      skipped.push(object.id);
-      continue;
-    }
-    photoPoses.push(pose);
-    textures.push(texture);
+    planes = placeCapturedImagePlanes({
+      scene: group,
+      poses: photoPoses,
+      textures,
+    });
+  } catch (error) {
+    // A constructor that throws half way (a label without a canvas) must
+    // not strand what was made before it: a station is drawn and freed
+    // again as the visitor walks.
+    for (const label of labels) label.dispose();
+    for (const texture of textures) texture.dispose();
+    throw error;
   }
-  const planes = placeCapturedImagePlanes({
-    scene: group,
-    poses: photoPoses,
-    textures,
-  });
   deps.scene.add(group);
   return {
     count: labels.length + planes.count,

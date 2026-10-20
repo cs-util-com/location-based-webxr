@@ -10,8 +10,12 @@
 /** The second line on a poster (the S1 design's wording, r820 feedback). */
 export const DEFAULT_EXPLANATION = "AR tour starts here";
 
-/** The line under the code. */
-export const DEFAULT_CALL_TO_ACTION = "Scan with your phone camera";
+/** The line under the code. It names the phone a tour needs (D8 of tour
+ *  editor plan 2026-10-17-1816: Android-only, said plainly on the poster
+ *  too), and the browser since the PR #637 review: as one line as "Scan
+ *  with an Android phone" was, at every size and paper measured. It was
+ *  "Scan with your phone camera". */
+export const DEFAULT_CALL_TO_ACTION = "Scan with Chrome on Android";
 
 export interface PosterFields {
   title: string;

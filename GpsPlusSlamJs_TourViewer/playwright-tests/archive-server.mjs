@@ -24,12 +24,19 @@
  *   blocks browsers, which the "download the file and open it here"
  *   advice exists for (tour kit plan K0).
  * - `/ranges-ok/no-gps-tour.zip` - the default tour with its `tour.json`
- *   marked `needsNoGps` (version 2, minor 2; Tour Viewer QR-first, owner
- *   decision Q-QF-1): its visitor is never asked for the location.
- * - `/ranges-ok/stations-tour.zip` - a `tour.json` version 2 with three
- *   stations (tour kit plan K4): one found by the fixture's printed code
- *   (a knight with a voice and a scene choice), one by walking to it (a
- *   `.glb` model), one far away for the skip.
+ *   marked `needsNoGps` (Tour Viewer QR-first, owner decision Q-QF-1): its
+ *   visitor is never asked for the location.
+ * - `/ranges-ok/details-tour.zip` - a tour carrying its details (tour
+ *   editor plan 2026-10-17-1816, W2): a name, a description, a
+ *   contact, and a cover that is its SECOND photo (3 px wide; the first is
+ *   1 px), so a page that took the first photo is told apart.
+ * - `/ranges-ok/stations-tour.zip` - a tour with three stations (tour
+ *   kit plan K4): one at the fixture's printed code (a knight with a voice
+ *   and a scene choice), one found by walking to it (a `.glb` model), one
+ *   far away for the skip.
+ *
+ * Every `tour.json` here is version 3 (tour editor plan W3): stations at
+ * geo poses, pins and photos as their items.
  *
  * CORS: the app origin (the vite port) differs from this server's,
  * and `Range` is not a CORS-safelisted request header, so the preflight
@@ -38,6 +45,7 @@
 
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { crc32, deflateSync } from "node:zlib";
 import {
   TextReader,
   Uint8ArrayReader,
@@ -45,9 +53,8 @@ import {
   ZipWriter,
 } from "@zip.js/zip.js";
 
-import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
-
-import { E2E_QR_TEXT, e2eQrLevelEntryName } from "./qr-fixture.mjs";
+import { e2eQrLevelEntryName } from "./qr-fixture.mjs";
+import { inOwnStation, stationAt } from "./v3-fixture.mjs";
 
 const port = Number(process.argv[2] ?? "5197");
 
@@ -62,8 +69,7 @@ const TINY_PNG = Uint8Array.from(
 /** The default tour: images, an authored level, padding. `withLevel: false`
  *  is the PLAIN tour (flows plan M4) - images only, no recording and no
  *  printed code: the "nothing to place" case the status line must name.
- *  `needsNoGps`: the same tour, its `tour.json` marked as needing no GPS
- *  (written at version 2, minor 2 - the revision that added the flag). */
+ *  `needsNoGps`: the same tour, its `tour.json` marked as needing no GPS. */
 async function buildZip({ withLevel = true, needsNoGps = false } = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   await writer.add("session.json", new TextReader('{"kind":"e2e-tour"}'));
@@ -106,17 +112,17 @@ async function buildZip({ withLevel = true, needsNoGps = false } = {}) {
       "tour.json",
       new TextReader(
         JSON.stringify({
-          ...(needsNoGps
-            ? { version: 2, minor: 2, needsNoGps: true }
-            : { version: 1 }),
-          objects: [
-            {
+          version: 3,
+          minor: 0,
+          ...(needsNoGps ? { needsNoGps: true } : {}),
+          stations: [
+            inOwnStation({
               id: "fixturepin01",
               kind: "pin",
-              geo: { lat: 47.50009, lon: 8.7, alt: 400, headingDeg: 0 },
+              geo: { lat: 47.50009, lon: 8.7, alt: 400 },
               createdAtIso: "2026-09-08T12:00:00.000Z",
               label: "Fixture pin",
-            },
+            }),
           ],
         }),
       ),
@@ -158,10 +164,13 @@ const DEG_PER_M_LAT = 8.9832e-6;
 const DEG_PER_M_LON = 1.32966e-5;
 
 /**
- * The stations tour (tour kit plan K4): fixed order; "The gate" anchored to
- * the fixture's printed code (so the lock that passes the scan gate finds
- * it), "The well" 30 m north (found by walking), "The tower" 300 m east
- * (skipped).
+ * The stations tour (tour kit plan K4): fixed order; "The gate" at the
+ * fixture's printed code (2 m north, 1 m east: the lock that passes the
+ * scan gate places the visitor inside its radius - a lock is no arrival of
+ * its own, tour editor plan D16), "The well" 30 m north (found by
+ * walking), "The tower" 300 m east (skipped). The gate and the well each
+ * hold one pin, so the e2e suite can see which station's content stands in
+ * the scene (only the present one's).
  */
 async function buildStationsZip() {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
@@ -205,10 +214,10 @@ async function buildStationsZip() {
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 2,
+        version: 3,
+        minor: 0,
         title: "E2E castle",
         order: "fixed",
-        objects: [],
         assets: [
           { id: "knight", path: "content/knight.png", width: 1, height: 1 },
           { id: "voice", path: "content/voice.mp3" },
@@ -218,9 +227,19 @@ async function buildStationsZip() {
           {
             id: "gate",
             title: "The gate",
-            anchor: { code: await qrCodeId(E2E_QR_TEXT) },
+            geo: geo(2, 1),
             activateRadiusM: 30,
             foundRadiusM: 5,
+            hint: "arrow",
+            items: [
+              {
+                id: "gate-pin",
+                kind: "pin",
+                label: "Gate sign",
+                createdAtIso: "2026-10-19T08:00:00.000Z",
+                pose: { position: [0, 1.5, 1], rotation: [0, 0, 0, 1] },
+              },
+            ],
             steps: [
               {
                 id: "knight",
@@ -253,9 +272,19 @@ async function buildStationsZip() {
           {
             id: "well",
             title: "The well",
-            anchor: { geo: geo(30, 0) },
+            geo: geo(30, 0),
             activateRadiusM: 20,
             foundRadiusM: 5,
+            hint: "arrow",
+            items: [
+              {
+                id: "well-pin",
+                kind: "pin",
+                label: "Well sign",
+                createdAtIso: "2026-10-19T08:00:00.000Z",
+                pose: { position: [0, 1.5, 1], rotation: [0, 0, 0, 1] },
+              },
+            ],
             steps: [
               {
                 id: "arch",
@@ -270,9 +299,11 @@ async function buildStationsZip() {
           {
             id: "tower",
             title: "The tower",
-            anchor: { geo: geo(0, 300) },
+            geo: geo(0, 300),
             activateRadiusM: 20,
             foundRadiusM: 5,
+            hint: "arrow",
+            items: [],
             steps: [{ id: "top", block: { kind: "text", text: "The top." } }],
           },
         ],
@@ -382,21 +413,25 @@ async function buildRecordingZip() {
  */
 async function buildBakedZip() {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
-  const spot = (i, lat) => ({
+  const spot = (i) => ({
     image: `images/frame-${String(i)}.png`,
-    geo: { lat, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+    station: `walk-${String(i)}`,
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
   });
   await writer.add(
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 2,
-        minor: 1,
-        objects: [],
+        version: 3,
+        minor: 0,
+        stations: [
+          stationAt("walk-0", { lat: 47.50002, lon: 8.7, alt: 400 }),
+          stationAt("walk-1", { lat: 47.50011, lon: 8.7, alt: 400 }),
+        ],
         captureSpots: {
           fixes: 7,
           gpsAccuracyMedianM: 3,
-          captures: [spot(0, 47.50002), spot(1, 47.50011)],
+          captures: [spot(0), spot(1)],
         },
       }),
     ),
@@ -440,7 +475,69 @@ async function buildBakedZip() {
   return writer.close();
 }
 
+/** A real, decodable grey PNG of `width` x 1 px. */
+function greyPng(width) {
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(1, 4);
+  header[8] = 8; // bit depth
+  header[9] = 0; // greyscale
+  const row = Buffer.alloc(1 + width, 0x80);
+  row[0] = 0; // no filter
+  return new Uint8Array(
+    Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk("IHDR", header),
+      chunk("IDAT", deflateSync(row)),
+      chunk("IEND", Buffer.alloc(0)),
+    ]),
+  );
+}
+
+/** The details tour (W2): two placed photos, the second the cover. */
+async function buildDetailsZip() {
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+  const photo = (id, width, lat) => ({
+    id,
+    kind: "photo",
+    image: `content/${id}.png`,
+    imageWidth: width,
+    imageHeight: 1,
+    createdAtIso: "2026-10-17T00:00:00.000Z",
+    geo: { lat, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+  });
+  await writer.add(
+    "tour.json",
+    new TextReader(
+      JSON.stringify({
+        version: 3,
+        minor: 0,
+        title: "Harbour Lights",
+        description: "Six places along the old harbour.",
+        cover: "second",
+        contact: "guide@example.org",
+        stations: [
+          inOwnStation(photo("first", 1, 47.5)),
+          inOwnStation(photo("second", 3, 47.5001)),
+        ],
+      }),
+    ),
+  );
+  await writer.add("content/first.png", new Uint8ArrayReader(greyPng(1)));
+  await writer.add("content/second.png", new Uint8ArrayReader(greyPng(3)));
+  return writer.close();
+}
+
 const zipBytes = await buildZip();
+const detailsZipBytes = await buildDetailsZip();
 const bakedZipBytes = await buildBakedZip();
 const plainZipBytes = await buildZip({ withLevel: false });
 const noGpsZipBytes = await buildZip({ needsNoGps: true });
@@ -604,6 +701,10 @@ createServer((req, res) => {
   }
   if (url.pathname === "/ranges-ok/baked-tour.zip") {
     handleArchive(req, res, "ranges-ok", bakedZipBytes, '"e2e-baked-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/details-tour.zip") {
+    handleArchive(req, res, "ranges-ok", detailsZipBytes, '"e2e-details-v1"');
     return;
   }
   if (url.pathname === "/ranges-ok/stations-tour.zip") {

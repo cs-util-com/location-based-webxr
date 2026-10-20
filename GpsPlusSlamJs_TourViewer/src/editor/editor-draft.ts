@@ -34,7 +34,8 @@
  * tab holding it writes, and any other tab says it keeps no backup.
  *
  * THE SETTINGS (QR-first M1b-2). The tour-level settings the editor changes
- * - today only "needs no GPS" - are ONE record (`settings`) beside the
+ * - "needs no GPS" and, since W2 of the tour editor plan, the tour's
+ * details (name, description, cover, contact) - are ONE record (`settings`) beside the
  * objects', by the same rules: kept while the file on disk does not carry
  * it (or a build wrote the other value, the "built but never put in place"
  * walk), offered by a later open whose file does not carry it, spent by one
@@ -55,23 +56,30 @@
  */
 
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
-import type {
-  TourManifest,
-  TourObject,
+import {
+  tourItems,
+  type TourManifest,
+  type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
+import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
 import {
   draftDeletionsNotYetHosted,
   draftObjectsNotYetHosted,
   draftObjectsSuperseded,
+  hostedObjects,
   manifestAsRead,
-  objectContentKey,
   restoreOfferText,
   supersededLine,
   withBaseKey,
   type DraftBase,
 } from "../authoring-draft.js";
 import type { DraftObjectWrites } from "../draft-actions.js";
+import {
+  DETAIL_FIELDS,
+  detailsOf,
+  type TourDetailFields,
+} from "../tour-details-form.js";
 import {
   addDraftBaseKey,
   META_KEY,
@@ -80,44 +88,179 @@ import {
   removeDraftObject,
   writeDraftBase,
   writeDraftDeletion,
-  writeDraftEdit,
+  writeDraftLiveRecord,
   writeDraftMeta,
 } from "../draft-persistence.js";
 import { createKeyedChain } from "../keyed-chain.js";
 import type { EditorLock } from "./save-target.js";
+import type { StationPose } from "../tour-document.js";
+import {
+  changedStations,
+  parseSettingsRecord,
+  SETTINGS_KEY,
+} from "../tour-document-draft.js";
 
 /** The tour-level settings the editor changes (QR-first M1b-2): what the
  *  draft's settings record holds. */
 export interface EditorTourSettings {
   readonly needsNoGps: boolean;
+  /** The tour's details as they stand (W2). Absent in a record written
+   *  before the details existed, or before any was changed: no opinion
+   *  about them, so it never offers to change (or blank) them. */
+  readonly details?: TourDetailFields;
+  /** Every station's pose (D17), once a frame was moved here: a moved
+   *  station comes back with its items (the r875 milestone review #1).
+   *  Absent: no opinion about them. A pose for a station the file does not
+   *  carry is no change. */
+  readonly stations?: readonly StationPose[];
 }
 
-/** The settings record's file in a namespace. Not a prefix the phone's
- *  `readDraft` reads, so the shared reader skips it. */
-const SETTINGS_KEY = "settings";
+/** One of the details' fields (`tour-details-form.ts`), in the order the
+ *  offer names them. */
+type DetailField = (typeof DETAIL_FIELDS)[number];
+
+/** Each field as the page names it (`edit.html`'s "Tour details"). */
+const DETAIL_NAMES: Readonly<Record<DetailField, string>> = {
+  title: "name",
+  description: "description",
+  cover: "cover",
+  contact: "contact",
+};
+
+/** The fields `wanted` changes against `against`; none for a record
+ *  without details (no opinion). */
+function changedDetails(
+  wanted: TourDetailFields | undefined,
+  against: TourDetailFields | undefined,
+): DetailField[] {
+  if (wanted === undefined) return [];
+  return DETAIL_FIELDS.filter((f) => wanted[f] !== against?.[f]);
+}
+
+/** Whether `wanted` changes anything `against` holds. */
+function differs(
+  wanted: EditorTourSettings,
+  against: EditorTourSettings,
+): boolean {
+  return (
+    wanted.needsNoGps !== against.needsNoGps ||
+    changedDetails(wanted.details, against.details).length > 0 ||
+    changedStations(wanted.stations, against.stations).length > 0
+  );
+}
+
+/** Two records alike (null is "no record"). */
+function sameRecord(
+  a: EditorTourSettings | null,
+  b: EditorTourSettings | null,
+): boolean {
+  if (a === null || b === null) return a === b;
+  if (a.needsNoGps !== b.needsNoGps) return false;
+  if ((a.details === undefined) !== (b.details === undefined)) return false;
+  if (JSON.stringify(a.stations) !== JSON.stringify(b.stations)) return false;
+  return changedDetails(a.details, b.details).length === 0;
+}
 
 /** The setting's name as the page shows it (`edit.html`). */
 const NO_GPS_LABEL = '"This tour needs no GPS"';
 
+/** How the offer names its settings part: the setting, the details, or
+ *  both (`restoredLine`). */
+const NO_GPS_WHAT = `this tour's "needs no GPS" setting`;
+const DETAILS_WHAT = "this tour's details";
+const BOTH_WHAT = "this tour's settings";
+const STATIONS_WHAT = "this tour's station positions";
+
+/** What an offered record changes against the opened file: whether the
+ *  setting, and which details. */
+function settingsChanges(
+  settings: EditorTourSettings,
+  manifest: TourManifest,
+): {
+  readonly noGps: boolean;
+  readonly details: DetailField[];
+  readonly stations: string[];
+} {
+  const file = settingsOf(manifest);
+  return {
+    noGps: settings.needsNoGps !== file.needsNoGps,
+    details: changedDetails(settings.details, file.details),
+    stations: changedStations(settings.stations, file.stations),
+  };
+}
+
 /**
- * The offer's words (`restoreOfferText`), and - when it holds the setting -
- * which setting and to what value (M1b-2 milestone review #3): Restore
- * then never puts a value back the creator did not see named.
+ * The offer's words (`restoreOfferText`), and - when it holds settings -
+ * which and to what (M1b-2 milestone review #3; W2 names the details by
+ * field): Restore then never puts a value back the creator did not see
+ * named. Each changed detail counts as one change, as the session counts
+ * it.
  */
 function offerText(
   notes: number,
   deleted: number,
   settings: EditorTourSettings | undefined,
+  manifest: TourManifest,
 ): string {
+  const changes =
+    settings === undefined ? null : settingsChanges(settings, manifest);
   const counted = restoreOfferText(0, false, {
-    changed: notes + (settings === undefined ? 0 : 1),
+    changed: notes + (changes === null ? 0 : settingsChangeCount(changes)),
     deleted,
   });
-  if (settings === undefined) return counted;
-  const value = `${NO_GPS_LABEL} turned ${settings.needsNoGps ? "on" : "off"}`;
-  return notes + deleted === 0
-    ? `${counted} It is ${value}.`
-    : `${counted} One of the changes is ${value}.`;
+  if (settings === undefined || changes === null) return counted;
+  const noGps = `${NO_GPS_LABEL} turned ${settings.needsNoGps ? "on" : "off"}`;
+  if (changes.details.length === 0 && changes.stations.length === 0) {
+    return notes + deleted === 0
+      ? `${counted} It is ${noGps}.`
+      : `${counted} One of the changes is ${noGps}.`;
+  }
+  const parts = settingsParts(changes, noGps);
+  const last = parts.pop();
+  const named = parts.length === 0 ? last : `${parts.join(", ")}, and ${last}`;
+  return `${counted} Changed: ${named}.`;
+}
+
+type SettingsChanges = ReturnType<typeof settingsChanges>;
+
+/** How many changes a settings record counts as: the setting, each detail
+ *  and each station one. */
+function settingsChangeCount(changes: SettingsChanges): number {
+  return (
+    (changes.noGps ? 1 : 0) + changes.details.length + changes.stations.length
+  );
+}
+
+/** The offer's named parts of a settings record, in the page's order. */
+function settingsParts(changes: SettingsChanges, noGps: string): string[] {
+  const parts: string[] = [];
+  if (changes.noGps) parts.push(noGps);
+  if (changes.details.length > 0) {
+    const names = changes.details.map((f) => DETAIL_NAMES[f]).join(", ");
+    parts.push(`the tour's details (${names})`);
+  }
+  if (changes.stations.length === 1) parts.push("the position of a station");
+  if (changes.stations.length > 1) {
+    parts.push(`the positions of ${String(changes.stations.length)} stations`);
+  }
+  return parts;
+}
+
+/** `settingsWhat` of an offer that holds `settings`. */
+function settingsWhatOf(
+  settings: EditorTourSettings,
+  manifest: TourManifest,
+): string {
+  const changes = settingsChanges(settings, manifest);
+  const kinds = [
+    changes.noGps,
+    changes.details.length > 0,
+    changes.stations.length > 0,
+  ].filter(Boolean).length;
+  if (kinds > 1) return BOTH_WHAT;
+  if (changes.details.length > 0) return DETAILS_WHAT;
+  if (changes.stations.length > 0) return STATIONS_WHAT;
+  return NO_GPS_WHAT;
 }
 
 /**
@@ -127,7 +270,10 @@ function offerText(
  */
 export function restoredLine(
   count: number,
-  offer: Pick<EditorDraftOffer, "objects" | "deleted" | "settings">,
+  offer: Pick<
+    EditorDraftOffer,
+    "objects" | "deleted" | "settings" | "settingsWhat"
+  >,
 ): string {
   if (count > 0) {
     const back =
@@ -139,30 +285,54 @@ export function restoredLine(
   if (offer.settings === undefined) {
     return "Nothing was restored: the notes those changes were for are edited here already.";
   }
+  const what = offer.settingsWhat ?? NO_GPS_WHAT;
   if (offer.objects.length + offer.deleted.length === 0) {
-    return `Nothing was restored: this tour's "needs no GPS" setting is changed here already.`;
+    return `Nothing was restored: ${what} ${what === NO_GPS_WHAT ? "is" : "are"} changed here already.`;
   }
-  return "Nothing was restored: the notes and the setting those changes were for are changed here already.";
+  const part =
+    what === NO_GPS_WHAT
+      ? "the setting"
+      : what === DETAILS_WHAT
+        ? "the details"
+        : what === STATIONS_WHAT
+          ? "the station positions"
+          : "the settings";
+  return `Nothing was restored: the notes and ${part} those changes were for are changed here already.`;
+}
+
+/**
+ * `settings` as measured against `manifest`: a cover naming no image of
+ * that file (a deleted photo) is no opinion about the cover - the file's
+ * own stands - since no save could write it (M4a review #1: the record
+ * kept the deleted photo's cover, and every later open offered a cover
+ * change that Restore could not make).
+ */
+function heldAgainst(
+  settings: EditorTourSettings,
+  manifest: TourManifest,
+): EditorTourSettings {
+  const details = settings.details;
+  const cover = details?.cover;
+  if (details === undefined || cover === undefined) return settings;
+  const images = tourImageIds({
+    objects: tourItems(manifest),
+    assets: manifest.assets,
+  });
+  if (images.has(cover)) return settings;
+  const { cover: _gone, ...rest } = details;
+  return {
+    ...settings,
+    details:
+      manifest.cover === undefined ? rest : { ...rest, cover: manifest.cover },
+  };
 }
 
 function settingsOf(manifest: TourManifest): EditorTourSettings {
-  return { needsNoGps: manifest.needsNoGps === true };
-}
-
-/** A stored settings record; undefined for anything that does not read
- *  (a record that does not read costs itself). */
-function parseSettings(
-  text: string | undefined,
-): EditorTourSettings | undefined {
-  if (text === undefined) return undefined;
-  try {
-    const value: unknown = JSON.parse(text);
-    if (value === null || typeof value !== "object") return undefined;
-    const { needsNoGps } = value as Record<string, unknown>;
-    return typeof needsNoGps === "boolean" ? { needsNoGps } : undefined;
-  } catch {
-    return undefined;
-  }
+  return {
+    needsNoGps: manifest.needsNoGps === true,
+    details: detailsOf(manifest),
+    stations: manifest.stations.map(({ id, geo }) => ({ id, geo })),
+  };
 }
 
 /** Every editor draft's namespace starts with this; the phone's never do
@@ -203,8 +373,12 @@ export interface EditorDraftOffer {
   /** The tour's settings, when the opened file does not carry the draft's
    *  (QR-first M1b-2). */
   readonly settings?: EditorTourSettings;
+  /** How the offer's settings part is named in plain words ("this tour's
+   *  details"), present with `settings` (`restoredLine`). */
+  readonly settingsWhat?: string;
   /** The offer's words: changes and deletions named apart
-   *  (`restoreOfferText`); a changed setting is a change. */
+   *  (`restoreOfferText`); a changed setting, and each changed detail, is
+   *  a change. */
   readonly text: string;
 }
 
@@ -306,18 +480,19 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
    *  whether or not its record is, so a build or a landed write can decide
    *  the keep again (M1b-2 milestone review #1). */
   let settingsWanted: EditorTourSettings | null = null;
-  /** The "needs no GPS" values builds wrote since the open: a change back
-   *  to the file's value still differs from a built copy that may be put
-   *  in place, so its record is kept (review #1's walk, for the setting). */
-  const builtNoGps = new Set<boolean>();
+  /** The manifests builds wrote since the open (their settings, and the
+   *  images a recorded cover is measured against): a change back to the
+   *  file's value still differs from a built copy that may be put in
+   *  place, so its record is kept (review #1's walk, for the settings). */
+  const built: TourManifest[] = [];
 
   /** Whether `settings` must be kept: the file on disk differs, or a
-   *  build wrote the other value (THE SETTINGS). */
+   *  build wrote other values (THE SETTINGS). */
   function keepSettings(settings: EditorTourSettings): boolean {
     return (
       opened === null ||
-      settings.needsNoGps !== settingsOf(opened).needsNoGps ||
-      builtNoGps.has(!settings.needsNoGps)
+      differs(heldAgainst(settings, opened), settingsOf(opened)) ||
+      built.some((b) => differs(heldAgainst(settings, b), settingsOf(b)))
     );
   }
 
@@ -328,7 +503,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     const wanted = settingsWanted;
     if (wanted === null) return false;
     const next = keepSettings(wanted) ? wanted : null;
-    if (next?.needsNoGps === settingsPending?.needsNoGps) return false;
+    if (sameRecord(next, settingsPending)) return false;
     settingsPending = next;
     return true;
   }
@@ -545,10 +720,12 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         if (s.rejected.includes(id)) return true;
         const store = await s.store;
         if (store === undefined) return false;
+        // A live record, as `saveObject` writes it: the new key's namespace
+        // may hold an older session's tombstone for this id.
         const wrote =
           change === null
             ? await writeDraftDeletion(store, id)
-            : await writeDraftEdit(store, change, undefined, undefined);
+            : await writeDraftLiveRecord(store, change, undefined, undefined);
         // After the record: a record without its base is never superseded.
         if (base !== undefined) await writeDraftBase(store, id, base);
         return wrote;
@@ -586,8 +763,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   }
 
   function seenKey(id: string): string | undefined {
-    const hosted = opened?.objects.find((o) => o.id === id);
-    return hosted === undefined ? undefined : objectContentKey(hosted);
+    return hostedObjects(opened).key(id);
   }
 
   function close(): void {
@@ -601,7 +777,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     bases.clear();
     settingsPending = null;
     settingsWanted = null;
-    builtNoGps.clear();
+    built.length = 0;
     if (s === null) return;
     // After its queued writes (E2c review #6): until they land, another
     // tab taking the draft would read it half written. Chained on the last
@@ -645,12 +821,26 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // file does not carry it; spent or unreadable, it goes.
       const settingsText = await store.getText(SETTINGS_KEY);
       if (mine !== generation) return none;
-      const storedSettings = parseSettings(settingsText);
+      const readSettings = parseSettingsRecord(settingsText);
+      const storedSettings =
+        readSettings === undefined
+          ? undefined
+          : heldAgainst(readSettings, manifest);
       const settings =
         storedSettings !== undefined &&
-        storedSettings.needsNoGps !== settingsOf(manifest).needsNoGps
+        differs(storedSettings, settingsOf(manifest))
           ? storedSettings
           : undefined;
+      /** The offer's words, and how its settings part is named. */
+      const offerWords = (
+        notes: number,
+        gone: number,
+      ): { text: string; settingsWhat?: string } => ({
+        text: offerText(notes, gone, settings, manifest),
+        ...(settings === undefined
+          ? {}
+          : { settingsWhat: settingsWhatOf(settings, manifest) }),
+      });
       if (settingsText !== undefined && settings === undefined) {
         void settingsIn(s, null);
       }
@@ -673,10 +863,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             ? null
             : { objects: [], deleted: [], settings };
         return {
-          offer:
-            offer === null
-              ? null
-              : { ...offer, text: offerText(0, 0, settings) },
+          offer: offer === null ? null : { ...offer, ...offerWords(0, 0) },
           superseded: null,
           backedUp: true,
         };
@@ -694,12 +881,12 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           if (!ok) say(s, s.refused ?? "storage");
         }),
       );
-      const hostedIds = new Set(manifest.objects.map((o) => o.id));
+      const hosted = hostedObjects(manifest);
       const notHosted = draftObjectsNotYetHosted(stored.draft, manifest);
       // The editor places nothing new: a record of an id the file no
       // longer carries is a note deleted elsewhere, given way to like a
       // replaced one.
-      const waiting = notHosted.filter((o) => hostedIds.has(o.id));
+      const waiting = notHosted.filter((o) => hosted.key(o.id) !== undefined);
       const replaced =
         draftObjectsSuperseded(stored.draft, manifest).length +
         (notHosted.length - waiting.length);
@@ -727,7 +914,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             ? null
             : {
                 ...offer,
-                text: offerText(waiting.length, deleted.length, settings),
+                ...offerWords(waiting.length, deleted.length),
               },
         superseded:
           replaced === 0 ? null : supersededLine(replaced, SUPERSEDED_WHERE),
@@ -817,15 +1004,15 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       if (s === null) return;
       // As a reader of the written file sees it (the E2p third review #5).
       const read = manifestAsRead(written);
-      builtNoGps.add(settingsOf(read).needsNoGps);
+      built.push(read);
+      const readObjects = hostedObjects(read);
       // A setting turned back while this save built is measured against
       // the build now (M1b-2 milestone review #1).
       if (redecideSettings()) void writeSettingsIn(s, settingsPending);
       for (const [id, change] of pending) {
         if (change === null) continue;
-        const object = read.objects.find((o) => o.id === id);
-        if (object === undefined) continue;
-        const key = objectContentKey(object);
+        const key = readObjects.key(id);
+        if (key === undefined) continue;
         bases.set(id, withBaseKey(bases.get(id), "written", key));
         // Not said when it fails: a base that did not land is removed,
         // and no base is never superseded.
@@ -839,17 +1026,11 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       const s = space;
       if (s === null) return;
       const read = manifestAsRead(written);
-      const hosted = new Map(
-        read.objects.map((o) => [o.id, objectContentKey(o)]),
-      );
+      const hosted = hostedObjects(read);
       // What the file carries now is no longer pending; an edit made
       // while the save ran is.
       const spent = [...pending].flatMap(([id, change]) =>
-        (
-          change === null
-            ? !hosted.has(id)
-            : hosted.get(id) === objectContentKey(change)
-        )
+        (change === null ? hosted.key(id) === undefined : hosted.holds(change))
           ? [id]
           : [],
       );
@@ -937,7 +1118,11 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       if (seen !== undefined) {
         bases.set(id, withBaseKey(bases.get(id), "seen", seen));
       }
-      return write(id, (store) => writeDraftEdit(store, object, blob, seen));
+      // A live record takes its id's stale tombstone away (an offered
+      // deletion edited meanwhile), once the record landed.
+      return write(id, (store) =>
+        writeDraftLiveRecord(store, object, blob, seen),
+      );
     },
     saveDeletion(id) {
       pending.set(id, null);
@@ -951,8 +1136,8 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     },
     saveSettings(settings) {
       settingsWanted = settings;
-      // Kept while the file on disk differs, or a build wrote the other
-      // value (THE SETTINGS); else the record goes.
+      // Kept while the file on disk differs, or a build wrote other
+      // values (THE SETTINGS); else the record goes.
       settingsPending = keepSettings(settings) ? settings : null;
       const s = space;
       return s === null

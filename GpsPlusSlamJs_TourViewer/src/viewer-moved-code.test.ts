@@ -44,7 +44,11 @@ import {
   MAX_VOTED_LOCKS_PER_CODE,
 } from "./qr-viewer-mode.js";
 import type { TourViewerSeams } from "./seams.js";
-import { arStatusLine } from "./tour-flow.js";
+import {
+  arStatusLine,
+  codePlacedTour,
+  type ArStatusInput,
+} from "./tour-flow.js";
 import {
   createTourViewerSession,
   createTourViewerStore,
@@ -55,6 +59,8 @@ import {
 import type { TourViewingAction } from "./tour-viewing-actions.js";
 import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
+import { stationAlignmentSignals } from "./visitor-stations.js";
+import { visitorStatus } from "./visitor-status.js";
 
 const captured = vi.hoisted(() => ({
   configs: [] as QrTrackingControllerConfig[],
@@ -311,29 +317,29 @@ function viewer(level: QrLevel = LEVEL, withCodeB = false) {
     (arStore.getState().gpsData?.gpsEvents?.gpsPositions ?? []).filter(
       (p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_SYNTHETIC_QR,
     ).length;
-  const statusLine = () =>
-    arStatusLine({
-      mode: "visitor",
-      arStatus: "running",
-      cameraFrames: 0,
-      tour: { kind: "open", levelCount: 1 },
-      qr: {
-        status: "tracking",
-        unknownCode: null,
-        unusableCode: null,
-        reprojectionErrorPx: null,
-        ignoredCode: ctx.viewerIgnoredText,
-        votedLocks: ctx.viewerVotedLocks,
-        lockedText: ctx.viewerLockedText,
-        hold: ctx.viewerKeepAlive?.phase(clock.nowMs) ?? null,
-      },
-      readiness: null,
-      placement: ctx.placement,
-      planesError: null,
-      contentError: null,
-      gate: ctx.scanGate,
-      content: { kind: "none" },
-    });
+  const statusInput = (): ArStatusInput => ({
+    mode: "visitor",
+    arStatus: "running",
+    cameraFrames: 0,
+    tour: { kind: "open", levelCount: 1 },
+    qr: {
+      status: "tracking",
+      unknownCode: null,
+      unusableCode: null,
+      reprojectionErrorPx: null,
+      ignoredCode: ctx.viewerIgnoredText,
+      votedLocks: ctx.viewerVotedLocks,
+      lockedText: ctx.viewerLockedText,
+      hold: ctx.viewerKeepAlive?.phase(clock.nowMs) ?? null,
+    },
+    readiness: null,
+    placement: ctx.placement,
+    planesError: null,
+    contentError: null,
+    gate: ctx.scanGate,
+    content: { kind: "none" },
+  });
+  const statusLine = () => arStatusLine(statusInput());
   return {
     ctx,
     arStore,
@@ -345,6 +351,7 @@ function viewer(level: QrLevel = LEVEL, withCodeB = false) {
     posterOffM,
     votesStored,
     statusLine,
+    statusInput,
     logged,
     enter,
   };
@@ -565,6 +572,80 @@ describe(
       expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
     });
 
+    // Why (r881 review M1): the veto takes every vote back, but the page
+    // kept its count of voted locks, so every reader of "a code lined the
+    // tour up" kept believing it on what was a GPS-only alignment again:
+    // the stations trusted it whatever the raw accuracy, and the status
+    // line said "Tour placed." instead of naming the moved code.
+    it("the veto forgets the voted locks: the stations stop trusting the alignment and the line names the moved code", () => {
+      const v = scannedAndWalked();
+      expect(v.ctx.viewerVotedLocks).toBeGreaterThan(0);
+      expect(stationAlignmentSignals(v.ctx, v.arStore).codeLinedUp()).toBe(
+        true,
+      );
+      v.walk(1, 75);
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      expect(v.ctx.viewerVotedLocks).toBe(0);
+      expect(v.ctx.viewerLockedText).toBeNull();
+      expect(stationAlignmentSignals(v.ctx, v.arStore).codeLinedUp()).toBe(
+        false,
+      );
+      expect(
+        visitorStatus({
+          ...v.statusInput(),
+          content: { kind: "placed", count: 1, skipped: 0 },
+        }),
+      ).toEqual({
+        state: "placed-gps",
+        text: "Tour placed by GPS (less exact): its code seems to have been moved. Look around.",
+      });
+    });
+
+    // Why (r881 re-review L-F, L1): the veto sets the voted count back to
+    // 0, and "a code in view with no vote yet" is when the line shows the
+    // code-measuring hint, so the ignored code still in view read "Code
+    // measured - placing the tour." The page withholds the hint of an
+    // evaluation whose text IS the ignored code (`ar-entry.ts`), never of
+    // another code. That only works if the pipeline records the ignored
+    // code by its scanned text, the key its evaluations carry
+    // (`onEvaluated(result, ms, text)`) - pinned here on the real veto.
+    it("after the veto the ignored code is recorded by its scanned text, the key its evaluations carry", () => {
+      const v = scannedAndWalked();
+      v.walk(1, 75);
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      expect(v.ctx.viewerIgnoredText).toBe(TEXT);
+    });
+
+    // Why (r881 review M1): code B passed the gate and keeps it, but the
+    // veto of code A took B's votes back too. The placement trigger's
+    // "a code placed the tour" must not hold on B's spent count: until a
+    // code votes again, photos not placed yet wait for tracking readiness
+    // like any GPS-only session. That is the safe direction (accepted in
+    // the re-review): at worst they wait longer; photos already placed
+    // stay where they are.
+    it("after a veto the placement trigger no longer reads the tour as code-placed, until a code votes again", () => {
+      const v = viewer(LEVEL, true);
+      v.walk(0, 0);
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 500 + i * 10, "B");
+      }
+      expect(codePlacedTour(v.ctx)).toBe(true);
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 1000 + i * 100);
+      }
+      let s = 1;
+      while (!v.ctx.ignoredCodes.has(LEVEL_ID) && s <= 90) {
+        v.walk(s, s);
+        s += 1;
+      }
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+      expect(codePlacedTour(v.ctx)).toBe(false);
+      // B's next lock votes again: code-placed once more.
+      v.lock(T0 + s * 1000, "B");
+      expect(codePlacedTour(v.ctx)).toBe(true);
+    });
+
     // Why (M5c review M2): the veto takes EVERY vote back - another code's
     // too. Code B, scanned after A and spent, is the code the keep-alive
     // holds; without a budget reset its next lock casts nothing (its hold is
@@ -593,6 +674,43 @@ describe(
       expect(afterB).toBeGreaterThan(0);
       v.lock(T0 + s * 1000 + 100);
       expect(v.votesStored()).toBe(afterB);
+    });
+
+    // Why: the veto stopped the keep-alive only when it held the VETOED
+    // code. With code B holding it, B's ring kept going into every device
+    // fix after the veto took every vote back - code votes feeding the
+    // tracking report while nothing read the tour as lined up by a code,
+    // so the station guide could latch a heading only a code had earned.
+    // "No vote stands now" must hold until a code locks again.
+    it("the veto stops another code's keep-alive too: no code vote goes into the fixes after it", () => {
+      const v = viewer(LEVEL, true);
+      v.walk(0, 0);
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 500 + i * 10);
+      }
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 700 + i * 10, "B");
+      }
+      let s = 1;
+      let heldBeforeVeto: unknown = null;
+      while (!v.ctx.ignoredCodes.has(LEVEL_ID) && s <= 90) {
+        heldBeforeVeto = v.ctx.viewerKeepAlive?.phase(v.clock.nowMs) ?? null;
+        v.walk(s, s);
+        s += 1;
+      }
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      expect(heldBeforeVeto, "B held the keep-alive up to the veto").toEqual(
+        expect.objectContaining({ text: TEXT_B }),
+      );
+      expect(v.votesStored()).toBe(0);
+      v.walk(s, s + 5);
+      expect(v.votesStored(), "no ring after the veto").toBe(0);
+      expect(stationAlignmentSignals(v.ctx, v.arStore).codeLinedUp()).toBe(
+        false,
+      );
+      // B's next lock votes again, as after any veto.
+      v.lock(T0 + (s + 6) * 1000, "B");
+      expect(v.votesStored()).toBeGreaterThan(0);
     });
 
     // Why (polish round C5, owner decision Q-C5): a veto used to hold for

@@ -77,7 +77,7 @@ function harness(objects: readonly AuthoringObject[]) {
 }
 
 describe("creator-previews: a photo's bytes", () => {
-  // Why this test matters: a Finish takes a photo out of `placedObjects`
+  // Why this test matters: a Finish takes a photo out of the page's work
   // while the hosted zip does not carry its bytes yet (the creator still
   // has to upload the rebuilt file). Its preview must decode the bytes the
   // Finish kept; reading the zip instead finds nothing and the photo

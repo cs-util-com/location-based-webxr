@@ -1,151 +1,133 @@
 # tour-manifest.ts
 
 **Purpose:** the schema, reader and writer of `tour.json` - what a creator
-placed in a tour (text pins, captured photos), each with an exact geo pose
-(lat, lon, absolute altitude, rotation against north) minted the way the
-printed code's pose is, and from format version 2 the tour kit's game
-content (title, station order, media assets, stations). Guided-setup plan
-DEC-N7/N8/N9
-(`GpsPlusSlamJs_Docs/docs/2026-09-08-tour-viewer-improvements/2026-09-08-1459-tour-viewer-guided-setup-and-mandatory-code-plan.md`);
-tour kit plan K1 and §8 D7
-(`GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`).
+placed in a tour. Since format version 3 (tour editor plan
+`GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md`,
+W3) every text pin and captured photo is an ITEM of a STATION: the station
+carries the exact geo pose (lat, lon, absolute altitude, rotation against
+north) and its items carry LOCAL poses relative to it (`tour-items.ts`,
+`tour-station-pose.ts`). Also the tour kit's game content (title, station
+order, media assets, station stories; tour kit plan K1 and §8 D7,
+`GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`),
+baked recorded photos, the needs-no-GPS flag and the tour details.
+Guided-setup plan DEC-N7/N8/N9 for the original pins and photos
+(`GpsPlusSlamJs_Docs/docs/2026-09-08-tour-viewer-improvements/2026-09-08-1459-tour-viewer-guided-setup-and-mandatory-code-plan.md`).
 
 ## Public API
 
-- `TOUR_MANIFEST_VERSION = 2` (the format's major number) and
-  `TOUR_MANIFEST_MINOR = 2` (the newest additive revision this module
-  knows; minor 1 added `captureSpots`, minor 2 `needsNoGps`).
-- `parseTourManifest(data: unknown): TourManifest` - validates every field;
-  throws `TourManifestValidationError` naming the object
-  (`"objects[3].geo.lat" …`, `"stations[0].steps[2].block.asset" …`).
-  Unknown kinds and duplicate ids reject - except in a file of a NEWER
-  minor, where an unknown value of a closed list degrades (below). A
-  version 1 document MIGRATES.
-- `serializeTourManifest(manifest): string` - re-validates through the
-  reader, refuses a manifest of a newer minor, then pretty-prints - as
-  `{ version: 1, objects }` when nothing in it needs version 2, else at
-  the lowest minor its content needs (below).
-- `createEmptyTourManifest(): TourManifest` - `{ version: 2, minor: 0,
-order: "fixed", objects: [], assets: [], stations: [] }`, the starter
-  zip's content.
-- Types `TourManifest`, `TourObject = TourPin | TourPhoto` (a
-  discriminated union on `kind`, so a renderer never asserts a field the
-  parser guaranteed), `TourObjectKind`, `TourCaptureSpots` and
-  `TourCapture` (below); `TourManifestValidationError`; and
-  re-exported from `tour-stations.ts`: `TourAsset`, `TourAssetKind`,
-  `TourOrder`, `TourStation`, `TourStationAnchor`, `TourStep`,
-  `TourStepAdvance`, `TourBlock`, `TourChoiceOption`, `TourQuizOption`,
-  `TourQuizAnswer`, `TourQuizRoute`.
+- `TOUR_MANIFEST_VERSION = 3` (the format's major number) and
+  `TOUR_MANIFEST_MINOR = 0` (the newest additive revision of version 3
+  this module knows).
+- `parseTourManifest(data: unknown, options?: TourManifestReadOptions): TourManifest`
+  - validates every field; throws `TourManifestValidationError` naming the
+    record (`"stations[1].items[3].pose.position" …`,
+    `"stations[0].steps[2].block.asset" …`). Unknown kinds and duplicate
+    ids reject - except in a file of a NEWER minor, where an unknown value
+    of a closed list degrades (below). `options.onDropped(drop)` hears
+    each tour detail left out (below).
+- `serializeTourManifest(manifest, options?): string` - re-validates
+  through the reader, refuses a manifest of a newer minor, then
+  pretty-prints `{ version: 3, minor: 0, ... }`.
+- `createEmptyTourManifest(): TourManifest` - `{ version: 3, minor: 0,
+order: "fixed", assets: [], stations: [] }`, the starter zip's content.
+- `tourItems(tour): TourItem[]` - every station's items, in station order.
+- `parseTourObject(value, at?): TourObject` - one WORLD-VIEW pin or photo
+  (geo pose, optional `station` id), the record a creator's on-device
+  draft keeps (`draft-persistence.ts` in the Tour Viewer); same field
+  rules as an item (`tour-items.ts` `parseTourContentFields`).
+- Types `TourManifest`; the world view `TourObject = TourPin | TourPhoto`
+  (`kind`, the item's fields, `geo`, `station?`), `TourObjectKind`;
+  `TourCaptureSpots` and `TourCapture` (`{ image, station, pose }`);
+  `TourManifestValidationError`; re-exported from `tour-items.ts`:
+  `TourItem`, `TourPinItem`, `TourPhotoItem`, `TourLocalPose`; and from
+  `tour-stations.ts`: `TourAsset`, `TourAssetKind`, `TourOrder`,
+  `TourStation`, `TourStep`, `TourStepAdvance`, `TourBlock`,
+  `TourChoiceOption`, `TourQuizOption`, `TourQuizAnswer`, `TourQuizRoute`.
 
-## Baked capture spots (minor 1, scan-pass plan S1)
+## Version 3 (W3; a major)
+
+- **Stations as parents.** `stations[]` each carry `geo` (required; no
+  code link, no code-only station, D9) and `items[]` (pins and photos at
+  local poses). There are no loose objects: `objects` is gone from the
+  file and from memory. A station may have no `steps` (an automatic
+  station, D20: finding it completes it).
+- **Local poses are the truth.** The manifest holds the local poses as
+  written, and the writer writes them as held: nothing on the way
+  recomputes one, so a station's move (D17) or a save never nudges an
+  item (property-tested bit for bit). The world view is computed
+  (`tour-station-pose.ts` `tourObjects`, `tourCaptureGeos`).
+- **No migration (D5).** Versions 1 and 2 are refused: "this tour is in
+  an older format (version N) that this version of the app no longer
+  opens; it has to be made again". A version 2 reader refuses a version 3
+  file with its own "made with a newer version of the app (format 3);
+  update the app to open it" - which is what the plan asks of old readers.
+- **Ids.** Item ids are unique across the whole tour (they are content
+  file stems); an asset may not share one (checked here, since only the
+  manifest sees every station's items).
+
+## Baked capture spots (scan-pass plan S1)
 
 - `captureSpots?: { fixes, gpsAccuracyMedianM, captures }`: a recorded
-  walk's photos, each `{ image, geo }`, placed ONCE at the creator's
-  Finish through the first settled alignment after the photo was taken
-  (S-D11), so a visitor neither downloads nor replays the walk. Its
-  presence is the "baked" marker: the Tour Viewer places these and never
-  runs its live join; a tour without it keeps the join.
-- `image` is the recording's own entry name (`add2dImage`'s `imageFile`,
-  e.g. `images/frame-000002.jpg`), not a `content/` path: checked by
-  the shared zip path rules (`storage/zip-entry-path.ts`) and the media
-  allowlist (an image type). `geo` must carry a `rotation` (photos face
-  as captured). `fixes` is a positive integer; `gpsAccuracyMedianM` is a
-  number >= 0 or `null` when the fixes reported none. `captures` is
-  non-empty (a bake that placed nothing writes no marker) and names each
-  photo once. A version 1 document carries none.
-- `fixes` and the accuracy describe the whole walk, as the live join's
-  status line did; with per-photo alignments they are the walk's quality,
-  not each spot's.
+  walk's photos, each `{ image, station, pose }` - placed ONCE at the
+  creator's Finish through the first settled alignment after the photo
+  was taken (S-D11), assigned to stations by the automatic-station rule
+  in capture order, and held at a local pose. A visitor neither downloads
+  nor replays the walk. Its presence is the "baked" marker: the Tour
+  Viewer places these and never runs its live join.
+- `image` is the recording's own entry name (`images/frame-000002.jpg`),
+  checked by the shared zip path rules and the media allowlist (an image
+  type). `station` must name one of the tour's stations; `pose` is a local
+  pose (photos face as captured: a local rotation always exists). `fixes`
+  is a positive integer; `gpsAccuracyMedianM` a number >= 0 or `null`.
+  `captures` is non-empty and names each photo once.
 - **A newer minor's spots this reader cannot read are dropped**, not the
-  tour (K1 R4, S1 milestone review #8): the viewer then falls back to its
-  own join or the ring. At this reader's own minor they are a broken file.
-- **The minor the writer stamps is `minorNeeded`, which must learn every
-  new field at a bump.** Forgetting it writes a too-low minor, and a reader
-  at that minor parses strictly and refuses the tour. A tripwire test pins
-  `TOUR_MANIFEST_MINOR` (now 2) so a bump cannot happen without reading
-  this.
+  tour (K1 R4, S1 milestone review #8).
 
-## A tour that needs no GPS (minor 2, Tour Viewer QR-first, Q-QF-1)
+## A tour that needs no GPS (Q-QF-1)
 
 - `needsNoGps?: true`: the tour's printed codes place it on their own, so
-  a viewer never asks its visitors for their location and starts without
-  it (the Tour Viewer: no "Allow location" step, `enable()` with
-  `location: 'none'`).
-- Only `true` is kept. `false` and absent both read as absent, and a
-  tour without the flag is written exactly as before (version 1 when
-  nothing else needs version 2). A non-boolean is a broken file at this
-  reader's minor and reads as absent from a newer one. A version 1
-  document carries none.
-- Written at minor 2 (`minorNeeded`). A minor-1 reader opens such a tour
-  and ignores the flag - its visitors are asked for location, as before;
-  a minor-1 writer refuses to save it, so the flag is never dropped.
-- Setting it is the creator's choice (the desktop editor's toggle, not in
-  this module); a tour flagged with stations that have no printed code
-  cannot reach them by position - the editor is meant to warn.
+  a viewer never asks its visitors for their location. Only `true` is
+  kept; `false` and absent read as absent. A non-boolean is a broken file
+  at this reader's minor and reads as absent from a newer one.
 
-## The version policy (K1)
+## Tour details (W2, D15)
 
-- **Major (`version`).** 2 is read as is; 1 MIGRATES: its pins and photos
-  stay as free objects, `minor` 0, `order` `"fixed"`, no assets, no
-  stations (its own fields beyond `objects` are ignored). A higher
-  integer is refused as "made with a newer version of the app (format N)";
-  anything else as not a format number.
-- **What is written (K1 milestone review R10).** A manifest with no title,
-  no assets, no stations, the default order and minor 0 is written as
-  `{ version: 1, objects }` - exactly what the pre-K1 reader checks
-  (`version === 1`, then `objects`), so a Finish of a pins-and-photos tour
-  still opens on the deployed `main` and older previews. Anything that
-  uses version 2 is written as version 2. In memory a manifest is always
-  version 2; the downgrade is the text alone, and it reads back to the
-  same manifest.
-- **The minor written is the lowest the content needs** (0, or 1 with
-  `captureSpots`), not the one the file was read at. That is lossless,
-  because this module knows every field up to its own minor, and it keeps
-  a tour without a newer field open and writable for older builds; the
-  empty manifest is minor 0 for the same reason.
-- **Minor (`minor`, default 0).** Additive revisions of version 2. A
+- `description?`, `cover?`, `contact?` (`TourDetails`, checked by
+  `tour-details.ts`): the cover names one of the tour's images - a
+  station's photo item or an image asset.
+- **Dropped, never failed, by the reader, at every minor**, and reported
+  through `onDropped`; the writer leaves out only a cover whose image went
+  (a deleted photo, the drop's `cause` `image-gone`), and throws on any
+  other drop - a cover that is not an image id, or a description or contact
+  its reader would drop (a programming error, PR #638 review).
+
+## The version policy
+
+- **Minor (`minor`, default 0).** Additive revisions of version 3. A
   reader opens any minor; unknown fields are IGNORED at every level and at
-  every minor (so a typo in a hand-edited optional field reads as absent:
-  the cost of being forward compatible). The writer refuses a manifest
-  whose minor is newer than `TOUR_MANIFEST_MINOR`: it was read with fields
-  dropped, and writing it back would lose them silently. A creator's
-  Finish on such a tour therefore fails with that message instead of
-  destroying content.
-- **Unknown VALUES of a newer minor (K1 milestone review R4).** "Additive"
-  must hold for the closed lists too, or a later minor that adds a block
-  kind breaks every older reader. In a file whose `minor` is newer than
-  `TOUR_MANIFEST_MINOR`: an unknown object kind, or a photo of an unknown
-  image type, leaves the object out; an unknown `order` reads `any`
-  (every station offered: a stricter guess could strand one); the
-  stations' lists degrade as `tour-stations.ts` says. At this reader's
-  own minor or below the same value fails, as before. Such a tour is
-  never written back (the newer-minor refusal above), so nothing is lost.
-- **Drafts.** A draft object is validated by wrapping it in a manifest of
-  the CURRENT version (`draft-persistence.ts`), and the object shapes did
-  not change between 1 and 2, so a draft written by a pre-K1 app reads
-  as version 2 (the Tour Viewer's draft test loads one), and its Finish is
-  written as version 1 while it uses nothing of version 2 (R10).
+  every minor. The writer refuses a manifest whose minor is newer than
+  `TOUR_MANIFEST_MINOR` (it was read with fields dropped). When a minor is
+  added, the writer must learn which content needs it (the version 2
+  writer's `minorNeeded`), so an older reader at a lower minor is never
+  handed a field it parses strictly.
+- **Unknown VALUES of a newer minor (K1 milestone review R4):** an
+  unknown item kind, or a photo of an unknown image type, leaves the item
+  out; an unknown `order` reads `any`; the stations' lists degrade as
+  `tour-stations.ts` says. At this reader's own minor the same value
+  fails. Such a tour is never written back.
 - The series id and version number of a tour are NOT here:
   `manifest.json` is their one place (§8 G7, `tour-signed-manifest.ts`).
 
 ## Invariants & assumptions
 
-- `objects[].geo` is a `QrGeoPose` validated by `qr/geo-pose.ts` (shared
-  with the level file): rotation is a NUE unit quaternion; heading and
-  rotation must agree.
-- `id` is one path-safe segment (`[A-Za-z0-9_-]{1,64}`), unique in the
-  manifest, and the content file's stem (`tour-archive.ts`).
-- A `pin` needs a non-empty `label`; a `photo` needs `image` equal to
-  `tourContentEntryName(id, ext)` for ITS OWN id (`content/<id>.<ext>`;
-  any other string rejects) with an allowlisted IMAGE extension (no SVG,
-  no model or media; tour kit plan K0, checked before the name is built so
-  the error is the manifest's own) and positive integer `imageWidth`/
-  `imageHeight` (the plane's aspect without decoding), and may carry a
-  label. `createdAtIso` must parse as a date.
-- `title` is optional and non-blank; `order` is `fixed | any | branch`.
-- Assets and stations are validated by `tour-stations.ts`, with the
-  object ids passed in (an asset id must not be an object id: both name a
-  content file by id).
+- A station's `geo` is a `QrGeoPose` validated by `qr/geo-pose.ts`
+  (shared with the level file).
+- An item's `pose` is three finite offsets within 10 km and a unit
+  quaternion (`tour-items.ts`).
+- `id`s are path-safe segments (`[A-Za-z0-9_-]{1,64}`); a photo's `image`
+  is `content/<its id>.<image ext>`.
+- `title` is optional and non-blank, read trimmed; `order` is
+  `fixed | any | branch`.
 - Defensive at the boundary like `qr-level.ts`: hand-editable data, every
   field checked, the writer re-validates.
 
@@ -153,26 +135,43 @@ order: "fixed", objects: [], assets: [], stations: [] }`, the starter
 
 ```ts
 const manifest = createEmptyTourManifest();
-manifest.objects.push({ id, kind: 'pin', geo, createdAtIso, label: 'Gate' });
-const text = serializeTourManifest(manifest); // throws if any object is wrong
-parseTourManifest({ version: 1, objects: [] }).version; // 2 (migrated)
+manifest.stations.push({
+  id: 'gate',
+  geo,
+  activateRadiusM: 50,
+  foundRadiusM: 25,
+  hint: 'arrow',
+  steps: [],
+  items: [
+    {
+      id,
+      kind: 'pin',
+      label: 'Gate',
+      createdAtIso,
+      pose: { position: [0, 1.5, 0], rotation: [0, 0, 0, 1] },
+    },
+  ],
+});
+const text = serializeTourManifest(manifest); // throws if any record is wrong
+parseTourManifest({ version: 2, objects: [] }); // throws: an older format
 ```
 
 ## Tests
 
-- `tour-manifest.test.ts` - accepts pins/photos, the empty manifest, one
-  rejection per rule with the object named, write/read round trip, the
-  writer's refusal; the version policy: v1 migration, a tour without
-  version 2 content written as exactly `{ version: 1, objects }` and each
-  kind of version 2 content (title, order, asset, station) written as 2,
-  a full v2 tour, a newer minor read with unknown fields ignored and
-  refused on write, a newer minor's unknown values degraded (and the same
-  file refused at this minor), a newer major and a malformed version
-  refused; the baked capture spots: read and round trip, written at
-  minor 1, a tour without them written as version 1 whatever minor it was
-  read at, a null median kept, and each malformed capture or spot set
-  refused.
-- `tour-manifest.property.test.ts` - serialize→parse is the identity and
-  parse is idempotent over generated manifests; a generated v1 manifest
-  migrates to the v2 manifest with the same objects, and migrating is
-  idempotent.
+- `tour-manifest.test.ts` - a station with a pin and a photo, the empty
+  manifest, one rejection per rule with the record named (ids across
+  stations, an asset on an item id, item fields, poses, the station geo),
+  versions 1 and 2 refused as older formats and 4 as newer, version 3
+  minor 0 written always, a full tour, a newer minor's unknown fields
+  ignored and its unknown values degraded (and refused at this minor and
+  on write), write/read round trip, the writer's refusal, the world-view
+  object parser, the baked spots (round trip, null median, each malformed
+  capture or spot set, a capture's station that does not exist), the
+  needs-no-GPS flag, the tour details (round trip, cover on a station's
+  photo or an image asset only, dropped details, the writer's cover drop
+  and refusals).
+- `tour-manifest.property.test.ts` - over generated stations, items,
+  recorded photos and details: serialize->parse is the identity with every
+  local pose the same numbers exactly; parse is idempotent; every item
+  stays in its station and a kept cover is always one of the tour's
+  photos.
