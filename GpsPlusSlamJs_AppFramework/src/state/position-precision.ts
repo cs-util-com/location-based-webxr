@@ -119,9 +119,13 @@ export interface PrecisionGpsPoint {
 }
 
 export interface PositionPrecisionInput {
-  /** The position the app judges, or null when it has none (no alignment
-   *  it may use and no fresh fix, or a tracking drop). Undefined reads as
-   *  null; any other value throws. */
+  /** The position the app judges, or null when it has none: no alignment
+   *  it may use and no fresh fix. A tracking drop (the camera pose lost
+   *  for a moment) is NOT null: the app passes the kind it would judge, so
+   *  a code's hold survives the drop - null reads `'none'`, and an app
+   *  that ends what a code made on `'none'` would end it on every drop.
+   *  Whether to act on a position it cannot see this tick stays the app's.
+   *  Undefined reads as null; any other value throws. */
   readonly position: PositionKind | null;
   /** The app's statement that a code still holds its alignment. */
   readonly codeHold: boolean;

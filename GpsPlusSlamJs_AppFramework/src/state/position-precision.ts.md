@@ -19,9 +19,14 @@ through `dist`). The Tour Viewer's station guide is the first (M2 of
 - `positionPrecision(input): PositionPrecision` - the judgement. `input`:
   - `position`: `'aligned'` (the aligned camera), `'lone-fix'` (a device fix
     standing in for it), or `null` (the app has no position: no alignment it
-    may use and no fresh fix, a tracking drop). Which one is the app's call.
-    `undefined` reads as `null` (a plain-JS caller); any other value is a
-    caller bug and throws a `RangeError`.
+    may use and no fresh fix). Which one is the app's call. **A tracking
+    drop is not `null`:** the app passes the kind it would judge, so a
+    code's hold survives the drop (`null` reads `'none'`, and an app that
+    ends what a code made on `'none'` would end it on every drop); whether
+    to act on a position it cannot see this tick stays the app's. The Tour
+    Viewer's station guide does exactly this. `undefined` reads as `null`
+    (a plain-JS caller); any other value is a caller bug and throws a
+    `RangeError`.
   - `codeHold`: the app's own statement that a code still holds its
     alignment. When that ends is the app's: on events (a code judged moved,
     a new odometry frame, leaving AR, another tour), never by the clock.
@@ -101,6 +106,8 @@ import {
 } from 'gps-plus-slam-app-framework/state/position-precision';
 
 const precision = positionPrecision({
+  // A tracking drop keeps the alignment (and so 'aligned'): a code's hold
+  // survives it. null only with no alignment to use and no fresh fix.
   position: alignmentReady ? 'aligned' : freshFix ? 'lone-fix' : null,
   codeHold: codeStillHolds,
   gpsPoints: selectGpsPositions(store.getState()),
@@ -115,8 +122,9 @@ if (!canTellApart(precision, nearestOtherTargetM)) {
 ## Tests
 
 - `position-precision.test.ts` - the constants; `'code'` for an aligned
-  position a code holds (codes-only too); `'none'` with no position (no
-  number, too weak); an undefined position as none and an unknown kind
+  position a code holds (codes-only too); a code holding through a
+  tracking drop (the app keeps passing `'aligned'`, as the contract says);
+  `'none'` with no position (no number, too weak); an undefined position as none and an unknown kind
   refused; the
   median of device fixes only; the window of 10 usable fixes; both sides of
   the ceiling and a caller ceiling; the lone fix's worse-of and that a code

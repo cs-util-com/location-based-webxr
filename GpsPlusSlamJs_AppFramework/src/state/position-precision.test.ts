@@ -61,6 +61,41 @@ describe('position precision: one judgement of how precise a position is', () =>
     ).toEqual(code);
   });
 
+  // Why this test matters: the contract for `position` says a tracking drop
+  // is NOT null - the app keeps passing the kind it would judge. An app that
+  // read the older wording ("null on a tracking drop") would see `'none'` on
+  // every drop and, if it ends what a code made on `'none'` (the Tour
+  // Viewer ends a station a code made present), clear it each time the
+  // camera pose blinks. This pins both readings over a stream with a drop,
+  // so the one the contract names is the one that keeps the code.
+  it('keeps a code holding through a tracking drop when the app passes the kind it would judge', () => {
+    // A code holds throughout; the camera pose drops on ticks 2-4. Weak
+    // device fixes, so a lost hold would show as too weak, not as "code".
+    const poseSeen = [true, true, false, false, false, true];
+    const gpsPoints = [device(40), device(45)];
+    const byContract = poseSeen.map(() =>
+      positionPrecision({ position: 'aligned', codeHold: true, gpsPoints })
+    );
+    expect(byContract.map((p) => p.source)).toEqual(poseSeen.map(() => 'code'));
+    expect(byContract.every((p) => !p.tooWeak)).toBe(true);
+    // The reading the contract rules out: null on the drop loses the code.
+    const nullOnDrop = poseSeen.map((seen) =>
+      positionPrecision({
+        position: seen ? 'aligned' : null,
+        codeHold: true,
+        gpsPoints,
+      })
+    );
+    expect(nullOnDrop.map((p) => p.source)).toEqual([
+      'code',
+      'code',
+      'none',
+      'none',
+      'none',
+      'code',
+    ]);
+  });
+
   // Why this test matters: with no position the app has nothing to judge, and
   // a reader that checks only `tooWeak` must still never guide on it. But
   // `tooWeak` on "none" is NOT a verdict on GPS: a tracking drop or location
