@@ -377,13 +377,20 @@ function phoneElement() {
   };
 }
 
+/** What only the phone's page offers here: the file its last Finish
+ *  made, and the objects its document holds. */
+interface PhonePage extends Page {
+  lastFinished(): File;
+  objects(): TourObject[];
+}
+
 async function phonePage(
   file: File,
   stores: (key: string) => Promise<DraftFileStore>,
   restore = false,
   /** The tour.json the page opens (default: the table's tour). */
   manifest: TourManifest = tourOf(OPENED),
-): Promise<Page> {
+): Promise<PhonePage> {
   const session: TourSession = await openTourFile(file);
   const dom = Object.fromEntries(
     PHONE_DOM_KEYS.map((k) => [k, phoneElement()]),
@@ -516,6 +523,14 @@ async function phonePage(
       return readRecords(await stores(draftKey), true);
     },
     reopenRestored: () => phonePage(file, stores, true),
+    lastFinished: () => {
+      const made = ctx.rebuiltZip;
+      if (made === null) throw new Error("the phone finished no tour");
+      return new File([made.blob], made.filename, {
+        type: "application/zip",
+      });
+    },
+    objects,
     addedStations: () =>
       addedOf(
         (ctx.tourDocument.manifest()?.stations ?? []).map((s) => ({
@@ -1055,4 +1070,40 @@ describe("the parity contract: a file carrying debug camera captures", () => {
       );
     }
   }, 60_000);
+});
+
+describe("the phone's draft of a file-opened tour across Finishes", () => {
+  // MARKED `it.fails`: the defect is real and open. The phone keeps its
+  // draft under the key the tour was opened with until a re-open proves
+  // the Finish was put in place (`creator-finish.ts`, "NOT cleared
+  // here"), but the file that proof would come from has another key. The
+  // fix - moving or copying the namespace to the finished bytes' key as
+  // the desktop moves it on an in-place write (`editor-draft.ts`
+  // `landed`), or a key on an id the tour itself carries - is a decision
+  // about the draft's semantics on a download, filed rather than taken
+  // here. When it lands this test turns red and the marker comes off.
+  it.fails(
+    "a phone draft of a file-opened tour stays reachable across two Finishes",
+    async () => {
+      // Why this test matters: a tour opened from a FILE is known by a key
+      // taken from its content (`tour-file-key.ts`), and the draft is kept
+      // under it. A finished tour without a walk holds only what the tour
+      // kit writes, so that key hashes its tour.json - and every Finish
+      // writes a new one. The file a creator opens next is the one the last
+      // Finish made; an edit made after that Finish must be offered there,
+      // or it is lost with the page. (Fails today on the reopen: no offer.)
+      const stores = memoryStores();
+      const page = await phonePage(await tourFile(), stores);
+      await page.edit("a", "Before the first Finish");
+      await page.save();
+      await page.edit("b", "Before the second Finish");
+      const written = await page.save();
+      await page.edit("a", "After the second Finish");
+      const next = await phonePage(page.lastFinished(), stores, true, written);
+      expect(next.objects().find((o) => o.id === "a")).toMatchObject({
+        label: "After the second Finish",
+      });
+    },
+    60_000,
+  );
 });
