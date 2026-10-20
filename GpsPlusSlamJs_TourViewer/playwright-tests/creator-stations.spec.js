@@ -228,6 +228,125 @@ test("'New station here' makes the next pin start its own station within the rad
   expect(started.geo.lon).toBeCloseTo(own.geo.lon, 9);
 });
 
+/** A recording with no `tour.json` (archive-server.mjs): two photos about
+ *  2 m and 12 m north of the zero, no code. */
+const RECORDING = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
+
+/**
+ * Open the recording on the creator's page and wait for the open to settle
+ * (the bake of its photos included), with step 4 open.
+ * @param {import("@playwright/test").Page} page
+ */
+async function openRecording(page) {
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RECORDING);
+  await page.getByTestId("open-button").click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    { timeout: 15000 },
+  );
+  const step = page.getByTestId("step-measure");
+  if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
+    await page.getByTestId("station-measure").click();
+  }
+}
+
+/**
+ * The pin labelled `label` as the page's tour document holds it, the frame
+ * of the station it names (null when the document has no such station),
+ * and the ids of the stations the opened tour carries. The fakes hand
+ * the page's store over when AR starts, so read it after an entry.
+ * @param {import("@playwright/test").Page} page
+ */
+async function pinInStore(page, label) {
+  return page.evaluate(
+    ({ key, label }) => {
+      const doc = /** @type {any} */ (window)[key].alignmentStore.getState()
+        .tourDocument;
+      const pin = doc.placed
+        .map((/** @type {any} */ p) => p.object)
+        .find((/** @type {any} */ o) => o.kind === "pin" && o.label === label);
+      const frame =
+        pin === undefined
+          ? null
+          : (doc.stations.find(
+              (/** @type {any} */ f) => f.id === pin.station,
+            ) ?? null);
+      return {
+        pin: pin ?? null,
+        frame,
+        opened: (doc.opened?.stations ?? []).map(
+          (/** @type {any} */ st) => st.id,
+        ),
+      };
+    },
+    { key: TEST_KEY, label },
+  );
+}
+
+test("a recording without tour.json is a tour from the open: a fresh pin's station is in the document before any Finish, after the visit's settle and after a reload", async ({
+  page,
+}) => {
+  // Why this test matters: the station a pin stands in used to be decided
+  // by the Finish, so before it the page showed stations a write could
+  // still change, and a reload could bring a pin back naming a station the
+  // tour lacked. Every object now belongs to a station of the document
+  // from the moment it is placed; the recording's photos are in stations
+  // from the open; and the station survives the visit's settle and a
+  // reload. Read from the store, not from the words on screen.
+  await openRecording(page);
+  await enterArAndMeasure(page);
+  // The recording's two photos, 10 m apart, share one station of the
+  // walk, made at the open.
+  expect((await pinInStore(page, "none")).opened).toEqual(["walk-1"]);
+
+  // 100 m north: far from the walk's station, so the pin starts its own.
+  await stand(page, 100, 0);
+  await placePin(page, "Far", 100, 0);
+  await expect(page.getByTestId("setup-status")).toContainText(
+    'Pin "Far" placed - it starts Station 2',
+  );
+  const placed = await pinInStore(page, "Far");
+  expect(placed.pin?.station).toBeDefined();
+  expect(placed.frame).not.toBeNull();
+  expect(placed.frame.id).not.toBe("walk-1");
+  expect(placed.frame.geo.lat).toBeCloseTo(placed.pin.geo.lat, 9);
+
+  // The visit ends: its settle re-poses the pin and its station together.
+  await page.evaluate((key) => {
+    /** @type {any} */ (window)[key].endXrSession();
+  }, TEST_KEY);
+  await expect(page.getByTestId("enter-ar")).not.toHaveAttribute(
+    "data-ar-state",
+    "running",
+  );
+  const settled = await pinInStore(page, "Far");
+  expect(settled.pin?.station).toBe(placed.pin.station);
+  expect(settled.frame).not.toBeNull();
+  expect(settled.frame.geo.lat).toBeCloseTo(settled.pin.geo.lat, 9);
+  expect(settled.frame.geo.lon).toBeCloseTo(settled.pin.geo.lon, 9);
+
+  // A reload, the draft offered and restored: the same station, whole.
+  await page.reload();
+  await openRecording(page);
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await page.getByTestId("draft-restore").click();
+  await expect(page.getByTestId("draft-offer")).toBeHidden();
+  await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("enter-ar").click();
+  await expect(page.getByTestId("enter-ar")).toHaveAttribute(
+    "data-ar-state",
+    "running",
+  );
+  await expect
+    .poll(async () => (await pinInStore(page, "Far")).pin?.station)
+    .toBe(placed.pin.station);
+  const restored = await pinInStore(page, "Far");
+  expect(restored.frame).toEqual(settled.frame);
+  expect(restored.opened).toEqual(["walk-1"]);
+});
+
 /** The box of a test id, in viewport pixels. */
 async function box(page, testId) {
   const b = await page.getByTestId(testId).boundingBox();
