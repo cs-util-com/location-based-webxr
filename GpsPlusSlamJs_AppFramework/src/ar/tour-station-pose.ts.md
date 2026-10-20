@@ -20,7 +20,8 @@ pose and its station) - what a viewer places and a creator's drafts hold.
   rotation also carries the compat `headingDeg`, as every minted pose).
 - `tourObjects(manifest): TourObject[]` - every item in the world, with
   `station` set, in station order.
-- `tourCaptureGeos(manifest): TourCaptureGeo[]` - the baked recorded
+- `tourCaptureGeos(manifest): TourCaptureGeo[]` (**deprecated**, with
+  `TourCaptureGeo`: no app writes them; removed in the next major) - the baked recorded
   photos in the world (`{ image, station, geo }`), in capture order; empty
   without spots.
 

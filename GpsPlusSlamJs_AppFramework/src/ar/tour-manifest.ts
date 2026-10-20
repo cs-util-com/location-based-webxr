@@ -129,7 +129,11 @@ export type TourObjectKind = TourObject['kind'];
 
 /** One recorded photo's spot, baked at the creator's Finish, held by a
  *  station at a local pose (always with a rotation: photos face as
- *  captured). */
+ *  captured).
+ *
+ *  @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major.
+ *  The parser still reads them and the writer still writes what it is
+ *  given. */
 export interface TourCapture {
   /** The photo's entry name as the recording wrote it (`add2dImage`). */
   readonly image: string;
@@ -145,6 +149,10 @@ export interface TourCapture {
  * alignment after it was taken), so a visitor neither downloads the walk
  * nor replays it. Its presence is the "baked" marker: a viewer places
  * these and never runs its live join; a tour without it keeps the join.
+ *
+ * @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major.
+ * The parser still reads them and the writer still writes what it is
+ * given.
  */
 export interface TourCaptureSpots {
   /** The walk's GPS fixes paired with odometry, and their median accuracy
@@ -167,7 +175,8 @@ export interface TourManifest extends TourDetails {
   assets: TourAsset[];
   /** The stations, each with its pins and photos (no loose ones). */
   stations: TourStation[];
-  /** The recorded photos' baked spots (see the type). */
+  /** The recorded photos' baked spots (see the type).
+   *  @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major. */
   captureSpots?: TourCaptureSpots;
   /**
    * The tour's printed codes place it on their own, so a viewer never asks

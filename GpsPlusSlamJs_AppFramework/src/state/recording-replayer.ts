@@ -52,8 +52,7 @@ export interface ReplayRecordingOptions {
    * wants the result but no way to act on it (PR #378 review). The
    * TourViewer already checks a generation token inside `onChunk` — and
    * could only use it to skip a status label, so a replay whose AR session
-   * had ended kept dispatching to a store nobody would read. Same shape as
-   * the abort seam added to `decodeJoinedPoses`, whose own comment names it.
+   * had ended kept dispatching to a store nobody would read.
    *
    * The returned state is PARTIAL by construction; a caller that aborts is
    * expected to discard it, which is why this is a separate hook rather than

@@ -26,13 +26,13 @@ Loads all actions from a recording zip, creates a store with `NullStorageBackend
   is a separate hook rather than an error.
   - It exists because `onChunk` gave a caller a place to NOTICE it no longer
     wanted the result but no way to act on it. Its production caller is the
-    TourViewer's bake of a recording's photos at a creator's open
-    (`capture-bake.ts` `bakeCaptureSpots`, through `walkAtOpen`), which the
-    phone's open (`archive-open.ts`) runs with
-    `() => ctx.session === opened`: a bake whose tour was closed or
-    replaced stops at the next chunk instead of replaying the rest of a
-    walk nobody will read. `capture-bake.test.ts` ("a replay the caller
-    stopped") pins the pass-through.
+    TourViewer's placement of a walk's debug camera captures
+    (`debug-captures.ts` `debugCapturesOf`), which the desktop editor's
+    debug layer (`editor/debug-capture-layer.ts`) runs until the tour
+    closes: a replay whose tour was closed or replaced stops at the next
+    chunk instead of replaying the rest of a walk nobody will read.
+    `debug-captures.test.ts` ("a replay the caller stopped") pins the
+    pass-through.
   - **The option was once added a round BEFORE its first caller was
     wired**, and nothing caught the gap: the option is optional so types
     were satisfied, and the framework tests use it so knip saw no dead

@@ -102,7 +102,9 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 
 ## Baked capture spots (scan-pass plan S1)
 
-- `captureSpots?: { fixes, gpsAccuracyMedianM, captures }`: a recorded
+- `captureSpots?: { fixes, gpsAccuracyMedianM, captures }` (**deprecated**:
+  the walk's camera captures are debug data; no app writes them; removed in the next major. The parser
+  still reads the field and the writer still writes what it is given): a recorded
   walk's photos, each `{ image, station, pose }` - placed ONCE at the
   creator's Finish through the first settled alignment after the photo
   was taken (S-D11), assigned to stations by the automatic-station rule

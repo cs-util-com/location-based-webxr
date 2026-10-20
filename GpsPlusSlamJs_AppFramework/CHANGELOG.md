@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Deprecated
+
+- **`captureSpots` and its types**: `TourManifest.captureSpots`,
+  `TourCaptureSpots`, `TourCapture`, `TourCaptureGeo` and
+  `tourCaptureGeos`. A walk's camera captures are debug data: no app writes them; removed in the next major.
+  The parser still reads the field and the writer still writes what it is
+  given, so files written earlier keep opening.
+
 ### Fixed
 
 - **The NOTICE links the public repository**: it pointed at a repository a
