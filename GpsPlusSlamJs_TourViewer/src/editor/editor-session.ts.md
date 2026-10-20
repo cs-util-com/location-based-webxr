@@ -191,6 +191,11 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     the debug data" after a save that left the walk out (M2 of the
     debug-captures plan, review #9): the newest bytes then carry none.
     Changes nothing of the session.
+  - `debugTour()` - the tour a debug bundle saved now names, and the one
+    an added debug data file is compared with (`bundleMatchesTour`, "Add
+    debug data…"): a listed tour's series, the title of the newest
+    written file (an edit not yet saved is not the file's), the saved
+    file name.
   - `walkEntries()` - the walk recording's entries in the newest bytes
     (the last save's, else the opened file's; `scanEntryNames`): none once
     it was moved out, or when a save left it out.

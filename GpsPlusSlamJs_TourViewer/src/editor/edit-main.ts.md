@@ -107,13 +107,30 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   newest copy waits and replaces any copy waiting before it (E2b-2
   milestone review #3).
 - **The debug layer** (`debug-capture-layer.ts`, M1 of the
-  debug-captures plan): for a tour whose file carries a walk, once the
-  tour is on screen, the walk's camera captures are placed
-  (`debugCapturesOf`) and drawn as thumbnails, read from the copy the
-  page reads now, with "Reading the debug data..." and then how many it
-  shows or why none (`#debug-status`). The "Show debug data" switch
-  starts ticked and only shows or hides them: view state, never in the
-  tour document, a save or the draft. Leaving the tour stops it.
+  debug-captures plan): once the tour is on screen, the camera captures
+  of `debugSource()` are placed (`debugCapturesOf`) and drawn as
+  thumbnails, with "Reading the debug data..." and then how many it shows
+  or why none (`#debug-status`). The "Show debug data" switch
+  (`#debug-switch`) shows only while there is a source, starts ticked and
+  only shows or hides them: view state, never in the tour document, a
+  save or the draft. Leaving the tour stops it.
+  - `debugSource()` is the one seam the layer reads (and a point cloud
+    will): debug data added beside the tour wins - the creator chose it -
+    else the opened file when it carries a walk (`tourWalk`, its
+    pictures from the copy the page reads now), else none.
+- **Add debug data…** (`addDebugData`, M2 step 5 of the debug-captures
+  plan; the panel shows it for every open tour; its file input, or a file
+  dropped on the panel): a debug bundle or a plain Recorder zip, opened
+  as any zip is (`openTourFile`: the archive caps; the picture cap for
+  its thumbnails) and read for whose it is (`readDebugBundle`,
+  `bundleMatchesTour` against `EditorSession.debugTour()`). Shown, also
+  when it is another tour's (Q-C), with `addedDebugLine`
+  (`added-debug-data.ts`) ahead of the layer's line; a file that is no
+  debug data is refused in a toast (`notAddedLine`), the layer kept.
+  The button reads "Adding the debug data…" and is disabled meanwhile.
+  Never saved, never drafted, closed with the tour and forgotten at a
+  reload (Q-H); a newer add replaces it; an add that ends after another
+  tour opened is closed unseen.
 - **Save** builds the tour (`keepScan` from the "Keep the debug data in
   the tour file" switch, shown only for a tour that carries a walk and
   unticked at the open (M2 of the debug-captures plan, E2: the walk is
@@ -443,5 +460,9 @@ chosen file, the dialog held open and Done disabled while it runs, the
 download's second click, the tour file itself refused as the walk's, a
 tour with no file downloaded on a second click, a dismissed walk save and
 a failed tour write
-each followed by a save that still carries the walk - among them) and `editor-entry.spec.js` (the
+each followed by a save that still carries the walk - among them; the
+debug layer and "Add debug data…": an added file's captures and line,
+another tour's and a plain recording's lines, a refusal, no save carrying
+it, a reload forgetting it, a drop on the panel shown in place of the
+tour's walk) and `editor-entry.spec.js` (the
 "Nothing to save" toast, the open from a link); `way-in.spec.js` checks its first paint.

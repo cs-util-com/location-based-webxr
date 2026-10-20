@@ -567,9 +567,13 @@ test("says why a walk shows no debug data, and shows no switch for a tour withou
   // Why (the async-UI rule): the debug layer's work ends in a final state
   // the creator can read - here a walk whose stream places nothing. A
   // tour without a walk has no debug data and no switch for it.
+  // Changed expectation (M2 step 5 of the debug-captures plan): such a
+  // tour's panel stays, offering "Add debug data…" alone - it used to be
+  // hidden, which left no place to add the debug data back.
   await page.goto("/edit.html");
   await openThroughChooser(page, await wrappedTour(), "wrapped.zip");
   await expect(page.locator("#debug-panel")).toBeVisible();
+  await expect(page.locator("#debug-switch")).toBeVisible();
   await expect(page.locator("#debug-status")).toContainText(
     "No debug data shown: ",
   );
@@ -580,7 +584,200 @@ test("says why a walk shows no debug data, and shows no switch for a tour withou
   await page.locator("#open-another").click();
   await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
   await expect(page.locator("#tour-name")).not.toHaveText("Wrapped fixture");
-  await expect(page.locator("#debug-panel")).toBeHidden();
+  await expect(page.locator("#debug-panel")).toBeVisible();
+  await expect(page.locator("#debug-switch")).toBeHidden();
+  await expect(page.locator("#debug-status")).toHaveText("");
+  await expect(page.locator("#debug-add")).toHaveText("Add debug data…");
+});
+
+/**
+ * Debug data as the Tour Viewer saves it apart (`debug-bundle.ts`): the
+ * recording of recording-tour.zip - its tour and its code left out - and
+ * a `debug-bundle.json` naming the tour it was saved from.
+ * @param {{ tour: string | null, file: string | null }} from
+ */
+async function debugBundleOf(from) {
+  const full = new ZipReader(
+    new Uint8ArrayReader(
+      new Uint8Array(
+        await (
+          await fetch("http://127.0.0.1:5197/ranges-ok/recording-tour.zip")
+        ).arrayBuffer(),
+      ),
+    ),
+  );
+  const entries = [];
+  for (const entry of await full.getEntries()) {
+    if (entry.directory) continue;
+    if (entry.filename === "tour.json" || entry.filename.startsWith("qr/")) {
+      continue;
+    }
+    entries.push({
+      path: entry.filename,
+      data: await entry.getData(new Uint8ArrayWriter()),
+    });
+  }
+  await full.close();
+  entries.push({
+    path: "debug-bundle.json",
+    data: JSON.stringify({
+      format: 1,
+      seriesId: null,
+      ...from,
+      writtenAt: "2026-10-20T12:00:00.000Z",
+    }),
+  });
+  return zip(entries);
+}
+
+/**
+ * Add a file as debug data through the panel's file input.
+ * @param {import("@playwright/test").Page} page
+ * @param {Buffer} buffer
+ * @param {string} name
+ */
+async function addDebugFile(page, buffer, name) {
+  await page
+    .locator("#debug-add-input")
+    .setInputFiles({ name, mimeType: "application/zip", buffer });
+}
+
+test("adds the debug data back beside a tour from its own button, and forgets it at a reload", async ({
+  page,
+}) => {
+  // Why (M2 step 5 of the debug-captures plan, Q-H): the debug data lives
+  // in a file of its own, and the editor shows it again when the creator
+  // adds that file - its captures on the map, a line naming the file -
+  // without it ever becoming part of the tour: nothing pending, and a
+  // reload forgets it (keeping it would put the whole walk in the
+  // browser's storage).
+  await page.goto("/edit.html");
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  // The panel shows once the tour is open: only then is there a tour to
+  // add debug data to.
+  await expect(page.locator("#debug-panel")).toBeVisible();
+  await expect(page.locator("#debug-switch")).toBeHidden();
+  const rows = await page.locator("#rail .row").count();
+  expect(rows).toBeGreaterThan(0);
+  const bundle = await debugBundleOf({
+    tour: "Editor fixture",
+    file: "editor-fixture.zip",
+  });
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator("#debug-add").click();
+  await (
+    await chooser
+  ).setFiles({
+    name: "editor-fixture-debug.zip",
+    mimeType: "application/zip",
+    buffer: bundle,
+  });
+  await expect(page.locator("#debug-status")).toHaveText(
+    "Added from editor-fixture-debug.zip, not saved with the tour. Debug data: 2 camera captures on the map.",
+  );
+  await expect(page.locator(".mk-debug-wrap")).toHaveCount(2);
+  await expect(page.locator(".mk-debug img")).toHaveCount(2);
+  await expect(page.locator("#debug-switch")).toBeVisible();
+  await expect(page.locator("#debug-add")).toHaveText("Add debug data…");
+  await expect(page.locator("#debug-add")).toBeEnabled();
+  // Not the tour's content: nothing listed, nothing pending.
+  await expect(page.locator("#rail .row")).toHaveCount(rows);
+  await expect(page.locator("#save-status")).toHaveText("No changes");
+  await page.reload();
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await expect(page.locator("#debug-switch")).toBeHidden();
+  await expect(page.locator("#debug-status")).toHaveText("");
+  await expect(page.locator(".mk-debug-wrap")).toHaveCount(0);
+});
+
+test("says whose added debug data is - another tour's, or a plain recording - refuses a file that is none, and never saves it", async ({
+  page,
+}) => {
+  // Why (Q-C of the debug-captures plan): a file saved from another tour
+  // is shown, never refused, but the line says so; a Recorder zip names no
+  // tour, so it is "a recording". A file without a recording is refused in
+  // words, the layer kept. No save carries any of it (E2).
+  await noSavePicker(page);
+  await page.goto("/edit.html");
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  await expect(page.locator("#debug-panel")).toBeVisible();
+  await addDebugFile(
+    page,
+    await debugBundleOf({ tour: "Somewhere else", file: "else.zip" }),
+    "else-debug.zip",
+  );
+  await expect(page.locator("#debug-status")).toHaveText(
+    'Added from else-debug.zip, not saved with the tour. It was saved from another tour ("Somewhere else", else.zip), not this one. Debug data: 2 camera captures on the map.',
+  );
+  await expect(page.locator(".mk-debug-wrap")).toHaveCount(2);
+  const recording = Buffer.from(
+    await (
+      await fetch("http://127.0.0.1:5197/ranges-ok/recording-tour.zip")
+    ).arrayBuffer(),
+  );
+  await addDebugFile(page, recording, "walk.zip");
+  await expect(page.locator("#debug-status")).toHaveText(
+    "Added from walk.zip, not saved with the tour. It is a recording, not saved from this tour. Debug data: 2 camera captures on the map.",
+  );
+  await addDebugFile(page, await editorTour(), "plain.zip");
+  await expect(
+    page.locator(".toast", {
+      hasText:
+        "Not added: This file carries no recording: it is neither debug data nor a Recorder zip.",
+    }),
+  ).toBeVisible();
+  // The layer kept what was added before.
+  await expect(page.locator("#debug-status")).toContainText(
+    "Added from walk.zip",
+  );
+  await expect(page.locator(".mk-debug-wrap")).toHaveCount(2);
+  await expect(page.locator("#save-status")).toHaveText("No changes");
+  await page.locator("#rail .row", { hasText: "Town hall" }).click();
+  const field = page.locator("#card textarea");
+  await field.fill("Edited beside debug data");
+  await field.blur();
+  const saved = await saveAndRead(page);
+  expect(saved.names.filter((n) => n.startsWith("actions/"))).toEqual([]);
+  expect(saved.names.filter((n) => n.startsWith("images/"))).toEqual([]);
+  expect(saved.names).not.toContain("session.json");
+  expect(saved.names).not.toContain("debug-bundle.json");
+});
+
+test("shows debug data dropped on its panel in place of the tour's own walk, and says so", async ({
+  page,
+}) => {
+  // Why (M2 step 5 of the debug-captures plan): the creator chose the
+  // added file, so it wins over the walk the tour carries - here a walk
+  // whose stream places nothing, so only the added file can draw - and
+  // the line says which one the map shows. A drop on the panel adds it as
+  // the button does.
+  await page.goto("/edit.html");
+  await openThroughChooser(page, await wrappedTour(), "wrapped.zip");
+  await expect(page.locator("#debug-status")).toContainText(
+    "No debug data shown: ",
+  );
+  const bundle = await debugBundleOf({
+    tour: "Wrapped fixture",
+    file: "wrapped.zip",
+  });
+  const dropped = await page.evaluateHandle((bytes) => {
+    const data = new DataTransfer();
+    data.items.add(
+      new File([new Uint8Array(bytes)], "wrapped-debug.zip", {
+        type: "application/zip",
+      }),
+    );
+    return data;
+  }, Array.from(bundle));
+  await page
+    .locator("#debug-panel")
+    .dispatchEvent("drop", { dataTransfer: dropped });
+  await expect(page.locator("#debug-status")).toHaveText(
+    "Added from wrapped-debug.zip, not saved with the tour. It is shown in place of the tour's own walk. Debug data: 2 camera captures on the map.",
+  );
+  await expect(page.locator(".mk-debug-wrap")).toHaveCount(2);
+  await expect(page.locator("#save-status")).toHaveText("No changes");
 });
 
 test("says the sample is being fetched while it is, and why it failed when it does", async ({

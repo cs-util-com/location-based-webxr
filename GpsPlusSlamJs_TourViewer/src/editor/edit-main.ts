@@ -98,7 +98,17 @@ import {
   type EditorSave,
   type EditorSession,
 } from "./editor-session.js";
-import { debugBundleFileName } from "../debug-bundle.js";
+import {
+  bundleMatchesTour,
+  debugBundleFileName,
+  readDebugBundle,
+  type DebugBundleTour,
+} from "../debug-bundle.js";
+import {
+  ADD_DEBUG_LABELS,
+  addedDebugLine,
+  notAddedLine,
+} from "./added-debug-data.js";
 import { noGpsWarnings } from "./no-gps-check.js";
 import { revealPadding, type Box } from "./popover-place.js";
 import { createStatusLines } from "./status-lines.js";
@@ -254,8 +264,13 @@ const keepWalk = element("keep-walk");
 const keepWalkInput = element<HTMLInputElement>("keep-walk-input");
 /** The debug layer's switch and its line (`debug-capture-layer.ts`). */
 const debugPanel = element("debug-panel");
+const debugSwitch = element("debug-switch");
 const debugInput = element<HTMLInputElement>("debug-data-input");
 const debugStatus = element("debug-status");
+/** "Add debug data…" and its file input (M2 step 5 of the debug-captures
+ *  plan). */
+const debugAddButton = element<HTMLButtonElement>("debug-add");
+const debugAddInput = element<HTMLInputElement>("debug-add-input");
 /** The tour's "needs no GPS" setting and its warnings (QR-first M1b-2). */
 const noGpsInput = element<HTMLInputElement>("no-gps-input");
 /** Its warnings' live region: never hidden (an empty one is zero-height),
@@ -1172,28 +1187,82 @@ function leaveFile(): void {
   photos.clear();
   debugLayer?.stop();
   debugLayer = null;
+  tourWalk = null;
+  forgetAddedDebug();
   debugPanel.hidden = true;
+  debugSwitch.hidden = true;
   debugStatus.textContent = "";
 }
 
 /** The open tour's debug layer: view state only, never in the tour
  *  document, a save or the draft. */
 let debugLayer: DebugLayer | null = null;
+/** The opened file, when it carries a walk: the layer's source unless
+ *  debug data was added. */
+let tourWalk: TourSession | null = null;
+/** Debug data added beside the tour ("Add debug data…", M2 step 5 of the
+ *  debug-captures plan): a second, read-only archive. Never saved, never
+ *  drafted, gone at a reload (Q-H) and with the tour. */
+let addedDebug: {
+  readonly session: TourSession;
+  readonly line: string;
+} | null = null;
+/** An add is reading its file: a second one starts nothing. */
+let addingDebug = false;
 
-/**
- * Show the walk's debug camera captures of a tour that carries a walk,
- * after it opened: the join replays the walk once (`debugCapturesOf`),
- * then a thumbnail per capture is decoded, one at a time. Shown by
- * default; the switch hides them. A tour closed meanwhile stops it.
- */
-function startDebugLayer(opened: TourSession): void {
-  debugPanel.hidden = false;
-  debugInput.checked = true;
-  const layer = createDebugCaptureLayer<HTMLElement>({
-    read: (options) => debugCapturesOf(opened, options),
+/** Where the debug layer reads (one seam, so a point cloud reads the
+ *  same place): debug data added wins over the tour's own walk - the
+ *  creator chose it - and its line says which it shows; null when there
+ *  is neither. */
+function debugSource(): {
+  readonly source: TourSession;
+  readonly loadPicture: (image: string) => Promise<Blob>;
+  readonly line: string | null;
+} | null {
+  if (addedDebug !== null) {
+    const added = addedDebug.session;
+    return {
+      source: added,
+      loadPicture: (image) => added.loadEntry(image),
+      line: addedDebug.line,
+    };
+  }
+  const walk = tourWalk;
+  if (walk === null) return null;
+  return {
+    source: walk,
     // From the copy the page reads now: the opened file stops reading
     // once a save rewrote it (as the card's photos, E2b plan review #2).
-    loadPicture: (image) => (photos.current() ?? opened).loadEntry(image),
+    loadPicture: (image) => (photos.current() ?? walk).loadEntry(image),
+    line: null,
+  };
+}
+
+/** The added debug data goes, its archive closed. */
+function forgetAddedDebug(): void {
+  const was = addedDebug;
+  addedDebug = null;
+  if (was !== null) void was.session.close().catch(() => undefined);
+}
+
+/**
+ * Show the debug camera captures of `debugSource()`, after the tour
+ * opened: the join replays the walk once (`debugCapturesOf`), then a
+ * thumbnail per capture is decoded, one at a time. Shown by default; the
+ * switch hides them. A tour closed meanwhile, or a source replaced, stops
+ * it. With no source the panel offers only "Add debug data…".
+ */
+function startDebugLayer(): void {
+  debugLayer?.stop();
+  debugLayer = null;
+  const from = debugSource();
+  debugSwitch.hidden = from === null;
+  debugStatus.textContent = from?.line ?? "";
+  if (from === null) return;
+  debugInput.checked = true;
+  const layer = createDebugCaptureLayer<HTMLElement>({
+    read: (options) => debugCapturesOf(from.source, options),
+    loadPicture: from.loadPicture,
     pictureProblem,
     thumbnail: decodeDebugThumbnail,
     view: {
@@ -1211,12 +1280,98 @@ function startDebugLayer(opened: TourSession): void {
       },
     },
     status: (line) => {
-      debugStatus.textContent = line;
+      debugStatus.textContent =
+        from.line === null ? line : `${from.line} ${line}`;
     },
     discard: revokeDebugThumbnail,
   });
   debugLayer = layer;
   void layer.start();
+}
+
+/**
+ * "Add debug data…" (M2 step 5 of the debug-captures plan): a debug
+ * bundle or a plain Recorder zip, opened as any zip is (its archive caps,
+ * and the picture cap for its thumbnails), read for whose it is
+ * (`readDebugBundle`, `bundleMatchesTour`) and shown in place of the
+ * tour's own walk. Another tour's is shown with a line saying so (Q-C);
+ * a file that is no debug data is refused in words, the layer kept. The
+ * button says it is reading meanwhile (the async-UI rule).
+ */
+async function addDebugData(file: File): Promise<void> {
+  const mine = editor;
+  if (mine === null || addingDebug) return;
+  addingDebug = true;
+  debugAddButton.disabled = true;
+  debugAddButton.textContent = ADD_DEBUG_LABELS.adding;
+  try {
+    const added = await readAddedDebug(
+      file,
+      mine.debugTour(),
+      tourWalk !== null,
+    );
+    if (editor !== mine) {
+      // Another tour opened meanwhile: this file is not its debug data.
+      if (added.kind === "added") {
+        void added.session.close().catch(() => undefined);
+      }
+      return;
+    }
+    if (added.kind === "refused") {
+      fileToasts.push(toast(notAddedLine(added.reason)));
+      return;
+    }
+    forgetAddedDebug();
+    addedDebug = { session: added.session, line: added.line };
+    startDebugLayer();
+  } finally {
+    addingDebug = false;
+    debugAddButton.disabled = false;
+    debugAddButton.textContent = ADD_DEBUG_LABELS.idle;
+  }
+}
+
+/** A file added as debug data, opened and read for whose it is, or why
+ *  not; a refused file's archive is closed. */
+async function readAddedDebug(
+  file: File,
+  tour: DebugBundleTour,
+  tourCarriesWalk: boolean,
+): Promise<
+  | {
+      readonly kind: "added";
+      readonly session: TourSession;
+      readonly line: string;
+    }
+  | { readonly kind: "refused"; readonly reason: string }
+> {
+  let opened: TourSession;
+  try {
+    opened = await openTourFile(file);
+  } catch (err) {
+    return {
+      kind: "refused",
+      reason: `${file.name} could not be read (${err instanceof Error ? err.message : String(err)}).`,
+    };
+  }
+  const read = await readDebugBundle(
+    opened.entries.map((e) => e.filename),
+    (name) => opened.loadEntry(name),
+  );
+  if (read.kind === "refused") {
+    void opened.close().catch(() => undefined);
+    return { kind: "refused", reason: read.reason };
+  }
+  return {
+    kind: "added",
+    session: opened,
+    line: addedDebugLine({
+      fileName: file.name,
+      match: bundleMatchesTour(read, tour),
+      identity: read.kind === "bundle" ? read.identity : null,
+      tourCarriesWalk,
+    }),
+  };
 }
 
 /** What this page keeps of the tour beside the store's document (whose
@@ -1423,7 +1578,9 @@ async function openFile(
   if (drafted.offer !== null) offerDraft(editor, drafted.offer);
   if (handle !== null) void attachTarget(editor, handle, file);
   // After the open, never before it: the replay must not hold up the tour.
-  if (carriesWalk) startDebugLayer(opened);
+  tourWalk = carriesWalk ? opened : null;
+  debugPanel.hidden = false;
+  startDebugLayer();
   return true;
 }
 
@@ -1875,6 +2032,29 @@ saveButton.addEventListener("click", () => {
 // The debug layer's switch: view state only - no edit, nothing pending.
 debugInput.addEventListener("change", () => {
   debugLayer?.setVisible(debugInput.checked);
+});
+// "Add debug data…": its file input, or a file dropped on the panel. The
+// document's own drop guard keeps the browser from opening the file.
+debugAddButton.addEventListener("click", () => {
+  debugAddInput.click();
+});
+debugAddInput.addEventListener("change", () => {
+  const file = debugAddInput.files?.[0];
+  debugAddInput.value = "";
+  if (file !== undefined) void addDebugData(file);
+});
+debugPanel.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  debugPanel.classList.add("over");
+});
+debugPanel.addEventListener("dragleave", () => {
+  debugPanel.classList.remove("over");
+});
+debugPanel.addEventListener("drop", (event) => {
+  event.preventDefault();
+  debugPanel.classList.remove("over");
+  const file = event.dataTransfer?.files[0];
+  if (file !== undefined) void addDebugData(file);
 });
 // A tour-level edit (QR-first M1b-2): pending like a note's, backed up by
 // the draft, saved by itself like any change.

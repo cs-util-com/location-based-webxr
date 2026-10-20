@@ -1122,6 +1122,18 @@ kbd {
   gap: 6px;
 }
 
+.debug-data[hidden] {
+  display: none;
+}
+
+.debug-panel.over {
+  outline: 2px dashed var(--ink-dim);
+}
+
+.debug-add {
+  align-self: flex-start;
+}
+
 .mk-debug {
   position: absolute;
   transform: translate(-50%, -50%);

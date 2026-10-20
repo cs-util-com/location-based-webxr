@@ -13,14 +13,31 @@
     <div id="map" aria-label="Tour map"></div>
 
     <!-- The debug layer (debug-capture-layer.ts): the walk's camera
-         captures on the map, for a tour whose file carries a walk. Debug
-         data, never the tour's content. -->
-    <div id="debug-panel" class="panel debug-panel" hidden>
-      <label class="debug-data">
+         captures on the map, for a tour whose file carries a walk or with
+         debug data added beside it ("Add debug data…", a file input or a
+         drop on this panel; added-debug-data.ts). Debug data, never the
+         tour's content: an added file is never saved, drafted or kept
+         across a reload. The switch only while the layer shows something. -->
+    <div
+      id="debug-panel"
+      class="panel debug-panel"
+      aria-label="Debug data"
+      hidden
+    >
+      <label class="debug-data" id="debug-switch" hidden>
         <input type="checkbox" id="debug-data-input" checked />
         Show debug data
       </label>
       <span id="debug-status" role="status" aria-live="polite"></span>
+      <button class="btn debug-add" id="debug-add" type="button">
+        Add debug data…
+      </button>
+      <input
+        type="file"
+        id="debug-add-input"
+        accept=".zip,application/zip"
+        hidden
+      />
     </div>
 
     <header id="topbar" class="panel" hidden>

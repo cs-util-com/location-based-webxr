@@ -87,10 +87,12 @@ again by an OS's "compress folder" gains a folder.
   - Each refusal carries `reason`, a sentence for the page.
 - `bundleMatchesTour(read, tour) -> "this-tour" | "other-tour" | "recording"`
   - pure, plan Q-C:
-  - a listed tour (`seriesId` not null): on the series id alone (a bundle
-    without one is `"other-tour"`);
-  - an unlisted tour: `"this-tour"` unless the title AND the file name
-    both differ; a text neither side knows (null) is no match, so two
+  - a listed tour and a bundle that names a series: on the series id
+    alone;
+  - otherwise (an unlisted tour, or a listed tour's bundle saved before it
+    was listed, which names no series): `"this-tour"` unless the title AND
+    the file name both differ (plan section 10: changed when M2 wired the
+    module; such a bundle used to read as `"other-tour"`); a text neither side knows (null) is no match, so two
     untitled, unnamed tours are `"other-tour"`;
   - a plain recording: `"recording"` ("a recording, not saved from this
     tour").

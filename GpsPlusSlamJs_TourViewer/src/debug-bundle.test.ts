@@ -487,9 +487,34 @@ describe("does the bundle belong to this tour", () => {
     expect(
       bundleMatchesTour(identity({ seriesId: "OtherSeries_123456" }), LISTED),
     ).toBe("other-tour");
+  });
+
+  it("falls back to the title and the file name for a listed tour's bundle saved before it was listed", () => {
+    // Why (plan section 10, changed when M2 wired the module): a bundle
+    // without a series id was saved while the tour was unlisted, so the
+    // series says nothing either way - the unlisted rule decides. It used
+    // to read as "other-tour", which called the tour's own walk another
+    // tour's once the tour was listed.
     expect(bundleMatchesTour(identity({ seriesId: null }), LISTED)).toBe(
-      "other-tour",
+      "this-tour",
     );
+    expect(
+      bundleMatchesTour(identity({ seriesId: null }), {
+        ...LISTED,
+        title: "Renamed",
+      }),
+    ).toBe("this-tour");
+    expect(
+      bundleMatchesTour(identity({ seriesId: null }), {
+        seriesId: SERIES,
+        title: "Other",
+        fileName: "other.zip",
+      }),
+    ).toBe("other-tour");
+    // A bundle that names a series is still judged on it alone.
+    expect(
+      bundleMatchesTour(identity({ seriesId: "OtherSeries_123456" }), LISTED),
+    ).toBe("other-tour");
   });
 
   it("matches an unlisted tour unless its title AND its file name both differ", () => {

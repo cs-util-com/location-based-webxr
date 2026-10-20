@@ -365,10 +365,12 @@ export async function readDebugBundle(
 }
 
 /**
- * Whether a bundle is this tour's (plan Q-C): a listed tour's on its series
- * id alone; an unlisted tour's unless its title AND its file name both
- * differ (a text neither side knows is no match). A plain recording is its
- * own case: "a recording, not saved from this tour".
+ * Whether a bundle is this tour's (plan Q-C): a bundle that names a series
+ * is a listed tour's on its series id alone; any other - an unlisted
+ * tour's, or one saved before the tour was listed - is this tour's unless
+ * its title AND its file name both differ (a text neither side knows is no
+ * match). A plain recording is its own case: "a recording, not saved from
+ * this tour".
  */
 export function bundleMatchesTour(
   read: DebugBundleFound,
@@ -376,7 +378,7 @@ export function bundleMatchesTour(
 ): BundleMatch {
   if (read.kind === "recording") return "recording";
   const { identity } = read;
-  if (tour.seriesId !== null) {
+  if (tour.seriesId !== null && identity.seriesId !== null) {
     return identity.seriesId === tour.seriesId ? "this-tour" : "other-tour";
   }
   const title = identityText(tour.title);

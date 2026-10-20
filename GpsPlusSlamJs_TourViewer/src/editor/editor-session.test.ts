@@ -55,7 +55,7 @@ import {
 } from "../test-support/v3-tour.js";
 import type { EditorModel } from "./editor-model.js";
 import { openTourForEditing } from "./editor-open.js";
-import { readDebugBundle } from "../debug-bundle.js";
+import { bundleMatchesTour, readDebugBundle } from "../debug-bundle.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -1938,6 +1938,38 @@ describe("moving the walk out (W2, D19)", () => {
     const nothing = await none.debugData();
     expect(nothing.kind).toBe("refused");
     await plain.session.close();
+  });
+
+  it("names the tour an added debug data file is compared with, as its own bundle names it", async () => {
+    // Why (M2 step 5 of the debug-captures plan, Q-C): "Add debug data…"
+    // says whether the file is this tour's by comparing it with this tour;
+    // the debug data this session saves must compare as its own, and a
+    // title only edited, not saved, is not yet the file's.
+    const { session, manifest } = await walkTour();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.debugTour()).toEqual({
+      seriesId: null,
+      title: manifest.title,
+      fileName: "tour.zip",
+    });
+    const built = await editor.debugData();
+    if (built.kind !== "built") throw new Error(built.reason);
+    const read = await bundleOf(built.blob);
+    if (read.kind === "refused") throw new Error(read.reason);
+    expect(bundleMatchesTour(read, editor.debugTour())).toBe("this-tour");
+    const edited = editor.setDetails({
+      ...editor.details(),
+      name: "A new name",
+    });
+    expect(edited.kind).not.toBe("refused");
+    expect(editor.debugTour().title).toBe(manifest.title);
+    await editor.save({ keepScan: false });
+    expect(editor.debugTour().title).toBe("A new name");
+    await session.close();
   });
 
   it("reads the opened file once for a move made before any save", async () => {

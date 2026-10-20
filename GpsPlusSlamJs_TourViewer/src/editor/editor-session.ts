@@ -288,6 +288,12 @@ export interface EditorSession {
    *  move refuses), queued with the saves; refused, in words, when the
    *  opened file carries no walk. Changes nothing of the session. */
   debugData(): Promise<DebugBundleBuilt>;
+  /** The tour a debug bundle saved now names, and the one an added debug
+   *  data file is compared with (`bundleMatchesTour`, M2 step 5 of the
+   *  debug-captures plan): a listed tour's series, the title of the newest
+   *  written file (an edit not yet saved is not the file's), the file's
+   *  name. */
+  debugTour(): DebugBundleTour;
 }
 
 export function createEditorSession(input: {
@@ -757,6 +763,9 @@ export function createEditorSession(input: {
     moveWalkOut() {
       return dispatchThunk(store, saves.queued(buildWalkMove));
     },
+    debugTour() {
+      return debugTourOf(written());
+    },
     debugData() {
       return dispatchThunk(
         store,
@@ -766,7 +775,7 @@ export function createEditorSession(input: {
           // The opened file is untrusted: read under the session's budget.
           return buildDebugBundle(
             await session.readWholeArchive(),
-            debugTour(written()),
+            debugTourOf(written()),
             { budget: session.budget },
           );
         }),
@@ -794,7 +803,7 @@ export function createEditorSession(input: {
 
   /** The tour a debug bundle names (`debug-bundle.json`): a listed
    *  tour's series, the title the tour carries now and the file's name. */
-  function debugTour(manifest: TourManifest): DebugBundleTour {
+  function debugTourOf(manifest: TourManifest): DebugBundleTour {
     return {
       seriesId:
         session.integrity.kind === "listed"
@@ -821,7 +830,7 @@ export function createEditorSession(input: {
     // #8), so it is a complete recording on its own, and names the tour it
     // came from (one format for both pages, M2 of the debug-captures plan).
     const source = base === null ? await session.readWholeArchive() : base.blob;
-    const bundle = await buildDebugBundle(source, debugTour(snap.manifest), {
+    const bundle = await buildDebugBundle(source, debugTourOf(snap.manifest), {
       // The opened file is untrusted: read under the session's budget, as
       // the rebuild below reads it (K0 milestone review R1).
       ...(base === null ? { budget: session.budget } : {}),
