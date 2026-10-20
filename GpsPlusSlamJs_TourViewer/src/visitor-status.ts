@@ -11,6 +11,7 @@
  */
 
 import { codeLinedUp, type ArStatusInput } from "./tour-flow.js";
+import { notFinishedSentence } from "./tour-unfinished.js";
 /** The in-AR scan line without location (QR-first M1b-1), under the scan
  *  card's title ("Scan the code again so the tour can start"): what the
  *  absence of location means, not a second "scan". */
@@ -39,6 +40,7 @@ type VisitorStatusState =
   | "unsupported"
   | "error"
   | "no-tour"
+  | "unfinished"
   | "scan"
   | "measuring-code"
   | "code-other-tour"
@@ -355,6 +357,13 @@ function runningSentence(input: ArStatusInput): VisitorStatus {
     return {
       state: "no-tour",
       text: "No tour is open here, so there is nothing to show. Open the tour's link again.",
+    };
+  }
+  // Nothing to scan for or wait for yet: said before anything else.
+  if (input.tour.unfinished !== undefined) {
+    return {
+      state: "unfinished",
+      text: notFinishedSentence(input.tour.unfinished.contact),
     };
   }
   // Without location, a gate waived for any reason but the creator's

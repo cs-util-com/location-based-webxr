@@ -87,12 +87,14 @@ describe("visitorStartView", () => {
     );
   });
 
-  it("still reads as a tour without a name, or before the manifest arrives", () => {
+  it("still reads as a tour without a name, and says a zip without tour.json is not finished", () => {
     expect(visitorStartView(tour({})).title).toBe("An AR tour");
     expect(visitorStartView(tour({ title: "   " })).title).toBe("An AR tour");
+    // The printed code may point at the hosted file before its first
+    // Finish: the start page says so instead of an empty promise.
     expect(visitorStartView(null)).toEqual({
       title: "An AR tour",
-      subline: null,
+      subline: "This tour is not finished yet.",
       description: null,
       coverPath: null,
       pageTitle: "Tour Viewer",
@@ -107,7 +109,10 @@ describe("visitorStartView", () => {
     expect(visitorStartView(tour({ objects: [pin("a")] })).subline).toBe(
       "1 place to discover",
     );
-    expect(visitorStartView(tour({})).subline).toBeNull();
+    // A tour without stations is not finished: nothing to discover yet.
+    expect(visitorStartView(tour({ title: "Harbour" })).subline).toBe(
+      "This tour is not finished yet.",
+    );
     // A tour of stations (the sample) counts its stations.
     const station = recorded(["x"]).stations![0]!;
     expect(
@@ -313,7 +318,9 @@ describe("wireVisitorStart", () => {
     });
     start.clear();
     expect(dom.title.textContent).toBe("An AR tour");
+    // No tour open is not an unfinished tour: nothing is said about one.
     expect(dom.subline.hidden).toBe(true);
+    expect(dom.subline.textContent).toBe("");
     expect(dom.cover.hidden).toBe(true);
     expect(revoked).toEqual(["blob:1"]);
     expect(dom.page.title).toBe("Tour Viewer");

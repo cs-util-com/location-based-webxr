@@ -27,6 +27,8 @@ import {
   selectPresentStationId,
 } from "./visitor-guide-slice.js";
 import { RECORDING_DEPTH } from "./authoring-recording.js";
+import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourOf } from "./test-support/v3-tour.js";
 import {
   endSession,
   recordGpsEvent,
@@ -59,6 +61,17 @@ function el() {
   };
 }
 
+/** A tour with one station: finished (`tour-unfinished.ts`). */
+const FINISHED_TOUR = tourOf([
+  {
+    id: "p1",
+    kind: "pin",
+    label: "Gate",
+    geo: { lat: 47, lon: 8, alt: 400, rotation: [0, 0, 0, 1] },
+    createdAtIso: "2026-10-20T00:00:00.000Z",
+  } as unknown as TourObject,
+]);
+
 async function settle(): Promise<void> {
   for (let i = 0; i < 12; i += 1) await Promise.resolve();
 }
@@ -81,6 +94,9 @@ function harness(
   vi.stubGlobal("document", { body: { dataset: {} } });
   vi.stubGlobal("location", { href: "https://example.test/tour/?qr=abc" });
   const ctx = createTourViewerSession();
+  // A finished tour (one station) unless a test closes it: a visitor's
+  // line about an open tour assumes one with something to show.
+  ctx.tourDocument.open(FINISHED_TOUR);
   const dispose = vi.fn();
   let enabled: EnableGpsArConfig | null = null;
   /** The controller's status, settable so a test can walk a session. */
@@ -407,6 +423,30 @@ describe("wireArEntry QR readout and visitor hint", () => {
     h.ctx.qrController = { status: "tracking" } as never;
     h.entry.renderArStatus();
     expect(h.dom.arDebug.textContent.split("\n")[0]).toBe("qr: tracking");
+  });
+
+  it("tells a visitor of a tour not finished yet so, without the scan card", () => {
+    // Why: a tour without stations may carry its measured code; the line
+    // says the tour is not finished (with the contact the tour names) and
+    // the scan card, which would ask for the code, stays closed.
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.tourDocument.open({
+      ...tourOf([]),
+      contact: "guide@example.org",
+    });
+    h.ctx.scanGate = { kind: "scanning", escapeOffered: false };
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toBe(
+      "This tour is not finished yet. Questions about this tour? Contact its maker: guide@example.org",
+    );
+    expect(h.dom.scanCard.hidden).toBe(true);
+    expect(h.dom.arStatus.hidden).toBe(false);
+    // A zip without tour.json is not finished either.
+    h.ctx.tourDocument.close();
+    h.ctx.tourDocument.open(null);
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toBe("This tour is not finished yet.");
   });
 
   it("shows the fused pose's hint from the last evaluation while tracking", () => {

@@ -199,7 +199,9 @@ drawn `map-station-<step>`), `setup-card` (owns `setup-badge`, `setup-of`,
 `print-settings` (`author-size`, `print-paper`, `author-c`), `print-pdf`,
 `print-info`,
 `print-tiles` (its tiles `print-tile`, the first canvas `print-canvas`), `visitor-link` - opens in a
-new tab, polish round A17), `make-your-own` (on the visitor screen: the
+new tab, polish round A17), `visitor-link-note` (under it, shown while
+the hosted file is not finished yet: what a visitor reads then,
+`tour-unfinished.ts`), `make-your-own` (on the visitor screen: the
 setup page in a new tab, polish round A8), `visitor-safety`, `visitor-privacy`,
 `setup-foot`, `step-hang`, `hang-done`, `step-measure` (owns
 `draft-offer`,

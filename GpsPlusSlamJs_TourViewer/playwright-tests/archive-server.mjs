@@ -30,6 +30,8 @@
  *   editor plan 2026-10-17-1816, W2): a name, a description, a
  *   contact, and a cover that is its SECOND photo (3 px wide; the first is
  *   1 px), so a page that took the first photo is told apart.
+ * - `/ranges-ok/unfinished-tour.zip` - a tour not finished yet: a name,
+ *   a contact and the fixture's code, no station.
  * - `/ranges-ok/stations-tour.zip` - a tour with three stations (tour
  *   kit plan K4): one at the fixture's printed code (a knight with a voice
  *   and a scene choice), one found by walking to it (a `.glb` model), one
@@ -67,8 +69,8 @@ const TINY_PNG = Uint8Array.from(
 );
 
 /** The default tour: images, an authored level, padding. `withLevel: false`
- *  is the PLAIN tour (flows plan M4) - images only, no recording and no
- *  printed code: the "nothing to place" case the status line must name.
+ *  is the PLAIN tour - images only, no `tour.json`, no recording and no
+ *  printed code: a tour not finished yet.
  *  `needsNoGps`: the same tour, its `tour.json` marked as needing no GPS. */
 async function buildZip({ withLevel = true, needsNoGps = false } = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
@@ -536,8 +538,49 @@ async function buildDetailsZip() {
   return writer.close();
 }
 
+/**
+ * A tour not finished yet: a `tour.json` with a name and a contact but no
+ * station, and the fixture's measured code - a creator who hung the code
+ * and hosted the file before placing anything. Its visitor reads that the
+ * tour is not finished, with the contact, and is never asked for the code.
+ */
+async function buildUnfinishedZip() {
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+  await writer.add(
+    "tour.json",
+    new TextReader(
+      JSON.stringify({
+        version: 3,
+        minor: 0,
+        title: "Harbour Lights",
+        contact: "guide@example.org",
+        stations: [],
+      }),
+    ),
+  );
+  await writer.add(
+    await e2eQrLevelEntryName(),
+    new TextReader(
+      JSON.stringify({
+        version: 1,
+        qr: {
+          physicalSizeM: 0.2,
+          geo: {
+            lat: 47.5001,
+            lon: 8.7001,
+            alt: 400,
+            rotation: MEASURED_CODE_ROTATION,
+          },
+        },
+      }),
+    ),
+  );
+  return writer.close();
+}
+
 const zipBytes = await buildZip();
 const detailsZipBytes = await buildDetailsZip();
+const unfinishedZipBytes = await buildUnfinishedZip();
 const bakedZipBytes = await buildBakedZip();
 const plainZipBytes = await buildZip({ withLevel: false });
 const noGpsZipBytes = await buildZip({ needsNoGps: true });
@@ -705,6 +748,16 @@ createServer((req, res) => {
   }
   if (url.pathname === "/ranges-ok/details-tour.zip") {
     handleArchive(req, res, "ranges-ok", detailsZipBytes, '"e2e-details-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/unfinished-tour.zip") {
+    handleArchive(
+      req,
+      res,
+      "ranges-ok",
+      unfinishedZipBytes,
+      '"e2e-unfinished-v1"',
+    );
     return;
   }
   if (url.pathname === "/ranges-ok/stations-tour.zip") {

@@ -53,6 +53,7 @@ import { contentStatus } from "./station-content.js";
 import { arStatusLine, type ArStatusInput } from "./tour-flow.js";
 import { scanCardShown } from "./scan-gate.js";
 import { visitorStatus } from "./visitor-status.js";
+import { tourUnfinished } from "./tour-unfinished.js";
 import {
   selectHeadingPending,
   selectPresentStationId,
@@ -220,12 +221,29 @@ export function wireArEntry(deps: {
    *  the status line steps aside meanwhile (kept with ?debug=1, whose
    *  technical line the card does not carry). */
   function renderScanCard(input: ArStatusInput, sentence: string): void {
-    const shown = scanCardShown(mode, input.arStatus, ctx.scanGate);
+    const shown = scanCardShown(
+      mode,
+      input.arStatus,
+      ctx.scanGate,
+      input.tour.kind === "open" && input.tour.unfinished !== undefined,
+    );
     if (dom.scanCard !== undefined) dom.scanCard.hidden = !shown;
     if (dom.scanCardLine !== undefined) {
       dom.scanCardLine.textContent = shown ? sentence : "";
     }
     dom.arStatus.hidden = shown && !ctx.debug;
+  }
+
+  /** A visitor's tour that is not finished yet (`tour-unfinished.ts`),
+   *  once its manifest settled; a creator's tour is the one being made. */
+  function unfinishedTour(): {
+    unfinished?: { readonly contact: string | undefined };
+  } {
+    if (mode !== "visitor" || ctx.tourManifestStatus !== "settled") return {};
+    const manifest = ctx.tourDocument.manifest();
+    return tourUnfinished(manifest)
+      ? { unfinished: { contact: manifest?.contact } }
+      : {};
   }
 
   function renderArStatus(): void {
@@ -242,6 +260,7 @@ export function wireArEntry(deps: {
           : {
               kind: "open",
               levelCount: ctx.currentLevels?.size ?? null,
+              ...unfinishedTour(),
             },
       qr: {
         status: ctx.viewerQrStatus,

@@ -167,6 +167,28 @@ describe("the scan gate and the content in the composed line (M5)", () => {
   });
 });
 
+describe("arStatusLine - an unfinished tour", () => {
+  // Why: a visitor of a tour that is not finished yet (no tour.json, or no
+  // stations) has nothing to scan for or wait for; the debug line says so
+  // after its fixed prefix, without the scan or placement segments.
+  it("says the tour is not finished, with whom to ask, and nothing else", () => {
+    const line = arStatusLine({
+      ...RUNNING_BASE,
+      tour: {
+        kind: "open",
+        levelCount: 0,
+        unfinished: { contact: "https://example.org/castle" },
+      },
+      qr: { ...RUNNING_BASE.qr, status: "scanning" },
+      gate: { kind: "not-required", reason: "no-lockable-level" },
+      placement: { kind: "waiting-ready" },
+    });
+    expect(line).toBe(
+      "Visitor mode — AR running · 3 camera frames · This tour is not finished yet. Questions about this tour? Contact its maker: https://example.org/castle",
+    );
+  });
+});
+
 describe("arStatusLine - the fixed prefix", () => {
   it("renders mode and status while the session is not running", () => {
     expect(arStatusLine({ ...RUNNING_BASE, arStatus: "ready" })).toBe(

@@ -136,10 +136,11 @@ lives here.
   `presentTourCodes` (the open tour's codes arrived: the print step
   continues their numbering - polish round M0b), `presentTourLevels`
   (the open tour's levels settled, read or failed: the visitor screen's
-  line follows - r857 review #5), `presentTourInfo(manifest,
-loadImage)` (the open tour's manifest settled, or null on teardown: the
-  visitor's start page shows its name, subline and cover, read from the
-  zip by archive path - polish round M4a), `finishFromAr()` (a creator's
+  line follows), `presentTourInfo(tour)` (`{ manifest,
+loadImage }` once the open tour's manifest settled, `manifest` null for
+  a zip without `tour.json`; null on teardown: the visitor's start page
+  shows its name, subline and cover, read from the zip by archive path -
+  polish round M4a - or that the tour is not finished yet), `finishFromAr()` (a creator's
   Done in AR: start a finish if one can start, false when none can -
   polish round M3), `beginAuthorVisit` / `endAuthorVisit` - the
   creator's AR visit start and its settle, M2c), no-ops until their owner

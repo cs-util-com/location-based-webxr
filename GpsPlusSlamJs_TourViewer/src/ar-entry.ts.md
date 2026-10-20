@@ -88,7 +88,8 @@ since the flows plan M6.
       milestone review #1).
   - `renderArStatus` also renders the visitor's scan card (`dom.scanCard`,
     `dom.scanCardLine`, optional; the owner's S1, polish round M4b): shown
-    while `scanCardShown` holds, carrying the visitor's sentence, with the
+    while `scanCardShown` holds (never for a tour not finished yet,
+    whose line says so), carrying the visitor's sentence, with the
     status line hidden meanwhile (kept under `?debug=1`, whose technical
     line the card does not carry); the live region is unchanged.
   - The render also writes `data-ar-state` (the controller status, for

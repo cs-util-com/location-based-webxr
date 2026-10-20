@@ -24,6 +24,7 @@ import {
 
 import type { ViewerMode } from "./mode.js";
 import { IGNORED_CODE_LINE, viewerStatusLine } from "./qr-viewer-mode.js";
+import { notFinishedSentence } from "./tour-unfinished.js";
 import type { KeepAlivePhase } from "./qr-vote-keep-alive.js";
 import { gateSegment, type ScanGate } from "./scan-gate.js";
 
@@ -35,6 +36,9 @@ type TourFlowTour =
       kind: "open";
       /** Authored `qr/<id>.json` count; null while the levels still load. */
       levelCount: number | null;
+      /** Present for a visitor's tour that is not finished yet
+       *  (`tour-unfinished.ts`), with the tour's contact (absent: none). */
+      unfinished?: { readonly contact: string | undefined };
     };
 
 /** What the photo placement did or is doing. The strings are rendered by
@@ -304,6 +308,11 @@ export function arStatusLine(input: ArStatusInput): string {
     return input.arStatus === "error" && input.arError != null
       ? `${mode} — error: ${input.arError}`
       : `${mode} — ${input.arStatus}`;
+  }
+  // A tour that is not finished yet has nothing to scan for or place: the
+  // sentence stands alone after the prefix.
+  if (input.tour.kind === "open" && input.tour.unfinished !== undefined) {
+    return `${mode} — AR running · ${String(input.cameraFrames)} camera frames · ${notFinishedSentence(input.tour.unfinished.contact)}`;
   }
   // A declined join on a tour that also has no printed codes is the
   // "nothing to place" case - derived here so the caller never has to

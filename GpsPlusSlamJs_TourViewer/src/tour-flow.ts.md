@@ -11,8 +11,13 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
 ## Public API
 
 - `ArStatusInput["tour"]` (the module-private `TourFlowTour`) -
-  `{ kind: "none" } | { kind: "open"; levelCount: number | null }`.
+  `{ kind: "none" } | { kind: "open"; levelCount: number | null;
+unfinished?: { contact } }`.
   `levelCount` is null while the tour's `qr/<id>.json` levels still load.
+  `unfinished` is present for a visitor's tour that is not finished yet
+  (`tour-unfinished.ts`, set by `ar-entry.ts` once the manifest settled):
+  the line is then the prefix and that sentence alone (with the contact
+  when the tour names one), no scan, gate or placement segment.
   (Whether the zip has a recording is NOT an input: a decline already says
   the recording path is out - M6 review #1.)
 - `type PlacementState` - what the photo placement did: `idle` ·
@@ -153,7 +158,8 @@ arStatusLine({
 ## Tests
 
 - `tour-flow.test.ts` - every branch of the line, string-exact, including
-  the e2e-pinned prefix and the no-codes rule's scope; the placed wording
+  the e2e-pinned prefix, an unfinished tour's line (the prefix and its
+  sentence alone) and the no-codes rule's scope; the placed wording
   with photos standing, at their stations, or both.
 - `tour-flow.property.test.ts` - the no-codes rule for every open-tour
   state and its absence with no tour; decline reasons verbatim; no

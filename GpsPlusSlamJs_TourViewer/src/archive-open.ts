@@ -176,9 +176,7 @@ export function wireArchiveOpen(deps: {
     ctx.tourDocument.close();
     // The next open bakes its own walk.
     ctx.walkBake = null;
-    hooks.presentTourInfo(null, () =>
-      Promise.reject(new Error("no tour is open")),
-    );
+    hooks.presentTourInfo(null);
     // The closing tour's story and HUD (tour kit plan K4).
     hooks.stopStations();
     ctx.rebuiltZip = null;
@@ -495,9 +493,11 @@ export function wireArchiveOpen(deps: {
         // any tour opened) comes along (scan-to-open plan §9 #5).
         ctx.tourDocument.open(document);
         ctx.tourManifestStatus = "settled";
-        hooks.presentTourInfo(manifest, (path) =>
-          opened.loadEntry(`${opened.manifestWrap}${path}`),
-        );
+        hooks.presentTourInfo({
+          manifest,
+          loadImage: (path) =>
+            opened.loadEntry(`${opened.manifestWrap}${path}`),
+        });
         ctx.scanEntries = new Set(
           manifest === null
             ? []

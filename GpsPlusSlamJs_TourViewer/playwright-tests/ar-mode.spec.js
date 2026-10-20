@@ -1339,111 +1339,38 @@ test("a failed finish says so with priority and can be retried; the panel shows 
   await expect(page.getByTestId("finish-download")).toBeEnabled();
 });
 
-test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", async ({
+test("a visitor of a zip without tour.json reads that the tour is not finished yet, a recording's or not", async ({
   page,
 }) => {
-  // Why this matters (geo-join plan Rev 2 §4 — the plan's own verification
-  // clause): the fake tour gains a REAL action stream (era-5 session.json,
-  // a zero, four consistent GPS↔odom pairs that solve a translation
-  // alignment, two captures after the zero), and the COMPOSED viewer loop
-  // must run the whole join — gates → chunked replay → decode → placement —
-  // and say so in the status line. The ring wording must NOT appear: a
-  // silent decline that still shows a ring is exactly the failure the
-  // taxonomy exists to make visible.
-  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await openAsVisitor(page, ARCHIVE, { debug: true });
-
-  await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
-
-  await page.evaluate(() => {
-    const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
-    store.dispatch({
-      type: "gpsData/setZeroPos",
-      payload: { lat: 47.5, lon: 8.7 },
+  // Why this matters: the printed code may point at the hosted file before
+  // its first Finish. A recording (an action stream, frames) and a zip of
+  // images alone are both tours not finished yet: the AR status line says
+  // so, instead of placing a creator's walk or scanning for a code.
+  for (const archive of ["recording-tour.zip", "plain-tour.zip"]) {
+    await openAsVisitor(page, `http://127.0.0.1:5197/ranges-ok/${archive}`, {
+      debug: true,
     });
-    const pairs = [
-      { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
-      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
-      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
-    ];
-    for (const [i, p] of pairs.entries()) {
-      store.dispatch({
-        type: "gpsData/recordGpsEvent",
-        payload: {
-          odomPosition: p.odom,
-          odomRotation: [0, 0, 0, 1],
-          rawGpsPoint: {
-            id: `seed-${String(i)}`,
-            latitude: p.lat,
-            longitude: p.lon,
-            altitude: 400,
-            latLongAccuracy: 5,
-            timestamp: 1756150000000 + i * 1000,
-          },
+    await enterAr(page);
+    await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
+    await seedAlignment(page);
+    await forceTrackingReady(page);
+    await expect
+      .poll(
+        async () => {
+          await page.evaluate(() => {
+            /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+          });
+          return page.getByTestId("ar-status").textContent();
         },
-      });
-    }
-  });
-
-  // Guided-setup plan M5 (DEC-N3): the tour carries a measured code, so
-  // NOTHING is placed until it locks - not even with tracking ready. The
-  // gate's line stands alone (no coaching hint: "walk around" would
-  // contradict "stay at the code").
-  await forceTrackingReady(page);
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.emitFrames(2);
-  });
-  await expect(page.getByTestId("ar-status")).toContainText(
-    "Point the phone at the tour's code",
-  );
-  await expect(page.getByTestId("ar-status")).not.toContainText(
-    /capture spots|slowly look around|hold steady/,
-  );
-  expect(
-    await page.evaluate(
-      () =>
-        /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
-    ),
-  ).toBe(0);
-  await lockTheCode(page);
-  // Once locked, the ready trigger places the photos at their capture spots.
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("ar-status").textContent();
-      },
-      { timeout: 20000 },
-    )
-    .toMatch(/photos at capture spots \(4 fixes/);
-  await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
-
-  // Further locks AFTER the placement refine the alignment under the
-  // planes - they do not place a second time (review #4/#5). The photos are
-  // decoded after the line says they are placed (visitor plan M2: decoded
-  // when their station is drawn), so wait for them to stand first.
-  await expect.poll(() => drawnGroups(page)).toBeGreaterThan(0);
-  const planesBefore = await drawnGroups(page);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("ar-status").textContent();
-      },
-      { timeout: 20000 },
-    )
-    .toMatch(/Relocaliz/);
-  await expect(page.getByTestId("ar-status")).toContainText("capture spots");
-  const planesAfter = await page.evaluate(
-    () =>
-      /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
-  );
-  expect(planesAfter).toBe(planesBefore);
+        { timeout: 20000, message: archive },
+      )
+      .toMatch(/camera frames · This tour is not finished yet\.$/);
+    await expect(page.getByTestId("ar-status")).not.toContainText("Scanning");
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__tourViewerTest.endXrSession();
+    });
+    await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
+  }
 });
 
 test("a tour whose photo spots were baked at its Finish places them without any recording (scan-pass S1)", async ({
@@ -1485,14 +1412,17 @@ test("a tour whose photo spots were baked at its Finish places them without any 
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(0);
 });
 
-test("a tour with no recording and no printed codes says so, instead of scanning", async ({
+test("a visitor of a tour without stations reads that it is not finished, with whom to ask, and is never asked for its code", async ({
   page,
 }) => {
-  // Why this matters (feedback F3): the reporter's zip could not carry a
-  // code, and the old line promised one forever.
-  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
-  await openAsVisitor(page, ARCHIVE, { debug: true });
+  // Why this matters: a creator may hang the code and host the file before
+  // placing anything. The tour carries its code, but nothing to show: the
+  // scan card would ask for the code and hide the one sentence the visitor
+  // needs.
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/unfinished-tour.zip";
+  await openAsVisitor(page, ARCHIVE);
   await enterAr(page);
+  await seedAlignment(page);
   await forceTrackingReady(page);
   await expect
     .poll(
@@ -1500,25 +1430,16 @@ test("a tour with no recording and no printed codes says so, instead of scanning
         await page.evaluate(() => {
           /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
         });
-        return page.getByTestId("ar-status").textContent();
+        return page.getByTestId("ar-status").getAttribute("data-state");
       },
       { timeout: 20000 },
     )
-    .toMatch(/nothing to place/);
-  await expect(page.getByTestId("ar-status")).not.toContainText("Scanning");
-  // No measured code: the gate is waived and placing is by GPS - the
-  // escape never appears, even after the clock (M5, DEC-N4). The gate's
-  // line is the ONE "no code" line (M5 review #12).
-  await expect(page.getByTestId("ar-status")).toContainText(
-    "no measured code - placing by GPS",
+    .toBe("unfinished");
+  await expect(page.getByTestId("ar-status")).toHaveText(
+    "This tour is not finished yet. Questions about this tour? Contact its maker: guide@example.org",
   );
-  await expect(page.getByTestId("ar-status")).not.toContainText(
-    "no printed codes.",
-  );
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.fireTimers();
-  });
-  await expect(page.getByTestId("scan-escape")).toBeHidden();
+  await expect(page.getByTestId("ar-status")).toBeVisible();
+  await expect(page.getByTestId("scan-card")).toBeHidden();
 });
 
 test("the visitor's content and ring wait for the lock; the escape after its clock places by GPS instead (M5, DEC-N3)", async ({
@@ -1692,12 +1613,13 @@ test("a visitor reads one plain sentence per state, never the debug readout (UI 
   }
 });
 
-test("a visitor's plain line says when a tour has nothing to show, and when GPS placed it (U1 milestone review #2, #4)", async ({
+test("a visitor's plain line says when a tour is not finished yet, and when GPS placed it", async ({
   page,
 }) => {
   // Why this matters: the first plain line read "Placing the tour…"
-  // forever on a tour with no recording and no codes (the F3 case, now
-  // without ?debug=1), and the GPS escape needs its own honest sentence.
+  // forever on a tour with nothing to place (the F3 case, now without
+  // ?debug=1): a zip without tour.json is a tour not finished yet, and
+  // says so. The GPS escape needs its own honest sentence.
   await openAsVisitor(page, PLAIN_ARCHIVE);
   await enterAr(page);
   await seedAlignment(page);
@@ -1712,9 +1634,9 @@ test("a visitor's plain line says when a tour has nothing to show, and when GPS 
       },
       { timeout: 20000 },
     )
-    .toBe("nothing");
+    .toBe("unfinished");
   await expect(page.getByTestId("ar-status")).toHaveText(
-    "This tour has nothing to show here.",
+    "This tour is not finished yet.",
   );
 
   // A tour with a code, the visitor taking the GPS escape.
@@ -1749,7 +1671,7 @@ test("a visitor's plain line says when a tour has nothing to show, and when GPS 
   );
 });
 
-test("without a QR detector the photos still land at capture spots (review #2)", async ({
+test("without a QR detector the baked photos still stand at their stations", async ({
   page,
 }) => {
   // The join's old liveness guard was `qrController === null`, which is the
@@ -1759,7 +1681,7 @@ test("without a QR detector the photos still land at capture spots (review #2)",
     const seams = /** @type {any} */ (window).__tourViewerSeams;
     seams.createQrFrontEnd = () => null;
   });
-  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
   await openAsVisitor(page, ARCHIVE, { debug: true });
   await enterAr(page);
   await seedAlignment(page);
@@ -1774,14 +1696,15 @@ test("without a QR detector the photos still land at capture spots (review #2)",
       },
       { timeout: 20000 },
     )
-    .toMatch(/photos at capture spots/);
+    .toMatch(/photos at their stations/);
 });
 
 test("a re-entered session places the tour again once ITS tracking is ready (review #12)", async ({
   page,
 }) => {
-  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await openAsVisitor(page, ARCHIVE, { debug: true });
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
+  // Every station drawn: the photos wait at theirs.
+  await openAsVisitor(page, ARCHIVE, { debug: true, allStations: true });
   for (const entry of [1, 2]) {
     await enterAr(page);
     await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
@@ -1799,7 +1722,7 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
         },
         { timeout: 20000 },
       )
-      .toMatch(/photos at capture spots/);
+      .toMatch(/photos at their stations/);
     // Drawn once decoded, after the line (visitor plan M2).
     await expect
       .poll(() => drawnGroups(page), { message: `entry ${String(entry)}` })
@@ -2082,6 +2005,8 @@ test("opening a tour shows the code and the link it carries, without asking agai
   // the code and the step the creator was on - back reset everything.
   await expect(link).toHaveAttribute("target", "_blank");
   await expect(link).toHaveAttribute("rel", /noopener/);
+  // A finished tour (it has a station): nothing to warn about.
+  await expect(page.getByTestId("visitor-link-note")).toBeHidden();
 
   // A SECOND tour replaces what the code carries (PR #434 review): the
   // panel used to re-open showing the previous tour's link, so the printed
@@ -2097,6 +2022,12 @@ test("opening a tour shows the code and the link it carries, without asking agai
   await expect
     .poll(async () => page.getByTestId("print-url-out").textContent())
     .toContain("plain-tour");
+  // A zip without tour.json is not finished: the creator is told what a
+  // visitor of this link reads now, and what finishes the tour.
+  await expect(page.getByTestId("visitor-link-note")).toBeVisible();
+  await expect(page.getByTestId("visitor-link-note")).toContainText(
+    '"This tour is not finished yet."',
+  );
 
   // Changing the code number re-renders rather than leaving a stale code
   // on screen claiming to be the new one (M3 review #8).

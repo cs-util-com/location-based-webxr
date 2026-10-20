@@ -15,7 +15,9 @@ visitor's `?debug=1`.
 - `visitorStatus(input: ArStatusInput): VisitorStatus` -
   `{ state, text }`. `state` names the situation: `before-ar`,
   `checking`, `starting`, `stopping`, `unsupported`, `error`, `no-tour`,
-  `scan`, `measuring-code`, `code-other-tour`, `code-unusable`,
+  `unfinished` (the open tour is not finished yet, `tour-unfinished.ts`:
+  "This tour is not finished yet." with its contact when it names one,
+  said before every other running state), `scan`, `measuring-code`, `code-other-tour`, `code-unusable`,
   `code-moved`, `locking`, `warming-up`, `placing`, `placed`,
   `to-station`, `placed-gps`, `tracking-lost`, `finding-direction`, `needs-code`,
   `nothing`. `ar-entry.ts`
@@ -126,7 +128,8 @@ el.textContent =
 
 ## Tests
 
-`visitor-status.test.ts` (one case per state, the start-failure causes,
+`visitor-status.test.ts` (one case per state, an unfinished tour with and
+without a contact, the start-failure causes,
 what must never reach a visitor, load notes, the walk request: replacing
 only the placed line, after a GPS placement's or a moved code's reason, never
 while tracking initializes or without location; away from every station:

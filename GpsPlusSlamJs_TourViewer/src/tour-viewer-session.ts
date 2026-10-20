@@ -173,12 +173,16 @@ export interface TourViewerHooks {
    *  GPS" start follow whether a code can place the tour (r857 review #4,
    *  #5). */
   presentTourLevels(): void;
-  /** The open tour's manifest arrived (null: no tour any more): the
-   *  visitor's start page shows its name, its subline and its cover,
-   *  read from the zip by its archive path (polish round M4a). */
+  /** The open tour's manifest settled (`manifest` null: the zip has no
+   *  `tour.json`), or no tour is open any more (`tour` null): the
+   *  visitor's start page shows its name, its subline and its cover, read
+   *  from the zip by its archive path through `loadImage` (polish round
+   *  M4a), or that it is not finished yet. */
   presentTourInfo(
-    manifest: TourManifest | null,
-    loadImage: (path: string) => Promise<Blob>,
+    tour: {
+      readonly manifest: TourManifest | null;
+      readonly loadImage: (path: string) => Promise<Blob>;
+    } | null,
   ): void;
   /** A tour closed: the finish step's page-side state is stale. */
   resetFinishStep(): void;

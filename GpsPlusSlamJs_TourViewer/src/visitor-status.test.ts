@@ -384,6 +384,38 @@ describe("visitorStatus - states the first version got wrong (U1 milestone revie
     });
   });
 
+  it("an unfinished tour says so, with whom to ask, whatever else the line knows", () => {
+    // Why: the printed code may point at the hosted file before its first
+    // Finish; a visitor in AR must not be told to scan or wait for a tour
+    // that has nothing to show yet.
+    expect(
+      visitorStatus(
+        input({
+          tour: {
+            kind: "open",
+            levelCount: 0,
+            unfinished: { contact: "mailto:guide@example.org" },
+          },
+          gate: { kind: "not-required", reason: "no-lockable-level" },
+        }),
+      ),
+    ).toEqual({
+      state: "unfinished",
+      text: "This tour is not finished yet. Questions about this tour? Contact its maker: guide@example.org",
+    });
+    expect(
+      visitorStatus(
+        input({
+          tour: {
+            kind: "open",
+            levelCount: 1,
+            unfinished: { contact: undefined },
+          },
+        }),
+      ),
+    ).toEqual({ state: "unfinished", text: "This tour is not finished yet." });
+  });
+
   it("AR with no tour open says so (#6)", () => {
     expect(visitorStatus(input({ tour: { kind: "none" } }))).toEqual({
       state: "no-tour",
