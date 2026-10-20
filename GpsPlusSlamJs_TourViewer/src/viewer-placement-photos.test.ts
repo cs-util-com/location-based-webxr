@@ -36,6 +36,7 @@ import {
   createUnwiredHooks,
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
+import { presenceJudged, showAllContentSet } from "./visitor-guide-slice.js";
 
 interface Fakes {
   configs: QrTrackingControllerConfig[];
@@ -406,6 +407,39 @@ describe("the walk's photos and the ring, said as they stand", () => {
     });
     expect(decoded).toEqual([]);
     expect(h.ctx.stationContent?.showsAny()).toBe(false);
+  });
+
+  it("a station whose photos all fail says so only until a later station's photos stand", async () => {
+    // Why: the walk's parts mount per station visit, and a part none of
+    // whose photos decodes says so on the photos' channel. Nothing cleared
+    // it within a session, so one bad station left "could not be decoded"
+    // on the line at every station after it, whose photos stood fine.
+    fake.decode = (name) =>
+      name === "images/frame-0.png" ? null : new Texture();
+    const h = harness({
+      objects: [pin("s1", 0, 0), pin("s2", 100, 0)],
+      walk: [
+        { north: 1, east: 0 },
+        { north: 101, east: 0 },
+      ],
+    });
+    await h.lock();
+    // The visitor at the first station: its photo fails.
+    h.store.dispatch(
+      presenceJudged({
+        candidates: [{ id: "st-s1", distanceM: 0, foundM: 25, foundExitM: 30 }],
+        accuracyM: null,
+        codeLinedUp: true,
+      }),
+    );
+    h.placement.syncContent();
+    await flush();
+    expect(h.ctx.viewerPlanesError).not.toBeNull();
+    // The second station shows too, and its photo stands.
+    h.store.dispatch(showAllContentSet(true));
+    h.placement.syncContent();
+    await flush();
+    expect(h.ctx.viewerPlanesError).toBeNull();
   });
 
   it("a walk held by stations is counted at its stations, decoded only there", async () => {

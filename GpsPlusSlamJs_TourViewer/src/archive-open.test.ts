@@ -192,17 +192,23 @@ describe("a tour switch forgets the closing tour's failed finish", () => {
   });
 });
 
-describe("a tour switch forgets that the closing tour's walk was decided", () => {
-  it("clears walkDecidedFor, so the next tour hedges its stations and the closed one is not kept alive", async () => {
-    // Why this test matters (PR #642 review): the hint is keyed by the open
-    // session, so a reopened tour hedges again either way; clearing it also
-    // drops the page's last reference to the closed tour's archive.
+describe("a tour switch forgets the closing tour's walk", () => {
+  it("clears the closing tour's bake, so its decline is not said of the next tour", async () => {
+    // Why this test matters: the bake at open decides about one tour's
+    // walk. A decline kept across a switch would be shown, and read by the
+    // next tour's Finish, as if it were that tour's.
     const ctx = createTourViewerSession();
     ctx.session = openTour();
-    ctx.walkDecidedFor = ctx.session;
+    ctx.walkBake = {
+      kind: "decided",
+      photos: { notPlaced: "too few GPS fixes" },
+    };
     const dom = openAnotherTour(ctx);
     await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
-    expect(ctx.walkDecidedFor).toBeNull();
+    expect(ctx.walkBake).not.toEqual({
+      kind: "decided",
+      photos: { notPlaced: "too few GPS fixes" },
+    });
   });
 });
 

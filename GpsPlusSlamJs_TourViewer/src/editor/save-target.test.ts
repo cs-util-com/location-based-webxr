@@ -25,6 +25,10 @@ function fakeHandle(initial: string, name = "tour.zip") {
     modified: 1000,
     gone: false,
     failWrite: false,
+    /** The read right after a write still sees the old bytes (with the
+     *  new time): a lagging read of what was just written. */
+    lagging: false,
+    staleNext: null as string | null,
     calls: [] as string[],
     permission: "granted" as PermissionState | "throws",
   };
@@ -36,8 +40,10 @@ function fakeHandle(initial: string, name = "tour.zip") {
       if (state.gone) {
         return Promise.reject(new DOMException("gone", "NotFoundError"));
       }
+      const bytes = state.staleNext ?? state.bytes;
+      state.staleNext = null;
       return Promise.resolve(
-        new File([state.bytes], name, { lastModified: state.modified }),
+        new File([bytes], name, { lastModified: state.modified }),
       );
     },
     createWritable: () => {
@@ -49,6 +55,7 @@ function fakeHandle(initial: string, name = "tour.zip") {
           pending += await (data as Blob).text();
         },
         close: () => {
+          if (state.lagging) state.staleNext = state.bytes;
           state.bytes = pending;
           state.modified += 1;
           return Promise.resolve();
@@ -191,6 +198,18 @@ describe("createSaveTarget", () => {
     expect(state.bytes).toBe("version one");
     await target.write(new Blob(["fits"]));
     expect(state.bytes).toBe("fits");
+  });
+
+  it("takes the written size from the bytes it wrote, as the tail, so a lagging read back is no change", async () => {
+    // Why: the baseline after a write read the size (and time) back from
+    // the file but the tail from the bytes written. A read back that still
+    // saw the old size left a baseline that described no file, and the
+    // next save was refused as "changed" though nothing else wrote it.
+    const { handle, state } = fakeHandle("version one");
+    const target = await createSaveTarget(handle, await handle.getFile());
+    state.lagging = true;
+    await target.write(new Blob(["version two, longer"]));
+    expect(await target.check()).toBe("same");
   });
 
   it("keeps its baseline when a write fails, so the next check is honest", async () => {

@@ -51,6 +51,7 @@ import {
 import type { TourRelation } from "./code-tour.js";
 import { driveFileId } from "gps-plus-slam-app-framework/utils/drive-file-id";
 import type { CodeTourStatus } from "./scan-open.js";
+import type { WalkBake } from "./tour-document-bake.js";
 
 /**
  * Geo-less until minted (QD-4): `syntheticAccuracyM` is required by the
@@ -441,13 +442,34 @@ export function archiveSizeNote(bytes: number): string {
  */
 export const MISSING_SIZE_MESSAGE = `Enter the printed code's side length in centimetres (e.g. ${String(Math.round(AUTHOR_DEFAULT_SIZE_M * 1000) / 10)}) in step 3 before starting.`;
 
+/**
+ * The creator's line about the bake at open (`walkAtOpen`): the
+ * recording's photos are put into stations when it opens, which takes a
+ * replay of the walk. While it runs the line says so (with the replay's
+ * progress once known); a decline says why, since the tour then has no
+ * walk photos, and a read that failed says that opening the recording
+ * again tries once more. Nothing once they are placed, or when there are
+ * none.
+ */
+export function walkBakeLine(bake: WalkBake | null): string {
+  if (bake === null) return "";
+  if (bake.kind === "baking") {
+    return bake.total === 0
+      ? "Placing the recording's photos into stations…"
+      : `Placing the recording's photos into stations (${String(bake.done)} of ${String(bake.total)} steps of the walk)…`;
+  }
+  const reason = bake.photos.notPlaced;
+  if (reason === undefined) return "";
+  const line = `The recording's photos are not in the tour: they could not be placed (${reason}).`;
+  return bake.photos.readFailed === true
+    ? `${line} Open the recording again to try once more.`
+    : line;
+}
+
 /** The finish step's labels through its async cycle (async-UI rule). */
 export const FINISH_LABELS = {
   reading: (bytes: number) =>
     `Finishing - reading the hosted zip (${(bytes / 1_000_000).toFixed(1)} MB)…`,
-  /** The recorded photos' spots, baked once (scan-pass plan S1). */
-  placingPhotos: (done: number, total: number) =>
-    `Finishing - placing the recorded photos (${String(done)} of ${String(total)} steps of the walk)…`,
   rebuilding: (done: number, total: number) =>
     `Finishing - rebuilding ${String(done)} of ${String(total)} entries…`,
   /** The line shown while the Finish saves the rebuilt zip by itself (the

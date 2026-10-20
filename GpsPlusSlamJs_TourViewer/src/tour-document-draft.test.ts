@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   followDocument,
+  parseSettingsRecord,
   settingsRecord,
   type TourDocumentDraft,
 } from "./tour-document-draft.js";
@@ -328,5 +329,63 @@ describe("followDocument, the station poses (review #1)", () => {
     });
     expect(settingsRecord(after).stations?.[0]?.geo).toEqual(geo);
     expect(calls.filter((c) => c.startsWith("saveSettings"))).toHaveLength(1);
+  });
+});
+
+/**
+ * Why: a station the station rule started is the document's from that
+ * moment, and the objects' records only name it. The settings record keeps
+ * its whole frame, so a reload brings the station back where it stood -
+ * and a record whose frames do not read loses only them (the objects that
+ * named them are seated by the rule), never the setting beside them.
+ */
+describe("followDocument, the stations this page created", () => {
+  const far: TourObject = {
+    ...pin("far"),
+    geo: { lat: 48.53, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+  };
+
+  it("a placement that starts a station writes its whole frame; one that joins a station writes none", () => {
+    const joined = writesFor(
+      opened,
+      act.placed({ object: pin("near"), what: "p", newStationId: "unused" }),
+    );
+    expect(settingsRecord(joined.after)).toEqual({ needsNoGps: false });
+    expect(joined.calls.filter((c) => c.startsWith("saveSettings"))).toEqual(
+      [],
+    );
+    const started = writesFor(
+      opened,
+      act.placed({ object: far, what: "p", newStationId: "made" }),
+    );
+    const record = settingsRecord(started.after);
+    expect(record.createdStations).toEqual([
+      started.after.stations.find((f) => f.id === "made"),
+    ]);
+    expect(
+      started.calls.filter((c) => c.startsWith("saveSettings")),
+    ).toHaveLength(1);
+    // Read back from disk as the frame it was.
+    expect(parseSettingsRecord(JSON.stringify(record))).toEqual(record);
+  });
+
+  it("a record whose created frames do not read keeps the rest", () => {
+    const started = writesFor(
+      opened,
+      act.placed({ object: far, what: "p", newStationId: "made" }),
+    );
+    const record = settingsRecord(started.after);
+    const broken = {
+      ...record,
+      createdStations: [{ ...record.createdStations![0]!, foundRadiusM: -1 }],
+    };
+    expect(parseSettingsRecord(JSON.stringify(broken))).toEqual({
+      needsNoGps: false,
+    });
+    expect(
+      parseSettingsRecord(
+        JSON.stringify({ ...record, createdStations: "not a list" }),
+      ),
+    ).toEqual({ needsNoGps: false });
   });
 });

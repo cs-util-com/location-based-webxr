@@ -7,9 +7,12 @@ The capture join, baked (scan-pass plan
 S1 and owner decision S-D11): replay a tour's recording once, place each
 recorded photo through the first settled alignment after it was taken, and
 return the spots in the world (`CaptureSpotsInWorld` of `tour-content.ts`).
-The creator's Finish writes them as `captureSpots`, each photo in a station
-at a local pose (version 3, tour editor plan W3, D21); a visitor places them and never downloads or replays
-the walk. The viewer runs the same function over a tour never finished
+Both creator pages bake when they open a recording (`walkAtOpen` of
+`tour-document-bake.ts`), the tour holding them as `captureSpots` from then
+on, each photo in a station at a local pose (version 3,
+`withWalkPhotos` of `tour-content.ts`); the Finish writes them
+as they are. A visitor places them and never downloads or replays the
+walk. The viewer runs the same function over a tour never finished
 since S1, so a baked tour and an unbaked one show the photos at the same
 spots.
 
@@ -62,13 +65,13 @@ placesNothing? }`. `placesNothing: true` when the replayed walk names
   would make every Finish of that tour throw; a file captured again keeps
   its last pose, as the zip keeps its last write (S1 milestone review #7).
 - A wrapped Recorder zip (`mytour/actions/...`) never bakes: the recorded
-  `imageFile` names are unwrapped. The Finish then keeps the walk and says
-  so, which leaves a later fix possible.
+  `imageFile` names are unwrapped. The open then says the photos were not
+  placed and the Finish keeps the walk, which leaves a later fix possible.
 - `fixes` and `gpsAccuracyMedianM` are the walk's (the final assessment's),
   as the live join's status line reported them; `null` stays `null`.
 - Errors thrown by the session's reads (a cap's refusal, a failed
-  integrity check) propagate; the callers decide (the Finish rethrows
-  those two and keeps the live join for anything else).
+  integrity check) propagate; the callers decide (`walkAtOpen` makes
+  every failure the reason the tour opens without its walk photos).
 
 ## Examples
 
@@ -94,6 +97,8 @@ placed; a walk with no photo taken placing nothing, with GPS that solves
 and with no fix at all; the live
 join's declines (no recording, an old era, a stopped replay); an absent or
 string era declining and keeping the walk (PR #640 review); and the pose
-conversion. The Finish's use is pinned in `creator-finish.test.ts`, the
+conversion. The open's use is pinned in `archive-open-file.test.ts`,
+`editor/editor-open.test.ts` and `tour-document-bake.test.ts`,
+the Finish writing its result in `creator-finish.test.ts`, the
 viewer's in `playwright-tests/ar-mode.spec.js` (a baked tour without a
 recording) and `replay-abort-wiring.test.ts`.

@@ -9,10 +9,12 @@ import { Group, Mesh, type RingGeometry, type Vector3 } from "three";
 
 import { createCreatorDocument } from "./creator-document.js";
 import { tourOf } from "./test-support/v3-tour.js";
+import { withWalkPhotos } from "./tour-content.js";
 import {
   manifestToWrite,
   tourDocumentActions,
   tourDocumentReducer,
+  type TourDocumentState,
 } from "./tour-document.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import {
@@ -21,8 +23,6 @@ import {
   reticleNueOf,
   stationChipText,
   stationsAsFinished,
-  WALK_HEDGE,
-  walkPhotosPending,
   wireCreatorStations,
   type ArStation,
 } from "./creator-stations.js";
@@ -32,12 +32,24 @@ import { STATION_RING_NAME } from "./station-ring.js";
  * Why these tests matter (tour editor plan 2026-10-17-1816, W3 "AR
  * authoring", D20, D21): the creator decides where a station ends by what
  * the HUD says and the ring shows. If the HUD's stations were not the ones
- * the Finish writes, a pin the HUD said "joins Station 2" would land in a
- * new station - silently, discovered only by a visitor. So the stations
- * are read through the Finish's own writer, and the HUD's promise is a
- * property: a pin placed where the creator stands lands in the station the
- * HUD called open, or starts a new one when it called none.
+ * the tour document seats a placement in, a pin the HUD said "joins
+ * Station 2" would land in a new station - silently, discovered only by a
+ * visitor. So the stations are read from the document as its next write
+ * carries them, judged by each station's own found radius, and the HUD's
+ * promise is a property: a pin placed where the creator stands lands in
+ * the station the HUD called open, or starts a new one when it called
+ * none.
  */
+
+/** `manifest` with every station's found radius `radiusM` (the radius
+ *  the HUD and the document's rule read; swept by the properties). */
+function withRadius(manifest: TourManifest, radiusM?: number): TourManifest {
+  if (radiusM === undefined) return manifest;
+  return {
+    ...manifest,
+    stations: manifest.stations.map((s) => ({ ...s, foundRadiusM: radiusM })),
+  };
+}
 
 const zero = { lat: 47.5, lon: 8.7 };
 
@@ -65,19 +77,21 @@ function stationOf(
   return stations.find((s) => s.itemIds.includes(id));
 }
 
-/** The stations of a tour document holding `manifest` with this page's
- *  placements and deletions (null: no tour). */
+/** The stations of a tour document holding `manifest` (its stations'
+ *  found radius `radiusM` when given) with this page's placements and
+ *  deletions (null: no tour). */
 function finishedOf(input: {
   readonly manifest: TourManifest | null;
   readonly placed: readonly TourObject[];
   readonly deleted: readonly string[];
   readonly radiusM?: number;
 }): ArStation[] {
-  const radius = input.radiusM === undefined ? {} : { radiusM: input.radiusM };
   if (input.manifest === null) return stationsAsFinished({ state: null });
   let state = tourDocumentReducer(
     undefined,
-    tourDocumentActions.opened({ manifest: input.manifest }),
+    tourDocumentActions.opened({
+      manifest: withRadius(input.manifest, input.radiusM),
+    }),
   );
   // A refused change would make a test pass for the wrong reason: the
   // document ignores it, so each is checked here (the review's LOW-6).
@@ -95,17 +109,22 @@ function finishedOf(input: {
     const before = state;
     state = tourDocumentReducer(
       state,
-      tourDocumentActions.placed({ object, what: "a pin" }),
+      // A station id per object, so two runs over one walk agree.
+      tourDocumentActions.placed({
+        object,
+        what: "a pin",
+        newStationId: `new-${object.id}`,
+      }),
     );
     if (state.revision === before.revision) {
       throw new Error(`the document refused the placement of ${object.id}`);
     }
   }
-  return stationsAsFinished({ state, ...radius });
+  return stationsAsFinished({ state });
 }
 
 describe("stationsAsFinished", () => {
-  it("is the Finish's assignment: a pin within R joins the station, one beyond starts a new one, named by its place", () => {
+  it("is the document's assignment: a pin within the radius joins the station, one beyond starts a new one, named by its place", () => {
     const manifest = tourOf([pin("gate", 0, 0)]);
     const stations = finishedOf({
       manifest,
@@ -138,9 +157,9 @@ describe("stationsAsFinished", () => {
     expect(finishedOf({ manifest: null, placed: [], deleted: [] })).toEqual([]);
   });
 
-  it("never names an unwritten station like a hosted one", () => {
-    // A hosted station could carry any id; the HUD's own ids for the
-    // stations the Finish would start must never collide with one.
+  it("tells a station the file carries from one this page started, whatever its id", () => {
+    // A hosted station could carry any id: "started" is whether the tour
+    // file carries the station, never a reading of its id.
     const hosted = tourOf([pin("gate", 0, 0)]);
     const manifest: TourManifest = {
       ...hosted,
@@ -157,7 +176,7 @@ describe("stationsAsFinished", () => {
 });
 
 describe("openStationAt", () => {
-  it("is the nearest station within R, R itself inside, none beyond", () => {
+  it("is the nearest station whose own radius holds the spot, the radius itself inside, none beyond", () => {
     const stations = finishedOf({
       manifest: tourOf([pin("a", 0, 0), pin("b", 40, 0)]),
       placed: [],
@@ -167,7 +186,21 @@ describe("openStationAt", () => {
     expect(openStationAt(stations, at(10, 0))?.id).toBe("st-a");
     expect(openStationAt(stations, at(0, 25))?.id).toBe("st-a");
     expect(openStationAt(stations, at(0, 26))).toBeNull();
-    expect(openStationAt(stations, at(0, 30), 35)?.id).toBe("st-a");
+    // A station's own radius decides: 35 m holds 30 m, 5 m does not hold 6.
+    const wide = finishedOf({
+      manifest: tourOf([pin("a", 0, 0)]),
+      placed: [],
+      deleted: [],
+      radiusM: 35,
+    });
+    expect(openStationAt(wide, at(0, 30))?.id).toBe("st-a");
+    const narrow = finishedOf({
+      manifest: tourOf([pin("a", 0, 0)]),
+      placed: [],
+      deleted: [],
+      radiusM: 5,
+    });
+    expect(openStationAt(narrow, at(0, 6))).toBeNull();
   });
 
   it("keeps the HUD's promise: a pin placed where the creator stands lands in the open station, or starts one where none is open (property)", () => {
@@ -194,7 +227,7 @@ describe("openStationAt", () => {
               deleted: [],
               radiusM,
             });
-            const open = openStationAt(before, at(north, east), radiusM);
+            const open = openStationAt(before, at(north, east));
             const id = `p${String(i)}`;
             placed.push(pin(id, north, east));
             const after = finishedOf({
@@ -231,6 +264,7 @@ describe("the words", () => {
   const station = (name: string, started = false): ArStation => ({
     id: name,
     anchor: { lat: 47.5, lon: 8.7, alt: 400 },
+    foundRadiusM: 25,
     name,
     started,
     itemIds: ["first", "second"],
@@ -267,33 +301,6 @@ describe("the words", () => {
   });
 });
 
-describe("walkPhotosPending", () => {
-  // Why (M5c review #2, PR #642 review): the HUD hedges exactly while a
-  // Finish might still sort the walk's photos in - a recording and no baked
-  // spots - unless a Finish in THIS page already decided about the walk. A
-  // declined bake writes no spots, and the file cannot say it declined, so
-  // a tour reopened after one reads as pending again: hedged, never silent.
-  it("is true for a recording without photo spots, until a Finish in this page decided", () => {
-    const tour = tourOf([pin("gate", 0, 0)]);
-    const spots = {
-      ...tour,
-      captureSpots: { fixes: 4, gpsAccuracyMedianM: null, captures: [] },
-    } as TourManifest;
-    const session = { hasRecording: true };
-    // Never finished, or reopened after a declined bake (a new session):
-    // pending.
-    expect(walkPhotosPending(session, tour)).toBe(true);
-    expect(walkPhotosPending(session, tour, { hasRecording: true })).toBe(true);
-    // Baked: the spots are in the tour.
-    expect(walkPhotosPending(session, spots)).toBe(false);
-    // A Finish of this open tour, in this page, decided (baked or declined).
-    expect(walkPhotosPending(session, tour, session)).toBe(false);
-    expect(walkPhotosPending({ hasRecording: false }, tour)).toBe(false);
-    expect(walkPhotosPending(null, tour)).toBe(false);
-    expect(walkPhotosPending(session, null)).toBe(false);
-  });
-});
-
 describe("reticleNueOf", () => {
   // Why: the open station is judged where the reticle points only while it
   // is visible; a hidden or broken reticle must fall back to the creator.
@@ -311,14 +318,15 @@ describe("reticleNueOf", () => {
 });
 
 describe("wireCreatorStations", () => {
-  function harness(
-    options: { radiusM?: number; walkPhotosPending?: () => boolean } = {},
-  ) {
+  function harness(options: { radiusM?: number; opened?: TourManifest } = {}) {
     const scene = new Group();
     // The page's tour document, changed as the creator changes it (a
     // placement, a settle's re-pose, a delete, a Finish's write).
     const tour = createCreatorDocument(createTourViewerStore());
-    tour.open(tourOf([pin("gate", 0, 0)]));
+    tour.open(
+      options.opened ??
+        withRadius(tourOf([pin("gate", 0, 0)]), options.radiusM),
+    );
     const chip = { textContent: "", hidden: true };
     let creator: [number, number, number] | null = [5, 401.5, 0];
     let reticle: [number, number, number] | null = null;
@@ -330,10 +338,6 @@ describe("wireCreatorStations", () => {
       reticleNue: () => reticle,
       zero: () => zero,
       scene: () => sceneNow,
-      ...(options.radiusM === undefined ? {} : { radiusM: options.radiusM }),
-      ...(options.walkPhotosPending === undefined
-        ? {}
-        : { walkPhotosPending: options.walkPhotosPending }),
     });
     const ring = () =>
       scene.children.find((c) => c.name === STATION_RING_NAME) as
@@ -360,6 +364,52 @@ describe("wireCreatorStations", () => {
       },
     };
   }
+
+  it("hides the line and the ring and says it once when the stations cannot be read", () => {
+    // Why: the stations come from the document's write rule, which throws
+    // for an object in no station of the tour. The HUD reads them every
+    // camera frame; a throw there would escape the AR frame loop on every
+    // frame. It is caught: the line and the ring go, the page hears it
+    // once through its error channel, and the HUD comes back once the
+    // stations read again.
+    const scene = new Group();
+    const tour = createCreatorDocument(createTourViewerStore());
+    tour.open(tourOf([pin("gate", 0, 0)]));
+    tour.place(pin("far", 60, 0), {}, "a pin");
+    const good = tour.state();
+    const broken = {
+      ...good,
+      placed: good.placed.map((e) => ({
+        ...e,
+        object: { ...e.object, station: "nowhere" },
+      })),
+    };
+    let state: TourDocumentState = broken;
+    const chip = { textContent: "", hidden: true };
+    const said: string[] = [];
+    const stations = wireCreatorStations({
+      tour: { manifest: () => tour.manifest(), state: () => state },
+      dom: { chip },
+      creatorNue: () => [5, 401.5, 0],
+      zero: () => zero,
+      scene: () => scene,
+      reportError: (message) => said.push(message),
+    });
+    expect(() => {
+      stations.tick();
+    }).not.toThrow();
+    stations.tick();
+    expect(chip.hidden).toBe(true);
+    expect(scene.children.find((c) => c.name === STATION_RING_NAME)).toBe(
+      undefined,
+    );
+    expect(stations.placedIn("far")).toBeNull();
+    expect(said).toHaveLength(1);
+    expect(said[0]).toMatch(/station/i);
+    state = good;
+    stations.tick();
+    expect(chip.hidden).toBe(false);
+  });
 
   it("names the open station and rings its radius on the ground at its anchor", () => {
     const h = harness();
@@ -467,10 +517,16 @@ describe("wireCreatorStations", () => {
     expect(h.chip.textContent).toBe(
       "In Station 2 - what you place here joins it.",
     );
+    // 40 m on, beyond its station's 25 m radius: the document seats it in
+    // a station there, and the one it left, now empty, goes.
     h.tour.move(pin("far", 100, 0), "a settle's re-pose");
     h.stand(60, 0);
     expect(h.chip.textContent).toBe(
-      "You left Station 2 - what you place next starts a new station.",
+      "No station here - what you place next starts a new one.",
+    );
+    h.stand(100, 0);
+    expect(h.chip.textContent).toBe(
+      "In Station 2 - what you place here joins it.",
     );
   });
 
@@ -532,7 +588,8 @@ describe("wireCreatorStations", () => {
   it("keeps the line's promise wherever the pin lands, the reticle up to 10 m ahead or hidden (property)", () => {
     // D21 through the composed HUD: the line read just before a placement
     // names the station the placement joins, or says none is open and the
-    // placement starts one. R swept 15-40 m.
+    // placement starts one. The hosted station's radius swept 15-40 m (the
+    // stations a placement starts take the automatic 25 m).
     const joins = /^In (.+) - what you place here joins it.$/;
     fc.assert(
       fc.property(
@@ -580,41 +637,39 @@ describe("wireCreatorStations", () => {
     );
   });
 
-  // Why (M5c review #2, PR #642 review): a tour's first Finish sorts the
-  // walk's recorded photos in BEFORE the objects, and the HUD cannot see
-  // them (they are baked at the Finish), so its station names and numbers
-  // may change. Naming none left a tour reopened after a declined bake -
-  // which reads as pending for good - with a dead HUD. It names them,
-  // hedged, and drops the hedge once nothing is pending.
-  it("names the stations with a hedge while the walk's photos may still be sorted in", () => {
-    let pending = true;
-    const h = harness({ walkPhotosPending: () => pending });
-    h.stand(5, 0);
+  // Why this test matters: the walk's photos once went into stations at
+  // the first Finish, so the HUD could not see them and hedged every name
+  // ("may change at Finish"). They are baked into stations when the
+  // recording opens now: the HUD names the walk's own stations from the
+  // start, and a pin placed in one is told the station it will be written
+  // in, with no hedge.
+  it("names a station the walk's photos started, from the open on, without a hedge", () => {
+    const photoAt = pin("photo", 100, 0).geo;
+    const h = harness({
+      opened: withWalkPhotos(tourOf([pin("gate", 0, 0)]), {
+        fixes: 9,
+        gpsAccuracyMedianM: 4,
+        captures: [
+          {
+            image: "images/frame-1.jpg",
+            geo: { ...photoAt, rotation: [0, 0, 0, 1] },
+          },
+        ],
+      }),
+    });
+    h.stand(100, 0);
     expect(h.chip.textContent).toBe(
-      "In Station 1 - what you place here joins it. " + WALK_HEDGE,
+      "In Station 2 - what you place here joins it.",
     );
-    h.stand(60, 0);
-    expect(h.chip.textContent).toBe(
-      "You left Station 1 - what you place next starts a new station. " +
-        WALK_HEDGE,
-    );
-    h.tour.place(pin("near", 5, 0), {}, "a pin");
-    expect(h.stations.placedIn("near")).toBe(
-      "in Station 1 (may change at Finish, when the walk's photos are sorted in)",
-    );
-    pending = false;
-    h.stand(5, 0);
-    expect(h.chip.textContent).toBe(
-      "In Station 1 - what you place here joins it.",
-    );
-    expect(h.stations.placedIn("near")).toBe("in Station 1");
+    h.tour.place(pin("near", 101, 0), {}, "a pin");
+    expect(h.stations.placedIn("near")).toBe("in Station 2");
+    expect(h.stations.nameOf("near")).toBe("Station 2");
   });
 
-  // Why (M5c review #4): a station the next Finish starts has an
-  // order-numbered id ("unwritten-2") that shifts when an earlier one is
-  // deleted and is replaced by a minted one at the Finish. Remembered by
-  // that id, the station the creator left was forgotten, and the line said
-  // "No station here" instead of "You left ...".
+  // Why (M5c review #4): the HUD once read stations a Finish would start
+  // under order-numbered ids that shifted when an earlier one was deleted,
+  // and forgot the station the creator left ("No station here" instead of
+  // "You left ..."). A station now keeps its id from its first placement.
   it("still names the station the creator left after an earlier unwritten station is deleted", () => {
     const h = harness();
     h.tour.place(pin("a", 60, 0), {}, "a pin");
@@ -637,8 +692,8 @@ describe("wireCreatorStations", () => {
     expect(h.chip.textContent).toBe(
       "In Station 2 - what you place here joins it.",
     );
-    // The Finish writes the station under an id it mints, and the working
-    // copy starts again from the written tour.
+    // The Finish writes the station under the id the document gave it,
+    // and the working copy starts again from the written tour.
     const generation = h.tour.saveStarted();
     h.tour.saved({
       generation,

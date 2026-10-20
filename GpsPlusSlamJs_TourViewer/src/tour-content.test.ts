@@ -6,15 +6,17 @@
  * (each object with its geo pose) and writes through `withTourContent`, so
  * these tests pin the write: an object nobody moved keeps its local pose
  * bit for bit (D17's "never changes a child's local pose" starts here), a
- * moved one is re-expressed in its own station, a new one joins the
- * nearest station within R or starts one, recorded photos are assigned in
- * capture order, and a saved object compares equal to its stored copy
- * (`asStored`), which is what keeps a draft from being offered back after
- * its save.
+ * moved one is re-expressed in its own station, every object goes into the
+ * station it names (the writer starts none), the recorded photos are put
+ * into stations at the open by the station rule (`withWalkPhotos`), and a
+ * saved object compares equal to its stored copy (`asStored`), which is
+ * what keeps a draft from being offered back after its save.
  */
 
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
+  TourAsset,
+  TourBlock,
   TourManifest,
   TourObject,
   TourStation,
@@ -30,7 +32,9 @@ import { STATION_RADIUS_M } from "./station-assign.js";
 import {
   AUTO_STATION_ACTIVATE_M,
   asStored,
+  withReferencedAssets,
   withTourContent,
+  withWalkPhotos,
   worldCaptureSpots,
 } from "./tour-content.js";
 
@@ -83,19 +87,18 @@ function tour(stations: TourStation[]): TourManifest {
   return { version: 3, minor: 0, order: "fixed", assets: [], stations };
 }
 
-/** Station ids in order: `s1`, `s2`, ... */
-function counter(): () => string {
-  let n = 0;
-  return () => {
-    n += 1;
-    return `s${String(n)}`;
-  };
+/** `object` naming the station `id`, as the tour document seats it. */
+function inStation(object: TourObject, id: string): TourObject {
+  return { ...object, station: id };
 }
 
 describe("withTourContent", () => {
   it("an object nobody moved keeps its local pose bit for bit, its station, and its order", () => {
     const base = withTourContent(tour([station("gate", 0, 0)]), {
-      objects: [pin("a", 3, 4), pin("b", -2, 1)],
+      objects: [
+        inStation(pin("a", 3, 4), "gate"),
+        inStation(pin("b", -2, 1), "gate"),
+      ],
     });
     const again = withTourContent(base, { objects: tourObjects(base) });
     expect(JSON.stringify(again.stations)).toBe(JSON.stringify(base.stations));
@@ -103,7 +106,10 @@ describe("withTourContent", () => {
 
   it("an edited label keeps the pose; a moved object is re-expressed in its own station", () => {
     const base = withTourContent(tour([station("gate", 0, 0)]), {
-      objects: [pin("a", 3, 4), pin("b", -2, 1)],
+      objects: [
+        inStation(pin("a", 3, 4), "gate"),
+        inStation(pin("b", -2, 1), "gate"),
+      ],
     });
     const [a, b] = tourObjects(base);
     const moved = { ...b!, geo: geo(5, 5, 521.5) };
@@ -118,56 +124,70 @@ describe("withTourContent", () => {
     );
   });
 
-  it("a moved object stays in its station even beyond R: only a new one is assigned", () => {
-    const base = withTourContent(tour([station("gate", 0, 0)]), {
-      objects: [pin("a", 3, 4)],
-    });
-    const far = { ...tourObjects(base)[0]!, geo: geo(200, 0, 521.5) };
-    const next = withTourContent(base, { objects: [far] });
-    expect(next.stations.map((s) => s.id)).toEqual(["gate"]);
-    expect(next.stations[0]!.items.map((i) => i.id)).toEqual(["a"]);
-  });
-
-  it("a new object joins the nearest station within R; beyond R it starts a station where it stands", () => {
+  // Why this test matters: the tour document seats every object in a
+  // station from the moment it is placed or moved, and the page shows that
+  // station. A writer that assigned stations again (as it once did for new
+  // objects) could write an object somewhere other than the station the
+  // creator was shown, so it writes each object into the station it names,
+  // wherever it stands.
+  it("writes each object into the station it names, however far from it, and starts no station", () => {
     const next = withTourContent(
       tour([station("gate", 0, 0), station("well", 0, 40)]),
       {
-        objects: [pin("near-well", 0, 30), pin("lone", 100, 0)],
-        newStationId: counter(),
+        objects: [
+          inStation(pin("near-well", 0, 39), "gate"),
+          inStation(pin("lone", 100, 0), "well"),
+        ],
       },
     );
     expect(next.stations.map((s) => [s.id, s.items.map((i) => i.id)])).toEqual([
-      ["gate", []],
-      ["well", ["near-well"]],
-      ["s1", ["lone"]],
+      ["gate", ["near-well"]],
+      ["well", ["lone"]],
     ]);
-    const started = next.stations[2]!;
-    // Anchored at its first element, turned like north (D20), automatic:
-    // no story, found at R, activated further out.
-    expect(started).toMatchObject({
-      geo: { ...geo(100, 0, 521.5), rotation: [0, 0, 0, 1] },
-      foundRadiusM: STATION_RADIUS_M,
-      activateRadiusM: AUTO_STATION_ACTIVATE_M,
-      hint: "arrow",
-      steps: [],
-    });
-    expect(started.items[0]!.pose.position).toEqual([0, 0, 0]);
   });
 
-  it("a chain of new objects becomes a chain of stations, in the caller's order", () => {
-    const next = withTourContent(tour([]), {
-      objects: [0, 20, 40, 60].map((n) => pin(`p${String(n)}`, n, 0)),
-      newStationId: counter(),
+  it("an object keeps the station the tour holds it in when it names none", () => {
+    const base = withTourContent(tour([station("gate", 0, 0)]), {
+      objects: [inStation(pin("a", 3, 4), "gate")],
     });
-    expect(next.stations.map((s) => s.items.map((i) => i.id))).toEqual([
-      ["p0", "p20"],
-      ["p40", "p60"],
-    ]);
+    const { station: _station, ...unnamed } = tourObjects(base)[0]!;
+    const next = withTourContent(base, { objects: [unnamed] });
+    expect(next.stations[0]!.items.map((i) => i.id)).toEqual(["a"]);
+  });
+
+  // Why this test matters: an object that reaches the writer in no station
+  // of the tour is a broken document, not a reason to invent a station: a
+  // station made here would be one no page ever showed. The save fails in
+  // words instead of writing it somewhere.
+  it("refuses an object naming a station the tour lacks, or none at all", () => {
+    const base = tour([station("gate", 0, 0)]);
+    expect(() =>
+      withTourContent(base, { objects: [inStation(pin("a", 0, 0), "gone")] }),
+    ).toThrow(/"a".*station/);
+    expect(() => withTourContent(base, { objects: [pin("b", 0, 0)] })).toThrow(
+      /"b".*station/,
+    );
+  });
+
+  it("keeps the stations in the order the tour has them", () => {
+    const next = withTourContent(
+      tour([station("c", 0, 0), station("a", 50, 0), station("b", 100, 0)]),
+      {
+        objects: [
+          inStation(pin("in-b", 100, 0), "b"),
+          inStation(pin("in-c", 0, 0), "c"),
+        ],
+      },
+    );
+    expect(next.stations.map((s) => s.id)).toEqual(["c", "a", "b"]);
   });
 
   it("an object absent from the list leaves its station; the station stays", () => {
     const base = withTourContent(tour([station("gate", 0, 0)]), {
-      objects: [pin("a", 3, 4), pin("b", -2, 1)],
+      objects: [
+        inStation(pin("a", 3, 4), "gate"),
+        inStation(pin("b", -2, 1), "gate"),
+      ],
     });
     const next = withTourContent(base, {
       objects: tourObjects(base).filter((o) => o.id !== "a"),
@@ -195,28 +215,28 @@ describe("withTourContent", () => {
       ],
       next: "routed",
     };
+    const stations = [
+      station("auto", 0, 0),
+      titled,
+      storied,
+      station("photographed", 300, 0),
+      station("was-empty", 400, 0),
+      station("routed", 500, 0),
+    ];
     const base = withTourContent(
-      tour([
-        station("auto", 0, 0),
-        titled,
-        storied,
-        station("photographed", 300, 0),
-        station("was-empty", 400, 0),
-        station("routed", 500, 0),
-      ]),
+      withWalkPhotos(tour(stations), {
+        fixes: 3,
+        gpsAccuracyMedianM: 4,
+        captures: [{ image: "images/frame-1.jpg", geo: geo(302, 0, 521) }],
+      }),
       {
         objects: [
-          pin("a", 1, 0),
-          pin("b", 101, 0),
-          pin("c", 201, 0),
-          pin("d", 301, 0),
-          pin("e", 501, 0),
+          inStation(pin("a", 1, 0), "auto"),
+          inStation(pin("b", 101, 0), "titled"),
+          inStation(pin("c", 201, 0), "storied"),
+          inStation(pin("d", 301, 0), "photographed"),
+          inStation(pin("e", 501, 0), "routed"),
         ],
-        captureSpots: {
-          fixes: 3,
-          gpsAccuracyMedianM: 4,
-          captures: [{ image: "images/frame-1.jpg", geo: geo(302, 0, 521) }],
-        },
       },
     );
     expect(base.captureSpots?.captures[0]?.station).toBe("photographed");
@@ -230,173 +250,84 @@ describe("withTourContent", () => {
     ]);
   });
 
-  // Why: an undo after a save that pruned an emptied station hands the
-  // write the object as it stood, naming the station the save dropped
-  // (the M5a milestone review M2). The automatic rule would merge it into
-  // a neighbour within R, or start a station with a fresh id: the undo
-  // would not put the element back into its station. The recreated
-  // station goes after the tour's own: a save hands the objects "saved,
-  // then changed", so their order cannot say where it stood.
-  it("an object naming a station the tour lacks recreates that station under its id, after the tour's own", () => {
-    const base = withTourContent(
-      tour([
-        station("gate", 0, 0),
-        station("mid", 0, 10),
-        station("well", 0, 200),
-      ]),
-      { objects: [pin("a", 0, 1), pin("m", 0, 11), pin("w", 0, 201)] },
-    );
-    expect(base.stations.map((s) => s.items.map((i) => i.id))).toEqual([
-      ["a"],
-      ["m"],
-      ["w"],
-    ]);
-    const before = tourObjects(base);
-    const pruned = withTourContent(base, {
-      objects: before.filter((o) => o.id !== "m"),
+  it("keeps the tour's recorded photos verbatim", () => {
+    const baked = withWalkPhotos(tour([]), {
+      fixes: 9,
+      gpsAccuracyMedianM: 4,
+      captures: [{ image: "images/frame-1.jpg", geo: geo(0, 0, 521) }],
     });
-    expect(pruned.stations.map((s) => s.id)).toEqual(["gate", "well"]);
+    const later = withTourContent(baked, { objects: [] });
+    expect(later.captureSpots).toBe(baked.captureSpots);
+  });
+});
 
-    // As a save hands them: the saved objects, then the changed ones.
-    const undone = withTourContent(pruned, {
-      objects: [...tourObjects(pruned), before[1]!, pin("near-m", 0, 12)],
-      newStationId: counter(),
-    });
-    expect(
-      undone.stations.map((s) => [s.id, s.items.map((i) => i.id)]),
-    ).toEqual([
-      ["gate", ["a"]],
-      ["well", ["w"]],
-      ["mid", ["m", "near-m"]],
+describe("withWalkPhotos", () => {
+  // Why these tests matter: the recording's photos are put into stations
+  // once, when the creator opens the recording, by the same rule a
+  // placement follows (a station whose own found radius holds the spot,
+  // else a new one there). Their stations then exist from the open on,
+  // under ids a reload gives again, so nothing the page showed moves at
+  // the Finish.
+  const spotsAt = (...north: number[]) => ({
+    fixes: 9,
+    gpsAccuracyMedianM: 4,
+    captures: north.map((n, i) => ({
+      image: `images/frame-${String(i + 1)}.jpg`,
+      geo: geo(n, 0, 521),
+    })),
+  });
+
+  // Both sides of each boundary: the gate's own 10 m radius (10 m joins,
+  // 10.5 m does not) and the new station's 25 m (25.5 m from its anchor
+  // starts the next one, 24.5 m joins the nearer of two).
+  it("puts each photo, in capture order, in the station whose own radius holds it, else in a new one where it stands", () => {
+    const next = withWalkPhotos(
+      tour([station("gate", 0, 0)]),
+      spotsAt(10, 10.5, 36, 35),
+    );
+    expect(next.captureSpots?.captures.map((c) => c.station)).toEqual([
+      "gate",
+      "walk-1",
+      "walk-2",
+      "walk-2",
     ]);
-    const mid = undone.stations[2]!;
-    // Anchored where its element stands, as an automatic station is.
-    expect(mid).toMatchObject({
-      geo: {
-        lat: before[1]!.geo.lat,
-        lon: before[1]!.geo.lon,
-        alt: before[1]!.geo.alt,
-        rotation: [0, 0, 0, 1],
-      },
+    expect(next.stations.map((s) => s.id)).toEqual([
+      "gate",
+      "walk-1",
+      "walk-2",
+    ]);
+    const started = next.stations[1]!;
+    // Anchored at its first photo, turned like north, automatic.
+    expect(started).toMatchObject({
+      geo: { ...geo(10.5, 0, 521), rotation: [0, 0, 0, 1] },
       foundRadiusM: STATION_RADIUS_M,
       activateRadiusM: AUTO_STATION_ACTIVATE_M,
+      hint: "arrow",
       steps: [],
+      items: [],
     });
-    const m = tourObjects(undone).find((o) => o.id === "m")!;
-    expect(m.station).toBe("mid");
-    expect(m.geo.lat).toBeCloseTo(before[1]!.geo.lat, 9);
-    expect(m.geo.lon).toBeCloseTo(before[1]!.geo.lon, 9);
-  });
-
-  // Why (owner decision D8 of the editor round-2 plan): the phone's "New
-  // station here" places an object naming a fresh station, so it starts
-  // its own even 5 m from another. It is taken in the objects' order like
-  // the rule's own new stations: a new object placed BEFORE it, 3 m away,
-  // must stay in the station it started (its note said so), not be
-  // absorbed into the later one.
-  it("an object naming a station the tour lacks starts it in the objects' order, even within R of another", () => {
-    const next = withTourContent(tour([station("gate", 0, 0)]), {
-      objects: [
-        pin("near", 3, 0),
-        { ...pin("own", 5, 0), station: "mine" },
-        pin("far", 60, 0),
-        { ...pin("own2", 63, 0), station: "mine2" },
-        pin("after", 62, 0),
-      ],
-      newStationId: counter(),
-    });
-    expect(next.stations.map((s) => [s.id, s.items.map((i) => i.id)])).toEqual([
-      ["gate", ["near"]],
-      ["mine", ["own"]],
-      ["s1", ["far"]],
-      ["mine2", ["own2", "after"]],
-    ]);
-    const own = pin("own", 5, 0).geo;
-    expect(next.stations[1]!.geo).toMatchObject({
-      lat: own.lat,
-      lon: own.lon,
-      alt: own.alt,
-    });
-  });
-
-  // Why this test matters: the walk's photos go through the rule before the
-  // objects, so a station an object starts of its own ("New station here")
-  // did not exist yet when they were assigned. Photos taken at its spot then
-  // joined a neighbour 20 m back (R 20-40) or started a duplicate station
-  // beside it (R 15), never the station the creator started there. Swept
-  // over R, because which of the two failures shows depends on R.
-  it.each([15, 20, 25, 30, 35, 40])(
-    "recorded photos at an own station's spot join it, and an earlier pin stays out of it (R %d m)",
-    (radiusM) => {
-      const captures = [
-        { image: "images/frame-1.jpg", geo: geo(20, 1, 521) },
-        { image: "images/frame-2.jpg", geo: geo(21, 0, 521) },
-      ];
-      const next = withTourContent(tour([station("gate", 0, 0)]), {
-        objects: [
-          pin("near", 18, 0),
-          { ...pin("own", 20, 0), station: "mine" },
-        ],
-        captureSpots: { fixes: 9, gpsAccuracyMedianM: 4, captures },
-        newStationId: counter(),
-        radiusM,
-      });
-      expect(next.captureSpots?.captures.map((c) => c.station)).toEqual([
-        "mine",
-        "mine",
-      ]);
-      const mine = next.stations.find((s) => s.id === "mine")!;
-      expect(mine.items.map((i) => i.id)).toEqual(["own"]);
-      const own = pin("own", 20, 0).geo;
-      expect(mine.geo).toMatchObject({ lat: own.lat, lon: own.lon });
-      // The earlier pin is where the rule puts it without the own station:
-      // in the gate within R, in a station of its own beyond. And there is
-      // no duplicate station at the own station's spot.
-      const expected =
-        radiusM >= 18
-          ? [
-              ["gate", ["near"]],
-              ["mine", ["own"]],
-            ]
-          : [
-              ["gate", []],
-              ["s1", ["near"]],
-              ["mine", ["own"]],
-            ];
-      expect(
-        next.stations.map((s) => [s.id, s.items.map((i) => i.id)]),
-      ).toEqual(expected);
-    },
-  );
-
-  it("recorded photos are assigned in capture order, before the objects; the tour's own spots are kept", () => {
-    const captures = [0, 30, 60].map((n) => ({
-      image: `images/frame-${String(n)}.jpg`,
-      geo: geo(n, 0, 521),
-    }));
-    const next = withTourContent(tour([]), {
-      objects: [pin("pin", 32, 0)],
-      captureSpots: { fixes: 9, gpsAccuracyMedianM: 4, captures },
-      newStationId: counter(),
-    });
-    expect(next.captureSpots?.captures.map((c) => c.station)).toEqual([
-      "s1",
-      "s2",
-      "s3",
-    ]);
-    expect(next.stations[1]!.items.map((i) => i.id)).toEqual(["pin"]);
     expect(next.captureSpots).toMatchObject({
       fixes: 9,
       gpsAccuracyMedianM: 4,
     });
-    // Spots are baked once: a later save keeps the tour's, verbatim.
-    const later = withTourContent(next, {
-      objects: tourObjects(next),
-      captureSpots: { fixes: 1, gpsAccuracyMedianM: 1, captures: [] },
-    });
-    expect(later.captureSpots).toBe(next.captureSpots);
-    // And their world view reads back where they were baked.
-    const world = worldCaptureSpots(next)!;
+  });
+
+  it("names its stations the same on every open, skipping ids the tour has", () => {
+    const base = tour([station("walk-1", 500, 0)]);
+    const once = withWalkPhotos(base, spotsAt(0, 100));
+    expect(once.stations.map((s) => s.id)).toEqual([
+      "walk-1",
+      "walk-2",
+      "walk-3",
+    ]);
+    expect(withWalkPhotos(base, spotsAt(0, 100))).toEqual(once);
+  });
+
+  it("reads back where the photos were taken", () => {
+    const captures = spotsAt(0, 30, 60).captures;
+    const world = worldCaptureSpots(
+      withWalkPhotos(tour([]), spotsAt(0, 30, 60)),
+    )!;
     expect(world.captures.map((c) => c.image)).toEqual(
       captures.map((c) => c.image),
     );
@@ -406,10 +337,111 @@ describe("withTourContent", () => {
     }
   });
 
-  it("refuses an R that is not a positive number", () => {
-    expect(() =>
-      withTourContent(tour([]), { objects: [pin("a", 0, 0)], radiusM: 0 }),
-    ).toThrow(RangeError);
+  it("leaves a tour that has its photos, and a walk without photos, as they are", () => {
+    const baked = withWalkPhotos(tour([]), spotsAt(0));
+    expect(withWalkPhotos(baked, spotsAt(100))).toBe(baked);
+    const empty = tour([station("gate", 0, 0)]);
+    expect(withWalkPhotos(empty, spotsAt())).toBe(empty);
+  });
+});
+
+describe("withReferencedAssets", () => {
+  // Why these tests matter: a tour's media files are its assets, and a
+  // visitor downloads every one the tour lists. An asset nothing uses any
+  // more (its step or its cover changed) would ride along in every copy
+  // for good, so the write drops it. But "uses" must cover every place an
+  // asset is named - each kind of step block and the cover - or the write
+  // would delete a step's media: one test per block kind.
+  const asset = (id: string, kind: TourAsset["kind"]): TourAsset => {
+    const ext = { image: "png", audio: "mp3", video: "mp4", model: "glb" }[
+      kind
+    ];
+    return { id, path: `content/${id}.${ext}`, kind };
+  };
+  const ASSETS: readonly TourAsset[] = [
+    asset("picture", "image"),
+    asset("guide", "image"),
+    asset("guide-voice", "audio"),
+    asset("song", "audio"),
+    asset("clip", "video"),
+    asset("statue", "model"),
+    asset("cover-art", "image"),
+    asset("stray", "image"),
+  ];
+  /** A tour with every asset and one station telling `blocks`. */
+  function telling(
+    blocks: readonly TourBlock[],
+    extra: Partial<TourManifest> = {},
+  ): TourManifest {
+    const told = {
+      ...station("told", 0, 0),
+      steps: blocks.map((block, i) => ({
+        id: `step-${String(i)}`,
+        block,
+        advance: { mode: "tap" as const },
+      })),
+    };
+    return { ...tour([told]), assets: [...ASSETS], ...extra };
+  }
+  const kept = (manifest: TourManifest) =>
+    withReferencedAssets(manifest).assets.map((a) => a.id);
+
+  const cases: readonly [string, TourBlock, readonly string[]][] = [
+    ["an image", { kind: "image", asset: "picture" }, ["picture"]],
+    [
+      "a character's image and voice",
+      {
+        kind: "character",
+        name: "Guide",
+        image: "guide",
+        caption: "Hello",
+        voice: "guide-voice",
+      },
+      ["guide", "guide-voice"],
+    ],
+    [
+      "a character without a voice",
+      { kind: "character", name: "Guide", image: "guide", caption: "Hello" },
+      ["guide"],
+    ],
+    ["an audio", { kind: "audio", asset: "song", transcript: "La" }, ["song"]],
+    ["a video", { kind: "video", asset: "clip", transcript: "Look" }, ["clip"]],
+    ["a model", { kind: "model", asset: "statue" }, ["statue"]],
+    ["a text", { kind: "text", text: "Read me" }, []],
+  ];
+  for (const [name, block, ids] of cases) {
+    it(`keeps what ${name} block names, and drops every other asset`, () => {
+      expect(kept(telling([block]))).toEqual(ids);
+    });
+  }
+
+  it("keeps the cover's image, though no step names it", () => {
+    expect(kept(telling([], { cover: "cover-art" }))).toEqual(["cover-art"]);
+  });
+
+  it("counts a block in any station, in the tour's asset order", () => {
+    const second = {
+      ...station("second", 100, 0),
+      steps: [
+        {
+          id: "s",
+          block: { kind: "image", asset: "picture" } as const,
+          advance: { mode: "tap" } as const,
+        },
+      ],
+    };
+    const manifest = telling([{ kind: "model", asset: "statue" }]);
+    expect(
+      kept({ ...manifest, stations: [...manifest.stations, second] }),
+    ).toEqual(["picture", "statue"]);
+  });
+
+  it("returns the tour itself when every asset is in use", () => {
+    const manifest = {
+      ...telling([{ kind: "image", asset: "picture" }]),
+      assets: [ASSETS[0]!],
+    };
+    expect(withReferencedAssets(manifest)).toBe(manifest);
   });
 });
 
@@ -422,10 +454,13 @@ describe("asStored", () => {
         fc.double({ min: 500, max: 540, noNaN: true }),
         (n, e, alt) => {
           const base = tour([station("gate", 0, 0)]);
-          const placed = { ...pin("a", n, e), geo: geo(n, e, alt, 70) };
+          const placed = {
+            ...pin("a", n, e),
+            geo: geo(n, e, alt, 70),
+            station: "gate",
+          };
           const written = withTourContent(base, { objects: [placed] });
           const read = tourObjects(written)[0]!;
-          // In whichever station the rule put it (a far one starts its own).
           const home = written.stations.find((s) => s.id === read.station)!;
           expect(objectContentKey(asStored(placed, home))).toBe(
             objectContentKey(read),

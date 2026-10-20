@@ -1312,6 +1312,7 @@ async function openFile(
   editor = createEditorSession({
     session: outcome.session,
     manifest: outcome.manifest,
+    photos: outcome.photos,
     levels: outcome.levels,
     fileName: outcome.fileName,
     // A deleted photo's picture, from the copy the page reads now (the

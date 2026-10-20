@@ -1,11 +1,12 @@
 /**
- * The capture join, baked (scan-pass plan S1, S-D11): at the creator's
- * Finish, replay the tour's recording ONCE, place each recorded photo
+ * The capture join, baked: when a creator's
+ * page opens a recording, replay it ONCE, place each recorded photo
  * through the first settled alignment after it was taken
  * (`createCapturePickTracker`), and return the spots `tour.json` carries
  * as `captureSpots`. A visitor then places those and never downloads or
  * replays the walk. The spots come back in the world (geo poses); the
- * Finish puts them into stations (`tour-content.ts`, tour editor plan W3).
+ * open puts them into stations (`walkAtOpen`, `withWalkPhotos` of
+ * `tour-content.ts`, tour editor plan W3).
  *
  * Every decline is the live join's own (`preflightCaptureJoin`,
  * `assessReplayedJoin`), plus two more: no photo file left to show, and no

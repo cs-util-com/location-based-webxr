@@ -196,13 +196,10 @@ M4 settles every code of the book, not only the one in hand.
       sighting's pose, the print size the visit solved at, the chosen
       pick), so it is re-minted as if measured here and this visit's
       objects settle relative to it.
-    - An IMPROVED position moves the tour's other objects within 40 m of
-      the code's old position, and no nearer to another of the tour's
-      codes (M4b, `takesAlong`), with it (`moveEarlierWithCode`,
-      `move-with-code.ts`: yaw and position only, as the code correction;
-      hosted, restored and earlier visits' objects, as edits by id; a pin
-      keeps its orientation). A real MOVE leaves them (D19) and marks the
-      visit's move boundary.
+    - An IMPROVED position moves the tour's other objects with it - by
+      their stations, below (`moveEarlierWithCode`; hosted, restored and
+      earlier visits' objects, as edits by id). A real MOVE leaves them
+      and marks the visit's move boundary.
     - **Version 3: whole stations** (tour editor plan D17). The rule picks
       STATIONS by their anchor (`station-code-move.ts`), and each moves
       rigidly as the tour document's `stationMoved` (`moveStation`), the
@@ -210,9 +207,27 @@ M4 settles every code of the book, not only the one in hand.
       the frame, edited ones included. This visit's own objects in a moved
       station are put back where the visit's settle put them (`move`). An
       object in a station that does not move stays, whatever its own
-      distance. Only objects not yet in a station (placed on this device,
-      not yet written) are judged one by one. Claims are per object id
-      and per `station:<id>`.
+      distance: every object stands in a station (the tour document's
+      station rule), so none is judged on its own any more. Claims are per
+      object id and per `station:<id>`; the stations this visit started
+      are claimed from the start (below).
+    - **A station this visit started settles with it.** Its anchor is the
+      AR placement of the item it was started for
+      (`stationPlacements()` of `creator-document.ts`), and the settle
+      hands it to `planVisitSettle` (`stations`), which settles it
+      through that item's own choice. The settle moves each such station
+      to its settled anchor FIRST (`moveStation`: its items rigidly with
+      it), then puts each of the visit's objects at its own settled spot,
+      so no item is shifted twice and the station stays anchored at its
+      first item, whatever the correction (a 10 m shift and a 10 degree
+      turn are pinned). The code move leaves such a station alone: it was
+      settled through the improved code already. An item of such a station
+      that this visit did not place (earlier work moved into it, a
+      restored draft) is put back where it stood before the settle, as the
+      code move's `stay` does: the visit's correction says nothing about
+      it. Put back by a move, so it stays in the station while the
+      item stays within the moved station's found radius (25 m by
+      default); further off, the move re-seats it by the station rule.
     - **The draft keeps the station's move** (tour editor plan §19 #1):
       the document's listener writes the moved poses into the draft's
       settings record (`creator-draft.ts`), and a restore moves the frame
@@ -271,7 +286,11 @@ M4 settles every code of the book, not only the one in hand.
 
 Composed, through `wireCreatorSetup`: `authoring-settle.test.ts` (the
 settle, each object's pick, the code's saved position, the refusal line,
-the earlier visits' frame, the visit log), `creator-finish.test.ts` (a
+the earlier visits' frame, the visit log; a station the visit started
+staying anchored at its first item after a 10 m and a 10 degree
+correction with no item moved twice, an earlier visit's station left
+alone, and the code move leaving this visit's station where the settle
+put it), `creator-finish.test.ts` (a
 Finish's settle and the summary) and the e2e authoring specs; the decisions
 themselves in `visit-settle.test.ts`, `code-position-settle.test.ts` and
 `visit-settle.golden.test.ts` (the one-code oracle). The sampled mutants

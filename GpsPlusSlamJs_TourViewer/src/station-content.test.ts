@@ -575,3 +575,89 @@ describe("station content: always-shown content, its own lane, failures and fade
     expect(h.content.showsAny()).toBe(true);
   });
 });
+
+describe("station content: stale failures, the one-at-a-time rule, late parts", () => {
+  it("a render that fails after its station was left is not marked failed: shown again, it is built again", async () => {
+    // Why: a render that stops because its station was left (a long
+    // decode told `alive()` is false) may throw on the way out. That says
+    // nothing about the part, so it must not be left out for good.
+    const onFailed = vi.fn();
+    const h = harness({ onFailed });
+    let attempts = 0;
+    let fail: (() => void) | null = null;
+    h.content.setPart("a", "items", {
+      kind: "content",
+      render: (parent) => {
+        attempts += 1;
+        if (attempts === 1) {
+          return new Promise<RenderedPart>((_resolve, reject) => {
+            fail = () => {
+              reject(new Error("stopped"));
+            };
+          });
+        }
+        return planePart().part.render(parent, () => true);
+      },
+    });
+    h.content.show(new Set(["a"]));
+    await h.at(1000);
+    h.content.show(new Set());
+    fail!();
+    await h.at(1100);
+    expect(onFailed).not.toHaveBeenCalled();
+    h.content.show(new Set(["a"]));
+    await h.at(1200);
+    expect(attempts).toBe(2);
+  });
+
+  it("a station whose parts all failed before enters only once the station leaving is gone", async () => {
+    // Why: such a station settles at once, inside `show`, before `show`
+    // has marked the stations after it in the table as leaving - it
+    // entered beside a station that was about to fade out.
+    const h = harness();
+    // "b" first in the table: `show` reaches it before "a".
+    h.content.setPart("b", "items", {
+      kind: "content",
+      render: () => Promise.reject(new Error("broken")),
+    });
+    h.content.setPart("a", "items", planePart().part);
+    h.content.show(new Set(["b"]));
+    await h.at(1000);
+    h.content.show(new Set());
+    await h.at(1000 + 2 * FADE);
+    h.content.show(new Set(["a"]));
+    await h.at(3000);
+    await h.at(3000 + FADE);
+    expect(h.names()).toEqual(["station-content:a"]);
+    // Back to "b" (built from nothing now): it waits for "a" to go.
+    h.content.show(new Set(["b"]));
+    expect(h.names()).toEqual(["station-content:a"]);
+    await h.at(4000 + FADE);
+    expect(h.names()).toEqual(["station-content:b"]);
+  });
+
+  it("a part added to a station that waits to enter is waited for, and the station fades in from 0 with it", async () => {
+    // Why: a station that rendered its parts waits off the scene while the
+    // last one fades out. A part added then rendered uncounted, so the
+    // station entered without it and it popped in later at whatever
+    // opacity the fade had reached.
+    const h = harness();
+    h.content.setPart("a", "items", planePart().part);
+    h.content.setPart("b", "items", planePart().part);
+    h.content.show(new Set(["a"]));
+    await h.at(1000);
+    await h.at(1000 + FADE);
+    h.content.show(new Set(["b"]));
+    await h.at(1000 + FADE + FADE / 2);
+    // "b" rendered and waits for "a" to fade out.
+    expect(h.names()).toEqual(["station-content:a"]);
+    const late = pendingPart();
+    h.content.setPart("b", "late", late.part);
+    await h.at(1000 + 2 * FADE);
+    expect(h.names()).toEqual([]);
+    late.release();
+    await h.at(1000 + 2 * FADE + 1);
+    expect(h.names()).toEqual(["station-content:b"]);
+    expect(h.opacityOf("b")).toBe(0);
+  });
+});

@@ -15,11 +15,15 @@ phone's Finish does not yet: see "Not here yet" below.
 
 ## Public API
 
-- `createTourSaves({ tour, generation, pictureOf, picturesRead }): TourSaves`
+- `createTourSaves({ tour, generation, pictureOf, picturesRead, photos? }): TourSaves`
   - one handle per open; it keeps the imperative resources only - the
-    newest bytes (a Blob), the photo spots' decision, the queue's tail.
-  - `tour` - the open `TourSession` (the rebuild's and the bake's reads,
-    the file's name).
+    newest bytes (a Blob), the queue's tail.
+  - `tour` - the open `TourSession` (the rebuild's reads, the file's
+    name).
+  - `photos` - what the open's bake decided about the walk's photos
+    (`walkAtOpen` of `tour-document-bake.ts`); absent: nothing to say. A
+    save never bakes: the photos are in the tour's stations from the
+    open on.
   - `generation` - the open the saves belong to
     (`TourDocumentState.generation`).
   - `pictureOf(id)` - a photo's picture the page keeps (an undo brought
@@ -51,12 +55,9 @@ phone's Finish does not yet: see "Not here yet" below.
     undo asked for right after an awaited save is not refused. The
     desktop's move of the walk out runs in the same queue.
   - `snapshot()` - thunk; the document as a save reads it now.
-  - `photoSpots(manifest)` - the recorded photos' spots
-    (`captureSpotsForRebuild`), decided once per open (a decline is not
-    re-baked on every save), after `picturesRead()`. A rejected decision
-    (a cap's refusal, a failed integrity check) stays cached too, so every
-    later save of the open fails with the same words, as before the save
-    moved here: those errors are deterministic for the open's bytes.
+  - `photoSpots()` - the open's decision (`photos`), after
+    `picturesRead()` (before a rebuild replaces the bytes a picture may be
+    read from).
   - `rebuild(snap, photos, keepScan, whole?)` - `rebuildFinishedTour`
     from the newest bytes, or from `whole` (the opened file as the caller
     already read it, so it is not read twice); `levels: []`. Throws what
@@ -103,8 +104,8 @@ phone's Finish does not yet: see "Not here yet" below.
 `config/.dependency-cruiser.cjs`), and its save status stays in the
 session object (the named deviation MEDIUM-1, `creator-finish.ts.md`).
 Moving it onto this thunk would change the phone's behaviour, which a
-refactor must not: its Finish snapshots the entries AFTER the photo bake
-(here, before the first await), it ends the document's save
+refactor must not: its Finish snapshots the entries after its first
+await (here, before it), it ends the document's save
 (`saveEnded`) only after the AR session's end and the wizard's step (so
 an undo stays refused through them), and it rebuilds with the code
 levels, a progress line and a stop check this handle does not take.

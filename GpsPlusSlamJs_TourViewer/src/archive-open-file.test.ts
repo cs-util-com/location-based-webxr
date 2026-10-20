@@ -12,7 +12,15 @@
  * draft and the print step.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { OpenRemoteArchiveError } from "gps-plus-slam-app-framework/storage";
+import {
+  loadActionsFromZip,
+  OpenRemoteArchiveError,
+  readZipEntries,
+} from "gps-plus-slam-app-framework/storage";
+import {
+  SAMPLE_PHOTOS,
+  sampleRecordingBytes,
+} from "./test-support/sample-recording.js";
 import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 
 import { wireArchiveOpen, type ArchiveOpenDom } from "./archive-open.js";
@@ -82,7 +90,7 @@ function fakeSession(url: string) {
   };
 }
 
-function wire() {
+function wire(mode: "creator" | "visitor" = "creator") {
   const dom = {
     form: el(),
     linkInput: el(),
@@ -114,7 +122,7 @@ function wire() {
     dom: dom as unknown as ArchiveOpenDom,
     cacheStore: undefined,
     corsProxyBaseUrl: "https://proxy.test",
-    mode: "creator",
+    mode,
     hooks,
   });
   return { dom, hooks, ctx, archive };
@@ -203,6 +211,155 @@ describe("open a file", () => {
     dom.fileInput.fire("change");
     expect(mocks.openTourFile).not.toHaveBeenCalled();
     expect(dom.openFileButton.disabled).toBe(false);
+  });
+});
+
+describe("a recording without tour.json", () => {
+  // Why this matters: every Recorder zip lacks tour.json, and the creator
+  // builds a tour on it. Opened as "no tour", it had no stations until the
+  // first Finish wrote one, so the station shown, the settle and the write
+  // each read something different. Opened as an empty tour, a pin placed
+  // a moment later already stands in a station of the document.
+  it("opens for the creator as an empty unnamed tour whose first pin is in a station", async () => {
+    mocks.openTourFile.mockResolvedValueOnce(fakeSession("local-file:abc"));
+    const { dom, ctx, hooks } = wire("creator");
+    pick(dom, new File(["zip"], "walk.zip"));
+    // Called once the manifest settled and the document opened.
+    await vi.waitFor(() =>
+      expect(hooks.presentDraftForTour).toHaveBeenCalled(),
+    );
+    const opened = ctx.tourDocument.opened();
+    expect(opened?.stations).toEqual([]);
+    expect(opened?.title).toBeUndefined();
+    const placed = ctx.tourDocument.place(
+      {
+        id: "p",
+        kind: "pin",
+        label: "p",
+        createdAtIso: "2026-10-20T00:00:00.000Z",
+        geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
+      },
+      {},
+      "a pin",
+    );
+    const station = placed?.object.station;
+    expect(station).toBeDefined();
+    expect(ctx.tourDocument.manifest()?.stations.map((s) => s.id)).toEqual([
+      station,
+    ]);
+  });
+
+  it("stays no tour for a visitor", async () => {
+    mocks.openTourFile.mockResolvedValueOnce(fakeSession("local-file:abc"));
+    const { dom, ctx, hooks } = wire("visitor");
+    pick(dom, new File(["zip"], "walk.zip"));
+    // Called once the manifest settled and the document opened.
+    await vi.waitFor(() =>
+      expect(hooks.presentDraftForTour).toHaveBeenCalled(),
+    );
+    expect(ctx.tourDocument.opened()).toBeNull();
+    expect(ctx.tourDocument.manifest()).toBeNull();
+  });
+});
+
+describe("a creator's recording is baked when it opens", () => {
+  // Why these tests matter: the recording's photos are put into stations
+  // once, when the creator opens it, so every station exists from the
+  // open on and the Finish assigns nothing. The open settles only after
+  // the bake (the draft and the Finish read the baked tour), says that it
+  // runs, keeps what it decided for the Finish, and never bakes for a
+  // visitor.
+  async function recording(
+    loadRecordingActions?: () => Promise<unknown>,
+  ): Promise<Record<string, unknown>> {
+    const bytes = sampleRecordingBytes();
+    const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
+    return {
+      ...fakeSession("local-file:abc"),
+      hasRecording: true,
+      entries: (await readZipEntries(bytes))
+        .filter((e) => !e.directory)
+        .map((e) => ({
+          filename: e.filename,
+          isImage: SAMPLE_PHOTOS.includes(e.filename),
+        })),
+      loadSessionMeta: () => Promise.resolve({ odomCoordVersion: 5 }),
+      loadRecordingActions:
+        loadRecordingActions ?? (() => Promise.resolve(actions)),
+    };
+  }
+
+  it("opens the creator's tour with the walk's photos in its stations", async () => {
+    mocks.openTourFile.mockResolvedValueOnce(await recording());
+    const { dom, ctx, hooks } = wire("creator");
+    pick(dom, new File(["zip"], "walk.zip"));
+    await vi.waitFor(() =>
+      expect(hooks.presentDraftForTour).toHaveBeenCalled(),
+    );
+    const opened = ctx.tourDocument.opened();
+    const captures = opened?.captureSpots?.captures ?? [];
+    expect(captures.length).toBeGreaterThan(0);
+    const ids = new Set(opened?.stations.map((s) => s.id));
+    for (const c of captures) expect(ids.has(c.station)).toBe(true);
+    expect(ctx.walkBake).toMatchObject({
+      kind: "decided",
+      photos: { spots: { captures: expect.any(Array) } },
+    });
+  });
+
+  it("settles the open only after the bake, and says that it runs", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const real = await recording();
+    mocks.openTourFile.mockResolvedValueOnce(
+      await recording(async () => {
+        await held;
+        return (real["loadRecordingActions"] as () => Promise<unknown>)();
+      }),
+    );
+    const { dom, ctx, hooks } = wire("creator");
+    pick(dom, new File(["zip"], "walk.zip"));
+    await vi.waitFor(() => expect(ctx.walkBake?.kind).toBe("baking"));
+    expect(ctx.tourManifestStatus).toBe("pending");
+    expect(hooks.presentDraftForTour).not.toHaveBeenCalled();
+    release();
+    await vi.waitFor(() =>
+      expect(hooks.presentDraftForTour).toHaveBeenCalled(),
+    );
+    expect(ctx.tourManifestStatus).toBe("settled");
+    expect(ctx.walkBake?.kind).toBe("decided");
+  });
+
+  it("opens a declined bake's tour without walk photos and keeps the reason", async () => {
+    mocks.openTourFile.mockResolvedValueOnce(
+      await recording(() => Promise.reject(new Error("bad stream"))),
+    );
+    const { dom, ctx, hooks } = wire("creator");
+    pick(dom, new File(["zip"], "walk.zip"));
+    await vi.waitFor(() =>
+      expect(hooks.presentDraftForTour).toHaveBeenCalled(),
+    );
+    expect(ctx.tourDocument.opened()?.captureSpots).toBeUndefined();
+    expect(ctx.walkBake).toEqual({
+      kind: "decided",
+      // A read that failed: the line says another open tries again.
+      photos: {
+        notPlaced: "reading the recording failed: bad stream",
+        readFailed: true,
+      },
+    });
+  });
+
+  it("never bakes for a visitor", async () => {
+    const read = vi.fn(() => Promise.resolve([]));
+    mocks.openTourFile.mockResolvedValueOnce(await recording(read));
+    const { dom, ctx, hooks } = wire("visitor");
+    pick(dom, new File(["zip"], "walk.zip"));
+    await vi.waitFor(() =>
+      expect(hooks.presentDraftForTour).toHaveBeenCalled(),
+    );
+    expect(read).not.toHaveBeenCalled();
+    expect(ctx.walkBake).toBeNull();
   });
 });
 
