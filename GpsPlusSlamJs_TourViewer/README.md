@@ -151,10 +151,21 @@ The workspace's globe package (`gps-plus-slam-globe`) is a dependency, for
 the 3D editor's building blocks (`import ... from
 "gps-plus-slam-globe/editor"`; nothing in the app imports it yet).
 `src/globe-dependency.test.ts` builds those blocks with Vite and fails if
-the build holds two copies of three, bundles a third-party package that
-`NOTICE` does not name, bundles an Apache-2.0 package whose licence text
-is not shipped verbatim in `public/third-party-licenses/`, or bundles a
-patched package that `NOTICE` does not call modified.
+the build holds two copies of three.
+
+The app ships the licence of every third-party package it bundles,
+verbatim, in `public/third-party-licenses/` (copied into the site as
+`third-party-licenses/`): `<name>-LICENSE.txt`, and `<name>-NOTICE.txt`
+for a package that has a NOTICE, the name being the npm name with `@`
+dropped and `/` written as `-`. `src/third-party-licenses.test.ts` derives
+the list from the module ids of two builds (the app's own, and an entry
+importing the globe's editor blocks; `src/test-support/bundled-packages.ts`),
+never from `package.json`, and fails when a bundled package has no licence
+file of its own, when a licence or NOTICE file is not shipped verbatim,
+when a shipped file belongs to no bundled package, when `NOTICE` does not
+name a bundled package, or when it does not say that a patched package
+(`patchedDependencies` in `pnpm-workspace.yaml`) is modified and by which
+patch (Apache License 2.0, sections 4(a), 4(b) and 4(d)).
 
 ## Where the design lives
 
