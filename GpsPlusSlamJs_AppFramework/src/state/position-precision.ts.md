@@ -18,6 +18,8 @@ and a knip entry until a consumer exists).
   - `position`: `'aligned'` (the aligned camera), `'lone-fix'` (a device fix
     standing in for it), or `null` (the app has no position: no alignment it
     may use and no fresh fix, a tracking drop). Which one is the app's call.
+    `undefined` reads as `null` (a plain-JS caller); any other value is a
+    caller bug and throws a `RangeError`.
   - `codeHold`: the app's own statement that a code still holds its
     alignment. When that ends is the app's: on events (a code judged moved,
     a new odometry frame, leaving AR, another tour), never by the clock.
@@ -34,7 +36,7 @@ number | null, tooWeak: boolean }`.
   `TELL_APART_FACTOR`; `RangeError` unless positive and finite.
 - Constants: `POSITION_PRECISION_CEILING_M` (25),
   `DEVICE_ACCURACY_WINDOW_FIXES` (10), `CODE_HELD_ERROR_M` (1),
-  `TELL_APART_FACTOR` (1.25). Each doc comment carries its evidence and
+  `TELL_APART_FACTOR` (1.5). Each doc comment carries its evidence and
   the value that would reverse it.
 - Types: `PositionKind`, `PrecisionSource`, `PrecisionGpsPoint`,
   `PositionPrecisionInput`, `CanTellApartOptions`.
@@ -53,7 +55,10 @@ number | null, tooWeak: boolean }`.
     nothing speaks for the position's precision (codes-only mode once a
     code's hold ended).
 - `tooWeak` is true for `'none'` too, so a reader that checks only
-  `tooWeak` never guides on nothing.
+  `tooWeak` never guides on nothing. **On `'none'` it is a fail-safe, not
+  a verdict on GPS:** a tracking drop or location permission off reads the
+  same, so a display or a weak-fix path branches on `source` first - only
+  `'gps'` with `tooWeak` means "GPS too weak".
 - `canTellApart`: never for `'none'` or too weak; otherwise
   `factor x length <= spacing / 2`, where the length is the accuracy for
   `'gps'` and `CODE_HELD_ERROR_M` for `'code'`. A zero, negative or NaN
@@ -107,7 +112,9 @@ if (!canTellApart(precision, nearestOtherTargetM)) {
 ## Tests
 
 - `position-precision.test.ts` - the constants; `'code'` for an aligned
-  position a code holds (codes-only too); `'none'` with no position; the
+  position a code holds (codes-only too); `'none'` with no position (no
+  number, too weak); an undefined position as none and an unknown kind
+  refused; the
   median of device fixes only; the window of 10 usable fixes; both sides of
   the ceiling and a caller ceiling; the lone fix's worse-of and that a code
   never vouches for it; an aligned verdict ignores the lone fix; no code and
@@ -124,39 +131,73 @@ if (!canTellApart(precision, nearestOtherTargetM)) {
 
 ## Evidence (`position-precision.sweep.test.ts`)
 
-A visitor stands at one of a row of five targets; "right" is the share of
-positions whose nearest target is the visitor's, at the three inner targets.
-GPS: Gauss-Markov error (wander 0.6, white 0.3 of the accuracy, 20 s), 1 Hz,
-60 s per target, 40 seeds; true accuracy 1-40 m, spacing 3-50 m (208
-cells); the rule reads the reported accuracy, 0.5x/1x/2x the true one.
-`POSITION_PRECISION_SWEEP_OUT=<file>` writes every cell.
+A visitor stands at a target whose nearest other targets are S away; "right"
+is the share of positions whose nearest target is the visitor's. S is the
+distance to the NEAREST other target, and how many targets sit at it depends
+on the layout, so the sweep measures three: a **row** (two neighbours at S),
+a **square** grid (four at S, four at 1.41 S) and a **hex** grid (six at S),
+each at a target with its whole first ring present (in these layouts that
+ring alone decides the nearest target, so this equals an inner target of
+any larger layout). One seeded error series per cell is read in all three
+layouts. GPS: Gauss-Markov error, 1 Hz, 180 s, 40 seeds; true accuracy
+1-40 m, spacing 3-50 m (208 cells per layout); the rule reads the reported
+accuracy, 0.5x/1x/2x the true one. Noise shapes, mirroring the Tour
+Viewer's station sweeps: **raw** (wander 0.6, white 0.3 of the accuracy,
+20 s; 0.67 of it per axis: the accuracy read as a 68 % radius, a phone's raw
+fix), **mid** (0.45 / 0.2, 20 s), **fused** (0.25 / 0.15, 60 s: the
+framework's defaults, an aligned position). The factor is set on raw.
+`POSITION_PRECISION_SWEEP_OUT=<file>` writes every cell and summary.
 
-- Honest report, ceiling 25 m, 90 % goal (yes / unsafe yes / needless no /
-  worst yes):
-  - factor 0.75: 116 / 25 / 0 / 71 %
-  - factor 1: 103 / 12 / 0 / 85 %
-  - **factor 1.25: 89 / 0 / 2 / 92 %** (shipped)
-  - factor 1.5: 79 / 0 / 12 / 97 %
-  - factor 2: 65 / 0 / 26 / 99.5 %
-  - factor 3: 46 / 0 / 45 / 100 %
-- The goal decides the factor: 80 % takes 1, 90 % 1.25, 95 % 1.5.
-- The report decides it too: a phone reporting half its true error needs 2.5
-  (1.25 then gives 35 unsafe yeses, worst 63 %); one reporting double is
-  safe at 0.75 (1.25 then refuses 36 cells it could answer).
+- Honest raw report, ceiling 25 m, 90 % goal (yes / unsafe yes / needless
+  no / worst yes; the yes count is the same in every layout, the rule does
+  not know the layout):
+  - factor 1: 103 yes; row 12 / 0 / 84 %, square 21 / 0 / 73 %, hex
+    23 / 0 / 68 %
+  - factor 1.25: 89 yes; row 0 / 2 / 92 %, square 7 / 0 / 85 %, hex
+    9 / 0 / 82 %
+  - **factor 1.5: 79 yes; row 0 / 12 / 97 %, square 0 / 3 / 95 %, hex
+    0 / 1 / 93 %** (shipped)
+  - factor 1.75: 67 yes; row 0 / 24 / 99 %, square 0 / 15 / 98 %, hex
+    0 / 13 / 97 %
+  - factor 2: 65 yes; worst yes 98.8-99.3 % across the layouts
+- The smallest safe factor per layout and goal (raw, honest report):
+  - 80 %: row 1, square 1.25, hex 1.25
+  - 90 %: row 1.25, square 1.5, hex 1.5 - the shipped 1.5 is the worst
+    layout's
+  - 95 %: row 1.5, square 1.75, hex 1.75
+- Per noise shape (smallest safe factor in the worst layout, 80 / 90 / 95 %
+  goal): raw 1.25 / 1.5 / 1.75; mid 1 / 1.25 / 1.25; fused 0.75 / 0.75 /
+  0.75. The shipped 1.5 is safe in every shape and layout; on the smoother
+  shapes it only refuses more than it must (needless no's at 1.5, row /
+  square / hex: mid 31 / 24 / 18, fused 59 / 50 / 50).
+- The report decides it too: a phone reporting half its true error needs 3
+  in a grid (2.5 in a row); 1.5 then gives 26 / 35 / 37 unsafe yeses (worst
+  73 / 52 / 48 %). One reporting double is safe at 0.75 in every layout.
 - Standing anywhere within a quarter of half the spacing of the target
-  instead of its centre: 1.25 stays safe (worst yes 92 %).
-- The ceiling (10-50 m): never an unsafe yes; from 20 m up no verdict
-  changes; 10 m and 15 m add 6 and 1 needless no's.
-- Re-run with two other seed sets at 80 seeds: the same verdicts, worst yes
-  at 1.25 between 92.4 % and 92.8 %.
-- A GPS-only museum (3-6 m spacing) is a no at every accuracy above about
-  2.4 m - the case a code exists for.
-- A code (`CODE_HELD_ERROR_M` 1 m: yes from 2.5 m of spacing), constant
-  error 0-2 m per walk plus jitter 0.05-0.5 m: every yes at least 90 % right
-  up to 1 m of error with 0.25 m of jitter. 1 m with 0.5 m of jitter gives
-  85 % at 2.5 m; 1.5 m of error gives 63-85 % at 2.5-3 m; 2 m gives
-  44-87 % up to 4 m.
-- Not swept: the noise model's shape. The framework's default shape (wander
-  0.25, white 0.15, 60 s) has under half the raw shape's error for the same
-  accuracy (0.29 against 0.67 of it per axis), which acts like the 2x report
-  above: the rule more cautious than it needs to be, never less safe.
+  instead of its centre: 1.5 stays safe (worst yes row 96 %, square 93 %,
+  hex 91 %).
+- Two other seed sets (seed bases 1 000 003 and 2 000 029) at 80 seeds: the
+  same smallest safe factor in every layout; worst yes at 1.5 row 97.0-97.4
+  %, square 93.8-95.1 %, hex 92.3-93.4 % (a test re-runs this).
+- The ceiling (10-50 m): never an unsafe yes; from 15 m up no verdict
+  changes (1.5 already refuses every accuracy above 16.7 m at spacings up to
+  50 m); 10 m adds 3 needless no's in every layout.
+- A GPS-only museum (3-6 m spacing) is a no at every accuracy above 2 m -
+  the case a code exists for.
+- A code (`CODE_HELD_ERROR_M` 1 m: yes from 3 m of spacing at 1.5),
+  constant error 0-2 m per walk plus jitter 0.05-0.5 m, in all three
+  layouts: every yes at least 90 % right up to 1 m of error with 0.25 m of
+  jitter. 1 m with 0.5 m of jitter gives 87 % (square) and 83 % (hex) at
+  3 m, safe in a row; 1.5 m of error gives 85 % (row, 0.25 m jitter) and
+  79 % (hex, 0.05 m jitter) at 3 m; 2 m is unsafe up to 4-5 m.
+
+What would reverse the shipped 1.5:
+
+- The layout: targets only ever in a row would be safe at 1.25.
+- The goal: 80 % takes 1.25, 95 % 1.75 (worst layout).
+- The report: a phone reporting half its true error needs about 3 (2.5 in a
+  row); one reporting double would be safe at 0.75.
+- The noise shape: an error smoother than raw at the same reported accuracy
+  (mid, fused) is safe from 1.25 and 0.75; an error rougher than raw at
+  the same reported accuracy would need more (the half-error report above
+  is one such case).

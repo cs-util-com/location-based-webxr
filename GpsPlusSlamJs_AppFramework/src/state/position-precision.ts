@@ -35,9 +35,10 @@ import { interpolatingMedian } from '../utils/median.js';
  * Tour Viewer guides by. Equal to it still guides. Swept 10-50 m in
  * `position-precision.sweep.test.ts`: a ceiling only turns a
  * {@link canTellApart} yes into a no, so it never makes that rule unsafe;
- * from 20 m up it changes no verdict there at the shipped factor (targets up
- * to 50 m apart), and 10-15 m would refuse wide-spaced targets the rule can
- * tell apart.
+ * from 15 m up it changes no verdict there at the shipped factor (targets up
+ * to 50 m apart: 1.5 already refuses every accuracy above 16.7 m), and 10 m
+ * would refuse wide-spaced targets the rule can tell apart. Targets further
+ * apart than 50 m are what would make the ceiling decide.
  */
 export const POSITION_PRECISION_CEILING_M = 25;
 
@@ -53,31 +54,42 @@ export const DEVICE_ACCURACY_WINDOW_FIXES = 10;
 /**
  * The error length (m) a code-held position is judged by in
  * {@link canTellApart}. Never shown: a code-held position shows as "code".
- * At the shipped factor a code tells apart targets from 2.5 m of spacing.
- * The sweep's code rows (a constant error per walk plus jitter) keep every
- * such yes at least 90 % right up to 1 m of constant error with 0.25 m of
- * jitter; the measured error of a code-placed position is 0.3-0.6 m. What
- * reverses it: 1 m of error with 0.5 m of jitter (85 % at 2.5 m), or a
- * constant error of 1.5 m or more.
+ * Measured at the shipped factor, 1.5: a code tells apart targets from 3 m
+ * of spacing, and the sweep's code rows (a constant error per walk plus
+ * jitter, in a row, a square and a hex grid of targets) keep every such yes
+ * at least 90 % right up to 1 m of constant error with 0.25 m of jitter;
+ * the measured error of a code-placed position is 0.3-0.6 m. What reverses
+ * it: 1 m of error with 0.5 m of jitter in a grid (87 % square, 83 % hex at
+ * 3 m), or a constant error of 1.5 m or more (85 % in a row, 79 % in a hex
+ * grid at 3 m). A smaller factor moves the code's yes to closer targets, so
+ * this verdict must be re-measured whenever the factor changes.
  */
 export const CODE_HELD_ERROR_M = 1;
 
 /**
  * {@link canTellApart}'s factor: two targets can be told apart when this
- * many error lengths fit in half their spacing. 1.25 is the smallest swept
- * factor (0.5-3) whose every yes picks the right one of a row of targets at
- * least 90 % of the time on an honest accuracy report (worst yes 92 %; 1
- * says yes at 85 %), under the Gauss-Markov GPS error the Tour Viewer's
- * station sweeps use (`position-precision.sweep.test.ts`; the table is in
- * the sidecar). What would change it: a 95 % goal takes 1.5, an 80 % goal 1;
- * a phone that reports half its true error needs 2.5, one that reports
- * double would be safe at 0.75.
+ * many error lengths fit in half their spacing. 1.5 is the smallest swept
+ * factor (0.5-4) whose every yes picks the right target at least 90 % of
+ * the time in a row, a square grid AND a hex grid of targets, on an honest
+ * accuracy report under the raw-fix Gauss-Markov GPS error the Tour
+ * Viewer's station sweeps use (worst yes: row 97 %, square 95 %, hex 93 %).
+ * The spacing is the distance to the NEAREST other target, and a grid has
+ * four or six of them where a row has two: 1.25 would be enough for a row
+ * alone (worst yes 92 %) but says yes at 85 % in a square grid and 82 % in a
+ * hex one (`position-precision.sweep.test.ts`; the table is in the
+ * sidecar). What would change it: the layout (a row only: 1.25); the goal
+ * (80 %: 1.25, 95 %: 1.75, in the worst layout); the report (a phone that
+ * reports half its true error needs 3, one that reports double would be
+ * safe at 0.75); the noise shape (a smoother error at the same reported
+ * accuracy, as an aligned position has, is safe from 1.25 or 0.75).
  */
-export const TELL_APART_FACTOR = 1.25;
+export const TELL_APART_FACTOR = 1.5;
 
 /** The position an app judges: the aligned camera, or a lone device fix
  *  standing in for it. */
 export type PositionKind = 'aligned' | 'lone-fix';
+
+const POSITION_KINDS: readonly unknown[] = ['aligned', 'lone-fix'];
 
 /** What places the position: a code, device fixes, or nothing usable. */
 export type PrecisionSource = 'code' | 'gps' | 'none';
@@ -89,7 +101,10 @@ export interface PositionPrecision {
    *  shows as "code", never as a number that looks measured) and `'none'`. */
   readonly accuracyM: number | null;
   /** Too weak to guide by: `'none'`, or `'gps'` above the ceiling. Never
-   *  for `'code'`. */
+   *  for `'code'`. On `'none'` it is a fail-safe, NOT a verdict on GPS (a
+   *  tracking drop or location permission off reads the same): a caller
+   *  branches on `source` first, and only `'gps'` with `tooWeak` means
+   *  "GPS too weak". */
   readonly tooWeak: boolean;
 }
 
@@ -103,7 +118,8 @@ export interface PrecisionGpsPoint {
 
 export interface PositionPrecisionInput {
   /** The position the app judges, or null when it has none (no alignment
-   *  it may use and no fresh fix, or a tracking drop). */
+   *  it may use and no fresh fix, or a tracking drop). Undefined reads as
+   *  null; any other value throws. */
   readonly position: PositionKind | null;
   /** The app's statement that a code still holds its alignment. */
   readonly codeHold: boolean;
@@ -131,7 +147,8 @@ const NONE: PositionPrecision = {
  * How precise the position an app judges is now.
  *
  * @throws RangeError when `ceilingM` is given and is not a positive, finite
- *   number of metres (a caller bug, not data).
+ *   number of metres, or when `position` is a kind this version does not
+ *   know (caller bugs, not data). An undefined `position` reads as null.
  */
 export function positionPrecision(
   input: PositionPrecisionInput
@@ -140,7 +157,13 @@ export function positionPrecision(
     input.ceilingM ?? POSITION_PRECISION_CEILING_M,
     'ceilingM'
   );
-  if (input.position === null) return NONE;
+  // `== null`: a plain-JS caller leaving the position undefined has none.
+  if (input.position == null) return NONE;
+  if (!POSITION_KINDS.includes(input.position)) {
+    throw new RangeError(
+      `position must be 'aligned', 'lone-fix' or null; got ${String(input.position)}`
+    );
+  }
   if (input.position === 'aligned' && input.codeHold) {
     return { source: 'code', accuracyM: null, tooWeak: false };
   }

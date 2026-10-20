@@ -62,11 +62,14 @@
   10 DEVICE fixes (a code's synthetic readings never count; a lone fix is
   judged by the worse of that and its own), `'none'` with no position or
   no evidence. Too weak above 25 m (`POSITION_PRECISION_CEILING_M`), and
-  always for `'none'`. `canTellApart(precision, spacingM, { factor? })`
-  says whether it can tell apart two targets that far apart: factor x
-  error length within half the spacing, `TELL_APART_FACTOR` 1.25 from a
-  sweep (every yes at least 90 % right on an honest accuracy report), a
-  code judged as 1 m (`CODE_HELD_ERROR_M`). Reads no clock.
+  always for `'none'` (a fail-safe, not a GPS verdict: branch on
+  `source` first). An undefined position reads as null; an unknown kind
+  throws. `canTellApart(precision, spacingM, { factor? })` says whether
+  it can tell apart two targets that far apart: factor x error length
+  within half the spacing, `TELL_APART_FACTOR` 1.5 from a sweep (every
+  yes at least 90 % right on an honest raw-fix accuracy report, in a row,
+  a square grid and a hex grid of targets), a code judged as 1 m
+  (`CODE_HELD_ERROR_M`). Reads no clock.
 
 ### Changed
 

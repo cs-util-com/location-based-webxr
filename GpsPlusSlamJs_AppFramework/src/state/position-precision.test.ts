@@ -7,6 +7,7 @@ import {
   canTellApart,
   positionPrecision,
   type PositionPrecision,
+  type PositionPrecisionInput,
   type PrecisionGpsPoint,
 } from './position-precision.js';
 
@@ -35,7 +36,7 @@ describe('position precision: one judgement of how precise a position is', () =>
     expect(POSITION_PRECISION_CEILING_M).toBe(25);
     expect(DEVICE_ACCURACY_WINDOW_FIXES).toBe(10);
     expect(CODE_HELD_ERROR_M).toBe(1);
-    expect(TELL_APART_FACTOR).toBe(1.25);
+    expect(TELL_APART_FACTOR).toBe(1.5);
   });
 
   // Why this test matters: a code that holds the alignment is the most
@@ -61,15 +62,41 @@ describe('position precision: one judgement of how precise a position is', () =>
   });
 
   // Why this test matters: with no position the app has nothing to judge, and
-  // a reader that checks only `tooWeak` must still never guide on it.
-  it('reads no position as "none", too weak, whatever the code and the fixes say', () => {
-    expect(
+  // a reader that checks only `tooWeak` must still never guide on it. But
+  // `tooWeak` on "none" is NOT a verdict on GPS: a tracking drop or location
+  // permission off reads the same, so a display or a weak-fix path that
+  // mapped `tooWeak` straight onto "GPS too weak" would fire on every
+  // tracking drop. This pins the shape a caller must branch on: source
+  // first, then `tooWeak`.
+  it('reads no position as "none" with no number and too weak - a fail-safe, not a GPS verdict', () => {
+    const p = positionPrecision({
+      position: null,
+      codeHold: true,
+      gpsPoints: [device(3), device(4)],
+    });
+    expect(p.source).toBe('none');
+    expect(p.tooWeak).toBe(true);
+    expect(p.accuracyM).toBeNull();
+    expect(p).toEqual(NONE);
+  });
+
+  // Why this test matters: a plain-JS caller (or a TypeScript one reading an
+  // optional field) may leave the position undefined. A strict `=== null`
+  // check sent that down the aligned path and judged a position the app does
+  // not have; undefined must read like null. A kind this version does not
+  // know is a caller bug, not data, and must fail loudly rather than be
+  // judged as some position.
+  it('reads an undefined position like no position, and refuses a kind it does not know', () => {
+    const judge = (position: unknown) =>
       positionPrecision({
-        position: null,
+        position: position as PositionPrecisionInput['position'],
         codeHold: true,
-        gpsPoints: [device(3), device(4)],
-      })
-    ).toEqual(NONE);
+        gpsPoints: [device(3)],
+      });
+    expect(judge(undefined)).toEqual(NONE);
+    for (const bad of ['Aligned', 'fix', '', 0, true, {}]) {
+      expect(() => judge(bad)).toThrow(RangeError);
+    }
   });
 
   // Why this test matters: the store holds the synthetic readings a scanned
@@ -195,9 +222,12 @@ describe('position precision: one judgement of how precise a position is', () =>
   });
 
   // Why this test matters: with no code and no device fix that states an
-  // accuracy, nothing speaks for the position's precision - codes-only mode
-  // after the code's trust ended (a veto) is the real case. It must read as
-  // "none", not as a GPS position of unknown but acceptable precision.
+  // accuracy, nothing speaks for the position's precision. The real cases
+  // are codes-only mode (no device fix at all) once the app ends the code's
+  // hold on an event - a new odometry frame, another tour, re-entering AR -
+  // while the tracking report still reads ready on the code's synthetic
+  // points. It must read as "none", not as a GPS position of unknown but
+  // acceptable precision.
   it('reads a position with no code and no known device accuracy as "none"', () => {
     for (const position of ['aligned', 'lone-fix'] as const) {
       expect(
