@@ -5,8 +5,8 @@
 A station's frame in `tour.json` version 3 (tour editor plan
 `GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md`,
 W3): converts an item's LOCAL pose to its world geo pose and back, and gives
-the WORLD VIEW of a tour (every pin, photo and recorded photo with its geo
-pose and its station) - what a viewer places and a creator's drafts hold.
+the WORLD VIEW of a tour (every pin, photo and model with its geo pose and
+its station) - what a viewer places and a creator's drafts hold.
 
 ## Public API
 

@@ -63,9 +63,9 @@ export interface ReplayRecordingOptions {
   /**
    * Called after EACH dispatched action with the state it produced. For a
    * caller that needs the state as it stood at a moment of the recording,
-   * not only at its end: the Tour Viewer places a recorded photo through the
-   * first settled alignment after it was taken (scan-pass plan S-D11). Keep
-   * it cheap: it runs once per action.
+   * not only at its end: the Tour Viewer places a camera capture through
+   * the first settled alignment after it was taken (scan-pass plan S-D11).
+   * Keep it cheap: it runs once per action.
    */
   readonly onAction?: (
     action: RecordedAction,
