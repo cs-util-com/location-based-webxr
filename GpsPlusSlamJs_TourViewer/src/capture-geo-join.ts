@@ -1,14 +1,15 @@
 /**
  * The capture-time geo join (plan `2026-08-26-1130-capture-time-geo-join`,
  * Revision 2): turn a REPLAYED recording state into world poses for every
- * captured photo, so the AR view places each photo where it was taken
- * instead of ringing them around the QR code.
+ * captured photo, so the AR view places each photo where it was taken.
+ * Its one caller is the creator's bake (`capture-bake.ts`): a visitor
+ * places the baked spots and never runs a join.
  *
  * Pure decision + transform layer — no DOM, no three scene, no fetching.
  * The caller replays the tour zip (`replayRecording` over the streaming
  * ByteSource) and hands this module the result plus the action-type list;
- * this module decides whether the join is TRUSTWORTHY (every decline
- * reason falls back to the existing ring) and computes the poses.
+ * this module decides whether the join is TRUSTWORTHY (a declined join
+ * bakes no spot) and computes the poses.
  *
  * FRAME CONTRACT: inputs are the REPLAYED STATE (NUE — the reducer
  * converted raw WebXR action payloads on dispatch); outputs are geo
@@ -120,7 +121,7 @@ export const NEWEST_KNOWN_ODOM_COORD_VERSION = 5;
 /**
  * The BEFORE-replay half of the decision: era and segment gates run on the
  * cheap inputs (meta + action types) so a declined zip never pays the
- * seconds-long replay. Every `ok: false` means: keep the ring.
+ * seconds-long replay. Every `ok: false` means: bake no spot.
  */
 export function preflightCaptureJoin(
   meta: { odomCoordVersion?: unknown } | null,
@@ -153,8 +154,8 @@ export function preflightCaptureJoin(
 
 /**
  * The AFTER-replay half: quality gates on the replayed state. Every
- * `ok: false` carries a plain-words reason (surfaced in the AR status) and
- * means: keep the ring.
+ * `ok: false` carries a plain-words reason (the bake's decline) and
+ * means: bake no spot.
  */
 export function assessReplayedJoin(state: ReplayedJoinState): JoinAssessment {
   const gpsData = state.gpsData;
@@ -301,8 +302,7 @@ export function computeCaptureGeoJoin(
     // IS absolute altitude - the old `altitude ?? 0` put every such photo at
     // sea level, hundreds of metres below the visitor at any inland site,
     // while the status line still reported "N photos at capture spots". The
-    // caller falls back to the photo ring when nothing survives, which is the
-    // honest answer. Note zero is a VALID altitude here (the fixture's own
+    // bake declines when nothing survives, which is the honest answer. Note zero is a VALID altitude here (the fixture's own
     // zero sits at 0), so this keys on missing-or-non-finite, never on falsy.
     if (
       !Number.isFinite(geo.lat) ||

@@ -41,7 +41,9 @@ import {
   writeDraftObject,
 } from "./draft-persistence.js";
 import "./test-support/v3-tour.js";
-import { withTourContent } from "./tour-content.js";
+import { createCreatorDocument } from "./creator-document.js";
+import { manifestToWrite } from "./tour-document.js";
+import { createTourViewerStore } from "./tour-viewer-session.js";
 import type { VisitLogEntry } from "./visit-log.js";
 import { objectContentKey } from "./authoring-draft.js";
 
@@ -635,8 +637,8 @@ describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", (
   // with every object and photo - a draft that silently stopped loading
   // after an update would cost the creator a walk they cannot repeat. A
   // draft holds world poses, not a tour file, so it needs no migration: its
-  // Finish writes version 3 with every object in a station (tour editor
-  // plan W3).
+  // objects are put back into the tour document, which seats each in a
+  // station, and its Finish writes version 3 (tour editor plan W3).
   it("loads a v1 draft from the files the old app wrote, and finishes it as version 3", async () => {
     const store = memoryStore();
     // The files exactly as the pre-K1 app wrote them (literal keys and
@@ -675,11 +677,22 @@ describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", (
     const stored = await readDraft(store);
     expect(stored?.draft.objects.map((o) => o.id)).toEqual(["p1", "f1"]);
     expect(stored?.photos.has("f1")).toBe(true);
+    // As the page does: the draft restored into the tour it opened (here
+    // one without tour.json), then written.
+    const tourStore = createTourViewerStore();
+    const doc = createCreatorDocument(tourStore);
+    doc.open(createEmptyTourManifest());
+    doc.restore(
+      {
+        objects: stored?.draft.objects ?? [],
+        deleted: [],
+        pictures: stored?.photos ?? new Map(),
+      },
+      "the draft",
+    );
     const finished: unknown = JSON.parse(
       serializeTourManifest(
-        withTourContent(createEmptyTourManifest(), {
-          objects: [...(stored?.draft.objects ?? [])],
-        }),
+        manifestToWrite(tourStore.getState().tourDocument)!,
       ),
     );
     expect(finished).toMatchObject({ version: 3, minor: 0 });

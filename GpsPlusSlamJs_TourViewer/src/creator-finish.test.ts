@@ -57,7 +57,7 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import { objectPoseNue } from "./content-placement.js";
-import { walkPhotosPending } from "./creator-stations.js";
+import { walkAtOpen } from "./tour-document-bake.js";
 import {
   buildListedTourFixture,
   buildSignedTourFixture,
@@ -296,7 +296,15 @@ async function wireFinishable(options: {
   }) as never;
   ctx.tourManifestStatus = "settled";
   const tour = ctx.tourDocument;
-  tour.open(tourOf([...options.hosted], options.manifestExtras));
+  // Opened as the page opens a creator's tour (`archive-open.ts`): a
+  // recording's photos are baked into stations at the open.
+  const opened = tourOf([...options.hosted], options.manifestExtras);
+  const walk =
+    (ctx.session as { hasRecording?: boolean }).hasRecording === true
+      ? await walkAtOpen(ctx.session, opened)
+      : { manifest: opened, photos: {} };
+  ctx.walkBake = { kind: "decided", photos: walk.photos };
+  tour.open(walk.manifest);
   for (const id of options.deleted ?? []) {
     if (tour.remove(id, "a deletion") === null) {
       throw new Error(`the tour does not carry ${id} to delete`);
@@ -945,12 +953,14 @@ describe("the finish settles the AR visit still running (authoring plan 2026-09-
   });
 });
 
-describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)", () => {
-  // Why these tests matter: the baked spots are what every visitor places
-  // instead of replaying the walk, and their presence switches the
-  // visitor's live join OFF. So the Finish must bake exactly when the tour
-  // carries a recording it can join, never write the marker for nothing,
-  // and never let a recording it cannot join stop the creator's Finish.
+describe("the finish writes the recorded photos' spots baked at open", () => {
+  // Why these tests matter: the baked spots are the only recorded photos
+  // a visitor places; a visitor never replays the walk. The bake runs
+  // once, when the recording
+  // opens, and puts the photos in stations the page shows from then on;
+  // so the Finish must write exactly those, never bake or assign again,
+  // never write the marker for nothing, and never let a recording that
+  // cannot be joined stop the creator's Finish.
   createTourViewerStore();
   const FIXTURE = new URL(
     "../../GpsPlusSlamJs_PhysicsDemo/playwright-tests/fixtures/sample-recording.zip",
@@ -1021,9 +1031,8 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     expect(spots?.captures).toHaveLength(5);
     // The in-memory manifest advances with it, as with objects.
     expect(ctx.tourDocument.manifest()?.captureSpots).toEqual(spots);
-    // This page knows the walk is decided (the creator's HUD drops its
-    // hedge, PR #642 review).
-    expect(ctx.walkDecidedFor).toBe(ctx.session);
+    // Baked once, at the open: the Finish replayed nothing.
+    expect(recording.replays()).toBe(1);
   });
 
   it("does not bake again when the tour already carries its spots", async () => {
@@ -1073,25 +1082,16 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
       placed: [pin("new-one")],
       sessionExtras: recording.extras,
     });
-    // Why (PR #643 review, replacing the PR #642 choice): a declined bake
-    // writes no spots, and the phone's next Finish bakes again - so its
-    // station names may still change, and the HUD keeps its hedge. Only a
-    // Finish that settled the walk (spots written, or a walk that places
-    // nothing) drops it.
-    const pending = () =>
-      walkPhotosPending(
-        ctx.session,
-        ctx.tourDocument.manifest(),
-        ctx.walkDecidedFor,
-      );
-    expect(pending()).toBe(true);
+    // Why: a declined bake at the open is final for that open - the
+    // Finish neither bakes again nor writes spots, so no station appears
+    // or moves at the Finish.
+    const atOpen = recording.replays();
     dom.finishButton.click();
     await settle(ctx);
     expect(ctx.finishError).toBeNull();
     expect(await writtenManifest(ctx)).not.toHaveProperty("captureSpots");
     expect(ctx.tourDocument.manifest()?.captureSpots).toBeUndefined();
-    expect(ctx.walkDecidedFor).toBeNull();
-    expect(pending()).toBe(true);
+    expect(recording.replays()).toBe(atOpen);
   });
 
   it("finishes without the marker when reading the recording fails", async () => {
@@ -1132,8 +1132,10 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
   // A file of the creator's own that no viewer reads: never the walk.
   const README = `${WRAP}README.txt`;
 
+  /** `keepScan`: the creator's tick, or "default" to finish with the
+   *  switch as the page sets it for the open tour. */
   async function wireRecordingTour(
-    keepScan: boolean,
+    keepScan: boolean | "default",
     odomCoordVersion = 5,
     walk: readonly string[] = WALK,
   ) {
@@ -1157,14 +1159,18 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
         loadRecordingActions: () => Promise.resolve(actions),
       },
     });
-    wired.dom.keepScanInput.checked = keepScan;
+    // The page renders once the open settled; the creator ticks after.
+    wired.setup.renderAuthorReadout();
+    if (keepScan !== "default") wired.dom.keepScanInput.checked = keepScan;
     wired.dom.finishButton.click();
     await settle(wired.ctx);
     return wired;
   }
 
   it("leaves the walk out by default and keeps every photo a baked spot shows", async () => {
-    const { ctx, dom } = await wireRecordingTour(false);
+    const { ctx, dom } = await wireRecordingTour("default");
+    // The photos were placed: the switch starts unticked.
+    expect(dom.keepScanInput.checked).toBe(false);
     expect(ctx.finishError).toBeNull();
     const names = await entryNamesOf(ctx.rebuiltZip!.blob);
     // The first frame precedes the GPS zero, so no spot shows it.
@@ -1182,13 +1188,13 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     );
   });
 
-  it("keeps the walk when the photos could not be placed, and says why", async () => {
-    // Why (S1 milestone review #2): without baked spots the walk is the
-    // only way a visitor's viewer can place the photos - and the hosted
-    // file may be the creator's only copy of it. A recording this build
-    // cannot join (an old era here; a network blip reading it, a wrapped
-    // zip) must leave the copy as it was, with the reason on screen.
-    const { ctx, dom } = await wireRecordingTour(false, 3);
+  it("keeps the walk by default when the photos could not be placed, and says a later open can still place them", async () => {
+    // Why: a visitor shows baked photos only. A lean copy of a tour whose
+    // bake declined held neither the photos nor the walk they could be
+    // baked from, so re-opening it could never place them. A recording
+    // this build cannot join: an old era.
+    const { ctx, dom } = await wireRecordingTour("default", 3);
+    expect(dom.keepScanInput.checked).toBe(true);
     expect(ctx.finishError).toBeNull();
     const names = await entryNamesOf(ctx.rebuiltZip!.blob);
     expect(names.filter((n) => WALK.includes(n)).sort()).toEqual(
@@ -1198,7 +1204,25 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
       "leaves out the walk recording",
     );
     expect(dom.finishStatus.textContent).toContain(
-      "The recorded photos could not be placed",
+      "The recorded photos could not be placed (",
+    );
+    expect(dom.finishStatus.textContent).toContain(
+      "visitors will not see them. The walk stays in this copy, so opening it again can still place them.",
+    );
+  });
+
+  it("leaves that walk out when the creator unticks the switch, and says the photos cannot be placed from the copy", async () => {
+    // The page's later renders (the Finish renders too) keep the untick.
+    const { ctx, dom } = await wireRecordingTour(false, 3);
+    expect(ctx.finishError).toBeNull();
+    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
+    expect(names.filter((n) => WALK.includes(n))).toEqual([]);
+    expect(names).toContain(README);
+    expect(dom.finishStatus.textContent).toContain(
+      "leaves out the walk recording",
+    );
+    expect(dom.finishStatus.textContent).toContain(
+      "visitors will not see them, and this copy leaves out the walk they could be placed from later.",
     );
   });
 
@@ -1260,6 +1284,20 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     });
     withWalk.setup.renderAuthorReadout();
     expect(withWalk.dom.keepScanRow.hidden).toBe(false);
+    // A recording whose photos are not baked: its frames are the walk too,
+    // and the choice is offered.
+    const unbaked = await wireFinishable({
+      hosted: [],
+      placed: [],
+      hostedContent: [
+        { path: "session.json", data: "{}" },
+        { path: "actions/000001.json", data: "[]" },
+        { path: "images/frame-000001.jpg", data: "x" },
+      ],
+      arStatus: "ready",
+    });
+    unbaked.setup.renderAuthorReadout();
+    expect(unbaked.dom.keepScanRow.hidden).toBe(false);
     // In AR it is gone: the Finish there reads it.
     withWalk.arStatus.value = "running";
     withWalk.setup.renderAuthorReadout();

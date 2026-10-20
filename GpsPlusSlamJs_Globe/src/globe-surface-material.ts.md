@@ -14,17 +14,21 @@ cloudOpacity: 0.8, skyShare: 0.2 }`, the defaults (lab parameters `#nightGain=`,
     `skyShare` is the sky fill's share of the diffuse light, 1 - the
     relief's direct share (the terrain lab's 0.8, DEC-GL5-5).
   - `GLOBE_CLOUD_DRIFT_DEG_PER_S` - 0.375 (0.75 x the first 0.5, the
-    owner's choice, round-6 plan DEC-G6-5), the clouds' default drift in
-    degrees of longitude per scene second (lab `#cloudDrift=`, 0-10): sized
-    to move visibly within a few seconds at real time (about 1 px/s on a
-    phone-sized globe); real weather moves about a degree an hour.
+    owner's choice, round-6 plan DEC-G6-5), the clouds' drift FAR OUT in
+    degrees of longitude per scene second (lab `#cloudDrift=`, 0-10).
+    Nearer the ground it falls with the camera's altitude
+    (`globe-cloud-drift.ts`, round-5 plan 2026-10-12-0612 §9: on r823 one
+    rate was hectic near the clouds, on r826 a quarter of it too slow far
+    out); real weather moves about a degree an hour.
   - `cloudLonOffsetRad(sceneMs, degPerS)` - the drift at an instant (the
     globe clock's epoch ms), radians east in [0, 2π): an absolute function
     of the instant, so a pinned `#time=` shows the same clouds on every
     load. RangeError for a non-finite instant or rate.
   - `GLOBE_SURFACE_CACHE_KEY` - the program key every tile shares (`-v2`
     since the drift uniform joined the program, `-v6` since the sky fill,
-    `-v8` since the fill follows the band). A page with a relief compiles
+    `-v8` since the fill follows the band, `-v10` since the glint's cloud
+    mask fades with the flat layer, `-v11` since a tile without its imagery
+    shows the first look). A page with a relief compiles
     the band (`band: true`) under its own key, the same with `-band`, and
     a globe that fills the relief's gaps through the stencil (`band: true,
 fill: true`, round-6 plan G6-1) under `-band-fill`.
@@ -32,12 +36,34 @@ fill: true`, round-6 plan G6-1) under `-band-fill`.
     shared uniforms object: `uSunEcef` (unit, ECEF), `uSunWorld` (the
     same sun in world space, kept by the surface), `uNight`,
     `uClouds`, `uNightGain`, `uWaterRoughness`, `uCloudOpacity`,
-    `uCloudLonOffset` (radians, 0 until the caller sets it), `uSkyFloor`
+    `uCloudLonOffset` (radians, 0 until the caller sets it), `uCloudCubic`
+    (1: the clouds through the B-spline, `globe-cloud-filter.ts`, round-3
+    plan M1; 0 bilinear, to compare), `uSkyFloor`
     (`SKY_FILL.floor`, globe lab `#skyFloor=`) and `uSkyShare`
     (`GLOBE_SURFACE_TUNING.skyShare`), `uCarrierShare` (the altitude
     band's relief share, 0 until the page sets it) and `uSunRadiance` (the
     sun light's colour x intensity, kept by the surface: the fill's light by
-    role, not the scene's first directional light).
+    role, not the scene's first directional light), and the cloud shell's
+    three (round-6 plan G6-2): `uCloudInSurface` (1, the default: the
+    clouds painted into the ground's colour; 0 with the shell, then the
+    ground keeps its colour, and the night lights' cloud dimming follows the
+    same factor), `uCloudShadow` (the soft shadow on the ground, 0 off) and
+    `uCloudShellM` (the shell's height, for the shadow's offset), and
+    `uDayWest`, `uDayEast` and `uDayReady` (round-2 plan DEC-FR2-6: a
+    tile without its imagery, the first look's sphere, shows the imagery's
+    level 0 by longitude, its water from the images' alpha, once ready), and
+    `uCloudFlat` (round-2 plan DEC-FR2-5: the flat layer's share by
+    altitude, 1 the look before; the glint's cloud mask is `globeCloud x
+uCloudFlat`, so faded clouds leave no cloud-shaped dull water).
+  - `GLOBE_CLOUD_GLSL` and `GLOBE_TWILIGHT_GLSL`: the cloud sample and
+    shade, and the twilight look, shared with the cloud shell
+    (`globe-cloud-shell.ts`, DEC-H3); `afterChunk(source, anchor, code)`,
+    the insertion both use, which throws on a missing or repeated anchor.
+  - The shadow reads the cloud where the sun's ray through the ground
+    point crosses the shell: the point moved toward the sun by
+    h / (R sin(elevation)) radians, the elevation floored at 0.05; by day
+    only, after the paint, before the grade. A third textureGrad, with the
+    seam fix's gradients.
   - `GLOBE_FADE_GLSL` and `globeFadeKeeps(d, share, side)`: the band's
     cross-fade (one-scene plan §3.2). Each pixel goes to exactly one
     carrier by a screen dither (interleaved gradient noise of
@@ -74,7 +100,9 @@ uCarrierShare`, so above the band (share 0) the approved globe look is
       maps sampled once (the clouds
       `uCloudLonOffset` further west, so they drift east, with the same
       gradients: the shift is continuous and the map repeats, so it adds
-      no seam), and the clouds whitening `diffuseColor` by
+      no seam; the clouds and their shadow through the B-spline's four
+      taps, `globeCloudCubic`, so the texel grid no longer shows when the
+      map is magnified: round-3 plan M1; the program key is v12 since), and the clouds whitening `diffuseColor` by
       `cloud * uCloudOpacity`;
     - after `roughnessmap_fragment`: water with no cloud takes
       `uWaterRoughness` (the sun's glint);

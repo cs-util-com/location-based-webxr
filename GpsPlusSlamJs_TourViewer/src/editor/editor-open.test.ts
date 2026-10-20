@@ -6,7 +6,11 @@
  * plan review #8). Real zips, the viewer's real opener.
  */
 import { describe, expect, it } from "vitest";
-import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
+import {
+  packFilesAsZip,
+  rebuildZipWithEntries,
+} from "gps-plus-slam-app-framework/storage";
+import { sampleRecordingBytes } from "../test-support/sample-recording.js";
 import {
   createEmptyTourManifest,
   serializeTourManifest,
@@ -108,5 +112,50 @@ describe("openTourForEditing", () => {
       new File(["not a zip at all"], "broken.zip", { type: "application/zip" }),
     );
     expect(out.kind).toBe("refused");
+  });
+});
+
+describe("openTourForEditing bakes the recording's photos at open", () => {
+  // Why this test matters: the desktop editor shows a tour's stations and
+  // saves them as they are; a save no longer bakes or assigns. A tour that
+  // carries a recording and no baked photos must therefore open with its
+  // walk's photos already in stations, the same rule and the same ids the
+  // phone's open gives (so both pages show the same stations).
+  it("opens a tour carrying a recording with its photos in stations", async () => {
+    const zip = await rebuildZipWithEntries(
+      new Blob([sampleRecordingBytes()]),
+      [
+        {
+          path: "tour.json",
+          data: serializeTourManifest(createEmptyTourManifest()),
+        },
+      ],
+    );
+    const out = await openTourForEditing(
+      new File([zip], "walked.zip", { type: "application/zip" }),
+    );
+    if (out.kind !== "opened") throw new Error(out.reason);
+    const spots = out.manifest.captureSpots;
+    expect(spots?.captures.length).toBeGreaterThan(0);
+    expect(out.photos.spots?.captures.length).toBe(spots?.captures.length);
+    const ids = new Set(out.manifest.stations.map((s) => s.id));
+    for (const c of spots?.captures ?? [])
+      expect(ids.has(c.station)).toBe(true);
+    expect([...ids].every((id) => id.startsWith("walk-"))).toBe(true);
+    await out.session.close();
+  });
+
+  it("opens a tour without a recording as it is", async () => {
+    const file = await zipFile([
+      {
+        path: "tour.json",
+        data: serializeTourManifest(createEmptyTourManifest()),
+      },
+    ]);
+    const out = await openTourForEditing(file);
+    if (out.kind !== "opened") throw new Error(out.reason);
+    expect(out.manifest).toEqual(createEmptyTourManifest());
+    expect(out.photos).toEqual({});
+    await out.session.close();
   });
 });

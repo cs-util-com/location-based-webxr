@@ -21,6 +21,12 @@ downloading the whole file first.
   first, so the button counts "1 of 2" and "2 of 2"), enters AR, and
   places nothing until the phone has recognised the hung code. After 10 s
   without a lock the page offers "Continue with GPS only (less accurate)".
+  A tour that is not finished yet - a zip without `tour.json` (the
+  starter zip, a recording) or a tour without stations, hosted before
+  its first Finish - opens to a start page that says "This tour is not
+  finished yet." (with the tour's contact, when it names one) and offers
+  no Start: no location is asked for, no AR session opens, and the page
+  stops downloading the file, of which a visitor reads nothing.
 
 The mode is the launch parameter's presence and nothing else; there is no
 author flag.
@@ -146,6 +152,31 @@ Module map: `src/main.ts` is the composition root; `mode.ts` (the split),
 `tour.json` records and their rendering), `scan-gate.ts` and
 `viewer-placement.ts` (the visitor's gate and placement), `tour-flow.ts`
 (the status line). Every module has a sidecar `.md` next to it.
+
+The workspace's globe package (`gps-plus-slam-globe`) is a dependency, for
+the 3D editor's building blocks (`import ... from
+"gps-plus-slam-globe/editor"`; nothing in the app imports it yet).
+`src/globe-dependency.test.ts` builds those blocks with Vite and fails if
+the build holds two copies of three.
+
+The app ships the licence of every third-party package it bundles,
+verbatim, in `public/third-party-licenses/` (copied into the site as
+`third-party-licenses/`): `<name>-LICENSE.txt`, and `<name>-NOTICE.txt`
+for a package that has a NOTICE, the name being the npm name with `@`
+dropped and `/` written as `-`. `src/third-party-licenses.test.ts` derives
+the list from the module ids of two builds (the app's own, and an entry
+importing the globe's editor blocks; `src/test-support/bundled-packages.ts`),
+never from `package.json`, and fails when a bundled package has no licence
+file of its own, when a licence or NOTICE file is not shipped verbatim,
+when a shipped file belongs to no bundled package, when `NOTICE` does not
+name a bundled package, or when it does not say that a patched package
+(`patchedDependencies` in `pnpm-workspace.yaml`) is modified and by which
+patch (Apache License 2.0, sections 4(a), 4(b) and 4(d)). The app's own
+`NOTICE` ships too, as `third-party-licenses/NOTICE.txt`, and the test
+fails when that copy differs from it. A build's virtual modules (the
+build tools' runtime glue) belong to no package: the known ones are
+listed in `bundled-packages.ts` with the reason no licence ships for
+them, and an unknown one fails the test until someone decides.
 
 ## Where the design lives
 

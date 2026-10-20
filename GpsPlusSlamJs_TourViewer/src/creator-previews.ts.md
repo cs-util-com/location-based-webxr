@@ -52,8 +52,9 @@ photo is decoded from.
   in THIS visit is rigid in AR, under the world group at its odometry pose;
   anything else has only its geo and is placed from it in the earlier
   visits' frame (the scene root outside a visit).
-- **Incremental, by id** (`previewKey`: kind, look, and the local pose or
-  the geo): a preview whose object changed look or pose is replaced, one
+- **Incremental, by id** (`previewKey`: kind, look - a pin's text, a
+  photo's image, a placed model's asset and size (`lookOf`; no renderer
+  draws a model yet) - and the local pose or the geo): a preview whose object changed look or pose is replaced, one
   whose object is gone is disposed, the rest are left alone, so each
   placement decodes only its own photo and two placements cannot race each
   other's disposal. A render that lands after its visit ended, or after its

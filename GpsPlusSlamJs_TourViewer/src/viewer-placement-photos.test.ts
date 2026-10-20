@@ -1,15 +1,14 @@
 /**
- * The walk's photos and the ring around a code, placed per station
- * through the viewer placement with the
- * framework's controller config captured (as `viewer-placement-viewing-log`
- * does), the bake and the photo decoder faked.
+ * The tour's recorded photos, placed per station through the viewer
+ * placement with the framework's controller config captured (as
+ * `viewer-placement-viewing-log` does), the photo decoder faked.
  *
- * Why these tests matter: the status line must say what
- * actually stands. Photos that decode up front (content no station holds)
- * report their progress and then the count that decoded; photos held by
- * stations are counted where they wait, never as placed; a walk or a ring
- * none of whose photos loads says so; and a code far from every station
- * still shows its ring after the lock.
+ * Why these tests matter: a visitor sees only what the creator's open
+ * baked into `tour.json`: each recorded photo at its spot, held by its
+ * station and decoded only while that station shows. The status line says
+ * how many wait at their stations, never more; a station none of whose
+ * photos loads says so; and a tour without baked spots places no photo at
+ * all, whatever the zip carries - not its walk, not its images.
  */
 import { describe, expect, it, vi } from "vitest";
 import { Scene, Texture } from "three";
@@ -25,10 +24,9 @@ import {
   type RecordGpsEventPayload,
 } from "gps-plus-slam-app-framework/state";
 
-import type * as CaptureBake from "./capture-bake.js";
 import type * as ImagePlanes from "./image-planes.js";
 import type { TourViewerSeams } from "./seams.js";
-import { tourOf } from "./test-support/v3-tour.js";
+import { stationIdOf, tourOf } from "./test-support/v3-tour.js";
 import type { TourSession } from "./tour-session.js";
 import {
   createTourViewerSession,
@@ -36,21 +34,19 @@ import {
   createUnwiredHooks,
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
+import { presenceJudged, showAllContentSet } from "./visitor-guide-slice.js";
 
 interface Fakes {
   configs: QrTrackingControllerConfig[];
-  /** The bake's answer: the walk's photos at their spots. */
-  bake: unknown;
   /** The decoder's answer per photo name; a promise holds it back. */
   decode: (name: string) => unknown;
   names: WeakMap<object, string>;
-  /** Whether the plane constructors throw (a GPU-side failure). */
+  /** Whether the plane constructor throws (a GPU-side failure). */
   planesThrow: boolean;
 }
 
 const fake = vi.hoisted((): Fakes => ({
   configs: [],
-  bake: null,
   decode: () => null,
   names: new WeakMap<object, string>(),
   planesThrow: false,
@@ -68,10 +64,6 @@ vi.mock("gps-plus-slam-app-framework/ar/qr/qr-tracking-controller", () => ({
     };
   },
 }));
-vi.mock("./capture-bake.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof CaptureBake>()),
-  bakeCaptureSpots: () => Promise.resolve(fake.bake),
-}));
 vi.mock("./image-planes.js", async (importOriginal) => {
   const real = await importOriginal<typeof ImagePlanes>();
   return {
@@ -81,10 +73,6 @@ vi.mock("./image-planes.js", async (importOriginal) => {
     ) => {
       if (fake.planesThrow) throw new Error("no GPU memory");
       return real.placeCapturedImagePlanes(...args);
-    },
-    placeImagePlanes: (...args: Parameters<typeof real.placeImagePlanes>) => {
-      if (fake.planesThrow) throw new Error("no GPU memory");
-      return real.placeImagePlanes(...args);
     },
   };
 });
@@ -164,54 +152,63 @@ const flush = async (): Promise<void> => {
 };
 
 function harness(input: {
-  /** The tour's objects (each its own station). */
+  /** The tour's objects (each its own station, `st-<id>`). */
   objects?: TourObject[];
-  /** The walk's photos at these spots, joined live (no station). */
-  walk?: { north: number; east: number }[];
-  /** A ring of these image entries (a tour without a walk). */
-  ringImages?: string[];
-  /** Where the code hangs. */
-  code?: { north: number; east: number };
+  /** Recorded photos baked into the tour, each held by the station of the
+   *  object it names. */
+  baked?: { holder: string }[];
+  /** The zip carries a walk recording and images (never shown). */
+  walkInZip?: boolean;
 }) {
   fake.configs.length = 0;
   fake.planesThrow = false;
   const ctx = createTourViewerSession();
-  const code = input.code ?? { north: 0, east: 0 };
-  ctx.levelByText.set(TEXT, level(code.north, code.east));
+  ctx.levelByText.set(TEXT, level(0, 0));
   const store = createTourViewerStore();
   store.dispatch(setZeroPos(ZERO));
   const scene = new Scene();
-  fake.bake =
-    input.walk === undefined
-      ? { kind: "declined", reason: "no recording in this tour" }
-      : {
-          kind: "baked",
-          spots: {
-            fixes: 4,
-            gpsAccuracyMedianM: 3,
-            captures: input.walk.map((p, i) => ({
-              image: `images/frame-${String(i)}.png`,
-              geo: at(p.north, p.east),
-            })),
-          },
-        };
+  const loaded: string[] = [];
   const loadEntry = (name: string) => {
+    loaded.push(name);
     const blob = new Blob([name]);
     fake.names.set(blob, name);
     return Promise.resolve(blob);
   };
   ctx.session = {
-    hasRecording: input.walk !== undefined,
+    hasRecording: input.walkInZip === true,
     archive: { url: "https://example.test/tour.zip" },
-    entries: (input.ringImages ?? []).map((filename) => ({
-      filename,
-      isImage: true,
-      size: 3,
-    })),
+    entries:
+      input.walkInZip === true
+        ? ["actions/000001.json", "images/frame-0.png", "a.png"].map(
+            (filename) => ({
+              filename,
+              isImage: filename.endsWith(".png"),
+              size: 3,
+            }),
+          )
+        : [],
     loadEntry,
     loadContentEntry: loadEntry,
   } as unknown as TourSession;
-  ctx.tourDocument.open(tourOf(input.objects ?? []));
+  const baked = input.baked ?? [];
+  ctx.tourDocument.open(
+    tourOf(
+      input.objects ?? [],
+      baked.length === 0
+        ? {}
+        : {
+            captureSpots: {
+              fixes: 4,
+              gpsAccuracyMedianM: 3,
+              captures: baked.map((b, i) => ({
+                image: `images/frame-${String(i)}.png`,
+                station: stationIdOf(b.holder),
+                pose: { position: [0, 0, 0], rotation: FLAT },
+              })),
+            },
+          },
+    ),
+  );
   ctx.tourManifestStatus = "settled";
   ctx.scanGate = { kind: "passed", via: "code" };
   const seams = {
@@ -250,186 +247,122 @@ function harness(input: {
     config.dispatchVotes([vote()]);
     await flush();
   };
-  const groups = () => scene.children.map((c) => c.name);
-  return { ctx, store, scene, placement, lock, groups };
-}
-
-/** A decoder that holds every photo until released, in order. */
-function heldDecoder() {
-  const waiting: (() => void)[] = [];
-  fake.decode = () =>
-    new Promise((resolve) => {
-      waiting.push(() => {
-        resolve(new Texture());
-      });
-    });
-  return {
-    releaseOne: async () => {
-      waiting.shift()?.();
-      await flush();
-    },
+  const showAll = async () => {
+    store.dispatch(showAllContentSet(true));
+    placement.syncContent();
+    await flush();
   };
+  const groups = () => scene.children.map((c) => c.name);
+  return { ctx, store, scene, placement, lock, showAll, groups, loaded };
 }
 
-describe("the walk's photos and the ring, said as they stand", () => {
-  it("a walk no station holds says how far its photos have loaded, then how many stand", async () => {
-    const decoder = heldDecoder();
-    const h = harness({
-      walk: [
-        { north: 1, east: 0 },
-        { north: 2, east: 0 },
-        { north: 3, east: 0 },
-      ],
-    });
-    await h.lock();
-    expect(h.ctx.placement).toEqual({
-      kind: "placing",
-      phase: "loading-photos",
-      done: 0,
-      total: 3,
-    });
-    await decoder.releaseOne();
-    expect(h.ctx.placement).toMatchObject({
-      kind: "placing",
-      phase: "loading-photos",
-      done: 1,
-      total: 3,
-    });
-    await decoder.releaseOne();
-    await decoder.releaseOne();
-    expect(h.ctx.placement).toEqual({
-      kind: "placed",
-      placedKind: "capture-spots",
-      count: 3,
-      atStations: 0,
-      fixes: 4,
-      gpsAccuracyMedianM: 3,
-    });
-    expect(h.groups()).toEqual(["station-content:loose:always"]);
-    expect(h.ctx.viewerPlanesError).toBeNull();
-  });
-
-  it("a walk none of whose photos loads says so, and places nothing", async () => {
-    fake.decode = () => null;
-    const h = harness({
-      walk: [
-        { north: 1, east: 0 },
-        { north: 2, east: 0 },
-      ],
-    });
-    await h.lock();
-    expect(h.ctx.placement).toMatchObject({
-      kind: "placed",
-      placedKind: "capture-spots",
-      count: 0,
-    });
-    expect(h.ctx.viewerPlanesError).not.toBeNull();
-  });
-
-  it("a ring none of whose images loads says so", async () => {
-    fake.decode = () => null;
-    const h = harness({ ringImages: ["a.png", "b.png", "c.png"] });
-    await h.lock();
-    expect(h.ctx.placement).toMatchObject({
-      kind: "placed",
-      placedKind: "ring",
-      count: 0,
-    });
-    expect(h.ctx.viewerPlanesError).not.toBeNull();
-  });
-
-  // Why: a walk or a ring whose planes cannot be built must neither leak
-  // the photos it decoded nor leave the line on "Loading the photos…"
-  // forever.
-  it.each(["walk", "ring"] as const)(
-    "a %s whose planes cannot be built frees its decoded photos and says so",
-    async (what) => {
-      const textures: Texture[] = [];
-      const disposed = new Set<Texture>();
-      fake.decode = () => {
-        const texture = new Texture();
-        textures.push(texture);
-        texture.addEventListener("dispose", () => disposed.add(texture));
-        return texture;
-      };
-      const h = harness(
-        what === "walk"
-          ? {
-              walk: [
-                { north: 1, east: 0 },
-                { north: 2, east: 0 },
-              ],
-            }
-          : { ringImages: ["a.png", "b.png"] },
-      );
-      fake.planesThrow = true;
-      await h.lock();
-      expect(textures).toHaveLength(2);
-      expect(disposed.size).toBe(2);
-      expect(h.ctx.placement).toMatchObject({ kind: "placed", count: 0 });
-      expect(h.ctx.viewerPlanesError).not.toBeNull();
-    },
-  );
-
-  it("a code outside every station's radius shows its ring after the lock, with no station present", async () => {
-    fake.decode = () => new Texture();
-    const h = harness({
-      objects: [pin("far", 100, 0)],
-      ringImages: ["a.png", "b.png", "c.png"],
-    });
-    await h.lock();
-    expect(h.groups()).toEqual(["station-content:loose:always"]);
-    expect(h.ctx.placement).toEqual({
-      kind: "placed",
-      placedKind: "ring",
-      count: 3,
-      atStations: 0,
-    });
-  });
-
-  it("a ring held by a station is counted where it waits, not as placed, and decodes nothing until the station shows", async () => {
+describe("the tour's recorded photos, said as they stand", () => {
+  it("counts baked photos at their stations, and decodes none until a station shows", async () => {
     const decoded: string[] = [];
     fake.decode = (name) => {
       decoded.push(name);
       return new Texture();
     };
     const h = harness({
-      objects: [pin("near", 10, 0)],
-      ringImages: ["a.png", "b.png", "c.png"],
+      objects: [pin("a", 0, 0), pin("b", 100, 0)],
+      baked: [{ holder: "a" }, { holder: "a" }, { holder: "b" }],
     });
     await h.lock();
     expect(h.ctx.placement).toEqual({
       kind: "placed",
-      placedKind: "ring",
-      count: 0,
-      atStations: 3,
+      placedKind: "capture-spots",
+      count: 3,
+      fixes: 4,
+      gpsAccuracyMedianM: 3,
     });
     expect(decoded).toEqual([]);
     expect(h.ctx.stationContent?.showsAny()).toBe(false);
+    // Every station shown: each photo in its own station's group.
+    await h.showAll();
+    expect(decoded.sort()).toEqual([
+      "images/frame-0.png",
+      "images/frame-1.png",
+      "images/frame-2.png",
+    ]);
+    expect(h.groups().sort()).toEqual([
+      "station-content:st-a",
+      "station-content:st-b",
+    ]);
   });
 
-  it("a walk held by stations is counted at its stations, decoded only there", async () => {
-    const decoded: string[] = [];
-    fake.decode = (name) => {
-      decoded.push(name);
-      return new Texture();
-    };
+  it("places no photo for a tour without baked spots, whatever its zip carries", async () => {
+    // Why: the walk and the zip's images were once shown to a visitor (a
+    // live replay of the walk, or a ring of images around the code); a
+    // visitor now sees only what the creator's open baked into the tour.
+    fake.decode = () => new Texture();
+    const h = harness({ objects: [pin("a", 0, 0)], walkInZip: true });
+    await h.lock();
+    await h.showAll();
+    expect(h.ctx.placement).toEqual({ kind: "idle" });
+    expect(h.ctx.imagePlanes).toBeNull();
+    expect(h.loaded).toEqual([]);
+    expect(h.ctx.viewerPlanesError).toBeNull();
+  });
+
+  it("a station none of whose photos loads says so", async () => {
+    fake.decode = () => null;
     const h = harness({
-      objects: [pin("near", 0, 0)],
-      walk: [
-        { north: 1, east: 0 },
-        { north: 2, east: 0 },
-      ],
+      objects: [pin("a", 0, 0)],
+      baked: [{ holder: "a" }, { holder: "a" }],
     });
     await h.lock();
-    expect(h.ctx.placement).toEqual({
-      kind: "placed",
-      placedKind: "capture-spots",
-      count: 0,
-      atStations: 2,
-      fixes: 4,
-      gpsAccuracyMedianM: 3,
+    await h.showAll();
+    expect(h.ctx.viewerPlanesError).toBe("2 photos could not be decoded");
+  });
+
+  // Why: a station whose planes cannot be built must not leak the photos
+  // it decoded, and must say so.
+  it("a station whose planes cannot be built frees its decoded photos and says so", async () => {
+    const textures: Texture[] = [];
+    const disposed = new Set<Texture>();
+    fake.decode = () => {
+      const texture = new Texture();
+      textures.push(texture);
+      texture.addEventListener("dispose", () => disposed.add(texture));
+      return texture;
+    };
+    const h = harness({
+      objects: [pin("a", 0, 0)],
+      baked: [{ holder: "a" }, { holder: "a" }],
     });
-    expect(decoded).toEqual([]);
+    fake.planesThrow = true;
+    await h.lock();
+    await h.showAll();
+    expect(textures).toHaveLength(2);
+    expect(disposed.size).toBe(2);
+    expect(h.ctx.viewerPlanesError).not.toBeNull();
+  });
+
+  it("a station whose photos all fail says so only until a later station's photos stand", async () => {
+    // Why: the walk's parts mount per station visit, and a part none of
+    // whose photos decodes says so on the photos' channel. Nothing cleared
+    // it within a session, so one bad station left "could not be decoded"
+    // on the line at every station after it, whose photos stood fine.
+    fake.decode = (name) =>
+      name === "images/frame-0.png" ? null : new Texture();
+    const h = harness({
+      objects: [pin("s1", 0, 0), pin("s2", 100, 0)],
+      baked: [{ holder: "s1" }, { holder: "s2" }],
+    });
+    await h.lock();
+    // The visitor at the first station: its photo fails.
+    h.store.dispatch(
+      presenceJudged({
+        candidates: [{ id: "st-s1", distanceM: 0, foundM: 25, foundExitM: 30 }],
+        accuracyM: null,
+        codeLinedUp: true,
+      }),
+    );
+    h.placement.syncContent();
+    await flush();
+    expect(h.ctx.viewerPlanesError).not.toBeNull();
+    // The second station shows too, and its photo stands.
+    await h.showAll();
+    expect(h.ctx.viewerPlanesError).toBeNull();
   });
 });

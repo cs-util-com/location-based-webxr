@@ -27,6 +27,10 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
     (the manifest's, trimmed, else `fileName`).
 - Every manifest note is listed; one whose position cannot be drawn keeps
   its row with `at: null` and "· no position" in its meta (E1 review #9).
+- A placed 3D model (format minor 1) is listed nowhere and counted as no
+  kind: this 2D editor knows pins and photos only, and a model shown as a
+  note would be mislabelled. The tour keeps it untouched (the document
+  slice carries it); the 3D editor is where it shows.
 - The story's stations (`kind: "station"`, id `station:<id>`, title or
   "Station N" by `station-run.ts` `stationTitle`, meta "Station N"), at
   their own geo pose (version 3: every station has one, D9). Every
@@ -74,5 +78,5 @@ const rows = filterItems(model.items, searchBox.value);
 position, "The code" alone, the notes' titles and distance lines, the
 recorded photos, the stations, a station at a code's point (`onCode`,
 just inside and just outside `ON_CODE_M`), an undrawable note kept off the
-map, the
+map, a placed 3D model listed nowhere, the
 title fallback, the filter and `photoSource`.

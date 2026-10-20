@@ -16,6 +16,8 @@ import { installTourViewerArFakes } from "./ar-fakes.js";
 
 const SAMPLE = "http://127.0.0.1:5197/ranges-ok/sample-tour.zip";
 const BAKED = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
+const UNFINISHED = "http://127.0.0.1:5197/ranges-ok/unfinished-tour.zip";
+const PLAIN = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
 
 /** A visitor whose browser will still ask for the location. */
 async function openAsNewVisitor(page, url) {
@@ -232,4 +234,42 @@ test("a tour's details: its name in the tab, its description, the cover it chose
       "";
   });
   await expect(contact).toBeHidden();
+});
+
+test("a tour not finished yet says so on its start page, with whom to ask", async ({
+  page,
+}) => {
+  // Why this matters: the printed code may point at the hosted file before
+  // its first Finish. A visitor who opens it reads that the tour is not
+  // finished, not "N places to discover" with nothing behind it, and is
+  // told whom to ask when the tour names a contact - without any error.
+  await openAsNewVisitor(page, UNFINISHED);
+  await expect(page.getByTestId("visitor-title")).toHaveText("Harbour Lights", {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("visitor-subline")).toHaveText(
+    "This tour is not finished yet.",
+  );
+  await expect(page.getByTestId("error")).toHaveText("");
+  const contact = page.getByTestId("error-contact");
+  await expect(contact).toBeVisible();
+  await expect(contact.locator("a")).toHaveText("guide@example.org");
+  // Nothing to start: no Start, and no line about one.
+  await expect(page.getByTestId("enter-ar")).toBeHidden();
+  await expect(page.getByTestId("ar-hint")).toBeHidden();
+});
+
+test("a zip without tour.json says on its start page that the tour is not finished yet", async ({
+  page,
+}) => {
+  // Why this matters: a creator's first upload may be the starter zip or a
+  // recording, which carry no tour.json and so no contact to name.
+  await openAsNewVisitor(page, PLAIN);
+  await expect(page.getByTestId("visitor-subline")).toHaveText(
+    "This tour is not finished yet.",
+    { timeout: 15000 },
+  );
+  await expect(page.getByTestId("visitor-title")).toHaveText("An AR tour");
+  await expect(page.getByTestId("error-contact")).toBeHidden();
+  await expect(page.getByTestId("enter-ar")).toBeHidden();
 });

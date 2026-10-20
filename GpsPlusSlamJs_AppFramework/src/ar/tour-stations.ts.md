@@ -41,8 +41,10 @@ branch`), `TourStation`, `TourStep`,
 - **Station**: `id`, optional `title`, `geo` (a geo pose, required;
   `qr/geo-pose.ts`), `activateRadiusM` and
   `foundRadiusM` (positive, found <= activate; the hysteresis is K4's),
-  `hint` (`"arrow"`, the default), `steps` (may be empty), `items` (pins
-  and photos at local poses, ids unique per station; `tour-items.ts`),
+  `hint` (`"arrow"`, the default), `steps` (may be empty), `items` (pins,
+  photos and placed models at local poses, ids unique per station;
+  `tour-items.ts`; a placed model's `asset` must name a MODEL asset,
+  resolved here because only this module sees the assets),
   optional `next` (the default next station for `branch` order). An old
   `anchor` field is ignored as an unknown field.
 - **Step**: `id` (unique per station), `block`, `advance` (`{ mode: "tap" }`
@@ -76,7 +78,8 @@ tolerance >= 0, unit? }`.
   closed lists - block kind, quiz answer type, advance mode, hint, an
   asset's media type - are what a later minor extends. With `lenient` an
   unknown value degrades instead of failing: an asset of an unknown type
-  is left out; an item of an unknown kind or image type is left out; a
+  is left out; an item of an unknown kind or image type is left out, and
+  so is a placed model whose asset was left out or is not a model; a
   step whose block kind or quiz type is unknown, or whose
   asset is missing or of another kind, is SKIPPED; a scene choice keeps
   only options whose target step is still there, and is skipped itself
@@ -107,7 +110,9 @@ parseTourStations(json.stations, { assets, fail, lenient: true });
 - `tour-stations.test.ts` - a castle station (character scene, choice,
   model, quiz), every quiz answer type, routes, the defaults, one
   rejection per rule, and the version 3 station (empty steps, items read,
-  an old anchor ignored).
+  a placed model naming a model asset, refused for a missing, image or
+  audio asset, left out by a lenient read whose asset it lacks, an old
+  anchor ignored).
 - `tour-stations.property.test.ts` - generated station sets survive a JSON
   round trip unchanged; breaking any one asset reference or a choice
   target is refused; one unknown closed-list value anywhere never fails a

@@ -4,8 +4,8 @@
 > action stream via the framework parser - since the K1 milestone review
 > R1 over the session's OWN entry list, `loadActionsFromEntries`, never a
 > second directory read) and `loadSessionMeta()` (`session.json`, the era gate's input) —
-> BOTH null-tolerant: a hand-built zip or a corrupt stream reads as "keep
-> the ring", never a broken archive.
+> BOTH null-tolerant: a hand-built zip or a corrupt stream reads as "no
+> walk to bake", never a broken archive.
 >
 > M3 addition: `loadQrLevels(): Promise<ReadonlyMap<string, QrLevel>>` —
 > every `qr/<id>.json` in the archive, keyed by `<id>` — the hash of the
@@ -152,10 +152,9 @@ not-checked`): a link's complete copies are checked through
 - **A refusal of the recording is never "no recording"** (K0 milestone
   review R9): `loadRecordingActions` and `loadSessionMeta` still read a
   corrupt stream or file as null (the join declines, the tour works), but
-  REJECT with the `ArchiveLimitError` when a cap refuses them, so the
-  join's caller (`viewer-placement.ts`) shows it in the AR status line
-  ("photo ring (reading the recording failed: ...)") instead of a silent
-  ring.
+  REJECT with the `ArchiveLimitError` when a cap refuses them, so their
+  one caller, the creator's bake (`capture-bake.ts`), says why instead of
+  silently baking nothing.
 - **Opening a FILE (`openTourFile`, tour kit plan K0).** The same session
   over the file's own bytes (`LocalCacheByteSource`): the same caps (the
   transport cap from `file.size`, cause `'too-large'`), no network, no

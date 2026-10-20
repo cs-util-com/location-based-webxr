@@ -15,7 +15,9 @@ visitor's `?debug=1`.
 - `visitorStatus(input: ArStatusInput): VisitorStatus` -
   `{ state, text }`. `state` names the situation: `before-ar`,
   `checking`, `starting`, `stopping`, `unsupported`, `error`, `no-tour`,
-  `scan`, `measuring-code`, `code-other-tour`, `code-unusable`,
+  `unfinished` (the open tour is not finished yet, `tour-unfinished.ts`:
+  "This tour is not finished yet." with its contact when it names one,
+  said before every other running state), `scan`, `measuring-code`, `code-other-tour`, `code-unusable`,
   `code-moved`, `locking`, `warming-up`, `placing`, `placed`,
   `to-station`, `placed-gps`, `tracking-lost`, `finding-direction`, `needs-code`,
   `nothing`. `ar-entry.ts`
@@ -44,8 +46,8 @@ visitor's `?debug=1`.
   the code the moved-code check ignores, whose veto set its votes back to
   0, but still one for any other code (`ar-entry.ts`; r881 re-review L-F,
   L1) - the gate scanning); then what is
-  happening (photos loading, tracking warming up, nothing to show, needs
-  the code, a moved code, the code found, placing).
+  happening (tracking warming up, nothing to show, needs the code, a
+  moved code, the code found, placing).
 - **U1 milestone review fixes (2026-10-06):** a tour with no usable code
   whose photo join declined says "This tour has nothing to show here." (the
   F3 case; the old line derived it inside `arStatusLine`), and after the
@@ -53,8 +55,8 @@ visitor's `?debug=1`.
   forever; a passing product code never replaces a placed tour; "Find the
   poster's code to line it up" only after the escape and only until a code
   lock voted (the gate stays "skipped" after a later lock); the unusable
-  code mentions the GPS escape only while it is offered; a moved code does
-  not hide loading progress; no counter in "Loading the photos…".
+  code mentions the GPS escape only while it is offered. (The photos'
+  loading progress is gone: the photos decode per station as it shows.)
 - **The wait for a heading is said** (D34 of the tour editor plan
   2026-10-17-1816; PR review S6, N8): "Walk a few steps so the guide knows
   the direction." is asked while `stationsAwaitHeading` is true (the guide
@@ -126,7 +128,8 @@ el.textContent =
 
 ## Tests
 
-`visitor-status.test.ts` (one case per state, the start-failure causes,
+`visitor-status.test.ts` (one case per state, an unfinished tour with and
+without a contact, the start-failure causes,
 what must never reach a visitor, load notes, the walk request: replacing
 only the placed line, after a GPS placement's or a moved code's reason, never
 while tracking initializes or without location; away from every station:

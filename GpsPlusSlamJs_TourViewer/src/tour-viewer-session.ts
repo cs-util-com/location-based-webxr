@@ -56,6 +56,7 @@ import type { StationContent } from "./station-content.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { PlacementState } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
+import type { WalkBake } from "./tour-document-bake.js";
 import {
   createCreatorDocument,
   type CreatorDocument,
@@ -172,12 +173,16 @@ export interface TourViewerHooks {
    *  GPS" start follow whether a code can place the tour (r857 review #4,
    *  #5). */
   presentTourLevels(): void;
-  /** The open tour's manifest arrived (null: no tour any more): the
-   *  visitor's start page shows its name, its subline and its cover,
-   *  read from the zip by its archive path (polish round M4a). */
+  /** The open tour's manifest settled (`manifest` null: the zip has no
+   *  `tour.json`), or no tour is open any more (`tour` null): the
+   *  visitor's start page leads with the tour itself - its name, its
+   *  subline and its cover, read from the zip by its archive path through
+   *  `loadImage` - or says that it is not finished yet. */
   presentTourInfo(
-    manifest: TourManifest | null,
-    loadImage: (path: string) => Promise<Blob>,
+    tour: {
+      readonly manifest: TourManifest | null;
+      readonly loadImage: (path: string) => Promise<Blob>;
+    } | null,
   ): void;
   /** A tour closed: the finish step's page-side state is stale. */
   resetFinishStep(): void;
@@ -286,7 +291,7 @@ export interface TourViewerSession {
   tourManifestStatus: "pending" | "settled" | "broken";
   /** The creator's walk in the open tour (scan-pass plan S1,
    *  `tour-read-set.ts`), set when `tour.json` settles: the gallery and
-   *  the photo ring leave it out. Empty with no manifest. */
+   *  the visitor's download leave it out. Empty with no manifest. */
   scanEntries: ReadonlySet<string>;
   /** Bumped per open; a slower open that finishes after a newer one started
    *  must close itself instead of clobbering the newer session. */
@@ -373,13 +378,12 @@ export interface TourViewerSession {
     /** A save delivered it (UI round 1, U2: the leave guard). */
     delivered?: boolean;
   } | null;
-  /** The open tour whose Finish, in THIS page, settled the walk's recorded
-   *  photos (their spots written, or none to place - not a declined bake,
-   *  which the next Finish tries again, PR #643 review): the creator's
-   *  station HUD drops its hedge for it (`creator-stations.ts`
-   *  `walkPhotosPending`, PR #642 review). A per-page view hint, not
-   *  document state: a reopened tour (a new session) hedges again. */
-  walkDecidedFor: TourSession | null;
+  /** The creator's bake of the open recording's walk (`walkAtOpen` of
+   *  `tour-document-bake.ts`): running, with the replay's progress, or what
+   *  it decided (the Finish reads `notPlaced`; the
+   *  status line says a decline). Null before an open settled it and for
+   *  a visitor. */
+  walkBake: WalkBake | null;
   /** What the panel calls the open tour (`tourLabel`); null with none. */
   tourLabel: string | null;
   /** The creator's hit-test reticle for the running session. */
@@ -461,26 +465,15 @@ export interface TourViewerSession {
    *  capture-plane paths write `viewerPlanesError`, and whichever failed
    *  second used to erase the other's message (M5 review #5). */
   contentError: string | null;
-  /** The walk's photos or the ring, placed in the tour (since visitor plan
-   *  M2 as parts of their stations in `stationContent`, decoded only while
-   *  shown); its `dispose` takes those parts out. */
+  /** The tour's recorded photos, placed in the tour as parts of their
+   *  stations in `stationContent` (decoded only while shown); its
+   *  `dispose` takes those parts out. */
   imagePlanes: PlacedImagePlanes | null;
-  /** In-flight guard: without it every voted lock during the decode window
-   *  started ANOTHER placement run (M4 milestone review #4). */
-  imagePlanesLoading: boolean;
-  /** Bumped on session end and tour teardown: an in-flight placement run
-   *  captures the value and every post-await step re-checks it — a run its
-   *  session outlived frees its textures instead of planting planes into a
-   *  dead scene (milestone review, finding 6). */
-  planesRunGeneration: number;
   /** The store subscription while a viewer session runs (flows plan M4). */
   placementUnsubscribe: (() => void) | null;
   /** Whether this session+tour already attempted the ready-triggered
    *  placement. */
   placementAttempted: boolean;
-  /** Whether the join declined - a later lock goes straight to the ring
-   *  instead of replaying the walk again. */
-  joinDeclined: boolean;
 
   // --- the scan gate and the placed content (viewer-placement.ts, M5) ------
   /** This AR entry runs without location (QR-first M1b-1): the visitor
@@ -489,9 +482,9 @@ export interface TourViewerSession {
   scanGate: ScanGate;
   /** Cancels the escape clock while the gate scans. */
   cancelEscapeClock: (() => void) | null;
-  /** The visitor's content per station (`station-content.ts`, visitor plan
-   *  2026-10-18-2349 M2): the tour's items, the walk's photos and the ring
-   *  as parts of their stations, drawn only while the store shows them.
+  /** The visitor's content per station (`station-content.ts`): the
+   *  tour's items and its recorded photos as
+   *  parts of their stations, drawn only while the store shows them.
    *  Created with the first part after the gate; disposed at the session's
    *  end and when its tour closes. */
   stationContent: StationContent | null;
@@ -590,7 +583,7 @@ export function createTourViewerSession(
     finishProgress: "",
     finishError: null,
     rebuiltZip: null,
-    walkDecidedFor: null,
+    walkBake: null,
     tourLabel: null,
     arSessionGeneration: 0,
     reticle: null,
@@ -616,11 +609,8 @@ export function createTourViewerSession(
     viewerPlanesError: null,
     contentError: null,
     imagePlanes: null,
-    imagePlanesLoading: false,
-    planesRunGeneration: 0,
     placementUnsubscribe: null,
     placementAttempted: false,
-    joinDeclined: false,
     codesOnly: false,
     scanGate: { kind: "idle" },
     cancelEscapeClock: null,

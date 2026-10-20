@@ -53,10 +53,11 @@ lives here.
     sighting of it are private to `creator-codes.ts` since code book plan
     M5d-2),
     `finishing`, `rebuiltZip` (with the `manifest.json` list it carries,
-    for the next Finish, K1 milestone review R7), `walkDecidedFor` (the
-    open tour whose Finish in this page settled the walk's photos - not a
-    declined bake, PR #643 review; a per-page view hint for the creator's
-    station HUD, cleared at tour teardown, PR #642 review), `tourLabel` (set by
+    for the next Finish, K1 milestone review R7), `walkBake` (the
+    creator's bake of the open recording's walk, `WalkBake` of
+    `tour-document-bake.ts`: running with its progress, or what it decided -
+    set by `archive-open.ts`, read by the Finish and the status line,
+    cleared at tour teardown), `tourLabel` (set by
     archive-open); the open
     tour's document `tourDocument` (`creator-document.ts`: the shared
     `tourDocument` slice of the store the session was made with, plus the
@@ -95,9 +96,8 @@ lives here.
     `viewer-vote-sink.ts`: created at every visitor entry's start, which
     clears the solver overrides; forgotten by `endQrPipeline`; turned off
     by `endTourCodeVotes`), `placement`,
-    `viewerPlanesError`, `imagePlanes`, `imagePlanesLoading`,
-    `planesRunGeneration`, `placementUnsubscribe`, `placementAttempted`,
-    `joinDeclined`.
+    `viewerPlanesError`, `imagePlanes`, `placementUnsubscribe`,
+    `placementAttempted`.
 - `createTourViewerSession(store?): TourViewerSession` - the initial
   values; `store` holds the tour document in the page's store (the
   `tourDocument` slice the desktop editor uses too; a fresh
@@ -135,10 +135,11 @@ lives here.
   `presentTourCodes` (the open tour's codes arrived: the print step
   continues their numbering - polish round M0b), `presentTourLevels`
   (the open tour's levels settled, read or failed: the visitor screen's
-  line follows - r857 review #5), `presentTourInfo(manifest,
-loadImage)` (the open tour's manifest settled, or null on teardown: the
-  visitor's start page shows its name, subline and cover, read from the
-  zip by archive path - polish round M4a), `finishFromAr()` (a creator's
+  line follows), `presentTourInfo(tour)` (`{ manifest,
+loadImage }` once the open tour's manifest settled, `manifest` null for
+  a zip without `tour.json`; null on teardown: the visitor's start page
+  leads with the tour itself - its name, subline and cover, read from the
+  zip by archive path - or says that the tour is not finished yet), `finishFromAr()` (a creator's
   Done in AR: start a finish if one can start, false when none can -
   polish round M3), `beginAuthorVisit` / `endAuthorVisit` - the
   creator's AR visit start and its settle, M2c), no-ops until their owner
@@ -170,8 +171,7 @@ loadImage)` (the open tour's manifest settled, or null on teardown: the
   (`archive-open.ts`) and the AR session end (`ar-entry.ts`) are the two
   cross-cutting resets, and each resets exactly the fields the closing
   tour or session owned (see those sidecars for the lists).
-- The generation counters (`openGeneration`, `planesRunGeneration`) are
-  only ever incremented; async runs capture a value and compare.
+- The generation counter (`openGeneration`) is only ever incremented; async runs capture a value and compare.
 - `placementUnsubscribe !== null` is the "viewer session is live" signal
   the placement trigger reads; it is set after the runtime start and
   cleared on session end.

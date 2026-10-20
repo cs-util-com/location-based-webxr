@@ -53,7 +53,7 @@
 
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
-import { describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect } from "vitest";
 
 import { readTracked, repoRoot, trackedFiles } from "./tracked-tree.js";
 
@@ -331,6 +331,16 @@ export function staleExceptions(found, justified) {
 }
 
 describe("duplicate-helper guard", () => {
+  // The tree's definitions, read ONCE, in setup: the scan reads every
+  // package's src/**.ts, and run inside a test it was charged to that test's
+  // 5 s (three times, unmemoised) and timed out on a loaded machine five
+  // times on 2026-10-11, never on an assertion. A hook has its own limit;
+  // each test below then measures only its own check.
+  /** @type {ReturnType<typeof definitions>} */
+  let found;
+  beforeAll(() => {
+    found = definitions(sourceFiles(), readTracked);
+  });
   describe("definesHelper", () => {
     // The matcher is the whole guard, so it is tested against the shapes that
     // must and must not count — a source-text rule that matches nothing passes
@@ -426,7 +436,6 @@ describe("duplicate-helper guard", () => {
     // Without this, a matcher that matched NOTHING would leave every assertion
     // below permanently green. This is the check the plan called for after a
     // review found a precondition test that could not fail.
-    const found = definitions(sourceFiles(), readTracked);
     const paths = found.map((d) => `${d.name} @ ${d.file}`);
 
     for (const entry of CANONICAL.filter((e) => e.rule === "shared")) {
@@ -482,8 +491,6 @@ describe("duplicate-helper guard", () => {
   it("every justified exception still names a real definition", () => {
     // An exception that outlives its file is a claim nobody checked. Failing on
     // it is what keeps the list from becoming a graveyard.
-    const found = definitions(sourceFiles(), readTracked);
-
     expect(staleExceptions(found, JUSTIFIED)).toEqual([]);
   });
 
@@ -496,8 +503,6 @@ describe("duplicate-helper guard", () => {
   it("no canonical helper is re-implemented", () => {
     // A non-empty result names the offending file: import the canonical helper,
     // or add a JUSTIFIED entry saying why this one cannot.
-    const found = definitions(sourceFiles(), readTracked);
-
     expect(violations(found, CANONICAL, JUSTIFIED)).toEqual([]);
   });
 });

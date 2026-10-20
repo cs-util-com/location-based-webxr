@@ -12,6 +12,11 @@ import {
   type BoundedLocalCacheStore,
 } from "gps-plus-slam-app-framework/storage";
 import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
+import {
+  createEmptyTourManifest,
+  type TourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { walkAtOpen } from "./tour-document-bake.js";
 
 import { pictureProblem } from "./image-cap.js";
 import { DEFAULT_ASSET_PREFIX } from "./code-tour.js";
@@ -169,12 +174,9 @@ export function wireArchiveOpen(deps: {
     // they would duplicate their own ids and break every later finish; an
     // id deleted from one tour means nothing in another.
     ctx.tourDocument.close();
-    // A reopened tour hedges its stations again (PR #642 review); and the
-    // closing session is not kept alive by the hint.
-    ctx.walkDecidedFor = null;
-    hooks.presentTourInfo(null, () =>
-      Promise.reject(new Error("no tour is open")),
-    );
+    // The next open bakes its own walk.
+    ctx.walkBake = null;
+    hooks.presentTourInfo(null);
     // The closing tour's story and HUD (tour kit plan K4).
     hooks.stopStations();
     ctx.rebuiltZip = null;
@@ -222,13 +224,7 @@ export function wireArchiveOpen(deps: {
     for (const preview of ctx.placedPreviews.values()) preview.dispose();
     ctx.placedPreviews.clear();
     ctx.placementNote = null;
-    // Clear the latch HERE too (PR #367 review): the stale run's finally is
-    // generation-guarded and cannot clear it any more, and a latched
-    // imagePlanesLoading blocks every later placement in the session.
-    ctx.imagePlanesLoading = false;
-    ctx.planesRunGeneration += 1; // invalidate any in-flight placement run
     ctx.placementAttempted = false;
-    ctx.joinDeclined = false;
     // The QR line describes the CLOSING tour's codes (PR #434 review): a
     // lock, a vote count, an unknown or unusable code and a failed image
     // placement all belong to levels that just went away. Without this a
@@ -481,47 +477,80 @@ export function wireArchiveOpen(deps: {
       // it back, so a re-measure never drops what an earlier session placed.
       // A broken manifest is an error the creator must see (the framework's
       // rule for this file), not a silently empty tour.
+      /** The tour settles: the document opens `document` (what the
+       *  creator edits) while the page reads the file's own `manifest`. */
+      const settle = (
+        manifest: TourManifest | null,
+        document: TourManifest | null,
+      ) => {
+        // The creator's work made before the manifest settled (or before
+        // any tour opened) comes along (scan-to-open plan §9 #5).
+        ctx.tourDocument.open(document);
+        ctx.tourManifestStatus = "settled";
+        hooks.presentTourInfo({
+          manifest,
+          loadImage: (path) =>
+            opened.loadEntry(`${opened.manifestWrap}${path}`),
+        });
+        ctx.scanEntries = new Set(
+          manifest === null
+            ? []
+            : scanEntryNames(
+                opened.entries.map((e) => e.filename),
+                manifest,
+                opened.manifestWrap,
+              ),
+        );
+        // The background download fetches the WHOLE file; a visitor of a
+        // copy that carries a walk reads entries on demand instead, and a
+        // visitor of a tour not finished yet reads nothing more.
+        // The archive's dispose aborts the download AND its recovery
+        // download for a host that stops honouring ranges mid-session
+        // (S1 milestone review #5): accepted for this copy only.
+        if (stopsVisitorDownload(deps.mode, manifest, ctx.scanEntries)) {
+          opened.archive.dispose();
+        }
+        // The gallery waits for the manifest, which says what it shows.
+        const filled = fillGallery(opened);
+        // Only now can a draft be judged: "already hosted" is a question
+        // about this manifest.
+        hooks.presentDraftForTour(tourKeyOf(source, opened));
+        hooks.renderAuthorReadout();
+        hooks.tryPlaceTour(); // a visitor's content may now be placeable
+        return filled;
+      };
       const manifestDone = opened.loadTourManifest().then(
         (manifest) => {
           if (ctx.session !== opened) return;
-          // The creator's work made before the manifest settled (or before
-          // any tour opened) comes along (scan-to-open plan §9 #5).
-          ctx.tourDocument.open(manifest);
-          ctx.tourManifestStatus = "settled";
-          hooks.presentTourInfo(manifest, (path) =>
-            opened.loadEntry(`${opened.manifestWrap}${path}`),
-          );
-          ctx.scanEntries = new Set(
-            manifest === null
-              ? []
-              : scanEntryNames(
-                  opened.entries.map((e) => e.filename),
-                  manifest,
-                  opened.manifestWrap,
-                ),
-          );
-          // The background download fetches the WHOLE file; a visitor of a
-          // baked copy that kept the walk reads entries on demand instead.
-          // The archive's dispose aborts the download AND its recovery
-          // download for a host that stops honouring ranges mid-session
-          // (S1 milestone review #5): accepted for this copy only.
-          if (
-            stopsVisitorDownload(
-              deps.mode,
-              ctx.scanEntries,
-              manifest?.captureSpots !== undefined,
-            )
-          ) {
-            opened.archive.dispose();
+          if (deps.mode !== "creator") return settle(manifest, manifest);
+          // A creator's zip without tour.json (a recording) opens as an
+          // empty unnamed tour, not as "no tour": its stations exist from
+          // the first placement, for the HUD, the settle and the write
+          // alike. A visitor's stays "no tour".
+          const base = manifest ?? createEmptyTourManifest();
+          if (!opened.hasRecording || base.captureSpots !== undefined) {
+            ctx.walkBake = { kind: "decided", photos: {} };
+            return settle(manifest, base);
           }
-          // The gallery waits for the manifest, which says what it shows.
-          const filled = fillGallery(opened);
-          // Only now can a draft be judged: "already hosted" is a question
-          // about this manifest.
-          hooks.presentDraftForTour(tourKeyOf(source, opened));
+          // The recording's photos are baked once, now, into the tour's
+          // stations by the station rule (`walkAtOpen`): the tour opens
+          // with them, so no station appears or moves at the Finish. The
+          // open settles when the bake has run; work placed meanwhile
+          // comes along by the rule.
+          ctx.walkBake = { kind: "baking", done: 0, total: 0 };
           hooks.renderAuthorReadout();
-          hooks.tryPlaceTour(); // a visitor's content may now be placeable
-          return filled;
+          return walkAtOpen(opened, base, {
+            shouldContinue: () => ctx.session === opened,
+            onChunk: (done, total) => {
+              if (ctx.session !== opened) return;
+              ctx.walkBake = { kind: "baking", done, total };
+              hooks.renderAuthorReadout();
+            },
+          }).then((walk) => {
+            if (ctx.session !== opened) return;
+            ctx.walkBake = { kind: "decided", photos: walk.photos };
+            return settle(manifest, walk.manifest);
+          });
         },
         (err: unknown) => {
           if (ctx.session !== opened) return;

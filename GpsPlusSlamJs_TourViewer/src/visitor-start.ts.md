@@ -11,12 +11,17 @@ plus a small wiring that writes the page and loads the photo from the zip.
 
 - `visitorStartView(manifest: TourManifest | null): VisitorStartView` -
   pure.
+  - `manifest` is the open tour's `tour.json`, null for a zip without
+    one.
   - `title`: the manifest's `title`, trimmed; `"An AR tour"` when it has
-    none, an empty one, or no manifest yet.
+    none, an empty one, or no manifest.
   - `subline`: `"N places to discover"` (`"1 place …"`): the tour's
     stations (the pins, photos and recorded photos they hold are not
     places of their own; since version 3 every one of them is in a
-    station, tour editor plan W3); `null` when there are none.
+    station). `"This tour is not finished yet."`
+    for a tour that is not (`tour-unfinished.ts`: no `tour.json`, or no
+    station): the printed code may point at the hosted file before its
+    first Finish, and that is said plainly, not as an error.
   - `description`: the manifest's `description` (W2 of the tour editor
     plan 2026-10-17-1816), trimmed; `null` for none.
   - `coverPath`: the cover the creator chose (`cover`, W2; its entry by
@@ -35,7 +40,8 @@ plus a small wiring that writes the page and loads the photo from the zip.
     once, then reads the cover by its archive path through `loadImage`,
     checks it with `checkPicture` (the page's `pictureProblem`) and shows
     it through an object URL.
-  - `clear()` - the defaults, no photo, the object URL released.
+  - `clear()` - no tour open: the defaults (no subline), no photo, the
+    object URL released.
 
 ## Invariants & assumptions
 
@@ -72,13 +78,14 @@ const start = wireVisitorStart({
   revokeObjectUrl: (url) => URL.revokeObjectURL(url),
   checkPicture: pictureProblem,
 });
-hooks.presentTourInfo = (manifest, loadImage) =>
-  manifest === null ? start.clear() : start.present(manifest, loadImage);
+hooks.presentTourInfo = (tour) =>
+  tour === null ? start.clear() : start.present(tour.manifest, tour.loadImage);
 ```
 
 ## Tests
 
-- `visitor-start.test.ts` - the view (name, fallback, counts including
+- `visitor-start.test.ts` - the view (name, fallback, the unfinished
+  sentence for no `tour.json` and for no station, counts including
   stations and capture spots, cover choice and the chosen cover, the
   description, the page title, a property test that the cover is always a
   photo's own image) and the wiring (description, page title, cover shown after load,
@@ -87,4 +94,6 @@ hooks.presentTourInfo = (manifest, loadImage) =>
 - `playwright-tests/visitor-start.spec.js` - the real page: the sample
   tour's name and subline, the layout at three viewports, a baked
   tour's cover loading from the zip, and the details tour (its chosen
-  cover, description, page title and contact under an error).
+  cover, description, page title and contact under an error), a tour
+  without stations (its start page says it is not finished, with its
+  contact) and a zip without `tour.json` (the same sentence, no contact).

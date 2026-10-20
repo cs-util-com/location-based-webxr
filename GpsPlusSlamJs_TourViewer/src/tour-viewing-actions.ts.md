@@ -25,14 +25,15 @@ altitude, accuracyM, odomPosition }` as the fusion received it),
   `alignmentMatrix` (after the votes).
 - `tourPlaced(payload)` - `tourViewing/placed`: `what` (`content` - the
   tour's `tour.json` objects; `capture-spots` - the recording's photos at
-  their capture spots; `ring` - the photos around a code), `basis` (`geo`:
-  from geo positions through the zero and the alignment at the scene root;
-  `code`: around a locked code's geo), `count`, `zero`, `alignmentMatrix`,
-  and per kind `code` (`text`, `geo`, `centerNue`), `join` (`fixes`,
-  `gpsAccuracyMedianM`) or `skipped` (what could not render: content ids,
-  or the photos left out). `station` names the station whose part was
-  drawn (a placed log per station, each time it is drawn; absent for
-  content no station holds).
+  their capture spots), `basis` (always `geo`: from geo positions through
+  the zero and the alignment at the scene root; kept so earlier logs and
+  the tools that read them keep their shape), `count`, `zero`,
+  `alignmentMatrix`, `join` (`fixes`, `gpsAccuracyMedianM`; capture spots)
+  and `skipped` (what could not render: content ids, or the photos left
+  out). `station` names the station whose part was drawn (a placed log per
+  station, each time it is drawn; always present, since everything placed
+  belongs to a station). Logs written before carry `ring`, `code` and no
+  `station`.
 - `keepAliveChanged(payload)` - `tourViewing/keepAlive` (M1b review #5): the
   code keep-alive's state changes. `event` (`armed` - a voted lock handed it
   the code and its stable pose, carried as `kept { qrPoseWorld, qrGeo, sizeM

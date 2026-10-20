@@ -4,7 +4,7 @@ import {
   parseTourManifest,
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { withTourContent, worldCaptureSpots } from "./tour-content.js";
+import { withWalkPhotos, worldCaptureSpots } from "./tour-content.js";
 import { MATURE_GPS_EXTENT_M } from "gps-plus-slam-app-framework/state/alignment-maturity";
 import { tourMediaTypeOfEntry } from "gps-plus-slam-app-framework/ar/tour-media";
 import {
@@ -28,7 +28,7 @@ import {
  * where every visitor trusts them instead of replaying the walk. So the
  * bake must (a) produce spots the visitor's own reader accepts - a spot it
  * rejects would fail the whole tour open - and (b) decline, never guess,
- * whenever the live join would have declined.
+ * whenever the join (`capture-geo-join.ts`) declines.
  */
 
 async function sampleSource(
@@ -56,15 +56,12 @@ describe("bakeCaptureSpots over the real sample recording", () => {
     expect(bake.kind).toBe("baked");
     if (bake.kind !== "baked") return;
     // 5 of 6: the fixture's first photo precedes the GPS zero and has no
-    // joinable position (the integration test of the live join says why).
+    // joinable position (`capture-geo-join.integration.test.ts` says why).
     expect(bake.spots.captures).toHaveLength(5);
     expect(bake.spots.fixes).toBeGreaterThan(0);
-    // Placed into stations as the Finish does (version 3), the reader
+    // Placed into stations as the open does (version 3), the reader
     // takes them, and their world view is where the bake put them.
-    const tour = withTourContent(createEmptyTourManifest(), {
-      objects: [],
-      captureSpots: bake.spots,
-    });
+    const tour = withWalkPhotos(createEmptyTourManifest(), bake.spots);
     const read = parseTourManifest(JSON.parse(serializeTourManifest(tour)));
     const world = worldCaptureSpots(read)!;
     expect(world.captures.map((c) => c.image)).toEqual(
@@ -120,17 +117,14 @@ describe("bakeCaptureSpots over the real sample recording", () => {
       parseTourManifest(
         JSON.parse(
           serializeTourManifest(
-            withTourContent(createEmptyTourManifest(), {
-              objects: [],
-              captureSpots: bake.spots,
-            }),
+            withWalkPhotos(createEmptyTourManifest(), bake.spots),
           ),
         ),
       ),
     ).not.toThrow();
   });
 
-  it("drops a photo whose file the zip does not carry, as the live join's decode would", async () => {
+  it("drops a photo whose file the zip does not carry: a spot naming no file would show nothing", async () => {
     const source = await sampleSource();
     const full = await bakeCaptureSpots(source);
     if (full.kind !== "baked") throw new Error("expected a bake");
@@ -150,8 +144,8 @@ describe("bakeCaptureSpots over the real sample recording", () => {
       ...source,
       entries: source.entries.filter((e) => !e.isImage),
     });
-    // The walk then places nothing (the M4b milestone review #3): a lean
-    // Finish may leave it out, and the editor may move it out.
+    // The walk then places nothing: there are no photos to speak of, so
+    // no note says they could not be placed.
     expect(bake).toEqual({
       kind: "declined",
       reason: "no recorded photo file in this tour",
@@ -160,9 +154,8 @@ describe("bakeCaptureSpots over the real sample recording", () => {
   });
 
   it("places nothing for a walk on which no photo was taken, whatever its GPS came to", async () => {
-    // Why (the M4b milestone review #3): a walk recorded without photos
-    // was kept in every lean Finish and could never be moved out of the
-    // editor's tour, though it places nothing for any visitor.
+    // Why: a walk recorded without photos places nothing for any visitor;
+    // the creator must not be told its photos could not be placed.
     const source = await sampleSource();
     const actions = (await source.loadRecordingActions())!;
     const without = actions.filter((a) => a.type !== "gpsData/add2dImage");
@@ -209,15 +202,14 @@ describe("bakeCaptureSpots over the real sample recording", () => {
   });
 });
 
-describe("bakeCaptureSpots keeps a walk it cannot read (PR #638 review)", () => {
-  // Why: "places nothing" lets a lean Finish drop the walk from the tour
-  // file for good. Only a recording that really took no photo, or whose
+describe("bakeCaptureSpots says why a walk it cannot read places no photo", () => {
+  // Why: "places nothing" silences the note that the recorded photos could
+  // not be placed. Only a recording that really took no photo, or whose
   // photos are none of the tour's files, may say so. A replay that turns
   // the recording's photos into no spot at all - a newer recording era
   // this build cannot read, or capture actions it could not place - is a
-  // decline that keeps the walk, as the live join's "no captured photos"
-  // decline always did.
-  it("keeps the walk of a newer-era recording that shows this build no photo", async () => {
+  // decline with its reason, as the join's "no captured photos" decline is.
+  it("says why for a newer-era recording that shows this build no photo", async () => {
     const source = await sampleSource();
     const actions = (await source.loadRecordingActions())!;
     // A newer era may name its photo actions differently: this build sees
@@ -236,7 +228,7 @@ describe("bakeCaptureSpots keeps a walk it cannot read (PR #638 review)", () => 
     expect(bake).not.toHaveProperty("placesNothing");
   });
 
-  it("keeps the walk when the recording took photos the replay placed none of", async () => {
+  it("says why when the recording took photos the replay placed none of", async () => {
     const source = await sampleSource();
     const actions = (await source.loadRecordingActions())!;
     // Every photo before the GPS zero: the replay gives none a spot.
@@ -252,7 +244,7 @@ describe("bakeCaptureSpots keeps a walk it cannot read (PR #638 review)", () => 
   });
 });
 
-describe("bakeCaptureSpots declines where the live join declines", () => {
+describe("bakeCaptureSpots declines where the join declines", () => {
   it("a tour without a recording", async () => {
     const bake = await bakeCaptureSpots({
       entries: [],
@@ -318,8 +310,8 @@ describe("bakeCaptureSpots declines where the live join declines", () => {
 });
 
 describe("posesOfCaptureSpots", () => {
-  // Why: the viewer places baked spots through the same decode-and-plant
-  // path as the live join's poses; the altitude field changes name on the
+  // Why: the viewer places baked spots as the join's poses; the altitude
+  // field changes name on the
   // way (`alt` in the file, `altitude` in the join), so a mix-up would put
   // every photo at sea level.
   it("turns each baked spot into the join's pose, altitude and rotation included", () => {

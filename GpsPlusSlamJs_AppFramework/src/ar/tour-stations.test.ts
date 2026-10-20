@@ -720,6 +720,55 @@ describe('version 3 stations (tour editor plan 2026-10-17-1816, W3)', () => {
     ]);
   });
 
+  // Why: a placed model names a model asset, and the reference is
+  // resolved here, where the assets are known, so a renderer never meets a
+  // model with no file or an image where a model should be.
+  const placedModel = (asset: unknown) => ({
+    id: 'm1',
+    kind: 'model',
+    asset,
+    sizeM: 3,
+    createdAtIso: '2026-10-19T12:00:00.000Z',
+    pose: { position: [2, 0, 1], rotation: [0, 0, 0, 1] },
+  });
+
+  it('reads a placed model naming a model asset, its size exactly', () => {
+    const [parsed] = parse([station({ items: [placedModel('arch')] })]);
+    expect(parsed?.items).toEqual([placedModel('arch')]);
+  });
+
+  it.each([
+    ['a missing asset', 'nowhere'],
+    ['an image asset', 'gate'],
+    ['an audio asset', 'voice'],
+  ])('refuses a placed model naming %s', (_name, asset) => {
+    expect(() => parse([station({ items: [placedModel(asset)] })])).toThrow(
+      /"stations\[0\]\.items\[0\]\.asset" must name a model asset/
+    );
+  });
+
+  it('a lenient read leaves out a model whose asset it left out or does not have', () => {
+    // A newer minor's model format (here .usdz, unknown to this reader) is
+    // left out of the assets; the model naming it cannot be shown.
+    const newer = parseTourAssets(
+      [...assetsJson, { id: 'tower', path: 'content/tower.usdz' }],
+      { fail, lenient: true }
+    );
+    const [parsed] = parseTourStations(
+      [
+        station({
+          items: [
+            placedModel('tower'),
+            { ...placedModel('nowhere'), id: 'm2' },
+            { ...placedModel('arch'), id: 'm3' },
+          ],
+        }),
+      ],
+      { assets: newer, fail, lenient: true }
+    );
+    expect(parsed?.items.map((i) => i.id)).toEqual(['m3']);
+  });
+
   it('ignores a code a version 2 station named: no station is found by a code any more', () => {
     const [parsed] = parse([station({ anchor: { code: 'a1b2c3d4e5f6' } })]);
     expect(parsed).not.toHaveProperty('anchor');

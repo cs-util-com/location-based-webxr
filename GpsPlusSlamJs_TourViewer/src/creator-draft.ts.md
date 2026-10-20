@@ -227,11 +227,22 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
 ## The settings record (tour editor plan §19 #1)
 
 The tour document's settings record (`tour-document-draft.ts`: the
-setting, the details once set, every station's pose once one moved) is
-one file, `settings` (`SETTINGS_KEY`), in the tour's namespace - the
-desktop's name and shape (`editor/editor-draft.ts`), read by the same
-`parseSettingsRecord`. The document's listener writes it whole on each
-change, in its own queue. The phone reads only its STATION POSES back:
+setting, the details once set, every station's pose once one moved, the
+whole frames of the stations this page created) is one file, `settings`
+(`SETTINGS_KEY`), in the tour's namespace - the desktop's name and shape
+(`editor/editor-draft.ts`), read by the same `parseSettingsRecord`. The
+document's listener writes it whole on each change, in its own queue. The
+phone reads its STATION POSES and its CREATED STATIONS back:
+
+- **Created stations** (every object belongs to a station from its
+  placement on): the offer carries the record's created frames, and the
+  restore hands them to the document before the objects, so a pin comes
+  back in the station it was placed in - not seated anew because the tour
+  file lacks it. A frame of an id the document carries is left as it is.
+  They are not work of their own (the objects naming them are); a page
+  holding created stations counts as live settings work
+  (`settingsLive`), so neither "Delete it" nor a spent draft removes the
+  record their live objects need.
 
 - **Offered**: the poses that differ from the opened tour's
   (`changedStations`) are work like any object - the draft is not spent
@@ -260,6 +271,16 @@ change, in its own queue. The phone reads only its STATION POSES back:
   its commit lands). "Delete it" drops them only once its rejection
   landed: a rejection that did not land leaves the draft, poses and all,
   for a later rename to carry (L3).
+- **Undecided created stations ride along too**, in the same holder
+  (`created`: the stored record's created stations the opened tour
+  lacks). A live record names only this page's own created stations, and
+  a page holding one writes its record live (`settingsLive`) - so without
+  this a placement that starts a station, or the open's own live write,
+  replaced the stored record's created stations before the draft was
+  restored, and a later Restore seated its objects by the rule under new
+  ids. Each write adds the stored frames whose ids the record lacks (the
+  page's own frame of an id wins, `withCreated`); Restore, a landed
+  "Delete it" and a spent draft's sweep clear them.
 - **Removed** with a spent draft (after its meta commit) and by "Delete
   it" (after the rejection lands), unless this page changed the settings
   since the open - then "Delete it" rewrites the live record without the

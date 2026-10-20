@@ -107,7 +107,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   newest copy waits and replaces any copy waiting before it (E2b-2
   milestone review #3).
 - **Save** builds the tour (`keepScan` from the "Keep the walk recording"
-  switch, shown only for a tour that carries a walk) and downloads it
+  switch, shown only for a tour that carries a walk, and ticked at the
+  open when the photos could not be placed - `keepsWalkByDefault` of
+  `tour-document-bake.ts` - so a lean copy keeps the walk a later open
+  can place them from unless the creator unticks it) and downloads it
   through the framework's `downloadZip` under the session's `savedName()`
   (the page imports none of the Finish's rules; the walk's file is named
   after it too, `walkFileName`); the

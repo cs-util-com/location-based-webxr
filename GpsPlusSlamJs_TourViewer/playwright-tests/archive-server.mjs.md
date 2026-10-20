@@ -48,13 +48,16 @@ editor spec uses too.
 `node archive-server.mjs <port>` (default 5197 — registered in
 `../../docs/dev-server-ports.md` under auxiliary e2e servers). Routes:
 `/health` (readiness for the playwright `webServer` gate), the four archive
-routes, `/ranges-ok/recording-tour.zip` (a recording: era-5 session.json +
-an action stream, for the capture-spots placement), `/ranges-ok/baked-tour.zip`
+routes, `/ranges-ok/recording-tour.zip` (a recording without `tour.json`:
+era-5 session.json + an action stream; a creator opens it as an empty tour,
+a visitor reads that the tour is not finished yet), `/ranges-ok/baked-tour.zip`
 (a `tour.json` with baked `captureSpots`, 7 fixes, the two photos, and a
 walk kept for a co-author - `session.json`, an action, a third frame no spot
 shows - that a visitor must neither show nor replay: scan-pass plan S1), `/ranges-ok/plain-tour.zip`
-(images only - no level, no recording: the "nothing to place" case, flows
-plan M4), `/ranges-ok/details-tour.zip` (a `tour.json` at minor 3 carrying
+(images only - no `tour.json`, no level, no recording: a tour not finished
+yet), `/ranges-ok/unfinished-tour.zip` (a `tour.json` with a name and a
+contact but no station, and the fixture's code: a tour not finished yet
+whose visitor is told whom to ask and never asked for the code), `/ranges-ok/details-tour.zip` (a `tour.json` at minor 3 carrying
 its details - name, description, contact - and a cover that is its SECOND
 photo, 3 px wide against the first's 1 px, so a page that took the first
 photo is told apart: tour editor plan 2026-10-17-1816 W2), `/flip`, `/warm-gate`, and a CORS preflight handler.

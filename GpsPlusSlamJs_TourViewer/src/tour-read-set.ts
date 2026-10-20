@@ -13,7 +13,6 @@ import {
   tourItems,
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { tourMediaTypeOfEntry } from "gps-plus-slam-app-framework/ar/tour-media";
 import { signedManifestFilesOf } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   LEGACY_SESSION_IMAGES_DIR,
@@ -21,13 +20,13 @@ import {
 } from "gps-plus-slam-app-framework/storage/file-system-utils";
 
 import type { ViewerMode } from "./mode.js";
+import { tourUnfinished } from "./tour-unfinished.js";
 
 /**
  * The entries of `entryNames` a visitor reads: `tour.json`, every code
  * level, the signed list and its signature, the content files the manifest
  * names (under `wrap`, the tour's folder), and the recorded photos it baked
- * spots for - or, for a tour without baked spots, every image, which is
- * what the photo ring shows.
+ * spots for. Nothing else: a visitor never shows the zip's other images.
  */
 export function visitorEntryNames(
   entryNames: readonly string[],
@@ -43,13 +42,9 @@ export function visitorEntryNames(
     ...manifest.assets.map((a) => `${wrap}${a.path}`),
     ...(manifest.captureSpots?.captures.map((c) => c.image) ?? []),
   ]);
-  const ringPhotos = manifest.captureSpots === undefined;
   return new Set(
     entryNames.filter(
-      (name) =>
-        named.has(name) ||
-        qrLevelIdFromEntryName(name) !== null ||
-        (ringPhotos && tourMediaTypeOfEntry(name)?.kind === "image"),
+      (name) => named.has(name) || qrLevelIdFromEntryName(name) !== null,
     ),
   );
 }
@@ -101,7 +96,7 @@ export function recordingEntryNames(entryNames: readonly string[]): string[] {
 /**
  * The creator's walk in this archive, in archive order: the recording's own
  * entries (`session.json`, `actions/`, recorded frames) that a visitor
- * never reads - a baked photo, or a frame the photo ring shows, stays. What
+ * never reads - a baked photo stays. What
  * a lean Finish removes and a visitor's page leaves out. Never a file the
  * recording did not write: a README, credits or a licence file stays.
  */
@@ -126,16 +121,17 @@ export function entriesForVisitor<E extends { filename: string }>(
 
 /**
  * True when a VISITOR's background download of the whole archive should
- * stop: a copy whose photos are baked (`baked`) and that still carries a
- * walk (kept for a co-author). Without baked spots the viewer replays the
- * walk, reading every action entry: stopping the download would turn one
- * download into a range read per entry and lose the offline copy (S1
- * milestone review #1). A creator's working copy is still cached whole.
+ * stop: a tour not finished yet (`tour-unfinished.ts`: no `tour.json`,
+ * `manifest` null, or no station), of which a visitor reads nothing; or a
+ * copy that carries a walk (kept for a co-author, or never left out),
+ * which no visitor reads - a visitor shows baked photos only. A finished
+ * copy without a walk is all visitor content, and stopping would only lose
+ * the offline copy. A creator's working copy is still cached whole.
  */
 export function stopsVisitorDownload(
   mode: ViewerMode,
+  manifest: TourManifest | null,
   scan: ReadonlySet<string>,
-  baked: boolean,
 ): boolean {
-  return mode === "visitor" && baked && scan.size > 0;
+  return mode === "visitor" && (tourUnfinished(manifest) || scan.size > 0);
 }

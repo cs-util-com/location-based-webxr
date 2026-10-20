@@ -53,6 +53,7 @@ import {
   TOUR_REPLACED,
   type TourSaveBuilt,
 } from "../tour-document-save.js";
+import type { RebuildPhotoSpots } from "../tour-document-bake.js";
 import {
   createTourViewerStore,
   type TourViewerStore,
@@ -115,14 +116,6 @@ export function walkFileName(tourName: string): string {
 
 /** Said when "Move the walk out" finds no walk in the newest bytes. */
 const NO_WALK = "This tour carries no walk recording to move out.";
-
-/** Said when the recorded photos the tour carries are still placed by the
- *  walk: moving it out would leave them nowhere (`finish-rebuild.ts`, S1
- *  milestone review #2). A walk that names no photo of the tour places
- *  nothing and moves out (the M4b milestone review #3). */
-function walkStaysReason(notPlaced: string | undefined): string {
-  return `The walk cannot be moved out: this tour's recorded photos can only be placed with it, and they could not be fixed in place without it${notPlaced === undefined ? "" : ` (${notPlaced})`}. The tour keeps its walk.`;
-}
 
 /** The note inside a moved-out walk's zip, at its root: which tour it came
  *  from (the M4b milestone review #8). */
@@ -252,10 +245,11 @@ export interface EditorSession {
     id: string,
     text: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
-  /** Move a note on the map (its height and facing kept); refused for an
-   *  id the tour no longer carries, and for a spot further from its
-   *  station than a tour can carry (`TOO_FAR_FROM_STATION`). Throws for a
-   *  position nobody can draw (`moveObjectTo`). */
+  /** Move a note on the map (its height and facing kept): beyond its
+   *  station's found radius the station rule seats it anew - the station
+   *  holding its new spot, or a new one there - so no move is too far.
+   *  Refused for an id the tour no longer carries. Throws for a position
+   *  nobody can draw (`moveObjectTo`). */
   move(id: string, lat: number, lon: number): { kind: "moved" } | EditorRefusal;
   /** Delete (undone by `undo`, also after a save wrote it: a photo's
    *  picture is kept for that). Refused, deleting nothing, for an id the
@@ -314,7 +308,12 @@ export interface EditorSession {
 
 export function createEditorSession(input: {
   readonly session: TourSession;
+  /** The tour as opened, its walk's photos baked into its stations
+   *  (`openTourForEditing`). */
   readonly manifest: TourManifest;
+  /** What the open's bake decided about the walk's photos (`walkAtOpen`);
+   *  absent: nothing to say. */
+  readonly photos?: RebuildPhotoSpots;
   readonly levels: ReadonlyMap<string, QrLevel>;
   /** The file's name for the model's title (default: the session's). */
   readonly fileName?: string;
@@ -354,6 +353,7 @@ export function createEditorSession(input: {
     generation,
     pictureOf: (id) => pictures.get(id),
     picturesRead: () => Promise.all(pictureReads),
+    ...(input.photos === undefined ? {} : { photos: input.photos }),
   });
   /** The saved file's name: the opened one's, made safe (the Finish's rule). */
   const savedName = saves.fileName;
@@ -607,9 +607,6 @@ export function createEditorSession(input: {
       if (state === null) return notInTour;
       const change = objectMoveChange(state, id, lat, lon);
       if (change.kind === "missing") return notInTour;
-      if (change.kind === "too-far") {
-        return { kind: "refused", reason: TOO_FAR_FROM_STATION };
-      }
       store.dispatch(
         tourDocumentActions.moved({
           object: change.after,
@@ -698,27 +695,20 @@ export function createEditorSession(input: {
           JSON.stringify(frame.geo) !== JSON.stringify(pose.geo)
         );
       });
-      const poses = new Map(stations.map((p) => [p.id, p.geo]));
-      const framed: TourDocumentState = {
-        ...state,
-        stations: state.stations.map((s) => {
-          const geo = poses.get(s.id);
-          return geo === undefined ? s : { ...s, geo };
-        }),
-      };
-      // An object too far from its station (a draft written before far
-      // moves were refused) is skipped as the reducer skips it
-      // (`objectFits`, the M5a milestone review L1) - measured in the
-      // frames the restore puts back.
+      // An object its station cannot carry (a draft written before far
+      // moves re-ran the station rule) is seated by the rule as the
+      // restore puts it back (`restored`), never skipped.
       const objects = work.objects.filter(
-        (object) =>
-          !live.has(object.id) &&
-          find(object.id) !== undefined &&
-          objectFits(framed, object),
+        (object) => !live.has(object.id) && find(object.id) !== undefined,
       );
       const deleted = work.deleted.filter(
         (id) => !live.has(id) && find(id) !== undefined,
       );
+      // The stations the draft's objects were seated in that the tour
+      // lacks (a far move started one), whole: back before the objects.
+      const created = settings?.createdStations ?? [];
+      const createdStations =
+        created.length === 0 ? {} : { createdStations: created };
       const needsNoGps =
         settings !== undefined &&
         !state.touched.needsNoGps &&
@@ -733,6 +723,7 @@ export function createEditorSession(input: {
           objects,
           deleted,
           ...(stations.length === 0 ? {} : { stations }),
+          ...createdStations,
           what: "",
         }),
       );
@@ -758,6 +749,7 @@ export function createEditorSession(input: {
             ...(needsNoGps === undefined ? {} : { needsNoGps }),
             ...(details === null ? {} : { details }),
             ...(stations.length === 0 ? {} : { stations }),
+            ...createdStations,
             what: "the restored changes",
           }),
         );
@@ -812,13 +804,8 @@ export function createEditorSession(input: {
     if (scanEntryNames(names, snap.manifest, wrap).length === 0) {
       return { kind: "refused", reason: NO_WALK };
     }
-    const photos = await saves.photoSpots(snap.manifest);
-    // Without baked spots the walk is what places the recorded photos: the
-    // rebuild would keep it (`finish-rebuild.ts`), so the move refuses -
-    // unless the walk places nothing (the M4b milestone review #3).
-    if (photos.spots === undefined && photos.placesNothing !== true) {
-      return { kind: "refused", reason: walkStaysReason(photos.notPlaced) };
-    }
+    // The rebuild below writes what the open's bake decided.
+    const photos = await saves.photoSpots();
     // The walk's own file is the whole recording (the M4b milestone review
     // #8): the frames the tour keeps for its visitors too, so it is a
     // complete recording on its own.

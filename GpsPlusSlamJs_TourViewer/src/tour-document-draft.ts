@@ -11,13 +11,25 @@
  */
 
 import { parseGeoPose } from "gps-plus-slam-app-framework/ar/qr/geo-pose";
-import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  createEmptyTourManifest,
+  parseTourManifest,
+  type TourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_ID_PATTERN } from "gps-plus-slam-app-framework/ar/tour-archive";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { objectContentKey } from "./authoring-draft.js";
 import type { DraftObjectWrites } from "./draft-actions.js";
 import type { EditEntry } from "./object-edits.js";
+import { automaticStationFrame } from "./tour-content.js";
 import { DETAIL_FIELDS, type TourDetailFields } from "./tour-details-form.js";
-import type { StationPose, TourDocumentState } from "./tour-document.js";
+import {
+  createdStationFrames,
+  framesOf,
+  type StationFrame,
+  type StationPose,
+  type TourDocumentState,
+} from "./tour-document.js";
 import { sameJson } from "./same-json.js";
 
 /** The tour-level settings a draft keeps: the setting, and the details
@@ -31,6 +43,10 @@ export interface TourSettingsRecord {
    *  milestone review #1 - the objects alone came back at the moved spots
    *  inside unmoved stations). */
   readonly stations?: readonly StationPose[];
+  /** The whole frames of the stations this page created
+   *  (`createdStationFrames`): the objects' records name them, so a reload
+   *  puts them back before the objects (`restored`). Absent when none. */
+  readonly createdStations?: readonly StationFrame[];
 }
 
 /** The settings record's file in a draft namespace, on both pages. Not a
@@ -82,6 +98,66 @@ function parseStations(value: unknown): StationPose[] | undefined | null {
   return poses;
 }
 
+/** A stored record's created stations, each read on its own as the format
+ *  reads a station (`parseTourManifest`, without items): undefined when
+ *  absent; a frame that does not read is lost alone (the objects naming
+ *  it are seated by the station rule as they come back), and of two under
+ *  one id the first is kept. */
+function parseCreatedStations(value: unknown): StationFrame[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const entries = value as unknown[];
+  const ids = new Set(
+    entries
+      .map((entry) => idOf(entry))
+      .filter((id): id is string => id !== undefined),
+  );
+  const frames: StationFrame[] = [];
+  for (const entry of entries) {
+    const frame = parseCreatedStation(entry, ids);
+    if (frame !== undefined && !frames.some((f) => f.id === frame.id)) {
+      frames.push(frame);
+    }
+  }
+  return frames;
+}
+
+/** A stored frame's id, when it is one a station may carry. */
+function idOf(entry: unknown): string | undefined {
+  if (entry === null || typeof entry !== "object") return undefined;
+  const id = (entry as { id?: unknown }).id;
+  return typeof id === "string" && TOUR_ID_PATTERN.test(id) ? id : undefined;
+}
+
+/** Where the stand-ins for a frame's siblings stand: only their ids are
+ *  read (a route from the frame to a sibling). */
+const SIBLING_STAND_IN_AT = { lat: 0, lon: 0, alt: 0 };
+
+/** One created frame, read with a stand-in for each sibling id so that a
+ *  route between created stations still resolves; undefined when it does
+ *  not read. */
+function parseCreatedStation(
+  entry: unknown,
+  siblingIds: ReadonlySet<string>,
+): StationFrame | undefined {
+  const id = idOf(entry);
+  if (id === undefined) return undefined;
+  const standIns = [...siblingIds]
+    .filter((sibling) => sibling !== id)
+    .map((sibling) => ({
+      ...automaticStationFrame(sibling, SIBLING_STAND_IN_AT),
+      items: [],
+    }));
+  try {
+    const probe = parseTourManifest({
+      ...createEmptyTourManifest(),
+      stations: [{ ...(entry as object), items: [] }, ...standIns],
+    });
+    return framesOf(probe).find((frame) => frame.id === id);
+  } catch {
+    return undefined;
+  }
+}
+
 /** A stored record's details: undefined when absent, null when they do
  *  not read (a known field that is not a string). */
 function parseDetails(value: unknown): TourDetailFields | undefined | null {
@@ -114,10 +190,14 @@ export function parseSettingsRecord(
     const stations = parseStations(record["stations"]);
     if (typeof needsNoGps !== "boolean" || details === null) return undefined;
     if (stations === null) return undefined;
+    const created = parseCreatedStations(record["createdStations"]);
     return {
       needsNoGps,
       ...(details === undefined ? {} : { details }),
       ...(stations === undefined ? {} : { stations }),
+      ...(created === undefined || created.length === 0
+        ? {}
+        : { createdStations: created }),
     };
   } catch {
     return undefined;
@@ -132,12 +212,14 @@ export interface TourDocumentDraft extends DraftObjectWrites {
 
 /** The settings record as the document holds it now. */
 export function settingsRecord(state: TourDocumentState): TourSettingsRecord {
+  const created = createdStationFrames(state);
   return {
     needsNoGps: state.needsNoGps,
     ...(state.detailsRecorded ? { details: state.details } : {}),
     ...(state.stationsRecorded
       ? { stations: state.stations.map(({ id, geo }) => ({ id, geo })) }
       : {}),
+    ...(created.length === 0 ? {} : { createdStations: created }),
   };
 }
 

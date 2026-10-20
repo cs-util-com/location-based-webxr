@@ -11,6 +11,7 @@
  */
 
 import { codeLinedUp, type ArStatusInput } from "./tour-flow.js";
+import { notFinishedSentence } from "./tour-unfinished.js";
 /** The in-AR scan line without location (QR-first M1b-1), under the scan
  *  card's title ("Scan the code again so the tour can start"): what the
  *  absence of location means, not a second "scan". */
@@ -39,6 +40,7 @@ type VisitorStatusState =
   | "unsupported"
   | "error"
   | "no-tour"
+  | "unfinished"
   | "scan"
   | "measuring-code"
   | "code-other-tour"
@@ -162,7 +164,7 @@ function gpsOnly(gate: ArStatusInput["gate"]): boolean {
   );
 }
 
-/** The tour has no code that can lock (the photo ring needs one). */
+/** The tour has no code that can lock. */
 function noUsableCodes(input: ArStatusInput): boolean {
   const { tour, gate } = input;
   return (
@@ -301,15 +303,6 @@ function codeSentence(input: ArStatusInput): VisitorStatus | null {
 /** Nothing placed yet, the code situation settled: what is happening. */
 function placementSentence(input: ArStatusInput): VisitorStatus {
   const { placement, gate, qr } = input;
-  if (placement.kind === "placing") {
-    return {
-      state: "placing",
-      text:
-        placement.phase === "loading-photos"
-          ? "Loading the photos…"
-          : "Placing the photos…",
-    };
-  }
   if (placement.kind === "waiting-ready") {
     return {
       state: "warming-up",
@@ -319,11 +312,10 @@ function placementSentence(input: ArStatusInput): VisitorStatus {
         "Move the phone slowly so it can see the surroundings.",
     };
   }
-  const declined =
-    placement.kind === "declined" || placement.kind === "nothing-to-place";
-  // A declined photo join leaves the ring, which needs a code (U1 review
-  // #2, the F3 case): with no code to lock there is nothing to show; after
-  // the escape, the code would still show the photos.
+  const declined = placement.kind === "declined";
+  // Photos that cannot be shown yet (no GPS zero): with no code to lock
+  // there is nothing to show; after the escape, a code would still give
+  // the zero the photos need.
   if (declined && noUsableCodes(input)) {
     return { state: "nothing", text: "This tour has nothing to show here." };
   }
@@ -355,6 +347,13 @@ function runningSentence(input: ArStatusInput): VisitorStatus {
     return {
       state: "no-tour",
       text: "No tour is open here, so there is nothing to show. Open the tour's link again.",
+    };
+  }
+  // Nothing to scan for or wait for yet: said before anything else.
+  if (input.tour.unfinished !== undefined) {
+    return {
+      state: "unfinished",
+      text: notFinishedSentence(input.tour.unfinished.contact),
     };
   }
   // Without location, a gate waived for any reason but the creator's

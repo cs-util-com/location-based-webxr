@@ -27,6 +27,8 @@ import {
   selectPresentStationId,
 } from "./visitor-guide-slice.js";
 import { RECORDING_DEPTH } from "./authoring-recording.js";
+import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourOf } from "./test-support/v3-tour.js";
 import {
   endSession,
   recordGpsEvent,
@@ -59,6 +61,17 @@ function el() {
   };
 }
 
+/** A tour with one station: finished (`tour-unfinished.ts`). */
+const FINISHED_TOUR = tourOf([
+  {
+    id: "p1",
+    kind: "pin",
+    label: "Gate",
+    geo: { lat: 47, lon: 8, alt: 400, rotation: [0, 0, 0, 1] },
+    createdAtIso: "2026-10-20T00:00:00.000Z",
+  } as unknown as TourObject,
+]);
+
 async function settle(): Promise<void> {
   for (let i = 0; i < 12; i += 1) await Promise.resolve();
 }
@@ -72,6 +85,7 @@ function harness(
     locationPending?: () => boolean;
     codesOnly?: () => boolean;
     recheck?: () => Promise<void>;
+    request?: () => Promise<unknown>;
     copyText?: (text: string) => Promise<void>;
     meshCursor?: boolean;
   } = {},
@@ -81,6 +95,9 @@ function harness(
   vi.stubGlobal("document", { body: { dataset: {} } });
   vi.stubGlobal("location", { href: "https://example.test/tour/?qr=abc" });
   const ctx = createTourViewerSession();
+  // A finished tour (one station) unless a test closes it: a visitor's
+  // line about an open tour assumes one with something to show.
+  ctx.tourDocument.open(FINISHED_TOUR);
   const dispose = vi.fn();
   let enabled: EnableGpsArConfig | null = null;
   /** The controller's status, settable so a test can walk a session. */
@@ -162,7 +179,7 @@ function harness(
       busy: () => false,
       codesOnly: options.codesOnly ?? (() => false),
       recheck: options.recheck ?? (() => Promise.resolve()),
-      request: () => Promise.resolve(),
+      request: options.request ?? (() => Promise.resolve()),
     } as never,
     dom: dom as unknown as ArEntryDom,
     hooks,
@@ -409,6 +426,30 @@ describe("wireArEntry QR readout and visitor hint", () => {
     expect(h.dom.arDebug.textContent.split("\n")[0]).toBe("qr: tracking");
   });
 
+  it("tells a visitor of a tour not finished yet so, without the scan card", () => {
+    // Why: a tour without stations may carry its measured code; the line
+    // says the tour is not finished (with the contact the tour names) and
+    // the scan card, which would ask for the code, stays closed.
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.tourDocument.open({
+      ...tourOf([]),
+      contact: "guide@example.org",
+    });
+    h.ctx.scanGate = { kind: "scanning", escapeOffered: false };
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toBe(
+      "This tour is not finished yet. Questions about this tour? Contact its maker: guide@example.org",
+    );
+    expect(h.dom.scanCard.hidden).toBe(true);
+    expect(h.dom.arStatus.hidden).toBe(false);
+    // A zip without tour.json is not finished either.
+    h.ctx.tourDocument.close();
+    h.ctx.tourDocument.open(null);
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toBe("This tour is not finished yet.");
+  });
+
   it("shows the fused pose's hint from the last evaluation while tracking", () => {
     const h = harness({ arStatus: "running" });
     // A tour is open, as on a phone (with none, the visitor reads "No tour
@@ -625,6 +666,70 @@ describe("the visitor's step marker (polish round M4a, the owner's V4)", () => {
   it("carries no marker when the location was already allowed", () => {
     const h = harness();
     expect(h.dom.enterArButton.dataset["step"]).toBeUndefined();
+  });
+});
+
+describe("a visitor of a tour not finished yet gets no Start", () => {
+  // Why: such a tour has nothing to show. A Start there asked for the
+  // location (and, denied on a tour without codes, told the visitor to
+  // change a browser setting) and opened an empty AR session; the start
+  // page's sentence is the visitor's whole answer.
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function unfinishedVisitor(manifest: "no stations" | "no tour.json") {
+    const request = vi.fn(() => Promise.resolve("granted"));
+    const h = harness({ locationPending: () => true, request });
+    h.ctx.session = {} as never;
+    h.ctx.tourDocument.close();
+    h.ctx.tourDocument.open(manifest === "no stations" ? tourOf([]) : null);
+    h.entry.renderArEntry();
+    return { h, request };
+  }
+
+  it.each(["no stations", "no tour.json"] as const)(
+    "hides the button and its hint (%s), and a tap asks for nothing",
+    async (manifest) => {
+      const { h, request } = unfinishedVisitor(manifest);
+      expect(h.dom.enterArButton.hidden).toBe(true);
+      expect(h.dom.arHint.hidden).toBe(true);
+      await h.enter();
+      expect(request).not.toHaveBeenCalled();
+      expect(h.arController.enable).not.toHaveBeenCalled();
+    },
+  );
+
+  it("shows them while the tour.json is still being read, and for a finished tour", () => {
+    // Tapped before the manifest settles, the session's status line says
+    // the tour is not finished (`unfinishedTour`).
+    const { h } = unfinishedVisitor("no tour.json");
+    h.ctx.tourManifestStatus = "pending";
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.hidden).toBe(false);
+    expect(h.dom.arHint.hidden).toBe(false);
+    h.ctx.tourManifestStatus = "settled";
+    h.ctx.tourDocument.close();
+    h.ctx.tourDocument.open(FINISHED_TOUR);
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.hidden).toBe(false);
+    expect(h.dom.arHint.hidden).toBe(false);
+  });
+
+  it("keeps the button while a session runs: it is the way out", () => {
+    const { h } = unfinishedVisitor("no stations");
+    h.setArStatus("running");
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.hidden).toBe(false);
+  });
+
+  it("never hides a creator's button: the tour is the one being made", () => {
+    const h = harness({ mode: "creator" });
+    h.ctx.session = {} as never;
+    h.ctx.tourDocument.close();
+    h.ctx.tourDocument.open(tourOf([]));
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.hidden).toBe(false);
   });
 });
 
@@ -1072,9 +1177,10 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     } as never;
     h.ctx.placement = {
       kind: "placed",
-      placedKind: "ring",
-      count: 0,
-      atStations: 3,
+      placedKind: "capture-spots",
+      count: 3,
+      fixes: 4,
+      gpsAccuracyMedianM: null,
     };
     h.entry.renderArStatus();
     expect(h.dom.arStatus.dataset["state"]).toBe("to-station");
@@ -1099,9 +1205,10 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     } as never;
     h.ctx.placement = {
       kind: "placed",
-      placedKind: "ring",
-      count: 0,
-      atStations: 3,
+      placedKind: "capture-spots",
+      count: 3,
+      fixes: 4,
+      gpsAccuracyMedianM: null,
     };
     h.arStore.dispatch(
       presenceJudged({

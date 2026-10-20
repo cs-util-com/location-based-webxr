@@ -6,7 +6,8 @@ The capture-time geo join's pure core (plan
 `2026-08-26-1130-capture-time-geo-join`, Rev 2): decide whether a REPLAYED
 recording supports trustworthy photo placement, and compute a world pose
 for every captured photo — so the AR view places photos where they were
-taken instead of ringing them around the QR code.
+taken. Its one caller is the creator's bake (`capture-bake.ts`); a visitor
+places the baked spots and never runs a join.
 
 ## Public API
 
@@ -25,7 +26,7 @@ taken instead of ringing them around the QR code.
     said `=== 5` until the PR #368 review caught it, which had it declining
     era-4 zips on paper while the code accepted them.
 - `assessReplayedJoin(state): JoinAssessment` — the AFTER-replay half; every
-  `ok: false` carries a plain-words reason and means "keep the ring".
+  `ok: false` carries a plain-words reason and means "bake no spot".
   - Preflight declines: wrong/unknown era, or a segmenting action present
     (`odometryTrackingRestarted` / `arLoopClosureDetected` — a restart
     WIPES and a loop closure DEFORMS the alignment's odometry history
@@ -84,7 +85,7 @@ taken instead of ringing them around the QR code.
     under an inland visitor, while the status line still claimed
     "N photos at capture spots". Zero is a VALID altitude, so the drop keys
     on missing-or-non-finite, never on falsy. When nothing survives, the
-    caller falls back to the photo ring.
+    bake declines.
   - **A capture's own `rotation` is dropped on the same terms** (PR #378
     review): length-4, finite, and unit-norm, via the same
     `renormalizeUnitQuaternion`. A non-unit quaternion survives
@@ -146,13 +147,15 @@ const pre = preflightCaptureJoin(
   await session.loadSessionMeta(),
   actions?.map((a) => a.type) ?? [],
 );
-if (actions === null || !pre.ok) return placeRing(pre);
+// As the creator's bake at open does (`capture-bake.ts`): a declined
+// preflight or verdict is the reason the photos are not placed.
+if (!pre.ok) return { kind: "declined", reason: pre.reason };
+if (actions === null) return { kind: "declined", reason: "no walk" };
 const state = await replayActions(actions, { onChunk: showProgress });
 const verdict = assessReplayedJoin(state);
-if (verdict.ok) {
-  const poses = computeCaptureGeoJoin(state);
-  // place each pose via calcRelativeCoordsInMeters(viewerZero, pose.geo, …)
-}
+if (!verdict.ok) return { kind: "declined", reason: verdict.reason };
+const poses = computeCaptureGeoJoin(state);
+// each pose's geo becomes a baked spot in tour.json
 ```
 
 ## Tests
