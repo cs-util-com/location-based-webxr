@@ -6,6 +6,7 @@ import {
   createDebugCaptureLayer,
   DEBUG_READING_LINE,
   debugDeclinedLine,
+  debugReadingLine,
   debugShownLine,
   revokeDebugThumbnail,
   type DebugLayerDeps,
@@ -112,6 +113,41 @@ describe("the debug camera capture layer", () => {
     // One decode at a time: a walk of a thousand frames never holds more
     // than one full-size picture decoded at once.
     expect(mostInFlight()).toBe(1);
+  });
+
+  it("says how far the read is while the walk replays, each whole percent once, and nothing once stopped", async () => {
+    // Why (the r900 PR review): a long walk replays for seconds, and the
+    // line read "Reading the debug data..." with no movement - the join's
+    // progress option had no caller. Once per whole percent, so a walk of
+    // thousands of chunks does not redraw the line thousands of times.
+    const seen: { chunk?: (done: number, total: number) => void } = {};
+    let answer: (read: DebugCapturesRead) => void = () => undefined;
+    const { layer, log } = harness(() => Promise.resolve(placed(1)), {
+      read: (options) => {
+        seen.chunk = options.onChunk;
+        return new Promise((resolve) => {
+          answer = resolve;
+        });
+      },
+    });
+    const started = layer.start();
+    seen.chunk?.(400, 1000);
+    seen.chunk?.(401, 1000);
+    seen.chunk?.(1000, 1000);
+    answer(placed(1));
+    await started;
+    expect(log.filter((l) => l.startsWith("status "))).toEqual([
+      `status ${DEBUG_READING_LINE}`,
+      `status ${debugReadingLine(40)}`,
+      `status ${debugReadingLine(100)}`,
+      `status ${debugShownLine(1)}`,
+    ]);
+    expect(debugReadingLine(40)).toBe("Reading the debug data... 40 %");
+    // A chunk that lands after the layer stopped says nothing.
+    layer.stop();
+    const stoppedAt = log.length;
+    seen.chunk?.(500, 1000);
+    expect(log.length).toBe(stoppedAt);
   });
 
   it("says why it shows nothing when the join declines, and draws nothing", async () => {

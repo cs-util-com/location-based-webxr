@@ -89,7 +89,8 @@ cannot do - the sample walk alone never settles and could not tell them
 apart); a file captured twice named once; a missing file dropped and none
 left declined, also when the only file left is the frame the recording
 never placed; a recording wrapped in a folder placing the same captures
-under their wrapped entry names, and a frame of another folder never taken
+under their wrapped entry names, the replay's progress reported to the
+caller's `onChunk`, and a frame of another folder never taken
 for a capture's; a walk with no capture taken, with GPS that solves and with
 no fix at all; a newer era and captures the replay placed none of; the
 join's own declines (no recording, an old era, an absent or string era, a

@@ -336,6 +336,25 @@ describe("debugCapturesOf declines where the join declines", () => {
     });
   });
 
+  it("reports the replay's progress to its caller, rising to the whole walk (and declines nothing for it)", async () => {
+    // Why (the r900 PR review): the layer's progress line is only as good
+    // as these calls - the same total each time, rising, ending complete.
+    const calls: [number, number][] = [];
+    const read = await debugCapturesOf(await sampleSource(), {
+      onChunk: (done, total) => {
+        calls.push([done, total]);
+      },
+    });
+    expect(read.kind).toBe("placed");
+    expect(calls.length).toBeGreaterThan(0);
+    const total = calls[0]![1];
+    expect(total).toBeGreaterThan(0);
+    expect(calls.every(([, t]) => t === total)).toBe(true);
+    const done = calls.map(([d]) => d);
+    expect(done).toEqual([...done].sort((a, b) => a - b));
+    expect(calls.at(-1)).toEqual([total, total]);
+  });
+
   it("a replay the caller stopped", async () => {
     const read = await debugCapturesOf(await sampleSource(), {
       shouldContinue: () => false,

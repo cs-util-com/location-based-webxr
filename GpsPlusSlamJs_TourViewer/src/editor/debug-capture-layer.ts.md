@@ -15,7 +15,7 @@ save or the draft. The phone has no such layer
 
 - `createDebugCaptureLayer<T>(deps): DebugLayer` - the controller, pure of
   the DOM; `T` is the view's picture (an element in the page).
-  - `deps.read({ shouldContinue })` - the join over the open tour
+  - `deps.read({ shouldContinue, onChunk })` - the join over the open tour
     (`debugCapturesOf`); `shouldContinue` turns false once stopped.
   - `deps.loadPicture(image)` - a capture's picture by its entry name.
   - `deps.pictureProblem(blob)` - the tour's pixel cap (`image-cap.ts`).
@@ -27,7 +27,10 @@ save or the draft. The phone has no such layer
   - `deps.discard(picture)` - frees a thumbnail no marker took: one whose
     decode ended after `stop()` (the page passes `revokeDebugThumbnail`;
     debug-captures M1).
-  - `DebugLayer.start()` - says `DEBUG_READING_LINE`, reads, then draws
+  - `DebugLayer.start()` - says `DEBUG_READING_LINE`, reads - saying
+    `debugReadingLine(percent)` as the replay goes, once per whole percent
+    and never after `stop()` (its `onChunk`; r900 PR review: a long walk
+    replays for seconds) - then draws
     one marker per capture, applies the switch, says `debugShownLine(n)`,
     and decodes a thumbnail per capture, one at a time, in capture order.
     A decline says `debugDeclinedLine(reason)`; a read that throws says
@@ -38,7 +41,8 @@ save or the draft. The phone has no such layer
     picture is read or decoded, nothing more lands in the view (a
     thumbnail decoded meanwhile goes to `discard`), and its markers are
     removed. Idempotent.
-- `DEBUG_READING_LINE` ("Reading the debug data..."), `debugDeclinedLine`
+- `DEBUG_READING_LINE` ("Reading the debug data..."), `debugReadingLine`
+  ("Reading the debug data... 40 %"), `debugDeclinedLine`
   ("No debug data shown: <reason>."), `debugShownLine` ("Debug data: N
   camera captures on the map.").
 - A thumbnail is 32 CSS pixels wide (`DEBUG_THUMB_WIDTH_PX`, module-internal).
@@ -106,7 +110,8 @@ void layer.start();
 
 ## Tests
 
-`debug-capture-layer.test.ts`: the lines in order (reading, drawn, shown,
+`debug-capture-layer.test.ts`: the replay's progress lines, each whole
+percent once and none after a stop; the lines in order (reading, drawn, shown,
 a thumbnail each) with at most one decode in flight; a decline and a
 throwing read ending in a decline line with nothing drawn; a picture over
 the cap and an unreadable one never decoded, their markers kept; a failing

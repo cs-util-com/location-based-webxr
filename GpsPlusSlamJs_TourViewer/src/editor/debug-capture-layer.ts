@@ -22,6 +22,11 @@ import type {
 /** The line while the join replays the walk. */
 export const DEBUG_READING_LINE = "Reading the debug data...";
 
+/** The reading line with how far the replay is, in whole percent. */
+export function debugReadingLine(percent: number): string {
+  return `${DEBUG_READING_LINE} ${String(percent)} %`;
+}
+
 /** The line when the layer shows nothing, naming why. */
 export function debugDeclinedLine(reason: string): string {
   return `No debug data shown: ${reason}.`;
@@ -51,7 +56,7 @@ interface DebugLayerView<T> {
 export interface DebugLayerDeps<T> {
   /** The join over the open tour (`debugCapturesOf`). */
   read(
-    options: Required<Pick<DebugCaptureOptions, "shouldContinue">>,
+    options: Required<Pick<DebugCaptureOptions, "shouldContinue" | "onChunk">>,
   ): Promise<DebugCapturesRead>;
   /** A capture's picture by its entry name. */
   loadPicture(image: string): Promise<Blob>;
@@ -100,9 +105,19 @@ export function createDebugCaptureLayer<T>(
   return {
     async start() {
       deps.status(DEBUG_READING_LINE);
+      // The replay's progress, once per whole percent: a long walk replays
+      // for seconds, and a line without movement reads as stuck.
+      let shownPercent = -1;
+      const onChunk = (done: number, total: number): void => {
+        if (stopped || !(total > 0)) return;
+        const percent = Math.min(100, Math.floor((done * 100) / total));
+        if (percent === shownPercent) return;
+        shownPercent = percent;
+        deps.status(debugReadingLine(percent));
+      };
       let read: DebugCapturesRead;
       try {
-        read = await deps.read({ shouldContinue: () => !stopped });
+        read = await deps.read({ shouldContinue: () => !stopped, onChunk });
       } catch (err) {
         if (stopped) return;
         const why = err instanceof Error ? err.message : String(err);
