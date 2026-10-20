@@ -348,7 +348,7 @@ async function buildStationsZip() {
  * A tour zip that IS a recording (geo-join e2e): era-5 session.json plus an
  * action stream whose four consistent GPS↔odom pairs solve a clean
  * translation alignment ([+2 m N] and the 400 m altitude datum), and two
- * captures taken AFTER the zero — so the creator's bake (the capture-time
+ * captures taken AFTER the zero - so the creator's bake (the capture-time
  * join) accepts and places photos at capture spots.
  * Payload frames match the recorder's writes exactly: odom positions are
  * RAW WEBXR ([E, y, −N] for a NUE (N, E)); the reducer converts on replay.

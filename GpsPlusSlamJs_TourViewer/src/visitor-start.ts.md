@@ -18,7 +18,7 @@ plus a small wiring that writes the page and loads the photo from the zip.
   - `subline`: `"N places to discover"` (`"1 place …"`): the tour's
     stations (the pins, photos and recorded photos they hold are not
     places of their own; since version 3 every one of them is in a
-    station, tour editor plan W3). `"This tour is not finished yet."`
+    station). `"This tour is not finished yet."`
     for a tour that is not (`tour-unfinished.ts`: no `tour.json`, or no
     station): the printed code may point at the hosted file before its
     first Finish, and that is said plainly, not as an error.

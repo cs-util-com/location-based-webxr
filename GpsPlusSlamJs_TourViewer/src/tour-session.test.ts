@@ -312,7 +312,7 @@ describe("loadRecordingActions / loadSessionMeta", () => {
     expect(wrapped.hasRecording).toBe(true);
   });
 
-  it("returns null for a hand-built zip without a recording — nothing to bake, not an error", async () => {
+  it("returns null for a hand-built zip without a recording - nothing to bake, not an error", async () => {
     const fetchImpl = rangeServer(
       await buildExactZip({ "qr/1.json": LEVEL_JSON }),
     );
