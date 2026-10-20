@@ -39,7 +39,7 @@ export interface DebugCapture {
 }
 
 /** The walk's debug camera captures, with what their places rest on. */
-export interface DebugCaptures {
+interface DebugCaptures {
   /** The GPS fixes the walk's alignment paired. */
   readonly fixes: number;
   /** Their median accuracy (m); null when the fixes reported none. */

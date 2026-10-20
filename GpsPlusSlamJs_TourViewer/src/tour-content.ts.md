@@ -13,7 +13,8 @@ them opens without them (`withoutDebugCaptures`).
 
 ## Public API
 
-- `AUTO_STATION_ACTIVATE_M` (= 2 x `STATION_RADIUS_M`, so 50 m): how far out
+- `AUTO_STATION_ACTIVATE_M` (module-internal since nothing outside starts an
+  automatic station; = 2 x `STATION_RADIUS_M`, so 50 m): how far out
   an automatic station starts guiding. It is provisional, like R itself:
   chosen, not measured.
 - `asStored(object, station) -> TourObject`: the object as `station` stores

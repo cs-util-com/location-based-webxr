@@ -54,7 +54,7 @@ import { STATION_RADIUS_M, type StationPoint } from "./station-assign.js";
  * visitor is told of it before reaching its edge. PROVISIONAL, like R
  * itself: chosen, not measured.
  */
-export const AUTO_STATION_ACTIVATE_M = 2 * STATION_RADIUS_M;
+const AUTO_STATION_ACTIVATE_M = 2 * STATION_RADIUS_M;
 
 /** The same geo pose, field by field (=== on numbers, so -0 is 0): an
  *  object nobody moved, compared with what its stored item reads as. */

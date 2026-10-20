@@ -34,10 +34,10 @@ export function debugShownLine(count: number): string {
 
 /** A thumbnail's width in CSS pixels; its height keeps the picture's
  *  aspect. Small on purpose: a long walk has a thousand of them. */
-export const DEBUG_THUMB_WIDTH_PX = 32;
+const DEBUG_THUMB_WIDTH_PX = 32;
 
 /** What the layer draws into (the editor map's debug pane). */
-export interface DebugLayerView<T> {
+interface DebugLayerView<T> {
   /** One marker per capture, without a picture yet. */
   draw(captures: readonly DebugCapture[]): void;
   /** The capture's thumbnail into its marker. */

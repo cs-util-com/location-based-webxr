@@ -27,8 +27,9 @@ stations at the open (`capture-bake.ts`); that half went with M1.
   - Result: `{ kind: "placed", captures }` (`DebugCaptures`: `fixes`,
     `gpsAccuracyMedianM`, and `captures`, each `{ image, geo }` in capture
     order; `image` is the picture's archive entry name) or `{ kind: "declined", reason }`.
-- Types: `DebugCapture`, `DebugCaptures`, `DebugCapturesRead`,
-  `DebugCaptureSource`, `DebugCaptureOptions`.
+- Types: `DebugCapture`, `DebugCapturesRead` (its `captures` is the
+  module-internal `DebugCaptures`), `DebugCaptureSource`,
+  `DebugCaptureOptions`.
 
 ## Invariants & assumptions
 

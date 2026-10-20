@@ -37,7 +37,7 @@ save or the draft. The phone has no such layer
 - `DEBUG_READING_LINE` ("Reading the debug data..."), `debugDeclinedLine`
   ("No debug data shown: <reason>."), `debugShownLine` ("Debug data: N
   camera captures on the map.").
-- `DEBUG_THUMB_WIDTH_PX` (32) - a thumbnail's CSS width.
+- A thumbnail is 32 CSS pixels wide (`DEBUG_THUMB_WIDTH_PX`, module-internal).
 - `decodeDebugThumbnail(blob): Promise<HTMLImageElement>` - the browser's
   downscaled decode (`createImageBitmap` with `resizeWidth`, twice the
   width on a high-density screen), drawn once into a scratch canvas,
@@ -46,7 +46,8 @@ save or the draft. The phone has no such layer
   when the decode or the encode fails.
 - `revokeDebugThumbnail(picture)` - frees a thumbnail's blob URL (the
   editor map calls it for every thumbnail it drops or replaces).
-- Types: `DebugLayer`, `DebugLayerDeps`, `DebugLayerView`.
+- Types: `DebugLayer`, `DebugLayerDeps` (its `view` is the module-internal
+  `DebugLayerView`).
 
 ## Invariants & assumptions
 
