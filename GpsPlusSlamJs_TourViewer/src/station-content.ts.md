@@ -35,6 +35,8 @@ under "show all"); this module never reads the store.
   - `setPart(stationId, key, part | null)` - set or remove one named part.
     A part replaced or removed is disposed; one added to a station already
     shown renders at once into its group (and takes the group's opacity).
+    One added to a station that rendered and waits to enter (ready) is
+    waited for like the others: the station enters with it, from 0.
   - `show(ids)` - the stations whose content should show.
   - `update(nowMs)` - advance the fades and let ready stations enter.
   - `has(kind)` / `shown(kind)` - whether any station holds a part of that
@@ -58,7 +60,9 @@ under "show all"); this module never reads the store.
   its parts into a detached group and enters the scene at opacity 0 once
   every part settled, then fades in.
 - **One station group in the scene at a time**: a group enters only while
-  no other station is still fading out. The next station DECODES during the
+  no other station is still fading out - also for a station that settles
+  inside `show` (its parts all failed before): its entry waits until
+  `show` has marked every station it leaves. The next station DECODES during the
   fade-out (off the scene), so a switch holds two stations' textures at its
   peak and never more. "Show all" enters every station at once.
 - **Leaving**: fade out, then out of the scene and every part disposed
@@ -70,7 +74,9 @@ under "show all"); this module never reads the store.
   fade-out nor holds a station back, and is never faded out by `show`.
 - **A part that throws** is latched as failed (a `WeakSet` of parts): an
   enter/leave/enter tries it once, says `onFailed` once, and leaks
-  nothing (its own cleanup, `content-placement.ts`).
+  nothing (its own cleanup, `content-placement.ts`). Only while its render
+  is still wanted: a throw after its station was left (a stopped decode)
+  latches nothing, and the part is built again on the next entry.
 - **Late renders are dropped**: a render that lands after its station was
   left, its part replaced, or the table disposed is disposed at once
   (a per-entry token) and never enters the scene. `alive()` lets a long

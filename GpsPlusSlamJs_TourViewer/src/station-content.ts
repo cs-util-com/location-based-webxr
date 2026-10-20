@@ -166,6 +166,10 @@ export function createStationContent(deps: StationContentDeps): StationContent {
   let wanted: ReadonlySet<string> = new Set();
   const isWanted = (id: string): boolean => isAlways(id) || wanted.has(id);
   let disposed = false;
+  /** `show` is following the entries; an update asked meanwhile waits
+   *  for its end (`updateDue`). */
+  let following = false;
+  let updateDue = false;
   const unregisterFrame =
     deps.registerFrame?.(() => {
       update(deps.now());
@@ -219,9 +223,12 @@ export function createStationContent(deps: StationContentDeps): StationContent {
       .run(lane, async () => (alive() ? part.render(group, alive) : null))
       .catch((error: unknown): null => {
         // A part that could not be placed is left out for good (not built
-        // again on the next entry); the station shows the rest.
-        failed.add(part);
-        if (alive()) deps.onFailed?.(entry.id, part, error);
+        // again on the next entry); the station shows the rest. Not one
+        // whose station was left meanwhile: its throw may be the stop.
+        if (alive()) {
+          failed.add(part);
+          deps.onFailed?.(entry.id, part, error);
+        }
         return null;
       })
       .then((result) => {
@@ -248,7 +255,10 @@ export function createStationContent(deps: StationContentDeps): StationContent {
     entry.pending -= 1;
     if (entry.pending > 0 || entry.phase !== "loading") return;
     entry.phase = "ready";
-    update(deps.now());
+    // Inside `show` the stations after this one are not marked leaving
+    // yet: the update runs once `show` has followed every entry.
+    if (following) updateDue = true;
+    else update(deps.now());
   }
 
   function startLoading(entry: Entry): void {
@@ -341,6 +351,10 @@ export function createStationContent(deps: StationContentDeps): StationContent {
         teardown(entry);
         return;
       }
+      // A station that waits to enter (ready) waits for the new part too,
+      // and then fades in from 0 with it, rather than the part popping in
+      // at whatever opacity the fade reached.
+      if (part !== null && entry.phase === "ready") entry.phase = "loading";
       if (part !== null && entry.phase !== "idle") renderPart(entry, key, part);
       else follow(entry);
     },
@@ -353,7 +367,16 @@ export function createStationContent(deps: StationContentDeps): StationContent {
     show(stationIds) {
       if (disposed) return;
       wanted = new Set(stationIds);
-      for (const entry of entries.values()) follow(entry);
+      following = true;
+      try {
+        for (const entry of entries.values()) follow(entry);
+      } finally {
+        following = false;
+      }
+      if (updateDue) {
+        updateDue = false;
+        update(deps.now());
+      }
     },
     update,
     has(kind) {

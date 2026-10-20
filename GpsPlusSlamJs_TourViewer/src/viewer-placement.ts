@@ -895,15 +895,16 @@ export function createViewerPlacement(deps: {
   >();
 
   /** A walk or ring part none of whose photos could be decoded: said on
-   *  the photos' channel, so the line does not claim them. */
+   *  the photos' channel, so the line does not claim them. A part whose
+   *  photos stand clears it: parts mount per station visit, and an earlier
+   *  station's failure says nothing about the one shown now. */
   function notePhotosFailed(part: ContentPart, rendered: RenderedPart): void {
-    if (
-      part.kind === "content" ||
-      rendered.count > 0 ||
-      rendered.skipped.length === 0
-    ) {
+    if (part.kind === "content") return;
+    if (rendered.count > 0) {
+      ctx.viewerPlanesError = null;
       return;
     }
+    if (rendered.skipped.length === 0) return;
     const n = rendered.skipped.length;
     ctx.viewerPlanesError = `${String(n)} ${n === 1 ? "photo" : "photos"} could not be decoded`;
   }

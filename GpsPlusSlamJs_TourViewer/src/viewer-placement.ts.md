@@ -355,7 +355,10 @@ recording. Its own module since the flows plan M6.
     stations"), never as placed. A walk or ring part that is drawn with no
     photo at all, or whose planes cannot be built, sets
     `ctx.viewerPlanesError` ("Some photos could not load."); a plane
-    constructor's throw frees the photos decoded for it first.
+    constructor's throw frees the photos decoded for it first. A later
+    walk or ring part whose photos stand clears it: parts mount per
+    station visit, so one station's failure never stays on the line at the
+    stations after it.
   - A walk none of whose photos is readable shows them as skipped where it
     used to fall back to the ring - only a walk with no photo at all ("no
     readable capture photos") falls back.
