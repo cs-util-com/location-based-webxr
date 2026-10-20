@@ -2,7 +2,8 @@
  * The words of the editor's "Add debug data…" (debug-captures plan
  * 2026-10-20-1159, M2 step 5, Q-C): an added debug bundle or plain Recorder
  * zip is shown on the debug layer, never refused for being another tour's,
- * and the line under the layer says whose it is. Pure; the page
+ * and the line under the layer says whose it is; and the button through
+ * one add (`createAddDebugButton`). Pure but for that button; the page
  * (`edit-main.ts`) opens the file and runs the layer over it.
  *
  * @see added-debug-data.ts.md
@@ -54,4 +55,41 @@ export function addedDebugLine(added: AddedDebugData): string {
 /** Why a file was not added. */
 export function notAddedLine(reason: string): string {
   return `Not added: ${reason}`;
+}
+
+/** The part of the button the add drives (structural, for tests). */
+export interface AddDebugButtonDom {
+  disabled: boolean;
+  textContent: string | null;
+}
+
+export interface AddDebugButton {
+  /** Run one add with the button in its adding state (disabled, "Adding
+   *  the debug data…"), back to idle and enabled when it settles, however
+   *  it settles. Null, and nothing run, while another add runs. */
+  run<T>(work: () => Promise<T>): Promise<T | null>;
+  /** An add is running. */
+  busy(): boolean;
+}
+
+export function createAddDebugButton(
+  button: AddDebugButtonDom,
+): AddDebugButton {
+  let running = false;
+  return {
+    async run(work) {
+      if (running) return null;
+      running = true;
+      button.disabled = true;
+      button.textContent = ADD_DEBUG_LABELS.adding;
+      try {
+        return await work();
+      } finally {
+        running = false;
+        button.disabled = false;
+        button.textContent = ADD_DEBUG_LABELS.idle;
+      }
+    },
+    busy: () => running,
+  };
 }

@@ -708,6 +708,10 @@ test("says whose added debug data is - another tour's, or a plain recording - re
         "Not added: This file carries no recording: it is neither debug data nor a Recorder zip.",
     }),
   ).toBeVisible();
+  // The button is back, idle and enabled, after the refusal (r901
+  // review #3): left disabled, it would end the way to add the right file.
+  await expect(page.locator("#debug-add")).toHaveText("Add debug data…");
+  await expect(page.locator("#debug-add")).toBeEnabled();
   // The layer kept what was added before.
   await expect(page.locator("#debug-status")).toContainText(
     "Added from walk.zip",

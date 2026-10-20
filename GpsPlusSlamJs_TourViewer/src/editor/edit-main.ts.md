@@ -128,7 +128,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   when it is another tour's (Q-C), with `addedDebugLine`
   (`added-debug-data.ts`) ahead of the layer's line; a file that is no
   debug data is refused in a toast (`notAddedLine`), the layer kept.
-  The button reads "Adding the debug data…" and is disabled meanwhile.
+  The button reads "Adding the debug data…" and is disabled meanwhile,
+  and is idle and enabled again however the add ends
+  (`createAddDebugButton`).
   Never saved, never drafted, closed with the tour and forgotten at a
   reload (Q-H); a newer add replaces it; an add that ends after another
   tour opened is closed unseen.

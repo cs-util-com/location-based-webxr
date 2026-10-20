@@ -107,8 +107,8 @@ import {
   type DebugBundleTour,
 } from "../debug-bundle.js";
 import {
-  ADD_DEBUG_LABELS,
   addedDebugLine,
+  createAddDebugButton,
   notAddedLine,
 } from "./added-debug-data.js";
 import { noGpsWarnings } from "./no-gps-check.js";
@@ -1212,8 +1212,9 @@ let addedDebug: {
   readonly session: TourSession;
   readonly line: string;
 } | null = null;
-/** An add is reading its file: a second one starts nothing. */
-let addingDebug = false;
+/** "Add debug data…" while an add reads its file: disabled, saying so,
+ *  and a second add starts nothing (`createAddDebugButton`). */
+const debugAdd = createAddDebugButton(debugAddButton);
 
 /** Where the debug layer reads (one seam, so a point cloud reads the
  *  same place): debug data added wins over the tour's own walk - the
@@ -1305,11 +1306,8 @@ function startDebugLayer(): void {
  */
 async function addDebugData(file: File): Promise<void> {
   const mine = editor;
-  if (mine === null || addingDebug) return;
-  addingDebug = true;
-  debugAddButton.disabled = true;
-  debugAddButton.textContent = ADD_DEBUG_LABELS.adding;
-  try {
+  if (mine === null) return;
+  await debugAdd.run(async () => {
     const added = await readAddedDebug(
       file,
       mine.debugTour(),
@@ -1329,11 +1327,7 @@ async function addDebugData(file: File): Promise<void> {
     forgetAddedDebug();
     addedDebug = { session: added.session, line: added.line };
     startDebugLayer();
-  } finally {
-    addingDebug = false;
-    debugAddButton.disabled = false;
-    debugAddButton.textContent = ADD_DEBUG_LABELS.idle;
-  }
+  });
 }
 
 /** A file added as debug data, opened and read for whose it is, or why

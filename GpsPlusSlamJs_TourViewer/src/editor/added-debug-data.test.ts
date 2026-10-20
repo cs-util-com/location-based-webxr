@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import {
   ADD_DEBUG_LABELS,
   addedDebugLine,
+  createAddDebugButton,
   notAddedLine,
 } from "./added-debug-data.js";
 
@@ -92,5 +93,76 @@ describe("the add's other words", () => {
       idle: "Add debug data…",
       adding: "Adding the debug data…",
     });
+  });
+});
+
+describe("the button while a file is added", () => {
+  // Why (r901 review #3, the async-UI rule): reading an added file can take
+  // seconds, so the button says so and takes no second click meanwhile -
+  // and it must come back, idle and enabled, on every path: a file shown,
+  // a file refused in words, and a read that threw. A button left
+  // disabled after a refusal would end the creator's way to add the right
+  // file.
+  function button() {
+    return { disabled: false, textContent: ADD_DEBUG_LABELS.idle as string };
+  }
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (err: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  for (const [end, after] of [
+    ["added", "a file shown"],
+    ["refused", "a file refused in words"],
+    ["threw", "a read that threw"],
+  ] as const) {
+    it(`shows it is adding, then is idle and enabled again after ${after}`, async () => {
+      const b = button();
+      const add = createAddDebugButton(b);
+      const work = deferred<string>();
+      const run = add.run(() => work.promise);
+      expect(b.disabled).toBe(true);
+      expect(b.textContent).toBe(ADD_DEBUG_LABELS.adding);
+      expect(add.busy()).toBe(true);
+      const settled = run.then(
+        (value) => ({ value }),
+        (err: unknown) => ({ threw: String(err) }),
+      );
+      if (end === "threw") work.reject(new Error("unreadable"));
+      else work.resolve(end);
+      expect(await settled).toEqual(
+        end === "threw" ? { threw: "Error: unreadable" } : { value: end },
+      );
+      expect(b.disabled).toBe(false);
+      expect(b.textContent).toBe(ADD_DEBUG_LABELS.idle);
+      expect(add.busy()).toBe(false);
+    });
+  }
+
+  it("starts nothing while an add runs, and the next one once it ended", async () => {
+    const b = button();
+    const add = createAddDebugButton(b);
+    const first = deferred<string>();
+    let calls = 0;
+    const running = add.run(() => {
+      calls += 1;
+      return first.promise;
+    });
+    await expect(
+      add.run(() => {
+        calls += 1;
+        return Promise.resolve("second");
+      }),
+    ).resolves.toBeNull();
+    expect(calls).toBe(1);
+    first.resolve("first");
+    await running;
+    await expect(add.run(() => Promise.resolve("next"))).resolves.toBe("next");
   });
 });
