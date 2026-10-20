@@ -45,7 +45,7 @@ import {
 } from "gps-plus-slam-app-framework/test-utils/integrated-slam-drift";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 
-import { wireStationGuide } from "./station-guide";
+import { FIX_MAX_AGE_MS, wireStationGuide } from "./station-guide";
 import { visitorGuideReducer } from "./visitor-guide-slice";
 import { visitorPosition } from "./visitor-position";
 
@@ -464,40 +464,106 @@ const PARITY: readonly Scenario[] = [
   },
 ];
 
-/** The named exception (plan §12, S3): an aligned position the guide
- *  judges, no code holds, and no device fix states an accuracy. */
-function isNamedException(
-  input: TickInput,
-  hasDeviceAccuracy: boolean,
-): boolean {
-  return (
-    input.aligned &&
-    input.pose &&
-    (input.tracking || input.lined) &&
-    !input.lined &&
-    !hasDeviceAccuracy
-  );
-}
-
-/** Which ticks of a stream are the named exception. */
+/**
+ * The named exception (plan §12, S3, and the same rule for a lone fix): a
+ * position the guide judges that no code holds and no stated accuracy
+ * speaks for - no stored device fix states one and, for a lone fix,
+ * neither does the fix itself. The shared rule reads it as `'none'`; the
+ * guide before it judged such a position with an unknown accuracy, by the
+ * radius alone and with the widest bands.
+ */
 function exceptionTicks(s: Scenario): number[] {
   let deviceAccuracy = false;
+  let lastFixAt = Number.NEGATIVE_INFINITY;
   const ticks: number[] = [];
   for (let t = 0; t < s.seconds; t += 1) {
     const input = s.input(t);
-    if (input.fixAccuracyM !== null && Number.isFinite(input.fixAccuracyM)) {
-      deviceAccuracy = true;
+    if (input.fixAccuracyM !== null) {
+      lastFixAt = t;
+      if (Number.isFinite(input.fixAccuracyM)) deviceAccuracy = true;
     }
-    if (isNamedException(input, deviceAccuracy)) ticks.push(t);
+    if (deviceAccuracy) continue;
+    const ready = input.aligned && (input.tracking || input.lined);
+    const alignedNoCode = ready && input.pose && !input.lined;
+    // A fresh fix stands in only while the session counts as unaligned.
+    const loneFix = !ready && (t - lastFixAt) * 1000 <= FIX_MAX_AGE_MS;
+    if (alignedNoCode || loneFix) ticks.push(t);
   }
   return ticks;
 }
 
+/** The exception streams: each reaches the named exception (plan §12, S3)
+ *  and is frozen too, so the ticks before it are held to parity and the
+ *  ticks on it show what the old judgement did there. */
+const EXCEPTION: readonly Scenario[] = [
+  {
+    // Without location, the tracking report reads ready on the code's
+    // synthetic readings: when the code's trust ends (an odometry-frame
+    // change at 70 s) the aligned position has no code and no accuracy.
+    // A rescan at 100 s brings the code back.
+    name: "codes-only-trust-ended",
+    stations: MUSEUM,
+    seconds: 130,
+    input: (t) => ({
+      ...base(museumPath(t)),
+      fixAccuracyM: null,
+      aligned: t >= 3,
+      votes: (t >= 3 && t < 70) || t >= 100 ? 2 : 0,
+      lined: (t >= 3 && t < 70) || t >= 100,
+    }),
+  },
+  {
+    // Without location, leaving AR at 60 s: the next entry's report reads
+    // ready on the earlier entry's synthetic readings before any code
+    // locked in it; a lock at 85 s lines it up again.
+    name: "codes-only-re-entry",
+    stations: MUSEUM,
+    seconds: 110,
+    input: (t) => ({
+      ...base(museumPath(t)),
+      fixAccuracyM: null,
+      aligned: t >= 3,
+      votes: (t >= 3 && t < 60) || t >= 85 ? 2 : 0,
+      lined: (t >= 3 && t < 60) || t >= 85,
+      endSession: t === 60,
+    }),
+  },
+  {
+    // Device fixes that state no accuracy at all, aligned and ready, no
+    // code: nothing speaks for the position's precision.
+    name: "gps-without-accuracy",
+    stations: TOWN,
+    seconds: 60,
+    input: (t) => ({ ...base(townPath(t)), fixAccuracyM: Number.NaN }),
+  },
+  {
+    // A GPS-only session before tracking is ready, its fixes stating no
+    // accuracy (injected points: a phone always states one): the lone fix
+    // stands in with nothing to judge it by.
+    name: "lone-fix-without-accuracy",
+    stations: TOWN,
+    seconds: 60,
+    input: (t) => ({
+      ...base(townPath(t)),
+      fixAccuracyM: Number.NaN,
+      tracking: false,
+    }),
+  },
+];
+
 describe("the station guide's precision parity oracle (frozen before M2's switch)", () => {
-  const now = Object.fromEntries(PARITY.map((s) => [s.name, runStream(s)]));
+  const now = Object.fromEntries(
+    [...PARITY, ...EXCEPTION].map((s) => [s.name, runStream(s)]),
+  );
 
   it("no parity stream contains the named exception", () => {
     for (const s of PARITY) expect(exceptionTicks(s), s.name).toEqual([]);
+  });
+
+  it("every exception stream reaches the named exception", () => {
+    for (const s of EXCEPTION) {
+      expect(exceptionTicks(s).length, s.name).toBeGreaterThan(0);
+    }
   });
 
   // Why this test matters: an oracle over streams that never reach the
@@ -543,7 +609,7 @@ describe("the station guide's precision parity oracle (frozen before M2's switch
     expect(weak.slice(55, 70).every((r) => r.present === null)).toBe(true);
   });
 
-  it(`reproduces every tick of ${String(PARITY.length)} frozen streams`, () => {
+  it(`reproduces every tick of ${String(PARITY.length + EXCEPTION.length)} frozen streams`, () => {
     if (process.env["GOLDEN_UPDATE"] === "1") {
       // A regeneration absorbs whatever changed: never unattended.
       if (process.env["CI"]) {
@@ -556,9 +622,9 @@ describe("the station guide's precision parity oracle (frozen before M2's switch
       TickRecord[]
     >;
     expect(Object.keys(frozen).sort()).toEqual(
-      PARITY.map((s) => s.name).sort(),
+      [...PARITY, ...EXCEPTION].map((s) => s.name).sort(),
     );
-    for (const s of PARITY) {
+    for (const s of [...PARITY, ...EXCEPTION]) {
       const want = frozen[s.name]!;
       const got = now[s.name]!;
       expect(got).toHaveLength(want.length);

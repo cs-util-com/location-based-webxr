@@ -29756,5 +29756,6706 @@
    ],
    "crumbs": "v>far/16"
   }
+ ],
+ "codes-only-trust-ended": [
+  {
+   "t": 0,
+   "line": "6 stations to find - nearest: M0 - waiting for your position…",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": null,
+   "pending": false,
+   "hud": [],
+   "approach": [],
+   "crumbs": "->m0/26.5"
+  },
+  {
+   "t": 1,
+   "line": "6 stations to find - nearest: M0 - waiting for your position…",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": null,
+   "pending": false,
+   "hud": [],
+   "approach": [],
+   "crumbs": "->m0/26.5"
+  },
+  {
+   "t": 2,
+   "line": "6 stations to find - nearest: M0 - waiting for your position…",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": null,
+   "pending": false,
+   "hud": [],
+   "approach": [],
+   "crumbs": "->m0/26.5"
+  },
+  {
+   "t": 3,
+   "line": "6 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [
+    "m0"
+   ],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m0:0.007:6",
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.857:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 4,
+   "line": "6 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m0:0.038:6",
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.888:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 5,
+   "line": "6 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m0:0.048:6",
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.895:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 6,
+   "line": "6 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m0:0.014:6",
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.872:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 7,
+   "line": "5 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "m0"
+   ],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.840:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 8,
+   "line": "5 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.828:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 9,
+   "line": "5 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.848:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 10,
+   "line": "5 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.862:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 11,
+   "line": "5 stations to find - nearest: M1, 3 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:3.000:6",
+    "m2:7.000:6",
+    "m3:11.000:6",
+    "m4:15.000:6",
+    "far:275.138:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 12,
+   "line": "5 stations to find - nearest: M1, 2 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:2.000:6",
+    "m2:6.000:6",
+    "m3:10.000:6",
+    "m4:14.000:6",
+    "far:274.416:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 13,
+   "line": "5 stations to find - nearest: M2, 5 m",
+   "skip": "Can't get there?",
+   "found": [
+    "m1"
+   ],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:1.000:6",
+    "m2:5.000:6",
+    "m3:9.000:6",
+    "m4:13.000:6",
+    "far:273.695:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 14,
+   "line": "5 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:0.050:6",
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.942:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 15,
+   "line": "5 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:0.033:6",
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.954:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 16,
+   "line": "5 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:0.014:6",
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.986:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 17,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "m1"
+   ],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:273.010:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 18,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:273.002:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 19,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.971:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 20,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.944:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 21,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.947:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 22,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.976:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 23,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:273.006:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 24,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.976:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 25,
+   "line": "4 stations to find - nearest: M2, 3 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:3.000:6",
+    "m3:7.000:6",
+    "m4:11.000:6",
+    "far:272.259:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 26,
+   "line": "4 stations to find - nearest: M2, 2 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:2.000:6",
+    "m3:6.000:6",
+    "m4:10.000:6",
+    "far:271.544:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 27,
+   "line": "4 stations to find - nearest: M3, 5 m",
+   "skip": "Can't get there?",
+   "found": [
+    "m2"
+   ],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:1.000:6",
+    "m3:5.000:6",
+    "m4:9.000:6",
+    "far:270.830:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 28,
+   "line": "4 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:0.014:6",
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.109:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 29,
+   "line": "4 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:0.033:6",
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.142:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 30,
+   "line": "4 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:0.049:6",
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.153:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 31,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "m2"
+   ],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.133:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 32,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.099:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 33,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.083:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 34,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.100:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 35,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.134:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 36,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.153:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 37,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.141:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 38,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.118:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 39,
+   "line": "3 stations to find - nearest: M3, 3 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:3.000:6",
+    "m4:7.000:6",
+    "far:269.409:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 40,
+   "line": "3 stations to find - nearest: M3, 2 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:2.000:6",
+    "m4:6.000:6",
+    "far:268.701:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 41,
+   "line": "3 stations to find - nearest: M4, 5 m",
+   "skip": "Can't get there?",
+   "found": [
+    "m3"
+   ],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:1.000:6",
+    "m4:5.000:6",
+    "far:267.994:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 42,
+   "line": "3 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:0.046:6",
+    "m4:4.000:6",
+    "far:267.323:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 43,
+   "line": "3 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:0.042:6",
+    "m4:4.000:6",
+    "far:267.320:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 44,
+   "line": "3 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:0.001:6",
+    "m4:4.000:6",
+    "far:267.289:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 45,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "m3"
+   ],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.260:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 46,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.258:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 47,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.286:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 48,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.317:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 49,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.324:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 50,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.299:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 51,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.266:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 52,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.290:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 53,
+   "line": "2 stations to find - nearest: M4, 3 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:3.000:6",
+    "far:266.588:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 54,
+   "line": "2 stations to find - nearest: M4, 2 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:2.000:6",
+    "far:265.887:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 55,
+   "line": "2 stations to find - nearest: FAR, 265 m",
+   "skip": "Can't get there?",
+   "found": [
+    "m4"
+   ],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:1.000:6",
+    "far:265.189:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 56,
+   "line": "2 stations to find - nearest: FAR, 265 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:0.026:6",
+    "far:264.511:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 57,
+   "line": "2 stations to find - nearest: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:0.022:6",
+    "far:264.476:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 58,
+   "line": "2 stations to find - nearest: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:0.050:6",
+    "far:264.456:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 59,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "m4"
+   ],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:264.469:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 60,
+   "line": "Next: FAR, 265 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:264.503:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 61,
+   "line": "Next: FAR, 265 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:264.527:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 62,
+   "line": "Next: FAR, 265 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:264.519:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 63,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:264.486:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 64,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:264.459:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 65,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:264.462:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 66,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:264.492:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 67,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:267.290:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 68,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.118:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 69,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:272.976:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 70,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.836:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 71,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.830:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 72,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.854:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 73,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.886:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 74,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.896:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 75,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.876:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 76,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.843:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 77,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.828:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 78,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.845:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 79,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.878:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 80,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.862:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 81,
+   "line": "Next: FAR, 275 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.138:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 82,
+   "line": "Next: FAR, 274 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:274.416:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 83,
+   "line": "Next: FAR, 274 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:273.695:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 84,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:272.951:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 85,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:272.982:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 86,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:273.008:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 87,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:273.005:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 88,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:272.975:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 89,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:272.946:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 90,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:272.945:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 91,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:272.973:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 92,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:273.003:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 93,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:273.009:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 94,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:272.976:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 95,
+   "line": "Next: FAR, 272 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:272.259:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 96,
+   "line": "Next: FAR, 272 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:271.544:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 97,
+   "line": "Next: FAR, 271 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:270.830:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 98,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:270.139:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 99,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:270.154:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 100,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.136:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 101,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.103:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 102,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.084:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 103,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.097:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 104,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.130:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 105,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.153:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 106,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.144:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 107,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.112:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 108,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.118:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 109,
+   "line": "Next: FAR, 269 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:269.409:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 110,
+   "line": "Next: FAR, 269 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:268.701:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 111,
+   "line": "Next: FAR, 268 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:267.994:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 112,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:267.322:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 113,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:267.294:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 114,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:267.262:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 115,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:267.257:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 116,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:267.282:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 117,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:267.315:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 118,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:267.325:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 119,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:267.303:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 120,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:267.269:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 121,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:267.255:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 122,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:267.290:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 123,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:266.588:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 124,
+   "line": "Next: FAR, 266 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:265.887:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 125,
+   "line": "Next: FAR, 265 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:265.189:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 126,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:264.480:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 127,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:264.457:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 128,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:264.466:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 129,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:264.499:6"
+   ],
+   "crumbs": "v>far/3"
+  }
+ ],
+ "codes-only-re-entry": [
+  {
+   "t": 0,
+   "line": "6 stations to find - nearest: M0 - waiting for your position…",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": null,
+   "pending": false,
+   "hud": [],
+   "approach": [],
+   "crumbs": "->m0/26.5"
+  },
+  {
+   "t": 1,
+   "line": "6 stations to find - nearest: M0 - waiting for your position…",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": null,
+   "pending": false,
+   "hud": [],
+   "approach": [],
+   "crumbs": "->m0/26.5"
+  },
+  {
+   "t": 2,
+   "line": "6 stations to find - nearest: M0 - waiting for your position…",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": null,
+   "pending": false,
+   "hud": [],
+   "approach": [],
+   "crumbs": "->m0/26.5"
+  },
+  {
+   "t": 3,
+   "line": "6 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [
+    "m0"
+   ],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m0:0.007:6",
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.857:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 4,
+   "line": "6 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m0:0.038:6",
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.888:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 5,
+   "line": "6 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m0:0.048:6",
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.895:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 6,
+   "line": "6 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m0:0.014:6",
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.872:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 7,
+   "line": "5 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "m0"
+   ],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.840:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 8,
+   "line": "5 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.828:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 9,
+   "line": "5 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.848:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 10,
+   "line": "5 stations to find - nearest: M1, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:4.000:6",
+    "m2:8.000:6",
+    "m3:12.000:6",
+    "m4:16.000:6",
+    "far:275.862:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 11,
+   "line": "5 stations to find - nearest: M1, 3 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:3.000:6",
+    "m2:7.000:6",
+    "m3:11.000:6",
+    "m4:15.000:6",
+    "far:275.138:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 12,
+   "line": "5 stations to find - nearest: M1, 2 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m0",
+   "pending": false,
+   "hud": [
+    "m1:1.5:3",
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:2.000:6",
+    "m2:6.000:6",
+    "m3:10.000:6",
+    "m4:14.000:6",
+    "far:274.416:6"
+   ],
+   "crumbs": "v>m1/3"
+  },
+  {
+   "t": 13,
+   "line": "5 stations to find - nearest: M2, 5 m",
+   "skip": "Can't get there?",
+   "found": [
+    "m1"
+   ],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:1.000:6",
+    "m2:5.000:6",
+    "m3:9.000:6",
+    "m4:13.000:6",
+    "far:273.695:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 14,
+   "line": "5 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:0.050:6",
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.942:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 15,
+   "line": "5 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:0.033:6",
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.954:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 16,
+   "line": "5 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m1:0.014:6",
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.986:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 17,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "m1"
+   ],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:273.010:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 18,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:273.002:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 19,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.971:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 20,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.944:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 21,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.947:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 22,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.976:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 23,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:273.006:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 24,
+   "line": "4 stations to find - nearest: M2, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:4.000:6",
+    "m3:8.000:6",
+    "m4:12.000:6",
+    "far:272.976:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 25,
+   "line": "4 stations to find - nearest: M2, 3 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:3.000:6",
+    "m3:7.000:6",
+    "m4:11.000:6",
+    "far:272.259:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 26,
+   "line": "4 stations to find - nearest: M2, 2 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "m2:1.5:3",
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:2.000:6",
+    "m3:6.000:6",
+    "m4:10.000:6",
+    "far:271.544:6"
+   ],
+   "crumbs": "v>m2/3"
+  },
+  {
+   "t": 27,
+   "line": "4 stations to find - nearest: M3, 5 m",
+   "skip": "Can't get there?",
+   "found": [
+    "m2"
+   ],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:1.000:6",
+    "m3:5.000:6",
+    "m4:9.000:6",
+    "far:270.830:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 28,
+   "line": "4 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:0.014:6",
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.109:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 29,
+   "line": "4 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:0.033:6",
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.142:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 30,
+   "line": "4 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m2:0.049:6",
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.153:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 31,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "m2"
+   ],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.133:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 32,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.099:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 33,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.083:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 34,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.100:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 35,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.134:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 36,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.153:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 37,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.141:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 38,
+   "line": "3 stations to find - nearest: M3, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:4.000:6",
+    "m4:8.000:6",
+    "far:270.118:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 39,
+   "line": "3 stations to find - nearest: M3, 3 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:3.000:6",
+    "m4:7.000:6",
+    "far:269.409:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 40,
+   "line": "3 stations to find - nearest: M3, 2 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "m3:1.5:3",
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:2.000:6",
+    "m4:6.000:6",
+    "far:268.701:6"
+   ],
+   "crumbs": "v>m3/3"
+  },
+  {
+   "t": 41,
+   "line": "3 stations to find - nearest: M4, 5 m",
+   "skip": "Can't get there?",
+   "found": [
+    "m3"
+   ],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:1.000:6",
+    "m4:5.000:6",
+    "far:267.994:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 42,
+   "line": "3 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:0.046:6",
+    "m4:4.000:6",
+    "far:267.323:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 43,
+   "line": "3 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:0.042:6",
+    "m4:4.000:6",
+    "far:267.320:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 44,
+   "line": "3 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m3:0.001:6",
+    "m4:4.000:6",
+    "far:267.289:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 45,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "m3"
+   ],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.260:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 46,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.258:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 47,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.286:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 48,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.317:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 49,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.324:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 50,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.299:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 51,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.266:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 52,
+   "line": "2 stations to find - nearest: M4, 4 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:4.000:6",
+    "far:267.290:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 53,
+   "line": "2 stations to find - nearest: M4, 3 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:3.000:6",
+    "far:266.588:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 54,
+   "line": "2 stations to find - nearest: M4, 2 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m3",
+   "pending": false,
+   "hud": [
+    "m4:1.5:3",
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:2.000:6",
+    "far:265.887:6"
+   ],
+   "crumbs": "v>m4/3"
+  },
+  {
+   "t": 55,
+   "line": "2 stations to find - nearest: FAR, 265 m",
+   "skip": "Can't get there?",
+   "found": [
+    "m4"
+   ],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:1.000:6",
+    "far:265.189:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 56,
+   "line": "2 stations to find - nearest: FAR, 265 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:0.026:6",
+    "far:264.511:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 57,
+   "line": "2 stations to find - nearest: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:0.022:6",
+    "far:264.476:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 58,
+   "line": "2 stations to find - nearest: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "m4:0.050:6",
+    "far:264.456:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 59,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "m4"
+   ],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:264.469:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 60,
+   "line": "Next: FAR, 265 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:264.503:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 61,
+   "line": "Next: FAR, 265 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:264.527:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 62,
+   "line": "Next: FAR, 265 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:264.519:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 63,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:264.486:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 64,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:264.459:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 65,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:264.462:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 66,
+   "line": "Next: FAR, 264 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:264.492:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 67,
+   "line": "Next: FAR, 267 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:267.290:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 68,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:270.118:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 69,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:272.976:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 70,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.836:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 71,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.830:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 72,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.854:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 73,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.886:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 74,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.896:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 75,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.876:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 76,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.843:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 77,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.828:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 78,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.845:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 79,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.878:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 80,
+   "line": "Next: FAR, 276 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.862:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 81,
+   "line": "Next: FAR, 275 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:275.138:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 82,
+   "line": "Next: FAR, 274 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:274.416:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 83,
+   "line": "Next: FAR, 274 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:273.695:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 84,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m4",
+   "pending": false,
+   "hud": [
+    "far:1.5:26.5"
+   ],
+   "approach": [
+    "far:272.951:26.5"
+   ],
+   "crumbs": "v>far/26.5"
+  },
+  {
+   "t": 85,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:272.982:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 86,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:273.008:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 87,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:273.005:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 88,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:272.975:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 89,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:272.946:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 90,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:272.945:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 91,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:272.973:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 92,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:273.003:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 93,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:273.009:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 94,
+   "line": "Next: FAR, 273 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:272.976:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 95,
+   "line": "Next: FAR, 272 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:272.259:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 96,
+   "line": "Next: FAR, 272 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m1",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:271.544:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 97,
+   "line": "Next: FAR, 271 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.830:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 98,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.139:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 99,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.154:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 100,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.136:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 101,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.103:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 102,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.084:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 103,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.097:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 104,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.130:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 105,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.153:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 106,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.144:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 107,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.112:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 108,
+   "line": "Next: FAR, 270 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:270.118:6"
+   ],
+   "crumbs": "v>far/3"
+  },
+  {
+   "t": 109,
+   "line": "Next: FAR, 269 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "m2",
+   "pending": false,
+   "hud": [
+    "far:1.5:3"
+   ],
+   "approach": [
+    "far:269.409:6"
+   ],
+   "crumbs": "v>far/3"
+  }
+ ],
+ "gps-without-accuracy": [
+  {
+   "t": 0,
+   "line": "5 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [
+    "t0"
+   ],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t0:0.000:40",
+    "t1:30.000:40",
+    "t2:60.000:40",
+    "t3:90.000:40",
+    "far:600.000:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 1,
+   "line": "5 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t0:0.042:40",
+    "t1:29.958:40",
+    "t2:59.958:40",
+    "t3:89.958:40",
+    "far:599.958:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 2,
+   "line": "5 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t0:0.045:40",
+    "t1:29.955:40",
+    "t2:59.955:40",
+    "t3:89.955:40",
+    "far:599.955:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 3,
+   "line": "5 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t0:0.007:40",
+    "t1:29.993:40",
+    "t2:59.993:40",
+    "t3:89.993:40",
+    "far:599.993:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 4,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "t0"
+   ],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:30.038:40",
+    "t2:60.038:40",
+    "t3:90.038:40",
+    "far:600.038:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 5,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:30.048:40",
+    "t2:60.048:40",
+    "t3:90.048:40",
+    "far:600.048:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 6,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:30.014:40",
+    "t2:60.014:40",
+    "t3:90.014:40",
+    "far:600.014:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 7,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:29.967:40",
+    "t2:59.967:40",
+    "t3:89.967:40",
+    "far:599.967:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 8,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:29.951:40",
+    "t2:59.951:40",
+    "t3:89.951:40",
+    "far:599.951:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 9,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:29.979:40",
+    "t2:59.979:40",
+    "t3:89.979:40",
+    "far:599.979:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 10,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:30.027:40",
+    "t2:60.027:40",
+    "t3:90.027:40",
+    "far:600.027:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 11,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:30.050:40",
+    "t2:60.050:40",
+    "t3:90.050:40",
+    "far:600.050:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 12,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:30.027:40",
+    "t2:60.027:40",
+    "t3:90.027:40",
+    "far:600.027:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 13,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:29.979:40",
+    "t2:59.979:40",
+    "t3:89.979:40",
+    "far:599.979:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 14,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:29.950:40",
+    "t2:59.950:40",
+    "t3:89.950:40",
+    "far:599.950:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 15,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:29.967:40",
+    "t2:59.967:40",
+    "t3:89.967:40",
+    "far:599.967:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 16,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:30.014:40",
+    "t2:60.014:40",
+    "t3:90.014:40",
+    "far:600.014:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 17,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:30.048:40",
+    "t2:60.048:40",
+    "t3:90.048:40",
+    "far:600.048:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 18,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:30.038:40",
+    "t2:60.038:40",
+    "t3:90.038:40",
+    "far:600.038:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 19,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:29.993:40",
+    "t2:59.993:40",
+    "t3:89.993:40",
+    "far:599.993:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 20,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:30.000:40",
+    "t2:60.000:40",
+    "t3:90.000:40",
+    "far:600.000:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 21,
+   "line": "4 stations to find - nearest: T1, 29 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:28.800:40",
+    "t2:58.800:40",
+    "t3:88.800:40",
+    "far:598.800:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 22,
+   "line": "4 stations to find - nearest: T1, 28 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:27.600:40",
+    "t2:57.600:40",
+    "t3:87.600:40",
+    "far:597.600:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 23,
+   "line": "4 stations to find - nearest: T1, 26 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:26.400:40",
+    "t2:56.400:40",
+    "t3:86.400:40",
+    "far:596.400:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 24,
+   "line": "4 stations to find - nearest: T1, 25 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:25.200:40",
+    "t2:55.200:40",
+    "t3:85.200:40",
+    "far:595.200:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 25,
+   "line": "4 stations to find - nearest: T1, 24 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:24.000:40",
+    "t2:54.000:40",
+    "t3:84.000:40",
+    "far:594.000:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 26,
+   "line": "4 stations to find - nearest: T1, 23 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:22.800:40",
+    "t2:52.800:40",
+    "t3:82.800:40",
+    "far:592.800:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 27,
+   "line": "4 stations to find - nearest: T1, 22 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:21.600:40",
+    "t2:51.600:40",
+    "t3:81.600:40",
+    "far:591.600:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 28,
+   "line": "4 stations to find - nearest: T1, 20 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:20.400:40",
+    "t2:50.400:40",
+    "t3:80.400:40",
+    "far:590.400:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 29,
+   "line": "4 stations to find - nearest: T1, 19 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:19.200:40",
+    "t2:49.200:40",
+    "t3:79.200:40",
+    "far:589.200:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 30,
+   "line": "4 stations to find - nearest: T1, 18 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:18.000:40",
+    "t2:48.000:40",
+    "t3:78.000:40",
+    "far:588.000:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 31,
+   "line": "4 stations to find - nearest: T1, 17 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:16.800:40",
+    "t2:46.800:40",
+    "t3:76.800:40",
+    "far:586.800:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 32,
+   "line": "4 stations to find - nearest: T1, 16 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:15.600:40",
+    "t2:45.600:40",
+    "t3:75.600:40",
+    "far:585.600:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 33,
+   "line": "4 stations to find - nearest: T1, 14 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:14.400:40",
+    "t2:44.400:40",
+    "t3:74.400:40",
+    "far:584.400:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 34,
+   "line": "4 stations to find - nearest: T1, 13 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:13.200:40",
+    "t2:43.200:40",
+    "t3:73.200:40",
+    "far:583.200:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 35,
+   "line": "4 stations to find - nearest: T1, 12 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:12.000:40",
+    "t2:42.000:40",
+    "t3:72.000:40",
+    "far:582.000:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 36,
+   "line": "4 stations to find - nearest: T1, 11 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t1:10:35",
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:10.800:40",
+    "t2:40.800:40",
+    "t3:70.800:40",
+    "far:580.800:40"
+   ],
+   "crumbs": "v>t1/35"
+  },
+  {
+   "t": 37,
+   "line": "4 stations to find - nearest: T2, 40 m",
+   "skip": "Can't get there?",
+   "found": [
+    "t1"
+   ],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:9.600:40",
+    "t2:39.600:40",
+    "t3:69.600:40",
+    "far:579.600:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 38,
+   "line": "4 stations to find - nearest: T2, 38 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:8.400:40",
+    "t2:38.400:40",
+    "t3:68.400:40",
+    "far:578.400:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 39,
+   "line": "4 stations to find - nearest: T2, 37 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:7.200:40",
+    "t2:37.200:40",
+    "t3:67.200:40",
+    "far:577.200:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 40,
+   "line": "4 stations to find - nearest: T2, 36 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t1:6.000:40",
+    "t2:36.000:40",
+    "t3:66.000:40",
+    "far:576.000:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 41,
+   "line": "3 stations to find - nearest: T2, 35 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "t1"
+   ],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:34.800:40",
+    "t3:64.800:40",
+    "far:574.800:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 42,
+   "line": "3 stations to find - nearest: T2, 34 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:33.600:40",
+    "t3:63.600:40",
+    "far:573.600:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 43,
+   "line": "3 stations to find - nearest: T2, 32 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:32.400:40",
+    "t3:62.400:40",
+    "far:572.400:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 44,
+   "line": "3 stations to find - nearest: T2, 31 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:31.200:40",
+    "t3:61.200:40",
+    "far:571.200:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 45,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:29.957:40",
+    "t3:59.957:40",
+    "far:569.957:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 46,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:29.955:40",
+    "t3:59.955:40",
+    "far:569.955:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 47,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:29.994:40",
+    "t3:59.994:40",
+    "far:569.994:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 48,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:30.038:40",
+    "t3:60.038:40",
+    "far:570.038:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 49,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:30.048:40",
+    "t3:60.048:40",
+    "far:570.048:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 50,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:30.013:40",
+    "t3:60.013:40",
+    "far:570.013:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 51,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:29.966:40",
+    "t3:59.966:40",
+    "far:569.966:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 52,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:29.951:40",
+    "t3:59.951:40",
+    "far:569.951:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 53,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:29.980:40",
+    "t3:59.980:40",
+    "far:569.980:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 54,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:30.028:40",
+    "t3:60.028:40",
+    "far:570.028:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 55,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:30.050:40",
+    "t3:60.050:40",
+    "far:570.050:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 56,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:30.026:40",
+    "t3:60.026:40",
+    "far:570.026:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 57,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:29.978:40",
+    "t3:59.978:40",
+    "far:569.978:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 58,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:29.950:40",
+    "t3:59.950:40",
+    "far:569.950:40"
+   ],
+   "crumbs": "v>t2/35"
+  },
+  {
+   "t": 59,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": false,
+   "hud": [
+    "t2:10:35",
+    "t3:10:35",
+    "far:10:35"
+   ],
+   "approach": [
+    "t2:29.968:40",
+    "t3:59.968:40",
+    "far:569.968:40"
+   ],
+   "crumbs": "v>t2/35"
+  }
+ ],
+ "lone-fix-without-accuracy": [
+  {
+   "t": 0,
+   "line": "5 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [
+    "t0"
+   ],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t0:2.583:40",
+    "t1:30.271:40",
+    "t2:60.216:40",
+    "t3:90.198:40",
+    "far:600.166:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 1,
+   "line": "5 stations to find - nearest: T1, 36 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t0:6.060:40",
+    "t1:35.772:40",
+    "t2:65.747:40",
+    "t3:95.737:40",
+    "far:605.719:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 2,
+   "line": "5 stations to find - nearest: T1, 28 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t0:3.876:40",
+    "t1:27.925:40",
+    "t2:57.833:40",
+    "t3:87.803:40",
+    "far:597.755:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 3,
+   "line": "5 stations to find - nearest: T1, 25 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t0:6.973:40",
+    "t1:24.772:40",
+    "t2:54.577:40",
+    "t3:84.520:40",
+    "far:594.432:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 4,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "t0"
+   ],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:30.169:40",
+    "t2:60.168:40",
+    "t3:90.168:40",
+    "far:600.168:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 5,
+   "line": "4 stations to find - nearest: T1, 28 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:28.048:40",
+    "t2:58.046:40",
+    "t3:88.045:40",
+    "far:598.044:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 6,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:30.173:40",
+    "t2:60.172:40",
+    "t3:90.172:40",
+    "far:600.171:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 7,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:29.760:40",
+    "t2:59.355:40",
+    "t3:89.221:40",
+    "far:598.995:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 8,
+   "line": "4 stations to find - nearest: T1, 29 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:29.215:40",
+    "t2:59.117:40",
+    "t3:89.085:40",
+    "far:599.031:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 9,
+   "line": "4 stations to find - nearest: T1, 29 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:29.087:40",
+    "t2:59.000:40",
+    "t3:88.971:40",
+    "far:598.924:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 10,
+   "line": "4 stations to find - nearest: T1, 29 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:28.697:40",
+    "t2:58.605:40",
+    "t3:88.576:40",
+    "far:598.527:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 11,
+   "line": "4 stations to find - nearest: T1, 29 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:28.856:40",
+    "t2:58.622:40",
+    "t3:88.547:40",
+    "far:598.421:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 12,
+   "line": "4 stations to find - nearest: T1, 29 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:28.916:40",
+    "t2:58.915:40",
+    "t3:88.915:40",
+    "far:598.914:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 13,
+   "line": "4 stations to find - nearest: T1, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:29.741:40",
+    "t2:59.378:40",
+    "t3:89.258:40",
+    "far:599.056:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 14,
+   "line": "4 stations to find - nearest: T1, 29 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:29.257:40",
+    "t2:59.137:40",
+    "t3:89.098:40",
+    "far:599.032:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 15,
+   "line": "4 stations to find - nearest: T1, 29 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:29.388:40",
+    "t2:59.386:40",
+    "t3:89.385:40",
+    "far:599.384:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 16,
+   "line": "4 stations to find - nearest: T1, 26 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:25.922:40",
+    "t2:55.921:40",
+    "t3:85.920:40",
+    "far:595.920:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 17,
+   "line": "4 stations to find - nearest: T1, 32 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:31.541:40",
+    "t2:61.540:40",
+    "t3:91.540:40",
+    "far:601.540:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 18,
+   "line": "4 stations to find - nearest: T1, 32 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:32.125:40",
+    "t2:62.122:40",
+    "t3:92.121:40",
+    "far:602.119:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 19,
+   "line": "4 stations to find - nearest: T1, 28 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:28.239:40",
+    "t2:58.167:40",
+    "t3:88.144:40",
+    "far:598.105:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 20,
+   "line": "4 stations to find - nearest: T1, 27 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:27.127:40",
+    "t2:57.117:40",
+    "t3:87.114:40",
+    "far:597.109:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 21,
+   "line": "4 stations to find - nearest: T1, 27 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:26.653:40",
+    "t2:56.639:40",
+    "t3:86.635:40",
+    "far:596.628:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 22,
+   "line": "4 stations to find - nearest: T1, 34 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:34.108:40",
+    "t2:64.103:40",
+    "t3:94.101:40",
+    "far:604.097:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 23,
+   "line": "4 stations to find - nearest: T1, 26 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:25.635:40",
+    "t2:55.624:40",
+    "t3:85.620:40",
+    "far:595.615:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 24,
+   "line": "4 stations to find - nearest: T1, 27 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:26.971:40",
+    "t2:56.963:40",
+    "t3:86.961:40",
+    "far:596.957:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 25,
+   "line": "4 stations to find - nearest: T1, 27 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:27.440:40",
+    "t2:57.377:40",
+    "t3:87.358:40",
+    "far:597.326:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 26,
+   "line": "4 stations to find - nearest: T1, 18 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:17.640:40",
+    "t2:47.635:40",
+    "t3:77.634:40",
+    "far:587.633:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 27,
+   "line": "4 stations to find - nearest: T1, 21 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:21.387:40",
+    "t2:51.372:40",
+    "t3:81.368:40",
+    "far:591.363:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 28,
+   "line": "4 stations to find - nearest: T1, 18 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:17.701:40",
+    "t2:47.700:40",
+    "t3:77.700:40",
+    "far:587.699:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 29,
+   "line": "4 stations to find - nearest: T1, 15 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:14.789:40",
+    "t2:44.605:40",
+    "t3:74.569:40",
+    "far:584.522:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 30,
+   "line": "4 stations to find - nearest: T1, 20 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:20.068:40",
+    "t2:49.954:40",
+    "t3:79.926:40",
+    "far:589.885:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 31,
+   "line": "4 stations to find - nearest: T1, 20 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:20.266:40",
+    "t2:50.262:40",
+    "t3:80.261:40",
+    "far:590.259:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 32,
+   "line": "4 stations to find - nearest: T1, 16 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:15.591:40",
+    "t2:45.455:40",
+    "t3:75.428:40",
+    "far:585.391:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 33,
+   "line": "4 stations to find - nearest: T1, 11 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:10.969:40",
+    "t2:40.882:40",
+    "t3:70.868:40",
+    "far:580.852:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 34,
+   "line": "4 stations to find - nearest: T1, 10 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:10.350:40",
+    "t2:39.923:40",
+    "t3:69.862:40",
+    "far:579.789:40"
+   ],
+   "crumbs": "->t1/35"
+  },
+  {
+   "t": 35,
+   "line": "4 stations to find - nearest: T2, 39 m",
+   "skip": "Can't get there?",
+   "found": [
+    "t1"
+   ],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:9.442:40",
+    "t2:38.882:40",
+    "t3:68.808:40",
+    "far:578.723:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 36,
+   "line": "4 stations to find - nearest: T2, 44 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:13.683:40",
+    "t2:43.683:40",
+    "t3:73.683:40",
+    "far:583.682:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 37,
+   "line": "4 stations to find - nearest: T2, 40 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:10.755:40",
+    "t2:40.493:40",
+    "t3:70.453:40",
+    "far:580.406:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 38,
+   "line": "4 stations to find - nearest: T2, 43 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t1:12.705:40",
+    "t2:42.666:40",
+    "t3:72.659:40",
+    "far:582.651:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 39,
+   "line": "3 stations to find - nearest: T2, 34 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [
+    "t1"
+   ],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:34.285:40",
+    "t3:64.231:40",
+    "far:574.176:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 40,
+   "line": "3 stations to find - nearest: T2, 35 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:35.443:40",
+    "t3:65.421:40",
+    "far:575.397:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 41,
+   "line": "3 stations to find - nearest: T2, 35 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t0",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:35.207:40",
+    "t3:65.179:40",
+    "far:575.149:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 42,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:30.262:40",
+    "t3:60.240:40",
+    "far:570.221:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 43,
+   "line": "3 stations to find - nearest: T2, 34 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:33.719:40",
+    "t3:63.642:40",
+    "far:573.566:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 44,
+   "line": "3 stations to find - nearest: T2, 36 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:35.587:40",
+    "t3:65.587:40",
+    "far:575.587:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 45,
+   "line": "3 stations to find - nearest: T2, 31 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:30.884:40",
+    "t3:60.881:40",
+    "far:570.879:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 46,
+   "line": "3 stations to find - nearest: T2, 33 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:32.715:40",
+    "t3:62.714:40",
+    "far:572.714:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 47,
+   "line": "3 stations to find - nearest: T2, 27 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:26.630:40",
+    "t3:56.628:40",
+    "far:566.626:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 48,
+   "line": "3 stations to find - nearest: T2, 29 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:28.907:40",
+    "t3:58.894:40",
+    "far:568.882:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 49,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:30.102:40",
+    "t3:60.049:40",
+    "far:570.001:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 50,
+   "line": "3 stations to find - nearest: T2, 31 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:30.874:40",
+    "t3:60.846:40",
+    "far:570.820:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 51,
+   "line": "3 stations to find - nearest: T2, 29 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:29.439:40",
+    "t3:59.412:40",
+    "far:569.388:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 52,
+   "line": "3 stations to find - nearest: T2, 33 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:33.255:40",
+    "t3:63.193:40",
+    "far:573.132:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 53,
+   "line": "3 stations to find - nearest: T2, 37 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:36.544:40",
+    "t3:66.304:40",
+    "far:576.047:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 54,
+   "line": "3 stations to find - nearest: T2, 34 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:33.908:40",
+    "t3:63.753:40",
+    "far:573.597:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 55,
+   "line": "3 stations to find - nearest: T2, 28 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:27.811:40",
+    "t3:57.669:40",
+    "far:567.552:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 56,
+   "line": "3 stations to find - nearest: T2, 31 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:30.814:40",
+    "t3:60.803:40",
+    "far:570.794:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 57,
+   "line": "3 stations to find - nearest: T2, 34 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:34.101:40",
+    "t3:64.058:40",
+    "far:574.015:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 58,
+   "line": "3 stations to find - nearest: T2, 27 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:26.906:40",
+    "t3:56.848:40",
+    "far:566.800:40"
+   ],
+   "crumbs": "->t2/35"
+  },
+  {
+   "t": 59,
+   "line": "3 stations to find - nearest: T2, 30 m",
+   "skip": "Can't get there?",
+   "found": [],
+   "done": [],
+   "present": "t1",
+   "pending": true,
+   "hud": [],
+   "approach": [
+    "t2:29.725:40",
+    "t3:59.694:40",
+    "far:569.666:40"
+   ],
+   "crumbs": "->t2/35"
+  }
  ]
 }
