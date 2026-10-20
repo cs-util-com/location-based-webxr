@@ -61,7 +61,6 @@ import {
   objectAssetIds,
   routedTo,
   stepAssetIds,
-  withoutDebugCaptures,
 } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
 
@@ -254,15 +253,6 @@ export const initialTourDocumentState: TourDocumentState = {
 };
 
 // --- the pure rules ---------------------------------------------------------
-
-/** A file's tour as the document opens it (`opened`): without its debug
- *  camera captures and the stations only they kept
- *  (`withoutDebugCaptures`). The visitor's page reads a file's tour
- *  through it too (`archive-open.ts`), so its start page, scan set and
- *  download stop count what the document holds (debug-captures M1). */
-export function tourAsOpened(manifest: TourManifest): TourManifest {
-  return withoutDebugCaptures(manifest);
-}
 
 /** A manifest's stations without their items. */
 export function framesOf(manifest: TourManifest): StationFrame[] {
@@ -1004,12 +994,8 @@ const tourDocumentSlice = createSlice({
   name: "tourDocument",
   initialState: initialTourDocumentState,
   reducers: {
-    /** A tour opened: everything before it is gone. A file's debug
-     *  camera captures are not part of the tour: the document opens
-     *  without them and the stations only they kept
-     *  (`withoutDebugCaptures`), so no page shows or writes them. A tour
-     *  without an id of its own takes `newTourId` (debug-captures plan,
-     *  Q-I): minted here once, by the page that opens it (a reducer draws
+    /** A tour opened: everything before it is gone. A tour without an id
+     *  of its own takes `newTourId` (debug-captures plan, Q-I): minted here once, by the page that opens it (a reducer draws
      *  no random numbers), so every write carries it and a file saved from
      *  this tour is known by it (`tour-file-key.ts`). `opened` stays the
      *  file's tour as read (the draft's hosted comparisons read it). */
@@ -1017,8 +1003,7 @@ const tourDocumentSlice = createSlice({
       state,
       action: PayloadAction<{ manifest: TourManifest; newTourId?: string }>,
     ) {
-      const { newTourId } = action.payload;
-      const manifest = tourAsOpened(action.payload.manifest);
+      const { manifest, newTourId } = action.payload;
       // `opened` stays the file's tour as read; the writes start from
       // `written`, which carries the id.
       const written =

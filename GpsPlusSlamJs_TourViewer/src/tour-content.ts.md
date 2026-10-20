@@ -8,8 +8,8 @@ W3, D20, D21). The pages place, move and compare a WORLD view: every pin and
 photo with its geo pose, as the framework's `tourObjects` reads it. They
 write through `withTourContent`, which puts every object into the station
 it names at a LOCAL pose. A version 3 tour has no loose pins. The walk's
-camera captures are debug data, never in a station: a file that carries
-them opens without them (`withoutDebugCaptures`).
+camera captures are debug data, never in a station (an earlier file's
+`captureSpots` is an unknown field to the framework's reader).
 
 ## Public API
 
@@ -31,15 +31,6 @@ them opens without them (`withoutDebugCaptures`).
   naming none, the one the manifest holds it in), the stations kept as
   they are and in their order. Throws an `Error` naming the object for one
   in no station of the manifest.
-- `withoutDebugCaptures(manifest) -> TourManifest`: the manifest without
-  the walk's debug camera captures (`captureSpots`, written while they
-  were baked into the tour) and without the stations ONLY they kept: a
-  station a capture names that holds no item, has no title, no steps and
-  no route of its own (`next`), and that no station routes to (the
-  bake's automatic `walk-N` stations). Every other station stays,
-  untouched and in its order; an empty one no capture names is the
-  creator's. The same manifest when it carries no captures. The tour
-  document applies it at the open (`opened`).
 - `withReferencedAssets(manifest, alsoKeep?) -> TourManifest`: the
   manifest without the assets it does not use, in their order; the same
   manifest when every asset is in use. `alsoKeep` (the document's
@@ -77,12 +68,12 @@ them opens without them (`withoutDebugCaptures`).
   created them.
 - **The walk's debug camera captures keep no station.** Until M1 of the
   debug-captures plan the open seated them (`withWalkPhotos`), starting an
-  automatic `walk-N` station for every frame no station held; a file
-  written then carries such stations, which only the capture reference
-  kept. `withoutDebugCaptures` drops exactly those - the exclusion is
-  explicit, since `withTourContent`'s rule drops only a station a write
-  emptied - and a station anything else keeps (an item, a title, steps, a
-  route from or to it) stays with what it holds.
+  automatic `walk-N` station for every frame no station held, and named
+  them in `captureSpots`. That field is gone from the format: the reader
+  ignores it, so a file written then opens with its empty `walk-N`
+  stations as stations like any other (no tour was published with it,
+  D5/D43; `withoutDebugCaptures`, which dropped them, went with the
+  field).
 - An object missing from `objects` leaves its station. A station this
   write EMPTIED (it held items and holds none now) goes when nothing else
   keeps it: no title, no steps, and no other station routing to it (`next`, a quiz route). It existed for its
@@ -113,8 +104,6 @@ them opens without them (`withoutDebugCaptures`).
 ## Examples
 
 ```ts
-// At the open (the tour document's `opened`): no debug camera capture.
-const opened = withoutDebugCaptures(manifest);
 // At a write: every object in the station the document seated it in.
 const written = withTourContent(opened, {
   objects: applyObjectChanges(tourObjects(opened), placed, deleted),
@@ -128,10 +117,7 @@ const written = withTourContent(opened, {
   into the station it names however far from it, and one naming none kept
   in its own; an object in no station of the tour refused in words; the
   stations' order kept; removal; an emptied station dropped unless titled,
-  storied or routed to; `withoutDebugCaptures` dropping the captures and
-  the stations only they kept (one named twice, one never named kept,
-  each kind of keeping), the very manifest without captures, and a
-  property over any mix of stations and capture references; and the `asStored`
+  storied or routed to; and the `asStored`
   property (it is what a written tour holds, by content key);
   `withReferencedAssets` keeping each block kind's assets (an image, a
   character with and without a voice, an audio, a video, a model; a text

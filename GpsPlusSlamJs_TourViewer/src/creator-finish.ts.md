@@ -177,10 +177,10 @@ module's sidecar states them as its contract.
   what the zip carries WITH THE SAME CONTENT, and clears the applied
   deletions. The draft's tombstones stay until the hosted zip lacks the
   ids, the same proof the objects wait for.
-- **The Finish writes no debug camera captures**: the document drops a
-  file's capture spots at the open (`withoutDebugCaptures`), so
-  `tour.json` carries none and no station only they kept; the Finish
-  replays nothing and assigns nothing.
+- **The Finish writes no debug camera captures**: the format no longer
+  has the field (an earlier file's `captureSpots` is ignored by the
+  reader), so `tour.json` carries none; the Finish replays nothing and
+  assigns nothing.
 - **The published copy leaves the creator's walk out** (scan-pass plan
   S1, S-D10): unless the creator ticks "Keep the debug data in the tour
   file" (`keepScanRow` / `keepScanInput`, on the page BEFORE AR since UI

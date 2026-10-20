@@ -12,13 +12,16 @@
   older readers ignore the field and older writers drop it, which costs
   only that key.
 
-### Deprecated
+### Removed
 
 - **`captureSpots` and its types**: `TourManifest.captureSpots`,
   `TourCaptureSpots`, `TourCapture`, `TourCaptureGeo` and
-  `tourCaptureGeos`. A walk's camera captures are debug data: no app writes them; removed in the next major.
-  The parser still reads the field and the writer still writes what it is
-  given, so files written earlier keep opening.
+  `tourCaptureGeos` (all since 1.27.0). A walk's camera captures are debug
+  data, never tour content, and no app writes them any more. The reader
+  now ignores a file's `captureSpots` like any unknown field (whatever its
+  shape; the stations it named stay as written), and the writer never
+  writes it. This breaks the API and still ships in a minor release, by
+  decision, because no tours exist yet that carry the field.
 
 ### Fixed
 

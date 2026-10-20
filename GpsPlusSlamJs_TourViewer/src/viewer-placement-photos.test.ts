@@ -4,9 +4,10 @@
  * does), the photo decoder faked.
  *
  * Why this test matters: a visitor sees the tour's own content only. The
- * frames a recording captured by itself are debug data, which a tour.json
- * may still carry as `captureSpots` (the format keeps them, deprecated);
- * the viewer must draw none of them and read none of their files.
+ * frames a recording captured by itself are debug data, which an earlier
+ * tour.json carried as `captureSpots` (a field gone from the format) and a
+ * zip still carries with its walk; the viewer must draw none of them and
+ * read none of their files.
  */
 import { describe, expect, it, vi } from "vitest";
 import { Scene, Texture } from "three";
@@ -23,7 +24,7 @@ import {
 } from "gps-plus-slam-app-framework/state";
 
 import type { TourViewerSeams } from "./seams.js";
-import { stationIdOf, tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/v3-tour.js";
 import type { TourSession } from "./tour-session.js";
 import {
   createTourViewerSession,
@@ -136,9 +137,6 @@ const flush = async (): Promise<void> => {
 function harness(input: {
   /** The tour's objects (each its own station, `st-<id>`). */
   objects?: TourObject[];
-  /** Debug camera captures the tour.json carries (`captureSpots`), each
-   *  held by the station of the object it names. */
-  baked?: { holder: string }[];
   /** The zip carries a walk recording and its frames. */
   walkInZip?: boolean;
 }) {
@@ -171,25 +169,7 @@ function harness(input: {
     loadEntry,
     loadContentEntry: loadEntry,
   } as unknown as TourSession;
-  const baked = input.baked ?? [];
-  ctx.tourDocument.open(
-    tourOf(
-      input.objects ?? [],
-      baked.length === 0
-        ? {}
-        : {
-            captureSpots: {
-              fixes: 4,
-              gpsAccuracyMedianM: 3,
-              captures: baked.map((b, i) => ({
-                image: `images/frame-${String(i)}.png`,
-                station: stationIdOf(b.holder),
-                pose: { position: [0, 0, 0], rotation: FLAT },
-              })),
-            },
-          },
-    ),
-  );
+  ctx.tourDocument.open(tourOf(input.objects ?? []));
   ctx.tourManifestStatus = "settled";
   ctx.scanGate = { kind: "passed", via: "code" };
   const seams = {
@@ -238,13 +218,14 @@ function harness(input: {
 }
 
 describe("a visitor never sees a debug camera capture", () => {
-  it("draws no frame of a tour.json that carries capture spots, and reads none", async () => {
+  it("draws no frame of a zip that carries a walk and its frames, and reads none", async () => {
     // Why: the frames a recording captures by itself are debug data, shown
     // only in the desktop editor's debug layer. They were once drawn for a
     // visitor as photo planes at their stations, from the `captureSpots` a
-    // creator's open baked into tour.json; a visitor now draws none of
-    // them, reads none of their files, and the line says nothing of them,
-    // whatever the file carries (the zip's walk and images included).
+    // creator's open baked into tour.json (a field gone from the format);
+    // a visitor now draws none of them, reads none of their files, and the
+    // line says nothing of them, whatever the zip carries (its walk and
+    // images included).
     const decoded: string[] = [];
     fake.decode = (name) => {
       decoded.push(name);
@@ -252,7 +233,6 @@ describe("a visitor never sees a debug camera capture", () => {
     };
     const h = harness({
       objects: [pin("a", 0, 0), pin("b", 100, 0)],
-      baked: [{ holder: "a" }, { holder: "a" }, { holder: "b" }],
       walkInZip: true,
     });
     await h.lock();

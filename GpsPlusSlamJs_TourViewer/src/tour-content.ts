@@ -15,10 +15,9 @@
  *   reads back as the very numbers it has): a save never nudges an item,
  *   which D17's rigid station moves rely on.
  * - A moved object is re-expressed in its station (`localPoseOf`).
- * - The walk's camera captures are debug data, never in a station: a
- *   file that carries them (`captureSpots`, written while they were
- *   baked into the tour) opens without them and without the stations
- *   only they kept (`withoutDebugCaptures`).
+ * - The walk's camera captures are debug data, never in a station (an
+ *   earlier file's `captureSpots` is an unknown field to the framework's
+ *   reader, which ignores it).
  * - A station this write EMPTIED (it held items, it holds none) goes when
  *   nothing else keeps it: no title, no story steps, and no other
  *   station routing to it. It existed for its elements
@@ -171,36 +170,6 @@ export function withTourContent(
     ...manifest,
     stations: filled.filter(
       (s) => !emptiedAndBare(s, stationById.get(s.id), kept),
-    ),
-  };
-}
-
-/**
- * `manifest` without the walk's debug camera captures (`captureSpots`,
- * written while they were baked into the tour) and without the stations
- * ONLY they kept: a station a capture names that holds no item, has no
- * title, no story steps and no route of its own (`next`), and that no
- * station routes to (the bake's automatic `walk-N` stations). Every other station stays, untouched
- * and in its order - an empty one no capture names is the creator's. The
- * same manifest when it carries no captures. The tour document applies
- * it at the open (`opened`), so no page shows, keeps or writes them.
- */
-export function withoutDebugCaptures(manifest: TourManifest): TourManifest {
-  const spots = manifest.captureSpots;
-  if (spots === undefined) return manifest;
-  const named = new Set(spots.captures.map((c) => c.station));
-  const routed = new Set(manifest.stations.flatMap(routedTo));
-  const { captureSpots: _captures, ...rest } = manifest;
-  return {
-    ...rest,
-    stations: manifest.stations.filter(
-      (s) =>
-        !named.has(s.id) ||
-        s.items.length > 0 ||
-        (s.title ?? "").trim() !== "" ||
-        s.steps.length > 0 ||
-        s.next !== undefined ||
-        routed.has(s.id),
     ),
   };
 }

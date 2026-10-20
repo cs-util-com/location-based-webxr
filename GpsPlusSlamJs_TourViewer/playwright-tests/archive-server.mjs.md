@@ -50,8 +50,8 @@ editor spec uses too.
 routes, `/ranges-ok/recording-tour.zip` (a recording without `tour.json`:
 era-5 session.json + an action stream; a creator opens it as an empty tour,
 a visitor reads that the tour is not finished yet), `/ranges-ok/baked-tour.zip`
-(a `tour.json` carrying debug camera captures - the deprecated
-`captureSpots`, 7 fixes, two frames in stations of their own, one of which
+(an earlier `tour.json` carrying debug camera captures - `captureSpots`,
+a field gone from the format, which the reader ignores; 7 fixes, two frames in stations of their own, one of which
 holds a pin - and a walk: `session.json`, an action, a third frame. A
 visitor draws the pin and none of the frames, and takes no cover from one), `/ranges-ok/plain-tour.zip`
 (images only - no `tour.json`, no level, no recording: a tour not finished

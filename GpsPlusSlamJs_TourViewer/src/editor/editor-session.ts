@@ -298,8 +298,7 @@ export interface EditorSession {
 
 export function createEditorSession(input: {
   readonly session: TourSession;
-  /** The tour as opened (`openTourForEditing`); the document drops a
-   *  file's debug camera captures (`withoutDebugCaptures`). */
+  /** The tour as opened (`openTourForEditing`). */
   readonly manifest: TourManifest;
   readonly levels: ReadonlyMap<string, QrLevel>;
   /** The file's name for the model's title (default: the session's). */

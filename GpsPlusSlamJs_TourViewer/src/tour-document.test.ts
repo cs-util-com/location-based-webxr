@@ -16,7 +16,10 @@ import type {
   TourObject,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { serializeTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  parseTourManifest,
+  serializeTourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
@@ -159,36 +162,23 @@ describe("tour document: the open", () => {
     expect(documentObjects(state).map((o) => o.object.id)).toEqual(["z"]);
   });
 
-  it("drops a file's debug camera captures and the stations only they kept, and writes none", () => {
+  it("opens an earlier file that carries captureSpots as any tour of its stations, and writes none", () => {
     // Why this test matters: a file written while the walk's frames were
     // baked into the tour carries them as captureSpots, each frame in a
     // station - an automatic walk-N station where no station held it. The
-    // frames are debug data now, which no station holds: the document
-    // opens without them, so a save writes none and the empty walk-N
-    // stations do not come back as stations a visitor is led to.
-    const withCaptures: TourManifest = {
-      ...tourOf([pin("a")]),
-      stations: [
-        ...tourOf([pin("a")]).stations,
-        {
-          id: "walk-1",
-          geo: { lat: 48.53, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
-          activateRadiusM: 50,
-          foundRadiusM: 25,
-          hint: "arrow",
-          steps: [],
-          items: [],
-        },
-      ],
+    // field is gone from the format: the framework's reader ignores it,
+    // so the document opens what the file's stations are, and no save
+    // carries the frames on.
+    // (Changed expectation: the document once dropped walk-1 with the
+    // captures, `withoutDebugCaptures`. Without the field nothing names
+    // the stations the captures kept, and no tour was published with it
+    // (D5, D43), so walk-1 is an empty station like any other now.)
+    const fileJson = {
+      ...JSON.parse(serializeTourManifest(tourOf([pin("a")]))),
       captureSpots: {
         fixes: 3,
         gpsAccuracyMedianM: 4,
         captures: [
-          {
-            image: "images/frame-0.png",
-            station: stationIdOf("a"),
-            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-          },
           {
             image: "images/frame-1.png",
             station: "walk-1",
@@ -196,17 +186,25 @@ describe("tour document: the open", () => {
           },
         ],
       },
-    };
-    const state = open(withCaptures);
+    } as { stations: unknown[] };
+    fileJson.stations.push({
+      id: "walk-1",
+      geo: { lat: 48.53, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow",
+      steps: [],
+      items: [],
+    });
+    const state = open(parseTourManifest(fileJson));
+    const ids = [stationIdOf("a"), "walk-1"];
     for (const held of [state.opened, state.written, manifestNow(state)]) {
-      expect(held?.captureSpots).toBeUndefined();
-      expect(held?.stations.map((s) => s.id)).toEqual([stationIdOf("a")]);
+      expect(held !== null && "captureSpots" in held).toBe(false);
+      expect(held?.stations.map((s) => s.id)).toEqual(ids);
     }
-    expect(state.stations.map((s) => s.id)).toEqual([stationIdOf("a")]);
     const written = manifestToWrite(state);
-    expect(written?.captureSpots).toBeUndefined();
-    expect(written?.stations.map((s) => s.id)).toEqual([stationIdOf("a")]);
-    // Nothing reads as unsaved: the drop is the open's, not an edit.
+    expect(written?.stations.map((s) => s.id)).toEqual(ids);
+    expect(serializeTourManifest(written!)).not.toContain("captureSpots");
     expect(changeCount(state)).toBe(0);
   });
 });

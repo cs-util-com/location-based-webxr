@@ -30,6 +30,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  parseTourManifest,
   serializeTourManifest,
   type TourManifest,
   type TourObject,
@@ -1057,17 +1058,24 @@ describe("the parity contract: the phone's and the desktop's paths write the sam
   }
 });
 
-describe("the parity contract: a file carrying debug camera captures", () => {
+describe("the parity contract: an earlier file carrying debug camera captures", () => {
   // Why this row matters: a file written while the walk's frames were
   // baked into the tour carries them as captureSpots, one frame in a
   // station of the tour and one in an automatic walk-1 station only it
-  // kept. Both pages open the same document from it (the frames dropped,
-  // walk-1 with them), so an edit and a save on either writes the same
-  // tour - and neither writes a frame or the empty station.
-  const withCaptures: TourManifest = {
-    ...tourOf(OPENED),
+  // kept. The field is gone from the format, so both pages open the same
+  // document from it (the field ignored, walk-1 an empty station like any
+  // other), an edit and a save on either writes the same tour, and
+  // neither writes the field.
+  // (Changed expectation: both pages once dropped walk-1 with the frames.
+  // Without the field nothing names it, and no tour was published with it,
+  // D5/D43.)
+  const fileJson = JSON.parse(serializeTourManifest(tourOf(OPENED))) as {
+    stations: unknown[];
+  };
+  const withCaptures: TourManifest = parseTourManifest({
+    ...fileJson,
     stations: [
-      ...tourOf(OPENED).stations,
+      ...fileJson.stations,
       {
         id: "walk-1",
         geo: { lat: 48.53, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
@@ -1094,9 +1102,9 @@ describe("the parity contract: a file carrying debug camera captures", () => {
         },
       ],
     },
-  };
+  });
 
-  it("both pages write the same tour, without the captures and without walk-1", async () => {
+  it("both pages write the same tour, walk-1 kept as a station and without the field", async () => {
     const file = await tourFile();
     const written = await Promise.all(
       [desktopPage, phonePage].map(async (page) => {
@@ -1110,10 +1118,11 @@ describe("the parity contract: a file carrying debug camera captures", () => {
     // minted named alike, as every other row compares.)
     expect(withStationsByOrder(desktop!)).toEqual(withStationsByOrder(phone!));
     for (const w of written) {
-      expect(w?.captureSpots).toBeUndefined();
-      expect(w?.stations.map((st) => st.id)).toEqual(
-        tourOf(OPENED).stations.map((st) => st.id),
-      );
+      expect(w !== undefined && "captureSpots" in w).toBe(false);
+      expect(w?.stations.map((st) => st.id)).toEqual([
+        ...tourOf(OPENED).stations.map((st) => st.id),
+        "walk-1",
+      ]);
     }
   }, 60_000);
 });

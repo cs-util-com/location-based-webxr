@@ -10,8 +10,9 @@ north) and its items carry LOCAL poses relative to it (`tour-items.ts`,
 `tour-station-pose.ts`). Also the tour kit's game content (title, station
 order, media assets, station stories; tour kit plan K1 and §8 D7,
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`),
-the walk's baked camera captures (deprecated: no app writes them), the
-needs-no-GPS flag and the tour details.
+the needs-no-GPS flag and the tour details. The walk's camera captures,
+which earlier apps baked into the tour as `captureSpots`, are no longer
+part of the format (see below).
 Guided-setup plan DEC-N7/N8/N9 for the original pins and photos
 (`GpsPlusSlamJs_Docs/docs/2026-09-08-tour-viewer-improvements/2026-09-08-1459-tour-viewer-guided-setup-and-mandatory-code-plan.md`).
 
@@ -44,7 +45,6 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - Types `TourManifest`; the world view
   `TourObject = TourPin | TourPhoto | TourModel`
   (`kind`, the item's fields, `geo`, `station?`), `TourObjectKind`;
-  `TourCaptureSpots` and `TourCapture` (`{ image, station, pose }`);
   `TourManifestValidationError`; re-exported from `tour-items.ts`:
   `TourItem`, `TourPinItem`, `TourPhotoItem`, `TourModelItem`,
   `TourLocalPose`; and from
@@ -63,7 +63,7 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
   written, and the writer writes them as held: nothing on the way
   recomputes one, so a station's move (D17) or a save never nudges an
   item (property-tested bit for bit). The world view is computed
-  (`tour-station-pose.ts` `tourObjects`, `tourCaptureGeos`).
+  (`tour-station-pose.ts` `tourObjects`).
 - **No migration (D5).** Versions 1 and 2 are refused: "this tour is in
   an older format (version N) that this version of the app no longer
   opens; it has to be made again". A version 2 reader refuses a version 3
@@ -101,25 +101,19 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - **Nothing renders a placed model yet**: the Tour Viewer's renderer leaves
   it out until the 3D editor's work draws it.
 
-## Baked capture spots (scan-pass plan S1)
+## An earlier file's `captureSpots` (removed)
 
-- `captureSpots?: { fixes, gpsAccuracyMedianM, captures }` (**deprecated**:
-  the walk's camera captures are debug data; no app writes them; removed in the next major. The parser
-  still reads the field and the writer still writes what it is given): a recorded
-  walk's photos, each `{ image, station, pose }` - placed ONCE at the
-  creator's Finish through the first settled alignment after the photo
-  was taken (S-D11), assigned to stations by the automatic-station rule
-  in capture order, and held at a local pose. A visitor neither downloads
-  nor replays the walk. Its presence is the "baked" marker: the Tour
-  Viewer places these and never runs its live join.
-- `image` is the recording's own entry name (`images/frame-000002.jpg`),
-  checked by the shared zip path rules and the media allowlist (an image
-  type). `station` must name one of the tour's stations; `pose` is a local
-  pose (photos face as captured: a local rotation always exists). `fixes`
-  is a positive integer; `gpsAccuracyMedianM` a number >= 0 or `null`.
-  `captures` is non-empty and names each photo once.
-- **A newer minor's spots this reader cannot read are dropped**, not the
-  tour (K1 R4, S1 milestone review #8).
+- Earlier apps baked the walk's camera captures into the tour as
+  `captureSpots: { fixes, gpsAccuracyMedianM, captures }`, each capture
+  in a station (an automatic `walk-N` one where no station held it). They
+  are debug data, never tour content, and the field is no longer part of
+  the format (with `TourCaptureSpots`, `TourCapture`, `TourCaptureGeo` and
+  `tourCaptureGeos`; see the CHANGELOG).
+- **A file that still carries it** opens as if it were any unknown field:
+  the field is ignored, whatever its shape, and every station stays as
+  written - an empty `walk-N` station too, which is then a station like
+  any other. No tour was published with the field (D5, D43), so nothing
+  drops those stations. No write carries the field.
 
 ## A tour that needs no GPS (Q-QF-1)
 
@@ -223,14 +217,15 @@ parseTourManifest({ version: 2, objects: [] }); // throws: an older format
   is an asset id refused, the world-view model), a newer minor's unknown fields
   ignored and its unknown values degraded (and refused at this minor and
   on write), write/read round trip, the writer's refusal, the world-view
-  object parser, the baked spots (round trip, null median, each malformed
-  capture or spot set, a capture's station that does not exist), the
+  object parser, an earlier file's `captureSpots` (read without it, every
+  station kept, a malformed one ignored, never written), the
   needs-no-GPS flag, the tour id (round trip at minor 0, absent, a bad
   one dropped at every minor, the writer's refusal), the tour details (round trip, cover on a station's
   photo or an image asset only, dropped details, the writer's cover drop
   and refusals).
 - `tour-manifest.property.test.ts` - over generated stations, items
-  (placed models among them), baked camera captures, tour ids and details: serialize->parse
+  (placed models among them), tour ids and details, and an earlier file's
+  `captureSpots` (ignored, every station kept): serialize->parse
   is the identity (but for the minor, the writer's choice) with every local
   pose the same numbers exactly; minor 1 is written exactly when a model is
   present, every model's size read back unchanged; parse is idempotent; every item

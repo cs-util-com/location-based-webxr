@@ -636,58 +636,11 @@ describe("wireCreatorStations", () => {
     );
   });
 
-  // Why this test matters: the walk's camera captures were baked into
-  // stations when the recording opened, so the HUD named an automatic
-  // walk-N station where a frame was taken (this test pinned it, as
-  // "Station 2"). They are debug data now: a file that carries them opens
-  // without them and without the stations only they kept, so the HUD
-  // shows no station there, and a pin placed there starts the tour's own.
-  it("shows no station where only a debug camera capture was, and a pin there starts one", () => {
-    const at = pin("photo", 100, 0).geo;
-    const gate = tourOf([pin("gate", 0, 0)]);
-    const h = harness({
-      opened: {
-        ...gate,
-        stations: [
-          ...gate.stations,
-          {
-            id: "walk-1",
-            geo: {
-              lat: at.lat,
-              lon: at.lon,
-              alt: at.alt,
-              rotation: [0, 0, 0, 1],
-            },
-            activateRadiusM: 50,
-            foundRadiusM: 25,
-            hint: "arrow",
-            steps: [],
-            items: [],
-          },
-        ],
-        captureSpots: {
-          fixes: 9,
-          gpsAccuracyMedianM: 4,
-          captures: [
-            {
-              image: "images/frame-1.jpg",
-              station: "walk-1",
-              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-            },
-          ],
-        },
-      },
-    });
-    h.stand(100, 0);
-    expect(h.chip.textContent).toBe(
-      "No station here - what you place next starts a new one.",
-    );
-    h.tour.place(pin("near", 101, 0), {}, "a pin");
-    expect(h.stations.placedIn("near")).toBe("it starts Station 2");
-    expect(h.tour.manifest()?.stations.map((st) => st.id)).not.toContain(
-      "walk-1",
-    );
-  });
+  // (A test that the HUD showed no station where only a debug camera
+  // capture was stood here: the open dropped an earlier file's
+  // captureSpots and the walk-N stations only they kept. The field is gone
+  // from the format, so the reader ignores it and such a station is the
+  // tour's like any other.)
 
   // Why (M5c review #4): the HUD once read stations a Finish would start
   // under order-numbered ids that shifted when an earlier one was deleted,

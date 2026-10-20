@@ -21,8 +21,9 @@ which a visitor never sees.
   - each photo item's (every station's, `tourItems`) and each asset's
     file, under `wrap`;
   - Nothing else: a visitor never shows the zip's other images, nor a
-    recorded frame - not even one a file's `captureSpots` names (they
-    were read as the tour's content until M1 of the debug-captures plan).
+    recorded frame (an earlier file's `captureSpots` named some, read as
+    the tour's content until M1 of the debug-captures plan; the field is
+    gone from the format).
 - `scanEntryNames(entryNames, manifest, wrap) -> string[]` - the walk, in
   archive order: the entries a RECORDING writes (`session.json`, anything
   under `actions/`, `frame-NNNNNN.<ext>` in `images/` or the legacy

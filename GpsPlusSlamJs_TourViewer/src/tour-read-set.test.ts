@@ -42,36 +42,6 @@ function manifest(
   return tourOf(objects, rest);
 }
 
-/** Capture spots for a walk's frames, in a station of their own, as a
- *  file written while the frames were baked into the tour carries them. */
-function walk(
-  images: readonly string[],
-  gpsAccuracyMedianM: number | null,
-): Partial<TourManifest> {
-  return {
-    stations: [
-      {
-        id: "walk",
-        geo: GEO,
-        activateRadiusM: 50,
-        foundRadiusM: 25,
-        hint: "arrow",
-        steps: [],
-        items: [],
-      },
-    ],
-    captureSpots: {
-      fixes: 9,
-      gpsAccuracyMedianM,
-      captures: images.map((image) => ({
-        image,
-        station: "walk",
-        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-      })),
-    },
-  };
-}
-
 const RECORDING = [
   "session.json",
   "actions/000001.json",
@@ -84,7 +54,8 @@ describe("visitorEntryNames", () => {
   it("keeps the manifest, every code level, the signed list and the content the manifest names - never a recorded frame", () => {
     // Why: a frame a file's capture spots named was read as the tour's
     // content, so the published copy kept it for every visitor. The
-    // frames are debug data now: a visitor reads none, named or not.
+    // frames are debug data now, and the field that named them is gone
+    // from the format: a visitor reads none.
     const names = [
       "tour.json",
       "qr/abc123.json",
@@ -99,7 +70,6 @@ describe("visitorEntryNames", () => {
       manifest({
         objects: [photo],
         assets: [{ id: "knight", path: "content/knight.png" } as never],
-        ...walk(["images/frame-000002.jpg"], 3),
       }),
       "",
     );
@@ -116,7 +86,7 @@ describe("visitorEntryNames", () => {
     );
   });
 
-  it("without capture spots reads no recorded frame either", () => {
+  it("reads no recorded frame of a tour that names no content", () => {
     // Why: the zip's images were once all read for a ring around the code;
     // a visitor now reads only what the tour names.
     const read = visitorEntryNames(["tour.json", ...RECORDING], manifest(), "");
@@ -157,13 +127,11 @@ describe("scanEntryNames", () => {
   // licence file is never the walk, and dropping it from the published copy
   // would lose it silently (the first milestone browser run caught exactly
   // that).
-  const baked = walk(["images/frame-000002.jpg"], null);
-
-  it("is the recording's own files, every frame - also one a file's capture spots name", () => {
+  it("is the recording's own files, every frame", () => {
     const names = ["tour.json", ...RECORDING, "frames/frame-000009.jpg"];
     // (Was without "images/frame-000002.jpg": the frame the spots named
     // stayed the tour's. No frame is the tour's now.)
-    expect(scanEntryNames(names, manifest(baked), "")).toEqual([
+    expect(scanEntryNames(names, manifest(), "")).toEqual([
       ...RECORDING,
       "frames/frame-000009.jpg",
     ]);
@@ -180,13 +148,13 @@ describe("scanEntryNames", () => {
           "depth/000001.bin",
           "images/poster.jpg",
         ],
-        manifest(baked),
+        manifest(),
         "",
       ),
     ).toEqual([]);
   });
 
-  it("is the whole recording for a tour without capture spots: no visitor shows its frames", () => {
+  it("is the whole recording for a tour of no content: no visitor shows its frames", () => {
     expect(scanEntryNames(["tour.json", ...RECORDING], manifest(), "")).toEqual(
       RECORDING,
     );
@@ -199,7 +167,7 @@ describe("scanEntryNames", () => {
     expect(
       scanEntryNames(
         ["tour.json", "session.json", "images/frame-000001.jpg"],
-        manifest(baked),
+        manifest(),
         "",
       ),
     ).toEqual([]);
@@ -286,7 +254,7 @@ describe("what a visitor's page shows and downloads", () => {
     expect(stopsVisitorDownload("creator", finished, scan)).toBe(false);
   });
 
-  it("stops it for a tour without capture spots too: no visitor replays a walk", () => {
+  it("stops it for a tour whose walk is its whole recording: no visitor replays a walk", () => {
     // Why: the download was kept for such a tour while a visitor replayed
     // its walk by range reads; a visitor never reads the walk now.
     const walk = new Set(

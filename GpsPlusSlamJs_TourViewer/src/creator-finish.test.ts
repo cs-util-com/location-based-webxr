@@ -45,7 +45,6 @@ import {
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type {
-  TourCaptureSpots,
   TourManifest,
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -1022,50 +1021,15 @@ describe("the finish writes no debug camera captures", () => {
     expect(written).not.toHaveProperty("captureSpots");
     // One station: the pin's. None for a frame.
     expect(parseTourManifest(written).stations).toHaveLength(1);
-    expect(ctx.tourDocument.manifest()?.captureSpots).toBeUndefined();
+    expect("captureSpots" in (ctx.tourDocument.manifest() ?? {})).toBe(false);
     expect(recording.replays()).toBe(0);
   });
 
-  it("drops the captures a tour.json carried, and the station only they kept", async () => {
-    const recording = await recordingExtras();
-    const spots: TourCaptureSpots = {
-      fixes: 9,
-      gpsAccuracyMedianM: 2,
-      captures: [
-        {
-          image: "images/frame-000002.jpg",
-          station: "walk",
-          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-        },
-      ],
-    };
-    const { dom, ctx } = await wireFinishable({
-      hosted: [],
-      placed: [pin("new-one")],
-      sessionExtras: recording.extras,
-      manifestExtras: {
-        stations: [
-          {
-            id: "walk",
-            geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
-            activateRadiusM: 50,
-            foundRadiusM: 25,
-            hint: "arrow",
-            steps: [],
-            items: [],
-          },
-        ],
-        captureSpots: spots,
-      },
-    });
-    dom.finishButton.click();
-    await settle(ctx);
-    expect(ctx.finishError).toBeNull();
-    const written = parseTourManifest(await writtenManifest(ctx));
-    expect(written.captureSpots).toBeUndefined();
-    expect(written.stations.map((st) => st.id)).not.toContain("walk");
-    expect(recording.replays()).toBe(0);
-  });
+  // (A test that the Finish dropped the captures a tour.json carried, and
+  // the station only they kept, stood here. The field is gone from the
+  // format: the framework's reader ignores it, so no document holds it and
+  // the station is the tour's like any other - `tour-document.test.ts`
+  // opens such a file.)
 });
 
 describe("the published copy carries only what visitors need (scan-pass plan S1, S-D10)", () => {

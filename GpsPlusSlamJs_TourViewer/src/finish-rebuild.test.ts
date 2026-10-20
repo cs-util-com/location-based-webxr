@@ -287,7 +287,7 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
 
   // (A test that a Finish wrote the walk's photos as the open baked them,
   // and a later Finish kept them, stood here: the open bakes none, and
-  // the document drops a file's - `withoutDebugCaptures`.)
+  // a tour carries none (the field is gone from the format).
 
   it("stops without rebuilding when the caller no longer wants the result", async () => {
     const tour = await plainTour([]);

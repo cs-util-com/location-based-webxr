@@ -55,10 +55,10 @@ function tour(
   return tourOf(objects, rest);
 }
 
-/** A walk's debug camera captures as a tour.json may carry them
- *  (`captureSpots`, deprecated), each in a station of its own. */
-function recorded(images: readonly string[]): Partial<TourManifest> {
-  const stations: TourStation[] = images.map((_, i) => ({
+/** `count` stations without content, as an earlier file kept for its
+ *  walk's debug camera captures (`walk-N`). */
+function emptyStations(count: number): TourStation[] {
+  return Array.from({ length: count }, (_, i) => ({
     id: `walk-${String(i)}`,
     geo: GEO,
     activateRadiusM: 50,
@@ -67,18 +67,6 @@ function recorded(images: readonly string[]): Partial<TourManifest> {
     steps: [],
     items: [],
   }));
-  return {
-    stations,
-    captureSpots: {
-      fixes: 4,
-      gpsAccuracyMedianM: 3,
-      captures: images.map((image, i) => ({
-        image,
-        station: `walk-${String(i)}`,
-        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-      })),
-    },
-  };
 }
 
 describe("visitorStartView", () => {
@@ -115,7 +103,7 @@ describe("visitorStartView", () => {
       "This tour is not finished yet.",
     );
     // A tour of stations (the sample) counts its stations.
-    const station = recorded(["x"]).stations![0]!;
+    const station = emptyStations(1)[0]!;
     expect(
       visitorStartView(tour({ stations: [station, station] })).subline,
     ).toBe("2 places to discover");
@@ -167,23 +155,15 @@ describe("visitorStartView", () => {
     expect(visitorStartView(null).pageTitle).toBe("Tour Viewer");
   });
 
-  // Why: the frames a recording captured by itself are debug data, which
-  // a visitor never sees. A tour without a placed photo once took its first
-  // captured frame as the cover; it now has none, and a placed photo is
-  // the cover as before.
-  it("takes no cover from a debug camera capture", () => {
-    const walk = recorded(["images/frame-0.png", "images/frame-1.png"]);
-    expect(
-      visitorStartView(tour({ objects: [pin("a")], ...walk })).coverPath,
-    ).toBeNull();
-    expect(
-      visitorStartView(tour({ objects: [photo("b")], ...walk })).coverPath,
-    ).toBe("content/b.jpg");
-  });
+  // (A test that the cover was never taken from a debug camera capture
+  // stood here: a tour without a placed photo once took its first captured
+  // frame. The field that named the frames is gone from the format, so
+  // nothing can name one; the property below still says an empty station
+  // gives no cover.)
 
   // The cover is read from the zip by its path: only the tour's own photos
   // may be named - a photo object's image - never anything else the
-  // manifest holds (M4 review #8), its debug camera captures included.
+  // manifest holds (M4 review #8).
   it("only ever names one of the tour's own photos (property)", () => {
     fc.assert(
       fc.property(
@@ -195,21 +175,19 @@ describe("visitorStartView", () => {
             .constantFrom("f", "p", "x")
             .chain((p) => fc.nat({ max: 9 }).map((n) => `${p}${String(n)}`)),
         ),
-        (kinds, captureCount, cover) => {
+        (kinds, emptyCount, cover) => {
           const objects = kinds.map((kind, i) =>
             kind === "pin" ? pin(`p${String(i)}`) : photo(`f${String(i)}`),
-          );
-          const captures = Array.from(
-            { length: captureCount },
-            (_, i) => `images/frame-${String(i)}.png`,
           );
           const manifest = tour({
             objects,
             ...(cover === null ? {} : { cover }),
-            ...(captureCount === 0 ? {} : recorded(captures)),
+            ...(emptyCount === 0
+              ? {}
+              : { stations: emptyStations(emptyCount) }),
           });
           const { coverPath } = visitorStartView(manifest);
-          // The captures are never among them (debug data).
+          // An empty station adds none.
           const own = objects.flatMap((o) =>
             o.kind === "photo" ? [(o as { image: string }).image] : [],
           );

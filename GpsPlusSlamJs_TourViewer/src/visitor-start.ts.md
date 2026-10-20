@@ -26,8 +26,7 @@ plus a small wiring that writes the page and loads the photo from the zip.
   - `coverPath`: the cover the creator chose (`cover`, W2; its entry by
     the framework's `tourCoverEntry`), else the first placed photo's
     `image` (in station order, `tourItems`), else `null`. Never a debug
-    camera capture (a `tour.json`'s deprecated `captureSpots`): a visitor
-    never sees one.
+    camera capture: a visitor never sees one.
   - `pageTitle`: the tab's title, which a shared link's title shows too:
     the tour's name, else "Tour Viewer".
 - `wireVisitorStart({ dom, createObjectUrl, revokeObjectUrl, checkPicture }): VisitorStart`

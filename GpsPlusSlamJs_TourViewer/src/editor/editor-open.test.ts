@@ -149,7 +149,7 @@ describe("openTourForEditing starts no station for the walk's debug camera captu
     );
     const saved = await editor.save({ keepScan: true });
     expect(saved.written.stations).toEqual([]);
-    expect(saved.written.captureSpots).toBeUndefined();
+    expect("captureSpots" in saved.written).toBe(false);
     await out.session.close();
   });
 

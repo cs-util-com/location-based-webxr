@@ -276,8 +276,6 @@ export {
   type TourPhoto,
   type TourModel,
   type TourObjectKind,
-  type TourCapture,
-  type TourCaptureSpots,
   type TourItem,
   type TourLocalPose,
   type TourModelItem,
@@ -295,9 +293,7 @@ export {
   geoPoseRotation,
   itemGeoPose,
   localPoseOf,
-  tourCaptureGeos,
   tourObjects,
-  type TourCaptureGeo,
 } from './tour-station-pose.js';
 export {
   TOUR_ITEM_MAX_OFFSET_M,

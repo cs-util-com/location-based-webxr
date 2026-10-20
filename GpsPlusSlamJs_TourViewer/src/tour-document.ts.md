@@ -78,10 +78,9 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   (`newTourId()` of `tour-file-key.ts`; a reducer draws no random
   numbers), so every write carries it; `opened` stays the file's tour as
   read, and the id reads as no change. A tour's own id is never replaced.
-  The manifest opens without a file's debug camera captures and the
-  stations only they kept (`withoutDebugCaptures` of `tour-content.ts`):
-  no page shows, keeps or writes them, and nothing reads as unsaved for
-  it (`opened` and `written` are both the dropped manifest).
+  An earlier file's debug camera captures (`captureSpots`) never reach
+  it: the format no longer has the field and the reader ignores it, so
+  the document opens the file's stations as written.
   Only who holds the page's save slot (`save.by`) is kept: the slot is
   the page's, and the save holding it lets it go once it sees its tour
   gone (as the page's own flag behaved).
@@ -236,13 +235,6 @@ different times (a walk's move lands only after the page wrote both files).
   step that brings back a photo the written file has no picture for needs
   the page's picture.
 - `framesOf(manifest)`.
-- `tourAsOpened(manifest)` - a file's tour as `opened` takes it:
-  without its debug camera captures and the stations only they kept
-  (`withoutDebugCaptures`). The visitor's page reads a file's tour through
-  it (`archive-open.ts`), so its start page, scan set and download stop
-  count what the document holds (debug-captures M1); a page outside the
-  document never imports `tour-content.ts`
-  (D31).
 - Module-internal (not exported: nothing outside the slice needs them, and
   the root dead-code check holds exports to their importers):
   `contentAt(written, view)`, `withFrames(written, frames, placed)`,

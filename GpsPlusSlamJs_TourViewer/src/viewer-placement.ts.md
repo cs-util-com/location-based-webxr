@@ -8,8 +8,8 @@ and the GPS zero exists; until the tracking-quality phase reports ready or
 a code placed the tour the line coaches the visitor. Scanned codes
 relocalize the session via budgeted synthetic GPS votes and REFINE the
 alignment under the placed content. A visitor never sees the walk, the
-zip's other images, or the debug camera captures a `tour.json` may still
-carry (`captureSpots`, deprecated): nothing here reads them.
+zip's other images, or its debug camera captures: nothing here reads
+them.
 
 ## Public API
 
@@ -212,9 +212,8 @@ carry (`captureSpots`, deprecated): nothing here reads them.
   the ready trigger ends the coaching without a code; a lock after it
   changes the status only.
 - **No debug camera capture, ever** (the debug captures plan, E1): the
-  walk's frames are debug data, shown only in the desktop editor. A
-  `tour.json` that still carries `captureSpots` places nothing from them,
-  reads none of their files, and the line says nothing of them
+  walk's frames are debug data, shown only in the desktop editor. The
+  viewer places nothing from them, reads none of their files, and the line says nothing of them
   (`viewer-placement-photos.test.ts`). A visitor never replays a walk,
   so `archive-open.ts` stops the background download of every copy that
   carries one (`stopsVisitorDownload`).
@@ -373,9 +372,8 @@ ctx.placementUnsubscribe = arStore.subscribe(() => viewer.tryPlaceTour());
 ## Tests
 
 `viewer-placement-photos.test.ts` - through the real
-controller config, the decoder faked: a `tour.json` carrying debug camera
-captures (`captureSpots`) and a zip with a walk and frames draws none of
-them and reads none of their files, while its pins stand at their
+controller config, the decoder faked: a zip with a walk and frames draws
+none of them and reads none of their files, while its pins stand at their
 stations.
 
 `viewer-placement-viewing-log.test.ts` - the `tourViewing/*` hooks through the

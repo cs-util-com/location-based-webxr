@@ -19,7 +19,6 @@ import {
 import {
   parseTourManifest,
   serializeTourManifest,
-  type TourCaptureSpots,
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -1629,9 +1628,10 @@ describe("createEditorSession, undo and redo (W2)", () => {
   });
 });
 
-/** Capture spots a file written while the walk's frames were baked into
- *  the tour carries: the document drops them at the open. */
-const WALK_SPOTS: TourCaptureSpots = {
+/** Capture spots an earlier file written while the walk's frames were
+ *  baked into the tour carries: a field gone from the format, which the
+ *  reader ignores. */
+const WALK_SPOTS = {
   fixes: 3,
   gpsAccuracyMedianM: 4,
   captures: [
@@ -1644,6 +1644,15 @@ const WALK_SPOTS: TourCaptureSpots = {
   ],
 };
 
+/** `manifest`'s tour.json, with {@link WALK_SPOTS} as an earlier file
+ *  carried them when `spots`. */
+function withSpots(manifest: TourManifest, spots: boolean): string {
+  const json = serializeTourManifest(manifest);
+  return spots
+    ? JSON.stringify({ ...JSON.parse(json), captureSpots: WALK_SPOTS })
+    : json;
+}
+
 /** The walk's entries and their bytes, as the phone records them. */
 const WALK_ENTRIES: Readonly<Record<string, string>> = {
   "session.json": '{"version":1}',
@@ -1653,19 +1662,16 @@ const WALK_ENTRIES: Readonly<Record<string, string>> = {
 
 /** A tour with a pin and the walk, a second frame
  *  (`images/frame-000002.jpg`) among it; `withCaptures`: the file
- *  carries capture spots for that frame, as one written while the frames
- *  were baked into the tour did. */
+ *  carries capture spots for that frame, as an earlier one written while
+ *  the frames were baked into the tour did. */
 async function walkTour(withCaptures = true): Promise<{
   session: TourSession;
   manifest: TourManifest;
   bytes: Uint8Array;
 }> {
-  const manifest: TourManifest = tourOf(
-    [pin("a")],
-    withCaptures ? { captureSpots: WALK_SPOTS } : {},
-  );
+  const manifest: TourManifest = tourOf([pin("a")]);
   const zip = await packFilesAsZip([
-    { path: "tour.json", data: serializeTourManifest(manifest) },
+    { path: "tour.json", data: withSpots(manifest, withCaptures) },
     { path: "images/frame-000002.jpg", data: "the baked photo" },
     ...Object.entries(WALK_ENTRIES).map(([path, data]) => ({ path, data })),
   ]);
@@ -1747,7 +1753,7 @@ describe("moving the walk out (W2, D19)", () => {
     // (The second frame stayed in the tour while its capture spot named
     // it; no frame is the tour's now.)
     for (const name of recording) expect(tourNames).not.toContain(name);
-    expect((await carried(move.save.blob)).captureSpots).toBeUndefined();
+    expect("captureSpots" in (await carried(move.save.blob))).toBe(false);
     // The pending edit rides along, as in any save.
     expect((await carried(move.save.blob)).objects[0]).toMatchObject({
       label: "Moved with the walk",
@@ -1849,11 +1855,9 @@ describe("moving the walk out (W2, D19)", () => {
     // which compares it when the file is added back.
     const fixture = await buildListedTourFixture(
       {
-        "tour.json": serializeTourManifest(
-          tourOf([pin("a")], {
-            title: "Castle walk",
-            captureSpots: WALK_SPOTS,
-          }),
+        "tour.json": withSpots(
+          tourOf([pin("a")], { title: "Castle walk" }),
+          true,
         ),
         "images/frame-000002.jpg": "the baked photo",
         ...WALK_ENTRIES,

@@ -478,71 +478,57 @@ describe('parseTourObject (the world view a draft keeps)', () => {
   });
 });
 
-describe('baked capture spots (scan-pass plan S1, S-D11)', () => {
-  // Why: a recorded photo's spot is computed ONCE, at the creator's Finish,
-  // so a visitor neither downloads the walk nor replays it. Since version 3
-  // a station holds it at a local pose (assigned in capture order). The
-  // field is the "baked" marker the viewer trusts instead of its live
-  // join, so a malformed one must be refused here, never placed at a
-  // guessed spot.
+describe("an earlier file's captureSpots (removed from the format)", () => {
+  // Why: the walk's camera captures are debug data, never tour content, and
+  // the field that once baked them into tour.json is gone from the format.
+  // A file that still carries it must open as if the field were any other
+  // unknown one (ignored, every station kept as written), and no write may
+  // carry it on: a stale field a later reader could trust again.
   const capture = {
     image: 'images/frame-0001.jpg',
-    station: 'gate',
+    station: 'walk-1',
     pose: { position: [2, 1.4, 0], rotation: [0, 0, 0, 1] },
   };
   const spots = { fixes: 46, gpsAccuracyMedianM: 3.5, captures: [capture] };
-
-  it('reads and round-trips the baked spots', () => {
-    const manifest = parseTourManifest(tour({ captureSpots: spots }));
-    expect(manifest.captureSpots).toEqual(spots);
-    expect(
-      parseTourManifest(JSON.parse(serializeTourManifest(manifest)))
-    ).toEqual(manifest);
+  // The empty station only the capture named, as the earlier bake wrote it.
+  const walkStation = station([], {
+    id: 'walk-1',
+    title: undefined,
+    steps: [],
   });
 
-  it('keeps an unknown median accuracy unknown (null), never a guessed number', () => {
+  it('reads a file that carries it without it, every station kept as written', () => {
     const manifest = parseTourManifest(
-      tour({ captureSpots: { ...spots, gpsAccuracyMedianM: null } })
-    );
-    expect(manifest.captureSpots?.gpsAccuracyMedianM).toBeNull();
-  });
-
-  it.each([
-    ['a path that escapes the zip', { ...capture, image: '../x.jpg' }],
-    ['an absolute path', { ...capture, image: '/images/x.jpg' }],
-    ['a type that is not an image', { ...capture, image: 'images/x.glb' }],
-    ['a type outside the allowlist', { ...capture, image: 'images/x.svg' }],
-    ['a station the tour does not have', { ...capture, station: 'nope' }],
-    ['no station', { ...capture, station: undefined }],
-    ['no pose', { ...capture, pose: undefined }],
-  ])('refuses a capture with %s', (_name, bad) => {
-    expect(() =>
-      parseTourManifest(tour({ captureSpots: { ...spots, captures: [bad] } }))
-    ).toThrow(TourManifestValidationError);
-  });
-
-  it.each([
-    ['no captures', { ...spots, captures: [] }],
-    ['the same photo twice', { ...spots, captures: [capture, capture] }],
-    ['a fix count that is not a positive integer', { ...spots, fixes: 0 }],
-    ['a negative accuracy', { ...spots, gpsAccuracyMedianM: -1 }],
-    ['an accuracy that is not a number', { ...spots, gpsAccuracyMedianM: '3' }],
-    ['captures that are not a list', { ...spots, captures: {} }],
-  ])('refuses spots with %s', (_name, bad) => {
-    expect(() => parseTourManifest(tour({ captureSpots: bad }))).toThrow(
-      TourManifestValidationError
-    );
-  });
-
-  it('a NEWER minor with spots this build cannot read opens without them, instead of failing the tour', () => {
-    // Why (S1 milestone review #8): additive revisions must degrade.
-    const read = parseTourManifest(
       tour({
-        minor: TOUR_MANIFEST_MINOR + 1,
-        captureSpots: { ...spots, captures: [{ image: 'images/x.heic' }] },
+        stations: [station([pin, photo]), walkStation],
+        captureSpots: spots,
       })
     );
-    expect(read.captureSpots).toBeUndefined();
+    expect('captureSpots' in manifest).toBe(false);
+    expect(manifest.stations.map((s) => s.id)).toEqual(['gate', 'walk-1']);
+    expect(manifest.stations[1]?.items).toEqual([]);
+  });
+
+  it('a malformed one no longer fails the tour: it is an unknown field', () => {
+    for (const bad of [
+      { ...spots, captures: [] },
+      { ...spots, captures: [{ ...capture, image: '../x.jpg' }] },
+      { ...spots, captures: [{ ...capture, station: 'nope' }] },
+      'not an object',
+    ]) {
+      expect(() =>
+        parseTourManifest(tour({ captureSpots: bad }))
+      ).not.toThrow();
+    }
+  });
+
+  it('is never written: a manifest object that still carries it is saved without it', () => {
+    const carried = {
+      ...parseTourManifest(tour()),
+      captureSpots: spots,
+    } as Parameters<typeof serializeTourManifest>[0];
+    const written = JSON.parse(serializeTourManifest(carried)) as object;
+    expect('captureSpots' in written).toBe(false);
   });
 });
 

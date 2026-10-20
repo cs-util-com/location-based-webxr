@@ -1398,8 +1398,9 @@ test("a tour.json carrying debug camera captures shows a visitor its own content
   // data, shown only in the desktop editor's debug layer. This test once
   // pinned the opposite (the visitor drew the frames a creator's open had
   // baked into tour.json as `captureSpots`, "2 photos at their stations
-  // (7 fixes"); the format still reads that field, so a file carrying it
-  // must show the visitor its pin and no frame, in every station.
+  // (7 fixes"); the field is gone from the format and the reader ignores
+  // it, so a file carrying it must show the visitor its pin and no frame,
+  // in every station.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
   await openAsVisitor(page, ARCHIVE, { debug: true, allStations: true });
   await enterAr(page);

@@ -20,10 +20,6 @@ its station) - what a viewer places and a creator's drafts hold.
   rotation also carries the compat `headingDeg`, as every minted pose).
 - `tourObjects(manifest): TourObject[]` - every item in the world, with
   `station` set, in station order.
-- `tourCaptureGeos(manifest): TourCaptureGeo[]` (**deprecated**, with
-  `TourCaptureGeo`: no app writes them; removed in the next major) - the baked recorded
-  photos in the world (`{ image, station, geo }`), in capture order; empty
-  without spots.
 
 ## Invariants & assumptions
 
@@ -43,8 +39,6 @@ its station) - what a viewer places and a creator's drafts hold.
 - **Nothing here writes a local pose back.** A local pose changes only when
   an editor sets a new one; a station's move (D17) changes the station's
   geo pose, and every item follows by construction.
-- A capture whose station a hand-built manifest lacks is left out of the
-  world view (the parser guarantees it in a read file).
 - The world view of a manifest and the session-zero placement differ by
   the curvature between the station's tangent plane and the session
   zero's. It grows linearly with the distance between them: measured
@@ -67,4 +61,4 @@ const all = tourObjects(manifest); // [{ id, kind, geo, station, ... }]
   (by rotation and by heading), turns relative to the station's, a local
   pose placed in the world; properties: geo->local->geo and
   local->geo->local within a millimetre, a station's move keeps the
-  distances between its items; the world view of items and captures.
+  distances between its items; the world view of items.

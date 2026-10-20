@@ -140,6 +140,8 @@ const capture = (stationIds: readonly string[]) =>
 const manifest = stations.chain((s) =>
   fc
     .record({
+      // An earlier file's baked captures: no longer part of the format, so
+      // the reader must ignore them like any unknown field.
       captureSpots: fc.option(
         fc.record({
           fixes: fc.integer({ min: 1, max: 5000 }),
@@ -231,10 +233,16 @@ describe('tour manifest version 3 (properties)', () => {
     );
   });
 
-  it('keeps every item in the station it was written in, and a cover only when the tour has that photo', () => {
+  it('keeps every station and every item in the station it was written in, drops the captureSpots of an earlier file, and keeps a cover only when the tour has that photo', () => {
     fc.assert(
       fc.property(manifest, (m) => {
         const parsed = parseTourManifest(m);
+        // An earlier file's captureSpots never reaches the tour, and costs
+        // no station (the stations it named stay as written).
+        expect('captureSpots' in parsed).toBe(false);
+        expect(parsed.stations.map((s) => s.id)).toEqual(
+          m.stations.map((s) => s.id)
+        );
         expect(parsed.stations.map((s) => s.items.map((i) => i.id))).toEqual(
           m.stations.map((s) => s.items.map((i) => i.id))
         );

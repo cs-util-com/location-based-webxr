@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 import {
+  parseTourManifest,
   serializeTourManifest,
   type TourManifest,
   type TourObject,
@@ -63,11 +64,13 @@ const OPENED: TourManifest = tourOf([
   photo("f", 48.5204),
 ]);
 
-/** OPENED as a file written while the walk's frames were baked into the
- *  tour: one frame in the photo's station, one a kilometre away in an
- *  automatic walk-1 station only it kept. */
-const WITH_CAPTURES: TourManifest = {
-  ...OPENED,
+/** OPENED as an earlier file written while the walk's frames were baked
+ *  into the tour: one frame in the photo's station, one a kilometre away
+ *  in an automatic walk-1 station only it kept. The framework's reader
+ *  ignores the field (it is gone from the format), so this is OPENED with
+ *  an empty walk-1 station. */
+const WITH_CAPTURES: TourManifest = parseTourManifest({
+  ...JSON.parse(serializeTourManifest(OPENED)),
   stations: [
     ...OPENED.stations,
     {
@@ -96,7 +99,7 @@ const WITH_CAPTURES: TourManifest = {
       },
     ],
   },
-};
+});
 
 type Op =
   | { kind: "edit"; id: string; label: string }
@@ -309,9 +312,9 @@ describe("tour document (properties)", () => {
   it("the manifest the state would write is the one the Finish rebuild writes, for a file with debug camera captures and across a second save", async () => {
     // The r875 milestone review #7: what the page shows as the next write
     // must be what a save writes, for a tour opened from a file that
-    // carries debug camera captures (written while the walk's frames were
-    // baked into stations; the document drops them, so neither write may
-    // carry them) and from one without, and once more after a save landed
+    // carried debug camera captures (written while the walk's frames were
+    // baked into stations; the reader ignores the field, so neither write
+    // may carry it) and from one without, and once more after a save landed
     // in the middle - the second write starts from the first one's file.
     const zip = await packFilesAsZip([
       { path: "tour.json", data: serializeTourManifest(OPENED) },
@@ -344,9 +347,13 @@ describe("tour document (properties)", () => {
             previous: null,
           });
           expect(difference(one!.written, manifestToWrite(state)!)).toBeNull();
-          expect(one!.written.captureSpots).toBeUndefined();
+          expect("captureSpots" in one!.written).toBe(false);
+          // Changed expectation: walk-1 was dropped with the captures at
+          // the open. The field is gone from the format, so the earlier
+          // file's empty walk-1 is a station of the tour like any other,
+          // and a write keeps it (it emptied nothing).
           expect(one!.written.stations.some((s) => s.id === "walk-1")).toBe(
-            false,
+            withSpots,
           );
           state = reduce(
             state,
@@ -368,7 +375,7 @@ describe("tour document (properties)", () => {
             previous: { blob: one!.blob },
           });
           expect(difference(two!.written, manifestToWrite(state)!)).toBeNull();
-          expect(two!.written.captureSpots).toBeUndefined();
+          expect("captureSpots" in two!.written).toBe(false);
         },
       ),
       { numRuns: 25 },

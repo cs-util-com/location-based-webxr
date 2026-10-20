@@ -16,7 +16,7 @@ import {
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 
 import { worldManifest } from "./ar-fakes.js";
-import { inOwnStation, stationAt } from "./v3-fixture.mjs";
+import { inOwnStation } from "./v3-fixture.mjs";
 
 /**
  * Why these tests matter (Tour Viewer M6 E1): the desktop editor opens a
@@ -376,20 +376,16 @@ test("the sample tour opens with its story's stations on the map", async ({
 });
 
 /** A tour in the wrapped shape ("compress this folder") carrying a walk
- *  recording, and a code with no stored position. By default its
- *  `tour.json` also carries a debug camera capture of the walk's frame in
- *  a station of its own (`captureSpots`, as an earlier app wrote it),
- *  which the editor drops at the open. */
-/** @param {{ pin: boolean, extra?: boolean, spots?: boolean }} options -
+ *  recording and its frame, and a code with no stored position. */
+/** @param {{ pin: boolean, extra?: boolean }} options -
  *  `extra`: a second pin, as another program's edit of the same tour would
- *  add; `spots: false`: no capture spots and no station for them */
+ *  add */
 async function wrappedTour(options = { pin: false }) {
   const id = await qrCodeId("https://gps.csutil.com/tour/?qr=wrapped");
   const manifest = {
     ...createEmptyTourManifest(),
     title: "Wrapped fixture",
     stations: [
-      ...(options.spots === false ? [] : [stationAt("walk", geo(5, 5))]),
       ...(options.pin
         ? [
             {
@@ -413,21 +409,6 @@ async function wrappedTour(options = { pin: false }) {
           ].map(inOwnStation)
         : []),
     ],
-    ...(options.spots === false
-      ? {}
-      : {
-          captureSpots: {
-            fixes: 3,
-            gpsAccuracyMedianM: 4,
-            captures: [
-              {
-                image: "mytour/images/frame-000002.png",
-                station: "walk",
-                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-              },
-            ],
-          },
-        }),
   };
   return zip([
     { path: "mytour/tour.json", data: serializeTourManifest(manifest) },
@@ -1333,8 +1314,8 @@ test("saves in place to the file it opened, and keeps the walk recording", async
   expect(Object.keys(texts)).toContain("mytour/images/frame-000002.png");
   // Changed expectation: this test once opened the walk's frame as a
   // "Recorded photo" read from the written file. The frames are debug
-  // data now, so the write carries no capture spots, and the frame stays
-  // only as part of the walk.
+  // data now (the format has no field for them), and the frame stays only
+  // as part of the walk.
   expect(texts["mytour/tour.json"]).not.toContain("captureSpots");
 });
 

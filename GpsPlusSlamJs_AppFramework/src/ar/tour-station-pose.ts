@@ -34,7 +34,7 @@ import {
 } from './qr/qr-geo-pose-minting.js';
 import { rotateVectorByQuaternion } from './qr/qr-pose.js';
 import type { TourItem, TourLocalPose } from './tour-items.js';
-import type { TourManifest, TourObject, TourCapture } from './tour-manifest.js';
+import type { TourManifest, TourObject } from './tour-manifest.js';
 
 const IDENTITY: Quaternion = [0, 0, 0, 1];
 
@@ -132,39 +132,5 @@ export function tourObjects(
 ): TourObject[] {
   return manifest.stations.flatMap((station) =>
     station.items.map((item) => placed(item, station))
-  );
-}
-
-/** A baked camera capture's spot in the world.
- *  @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major. */
-export interface TourCaptureGeo {
-  readonly image: string;
-  readonly station: string;
-  /** Always carries a rotation (a capture faces as the camera did). */
-  readonly geo: QrGeoPose;
-}
-
-/** The baked camera captures in the world, in capture order; empty
- *  without baked spots.
- *  @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major. */
-export function tourCaptureGeos(
-  manifest: Pick<TourManifest, 'stations' | 'captureSpots'>
-): TourCaptureGeo[] {
-  const stations = new Map(manifest.stations.map((s) => [s.id, s.geo]));
-  return (manifest.captureSpots?.captures ?? []).flatMap(
-    (capture: TourCapture) => {
-      // The parser guarantees the station; a hand-built manifest that
-      // breaks it loses the capture, never the tour.
-      const station = stations.get(capture.station);
-      return station === undefined
-        ? []
-        : [
-            {
-              image: capture.image,
-              station: capture.station,
-              geo: itemGeoPose(capture.pose, station),
-            },
-          ];
-    }
   );
 }

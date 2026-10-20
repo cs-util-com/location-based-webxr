@@ -89,26 +89,7 @@ function stationAt(id: string, geo: QrGeoPose, title?: string): TourStation {
   };
 }
 
-/** The walk's recorded photos, each at a station of its own at `geo`
- *  (version 3 keeps them in stations, tour editor plan W3). */
-function walk(
-  captures: readonly { image: string; geo: QrGeoPose }[],
-): Partial<TourManifest> {
-  return {
-    stations: captures.map((c, i) => stationAt(`w${String(i)}`, c.geo)),
-    captureSpots: {
-      fixes: 3,
-      gpsAccuracyMedianM: 4,
-      captures: captures.map((c, i) => ({
-        image: c.image,
-        station: `w${String(i)}`,
-        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-      })),
-    },
-  };
-}
-
-/** The items besides the stations (a file's capture spots sit in some). */
+/** The items besides the stations. */
 function notStations(m: EditorModel) {
   return m.items.filter((i) => i.kind !== "station");
 }
@@ -166,32 +147,10 @@ describe("buildEditorModel", () => {
     expect(m.counts).toEqual({ code: 1, pin: 1, photo: 1, station: 0 });
   });
 
-  // Why: the walk's camera captures were listed as read-only "Recorded
-  // photo" items, in the rail, the counts and the map's item marks (two
-  // tests pinned that, one for a fix that cannot be drawn). They are debug
-  // data now, drawn on a debug layer of their own and never an item: a
-  // file's capture spots give none, and count as no photo.
-  it("lists no debug camera capture: a file's capture spots give no item and count as no photo", () => {
-    const m = buildEditorModel({
-      manifest: manifest(
-        walk([
-          {
-            image: "images/frame-000002.jpg",
-            geo: { ...AT, rotation: [0, 0, 0, 1] },
-          },
-          {
-            image: "images/frame-000003.jpg",
-            geo: { ...AT, lat: 123, rotation: [0, 0, 0, 1] },
-          },
-        ]),
-      ),
-      objects: [],
-      levels: new Map(),
-      fileName: "tour.zip",
-    });
-    expect(notStations(m)).toEqual([]);
-    expect(m.counts.photo).toBe(0);
-  });
+  // (A test that a file's capture spots gave no item and counted as no
+  // photo stood here: the walk's camera captures were once listed as
+  // "Recorded photo" items. The field that carried them is gone from the
+  // format, so nothing can list them; the debug layer draws the frames.)
 
   it("lists the story's stations at their own positions (version 3, D9)", () => {
     // Why: a story tour (the committed sample) may carry no pins or photos

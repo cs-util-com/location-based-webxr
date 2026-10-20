@@ -7,9 +7,8 @@
  * these tests pin the write: an object nobody moved keeps its local pose
  * bit for bit (D17's "never changes a child's local pose" starts here), a
  * moved one is re-expressed in its own station, every object goes into the
- * station it names (the writer starts none), a file's debug camera
- * captures leave the tour with the stations only they kept
- * (`withoutDebugCaptures`), and a saved object compares equal to its
+ * station it names (the writer starts none), and a saved object compares
+ * equal to its
  * stored copy (`asStored`), which is what keeps a draft from being
  * offered back after its save.
  */
@@ -31,7 +30,6 @@ import { describe, expect, it } from "vitest";
 import { objectContentKey } from "./authoring-draft.js";
 import {
   asStored,
-  withoutDebugCaptures,
   withReferencedAssets,
   withTourContent,
 } from "./tour-content.js";
@@ -202,8 +200,7 @@ describe("withTourContent", () => {
     // another station routes to stays so the route still resolves, and an
     // empty station the tour already had is left alone. (A "photographed"
     // station, kept by the walk's recorded photos, stood here too: those
-    // are debug camera captures now, which keep no station and which the
-    // document drops at the open, withoutDebugCaptures.)
+    // are debug camera captures now, which keep no station.)
     const titled = { ...station("titled", 100, 0), title: "Old well" };
     const storied: TourStation = {
       ...station("storied", 200, 0),
@@ -241,144 +238,14 @@ describe("withTourContent", () => {
   });
 
   // (A test that a write kept the tour's recorded photos verbatim stood
-  // here: a tour the document holds carries none since the open drops
-  // them, withoutDebugCaptures below.)
+  // here: a tour carries none, the field is gone from the format.)
 });
 
-describe("withoutDebugCaptures", () => {
-  // Why these tests matter: a file written before the debug camera
-  // captures left the tour carries them as captureSpots, each in a
-  // station, and the bake started an automatic walk-N station for every
-  // frame no station held. Such a station holds no item: the capture
-  // reference alone kept it, so a write that drops the captures but keeps
-  // it would leave the visitor's guide leading to an empty station. The
-  // open drops both; a station anything else keeps stays, and so does an
-  // empty one no capture named (the creator's own).
-  const capture = (image: string, stationId: string) => ({
-    image,
-    station: stationId,
-    pose: {
-      position: [0, 0, 0] as [number, number, number],
-      rotation: [0, 0, 0, 1] as [number, number, number, number],
-    },
-  });
-  const storied = (s: TourStation): TourStation => ({
-    ...s,
-    steps: [
-      {
-        id: "t",
-        block: { kind: "text", text: "Hi" },
-        advance: { mode: "tap" },
-      },
-    ],
-  });
-
-  it("drops the captures and every station only they kept", () => {
-    const gate = withTourContent(tour([station("gate", 0, 0)]), {
-      objects: [inStation(pin("a", 1, 0), "gate")],
-    }).stations[0]!;
-    const manifest: TourManifest = {
-      ...tour([
-        gate,
-        station("walk-1", 100, 0),
-        { ...station("walk-2", 200, 0), title: "Old well" },
-        storied(station("walk-3", 300, 0)),
-        { ...station("walk-4", 400, 0), next: "walk-5" },
-        station("walk-5", 500, 0),
-        station("own-empty", 600, 0),
-        station("walk-6", 700, 0),
-      ]),
-      captureSpots: {
-        fixes: 3,
-        gpsAccuracyMedianM: 4,
-        captures: [
-          capture("images/frame-1.jpg", "gate"),
-          capture("images/frame-2.jpg", "walk-1"),
-          capture("images/frame-3.jpg", "walk-2"),
-          capture("images/frame-4.jpg", "walk-3"),
-          capture("images/frame-5.jpg", "walk-4"),
-          capture("images/frame-6.jpg", "walk-5"),
-          capture("images/frame-7.jpg", "walk-6"),
-          capture("images/frame-8.jpg", "walk-6"),
-        ],
-      },
-    };
-    const out = withoutDebugCaptures(manifest);
-    expect("captureSpots" in out).toBe(false);
-    // Kept: an item, a title, steps, a route of its own (walk-4), routed
-    // to (walk-5, by walk-4), and an empty station no capture named. Gone: walk-1 and walk-6 (captures
-    // only), however many captures named them.
-    expect(out.stations.map((s) => s.id)).toEqual([
-      "gate",
-      "walk-2",
-      "walk-3",
-      "walk-4",
-      "walk-5",
-      "own-empty",
-    ]);
-    // What stays is the very station, untouched.
-    expect(out.stations[0]).toBe(manifest.stations[0]);
-  });
-
-  it("returns the very manifest when it carries no captures", () => {
-    const manifest = tour([station("own-empty", 0, 0)]);
-    expect(withoutDebugCaptures(manifest)).toBe(manifest);
-  });
-
-  it("drops exactly the bare stations a capture named, keeping the order (property)", () => {
-    // Why: the rule is one of exclusion; over any mix of stations and
-    // capture references, what goes must be exactly the bare stations a
-    // capture named, and the rest must keep their order.
-    const stationArb = fc.record({
-      title: fc.boolean(),
-      steps: fc.boolean(),
-      routedTo: fc.boolean(),
-      captured: fc.nat({ max: 2 }),
-    });
-    fc.assert(
-      fc.property(fc.array(stationArb, { maxLength: 8 }), (specs) => {
-        const ids = specs.map((_, i) => `s${String(i)}`);
-        const stations = specs.map((spec, i): TourStation => {
-          let s = station(ids[i]!, i * 100, 0);
-          if (spec.title) s = { ...s, title: "T" };
-          if (spec.steps) s = storied(s);
-          return s;
-        });
-        // A route to each station marked routedTo, from the station
-        // before it (the first is routed to from the last).
-        const routed = stations.map((s, i) => {
-          const j = (i + 1) % stations.length;
-          return specs[j]?.routedTo === true ? { ...s, next: ids[j]! } : s;
-        });
-        const captures = specs.flatMap((spec, i) =>
-          Array.from({ length: spec.captured }, (_, k) =>
-            capture(`images/f-${String(i)}-${String(k)}.jpg`, ids[i]!),
-          ),
-        );
-        const manifest: TourManifest = {
-          ...tour(routed),
-          captureSpots: { fixes: 1, gpsAccuracyMedianM: null, captures },
-        };
-        const out = withoutDebugCaptures(manifest);
-        expect("captureSpots" in out).toBe(false);
-        const expected = ids.filter((_, i) => {
-          const spec = specs[i]!;
-          // A station routes on (`next`) when the one after it is
-          // routed to, as built above.
-          const routesOn = specs[(i + 1) % specs.length]?.routedTo === true;
-          return (
-            spec.title ||
-            spec.steps ||
-            spec.routedTo ||
-            routesOn ||
-            spec.captured === 0
-          );
-        });
-        expect(out.stations.map((s) => s.id)).toEqual(expected);
-      }),
-    );
-  });
-});
+// (The tests of `withoutDebugCaptures` stood here: the open dropped an
+// earlier file's `captureSpots` and the stations only they kept. The field
+// is gone from the format, so the framework's reader ignores it like any
+// unknown field and keeps every station as written - its own tests pin
+// that - and nothing here drops a station for it.)
 
 describe("withReferencedAssets", () => {
   // Why these tests matter: a tour's media files are its assets, and a

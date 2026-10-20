@@ -20,9 +20,8 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
     version 3 through `withTourContent` (`tour-content.ts`): the edits
     apply to its world view (`tourObjects`), and every pin and photo is
     written into the station it names - the stations are the manifest's
-    as they are (the tour document seated every object). The tour
-    document hands it no debug camera captures (`withoutDebugCaptures`);
-    a manifest that carried some would be written as it is.
+    as they are (the tour document seated every object). A manifest
+    carries no debug camera captures (the format has no field for them).
   - `input.placed` - objects placed or edited (`{ object, blob? }`); a
     photo with bytes writes them as its content file. Read synchronously
     at the call: pass a snapshot, not a list the page keeps changing.
@@ -97,8 +96,7 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
   `previous.signedManifest`, the written ones hashed here). An unlisted
   tour carrying the name drops it.
 - **The walk:** entries visitors never read are left out unless
-  `keepScan`, with or without `captureSpots`: a visitor shows baked
-  photos only and never reads the walk.
+  `keepScan`: a visitor never reads the walk.
 - **Newest bytes:** `previous.blob` when given, else
   (null or omitted, one expression for both the read and the budget)
   `tour.readWholeArchive()` - rebuilding from the hosted zip again would

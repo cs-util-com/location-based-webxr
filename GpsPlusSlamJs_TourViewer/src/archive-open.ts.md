@@ -66,10 +66,8 @@ DOM glue, its own module since the flows plan M6.
     the origin says which form submitted, so an open started in step 4
     does not answer by collapsing step 4 - load the
     levels (with a `.catch`). Once the manifest settles,
-    `hooks.presentTourInfo({ manifest, loadImage })` gets it as the tour
-    document opens it (`tourAsOpened`: without the file's debug camera
-    captures and the stations only they kept, debug-captures M1;
-    `manifest` null for a zip without `tour.json`) with a loader that
+    `hooks.presentTourInfo({ manifest, loadImage })` gets it as the file
+    has it (`manifest` null for a zip without `tour.json`) with a loader that
     reads an
     archive path from the open zip, and `null` when the session is torn
     down (the visitor's start page, which leads with the tour's name and
@@ -174,9 +172,9 @@ DOM glue, its own module since the flows plan M6.
 - **No bake at open**: the walk's camera captures are debug data (plan
   `2026-10-20-1159-debug-captures-and-codes-in-store-plan`, M1). A
   creator's open settles as soon as `tour.json` is read, starts no
-  station for a frame and replays no walk; the document drops a file's
-  capture spots and the stations only they kept (`withoutDebugCaptures`
-  of `tour-content.ts`, in the document's `opened`). (Until M1 the open
+  station for a frame and replays no walk; an earlier file's capture
+  spots are an unknown field to the framework's reader, which ignores
+  them. (Until M1 the open
   replayed the walk and seated its frames in stations, `walk-N` ones
   where no station held them, before it settled.) Tests:
   `archive-open-file.test.ts` ("a creator's recording opens without its

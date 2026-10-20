@@ -436,8 +436,9 @@ async function buildRecordingZip() {
 
 /**
  * A tour zip whose `tour.json` carries debug camera captures
- * (`captureSpots`, 7 fixes, the format's deprecated field: an earlier app
- * wrote them at a creator's open) in stations of their own, one of which
+ * (`captureSpots`, 7 fixes: an earlier app wrote them at a creator's open;
+ * the field is gone from the format and the reader ignores it) in
+ * stations of their own, one of which
  * also holds a pin; the captured frames, a level, and a walk
  * (`session.json`, an action). A visitor draws the pin and none of the
  * frames, and takes no cover from one.

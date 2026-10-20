@@ -51,6 +51,11 @@
  *   does not know it drops it - which costs only the creator's draft its
  *   key on that tour's next open, never the tour. A minor for it would
  *   make every older writer refuse every tour that carries one.
+ * - `captureSpots` (the walk's camera captures, which earlier apps baked
+ *   into the tour) is no longer part of the format: they are debug data,
+ *   never tour content. A file that still carries the field opens without
+ *   it, like any unknown field (its stations stay as written), and no write
+ *   carries it.
  * Series id and version number do not live here: `manifest.json` is their
  * one place (§8 G7, `tour-signed-manifest.ts`). The `tourId` is not a
  * series id: it is unsigned, names no version, and only keys a creator's
@@ -59,12 +64,10 @@
  * @see tour-manifest.ts.md
  */
 
-import { assertSafeZipEntryPaths } from '../storage/zip-entry-path.js';
-import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
+import { isRecord } from '../utils/json-guards.js';
 import { parseGeoPose } from './qr/geo-pose.js';
 import type { QrGeoPose } from './qr/qr-gps-vote.js';
 import { TOUR_ID_PATTERN } from './tour-archive.js';
-import { tourMediaTypeOfEntry } from './tour-media.js';
 import {
   parseTourDetails,
   tourImageIds,
@@ -73,9 +76,7 @@ import {
 } from './tour-details.js';
 import {
   parseTourContentFields,
-  parseTourLocalPose,
   type TourItem,
-  type TourLocalPose,
   type TourModelFields,
   type TourPhotoFields,
   type TourPinFields,
@@ -134,41 +135,6 @@ export type TourModel = TourModelFields & TourPlacement;
 export type TourObject = TourPin | TourPhoto | TourModel;
 export type TourObjectKind = TourObject['kind'];
 
-/** One of the walk's camera captures at its spot, as earlier apps baked
- *  it into the tour, held by a station at a local pose (always with a
- *  rotation: a capture faces as the camera did).
- *
- *  @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major.
- *  The parser still reads them and the writer still writes what it is
- *  given. */
-export interface TourCapture {
-  /** The capture's entry name as the recording wrote it (`add2dImage`). */
-  readonly image: string;
-  /** The station holding it (by the automatic-station rule, in capture
-   *  order). */
-  readonly station: string;
-  readonly pose: TourLocalPose;
-}
-
-/**
- * The walk's camera captures at their spots, as earlier apps computed them
- * ONCE for the tour (scan-pass plan S1, S-D11: each capture through the
- * first settled alignment after it was taken) and showed them to
- * visitors. No app writes or shows them any more: they are debug data.
- *
- * @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major.
- * The parser still reads them and the writer still writes what it is
- * given.
- */
-export interface TourCaptureSpots {
-  /** The walk's GPS fixes paired with odometry, and their median accuracy
-   *  (null when the fixes reported none): the quality line a visitor sees,
-   *  as the live join reported it. */
-  readonly fixes: number;
-  readonly gpsAccuracyMedianM: number | null;
-  readonly captures: readonly TourCapture[];
-}
-
 export interface TourManifest extends TourDetails {
   version: typeof TOUR_MANIFEST_VERSION;
   /** The additive revision the file was written at (0 when absent). */
@@ -188,9 +154,6 @@ export interface TourManifest extends TourDetails {
   assets: TourAsset[];
   /** The stations, each with its pins and photos (no loose ones). */
   stations: TourStation[];
-  /** The walk's camera captures as earlier apps baked them (see the type).
-   *  @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major. */
-  captureSpots?: TourCaptureSpots;
   /**
    * The tour's printed codes place it on their own, so a viewer never asks
    * its visitors for their location and starts without it. Only `true` is
@@ -217,10 +180,6 @@ export class TourManifestValidationError extends Error {
 
 function fail(message: string): never {
   throw new TourManifestValidationError(message);
-}
-
-function isPositiveInteger(v: unknown): v is number {
-  return isFiniteNumber(v) && Number.isInteger(v) && v > 0;
 }
 
 /** An empty manifest at the current version - the starter zip's content. */
@@ -266,79 +225,6 @@ export function parseTourObject(value: unknown, at = 'object'): TourObject {
     geo,
     ...(station === undefined ? {} : { station }),
   };
-}
-
-function parseCapture(value: unknown, at: string): TourCapture {
-  if (!isRecord(value)) fail(`"${at}" must be an object`);
-  const { image, station } = value;
-  if (typeof image !== 'string') fail(`"${at}.image" must be a string`);
-  try {
-    assertSafeZipEntryPaths([image]);
-  } catch (err) {
-    fail(`"${at}.image": ${err instanceof Error ? err.message : String(err)}`);
-  }
-  if (tourMediaTypeOfEntry(image)?.kind !== 'image') {
-    fail(`"${at}.image" must be an image type`);
-  }
-  if (typeof station !== 'string' || !TOUR_ID_PATTERN.test(station)) {
-    fail(`"${at}.station" must be a station id`);
-  }
-  return {
-    image,
-    station,
-    pose: parseTourLocalPose(value.pose, `${at}.pose`, fail),
-  };
-}
-
-/** The baked spots, or undefined when the document has none. */
-function parseCaptureSpots(
-  value: unknown,
-  stationIds: ReadonlySet<string>
-): TourCaptureSpots | undefined {
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) fail('"captureSpots" must be an object');
-  const { fixes, gpsAccuracyMedianM, captures } = value;
-  if (!isPositiveInteger(fixes)) {
-    fail('"captureSpots.fixes" must be a positive integer');
-  }
-  if (
-    gpsAccuracyMedianM !== null &&
-    (!isFiniteNumber(gpsAccuracyMedianM) || gpsAccuracyMedianM < 0)
-  ) {
-    fail('"captureSpots.gpsAccuracyMedianM" must be null or a number >= 0');
-  }
-  // A bake that placed nothing is never written: the marker would stop the
-  // viewer's own join for a tour with nothing to show.
-  if (!Array.isArray(captures) || captures.length === 0) {
-    fail('"captureSpots.captures" must be a non-empty array');
-  }
-  const parsed = captures.map((c, i) =>
-    parseCapture(c, `captureSpots.captures[${String(i)}]`)
-  );
-  if (new Set(parsed.map((c) => c.image)).size !== parsed.length) {
-    fail('"captureSpots.captures" names a photo twice');
-  }
-  parsed.forEach((capture, i) => {
-    if (!stationIds.has(capture.station)) {
-      fail(`"captureSpots.captures[${String(i)}].station" must name a station`);
-    }
-  });
-  return { fixes, gpsAccuracyMedianM, captures: parsed };
-}
-
-/** A newer minor's spots this reader cannot read degrade to none (K1 R4,
- *  S1 milestone review #8): the viewer then falls back to its own join or
- *  the ring, instead of the whole tour failing to open. */
-function captureSpotsOrNone(
-  value: unknown,
-  stationIds: ReadonlySet<string>
-): TourCaptureSpots | undefined {
-  try {
-    return parseCaptureSpots(value, stationIds);
-  } catch (err) {
-    if (err instanceof TourManifestValidationError) return undefined;
-    throw err;
-  }
 }
 
 /** The format version, checked: 3; an older or a newer one is named. */
@@ -470,10 +356,6 @@ export function parseTourManifest(
   });
   checkContentIds(stations, assets);
   const needsNoGps = needsNoGpsOf(data.needsNoGps, lenient);
-  const stationIds = new Set(stations.map((s) => s.id));
-  const captureSpots = lenient
-    ? captureSpotsOrNone(data.captureSpots, stationIds)
-    : parseCaptureSpots(data.captureSpots, stationIds);
   const tourId = tourIdOf(data.tourId);
   return {
     version: TOUR_MANIFEST_VERSION,
@@ -483,7 +365,6 @@ export function parseTourManifest(
     order: orderOf(data.order, lenient),
     assets,
     stations,
-    ...(captureSpots === undefined ? {} : { captureSpots }),
     ...(needsNoGps === undefined ? {} : { needsNoGps }),
   };
 }

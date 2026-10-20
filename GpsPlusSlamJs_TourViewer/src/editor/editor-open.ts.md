@@ -12,9 +12,9 @@ and the codes, or the reason the file cannot be edited, worded by
 - `openTourForEditing(file, { onIntegrityFailure?, open? }): Promise<EditorOpen>`
   - `{ kind: "opened", session, manifest, levels, fileName, dropped }` -
     `manifest` is the file's, an empty one for a tour with codes but no
-    `tour.json`; the walk's debug camera captures start no station (the
-    document drops a file's capture spots, `withoutDebugCaptures`; until
-    M1 of the debug-captures plan the open baked them into stations);
+    `tour.json`; the walk's debug camera captures start no station (until
+    M1 of the debug-captures plan the open baked them into stations; an
+    earlier file's `captureSpots` is an unknown field to the reader);
     `dropped` lists the details the format's reader left out (a
     hand-edited description, contact or cover; M4a review #6).
   - `{ kind: "refused", reason }`:
