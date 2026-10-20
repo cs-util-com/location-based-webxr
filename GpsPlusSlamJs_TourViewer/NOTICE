@@ -8,7 +8,8 @@ The app bundles the following third-party libraries. Each one's own
 licence file ships with the app, verbatim, as
 third-party-licenses/<name>-LICENSE.txt (public/ in the source), and a
 library's own NOTICE file as third-party-licenses/<name>-NOTICE.txt; the
-name is the npm name with "@" dropped and "/" written as "-".
+name is the npm name with "@" dropped and "/" written as "-". This NOTICE
+ships with the app as third-party-licenses/NOTICE.txt.
 
 - Three.js (npm: three, https://threejs.org/) - MIT License
 - 3d-tiles-renderer (npm: 3d-tiles-renderer,
@@ -45,3 +46,9 @@ name is the npm name with "@" dropped and "/" written as "-".
 Several of these reach the app through the App Framework
 (gps-plus-slam-app-framework, Apache License 2.0), which has its own
 NOTICE.
+
+The build tools (Vite and Rolldown, both MIT License) emit a few lines
+of their own into the bundle: a module runtime, a dynamic-import preload
+helper and a modulepreload polyfill. That generated glue is neither a
+copy nor a substantial portion of either tool, so no licence file ships
+for it.

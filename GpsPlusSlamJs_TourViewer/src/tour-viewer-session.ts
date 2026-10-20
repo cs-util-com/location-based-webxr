@@ -175,9 +175,9 @@ export interface TourViewerHooks {
   presentTourLevels(): void;
   /** The open tour's manifest settled (`manifest` null: the zip has no
    *  `tour.json`), or no tour is open any more (`tour` null): the
-   *  visitor's start page shows its name, its subline and its cover, read
-   *  from the zip by its archive path through `loadImage` (polish round
-   *  M4a), or that it is not finished yet. */
+   *  visitor's start page leads with the tour itself - its name, its
+   *  subline and its cover, read from the zip by its archive path through
+   *  `loadImage` - or says that it is not finished yet. */
   presentTourInfo(
     tour: {
       readonly manifest: TourManifest | null;

@@ -171,7 +171,12 @@ file of its own, when a licence or NOTICE file is not shipped verbatim,
 when a shipped file belongs to no bundled package, when `NOTICE` does not
 name a bundled package, or when it does not say that a patched package
 (`patchedDependencies` in `pnpm-workspace.yaml`) is modified and by which
-patch (Apache License 2.0, sections 4(a), 4(b) and 4(d)).
+patch (Apache License 2.0, sections 4(a), 4(b) and 4(d)). The app's own
+`NOTICE` ships too, as `third-party-licenses/NOTICE.txt`, and the test
+fails when that copy differs from it. A build's virtual modules (the
+build tools' runtime glue) belong to no package: the known ones are
+listed in `bundled-packages.ts` with the reason no licence ships for
+them, and an unknown one fails the test until someone decides.
 
 ## Where the design lives
 

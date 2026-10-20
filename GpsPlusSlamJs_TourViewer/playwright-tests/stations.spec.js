@@ -433,9 +433,9 @@ test("?allstations=1 shows every station's content at once", async ({
     .toEqual(["station-content:gate", "station-content:well"]);
 });
 
-/** The ring's photo planes in one station's group: meshes standing
- *  directly in it (the station's own items hang one level deeper, under
- *  their frame), each with its opacity. */
+/** What one station's group draws, however deep (its items hang under
+ *  their frame): every mesh (a photo plane) and sprite (a pin), each
+ *  with its opacity. */
 function drawnOpacitiesIn(page, group) {
   return page.evaluate((name) => {
     /** @param {any} o @returns {number[]} */

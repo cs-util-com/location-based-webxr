@@ -651,12 +651,29 @@ describe("tour document: every object belongs to a station", () => {
     expect(stationOf(sideways, "p")).toBe("s");
     const fartherOut = moveTo(outside, "p", spot(-41));
     expect(stationOf(fartherOut, "p")).toBe("moved-p");
-    // Nearer s's anchor than before, and inside t's radius: t holds it.
+    // Nearer s's anchor than before, and into t's radius: t holds it.
     const intoT = place(tourWith(stationAt("s", 0), stationAt("t", 60)), {
+      ...pinAt("p", spot(45, 30)),
+      station: "s",
+    });
+    expect(stationOf(moveTo(intoT, "p", spot(40)), "p")).toBe("t");
+  });
+
+  // Why: radii overlap. An object of s that already stood inside t's
+  // radius (and outside s's) was re-seated into t by any nudge toward s:
+  // t held the spot before the move as much as after it, so the move did
+  // not take the object anywhere new.
+  it("an object of one station standing inside another's radius keeps its station when nudged toward its own anchor", () => {
+    const overlap = place(tourWith(stationAt("s", 0), stationAt("t", 60)), {
       ...pinAt("p", spot(40)),
       station: "s",
     });
-    expect(stationOf(moveTo(intoT, "p", spot(36)), "p")).toBe("t");
+    expect(stationOf(overlap, "p")).toBe("s");
+    const nudged = moveTo(overlap, "p", spot(38));
+    expect(stationOf(nudged, "p")).toBe("s");
+    expect(nudged.stations.map((s) => s.id)).toEqual(["s", "t"]);
+    // Farther from s's anchor it is the rule's again: t holds it.
+    expect(stationOf(moveTo(overlap, "p", spot(42)), "p")).toBe("t");
   });
 
   it("a delete that empties an automatic station drops it in the same step; an undo brings both back as they were", () => {

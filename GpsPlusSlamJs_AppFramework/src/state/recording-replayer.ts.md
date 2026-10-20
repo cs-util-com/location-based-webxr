@@ -26,15 +26,17 @@ Loads all actions from a recording zip, creates a store with `NullStorageBackend
   is a separate hook rather than an error.
   - It exists because `onChunk` gave a caller a place to NOTICE it no longer
     wanted the result but no way to act on it. Its production caller is the
-    TourViewer's geo join (`main.ts`), which passes
-    `() => generation === planesRunGeneration`; without it a replay whose AR
-    session had ended kept dispatching into a store nobody would read, on
-    device, competing with the frame loop.
-  - **The option was added one round BEFORE that caller was wired** (PR #379
-    review). Nothing caught the gap: the option is optional so types were
-    satisfied, the framework tests use it so knip saw no dead export, and
-    `main.ts` has no unit tests. `replay-abort-wiring.test.ts` in the
-    TourViewer now pins the call site.
+    TourViewer's bake of a recording's photos at a creator's open
+    (`capture-bake.ts` `bakeCaptureSpots`, through `walkAtOpen`), which the
+    phone's open (`archive-open.ts`) runs with
+    `() => ctx.session === opened`: a bake whose tour was closed or
+    replaced stops at the next chunk instead of replaying the rest of a
+    walk nobody will read. `capture-bake.test.ts` ("a replay the caller
+    stopped") pins the pass-through.
+  - **The option was once added a round BEFORE its first caller was
+    wired**, and nothing caught the gap: the option is optional so types
+    were satisfied, and the framework tests use it so knip saw no dead
+    export. A caller's own test of the pass-through is what closes it.
 - `options` — Optional `ReplayRecordingOptions`:
   - `migrateActions?: (actions: RecordedAction[]) => RecordedAction[]` — Transform actions before dispatch (e.g., era migration).
 

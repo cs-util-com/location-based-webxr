@@ -111,7 +111,9 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
     one there - so no move is ever too far, and none is silently dropped.
     An object already outside its station's radius (the radius shrank,
     the station moved) keeps its station when moved no farther from the
-    anchor and into no station's radius (`keepsHome`); the comparison is
+    anchor and into no other station's radius (`keepsHome`); a station
+    whose radius already held the old spot (overlapping radii) is not one
+    it moved into, so a nudge toward its own anchor keeps it. The comparison is
     strict, so a move a centimetre farther out runs the rule. The station it left goes in the same step when that leaves
     it an EMPTY AUTOMATIC station: no object names it, and no title,
     story step, route to it (`next`, a quiz's routes) or recorded photo
@@ -385,6 +387,8 @@ store.dispatch(tourDocumentActions.undone());
   a tie to the earlier station and two that hold to the nearer, the new
   station's frame, "New station here" within a radius, a taken id and a
   dangling station refused, a move within, out of and back into a radius,
+  an object outside its radius nudged (also inside another station's
+  overlapping radius, which it then keeps out of),
   the station it left dropped, a delete dropping an emptied automatic
   station and its undo bringing it back exactly, the stations a title, a
   step, a route or a recorded photo keeps, a placement during a save, a

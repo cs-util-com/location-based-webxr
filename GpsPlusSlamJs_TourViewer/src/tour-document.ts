@@ -974,7 +974,8 @@ function unseated(object: TourObject): TourObject {
  *  `frame`: the station's own found radius holds the spot; or the object
  *  stood outside that radius already, and the move takes it no farther
  *  from the anchor (strict: a centimetre farther runs the rule) and into
- *  no station's radius. */
+ *  no other station's radius - a station whose radius held the old spot
+ *  too (radii overlap) is not one it moved into. */
 function keepsHome(
   state: TourDocumentState,
   frame: StationFrame,
@@ -988,7 +989,11 @@ function keepsHome(
     return false;
   }
   const base = manifestNow(state);
-  return base !== null && stationHolding(base.stations, object.geo) === null;
+  if (base === null) return false;
+  const movedInto = base.stations.filter(
+    (s) => stationHolding([s], was) === null,
+  );
+  return stationHolding(movedInto, object.geo) === null;
 }
 
 /** The station the document's object `id` stands in, if any. */

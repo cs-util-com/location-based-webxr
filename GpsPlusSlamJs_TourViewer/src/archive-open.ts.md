@@ -69,7 +69,8 @@ DOM glue, its own module since the flows plan M6.
     `hooks.presentTourInfo({ manifest, loadImage })` gets it (`manifest`
     null for a zip without `tour.json`) with a loader that reads an
     archive path from the open zip, and `null` when the session is torn
-    down (the visitor's start page, polish round M4a). It resolves an `OpenOutcome` (`opened`,
+    down (the visitor's start page, which leads with the tour's name and
+    cover). It resolves an `OpenOutcome` (`opened`,
     `superseded`, or `failed` with the reject cause) and keeps a real
     in-flight flag; a successful open sets `ctx.tourLabel`.
   - `ArchiveOpen.openLink(url)` / `ArchiveOpen.openFile(file)` - the

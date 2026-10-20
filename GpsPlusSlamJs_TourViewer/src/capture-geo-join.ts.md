@@ -147,13 +147,15 @@ const pre = preflightCaptureJoin(
   await session.loadSessionMeta(),
   actions?.map((a) => a.type) ?? [],
 );
-if (actions === null || !pre.ok) return placeRing(pre);
+// As the creator's bake at open does (`capture-bake.ts`): a declined
+// preflight or verdict is the reason the photos are not placed.
+if (!pre.ok) return { kind: "declined", reason: pre.reason };
+if (actions === null) return { kind: "declined", reason: "no walk" };
 const state = await replayActions(actions, { onChunk: showProgress });
 const verdict = assessReplayedJoin(state);
-if (verdict.ok) {
-  const poses = computeCaptureGeoJoin(state);
-  // place each pose via calcRelativeCoordsInMeters(viewerZero, pose.geo, …)
-}
+if (!verdict.ok) return { kind: "declined", reason: verdict.reason };
+const poses = computeCaptureGeoJoin(state);
+// each pose's geo becomes a baked spot in tour.json
 ```
 
 ## Tests

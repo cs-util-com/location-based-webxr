@@ -138,8 +138,8 @@ lives here.
   line follows), `presentTourInfo(tour)` (`{ manifest,
 loadImage }` once the open tour's manifest settled, `manifest` null for
   a zip without `tour.json`; null on teardown: the visitor's start page
-  shows its name, subline and cover, read from the zip by archive path -
-  polish round M4a - or that the tour is not finished yet), `finishFromAr()` (a creator's
+  leads with the tour itself - its name, subline and cover, read from the
+  zip by archive path - or says that the tour is not finished yet), `finishFromAr()` (a creator's
   Done in AR: start a finish if one can start, false when none can -
   polish round M3), `beginAuthorVisit` / `endAuthorVisit` - the
   creator's AR visit start and its settle, M2c), no-ops until their owner

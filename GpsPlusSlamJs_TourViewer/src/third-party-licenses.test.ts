@@ -143,14 +143,16 @@ describe("the third-party licences the app ships", () => {
   });
 
   it("ships nothing for a package the app no longer bundles", () => {
-    const expected = new Set(
-      [...bundled].flatMap(([p, dir]) => [
+    const expected = new Set([
+      // The app's own NOTICE ships beside the licences (checked below).
+      "NOTICE.txt",
+      ...[...bundled].flatMap(([p, dir]) => [
         `${slug(p)}-LICENSE.txt`,
         ...(ownFile(dir, NOTICE_FILE) === null
           ? []
           : [`${slug(p)}-NOTICE.txt`]),
       ]),
-    );
+    ]);
     const stale = readdirSync(LICENCES).filter((f) => !expected.has(f));
     expect(stale).toEqual([]);
   });
@@ -173,5 +175,45 @@ describe("the third-party licences the app ships", () => {
       return !/\bmodified\b/i.test(entry) || !entry.includes(patch);
     });
     expect(unsaid).toEqual([]);
+  });
+});
+
+describe("the build tools' own modules", () => {
+  // Why: a build's virtual modules (ids starting with "\0") belong to no
+  // npm package, so the licence checks above never see them. The known
+  // ones are a few lines of runtime the build tools emit into every build
+  // (`test-support/bundled-packages.ts` says why no licence ships for
+  // them); an unknown one may be a plugin's library inlined under a
+  // virtual id, and must fail until someone decides.
+  it("accepts the known ones", () => {
+    expect(
+      bundledPackages([
+        "\0vite/preload-helper.js",
+        "\0vite/modulepreload-polyfill.js",
+        "\0rolldown/runtime.js",
+      ]).size,
+    ).toBe(0);
+  });
+
+  it("fails on a virtual module it does not know", () => {
+    expect(() => bundledPackages(["\0some-plugin/inlined-lib.js"])).toThrow(
+      /some-plugin\/inlined-lib\.js/,
+    );
+  });
+});
+
+describe("the NOTICE the app ships", () => {
+  // Why: the NOTICE (with the 3d-tiles-renderer "MODIFIED" statement,
+  // Apache 2.0 4(b)) sits beside the source; only public/ reaches the
+  // site, so a copy ships there and must not drift from it.
+  it("ships the package's NOTICE verbatim", () => {
+    const shipped = new URL("NOTICE.txt", LICENCES);
+    expect(existsSync(shipped)).toBe(true);
+    expect(
+      sameText(
+        readFileSync(shipped, "utf8"),
+        readFileSync(new URL("../NOTICE", import.meta.url), "utf8"),
+      ),
+    ).toBe(true);
   });
 });
