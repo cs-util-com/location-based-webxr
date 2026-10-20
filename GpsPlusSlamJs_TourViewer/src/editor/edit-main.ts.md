@@ -199,7 +199,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   write is dropped); a build
   adds its versions (`built`), and an in-place write that landed
   clears what it wrote and moves the draft to the written bytes' key
-  (`tourFileKeyOfFile`, worked out before the write, `landed`) - both
+  (`tourFileKeyOfFile`, worked out before the write, `landed`), and a
+  download that arrived whose bytes have another key (the first save of a
+  tour without an id, Q-I) takes the draft there (`moved`, the old
+  namespace kept) - all
   through the tour's own `draft.writes()`, taken when the save started, so
   a save of a closed tour moves nothing of the next (E2b-2 milestone
   review #1). A tab

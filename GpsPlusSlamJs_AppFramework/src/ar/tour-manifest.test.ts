@@ -698,3 +698,48 @@ describe('tour details (tour editor plan 2026-10-17-1816, W2, D15)', () => {
     ).not.toThrow();
   });
 });
+
+describe('a stable tour id (debug-captures plan, Q-I)', () => {
+  // Why: a tour opened from a FILE has no link to be known by, so a
+  // creator's draft was keyed by a fingerprint of the file's content -
+  // which a tour of authored files alone changes at every save, leaving
+  // the draft behind. An id the tour itself carries, written by every
+  // save, is a key that survives saves. Optional: a tour without one
+  // reads as before, and a bad one costs the id, never the tour.
+  it('reads and round-trips an id, at the minor the tour needs', () => {
+    const manifest = parseTourManifest(tour({ tourId: 'a1B2_c3-D4' }));
+    expect(manifest.tourId).toBe('a1B2_c3-D4');
+    const written = JSON.parse(serializeTourManifest(manifest)) as unknown;
+    // No minor of its own: a 3.0 or 3.1 reader ignores the field, and a
+    // writer of either keeps saving the tour (it only drops the id).
+    expect(written).toMatchObject({ tourId: 'a1B2_c3-D4', minor: 0 });
+    expect(parseTourManifest(written)).toEqual(manifest);
+  });
+
+  it('reads a tour without an id as none', () => {
+    const manifest = parseTourManifest(tour());
+    expect(manifest).not.toHaveProperty('tourId');
+    expect(JSON.parse(serializeTourManifest(manifest))).not.toHaveProperty(
+      'tourId'
+    );
+  });
+
+  it('reads an id that is not a short path-safe string as none, at every minor', () => {
+    for (const tourId of [42, '', 'has space', 'a/b', 'x'.repeat(65), null]) {
+      for (const minor of [0, TOUR_MANIFEST_MINOR + 1]) {
+        expect(parseTourManifest(tour({ minor, tourId }))).not.toHaveProperty(
+          'tourId'
+        );
+      }
+    }
+  });
+
+  it('the writer refuses an id its reader would drop: a programming error fails loud', () => {
+    const manifest = parseTourManifest(tour());
+    for (const tourId of ['', 'has space', 'x'.repeat(65)]) {
+      expect(() => serializeTourManifest({ ...manifest, tourId })).toThrow(
+        /"tourId" must be/
+      );
+    }
+  });
+});

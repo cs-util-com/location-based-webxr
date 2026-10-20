@@ -2008,9 +2008,12 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
     expect(old.pendingIds()).toEqual(["a"]);
     expect(old.details().name).toBe(first.manifest.title ?? "");
     expect(noteIds(now.model())).toEqual(["z"]);
-    expect(selectTourDocument(store.getState()).written).toEqual(
-      second.manifest,
-    );
+    // (Changed expectation, Q-I: the document's written tour is the
+    // second file's plus the id the open minted for it, which carries none.)
+    expect(selectTourDocument(store.getState()).written).toEqual({
+      ...second.manifest,
+      tourId: expect.stringMatching(/^[0-9a-f]{32}$/),
+    });
     expect(now.changeCount()).toBe(0);
     await first.session.close();
     await second.session.close();

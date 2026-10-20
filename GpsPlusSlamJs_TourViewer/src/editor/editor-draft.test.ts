@@ -372,6 +372,67 @@ describe("createEditorDraft", () => {
     expect(opened.offer?.deleted).toEqual([]);
   });
 
+  it("a download whose bytes have another key moves the draft there: the edit after it is offered under the new key, the original still offers what it did", async () => {
+    // Why (debug-captures plan, Q-I): the first save of a tour without an
+    // id writes one, so the file it makes - downloaded, not written in
+    // place - opens under the id's key. The draft must follow it there, or
+    // an edit made after the download is lost to the file the creator
+    // opens next. A download clears nothing (as since E2c): the
+    // original opened again still offers the edit made before it.
+    const b = browser();
+    const draft = draftIn(b);
+    const original = tour(pin("a"), pin("b"));
+    await draft.open(K1, original);
+    void draft.saveObject(pin("a", "saved"));
+    const written = tour(pin("a", "saved"), pin("b"));
+    draft.writes().built(written);
+    draft.writes().moved(K2);
+    void draft.saveObject(pin("b", "after"));
+    await draft.idle();
+    draft.close();
+    const opened = await draftIn(b).open(K2, written);
+    expect(opened.offer?.objects.map((o) => o.label)).toEqual(["after"]);
+    const before = await draftIn(b).open(K1, original);
+    expect(before.offer?.objects.map((o) => o.label)).toEqual(["saved"]);
+  });
+
+  it("a download's move spends nothing: a download never put anywhere leaves every edit offered", async () => {
+    // Why: unlike an in-place write, a download is not known to be the
+    // file anyone opens - the creator may never use it. So the move takes
+    // every record along as it is; only an open of a file that carries an
+    // edit spends it.
+    const b = browser();
+    const draft = draftIn(b);
+    const original = tour(pin("a"), pin("b"));
+    await draft.open(K1, original);
+    void draft.saveObject(pin("a", "saved"));
+    draft.writes().built(tour(pin("a", "saved"), pin("b")));
+    draft.writes().moved(K2);
+    void draft.saveObject(pin("b", "after"));
+    await draft.idle();
+    draft.close();
+    const opened = await draftIn(b).open(K2, original);
+    expect(opened.offer?.objects.map((o) => o.label).sort()).toEqual([
+      "after",
+      "saved",
+    ]);
+  });
+
+  it("a download to the key the draft has already moves nothing", async () => {
+    // Why: every save after the first carries the same id, so most
+    // downloads land on the draft's own key - and must leave it be.
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    void draft.saveObject(pin("a", "saved"));
+    draft.writes().moved(K1);
+    await draft.idle();
+    draft.close();
+    expect([...(b.spaces.get(editorDraftKey(K1))?.keys() ?? [])]).toContain(
+      objectKey("a"),
+    );
+  });
+
   it("a key move carries an edit made while the save ran, and an offer not yet answered", async () => {
     // Why (review #5, #7): the edit's write was queued in the OLD
     // namespace; the offer's records were never this page's - both must

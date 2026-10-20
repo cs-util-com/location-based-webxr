@@ -47,6 +47,7 @@ import { wireCreatorHandoff } from "./creator-handoff.js";
 import type { TourHost } from "./tour-host.js";
 import { wireCreatorCodes, type CreatorCodes } from "./creator-codes.js";
 import { wireCreatorDraft } from "./creator-draft.js";
+import { tourFileKeyOfFile } from "./tour-session.js";
 import { wireCreatorPreviews } from "./creator-previews.js";
 import { wireCreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import {
@@ -763,6 +764,23 @@ export function wireCreatorSetup(deps: {
     ...(deps.host === undefined ? {} : { host: deps.host }),
     // A yes to "did you upload it?" (F19) is noted in the draft.
     onUploaded: (written) => draft.uploaded(written),
+    // A tour opened from a FILE is known by its file's key, and the first
+    // save that wrote the tour's own id gives the saved file another one
+    // (Q-I): the draft follows the file the creator now has. A link's
+    // tour keeps its link's key. The old key's draft stays as it was, so a
+    // copy that did not land loses nothing the opened file offers.
+    onDelivered: (rebuilt) => {
+      const session = ctx.session;
+      if (session === null || !session.fromFile) return;
+      const saved = new File([rebuilt.blob], rebuilt.filename, {
+        type: "application/zip",
+      });
+      void tourFileKeyOfFile(saved)
+        .then((key) =>
+          ctx.session === session ? draft.follow(key) : undefined,
+        )
+        .catch(() => undefined);
+    },
   });
 
   /** Finish: the rebuilt zip and what it changes (`creator-finish.ts`). */

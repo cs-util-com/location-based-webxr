@@ -292,7 +292,8 @@ let picking = false;
 let keepsWalk = false;
 let editor: EditorSession | null = null;
 /** The open tour's draft key: its opened file's, then the key of each
- *  in-place write that landed (M6 E2c). */
+ *  in-place write that landed (M6 E2c) and of a download whose key differs
+ *  (the first save that wrote the tour's own id, Q-I). */
 let fileKey: string | null = null;
 let model: EditorModel | null = null;
 let selected: string | null = null;
@@ -1598,10 +1599,19 @@ async function deliver(
   if (into === null) {
     const arrived = await download(save);
     if (arrived) {
-      await readPhotosFrom(
-        mine,
-        new File([save.blob], save.filename, { type: "application/zip" }),
-      );
+      const saved = new File([save.blob], save.filename, {
+        type: "application/zip",
+      });
+      // The first save of a tour without an id writes one, so the file it
+      // makes opens under the id's key (Q-I): the draft follows it there,
+      // or an edit made after the download is not offered by that file.
+      // Unreadable (never for a zip this page built): the draft stays.
+      const savedKey = await tourFileKeyOfFile(saved).catch(() => null);
+      if (editor === mine && savedKey !== null && savedKey !== fileKey) {
+        writes?.moved(savedKey);
+        fileKey = savedKey;
+      }
+      await readPhotosFrom(mine, saved);
     }
     return { arrived, inPlace: false };
   }

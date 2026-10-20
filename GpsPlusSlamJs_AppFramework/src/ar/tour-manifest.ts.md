@@ -10,7 +10,8 @@ north) and its items carry LOCAL poses relative to it (`tour-items.ts`,
 `tour-station-pose.ts`). Also the tour kit's game content (title, station
 order, media assets, station stories; tour kit plan K1 and §8 D7,
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`),
-baked recorded photos, the needs-no-GPS flag and the tour details.
+the walk's baked camera captures (deprecated: no app writes them), the
+needs-no-GPS flag and the tour details.
 Guided-setup plan DEC-N7/N8/N9 for the original pins and photos
 (`GpsPlusSlamJs_Docs/docs/2026-09-08-tour-viewer-improvements/2026-09-08-1459-tour-viewer-guided-setup-and-mandatory-code-plan.md`).
 
@@ -127,6 +128,22 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
   kept; `false` and absent read as absent. A non-boolean is a broken file
   at this reader's minor and reads as absent from a newer one.
 
+## A stable tour id (debug-captures plan, Q-I)
+
+- `tourId?: string`: the tour's own id, minted once by the app that
+  first saves the tour and kept by every save after, so a tour opened from
+  a FILE (no link to be known by) keeps one key across saves - the Tour
+  Viewer keys a creator's on-device draft by it (`tour-file-key.ts` there).
+  Not a series id: unsigned, no version, no meaning for a visitor.
+- The one id rule (`TOUR_ID_PATTERN`: 1-64 letters, digits, `_`, `-`).
+  **A bad id is dropped by the reader, never failed, at every minor** - it
+  keys a draft only, so it costs the id, never the tour. The writer
+  refuses one (a programming error fails loud).
+- **No minor of its own.** An older reader ignores the field; an older
+  writer drops it, which costs only the draft its key on that tour's next
+  open. A minor for it would make every 3.0/3.1 writer refuse every tour
+  that carries one.
+
 ## Tour details (W2, D15)
 
 - `description?`, `cover?`, `contact?` (`TourDetails`, checked by
@@ -208,11 +225,12 @@ parseTourManifest({ version: 2, objects: [] }); // throws: an older format
   on write), write/read round trip, the writer's refusal, the world-view
   object parser, the baked spots (round trip, null median, each malformed
   capture or spot set, a capture's station that does not exist), the
-  needs-no-GPS flag, the tour details (round trip, cover on a station's
+  needs-no-GPS flag, the tour id (round trip at minor 0, absent, a bad
+  one dropped at every minor, the writer's refusal), the tour details (round trip, cover on a station's
   photo or an image asset only, dropped details, the writer's cover drop
   and refusals).
 - `tour-manifest.property.test.ts` - over generated stations, items
-  (placed models among them), recorded photos and details: serialize->parse
+  (placed models among them), baked camera captures, tour ids and details: serialize->parse
   is the identity (but for the minor, the writer's choice) with every local
   pose the same numbers exactly; minor 1 is written exactly when a model is
   present, every model's size read back unchanged; parse is idempotent; every item

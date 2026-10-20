@@ -66,6 +66,47 @@ describe("createKeyedChain", () => {
     stuck.resolve();
   });
 
+  it("runs an exclusive task after everything queued before it, and before anything queued after", async () => {
+    // Why (debug-captures plan, Q-I): the phone's draft follows a new key
+    // by copying its namespace. The copy is complete only once every write
+    // already queued for the old one has landed, and a write issued while
+    // it runs must land AFTER it - or the old copy of a file overwrites
+    // the newer write. A failure on either side must not stall the rest.
+    const chain = createKeyedChain();
+    const slow = deferred<void>();
+    const log: string[] = [];
+    void chain.run("a", async () => {
+      await slow.promise;
+      log.push("a");
+    });
+    void chain
+      .run("b", () => Promise.reject(new Error("quota")))
+      .catch(() => undefined);
+    const copy = deferred<void>();
+    const exclusive = chain.exclusive(async () => {
+      log.push("copy started");
+      await copy.promise;
+      log.push("copy done");
+      return "copied";
+    });
+    const after = chain.run("a", () => {
+      log.push("after");
+      return Promise.resolve();
+    });
+    await flush();
+    expect(log).toEqual([]);
+    slow.resolve();
+    await flush();
+    expect(log).toEqual(["a", "copy started"]);
+    copy.resolve();
+    expect(await exclusive).toBe("copied");
+    await after;
+    expect(log).toEqual(["a", "copy started", "copy done", "after"]);
+    const failed = chain.exclusive(() => Promise.reject(new Error("broken")));
+    await expect(failed).rejects.toThrow("broken");
+    expect(await chain.run("c", () => Promise.resolve(3))).toBe(3);
+  });
+
   it("forgets a key once its queue has drained, and keeps one still in flight", async () => {
     const chain = createKeyedChain();
     const held = deferred<void>();

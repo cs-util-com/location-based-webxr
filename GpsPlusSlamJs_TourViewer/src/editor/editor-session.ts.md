@@ -32,7 +32,8 @@ imperative resources only - that handle and the pictures' side table
   (`manifest` as `openTourForEditing` opened it; the document drops a
   file's debug camera captures)
   - `store` - the page's `createTourViewerStore()`; a fresh one when
-    absent (tests). Creating the session dispatches `opened`: whatever
+    absent (tests). Creating the session dispatches `opened` (with a
+    fresh `newTourId()` for a tour without an id, Q-I): whatever
     the store's document held is gone, and an older session on the same
     store is disowned (`generation`) - its edits are refused with
     `NOT_IN_TOUR`, a save it started before lands nowhere, a save or a

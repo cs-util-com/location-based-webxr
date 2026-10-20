@@ -47,6 +47,7 @@ import {
   type TourDocumentState,
 } from "../tour-document.js";
 import { followDocument } from "../tour-document-draft.js";
+import { newTourId } from "../tour-file-key.js";
 import {
   createTourSaves,
   dispatchThunk,
@@ -324,7 +325,13 @@ export function createEditorSession(input: {
 }): EditorSession {
   const { session, levels } = input;
   const store = input.store ?? createTourViewerStore();
-  store.dispatch(tourDocumentActions.opened({ manifest: input.manifest }));
+  // A tour without an id of its own is given one, once (Q-I).
+  store.dispatch(
+    tourDocumentActions.opened({
+      manifest: input.manifest,
+      newTourId: newTourId(),
+    }),
+  );
   /** This session's open: a later one in the same store makes every edit
    *  here refused and every save of it land nowhere. */
   const generation = doc().generation;

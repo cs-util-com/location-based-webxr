@@ -57,6 +57,7 @@ import {
   createTourViewerSession,
   createTourViewerStore,
 } from "./tour-viewer-session.js";
+import { documentObjects, selectTourDocument } from "./tour-document.js";
 import { tourOf } from "./test-support/v3-tour.js";
 
 beforeAll(() => {
@@ -186,6 +187,14 @@ interface Page {
   addedStations(): AddedStation[];
 }
 
+/** The desktop page, with its download (the save path's other half). */
+interface DesktopPage extends Page {
+  /** Save as a download that arrived: the file it made and its tour. */
+  download(): Promise<{ file: File; written: TourManifest }>;
+  /** The tour as the page shows it. */
+  objects(): TourObject[];
+}
+
 interface AddedStation {
   readonly id: string;
   readonly lat: number;
@@ -234,7 +243,7 @@ async function desktopPage(
   restore = false,
   /** The tour.json the page opens (default: the table's tour). */
   manifest: TourManifest = tourOf(OPENED),
-): Promise<Page> {
+): Promise<DesktopPage> {
   const session: TourSession = await openTourFile(file);
   const draft = createEditorDraft({
     openStore: stores,
@@ -242,11 +251,13 @@ async function desktopPage(
     noBackup: () => undefined,
   });
   const opened = await draft.open(session.archive.url, manifest);
+  const store = createTourViewerStore();
   const editor = createEditorSession({
     session,
     manifest,
     levels: new Map(),
     draft: draft.writes(),
+    store,
   });
   if (restore) {
     // The offer's Restore, as `edit-main.ts`'s toast runs it.
@@ -302,7 +313,23 @@ async function desktopPage(
       return draft.idle();
     },
     save: async () => (await editor.save({ keepScan: false })).written,
+    download: async () => {
+      // As `edit-main.ts`'s save path runs a download that arrived: the
+      // build noted, and the draft moved to the saved file's key.
+      const made = await editor.save({ keepScan: false });
+      draft.writes().built(made.written);
+      const saved = new File([made.blob], made.filename, {
+        type: "application/zip",
+      });
+      draft.writes().moved(await tourFileKeyOfFile(saved));
+      await draft.idle();
+      return { file: saved, written: made.written };
+    },
     records: async () => readRecords(await stores(key), false),
+    objects: () =>
+      documentObjects(selectTourDocument(store.getState())).map(
+        (o) => o.object,
+      ),
     reopenRestored: () => desktopPage(file, stores, true),
     addedStations: () =>
       addedOf(
@@ -927,10 +954,14 @@ async function outcome(
 
 /** The written manifest as JSON, the ids of stations the opened tour
  *  lacks named by their order: the automatic-station rule mints a random
- *  id on each page, which says nothing about whether they agree. */
+ *  id on each page, which says nothing about whether they agree. So is
+ *  the tour's own id, which each page's open mints for a file without
+ *  one (Q-I): it must be there, and is named `minted`. */
 function withStationsByOrder(written: TourManifest): unknown {
   const known = new Set(tourOf(OPENED).stations.map((s) => s.id));
   const names = new Map<string, string>();
+  expect(written.tourId).toMatch(/^[0-9a-f]{32}$/);
+  if (written.tourId !== undefined) names.set(written.tourId, "minted");
   for (const station of written.stations) {
     if (!known.has(station.id)) {
       names.set(station.id, `new-${String(names.size)}`);
@@ -1071,7 +1102,9 @@ describe("the parity contract: a file carrying debug camera captures", () => {
       }),
     );
     const [desktop, phone] = written;
-    expect(desktop).toEqual(phone);
+    // (Changed expectation, Q-I: compared with the tour id each page
+    // minted named alike, as every other row compares.)
+    expect(withStationsByOrder(desktop!)).toEqual(withStationsByOrder(phone!));
     for (const w of written) {
       expect(w?.captureSpots).toBeUndefined();
       expect(w?.stations.map((st) => st.id)).toEqual(
@@ -1081,61 +1114,82 @@ describe("the parity contract: a file carrying debug camera captures", () => {
   }, 60_000);
 });
 
-describe("the phone's draft of a file-opened tour across Finishes", () => {
-  // MARKED `it.fails`: the defect is real and open. The phone keeps its
-  // draft under the key the tour was opened with until a re-open proves
-  // the Finish was put in place (`creator-finish.ts`, "NOT cleared
-  // here"), but the file that proof would come from has another key. The
-  // fix - moving or copying the namespace to the finished bytes' key as
-  // the desktop moves it on an in-place write (`editor-draft.ts`
-  // `landed`), or a key on an id the tour itself carries - is a decision
-  // about the draft's semantics on a download, filed rather than taken
-  // here. When it lands this test turns red and the marker comes off.
-  it.fails(
-    "a phone draft of a file-opened tour stays reachable across two Finishes",
-    async () => {
-      // Why this test matters: a tour opened from a FILE is known by a key
-      // taken from its content (`tour-file-key.ts`), and the draft is kept
-      // under it. A finished tour without a walk holds only what the tour
-      // kit writes, so that key hashes its tour.json - and every Finish
-      // writes a new one. The file a creator opens next is the one the last
-      // Finish made; an edit made after that Finish must be offered there,
-      // or it is lost with the page. (Fails today on the reopen: no offer.)
-      const stores = memoryStores();
-      const page = await phonePage(await tourFile(), stores);
-      await page.edit("a", "Before the first Finish");
-      await page.save();
-      await page.edit("b", "Before the second Finish");
-      const written = await page.save();
-      await page.edit("a", "After the second Finish");
-      const next = await phonePage(page.lastFinished(), stores, true, written);
-      expect(next.objects().find((o) => o.id === "a")).toMatchObject({
-        label: "After the second Finish",
-      });
-    },
-    60_000,
-  );
-
-  it("today: the second Finish's file is known by another key, so its open offers nothing", async () => {
-    // Why (debug-captures M1): the marked row above says only that the edit
-    // is not offered; this one pins WHY, plainly, so a change of the
-    // mechanism is seen here and not only as the marked row turning red.
-    // The file a Finish makes holds only what the tour kit writes, so its
-    // key hashes its tour.json, which every Finish rewrites.
+describe("a draft of a file-opened tour across saves", () => {
+  // The marker came off (debug-captures plan, Q-I): the tour carries its
+  // own id from its first save, a file is keyed by it, and the save that
+  // wrote it took the draft to that key once - on the phone at the
+  // Finish's delivered save, on the desktop at a download that arrived -
+  // leaving the opened file's draft as it was.
+  it("a phone draft of a file-opened tour stays reachable across two Finishes", async () => {
+    // Why this test matters: a tour opened from a FILE is known by a key
+    // taken from its content (`tour-file-key.ts`), and the draft is kept
+    // under it. A finished tour without a walk holds only what the tour
+    // kit writes, so that key hashes its tour.json - and every Finish
+    // writes a new one. The file a creator opens next is the one the last
+    // Finish made; an edit made after that Finish must be offered there,
+    // or it is lost with the page.
     const stores = memoryStores();
-    const file = await tourFile();
-    const page = await phonePage(file, stores);
+    const page = await phonePage(await tourFile(), stores);
     await page.edit("a", "Before the first Finish");
     await page.save();
     await page.edit("b", "Before the second Finish");
     const written = await page.save();
     await page.edit("a", "After the second Finish");
+    const next = await phonePage(page.lastFinished(), stores, true, written);
+    expect(next.objects().find((o) => o.id === "a")).toMatchObject({
+      label: "After the second Finish",
+    });
+  }, 60_000);
+
+  it("how: every Finish's file is known by the tour's own id, the draft followed it there once, and its open offers the edit", async () => {
+    // Why (debug-captures M1, then Q-I): the row above says only that the
+    // edit is offered; this one pins WHY, plainly, so a change of the
+    // mechanism is seen here. (Changed expectation: it pinned the old
+    // mechanism - the second Finish's file under another key, nothing
+    // offered - which the tour's own id replaced.) The opened file has no
+    // id, so it keeps its content key; the files both Finishes made carry
+    // the one id its open minted; the draft followed the first of them.
+    const stores = memoryStores();
+    const file = await tourFile();
+    const page = await phonePage(file, stores);
+    const openedKey = page.draftKey();
+    expect(openedKey).toBe(await tourFileKeyOfFile(file));
+    await page.edit("a", "Before the first Finish");
+    const first = await page.save();
+    const firstKey = await tourFileKeyOfFile(page.lastFinished());
+    expect(first.tourId).toMatch(/^[0-9a-f]{32}$/);
+    expect(firstKey).toBe(`local-file:tour:${first.tourId!}`);
+    await page.edit("b", "Before the second Finish");
+    const written = await page.save();
+    expect(written.tourId).toBe(first.tourId);
+    await page.edit("a", "After the second Finish");
     const finished = page.lastFinished();
-    expect(await tourFileKeyOfFile(finished)).not.toBe(
-      await tourFileKeyOfFile(file),
-    );
+    expect(await tourFileKeyOfFile(finished)).toBe(firstKey);
+    expect(page.draftKey()).toBe(firstKey);
     const next = await phonePage(finished, stores, false, written);
-    expect(next.draftKey()).not.toBe(page.draftKey());
-    expect(next.offer()).toBe("");
+    expect(next.draftKey()).toBe(firstKey);
+    expect(next.offer()).not.toBe("");
+    // A saved file is not known to be put anywhere, so the opened file's
+    // draft keeps what it held: opened again, it still offers its edits.
+    const before = await phonePage(file, stores, false);
+    expect(before.offer()).not.toBe("");
+  }, 60_000);
+
+  it("a desktop draft of a file-opened tour follows its downloads the same way", async () => {
+    // Why (Q-I): the desktop saves a tour it cannot write in place as a
+    // download. Its first one writes the tour's id, so the file it made
+    // opens under the id's key; an edit made after it must be offered
+    // there, as on the phone.
+    const stores = memoryStores();
+    const page = await desktopPage(await tourFile(), stores);
+    await page.edit("a", "Before the first download");
+    await page.download();
+    await page.edit("b", "Before the second download");
+    const second = await page.download();
+    await page.edit("a", "After the second download");
+    const next = await desktopPage(second.file, stores, true, second.written);
+    expect(next.objects().find((o) => o.id === "a")).toMatchObject({
+      label: "After the second download",
+    });
   }, 60_000);
 });

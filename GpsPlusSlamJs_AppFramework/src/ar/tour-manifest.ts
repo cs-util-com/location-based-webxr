@@ -46,8 +46,15 @@
  *   degrades - the item or step is left out, an unknown order offers
  *   every station (`any`, which can never deadlock) - instead of failing
  *   the tour; at this reader's own minor or below it is a broken file.
+ * - `tourId` (optional, no minor of its own) is additive in the plain
+ *   sense: a reader that does not know it ignores it, and a writer that
+ *   does not know it drops it - which costs only the creator's draft its
+ *   key on that tour's next open, never the tour. A minor for it would
+ *   make every older writer refuse every tour that carries one.
  * Series id and version number do not live here: `manifest.json` is their
- * one place (§8 G7, `tour-signed-manifest.ts`).
+ * one place (§8 G7, `tour-signed-manifest.ts`). The `tourId` is not a
+ * series id: it is unsigned, names no version, and only keys a creator's
+ * on-device draft of a tour opened from a file.
  *
  * @see tour-manifest.ts.md
  */
@@ -127,15 +134,15 @@ export type TourModel = TourModelFields & TourPlacement;
 export type TourObject = TourPin | TourPhoto | TourModel;
 export type TourObjectKind = TourObject['kind'];
 
-/** One recorded photo's spot, baked at the creator's Finish, held by a
- *  station at a local pose (always with a rotation: photos face as
- *  captured).
+/** One of the walk's camera captures at its spot, as earlier apps baked
+ *  it into the tour, held by a station at a local pose (always with a
+ *  rotation: a capture faces as the camera did).
  *
  *  @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major.
  *  The parser still reads them and the writer still writes what it is
  *  given. */
 export interface TourCapture {
-  /** The photo's entry name as the recording wrote it (`add2dImage`). */
+  /** The capture's entry name as the recording wrote it (`add2dImage`). */
   readonly image: string;
   /** The station holding it (by the automatic-station rule, in capture
    *  order). */
@@ -144,11 +151,10 @@ export interface TourCapture {
 }
 
 /**
- * The recorded photos' spots, computed ONCE at the creator's Finish
- * (scan-pass plan S1, S-D11: each photo through the first settled
- * alignment after it was taken), so a visitor neither downloads the walk
- * nor replays it. Its presence is the "baked" marker: a viewer places
- * these and never runs its live join; a tour without it keeps the join.
+ * The walk's camera captures at their spots, as earlier apps computed them
+ * ONCE for the tour (scan-pass plan S1, S-D11: each capture through the
+ * first settled alignment after it was taken) and showed them to
+ * visitors. No app writes or shows them any more: they are debug data.
  *
  * @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major.
  * The parser still reads them and the writer still writes what it is
@@ -169,13 +175,20 @@ export interface TourManifest extends TourDetails {
   minor: number;
   /** The tour's name, for lists and the visitor's screen. */
   title?: string;
+  /**
+   * The tour's own id: minted once by the app that first saves the tour,
+   * then kept by every save, so a tour opened from a file is known by the
+   * same key across saves (a creator's draft is kept under it). Short and
+   * path-safe ({@link TOUR_ID_PATTERN}); a bad one reads as none.
+   */
+  tourId?: string;
   /** Which stations are offered: in order, all at once, or by answer. */
   order: TourOrder;
   /** Media files named by their own ids (§8 G5). */
   assets: TourAsset[];
   /** The stations, each with its pins and photos (no loose ones). */
   stations: TourStation[];
-  /** The recorded photos' baked spots (see the type).
+  /** The walk's camera captures as earlier apps baked them (see the type).
    *  @deprecated The walk's camera captures are debug data: no app writes them; removed in the next major. */
   captureSpots?: TourCaptureSpots;
   /**
@@ -398,6 +411,15 @@ function checkContentIds(
   });
 }
 
+/** The tour's id when it is one (the one id rule), else none: the id only
+ *  keys a creator's draft, so a bad one costs the id, never the tour - at
+ *  every minor. */
+function tourIdOf(value: unknown): string | undefined {
+  return typeof value === 'string' && TOUR_ID_PATTERN.test(value)
+    ? value
+    : undefined;
+}
+
 /** The title and the tour details, each present only when set. */
 function titleAndDetailsOf(
   data: Record<string, unknown>,
@@ -452,9 +474,11 @@ export function parseTourManifest(
   const captureSpots = lenient
     ? captureSpotsOrNone(data.captureSpots, stationIds)
     : parseCaptureSpots(data.captureSpots, stationIds);
+  const tourId = tourIdOf(data.tourId);
   return {
     version: TOUR_MANIFEST_VERSION,
     minor,
+    ...(tourId === undefined ? {} : { tourId }),
     ...titleAndDetailsOf(data, { stations, assets }, options),
     order: orderOf(data.order, lenient),
     assets,
@@ -482,6 +506,17 @@ export function serializeTourManifest(
   manifest: TourManifest,
   options: TourManifestReadOptions = {}
 ): string {
+  // The reader drops a bad id quietly (it is a file's); one handed to the
+  // writer is the page's bug, and writing the tour without it would hide
+  // that.
+  if (
+    manifest.tourId !== undefined &&
+    tourIdOf(manifest.tourId) === undefined
+  ) {
+    fail(
+      `"tourId" must be 1-64 letters, digits, "_" or "-", got ${JSON.stringify(manifest.tourId)}`
+    );
+  }
   const parsed = parseTourManifest(manifest, {
     onDropped: (drop) => {
       if (drop.cause !== 'image-gone') fail(drop.reason);

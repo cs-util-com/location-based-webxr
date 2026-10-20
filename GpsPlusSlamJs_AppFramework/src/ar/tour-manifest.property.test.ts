@@ -8,7 +8,7 @@
  * photos, placed models (their size in metres exactly), recorded photos and
  * details the generators can produce, not only the hand-written examples.
  * The minor written is the lowest the tour needs: 1 exactly when it carries
- * a model.
+ * a model (a tour id needs none).
  */
 
 import fc from 'fast-check';
@@ -153,6 +153,9 @@ const manifest = stations.chain((s) =>
         { nil: undefined }
       ),
       needsNoGps: fc.option(fc.boolean(), { nil: undefined }),
+      tourId: fc.option(fc.stringMatching(/^[A-Za-z0-9_-]{1,64}$/), {
+        nil: undefined,
+      }),
       description: fc.option(fc.stringMatching(/^[A-Za-z]{1,40}$/), {
         nil: undefined,
       }),
@@ -160,8 +163,9 @@ const manifest = stations.chain((s) =>
         nil: undefined,
       }),
     })
-    .map(({ captureSpots, needsNoGps, description, cover }) => ({
+    .map(({ captureSpots, needsNoGps, tourId, description, cover }) => ({
       version: 3,
+      ...(tourId === undefined ? {} : { tourId }),
       assets: MODEL_ASSETS,
       stations: s,
       ...(captureSpots === undefined ? {} : { captureSpots }),

@@ -72,7 +72,12 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
 
 ## Actions (`tourDocumentActions`)
 
-- `opened({ manifest })` - everything before it is gone; `generation` + 1.
+- `opened({ manifest, newTourId? })` - everything before it is gone;
+  `generation` + 1. A tour without an id of its own takes `newTourId` into
+  `written` (debug-captures plan, Q-I): minted by the page that opens it
+  (`newTourId()` of `tour-file-key.ts`; a reducer draws no random
+  numbers), so every write carries it; `opened` stays the file's tour as
+  read, and the id reads as no change. A tour's own id is never replaced.
   The manifest opens without a file's debug camera captures and the
   stations only they kept (`withoutDebugCaptures` of `tour-content.ts`):
   no page shows, keeps or writes them, and nothing reads as unsaved for

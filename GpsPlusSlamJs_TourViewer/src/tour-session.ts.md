@@ -30,12 +30,15 @@ loading with MIME types, and the poisoned-cache recovery loop.
 - `openTourFile(file, options?): Promise<TourSession>` (tour kit plan K0)
   - a tour zip on the device, `options.limits` as above. Its
     `archive.url` is `tour-file-key.ts`'s key: the series id when the
-    zip carries `manifest.json` (tour kit plan K1, R7), else the content
-    key.
+    zip carries `manifest.json` (tour kit plan K1, R7), else the tour's
+    own id from its `tour.json` (`local-file:tour:<tourId>`,
+    debug-captures plan Q-I; read under the text cap, a `tour.json` that
+    does not parse reads as none), else the content key.
 - `tourFileKeyOfFile(file, limits?): Promise<string>` (M6 E2c) - the key
   `openTourFile` would give `file`, without opening a session: the desktop
-  editor's draft follows the bytes an in-place save wrote
-  (`editor/editor-draft.ts`). Rejects as the open does for a file that is
+  editor's draft follows the bytes an in-place save wrote or a download
+  made (`editor/editor-draft.ts`), and the phone's the file a Finish
+  delivered (`creator-draft.ts` `follow`). Rejects as the open does for a file that is
   not a readable zip.
 - `TourSession { entries; archive; fromFile; hasRecording; manifestWrap; budget; stats(); loadEntry(filename); loadEntryText(filename); loadContentEntry(image); close() }`
   - `integrity` (tour kit plan K1, §8 D3) - TIER 1's result

@@ -42,6 +42,7 @@ import {
   type TourDocumentDraft,
 } from "./tour-document-draft.js";
 import { newObjectId } from "./content-placement.js";
+import { newTourId } from "./tour-file-key.js";
 import type { NuePose } from "./visit-anchoring.js";
 
 /**
@@ -386,7 +387,15 @@ export function createCreatorDocument(
     placements.clear();
     stationAnchors.clear();
     sideVersion += 1;
-    store.dispatch(tourDocumentActions.opened({ manifest: manifestToOpen }));
+    // A tour without an id of its own is given one, once (Q-I); "no
+    // tour" is none to write.
+    store.dispatch(
+      tourDocumentActions.opened(
+        manifestToOpen === noTour
+          ? { manifest: noTour }
+          : { manifest: manifestToOpen, newTourId: newTourId() },
+      ),
+    );
   }
 
   return {

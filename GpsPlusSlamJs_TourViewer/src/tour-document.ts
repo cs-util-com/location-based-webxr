@@ -1007,15 +1007,30 @@ const tourDocumentSlice = createSlice({
     /** A tour opened: everything before it is gone. A file's debug
      *  camera captures are not part of the tour: the document opens
      *  without them and the stations only they kept
-     *  (`withoutDebugCaptures`), so no page shows or writes them. */
-    opened(state, action: PayloadAction<{ manifest: TourManifest }>) {
+     *  (`withoutDebugCaptures`), so no page shows or writes them. A tour
+     *  without an id of its own takes `newTourId` (debug-captures plan,
+     *  Q-I): minted here once, by the page that opens it (a reducer draws
+     *  no random numbers), so every write carries it and a file saved from
+     *  this tour is known by it (`tour-file-key.ts`). `opened` stays the
+     *  file's tour as read (the draft's hosted comparisons read it). */
+    opened(
+      state,
+      action: PayloadAction<{ manifest: TourManifest; newTourId?: string }>,
+    ) {
+      const { newTourId } = action.payload;
       const manifest = tourAsOpened(action.payload.manifest);
+      // `opened` stays the file's tour as read; the writes start from
+      // `written`, which carries the id.
+      const written =
+        manifest.tourId === undefined && newTourId !== undefined
+          ? { ...manifest, tourId: newTourId }
+          : manifest;
       return {
         ...initialTourDocumentState,
         generation: state.generation + 1,
         save: slotKept(state.save),
         opened: manifest,
-        written: manifest,
+        written,
         stations: framesOf(manifest),
         needsNoGps: manifest.needsNoGps === true,
         details: detailsOf(manifest),

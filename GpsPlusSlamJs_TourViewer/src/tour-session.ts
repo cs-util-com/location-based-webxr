@@ -59,7 +59,11 @@ import {
 import { driveFileId } from "gps-plus-slam-app-framework/utils/drive-file-id";
 
 import { fileNameFromContentDisposition } from "./content-disposition.js";
-import { tourFileKey, tourSeriesFileKey } from "./tour-file-key.js";
+import {
+  tourFileKey,
+  tourIdFileKey,
+  tourSeriesFileKey,
+} from "./tour-file-key.js";
 import {
   checkArchiveCopy,
   integrityIdentity,
@@ -482,9 +486,10 @@ export function tourFileKeyOfFile(
   return fileKeyOf(file, { ...DEFAULT_ARCHIVE_LIMITS, ...limits });
 }
 
-/** The file's content key, from its central directory (walked under the
- *  same entry cap as any open). A file that is not a zip fails here, in
- *  plain words. */
+/** The file's key, from its central directory (walked under the same
+ *  entry cap as any open): a listed tour's series id, else the tour's own
+ *  id from its `tour.json` (debug-captures plan, Q-I), else its content
+ *  key. A file that is not a zip fails here, in plain words. */
 async function fileKeyOf(file: File, limits: ArchiveLimits): Promise<string> {
   const reader = new ZipReader(
     new ByteSourceReader(
@@ -495,9 +500,9 @@ async function fileKeyOf(file: File, limits: ArchiveLimits): Promise<string> {
   try {
     const entries = await listZipEntriesCapped(reader, limits.maxEntries);
     const seriesId = await seriesIdOf(entries, file.size, limits);
-    return seriesId === null
-      ? await tourFileKey(entries)
-      : tourSeriesFileKey(seriesId);
+    if (seriesId !== null) return tourSeriesFileKey(seriesId);
+    const tourId = await tourIdOf(entries, file.size, limits);
+    return tourId === null ? await tourFileKey(entries) : tourIdFileKey(tourId);
   } catch (err) {
     if (err instanceof ArchiveLimitError) throw err;
     throw new Error(
@@ -534,6 +539,37 @@ async function seriesIdOf(
       limits.maxTextEntryBytes,
     );
     return parseSignedTourManifest(await blob.text()).seriesId;
+  } catch (err) {
+    if (err instanceof ArchiveLimitError) throw err;
+    return null;
+  }
+}
+
+/**
+ * The tour's own id in a file's `tour.json`, or null without a readable
+ * one (debug-captures plan, Q-I). Read under the text cap with a budget of
+ * its own, as the series id is; a `tour.json` that does not parse falls
+ * back to the content key, and the open then reports it.
+ */
+async function tourIdOf(
+  entries: readonly Entry[],
+  archiveSize: number,
+  limits: ArchiveLimits,
+): Promise<string | null> {
+  const name = tourManifestEntryOf(entries.map((e) => e.filename));
+  const entry = entries.find((e) => e.filename === name);
+  if (entry === undefined || entry.directory) return null;
+  const budget = DecompressionBudget.forArchive(archiveSize, limits);
+  try {
+    const blob = await readZipEntryBlob(
+      entry,
+      budget,
+      "application/json",
+      limits.maxTextEntryBytes,
+    );
+    return (
+      parseTourManifest(JSON.parse(await blob.text()) as unknown).tourId ?? null
+    );
   } catch (err) {
     if (err instanceof ArchiveLimitError) throw err;
     return null;

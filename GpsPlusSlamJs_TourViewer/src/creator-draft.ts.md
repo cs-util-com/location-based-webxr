@@ -46,6 +46,21 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
   - `finished(ids, written)` - `creator-finish.ts` after a Finish wrote
     these objects: their versions in `written` are this device's own work.
     The ids (all of this load's Finishes) are kept for `uploaded`.
+  - `follow(tourUrl)` (debug-captures plan, Q-I) - the file a Finish
+    delivered of a tour opened from a file opens under another key once
+    its save wrote the tour's own id: the draft switches to that
+    namespace synchronously (every write from then on lands there), copies
+    every file of the old one into it inside the queue's `exclusive` task
+    (after every write already queued, before every one issued since - so
+    the old copy of a file never lands over a newer write; a photo's bytes
+    as a blob), and re-states the meta under the new key. The old
+    namespace keeps what it holds: the file is not known to be put
+    anywhere ("NOT cleared here" in `creator-finish.ts`), so the opened
+    file opened again offers what it did. True once the draft is under
+    `tourUrl` (or none is open); false when a listed file could not be
+    read or a write did not land, or another tour opened meanwhile.
+    `creator-setup.ts` calls it from the hand-off's `onDelivered` with
+    `tourFileKeyOfFile` of the delivered file, for a file-opened tour only.
   - `uploaded(written)` (follow-up F19, owner decision 2026-10-14) - the
     creator answered yes to "did you upload it?" (`creator-handoff.ts`),
     and `written` is the tour.json of the file the question was asked
@@ -329,7 +344,12 @@ keeping the tombstone; Restore's note counting what it put back, beside a
 code measured here and beside visits the log already held; a draft object
 whose id equals a visit id restored), `creator-finish.test.ts` and
 `authoring-settle.test.ts` (the meta a mint or settle writes, the backup
-notice), plus the draft e2e specs. The pure rules are in
+notice), plus the draft e2e specs. `follow` in isolation:
+`creator-draft-follow.test.ts` (every file copied, a photo as a blob, the
+meta re-stated, later writes in the new namespace, the old one kept; a
+write issued during the copy never overwritten by it; an unreadable file
+reported; nothing opened for the same key); composed, two Finishes and the
+reopen of the saved file: `tour-document-parity.test.ts`. The pure rules are in
 `authoring-draft.test.ts` and the on-disk shape in
 `draft-persistence.test.ts`. The sampled mutants of the region "draft"
 (`scripts/fixtures/creator-setup.mutants.json`) are killed.

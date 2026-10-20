@@ -24,6 +24,9 @@ copy of the tour.
   - `opened()` - the tour file as it was OPENED (the slice's `opened`):
     not what a Finish wrote since, nor this page's changes; null while no
     tour file is open. The phone's draft compares its records with it.
+    The open gives a tour without an id a fresh one (`newTourId()`, Q-I)
+    in what the writes start from - never in `opened()`, and never to
+    "no tour".
   - `entries()` - this page's entries (`PlacedEntry`: the object, its
     `blob`, its `placement`), in order; the same array until the document
     or a side table changes.

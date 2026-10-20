@@ -449,6 +449,11 @@ export interface EditorTourDraft
   /** An in-place write of `written` landed, whose bytes have `fileKey`:
    *  what it carries clears, and the draft follows the key. */
   landed(written: TourManifest, fileKey: string): void;
+  /** A download landed whose bytes have `fileKey` (debug-captures plan,
+   *  Q-I: the first save of a tour without an id writes one): the draft
+   *  follows the key, carrying everything - nothing is spent, and the old
+   *  namespace keeps what it holds. A no-op for the key it has. */
+  moved(fileKey: string): void;
 }
 
 export interface EditorDraft extends DraftObjectWrites, DraftSettingsWrites {
@@ -470,6 +475,10 @@ export interface EditorDraft extends DraftObjectWrites, DraftSettingsWrites {
   /** Every queued write settled. */
   idle(): Promise<void>;
 }
+
+/** The draft with the save notes `writes()` binds to one open. */
+type DraftApi = EditorDraft &
+  Pick<EditorTourDraft, "built" | "landed" | "moved">;
 
 /** One namespace: its key, its store (after the lock), its rejections. */
 interface Space {
@@ -838,9 +847,65 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     backedUp: false,
   };
 
-  // `built` and `landed` are reached only through `writes()`, bound to the
-  // tour open when it was called.
-  const api: EditorDraft & Pick<EditorTourDraft, "built" | "landed"> = {
+  /**
+   * The draft follows `fileKey` (`landed`, `moved`): synchronously, so
+   * every write from here on goes to the new namespace; what is pending,
+   * the settings kept and an offer not yet answered are carried, and -
+   * with `emptyOld` - the old namespace is emptied once everything landed
+   * in the new one.
+   */
+  function moveTo(s: Space, fileKey: string, emptyOld: boolean): void {
+    const next = makeSpace(fileKey);
+    space = next;
+    const carried = [writeMeta(next)];
+    for (const [id, change] of pending) {
+      carried.push(carry(next, id, change, bases.get(id)));
+    }
+    if (settingsPending !== null) {
+      carried.push(writeSettingsIn(next, settingsPending));
+    }
+    // An offer not yet answered (or put off with "Not now") moves too.
+    if (offer !== null) {
+      for (const object of offer.objects) {
+        if (!touched.has(object.id)) {
+          carried.push(carry(next, object.id, object, bases.get(object.id)));
+        }
+      }
+      for (const id of offer.deleted) {
+        if (!touched.has(id)) carried.push(carry(next, id, null, undefined));
+      }
+      if (offer.settings !== undefined && settingsWanted === null) {
+        carried.push(writeSettingsIn(next, offer.settings));
+      }
+    }
+    // The old namespace goes only once the new one holds everything
+    // (E2c review #2): a tab closed right after "Saved to" - nothing
+    // asks, no change is pending - must not find both half written.
+    // When anything did not land the old one stays (its key is the
+    // overwritten file's, or the downloaded-from one's: reached only by
+    // that file or a copy of it).
+    const moved = Promise.all(carried)
+      .then(async (oks) => {
+        if (emptyOld && oks.every(Boolean)) await empty(s);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        s.lock?.release();
+      });
+    void track(moved);
+    // The next open waits for the old key's hold to go, as after
+    // `close()`: the pre-save file reopened in this tab must not find
+    // this tab's own hold and say "another tab" (PR #626 bot finding 2).
+    letGo = letGo
+      .then(() => moved)
+      .then(async () => {
+        await s.lock?.released;
+      });
+  }
+
+  // `built`, `landed` and `moved` are reached only through `writes()`,
+  // bound to the tour open when it was called.
+  const api: DraftApi = {
     async open(fileKey, manifest) {
       close();
       const mine = generation;
@@ -996,6 +1061,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         landed: (written, fileKey) => {
           if (live()) api.landed(written, fileKey);
         },
+        moved: (fileKey) => {
+          if (live()) api.moved(fileKey);
+        },
       };
     },
 
@@ -1102,53 +1170,20 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         if (settingsChanged) void writeSettingsIn(s, settingsPending);
         return;
       }
-      // The key moves (a tour of notes alone): synchronously, so every
-      // write from here on goes to the new namespace.
-      const next = makeSpace(fileKey);
-      space = next;
-      const carried = [writeMeta(next)];
-      for (const [id, change] of pending) {
-        carried.push(carry(next, id, change, bases.get(id)));
-      }
-      if (settingsPending !== null) {
-        carried.push(writeSettingsIn(next, settingsPending));
-      }
-      // An offer not yet answered (or put off with "Not now") moves too.
-      if (offer !== null) {
-        for (const object of offer.objects) {
-          if (!touched.has(object.id)) {
-            carried.push(carry(next, object.id, object, bases.get(object.id)));
-          }
-        }
-        for (const id of offer.deleted) {
-          if (!touched.has(id)) carried.push(carry(next, id, null, undefined));
-        }
-        if (offer.settings !== undefined && settingsWanted === null) {
-          carried.push(writeSettingsIn(next, offer.settings));
-        }
-      }
-      // The old namespace goes only once the new one holds everything
-      // (E2c review #2): a tab closed right after "Saved to" - nothing
-      // asks, no change is pending - must not find both half written.
-      // When anything did not land the old one stays (its key is the
-      // overwritten file's, so it is reached only by a copy of that file).
-      const moved = Promise.all(carried)
-        .then(async (oks) => {
-          if (oks.every(Boolean)) await empty(s);
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          s.lock?.release();
-        });
-      void track(moved);
-      // The next open waits for the old key's hold to go, as after
-      // `close()`: the pre-save file reopened in this tab must not find
-      // this tab's own hold and say "another tab" (PR #626 bot finding 2).
-      letGo = letGo
-        .then(() => moved)
-        .then(async () => {
-          await s.lock?.released;
-        });
+      // The key moves (a tour of notes alone, or the first save that wrote
+      // the tour's own id); the overwritten file's namespace is emptied.
+      moveTo(s, fileKey, true);
+    },
+
+    moved(fileKey) {
+      const s = space;
+      if (s === null || editorDraftKey(fileKey) === s.key) return;
+      // Nothing is spent, and the old namespace keeps what it holds: a
+      // download is not known to be the file anyone opens ("a delivered
+      // download clears nothing", WHAT THE DRAFT HOLDS above), so the
+      // original opened again still offers what it did; an open of a file
+      // that carries an edit spends it there.
+      moveTo(s, fileKey, false);
     },
 
     backsUp() {

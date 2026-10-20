@@ -111,6 +111,41 @@ describe("tour document: the open", () => {
     expect(manifestNow(state)).toEqual(state.opened);
   });
 
+  it("takes the id it is given for a tour without one, keeps a tour's own, and every write carries it", () => {
+    // Why this test matters (debug-captures plan, Q-I): a tour opened from
+    // a file is known by its own id once it carries one, so the draft
+    // follows it across saves. The document is where it is minted: once,
+    // at the open (the page hands it a fresh id; the reducer stays pure),
+    // and only for a tour without one - a tour's own id is never replaced.
+    // The minted id is the open's, not an edit: nothing reads as unsaved,
+    // and the tour as opened stays the file's, as read.
+    const minted = reduce(
+      initialTourDocumentState,
+      act.opened({ manifest: OPENED, newTourId: "minted0001" }),
+    );
+    expect(minted.opened).toBe(OPENED);
+    for (const held of [minted.written, manifestNow(minted)]) {
+      expect(held?.tourId).toBe("minted0001");
+    }
+    expect(changeCount(minted)).toBe(0);
+    const edited = reduce(
+      minted,
+      act.edited({ object: { ...pin("a"), label: "x" }, what: "e" }),
+    );
+    expect(manifestToWrite(edited)?.tourId).toBe("minted0001");
+    expect(manifestToWrite(save(edited))?.tourId).toBe("minted0001");
+    const own = reduce(
+      initialTourDocumentState,
+      act.opened({
+        manifest: { ...OPENED, tourId: "ownId0001" },
+        newTourId: "minted0002",
+      }),
+    );
+    expect(manifestNow(own)?.tourId).toBe("ownId0001");
+    // No id given (a test, an older caller): none is made up.
+    expect(manifestNow(open())).not.toHaveProperty("tourId");
+  });
+
   it("forgets the previous tour entirely on a new open", () => {
     let state = open();
     state = reduce(

@@ -32,6 +32,8 @@ import {
   restoreOfferText,
 } from "./authoring-draft.js";
 import {
+  META_KEY,
+  photoKey,
   readDraft,
   removeDraftObject,
   addDraftBaseKey,
@@ -111,6 +113,18 @@ export interface CreatorDraft {
    *  the moved stations' poses, the details once set), in its own queue.
    *  True with no tour's draft open yet (`present` writes it then). */
   saveSettings(settings: TourSettingsRecord): Promise<boolean>;
+  /**
+   * The draft follows `tourUrl` (debug-captures plan, Q-I): the file a
+   * Finish saved of a tour opened from a file opens under another key once
+   * its save wrote the tour's own id. Every file of the namespace is copied
+   * there and the meta re-stated under it; the writes go there from now
+   * on. The old namespace keeps what it holds - a saved file is not known
+   * to be put anywhere ("NOT cleared here" in `creator-finish.ts`), so the
+   * opened file opened again still offers what it did. True once the
+   * draft is under `tourUrl` (or none is open); false when a copy did not
+   * land.
+   */
+  follow(tourUrl: string): Promise<boolean>;
   /** Say, once, that this device keeps no backup copy. */
   warnNoBackup(): void;
   /** False once the creator was told no backup is kept. */
@@ -627,6 +641,45 @@ export function wireCreatorDraft(deps: {
           diskRejected = new Set(meta.rejected);
         return wrote;
       });
+  }
+
+  async function follow(tourUrl: string): Promise<boolean> {
+    const from = draftStore;
+    const fromUrl = draftTourUrl;
+    if (from === undefined || fromUrl === null) return true;
+    if (draftKeyForTour(tourUrl) === draftKeyForTour(fromUrl)) return true;
+    const generation = ctx.openGeneration;
+    const opened = await deps.openDraftStore(draftKeyForTour(tourUrl));
+    if (opened === undefined) return false;
+    // Another tour opened, or the draft moved meanwhile: not this move's.
+    if (
+      generation !== ctx.openGeneration ||
+      draftStore !== from ||
+      draftTourUrl !== fromUrl
+    ) {
+      return false;
+    }
+    // Synchronously: every write issued from here on lands in the new one.
+    draftStore = opened;
+    draftTourUrl = tourUrl;
+    // Alone in the queue: the writes queued for the old namespace land
+    // there first, so the copy holds them, and a write issued from here on
+    // waits for the copy - the old copy of a file never lands over it.
+    const copied = await draftWrites
+      .exclusive(async () => {
+        let ok = true;
+        for (const key of await from.keys()) {
+          if (key === META_KEY) continue;
+          const data = key.startsWith(photoKey(""))
+            ? await from.getBlob(key)
+            : await from.getText(key);
+          // Listed but unreadable: not copied (the old namespace has it).
+          ok = data !== undefined && (await opened.put(key, data)) && ok;
+        }
+        return ok;
+      })
+      .catch(() => false);
+    return (await recordMeta(tourUrl)) && copied;
   }
 
   function withStoredCodes(
@@ -1268,6 +1321,7 @@ export function wireCreatorDraft(deps: {
         removeDraftObject(store, id),
       );
     },
+    follow,
     warnNoBackup: noteNoPersistence,
     persists: () => !warnedAboutPersistence,
     saveSettings: (settings) => {

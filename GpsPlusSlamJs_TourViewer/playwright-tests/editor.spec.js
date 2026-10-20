@@ -1604,6 +1604,42 @@ test("a delivered download clears nothing: the original reopened still offers th
   await expect(next.locator(".toast.draft-offer")).toContainText("1 change");
 });
 
+test("an edit after a download is offered by the downloaded file: the tour carries its own id from its first save", async ({
+  page,
+  context,
+}) => {
+  // Why (debug-captures plan, Q-I): a tour of notes alone was keyed by its
+  // content, which every save rewrites - so the file a download made
+  // opened under another key and an edit made after the download was not
+  // offered by it. The first save writes the tour's own id; the file is
+  // keyed by it and the draft follows it there, while the original keeps
+  // what it offered.
+  await noSavePicker(page);
+  const buffer = await editorTour();
+  await page.goto("/edit.html");
+  await openThroughChooser(page, buffer, "editor-fixture.zip");
+  await editTownHall(page, "Downloaded once");
+  const download = page.waitForEvent("download");
+  await page.locator("#save-btn").click();
+  const saved = readFileSync(await (await download).path());
+  await page.locator("#rail .row", { hasText: "Fountain" }).click();
+  await page.locator("#card button", { hasText: "Delete" }).click();
+  await backedUp(page);
+  await page.close();
+  const copy = await newEditorPage(context);
+  await openThroughChooser(copy, saved, "editor-fixture.zip");
+  await expect(
+    copy.locator("#rail .row", { hasText: "Downloaded once" }),
+  ).toHaveCount(1);
+  await expect(copy.locator(".toast.draft-offer")).toContainText("1 deletion");
+  await copy.close();
+  const original = await newEditorPage(context);
+  await openThroughChooser(original, buffer, "editor-fixture.zip");
+  await expect(original.locator(".toast.draft-offer")).toContainText(
+    "1 change",
+  );
+});
+
 test("a download of a tour that carries a walk keeps it by default, and leaves it out only when the switch is unticked", async ({
   page,
   context,
@@ -1656,8 +1692,10 @@ test("a lean download of a recording tour: the original still offers, the lean c
   context,
 }) => {
   // Why (E2c plan review #5): the copy without the walk has another key
-  // than the tour it came from, so the draft cannot follow a download -
-  // it stays with the original.
+  // than the tour it came from. Since the tour carries its own id
+  // (debug-captures plan, Q-I) the draft follows the download to it and
+  // the copy, which holds the edit, offers nothing - while the original
+  // keeps its draft, since a download clears nothing.
   await noSavePicker(page);
   const original = await wrappedTour({ pin: true });
   await page.goto("/edit.html");
