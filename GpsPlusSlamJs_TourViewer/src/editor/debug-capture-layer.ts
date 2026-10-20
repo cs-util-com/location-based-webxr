@@ -120,7 +120,6 @@ export function createDebugCaptureLayer<T>(
       // One decode at a time, in capture order: a long walk never holds
       // more than one full-size picture decoded at once.
       for (const c of captures) {
-        // eslint-disable-next-line no-await-in-loop -- sequential on purpose
         const picture = await thumbnailOf(c.image);
         if (stopped) return;
         if (picture !== null) deps.view.thumb(c.image, picture);
