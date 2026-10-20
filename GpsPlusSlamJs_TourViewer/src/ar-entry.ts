@@ -475,6 +475,9 @@ export function wireArEntry(deps: {
     // hint; during a session the button stays, as the way out.
     const withheld = !sessionActive && startWithheld();
     dom.enterArButton.hidden = withheld;
+    // The page's CSS reads it: "What happens?" describes a session this
+    // visitor cannot start, so it goes too (index.html).
+    dom.enterArButton.dataset["start"] = withheld ? "withheld" : "offered";
     dom.arHint.hidden =
       withheld ||
       sessionActive ||

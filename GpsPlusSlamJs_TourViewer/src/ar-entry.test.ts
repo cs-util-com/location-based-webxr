@@ -694,6 +694,9 @@ describe("a visitor of a tour not finished yet gets no Start", () => {
       const { h, request } = unfinishedVisitor(manifest);
       expect(h.dom.enterArButton.hidden).toBe(true);
       expect(h.dom.arHint.hidden).toBe(true);
+      // The page hides "What happens?" by this mark (index.html): it
+      // describes a session the visitor cannot start.
+      expect(h.dom.enterArButton.dataset["start"]).toBe("withheld");
       await h.enter();
       expect(request).not.toHaveBeenCalled();
       expect(h.arController.enable).not.toHaveBeenCalled();
@@ -714,6 +717,7 @@ describe("a visitor of a tour not finished yet gets no Start", () => {
     h.entry.renderArEntry();
     expect(h.dom.enterArButton.hidden).toBe(false);
     expect(h.dom.arHint.hidden).toBe(false);
+    expect(h.dom.enterArButton.dataset["start"]).toBe("offered");
   });
 
   it("keeps the button while a session runs: it is the way out", () => {

@@ -101,7 +101,9 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   one line under it, by flex `order`), then `#visitor-more` after the
   stage ("What happens?" `#visitor-what`, whose "Stays on your phone"
   says the app sends none of your data - no camera image, no location -
-  and links the privacy page,
+  and links the privacy page; hidden on a phone without AR and for a
+  tour not finished yet, whose Start is withheld (`#enter-ar`
+  `data-start="withheld"`),
   `visitor-privacy`; and `make-your-own`). The safety line
   `#visitor-safety` stands before the round button (W6, D13: "Watch where
   you walk..."), shown on the visitor's start page only. All of it

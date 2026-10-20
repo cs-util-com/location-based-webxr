@@ -155,6 +155,9 @@ entry; C7).
   While the manifest is still being read the button shows, so a session
   can still start on such a tour; its status line then says the tour is
   not finished. During a session the button stays: it is the way out.
+  The button carries `data-start` (`withheld` / `offered`), which
+  `index.html` reads to hide "What happens?" (`#visitor-what`) as well:
+  it describes a session the visitor cannot start.
   `renderArEntry` runs again when the tour's manifest settles
   (`visitor-screen.ts` `tourChanged`).
 - The printed-size input is disabled during a session ONLY in author mode
@@ -204,7 +207,8 @@ the hint hidden during a session, the unsupported state without fakes; a
 tour not finished yet: no Start and no location request, and a session
 started while its file was still being read says it is not finished.
 `ar-entry.test.ts` ("a visitor of a tour not finished yet gets no Start")
-pins the withheld button and hint, the tap that asks for nothing, the
+pins the withheld button and hint (and its `data-start` mark), the tap
+that asks for nothing, the
 button while the manifest is pending, during a session and for a creator.
 `ar-entry.test.ts` drives the real `wireArEntry` through "Enter AR" and the
 session-end callback it hands the AR controller: the QR controller is

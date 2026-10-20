@@ -254,9 +254,11 @@ test("a tour not finished yet says so on its start page, with whom to ask", asyn
   const contact = page.getByTestId("error-contact");
   await expect(contact).toBeVisible();
   await expect(contact.locator("a")).toHaveText("guide@example.org");
-  // Nothing to start: no Start, and no line about one.
+  // Nothing to start: no Start, and no line about one - nor "What
+  // happens?", which describes a session this visitor cannot start.
   await expect(page.getByTestId("enter-ar")).toBeHidden();
   await expect(page.getByTestId("ar-hint")).toBeHidden();
+  await expect(page.locator("#visitor-what")).toBeHidden();
 });
 
 test("a zip without tour.json says on its start page that the tour is not finished yet", async ({
@@ -272,4 +274,5 @@ test("a zip without tour.json says on its start page that the tour is not finish
   await expect(page.getByTestId("visitor-title")).toHaveText("An AR tour");
   await expect(page.getByTestId("error-contact")).toBeHidden();
   await expect(page.getByTestId("enter-ar")).toBeHidden();
+  await expect(page.locator("#visitor-what")).toBeHidden();
 });
