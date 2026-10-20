@@ -46,15 +46,14 @@ geo, station? }[] }`; `station` is the station a bake put the photo
   taken, after the tour's own, under the id `walk-1`, `walk-2`, ...
   (skipping ids the tour has). The same manifest when it already has its
   photos or the walk has none.
-- `referencedAssetIds(manifest) -> Set<string>`: the ids of the assets the
-  tour uses - every step block's (an image, a character's image and voice,
-  an audio, a video, a model) in any station, every item's (none for a pin
-  or a photo today), and the cover.
 - `withReferencedAssets(manifest) -> TourManifest`: the manifest without
-  the assets `referencedAssetIds` leaves out, in their order; the same
+  the assets it does not use, in their order; the same
   manifest when every asset is in use. A write applies it after
   `withTourContent`, and the rebuild removes the dropped assets' files
-  (`finish-rebuild.ts`).
+  (`finish-rebuild.ts`). Used means (module-private
+  `referencedAssetIds`): every step block's (an image, a character's image and voice,
+  an audio, a video, a model) in any station, every item's (none for a pin
+  or a photo today), and the cover.
 
 ## Invariants & assumptions
 

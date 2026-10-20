@@ -338,7 +338,7 @@ function itemAssetIds(item: TourItem): readonly string[] {
  * The ids of the assets `manifest` uses: every step block's of every
  * station, every item's, and the cover (which may name an image asset).
  */
-export function referencedAssetIds(manifest: TourManifest): Set<string> {
+function referencedAssetIds(manifest: TourManifest): Set<string> {
   return new Set([
     ...manifest.stations.flatMap((station) => [
       ...station.steps.flatMap((step) => blockAssetIds(step.block)),

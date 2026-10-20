@@ -64,7 +64,7 @@ export interface VisitPlacement {
  * anchor settles at. The settle re-poses such a station together with its
  * visit's objects, so it stays anchored at its first item.
  */
-export interface StationPlacement extends VisitPlacement {
+interface StationPlacement extends VisitPlacement {
   readonly item: string;
 }
 

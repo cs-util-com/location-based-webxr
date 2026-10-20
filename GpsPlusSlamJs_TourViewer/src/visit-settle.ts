@@ -848,7 +848,7 @@ export interface VisitSettleInput extends SettleAlignmentInput {
 }
 
 /** A station a visit started, as the settle reads it. */
-export interface VisitStation {
+interface VisitStation {
   readonly id: string;
   readonly placement: { readonly visit: number; readonly local: NuePose };
   /** The item it was anchored at: the anchor settles at its moment. */
@@ -856,7 +856,7 @@ export interface VisitStation {
 }
 
 /** Where a station of the visit is anchored after the settle. */
-export interface SettledStation {
+interface SettledStation {
   readonly id: string;
   readonly at: {
     readonly lat: number;

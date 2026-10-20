@@ -157,7 +157,8 @@ draft and logs `tourAuthoring/settled`.
   (`SettledStation`: lat, lon, alt; the station's orientation is its own):
   the anchor and its first item share one odometry pose and one
   alignment, so the anchor lands exactly where that item does, at any
-  correction. Another visit's stations are left out (that visit's settle
+  correction. Both shapes are module-private (`VisitSettleInput` and
+  `VisitSettle` carry them). Another visit's stations are left out (that visit's settle
   placed them).
 - **Several codes (code book refactor plan M4b): `codes` and `levels`.**
   `input.codes` (`VisitCode[]`: a level, this page's measurement or null,

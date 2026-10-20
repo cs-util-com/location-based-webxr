@@ -83,8 +83,9 @@ generation, written, appliedDeletions, stationsAtStart })`,
 - `stationPlacements()` - the AR anchors of the stations an object with
   an AR placement started, by station id (`StationPlacement`: the
   placement and the `item` it was started for), only stations the
-  document has now; see the invariants.
-- `revision()`; the types `VisitPlacement`, `StationPlacement`, `CreatorObject`,
+  document has now; see the invariants. `StationPlacement` is the
+  method's own shape, module-private.
+- `revision()`; the types `VisitPlacement`, `CreatorObject`,
   `DocumentChange`, `CreatorDocumentStore` (`PlacedEntry`,
   `PlacedChange`, `DocumentUndo` and `DocumentRename` are the methods' own shapes,
   module-private).
