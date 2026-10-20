@@ -15,6 +15,8 @@
 
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
+  TourAsset,
+  TourBlock,
   TourManifest,
   TourObject,
   TourStation,
@@ -30,6 +32,7 @@ import { STATION_RADIUS_M } from "./station-assign.js";
 import {
   AUTO_STATION_ACTIVATE_M,
   asStored,
+  withReferencedAssets,
   withTourContent,
   withWalkPhotos,
   worldCaptureSpots,
@@ -339,6 +342,106 @@ describe("withWalkPhotos", () => {
     expect(withWalkPhotos(baked, spotsAt(100))).toBe(baked);
     const empty = tour([station("gate", 0, 0)]);
     expect(withWalkPhotos(empty, spotsAt())).toBe(empty);
+  });
+});
+
+describe("withReferencedAssets", () => {
+  // Why these tests matter: a tour's media files are its assets, and a
+  // visitor downloads every one the tour lists. An asset nothing uses any
+  // more (its step or its cover changed) would ride along in every copy
+  // for good, so the write drops it. But "uses" must cover every place an
+  // asset is named - each kind of step block and the cover - or the write
+  // would delete a step's media: one test per block kind.
+  const asset = (id: string, kind: TourAsset["kind"]): TourAsset => {
+    const ext = { image: "png", audio: "mp3", video: "mp4", model: "glb" }[
+      kind
+    ];
+    return { id, path: `content/${id}.${ext}`, kind };
+  };
+  const ASSETS: readonly TourAsset[] = [
+    asset("picture", "image"),
+    asset("guide", "image"),
+    asset("guide-voice", "audio"),
+    asset("song", "audio"),
+    asset("clip", "video"),
+    asset("statue", "model"),
+    asset("cover-art", "image"),
+    asset("stray", "image"),
+  ];
+  /** A tour with every asset and one station telling `blocks`. */
+  function telling(
+    blocks: readonly TourBlock[],
+    extra: Partial<TourManifest> = {},
+  ): TourManifest {
+    const told = {
+      ...station("told", 0, 0),
+      steps: blocks.map((block, i) => ({
+        id: `step-${String(i)}`,
+        block,
+        advance: { mode: "tap" as const },
+      })),
+    };
+    return { ...tour([told]), assets: [...ASSETS], ...extra };
+  }
+  const kept = (manifest: TourManifest) =>
+    withReferencedAssets(manifest).assets.map((a) => a.id);
+
+  const cases: readonly [string, TourBlock, readonly string[]][] = [
+    ["an image", { kind: "image", asset: "picture" }, ["picture"]],
+    [
+      "a character's image and voice",
+      {
+        kind: "character",
+        name: "Guide",
+        image: "guide",
+        caption: "Hello",
+        voice: "guide-voice",
+      },
+      ["guide", "guide-voice"],
+    ],
+    [
+      "a character without a voice",
+      { kind: "character", name: "Guide", image: "guide", caption: "Hello" },
+      ["guide"],
+    ],
+    ["an audio", { kind: "audio", asset: "song", transcript: "La" }, ["song"]],
+    ["a video", { kind: "video", asset: "clip", transcript: "Look" }, ["clip"]],
+    ["a model", { kind: "model", asset: "statue" }, ["statue"]],
+    ["a text", { kind: "text", text: "Read me" }, []],
+  ];
+  for (const [name, block, ids] of cases) {
+    it(`keeps what ${name} block names, and drops every other asset`, () => {
+      expect(kept(telling([block]))).toEqual(ids);
+    });
+  }
+
+  it("keeps the cover's image, though no step names it", () => {
+    expect(kept(telling([], { cover: "cover-art" }))).toEqual(["cover-art"]);
+  });
+
+  it("counts a block in any station, in the tour's asset order", () => {
+    const second = {
+      ...station("second", 100, 0),
+      steps: [
+        {
+          id: "s",
+          block: { kind: "image", asset: "picture" } as const,
+          advance: { mode: "tap" } as const,
+        },
+      ],
+    };
+    const manifest = telling([{ kind: "model", asset: "statue" }]);
+    expect(
+      kept({ ...manifest, stations: [...manifest.stations, second] }),
+    ).toEqual(["picture", "statue"]);
+  });
+
+  it("returns the tour itself when every asset is in use", () => {
+    const manifest = {
+      ...telling([{ kind: "image", asset: "picture" }]),
+      assets: [ASSETS[0]!],
+    };
+    expect(withReferencedAssets(manifest)).toBe(manifest);
   });
 });
 

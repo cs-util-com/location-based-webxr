@@ -38,7 +38,7 @@ import {
   downloadSafeName,
   nameSurvivesDownload,
 } from "./content-disposition.js";
-import { withTourContent } from "./tour-content.js";
+import { withReferencedAssets, withTourContent } from "./tour-content.js";
 import { archiveFileName, type TourSession } from "./tour-session.js";
 
 /** The open tour, as far as a rebuild reads it. */
@@ -141,20 +141,23 @@ export function finishedManifest(input: FinishedManifestInput): TourManifest {
   const untitled = { ...manifest };
   delete untitled.title;
   // The unmoved ones keep their local poses; every object is written
-  // into the station it names (`tour-content.ts`).
-  return withTourContent(
-    { ...untitled, ...(title === undefined ? {} : { title }) },
-    {
-      // Never an id twice, and not for tidiness: the serializer REJECTS
-      // duplicates, so one restored object that is already in the
-      // manifest would make every finish throw - for as long as the
-      // draft is restored, with no escape inside the app (M5 review #4).
-      objects: applyObjectChanges(
-        tourObjects(manifest),
-        input.placed.map((p) => p.object),
-        input.deleted,
-      ),
-    },
+  // into the station it names, and an asset nothing names any more is
+  // dropped (`tour-content.ts`).
+  return withReferencedAssets(
+    withTourContent(
+      { ...untitled, ...(title === undefined ? {} : { title }) },
+      {
+        // Never an id twice, and not for tidiness: the serializer REJECTS
+        // duplicates, so one restored object that is already in the
+        // manifest would make every finish throw - for as long as the
+        // draft is restored, with no escape inside the app (M5 review #4).
+        objects: applyObjectChanges(
+          tourObjects(manifest),
+          input.placed.map((p) => p.object),
+          input.deleted,
+        ),
+      },
+    ),
   );
 }
 
@@ -217,8 +220,14 @@ export async function rebuildFinishedTour(
     input.keepScan || walkNeeded
       ? []
       : scanEntryNames(entryNames, written, wrap);
+  // An asset the write dropped takes its file with it, as a deleted
+  // photo does.
+  const keptAssets = new Set(written.assets.map((a) => a.id));
   const removed = [
     ...contentEntriesToRemove(hosted, deleted, wrap),
+    ...manifest.assets.flatMap((a) =>
+      keptAssets.has(a.id) ? [] : [`${wrap}${a.path}`],
+    ),
     ...scanLeftOut,
     ...signatureNames,
     ...(listed === null && listName !== undefined ? [listName] : []),

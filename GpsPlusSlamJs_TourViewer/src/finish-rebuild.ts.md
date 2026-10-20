@@ -77,6 +77,9 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
   deleted ones filtered out (`applyObjectChanges`; never an id twice, the
   serializer rejects duplicates). A deleted photo's content file is
   removed (`contentEntriesToRemove`).
+- **Assets:** an asset nothing names any more (no step block, not the
+  cover; `withReferencedAssets` of `tour-content.ts`) leaves the
+  written manifest, and its file leaves the zip.
 - **Paths:** the manifest at `${manifestWrap}tour.json` (the session's own
   prefix, never derived again); a level the zip holds is replaced where it
   is, a new one inside a listed tour's folder or at the root
@@ -119,7 +122,9 @@ if (finished !== null) save(finished.blob);
 ## Tests
 
 `finish-rebuild.test.ts` on real zips: the edits (in place, appended, a
-deleted photo's file removed, the level replaced inside the wrap), the
+deleted photo's file removed, the level replaced inside the wrap), an
+asset nothing uses dropped from the manifest and the zip while a step's
+asset and the cover stay, the
 title rule, a listed tour's series continued (reopened: listed, next
 version, whole-archive check passes), the previous rebuild as input (no
 read), `shouldContinue` stopping before the rebuild, the walk left out

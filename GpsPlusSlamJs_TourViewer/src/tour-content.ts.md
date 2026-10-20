@@ -46,6 +46,15 @@ geo, station? }[] }`; `station` is the station a bake put the photo
   taken, after the tour's own, under the id `walk-1`, `walk-2`, ...
   (skipping ids the tour has). The same manifest when it already has its
   photos or the walk has none.
+- `referencedAssetIds(manifest) -> Set<string>`: the ids of the assets the
+  tour uses - every step block's (an image, a character's image and voice,
+  an audio, a video, a model) in any station, every item's (none for a pin
+  or a photo today), and the cover.
+- `withReferencedAssets(manifest) -> TourManifest`: the manifest without
+  the assets `referencedAssetIds` leaves out, in their order; the same
+  manifest when every asset is in use. A write applies it after
+  `withTourContent`, and the rebuild removes the dropped assets' files
+  (`finish-rebuild.ts`).
 
 ## Invariants & assumptions
 
@@ -88,6 +97,12 @@ geo, station? }[] }`; `station` is the station a bake put the photo
 - The order of the world view read back is the stations' order, then the
   items' order within each station, which can differ from the order the
   objects were placed in.
+- **An asset nothing names is not written.** A visitor downloads every
+  asset a tour lists, so one a changed step or cover left behind would
+  ride along in every copy. A photo's image is its own content file, not
+  an asset. The item kinds are a closed switch (`itemAssetIds`): a new
+  kind of item (a model placed in a station) fails to compile there until
+  it says which assets it keeps.
 - Pure: no I/O. The geodesy it calls (`localPoseOf`, `itemGeoPose`) runs
   under the core's licence, which the app activates at boot.
 
@@ -115,7 +130,12 @@ const written = withTourContent(opened, {
   a 10 m own radius and of the 25 m automatic one), the same ids on every
   open skipping taken ones, the world view read back, and a tour with
   photos or a walk without them left as they are; and the `asStored`
-  property (it is what a written tour holds, by content key).
+  property (it is what a written tour holds, by content key);
+  `withReferencedAssets` keeping each block kind's assets (an image, a
+  character with and without a voice, an audio, a video, a model; a text
+  block names none) and dropping the rest, the cover kept though no step
+  names it, a block in any station counted, the tour's asset order kept,
+  and the same manifest when every asset is used.
 - Through `finish-rebuild.test.ts` (a Finish writing the photos baked at
   open, a micrometre stored copy counted as written), `tour-document-bake.test.ts` (`walkAtOpen`),
   `authoring-draft.test.ts`, `creator-finish.test.ts` and

@@ -529,6 +529,51 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
   });
 });
 
+describe("rebuildFinishedTour drops the assets nothing uses", () => {
+  // Why this test matters: the write is where an asset nothing names any
+  // more leaves the tour - from the manifest AND from the zip, or every
+  // copy keeps carrying its bytes. Read from the zip's bytes, so a manifest
+  // that only says so would not pass.
+  it("writes the step's asset and the cover, and leaves out a stray asset's entry", async () => {
+    const told: TourStation = {
+      ...HERE,
+      steps: [
+        {
+          id: "look",
+          block: { kind: "image", asset: "used" },
+          advance: { mode: "tap" },
+        },
+      ],
+    };
+    const manifest = tourOf([], {
+      stations: [told],
+      assets: [
+        { id: "used", path: "content/used.png", kind: "image" },
+        { id: "cover-art", path: "content/cover-art.png", kind: "image" },
+        { id: "stray", path: "content/stray.png", kind: "image" },
+      ],
+      cover: "cover-art",
+    });
+    const tour = await open(
+      await packFilesAsZip([
+        { path: `${WRAP}tour.json`, data: serializeTourManifest(manifest) },
+        { path: `${WRAP}content/used.png`, data: "u" },
+        { path: `${WRAP}content/cover-art.png`, data: "c" },
+        { path: `${WRAP}content/stray.png`, data: "s" },
+      ]),
+    );
+    const result = await rebuildFinishedTour({ tour, manifest, ...NO_EDITS });
+    const names = await namesOf(result!.blob);
+    expect(names).toContain(`${WRAP}content/used.png`);
+    expect(names).toContain(`${WRAP}content/cover-art.png`);
+    expect(names).not.toContain(`${WRAP}content/stray.png`);
+    const written = parseTourManifest(
+      JSON.parse((await textOf(result!.blob, `${WRAP}tour.json`))!),
+    );
+    expect(written.assets.map((a) => a.id)).toEqual(["used", "cover-art"]);
+  });
+});
+
 describe("pendingAfterRebuild (M6 E0b: what is still to save after a write)", () => {
   // Why: a page that keeps editing while a save runs (the phone's Finish
   // during a rebuild, the desktop editor's continuous saving) must drop

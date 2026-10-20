@@ -24,6 +24,9 @@
  *   and no other station routing to it. It existed for its elements
  *   (D20); left behind, the visitor's guide would still lead to it. An
  *   empty station the tour already had is left alone.
+ * - An asset nothing names any more is dropped (`withReferencedAssets`):
+ *   no step block (an image, a character's image or voice, an audio, a
+ *   video, a model) and not the cover.
  *
  * Pure.
  *
@@ -33,6 +36,7 @@
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourContentFields } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
+  TourBlock,
   TourCapture,
   TourItem,
   TourManifest,
@@ -297,4 +301,64 @@ export function routedTo(station: Omit<TourStation, "items">): string[] {
     ids.push(...Object.values(byOption ?? {}));
   }
   return ids;
+}
+
+/** The assets `block` names: its media, a character's image and voice. */
+function blockAssetIds(block: TourBlock): readonly string[] {
+  switch (block.kind) {
+    case "image":
+    case "audio":
+    case "video":
+    case "model":
+      return [block.asset];
+    case "character":
+      return block.voice === undefined
+        ? [block.image]
+        : [block.image, block.voice];
+    case "text":
+    case "choice":
+    case "quiz":
+      return [];
+  }
+}
+
+/** The assets `item` names: none for a pin or a photo (a photo's image is
+ *  its own content file, not an asset). A new kind of item fails to compile
+ *  here until it says which assets it keeps - a model item will name its
+ *  model. */
+function itemAssetIds(item: TourItem): readonly string[] {
+  switch (item.kind) {
+    case "pin":
+    case "photo":
+      return [];
+  }
+}
+
+/**
+ * The ids of the assets `manifest` uses: every step block's of every
+ * station, every item's, and the cover (which may name an image asset).
+ */
+export function referencedAssetIds(manifest: TourManifest): Set<string> {
+  return new Set([
+    ...manifest.stations.flatMap((station) => [
+      ...station.steps.flatMap((step) => blockAssetIds(step.block)),
+      ...station.items.flatMap(itemAssetIds),
+    ]),
+    ...(manifest.cover === undefined ? [] : [manifest.cover]),
+  ]);
+}
+
+/**
+ * `manifest` without the assets nothing names (`referencedAssetIds`), in
+ * their order: a visitor downloads every asset a tour lists, so one left
+ * behind by a changed step or cover would ride along in every copy. The
+ * same manifest when every asset is in use. The caller removes the dropped
+ * assets' files (`rebuildFinishedTour`).
+ */
+export function withReferencedAssets(manifest: TourManifest): TourManifest {
+  const used = referencedAssetIds(manifest);
+  const assets = manifest.assets.filter((a) => used.has(a.id));
+  return assets.length === manifest.assets.length
+    ? manifest
+    : { ...manifest, assets };
 }
