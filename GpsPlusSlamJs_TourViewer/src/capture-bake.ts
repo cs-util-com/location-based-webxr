@@ -8,11 +8,11 @@
  * open puts them into stations (`walkAtOpen`, `withWalkPhotos` of
  * `tour-content.ts`, tour editor plan W3).
  *
- * Every decline is the live join's own (`preflightCaptureJoin`,
+ * Every decline is the join's own (`preflightCaptureJoin`,
  * `assessReplayedJoin`), plus two more: no photo file left to show, and no
- * recorded photo that could be placed. A declined bake writes nothing, so
- * the tour keeps the live join, exactly as before S1. A walk that names no
- * photo the tour carries places nothing at all, live or baked: its decline
+ * recorded photo that could be placed. A declined bake writes nothing, and
+ * a visitor then sees no recorded photo. A walk that names no photo the
+ * tour carries places nothing at all: its decline
  * says so (`placesNothing`), and a lean Finish may then leave the walk out
  * (the M4b milestone review #3).
  *
@@ -98,13 +98,13 @@ export async function bakeCaptureSpots(
   // A stopped replay's state is partial by construction; assessing it
   // would name a wrong reason.
   if (stopped) return { kind: "declined", reason: "stopped" };
-  // Only photos the zip carries as images: the live join's decode skips a
-  // missing frame, and a spot naming no file would show nothing.
+  // Only photos the zip carries as images: a spot naming no file would
+  // show nothing.
   const images = new Set(
     source.entries.filter((e) => e.isImage).map((e) => e.filename),
   );
-  // A walk that names no photo the tour carries places nothing, live or
-  // baked - decided before the GPS verdict, which does not change that.
+  // A walk that names no photo the tour carries places nothing - decided
+  // before the GPS verdict, which does not change that.
   // "Places nothing" lets a lean Finish drop the walk for good, so only
   // a recording of a known era may say it, and only when it took no photo
   // at all or none of its placed photos is a file of the tour. Photos the
@@ -163,7 +163,7 @@ export async function bakeCaptureSpots(
     spots: {
       fixes: verdict.quality.pairCount,
       // Null when the fixes reported no accuracy: the visitor's line then
-      // omits it, as the live join's does.
+      // omits it.
       gpsAccuracyMedianM: verdict.quality.gpsAccuracyMedianM,
       captures,
     },

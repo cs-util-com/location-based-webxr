@@ -95,6 +95,7 @@ describe("the viewer's tourViewing log", () => {
       basis: "geo",
       count: 1,
       zero: { lat: 47.5, lon: 8.7 },
+      station: "st-a",
     });
     expect(h.dispatched).toEqual([]);
     // A vote cast while off is not carried into a later, recorded batch.
@@ -187,29 +188,23 @@ describe("the viewer's tourViewing log", () => {
   it("logs a placement with what it used", () => {
     const h = harness();
     h.log.placed({
-      what: "ring",
-      basis: "code",
+      what: "capture-spots",
+      basis: "geo",
       count: 3,
       zero: { lat: 47.5, lon: 8.7 },
-      code: {
-        text: "code-a",
-        geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 90 },
-        centerNue: [0, 400, 0],
-      },
+      join: { fixes: 12, gpsAccuracyMedianM: 4 },
+      station: "st-a",
     });
     expect(h.dispatched).toEqual([
       {
         type: "tourViewing/placed",
         payload: {
-          what: "ring",
-          basis: "code",
+          what: "capture-spots",
+          basis: "geo",
           count: 3,
           zero: { lat: 47.5, lon: 8.7 },
-          code: {
-            text: "code-a",
-            geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 90 },
-            centerNue: [0, 400, 0],
-          },
+          join: { fixes: 12, gpsAccuracyMedianM: 4 },
+          station: "st-a",
           alignmentMatrix: MATRIX,
           arVisitIndex: 0,
           atMs: T0,
@@ -229,6 +224,7 @@ describe("the viewer's tourViewing log", () => {
       count: 6,
       zero: { lat: 47.5, lon: 8.7 },
       join: { fixes: 12, gpsAccuracyMedianM: 4 },
+      station: "st-a",
     });
     for (const action of h.dispatched) {
       expect(JSON.parse(JSON.stringify(action))).toEqual(action);

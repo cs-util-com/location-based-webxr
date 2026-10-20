@@ -52,43 +52,18 @@ export type PlacementState =
       kind: "waiting-ready";
     }
   | {
-      /** The tour has neither a recording (capture spots) nor printed
-       *  codes (the ring) - said plainly instead of "Scanning…". */
-      kind: "nothing-to-place";
-    }
-  | {
-      /** `loading-photos`: the photos no station holds, decoded up front
-       *  (`done` of `total` decoded so far). */
-      kind: "placing";
-      phase: "reading-walk" | "loading-photos";
-      done: number;
-      total: number;
-    }
-  | {
-      /** `count`: the photos standing (decoded and drawn, held by no
-       *  station); `atStations`: the photos waiting at their stations,
-       *  drawn only while one shows (absent: 0). */
+      /** The tour's recorded photos at their baked capture spots:
+       *  `count` of them, each waiting at its station, drawn only while
+       *  that station shows; `fixes` and their median GPS accuracy are
+       *  what the spots rest on. */
       kind: "placed";
       placedKind: "capture-spots";
       count: number;
-      atStations?: number;
       fixes: number;
       gpsAccuracyMedianM: number | null;
     }
   | {
-      /** The ring around a locked code - the fallback for a tour without
-       *  a recording (milestone review #2: a placed ring used to keep the
-       *  decline copy, indistinguishable from "a ring is pending").
-       *  `count` and `atStations` as for the capture spots: a ring is
-       *  either standing or held by the code's station. */
-      kind: "placed";
-      placedKind: "ring";
-      count: number;
-      atStations?: number;
-    }
-  | {
-      /** The join declined (taxonomy reason) - the ring is the fallback and
-       *  the reason stays visible while it stands. */
+      /** The photos cannot be shown (the reason is the line's). */
       kind: "declined";
       reason: string;
     };
@@ -255,38 +230,17 @@ export function placementSegment(
       return readiness === null
         ? "Waiting for tracking to warm up…"
         : readiness.hint;
-    case "nothing-to-place":
-      return "nothing to place: this tour has no recording and no printed codes";
-    case "placing":
-      return placement.phase === "reading-walk"
-        ? `reading the walk ${String(placement.done)}/${String(placement.total)}…`
-        : `loading photos ${String(placement.done)}/${String(placement.total)}…`;
     case "placed": {
-      const atStations = placement.atStations ?? 0;
-      if (placement.placedKind === "ring") {
-        return atStations > 0
-          ? `${String(atStations)} photos in a ring around the code, at its station`
-          : `${String(placement.count)} photos in a ring around the code`;
-      }
-      // HONEST label (geo-join review, finding 5): fixes and their median
-      // GPS accuracy are what the numbers are - never a claimed placement
-      // error.
+      // An honest label: fixes and their median GPS accuracy are what the
+      // numbers are - never a claimed placement error.
       const accuracy =
         placement.gpsAccuracyMedianM === null
           ? ""
           : `, median GPS ±${placement.gpsAccuracyMedianM.toFixed(1)}m`;
-      // Standing photos and photos waiting at their stations, each named
-      // only when there are some (a tour of loose photos reads as before).
-      const where =
-        atStations === 0
-          ? `${String(placement.count)} photos at capture spots`
-          : placement.count === 0
-            ? `${String(atStations)} photos at their stations`
-            : `${String(placement.count)} photos at capture spots and ${String(atStations)} at their stations`;
-      return `${where} (${String(placement.fixes)} fixes${accuracy})`;
+      return `${String(placement.count)} photos at their stations (${String(placement.fixes)} fixes${accuracy})`;
     }
     case "declined":
-      return `photo ring (${placement.reason})`;
+      return `photos not shown (${placement.reason})`;
   }
 }
 
@@ -314,25 +268,7 @@ export function arStatusLine(input: ArStatusInput): string {
   if (input.tour.kind === "open" && input.tour.unfinished !== undefined) {
     return `${mode} — AR running · ${String(input.cameraFrames)} camera frames · ${notFinishedSentence(input.tour.unfinished.contact)}`;
   }
-  // A declined join on a tour that also has no printed codes is the
-  // "nothing to place" case - derived here so the caller never has to
-  // re-evaluate it when the levels arrive after the decline. A decline
-  // already means the recording path is out, whether or not the zip had a
-  // recording (a walk without GPS, an era mismatch): the ring needs a code,
-  // and with zero codes "photo ring (reason)" would promise one forever -
-  // the exact shape of feedback F3 (milestone review #1).
-  // A tour whose level file could not be read has no usable codes either,
-  // and its `levelCount` stays null forever (PR #434 review): without this
-  // the ring kept promising a code that can never arrive.
-  const noUsableCodes =
-    input.tour.kind === "open" &&
-    (input.tour.levelCount === 0 ||
-      (input.gate.kind === "not-required" &&
-        input.gate.reason === "levels-unavailable"));
-  const placement: PlacementState =
-    input.placement.kind === "declined" && noUsableCodes
-      ? { kind: "nothing-to-place" }
-      : input.placement;
+  const placement = input.placement;
   // While the gate scans, the placement's coaching hint ("walk around")
   // would contradict "stay at the code": the gate's line stands alone.
   const gateScanning = input.gate.kind === "scanning";

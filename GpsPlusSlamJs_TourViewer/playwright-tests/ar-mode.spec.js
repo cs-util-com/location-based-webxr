@@ -86,7 +86,7 @@ async function openAsVisitor(
   // `allStations`: every station's content shows (?allstations=1). The
   // page draws only the present station's content, and these fakes give
   // the station guide no camera pose unless a test sets one, so a test
-  // about the gate, the votes or the ring (not about presence, which
+  // about the gate or the votes (not about presence, which
   // stations.spec.js walks) turns it on to see the content it places.
   await page.goto(
     `/?qr=${encodeURIComponent(url)}${debug ? "&debug=1" : ""}${allStations ? "&allstations=1" : ""}`,
@@ -110,15 +110,19 @@ function drawnGroups(page) {
   });
 }
 
-/** The ring's photo planes: meshes standing directly in a station's group
- *  (a station's own items hang one level deeper, under its frame). */
-function ringPlanes(page) {
-  return page.evaluate(
-    () =>
-      /** @type {any} */ (window).__tourViewerTest.fakeScene.children
-        .flatMap((/** @type {any} */ g) => g.children)
-        .filter((/** @type {any} */ o) => o.isMesh === true).length,
-  );
+/** The photo planes standing in the fake scene, however deep: a
+ *  station's items hang under its frame (pins are sprites, not meshes). */
+function photoPlanes(page) {
+  return page.evaluate(() => {
+    /** @param {any} o @returns {number} */
+    const count = (o) =>
+      (o.isMesh === true ? 1 : 0) +
+      (o.children ?? []).reduce(
+        (/** @type {number} */ n, /** @type {any} */ c) => n + count(c),
+        0,
+      );
+    return count(/** @type {any} */ (window).__tourViewerTest.fakeScene);
+  });
 }
 
 /** Lock the fixture's code: arm the detection and feed frames until the
@@ -805,11 +809,16 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // The pin the hosted zip already carried SURVIVES the rebuild - the
   // whole reason the manifest is loaded at open (M3 review #5/#7).
   const manifest = worldManifest(rebuilt.entries["tour.json"]);
-  // The fixture's own pin SURVIVES the rebuild (M3 review #5/#7), and the
-  // two objects placed above are appended after it.
-  expect(manifest.objects).toHaveLength(3);
-  expect(manifest.objects[0]?.id).toBe("fixturepin01");
-  const [, pin, photo] = manifest.objects;
+  // The fixture's own pin and photos SURVIVE the rebuild, and the two
+  // objects placed above are appended after them.
+  expect(manifest.objects).toHaveLength(6);
+  expect(manifest.objects.slice(0, 4).map((o) => o.id)).toEqual([
+    "fixturepin01",
+    "fixturephoto1",
+    "fixturephoto2",
+    "fixturephoto3",
+  ]);
+  const [, , , , pin, photo] = manifest.objects;
   expect(pin?.kind).toBe("pin");
   expect(pin?.kind === "pin" ? pin.label : null).toBe("The old gate");
   // The pin keeps its place RELATIVE TO THE CODE (D10b): the visit settles
@@ -903,9 +912,13 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
 
   const second = await readDownloadedZip(page, 2);
   const secondManifest = worldManifest(second.entries["tour.json"]);
-  // The fixture's pin, batch one's pin and photo, batch two's pin.
+  // The fixture's pin and photos, batch one's pin and photo, batch two's
+  // pin.
   expect(secondManifest.objects.map((o) => o.kind)).toEqual([
     "pin",
+    "photo",
+    "photo",
+    "photo",
     "pin",
     "photo",
     "pin",
@@ -915,7 +928,9 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   );
   expect(labels).toEqual(["Fixture pin", "The old gate", "The second visit"]);
   // Batch one's photo bytes are still in the archive, not just its record.
-  const keptPhoto = secondManifest.objects.find((o) => o.kind === "photo");
+  const keptPhoto = secondManifest.objects.find(
+    (o) => o.kind === "photo" && !o.id.startsWith("fixturephoto"),
+  );
   expect(
     Array.from(
       second.entries[keptPhoto?.kind === "photo" ? keptPhoto.image : ""],
@@ -1406,7 +1421,6 @@ test("a tour whose photo spots were baked at its Finish places them without any 
     // Baked photos keep their stations, so they are counted where they
     // wait, drawn only while their station shows.
     .toMatch(/2 photos at their stations \(7 fixes/);
-  await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
   // A visitor's page decodes no photo for its hidden gallery at all
   // (follow-up F14), so the walk's frame is not read either.
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(0);
@@ -1442,14 +1456,13 @@ test("a visitor of a tour without stations reads that it is not finished, with w
   await expect(page.getByTestId("scan-card")).toBeHidden();
 });
 
-test("the visitor's content and ring wait for the lock; the escape after its clock places by GPS instead (M5, DEC-N3)", async ({
+test("the visitor's content waits for the lock; the escape after its clock places by GPS instead", async ({
   page,
 }) => {
   // Why this matters: the mandatory scan is the demo's claim. Before the
-  // lock nothing stands in the scene; after it the tour.json pin is placed
-  // and the ring follows the vote. A second visitor never locks: the clock
-  // (fired by the fake, no frames needed) offers the escape, which places
-  // by GPS and says so.
+  // lock nothing stands in the scene; after it the tour.json pin and photos
+  // are placed. A second visitor never locks: the clock (fired by the fake,
+  // no frames needed) offers the escape, which places by GPS and says so.
   await openAsVisitor(page, RANGES_ARCHIVE, { debug: true, allStations: true });
   await enterAr(page);
   await seedAlignment(page);
@@ -1465,22 +1478,10 @@ test("the visitor's content and ring wait for the lock; the escape after its clo
     ),
   ).toBe(0);
   await lockTheCode(page);
-  await expect(page.getByTestId("ar-status")).toContainText("1 placed object");
-  // The ring follows the VOTE (a few more frames past the lock).
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("ar-status").textContent();
-      },
-      { timeout: 20000 },
-    )
-    .toMatch(/photos in a ring/);
-  // The ring goes with the station nearest its code, the pin's: its three
-  // planes stand in that station's group, drawn once decoded.
-  await expect.poll(() => ringPlanes(page)).toBe(3);
+  await expect(page.getByTestId("ar-status")).toContainText("4 placed objects");
+  // The station's three photos stand in its one group with the pin, drawn
+  // once decoded.
+  await expect.poll(() => photoPlanes(page)).toBe(3);
   expect(await drawnGroups(page)).toBe(1);
   // The escape clock was cancelled by the lock: firing it changes nothing.
   await page.evaluate(() => {
@@ -1506,7 +1507,7 @@ test("the visitor's content and ring wait for the lock; the escape after its clo
   await expect(page.getByTestId("ar-status")).toContainText(
     "Placing by GPS (less accurate)",
   );
-  await expect(page.getByTestId("ar-status")).toContainText("1 placed object");
+  await expect(page.getByTestId("ar-status")).toContainText("4 placed objects");
 });
 
 for (const viewport of [
@@ -1740,14 +1741,13 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
   }
 });
 
-test("viewer mode relocalizes against the tour's level: budgeted votes, marker, image ring", async ({
+test("viewer mode relocalizes against the tour's level: budgeted votes, marker, the station's photos", async ({
   page,
 }) => {
   // Why this matters (QR-pose plan M4): the COMPOSED viewer loop — the
   // the zip-carried level resolved for the DETECTED code, the REAL vote
   // builder writing budgeted synthetic GPS events into the real store, and
-  // the visible payoff (glue marker + the tour's images ringed around the
-  // anchor). The budget is the guardrail: without it every locked frame
+  // the visible payoff (glue marker + the station's pin and photos). The budget is the guardrail: without it every locked frame
   // votes and a lingering visitor pins the alignment centroid.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
   // three REFUSES a child that is not an Object3D, leaving only this
@@ -1797,8 +1797,8 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
       { timeout: 20000 },
     )
     .toMatch(/the code holds the placement/i);
-  // The ring and the pin are drawn once decoded (one station, one group).
-  await expect.poll(() => ringPlanes(page)).toBe(3);
+  // The photos and the pin are drawn once decoded (one station, one group).
+  await expect.poll(() => photoPlanes(page)).toBe(3);
 
   const afterBudget = await page.evaluate(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;
@@ -1807,11 +1807,13 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
         t.alignmentStore.getState().gpsData.gpsEvents.gpsPositions.length,
       markerUpdates: t.qrDebugUpdates,
       groups: t.fakeScene.children.length,
-      planes: t.fakeScene.children
-        .flatMap((/** @type {any} */ g) => g.children)
-        .filter((/** @type {any} */ o) => o.isMesh === true).length,
       // The station's group -> the station's frame at its pose (tour
       // editor plan W3: playback as station groups) -> the station's items.
+      planes: t.fakeScene.children
+        .flatMap((/** @type {any} */ c) => (c.isGroup ? c.children : []))
+        .flatMap((/** @type {any} */ s) => (s.isGroup ? s.children : []))
+        .flatMap((/** @type {any} */ g) => (g.isGroup ? g.children : []))
+        .filter((/** @type {any} */ o) => o.isMesh === true).length,
       pinLabels: t.fakeScene.children
         .flatMap((/** @type {any} */ c) => (c.isGroup ? c.children : []))
         .flatMap((/** @type {any} */ s) => (s.isGroup ? s.children : []))
@@ -1823,9 +1825,8 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
   // authoring plan M2b; 16 per lock since owner decision D13) = 163.
   expect(afterBudget.gpsCount).toBe(163);
   expect(afterBudget.markerUpdates).toBeGreaterThan(0);
-  // One station drawn: the image ring (3 planes), placed once, with the
-  // station nearest its code, and that station's tour.json content placed
-  // after the lock (M5), in one group...
+  // One station drawn: its tour.json content placed after the lock, the
+  // three photos among it, in one group...
   expect(afterBudget.groups).toBe(1);
   expect(afterBudget.planes).toBe(3);
   // ...which really holds the fixture pin's label sprite: a label three
@@ -3682,8 +3683,8 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
   // visitor without ?debug=1 sees no switch at all (nothing changes for
   // visitors); with it, the same switch and privacy line as the creator's,
   // and the recording holds the viewer's own log actions - which lock cast
-  // which votes, and what the ring was placed around - tagged tour-viewing
-  // for the Recorder's replay.
+  // which votes, and which station's content was drawn - tagged
+  // tour-viewing for the Recorder's replay.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
   await openAsVisitor(page, ARCHIVE);
   await expect(page.getByTestId("recording-block")).toBeHidden();
@@ -3732,8 +3733,8 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
   await page.evaluate((text) => {
     /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
   }, E2E_QR_TEXT);
-  // Frames until the budget is spent: the votes flowed, and the ring was
-  // placed at a voted lock (the relocalization e2e's path). Since M2b the
+  // Frames until the budget is spent: the votes flowed, and the content
+  // was placed at a voted lock (the relocalization e2e's path). The
   // spent-budget line is the code's hold ("Relocalized - the code holds the
   // placement for N s more"), as in the relocalization e2e.
   await expect
@@ -3747,9 +3748,9 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
       { timeout: 20000 },
     )
     .toMatch(/the code holds the placement/i);
-  // The ring (3 planes) and the fixture pin's label, in the one station's
+  // The three photos and the fixture pin's label, in the one station's
   // group.
-  await expect.poll(() => ringPlanes(page)).toBe(3);
+  await expect.poll(() => photoPlanes(page)).toBe(3);
   expect(await drawnGroups(page)).toBe(1);
 
   await page.evaluate(() => {
@@ -3797,12 +3798,13 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
     types.indexOf("tourViewing/votesCast"),
   );
   const placed = actions.filter((a) => a.type === "tourViewing/placed");
-  expect(placed.map((a) => a.payload.what)).toEqual(
-    expect.arrayContaining(["ring", "content"]),
-  );
-  const ring = placed.find((a) => a.payload.what === "ring");
-  expect(ring.payload.basis).toBe("code");
-  expect(ring.payload.code.text).toBe(E2E_QR_TEXT);
+  // The station's content, logged as drawn: its pin and three photos.
+  expect(placed.map((a) => a.payload.what)).toEqual(["content"]);
+  expect(placed[0].payload).toMatchObject({
+    basis: "geo",
+    count: 4,
+    station: "st-fixturepin01",
+  });
   expect(types).toContain("gpsData/resetGpsSessionData");
 });
 
@@ -3920,7 +3922,7 @@ test("a code hung far from its saved spot is ignored after a minute of walking: 
   await expect(status).not.toContainText("Relocaliz");
   await expect(status).not.toContainText("Point the phone");
   await expect(status).not.toContainText("Scan the code again");
-  await expect(status).toContainText("1 placed object");
+  await expect(status).toContainText("4 placed objects");
   // The votes are gone and the tour follows GPS.
   expect(await votesStored()).toBe(0);
   expect(await offFromGps(75)).toBeLessThan(2);

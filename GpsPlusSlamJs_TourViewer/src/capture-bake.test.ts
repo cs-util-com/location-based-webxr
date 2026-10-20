@@ -28,7 +28,7 @@ import {
  * where every visitor trusts them instead of replaying the walk. So the
  * bake must (a) produce spots the visitor's own reader accepts - a spot it
  * rejects would fail the whole tour open - and (b) decline, never guess,
- * whenever the live join would have declined.
+ * whenever the join (`capture-geo-join.ts`) declines.
  */
 
 async function sampleSource(
@@ -56,7 +56,7 @@ describe("bakeCaptureSpots over the real sample recording", () => {
     expect(bake.kind).toBe("baked");
     if (bake.kind !== "baked") return;
     // 5 of 6: the fixture's first photo precedes the GPS zero and has no
-    // joinable position (the integration test of the live join says why).
+    // joinable position (`capture-geo-join.integration.test.ts` says why).
     expect(bake.spots.captures).toHaveLength(5);
     expect(bake.spots.fixes).toBeGreaterThan(0);
     // Placed into stations as the open does (version 3), the reader
@@ -124,7 +124,7 @@ describe("bakeCaptureSpots over the real sample recording", () => {
     ).not.toThrow();
   });
 
-  it("drops a photo whose file the zip does not carry, as the live join's decode would", async () => {
+  it("drops a photo whose file the zip does not carry: a spot naming no file would show nothing", async () => {
     const source = await sampleSource();
     const full = await bakeCaptureSpots(source);
     if (full.kind !== "baked") throw new Error("expected a bake");
@@ -209,8 +209,8 @@ describe("bakeCaptureSpots keeps a walk it cannot read (PR #638 review)", () => 
   // photos are none of the tour's files, may say so. A replay that turns
   // the recording's photos into no spot at all - a newer recording era
   // this build cannot read, or capture actions it could not place - is a
-  // decline that keeps the walk, as the live join's "no captured photos"
-  // decline always did.
+  // decline that keeps the walk, as the join's "no captured photos"
+  // decline does.
   it("keeps the walk of a newer-era recording that shows this build no photo", async () => {
     const source = await sampleSource();
     const actions = (await source.loadRecordingActions())!;
@@ -246,7 +246,7 @@ describe("bakeCaptureSpots keeps a walk it cannot read (PR #638 review)", () => 
   });
 });
 
-describe("bakeCaptureSpots declines where the live join declines", () => {
+describe("bakeCaptureSpots declines where the join declines", () => {
   it("a tour without a recording", async () => {
     const bake = await bakeCaptureSpots({
       entries: [],
@@ -312,8 +312,8 @@ describe("bakeCaptureSpots declines where the live join declines", () => {
 });
 
 describe("posesOfCaptureSpots", () => {
-  // Why: the viewer places baked spots through the same decode-and-plant
-  // path as the live join's poses; the altitude field changes name on the
+  // Why: the viewer places baked spots as the join's poses; the altitude
+  // field changes name on the
   // way (`alt` in the file, `altitude` in the join), so a mix-up would put
   // every photo at sea level.
   it("turns each baked spot into the join's pose, altitude and rotation included", () => {

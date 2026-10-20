@@ -96,9 +96,8 @@ lives here.
     `viewer-vote-sink.ts`: created at every visitor entry's start, which
     clears the solver overrides; forgotten by `endQrPipeline`; turned off
     by `endTourCodeVotes`), `placement`,
-    `viewerPlanesError`, `imagePlanes`, `imagePlanesLoading`,
-    `planesRunGeneration`, `placementUnsubscribe`, `placementAttempted`,
-    `joinDeclined`.
+    `viewerPlanesError`, `imagePlanes`, `placementUnsubscribe`,
+    `placementAttempted`.
 - `createTourViewerSession(store?): TourViewerSession` - the initial
   values; `store` holds the tour document in the page's store (the
   `tourDocument` slice the desktop editor uses too; a fresh
@@ -172,8 +171,7 @@ loadImage }` once the open tour's manifest settled, `manifest` null for
   (`archive-open.ts`) and the AR session end (`ar-entry.ts`) are the two
   cross-cutting resets, and each resets exactly the fields the closing
   tour or session owned (see those sidecars for the lists).
-- The generation counters (`openGeneration`, `planesRunGeneration`) are
-  only ever incremented; async runs capture a value and compare.
+- The generation counter (`openGeneration`) is only ever incremented; async runs capture a value and compare.
 - `placementUnsubscribe !== null` is the "viewer session is live" signal
   the placement trigger reads; it is set after the runtime start and
   cleared on session end.

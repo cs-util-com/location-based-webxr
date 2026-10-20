@@ -189,7 +189,7 @@ export interface TourSession {
    * The recording's action stream, range-streamed and parsed — the input
    * to the capture-geo join's gates and replay. NULL when the archive has
    * no readable action stream (a hand-built zip is a normal tour): null
-   * means "keep the ring", never an error.
+   * means "no walk to bake", never an error.
    */
   loadRecordingActions(): Promise<readonly RecordedAction[] | null>;
   /**

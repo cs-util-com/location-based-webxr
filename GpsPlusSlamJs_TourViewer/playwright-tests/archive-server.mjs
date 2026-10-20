@@ -60,6 +60,9 @@ import { inOwnStation, stationAt } from "./v3-fixture.mjs";
 
 const port = Number(process.argv[2] ?? "5197");
 
+/** The default tour's photo items, in its pin's station. */
+const FIXTURE_PHOTO_IDS = ["fixturephoto1", "fixturephoto2", "fixturephoto3"];
+
 /** 1×1 red PNG — a real decodable image, 67 bytes. */
 const TINY_PNG = Uint8Array.from(
   atob(
@@ -68,18 +71,29 @@ const TINY_PNG = Uint8Array.from(
   (c) => c.codePointAt(0),
 );
 
-/** The default tour: images, an authored level, padding. `withLevel: false`
- *  is the PLAIN tour - images only, no `tour.json`, no recording and no
- *  printed code: a tour not finished yet.
+/** The default tour: an authored level, a station holding a pin and three
+ *  photos (each its own `content/` image), five other images, padding -
+ *  eight images in all. `withLevel: false` is the PLAIN tour - eight
+ *  images only, no `tour.json`, no recording and no printed code: a tour
+ *  not finished yet.
  *  `needsNoGps`: the same tour, its `tour.json` marked as needing no GPS. */
 async function buildZip({ withLevel = true, needsNoGps = false } = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   await writer.add("session.json", new TextReader('{"kind":"e2e-tour"}'));
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < (withLevel ? 5 : 8); i += 1) {
     await writer.add(
       `images/frame-${String(i)}.png`,
       new Uint8ArrayReader(TINY_PNG.slice()),
     );
+  }
+  // The station's photos: what a visitor sees besides the pin.
+  if (withLevel) {
+    for (const id of FIXTURE_PHOTO_IDS) {
+      await writer.add(
+        `content/${id}.png`,
+        new Uint8ArrayReader(TINY_PNG.slice()),
+      );
+    }
   }
   // An authored QR level (QR-pose plan M4): the viewer spec relocalizes
   // against it. Geo sits ~13 m from the spec's zero reference.
@@ -118,13 +132,28 @@ async function buildZip({ withLevel = true, needsNoGps = false } = {}) {
           minor: 0,
           ...(needsNoGps ? { needsNoGps: true } : {}),
           stations: [
-            inOwnStation({
-              id: "fixturepin01",
-              kind: "pin",
-              geo: { lat: 47.50009, lon: 8.7, alt: 400 },
-              createdAtIso: "2026-09-08T12:00:00.000Z",
-              label: "Fixture pin",
-            }),
+            stationAt(
+              "st-fixturepin01",
+              { lat: 47.50009, lon: 8.7, alt: 400 },
+              [
+                {
+                  id: "fixturepin01",
+                  kind: "pin",
+                  createdAtIso: "2026-09-08T12:00:00.000Z",
+                  label: "Fixture pin",
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                },
+                ...FIXTURE_PHOTO_IDS.map((id, i) => ({
+                  id,
+                  kind: "photo",
+                  image: `content/${id}.png`,
+                  imageWidth: 1,
+                  imageHeight: 1,
+                  createdAtIso: "2026-09-08T12:00:00.000Z",
+                  pose: { position: [i + 1, 0, 0], rotation: [0, 0, 0, 1] },
+                })),
+              ],
+            ),
           ],
         }),
       ),
@@ -319,8 +348,8 @@ async function buildStationsZip() {
  * A tour zip that IS a recording (geo-join e2e): era-5 session.json plus an
  * action stream whose four consistent GPS↔odom pairs solve a clean
  * translation alignment ([+2 m N] and the 400 m altitude datum), and two
- * captures taken AFTER the zero — so the viewer's capture-time join
- * accepts and places photos at capture spots instead of the ring.
+ * captures taken AFTER the zero — so the creator's bake (the capture-time
+ * join) accepts and places photos at capture spots.
  * Payload frames match the recorder's writes exactly: odom positions are
  * RAW WEBXR ([E, y, −N] for a NUE (N, E)); the reducer converts on replay.
  */

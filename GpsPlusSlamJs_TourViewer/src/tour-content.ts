@@ -72,8 +72,8 @@ export interface CaptureSpotsInWorld {
     readonly image: string;
     readonly geo: QrGeoPose;
     /** The station a baked spot is held by (`worldCaptureSpots`); absent
-     *  for spots joined live, which the viewer assigns itself
-     *  (`station-captures.ts`). */
+     *  for a bake's own output, before its photos are put in stations.
+     *  The viewer draws a photo only with its station. */
     readonly station?: string;
   }[];
 }

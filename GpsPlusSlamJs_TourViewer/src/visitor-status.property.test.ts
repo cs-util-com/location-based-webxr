@@ -47,24 +47,16 @@ const arbInput: fc.Arbitrary<ArStatusInput> = fc.record({
   placement: fc.oneof(
     fc.constant({ kind: "idle" as const }),
     fc.constant({ kind: "waiting-ready" as const }),
-    fc.constant({ kind: "nothing-to-place" as const }),
-    fc.record({
-      kind: fc.constant("placing" as const),
-      phase: fc.constantFrom(
-        "reading-walk" as const,
-        "loading-photos" as const,
-      ),
-      done: fc.nat(50),
-      total: fc.nat(50),
-    }),
     fc.record({
       kind: fc.constant("placed" as const),
-      placedKind: fc.constant("ring" as const),
+      placedKind: fc.constant("capture-spots" as const),
       count: fc.nat(9),
+      fixes: fc.nat(9),
+      gpsAccuracyMedianM: fc.constant(null),
     }),
     fc.record({
       kind: fc.constant("declined" as const),
-      reason: fc.constant("no recording in this tour"),
+      reason: fc.constant("no readable capture photos"),
     }),
   ),
   planesError: fc.option(fc.constant("HTTP 404"), { nil: null }),

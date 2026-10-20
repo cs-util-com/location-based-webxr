@@ -18,20 +18,14 @@ unfinished?: { contact } }`.
   (`tour-unfinished.ts`, set by `ar-entry.ts` once the manifest settled):
   the line is then the prefix and that sentence alone (with the contact
   when the tour names one), no scan, gate or placement segment.
-  (Whether the zip has a recording is NOT an input: a decline already says
-  the recording path is out - M6 review #1.)
+  (Whether the zip has a recording is NOT an input: a visitor never sees
+  a walk.)
 - `type PlacementState` - what the photo placement did: `idle` ·
-  `placing { phase: "reading-walk" | "loading-photos"; done; total }`
-  (`loading-photos`: the photos no station holds, decoding up front) ·
-  `placed { placedKind: "capture-spots"; count; atStations?; fixes; gpsAccuracyMedianM }`
-  · `placed { placedKind: "ring"; count; atStations? }` (`count`: the
-  photos standing, decoded and drawn; `atStations`: the photos waiting at
-  their stations, drawn only while one shows; absent: 0. Rendered "N photos
-  at capture spots", "N photos at their stations", "A photos at capture
-  spots and B at their stations", "N photos in a ring around the code[, at
-  its station]")
-  · `declined { reason }` (the join's taxonomy reason; the ring is the
-  fallback and the reason stays visible while it stands).
+  `placed { placedKind: "capture-spots"; count; fixes; gpsAccuracyMedianM }`
+  (`count`: the baked photos waiting at their stations, each drawn only
+  while its station shows; rendered "N photos at their stations (F fixes[,
+  median GPS ±A m])") · `declined { reason }` (rendered "photos not shown
+  (reason)").
 - `interface ArStatusInput` - mode, controller status, camera-frame count,
   the tour, the viewer pipeline's QR inputs (the `viewerStatusLine` shape),
   the `readiness` (the framework's `OnboardingGuidance` for the current
@@ -70,13 +64,7 @@ codeLinedUp(qr)`: whether the station guide judges on the aligned frame
   heading latches its first `true` per AR entry, as the photos' trigger
   does, so a degraded dip does not take the arrows away (re-review L-B).
 - `PlacementState` also carries `waiting-ready` (renders the readiness
-  hint, or "Waiting for tracking to warm up…" without one) and
-  `nothing-to-place` (a tour with neither a recording nor printed codes).
-  `arStatusLine` DERIVES `nothing-to-place` from a `declined` placement on
-  an open tour with `levelCount === 0` - whatever `hasRecording` says, since
-  a decline already means the recording path is out and the ring needs a
-  code (milestone review #1) - so the line follows the tour's facts at
-  render time whatever order the decline and the levels arrived in.
+  hint, or "Waiting for tracking to warm up…" without one).
 - `contentSegment(content)` - "N placed objects (K could not load)" once
   the tour's `tour.json` content is rendered (M5).
 - The composed line carries the scan gate's segment (`gateSegment`, from
@@ -87,8 +75,7 @@ codeLinedUp(qr)`: whether the station guide judges on the aligned frame
   or before the pipeline reports a status.
 - `placementSegment(placement, readiness = null): string` - the placement
   copy; `""` for idle; `waiting-ready` renders `readiness.hint` (or the
-  generic wait); a placed ring renders "N photos in a ring around the code"
-  (milestone review #2).
+  generic wait).
 - `arStatusLine(input): string` - the whole `#ar-status` text.
 - `clearCacheLabel(removed): string` - the Clear-cache confirmation
   ("Cache cleared - N stored tours removed", singular for 1, "nothing was
@@ -117,8 +104,7 @@ frames"` is asserted literally by `playwright-tests/ar-mode.spec.js`.
 - Segments are joined with `" · "`; empty segments are dropped, so the line
   never carries a dangling separator.
 - The placement strings are the geo-join results doc's wording; the e2e
-  specs match them by regex (`photos at capture spots (4 fixes`, `photo
-ring`, `reading the walk`).
+  specs match them by regex (`photos at their stations (4 fixes`).
 - Pure: no DOM, no store; `ar-entry.ts` builds the input from the session
   object and writes the result into `#ar-status`.
 
@@ -139,12 +125,10 @@ arStatusLine({
     reprojectionErrorPx: null,
   },
   readiness: null,
-  placement: { kind: "declined", reason: "no recording in this tour" },
+  placement: { kind: "declined", reason: "no readable capture photos" },
   planesError: null,
 });
-// "Visitor mode — AR running · 3 camera frames · This tour has no printed codes. · nothing to place: this tour has no recording and no printed codes"
-// (the decline on a code-less tour is DERIVED to nothing-to-place: a ring
-// needs a code, so "photo ring (…)" would promise one forever - review #1)
+// "Visitor mode — AR running · 3 camera frames · This tour has no printed codes. · photos not shown (no readable capture photos)"
 ```
 
 - `ArStatusInput.qr.fusedHint` carries the visitor hint through to
@@ -160,7 +144,8 @@ arStatusLine({
 - `tour-flow.test.ts` - every branch of the line, string-exact, including
   the e2e-pinned prefix, an unfinished tour's line (the prefix and its
   sentence alone) and the no-codes rule's scope; the placed wording
-  with photos standing, at their stations, or both.
+  (photos at their stations, with and without a GPS median) and the
+  declined wording.
 - `tour-flow.property.test.ts` - the no-codes rule for every open-tour
   state and its absence with no tour; decline reasons verbatim; no
   non-idle placement renders as silence.

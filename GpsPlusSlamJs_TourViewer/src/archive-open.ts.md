@@ -132,9 +132,7 @@ DOM glue, its own module since the flows plan M6.
   code's vote budget starts again, so a reopened tour's gate waits for a
   real vote - M2b review #6) and the placement fields the
   closing tour owned (`stationContent`, disposed with every station's
-  parts, `imagePlanes`, `imagePlanesLoading`,
-  `planesRunGeneration` bump, `placementAttempted`, `joinDeclined`,
-  `placement`) and the QR controller's level cache (the compass wait it
+  parts, `imagePlanes`, `placementAttempted`, `placement`) and the QR controller's level cache (the compass wait it
   also ended, r857 review #9, is gone since r863), `levelsUnreadable`,
   and a failed
   finish (`finishError`, which keeps Save off - scan-to-open plan §9 #8),

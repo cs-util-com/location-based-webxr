@@ -223,7 +223,13 @@ test("'New station here' makes the next pin start its own station within the rad
   }
   expect(started.id).not.toBe(fixture.id);
   expect(holding("After")?.id).toBe(started.id);
-  expect(fixture.items.map((i) => i.id)).toHaveLength(1);
+  // The fixture's station keeps its own pin and photos, nothing more.
+  expect(fixture.items.map((i) => i.id)).toEqual([
+    "fixturepin01",
+    "fixturephoto1",
+    "fixturephoto2",
+    "fixturephoto3",
+  ]);
   expect(started.geo.lat).toBeCloseTo(own.geo.lat, 9);
   expect(started.geo.lon).toBeCloseTo(own.geo.lon, 9);
 });

@@ -1112,9 +1112,10 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     } as never;
     h.ctx.placement = {
       kind: "placed",
-      placedKind: "ring",
-      count: 0,
-      atStations: 3,
+      placedKind: "capture-spots",
+      count: 3,
+      fixes: 4,
+      gpsAccuracyMedianM: null,
     };
     h.entry.renderArStatus();
     expect(h.dom.arStatus.dataset["state"]).toBe("to-station");
@@ -1139,9 +1140,10 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     } as never;
     h.ctx.placement = {
       kind: "placed",
-      placedKind: "ring",
-      count: 0,
-      atStations: 3,
+      placedKind: "capture-spots",
+      count: 3,
+      fixes: 4,
+      gpsAccuracyMedianM: null,
     };
     h.arStore.dispatch(
       presenceJudged({

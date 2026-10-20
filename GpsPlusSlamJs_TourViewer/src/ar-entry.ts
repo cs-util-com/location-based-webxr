@@ -524,20 +524,11 @@ export function wireArEntry(deps: {
     ctx.viewerLastEvaluation = null;
     ctx.placement = { kind: "idle" };
     ctx.viewerPlanesError = null;
-    ctx.imagePlanesLoading = false;
     // The placement trigger is session state (unsubscribed above, before
     // the guide's teardown): let the next entry attempt again once ITS
     // tracking reports ready (flows plan M4, review #12 - per-entry
     // re-placement by design).
     ctx.placementAttempted = false;
-    ctx.joinDeclined = false;
-    // Invalidate any join still awaiting: it cannot be cancelled, but every
-    // post-await guard checks this token, so a stale run frees its textures
-    // instead of planting planes into a dead scene and clobbering the next
-    // session's latch (milestone review, finding 6 — the join's
-    // tens-of-seconds decode turned this race from theoretical into
-    // expected).
-    ctx.planesRunGeneration += 1;
     if (depthRunning) {
       seams.stopDepthCapture();
       depthRunning = false;
@@ -722,7 +713,6 @@ export function wireArEntry(deps: {
     // predicate reads until the tracking-quality phase is `ready`, then
     // runs once.
     ctx.placementAttempted = false;
-    ctx.joinDeclined = false;
     ctx.placementUnsubscribe = arStore.subscribe(() => {
       hooks.tryPlaceTour();
       // The stations (tour kit plan K4) are judged on every GPS fix too.

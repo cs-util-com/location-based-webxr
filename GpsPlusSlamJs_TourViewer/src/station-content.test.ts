@@ -319,6 +319,7 @@ describe("station content: one side table, drawn by presence", () => {
 
   it("counts what stands for the shown stations, per kind", async () => {
     const h = harness();
+    expect(h.content.has("content")).toBe(false);
     const skipping: ContentPart = {
       kind: "content",
       render: () =>
@@ -328,7 +329,6 @@ describe("station content: one side table, drawn by presence", () => {
     h.content.setPart("a", "walk", planePart("capture-spots").part);
     h.content.setPart("b", "items", planePart().part);
     expect(h.content.has("content")).toBe(true);
-    expect(h.content.has("ring")).toBe(false);
     expect(h.content.shown("content")).toEqual({ count: 0, skipped: [] });
     h.content.show(new Set(["a"]));
     await h.at(1000);
@@ -427,77 +427,11 @@ describe("station content: one side table, drawn by presence", () => {
   });
 });
 
-describe("station content: always-shown content, its own lane, failures and fades", () => {
-  // Why these tests matter: content no station holds (the
-  // loose group) shows whatever the presence says, so it must neither wait
-  // for a station's fade nor make a station wait behind its decodes; a part
-  // that cannot be built must not be rebuilt on every entry; a throwing
-  // mount callback must not strand a station in "loading"; and a settled
-  // fade must not keep rewriting every material each frame.
-
-  const always = (id: string) => id === "loose";
-
-  it("shows always-shown content without being asked, beside the present station, and never fades it out", async () => {
-    const h = harness({ alwaysShown: always });
-    h.content.setPart("loose", "walk", planePart("capture-spots").part);
-    h.content.setPart("a", "items", planePart().part);
-    await h.at(1000);
-    expect(h.names()).toEqual(["station-content:loose"]);
-    h.content.show(new Set(["a"]));
-    await h.at(1000);
-    expect([...h.names()].sort()).toEqual([
-      "station-content:a",
-      "station-content:loose",
-    ]);
-    h.content.show(new Set());
-    await h.at(1000 + 2 * FADE);
-    expect(h.names()).toEqual(["station-content:loose"]);
-    expect(h.opacityOf("loose")).toBe(1);
-    expect(h.content.showsAny()).toBe(true);
-  });
-
-  it("a station entering does not wait for always-shown content, and always-shown content does not wait for a station's fade-out", async () => {
-    const h = harness({ alwaysShown: always });
-    h.content.setPart("a", "items", planePart().part);
-    h.content.setPart("b", "items", planePart().part);
-    h.content.show(new Set(["a"]));
-    await h.at(1000);
-    await h.at(1000 + FADE);
-    h.content.show(new Set(["b"]));
-    await h.at(1000 + FADE + FADE / 2);
-    // a fades out; loose content added now enters at once all the same.
-    h.content.setPart("loose", "ring", planePart("ring").part);
-    await h.at(1000 + FADE + FADE / 2);
-    expect(h.names()).toContain("station-content:loose");
-  });
-
-  it("a present station's items mount while 60 always-shown photos are still decoding (their own lane)", async () => {
-    vi.useFakeTimers();
-    try {
-      const h = harness({ alwaysShown: always });
-      let decoded = 0;
-      h.content.setPart("loose", "walk", {
-        kind: "capture-spots",
-        async render(_parent, alive) {
-          for (let i = 0; i < 60 && alive(); i += 1) {
-            await new Promise((r) => setTimeout(r, 50));
-            decoded += 1;
-          }
-          return { count: decoded, skipped: [], dispose: () => undefined };
-        },
-      });
-      h.content.setPart("a", "items", planePart().part);
-      h.content.show(new Set(["a"]));
-      await vi.advanceTimersByTimeAsync(10);
-      h.content.update(h.clock.ms);
-      expect(decoded).toBeLessThan(60);
-      expect(h.names()).toContain("station-content:a");
-      await vi.advanceTimersByTimeAsync(60 * 50);
-      expect(decoded).toBe(60);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+describe("station content: failures and fades", () => {
+  // Why these tests matter: a part that cannot be built must not be rebuilt
+  // on every entry; a throwing mount callback must not strand a station in
+  // "loading"; a settled fade must not keep rewriting every material each
+  // frame; and nothing shows while no shown station holds a part.
 
   it("a part that throws is tried once per table: enter, leave, enter again builds it no more, leaks nothing, and says so once", async () => {
     const onFailed = vi.fn();
@@ -563,7 +497,7 @@ describe("station content: always-shown content, its own lane, failures and fade
   });
 
   it("showsAny: false while no shown station holds a part, true once one does", () => {
-    const h = harness({ alwaysShown: always });
+    const h = harness();
     h.content.setPart("a", "items", planePart().part);
     expect(h.content.showsAny()).toBe(false);
     h.content.show(new Set(["b"]));
@@ -571,8 +505,7 @@ describe("station content: always-shown content, its own lane, failures and fade
     h.content.show(new Set(["a"]));
     expect(h.content.showsAny()).toBe(true);
     h.content.show(new Set());
-    h.content.setPart("loose", "walk", planePart("capture-spots").part);
-    expect(h.content.showsAny()).toBe(true);
+    expect(h.content.showsAny()).toBe(false);
   });
 });
 

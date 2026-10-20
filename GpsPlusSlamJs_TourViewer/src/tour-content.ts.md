@@ -19,7 +19,8 @@ recorded photos are put into stations once, when a recording is opened
 - `CaptureSpotsInWorld`: `{ fixes, gpsAccuracyMedianM, captures: { image,
 geo, station? }[] }`; `station` is the station a bake put the photo
   into, passed through by `worldCaptureSpots` so the viewer draws it with
-  that station (`station-captures.ts`). These are the walk's recorded
+  that station (`viewer-placement.ts`; a capture without one is not
+  drawn). These are the walk's recorded
   photos in the world, before they are in stations: what the bake
   produces (`capture-bake.ts`) and what a viewer places.
 - `worldCaptureSpots(manifest) -> CaptureSpotsInWorld | undefined`: the

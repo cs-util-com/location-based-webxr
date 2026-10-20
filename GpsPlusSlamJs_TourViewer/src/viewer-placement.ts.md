@@ -2,12 +2,12 @@
 
 ## Purpose
 
-Viewer mode (QR-pose plan M4) and the photo placement (geo-join plan, flows
-plan M4): the default passerby flow. Photos are placed at their capture spots
-once the tracking-quality phase reports ready; scanned codes relocalize the
+Viewer mode and the photo placement: the default passerby flow. The tour's recorded photos are placed
+at the capture spots baked into `tour.json` once the tracking-quality phase
+reports ready or a code placed the tour; scanned codes relocalize the
 session via budgeted synthetic GPS votes and REFINE the alignment under the
-placed planes; the ring around a code is the fallback for a tour without a
-recording. Its own module since the flows plan M6.
+placed planes. A tour without baked spots shows no recorded photo: never
+its walk, never the zip's other images.
 
 ## Public API
 
@@ -19,10 +19,10 @@ recording. Its own module since the flows plan M6.
   - `viewingLog` (M1b, `viewing-log.ts`): the `?debug=1` viewer recording's
     hooks - `detection` after each recorded detection (with the status before
     it), `vote` after each dispatched vote, `votedLock` first in
-    `onVotedLock`, `placed` after the content, the capture-spot and the ring
-    placements - since visitor plan 2026-10-18-2349 M2 once per station
-    each time that station is drawn (`station` names it; content no
-    station holds logs without), with the count that stood - and `keepAlive` wrapping each AR entry's code keep-alive so
+    `onVotedLock`, `placed` after the content and the capture-spot
+    placements - once per station each time that station is drawn
+    (`station` names it, always: everything placed belongs to a station),
+    with the count that stood - and `keepAlive` wrapping each AR entry's code keep-alive so
     its state changes are logged (M1b review #5; the wrapper is what
     `ctx.viewerKeepAlive` holds, so the AR exit's and the tour close's
     `stop()` are logged too). Silent unless a recording runs; absent,
@@ -47,9 +47,9 @@ recording. Its own module since the flows plan M6.
     reaches `onIgnoredLock` instead, D20); the
     escape button passes it as "skipped"; both place first and render the
     line after. Nothing is placed until the gate allows it (DEC-N3): the
-    capture-spot join, the tour's content, AND the ring placed on a voted
-    lock (the framework dispatches a frame's votes before it reports the
-    lock, so the first `onVotedLock` arrives while the gate still scans).
+    tour's photos and its content, also on a voted lock (the framework
+    dispatches a frame's votes before it reports the lock, so the first
+    `onVotedLock` arrives while the gate still scans).
   - The tour's content (`tour.json`, M5) is rendered once per session as
     soon as the gate allows it and the GPS zero exists
     (`renderTourStation`: a group per station at its geo pose, its
@@ -112,7 +112,7 @@ recording. Its own module since the flows plan M6.
     keep-alive never answers a vote.
   - `tryPlaceTour(): void` - the placement trigger (DEC-F3): with a tour
     open and a viewer session live (`ctx.placementUnsubscribe !== null`),
-    runs the capture join ONCE per session+tour
+    places the tour's baked photos ONCE per session+tour
     (`ctx.placementAttempted`) as soon as
     `isPlacementReady(selectTrackingQuality(state))` - or as soon as a
     code placed the tour (the gate passed on a voted lock of a trusted code;
@@ -139,21 +139,16 @@ recording. Its own module since the flows plan M6.
     alpha 1, which removed that residue, was dropped in the r863 milestone
     review for its per-fix steps over the rest of the entry.) Investigation:
     `GpsPlusSlamJs_Docs/docs/2026-10-15-0511-code-rotation-overwritten-by-compass-investigation.md`.
-    Whenever a code placed the
-    tour, the trigger's join runs WITH the locked code
-    (`placeTourImagePlanes(ctx.viewerLockedText)`), so a declining join
-    falls back to the ring in the same run (r857 review #3: the join
-    without the code set the loading latch and dropped the ring of the lock
-    that placed the tour, and a glance gets no later lock). The code rule changes
+    The code rule changes
     little (corrected after the M1 review #5; the M1 commit overstated it):
     every voted lock AFTER the gate already starts the placement itself
     (`onVotedLock`), bypassing readiness, so the rule decides only a scan
     whose single voted lock opened the gate, and this trigger's own latch
     (`placementAttempted`). It also waits while `tour.json` is still loading
     (`tourManifestStatus === "pending"`; the manifest's settle calls it
-    again), because the baked spots live there. A tour with neither a
-    recording nor baked spots declines at once (the ring waits for a
-    lock). Cheap by design: a few predicate reads per dispatch.
+    again), because the baked spots live there. A tour without baked spots
+    places no photo: the placement stays `idle` and the line says nothing
+    about photos. Cheap by design: a few predicate reads per dispatch.
 
 ## The moved-code veto (D20, M5c; owner approval 2026-10-02)
 
@@ -211,32 +206,23 @@ recording. Its own module since the flows plan M6.
 
 - Session-state fields it owns: the six `viewer*` QR-line inputs,
   `latestReprojectionPx`, `placement`, `viewerPlanesError`, `imagePlanes`,
-  `imagePlanesLoading`, `planesRunGeneration` (bumped by the two resets in
-  `archive-open.ts` / `ar-entry.ts`), `placementAttempted`, `joinDeclined`,
-  `levelByText` (written by `onLevelResolved`).
-- **The code is a refinement, not a gate.** `placeTourImagePlanes(null)`
-  runs the capture join from the ready trigger; only the RING needs a
-  locked code's geo. A lock during a running join is dropped and the next
-  of the ≤ 10 budgeted locks retries (`imagePlanes === null &&
-!imagePlanesLoading`, review #4); a lock after a placement changes the
-  status only.
-- **The photos' spots come from `tour.json` when the creator's Finish
-  baked them** (`captureSpots`, scan-pass plan S1, S-D11; read in the
-  world through `worldCaptureSpots`, since version 3 keeps them in
-  stations): no download of the walk, no replay, and the status line
-  reports the baked fixes. A tour
-  without them runs the SAME bake here (`capture-bake.ts`: each photo
-  through the first settled alignment after it was taken), so both show
-  the photos at the same spots.
-- **The ring's photos are never the walk's** (`entriesForVisitor` over
-  `ctx.scanEntries`): the first three images outside the walk, never a
-  frame of a walk the copy kept for a co-author.
-- **A declined join is remembered** (`joinDeclined`) so a later lock goes
-  straight to the ring instead of replaying the walk (seconds of CPU).
-- **Liveness inside the async runs is the controller status (`running`)
-  plus `planesRunGeneration`** - never `qrController`, which is null for a
-  whole session without a BarcodeDetector (review #2). Every bail path
-  frees its textures.
+  `placementAttempted`, `levelByText` (written by `onLevelResolved`).
+- **The code is a refinement, not a gate.** The ready trigger places the
+  photos without a code; a lock after they stand changes the status only.
+- **The photos' spots come from `tour.json` only** (`captureSpots`, baked
+  by the creator's Finish; read in the world through
+  `worldCaptureSpots`, since version 3 keeps them in stations): no download
+  of the walk, no replay, and the status line reports the baked fixes. A
+  visitor never replays a walk, so `archive-open.ts` stops the background
+  download of every copy that carries one (`stopsVisitorDownload`).
+- **Every baked photo is held by its station** (the format refuses a
+  capture whose station the tour lacks): the photos are grouped by
+  `capture.station`, one walk part per station. A capture without a
+  station is not baked and is left out.
+- **Liveness is the controller status (`running`)** - never
+  `qrController`, which is null for a whole session without a
+  BarcodeDetector. The placement itself is synchronous; the decodes run in
+  the side table, whose late renders are dropped and freed.
 - Votes: `canAcceptVotes` tests the session ZERO, not merely the slice
   (PR #386 review) - votes before the zero would charge the budget while
   `recordGpsEvent` wrote nothing.
@@ -334,34 +320,23 @@ recording. Its own module since the flows plan M6.
 - **Drawn per station** (visitor plan 2026-10-18-2349 §3, M2;
   `station-content.ts`): everything placed is a part of its station in
   the session's side table (`ctx.stationContent`, created with the first
-  part): the tour's items ("items", one per station that has some), the
-  walk's photos ("walk", grouped by `station-captures.ts`: a baked photo
-  keeps its station, a live one goes to the nearest station within 25 m)
-  and the ring ("ring", with the nearest station whose own found radius
-  holds its code, where a visitor at the code is present). Only the stations the store shows - the present one, or every one
-  under "show all" - are decoded and stand in the scene, one station group
-  at a time with a 400 ms fade; content no station holds (live photos
-  beyond every station, a ring whose code no found radius holds) is the
-  loose group `loose:always`, the table's `alwaysShown`: always shown,
-  in its own render lane, so a present station never waits behind it.
-  `syncContent()` tells the table the shown set on every store dispatch
-  and camera frame (`main.ts` `hooks.tickStations`); `tryPlaceTour` ends
-  with it.
-  - **What the status line says** (the async-UI rule): the
-    loose photos decode up front, so the line says "loading photos k/N"
-    (a progress callback into their decode), then `placed` with the count
-    that DECODED once their part is drawn. Photos held by stations are not
-    standing: they are counted as `atStations` ("5 photos at their
-    stations"), never as placed. A walk or ring part that is drawn with no
-    photo at all, or whose planes cannot be built, sets
-    `ctx.viewerPlanesError` ("Some photos could not load."); a plane
-    constructor's throw frees the photos decoded for it first. A later
-    walk or ring part whose photos stand clears it: parts mount per
-    station visit, so one station's failure never stays on the line at the
-    stations after it.
-  - A walk none of whose photos is readable shows them as skipped where it
-    used to fall back to the ring - only a walk with no photo at all ("no
-    readable capture photos") falls back.
+  part): the tour's items ("items", one per station that has some) and the
+  recorded photos ("walk", one per station that holds some). Only the
+  stations the store shows - the present one, or every one under "show
+  all" - are decoded and stand in the scene, one station group at a time
+  with a 400 ms fade. `syncContent()` tells the table the shown set on
+  every store dispatch and camera frame (`main.ts` `hooks.tickStations`);
+  `tryPlaceTour` ends with it.
+  - **What the status line says** (the async-UI rule): `placed` counts
+    the photos waiting at their stations ("5 photos at their stations"),
+    none of them decoded yet. A walk part that is drawn with no photo at
+    all, or whose planes cannot be built, sets `ctx.viewerPlanesError`
+    ("2 photos could not be decoded"); a plane constructor's throw frees
+    the photos decoded for it first. A later walk part whose photos stand
+    clears it: parts mount per station visit, so one station's failure
+    never stays on the line at the stations after it.
+  - A tour whose baked captures yield no pose at all declines with "no
+    readable capture photos" ("photos not shown (...)" on the debug line).
   - **A code's trust ends on events only**: a veto, an odometry-frame
     change, an AR exit, a new tour - never by the clock, a count of fixes
     or a distance (measured across clock, fix-count and distance rules in
@@ -374,19 +349,15 @@ recording. Its own module since the flows plan M6.
 - Planes live at the SCENE ROOT in raw GPS-world NUE (the framework's
   built-once parenting rule); the alignment moves the odometry group under
   them, which is why a later lock needs no re-placement.
-- The join's gates, failure taxonomy and decline wording are the geo-join
-  plan's, unchanged: every decline is a `declined { reason }` placement
-  state, rendered as "photo ring (reason)" by `tour-flow` - EXCEPT on an
-  open tour with zero levels, where `arStatusLine` derives it to "nothing
-  to place" (a ring needs a code; M1-M4 review #1). This module never
-  produces `nothing-to-place` itself.
+- Every decline is a `declined { reason }` placement state, rendered as
+  "photos not shown (reason)" by `tour-flow`.
 - `levelByText` is owned here (the only reader/writer:
-  `onLevelResolved`, the detection glue and the ring's geo lookup); it is
+  `onLevelResolved` and the detection glue); it is
   cleared on tour teardown (`archive-open.ts`), not on session end - the
   same tour's codes stay valid across AR re-entries, and the QR
   controller's `reset()` re-resolves any text that locks again.
-- Every tour image this module decodes (the placed photo planes, the
-  capture planes, the ring) carries the tour pixel cap
+- Every tour image this module decodes (the placed photo planes and the
+  capture planes) carries the tour pixel cap
   (`decodeFrameTexture`'s `maxPixels: TOUR_MAX_IMAGE_PIXELS`, tour kit K4
   review R2): an image over 4096 x 4096, or one whose size cannot be read,
   is never decoded and leaves its plane out.
@@ -413,12 +384,13 @@ ctx.placementUnsubscribe = arStore.subscribe(() => viewer.tryPlaceTour());
 ## Tests
 
 `viewer-placement-photos.test.ts` - through the real
-controller config, the bake and the decoder faked: a walk no station holds
-says "loading photos" with its progress, then the count that decoded; a
-walk or ring none of whose photos loads sets the photos' error; a walk or
-ring whose planes cannot be built frees its decoded photos and says so; a
-code beyond every station's radius shows its ring after the lock; a ring or
-a walk held by a station is counted `atStations` and decodes nothing.
+controller config, the decoder faked: baked photos are counted at their
+stations and none is decoded until a station shows, each then in its own
+station's group; a tour without baked spots places no photo and reads no
+entry, whatever its zip carries; a station none of whose photos loads says
+so; a station whose planes cannot be built frees its decoded photos and
+says so; one station's failure is cleared once a later station's photos
+stand.
 
 `viewer-placement-viewing-log.test.ts` - the `tourViewing/*` hooks through the
 real viewer controller config (a lock, then its votes as one batch; no
@@ -474,8 +446,7 @@ tick's fix-first batch, a malformed fix dropped alone.
 real controller and store: the content follows the live alignment, a code
 alone places the tour, and since r863 no compass wait: the content and
 the station on the scanned code show on the first voted lock (r857 review
-#1 the other way round), a recording that declines the join still gets the
-ring (r857 review #3), a second AR entry and a tour opened inside one entry
+#1 the other way round), a second AR entry and a tour opened inside one entry
 show on their first voted lock too (PR #624 review; the AR exit and the
 tour switch are mirrored in the test); and the owner's bug (r863): a
 code's rotation stays within 1 deg of the code's when device fixes with a
@@ -488,9 +459,8 @@ the true rotation where single-frame poses scatter past the old average's
 gate), a restart empties it, and each pipeline start makes a new source.
 
 `playwright-tests/ar-mode.spec.js` - the capture-spots placement with no
-detection (forced `ready`), the refine-after-place lock, the ring for a
-tour without a recording (budgeted votes, marker, three planes), the
-unknown-code line, the no-levels "nothing to place" line, the no-detector
-placement, and the per-entry re-placement. The pure pieces:
-`qr-viewer-mode.test.ts`, `capture-geo-join*.test.ts`,
-`image-planes.test.ts`, `tour-flow.test.ts` (`isPlacementReady`).
+detection (forced `ready`), the refine-after-place lock, the content and
+photos waiting for the lock (budgeted votes, marker), the unknown-code
+line, the no-detector placement, and the per-entry re-placement. The pure
+pieces: `qr-viewer-mode.test.ts`, `image-planes.test.ts`,
+`tour-flow.test.ts` (`isPlacementReady`).

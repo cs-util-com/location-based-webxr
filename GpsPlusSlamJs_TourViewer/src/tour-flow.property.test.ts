@@ -33,15 +33,6 @@ const QR_QUIET: ArStatusInput["qr"] = {
 const arbNonIdlePlacement = (): fc.Arbitrary<PlacementState> =>
   fc.oneof(
     fc.record({
-      kind: fc.constant("placing" as const),
-      phase: fc.constantFrom(
-        "reading-walk" as const,
-        "loading-photos" as const,
-      ),
-      done: fc.nat({ max: 500 }),
-      total: fc.nat({ max: 500 }),
-    }),
-    fc.record({
       kind: fc.constant("placed" as const),
       placedKind: fc.constant("capture-spots" as const),
       count: fc.nat({ max: 500 }),

@@ -224,13 +224,7 @@ export function wireArchiveOpen(deps: {
     for (const preview of ctx.placedPreviews.values()) preview.dispose();
     ctx.placedPreviews.clear();
     ctx.placementNote = null;
-    // Clear the latch HERE too (PR #367 review): the stale run's finally is
-    // generation-guarded and cannot clear it any more, and a latched
-    // imagePlanesLoading blocks every later placement in the session.
-    ctx.imagePlanesLoading = false;
-    ctx.planesRunGeneration += 1; // invalidate any in-flight placement run
     ctx.placementAttempted = false;
-    ctx.joinDeclined = false;
     // The QR line describes the CLOSING tour's codes (PR #434 review): a
     // lock, a vote count, an unknown or unusable code and a failed image
     // placement all belong to levels that just went away. Without this a
@@ -508,17 +502,11 @@ export function wireArchiveOpen(deps: {
               ),
         );
         // The background download fetches the WHOLE file; a visitor of a
-        // baked copy that kept the walk reads entries on demand instead.
+        // copy that carries a walk reads entries on demand instead.
         // The archive's dispose aborts the download AND its recovery
         // download for a host that stops honouring ranges mid-session
         // (S1 milestone review #5): accepted for this copy only.
-        if (
-          stopsVisitorDownload(
-            deps.mode,
-            ctx.scanEntries,
-            manifest?.captureSpots !== undefined,
-          )
-        ) {
+        if (stopsVisitorDownload(deps.mode, ctx.scanEntries)) {
           opened.archive.dispose();
         }
         // The gallery waits for the manifest, which says what it shows.
