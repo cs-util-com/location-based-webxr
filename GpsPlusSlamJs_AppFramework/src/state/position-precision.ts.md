@@ -41,6 +41,11 @@ number | null, tooWeak: boolean }`.
   can tell apart two targets `spacingM` apart (for a set of targets: the
   distance to the nearest other one). `factor` defaults to
   `TELL_APART_FACTOR`; `RangeError` unless positive and finite.
+  No app calls it yet: the apps read `positionPrecision` and
+  `POSITION_PRECISION_CEILING_M` only. Its first planned consumer is a
+  GPS-only tour (no codes) asking for a code where GPS cannot tell the
+  stations apart, which waits for its own decision; until then the factor
+  and `CODE_HELD_ERROR_M` carry no app behaviour.
 - Constants: `POSITION_PRECISION_CEILING_M` (25),
   `DEVICE_ACCURACY_WINDOW_FIXES` (10), `CODE_HELD_ERROR_M` (1),
   `TELL_APART_FACTOR` (1.5). Each doc comment carries its evidence and
