@@ -60,7 +60,6 @@ import {
 } from "./visitor-guide-slice.js";
 import type { LocationGate } from "./visitor-screen.js";
 import type { RecordingPanel } from "./recording-panel.js";
-import { onlyCreatorCodesChanged } from "./creator-codes-slice.js";
 import {
   endQrPipeline,
   isCodeIgnored,
@@ -725,13 +724,7 @@ export function wireArEntry(deps: {
     // predicate reads until the tracking-quality phase is `ready`, then
     // runs once.
     ctx.placementAttempted = false;
-    let seen = arStore.getState();
     ctx.placementUnsubscribe = arStore.subscribe(() => {
-      const before = seen;
-      seen = arStore.getState();
-      // Neither reads the creator's code state, whose sightings dispatch
-      // about once per stable QR frame (r902 review #1).
-      if (onlyCreatorCodesChanged(before, seen)) return;
       hooks.tryPlaceTour();
       // The stations (tour kit plan K4) are judged on every GPS fix too.
       hooks.tickStations();

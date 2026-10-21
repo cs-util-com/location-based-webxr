@@ -25,9 +25,12 @@ sighting })`, `visitEnded()`.
 - `onlyCreatorCodesChanged(before, after): boolean` - true when the
   `creatorCodes` slice is a new object and every other root slice is the
   same object (same set of keys); false for an unchanged state. The
-  page's store subscribers (`creator-setup.ts`'s readout, `ar-entry.ts`'s
-  visitor placement) skip such a dispatch: the sightings arrive about once
-  per stable QR frame, and these subscribers do not read them.
+  creator's readout (`creator-setup.ts`) skips such a dispatch: the
+  sightings arrive about once per stable QR frame, and it does not read
+  them. Not only the sightings match: `codesForgotten` on an empty book
+  leaves the document as it was and renews this slice, so it matches too
+  (why the visitor's placement trigger in `ar-entry.ts` carries no such
+  filter since r904).
 
 ## Invariants & assumptions
 
@@ -81,6 +84,5 @@ selectCreatorCodes(store.getState()).storedSightings;
   subset of changed slices (property), an unchanged state, a slice added;
   and the freeze of what enters the slice (a sighting, its pose, the
   caller's own object).
-  Its callers: `creator-setup.test.ts` ("the readout and a dispatch that
-  changed only the creator's code state") and `ar-entry.test.ts` ("a
-  dispatch that changed only the creator's code state places nothing").
+  Its caller: `creator-setup.test.ts` ("the readout and a dispatch that
+  changed only the creator's code state").

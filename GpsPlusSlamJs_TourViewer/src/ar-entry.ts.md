@@ -168,9 +168,11 @@ entry; C7).
   tracking-quality phase is fed (flows plan M4).
 - On `running`, viewer mode installs the placement subscription
   (`ctx.placementUnsubscribe`) and attempts once; author mode renders the
-  readout instead. The subscription skips a dispatch that moved only the
-  creator's code state (`onlyCreatorCodesChanged`, `creator-codes-slice.ts`):
-  neither the placement nor the stations read it.
+  readout instead. The subscription answers every dispatch, with no
+  `onlyCreatorCodesChanged` filter: the creator's sightings, which that
+  filter exists for (`creator-setup.ts`), never dispatch for a visitor, and
+  the one visitor dispatch it matched (`codesForgotten` at a tour's close
+  mid-session, an empty book) only skipped a redundant call (r904).
 - The runtime start is all-or-nothing (`startTourArRuntime`); its failure
   surfaces in the error box and disables back to `ready`.
 

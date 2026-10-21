@@ -27,7 +27,7 @@ import {
   selectPresentStationId,
 } from "./visitor-guide-slice.js";
 import { RECORDING_DEPTH } from "./authoring-recording.js";
-import { creatorCodesActions } from "./creator-codes-slice.js";
+import { tourDocumentActions } from "./tour-document.js";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourOf } from "./test-support/v3-tour.js";
 import {
@@ -278,12 +278,13 @@ describe("wireArEntry session end", () => {
     expect(h.ctx.placementUnsubscribe).toBeNull();
   });
 
-  // Why this test matters (r902 review #1): the creator's code state lives
-  // in the same store, and its sightings dispatch about once per stable QR
-  // frame. Neither the placement nor the stations read that state, so a
-  // dispatch that changed only it must not re-run them; any other dispatch
-  // still does (the control half, which proves the probe can fire).
-  it("a dispatch that changed only the creator's code state places nothing and ticks no station", async () => {
+  // Why this test matters: the visitor's placement trigger answers EVERY
+  // dispatch of the session. A tour's close mid-session (a late integrity
+  // failure, `archive-open.ts`) dispatches `codesForgotten`, which for a
+  // visitor (an empty code book) changes only the creator's code slice; a
+  // filter on "only the creator's codes changed" (r902 review #1, removed
+  // in r904) skipped exactly that dispatch, so this pins that none does.
+  it("a tour's close mid-session still reaches the placement trigger and the stations", async () => {
     const h = harness({ enableOk: true });
     await h.enter();
     let attempts = 0;
@@ -294,16 +295,7 @@ describe("wireArEntry session end", () => {
     h.hooks.tickStations = () => {
       ticks += 1;
     };
-    h.arStore.dispatch(
-      creatorCodesActions.sightingSeen({
-        text: "code",
-        levelId: "lvl",
-        odomPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-      }),
-    );
-    expect(attempts).toBe(0);
-    expect(ticks).toBe(0);
-    h.arStore.dispatch(presenceCleared());
+    h.arStore.dispatch(tourDocumentActions.codesForgotten());
     expect(attempts).toBe(1);
     expect(ticks).toBe(1);
   });
