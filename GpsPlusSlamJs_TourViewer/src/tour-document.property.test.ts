@@ -595,13 +595,16 @@ const stationOpArb: fc.Arbitrary<StationOp> = fc.oneof(
 
 /** The station ops as the pages dispatch them, every state on the way;
  *  station ids minted in order (as `prepare` would, but repeatable). */
-function stationRun(ops: readonly StationOp[]): TourDocumentState[] {
+function stationRun(
+  ops: readonly StationOp[],
+  start: TourDocumentState = opened,
+): TourDocumentState[] {
   let minted = 0;
   const mint = (): string => {
     minted += 1;
     return `n${String(minted)}`;
   };
-  let state = opened;
+  let state = start;
   const states = [state];
   const current = (oid: string) =>
     documentObjects(state).find((o) => o.object.id === oid)?.object;
@@ -674,7 +677,7 @@ function stationRun(ops: readonly StationOp[]): TourDocumentState[] {
         const carried = documentObjects(state)
           .filter((o) => !o.hosted)
           .map((o) => o.object);
-        state = reduce(state, act.opened({ manifest: OPENED }));
+        state = reduce(state, act.opened({ manifest: start.opened! }));
         states.push(state);
         state = reduce(
           state,
@@ -712,11 +715,18 @@ function stationRun(ops: readonly StationOp[]): TourDocumentState[] {
 }
 
 /** The ids of `state`'s EMPTY AUTOMATIC stations: no object names them,
- *  and nothing else keeps them (no title, no steps, no route to them). */
+ *  and nothing else keeps them (no title, no steps, no route to them, no
+ *  description, no card image naming an image asset - an empty station
+ *  holds no photo for one to name). */
 function emptyAutomatic(state: TourDocumentState): string[] {
   const named = new Set(documentObjects(state).map((o) => o.object.station));
   const routed = new Set(
     state.stations.flatMap((s) => (s.next === undefined ? [] : [s.next])),
+  );
+  const imageAssets = new Set(
+    (state.written?.assets ?? [])
+      .filter((a) => a.kind === "image")
+      .map((a) => a.id),
   );
   return state.stations
     .filter(
@@ -724,9 +734,41 @@ function emptyAutomatic(state: TourDocumentState): string[] {
         !named.has(s.id) &&
         !routed.has(s.id) &&
         (s.title ?? "").trim() === "" &&
-        s.steps.length === 0,
+        s.steps.length === 0 &&
+        s.description === undefined &&
+        !(s.image !== undefined && imageAssets.has(s.image)),
     )
     .map((s) => s.id);
+}
+
+/** The ways a station of OPENED is kept or not by its own minor 2 fields:
+ *  a description, a card image naming the tour's image asset, a card
+ *  image naming its own photo (only `f`'s station has one), or nothing. */
+const keeperArb = fc.constantFrom("none", "description", "asset", "own");
+
+/** OPENED with an image asset and `keepers` on its three stations, as the
+ *  framework's reader gives it (a pin's station's "own" image, which names
+ *  no photo, is dropped by that read). */
+function openedWithKeepers(keepers: readonly string[]): TourDocumentState {
+  const manifest: TourManifest = {
+    ...OPENED,
+    assets: [{ id: "art", path: "content/art.png", kind: "image" }],
+    stations: OPENED.stations.map((s, i) => {
+      const keeper = keepers[i];
+      if (keeper === "description") return { ...s, description: "Kept." };
+      if (keeper === "asset") return { ...s, image: "art" };
+      if (keeper === "own") return { ...s, image: s.items[0]!.id };
+      return s;
+    }),
+  };
+  return reduce(
+    initialTourDocumentState,
+    act.opened({
+      manifest: parseTourManifest(
+        JSON.parse(serializeTourManifest(manifest)) as unknown,
+      ),
+    }),
+  );
 }
 
 describe("tour document (properties): every object belongs to a station", () => {
@@ -753,6 +795,40 @@ describe("tour document (properties): every object belongs to a station", () => 
           expect(emptyAutomatic(state)).toEqual([]);
         }
       }),
+      { numRuns: 300 },
+    );
+  });
+
+  it("a station with a description or a card image asset is never emptied away; an emptied one with neither still goes (G2 build plan M1a)", () => {
+    // Why: a description and a card image (format minor 2) are the
+    // creator's work on the station, as a title is (G2 build plan
+    // 2026-10-21-2247, §4.2.4): no delete or move of its items, no save,
+    // undo or redo may take the station with them - neither from the
+    // document's frames nor from the file a save writes. A card image of
+    // the station's own photo keeps nothing once the station is emptied
+    // (the photo has left it), so that station goes like a bare one. Over
+    // the same op mix as above, from a tour whose stations carry any mix
+    // of the two fields.
+    fc.assert(
+      fc.property(
+        fc.array(keeperArb, { minLength: 3, maxLength: 3 }),
+        fc.array(stationOpArb, { maxLength: 30 }),
+        (keepers, ops) => {
+          const start = openedWithKeepers(keepers);
+          const kept = start.stations
+            .filter((s) => s.description !== undefined || s.image === "art")
+            .map((s) => s.id);
+          for (const state of stationRun(ops, start)) {
+            const frames = state.stations.map((s) => s.id);
+            const written = manifestToWrite(state)!.stations.map((s) => s.id);
+            for (const id of kept) {
+              expect(frames).toContain(id);
+              expect(written).toContain(id);
+            }
+            expect(emptyAutomatic(state)).toEqual([]);
+          }
+        },
+      ),
       { numRuns: 300 },
     );
   });

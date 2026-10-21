@@ -134,8 +134,10 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
     whose radius already held the old spot (overlapping radii) is not one
     it moved into, so a nudge toward its own anchor keeps it. The comparison is
     strict, so a move a centimetre farther out runs the rule. The station it left goes in the same step when that leaves
-    it an EMPTY AUTOMATIC station: no object names it, and no title,
-    story step or route to it (`next`, a quiz's routes) keeps it. An unknown id changes nothing.
+    it an EMPTY AUTOMATIC station: no object names it, and nothing of its
+    own (`keepsItself` of `tour-content.ts`: a title, a story step, a
+    description, a card image naming an image asset) and no
+    route to it (`next`, a quiz's routes) keeps it. An unknown id changes nothing.
   - One step each: an undo gives the stations back exactly as they were.
 - `deleted({ id, what })` - `deleteObject`: the entry goes, a written
   object gets a tombstone, and its station goes too when that leaves it an
@@ -259,7 +261,8 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   `finishedManifest` (the Finish's own rule) over `manifestNow`, `placed`,
   `deleted` and `historyAssetIds`.
 - `historyAssetIds(state)` - the assets the undo and redo steps' views
-  name (their frames' steps, their objects - a placed model's file - and
+  name (their frames' steps and card images, their objects - a placed
+  model's file - and
   their covers). Every write
   keeps them (`keepAssets`: this selector, the desktop's save snapshot,
   the phone's Finish), so an undo across a save finds a cover image the
@@ -471,9 +474,11 @@ store.dispatch(tourDocumentActions.undone());
   overlapping radius, which it then keeps out of),
   the station it left dropped, a delete dropping an emptied automatic
   station and its undo bringing it back exactly, the stations a title, a
+  description, a card image asset (not an image of its own deleted photo), a
   step or a route keeps, a placement during a save, a
   restore re-creating its created frames and seating a dangling object,
-  carried work re-seated.
+  carried work re-seated; a card image asset only an earlier view names
+  among `historyAssetIds`.
 - The save, a thunk against this slice: `tour-document-save.ts.md`.
 - `tour-document.property.test.ts` - D33's rule against a model that reads
   the SET of edits each view carries (over random edits, steps, in-place
@@ -491,7 +496,10 @@ store.dispatch(tourDocumentActions.undone());
   on the edge of and beyond the 25 m radius), moves, deletes, station
   moves, restores, carried work, saves, undos and redos, every object
   names one of the document's stations and no empty automatic station
-  stays; an undo of a placement gives the stations back exactly.
+  stays; from a tour whose stations carry any mix of descriptions and card
+  images, no station a description or an image asset keeps ever leaves the
+  frames or the written file (G2 build plan M1a); an undo of a placement
+  gives the stations back exactly.
 - `tour-document-parity.test.ts` - the phone's and the desktop's paths
   write the same tour and draft, the station rule included (a pin
   within a station's radius joins it, one beyond starts one, a move out of

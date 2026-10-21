@@ -22,9 +22,12 @@ code-only station), its pins and photos as `items` at local poses
   is DERIVED from the extension through the media allowlist
   (`tour-media.ts`), never stored. Width/height are images only and come
   as a pair of positive integers.
-- `parseTourStations(value, { assets, fail }): TourStation[]` - validates
-  every station and resolves every reference.
-- Types: `TourAsset`, `TourAssetKind`, `TourOrder` (`fixed | any |
+- `parseTourStations(value, { assets, fail, lenient?, onDropped? }): TourStation[]` - validates
+  every station and resolves every reference. `onDropped` hears each
+  station card image left out because its picture is gone
+  (`TourStationImageDrop`: `{ field: "image", station, reason, cause:
+"station-image-gone" }`; minor 2, below).
+- Types: `TourAsset`, `TourAssetKind`, `TourStationImageDrop`, `TourOrder` (`fixed | any |
 branch`), `TourStation`, `TourStep`,
   `TourStepAdvance`, `TourBlock`, `TourChoiceOption`, `TourQuizOption`,
   `TourQuizAnswer`, `TourQuizRoute`.
@@ -45,8 +48,29 @@ branch`), `TourStation`, `TourStep`,
   photos and placed models at local poses, ids unique per station;
   `tour-items.ts`; a placed model's `asset` must name a MODEL asset,
   resolved here because only this module sees the assets),
-  optional `next` (the default next station for `branch` order). An old
+  optional `next` (the default next station for `branch` order),
+  optional `description` and `image` (minor 2, below). An old
   `anchor` field is ignored as an unknown field.
+- **A station's description and card image (minor 2;** G2 build plan
+  `GpsPlusSlamJs_Docs/docs/2026-10-21-2247-g2-3d-editor-build-plan.md`,
+  §4.2.4, Q14**):**
+  - `description`: the tour description's rule (`checkTourDescription` of
+    `tour-details.ts`): read trimmed, line breaks kept, at most 2000
+    characters (code points), so what the editor's field accepts is what a
+    reader keeps. A blank one reads as none, as a blank title does. Not
+    text, or too long: a broken file at this reader's minor, none from a
+    newer one.
+  - `image`: an id naming a PHOTO item of this same station or an IMAGE
+    asset of the tour (`tourImageIds` over the station's items; items and
+    assets share one id namespace, so an id is never both). A well-formed
+    id naming neither - the photo or asset was deleted, or it names
+    another station's photo, a pin or an asset of another kind - is LEFT
+    OUT and reported through `onDropped` as `station-image-gone`, at every
+    minor, never failing the tour; the writer accepts that drop like the
+    cover's `image-gone`. A value that is not an id: a broken file at this
+    reader's minor, none from a newer one.
+  - The station's items are parsed before its image, since the image may
+    name one of them.
 - **Step**: `id` (unique per station), `block`, `advance` (`{ mode: "tap" }`
   by default, or `{ mode: "auto", afterS > 0 }`). The default is written
   out on parse, so a renderer never guesses.
@@ -94,7 +118,10 @@ tolerance >= 0, unit? }`.
 - No list or length caps: the whole document is read under the text cap of
   `archive-limits.ts` (16 MiB), which already bounds the work; a cap per
   list would be a second, arbitrary limit with nothing measured behind it.
-  The castle example needs about 10 stations of about 10 steps.
+  The castle example needs about 10 stations of about 10 steps. The one
+  length cap is a station description's, and it is not new: it is the
+  tour description's own (`TOUR_DESCRIPTION_MAX_CHARS`), shared so the
+  editor's fields count alike.
 
 ## Examples
 
@@ -103,6 +130,12 @@ const assets = parseTourAssets(json.assets, { fail });
 const stations = parseTourStations(json.stations, { assets, fail });
 // A file of a newer minor: what this reader cannot show is skipped.
 parseTourStations(json.stations, { assets, fail, lenient: true });
+// A card image whose photo was deleted is left out, and said.
+parseTourStations(json.stations, {
+  assets,
+  fail,
+  onDropped: (drop) => console.warn(drop.station, drop.reason),
+});
 ```
 
 ## Tests
@@ -112,7 +145,13 @@ parseTourStations(json.stations, { assets, fail, lenient: true });
   rejection per rule, and the version 3 station (empty steps, items read,
   a placed model naming a model asset, refused for a missing, image or
   audio asset, left out by a lenient read whose asset it lacks, an old
-  anchor ignored).
+  anchor ignored), and the minor 2 station fields (a description read
+  trimmed and a blank one as none, refused when not text or over 2000
+  characters, counted in code points; an image naming the station's own
+  photo or an image asset kept; one naming another station's photo, a
+  pin, an audio or model asset or nothing dropped with
+  `station-image-gone`; an image that is not an id refused, and both
+  fields read as none from a newer minor).
 - `tour-stations.property.test.ts` - generated station sets survive a JSON
   round trip unchanged; breaking any one asset reference or a choice
   target is refused; one unknown closed-list value anywhere never fails a

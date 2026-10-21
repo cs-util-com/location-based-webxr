@@ -12,8 +12,28 @@
   shape; the stations it named stay as written), and the writer never
   writes it. This breaks the API and still ships in a minor release, by
   decision, because no tours exist yet that carry the field.
+- **`TourManifestReadOptions.onDropped` hears a `TourManifestDrop`**
+  (`TourDetailsDrop | TourStationImageDrop`) instead of a
+  `TourDetailsDrop`: a reader now also reports a station card image it
+  left out (below). A handler typed for `TourDetailsDrop` alone no longer
+  compiles; narrow on `drop.field === 'image'`.
 
 ### Added
+
+- **A station's description and card image, `tour.json` version 3 minor
+  2** (`ar/tour-stations`, `ar/tour-manifest`): `TourStation.description`
+  (the tour description's rule: trimmed, at most 2000 characters; blank
+  reads as none) and `TourStation.image` (the id of a photo item of that
+  station or an image asset of the tour). An image whose photo or asset
+  is gone is left out and reported through `onDropped` as a
+  `TourStationImageDrop` (`cause: 'station-image-gone'`), never failing
+  the read, and the writer accepts that drop as it does the cover's
+  `image-gone`; an image that is not an id, or a description that is not
+  text or too long, fails at this minor. `TOUR_MANIFEST_MINOR` is 2; the
+  writer writes 2 only while a station carries either field, so every
+  other tour is written exactly as before. For older writers: deployed
+  viewers and npm 1.30.0 (minor 1) read a minor 2 tour leniently, without
+  the two fields, and refuse to save it.
 
 - **`TourManifest.tourId`**: an optional id a tour carries in its
   `tour.json`, minted once by the app that first saves the tour and kept

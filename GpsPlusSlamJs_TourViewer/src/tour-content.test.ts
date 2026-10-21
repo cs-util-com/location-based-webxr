@@ -239,6 +239,61 @@ describe("withTourContent", () => {
 
   // (A test that a write kept the tour's recorded photos verbatim stood
   // here: a tour carries none, the field is gone from the format.)
+
+  describe("a station's description and card image keep it (G2 build plan M1a)", () => {
+    // Why: a description or a card image is the creator's work on the
+    // station, as a title is (G2 build plan 2026-10-21-2247, §4.2.4).
+    // Deleting a station's last pin must not delete the words or the
+    // picture with it. A card image keeps the station only while it still
+    // names a picture: an emptied station holds no photo any more, so an
+    // image of its own (now deleted) photo keeps nothing - the write drops
+    // it - and the station goes, as it would have without one.
+    const ART: TourAsset = {
+      id: "art",
+      path: "content/art.png",
+      kind: "image",
+    };
+    const shot: TourObject = {
+      id: "shot",
+      kind: "photo",
+      image: "content/shot.jpg",
+      imageWidth: 4,
+      imageHeight: 3,
+      createdAtIso: "2026-10-21T06:00:00.000Z",
+      geo: geo(301, 0, 521.5),
+    };
+    function emptiedIds(stations: TourStation[]): string[] {
+      const base = withTourContent(
+        { ...tour(stations), assets: [ART] },
+        {
+          objects: stations.map((s, i) =>
+            s.id === "own-photo"
+              ? inStation(shot, s.id)
+              : inStation(pin(`p${String(i)}`, i * 100 + 1, 0), s.id),
+          ),
+        },
+      );
+      return withTourContent(base, { objects: [] }).stations.map((s) => s.id);
+    }
+
+    it("a description keeps an emptied station; a blank-titled bare one still goes", () => {
+      expect(
+        emptiedIds([
+          { ...station("described", 0, 0), description: "The old well." },
+          station("bare", 100, 0),
+        ]),
+      ).toEqual(["described"]);
+    });
+
+    it("an image asset keeps an emptied station; an image of its own deleted photo does not", () => {
+      expect(
+        emptiedIds([
+          { ...station("pictured", 0, 0), image: "art" },
+          { ...station("own-photo", 300, 0), image: "shot" },
+        ]),
+      ).toEqual(["pictured"]);
+    });
+  });
 });
 
 // (The tests of `withoutDebugCaptures` stood here: the open dropped an
@@ -319,6 +374,17 @@ describe("withReferencedAssets", () => {
 
   it("keeps the cover's image, though no step names it", () => {
     expect(kept(telling([], { cover: "cover-art" }))).toEqual(["cover-art"]);
+  });
+
+  it("keeps a station's card image, though no step names it (G2 build plan M1a)", () => {
+    // Why: a card image (minor 2) may name an image asset; dropping it as
+    // unused would delete the file the station's card shows.
+    const manifest = telling([]);
+    const pictured = {
+      ...manifest,
+      stations: manifest.stations.map((s) => ({ ...s, image: "picture" })),
+    };
+    expect(kept(pictured)).toEqual(["picture"]);
   });
 
   it("counts a block in any station, in the tour's asset order", () => {

@@ -199,8 +199,8 @@ describe('parseTourManifest', () => {
 });
 
 describe('the version policy (tour editor plan W3, D5)', () => {
-  it('is version 3, minor 1 (minor 1 adds the placed 3D model)', () => {
-    expect([TOUR_MANIFEST_VERSION, TOUR_MANIFEST_MINOR]).toEqual([3, 1]);
+  it("is version 3, minor 2 (minor 1 adds the placed 3D model, minor 2 a station's description and card image)", () => {
+    expect([TOUR_MANIFEST_VERSION, TOUR_MANIFEST_MINOR]).toEqual([3, 2]);
   });
 
   it.each([1, 2])(
@@ -425,6 +425,118 @@ describe('a placed 3D model (minor 1, a size in metres)', () => {
     expect(() => parseTourObject({ ...world, sizeM: 0 })).toThrow(
       /object\.sizeM/
     );
+  });
+});
+
+describe("a station's description and card image (minor 2, G2 build plan M1a)", () => {
+  // Why: the 3D editor's station cards carry a description and a picture
+  // (G2 build plan 2026-10-21-2247, §4.2.4). A reader of minor 1 does not
+  // know the fields, so it would read such a tour and write it back
+  // WITHOUT them; a tour carrying either is therefore written at minor 2,
+  // which that reader opens leniently and refuses to save. A tour without
+  // them keeps the minor it had (0, or 1 with a model), so every tour made
+  // before stays editable by the apps already deployed.
+  const art = { id: 'art', path: 'content/art.png', width: 640, height: 480 };
+  const arch = { id: 'arch', path: 'content/arch.glb' };
+  const model = {
+    id: 'm1',
+    kind: 'model',
+    asset: 'arch',
+    sizeM: 3,
+    createdAtIso: '2026-10-21T12:00:00.000Z',
+    pose: POSE,
+  };
+  const minorOf = (m: unknown) =>
+    (
+      JSON.parse(serializeTourManifest(parseTourManifest(m))) as {
+        minor: number;
+      }
+    ).minor;
+
+  it('reads and writes a station with a description and an image back exactly, at minor 2', () => {
+    const manifest = parseTourManifest(
+      tour({
+        assets: [art],
+        stations: [
+          station([pin, photo], { description: 'The old gate.', image: 'f1' }),
+          station([], { id: 'well', image: 'art' }),
+        ],
+      })
+    );
+    expect(manifest.stations.map((s) => [s.description, s.image])).toEqual([
+      ['The old gate.', 'f1'],
+      [undefined, 'art'],
+    ]);
+    const json = serializeTourManifest(manifest);
+    expect(JSON.parse(json)).toMatchObject({ version: 3, minor: 2 });
+    expect(parseTourManifest(JSON.parse(json))).toEqual({
+      ...manifest,
+      minor: 2,
+    });
+  });
+
+  it('writes the lowest minor the tour needs: 2 for either field, 1 for a model alone, else 0', () => {
+    const at = (
+      extra: Record<string, unknown>,
+      items: unknown[] = [pin, photo]
+    ) => minorOf(tour({ assets: [arch], stations: [station(items, extra)] }));
+    expect(at({ description: 'Hi.' })).toBe(2);
+    expect(at({ image: 'f1' })).toBe(2);
+    expect(at({ description: 'Hi.' }, [pin, model])).toBe(2);
+    expect(at({}, [pin, model])).toBe(1);
+    expect(at({})).toBe(0);
+  });
+
+  it('a minor 1 file without the new fields still opens and saves as minor 1', () => {
+    const file = {
+      ...tour({ assets: [arch], stations: [station([pin, model])] }),
+      minor: 1,
+    };
+    expect(parseTourManifest(file).minor).toBe(1);
+    expect(minorOf(file)).toBe(1);
+  });
+
+  it('the writer drops an image whose photo went (a deleted photo) with its own reason, never failing, and the minor falls back', () => {
+    const manifest = parseTourManifest(
+      tour({ stations: [station([pin, photo], { image: 'f1' })], cover: 'f1' })
+    );
+    const withoutPhoto = {
+      ...manifest,
+      stations: [
+        {
+          ...manifest.stations[0]!,
+          items: manifest.stations[0]!.items.filter((i) => i.id !== 'f1'),
+        },
+      ],
+    };
+    const dropped: { field: string; cause?: string }[] = [];
+    const written = JSON.parse(
+      serializeTourManifest(withoutPhoto, {
+        onDropped: (drop) => {
+          dropped.push({ field: drop.field, cause: drop.cause });
+        },
+      })
+    ) as { minor: number; stations: Record<string, unknown>[] };
+    expect(written.stations[0]).not.toHaveProperty('image');
+    expect(written.minor).toBe(0);
+    expect(dropped).toEqual([
+      { field: 'image', cause: 'station-image-gone' },
+      { field: 'cover', cause: 'image-gone' },
+    ]);
+  });
+
+  it('the writer refuses a station image or description its reader refuses: a programming error fails loud', () => {
+    const manifest = parseTourManifest(tour());
+    const withStation = (extra: Record<string, unknown>) => ({
+      ...manifest,
+      stations: [{ ...manifest.stations[0]!, ...extra }],
+    });
+    expect(() =>
+      serializeTourManifest(withStation({ image: 'not/an id' }) as never)
+    ).toThrow(/"stations\[0\]\.image" must be an image id/);
+    expect(() =>
+      serializeTourManifest(withStation({ description: 42 }) as never)
+    ).toThrow(/"stations\[0\]\.description" must be text/);
   });
 });
 

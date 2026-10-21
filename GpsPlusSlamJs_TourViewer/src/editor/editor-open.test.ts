@@ -17,6 +17,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   droppedDetailsLine,
+  droppedStationImagesLine,
   NOT_A_TOUR,
   NOT_A_ZIP,
   openTourForEditing,
@@ -80,6 +81,54 @@ describe("openTourForEditing", () => {
     expect(droppedDetailsLine(out.dropped.slice(1))).toBe(
       "This tour's contact could not be read, so the editor left it out: the next save writes the tour without it. Set it again in the tour's details.",
     );
+    await out.session.close();
+  });
+
+  it("names the stations whose card image the reader dropped, apart from the details (G2 build plan M1a)", async () => {
+    // Why: a station's card image (format minor 2) whose photo or image
+    // is gone is dropped by the reader instead of failing the tour (Q14).
+    // It must be said like a dropped detail - never lost silently by the
+    // next save - but it is no tour detail, so it is not told to be set
+    // again in the tour's details.
+    const at = { lat: 48.1, lon: 11.5, alt: 520, rotation: [0, 0, 0, 1] };
+    const bare = (id: string, image: string) => ({
+      id,
+      geo: at,
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      steps: [],
+      items: [],
+      image,
+    });
+    const file = await zipFile([
+      {
+        path: "tour.json",
+        data: JSON.stringify({
+          version: 3,
+          minor: 2,
+          stations: [bare("well", "gone"), bare("gate", "lost")],
+          cover: "gone",
+        }),
+      },
+    ]);
+    const out = await openTourForEditing(file);
+    expect(out.kind).toBe("opened");
+    if (out.kind !== "opened") return;
+    expect(out.dropped.map((d) => d.field)).toEqual([
+      "image",
+      "image",
+      "cover",
+    ]);
+    expect(droppedDetailsLine(out.dropped)).toBe(
+      "This tour's cover could not be read, so the editor left it out: the next save writes the tour without it. Set it again in the tour's details.",
+    );
+    expect(droppedStationImagesLine(out.dropped)).toBe(
+      'The card images of 2 stations ("well" and "gate") name pictures this tour no longer has, so the editor left them out: the next save writes those stations without them.',
+    );
+    expect(droppedStationImagesLine(out.dropped.slice(1))).toBe(
+      'The card image of station "gate" names a picture this tour no longer has, so the editor left it out: the next save writes the station without it.',
+    );
+    expect(droppedStationImagesLine(out.dropped.slice(2))).toBeNull();
     await out.session.close();
   });
 

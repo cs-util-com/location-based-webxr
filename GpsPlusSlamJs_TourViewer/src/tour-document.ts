@@ -79,6 +79,8 @@ import {
 } from "./tour-details-form.js";
 import {
   automaticStationFrame,
+  imageAssetIds,
+  keepsItself,
   objectAssetIds,
   routedTo,
   stepAssetIds,
@@ -662,19 +664,20 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
 }
 
 /**
- * The assets the undo and redo steps' views name - their stations' steps,
- * their objects and their covers: a write keeps them (`keepAssets`), so
- * a step back across a save finds them. Without it a cover image no step
- * uses was dropped (with its file) by the save after a cover change, and
- * the undo of that change had no image to show. Kept until the history no
- * longer names them (a new edit drops the redo steps, the bound the
- * oldest).
+ * The assets the undo and redo steps' views name - their stations' steps
+ * and card images, their objects and their covers: a write keeps them
+ * (`keepAssets`), so a step back across a save finds them. Without it a
+ * cover image no step uses was dropped (with its file) by the save after a
+ * cover change, and the undo of that change had no image to show. Kept
+ * until the history no longer names them (a new edit drops the redo steps,
+ * the bound the oldest).
  */
 export function historyAssetIds(state: TourDocumentState): Set<string> {
   const ids = new Set<string>();
   for (const { view } of [...state.past, ...state.future]) {
     for (const frame of view.stations) {
       for (const id of stepAssetIds(frame)) ids.add(id);
+      if (frame.image !== undefined) ids.add(frame.image);
     }
     for (const object of view.objects) {
       for (const id of objectAssetIds(object)) ids.add(id);
@@ -809,8 +812,9 @@ function seatByRule(
 /**
  * `state`'s frames without those of `candidates` that are now EMPTY
  * AUTOMATIC stations: no object of the document names them, and nothing
- * else keeps them - no title, no story steps, no route from another
- * station. Such a station existed only for its
+ * else keeps them - nothing of their own (a title, story steps, a
+ * description, a card image naming an image asset: `keepsItself`), no
+ * route from another station. Such a station existed only for its
  * elements; left behind, a visitor's guide would still lead to it.
  * The same array when nothing goes.
  */
@@ -822,11 +826,11 @@ function withoutEmptied(
   if (ids.size === 0) return state.stations;
   const named = new Set(documentObjects(state).map((o) => o.object.station));
   const routed = new Set(state.stations.flatMap(routedTo));
+  const imageAssets = imageAssetIds(state.written?.assets ?? []);
   const gone = (frame: StationFrame): boolean =>
     ids.has(frame.id) &&
     !named.has(frame.id) &&
-    (frame.title ?? "").trim() === "" &&
-    frame.steps.length === 0 &&
+    !keepsItself(frame, imageAssets) &&
     !routed.has(frame.id);
   return state.stations.some(gone)
     ? state.stations.filter((f) => !gone(f))

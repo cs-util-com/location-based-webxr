@@ -19,19 +19,23 @@ Guided-setup plan DEC-N7/N8/N9 for the original pins and photos
 ## Public API
 
 - `TOUR_MANIFEST_VERSION = 3` (the format's major number) and
-  `TOUR_MANIFEST_MINOR = 1` (the newest additive revision of version 3
-  this module knows; minor 1 adds the placed 3D model).
+  `TOUR_MANIFEST_MINOR = 2` (the newest additive revision of version 3
+  this module knows; minor 1 adds the placed 3D model, minor 2 a
+  station's description and card image).
 - `parseTourManifest(data: unknown, options?: TourManifestReadOptions): TourManifest`
   - validates every field; throws `TourManifestValidationError` naming the
     record (`"stations[1].items[3].pose.position" …`,
     `"stations[0].steps[2].block.asset" …`). Unknown kinds and duplicate
     ids reject - except in a file of a NEWER minor, where an unknown value
     of a closed list degrades (below). `options.onDropped(drop)` hears
-    each tour detail left out (below).
+    each tour detail and each station card image left out (below), as a
+    `TourManifestDrop` (`TourDetailsDrop | TourStationImageDrop`; a card
+    image's has `field: "image"` and the station's id).
 - `serializeTourManifest(manifest, options?): string` - re-validates
   through the reader, refuses a manifest of a newer minor, then
   pretty-prints `{ version: 3, minor, ... }` at the lowest minor the tour
-  needs (`minorNeeded`: 1 while it carries a model, else 0).
+  needs (`minorNeeded`: 2 while a station carries a description or a card
+  image, else 1 while it carries a model, else 0).
 - `createEmptyTourManifest(): TourManifest` - `{ version: 3, minor: 0,
 order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - `tourItems(tour): TourItem[]` - every station's items, in station order.
@@ -101,6 +105,34 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - **Nothing renders a placed model yet**: the Tour Viewer's renderer leaves
   it out until the 3D editor's work draws it.
 
+## Minor 2: a station's description and card image (G2, the 3D editor)
+
+- A station's optional `description` and `image` (rules in
+  `tour-stations.ts.md`): the description by the tour description's rule
+  (trimmed, at most 2000 characters), the image an id naming a photo item
+  of THAT station or an image asset of the tour. Decision record:
+  `GpsPlusSlamJs_Docs/docs/2026-10-21-2247-g2-3d-editor-build-plan.md`
+  §4.2.4 and Q14 (the image referent; its recommended default, built
+  pending a veto).
+- **The writer writes minor 2 while any station carries either**, else
+  the minor it needed before (1 with a model, else 0), so a tour without
+  them is written exactly as before. A 3.1 reader ignores both fields as
+  unknown ones; were the tour written at 3.1, that reader would open it
+  strictly and write it back WITHOUT them. At 3.2 it reads it leniently and
+  refuses to save it - which is what deployed viewers and npm 1.30.0 do,
+  by the version policy below.
+- **A card image whose picture went is dropped, never failed**, at every
+  minor: a well-formed id naming no photo of the station and no image
+  asset (a deleted photo or asset, a photo moved to another station) is
+  left out and reported through `onDropped` with `field: "image"`, the
+  station's id and `cause: "station-image-gone"`. The writer accepts that
+  drop quietly, beside the cover's `image-gone` - so deleting the photo a
+  card shows never fails a save - and writes the lowest minor the tour
+  still needs (a tour whose only minor 2 content was that image falls back).
+  An image that is not an id, or a description that is not text or too
+  long, is a broken file at this reader's minor (the writer fails loud: a
+  programming error) and none from a newer one.
+
 ## An earlier file's `captureSpots` (removed)
 
 - Earlier apps baked the walk's camera captures into the tour as
@@ -156,8 +188,9 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
   every minor. The writer refuses a manifest whose minor is newer than
   `TOUR_MANIFEST_MINOR` (it was read with fields dropped). When a minor is
   added, the writer must learn which content needs it (`minorNeeded`; it
-  did for minor 1), so an older reader at a lower minor is never handed a
-  field it parses strictly.
+  did for minors 1 and 2), so an older reader at a lower minor is never
+  handed a field it parses strictly - or one it would drop on its own
+  write.
 - **Unknown VALUES of a newer minor (K1 milestone review R4):** an
   unknown item kind, a photo of an unknown image type, or a model whose
   asset the reader lacks or whose positive size lies beyond its bound,
@@ -222,12 +255,23 @@ parseTourManifest({ version: 2, objects: [] }); // throws: an older format
   needs-no-GPS flag, the tour id (round trip at minor 0, absent, a bad
   one dropped at every minor, the writer's refusal), the tour details (round trip, cover on a station's
   photo or an image asset only, dropped details, the writer's cover drop
-  and refusals).
+  and refusals), and minor 2 (a station's description and image read and
+  written back exactly at minor 2; the minor per field - 2 for either, 1
+  for a model alone, else 0; a minor 1 file opening and saving as 1; the
+  writer dropping an image whose photo went with `station-image-gone`
+  and falling back a minor; the writer refusing a malformed image or
+  description).
 - `tour-manifest.property.test.ts` - over generated stations, items
-  (placed models among them), tour ids and details, and an earlier file's
-  `captureSpots` (ignored, every station kept): serialize->parse
-  is the identity (but for the minor, the writer's choice) with every local
-  pose the same numbers exactly; minor 1 is written exactly when a model is
-  present, every model's size read back unchanged; parse is idempotent; every item
-  stays in its station and a kept cover is always one of the tour's
-  photos.
+  (placed models among them), station descriptions (blank and padded
+  among them) and card images (the station's own photo, the image asset,
+  another station's item, a missing id), tour ids and details, and an
+  earlier file's `captureSpots` (ignored, every station kept):
+  serialize->parse is the identity (but for the minor, the writer's
+  choice) with every local pose the same numbers exactly; the minor
+  written is the SMALLEST whose reader keeps the whole tour (a minor 0
+  reader drops the models, a minor 1 reader the descriptions and images)
+  - 2 with a description or image, else 1 with a model, else 0 - and every
+    model's size reads back unchanged; parse is idempotent; every item
+    stays in its station, a kept cover is always one of the tour's photos,
+    and a kept card image is always a photo of its station or an image
+    asset, every other one reported as dropped.

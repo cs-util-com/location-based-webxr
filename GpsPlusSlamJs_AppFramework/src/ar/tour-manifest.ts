@@ -40,6 +40,12 @@
  *   the LOWEST minor the tour needs: 1 while it carries a model, else 0, so
  *   a tour without one stays editable by a 3.0 reader, and a 3.0 reader of a tour with a model leaves the model out (its
  *   lenient read) instead of refusing the tour.
+ * - MINOR 2 adds a station's `description` and card `image`
+ *   (`tour-stations.ts`; G2 build plan 2026-10-21-2247, §4.2.4). Written
+ *   at 2 while any station carries either: a 3.1 reader ignores both as
+ *   unknown fields, so it reads such a tour leniently and refuses to save
+ *   it, instead of writing it back without them. A card image whose
+ *   picture went is dropped (`station-image-gone`), like the cover.
  * - A newer minor may also add VALUES to a closed list (K1 milestone
  *   review R4): an item kind, an order, and the lists of
  *   `tour-stations.ts`. Read from a file of a newer minor, an unknown value
@@ -87,6 +93,7 @@ import {
   type TourAsset,
   type TourOrder,
   type TourStation,
+  type TourStationImageDrop,
 } from './tour-stations.js';
 
 export type {
@@ -99,6 +106,7 @@ export type {
   TourQuizOption,
   TourQuizRoute,
   TourStation,
+  TourStationImageDrop,
   TourStep,
   TourStepAdvance,
 } from './tour-stations.js';
@@ -114,7 +122,7 @@ export type {
 export const TOUR_MANIFEST_VERSION = 3;
 
 /** The newest additive revision of version 3 this module knows. */
-export const TOUR_MANIFEST_MINOR = 1;
+export const TOUR_MANIFEST_MINOR = 2;
 
 /** Where a pin, photo or model stands in the WORLD: the view the viewer places
  *  and the creator's drafts hold (`tour-station-pose.ts` `tourObjects`). */
@@ -162,10 +170,15 @@ export interface TourManifest extends TourDetails {
   needsNoGps?: true;
 }
 
-/** How a reader or writer reports a detail it left out (`tour-details.ts`):
- *  a detail is cosmetic, so a bad one costs the detail, never the tour. */
+/** What a reader left out without failing the tour: a tour detail
+ *  (`tour-details.ts`), or a station's card image whose picture went
+ *  (`field` `image`, with the station's id). */
+export type TourManifestDrop = TourDetailsDrop | TourStationImageDrop;
+
+/** How a reader or writer reports what it left out: a detail is cosmetic,
+ *  and so is a card image, so a bad one costs the value, never the tour. */
 export interface TourManifestReadOptions {
-  readonly onDropped?: (drop: TourDetailsDrop) => void;
+  readonly onDropped?: (drop: TourManifestDrop) => void;
 }
 
 const ORDERS: ReadonlySet<string> = new Set(['fixed', 'any', 'branch']);
@@ -353,6 +366,9 @@ export function parseTourManifest(
     assets,
     fail,
     lenient,
+    ...(options.onDropped === undefined
+      ? {}
+      : { onDropped: options.onDropped }),
   });
   checkContentIds(stations, assets);
   const needsNoGps = needsNoGpsOf(data.needsNoGps, lenient);
@@ -379,9 +395,10 @@ export function parseTourManifest(
  *
  * Of the details, only a cover whose image went (a deleted photo, the
  * drop's `cause` `image-gone`) is left out, reported through
- * `onDropped`. Any other drop - a cover that is not an image id, a
- * description or a contact the reader would drop - is a programming error
- * here (the editor checks them with the same rules) and fails loud.
+ * `onDropped`, and so is a station's card image whose picture went
+ * (`station-image-gone`). Any other drop - a cover that is not an image
+ * id, a description or a contact the reader would drop - is a programming
+ * error here (the editor checks them with the same rules) and fails loud.
  */
 export function serializeTourManifest(
   manifest: TourManifest,
@@ -400,7 +417,9 @@ export function serializeTourManifest(
   }
   const parsed = parseTourManifest(manifest, {
     onDropped: (drop) => {
-      if (drop.cause !== 'image-gone') fail(drop.reason);
+      if (drop.cause !== 'image-gone' && drop.cause !== 'station-image-gone') {
+        fail(drop.reason);
+      }
       options.onDropped?.(drop);
     },
   });
@@ -412,7 +431,15 @@ export function serializeTourManifest(
   return JSON.stringify({ ...parsed, minor: minorNeeded(parsed) }, null, 2);
 }
 
-/** The lowest minor that carries the tour: 1 with a model, else 0. */
+/** The lowest minor that carries the tour: 2 with a station's description
+ *  or card image, else 1 with a model, else 0. */
 function minorNeeded(manifest: TourManifest): number {
+  if (
+    manifest.stations.some(
+      (s) => s.description !== undefined || s.image !== undefined
+    )
+  ) {
+    return 2;
+  }
   return tourItems(manifest).some((item) => item.kind === 'model') ? 1 : 0;
 }

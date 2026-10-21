@@ -58,7 +58,11 @@ import {
   type EditorItem,
   type EditorModel,
 } from "./editor-model.js";
-import { droppedDetailsLine, openTourForEditing } from "./editor-open.js";
+import {
+  droppedDetailsLine,
+  droppedStationImagesLine,
+  openTourForEditing,
+} from "./editor-open.js";
 import { holdPageInert } from "./page-inert.js";
 import { fetchTourFile, linkOpenErrorText } from "./editor-link.js";
 import { driveProxyBaseUrl } from "../drive-proxy-url.js";
@@ -1590,10 +1594,15 @@ async function openFile(
   renderSaveState();
   toast(`Opened ${outcome.fileName}: ${openedSummary(model)}`);
   sayNoBackup();
-  // Details the reader dropped are said, never lost silently by the next
-  // save (M4a review #6); kept until closed, as an instruction.
-  const dropped = droppedDetailsLine(outcome.dropped);
-  if (dropped !== null) fileToasts.push(toast(dropped, undefined, null));
+  // Details and station card images the reader dropped are said, never
+  // lost silently by the next save (M4a review #6); kept until closed, as
+  // an instruction.
+  for (const line of [
+    droppedDetailsLine(outcome.dropped),
+    droppedStationImagesLine(outcome.dropped),
+  ]) {
+    if (line !== null) fileToasts.push(toast(line, undefined, null));
+  }
   if (drafted.superseded !== null) {
     fileToasts.push(toast(drafted.superseded, undefined, null));
   }

@@ -19,13 +19,14 @@
  *   earlier file's `captureSpots` is an unknown field to the framework's
  *   reader, which ignores it).
  * - A station this write EMPTIED (it held items, it holds none) goes when
- *   nothing else keeps it: no title, no story steps, and no other
+ *   nothing else keeps it: no title, no story steps, no description, no
+ *   card image that still names a picture (`keepsItself`), and no other
  *   station routing to it. It existed for its elements
  *   (D20); left behind, the visitor's guide would still lead to it. An
  *   empty station the tour already had is left alone.
  * - An asset nothing names any more is dropped (`withReferencedAssets`):
  *   no step block (an image, a character's image or voice, an audio, a
- *   video, a model) and not the cover.
+ *   video, a model), no station's card image and not the cover.
  *
  * Pure.
  *
@@ -33,6 +34,7 @@
  */
 
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
+import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
 import type { TourContentFields } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
   TourBlock,
@@ -166,27 +168,57 @@ export function withTourContent(
     items: items.get(station.id) ?? [],
   }));
   const kept = new Set(filled.flatMap(routedTo));
+  const imageAssets = imageAssetIds(manifest.assets);
   return {
     ...manifest,
     stations: filled.filter(
-      (s) => !emptiedAndBare(s, stationById.get(s.id), kept),
+      (s) => !emptiedAndBare(s, stationById.get(s.id), kept, imageAssets),
     ),
   };
 }
 
 /** Whether this write emptied `station` (`before` held items) and
- *  nothing else keeps it: no title, no steps, not in `kept`. */
+ *  nothing else keeps it: nothing of its own (`keepsItself`), not in
+ *  `kept`. */
 function emptiedAndBare(
   station: TourStation,
   before: TourStation | undefined,
   kept: ReadonlySet<string>,
+  imageAssets: ReadonlySet<string>,
 ): boolean {
   return (
     station.items.length === 0 &&
     (before?.items.length ?? 0) > 0 &&
-    (station.title ?? "").trim() === "" &&
-    station.steps.length === 0 &&
+    !keepsItself(station, imageAssets) &&
     !kept.has(station.id)
+  );
+}
+
+/** The ids of the image assets among `assets`: what an EMPTY station's
+ *  card image can still name (it holds no photo any more). */
+export function imageAssetIds(
+  assets: TourManifest["assets"],
+): ReadonlySet<string> {
+  return tourImageIds({ objects: [], assets });
+}
+
+/**
+ * Whether an EMPTY station carries the creator's own work, which keeps it
+ * when its last item leaves (D20; G2 build plan 2026-10-21-2247, §4.2.4):
+ * a title, story steps, a description, or a card image naming one of the
+ * tour's image assets (`imageAssets`). An image of the station's own photo
+ * keeps nothing here: an emptied station holds no photo, so the write
+ * drops that image (`station-image-gone`) and the station is bare.
+ */
+export function keepsItself(
+  station: Pick<TourStation, "title" | "steps" | "description" | "image">,
+  imageAssets: ReadonlySet<string>,
+): boolean {
+  return (
+    (station.title ?? "").trim() !== "" ||
+    station.steps.length > 0 ||
+    station.description !== undefined ||
+    (station.image !== undefined && imageAssets.has(station.image))
   );
 }
 
@@ -246,13 +278,15 @@ export function stepAssetIds(
 
 /**
  * The ids of the assets `manifest` uses: every step block's of every
- * station, every item's, and the cover (which may name an image asset).
+ * station, every item's, every station's card image and the cover (each
+ * of the last two may name an image asset).
  */
 function referencedAssetIds(manifest: TourManifest): Set<string> {
   return new Set([
     ...manifest.stations.flatMap((station) => [
       ...stepAssetIds(station),
       ...station.items.flatMap(objectAssetIds),
+      ...(station.image === undefined ? [] : [station.image]),
     ]),
     ...(manifest.cover === undefined ? [] : [manifest.cover]),
   ]);
