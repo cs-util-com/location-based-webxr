@@ -58,6 +58,11 @@ actions and reads their selectors, and holds no state of its own.
     wins at every change of the book, so it would otherwise put the
     text back at the next one. The book's own measurement of the code
     stays; a hand on a code the step did not change is kept.
+  - A redo of that step puts the improved text back but NOT the hand
+    (intended): the undo let the hand go, the step keeps the codes'
+    texts only, and a redo never re-takes a code the creator no longer
+    holds (pinned in `authoring-settle.test.ts`, "restores the improved
+    text at a redo of the settle, but not the hand").
 - The book of codes a Finish writes (M4c-1, `code-book.ts`):
   - `toWrite()` - every code this page took whose saved text differs from
     what the zip the Finish rebuilds from holds (the last Finish's text,

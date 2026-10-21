@@ -52,7 +52,11 @@ import {
   createTourViewerStore,
   endQrPipeline,
 } from "./tour-viewer-session.js";
-import { isCodeChange, isDocumentEdit } from "./tour-document.js";
+import {
+  isCodeChange,
+  isDocumentEdit,
+  tourDocumentActions,
+} from "./tour-document.js";
 import { mintPin, objectPoseNue } from "./content-placement.js";
 import {
   deletedKey,
@@ -3273,6 +3277,29 @@ describe(
       for (const written of [a.codes.toWrite(), a.codes.notHosted()]) {
         expect(written.find((l) => l.id === stored.id)?.json).toBe(stored.json);
       }
+    });
+
+    // Why this test matters (plan M3b): a redo of the settle's step puts
+    // the improved text back, but NOT the hand. Intended: the undo let the
+    // hand go of the code (its measurement too), and the step keeps the
+    // codes' texts only - the hand is the creator's live state, and a redo
+    // never re-takes a code the creator no longer holds. Pinned so a
+    // change that makes the redo re-take it is a decision, not an accident.
+    it("restores the improved text at a redo of the settle, but not the hand", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      a.endVisit();
+      const improved = a.codes.savedText(stored.id);
+      expect(improved).not.toBe(stored.json);
+      a.ctx.tourDocument.undo();
+      expect(a.codes.inHand()).toBeNull();
+      a.ctx.store.dispatch(tourDocumentActions.redone());
+      expect(a.codes.savedText(stored.id), "the text is redone").toBe(improved);
+      expect(a.codes.inHand(), "the hand stays empty").toBeNull();
+      expect(a.codes.measurement()).toBeNull();
     });
 
     // Why this test matters (plan M3b): what the undo puts back must reach
