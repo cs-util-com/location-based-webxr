@@ -26,6 +26,8 @@ import { DETAIL_FIELDS, type TourDetailFields } from "./tour-details-form.js";
 import {
   createdStationFrames,
   framesOf,
+  levelsNotHosted,
+  type LevelText,
   type StationFrame,
   type StationPose,
   type TourDocumentState,
@@ -213,10 +215,28 @@ export function parseSettingsRecord(
   }
 }
 
-/** Where a page backs its edits up: the objects' writes the pages share
- *  and the settings record. */
+/** The codes a draft keeps (plan M3b): the code in hand, and every code
+ *  whose saved text the hosted zip does not hold yet (`levelsNotHosted`),
+ *  the hand's among them. */
+export interface TourCodesRecord {
+  readonly level: LevelText | null;
+  readonly levels: readonly LevelText[];
+}
+
+/** The codes record as the document holds it now, with `hand` in hand. */
+export function codesRecord(
+  state: TourDocumentState,
+  hand: LevelText | null,
+): TourCodesRecord {
+  return { level: hand, levels: levelsNotHosted(state) };
+}
+
+/** Where a page backs its edits up: the objects' writes the pages share,
+ *  the settings record, and the codes record (a page that measures codes:
+ *  the phone's). */
 export interface TourDocumentDraft extends DraftObjectWrites {
   saveSettings(settings: TourSettingsRecord): Promise<boolean>;
+  saveCodes?(codes: TourCodesRecord): Promise<boolean>;
 }
 
 /** The settings record as the document holds it now. */
@@ -301,13 +321,19 @@ function holderOf(manifest: TourManifest | null): (id: string) => boolean {
  * The draft follows the document from `before` to `after`: every write is
  * issued now, in order (each resolves on its own; the draft says its own
  * failures). Nothing is written across an open (`generation`): the new
- * tour's draft is not the old one's.
+ * tour's draft is not the old one's. The codes record follows too when
+ * the draft keeps one and `hands` names the code in hand before and after
+ * (the hand is the page's, not the document's).
  */
 export function followDocument(
   draft: TourDocumentDraft,
   before: TourDocumentState,
   after: TourDocumentState,
   pictureOf: (id: string) => Blob | undefined,
+  hands?: {
+    readonly before: LevelText | null;
+    readonly after: LevelText | null;
+  },
 ): void {
   if (before.generation !== after.generation) return;
   const ids = new Set([
@@ -335,4 +361,8 @@ export function followDocument(
   if (JSON.stringify(was) !== JSON.stringify(now)) {
     void draft.saveSettings(now);
   }
+  if (draft.saveCodes === undefined || hands === undefined) return;
+  const codesWere = codesRecord(before, hands.before);
+  const codesNow = codesRecord(after, hands.after);
+  if (!sameJson(codesWere, codesNow)) void draft.saveCodes(codesNow);
 }

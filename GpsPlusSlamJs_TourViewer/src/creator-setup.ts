@@ -328,6 +328,7 @@ export function wireCreatorSetup(deps: {
   ctx.tourDocument.follow({
     ...draftObjectWrites(draft),
     saveSettings: (settings) => draft.saveSettings(settings),
+    saveCodes: (record) => draft.saveCodes(record),
   });
   /** The placed objects' previews and the earlier visits' frame
    *  (`creator-previews.ts`). */

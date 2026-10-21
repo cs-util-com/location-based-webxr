@@ -11,7 +11,11 @@
  * @see creator-document.ts.md
  */
 
-import type { TypedStartListening, UnknownAction } from "@reduxjs/toolkit";
+import {
+  isAnyOf,
+  type TypedStartListening,
+  type UnknownAction,
+} from "@reduxjs/toolkit";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import {
   createEmptyTourManifest,
@@ -23,6 +27,7 @@ import {
   canPlace,
   canStep,
   documentObjects,
+  isCodeChange,
   isDocumentEdit,
   manifestNow,
   nextStep,
@@ -147,13 +152,19 @@ export interface SettleBatch {
   ): DocumentChange | null;
 }
 
+/** The store's state as the document's listeners read it: the document,
+ *  and the page's code in hand where the store holds one (`creatorCodes`,
+ *  the codes record the draft follows). */
+interface CreatorDocumentRoot {
+  tourDocument: TourDocumentState;
+  creatorCodes?: { readonly hand: LevelText | null };
+}
+
 /** The store the document lives in (`createTourViewerStore`). */
 export interface CreatorDocumentStore {
   getState(): { readonly tourDocument: TourDocumentState };
   dispatch(action: UnknownAction): unknown;
-  readonly listenToDocument: TypedStartListening<{
-    tourDocument: TourDocumentState;
-  }>;
+  readonly listenToDocument: TypedStartListening<CreatorDocumentRoot>;
 }
 
 export interface CreatorDocument {
@@ -712,15 +723,26 @@ export function createCreatorDocument(
           return forgotten.then(() => undefined);
         },
         saveSettings: collected((record) => draft.saveSettings(record)),
+        ...(draft.saveCodes === undefined
+          ? {}
+          : { saveCodes: collected(draft.saveCodes.bind(draft)) }),
       };
+      const handIn = (root: CreatorDocumentRoot) =>
+        root.creatorCodes?.hand ?? null;
       store.listenToDocument({
-        predicate: isDocumentEdit,
+        // The edits, and every change of the codes the draft keeps (their
+        // record follows them, plan M3b).
+        predicate: isAnyOf(isDocumentEdit, isCodeChange),
         effect: (_action, api) => {
           followDocument(
             tracked,
             selectTourDocument(api.getOriginalState()),
             selectTourDocument(api.getState()),
             (id) => pictures.get(id),
+            {
+              before: handIn(api.getOriginalState()),
+              after: handIn(api.getState()),
+            },
           );
         },
       });

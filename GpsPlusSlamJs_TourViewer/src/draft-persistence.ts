@@ -73,6 +73,16 @@ import {
  * `docs/2026-09-10-1345-draft-rejection-commit-point-plan.md` (docs repo).
  */
 export const META_KEY = "meta";
+/**
+ * The draft's codes (plan M3b): the code in hand and every code the
+ * hosted zip does not hold yet, as the tour document's draft record
+ * (`tour-document-draft.ts`'s `codesRecord`, written by its listener
+ * whenever the codes change). Its own file, not a field of the meta: the
+ * meta is the commit point of a rejection and the codes change with
+ * every measurement and settle. A draft without the file has no codes; a
+ * file that does not read costs the codes, never the walk.
+ */
+export const CODES_KEY = "codes";
 const OBJECT_PREFIX = "object:";
 const PHOTO_PREFIX = "photo:";
 const DELETED_PREFIX = "deleted:";
@@ -263,19 +273,28 @@ export async function removeDraftDeletion(
   return true;
 }
 
+/** A level file a draft keeps: its id and text. */
+interface DraftLevel {
+  readonly id: string;
+  readonly json: string;
+}
+
+/** What the codes file holds (`CODES_KEY`). */
+export interface DraftCodes {
+  /** The code in hand, or null. */
+  readonly level: DraftLevel | null;
+  /** Every code this page measured or changed that the hosted zip does
+   *  not hold yet (code book refactor plan M4c-1), `level` among them. */
+  readonly levels: readonly DraftLevel[];
+}
+
+/** No codes: a draft without the codes file, or one that does not read. */
+const NO_CODES: DraftCodes = { level: null, levels: [] };
+
 /** What the meta file holds. */
 interface DraftMeta {
   tourUrl: string;
   sizeM: number;
-  level: { id: string; json: string } | null;
-  /**
-   * Every code this page measured or changed that the hosted zip does not
-   * hold yet (code book refactor plan M4c-1), `level` among them. OPTIONAL
-   * like `rejected`: absent from every meta written before, where `level`
-   * is the only code. Each entry is validated like `level`; one that does
-   * not read costs itself.
-   */
-  levels?: readonly { id: string; json: string }[];
   /**
    * Object ids the creator has thrown away, which `readDraft` refuses
    * whether or not their files are still on disk.
@@ -314,12 +333,60 @@ export function parseDraftObject(text: string): TourObject | null {
   }
 }
 
-/** Record the tour, the printed size and the measured level. */
+/** Record the tour, the printed size and the rejections. */
 export async function writeDraftMeta(
   store: DraftFileStore,
   meta: DraftMeta,
 ): Promise<boolean> {
   return store.put(META_KEY, JSON.stringify(meta));
+}
+
+/** Record the draft's codes, whole. */
+export async function writeDraftCodes(
+  store: DraftFileStore,
+  codes: DraftCodes,
+): Promise<boolean> {
+  return store.put(CODES_KEY, JSON.stringify(codes));
+}
+
+/**
+ * The codes in a stored value (the codes file's, or an older meta's):
+ * each field checked on its own, so a level that does not read costs the
+ * measurement and an entry of `levels` that does not read costs itself. A
+ * value without `levels` (an older meta, written before M4c-1) keeps its
+ * one `level` as the list.
+ */
+function codesOf(value: unknown): DraftCodes {
+  if (typeof value !== "object" || value === null) return NO_CODES;
+  const record = value as Record<string, unknown>;
+  const level = isLevel(record["level"]) ? (record["level"] ?? null) : null;
+  const levels = Array.isArray(record["levels"])
+    ? (record["levels"] as unknown[]).filter(
+        (l): l is DraftLevel => l !== null && isLevel(l),
+      )
+    : level === null
+      ? []
+      : [level];
+  return { level, levels };
+}
+
+/**
+ * Read the draft's codes: the codes file, else (no such file) the codes an
+ * older meta carried in its own fields - a draft left before the codes
+ * had a file of their own keeps its measured code (code book plan M1's
+ * frozen meta). None when neither reads.
+ */
+export async function readDraftCodes(
+  store: DraftFileStore,
+): Promise<DraftCodes> {
+  const text =
+    (await store.getText(CODES_KEY)) ?? (await store.getText(META_KEY));
+  if (text === undefined) return NO_CODES;
+  try {
+    return codesOf(JSON.parse(text));
+  } catch {
+    return NO_CODES;
+  }
 }
 
 /** Record one placement. The photo's bytes go in their own file. */
@@ -420,18 +487,19 @@ export async function readDraft(
   try {
     const parsed: unknown = JSON.parse(metaText);
     if (!isMeta(parsed)) return undefined;
-    // An unreadable LEVEL costs the measurement, not the walk. The two
-    // other meta fields say which tour a draft belongs to and how big the
-    // printed code is - without them the draft cannot be used at all - but
-    // a level that does not read is "this draft has no measurement yet",
-    // which is a shape the whole flow already supports. Discarding the
-    // draft instead would throw away every placement the creator made,
-    // which is the opposite of the rule two screens up: a record that does
-    // not read costs itself and nothing else (M1/M3 review #10).
-    meta = isLevel(parsed.level) ? parsed : { ...parsed, level: null };
+    meta = parsed;
   } catch {
     return undefined;
   }
+  // An unreadable LEVEL costs the measurement, not the walk. The meta's
+  // fields say which tour a draft belongs to and how big the printed code
+  // is - without them the draft cannot be used at all - but a level that
+  // does not read is "this draft has no measurement yet", which is a shape
+  // the whole flow already supports. Discarding the draft instead would
+  // throw away every placement the creator made, which is the opposite of
+  // the rule two screens up: a record that does not read costs itself and
+  // nothing else (M1/M3 review #10). `readDraftCodes` reads each field so.
+  const codes = await readDraftCodes(store);
 
   const keys = await store.keys();
   // The committed rejections. Read from the raw parsed value, not through
@@ -524,16 +592,8 @@ export async function readDraft(
     draft: {
       tourUrl: meta.tourUrl,
       sizeM: meta.sizeM,
-      level: meta.level,
-      // From the raw parsed value, like `rejected`: `isMeta` does not
-      // validate it. An older meta's one level is the list.
-      levels: Array.isArray(meta.levels)
-        ? (meta.levels as unknown[]).filter(
-            (l): l is { id: string; json: string } => l !== null && isLevel(l),
-          )
-        : meta.level === null
-          ? []
-          : [meta.level],
+      level: codes.level,
+      levels: codes.levels,
       objects,
       deleted: deleted.sort(),
       ...(bases.size === 0 ? {} : { bases }),
@@ -589,7 +649,7 @@ function isMeta(value: unknown): value is DraftMeta {
  * failure this feature exists to prevent. A record this cannot read must
  * come back as "no draft", never as a level the finish cannot name.
  */
-function isLevel(value: unknown): value is DraftMeta["level"] {
+function isLevel(value: unknown): value is DraftLevel | null {
   if (value === null) return true;
   if (typeof value !== "object") return false;
   const record = value as Record<string, unknown>;

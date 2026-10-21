@@ -295,8 +295,9 @@ describe("the tour document's code book", () => {
     expect(documentCodes(gone)).toEqual([]);
   });
 
-  // Why this test matters: `setBook`'s rule moved into the reducers - the
-  // book never holds another text for the code in hand than the hand does,
+  // Why this test matters: the rule of the module's one book write before
+  // the store moved into the reducers (`withHand`) - the book never holds
+  // another text for the code in hand than the hand does,
   // whichever action wrote it. The action names the hand after it.
   it("keeps the hand's text for its own code when a change would replace it", () => {
     const live = { id: "m", json: "measured-m" };

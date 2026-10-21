@@ -2003,6 +2003,20 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.restored,
 );
 
+/** Whether `action` changes the codes a draft keeps (plan M3b): the
+ *  book's saved texts or the code in hand. Not a tour's close
+ *  (`codesForgotten`): the closed tour's codes stay in its draft. */
+export const isCodeChange = isAnyOf(
+  tourDocumentActions.codeTaken,
+  tourDocumentActions.codeTakenFromDraft,
+  tourDocumentActions.codeLetGo,
+  tourDocumentActions.codeMeasurementDropped,
+  tourDocumentActions.codeSaved,
+  tourDocumentActions.codesRestored,
+  tourDocumentActions.codesFinished,
+  tourDocumentActions.handReleased,
+);
+
 /** The slice inside a store's state. */
 export function selectTourDocument(root: {
   readonly tourDocument: TourDocumentState;

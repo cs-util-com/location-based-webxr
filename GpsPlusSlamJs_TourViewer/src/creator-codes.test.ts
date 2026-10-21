@@ -696,10 +696,10 @@ function applyCodesOp(
   }
 }
 
-describe("creator-codes: the hand's text wins in the book (setBook, creator-codes.ts:173-185)", () => {
+describe("creator-codes: the hand's text wins in the book (withHand, in every reducer that writes the book)", () => {
   // Why this test matters: a measurement dropped for a new print size
   // falls the book back to the zip's text (`withoutMeasurement`); for the
-  // code still in hand `setBook` puts the hand's text straight back, or
+  // code still in hand `withHand` puts the hand's text straight back, or
   // the next Finish would write a pose the hand no longer agrees with.
   it("keeps the hand's text, and its reference, when the hand's measurement is dropped", () => {
     const ctx = createTourViewerSession();
@@ -718,11 +718,12 @@ describe("creator-codes: the hand's text wins in the book (setBook, creator-code
     expect(codes.measurement()).toBe(MEASUREMENT);
   });
 
-  // Why this test matters: `setBook` is the one write of the book, and its
-  // rule is that the book never holds another text for the code in hand
-  // than the hand does - whatever wrote the book (a restore, a dropped
-  // measurement, a re-mint, a Finish, the levels arriving). The store's
-  // reducers will be several; this law is what they must keep together.
+  // Why this test matters: the book never holds another text for the code
+  // in hand than the hand does - whatever wrote the book (a restore, a
+  // dropped measurement, a re-mint, a Finish, the levels arriving). The
+  // module before the store kept it in its one write of the book; the
+  // store's reducers are several, and `withHand` is the law they keep
+  // together.
   it("never lets the book and the hand disagree about the code in hand, for any sequence (property)", () => {
     fc.assert(
       fc.property(
@@ -1059,7 +1060,7 @@ describe("creator-codes: the measurements per measured code (visitCodes/measured
   });
 });
 
-describe("creator-codes: the print panel hears only a change of the SET of ids (setBook, creator-codes.ts:179-184)", () => {
+describe("creator-codes: the print panel hears only a change of the SET of ids (noticingIds, creator-codes.ts)", () => {
   // Why these tests matter (follow-up F16): the print panel renumbers on
   // this signal (main.ts `onCodesChanged` -> `presentTourCodes`), which
   // runs a spelling search over the codes - so it must fire when a code
@@ -1095,8 +1096,8 @@ describe("creator-codes: the print panel hears only a change of the SET of ids (
     expect(heard).toBe(3);
   });
 
-  // Why this test matters: the close empties the book without `setBook`
-  // (creator-codes.ts:339), so it is NOT heard here; the print panel
+  // Why this test matters: the close empties the book outside the notice
+  // (`reset`, not through `changeBook`), so it is NOT heard here; the print panel
   // learns of a closed tour through its own `presentNoTour`. Pinned so the
   // store's close does not start renumbering a panel that has no tour.
   it("is not heard at a tour's close, and the same id after it joins again", () => {

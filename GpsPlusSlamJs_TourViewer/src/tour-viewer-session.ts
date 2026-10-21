@@ -112,6 +112,7 @@ export function createTourViewerStore(recording?: {
 }) {
   const documentListener = createListenerMiddleware<{
     tourDocument: TourDocumentState;
+    creatorCodes: CreatorCodesState;
   }>();
   const store = createSlamAppStore({
     storageBackend: recording?.storageBackend ?? new NullStorageBackend(),

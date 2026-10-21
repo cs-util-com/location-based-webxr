@@ -8,16 +8,26 @@ are the framework's.
 
 ## Public API
 
-- `writeDraftMeta(store, { tourUrl, sizeM, level, levels?, rejected? })` - the
-  tour, the printed size, the measured level and the ids the creator has
-  thrown away. (Metas written before code book plan M6 also carry the move
-  prompt's answers; they are read as if absent.) **This write is the commit point for a rejection** - see the
-  invariant below. `rejected` is optional and absent from every meta file
-  written before 2026-09-10. `levels` (code book plan M4c-1) is every code
-  the hosted zip does not hold yet, `level` (the code in hand) among them;
-  optional, and `readDraft` returns the one `level` as the list for a meta
-  written before it. Each entry is checked like `level`; one that does not
-  read costs itself (`draft.levels`).
+- `writeDraftMeta(store, { tourUrl, sizeM, rejected? })` - the tour, the
+  printed size and the ids the creator has thrown away. (Metas written
+  before code book plan M6 also carry the move prompt's answers; they are
+  read as if absent.) **This write is the commit point for a rejection** -
+  see the invariant below. `rejected` is optional and absent from every
+  meta file written before 2026-09-10.
+- `CODES_KEY` (`"codes"`), `DraftCodes` `{ level, levels }`,
+  `writeDraftCodes(store, codes)`, `readDraftCodes(store)` (plan M3b) -
+  the draft's codes in a file of their own: the code in hand (`level`)
+  and every code the hosted zip does not hold yet (`levels`, code book
+  plan M4c-1, `level` among them), written whole by the tour document's
+  listener whenever they change (`tour-document-draft.ts`'s
+  `codesRecord`). Not in the meta: the meta is a rejection's commit
+  point, and the codes change with every measurement and settle. Read
+  field by field: a `level` that does not read costs the measurement,
+  never the walk (`null`); an entry of `levels` that does not read costs
+  itself; a value without `levels` keeps its one `level` as the list.
+  With no codes file, `readDraftCodes` reads the same fields of the meta,
+  so a meta written before M3b (frozen as text in the tests) keeps its
+  measured code; a meta written since carries none.
 - `writeDraftEdit(store, object, blob, seen)` (M6 E2p) - a placement or
   an edit, and, when `seen` is given, that version added to the object's
   base as seen hosted (`creator-draft.ts` passes the tour as opened). Both
@@ -216,7 +226,11 @@ if (store !== undefined) {
 ## Tests
 
 `draft-persistence.test.ts`, against an in-memory store with the same
-contract. The ones that carry it: a corrupt record costing only itself, a
+contract. The codes (plan M3b moved their seeding from the meta to the
+codes record, each rule unchanged): an unreadable level costing the
+measurement and not the walk, the two shapes a level has, several codes
+kept, an unreadable entry costing itself, none without codes, and a meta
+written before the code book read for its one level. The ones that carry it: a corrupt record costing only itself, a
 photo record dropped with its missing bytes, no meta yielding nothing, and
 a property that the order is stable and is the order things were placed in.
 Plus the rejection set: an object the meta rejects is refused though its

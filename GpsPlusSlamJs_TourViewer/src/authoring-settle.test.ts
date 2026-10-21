@@ -55,7 +55,7 @@ import { isDocumentEdit } from "./tour-document.js";
 import { mintPin, objectPoseNue } from "./content-placement.js";
 import {
   deletedKey,
-  META_KEY,
+  CODES_KEY,
   objectKey,
   readDraft,
   visitKey,
@@ -867,10 +867,10 @@ describe(
         String(files.get(objectKey(pin.id))),
       ) as TourObject;
       expect(onDisk.geo).toEqual(pin.geo);
-      const meta = JSON.parse(String(files.get(META_KEY))) as {
+      const codes = JSON.parse(String(files.get(CODES_KEY))) as {
         level: { json: string };
       };
-      expect(meta.level.json).toBe(a.codes.inHand()!.json);
+      expect(codes.level.json).toBe(a.codes.inHand()!.json);
     });
   },
 );
@@ -1970,7 +1970,7 @@ describe(
       await flush();
       const savedA = () =>
         (
-          JSON.parse(String(files.get(META_KEY))) as {
+          JSON.parse(String(files.get(CODES_KEY))) as {
             levels: { id: string; json: string }[];
           }
         ).levels[0]!;
@@ -2828,8 +2828,16 @@ describe(
       accuracyM?: number;
       /** The stored level as a build before F2 wrote it: no printed text. */
       storedWithoutText?: boolean;
+      /** A draft store, the tour's draft opened on it before the mint. */
+      store?: DraftFileStore;
     }) {
-      const a = authoring();
+      const a = authoring(
+        opts.store === undefined ? {} : { store: opts.store },
+      );
+      if (opts.store !== undefined) {
+        a.setup.presentDraftForTour("https://example.test/tour.zip");
+        await flush();
+      }
       await a.mint();
       await a.placePin("near", [2, 0, -1]);
       await a.placePin("far", [60, 0, 0]);
@@ -3260,6 +3268,37 @@ describe(
       for (const written of [a.codes.toWrite(), a.codes.notHosted()]) {
         expect(written.find((l) => l.id === stored.id)?.json).toBe(stored.json);
       }
+    });
+
+    // Why this test matters (plan M3b): what the undo puts back must reach
+    // the draft too, or a reload after the undo restores the improved code
+    // the creator took back. The codes record follows the undo and the
+    // hand letting go: it keeps the earlier text, and names no hand.
+    it("writes the earlier text into the draft's codes at an undo of the settle", async () => {
+      const { store, files } = memoryDraftStore();
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+        store,
+      });
+      a.endVisit();
+      await flush();
+      const codes = () =>
+        JSON.parse(String(files.get(CODES_KEY))) as {
+          level: { id: string; json: string } | null;
+          levels: { id: string; json: string }[];
+        };
+      const improved = codes().levels.find((l) => l.id === stored.id)?.json;
+      expect(improved, "the settle wrote the improved code").not.toBe(
+        stored.json,
+      );
+      a.ctx.tourDocument.undo();
+      await flush();
+      expect(codes().level).toBeNull();
+      expect(codes().levels.find((l) => l.id === stored.id)?.json).toBe(
+        stored.json,
+      );
     });
 
     // Why this test matters (code book plan M4b, the owner's choice after
@@ -4339,10 +4378,10 @@ describe(
       expect(second.id).not.toBe(first.id);
       a.endVisit();
       await flush();
-      const meta = JSON.parse(String(files.get(META_KEY))) as {
+      const codes = JSON.parse(String(files.get(CODES_KEY))) as {
         levels: { id: string }[];
       };
-      expect(meta.levels.map((l) => l.id)).toEqual([first.id, second.id]);
+      expect(codes.levels.map((l) => l.id)).toEqual([first.id, second.id]);
     });
 
     // Why this test matters (code book plan M4e, found by the two-code
@@ -4442,10 +4481,10 @@ describe(
       );
       a.endVisit();
       await flush();
-      const meta = JSON.parse(String(files.get(META_KEY))) as {
+      const codes = JSON.parse(String(files.get(CODES_KEY))) as {
         levels: { id: string; json: string }[];
       };
-      const settledA = meta.levels.find((l) => l.id === first.id)!;
+      const settledA = codes.levels.find((l) => l.id === first.id)!;
       // Re-minted through A's own pick: where it was measured.
       expect(
         codeWorldOf(settledA.json).distanceTo(codeWorldOf(first.json)),

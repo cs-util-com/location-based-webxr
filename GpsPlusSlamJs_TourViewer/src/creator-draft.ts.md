@@ -105,11 +105,15 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
   - `reset()` - a tour closed: the offer, the namespace and the
     rejections go.
   - `saveMeta()` - rewrite the open tour's meta (tour, printed size from
-    the FIELD, the code in hand from `creator-codes.ts` and every code the
-    hosted zip does not hold yet as `levels` (M4c-1), the rejections),
-    queued per namespace. Resolves true with no tour open (nothing to
-    write, nothing failed), false where the tour has no store; a refused
-    write may reject, as before the split.
+    the FIELD, the rejections), queued per namespace. Resolves true with
+    no tour open (nothing to write, nothing failed), false where the tour
+    has no store; a refused write may reject, as before the split.
+  - `saveCodes(codes)` (plan M3b) - write the codes record
+    (`draft-persistence.ts`'s `CODES_KEY`: the code in hand and every
+    code the hosted zip does not hold yet), in its own queue, the waiting
+    draft's codes re-stated after the page's. The document's listener
+    calls it (`creator-setup.ts` wires it into `follow`). True with no
+    tour's draft open yet (`present` writes this page's codes then).
   - `recordPlacement(object, blob?)`, `recordVisit(entry)` -
     fire-and-forget, in the id's queue; before the namespace opens they are
     written when it does (`present` writes the document's live work with
@@ -208,11 +212,20 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   are gone while the meta still rejects it, and an edit of it was hidden at
   the next read and swept - deleted for good; a deletion came back at the
   next Finish (found building M6 E2c, its milestone review #3).
-- **A meta written before the offer is answered keeps the stored draft's
-  codes** (M6 E2c review #3): `level` falls back to the draft's, and its
-  `levels` are re-stated beside the page's (a live code with the same id
-  wins), until Restore makes them the page's or "Delete it" rejects them;
-  "Not now" keeps them. A spent draft re-states nothing.
+- **A write of the codes before the offer is answered keeps the stored
+  draft's codes** (M6 E2c review #3, a codes record since plan M3b): the
+  open reads the codes record first, in the codes queue, into its holder;
+  every later write of the codes runs after that read and re-states them
+  as they stand when it runs - `level` falls back to the draft's, its
+  `levels` after the page's (a live code with the same id wins) - until
+  Restore makes them the page's or a rejection of the draft LANDS; "Not
+  now" keeps them. "Delete it" queues, at the tap, a write of this page's
+  codes that waits for the meta's commit: a commit that is refused writes
+  nothing and keeps them (before M3b a refused discard forgot them, and
+  the next write dropped the draft's measured code); between the commit
+  and that write a reload offers the rejected codes again, the safe
+  direction. A spent draft re-states nothing: the codes are written
+  again, this page's only, once its commit landed.
 - **Work done before the draft opened is written after the read, ALL of
   it** (M4 review #2): an edit or a deletion keeps its id, so the draft
   may hold an older change of the same id, and writing only ids the draft
@@ -340,6 +353,12 @@ phone reads its STATION POSES and its CREATED STATIONS back:
   reload of the tour until a discard.
 
 ## Tests
+
+The codes record (plan M3b), through `wireCreatorSetup`: the
+characterization tests of the waiting draft's codes and the spent rule,
+moved from the meta to the codes record rule for rule, and a "Delete it"
+whose commit is refused keeping the draft's codes (checked to fail with
+them forgotten at the tap).
 
 Composed, through `wireCreatorSetup` and unchanged by the split:
 `creator-setup.test.ts` (the offer, its three answers after a Finish too,

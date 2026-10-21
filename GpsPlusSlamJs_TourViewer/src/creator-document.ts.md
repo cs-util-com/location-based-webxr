@@ -90,8 +90,12 @@ what)` - a draft's work, already filtered by the page, with its
 generation, written, appliedDeletions, stationsAtStart })`,
   `saveEnded(generation, error?)`.
 - `follow(draft)` - the draft follows the document: `followDocument`
-  (`tour-document-draft.ts`) from a listener after each edit. Once per
-  page (a second call throws: two drafts would write everything twice).
+  (`tour-document-draft.ts`) from a listener after each edit, and after
+  each change of the codes the draft keeps (`isCodeChange`, plan M3b:
+  never a tour's close, which empties the book and would wipe the closed
+  tour's codes), with the hand read from the store's `creatorCodes` when
+  it has one. Once per page (a second call throws: two drafts would write
+  everything twice).
 - `stationPlacements()` - the AR anchors of the stations an object with
   an AR placement started, by station id (`StationPlacement`: the
   placement and the `item` it was started for), only stations the
@@ -183,6 +187,7 @@ else void placed.backedUp.then((ok) => ok || draft.warnNoBackup());
   batch (its staged reads, the store untouched until the commit, one step,
   one commit only, no step for nothing, the anchor of a station a move in
   it started - the last two checked to fail with the commit's guard and
-  its anchoring turned off).
+  its anchoring turned off); the codes record followed, with the hand,
+  and not written at a tour's close.
 - The composed phone: `authoring-settle.test.ts`, `creator-setup.test.ts`,
   `creator-finish.test.ts`, `tour-document-parity.test.ts`.

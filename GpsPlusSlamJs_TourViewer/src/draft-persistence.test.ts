@@ -27,6 +27,7 @@ import {
   objectKey,
   visitKey,
   writeDraftVisit,
+  CODES_KEY,
   parseDraftObject,
   photoKey,
   readDraft,
@@ -37,6 +38,7 @@ import {
   writeDraftEdit,
   writeDraftDeletion,
   writeDraftLiveRecord,
+  writeDraftCodes,
   writeDraftMeta,
   writeDraftObject,
 } from "./draft-persistence.js";
@@ -108,7 +110,7 @@ function photo(
   };
 }
 
-const META = { tourUrl: "https://h/t.zip", sizeM: 0.16, level: null };
+const META = { tourUrl: "https://h/t.zip", sizeM: 0.16 };
 
 describe("readDraft", () => {
   it("round-trips the meta and every placed object", async () => {
@@ -251,7 +253,8 @@ describe("the meta's own validation", () => {
       { id: "", json: "{}" },
     ]) {
       const store = memoryStore();
-      store.files.set("meta", JSON.stringify({ ...META, level }));
+      store.files.set("meta", JSON.stringify(META));
+      store.files.set(CODES_KEY, JSON.stringify({ level }));
       await writeDraftObject(store, pin("a"));
       const read = await readDraft(store);
       expect(read, JSON.stringify(level)).toBeDefined();
@@ -262,9 +265,10 @@ describe("the meta's own validation", () => {
 
   it("accepts the two shapes a level really has", async () => {
     const withLevel = memoryStore();
-    await writeDraftMeta(withLevel, {
-      ...META,
+    await writeDraftMeta(withLevel, META);
+    await writeDraftCodes(withLevel, {
       level: { id: "abc", json: "{}" },
+      levels: [],
     });
     expect((await readDraft(withLevel))?.draft.level).toEqual({
       id: "abc",
@@ -302,16 +306,17 @@ describe("a meta written before the code book (one level) stays readable (code b
   });
 });
 
-describe("several codes in the meta (code book plan M4c-1)", () => {
+describe("several codes in the draft (code book plan M4c-1)", () => {
   // Why these tests matter: a meta held ONE level, so a crash after a
   // Finish but before its upload lost every other code measured on the
-  // page. `levels` keeps them all; `level` (the code in hand) is still
-  // written, so an older build reading the draft keeps its one code.
-  it("keeps every code, and the code in hand as the legacy level", async () => {
+  // page. `levels` keeps them all, and `level` the code in hand. Kept in
+  // the draft's codes record since plan M3b (`CODES_KEY`).
+  it("keeps every code, and the code in hand", async () => {
     const store = memoryStore();
     const a = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
     const b = { id: "bbbbbbbbbbb2", json: '{"b":1}' };
-    await writeDraftMeta(store, { ...META, level: b, levels: [a, b] });
+    await writeDraftMeta(store, META);
+    await writeDraftCodes(store, { level: b, levels: [a, b] });
     const read = await readDraft(store);
     expect(read?.draft.level).toEqual(b);
     expect(read?.draft.levels).toEqual([a, b]);
@@ -320,10 +325,10 @@ describe("several codes in the meta (code book plan M4c-1)", () => {
   it("drops a code that does not read and keeps the others", async () => {
     const store = memoryStore();
     const a = { id: "aaaaaaaaaaa1", json: "{}" };
+    store.files.set("meta", JSON.stringify(META));
     store.files.set(
-      "meta",
+      CODES_KEY,
       JSON.stringify({
-        ...META,
         level: null,
         levels: [a, { id: "../escape", json: "{}" }, { id: 5 }, 7],
       }),

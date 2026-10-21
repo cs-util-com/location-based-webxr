@@ -249,7 +249,7 @@ export function wireCreatorSettle(deps: {
   seams: Pick<TourViewerSeams, "getScene">;
   previews: Pick<CreatorPreviews, "inVisit" | "placeEarlier" | "sync">;
   alignmentPicks: Pick<CreatorAlignmentPicks, "sync" | "picks" | "gpsExtent">;
-  draft: Pick<CreatorDraft, "saveMeta" | "warnNoBackup" | "recordVisit">;
+  draft: Pick<CreatorDraft, "warnNoBackup" | "recordVisit">;
   /** The codes: in hand, its measurement and sightings, every stored
    *  pose, the visit's stored-code sightings. */
   codes: Pick<
@@ -1058,7 +1058,6 @@ export function wireCreatorSettle(deps: {
     noteUnlanded(
       deps.codes.applySettle(batch, settledLevels, "the settle of this visit"),
     );
-    if (settledLevels.length > 0) void deps.draft.saveMeta();
     if (movedWithCodes) deps.previews.sync();
     logSettle(
       visit,
@@ -1162,7 +1161,6 @@ export function wireCreatorSettle(deps: {
             ),
           ),
         });
-        void deps.draft.saveMeta();
       }
       spotDecisions.set(code.id, { visit, result });
       recordSpots(out, visit, code.id, result, false);

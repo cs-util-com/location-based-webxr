@@ -33,6 +33,7 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import {
+  CODES_KEY,
   deletedKey,
   META_KEY,
   objectKey,
@@ -167,22 +168,30 @@ function memoryStore(
   files: Map<string, unknown>;
   putKeys: string[];
   metaPuts: string[];
+  /** Every codes record written (`CODES_KEY`), in order. */
+  codesPuts: string[];
   releaseHeldPut: () => void;
   releaseHeldKeys: () => void;
 } {
   const files = new Map<string, unknown>(Object.entries(seed));
   const putKeys: string[] = [];
   const metaPuts: string[] = [];
+  const codesPuts: string[] = [];
   let held: (() => void) | null = null;
   let released = false;
   const heldByKey: (() => void)[] = [];
   let refusedRemoves = 0;
   const refuses =
     options.failKeys ?? ((): boolean => options.putFails === true);
+  const recordPut = (key: string, data: unknown): void => {
+    putKeys.push(key);
+    if (typeof data !== "string") return;
+    if (key === META_KEY) metaPuts.push(data);
+    if (key === CODES_KEY) codesPuts.push(data);
+  };
   const store: DraftFileStore = {
     put: (key: string, data: unknown) => {
-      putKeys.push(key);
-      if (key === META_KEY && typeof data === "string") metaPuts.push(data);
+      recordPut(key, data);
       // A store that REFUSES, as the real one does on a quota wall or a
       // revoked directory handle: `put` reports false rather than throwing.
       if (refuses(key)) return Promise.resolve(false);
@@ -238,6 +247,7 @@ function memoryStore(
     files,
     putKeys,
     metaPuts,
+    codesPuts,
     releaseHeldPut: () => {
       released = true;
       held?.();
@@ -1216,8 +1226,8 @@ describe("work made before the tour's draft opened reaches it", () => {
   it("records a level measured before the open, even beside an older draft", async () => {
     // The offer branch wrote no meta: an older draft waiting to be restored
     // left this session's measurement only in memory.
-    const { store, metaPuts } = memoryStore({
-      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+    const { store, codesPuts } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
       [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
     });
     const { dom, setup } = wire(store, { placeable: true });
@@ -1225,7 +1235,7 @@ describe("work made before the tour's draft opened reaches it", () => {
     setup.presentDraftForTour(TOUR);
     await settle();
     expect(dom.draftOffer.hidden, "the older draft is offered").toBe(false);
-    const last = JSON.parse(String(metaPuts.at(-1))) as {
+    const last = JSON.parse(String(codesPuts.at(-1))) as {
       level: { id: string } | null;
     };
     expect(last.level?.id).toBe("fresh");
@@ -1236,11 +1246,8 @@ describe("work made before the tour's draft opened reaches it", () => {
   // about a code the creator did not get back.
   it("Restore beside a code measured here does not claim the draft's position came back", async () => {
     const { store } = memoryStore({
-      [META_KEY]: JSON.stringify({
-        tourUrl: TOUR,
-        sizeM: 0.16,
-        level: { id: "old", json: "{}" },
-      }),
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: { id: "old", json: "{}" } }),
     });
     const { ctx, dom, setup } = wire(store);
     setup.codes.setInHand({ id: "fresh", json: "{}" }, null);
@@ -1850,28 +1857,24 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   // write before the offer is answered wrote only this page's codes - so
   // the offered draft's measured code was gone from disk, and a reload
   // offered the objects without it (Finish refused until the creator
-  // walked back to the poster).
-  it("keeps the offered draft's code in a meta written before the offer is answered", async () => {
+  // walked back to the poster). The codes live in the draft's codes record
+  // now (plan M3b); the rule is the same: a write before the offer is
+  // answered keeps the offered draft's code on disk.
+  it("keeps the offered draft's code on disk through a write made before the offer is answered", async () => {
     const level = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
     const { store, files } = memoryStore({
       ...DISCARDED_ON_DISK,
-      [META_KEY]: JSON.stringify({
-        tourUrl: TOUR,
-        sizeM: 0.16,
-        level,
-        levels: [level],
-        rejected: ["hosted"],
-      }),
+      [CODES_KEY]: JSON.stringify({ level, levels: [level] }),
     });
     const second = await reopen(store);
     second.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
     await settle();
-    const meta = JSON.parse(String(files.get(META_KEY))) as {
+    const codes = JSON.parse(String(files.get(CODES_KEY))) as {
       level: unknown;
       levels: unknown;
     };
-    expect(meta.level).toEqual(level);
-    expect(meta.levels).toEqual([level]);
+    expect(codes.level).toEqual(level);
+    expect(codes.levels).toEqual([level]);
     const third = await reopen(store);
     third.dom.draftRestore.click();
     expect(third.setup.codes.inHand()).toEqual(level);
@@ -1984,12 +1987,8 @@ describe("the print step hears codes a draft restores (follow-up F16)", () => {
   it("tells the page when a restored draft brings codes back", async () => {
     const a = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
     const { store } = memoryStore({
-      [META_KEY]: JSON.stringify({
-        tourUrl: TOUR,
-        sizeM: 0.16,
-        level: a,
-        levels: [a],
-      }),
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: a, levels: [a] }),
     });
     let heard = 0;
     const { dom, setup } = wire(store, {
@@ -2011,17 +2010,13 @@ describe("a draft with several codes (code book plan M4c-1)", () => {
   // Why this test matters: a draft kept ONE level, the code in hand, so a
   // crash after measuring a second code lost the first one's measurement.
   // A restored draft's codes all go back into the code book, and the next
-  // meta write keeps them all.
-  it("restores every code a draft kept, and the next meta write keeps them", async () => {
+  // write of the draft's codes keeps them all.
+  it("restores every code a draft kept, and the next write of its codes keeps them", async () => {
     const a = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
     const b = { id: "bbbbbbbbbbb2", json: '{"b":1}' };
-    const { store, files } = memoryStore({
-      [META_KEY]: JSON.stringify({
-        tourUrl: TOUR,
-        sizeM: 0.16,
-        level: b,
-        levels: [a, b],
-      }),
+    const { store, codesPuts } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: b, levels: [a, b] }),
     });
     const { dom, setup } = wire(store);
     setup.presentDraftForTour(TOUR);
@@ -2030,87 +2025,124 @@ describe("a draft with several codes (code book plan M4c-1)", () => {
     dom.draftRestore.click();
     await settle();
     expect(setup.codes.inHand()).toEqual(b);
-    // The tour opened again: with a code in hand its meta is re-stated.
+    // The tour opened again: with a code in hand its codes are re-stated.
     setup.presentDraftForTour(TOUR);
     await settle();
-    const meta = JSON.parse(String(files.get(META_KEY))) as {
+    // The last write, not the file: the file was seeded with them.
+    const codes = JSON.parse(String(codesPuts.at(-1))) as {
       level: unknown;
       levels: unknown;
     };
-    expect(meta.level).toEqual(b);
-    expect(meta.levels).toEqual([a, b]);
+    expect(codes.level).toEqual(b);
+    expect(codes.levels).toEqual([a, b]);
   });
 });
 
 describe("the waiting draft's codes and the spent rule (characterization, codes-in-store plan M3a)", () => {
   // Why these tests matter: plan 2026-10-20-1159 M3a moves the codes into
   // the store and names this state as the draft's, not the code book's:
-  // the stored draft's codes while nobody answered its offer
-  // (`storedCodes`/`withStoredCodes`, creator-draft.ts:331-340, :606-611,
-  // :632-638) and the spent rule's reads of the hosted codes
-  // (creator-draft.ts:1050-1094). Green against today's code, so the move
-  // cannot change them silently. A wrong turn in either loses a measured
-  // poster from disk, or keeps a spent draft offered forever.
+  // the stored draft's codes while nobody answered its offer (the open's
+  // holder in creator-draft.ts) and the spent rule's reads of the hosted
+  // codes. Pinned against the code before the move, and kept through it:
+  // M3b moved the codes from the meta into the draft's codes record
+  // (`CODES_KEY`), so only where they are seeded and read changed. A
+  // wrong turn in either loses a measured poster from disk, or keeps a
+  // spent draft offered forever.
   const HOSTED = pin("hosted");
   const PUBLISHED = tourOf([HOSTED]);
   const a = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
   const b = { id: "bbbbbbbbbbb2", json: '{"b":1}' };
   const lastMeta = (metaPuts: readonly string[]) =>
     JSON.parse(String(metaPuts.at(-1))) as {
-      level: unknown;
-      levels: unknown;
       rejected: readonly string[];
     };
+  const lastCodes = (codesPuts: readonly string[]) =>
+    JSON.parse(String(codesPuts.at(-1))) as {
+      level: unknown;
+      levels: unknown;
+    };
 
-  // Why: every meta write re-states the waiting draft's codes AFTER this
-  // page's, and a code this page holds under the same id is newer and
-  // wins (creator-draft.ts:606-611, :632-638). "Delete it" rejects them
-  // with the draft (:765): the meta it commits names this page's codes
-  // only, so the rejected measurement is not offered again.
+  // Why: every write of the codes re-states the waiting draft's codes
+  // AFTER this page's, and a code this page holds under the same id is
+  // newer and wins. "Delete it" rejects them with the draft: the meta it
+  // commits rejects the draft's ids, and the codes written after it name
+  // this page's codes only, so the rejected measurement is not offered
+  // again.
   it("re-states the waiting draft's codes after this page's, the page's winning, until Delete it rejects them", async () => {
-    const { store, metaPuts } = memoryStore({
-      [META_KEY]: JSON.stringify({
-        tourUrl: TOUR,
-        sizeM: 0.16,
-        level: a,
-        levels: [a, b],
-      }),
+    const { store, metaPuts, codesPuts } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: a, levels: [a, b] }),
       [objectKey("placed")]: JSON.stringify(pin("placed")),
     });
     const { dom, setup } = wire(store);
     const liveA = { id: a.id, json: '{"a":"live"}' };
-    // Taken before the open: a meta write follows the read (:1142).
+    // Taken before the open: a write of the codes follows the read.
     setup.codes.setInHand(liveA, null);
     setup.presentDraftForTour(TOUR);
     await settle();
     expect(dom.draftOffer.hidden, "the draft is offered").toBe(false);
-    const offered = lastMeta(metaPuts);
+    const offered = lastCodes(codesPuts);
     expect(offered.level, "the hand outranks the stored level").toEqual(liveA);
     expect(offered.levels).toEqual([liveA, b]);
 
     dom.draftDiscard.click();
     await settle();
-    const discarded = lastMeta(metaPuts);
+    const discarded = lastCodes(codesPuts);
     expect(discarded.level).toEqual(liveA);
     expect(discarded.levels, "the rejected draft's code b is gone").toEqual([
       liveA,
     ]);
-    expect(discarded.rejected).toEqual(["placed"]);
+    expect(lastMeta(metaPuts).rejected).toEqual(["placed"]);
   });
 
-  // Why: "Not now" is not "Delete it" (creator-draft.ts:746-751 leaves
-  // `storedCodes`): the draft is offered again at the next open, so a
-  // meta written meanwhile - here a claim of an id the disk rejects -
-  // must still carry its measured code.
+  // Why (plan M3b): the codes of a rejected draft go only once its
+  // rejection LANDED - the meta is the commit point. A "Delete it" whose
+  // commit is refused leaves the draft on disk, offered again, so its
+  // codes stay on disk and a later write of the codes still re-states
+  // them; before, the refused discard had forgotten them, and the next
+  // write dropped the draft's measured code.
+  it("keeps the waiting draft's codes when Delete it does not land", async () => {
+    let refuseMeta = false;
+    const { store, files, codesPuts } = memoryStore(
+      {
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+        [CODES_KEY]: JSON.stringify({ level: a, levels: [a, b] }),
+        [objectKey("placed")]: JSON.stringify(pin("placed")),
+      },
+      { failKeys: (key) => refuseMeta && key === META_KEY },
+    );
+    const { dom, setup } = wire(store);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden, "the draft is offered").toBe(false);
+    refuseMeta = true;
+    dom.draftDiscard.click();
+    await settle();
+    expect(codesPuts, "nothing written over the draft's codes").toEqual([]);
+    expect(JSON.parse(String(files.get(CODES_KEY)))).toEqual({
+      level: a,
+      levels: [a, b],
+    });
+    const liveC = { id: "ccccccccccc3", json: '{"c":1}' };
+    setup.codes.setInHand(liveC, null);
+    await settle();
+    expect(lastCodes(codesPuts)).toEqual({
+      level: liveC,
+      levels: [liveC, a, b],
+    });
+  });
+
+  // Why: "Not now" is not "Delete it": the draft is offered again at the
+  // next open, so a write made meanwhile - here a claim of an id the disk
+  // rejects - must leave its measured code on disk.
   it("keeps re-stating them after Not now", async () => {
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({
         tourUrl: TOUR,
         sizeM: 0.16,
-        level: a,
-        levels: [a],
         rejected: ["hosted"],
       }),
+      [CODES_KEY]: JSON.stringify({ level: a, levels: [a] }),
       [objectKey("placed")]: JSON.stringify(pin("placed")),
     });
     const page = wire(store);
@@ -2122,12 +2154,14 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
     page.dom.objectList.listHandlers!.editText("hosted", "a new text");
     await settle();
     const meta = JSON.parse(String(files.get(META_KEY))) as {
-      level: unknown;
-      levels: unknown;
       rejected: readonly string[];
     };
-    expect(meta.level).toEqual(a);
-    expect(meta.levels).toEqual([a]);
+    const codes = JSON.parse(String(files.get(CODES_KEY))) as {
+      level: unknown;
+      levels: unknown;
+    };
+    expect(codes.level).toEqual(a);
+    expect(codes.levels).toEqual([a]);
     expect(meta.rejected, "the claim took the id back").not.toContain("hosted");
   });
 
@@ -2144,18 +2178,14 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
   }
 
   // Why: the spent rule reads, per draft code, what the HOSTED zip stores
-  // - its content, not the presence of the id (creator-draft.ts:120-148,
-  // :1050-1058). A draft whose objects and code the zip holds as they are
-  // is spent: its ids are rejected at the commit point and none of its
-  // codes is re-stated (:1091-1094), so the next open offers nothing.
+  // - its content, not the presence of the id (`hostedLevelJson`). A
+  // draft whose objects and code the zip holds as they are is spent: its
+  // ids are rejected at the commit point and none of its codes is
+  // re-stated, so the next open offers nothing.
   it("treats a draft whose code the hosted zip holds as it is as spent, rejecting its ids and re-stating none of its codes", async () => {
-    const { store, files, metaPuts } = memoryStore({
-      [META_KEY]: JSON.stringify({
-        tourUrl: TOUR,
-        sizeM: 0.16,
-        level: a,
-        levels: [a],
-      }),
+    const { store, files, metaPuts, codesPuts } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: a, levels: [a] }),
       [objectKey("hosted")]: JSON.stringify(HOSTED),
     });
     const { ctx, dom, setup } = wire(store);
@@ -2165,18 +2195,18 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
     setup.presentDraftForTour(TOUR);
     await settle();
     expect(dom.draftOffer.hidden, "a spent draft is never offered").toBe(true);
-    const meta = lastMeta(metaPuts);
-    expect(meta.rejected).toEqual(["hosted"]);
-    expect(meta.level).toBeNull();
-    expect(meta.levels).toEqual([]);
+    expect(lastMeta(metaPuts).rejected).toEqual(["hosted"]);
+    const codes = lastCodes(codesPuts);
+    expect(codes.level).toBeNull();
+    expect(codes.levels).toEqual([]);
     expect(files.has(objectKey("hosted"))).toBe(false);
   });
 
   // Why: anything short of the same content is not proof the code reached
   // the file visitors get - a re-measure keeps its id (the id hashes the
   // printed text), and an unreadable entry proves nothing (the safe
-  // direction is to KEEP the draft, creator-draft.ts:139-146). Each case
-  // offers the draft, with its code, and deletes nothing.
+  // direction is to KEEP the draft, `hostedLevelJson`). Each case offers
+  // the draft, with its code, and deletes nothing.
   it.each([
     [
       "holds another text for it",
@@ -2191,12 +2221,8 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
     "keeps and offers a draft when the hosted zip %s",
     async (_case, session) => {
       const { store, files, metaPuts } = memoryStore({
-        [META_KEY]: JSON.stringify({
-          tourUrl: TOUR,
-          sizeM: 0.16,
-          level: a,
-          levels: [a],
-        }),
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+        [CODES_KEY]: JSON.stringify({ level: a, levels: [a] }),
         [objectKey("hosted")]: JSON.stringify(HOSTED),
       });
       const { ctx, dom, setup } = wire(store);

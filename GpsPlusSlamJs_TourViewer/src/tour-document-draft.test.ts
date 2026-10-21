@@ -461,3 +461,70 @@ describe("followDocument, the stations this page created", () => {
     ).toEqual({ needsNoGps: false });
   });
 });
+
+describe("followDocument, the codes record (plan M3b)", () => {
+  // Why these tests matter: the draft's codes moved out of the phone's meta
+  // into a record the document's listener writes. It must follow every
+  // change of the codes the draft keeps - the code in hand and the codes
+  // the hosted zip does not hold - and only those, and a page that keeps
+  // no codes record (the desktop's) must get no codes write.
+  const a1 = { id: "a", json: "a-1" };
+  const a2 = { id: "a", json: "a-2" };
+  const codesOpened = reduce(
+    opened,
+    act.codeTaken({ level: a1, measurement: null }),
+  );
+
+  function codeWrites(
+    steps: readonly {
+      action: Parameters<typeof reduce>[1];
+      hand: { id: string; json: string } | null;
+    }[],
+    withCodes = true,
+  ): string[] {
+    const { draft, calls } = recordingDraft();
+    const tracked: TourDocumentDraft = withCodes
+      ? {
+          ...draft,
+          saveCodes: (codes) => {
+            calls.push(`saveCodes ${JSON.stringify(codes)}`);
+            return Promise.resolve(true);
+          },
+        }
+      : draft;
+    let state = codesOpened;
+    let hand: { id: string; json: string } | null = a1;
+    for (const step of steps) {
+      const next = reduce(state, step.action);
+      followDocument(tracked, state, next, () => undefined, {
+        before: hand,
+        after: step.hand,
+      });
+      state = next;
+      hand = step.hand;
+    }
+    return calls.filter((c) => c.startsWith("saveCodes"));
+  }
+
+  it("writes the record when a code's text or the hand changes, and nothing for the same codes", () => {
+    expect(
+      codeWrites([
+        { action: act.codeSaved({ level: a2, hand: a2 }), hand: a2 },
+        { action: act.codeSaved({ level: a2, hand: a2 }), hand: a2 },
+        { action: act.handReleased({ levelIds: ["a"] }), hand: null },
+      ]),
+    ).toEqual([
+      `saveCodes ${JSON.stringify({ level: a2, levels: [a2] })}`,
+      `saveCodes ${JSON.stringify({ level: null, levels: [a2] })}`,
+    ]);
+  });
+
+  it("writes no codes for a draft that keeps none", () => {
+    expect(
+      codeWrites(
+        [{ action: act.codeSaved({ level: a2, hand: a2 }), hand: a2 }],
+        false,
+      ),
+    ).toEqual([]);
+  });
+});

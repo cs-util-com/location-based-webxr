@@ -497,6 +497,30 @@ describe("the creator's document: the draft follows it", () => {
     expect(calls).toEqual(["save q +picture", "undelete q", "delete a"]);
   });
 
+  // Why this test matters (plan M3b): the draft's codes record follows the
+  // codes through the same listener, with the hand from the page's code
+  // state - but a tour's close empties the book, and a write then would
+  // wipe the closed tour's codes from its draft.
+  it("writes the codes record when the codes change, with the hand, and nothing at a tour's close", () => {
+    const store = createTourViewerStore();
+    const doc = createCreatorDocument(store);
+    const { draft, calls } = recordingDraft();
+    doc.follow({
+      ...draft,
+      saveCodes: (codes) => {
+        calls.push(`codes ${JSON.stringify(codes)}`);
+        return Promise.resolve(true);
+      },
+    });
+    doc.open(tourOf([]));
+    const level = { id: "c", json: "c-1" };
+    store.dispatch(tourDocumentActions.codeTaken({ level, measurement: null }));
+    store.dispatch(tourDocumentActions.codesForgotten());
+    expect(calls.filter((c) => c.startsWith("codes"))).toEqual([
+      `codes ${JSON.stringify({ level, levels: [level] })}`,
+    ]);
+  });
+
   it("reports a write that did not land to the change that caused it", async () => {
     const doc = fresh();
     const { draft } = recordingDraft((call) => !call.startsWith("delete"));

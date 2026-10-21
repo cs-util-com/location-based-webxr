@@ -307,6 +307,9 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   types `TourSaveStatus` and `TourSaveHolder` (the desktop page's save slot).
 - `isDocumentEdit(action)` - the actions a draft follows (not `saved`, not
   `opened`); `settleApplied` among them, as one edit.
+- `isCodeChange(action)` - the code actions that change what a draft's
+  codes record holds (the book's texts or the hand; plan M3b). Not
+  `codesForgotten`: a tour's close must not empty its draft's codes.
 - The rules the reducers keep, exported so a page asks first and says why
   in its own words (`editor-session.ts`'s refusals): `objectFits(state,
 object)` (within the format's `TOUR_ITEM_MAX_OFFSET_M` per axis of its

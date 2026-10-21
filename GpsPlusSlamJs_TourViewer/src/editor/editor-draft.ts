@@ -657,7 +657,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   }
 
   /** The meta `readDraft` reads: the editor has no code to measure, so a
-   *  default size and no level. Values captured now, written in order;
+   *  default size, and no codes. Values captured now, written in order;
    *  counted among `s`'s writes, so a close lets the hold go only after it
    *  landed - "Delete it"'s commit point among them (PR #622 bot finding
    *  B). */
@@ -666,7 +666,6 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     const meta = {
       tourUrl: s.fileKey,
       sizeM: AUTHOR_DEFAULT_SIZE_M,
-      level: null,
       rejected,
     };
     return inSpace(
