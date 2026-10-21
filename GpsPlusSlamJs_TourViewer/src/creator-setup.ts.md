@@ -97,12 +97,14 @@ were here. What stays is the Finish's side:
     - `newStationButton` (optional; owner decision D8 of `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`) -
       "New station here", `#setup-new-station` after "Take a photo";
       handled by `creator-placement.ts`; absent (node tests), no chip.
-    - `undoButton`, `undoLabel` (optional; owner decision W-D4) - the
+    - `undoButton`, `undoLabel` (optional; W4 build plan MU) - the
       strip's persistent Undo, `#setup-undo` first in `#setup-controls`,
       and its label; wired by `creator-undo.ts` (offers from the object
       editing's delete and the settle's automatic code change; rendered
-      with the readout, reset with the tour); absent (node tests), a
-      detached stand-in.
+      with the readout, reset with the tour; the last settle's offer is
+      withdrawn when a failed Finish forgets that settle, and its undo
+      says the next Finish saves it once a Finish wrote the change);
+      absent (node tests), a detached stand-in.
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not

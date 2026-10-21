@@ -44,7 +44,7 @@ draft writes and history. Wired by `creator-setup.ts`, drawn by
   optional `loadPicture` (a hosted photo's picture from the open file,
   kept at its delete so an Undo after a Finish can bring it back), `schedule`
   (the app's one-shot timer seam), `syncPreviews` and
-  `renderAuthorReadout`; the optional `offerUndo` (owner decision W-D4)
+  `renderAuthorReadout`; the optional `offerUndo` (W4 build plan MU)
   is handed each delete at once, as an `UndoOffer` named `delete <name>`
   whose run is the same `undoDelete` as the note's. No draft writes: the document's listener writes
   the draft (`creator-document.ts` `follow`), and each change's
@@ -98,13 +98,16 @@ draft writes and history. Wired by `creator-setup.ts`, drawn by
   both in the id's queue - an Undo cut short leaves the object deleted
   rather than half restored) and the log
   (`tourAuthoring/objectDeleteUndone`). **In AR the note shows no Undo of
-  its own** (owner decision W-D4): the strip's persistent Undo
+  its own** (W4 build plan MU): the strip's persistent Undo
   (`creator-undo.ts`), offered the same delete at once, is the one Undo
   there and outlives the hold; on the page the note's Undo stays. Both run
   `undoDelete` under the same revision rule, so they cannot take back two
   different things. Refused in words while a Finish
   writes (`canStep`) and for a photo whose picture this device no longer
   holds. "Restoring ..." then "Restored ..." or the not-backed-up wording.
+  A delete's own outcome ("Deleted ...") is said only while the delete
+  is still the document's last step: the strip's Undo may take it back
+  before its draft write lands, and its note must not be overwritten.
 - **An outcome is held against a selecting tap** (M4 review #6). In AR
   every tap on the scene is a select, which used to clear the note at once
   - before it could be read. A note now stands for `OUTCOME_HOLD_MS`

@@ -1,16 +1,16 @@
 /**
- * The persistent Undo of the creator's AR action strip (owner decision
- * W-D4, Q-J of the debug-captures plan): one chip that takes back the
- * tour document's last step when that step is one the page offered - a
- * delete, or a settle that changed a stored code automatically together
- * with the stations and objects it moved (plan M3b, Q-D: one step).
+ * The persistent Undo of the creator's AR action strip (W4 build plan
+ * MU): one chip that takes back the tour document's last step when that
+ * step is one the page offered - a delete, or a settle that changed a
+ * stored code automatically together with the stations and objects it
+ * moved (plan M3b, Q-D: one step).
  *
  * The callers OFFER a step right after taking it (`object-editing.ts` at
  * a delete, `creator-settle.ts` at a settle's commit); the offer stands
  * while the document stays where that step left it (the same open, the
- * same revision), because the document's undo takes back its LAST step.
- * Single level: a tap takes the offered step back and offers nothing
- * further.
+ * same revision, every code the step set still at that text), because the
+ * document's undo takes back its LAST step. Single level: a tap takes the
+ * offered step back and offers nothing further; a refused tap keeps it.
  *
  * @see creator-undo.ts.md
  */
@@ -19,8 +19,10 @@ import type { CreatorDocument } from "./creator-document.js";
 import { NOT_BACKED_UP } from "./object-editing.js";
 import type { SettleUndoneLog } from "./tour-authoring-actions.js";
 import {
+  codeSavedText,
   documentCodes,
   documentObjects,
+  nextStep,
   type TourDocumentState,
 } from "./tour-document.js";
 
@@ -49,10 +51,11 @@ export function undoChipText(target: string | null, busy: boolean): string {
 }
 
 /** How a settle changed one code's saved text: an automatic improvement
- *  (`replace`), an automatic move to the poster's new spot, or a move back
- *  to its earlier spot (the code-spot rule's undo); null for a code the
- *  settle only re-minted from this visit's own measurement. */
-export type SettleCodeChange = "improvement" | "move" | "move-back" | null;
+ *  (`replace`) or an automatic move to the poster's new spot; null for a
+ *  code the settle only re-minted from this visit's own measurement, or
+ *  re-applied after a failed Finish. (A code-spot move back is written
+ *  before the settle's step, so it is outside the history.) */
+export type SettleCodeChange = "improvement" | "move" | null;
 
 /**
  * What the strip's Undo names a settle's step by, from the codes whose
@@ -68,9 +71,7 @@ export function settleUndoTarget(
   if (!changes.some((c) => c !== null)) return null;
   if (changes.length === 1) {
     const [only] = changes;
-    if (only === "move") return "the code's move";
-    if (only === "move-back") return "the code's move back";
-    return "the code's improvement";
+    return only === "move" ? "the code's move" : "the code's improvement";
   }
   return `the ${String(changes.length)} codes' new positions`;
 }
@@ -114,15 +115,30 @@ function wentBack(
   };
 }
 
+/** What an undo of a settle says it put back: the codes it took back, or
+ *  - none of them (one changed since) - only the stations and objects. */
+function settleUndoneSentence(target: string, codes: number): string {
+  if (codes === 0) {
+    return `Undone: ${target} - the stations and objects it moved are back, but the code changed since and keeps its newer position.`;
+  }
+  return codes > 1
+    ? `Undone: ${target} - the codes and everything that moved with them are back where they were.`
+    : `Undone: ${target} - the code and everything that moved with it are back where they were.`;
+}
+
+/** Added when a Finish already wrote the change: the zip keeps it. */
+const SAVED_AT_NEXT_FINISH = "The next Finish saves this in the zip.";
+
 /**
- * The strip's tap on a settle's step (Q-D, W-D4): the document's undo,
+ * The strip's tap on a settle's step (Q-D, MU): the document's undo,
  * which takes back the codes' texts with the stations and objects the
  * settle moved in ONE step (the hand letting go of the codes it took back
  * is `creator-codes.ts`'s listener). Logged (`tourAuthoring/settleUndone`),
  * then `changed` brings the scene and the readout along, and `say` names
- * what was undone once its draft writes settled. Null when the document
- * refused (a Finish rebuilds) or had nothing to take back - said in words
- * for a refusal.
+ * what was undone once its draft writes settled - what actually went back,
+ * and that the next Finish saves it when a Finish already wrote the
+ * change. Null when the document refused (a Finish rebuilds) or had
+ * nothing to take back - said in words for a refusal.
  */
 export function undoSettle(deps: {
   readonly tour: Pick<CreatorDocument, "state" | "undo">;
@@ -130,6 +146,10 @@ export function undoSettle(deps: {
   readonly target: string;
   /** The visit the tap is made in. */
   readonly visit: number;
+  /** The visit whose settle took the step (its `settled` action's). */
+  readonly settledVisit: number;
+  /** A Finish wrote the tour since the settle: the zip has the change. */
+  written(): boolean;
   log(payload: SettleUndoneLog): void;
   changed(): void;
   say(text: string): void;
@@ -149,21 +169,18 @@ export function undoSettle(deps: {
   const back = wentBack(before, tour.state());
   deps.log({
     arVisitIndex: deps.visit,
+    settledVisitIndex: deps.settledVisit,
     atMs: Date.now(),
     what: target,
     ...back,
   });
   deps.changed();
-  const what =
-    back.levelIds.length > 1
-      ? "the codes and everything that moved with them are back where they were."
-      : "the code and everything that moved with it are back where they were.";
+  const written = deps.written();
   return undone.backedUp.then((ok) => {
-    deps.say(
-      ok
-        ? `Undone: ${target} - ${what}`
-        : `Undone: ${target}, but ${NOT_BACKED_UP}`,
-    );
+    const said = ok
+      ? settleUndoneSentence(target, back.levelIds.length)
+      : `Undone: ${target}, but ${NOT_BACKED_UP}`;
+    deps.say(written ? `${said} ${SAVED_AT_NEXT_FINISH}` : said);
     return ok;
   });
 }
@@ -186,6 +203,9 @@ export interface CreatorUndo {
   target(): string | null;
   /** Bring the chip in line (the readout's render calls it). */
   render(): void;
+  /** `offer` no longer stands (a failed Finish forgot its settle): it
+   *  goes, if it is the one offered; any other offer stays. */
+  withdraw(offer: UndoOffer): void;
   /** A tour closed: the offer goes. */
   reset(): void;
 }
@@ -209,11 +229,21 @@ export function wireCreatorUndo(deps: {
   /** A tap's draft writes are running. */
   let busy = false;
 
-  /** The offer, while the document stands where its step left it. */
+  /** The offer, while the document stands where its step left it: the
+   *  same open, the same revision, and every code the step set still at
+   *  that text - a code changes without a step of its own (the code-spot
+   *  rule's confirmation), and the document's undo then leaves it. */
   function current(): UndoOffer | null {
     if (offered === null) return null;
-    const { generation, revision } = tour.state();
-    if (offered.generation !== generation || offered.revision !== revision) {
+    const state = tour.state();
+    const codesMoved = (nextStep(state, "undo")?.codes ?? []).some(
+      (c) => codeSavedText(state, c.id) !== c.from,
+    );
+    if (
+      offered.generation !== state.generation ||
+      offered.revision !== state.revision ||
+      codesMoved
+    ) {
       offered = null;
       return null;
     }
@@ -234,6 +264,7 @@ export function wireCreatorUndo(deps: {
     if (busy || deps.locked()) return;
     // Checked again at the tap: a change that rendered nothing may have
     // landed since the chip was drawn.
+    const standing = offered;
     const offer = current();
     offered = null;
     if (offer === null) {
@@ -242,6 +273,8 @@ export function wireCreatorUndo(deps: {
     }
     const writes = offer.run();
     if (writes === null) {
+      // Refused (said in the note): the chip stays as it was.
+      offered = standing;
       render();
       return;
     }
@@ -263,6 +296,11 @@ export function wireCreatorUndo(deps: {
     },
     target: () => current()?.target ?? null,
     render,
+    withdraw(offer) {
+      if (offered?.offer !== offer) return;
+      offered = null;
+      render();
+    },
     reset() {
       offered = null;
       render();

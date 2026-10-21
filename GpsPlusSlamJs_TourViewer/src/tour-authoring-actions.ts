@@ -312,6 +312,9 @@ export const objectDeleteUndone = logAction<ObjectDeletedLog>()(
 export interface SettleUndoneLog {
   /** The visit the tap was made in (not the settle's own). */
   readonly arVisitIndex: number;
+  /** The visit whose settle took the step: its `settled` action's
+   *  `arVisitIndex`, which a replay pairs the undo with. */
+  readonly settledVisitIndex: number;
   readonly atMs: number;
   /** What the strip's Undo named ("the code's improvement"). */
   readonly what: string;
@@ -329,9 +332,9 @@ export interface SettleUndoneLog {
   }[];
 }
 
-/** A settle's step undone from the AR strip (owner decision W-D4, Q-J):
- *  what went back, so a replay that applied the `settled` action can take
- *  it back too. */
+/** A settle's step undone from the AR strip (the persistent Undo, W4
+ *  build plan MU): what went back, so a replay that applied the `settled`
+ *  action can take it back too. */
 export const settleUndone = logAction<SettleUndoneLog>()(
   "tourAuthoring/settleUndone",
 );

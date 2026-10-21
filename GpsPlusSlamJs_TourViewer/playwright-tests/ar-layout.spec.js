@@ -319,7 +319,7 @@ for (const viewport of [
     expect(photo.right).toBeLessThanOrEqual(viewport.width);
     expect(newStation.left).toBeGreaterThanOrEqual(0);
     expect(newStation.right).toBeLessThanOrEqual(viewport.width);
-    // The persistent Undo (W-D4): its own line, centred just above "New
+    // The persistent Undo (MU): its own line, centred just above "New
     // station here", there and dimmed while nothing can be taken back.
     await expect(page.getByTestId("setup-undo")).toBeDisabled();
     await expect(page.getByTestId("setup-undo")).toHaveText("Undo");
@@ -340,8 +340,9 @@ for (const viewport of [
             .map((b) => b.dataset.testid),
         ),
     ).toEqual(["setup-undo", "setup-new-station", "setup-pin", "setup-photo"]);
-    // The camera view between them is clear: nothing of the panel there.
-    expect(pin.top - card.bottom).toBeGreaterThan(viewport.height * 0.3);
+    // The camera view between them is clear: nothing of the panel there,
+    // measured from the topmost chip (the Undo, on its own line).
+    expect(undo.top - card.bottom).toBeGreaterThan(viewport.height * 0.3);
     // The technical line is ?debug=1's only.
     await expect(page.getByTestId("ar-status")).toBeHidden();
   });
@@ -354,7 +355,7 @@ for (const viewport of [
   { width: 390, height: 844 },
   { width: 320, height: 640 },
 ]) {
-  test(`the strip's Undo names a deleted pin's long text without overflowing a ${viewport.width}x${viewport.height} screen (W-D4)`, async ({
+  test(`the strip's Undo names a deleted pin's long text without overflowing a ${viewport.width}x${viewport.height} screen (MU)`, async ({
     page,
   }, testInfo) => {
     // Why: the persistent Undo says what it takes back, so its label is as

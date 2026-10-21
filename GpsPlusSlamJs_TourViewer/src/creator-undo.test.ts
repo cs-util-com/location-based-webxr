@@ -11,7 +11,7 @@ import {
 } from "./creator-undo.js";
 
 /**
- * Why these tests matter (owner decision W-D4, Q-J): the phone's one-step
+ * Why these tests matter (W4 build plan MU): the phone's one-step
  * undo of a settle (plan M3b, Q-D) had no button, and the delete's Undo
  * went away after 8 s. The strip's Undo is persistent, so the two things
  * that can go wrong are the ones pinned here: a button that offers a step
@@ -20,9 +20,19 @@ import {
  * does not say what the tap takes back.
  */
 
-/** The document as the tracker reads it: where it stands in its history. */
+/** The document as the tracker reads it: where it stands in its history,
+ *  its last step's codes and the code book they are checked against. */
 function fakeTour() {
-  const at = { generation: 1, revision: 0 };
+  const at = {
+    generation: 1,
+    revision: 0,
+    past: [] as {
+      what: string;
+      codes?: { id: string; from: string; to: string }[];
+    }[],
+    future: [] as unknown[],
+    codes: { book: [] as { levelId: string; saved: string }[] },
+  };
   return {
     at,
     tour: { state: () => at as never },
@@ -59,8 +69,11 @@ function wired(
   return { at, dom, undo };
 }
 
-/** An offer that counts its runs and settles as told. */
-function counted(target: string, result: Promise<boolean> | null = null) {
+/** An offer that counts its runs and settles as told (null: refused). */
+function counted(
+  target: string,
+  result: Promise<boolean> | null = Promise.resolve(true),
+) {
   const runs = { count: 0 };
   const offer: UndoOffer = {
     target,
@@ -76,7 +89,7 @@ async function flush(): Promise<void> {
   for (let i = 0; i < 10; i += 1) await Promise.resolve();
 }
 
-describe("the Undo chip's words (W-D4)", () => {
+describe("the Undo chip's words (MU)", () => {
   // Why: the label is the promise - it must say what the tap takes back,
   // and say only "Undo" while there is nothing.
   it("says what the tap takes back, and only Undo with nothing to take back", () => {
@@ -101,7 +114,6 @@ describe("the Undo chip's words (W-D4)", () => {
   it("names a settle's step by its automatic code change, and offers none without one", () => {
     expect(settleUndoTarget(["improvement"])).toBe("the code's improvement");
     expect(settleUndoTarget(["move"])).toBe("the code's move");
-    expect(settleUndoTarget(["move-back"])).toBe("the code's move back");
     expect(settleUndoTarget(["improvement", null])).toBe(
       "the 2 codes' new positions",
     );
@@ -114,7 +126,7 @@ describe("the Undo chip's words (W-D4)", () => {
   });
 });
 
-describe("the strip's Undo (W-D4)", () => {
+describe("the strip's Undo (MU)", () => {
   it("is disabled and says Undo before anything was offered", () => {
     const { dom, undo } = wired();
     undo.render();
@@ -150,14 +162,16 @@ describe("the strip's Undo (W-D4)", () => {
     expect(undo.target()).toBeNull();
   });
 
-  it("takes back exactly the last step offered, once", () => {
+  it("takes back exactly the last step offered, once", async () => {
     const { dom, undo } = wired();
     const first = counted('delete "Gate"');
     const last = counted('delete "Mill"');
     undo.offer(first.offer);
     undo.offer(last.offer);
     dom.tap();
+    await flush();
     dom.tap();
+    await flush();
     expect(first.runs.count).toBe(0);
     expect(last.runs.count).toBe(1);
     // Single level: the step before it is not offered by the tap.
@@ -199,17 +213,67 @@ describe("the strip's Undo (W-D4)", () => {
     }
   });
 
-  it("goes back to Undo when the writes reject, and when a run took nothing back", async () => {
+  it("goes back to Undo when the writes reject", async () => {
     const { dom, undo } = wired();
     undo.offer(counted('delete "Gate"', Promise.reject(new Error("x"))).offer);
     dom.tap();
     await flush();
     expect(dom.label.textContent).toBe("Undo");
-
-    undo.offer(counted('delete "Mill"', null).offer);
-    dom.tap();
-    expect(dom.label.textContent).toBe("Undo");
     expect(dom.button.disabled).toBe(true);
+  });
+
+  // Why: a run the document refused (a Finish rebuilds, a photo's picture
+  // is gone) took nothing back and said why in the note; the chip stays as
+  // it was, still offering the step, so the creator can try again.
+  it("keeps the offer when the document refused the run, and a later tap runs it again", () => {
+    const { dom, undo } = wired();
+    const refused = counted('delete "Mill"', null);
+    undo.offer(refused.offer);
+    dom.tap();
+    expect(refused.runs.count).toBe(1);
+    expect(dom.label.textContent).toBe('Undo: delete "Mill"');
+    expect(dom.button.disabled).toBe(false);
+    dom.tap();
+    expect(refused.runs.count).toBe(2);
+  });
+
+  // Why: a code changes without a step of its own (the code-spot rule's
+  // confirmation writes the book, no revision), and the document's undo
+  // leaves a code that no longer holds the text the step set. An offer
+  // whose step would take back none of the codes it names must go, or the
+  // tap restores nothing for the code and still says it did.
+  it("withdraws the offer once a code of the last step no longer holds the text the step set", () => {
+    const { at, dom, undo } = wired();
+    at.past = [
+      { what: "the settle", codes: [{ id: "L", from: "new", to: "old" }] },
+    ];
+    at.codes = { book: [{ levelId: "L", saved: "new" }] };
+    undo.offer(counted("the code's move").offer);
+    expect(dom.button.disabled).toBe(false);
+    at.codes = { book: [{ levelId: "L", saved: "newer" }] };
+    undo.render();
+    expect(dom.button.disabled).toBe(true);
+    expect(dom.label.textContent).toBe("Undo");
+    // Gone for good: the code coming back to the text is a new state.
+    at.codes = { book: [{ levelId: "L", saved: "new" }] };
+    undo.render();
+    expect(undo.target()).toBeNull();
+  });
+
+  // Why: a failed Finish forgets its visit's settle, which settles again
+  // at the visit's end; the settle's offer goes with it (creator-setup.ts),
+  // and only that offer - a later one stands.
+  it("withdraws an offer by name, and leaves a different standing offer alone", () => {
+    const { dom, undo } = wired();
+    const settle = counted("the code's move");
+    const later = counted('delete "Gate"');
+    undo.offer(settle.offer);
+    undo.offer(later.offer);
+    undo.withdraw(settle.offer);
+    expect(dom.label.textContent).toBe('Undo: delete "Gate"');
+    undo.withdraw(later.offer);
+    expect(dom.button.disabled).toBe(true);
+    expect(undo.target()).toBeNull();
   });
 
   it("an offer made while a tap's writes run is shown once they settle", async () => {
@@ -267,19 +331,21 @@ describe("the strip's Undo (W-D4)", () => {
   });
 
   // Why: the enablement rule as a property over any order of offers,
-  // document changes, opens and taps - the button is enabled exactly while
-  // the LAST offer still names the document's last step, and a tap runs
-  // that offer and nothing else.
-  it("is enabled exactly while the last offer names the document's last step, and a tap runs only that offer (property)", () => {
-    type Op = "offer" | "change" | "open" | "tap";
-    fc.assert(
-      fc.property(
-        fc.array(fc.constantFrom<Op>("offer", "change", "open", "tap"), {
-          maxLength: 30,
-        }),
-        (ops) => {
+  // document changes, opens, taps and refused taps - the button is enabled
+  // exactly while the LAST offer still names the document's last step, a
+  // tap runs that offer and nothing else, and a refused run keeps it.
+  it("is enabled exactly while the last offer names the document's last step, and a tap runs only that offer (property)", async () => {
+    type Op = "offer" | "change" | "open" | "tap" | "refused";
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(
+          fc.constantFrom<Op>("offer", "change", "open", "tap", "refused"),
+          { maxLength: 30 },
+        ),
+        async (ops) => {
           const { at, dom, undo } = wired();
           const runs: number[] = [];
+          let refusing = false;
           // The model: the runs a correct chip makes, and the offer that
           // still names the document's last step.
           const expectedRuns: number[] = [];
@@ -299,7 +365,7 @@ describe("the strip's Undo (W-D4)", () => {
                 target: `step ${String(id)}`,
                 run: () => {
                   runs.push(id);
-                  return null;
+                  return refusing ? null : Promise.resolve(true);
                 },
               });
               model = { id, gen: at.generation, rev: at.revision };
@@ -312,8 +378,11 @@ describe("the strip's Undo (W-D4)", () => {
             } else {
               const tapped = live();
               if (tapped !== null) expectedRuns.push(tapped.id);
+              refusing = op === "refused";
               dom.tap();
-              model = null;
+              refusing = false;
+              await flush();
+              model = op === "refused" ? tapped : null;
             }
             const standing = live();
             expect(runs).toEqual(expectedRuns);

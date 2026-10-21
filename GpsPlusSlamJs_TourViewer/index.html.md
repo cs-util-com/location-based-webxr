@@ -172,7 +172,7 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   decided by the settle: the measure button, the explicit replace and its
   confirm are gone, UI round 1, U3, and the move question since code book
   plan M6), first the strip's persistent Undo `setup-undo` (its label
-  `setup-undo-label`, owner decision W-D4, `creator-undo.ts`), then the
+  `setup-undo-label`, W4 build plan MU, `creator-undo.ts`), then the
   placement controls `setup-pin` / `pin-label` / `pin-save` /
   `pin-cancel` / `setup-photo`; then `setup-finish`, and LAST, outside
   the controls because it works on the page too, the object list

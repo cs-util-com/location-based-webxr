@@ -83,7 +83,7 @@ export interface ObjectEditingDeps {
   /** The panel should re-read state (placement count, Finish). */
   readonly renderAuthorReadout: () => void;
   /** A delete was just taken: the AR strip's persistent Undo offers it
-   *  (owner decision W-D4, `creator-undo.ts`). Absent: only the note's
+   *  (W4 build plan MU, `creator-undo.ts`). Absent: only the note's
    *  Undo offers it. */
   readonly offerUndo?: (offer: UndoOffer) => void;
 }
@@ -196,7 +196,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
         busy,
         locked: ctx.finishing,
         note,
-        // In AR the strip's persistent Undo is the one Undo (W-D4): the
+        // In AR the strip's persistent Undo is the one Undo (MU): the
         // note says what happened, the strip takes it back.
         undo: undoable !== null && !ctx.finishing && !deps.sessionLive(),
       }),
@@ -441,6 +441,11 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     // tombstone for an object the file carries, the record gone for one
     // only this device had - as the desktop editor's.
     void gone.backedUp.then((ok) => {
+      // Said only while the delete is still the last step: the strip's
+      // Undo may have taken it back before its write landed, and its
+      // "Restoring ..." must not be overwritten by "Deleted ...".
+      const now = tour.state();
+      if (now.generation !== generation || now.revision !== revision) return;
       // Undo is offered with the outcome either way: a delete the draft
       // did not record is still a delete in memory, and the next Finish.
       say(

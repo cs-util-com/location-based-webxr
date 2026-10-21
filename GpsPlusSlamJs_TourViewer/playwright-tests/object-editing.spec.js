@@ -306,10 +306,10 @@ test("Delete offers Undo beside its outcome, which brings a hosted pin back; the
 test("in AR a delete is taken back by the strip's persistent Undo, which names it and outlives the note's hold", async ({
   page,
 }) => {
-  // Owner decision W-D4 (Q-J): the phone's only Undo used to be the
-  // note's, for 8 s. In AR the strip's Undo is the one Undo: the note says
-  // what happened, the strip says what it will take back, and it stays
-  // until the document moves on.
+  // The persistent Undo (W4 build plan MU): the phone's only Undo used to
+  // be the note's, for 8 s. In AR the strip's Undo is the one Undo: the
+  // note says what happened, the strip says what it will take back, and it
+  // stays until the document moves on.
   await openTour(page);
   await enterArAndMeasure(page);
   const chip = page.getByTestId("setup-undo");

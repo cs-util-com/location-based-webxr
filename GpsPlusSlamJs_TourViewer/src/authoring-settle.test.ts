@@ -74,6 +74,7 @@ import { readPrintedText } from "./level-printed.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import { OUTCOME_HOLD_MS } from "./object-editing.js";
+import { undoSettle } from "./creator-undo.js";
 import { UPLOAD_ASK_LABELS } from "./creator-handoff.js";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 import {
@@ -2238,6 +2239,19 @@ describe(
       })!;
     }
 
+    /** A photo the hosted zip carries, by the zero. */
+    function hostedPhoto(id: string): TourObject {
+      return {
+        id,
+        kind: "photo",
+        image: `content/${id}.jpg`,
+        imageWidth: 4,
+        imageHeight: 3,
+        createdAtIso: "2026-09-29T10:00:00.000Z",
+        geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 400, rotation: [0, 0, 0, 1] },
+      };
+    }
+
     /** A creator in AR with a hosted tour open whose zip carries `objects`. */
     async function withHostedTour(
       objects: TourObject[],
@@ -2621,7 +2635,7 @@ describe(
       const { store, files } = memoryDraftStore();
       const a = await withHostedTour([hostedPin("h1", "Gate")], store);
       // On the page: in AR the strip's persistent Undo takes the note's
-      // place (owner decision W-D4), so the note's Undo is the page's.
+      // place (W4 build plan MU), so the note's Undo is the page's.
       a.endVisit();
       const list = a.dom.objectList;
       list.listHandlers!.remove("h1");
@@ -2682,7 +2696,7 @@ describe(
         hostedPin("h2", "Mill"),
       ]);
       // On the page: in AR the strip's persistent Undo takes the note's
-      // place (owner decision W-D4), so the note's Undo is the page's.
+      // place (W4 build plan MU), so the note's Undo is the page's.
       a.endVisit();
       const list = a.dom.objectList;
       list.listHandlers!.remove("h1");
@@ -2701,7 +2715,7 @@ describe(
       expect(list.lastModel?.undo).toBe(false);
     });
 
-    // Why these tests matter (owner decision W-D4, Q-J): in AR the strip's
+    // Why these tests matter (W4 build plan MU): in AR the strip's
     // Undo is the one Undo - persistent, where the note's went after its
     // hold - and it takes back exactly the delete it names, through the
     // same path as the note's (`undoDelete`: the list, the scene, the
@@ -2807,6 +2821,71 @@ describe(
       );
     });
 
+    // Why: the document refuses an undo that brings back a photo whose
+    // picture is not on this device (a Finish wrote the delete, and the
+    // picture was never read). Through the strip the note must say why,
+    // and the chip stays as it was - still offering the delete.
+    it("says why the strip's Undo cannot bring back a deleted photo whose picture is gone, and keeps offering it", async () => {
+      const a = await withHostedTour([hostedPhoto("f1")]);
+      // The picture is never read: the zip's entry does not load.
+      (
+        a.ctx.session as unknown as { loadContentEntry: () => Promise<Blob> }
+      ).loadContentEntry = () => Promise.reject(new Error("not cached"));
+      a.dom.objectList.listHandlers!.remove("f1");
+      await flush();
+      expect(a.dom.undoLabel.textContent).toBe("Undo: delete the photo");
+      // A Finish wrote the delete: the file no longer carries the photo.
+      const doc = a.ctx.tourDocument;
+      const generation = doc.saveStarted();
+      doc.saved({
+        generation,
+        written: tourOf([]),
+        appliedDeletions: ["f1"],
+        stationsAtStart: doc.state().stations,
+      });
+      doc.saveEnded(generation);
+      a.setup.renderAuthorReadout();
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.dom.objectList.lastModel?.note).toBe(
+        "the photo cannot come back: its picture is no longer on this device.",
+      );
+      expect(a.ctx.placedPreviews.has("f1"), "still deleted").toBe(false);
+      expect(a.dom.undoButton.disabled).toBe(false);
+      expect(a.dom.undoLabel.textContent).toBe("Undo: delete the photo");
+    });
+
+    // Why: the strip offers a delete at once, before its draft write
+    // landed. A tap then says "Restoring ..."; the delete's own outcome,
+    // arriving later, must not overwrite that with "Deleted ..." - the
+    // creator would read that the pin is gone when it is back.
+    it("does not let a delete's late outcome overwrite the strip's undo of it", async () => {
+      const slow = slowDraftStore();
+      const a = await withHostedTour([hostedPin("h1", "Gate")], slow.store);
+      await slow.release();
+      const list = a.dom.objectList;
+      // Every note the list is drawn with, in order.
+      const notes: string[] = [];
+      const draw = list.render.bind(list);
+      list.render = (model: ObjectListModel) => {
+        notes.push(model.note);
+        draw(model);
+      };
+      list.listHandlers!.remove("h1");
+      await flush();
+      expect(list.lastModel?.note).toBe('Deleting "Gate"…');
+      a.dom.undoButton.click();
+      await flush();
+      await slow.release();
+      expect(a.ctx.tourDocument.deleted()).toEqual([]);
+      const restoring = notes.indexOf('Restoring "Gate"…');
+      expect(restoring, "the undo said it runs").toBeGreaterThanOrEqual(0);
+      expect(
+        notes.slice(restoring).filter((n) => n.startsWith("Deleted")),
+      ).toEqual([]);
+      expect(list.lastModel?.note).toBe('Restored "Gate".');
+    });
+
     // Why: on the page there is no strip (the AR controls are the
     // session's), so the delete's outcome keeps its own Undo there.
     it("keeps the note's Undo beside a delete's outcome on the page", async () => {
@@ -2822,7 +2901,7 @@ describe(
     it(`withdraws Undo after ${String(OUTCOME_HOLD_MS)} ms, and an expired Undo restores nothing`, async () => {
       const a = await withHostedTour([hostedPin("h1", "Gate")]);
       // On the page: in AR the strip's persistent Undo takes the note's
-      // place (owner decision W-D4), so the note's Undo is the page's.
+      // place (W4 build plan MU), so the note's Undo is the page's.
       a.endVisit();
       const list = a.dom.objectList;
       list.listHandlers!.remove("h1");
@@ -3461,7 +3540,7 @@ describe(
       expect(a.codes.savedText(stored.id)).toBe(stored.json);
     });
 
-    // Why these tests matter (owner decision W-D4, Q-J): the one-step undo
+    // Why these tests matter (W4 build plan MU): the one-step undo
     // of a settle (Q-D) had no button. The settle lands at the visit's
     // end, so the strip offers it in the next visit, named by what it
     // takes back, and ONE tap takes back the code's improvement, the
@@ -3473,6 +3552,7 @@ describe(
         walkM: 30,
       });
       const station = stationOf(a, "near").geo;
+      const settledIn = a.ctx.arSessionGeneration;
       a.endVisit();
       expect(codePosition(a)?.decision).toEqual({ kind: "replace" });
       expect(a.codes.savedText(stored.id)).not.toBe(stored.json);
@@ -3493,8 +3573,8 @@ describe(
       expect(stationOf(a, "near").geo).toEqual(station);
       expect(pins()).toEqual(before);
       expect(a.codes.inHand(), "the hand lets go").toBeNull();
-      expect(a.dom.objectList.lastModel?.note).toMatch(
-        /^Undone: the code's improvement - /,
+      expect(a.dom.objectList.lastModel?.note).toBe(
+        "Undone: the code's improvement - the code and everything that moved with it are back where they were.",
       );
       expect(a.dom.undoButton.disabled).toBe(true);
       expect(a.dom.undoLabel.textContent).toBe("Undo");
@@ -3502,28 +3582,41 @@ describe(
         (x) => x.type === "tourAuthoring/settleUndone",
       );
       expect(log).toHaveLength(1);
-      expect(log[0]?.payload).toMatchObject({ levelIds: [stored.id] });
+      // A replay pairs the undo with the `settled` action it takes back:
+      // the visit that settled, beside the visit the tap was made in.
+      expect(settledIn).not.toBe(a.ctx.arSessionGeneration);
+      expect(log[0]?.payload).toMatchObject({
+        levelIds: [stored.id],
+        settledVisitIndex: settledIn,
+        arVisitIndex: a.ctx.arSessionGeneration,
+      });
     });
 
-    // Why (a defect the strip's Undo exposed, found while building it): the
-    // settle keeps what it decided per code for the Finish's result line,
-    // so after the creator took the improvement back the result still
-    // said "the code's saved position was improved by this walk" - a
-    // false statement about the zip they are about to publish.
+    // Why: the settle keeps what it decided per code for the Finish's
+    // result line, and an undo of the settle takes that with it - or after
+    // the creator took the improvement back the result would still say
+    // "the code's saved position was improved by this walk", a false
+    // statement about the zip they are about to publish.
     it("says nothing of the improvement on the Finish's result once the strip's Undo took it back", async () => {
-      const { a } = await secondVisit({ yawDeg: 20, northM: 3, walkM: 30 });
-      a.endVisit();
-      a.beginVisit();
-      a.setup.renderAuthorReadout();
-      a.dom.undoButton.click();
-      await flush();
-      a.endVisit();
-      await openFinishableTour(a);
-      a.ctx.tourManifestStatus = "settled";
-      a.dom.finishButton.click();
-      await finished(a.ctx);
-      expect(a.ctx.finishError).toBeNull();
-      expect(a.dom.finishStatus.textContent).not.toMatch(/improved/);
+      /** The Finish's result line after the settle, the undo tapped or not. */
+      const finishLine = async (tap: boolean) => {
+        const { a } = await secondVisit({ yawDeg: 20, northM: 3, walkM: 30 });
+        a.endVisit();
+        a.beginVisit();
+        a.setup.renderAuthorReadout();
+        if (tap) a.dom.undoButton.click();
+        await flush();
+        a.endVisit();
+        await openFinishableTour(a);
+        a.ctx.tourManifestStatus = "settled";
+        a.dom.finishButton.click();
+        await finished(a.ctx);
+        expect(a.ctx.finishError).toBeNull();
+        return a.dom.finishStatus.textContent;
+      };
+      // The control: without the tap the line does report it.
+      expect(await finishLine(false)).toMatch(/improved/);
+      expect(await finishLine(true)).not.toMatch(/improved/);
     });
 
     it("withdraws the settle's Undo once the creator places something after it", async () => {
@@ -5365,6 +5458,121 @@ describe(
       }
       expect(spotsOf(a).previous).toBeNull();
       expect(spotsOf(a).copies).toEqual([original]);
+    });
+
+    // Why (the strip's Undo): the confirmation writes the code book with
+    // no step of its own, so the document's last step is still the move.
+    // Its undo would take back the move's stations and objects but not the
+    // code, which no longer holds the text the move set - and say the code
+    // is back. The offer goes instead.
+    it("withdraws the strip's Undo of a move once a later visit's confirmation rewrote the code", async () => {
+      const { a, original } = await storedCode();
+      await visitSeeing(a, 30);
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoLabel.textContent).toBe("Undo: the code's move");
+      a.endVisit();
+      const sameDayMs = Date.now();
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        vi.setSystemTime(sameDayMs + 25 * 3_600_000);
+        await visitSeeing(a, 30);
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(spotsOf(a).copies, "confirmed").toEqual([original]);
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoButton.disabled).toBe(true);
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+    });
+
+    // Why: a Finish that already wrote the change into the zip keeps it
+    // there - the undo changes the tour on this device, until the next
+    // Finish saves it. The note says so, or the creator would think the
+    // saved zip is already back.
+    it("says the undo is saved at the next Finish when a Finish already wrote the change", async () => {
+      const a = authoring();
+      await openFinishableTour(a);
+      await a.mint();
+      a.endVisit();
+      await visitSeeing(a, 30);
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoLabel.textContent).toBe("Undo: the code's move");
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.dom.objectList.lastModel?.note).toBe(
+        "Undone: the code's move - the code and everything that moved with it are back where they were. The next Finish saves this in the zip.",
+      );
+    });
+
+    // Why: defensive wording - an undo of a settle that took back none of
+    // the codes it named (one changed between the chip's check and the
+    // document's undo) must not say the code is back.
+    it("says the code keeps its newer position when an undo of a settle took back none of its codes", async () => {
+      const { a } = await storedCode();
+      await visitSeeing(a, 30);
+      const level = a.codes.inHand()!;
+      a.codes.saveLevel({ id: level.id, json: `${level.json} ` });
+      const said: string[] = [];
+      await undoSettle({
+        tour: a.ctx.tourDocument,
+        target: "the code's move",
+        visit: a.ctx.arSessionGeneration,
+        settledVisit: a.ctx.arSessionGeneration,
+        written: () => false,
+        log: () => undefined,
+        changed: () => undefined,
+        say: (text) => said.push(text),
+      });
+      expect(said).toEqual([
+        "Undone: the code's move - the stations and objects it moved are back, but the code changed since and keeps its newer position.",
+      ]);
+    });
+
+    // Why: a failed Finish forgets its visit's settle, which settles again
+    // at the visit's end and re-applies the decisions it made. The first
+    // settle's offer must go with the unsettle (its records are re-applied,
+    // not taken back), and the re-settle is no new automatic change to
+    // offer - an Undo of it would drop the first settle's line while the
+    // change stays in the document.
+    it("withdraws a settle's Undo when a failed Finish unsettles it, and offers none for the re-settle", async () => {
+      const { store } = memoryDraftStore();
+      const a = authoring({ store });
+      await openFinishableTour(a);
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      await a.mint();
+      a.endVisit();
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [30, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      walkThrough(a, 30);
+      (
+        a.ctx.session as unknown as { readWholeArchive: () => Promise<Blob> }
+      ).readWholeArchive = () => Promise.reject(new Error("offline"));
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).not.toBeNull();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoButton.disabled, "withdrawn with the unsettle").toBe(
+        true,
+      );
+      a.endVisit();
+      await flush();
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoButton.disabled, "no offer for the re-settle").toBe(
+        true,
+      );
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
     });
 
     // Why (M6 milestone review #4; D19, §7j #12): a real move leaves the

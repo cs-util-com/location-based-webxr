@@ -60,7 +60,7 @@ import { wireCreatorSettle } from "./creator-settle.js";
 import { wireCreatorFinish } from "./creator-finish.js";
 import { reticleNueOf, wireCreatorStations } from "./creator-stations.js";
 import { undoSettle, wireCreatorUndo } from "./creator-undo.js";
-import type { CreatorUndoDom } from "./creator-undo.js";
+import type { CreatorUndoDom, UndoOffer } from "./creator-undo.js";
 import { settleUndone } from "./tour-authoring-actions.js";
 import { visitorPosition } from "./visitor-position.js";
 
@@ -178,7 +178,7 @@ export interface CreatorSetupDom {
    *  `creator-placement.ts`). Absent in the node tests that do not need
    *  it. */
   newStationButton?: NonNullable<CreatorPlacementDom["newStationButton"]>;
-  /** The strip's persistent Undo and its label (owner decision W-D4,
+  /** The strip's persistent Undo and its label (W4 build plan MU,
    *  `creator-undo.ts`). Absent in the node tests that do not need it. */
   undoButton?: HTMLButtonElement;
   undoLabel?: Pick<HTMLElement, "textContent">;
@@ -430,7 +430,7 @@ export function wireCreatorSetup(deps: {
     },
   });
 
-  /** The strip's persistent Undo (owner decision W-D4): a delete or a
+  /** The strip's persistent Undo (W4 build plan MU): a delete or a
    *  settle's automatic code change, while it is the document's last step. */
   const undo = wireCreatorUndo({
     tour: ctx.tourDocument,
@@ -439,6 +439,9 @@ export function wireCreatorSetup(deps: {
     // Object mode: the selected object's actions take the strip's place.
     hidden: () => editing.selected() !== null,
   });
+  /** The last settle's offer, by its visit: a failed Finish that forgets
+   *  that settle withdraws it (`withdrawUndo`). */
+  let settleOffer: { visit: number; offer: UndoOffer } | null = null;
 
   if (creator) {
     // Alignment arrives via GPS dispatches, not via controller state - the
@@ -806,13 +809,17 @@ export function wireCreatorSetup(deps: {
     alignmentInfo: () => authorAlignmentInfo(),
     sizeOf: (text) => measuring.sizeOf(text),
     offerUndo: (target, settledVisit) => {
-      undo.offer({
+      // The Finishes so far: one more by the tap means the zip has it.
+      const finishesAtOffer = settle.finishesWritten();
+      const offer: UndoOffer = {
         target,
         run: () =>
           undoSettle({
             tour: ctx.tourDocument,
             target,
             visit: ctx.arSessionGeneration,
+            settledVisit,
+            written: () => settle.finishesWritten() > finishesAtOffer,
             log: (payload) => arStore.dispatch(settleUndone(payload)),
             changed: () => {
               // What that settle decided per code goes with it: the
@@ -828,7 +835,14 @@ export function wireCreatorSetup(deps: {
               editing.announce(text);
             },
           }),
-      });
+      };
+      settleOffer = { visit: settledVisit, offer };
+      undo.offer(offer);
+    },
+    withdrawUndo: (visit) => {
+      if (settleOffer?.visit !== visit) return;
+      undo.withdraw(settleOffer.offer);
+      settleOffer = null;
     },
   });
 
@@ -1015,6 +1029,7 @@ export function wireCreatorSetup(deps: {
       editing.reset();
       // A step of the closing tour is nothing to take back in the next.
       undo.reset();
+      settleOffer = null;
       // The summary and the visits belonged to the closing tour (M3b).
       deps.summary?.hide();
       visitLog.clear();
