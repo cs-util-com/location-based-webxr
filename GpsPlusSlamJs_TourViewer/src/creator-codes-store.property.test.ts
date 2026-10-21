@@ -356,14 +356,17 @@ describe("creator-codes: the store keeps every rule of the codes as they were", 
         };
         // The closure module's side: plain fields. An open's answer is its
         // last one (archive-open gives each open one; the property may give
-        // several), a new open starts with none, and an older open's late
-        // answer was dropped by archive-open's own guard.
+        // several), a new open starts with none - texts and parsed levels
+        // alike, as archive-open's teardown clears both (the store's parsed
+        // levels are held per open since plan M3b) - and an older open's
+        // late answer was dropped by archive-open's own guard.
         const modelPage: Page = {
           levels: (texts) => {
             model.currentLevelTexts = texts;
             model.levelsUnreadable = texts === null;
           },
           nextOpen: () => {
+            model.currentLevels = null;
             model.currentLevelTexts = null;
             model.levelsUnreadable = false;
           },

@@ -9,6 +9,11 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { wireCreatorCodes } from "./creator-codes.js";
+import {
+  hostedLevels,
+  selectTourDocument,
+  tourDocumentActions,
+} from "./tour-document.js";
 import { createTourViewerSession } from "./tour-viewer-session.js";
 import type { CodeMeasurement, CodeSighting } from "./visit-settle.js";
 
@@ -278,6 +283,44 @@ describe("creator-codes: stored codes and what Finish wrote", () => {
     codes.endVisit();
     expect([...codes.storedSightings()]).toEqual([]);
     expect(codes.sighting()).toBeNull();
+  });
+});
+
+describe("creator-codes: the open tour's codes come from the store (plan M3b)", () => {
+  // Why this test matters (the r902 review #4): the numbering, the
+  // references and the stored-pose question read the parsed levels from
+  // the session, not from the store that holds the tour's other codes, so
+  // the hosted levels lived twice and a store-only reader saw no tour
+  // codes. They read the store's now, the open's own.
+  it("numbers, lists and counts the store's parsed levels of the open", () => {
+    const ctx = createTourViewerSession();
+    const codes = wireCreatorCodes({ ctx });
+    ctx.store.dispatch(
+      tourDocumentActions.levelsParsed({
+        session: ctx.openGeneration,
+        levels: [
+          { id: "h", level: hostedLevel(47.3) },
+          { id: "nogeo", level: hostedLevel(null) },
+        ],
+      }),
+    );
+    expect(codes.numbering()).toEqual(["h", "nogeo"]);
+    expect(codes.references().map((r) => r.levelId)).toEqual(["h", "nogeo"]);
+    expect(codes.hasStoredPose("h")).toBe(true);
+    expect(codes.hasStoredPose("nogeo")).toBe(false);
+  });
+
+  // Why this test matters: the session's levels are a view of the store,
+  // so the viewer pipeline and the codes can never read two different
+  // tours' levels; an assignment lands in the store for the running open.
+  it("makes the session's levels a view of the store", () => {
+    const ctx = createTourViewerSession();
+    ctx.currentLevels = new Map([["h", hostedLevel(47.3)]]);
+    const held = hostedLevels(selectTourDocument(ctx.store.getState()));
+    expect([...(held?.keys() ?? [])]).toEqual(["h"]);
+    expect(ctx.currentLevels).toBe(held);
+    ctx.currentLevels = null;
+    expect(ctx.currentLevels).toBeNull();
   });
 });
 

@@ -214,6 +214,12 @@ written, hand })` (the hosted texts enter the book);
     `levelsCleared({ session })` - the open `session`'s levels: arrived,
     unreadable (texts null), none yet. An older open's answer is dropped,
     a newer one's replaces them; either order with `opened` holds them.
+  - `levelsParsed({ session, levels })` - the same open's levels as they
+    parsed (`{ id, level }` in the zip's order; null: none), under the
+    same session rule (plan M3b): the viewer's level source, the
+    numbering's order and the hosted poses the codes read. A newer open
+    starts with none; within one open the texts and the parse land in
+    either order, each keeping the other.
 
 ## Selectors and pure rules
 
@@ -224,7 +230,9 @@ written, hand })` (the hosted texts enter the book);
   `levelsNotHosted(state)` (the two baselines kept apart: `finished ??
 hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   (a map, the same one until the levels change; null before they arrived
-  or after a failed read) and `hostedLevelsUnreadable(state)`.
+  or after a failed read), `hostedLevels(state)` (the parsed levels by id
+  in the zip's order, the same map until they change; null before they
+  arrived) and `hostedLevelsUnreadable(state)`.
 - `documentObjects(state)` - the objects now (`authoringObjects` over the
   written tour with the frames), each with its entry.
 - `manifestNow(state)` - the manifest the next write starts from: the

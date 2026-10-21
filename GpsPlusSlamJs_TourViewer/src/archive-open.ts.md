@@ -113,9 +113,11 @@ DOM glue, its own module since the flows plan M6.
   `"unavailable"` on a failed read, M5 review #1), and the visitor screen
   either way (`hooks.presentTourLevels()`, r857 review #5); a failed read
   says the levels unreadable (no code of this tour can place it, r857
-  review #4); the level texts and that failure go into the tour
-  document as `levelsArrived` / `levelsUnreadable` with this open's
-  generation, and the teardown's `levelsCleared` hands them to the open
+  review #4); the level texts, the parsed levels and that failure go into
+  the tour document as `levelsArrived` / `levelsParsed` /
+  `levelsUnreadable` with this open's generation (`currentLevels` is a
+  view of the parsed ones, plan M3b), and the teardown's `levelsCleared`
+  hands them to the open
   that runs it (debug-captures plan M3a: an older open's late answer is
   dropped in the store too);
   `teardownSession` clears tour state ONLY when a tour was open at its

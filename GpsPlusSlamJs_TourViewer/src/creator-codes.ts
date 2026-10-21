@@ -25,6 +25,7 @@ import {
   codeLiveText,
   codeSavedText,
   documentCodes,
+  hostedLevels,
   hostedLevelTexts,
   levelsNotHosted,
   levelsToWrite,
@@ -173,7 +174,7 @@ export function wireCreatorCodes(deps: {
       listed.add(code.levelId);
       out.push({ levelId: code.levelId, geo: storedGeo(code.saved) });
     }
-    for (const [id, level] of ctx.currentLevels ?? []) {
+    for (const [id, level] of hostedLevels(doc()) ?? []) {
       if (listed.has(id)) continue;
       out.push({ levelId: id, geo: level.qr.geo ?? null });
     }
@@ -218,7 +219,7 @@ export function wireCreatorCodes(deps: {
       if (hand()?.id === levelId) return true;
       const saved = codeSavedText(doc(), levelId);
       if (saved !== null && storedGeo(saved) !== null) return true;
-      return ctx.currentLevels?.get(levelId)?.qr.geo !== undefined;
+      return hostedLevels(doc())?.get(levelId)?.qr.geo !== undefined;
     },
     savedText: (levelId) => codeSavedText(doc(), levelId),
     references,
@@ -267,7 +268,7 @@ export function wireCreatorCodes(deps: {
       );
     },
     numbering: () => {
-      const ids = [...(ctx.currentLevels?.keys() ?? [])];
+      const ids = [...(hostedLevels(doc())?.keys() ?? [])];
       const listed = new Set(ids);
       // A code with no saved pose is not among the references the summary
       // numbers (M5b review #6).

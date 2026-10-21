@@ -44,9 +44,12 @@ lives here.
     `levelsUnreadable` (the levels' read failed: the tour has no usable
     code, r857 review #4), `openGeneration`; `currentLevelTexts` and
     `levelsUnreadable` are VIEWS of the store since the debug-captures
-    plan M3a (accessors over the tour document's hosted levels; assigning
+    plan M3a, and `currentLevels` since M3b (accessors over the tour
+    document's hosted levels, `hostedLevels` for the parsed ones; assigning
     one dispatches `levelsArrived` / `levelsCleared` / `levelsUnreadable`
-    for the current open). **The setters are a test seam with no
+    / `levelsParsed` for the current open). The parsed levels enter the
+    store and so are frozen there, as everything it holds is; nothing
+    writes into a level after its parse. **The setters are a test seam with no
     production writer:** `archive-open.ts` dispatches those actions
     itself, with its own open's generation (an open's answer must name the
     open it belongs to, and a setter can only name the current one), and

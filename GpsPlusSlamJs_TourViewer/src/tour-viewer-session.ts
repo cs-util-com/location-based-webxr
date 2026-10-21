@@ -32,6 +32,7 @@ import {
 import { objectPlaced } from "./tour-authoring-actions.js";
 import { codeLocked } from "./tour-viewing-actions.js";
 import {
+  hostedLevels,
   hostedLevelTexts,
   hostedLevelsUnreadable,
   selectTourDocument,
@@ -288,7 +289,11 @@ export function createUnwiredHooks(): TourViewerHooks {
 export interface TourViewerSession {
   // --- the open tour (archive-open.ts) ------------------------------------
   session: TourSession | null;
-  /** The open tour's authored QR levels — the viewer pipeline's level source. */
+  /** The open tour's authored QR levels — the viewer pipeline's level
+   *  source. A view of the store like `currentLevelTexts`: the tour
+   *  document's parsed levels (`hostedLevels`, plan M3b), which the
+   *  creator's codes read too. Assigning dispatches `levelsParsed` for the
+   *  current open. */
   currentLevels: ReadonlyMap<string, QrLevel> | null;
   /** The same levels' raw file texts, parseable or not
    *  (`TourSession.levelTexts`): what the hosted zip holds for each code
@@ -576,7 +581,20 @@ export function createTourViewerSession(
   const document = () => selectTourDocument(store.getState());
   const ctx: TourViewerSession = {
     session: null,
-    currentLevels: null,
+    get currentLevels() {
+      return hostedLevels(document());
+    },
+    set currentLevels(levels) {
+      store.dispatch(
+        tourDocumentActions.levelsParsed({
+          session: ctx.openGeneration,
+          levels:
+            levels === null
+              ? null
+              : [...levels].map(([id, level]) => ({ id, level })),
+        }),
+      );
+    },
     get currentLevelTexts() {
       return hostedLevelTexts(document());
     },

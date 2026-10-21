@@ -6,10 +6,12 @@
  */
 
 import { describe, expect, it } from "vitest";
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { createEmptyTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   codeSavedText,
   documentCodes,
+  hostedLevels,
   hostedLevelTexts,
   hostedLevelsUnreadable,
   initialTourDocumentState,
@@ -102,6 +104,70 @@ describe("the tour document's hosted level texts", () => {
   it("hands out the same map until the levels change", () => {
     const state = run(act.levelsArrived({ session: 0, texts: HOSTED }));
     expect(hostedLevelTexts(state)).toBe(hostedLevelTexts(state));
+  });
+});
+
+describe("the tour document's parsed hosted levels (plan M3b)", () => {
+  const level = (lat: number): QrLevel => ({
+    version: 1,
+    qr: { geo: { lat, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] } },
+  });
+  const ids = (state: TourDocumentState) => [
+    ...(hostedLevels(state)?.keys() ?? []),
+  ];
+
+  // Why this test matters (the r902 review #4): the parsed levels - the
+  // numbering's order and the hosted poses the codes read - lived on the
+  // session beside the texts in the store, so the hosted levels were held
+  // twice. In the store they follow the texts' rules: per open, in the
+  // zip's order, in either order with the texts, never an older open's.
+  it("holds the open's parsed levels in the zip's order, beside its texts in either order", () => {
+    const parsed = act.levelsParsed({
+      session: 1,
+      levels: [
+        { id: "b", level: level(47.2) },
+        { id: "a", level: level(47.1) },
+      ],
+    });
+    const arrived = act.levelsArrived({ session: 1, texts: HOSTED });
+    for (const state of [
+      run(act.levelsCleared({ session: 1 }), parsed, arrived),
+      run(act.levelsCleared({ session: 1 }), arrived, parsed),
+    ]) {
+      expect(ids(state)).toEqual(["b", "a"]);
+      expect(hostedLevels(state)?.get("a")?.qr.geo?.lat).toBe(47.1);
+      expect([...(hostedLevelTexts(state) ?? [])]).toEqual([["h", "hosted-h"]]);
+    }
+  });
+
+  // Why this test matters: a slow parse of a tour closed since must not
+  // number the next tour's codes, and a newer open starts with none.
+  it("drops an older open's parsed levels, and a newer open starts with none", () => {
+    const late = run(
+      act.levelsCleared({ session: 2 }),
+      act.levelsParsed({ session: 1, levels: [{ id: "a", level: level(47) }] }),
+    );
+    expect(hostedLevels(late)).toBeNull();
+    const next = run(
+      act.levelsParsed({ session: 1, levels: [{ id: "a", level: level(47) }] }),
+      act.levelsCleared({ session: 2 }),
+    );
+    expect(hostedLevels(next)).toBeNull();
+    const cleared = run(
+      act.levelsParsed({ session: 1, levels: [{ id: "a", level: level(47) }] }),
+      act.levelsParsed({ session: 1, levels: null }),
+    );
+    expect(hostedLevels(cleared)).toBeNull();
+  });
+
+  // Why this test matters: the viewer pipeline reads the levels on every
+  // frame through the session's view; one map per change keeps that cheap
+  // and a reader's identity check meaningful.
+  it("hands out the same map until the parsed levels change", () => {
+    const state = run(
+      act.levelsParsed({ session: 0, levels: [{ id: "a", level: level(47) }] }),
+    );
+    expect(hostedLevels(state)).toBe(hostedLevels(state));
   });
 });
 

@@ -552,7 +552,13 @@ export function wireArchiveOpen(deps: {
         .loadQrLevels()
         .then((levels) => {
           if (ctx.session !== opened) return;
-          ctx.currentLevels = levels;
+          // Both answers of the read for this open, never the next one's.
+          ctx.store.dispatch(
+            tourDocumentActions.levelsParsed({
+              session: generation,
+              levels: [...levels].map(([id, level]) => ({ id, level })),
+            }),
+          );
           ctx.store.dispatch(
             tourDocumentActions.levelsArrived({
               session: generation,

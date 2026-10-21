@@ -26,6 +26,7 @@ import {
   type PayloadAction,
 } from "@reduxjs/toolkit";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
@@ -263,6 +264,12 @@ function saveWith(
 
 // --- the codes (debug-captures plan M3a) -----------------------------------
 
+/** One parsed level of the open tour, by id. */
+interface ParsedLevel {
+  readonly id: string;
+  readonly level: QrLevel;
+}
+
 /** The open tour's level files as its zip holds them, for one open. */
 interface HostedLevels {
   /** The open they belong to (the page's open counter): an answer of an
@@ -271,6 +278,11 @@ interface HostedLevels {
   /** Each level's file text by id, in the zip's order, parseable or not;
    *  null until they arrived, and after their read failed. */
   readonly texts: readonly LevelText[] | null;
+  /** The levels that parsed, in the zip's order (plan M3b): the viewer's
+   *  level source, the numbering's order and the hosted poses the codes
+   *  read; null until they arrived. Their own action (`levelsParsed`): the
+   *  parse and the texts are two answers of one read. */
+  readonly parsed: readonly ParsedLevel[] | null;
   /** Their read failed: they never come for this open. Every saved code
    *  then counts as one to write and one the draft keeps (there is no
    *  hosted text to compare with). */
@@ -287,9 +299,15 @@ interface DocumentCodes {
   readonly hosted: HostedLevels;
 }
 
+const NO_HOSTED: Omit<HostedLevels, "session"> = {
+  texts: null,
+  parsed: null,
+  unreadable: false,
+};
+
 const NO_CODES: DocumentCodes = {
   book: [],
-  hosted: { session: 0, texts: null, unreadable: false },
+  hosted: { session: 0, ...NO_HOSTED },
 };
 
 /** The book as a map, one per array (the state is immutable, so a book
@@ -320,6 +338,26 @@ export function hostedLevelTexts(
   if (map === undefined) {
     map = new Map(texts.map((l) => [l.id, l.json]));
     hostedMaps.set(texts, map);
+  }
+  return map;
+}
+
+const parsedMaps = new WeakMap<
+  readonly ParsedLevel[],
+  ReadonlyMap<string, QrLevel>
+>();
+
+/** The open tour's parsed levels by id, in the zip's order; null before
+ *  they arrived. The same map until they change. */
+export function hostedLevels(
+  state: TourDocumentState,
+): ReadonlyMap<string, QrLevel> | null {
+  const parsed = state.codes.hosted.parsed;
+  if (parsed === null) return null;
+  let map = parsedMaps.get(parsed);
+  if (map === undefined) {
+    map = new Map(parsed.map((l) => [l.id, l.level]));
+    parsedMaps.set(parsed, map);
   }
   return map;
 }
@@ -387,17 +425,20 @@ function withBook(
   };
 }
 
-/** `before` with the hosted levels of `session` set to `hosted`, unless
- *  they are an older open's. */
+/** `before` with the hosted levels of `session` changed by `change`,
+ *  unless they are an older open's: a newer open starts from none, the
+ *  same open keeps what `change` does not name. */
 function withHostedLevels(
   before: TourDocumentState,
   session: number,
-  hosted: Omit<HostedLevels, "session">,
+  change: Partial<Omit<HostedLevels, "session">>,
 ): TourDocumentState {
-  if (session < before.codes.hosted.session) return before;
+  const was = before.codes.hosted;
+  if (session < was.session) return before;
+  const base = session === was.session ? was : { ...NO_HOSTED, session };
   return {
     ...before,
-    codes: { ...before.codes, hosted: { session, ...hosted } },
+    codes: { ...before.codes, hosted: { ...base, ...change, session } },
   };
 }
 
@@ -1758,12 +1799,25 @@ const tourDocumentSlice = createSlice({
         unreadable: true,
       });
     },
-    /** A tour closed, and `session` opens next: no levels yet. */
+    /** A tour closed, and `session` opens next: no level texts yet (a
+     *  newer open has no parsed levels either). */
     levelsCleared(state, action: PayloadAction<{ session: number }>) {
       return withHostedLevels(plain(state), action.payload.session, {
         texts: null,
         unreadable: false,
       });
+    },
+    /** The open `session`'s levels as they parsed, in the zip's order
+     *  (null: none, the tour closing); dropped for an older open. */
+    levelsParsed(
+      state,
+      action: PayloadAction<{
+        session: number;
+        levels: readonly ParsedLevel[] | null;
+      }>,
+    ) {
+      const { session, levels } = action.payload;
+      return withHostedLevels(plain(state), session, { parsed: levels });
     },
   },
 });

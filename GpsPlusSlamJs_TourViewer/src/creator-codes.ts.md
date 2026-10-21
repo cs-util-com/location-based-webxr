@@ -89,7 +89,11 @@ sighting)` keeps the latest per code; `storedSightings()` lists them (the
   the ids before and after the dispatch), never for a new text of a known
   code and not at a tour's close (`reset` empties the book outside it).
 - The hosted texts are the store's (`ctx.currentLevelTexts` is a view of
-  them): read as they stand at each call, as before the move.
+  them): read as they stand at each call, as before the move. So are the
+  open tour's parsed levels (plan M3b, `hostedLevels`; `ctx.currentLevels`
+  is a view of them): `numbering()`, `references()` and `hasStoredPose()`
+  read the store, never a session field, so the hosted levels are held
+  once.
 - **A draft's newer text takes a hand that only KEPT its code** (PR #568
   review): `restoreLevels` moves the hand to the draft's text when the
   page changed that code in no live way (`liveText` null), before
