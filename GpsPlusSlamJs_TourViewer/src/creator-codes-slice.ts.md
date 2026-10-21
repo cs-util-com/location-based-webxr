@@ -34,8 +34,10 @@ sighting })`, `visitEnded()`.
 - **The hand moves with the document's code actions**, one dispatch for
   both slices: `codeTaken` (the hand and its measurement, also an empty
   hand), `codeTakenFromDraft` (the hand), `codeLetGo` (both null),
-  `codeSaved` and `codesRestored` (the hand their payload names),
-  `codesForgotten` (both null). The document reducer reads the same
+  `codeSaved`, `codesRestored` and `settleApplied` (the hand their
+  payload names), `codesForgotten` (both null), `handReleased` (both
+  null when the hand holds one of its codes: an undo took that code's
+  saved text back, plan M3b). The document reducer reads the same
   payload's hand for its "the hand's text wins" rule, so the two slices
   can never disagree about the hand after an action.
 - **What is cleared when:** a visit's end (`visitEnded`) clears only the

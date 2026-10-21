@@ -422,6 +422,66 @@ describe("the creator's document: the AR anchors of the stations it starts", () 
   });
 });
 
+describe("the creator's document: a settle's batch (plan M3b, Q-D)", () => {
+  // Why these tests matter: a settle moves stations and objects, and each
+  // move reads the document as the moves before it left it (the station
+  // rule reads the frames as they stand). The batch must give it that
+  // view while nothing reaches the store, take everything as ONE step at
+  // its commit, and anchor a station a move started as a move outside a
+  // batch does - or the settle's own anchors drift from their items.
+  it("reads as its changes leave it, reaches the store only at its commit, as one step", () => {
+    const doc = fresh();
+    doc.open(tourOf([pin("a")]));
+    const station = doc.state().stations[0]!;
+    const geo = { ...station.geo, lat: station.geo.lat + 0.0001 };
+    const revision = doc.revision();
+    const batch = doc.settleBatch();
+    expect(batch.moveStation("nowhere", geo)).toBe(false);
+    expect(batch.move(pin("nobody"))).toBe(false);
+    expect(batch.moveStation(station.id, geo)).toBe(true);
+    expect(batch.state().stations[0]?.geo).toEqual(geo);
+    expect(batch.objects()[0]?.object.geo.lat).toBeGreaterThan(48.52);
+    expect(doc.revision(), "nothing in the store yet").toBe(revision);
+    expect(doc.objects()[0]?.object.geo.lat).toBe(48.52);
+    const past = doc.state().past.length;
+    expect(
+      batch.commit({ levels: [], hand: null }, "the settle"),
+    ).not.toBeNull();
+    expect(doc.state().past.length).toBe(past + 1);
+    expect(doc.state().stations[0]?.geo).toEqual(geo);
+    expect(doc.objects()[0]?.object).toEqual(batch.objects()[0]?.object);
+    expect(
+      batch.commit({ levels: [], hand: null }, "again"),
+      "a batch commits once",
+    ).toBeNull();
+    expect(doc.state().past.length).toBe(past + 1);
+  });
+
+  it("takes no step for a batch that moved nothing and saved no code", () => {
+    const doc = fresh();
+    doc.open(tourOf([pin("a")]));
+    const revision = doc.revision();
+    expect(
+      doc.settleBatch().commit({ levels: [], hand: null }, "the settle"),
+    ).toBeNull();
+    expect(doc.revision()).toBe(revision);
+  });
+
+  it("anchors the station a move in it starts at the placement the item keeps", () => {
+    const doc = fresh();
+    doc.open(tourOf([]));
+    doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
+    const batch = doc.settleBatch();
+    batch.move(pin("p", 48.53));
+    batch.commit({ levels: [], hand: null }, "the settle");
+    const station = doc.objects().find((o) => o.object.id === "p")!.object
+      .station!;
+    expect([...doc.stationPlacements()]).toEqual([
+      [station, { ...PLACEMENT, item: "p" }],
+    ]);
+  });
+});
+
 describe("the creator's document: the draft follows it", () => {
   it("writes each change from the listener, with the photo's picture", async () => {
     const doc = fresh();

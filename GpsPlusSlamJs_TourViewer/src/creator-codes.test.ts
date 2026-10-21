@@ -15,6 +15,7 @@ import {
   tourDocumentActions,
 } from "./tour-document.js";
 import { createTourViewerSession } from "./tour-viewer-session.js";
+import { tourOf } from "./test-support/v3-tour.js";
 import type { CodeMeasurement, CodeSighting } from "./visit-settle.js";
 
 /** A level text whose `storedGeo` reads (the parser's minimal shape). */
@@ -321,6 +322,67 @@ describe("creator-codes: the open tour's codes come from the store (plan M3b)", 
     expect(ctx.currentLevels).toBe(held);
     ctx.currentLevels = null;
     expect(ctx.currentLevels).toBeNull();
+  });
+});
+
+describe("creator-codes: a settle's codes, and its undo (plan M3b, Q-D)", () => {
+  function settled() {
+    const ctx = createTourViewerSession();
+    let heard = 0;
+    const codes = wireCreatorCodes({
+      ctx,
+      onIdsChanged: () => {
+        heard += 1;
+      },
+    });
+    ctx.tourDocument.open(tourOf([]));
+    return { ctx, codes, heard: () => heard };
+  }
+  const a1 = { id: "a", json: levelJson(47.5) };
+  const a2 = { id: "a", json: levelJson(47.6) };
+  const b = { id: "b", json: levelJson(47.7) };
+
+  // Why this test matters: a settle saves its re-minted codes with its
+  // document changes as ONE step; the hand takes a code's new text only if
+  // it held that code (as `saveLevel` did), and a code that joins the
+  // book is heard by the print panel as by any other door.
+  it("saves the settle's codes with its changes, the hand following its own code, a joining code heard", () => {
+    const { ctx, codes, heard } = settled();
+    codes.setInHand(a1, MEASUREMENT);
+    const past = ctx.tourDocument.state().past.length;
+    codes.applySettle(ctx.tourDocument.settleBatch(), [a2, b], "the settle");
+    expect(codes.inHand()).toEqual(a2);
+    expect(codes.savedText("b")).toBe(b.json);
+    expect(ctx.tourDocument.state().past.length).toBe(past + 1);
+    expect(heard()).toBe(2);
+  });
+
+  // Why this test matters: the hand's text wins at every change of the
+  // book, so an undo that only put the book back would see the improved
+  // text return at the next write. The undo makes the hand let go of the
+  // code it took back, its measurement with it.
+  it("lets the hand go of a code the undo took back", () => {
+    const { ctx, codes } = settled();
+    codes.setInHand(a1, MEASUREMENT);
+    codes.applySettle(ctx.tourDocument.settleBatch(), [a2], "the settle");
+    expect(ctx.tourDocument.undo().kind).toBe("undone");
+    expect(codes.inHand()).toBeNull();
+    expect(codes.measurement()).toBeNull();
+    expect(codes.savedText("a")).toBe(a1.json);
+    codes.saveLevel(b);
+    expect(codes.savedText("a"), "and nothing puts it back").toBe(a1.json);
+  });
+
+  // Why this test matters: only the codes the undo changed are let go - a
+  // hand on another code is live work the undo says nothing about.
+  it("keeps a hand of a code the undo did not change", () => {
+    const { ctx, codes } = settled();
+    codes.setInHand(a1, MEASUREMENT);
+    codes.applySettle(ctx.tourDocument.settleBatch(), [b], "the settle");
+    ctx.tourDocument.undo();
+    expect(codes.inHand()).toEqual(a1);
+    expect(codes.measurement()).toBe(MEASUREMENT);
+    expect(codes.savedText("b")).toBeNull();
   });
 });
 

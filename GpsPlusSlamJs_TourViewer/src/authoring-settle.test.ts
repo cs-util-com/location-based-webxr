@@ -51,6 +51,7 @@ import {
   createTourViewerStore,
   endQrPipeline,
 } from "./tour-viewer-session.js";
+import { isDocumentEdit } from "./tour-document.js";
 import { mintPin, objectPoseNue } from "./content-placement.js";
 import {
   deletedKey,
@@ -3186,30 +3187,80 @@ describe(
       expect(stationOf(a, "near").geo).toEqual(before);
     });
 
-    // TODAY'S SPLIT, a known divergence (`it.fails`, the convention of
-    // tour-document-parity.test.ts): the same undo leaves the improved
-    // code in place, so the station is back at the old code's spot while
-    // the code book still holds - and the next Finish writes - the new
-    // one. The code in hand's text wins in the book (`setBook`,
-    // creator-codes.ts:173-185), so nothing short of the undo itself can
-    // put the earlier text back. M3b's one-step settle with its undo
-    // listener turns this row red; then the marker comes off, the
-    // assertion stays as it is.
-    it.fails(
-      "an undo of the settle's station move takes the code's improvement back too [DIVERGES until: M3b, one undo step per settle]",
-      async () => {
-        const { a, stored } = await secondVisit({
-          yawDeg: 20,
-          northM: 3,
-          walkM: 30,
-        });
-        a.endVisit();
-        expect(a.codes.savedText(stored.id)).not.toBe(stored.json);
-        a.ctx.tourDocument.undo();
-        a.setup.renderAuthorReadout();
-        expect(a.codes.savedText(stored.id)).toBe(stored.json);
-      },
-    );
+    // Why this test matters (plan M3b, Q-D): the settle moved
+    // each station and object as a document action of its own - one undo
+    // step and one draft backup each - so an undo took back the last
+    // station only, and a crash between two backups left half a settle on
+    // disk. One settle is one step and one backup.
+    it("takes one undo step and one draft backup for a settle that improves a code and moves its stations", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      // A pin of this visit too: the settle re-poses it besides the
+      // station the improved code takes along.
+      await a.placePin("this visit", [3, 0, -2]);
+      const past = a.ctx.tourDocument.state().past.length;
+      let follows = 0;
+      a.ctx.store.listenToDocument({
+        predicate: isDocumentEdit,
+        effect: () => {
+          follows += 1;
+        },
+      });
+      a.endVisit();
+      expect(a.codes.savedText(stored.id), "the code improved").not.toBe(
+        stored.json,
+      );
+      expect(a.ctx.tourDocument.state().past.length - past).toBe(1);
+      expect(follows, "the draft follows the settle once").toBe(1);
+    });
+
+    // Was today's split, a known divergence until M3b: the same undo left
+    // the improved code in place, so the station was back at the old
+    // code's spot while the code book still held - and the next Finish
+    // wrote - the new one. The code in hand's text wins in the book
+    // (`withHand`), so nothing short of the undo itself can put the
+    // earlier text back. M3b's one-step settle with its undo listener
+    // turned this row green; the marker came off, the assertion stayed.
+    it("an undo of the settle's station move takes the code's improvement back too", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      a.endVisit();
+      expect(a.codes.savedText(stored.id)).not.toBe(stored.json);
+      a.ctx.tourDocument.undo();
+      a.setup.renderAuthorReadout();
+      expect(a.codes.savedText(stored.id)).toBe(stored.json);
+    });
+
+    // Why this test matters (plan M3b): the hand held the improved text,
+    // and the hand's text wins at every later change of the book - so an
+    // undo that only put the book back would see the improvement return
+    // at the next write. The undo makes the hand let go of the code it
+    // took back, its measurement with it, and the earlier text stays at
+    // the next render and in what the next Finish and the draft write.
+    it("lets the hand go of the code an undo of the settle took back, and the earlier text stays", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      a.endVisit();
+      expect(a.codes.inHand()?.id).toBe(stored.id);
+      a.ctx.tourDocument.undo();
+      expect(a.codes.inHand()).toBeNull();
+      expect(a.codes.measurement()).toBeNull();
+      a.setup.renderAuthorReadout();
+      a.codes.finished([]);
+      expect(a.codes.savedText(stored.id)).toBe(stored.json);
+      for (const written of [a.codes.toWrite(), a.codes.notHosted()]) {
+        expect(written.find((l) => l.id === stored.id)?.json).toBe(stored.json);
+      }
+    });
 
     // Why this test matters (code book plan M4b, the owner's choice after
     // the M3 sweep): an improved code took every pin within 40 m along,

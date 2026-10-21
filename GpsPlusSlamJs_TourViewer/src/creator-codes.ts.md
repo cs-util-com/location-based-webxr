@@ -44,8 +44,20 @@ actions and reads their selectors, and holds no state of its own.
     summary and the object list missed a code measured before the one in
     hand), then the tour's others (geo null for a level without one);
     `storedPoses()` - the ones that read, same order.
-  - Every re-mint is `saveLevel(level)` (the settle's code in hand
-    included; code book plan M5d removed `remint`, which did the same).
+  - A re-mint outside a settle's step is `saveLevel(level)` (the
+    automatic code spots' undo and confirmation; code book plan M5d
+    removed `remint`, which did the same).
+  - `applySettle(batch, levels, what)` - the settle's re-minted codes
+    with its moves as ONE step of the document (plan M3b, Q-D): the
+    batch's `commit`, the hand taking a code's new text only if it held
+    that code (as `saveLevel`), heard by `onIdsChanged` as one change.
+    Returns the document's change, or null for no step.
+  - An undo or a redo that changed the saved text of a code (a settle's
+    step) makes the hand let go of that code, its measurement with it
+    (`handReleased`, from a listener on the document): the hand's text
+    wins at every change of the book, so it would otherwise put the
+    text back at the next one. The book's own measurement of the code
+    stays; a hand on a code the step did not change is kept.
 - The book of codes a Finish writes (M4c-1, `code-book.ts`):
   - `toWrite()` - every code this page took whose saved text differs from
     what the zip the Finish rebuilds from holds (the last Finish's text,
@@ -134,7 +146,9 @@ property), the two baselines kept apart, the hosted texts read lazily
 (levels arriving late, a failed level read, a Finish taking them in), what
 a visit's end and a tour's close clear, the visit's codes and
 `measuredIn`, and `onIdsChanged` heard exactly when a code joins (examples
-and a property)), all unchanged through the move.
+and a property)), all unchanged through the move; a settle's codes as one
+step, its undo letting the hand go of the code it took back and keeping a
+hand of another code (plan M3b).
 `creator-codes-store.property.test.ts` - every observable of the facade
 (the hand, its measurement and sighting, the ids, the numbering, the
 references, both baselines, the sightings, the visit's codes, each code's

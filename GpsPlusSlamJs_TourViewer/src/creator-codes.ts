@@ -19,7 +19,7 @@
  * @see creator-codes.ts.md
  */
 
-import type { UnknownAction } from "@reduxjs/toolkit";
+import { isAnyOf, type UnknownAction } from "@reduxjs/toolkit";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import {
   codeLiveText,
@@ -38,6 +38,7 @@ import {
   selectCreatorCodes,
   type StoredSighting,
 } from "./creator-codes-slice.js";
+import type { DocumentChange, SettleBatch } from "./creator-document.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
 import {
   storedGeo,
@@ -95,6 +96,16 @@ export interface CreatorCodes {
   /** A code re-minted by the settle: saved in the book; it takes the hand
    *  only if it already had it. */
   saveLevel(level: LevelText): void;
+  /** A settle's changes (`batch`) and the codes it re-minted (`levels`,
+   *  saved in order, each taking the hand only if it already had it) as
+   *  ONE step of the document (plan M3b, Q-D): its undo takes the codes'
+   *  texts back with the moves, and the hand lets go of a code it took
+   *  back. What the document took, or null for no step. */
+  applySettle(
+    batch: Pick<SettleBatch, "commit">,
+    levels: readonly LevelText[],
+    what: string,
+  ): DocumentChange | null;
   /** This page took `levelId` (measured, restored or kept it). */
   inBook(levelId: string): boolean;
   /** Every code this page holds, in the order it took them (M4d: the
@@ -148,9 +159,9 @@ export function wireCreatorCodes(deps: {
    * exactly when a code joins, never for a new text of a known code (its
    * listener reruns a spelling search over the codes).
    */
-  function changeBook(action: UnknownAction): void {
+  function noticingIds<T>(run: () => T): T {
     const before = new Set(book().map((c) => c.levelId));
-    store.dispatch(action);
+    const result = run();
     const after = book();
     if (
       after.length !== before.size ||
@@ -158,7 +169,31 @@ export function wireCreatorCodes(deps: {
     ) {
       deps.onIdsChanged?.();
     }
+    return result;
   }
+
+  function changeBook(action: UnknownAction): void {
+    noticingIds(() => store.dispatch(action));
+  }
+
+  // An undo (or a redo) that took the saved text of the code in hand
+  // elsewhere (a settle's step, plan M3b): the hand lets go of it - its
+  // text wins at every change of the book (`withHand`), so it would put
+  // the text back at the next one.
+  store.listenToDocument({
+    predicate: isAnyOf(tourDocumentActions.undone, tourDocumentActions.redone),
+    effect: (_action, api) => {
+      const was = selectTourDocument(api.getOriginalState());
+      const now = selectTourDocument(api.getState());
+      if (was.codes.book === now.codes.book) return;
+      const levelIds = documentCodes(now).flatMap((c) =>
+        codeSavedText(was, c.levelId) === c.saved ? [] : [c.levelId],
+      );
+      if (levelIds.length > 0) {
+        api.dispatch(tourDocumentActions.handReleased({ levelIds }));
+      }
+    },
+  });
 
   function references(): { levelId: string; geo: QrGeoPose | null }[] {
     const inHand = hand();
@@ -266,6 +301,11 @@ export function wireCreatorCodes(deps: {
           hand: held?.id === level.id ? level : held,
         }),
       );
+    },
+    applySettle: (batch, levels, what) => {
+      let held = hand();
+      for (const level of levels) if (held?.id === level.id) held = level;
+      return noticingIds(() => batch.commit({ levels, hand: held }, what));
     },
     numbering: () => {
       const ids = [...(hostedLevels(doc())?.keys() ?? [])];

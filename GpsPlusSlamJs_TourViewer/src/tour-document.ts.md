@@ -144,6 +144,21 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   object of the station becomes an edit at the spot the moved frame gives
   it (its local pose kept), as the phone's settle leaves its lists; an
   unknown station changes nothing.
+- `settleApplied({ changes, codes, hand, what })` - a settle as ONE step
+  (plan M3b, Q-D): `changes` (`SettleChange[]`, in the settle's order:
+  `{ kind: "station", stationId, geo }` by `stationMoved`'s rule, `{ kind:
+"object", object, newStationId }` by `moved`'s) applied one after the
+  other, each reading the document as the ones before left it; then
+  `codes` saved (`withSaved`) and the hand named after them winning
+  (`withHand`). The step keeps each code whose saved text it changed with
+  its earlier text (`TourHistoryStep.codes`), so its undo puts the text
+  back and its redo the new one - only while the code still holds the
+  text the step left (the codes take no step of their own: a code
+  measured again since is newer work, and the step leaves it). No step
+  when nothing moved and no saved text changed.
+- `handReleased({ levelIds })` - no change of the document: the hand of
+  `creatorCodes` lets go of a code an undo or a redo took the saved text
+  of (`creator-codes.ts`'s listener dispatches it).
 - `settingsChanged({ needsNoGps, what })`, `detailsChanged({ details, what })`
   - the details as checked by `checkDetailsForm`.
 - `undone()` / `redone()` - one step (none while a save is queued or runs,
@@ -157,7 +172,9 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   frame moved prunes the same way. A step marks the station poses as the
   draft's to keep (`stationsRecorded`, `touched.stations`) only when a
   frame both views carry differs: a station the rule started or dropped
-  is no moved station.
+  is no moved station. A step that carries codes (a settle's) sets their
+  saved texts too, under the rule of `settleApplied` above, and the step
+  it leaves for the way back carries the codes it set.
 - `restored({ objects, deleted, needsNoGps?, details?, stations?,
 createdStations?, rerun?, what, newStationIds? })` - a draft's work,
   already filtered by the page's rules, as one step to undo; not live work
@@ -289,7 +306,7 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   desktop session checks its pictures before dispatching); the save status
   types `TourSaveStatus` and `TourSaveHolder` (the desktop page's save slot).
 - `isDocumentEdit(action)` - the actions a draft follows (not `saved`, not
-  `opened`).
+  `opened`); `settleApplied` among them, as one edit.
 - The rules the reducers keep, exported so a page asks first and says why
   in its own words (`editor-session.ts`'s refusals): `objectFits(state,
 object)` (within the format's `TOUR_ITEM_MAX_OFFSET_M` per axis of its
@@ -424,7 +441,10 @@ store.dispatch(tourDocumentActions.undone());
   orders with `opened`, an older open's late levels dropped and a newer
   one's replacing them, a failed read counting every saved code as new,
   the same map handed out; the codes taking no history step and surviving
-  `opened`, `closed` and an undo; the hand's text winning.
+  `opened`, `closed` and an undo; the hand's text winning. A settle as
+  one step (plan M3b): its stations, their items and its code taken back
+  by one undo and brought back by one redo; a code measured again since
+  left as it is by the undo; no step for a settle that changes nothing.
 - `tour-document.test.ts` - the step across an in-place save (D33: an undo
   of a written delete, an undo of an edit no save wrote or made after it,
   the second undo below the save, a download, a redo across and not, the

@@ -111,12 +111,40 @@ export interface TourDocumentView {
   readonly details: TourDetailFields;
 }
 
+/** A code's saved text a step sets (plan M3b): `to`, while the code still
+ *  holds `from` - the codes take no step of their own, so a code changed
+ *  since is newer work than the step, and the step leaves it. */
+interface StepCode {
+  readonly id: string;
+  readonly from: string | null;
+  readonly to: string | null;
+}
+
 /** One step of the history: the view to go back (or forward) to, and the
- *  edit in words ("the move of "Fountain""). */
+ *  edit in words ("the move of "Fountain""); `codes`, the saved texts it
+ *  sets (a settle's improved codes, plan M3b, Q-D). */
 interface TourHistoryStep {
   readonly view: TourDocumentView;
   readonly what: string;
+  readonly codes?: readonly StepCode[];
 }
+
+/** One change of a settle (`settleApplied`, plan M3b), in the settle's own
+ *  order - the station rule reads the frames as they stand when an object
+ *  moves: a station's frame moved, its items rigidly with it (as
+ *  `stationMoved`), or an object moved (as `moved`; a station it starts
+ *  takes `newStationId`). */
+export type SettleChange =
+  | {
+      readonly kind: "station";
+      readonly stationId: string;
+      readonly geo: QrGeoPose;
+    }
+  | {
+      readonly kind: "object";
+      readonly object: TourObject;
+      readonly newStationId: string;
+    };
 
 /** Who holds a page's one save slot: an explicit Save, the autosave, or
  *  a step of the walk's move. */
@@ -1030,6 +1058,43 @@ function goTo(
   };
 }
 
+/** `state` with each of `codes` at its `to` text where it still holds its
+ *  `from` one, and the codes that moved. */
+function codesAt(
+  state: TourDocumentState,
+  codes: readonly StepCode[],
+): { readonly state: TourDocumentState; readonly moved: StepCode[] } {
+  const book = new Map(bookOf(state.codes));
+  const moved: StepCode[] = [];
+  for (const code of codes) {
+    const now = book.get(code.id);
+    if (now === undefined || now.saved !== code.from) continue;
+    book.set(code.id, { ...now, saved: code.to });
+    moved.push(code);
+  }
+  if (moved.length === 0) return { state, moved };
+  return {
+    state: { ...state, codes: { ...state.codes, book: [...book.values()] } },
+    moved,
+  };
+}
+
+/** The step back to `state` from a step named `what`: its view, and the
+ *  codes the step moved, set again to the texts they had. */
+function wayBack(
+  state: TourDocumentState,
+  what: string,
+  moved: readonly StepCode[],
+): TourHistoryStep {
+  const view = viewOf(state);
+  if (moved.length === 0) return { view, what };
+  return {
+    view,
+    what,
+    codes: moved.map((c) => ({ id: c.id, from: c.to, to: c.from })),
+  };
+}
+
 /** A step from one end of the history to the other. */
 function step(
   state: TourDocumentState,
@@ -1038,8 +1103,9 @@ function step(
   const target = nextStep(state, which);
   if (target === undefined || state.written === null) return state;
   const crosses = stepCrossesInPlaceSave(state, which);
-  const here: TourHistoryStep = { view: viewOf(state), what: target.what };
-  const moved = goTo(state, target.view);
+  const codes = codesAt(goTo(state, target.view), target.codes ?? []);
+  const here = wayBack(state, target.what, codes.moved);
+  const moved = codes.state;
   const from = which === "undo" ? state.past : state.future;
   const to = which === "undo" ? state.future : state.past;
   const rest = from.slice(0, -1);
@@ -1201,6 +1267,117 @@ function homeOf(state: TourDocumentState, id: string): string | undefined {
   return documentObjects(state).find((o) => o.object.id === id)?.object.station;
 }
 
+/** `stationMoved`'s rule: the frame of `stationId` at `geo`, its items
+ *  rigidly with it, as one step; `before` for a station it lacks. */
+function stationMove(
+  before: TourDocumentState,
+  stationId: string,
+  geo: QrGeoPose,
+  what: string,
+): TourDocumentState {
+  const frame = before.stations.find((s) => s.id === stationId);
+  if (frame === undefined) return before;
+  let placed = before.placed;
+  for (const { object } of documentObjects(before)) {
+    if (object.station !== stationId) continue;
+    const moved: TourObject = {
+      ...object,
+      geo: itemGeoPose(localPoseOf(object.geo, frame.geo), geo),
+    };
+    placed = upsertPlaced(placed, { object: moved });
+  }
+  return edited(
+    before,
+    {
+      placed,
+      stations: before.stations.map((s) =>
+        s.id === stationId ? { ...s, geo } : s,
+      ),
+      touched: { ...before.touched, stations: true },
+      stationsRecorded: true,
+    },
+    what,
+  );
+}
+
+/** `moved`'s rule: the object at its new spot, keeping its station or
+ *  seated anew (see `moved`), as one step; `before` for an unknown id. */
+function objectMove(
+  before: TourDocumentState,
+  { object, what, newStationId }: PlacedPayload,
+): TourDocumentState {
+  const home = homeOf(before, object.id);
+  const frame = before.stations.find((s) => s.id === home);
+  if (home === undefined || frame === undefined) return before;
+  const kept = { ...object, station: home };
+  if (keepsHome(before, frame, object) && objectFits(before, kept)) {
+    return putObject(before, kept, what);
+  }
+  const seated = seatByRule(before, unseated(object), { newStationId });
+  if (seated === null) return before;
+  return putObject(before, seated.object, what, seated.stations, home);
+}
+
+/** What a settle hands the document (`settleApplied`). */
+interface SettleApplied {
+  readonly changes: readonly SettleChange[];
+  /** The codes it re-minted or improved, saved in this order. */
+  readonly codes: readonly LevelText[];
+  /** The code in hand after them (its text wins, `withHand`). */
+  readonly hand: LevelText | null;
+  readonly what: string;
+}
+
+/** A settle's changes and codes as ONE step (plan M3b, Q-D): each change
+ *  by its own rule in order, then the codes saved, the hand's text
+ *  winning; the step keeps each code's earlier text, so its undo puts it
+ *  back. `before` when it moves nothing and changes no saved text. */
+function applySettle(
+  before: TourDocumentState,
+  { changes, codes, hand, what }: SettleApplied,
+): TourDocumentState {
+  if (before.written === null) return before;
+  let moved = before;
+  for (const change of changes) {
+    moved =
+      change.kind === "station"
+        ? stationMove(moved, change.stationId, change.geo, what)
+        : objectMove(moved, {
+            object: change.object,
+            what,
+            newStationId: change.newStationId,
+          });
+  }
+  const was = bookOf(before.codes);
+  let book = was;
+  for (const level of codes) book = withSaved(book, level);
+  const coded = withBook(before, book, hand).codes;
+  // Undone: each code back from its new text to the one it had.
+  const stepCodes = coded.book.flatMap((code): StepCode[] => {
+    const earlier = was.get(code.levelId)?.saved ?? null;
+    return code.saved === earlier
+      ? []
+      : [{ id: code.levelId, from: code.saved, to: earlier }];
+  });
+  if (moved === before && stepCodes.length === 0) return before;
+  const after = edited(
+    before,
+    {
+      placed: moved.placed,
+      stations: moved.stations,
+      touched: moved.touched,
+      stationsRecorded: moved.stationsRecorded,
+      codes: coded,
+    },
+    what,
+  );
+  if (stepCodes.length === 0) return after;
+  const past = [...after.past];
+  const last = past.pop();
+  if (last !== undefined) past.push({ ...last, codes: stepCodes });
+  return { ...after, past };
+}
+
 const tourDocumentSlice = createSlice({
   name: "tourDocument",
   initialState: initialTourDocumentState,
@@ -1277,20 +1454,7 @@ const tourDocumentSlice = createSlice({
      *  one. An unknown id changes nothing. */
     moved: {
       reducer(state, action: PayloadAction<PlacedPayload>) {
-        const before = plain(state);
-        const { object, what } = action.payload;
-        const home = homeOf(before, object.id);
-        const frame = before.stations.find((s) => s.id === home);
-        if (home === undefined || frame === undefined) return before;
-        const kept = { ...object, station: home };
-        if (keepsHome(before, frame, object) && objectFits(before, kept)) {
-          return putObject(before, kept, what);
-        }
-        const seated = seatByRule(before, unseated(object), {
-          newStationId: action.payload.newStationId,
-        });
-        if (seated === null) return before;
-        return putObject(before, seated.object, what, seated.stations, home);
+        return objectMove(plain(state), action.payload);
       },
       prepare: prepareSeating,
     },
@@ -1326,31 +1490,15 @@ const tourDocumentSlice = createSlice({
         what: string;
       }>,
     ) {
-      const before = plain(state);
       const { stationId, geo, what } = action.payload;
-      const frame = before.stations.find((s) => s.id === stationId);
-      if (frame === undefined) return before;
-      let placed = before.placed;
-      for (const { object } of documentObjects(before)) {
-        if (object.station !== stationId) continue;
-        const moved: TourObject = {
-          ...object,
-          geo: itemGeoPose(localPoseOf(object.geo, frame.geo), geo),
-        };
-        placed = upsertPlaced(placed, { object: moved });
-      }
-      return edited(
-        before,
-        {
-          placed,
-          stations: before.stations.map((s) =>
-            s.id === stationId ? { ...s, geo } : s,
-          ),
-          touched: { ...before.touched, stations: true },
-          stationsRecorded: true,
-        },
-        what,
-      );
+      return stationMove(plain(state), stationId, geo, what);
+    },
+    /** A settle (plan M3b, Q-D): its station and object moves in its own
+     *  order and the codes it re-minted, as ONE step - its undo takes them
+     *  all back, each code's earlier text included (`applySettle`). The
+     *  hand is named after the codes, as every code action names it. */
+    settleApplied(state, action: PayloadAction<SettleApplied>) {
+      return applySettle(plain(state), action.payload);
     },
     /** The setting turned on or off; nothing before an open (an undo
      *  could never take the step back: a step needs a written file). */
@@ -1772,6 +1920,15 @@ const tourDocumentSlice = createSlice({
         hand,
       );
     },
+    /** The hand lets go of `levelIds` (an undo took their saved texts
+     *  back): the book is as it is; `creatorCodes` empties a hand that
+     *  holds one of them. */
+    handReleased(
+      state,
+      _action: PayloadAction<{ levelIds: readonly string[] }>,
+    ) {
+      return plain(state);
+    },
     /** A tour closed: its book goes (the hosted levels are the open's,
      *  `levelsCleared`). */
     codesForgotten(state) {
@@ -1838,6 +1995,7 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.moved,
   tourDocumentActions.deleted,
   tourDocumentActions.stationMoved,
+  tourDocumentActions.settleApplied,
   tourDocumentActions.settingsChanged,
   tourDocumentActions.detailsChanged,
   tourDocumentActions.undone,

@@ -32,7 +32,10 @@ import {
   detailsChange,
   effectiveDetails,
   tourDocumentActions,
+  tourDocumentReducer,
   tourFieldChanges,
+  type LevelText,
+  type SettleChange,
   type StationFrame,
   type StationPose,
   type TourDocumentState,
@@ -109,6 +112,40 @@ type DocumentRename =
   | ({ readonly kind: "renamed" } & DocumentChange)
   | { readonly kind: "unchanged" }
   | { readonly kind: "refused"; readonly reason: string };
+
+/**
+ * A settle's changes, collected before they reach the document and then
+ * taken as ONE step with the codes the settle re-minted (plan M3b, Q-D):
+ * one undo takes the whole settle back, and the draft follows it once.
+ * The settle reads the document through it as its changes so far leave
+ * it - the station rule reads the frames as they stand when an object
+ * moves - and nothing reaches the store before `commit`. Synchronous: the
+ * settle runs in one go, and nothing else edits the document meanwhile.
+ */
+export interface SettleBatch {
+  /** The document as the changes so far leave it. */
+  state(): TourDocumentState;
+  /** The tour's objects as the changes so far leave them, each with this
+   *  page's entry (as {@link CreatorDocument.objects}). */
+  objects(): CreatorObject[];
+  /** A station's frame moved (D17), its items rigidly with it; false for a
+   *  station the document does not carry. */
+  moveStation(stationId: string, geo: QrGeoPose): boolean;
+  /** An object moved, its AR placement kept (`moved`); false for an id
+   *  the document lacks. */
+  move(object: TourObject): boolean;
+  /** The changes and the settle's codes (`levels` saved, the hand after
+   *  them) as one step named `what`; null when it took none (nothing
+   *  moved and no code's text changed), and for a batch committed
+   *  already. */
+  commit(
+    codes: {
+      readonly levels: readonly LevelText[];
+      readonly hand: LevelText | null;
+    },
+    what: string,
+  ): DocumentChange | null;
+}
 
 /** The store the document lives in (`createTourViewerStore`). */
 export interface CreatorDocumentStore {
@@ -197,6 +234,8 @@ export interface CreatorDocument {
     geo: QrGeoPose,
     what: string,
   ): DocumentChange | null;
+  /** A settle's changes, taken as one step at its `commit` (plan M3b). */
+  settleBatch(): SettleBatch;
   /** The tour's name (the phone's one detail, plan W2), checked as the
    *  desktop's details form checks it (`detailsChange`: at most 80
    *  characters, counted as a reader counts them; an empty name removes
@@ -281,6 +320,14 @@ export function createCreatorDocument(
     return {
       backedUp: Promise.all(writes).then((all) => all.every(Boolean)),
     };
+  }
+
+  /** The objects of `s`, each joined with the side tables. */
+  function objectsOf(s: TourDocumentState): CreatorObject[] {
+    return documentObjects(s).map((o) => ({
+      ...o,
+      placed: o.placed === null ? null : join(o.placed.object),
+    }));
   }
 
   function join(object: TourObject): PlacedEntry {
@@ -407,11 +454,7 @@ export function createCreatorDocument(
     },
     entries,
     deleted: () => state().deleted,
-    objects: () =>
-      documentObjects(state()).map((o) => ({
-        ...o,
-        placed: o.placed === null ? null : join(o.placed.object),
-      })),
+    objects: () => objectsOf(state()),
     pictureOf: (id) => pictures.get(id),
     stationPlacements: () => {
       const current = new Set(state().stations.map((s) => s.id));
@@ -513,6 +556,59 @@ export function createCreatorDocument(
     moveStation(stationId, geo, what) {
       if (!state().stations.some((s) => s.id === stationId)) return null;
       return change(tourDocumentActions.stationMoved({ stationId, geo, what }));
+    },
+    settleBatch() {
+      const start = state();
+      /** The document as the changes so far leave it: each staged by the
+       *  slice's own reducer, so `settleApplied`, which applies them in the
+       *  same order from the same start, arrives at the same document. */
+      let staged = start;
+      const changes: SettleChange[] = [];
+      let committed = false;
+      return {
+        state: () => staged,
+        objects: () => objectsOf(staged),
+        moveStation(stationId, geo) {
+          if (!staged.stations.some((s) => s.id === stationId)) return false;
+          changes.push({ kind: "station", stationId, geo });
+          staged = tourDocumentReducer(
+            staged,
+            tourDocumentActions.stationMoved({ stationId, geo, what: "" }),
+          );
+          return true;
+        },
+        move(object) {
+          if (!documentObjects(staged).some((o) => o.object.id === object.id)) {
+            return false;
+          }
+          const newStationId = freshStationId(staged);
+          changes.push({ kind: "object", object, newStationId });
+          staged = tourDocumentReducer(
+            staged,
+            tourDocumentActions.moved({ object, what: "", newStationId }),
+          );
+          return true;
+        },
+        commit({ levels, hand }, what) {
+          if (committed) return null;
+          committed = true;
+          const before = state();
+          const taken = change(
+            tourDocumentActions.settleApplied({
+              changes,
+              codes: levels,
+              hand,
+              what,
+            }),
+          );
+          if (state().revision === before.revision) return null;
+          anchorStarted(
+            before,
+            changes.flatMap((c) => (c.kind === "object" ? [c.object.id] : [])),
+          );
+          return taken;
+        },
+      };
     },
     rename(name) {
       const s = state();

@@ -228,6 +228,15 @@ M4 settles every code of the book, not only the one in hand.
       it. Put back by a move, so it stays in the station while the
       item stays within the moved station's found radius (25 m by
       default); further off, the move re-seats it by the station rule.
+    - **One settle is one step** (plan M3b, Q-D): every station and
+      object move of the settle, the code move's included, is collected in
+      the document's `settleBatch()` (each reading the document as the
+      moves before it left it), and reaches the document with the codes
+      the settle re-minted as ONE `settleApplied` at the end
+      (`codes.applySettle`): one undo takes the whole settle back, the
+      codes' improved texts included, and the draft follows it once. The
+      automatic code spots' undo and confirmation stay saved before the
+      settle reads the codes (`saveLevel`), outside that step.
     - **The draft keeps the station's move** (tour editor plan §19 #1):
       the document's listener writes the moved poses into the draft's
       settings record (`creator-draft.ts`), and a restore moves the frame

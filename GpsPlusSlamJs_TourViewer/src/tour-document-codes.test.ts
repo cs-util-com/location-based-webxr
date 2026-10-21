@@ -15,6 +15,7 @@ import {
   hostedLevelTexts,
   hostedLevelsUnreadable,
   initialTourDocumentState,
+  documentObjects,
   levelsNotHosted,
   levelsToWrite,
   tourDocumentActions as act,
@@ -22,6 +23,8 @@ import {
   type TourDocumentState,
 } from "./tour-document.js";
 import type { CodeMeasurement } from "./visit-settle.js";
+import { tourOf } from "./test-support/v3-tour.js";
+import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 const HOSTED = [{ id: "h", json: "hosted-h" }];
 
@@ -168,6 +171,99 @@ describe("the tour document's parsed hosted levels (plan M3b)", () => {
       act.levelsParsed({ session: 0, levels: [{ id: "a", level: level(47) }] }),
     );
     expect(hostedLevels(state)).toBe(hostedLevels(state));
+  });
+});
+
+describe("a settle as one step of the document (plan M3b, Q-D)", () => {
+  const PIN: TourObject = {
+    id: "p",
+    kind: "pin",
+    label: "Gate",
+    createdAtIso: "2026-10-21T00:00:00.000Z",
+    geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
+  };
+  const tourOpened = act.opened({ manifest: tourOf([PIN]) });
+  const stored = { id: "c", json: "stored-c" };
+  const improved = { id: "c", json: "improved-c" };
+  const movedTo = {
+    lat: 48.5201,
+    lon: 9.0501,
+    alt: 340,
+    rotation: [0, 0, 0, 1] as [number, number, number, number],
+  };
+  const settle = act.settleApplied({
+    changes: [{ kind: "station", stationId: "st-p", geo: movedTo }],
+    codes: [improved],
+    hand: improved,
+    what: "the settle of this visit",
+  });
+  const pinGeo = (state: TourDocumentState) =>
+    documentObjects(state).find((o) => o.object.id === "p")?.object.geo;
+  const stationGeo = (state: TourDocumentState) =>
+    state.stations.find((s) => s.id === "st-p")?.geo;
+
+  // Why this test matters: the settle moved every station and object as
+  // an action of its own and saved the code outside the history, so an
+  // undo took back the last move only and left the improved code. One
+  // settle is one step: its undo takes back the stations, their items and
+  // the code's text together, and its redo brings them back.
+  it("moves the stations and saves the codes in one step, and its undo and redo take them all", () => {
+    const before = run(
+      tourOpened,
+      act.codeTaken({ level: stored, measurement: null }),
+    );
+    const settled = reduce(before, settle);
+    expect(settled.past).toHaveLength(before.past.length + 1);
+    expect(settled.past.at(-1)?.what).toBe("the settle of this visit");
+    expect(stationGeo(settled)).toEqual(movedTo);
+    expect(pinGeo(settled)).not.toEqual(pinGeo(before));
+    expect(codeSavedText(settled, "c")).toBe("improved-c");
+
+    const undone = reduce(settled, act.undone());
+    expect(stationGeo(undone)).toEqual(stationGeo(before));
+    expect(pinGeo(undone)).toEqual(pinGeo(before));
+    expect(codeSavedText(undone, "c")).toBe("stored-c");
+
+    const redone = reduce(undone, act.redone());
+    expect(stationGeo(redone)).toEqual(movedTo);
+    expect(codeSavedText(redone, "c")).toBe("improved-c");
+  });
+
+  // Why this test matters: the codes take no history step of their own,
+  // so a code measured again after the settle is newer work than the
+  // step; the undo must not put the settle's earlier text over it.
+  it("leaves a code changed since the settle as it is at the undo", () => {
+    const remeasured = { id: "c", json: "remeasured-c" };
+    const undone = run(
+      tourOpened,
+      act.codeTaken({ level: stored, measurement: null }),
+      settle,
+      act.codeTaken({ level: remeasured, measurement: MEASUREMENT }),
+      act.undone(),
+    );
+    expect(codeSavedText(undone, "c")).toBe("remeasured-c");
+    expect(stationGeo(undone)).not.toEqual(movedTo);
+  });
+
+  // Why this test matters: a visit whose settle moved nothing and saved
+  // no new text takes no step, or an undo would take back nothing while
+  // withdrawing the creator's last edit from reach.
+  it("takes no step when it moves nothing and changes no code's text", () => {
+    const before = run(
+      tourOpened,
+      act.codeTaken({ level: stored, measurement: null }),
+    );
+    const same = reduce(
+      before,
+      act.settleApplied({
+        changes: [],
+        codes: [stored],
+        hand: stored,
+        what: "the settle of this visit",
+      }),
+    );
+    expect(same.past).toHaveLength(before.past.length);
+    expect(same.revision).toBe(before.revision);
   });
 });
 

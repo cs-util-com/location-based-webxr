@@ -208,6 +208,20 @@ export function wireReferenceCodes(deps: {
       if (hand?.id === level.id) hand = level;
       setBook(withSaved(book, level));
     },
+    // Added for the settle as one step (plan M3b): its codes as one change
+    // of the book - the same rule as `saveLevel` per code, the hand taking
+    // a code's new text only if it held that code, heard once. The step,
+    // its moves and its undo are the document's, which this model does not
+    // hold: the batch is not committed here.
+    applySettle: (_batch, levels) => {
+      let next = book;
+      for (const level of levels) {
+        if (hand?.id === level.id) hand = level;
+        next = withSaved(next, level);
+      }
+      setBook(next);
+      return null;
+    },
     numbering: () => {
       const ids = [...(ctx.currentLevels?.keys() ?? [])];
       const listed = new Set(ids);

@@ -65,7 +65,7 @@ import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorCodes } from "./creator-codes.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import { moveStationsWithCode } from "./station-code-move.js";
-import type { DocumentChange } from "./creator-document.js";
+import type { DocumentChange, SettleBatch } from "./creator-document.js";
 import { correctionRefusedLine } from "./qr-author-mode.js";
 import type { TourViewerSeams } from "./seams.js";
 import { buildSummaryModel, codeLabel } from "./summary-model.js";
@@ -258,6 +258,7 @@ export function wireCreatorSettle(deps: {
     | "measurement"
     | "sighting"
     | "saveLevel"
+    | "applySettle"
     | "visitCodes"
     | "references"
     | "numbering"
@@ -931,8 +932,12 @@ export function wireCreatorSettle(deps: {
     // item of such a station that this visit did not place (earlier work
     // moved into it, a restored draft) is put back where it stood: the
     // visit's correction says nothing about it (as the code move's `stay`).
+    // Every move and the codes re-minted reach the document as ONE step at
+    // the end (plan M3b, Q-D): one undo takes the settle back, and the
+    // draft follows it once.
+    const batch = ctx.tourDocument.settleBatch();
     const settling = new Set(plan.stations.map((s) => s.id));
-    const stay = ctx.tourDocument
+    const stay = batch
       .objects()
       .filter(
         (o) =>
@@ -942,35 +947,25 @@ export function wireCreatorSettle(deps: {
       );
     const reposed = new Set<string>();
     for (const { id, at } of plan.stations) {
-      const frame = ctx.tourDocument.state().stations.find((s) => s.id === id);
+      const frame = batch.state().stations.find((s) => s.id === id);
       if (frame === undefined) continue;
       const { lat, lon, alt } = frame.geo;
       if (lat === at.lat && lon === at.lon && alt === at.alt) continue;
       reposed.add(id);
-      noteUnlanded(
-        ctx.tourDocument.moveStation(
-          id,
-          { ...frame.geo, ...at },
-          `the settle of ${frame.title === undefined ? "a station" : `"${frame.title}"`}`,
-        ),
-      );
+      batch.moveStation(id, { ...frame.geo, ...at });
     }
     for (const o of stay) {
       if (o.object.station === undefined || !reposed.has(o.object.station)) {
         continue;
       }
-      noteUnlanded(
-        ctx.tourDocument.move(o.object, `the settle of ${nameOf(o.object)}`),
-      );
+      batch.move(o.object);
     }
     for (const { index, object } of plan.objects) {
       const entry = input.placed[index];
       if (entry === undefined || entry.object === object) continue;
       // Its AR placement is kept: a later settle of this visit recomputes
       // it from there (a Finish's tap settle, then the visit's end).
-      noteUnlanded(
-        ctx.tourDocument.move(object, `the settle of ${nameOf(object)}`),
-      );
+      batch.move(object);
     }
     // Every code's pose BEFORE this settle re-mints any: each earlier
     // object belongs to one code, judged against these (M5 design review
@@ -1025,12 +1020,12 @@ export function wireCreatorSettle(deps: {
       plan.level !== null && plan.level.id === level?.id
         ? levelOf(plan.level)
         : null;
-    if (inHandLevel !== null) deps.codes.saveLevel(inHandLevel);
-    // The visit's other measured codes, re-minted too (M4c-2).
-    for (const other of levels) {
-      if (other.id !== inHandLevel?.id) deps.codes.saveLevel(other);
-    }
-    if (levels.length > 0) void deps.draft.saveMeta();
+    // Saved with the moves, at the end: the code in hand first, then the
+    // visit's other measured codes, re-minted too (M4c-2).
+    const settledLevels = [
+      ...(inHandLevel === null ? [] : [inHandLevel]),
+      ...levels.filter((other) => other.id !== inHandLevel?.id),
+    ];
     // An IMPROVED position takes the pins and photos near it along, so
     // they keep their place next to the poster (owner decision
     // 2026-10-06); a real move leaves them where they are (D19). Each
@@ -1040,6 +1035,7 @@ export function wireCreatorSettle(deps: {
     const claimed = new Set<string>(
       stations.map((s) => `${STATION_CLAIM}${s.id}`),
     );
+    let movedWithCodes = false;
     decisions.forEach((d, i) => {
       if (!d.applied || d.reapplied || d.plan.decision.kind !== "replace") {
         return;
@@ -1047,6 +1043,7 @@ export function wireCreatorSettle(deps: {
       const after = levels.find((l) => l.id === d.code.id);
       if (after === undefined) return;
       const moved = moveEarlierWithCode(
+        batch,
         visit,
         d.code.id,
         d.code.json,
@@ -1055,8 +1052,14 @@ export function wireCreatorSettle(deps: {
         claimed,
         elsewhere,
       );
+      if (moved.length > 0) movedWithCodes = true;
       logged[i]?.movedWithCode.push(...moved);
     });
+    noteUnlanded(
+      deps.codes.applySettle(batch, settledLevels, "the settle of this visit"),
+    );
+    if (settledLevels.length > 0) void deps.draft.saveMeta();
+    if (movedWithCodes) deps.previews.sync();
     logSettle(
       visit,
       trigger,
@@ -1289,6 +1292,8 @@ export function wireCreatorSettle(deps: {
    *   claimed before (`claimed`): the visit's settle moved it already.
    */
   function moveEarlierWithCode(
+    /** The settle's changes so far, which this one joins. */
+    batch: SettleBatch,
     visit: number,
     levelId: string,
     beforeJson: string,
@@ -1317,11 +1322,11 @@ export function wireCreatorSettle(deps: {
     const moved: { id: string; before: QrGeoPose; after: QrGeoPose }[] = [];
     // The objects as they stand BEFORE any station moves: where the code's
     // move starts from, and what the log names as before.
-    const entries = ctx.tourDocument.objects();
-    const homes = moveStationsAlong(from, to, others, claimed, visit);
+    const entries = batch.objects();
+    const homes = moveStationsAlong(batch, from, to, others, claimed, visit);
     /** Where the moved stations' frames put their objects now. */
     const now = new Map(
-      ctx.tourDocument.objects().map((o) => [o.object.id, o.object.geo]),
+      batch.objects().map((o) => [o.object.id, o.object.geo]),
     );
     for (const entry of entries) {
       if (entry.placed?.placement?.visit === visit) continue;
@@ -1336,7 +1341,6 @@ export function wireCreatorSettle(deps: {
       claimed.add(entry.object.id);
       moved.push({ id: entry.object.id, before: entry.object.geo, after });
     }
-    if (moved.length > 0) deps.previews.sync();
     return moved;
   }
 
@@ -1348,6 +1352,7 @@ export function wireCreatorSettle(deps: {
    * this visit's settle, through the improved code already.
    */
   function moveStationsAlong(
+    batch: SettleBatch,
     from: QrGeoPose,
     to: QrGeoPose,
     others: readonly QrGeoPose[],
@@ -1356,7 +1361,7 @@ export function wireCreatorSettle(deps: {
   ): ReadonlySet<string> {
     // The document as it stands, also before any tour file opened: its
     // objects stand in its stations then too, and move with them.
-    const manifest = manifestNow(ctx.tourDocument.state());
+    const manifest = manifestNow(batch.state());
     const none = new Set<string>();
     if (manifest === null) return none;
     const result = moveStationsWithCode(manifest.stations, {
@@ -1373,7 +1378,7 @@ export function wireCreatorSettle(deps: {
     });
     if (result.moved.length === 0) return none;
     const movedIds = new Set(result.moved);
-    const stay = ctx.tourDocument
+    const stay = batch
       .objects()
       .filter(
         (o) =>
@@ -1383,26 +1388,11 @@ export function wireCreatorSettle(deps: {
       );
     for (const station of result.stations) {
       if (!movedIds.has(station.id)) continue;
-      noteUnlanded(
-        ctx.tourDocument.moveStation(
-          station.id,
-          station.geo,
-          `the move of ${station.title === undefined ? "a station" : `"${station.title}"`} with its code`,
-        ),
-      );
+      batch.moveStation(station.id, station.geo);
       claimed.add(`${STATION_CLAIM}${station.id}`);
     }
-    for (const o of stay) {
-      noteUnlanded(
-        ctx.tourDocument.move(o.object, `the settle of ${nameOf(o.object)}`),
-      );
-    }
+    for (const o of stay) batch.move(o.object);
     return movedIds;
-  }
-
-  /** How a log of the document names `object`. */
-  function nameOf(object: TourObject): string {
-    return object.kind === "pin" ? `"${object.label}"` : "a photo";
   }
 
   /** A change's draft writes, a failure said once (as a placement's). */

@@ -150,6 +150,21 @@ const creatorCodesSlice = createSlice({
       .addCase(tourDocumentActions.codesRestored, (state, action) =>
         withFields(state, { hand: action.payload.hand }),
       )
+      // A settle names the hand after its codes, as `codeSaved` does: the
+      // hand takes its own code's new text, its measurement stays.
+      .addCase(tourDocumentActions.settleApplied, (state, action) =>
+        withFields(state, { hand: action.payload.hand }),
+      )
+      // An undo took the saved text of the hand's code back (plan M3b): the
+      // hand lets go of it, its measurement with it - its text would
+      // otherwise win again at the next change of the book.
+      .addCase(tourDocumentActions.handReleased, (state, action) => {
+        const before = plain(state);
+        return before.hand !== null &&
+          action.payload.levelIds.includes(before.hand.id)
+          ? { ...before, hand: null, handMeasurement: null }
+          : before;
+      })
       // A tour's close: the hand and its measurement go. The visit's
       // sightings are left to the visit's end, as a tour cannot close
       // inside a visit (scan-to-open never switches tours, and the open

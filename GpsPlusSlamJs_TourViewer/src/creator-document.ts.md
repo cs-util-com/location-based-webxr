@@ -55,6 +55,16 @@ copy of the tour.
     kept (a settle's re-pose);
   - `remove(id, what)` - null for an id the tour does not carry;
   - `moveStation(stationId, geo, what)` - D17, null for an unknown station;
+  - `settleBatch()` - a settle's changes as ONE step (plan M3b, Q-D):
+    `moveStation(stationId, geo)` and `move(object)` (false for an
+    unknown station or id; a move's AR placement kept, a fresh id minted
+    for a station it may start) are staged by the slice's own reducer, so
+    `state()` and `objects()` read the document as the changes so far
+    leave it while nothing reaches the store; `commit({ levels, hand },
+what)` dispatches them with the settle's codes as one
+    `settleApplied`, anchors a station a move started as `move` does,
+    and returns the change (null for no step, and for a second commit).
+    The settle commits through `creator-codes.ts`'s `applySettle`.
   - `restore({ objects, deleted, pictures, stations?, createdStations? },
 what)` - a draft's work, already filtered by the page, with its
     photos' pictures and the whole frames of the stations its objects were
@@ -169,6 +179,10 @@ else void placed.backedUp.then((ok) => ok || draft.warnNoBackup());
   tour's station; kept through undo and redo; gone with the tour and for a
   written station), and the draft following (writes from the listener with
   the picture, a failure reported to its change, the station poses'
-  record, nothing for an open, a close or a landed write).
+  record, nothing for an open, a close or a landed write); a settle's
+  batch (its staged reads, the store untouched until the commit, one step,
+  one commit only, no step for nothing, the anchor of a station a move in
+  it started - the last two checked to fail with the commit's guard and
+  its anchoring turned off).
 - The composed phone: `authoring-settle.test.ts`, `creator-setup.test.ts`,
   `creator-finish.test.ts`, `tour-document-parity.test.ts`.
