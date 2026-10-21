@@ -1878,6 +1878,20 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
     const third = await reopen(store);
     third.dom.draftRestore.click();
     expect(third.setup.codes.inHand()).toEqual(level);
+    // The edit above writes the meta only, so it cannot tell whether a
+    // write made before the offer is answered keeps the offered code. A
+    // write of the CODES on that page does: a measurement there re-states
+    // the offered draft's code after its own. (The third page's restore
+    // writes the codes too; it lands first, so the file read below is the
+    // second page's.)
+    await settle();
+    const other = { id: "ccccccccccc3", json: '{"c":1}' };
+    second.setup.codes.setInHand(other, null);
+    await settle();
+    expect(JSON.parse(String(files.get(CODES_KEY)))).toEqual({
+      level: other,
+      levels: [other, level],
+    });
   });
 
   it("does not bring back a rejected file the sweep could not remove, when a crash follows the claim", async () => {
@@ -2189,6 +2203,16 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
     expect(codes.level).toEqual(a);
     expect(codes.levels).toEqual([a]);
     expect(meta.rejected, "the claim took the id back").not.toContain("hosted");
+    // The claim above writes the meta only, so it cannot tell whether
+    // "Not now" let go of the draft's codes. A write of the CODES does: it
+    // must still re-state the offered draft's code after this page's.
+    const other = { id: "ccccccccccc3", json: '{"c":1}' };
+    page.setup.codes.setInHand(other, null);
+    await settle();
+    expect(JSON.parse(String(files.get(CODES_KEY)))).toEqual({
+      level: other,
+      levels: [other, a],
+    });
   });
 
   /** The open tour's zip as `hostedLevelJson` reads it: `qr/<id>.json`
