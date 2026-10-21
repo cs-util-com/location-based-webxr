@@ -43,6 +43,9 @@ import type { LatLng } from "gps-plus-slam-osm";
  * framework's own `calcRelativeCoordsInMeters` makes the identical
  * approximation with the same fixed cosine, so both subsystems are wrong in
  * precisely the same way — which is what makes them agree with each other.
+ * (Only east-west until 2026-10-06: the frame's metres a degree of latitude
+ * were 111,320 against the core's 110,946, 0.34 % apart. Since then the frame
+ * uses the core's two numbers; `one-ruler.test.ts` compares the conversions.)
  * Locally the residual is a scale error of ~0.2 % at a 10 km offset, about half
  * a metre across a city block.
  */

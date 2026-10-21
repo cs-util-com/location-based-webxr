@@ -4,8 +4,8 @@
 > action stream via the framework parser - since the K1 milestone review
 > R1 over the session's OWN entry list, `loadActionsFromEntries`, never a
 > second directory read) and `loadSessionMeta()` (`session.json`, the era gate's input) —
-> BOTH null-tolerant: a hand-built zip or a corrupt stream reads as "keep
-> the ring", never a broken archive.
+> BOTH null-tolerant: a hand-built zip or a corrupt stream reads as "no
+> walk to bake", never a broken archive.
 >
 > M3 addition: `loadQrLevels(): Promise<ReadonlyMap<string, QrLevel>>` —
 > every `qr/<id>.json` in the archive, keyed by `<id>` — the hash of the
@@ -30,12 +30,15 @@ loading with MIME types, and the poisoned-cache recovery loop.
 - `openTourFile(file, options?): Promise<TourSession>` (tour kit plan K0)
   - a tour zip on the device, `options.limits` as above. Its
     `archive.url` is `tour-file-key.ts`'s key: the series id when the
-    zip carries `manifest.json` (tour kit plan K1, R7), else the content
-    key.
+    zip carries `manifest.json` (tour kit plan K1, R7), else the tour's
+    own id from its `tour.json` (`local-file:tour:<tourId>`,
+    debug-captures plan Q-I; read under the text cap, a `tour.json` that
+    does not parse reads as none), else the content key.
 - `tourFileKeyOfFile(file, limits?): Promise<string>` (M6 E2c) - the key
   `openTourFile` would give `file`, without opening a session: the desktop
-  editor's draft follows the bytes an in-place save wrote
-  (`editor/editor-draft.ts`). Rejects as the open does for a file that is
+  editor's draft follows the bytes an in-place save wrote or a download
+  made (`editor/editor-draft.ts`), and the phone's the file a Finish
+  delivered (`creator-draft.ts` `follow`). Rejects as the open does for a file that is
   not a readable zip.
 - `TourSession { entries; archive; fromFile; hasRecording; manifestWrap; budget; stats(); loadEntry(filename); loadEntryText(filename); loadContentEntry(image); close() }`
   - `integrity` (tour kit plan K1, §8 D3) - TIER 1's result
@@ -152,10 +155,9 @@ not-checked`): a link's complete copies are checked through
 - **A refusal of the recording is never "no recording"** (K0 milestone
   review R9): `loadRecordingActions` and `loadSessionMeta` still read a
   corrupt stream or file as null (the join declines, the tour works), but
-  REJECT with the `ArchiveLimitError` when a cap refuses them, so the
-  join's caller (`viewer-placement.ts`) shows it in the AR status line
-  ("photo ring (reading the recording failed: ...)") instead of a silent
-  ring.
+  REJECT with the `ArchiveLimitError` when a cap refuses them, so their
+  one caller, the editor's debug layer (`debug-captures.ts`), says why
+  instead of silently showing nothing.
 - **Opening a FILE (`openTourFile`, tour kit plan K0).** The same session
   over the file's own bytes (`LocalCacheByteSource`): the same caps (the
   transport cap from `file.size`, cause `'too-large'`), no network, no

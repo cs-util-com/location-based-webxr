@@ -673,6 +673,23 @@ describe("a file-opened tour's key (tour kit plan K1, R7)", () => {
     await b.close();
   });
 
+  it("is the series id even when tour.json carries a tour id too", async () => {
+    // Why (debug-captures plan, Q-I): the signed list is the listed tour's
+    // one identity; an id in tour.json is the fallback for unlisted tours.
+    const listed = await buildListedTourFixture(
+      {
+        ...FILES,
+        "tour.json": JSON.stringify({ version: 3, tourId: "OwnId1234" }),
+      },
+      { seriesId: "SeriesAAAAAAAAAAAAAAAAA" },
+    );
+    const session = await openTourFile(file(listed.zip));
+    expect(session.archive.url).toBe(
+      "local-file:series:SeriesAAAAAAAAAAAAAAAAA",
+    );
+    await session.close();
+  });
+
   it("stays the content key for a tour without a manifest", async () => {
     const zip = await writeStoreZip(
       Object.entries(FILES).map(([path, data]) => ({ path, data })),

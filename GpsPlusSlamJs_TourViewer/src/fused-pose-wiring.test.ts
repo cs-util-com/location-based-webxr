@@ -312,6 +312,10 @@ describe("the creator measures and mints with the fused pose", () => {
     "objectList",
     "keepScanRow",
     "keepScanInput",
+    "debugSave",
+    "debugSaveText",
+    "debugSaveButton",
+    "debugSaveStatus",
   ] as const;
   function el() {
     const handlers = new Map<string, () => void>();

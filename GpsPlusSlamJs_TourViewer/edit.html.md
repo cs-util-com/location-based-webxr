@@ -18,9 +18,19 @@ AR (tour editor plan 2026-10-17-1816, W1).
 ## Structure
 
 - `#map` - the full-window map (`src/editor/editor-map.ts`).
+- `#debug-panel` - shown for every open tour: the debug layer's "Show
+  debug data" switch (`#debug-switch` around `#debug-data-input`,
+  ticked; shown only while the layer has a source - the tour's walk or
+  added debug data), its line (`#debug-status`, a live region) and "Add
+  debug data…" (`#debug-add`, with its hidden `#debug-add-input`; a file
+  dropped on the panel too; M2 step 5 of the debug-captures plan)
+  (`src/editor/debug-capture-layer.ts`, `src/editor/added-debug-data.ts`).
+  It stacks under the note card (`editor.css`), which may open over the
+  same corner.
 - `#topbar` - the tour's title (`#tour-name`, a button that opens the
-  tour's details, W2) and file name, the "Keep the walk recording"
-  switch (`#keep-walk`, only for a tour carrying a walk), `#save-status`,
+  tour's details, W2) and file name, the "Keep the debug data in
+  the tour file" switch (`#keep-walk`, only for a tour carrying a walk,
+  unticked; hidden for a file opened for writing, which keeps its walk), `#save-status`,
   `#save-btn` (Save downloads the tour, M6 E2a), `#done-btn` ("Done",
   W2), "Open another tour".
 - `#rail` - the codes, pins and photos (`src/editor/editor-rail.ts`).
@@ -55,7 +65,9 @@ AR (tour editor plan 2026-10-17-1816, W1).
   `edit-main.ts`) with `#done-update`, `#done-public`, `#done-drive-tip`
   (hidden: `DRIVE_MOUNT_TIP_SHOWN` is off until the owner's check),
   `#done-walk` (only while the file carries the walk: `#done-walk-text`,
-  `#done-move` "Move the walk out", `#done-move-status`), a Privacy link
+  `#done-move` "Move the debug data out", `#done-save-debug` "Save the
+  debug data" after a save that left it out, `#done-move-status`), a
+  Privacy link
   (`legal.html#privacy`) and Close. Above the toasts (z-index).
 - `#toasts` - "Opened <file>: N codes, M notes".
 

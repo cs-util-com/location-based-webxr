@@ -4,8 +4,8 @@
  * loading, and the dive's clock, paced by that loading (`flight-pace.ts`)
  * or fixed by hand (`diveMs`). Pure, apart from the clock's own state.
  *
- * The counts are OsmDemo's arrival prefetch's (`arrival-progress.ts` there),
- * declared here structurally: this package does not depend on OsmDemo.
+ * The counts are the Osm library's city load's (`city/city-progress.ts`),
+ * declared here structurally: this package does not depend on the library.
  *
  * @see globe-arrival.ts.md
  */

@@ -32,22 +32,32 @@ import {
   restoreOfferText,
 } from "./authoring-draft.js";
 import {
+  META_KEY,
+  photoKey,
   readDraft,
+  readDraftCodes,
   removeDraftObject,
   addDraftBaseKey,
+  writeDraftCodes,
   writeDraftDeletion,
   writeDraftLiveRecord,
   writeDraftMeta,
   writeDraftVisit,
+  type DraftCodes,
 } from "./draft-persistence.js";
 import type { CreatorCodes } from "./creator-codes.js";
 import { createKeyedChain } from "./keyed-chain.js";
-import type { StationPose } from "./tour-document.js";
+import {
+  createdStationFrames,
+  type StationFrame,
+  type StationPose,
+} from "./tour-document.js";
 import {
   changedStations,
   parseSettingsRecord,
   settingsRecord,
   SETTINGS_KEY,
+  type TourCodesRecord,
   type TourSettingsRecord,
 } from "./tour-document-draft.js";
 import type { TourSession } from "./tour-session.js";
@@ -72,9 +82,14 @@ export interface CreatorDraft {
   present(tourUrl: string): void;
   /** A tour closed: its offer, namespace, rejections and answers go. */
   reset(): void;
-  /** Rewrite the open tour's meta (tour, printed size, measured level,
-   *  rejections, move answers). True with no tour open: nothing to write. */
+  /** Rewrite the open tour's meta (tour, printed size, rejections). True
+   *  with no tour open: nothing to write. */
   saveMeta(): Promise<boolean>;
+  /** Write the draft's codes record (`tour-document-draft.ts`, plan M3b:
+   *  the code in hand and the codes the hosted zip does not hold yet), in
+   *  its own queue, the waiting draft's codes re-stated after it. True
+   *  with no tour's draft open yet (`present` writes them then). */
+  saveCodes(codes: TourCodesRecord): Promise<boolean>;
   /** Record something placed, fire-and-forget. */
   recordPlacement(object: TourObject, blob?: Blob): void;
   /** Record one AR visit's log entry, in memory and in the draft. */
@@ -107,6 +122,18 @@ export interface CreatorDraft {
    *  the moved stations' poses, the details once set), in its own queue.
    *  True with no tour's draft open yet (`present` writes it then). */
   saveSettings(settings: TourSettingsRecord): Promise<boolean>;
+  /**
+   * The draft follows `tourUrl` (debug-captures plan, Q-I): the file a
+   * Finish saved of a tour opened from a file opens under another key once
+   * its save wrote the tour's own id. Every file of the namespace is copied
+   * there and the meta re-stated under it; the writes go there from now
+   * on. The old namespace keeps what it holds - a saved file is not known
+   * to be put anywhere ("NOT cleared here" in `creator-finish.ts`), so the
+   * opened file opened again still offers what it did. True once the
+   * draft is under `tourUrl` (or none is open); false when a copy did not
+   * land.
+   */
+  follow(tourUrl: string): Promise<boolean>;
   /** Say, once, that this device keeps no backup copy. */
   warnNoBackup(): void;
   /** False once the creator was told no backup is kept. */
@@ -143,6 +170,55 @@ export async function hostedLevelJson(
   }
 }
 
+/** What one open read of the stored settings record that no decision took
+ *  yet (`undecided` in `wireCreatorDraft`). `created` holds the stored
+ *  record's created stations (those its objects were placed in that the
+ *  opened tour lacks): a live record names only the page's own, so
+ *  without them a write before the restore - a placement that starts a
+ *  station, the open's own live write - would take the draft's stations
+ *  off disk, and a later restore would seat its objects by the rule under
+ *  new ids. */
+interface SettingsHolder {
+  poses: readonly StationPose[] | null;
+  created: readonly StationFrame[] | null;
+  /** The stored draft's codes while nobody decided on them (plan M3b, the
+   *  M6 E2c review #3 before it): from the open's read until Restore
+   *  brings them in or a rejection of the draft lands. A write of the
+   *  codes meanwhile - a measurement, a settle, "Not now" then a Finish -
+   *  re-states them after the page's own, or the draft's measured code
+   *  would be gone from disk at the next read. */
+  codes: DraftCodes | null;
+}
+
+/** `record` with the waiting draft's codes `stored` after its own: the
+ *  record's hand first, else the stored one; a code the record holds
+ *  under the same id is newer and wins. */
+function withStoredCodes(
+  record: DraftCodes,
+  stored: DraftCodes | null,
+): DraftCodes {
+  if (stored === null) return record;
+  const ids = new Set(record.levels.map((l) => l.id));
+  return {
+    level: record.level ?? stored.level,
+    levels: [...record.levels, ...stored.levels.filter((l) => !ids.has(l.id))],
+  };
+}
+
+/** `record` with the stored created stations whose ids it lacks: the
+ *  record's own frame of an id wins (this page's, newer). */
+function withCreated(
+  record: TourSettingsRecord,
+  stored: readonly StationFrame[] | null,
+): TourSettingsRecord {
+  const own = record.createdStations ?? [];
+  const have = new Set(own.map((f) => f.id));
+  const extra = (stored ?? []).filter((f) => !have.has(f.id));
+  return extra.length === 0
+    ? record
+    : { ...record, createdStations: [...own, ...extra] };
+}
+
 export function wireCreatorDraft(deps: {
   ctx: TourViewerSession;
   dom: CreatorDraftDom;
@@ -151,7 +227,7 @@ export function wireCreatorDraft(deps: {
   openDraftStore: (key: string) => Promise<DraftFileStore | undefined>;
   /** The page-side visit log (`creator-setup.ts` owns it). */
   visitLog: VisitLog;
-  /** The code in hand: written to the meta, restored from it. */
+  /** The codes: written to the codes record, restored from it. */
   codes: Pick<
     CreatorCodes,
     "inHand" | "restoreInHand" | "restoreLevels" | "notHosted"
@@ -232,6 +308,10 @@ export function wireCreatorDraft(deps: {
   function settingsChainKey(tourUrl: string): string {
     return JSON.stringify(["settings", draftKeyForTour(tourUrl)]);
   }
+  /** The codes record's queue, for the same reason. */
+  function codesChainKey(tourUrl: string): string {
+    return JSON.stringify(["codes", draftKeyForTour(tourUrl)]);
+  }
 
   /** The creator-facing url of the open tour, for later draft writes. */
   let draftTourUrl: string | null = null;
@@ -247,7 +327,7 @@ export function wireCreatorDraft(deps: {
    *  its poses when it runs, so a write still queued when the tour closes
    *  (or another opens) carries its own tour's poses - never none, never
    *  the next tour's (the r880 fix re-review, L2). */
-  let undecided: { poses: readonly StationPose[] | null } | null = null;
+  let undecided: SettingsHolder | null = null;
   /** The settings records (not removals) issued per tour since the page
    *  loaded, by the namespace key (as the queues above): a "Delete it" that
    *  commits after its tour closed compares it with its tap's count, to
@@ -291,17 +371,10 @@ export function wireCreatorDraft(deps: {
      *  opened tour's (D17): a restore moves those frames first, so their
      *  items' records land inside them. */
     stations: readonly StationPose[];
-  } | null = null;
-  /**
-   * The stored draft's codes while they are not this page's (M6 E2c review
-   * #3): from the read until Restore brings them in or "Delete it" rejects
-   * them. A meta write meanwhile - a claim, a mint, "Not now" then a
-   * Finish - re-states them beside the page's own, or the draft's measured
-   * code would be gone from disk at the next read.
-   */
-  let storedCodes: {
-    level: { id: string; json: string } | null;
-    levels: readonly { id: string; json: string }[];
+    /** The stations this draft's objects were placed in that the opened
+     *  tour lacks, whole (the settings record's `createdStations`): put
+     *  back before the objects, so each comes back in its own station. */
+    createdStations: readonly StationFrame[];
   } | null = null;
   /** Said once, not per placement: a creator mid-walk cannot act on it. */
   let warnedAboutPersistence = false;
@@ -386,7 +459,7 @@ export function wireCreatorDraft(deps: {
     store: DraftFileStore,
     tourUrl: string,
     record: TourSettingsRecord | null,
-    held: { poses: readonly StationPose[] | null } | null,
+    held: SettingsHolder | null,
   ): Promise<boolean> {
     if (record !== null) {
       settingsPuts.set(draftKeyForTour(tourUrl), settingsPutsFor(tourUrl) + 1);
@@ -396,24 +469,63 @@ export function wireCreatorDraft(deps: {
         if (record === null) {
           return store.remove(SETTINGS_KEY).then(() => true);
         }
-        // Its undecided poses as they stand when the write RUNS: the
-        // open's read of the record sets them in this same queue.
+        // Its undecided poses and created stations as they stand when the
+        // write RUNS: the open's read of the record sets them in this same
+        // queue.
         const poses = held?.poses ?? null;
-        const value =
+        const posed =
           record.stations === undefined && poses !== null
             ? { ...record, stations: poses }
             : record;
-        return store.put(SETTINGS_KEY, JSON.stringify(value));
+        return store.put(
+          SETTINGS_KEY,
+          JSON.stringify(withCreated(posed, held?.created ?? null)),
+        );
       })
       .catch(() => false);
+  }
+
+  /** The codes record's write in its queue: `codes`, with the waiting
+   *  draft's codes of `held` (the open the write is FOR, as for the
+   *  settings) re-stated as they stand when the write RUNS - the open's
+   *  read of the record sets them in this same queue. */
+  function writeCodes(
+    store: DraftFileStore,
+    tourUrl: string,
+    codes: DraftCodes,
+    held: SettingsHolder | null,
+  ): Promise<boolean> {
+    return draftWrites
+      .run(codesChainKey(tourUrl), () =>
+        writeDraftCodes(store, withStoredCodes(codes, held?.codes ?? null)),
+      )
+      .catch(() => false);
+  }
+
+  /** This page's codes as they stand (`codesRecord`'s, read through the
+   *  codes facade). */
+  function pageCodes(): DraftCodes {
+    return { level: deps.codes.inHand(), levels: deps.codes.notHosted() };
+  }
+
+  /** This page holds a code the draft keeps. */
+  function hasPageCodes(): boolean {
+    const codes = pageCodes();
+    return codes.level !== null || codes.levels.length > 0;
   }
 
   /** This page changed the tour's settings since the open (a station
    *  moved, the details set): its record is live work, newer than any
    *  draft's. */
   function settingsLive(): boolean {
-    const { touched } = ctx.tourDocument.state();
-    return touched.stations || touched.details || touched.needsNoGps;
+    const state = ctx.tourDocument.state();
+    const { touched } = state;
+    return (
+      touched.stations ||
+      touched.details ||
+      touched.needsNoGps ||
+      createdStationFrames(state).length > 0
+    );
   }
 
   function writeVisit(
@@ -540,7 +652,8 @@ export function wireCreatorDraft(deps: {
   }
 
   /**
-   * Record the tour, the printed size and the measured level.
+   * Record the tour, the printed size and the rejections (the codes have a
+   * record of their own, `writeCodes`).
    *
    * @param tourUrl the CREATOR-FACING url, which is what the store is keyed
    *   by. `ctx.session.archive.url` is normalised - for a Drive tour it is
@@ -558,12 +671,6 @@ export function wireCreatorDraft(deps: {
       tourUrl,
       sizeM:
         Number.isFinite(sizeM) && sizeM > 0 ? sizeM : AUTHOR_DEFAULT_SIZE_M,
-      level: deps.codes.inHand() ?? storedCodes?.level ?? null,
-      // Every code the hosted zip does not hold yet (M4c-1), the code in
-      // hand among them; `level` stays for an older build reading this.
-      // The stored draft's too while they are not this page's; a live code
-      // with the same id is newer and wins.
-      levels: withStoredCodes(deps.codes.notHosted()),
       // Re-stated on every write, not only on the discard's: this file is
       // rewritten on each mint, each finish and each tour open, and one
       // that omitted the list would hand a rejected draft back on the next
@@ -584,12 +691,48 @@ export function wireCreatorDraft(deps: {
       });
   }
 
-  function withStoredCodes(
-    live: readonly { id: string; json: string }[],
-  ): readonly { id: string; json: string }[] {
-    if (storedCodes === null) return live;
-    const ids = new Set(live.map((l) => l.id));
-    return [...live, ...storedCodes.levels.filter((l) => !ids.has(l.id))];
+  async function follow(tourUrl: string): Promise<boolean> {
+    const from = draftStore;
+    const fromUrl = draftTourUrl;
+    if (from === undefined || fromUrl === null) return true;
+    if (draftKeyForTour(tourUrl) === draftKeyForTour(fromUrl)) return true;
+    const generation = ctx.openGeneration;
+    const opened = await deps.openDraftStore(draftKeyForTour(tourUrl));
+    if (opened === undefined) return false;
+    // Another tour opened, or the draft moved meanwhile: not this move's -
+    // unless it moved where this one was going (a second quick Finish of
+    // the same file), which is the draft where it belongs.
+    if (
+      generation !== ctx.openGeneration ||
+      draftStore !== from ||
+      draftTourUrl !== fromUrl
+    ) {
+      return (
+        draftTourUrl !== null &&
+        draftKeyForTour(draftTourUrl) === draftKeyForTour(tourUrl)
+      );
+    }
+    // Synchronously: every write issued from here on lands in the new one.
+    draftStore = opened;
+    draftTourUrl = tourUrl;
+    // Alone in the queue: the writes queued for the old namespace land
+    // there first, so the copy holds them, and a write issued from here on
+    // waits for the copy - the old copy of a file never lands over it.
+    const copied = await draftWrites
+      .exclusive(async () => {
+        let ok = true;
+        for (const key of await from.keys()) {
+          if (key === META_KEY) continue;
+          const data = key.startsWith(photoKey(""))
+            ? await from.getBlob(key)
+            : await from.getText(key);
+          // Listed but unreadable: not copied (the old namespace has it).
+          ok = data !== undefined && (await opened.put(key, data)) && ok;
+        }
+        return ok;
+      })
+      .catch(() => false);
+    return (await recordMeta(tourUrl)) && copied;
   }
 
   /** Put a restored draft's objects and deletions back into the tour
@@ -615,6 +758,9 @@ export function wireCreatorDraft(deps: {
     ctx.tourDocument.restore(
       {
         ...(stations.length === 0 ? {} : { stations }),
+        ...(waiting.createdStations.length === 0
+          ? {}
+          : { createdStations: waiting.createdStations }),
         objects,
         deleted,
         pictures: new Map(
@@ -644,9 +790,12 @@ export function wireCreatorDraft(deps: {
     if (waiting === null) return;
     // Decided: the restored frames are the document's now, and its record
     // carries them.
-    if (undecided !== null) undecided.poses = null;
-    // The codes become this page's below (`restoreLevels`).
-    storedCodes = null;
+    if (undecided !== null) {
+      undecided.poses = null;
+      undecided.created = null;
+      // The codes become this page's below (`restoreLevels`).
+      undecided.codes = null;
+    }
     // Into the SAME document a live placement changes, so the finish needs
     // no second path: it writes these into the manifest exactly as it
     // writes anything else (an edit of a hosted object replaces it by id),
@@ -706,12 +855,10 @@ export function wireCreatorDraft(deps: {
     // Minus the ids changed live since (`notLive`, M4).
     const rejectedIds = notLive(offered?.storedIds ?? []);
     offered = null;
-    // The undecided poses go with the draft once its rejection LANDED
-    // (below): until then the draft is still there, and a rename must
-    // still carry them (the r880 fix re-review, L3).
+    // The undecided poses and codes go with the draft once its rejection
+    // LANDED (below): until then the draft is still there, and a rename
+    // or a measurement must still carry them (the r880 fix re-review, L3).
     const held = undecided;
-    // Rejected with the draft: the meta below writes this page's codes only.
-    storedCodes = null;
     const store = draftStore;
     if (store === undefined) return;
     // The one way a creator can throw a draft away deliberately - and the
@@ -764,6 +911,22 @@ export function wireCreatorDraft(deps: {
     // chain guarantees ordering, not immediacy: the `put` itself is issued
     // from a `then`, so it is a microtask away at best (PR #457 review).
     const committed = recordMeta(tourUrl);
+    // The draft's codes go with it once the commit LANDED: this page's
+    // only, as they stood at the tap. Queued NOW, so a write of the codes
+    // issued after the tap - live work, newer - lands after it, without
+    // the rejected ones. A commit that did not land writes nothing: the
+    // draft is still there, its codes with it. Between the commit and
+    // this write a reload finds the rejected draft's codes without its
+    // objects, and offers them again - the safe direction (a prompt with
+    // "Delete it" on it, never lost work), and the window of one write.
+    const codesAtTap = pageCodes();
+    void draftWrites
+      .run(codesChainKey(tourUrl), async () => {
+        if (!(await committed)) return false;
+        if (held !== null) held.codes = null;
+        return writeDraftCodes(store, codesAtTap);
+      })
+      .catch(() => false);
     void (async () => {
       if (!(await committed)) {
         // The rejection is not on disk, so it must not stay in memory: a
@@ -804,7 +967,10 @@ export function wireCreatorDraft(deps: {
       for (const id of rejectedIds) sweepRejected(store, tourUrl, id);
       // Committed: the undecided poses are rejected with the draft, so no
       // later record carries them.
-      if (held !== null) held.poses = null;
+      if (held !== null) {
+        held.poses = null;
+        held.created = null;
+      }
       // The record goes with the draft - unless this page changed the
       // settings since the open: then the file is that live work's, and
       // is written again without the rejected poses it carried. Only
@@ -852,9 +1018,9 @@ export function wireCreatorDraft(deps: {
     // this open's: `stale`).
     const opened = openedTour();
     supersededNote = null;
-    // This open's holder (L2): its writes read its poses, whatever opens
-    // after it.
-    const held: { poses: readonly StationPose[] | null } = { poses: null };
+    // This open's holder (L2): its writes read its poses and codes,
+    // whatever opens after it.
+    const held: SettingsHolder = { poses: null, created: null, codes: null };
     undecided = held;
     void (async () => {
       const store = await deps.openDraftStore(draftKeyForTour(tourUrl));
@@ -869,6 +1035,14 @@ export function wireCreatorDraft(deps: {
         noteNoPersistence();
         return;
       }
+      // The stored codes FIRST, in their own queue and synchronously
+      // queued: a write of the codes issued from here on runs after this
+      // read, re-stating them (`writeCodes`).
+      const codesRead = draftWrites.run(codesChainKey(tourUrl), async () => {
+        const read = await readDraftCodes(store);
+        held.codes =
+          read.level === null && read.levels.length === 0 ? null : read;
+      });
       // The settings record FIRST, in its own queue: a write this page
       // issues from here on (the live record below, a rename) runs after
       // this read, carrying the poses it found undecided.
@@ -886,19 +1060,22 @@ export function wireCreatorDraft(deps: {
             changedStations(read.stations, openedPoses).length > 0
               ? read.stations
               : null;
+          const openedIds = new Set(openedPoses.map((p) => p.id));
+          const created = (read?.createdStations ?? []).filter(
+            (f) => !openedIds.has(f.id),
+          );
+          held.created = created.length === 0 ? null : created;
           return read;
         },
       );
+      if (stale()) return;
+      await codesRead.catch(() => undefined);
       if (stale()) return;
       const stored = await readDraft(store);
       if (stale()) return;
       // Per-tour state: never carry the previous tour's rejections into
       // this one's meta.
       draftRejected = stored?.rejectedIds ?? [];
-      storedCodes =
-        stored === undefined
-          ? null
-          : { level: stored.draft.level, levels: draftLevels(stored.draft) };
       diskRejected = new Set(stored?.rejectedOnDisk ?? []);
       // Deletes that did not finish last time. `rejectedIds` is exactly
       // the ids the meta rejects whose files are still on disk, so this
@@ -948,8 +1125,9 @@ export function wireCreatorDraft(deps: {
       if (stored === undefined) {
         // No draft yet, but there will be: record what is already known,
         // so a crash before the first placement still leaves the tour and
-        // the printed size behind.
+        // the printed size behind - and a code measured before the open.
         void recordMeta(tourUrl);
+        if (hasPageCodes()) void writeCodes(store, tourUrl, pageCodes(), held);
         return;
       }
       // A newer edit elsewhere wins (M6 E2p, owner question Q-E2-2's
@@ -1031,8 +1209,6 @@ export function wireCreatorDraft(deps: {
         // live change's.
         const sweep = notLive(stored.storedIds);
         draftRejected = sweep;
-        // Spent: the zip holds its codes, so nothing of them is re-stated.
-        storedCodes = null;
         // Same commit point as the discard, for the same reason: an
         // interrupted sweep must not bring a spent draft back - and the
         // same notice when it does not land.
@@ -1041,7 +1217,14 @@ export function wireCreatorDraft(deps: {
           return;
         }
         if (stale()) return;
+        // Spent: the zip holds its codes, so nothing of them is re-stated;
+        // the record keeps this page's own.
+        held.codes = null;
+        void writeCodes(store, tourUrl, pageCodes(), held);
         for (const id of sweep) sweepRejected(store, tourUrl, id);
+        // Its created stations went with its objects: no later record
+        // carries them.
+        held.created = null;
         // The record is spent too: the opened tour carries its poses. Not
         // when this page wrote its own (live) - and `settingsLive` asked
         // again, a station may have moved during the awaits.
@@ -1074,10 +1257,11 @@ export function wireCreatorDraft(deps: {
         placed: waiting.length - edits,
         changed: edits + waitingStations.length,
       };
-      // A level measured before this open is newer than the offered
-      // draft's and would otherwise live only in memory; a mint after the
-      // open would write it the same way.
-      if (deps.codes.inHand() !== null) void recordMeta(tourUrl);
+      // A code measured before this open is newer than the offered
+      // draft's and would otherwise live only in memory; a measurement
+      // after the open is written the same way, by the document's
+      // listener.
+      if (hasPageCodes()) void writeCodes(store, tourUrl, pageCodes(), held);
       offered = {
         objects: waiting,
         storedIds: stored.storedIds,
@@ -1095,6 +1279,9 @@ export function wireCreatorDraft(deps: {
         counts,
         visits: stored.visits,
         stations: waitingStations,
+        // Whatever this page did meanwhile: a frame of an id the document
+        // carries is left as it is (`restored`).
+        createdStations: storedSettings?.createdStations ?? [],
       };
       dom.draftOfferText.textContent = restoreOfferText(
         counts.placed,
@@ -1140,10 +1327,24 @@ export function wireCreatorDraft(deps: {
       draftTourUrl = null;
       draftRejected = [];
       diskRejected = new Set();
-      storedCodes = null;
     },
     saveMeta: () =>
       draftTourUrl === null ? Promise.resolve(true) : recordMeta(draftTourUrl),
+    saveCodes: (codes) => {
+      const store = draftStore;
+      const tourUrl = draftTourUrl;
+      // No draft namespace yet: `present` writes them when it opens.
+      if (tourUrl === null) return Promise.resolve(true);
+      if (store === undefined) {
+        noteNoPersistence();
+        return Promise.resolve(false);
+      }
+      // Issued now, for the open tour: its holder is this open's.
+      return writeCodes(store, tourUrl, codes, undecided).then((ok) => {
+        if (!ok) noteNoPersistence();
+        return ok;
+      });
+    },
     recordPlacement,
     recordVisit,
     // The document's writes (`draftObjectWrites`): each id they name is
@@ -1203,6 +1404,7 @@ export function wireCreatorDraft(deps: {
         removeDraftObject(store, id),
       );
     },
+    follow,
     warnNoBackup: noteNoPersistence,
     persists: () => !warnedAboutPersistence,
     saveSettings: (settings) => {

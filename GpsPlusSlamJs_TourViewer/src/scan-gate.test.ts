@@ -262,6 +262,14 @@ describe("scanCardShown (polish round M4b, the owner's S1)", () => {
     }
     expect(scanCardShown("visitor", "running", { kind: "idle" })).toBe(false);
   });
+
+  it("never shows for a tour that is not finished yet", () => {
+    // Why: a tour without stations may still carry its measured code; the
+    // card would ask for that code and hide the line saying the tour is
+    // not finished, the one thing the visitor needs to read.
+    expect(scanCardShown("visitor", "running", scanning, true)).toBe(false);
+    expect(scanCardShown("visitor", "running", scanning, false)).toBe(true);
+  });
 });
 
 // Why (M1b-1 review #6): the ?debug=1 line said "placing by GPS" in the

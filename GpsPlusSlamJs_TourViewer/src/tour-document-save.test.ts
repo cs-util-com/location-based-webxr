@@ -134,15 +134,15 @@ describe("createTourSaves", () => {
     const running = dispatchThunk(store, saves.save({ keepScan: false }));
     expect(doc(store).save).toMatchObject({ status: "saving", rebuilds: 1 });
     const built = await running;
-    expect(await labels(built.finished.blob)).toEqual(["First", "pin b"]);
-    expect(doc(store).written).toEqual(built.finished.written);
+    expect(await labels(built.blob)).toEqual(["First", "pin b"]);
+    expect(doc(store).written).toEqual(built.written);
     expect(doc(store).placed).toEqual([]);
     expect(doc(store).save).toMatchObject({
       status: "idle",
       rebuilds: 0,
       error: null,
     });
-    expect(saves.newest()?.blob).toBe(built.finished.blob);
+    expect(saves.newest()?.blob).toBe(built.blob);
     expect(saves.fileName).toBe("tour.zip");
     await session.close();
   });
@@ -207,13 +207,13 @@ describe("createTourSaves", () => {
     expect(reads).toBe(1);
     release();
     const one = await first;
-    expect(await labels(one.finished.blob)).toEqual(["One", "pin b"]);
+    expect(await labels(one.blob)).toEqual(["One", "pin b"]);
     const two = await second;
-    expect(await labels(two.finished.blob)).toEqual(["One", "Three"]);
+    expect(await labels(two.blob)).toEqual(["One", "Three"]);
     expect(reads).toBe(1);
     expect(doc(store).placed).toEqual([]);
     expect(doc(store).save).toMatchObject({ status: "idle", rebuilds: 0 });
-    expect(saves.newest()?.blob).toBe(two.finished.blob);
+    expect(saves.newest()?.blob).toBe(two.blob);
     await session.close();
   });
 
@@ -245,7 +245,7 @@ describe("createTourSaves", () => {
       tourDocumentActions.opened({ manifest: tourOf([pin("z")]) }),
     );
     const next = doc(store).written;
-    expect(await labels((await late).finished.blob)).toEqual(["Late"]);
+    expect(await labels((await late).blob)).toEqual(["Late"]);
     expect(doc(store).written).toBe(next);
     await expect(
       dispatchThunk(store, saves.save({ keepScan: false })),

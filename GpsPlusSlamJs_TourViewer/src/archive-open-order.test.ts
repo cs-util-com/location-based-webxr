@@ -1,12 +1,11 @@
 /**
  * Why this test matters (S1 milestone review #4): a tour opened INTO a
  * running AR session is placed from the open path at once
- * (`hooks.tryPlaceTour()`), and since scan-pass S1 its recorded photos'
- * spots live in `tour.json`. The placement trigger waits while the
- * manifest is "pending" - but only if the open has SAID it is pending
- * before it calls the trigger. Called first, the trigger sees the
- * teardown's "settled" with no manifest, declines a baked tour for having
- * no recording, and latches that for the whole session. The order is a
+ * (`hooks.tryPlaceTour()`), and its content lives in `tour.json`. The
+ * content's placement waits while the manifest is "pending" - but only if
+ * the open has SAID it is pending before it calls the trigger. Called
+ * first, the trigger sees the teardown's "settled" with no manifest,
+ * places nothing, and latches that for the whole session. The order is a
  * property of one function's source, which no behavioural test of the
  * open (its session is mocked away) reaches.
  */
