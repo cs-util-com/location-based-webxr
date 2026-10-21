@@ -26,6 +26,9 @@ export type EditorOpen =
   | {
       readonly kind: "opened";
       readonly session: TourSession;
+      /** The tour as the file has it, an empty one for a zip that
+       *  carries codes and no tour.json. The walk's debug camera
+       *  captures start no station. */
       readonly manifest: TourManifest;
       readonly levels: ReadonlyMap<string, QrLevel>;
       readonly fileName: string;

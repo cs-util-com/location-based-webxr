@@ -5,10 +5,17 @@
  * wrote through it; the session fields are a mirror only it writes.
  */
 
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { wireCreatorCodes } from "./creator-codes.js";
+import {
+  hostedLevels,
+  selectTourDocument,
+  tourDocumentActions,
+} from "./tour-document.js";
 import { createTourViewerSession } from "./tour-viewer-session.js";
+import { tourOf } from "./test-support/v3-tour.js";
 import type { CodeMeasurement, CodeSighting } from "./visit-settle.js";
 
 /** A level text whose `storedGeo` reads (the parser's minimal shape). */
@@ -280,6 +287,105 @@ describe("creator-codes: stored codes and what Finish wrote", () => {
   });
 });
 
+describe("creator-codes: the open tour's codes come from the store (plan M3b)", () => {
+  // Why this test matters (the r902 review #4): the numbering, the
+  // references and the stored-pose question read the parsed levels from
+  // the session, not from the store that holds the tour's other codes, so
+  // the hosted levels lived twice and a store-only reader saw no tour
+  // codes. They read the store's now, the open's own.
+  it("numbers, lists and counts the store's parsed levels of the open", () => {
+    const ctx = createTourViewerSession();
+    const codes = wireCreatorCodes({ ctx });
+    ctx.store.dispatch(
+      tourDocumentActions.levelsParsed({
+        session: ctx.openGeneration,
+        levels: [
+          { id: "h", level: hostedLevel(47.3) },
+          { id: "nogeo", level: hostedLevel(null) },
+        ],
+      }),
+    );
+    expect(codes.numbering()).toEqual(["h", "nogeo"]);
+    expect(codes.references().map((r) => r.levelId)).toEqual(["h", "nogeo"]);
+    expect(codes.hasStoredPose("h")).toBe(true);
+    expect(codes.hasStoredPose("nogeo")).toBe(false);
+  });
+
+  // Why this test matters: the session's levels are a view of the store,
+  // so the viewer pipeline and the codes can never read two different
+  // tours' levels; an assignment lands in the store for the running open.
+  it("makes the session's levels a view of the store", () => {
+    const ctx = createTourViewerSession();
+    ctx.currentLevels = new Map([["h", hostedLevel(47.3)]]);
+    const held = hostedLevels(selectTourDocument(ctx.store.getState()));
+    expect([...(held?.keys() ?? [])]).toEqual(["h"]);
+    expect(ctx.currentLevels).toBe(held);
+    ctx.currentLevels = null;
+    expect(ctx.currentLevels).toBeNull();
+  });
+});
+
+describe("creator-codes: a settle's codes, and its undo (plan M3b, Q-D)", () => {
+  function settled() {
+    const ctx = createTourViewerSession();
+    let heard = 0;
+    const codes = wireCreatorCodes({
+      ctx,
+      onIdsChanged: () => {
+        heard += 1;
+      },
+    });
+    ctx.tourDocument.open(tourOf([]));
+    return { ctx, codes, heard: () => heard };
+  }
+  const a1 = { id: "a", json: levelJson(47.5) };
+  const a2 = { id: "a", json: levelJson(47.6) };
+  const b = { id: "b", json: levelJson(47.7) };
+
+  // Why this test matters: a settle saves its re-minted codes with its
+  // document changes as ONE step; the hand takes a code's new text only if
+  // it held that code (as `saveLevel` did), and a code that joins the
+  // book is heard by the print panel as by any other door.
+  it("saves the settle's codes with its changes, the hand following its own code, a joining code heard", () => {
+    const { ctx, codes, heard } = settled();
+    codes.setInHand(a1, MEASUREMENT);
+    const past = ctx.tourDocument.state().past.length;
+    codes.applySettle(ctx.tourDocument.settleBatch(), [a2, b], "the settle");
+    expect(codes.inHand()).toEqual(a2);
+    expect(codes.savedText("b")).toBe(b.json);
+    expect(ctx.tourDocument.state().past.length).toBe(past + 1);
+    expect(heard()).toBe(2);
+  });
+
+  // Why this test matters: the hand's text wins at every change of the
+  // book, so an undo that only put the book back would see the improved
+  // text return at the next write. The undo makes the hand let go of the
+  // code it took back, its measurement with it.
+  it("lets the hand go of a code the undo took back", () => {
+    const { ctx, codes } = settled();
+    codes.setInHand(a1, MEASUREMENT);
+    codes.applySettle(ctx.tourDocument.settleBatch(), [a2], "the settle");
+    expect(ctx.tourDocument.undo().kind).toBe("undone");
+    expect(codes.inHand()).toBeNull();
+    expect(codes.measurement()).toBeNull();
+    expect(codes.savedText("a")).toBe(a1.json);
+    codes.saveLevel(b);
+    expect(codes.savedText("a"), "and nothing puts it back").toBe(a1.json);
+  });
+
+  // Why this test matters: only the codes the undo changed are let go - a
+  // hand on another code is live work the undo says nothing about.
+  it("keeps a hand of a code the undo did not change", () => {
+    const { ctx, codes } = settled();
+    codes.setInHand(a1, MEASUREMENT);
+    codes.applySettle(ctx.tourDocument.settleBatch(), [b], "the settle");
+    ctx.tourDocument.undo();
+    expect(codes.inHand()).toEqual(a1);
+    expect(codes.measurement()).toBe(MEASUREMENT);
+    expect(codes.savedText("b")).toBeNull();
+  });
+});
+
 describe("creator-codes: the book of codes a Finish writes (M4c-1)", () => {
   // Why this test matters: each Finish wrote ONE level, the code in hand;
   // the book keeps every code this page took, and a Finish writes each one
@@ -503,5 +609,538 @@ describe("creator-codes: the page hears when the set of codes changes (follow-up
     codes.restoreLevels([{ id: "b", json: levelJson(47.7) }]);
     expect(heard).toBe(2);
     expect(codes.ids().sort()).toEqual(["a", "b"]);
+  });
+});
+
+// --- Characterization before the codes move into the store ------------------
+// Plan GpsPlusSlamJs_Docs/docs/2026-10-20-1159-debug-captures-and-codes-in-store-plan.md
+// M3a: these pin TODAY's rules of the closure state, green by design, so
+// the move into the Redux store cannot change any of them silently. Each
+// names the line of `creator-codes.ts` it rests on.
+
+/** Ops a property drives the module with; texts repeat on purpose, so a
+ *  sequence can return a code to an earlier (or the hosted) text. */
+type CodesOp =
+  | {
+      kind: "measure" | "keep" | "save" | "restoreHand";
+      id: string;
+      v: number;
+    }
+  | { kind: "restore"; levels: { id: string; v: number }[] }
+  | { kind: "drop"; id: string }
+  | { kind: "clear" | "finish" | "levelsArrive" };
+
+function codesOps(ids: readonly string[]): fc.Arbitrary<CodesOp> {
+  const id = fc.constantFrom(...ids);
+  return fc.oneof(
+    fc.record({
+      kind: fc.constantFrom(
+        "measure" as const,
+        "keep" as const,
+        "save" as const,
+        "restoreHand" as const,
+      ),
+      id,
+      v: fc.nat(2),
+    }),
+    fc.record({
+      kind: fc.constant("restore" as const),
+      levels: fc.array(fc.record({ id, v: fc.nat(2) }), { maxLength: 3 }),
+    }),
+    fc.record({ kind: fc.constant("drop" as const), id }),
+    fc.record({
+      kind: fc.constantFrom(
+        "clear" as const,
+        "finish" as const,
+        "levelsArrive" as const,
+      ),
+    }),
+  );
+}
+
+/** The level texts a property's ops produce: "a0" and "b0" are the
+ *  hosted ones `levelsArrive` installs. */
+const opText = (id: string, v: number): string => `${id}${String(v)}`;
+
+function applyCodesOp(
+  ctx: ReturnType<typeof createTourViewerSession>,
+  codes: ReturnType<typeof wireCreatorCodes>,
+  o: CodesOp,
+): void {
+  if (o.kind === "measure") {
+    codes.setInHand(
+      { id: o.id, json: opText(o.id, o.v) },
+      { ...MEASUREMENT, levelId: o.id },
+    );
+  } else if (o.kind === "keep") {
+    codes.setInHand({ id: o.id, json: opText(o.id, o.v) }, null);
+  } else if (o.kind === "save") {
+    codes.saveLevel({ id: o.id, json: opText(o.id, o.v) });
+  } else if (o.kind === "restoreHand") {
+    codes.restoreInHand({ id: o.id, json: opText(o.id, o.v) });
+  } else if (o.kind === "restore") {
+    codes.restoreLevels(
+      o.levels.map((l) => ({ id: l.id, json: opText(l.id, l.v) })),
+    );
+  } else if (o.kind === "drop") {
+    codes.dropMeasurement(o.id);
+  } else if (o.kind === "clear") {
+    codes.clearInHand();
+  } else if (o.kind === "finish") {
+    codes.finished(codes.toWrite());
+  } else {
+    ctx.currentLevelTexts = new Map([
+      ["a", "a0"],
+      ["b", "b0"],
+    ]);
+  }
+}
+
+describe("creator-codes: the hand's text wins in the book (withHand, in every reducer that writes the book)", () => {
+  // Why this test matters: a measurement dropped for a new print size
+  // falls the book back to the zip's text (`withoutMeasurement`); for the
+  // code still in hand `withHand` puts the hand's text straight back, or
+  // the next Finish would write a pose the hand no longer agrees with.
+  it("keeps the hand's text, and its reference, when the hand's measurement is dropped", () => {
+    const ctx = createTourViewerSession();
+    ctx.currentLevelTexts = new Map([["a", levelJson(47.3)]]);
+    const codes = wireCreatorCodes({ ctx });
+    const live = { id: "a", json: levelJson(47.5) };
+    codes.setInHand(live, MEASUREMENT);
+    codes.dropMeasurement("a");
+    expect(codes.inHand()).toEqual(live);
+    expect(codes.savedText("a")).toBe(live.json);
+    expect(codes.references()[0]?.levelId).toBe("a");
+    expect(codes.toWrite()).toEqual([live]);
+    // The book entry's measurement went, though: `measuredIn` reads it,
+    // while the hand's own measurement is a separate field the drop leaves.
+    expect(codes.measuredIn("a", 0)).toBe(false);
+    expect(codes.measurement()).toBe(MEASUREMENT);
+  });
+
+  // Why this test matters: the book never holds another text for the code
+  // in hand than the hand does - whatever wrote the book (a restore, a
+  // dropped measurement, a re-mint, a Finish, the levels arriving). The
+  // module before the store kept it in its one write of the book; the
+  // store's reducers are several, and `withHand` is the law they keep
+  // together.
+  it("never lets the book and the hand disagree about the code in hand, for any sequence (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.array(codesOps(["a", "b", "c"]), { maxLength: 20 }),
+        (ops) => {
+          const ctx = createTourViewerSession();
+          const codes = wireCreatorCodes({ ctx });
+          for (const o of ops) {
+            applyCodesOp(ctx, codes, o);
+            const hand = codes.inHand();
+            const held = hand === null ? null : codes.savedText(hand.id);
+            expect(held).toBe(hand?.json ?? null);
+            const first =
+              hand === null ? null : (codes.references()[0]?.levelId ?? null);
+            expect(first).toBe(hand?.id ?? null);
+          }
+        },
+      ),
+    );
+  });
+});
+
+type LiveOp =
+  { kind: "measure"; id: string; v: number } | { kind: "clear" | "finish" };
+
+/** Drive `ops`, keeping the model beside them: the live text per code,
+ *  voided by a new print size (`clearInHand`), and the code in hand. */
+function liveWork(
+  codes: ReturnType<typeof wireCreatorCodes>,
+  ops: readonly LiveOp[],
+): { live: Map<string, string>; hand: string | null } {
+  const live = new Map<string, string>();
+  let hand: string | null = null;
+  for (const o of ops) {
+    if (o.kind === "measure") {
+      const json = `live-${opText(o.id, o.v)}`;
+      codes.setInHand({ id: o.id, json }, { ...MEASUREMENT, levelId: o.id });
+      live.set(o.id, json);
+      hand = o.id;
+    } else if (o.kind === "clear") {
+      codes.clearInHand();
+      if (hand !== null) live.delete(hand);
+      hand = null;
+    } else {
+      codes.finished(codes.toWrite());
+    }
+  }
+  return { live, hand };
+}
+
+describe("creator-codes: live work wins over a draft restore", () => {
+  // Why this test matters: a draft is offered after the tour opened, so a
+  // code measured in this page since is newer than anything the draft
+  // holds. Whatever the creator measured (and did not void by a new print
+  // size), neither restore - the book's (`restoreLevels`) nor the hand's
+  // (`restoreInHand`) - may put the draft's older text over it; every code
+  // without live work takes the draft's.
+  it("keeps every live measurement and takes the draft's text for every other code, for any sequence (property)", () => {
+    const ids = fc.constantFrom("a", "b", "c");
+    const op: fc.Arbitrary<LiveOp> = fc.oneof(
+      fc.record({
+        kind: fc.constant("measure" as const),
+        id: ids,
+        v: fc.nat(2),
+      }),
+      fc.record({ kind: fc.constantFrom("clear" as const, "finish" as const) }),
+    );
+    const draftOf = fc.uniqueArray(fc.record({ id: ids, v: fc.nat(2) }), {
+      selector: (l) => l.id,
+      minLength: 1,
+      maxLength: 3,
+    });
+    fc.assert(
+      fc.property(
+        fc.array(op, { maxLength: 12 }),
+        draftOf,
+        fc.boolean(),
+        (ops, drafted, hostedKnown) => {
+          const ctx = createTourViewerSession();
+          if (hostedKnown) {
+            ctx.currentLevelTexts = new Map([
+              ["a", "a0"],
+              ["b", "b0"],
+            ]);
+          }
+          const codes = wireCreatorCodes({ ctx });
+          const { live, hand } = liveWork(codes, ops);
+          const levels = drafted.map((l) => ({
+            id: l.id,
+            json: `draft-${opText(l.id, l.v)}`,
+          }));
+          codes.restoreLevels(levels);
+          const first = levels[0]!;
+          expect(codes.restoreInHand(first)).toBe(hand === null);
+          for (const l of levels) {
+            expect(codes.savedText(l.id)).toBe(live.get(l.id) ?? l.json);
+          }
+          for (const [id, json] of live) {
+            expect(codes.savedText(id)).toBe(json);
+          }
+          // The hand: the live code it held, else the draft's code, at its
+          // live text if it has one.
+          const handId = hand ?? first.id;
+          expect(codes.inHand()).toEqual({
+            id: handId,
+            json: live.get(handId) ?? first.json,
+          });
+        },
+      ),
+    );
+  });
+});
+
+describe("creator-codes: two baselines, kept apart (code-book.ts:83-85, :199-219)", () => {
+  // Why this test matters: `toWrite` asks the zip the next Finish rebuilds
+  // from (the last Finish's text, else the hosted one), `notHosted` asks
+  // the hosted file only. After a Finish wrote a code, the next Finish has
+  // nothing to write for it, but the draft must keep it until the creator
+  // uploads that file - a crash in between otherwise loses the measurement.
+  it("leaves a Finish's code out of the next Finish, and keeps it in the draft", () => {
+    const ctx = createTourViewerSession();
+    ctx.currentLevelTexts = new Map([["h", levelJson(47.3)]]);
+    const codes = wireCreatorCodes({ ctx });
+    const improved = { id: "h", json: levelJson(47.31) };
+    codes.setInHand(improved, { ...MEASUREMENT, levelId: "h" });
+    expect(codes.toWrite()).toEqual([improved]);
+    expect(codes.notHosted()).toEqual([improved]);
+    codes.finished(codes.toWrite());
+    expect(codes.toWrite()).toEqual([]);
+    expect(codes.notHosted()).toEqual([improved]);
+    // Back to the hosted text after that Finish: the zip holds the
+    // improvement, so it is written again, while the hosted file already
+    // holds this text and the draft has nothing to keep.
+    const back = { id: "h", json: levelJson(47.3) };
+    codes.saveLevel(back);
+    expect(codes.toWrite()).toEqual([back]);
+    expect(codes.notHosted()).toEqual([]);
+  });
+});
+
+describe("creator-codes: the hosted baseline is read lazily (withHostedTexts)", () => {
+  // Why these tests matter: the tour's level files arrive AFTER the open
+  // (archive-open.ts reads them beside tour.json), and this module holds
+  // no copy of them before a Finish: each `toWrite`/`notHosted` reads
+  // `ctx.currentLevelTexts` as it stands, and the restores judge live work
+  // against it at their call. The store must keep that (plan M3a): a code
+  // the hand only kept is "nothing new" once the levels land, whenever
+  // they land.
+  it("counts a code kept at its hosted text as new until the levels arrive, and as unchanged after", () => {
+    const ctx = createTourViewerSession();
+    const codes = wireCreatorCodes({ ctx });
+    const hosted = { id: "h", json: levelJson(47.3) };
+    codes.setInHand(hosted, null);
+    // Unknown so far: written, to be safe.
+    expect(codes.toWrite()).toEqual([hosted]);
+    expect(codes.notHosted()).toEqual([hosted]);
+    ctx.currentLevelTexts = new Map([["h", hosted.json]]);
+    expect(codes.toWrite()).toEqual([]);
+    expect(codes.notHosted()).toEqual([]);
+  });
+
+  it("judges a draft restore by the levels as they stand at the restore", () => {
+    // Before the levels: the kept code looks changed live, so the draft's
+    // text does not take it. After them: it is no live work, and does.
+    const hosted = { id: "h", json: levelJson(47.3) };
+    const drafted = { id: "h", json: levelJson(47.39) };
+    const other = { id: "o", json: levelJson(47.6) };
+
+    const early = createTourViewerSession();
+    const before = wireCreatorCodes({ ctx: early });
+    before.setInHand(hosted, null);
+    before.setInHand(other, null);
+    before.restoreLevels([drafted]);
+    expect(before.savedText("h"), "levels not arrived yet").toBe(hosted.json);
+
+    const late = createTourViewerSession();
+    const after = wireCreatorCodes({ ctx: late });
+    after.setInHand(hosted, null);
+    after.setInHand(other, null);
+    late.currentLevelTexts = new Map([["h", hosted.json]]);
+    after.restoreLevels([drafted]);
+    expect(after.savedText("h"), "levels arrived").toBe(drafted.json);
+  });
+
+  // Why this test matters, and a difference from the plan: today a failed
+  // level read (archive-open.ts:589-603) sets only `ctx.levelsUnreadable`
+  // and leaves `ctx.currentLevelTexts` null, and this module reads no
+  // failure flag. So nothing is ever compared with a hosted text: every
+  // saved code counts as one to write and one the draft keeps, a draft's
+  // code identical to the unreadable file included. The plan's
+  // `levelsUnreadable` action ("nothing counts as new") must either keep
+  // this or change it on purpose; this test pins what the code does now.
+  it("after a failed level read, counts every saved code as new, against no hosted text", () => {
+    const ctx = createTourViewerSession();
+    ctx.levelsUnreadable = true;
+    const codes = wireCreatorCodes({ ctx });
+    const drafted = { id: "h", json: levelJson(47.3) };
+    codes.restoreLevels([drafted]);
+    expect(codes.restoreInHand(drafted)).toBe(true);
+    expect(codes.toWrite()).toEqual([drafted]);
+    expect(codes.notHosted()).toEqual([drafted]);
+  });
+
+  // Why this test matters: a Finish takes the hosted texts INTO the book
+  // (`finished` -> `afterFinish(withHostedTexts(), ...)`, creator-codes.ts:
+  // 326-328); before it the book holds none. From then on the book knows
+  // a code's hosted text even without the level read's map.
+  it("takes the hosted texts into the book at a Finish", () => {
+    const ctx = createTourViewerSession();
+    const hosted = levelJson(47.3);
+    ctx.currentLevelTexts = new Map([["h", hosted]]);
+    const codes = wireCreatorCodes({ ctx });
+    codes.setInHand({ id: "h", json: hosted }, null);
+    codes.finished([]);
+    ctx.currentLevelTexts = null;
+    expect(codes.toWrite()).toEqual([]);
+    expect(codes.notHosted()).toEqual([]);
+  });
+});
+
+describe("creator-codes: what a visit's end and a tour's close clear", () => {
+  // Why these tests matter (plan M3a): the store splits this state into
+  // a part cleared per visit and a part cleared per tour. Today
+  // a visit's end clears ONLY the sightings (odometry does not carry
+  // over); the hand, its measurement, the book and every code's
+  // measurement survive into the next visit of the same tour.
+  it("clears only the sightings at a visit's end", () => {
+    const ctx = createTourViewerSession();
+    const codes = wireCreatorCodes({ ctx });
+    const a = { id: "a", json: levelJson(47.5) };
+    const b = { id: "b", json: levelJson(47.6) };
+    const bMeasured = { ...MEASUREMENT, levelId: "b", visit: 3 };
+    codes.setInHand(a, { ...MEASUREMENT, visit: 3 });
+    codes.setInHand(b, bMeasured);
+    codes.setSighting({ ...SIGHTING, levelId: "b" });
+    codes.noteStoredSighting("h", 3, SIGHTING);
+    codes.endVisit();
+    expect(codes.sighting()).toBeNull();
+    expect([...codes.storedSightings()]).toEqual([]);
+    expect(codes.inHand()).toEqual(b);
+    expect(codes.measurement()).toEqual(bMeasured);
+    expect(codes.measuredIn("a", 3)).toBe(true);
+    expect(codes.visitCodes(3).map((c) => c.level.id)).toEqual(["a", "b"]);
+    expect(codes.toWrite()).toEqual([a, b]);
+  });
+
+  // Why this test matters: a tour's close drops the hand, its measurement,
+  // every code's measurement and what this page's Finishes wrote. The
+  // finished texts are the subtle one: if they survived, the next tour's
+  // first Finish would skip a code whose text a Finish of the CLOSED tour
+  // happened to write.
+  it("clears the hand, the measurements and the finished texts at a tour's close", () => {
+    const ctx = createTourViewerSession();
+    const codes = wireCreatorCodes({ ctx });
+    const a = { id: "a", json: levelJson(47.5) };
+    codes.setInHand(a, { ...MEASUREMENT, visit: 2 });
+    codes.finished(codes.toWrite());
+    expect(codes.toWrite()).toEqual([]);
+    codes.reset();
+    expect(codes.inHand()).toBeNull();
+    expect(codes.measurement()).toBeNull();
+    expect(codes.measuredIn("a", 2)).toBe(false);
+    expect(codes.visitCodes(2)).toEqual([]);
+    expect(codes.ids()).toEqual([]);
+    expect(codes.numbering()).toEqual([]);
+    expect(codes.notHosted()).toEqual([]);
+    // The same text again in the next tour: written, no Finish wrote it.
+    codes.setInHand(a, { ...MEASUREMENT, visit: 0 });
+    expect(codes.toWrite()).toEqual([a]);
+  });
+
+  // Why this test matters: today the close leaves the sightings to the
+  // visit's end (a tour cannot close inside a visit), so the two resets
+  // do not overlap. Pinned so a reducer for the
+  // close does not quietly take over the visit's part, or the reverse.
+  it("leaves the sightings to the visit's end at a tour's close", () => {
+    const ctx = createTourViewerSession();
+    const codes = wireCreatorCodes({ ctx });
+    codes.setSighting(SIGHTING);
+    codes.noteStoredSighting("h", 1, SIGHTING);
+    codes.reset();
+    expect(codes.sighting()).toEqual(SIGHTING);
+    expect([...codes.storedSightings()]).toEqual([
+      { visit: 1, sighting: SIGHTING },
+    ]);
+  });
+});
+
+describe("creator-codes: the measurements per measured code (visitCodes/measuredIn)", () => {
+  // Why this test matters: the settle reads a visit's codes from here,
+  // and the store will hold the per-code measurements in its own slice.
+  // The rules: a measured code is listed once even when it was also
+  // sighted as stored; a sighting of another visit is not listed; a
+  // sighted code takes the book's saved text over the hosted file's, and
+  // one with no text anywhere is left out; a dropped measurement is not
+  // "measured in" any visit, and its code is no longer listed as measured.
+  it("lists each code once, by its own visit, at the book's text", () => {
+    const ctx = createTourViewerSession();
+    ctx.currentLevelTexts = new Map([
+      ["kept", levelJson(47.1)],
+      ["hosted", levelJson(47.2)],
+    ]);
+    const codes = wireCreatorCodes({ ctx });
+    const m = { id: "m", json: levelJson(47.5) };
+    codes.setInHand(m, { ...MEASUREMENT, levelId: "m", visit: 4 });
+    const keptBetter = { id: "kept", json: levelJson(47.15) };
+    codes.saveLevel(keptBetter);
+    codes.noteStoredSighting("m", 4, SIGHTING);
+    codes.noteStoredSighting("kept", 4, SIGHTING);
+    codes.noteStoredSighting("hosted", 4, SIGHTING);
+    codes.noteStoredSighting("other-visit", 3, SIGHTING);
+    codes.noteStoredSighting("no-text", 4, SIGHTING);
+    expect(
+      codes
+        .visitCodes(4)
+        .map((c) => [c.level.id, c.level.json, c.measurement?.visit ?? null]),
+    ).toEqual([
+      ["m", m.json, 4],
+      ["kept", keptBetter.json, null],
+      ["hosted", levelJson(47.2), null],
+    ]);
+    expect(codes.measuredIn("m", 4)).toBe(true);
+    expect(codes.measuredIn("m", 3)).toBe(false);
+    expect(codes.measuredIn("kept", 4)).toBe(false);
+    codes.setInHand(null, null);
+    codes.dropMeasurement("m");
+    expect(codes.measuredIn("m", 4)).toBe(false);
+    // Its sighting of this visit remains, but it has no saved text left
+    // (no Finish or hosted file holds it): not listed at all.
+    expect(codes.visitCodes(4).map((c) => c.level.id)).toEqual([
+      "kept",
+      "hosted",
+    ]);
+  });
+});
+
+describe("creator-codes: the print panel hears only a change of the SET of ids (noticingIds, creator-codes.ts)", () => {
+  // Why these tests matter (follow-up F16): the print panel renumbers on
+  // this signal (main.ts `onCodesChanged` -> `presentTourCodes`), which
+  // runs a spelling search over the codes - so it must fire when a code
+  // joins and never for a change of a known code's text. A store
+  // subscription that fired on every book change would rerun that search
+  // on every re-mint.
+  it("stays quiet for a re-mint, a kept code, a dropped measurement, a Finish, a restore of known codes and a cleared hand", () => {
+    const ctx = createTourViewerSession();
+    let heard = 0;
+    const codes = wireCreatorCodes({
+      ctx,
+      onIdsChanged: () => {
+        heard += 1;
+      },
+    });
+    const a = { id: "a", json: levelJson(47.5) };
+    codes.setInHand(a, MEASUREMENT);
+    expect(heard).toBe(1);
+    codes.saveLevel({ id: "a", json: levelJson(47.51) });
+    codes.setInHand(a, null);
+    codes.dropMeasurement("a");
+    codes.finished(codes.toWrite());
+    codes.restoreLevels([{ id: "a", json: levelJson(47.52) }]);
+    codes.clearInHand();
+    codes.restoreInHand({ id: "a", json: levelJson(47.53) });
+    expect(heard).toBe(1);
+    // A new code by any door is heard: a re-mint of an unknown code, the
+    // hand restored from a draft.
+    codes.saveLevel({ id: "b", json: levelJson(47.6) });
+    expect(heard).toBe(2);
+    codes.clearInHand();
+    codes.restoreInHand({ id: "c", json: levelJson(47.7) });
+    expect(heard).toBe(3);
+  });
+
+  // Why this test matters: the close empties the book outside the notice
+  // (`reset`, not through `changeBook`), so it is NOT heard here; the print panel
+  // learns of a closed tour through its own `presentNoTour`. Pinned so the
+  // store's close does not start renumbering a panel that has no tour.
+  it("is not heard at a tour's close, and the same id after it joins again", () => {
+    const ctx = createTourViewerSession();
+    let heard = 0;
+    const codes = wireCreatorCodes({
+      ctx,
+      onIdsChanged: () => {
+        heard += 1;
+      },
+    });
+    codes.setInHand({ id: "a", json: levelJson(47.5) }, MEASUREMENT);
+    codes.reset();
+    expect(heard).toBe(1);
+    codes.setInHand({ id: "a", json: levelJson(47.5) }, MEASUREMENT);
+    expect(heard).toBe(2);
+  });
+
+  it("is heard exactly when a code joins, for any sequence (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.array(codesOps(["a", "b", "c", "d"]), { maxLength: 20 }),
+        (ops) => {
+          const ctx = createTourViewerSession();
+          let heard = 0;
+          const codes = wireCreatorCodes({
+            ctx,
+            onIdsChanged: () => {
+              heard += 1;
+            },
+          });
+          for (const o of ops) {
+            const before = new Set(codes.ids());
+            const heardBefore = heard;
+            applyCodesOp(ctx, codes, o);
+            const after = codes.ids();
+            // No op of an open tour takes a code out of the book.
+            expect(after.length).toBeGreaterThanOrEqual(before.size);
+            const joined = after.some((id) => !before.has(id));
+            expect(heard - heardBefore).toBe(joined ? 1 : 0);
+          }
+        },
+      ),
+    );
   });
 });

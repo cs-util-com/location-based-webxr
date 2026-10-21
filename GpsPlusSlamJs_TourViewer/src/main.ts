@@ -86,6 +86,11 @@ import {
 } from "./visitor-guide-slice.js";
 import { wireTourNameField } from "./tour-name-field.js";
 import { renderTourContact } from "./tour-contact.js";
+import {
+  NOT_FINISHED,
+  tourUnfinished,
+  unfinishedNote,
+} from "./tour-unfinished.js";
 
 /** Keep at most this many archives cached (LRU) — see BoundedLocalCacheStore. */
 const MAX_CACHED_ARCHIVES = 5;
@@ -413,10 +418,13 @@ if (mode === "visitor") {
     line: element("error-contact"),
     link: element<HTMLAnchorElement>("error-contact-link"),
   };
+  /** The open tour is not finished yet (`tour-unfinished.ts`): its
+   *  contact shows under the start page's sentence too. */
+  let unfinished = false;
   const renderContact = (): void => {
     renderTourContact(
       contactDom,
-      errorBox.textContent ?? "",
+      errorBox.textContent || (unfinished ? NOT_FINISHED : ""),
       ctx.tourDocument.manifest()?.contact,
     );
   };
@@ -425,9 +433,10 @@ if (mode === "visitor") {
     characterData: true,
     subtree: true,
   });
-  hooks.presentTourInfo = (manifest, loadImage) => {
-    if (manifest === null) visitorStart.clear();
-    else visitorStart.present(manifest, loadImage);
+  hooks.presentTourInfo = (tour) => {
+    if (tour === null) visitorStart.clear();
+    else visitorStart.present(tour.manifest, tour.loadImage);
+    unfinished = tour !== null && tourUnfinished(tour.manifest);
     renderContact();
     visitor.tourChanged();
   };
@@ -560,11 +569,17 @@ const tourNameField = wireTourNameField(
   },
 );
 if (mode === "creator") {
-  hooks.presentTourInfo = (manifest) => {
+  const visitorLinkNote = element("visitor-link-note");
+  hooks.presentTourInfo = (tour) => {
+    const manifest = tour?.manifest ?? null;
     tourNameField.present(
       manifest?.title ?? null,
       manifest === null ? null : (ctx.session?.archive.url ?? null),
     );
+    // What a visitor of the hosted file reads while it is not finished.
+    const note = tour === null ? null : unfinishedNote(tour.manifest);
+    visitorLinkNote.textContent = note ?? "";
+    visitorLinkNote.hidden = note === null;
   };
 }
 
@@ -621,6 +636,10 @@ const setup = wireCreatorSetup({
     replaceHelpGeneric: element("replace-help-generic"),
     replaceHelpDrive: element("replace-help-drive"),
     replaceDriveCopy: element("replace-drive-copy"),
+    debugSave: element("debug-save"),
+    debugSaveText: element("debug-save-text"),
+    debugSaveButton: element("debug-save-btn"),
+    debugSaveStatus: element("debug-save-status"),
     pinButton: element("setup-pin"),
     pinLabel: element("pin-label"),
     pinSave: element("pin-save"),

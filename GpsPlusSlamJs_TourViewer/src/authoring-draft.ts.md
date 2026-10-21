@@ -72,6 +72,8 @@ where)`, owner question Q-E2-2's default; `where` is the phone's "on this
   its id, the rest of `changes` appended, every deleted id filtered out.
 - `contentEntriesToRemove(existing, deleted, wrap) -> string[]` - the zip
   paths of deleted photos' content files, for the rebuild's removal list.
+  Photos only: a placed 3D model names a SHARED model asset, so deleting
+  one never removes a file another model may still draw from.
 - `restoreOfferText(count, hasLevel, { changed, deleted, visits })`,
   `restoredText(count, hasLevel, { changed, deleted, visits })` - the
   creator's words; changes, deletions and AR visits are named apart from
@@ -157,5 +159,7 @@ object counted as not hosted and field order ignored, a re-assignment to
 another station at the same spot counted as not hosted (L2), pending deletions
 and the spent rule, `applyObjectChanges` (replace, append, filter) with a
 property that no deleted id comes back and no id is written twice,
-`contentEntriesToRemove`, the key's identity, and the counts in the copy
+`contentEntriesToRemove` (and the guard that deleting one of two models
+sharing an asset removes no file and the rebuilt tour still validates;
+seen to fail with the filter widened to `kind !== "pin"`), the key's identity, and the counts in the copy
 (changes and deletions named).

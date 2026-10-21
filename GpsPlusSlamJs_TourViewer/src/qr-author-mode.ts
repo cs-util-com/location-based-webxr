@@ -441,13 +441,14 @@ export function archiveSizeNote(bytes: number): string {
  */
 export const MISSING_SIZE_MESSAGE = `Enter the printed code's side length in centimetres (e.g. ${String(Math.round(AUTHOR_DEFAULT_SIZE_M * 1000) / 10)}) in step 3 before starting.`;
 
+function leanCopyLine(files: number): string {
+  return `This copy is for visitors: it leaves out the debug data (the walk recording, ${String(files)} ${files === 1 ? "file" : "files"}).`;
+}
+
 /** The finish step's labels through its async cycle (async-UI rule). */
 export const FINISH_LABELS = {
   reading: (bytes: number) =>
     `Finishing - reading the hosted zip (${(bytes / 1_000_000).toFixed(1)} MB)…`,
-  /** The recorded photos' spots, baked once (scan-pass plan S1). */
-  placingPhotos: (done: number, total: number) =>
-    `Finishing - placing the recorded photos (${String(done)} of ${String(total)} steps of the walk)…`,
   rebuilding: (done: number, total: number) =>
     `Finishing - rebuilding ${String(done)} of ${String(total)} entries…`,
   /** The line shown while the Finish saves the rebuilt zip by itself (the
@@ -458,14 +459,14 @@ export const FINISH_LABELS = {
     `The tour zip is ready (${(bytes / 1_000_000).toFixed(1)} MB) and is being saved to this phone…`,
   /** Appended to the ready line when the Finish left the walk out of
    *  the copy (scan-pass plan S-D10): the hosted file may be the creator's
-   *  only copy of it. */
+   *  only copy of it, so it names the button that saves it apart - in the
+   *  phone's Done step and the editor's Done dialog (debug-captures plan
+   *  M2). */
   scanLeftOut: (files: number) =>
-    `This copy is for visitors: it leaves out the walk recording (${String(files)} ${files === 1 ? "file" : "files"}). Keep your original zip if you still need the walk.`,
-  /** Appended when the recording's photos could not be placed at this
-   *  Finish (S1 milestone review #2): the walk then stays in the zip, the
-   *  viewer places them itself or rings them, and the creator sees why. */
-  photosNotPlaced: (reason: string) =>
-    `The recorded photos could not be placed (${reason}), so the walk recording stays in the zip.`,
+    `${leanCopyLine(files)} Use "Save the debug data" to keep it in a file of its own.`,
+  /** What a copy without the walk is, alone: the desktop's lean download
+   *  says it before its own next step (`editor/save-toast.ts`). */
+  leanCopy: leanCopyLine,
   failed: (reason: string) => `Finishing failed: ${reason}`,
   /** The one button left after a Finish: the same save again (owner
    *  decision D-F4b). */
