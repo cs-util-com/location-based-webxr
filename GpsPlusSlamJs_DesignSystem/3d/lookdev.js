@@ -33,6 +33,12 @@ import { AtmosphereHaze } from "/fw/visualization/atmosphere/atmosphere-haze.js"
 import { fallbackSky } from "/fw/visualization/atmosphere/atmosphere-fallback.js";
 import { SkyAtmosphere } from "/fw/visualization/atmosphere/sky-atmosphere.js";
 import { CloudShadow } from "/fw/visualization/atmosphere/cloud-shadow.js";
+import {
+  CLOUD_HEX,
+  CLOUD_HEX_GLSL,
+  hexTiledSample,
+} from "/fw/visualization/atmosphere/cloud-hex.js";
+import { cloudTextureSample } from "/fw/visualization/atmosphere/cloud-layer.js";
 import { createSunCloudProbe, PAGE_DISC_EXPONENT } from "./sun-clouds.js";
 import { WaterSurface } from "/fw/visualization/atmosphere/water-surface-material.js";
 import { WATER_POLISH_DEFAULT_PARAMS } from "/fw/visualization/atmosphere/water-polish.js";
@@ -224,6 +230,9 @@ const state = {
   // Cloud shadows on the ground (DEC-FB3-7): the sun's direct light dimmed
   // per pixel by the cloud column toward it, in every lit material. On.
   cloudShadows: true,
+  // The clouds' big-shape octave hex-tiled, no repeat at 24 km (hex-tiling
+  // plan 2026-10-07-0919, H2): off until the owner's phone run.
+  cloudHex: false,
   // The sun light as a whole dimmed by the cloud column over the scene's
   // centre (the brief's candidate). Off by default: with the cloud shadows
   // on it dims the ground twice (the record's open question).
@@ -406,6 +415,7 @@ function readHash() {
     state.cloudShadows = params.get("cloudShadows") === "1";
   }
   if (params.has("godRays")) state.godRays = params.get("godRays") === "1";
+  if (params.has("cloudHex")) state.cloudHex = params.get("cloudHex") === "1";
   if (WATER_IDS.includes(params.get("water"))) {
     state.water = params.get("water");
   }
@@ -453,6 +463,7 @@ function writeHash() {
     cloudShadows: state.cloudShadows ? "1" : "0",
     sunLightDim: state.sunLightDim ? "1" : "0",
     godRays: state.godRays ? "1" : "0",
+    cloudHex: state.cloudHex ? "1" : "0",
     ...Object.fromEntries(
       Object.keys(WATER_POLISH_KEYS).map((key) => [
         key,
@@ -613,6 +624,7 @@ function useAtmosphere() {
     visibilityKm: state.visibility,
     cloudCover: state.clouds,
     cloudMode: state.cloudMode,
+    cloudHex: state.cloudHex,
     sunThroughClouds: {
       discExponent: state.sunDisc ? PAGE_DISC_EXPONENT : 0,
       aureole: state.sunAureole ? 1 : 0,
@@ -1109,6 +1121,7 @@ function syncControls() {
   $("#sun-aureole").checked = state.sunAureole;
   $("#sun-silver").checked = state.sunSilver;
   $("#cloud-shadows").checked = state.cloudShadows;
+  $("#cloud-hex").checked = state.cloudHex;
   $("#sun-light-dim").checked = state.sunLightDim;
   $("#god-rays").checked = state.godRays;
   for (const key of Object.keys(WATER_POLISH_KEYS)) {
@@ -1188,6 +1201,9 @@ function buildControls() {
   );
   $("#cloud-shadows").addEventListener("change", (e) =>
     api.setCloudShadows(e.target.checked),
+  );
+  $("#cloud-hex").addEventListener("change", (e) =>
+    api.setCloudHex(e.target.checked),
   );
   $("#god-rays").addEventListener("change", (e) =>
     api.setGodRays(e.target.checked),
@@ -2099,6 +2115,78 @@ Object.assign(api, {
     if (!CLOUD_MODES.includes(mode))
       throw new Error(`unknown cloud mode ${mode}`);
     state.cloudMode = mode;
+    applyLook();
+  },
+  /**
+   * Test surface (hex-tiling plan H2, cold review finding 11): the shader
+   * twin's hex-tiled read (`atmCloudHexLod` at level 0) of the sky's own
+   * cloud texture at each [u, v] (tiles), rendered into a float target and
+   * read back, beside the CPU twin's (`hexTiledSample`) at the same points.
+   */
+  hexProbe(uvs) {
+    if (!atmosphere) throw new Error("the probe needs the atmosphere");
+    const texture = atmosphere.cloudUniforms.atmCloudTexture.value;
+    const n = uvs.length;
+    const input = new Float32Array(n * 4);
+    uvs.forEach(([u, v], i) => {
+      input[4 * i] = u;
+      input[4 * i + 1] = v;
+    });
+    const inputTexture = new THREE.DataTexture(
+      input,
+      n,
+      1,
+      THREE.RGBAFormat,
+      THREE.FloatType,
+    );
+    inputTexture.needsUpdate = true;
+    const target = new THREE.WebGLRenderTarget(n, 1, {
+      type: THREE.FloatType,
+    });
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uInput: { value: inputTexture },
+        uTexture: { value: texture },
+        uMean: { value: CLOUD_HEX.textureMean },
+      },
+      vertexShader:
+        "void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }",
+      fragmentShader: `${CLOUD_HEX_GLSL}
+uniform sampler2D uInput;
+uniform sampler2D uTexture;
+uniform float uMean;
+void main() {
+  vec2 uv = texelFetch(uInput, ivec2(gl_FragCoord.xy), 0).xy;
+  gl_FragColor = vec4(atmCloudHexLod(uTexture, uv, 0.0, uMean), 0.0, 0.0, 1.0);
+}`,
+    });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    const probeScene = new THREE.Scene();
+    probeScene.add(quad);
+    const previous = renderer.getRenderTarget();
+    renderer.setRenderTarget(target);
+    renderer.render(probeScene, camera);
+    const out = new Float32Array(n * 4);
+    renderer.readRenderTargetPixels(target, 0, 0, n, 1, out);
+    renderer.setRenderTarget(previous);
+    target.dispose();
+    material.dispose();
+    quad.geometry.dispose();
+    inputTexture.dispose();
+    const { data, width } = texture.image;
+    return uvs.map(([u, v], i) => ({
+      gpu: out[4 * i],
+      cpu: hexTiledSample(
+        (a, b) => cloudTextureSample(data, width, a, b),
+        u,
+        v,
+        CLOUD_HEX.textureMean,
+      ),
+    }));
+  },
+  /** The clouds' big-shape octave hex-tiled or not (hex-tiling plan H2). */
+  setCloudHex(on) {
+    state.cloudHex = Boolean(on);
     applyLook();
   },
   /**

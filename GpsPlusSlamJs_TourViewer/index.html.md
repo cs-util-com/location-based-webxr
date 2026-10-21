@@ -101,7 +101,9 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   one line under it, by flex `order`), then `#visitor-more` after the
   stage ("What happens?" `#visitor-what`, whose "Stays on your phone"
   says the app sends none of your data - no camera image, no location -
-  and links the privacy page,
+  and links the privacy page; hidden on a phone without AR and for a
+  tour not finished yet, whose Start is withheld (`#enter-ar`
+  `data-start="withheld"`),
   `visitor-privacy`; and `make-your-own`). The safety line
   `#visitor-safety` stands before the round button (W6, D13: "Watch where
   you walk..."), shown on the visitor's start page only. All of it
@@ -199,7 +201,9 @@ drawn `map-station-<step>`), `setup-card` (owns `setup-badge`, `setup-of`,
 `print-settings` (`author-size`, `print-paper`, `author-c`), `print-pdf`,
 `print-info`,
 `print-tiles` (its tiles `print-tile`, the first canvas `print-canvas`), `visitor-link` - opens in a
-new tab, polish round A17), `make-your-own` (on the visitor screen: the
+new tab, polish round A17), `visitor-link-note` (under it, shown while
+the hosted file is not finished yet: what a visitor reads then,
+`tour-unfinished.ts`), `make-your-own` (on the visitor screen: the
 setup page in a new tab, polish round A8), `visitor-safety`, `visitor-privacy`,
 `setup-foot`, `step-hang`, `hang-done`, `step-measure` (owns
 `draft-offer`,
@@ -209,7 +213,10 @@ setup page in a new tab, polish round A8), `visitor-safety`, `visitor-privacy`,
 `have-tour-link`, `have-tour-open`, `have-tour-status`, `have-tour-ask`,
 `have-tour-play`, `have-tour-continue`),
 `step-done` (owns `done-pending`, `finish-block`,
-`finish-status`, `finish-download`, `summary` (the summary after Finish,
+`finish-status`, `finish-download`, `debug-save` ("Save the debug data"
+after a Finish that left the walk out, above the replace steps:
+`debug-save-text`, `debug-save-btn`, `debug-save-status`;
+`creator-debug-save.ts`), `summary` (the summary after Finish,
 authoring plan 2026-09-28-0953 M3b: owns `summary-codes`, `summary-map`,
 `summary-map-status`, `summary-start-ar`; written by `summary-panel.ts`,
 its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns

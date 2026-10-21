@@ -54,7 +54,7 @@ const field = wireTourNameField(element("tour-name-input"), localStorage, {
   apply: (name) => setup.renameTour(name),
   error: element("tour-name-error"),
 });
-hooks.presentTourInfo = (manifest) => field.present(manifest?.title ?? null);
+hooks.presentTourInfo = (tour) => field.present(tour?.manifest?.title ?? null);
 ```
 
 ## Tests

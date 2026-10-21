@@ -11,6 +11,7 @@
  */
 
 import { codeLinedUp, type ArStatusInput } from "./tour-flow.js";
+import { notFinishedSentence } from "./tour-unfinished.js";
 /** The in-AR scan line without location (QR-first M1b-1), under the scan
  *  card's title ("Scan the code again so the tour can start"): what the
  *  absence of location means, not a second "scan". */
@@ -39,6 +40,7 @@ type VisitorStatusState =
   | "unsupported"
   | "error"
   | "no-tour"
+  | "unfinished"
   | "scan"
   | "measuring-code"
   | "code-other-tour"
@@ -145,7 +147,6 @@ function loadNotes(input: ArStatusInput): string[] {
     const n = input.content.skipped;
     notes.push(`${String(n)} ${n === 1 ? "item" : "items"} could not load.`);
   }
-  if (input.planesError !== null) notes.push("Some photos could not load.");
   if (input.contentError !== null) {
     notes.push("Some of the tour's content could not load.");
   }
@@ -162,19 +163,8 @@ function gpsOnly(gate: ArStatusInput["gate"]): boolean {
   );
 }
 
-/** The tour has no code that can lock (the photo ring needs one). */
-function noUsableCodes(input: ArStatusInput): boolean {
-  const { tour, gate } = input;
-  return (
-    (tour.kind === "open" && tour.levelCount === 0) ||
-    (gate.kind === "not-required" &&
-      (gate.reason === "no-lockable-level" ||
-        gate.reason === "levels-unavailable"))
-  );
-}
-
 function isPlaced(input: ArStatusInput): boolean {
-  return input.placement.kind === "placed" || input.content.kind === "placed";
+  return input.content.kind === "placed";
 }
 
 /** Placed: through the code, or by GPS - with the one hint that can still
@@ -301,15 +291,6 @@ function codeSentence(input: ArStatusInput): VisitorStatus | null {
 /** Nothing placed yet, the code situation settled: what is happening. */
 function placementSentence(input: ArStatusInput): VisitorStatus {
   const { placement, gate, qr } = input;
-  if (placement.kind === "placing") {
-    return {
-      state: "placing",
-      text:
-        placement.phase === "loading-photos"
-          ? "Loading the photos…"
-          : "Placing the photos…",
-    };
-  }
   if (placement.kind === "waiting-ready") {
     return {
       state: "warming-up",
@@ -317,20 +298,6 @@ function placementSentence(input: ArStatusInput): VisitorStatus {
       text:
         input.readiness?.hint ??
         "Move the phone slowly so it can see the surroundings.",
-    };
-  }
-  const declined =
-    placement.kind === "declined" || placement.kind === "nothing-to-place";
-  // A declined photo join leaves the ring, which needs a code (U1 review
-  // #2, the F3 case): with no code to lock there is nothing to show; after
-  // the escape, the code would still show the photos.
-  if (declined && noUsableCodes(input)) {
-    return { state: "nothing", text: "This tour has nothing to show here." };
-  }
-  if (declined && gate.kind === "passed" && gate.via === "skipped") {
-    return {
-      state: "needs-code",
-      text: "Nothing to show by GPS alone. Point your phone at the tour's code to show the photos.",
     };
   }
   if (qr.ignoredCode != null) {
@@ -355,6 +322,13 @@ function runningSentence(input: ArStatusInput): VisitorStatus {
     return {
       state: "no-tour",
       text: "No tour is open here, so there is nothing to show. Open the tour's link again.",
+    };
+  }
+  // Nothing to scan for or wait for yet: said before anything else.
+  if (input.tour.unfinished !== undefined) {
+    return {
+      state: "unfinished",
+      text: notFinishedSentence(input.tour.unfinished.contact),
     };
   }
   // Without location, a gate waived for any reason but the creator's
@@ -383,14 +357,12 @@ function runningSentence(input: ArStatusInput): VisitorStatus {
 }
 
 /** The placing line, with the walk request after it while the guide waits
- *  for a heading - except at a dead end: no step makes a tour with nothing
- *  to show, or one that only a code can place, appear. */
+ *  for a heading. */
 function withWalkRequest(
   input: ArStatusInput,
   placing: VisitorStatus,
 ): VisitorStatus {
-  const deadEnd = placing.state === "nothing" || placing.state === "needs-code";
-  return asksForSteps(input) && !deadEnd
+  return asksForSteps(input)
     ? { state: placing.state, text: `${placing.text} ${WALK}` }
     : placing;
 }

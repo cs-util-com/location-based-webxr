@@ -12,7 +12,8 @@
  *   its radius alone (tour editor plan 2026-10-17-1816 D16): the caller's
  *   distance from the phone's current best position is inside the
  *   station's found radius (`station-bands.ts`). The accuracy never widens
- *   it; a position too weak to guide by (`tooWeakToGuide`) judges nothing,
+ *   it; a position too weak to guide by (`PositionPrecision.tooWeak`, the
+ *   framework's one rule) judges nothing,
  *   so the latch agrees with the guide's line (PR #640 review). A code lock
  *   is no arrival (D9: a scan only improves the position), and
  *   there is no "I'm here" (W7, 0348 M2).
@@ -28,7 +29,9 @@ import type {
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-stations";
 
-import { stationBands, tooWeakToGuide } from "./station-bands.js";
+import type { PositionPrecision } from "gps-plus-slam-app-framework/state/position-precision";
+
+import { stationBands } from "./station-bands.js";
 
 /** No state between waiting and found (K4 review R10): an "active" state
  *  with its own hysteresis drove nothing a visitor sees. */
@@ -105,17 +108,17 @@ export interface StationRun {
    * Horizontal distances (m) from the phone's current best position to the
    * stations the caller can place (D16). A station without a finite
    * distance is not judged: with no position, nothing is reached.
-   * `accuracyM` is that position's accuracy (m); above the ceiling the
-   * guide's line says the GPS is too weak, and nothing is judged
-   * (`tooWeakToGuide`, PR #640 review). Absent or null: unknown, judged
-   * by the radius alone - the guide passes null for a position a code
-   * lined up, which the raw fixes' accuracy says nothing about (M5c
-   * review #1; `station-bands.ts` `judgedAccuracy`).
+   * `precision` is that position's (`position-precision`): too weak to
+   * guide by - GPS above the ceiling, where the guide's line says so (PR
+   * #640 review), or nothing to judge by - and nothing is judged. A code's
+   * position (`'code'`, no number) is judged by the radius alone, whatever
+   * the raw fixes' accuracy (M5c review #1). Absent: judged by the radius
+   * alone.
    */
   observe(input: {
     readonly distances: ReadonlyMap<string, number>;
     readonly nowMs: number;
-    readonly accuracyM?: number | null;
+    readonly precision?: PositionPrecision;
   }): StationEvent[];
   /** The station's steps finished (a found station only). */
   finish(id: string, nowMs: number): StationEvent[];
@@ -263,9 +266,9 @@ export function createStationRun(input: {
     statuses: () => stations.map((st) => snapshot(st.id, states.get(st.id)!)),
     isComplete: () => offeredIds.length === 0,
 
-    observe({ distances, accuracyM }) {
-      // No arrival on a fix the guide calls too weak to guide by.
-      if (tooWeakToGuide(accuracyM ?? null)) return [];
+    observe({ distances, precision }) {
+      // No arrival on a position the guide calls too weak to guide by.
+      if (precision?.tooWeak === true) return [];
       const events: StationEvent[] = [];
       for (const id of [...offeredIds]) {
         const d = distances.get(id);

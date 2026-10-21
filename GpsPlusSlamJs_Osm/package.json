@@ -23,7 +23,8 @@
     "./elevation": "./dist/elevation/index.js",
     "./elevation/*": "./dist/elevation/*.js",
     "./mesh": "./dist/mesh/index.js",
-    "./mesh/*": "./dist/mesh/*.js"
+    "./mesh/*": "./dist/mesh/*.js",
+    "./three": "./dist/three/index.js"
   },
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -50,11 +51,13 @@
     "node": ">=26.0.0"
   },
   "peerDependencies": {
-    "h3-js": ">=4.2.1"
+    "h3-js": ">=4.2.1",
+    "three": ">=0.170.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.9.5",
+    "@types/three": "^0.185.4",
     "@vitest/coverage-v8": "^5.0.0",
     "@vitest/eslint-plugin": "^1.6.27",
     "dpdm": "^4.3.0",
@@ -67,6 +70,7 @@
     "h3-js": "^4.5.0",
     "osmtogeojson": "3.0.0-beta.5",
     "prettier": "^3.9.6",
+    "three": "^0.185.1",
     "tsdown": "^0.22.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.69.0",
@@ -90,5 +94,10 @@
   "homepage": "https://github.com/cs-util-com/location-based-webxr#readme",
   "bugs": {
     "url": "https://github.com/cs-util-com/location-based-webxr/issues"
+  },
+  "peerDependenciesMeta": {
+    "three": {
+      "optional": true
+    }
   }
 }

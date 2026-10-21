@@ -36,8 +36,16 @@ placeholders stay visible until the owner fills them in, and the page says
   (`tour-viewer.wizard.*`, `tour-viewer.poster.*`, `tour-viewer.tour-name.*`,
   `tour-viewer.hud.folded.*`); the trust records (`tour-viewer.trust.v1`:
   signer and first/last seen per link, code and series) said to be a local
-  visit history; "sets no cookies" (a server in the path may); the walk
-  kept by the phone only when the photos need it (`creator-finish.ts`). A change of what the app sends or
+  visit history; "sets no cookies" (a server in the path may). Corrected
+  after M1 of the debug-captures plan, where the page said
+  the phone kept the walk only when the photos needed it: the walk carries
+  the camera's own pictures too. Corrected again in M2: both pages leave
+  it out of a saved copy unless its switch is ticked (`creator-finish.ts`,
+  `edit-main.ts`: the switch starts unticked), both offer it as a file of
+  its own ("Save the debug data", `creator-debug-save.ts`,
+  `editor/done-dialog.ts`), and the desktop keeps it in a file opened for
+  writing (`keepsWalk`). A change
+  of what the app sends or
   stores changes this page in the same commit.
 - `wrangler.toml` logging and the referrer policy are the owner's open
   questions (design doc §5 Q2, Q3); the page states the logging as it is.

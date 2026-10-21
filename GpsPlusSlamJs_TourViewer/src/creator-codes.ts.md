@@ -7,9 +7,14 @@ The one owner of the codes while authoring (code book refactor plan
 M4a; the M2 milestone review's #1): the code in hand, its measurement, the
 visit's sighting of it, the visit's latest sighting of every stored code,
 and the levels a Finish of this page wrote. Every creator module reads and
-writes these through it, and they are private to it (code book plan M5d-2:
-no session field holds any of them); its inside is the code book
-(`code-book.ts`) holding several codes.
+writes these through it. Since the debug-captures plan
+(`GpsPlusSlamJs_Docs/docs/2026-10-20-1159-debug-captures-and-codes-in-store-plan.md`,
+M3a) it is a FACADE over the page's store with the same API: the tour's
+codes are the tour document's (`tour-document.ts` `codes`: the code book,
+`code-book.ts`, whose rules its reducers apply, and the hosted texts held
+per open), the code in hand, its measurement and the sightings are the
+page's (`creatorCodes`, `creator-codes-slice.ts`). It dispatches their
+actions and reads their selectors, and holds no state of its own.
 
 ## Public API
 
@@ -39,8 +44,33 @@ no session field holds any of them); its inside is the code book
     summary and the object list missed a code measured before the one in
     hand), then the tour's others (geo null for a level without one);
     `storedPoses()` - the ones that read, same order.
-  - Every re-mint is `saveLevel(level)` (the settle's code in hand
-    included; code book plan M5d removed `remint`, which did the same).
+  - A re-mint outside a settle's step is `saveLevel(level)` (the
+    automatic code spots' undo and confirmation; code book plan M5d
+    removed `remint`, which did the same).
+  - `applySettle(batch, levels, what)` - the settle's re-minted codes
+    with its moves as ONE step of the document (plan M3b, Q-D): the
+    batch's `commit`, the hand taking a code's new text only if it held
+    that code (as `saveLevel`), heard by `onIdsChanged` as one change.
+    Returns the document's change, or null for no step.
+  - An undo or a redo that changed the saved text of a code (a settle's
+    step) makes the hand let go of that code, its measurement with it
+    (`handReleased`, from a listener on the document): the hand's text
+    wins at every change of the book, so it would otherwise put the
+    text back at the next one. The book's own measurement of the code
+    stays; a hand on a code the step did not change is kept.
+  - A redo of that step puts the improved text back but NOT the hand
+    (intended): the undo let the hand go, the step keeps the codes'
+    texts only, and a redo never re-takes a code the creator no longer
+    holds (pinned in `authoring-settle.test.ts`, "restores the improved
+    text at a redo of the settle, but not the hand").
+  - After such an undo the code keeps its BOOK measurement (the step
+    holds the texts only, and `handReleased` drops the hand's): it still
+    counts as changed live (`code-book.ts`'s `changedLive`), so a restored
+    draft's text for it does not win, and `visitCodes` still lists it for
+    the visit that measured it (a settle redone after a failed Finish
+    reads it). Pinned in `authoring-settle.test.ts`, "keeps the code's
+    book measurement after an undo of the settle, and the visit still
+    lists it".
 - The book of codes a Finish writes (M4c-1, `code-book.ts`):
   - `toWrite()` - every code this page took whose saved text differs from
     what the zip the Finish rebuilds from holds (the last Finish's text,
@@ -71,17 +101,28 @@ sighting)` keeps the latest per code; `storedSightings()` lists them (the
 
 ## Invariants & assumptions
 
-- **Private storage** (M5d-2): the code in hand, its measurement and the
-  visit's sighting are closure variables; the composed tests reach them
-  through `CreatorSetup.codes`. The close reaches them through `reset()`.
-- **The code in hand's text wins for its own code**: every write of the
-  book goes through one `setBook`, which puts the hand's text back when a
-  change replaced it (a dropped measurement). The book therefore always
-  holds the code in hand, and reads never write.
+- **One writer** (M5d-2, then M3a): only this module dispatches the codes'
+  actions; the store is reached through `ctx.store`. The composed tests
+  reach the codes through `CreatorSetup.codes`. The close reaches them
+  through `reset()`.
+- **The code in hand's text wins for its own code**: every change of the
+  book names the hand after it, and the document's reducer ends in
+  `withHand`, which puts the hand's text back when a change replaced it (a
+  dropped measurement). The book therefore always holds the code in hand,
+  and reads never write.
+- **`onIdsChanged` is heard exactly when a code joins** (`changeBook`:
+  the ids before and after the dispatch), never for a new text of a known
+  code and not at a tour's close (`reset` empties the book outside it).
+- The hosted texts are the store's (`ctx.currentLevelTexts` is a view of
+  them): read as they stand at each call, as before the move. So are the
+  open tour's parsed levels (plan M3b, `hostedLevels`; `ctx.currentLevels`
+  is a view of them): `numbering()`, `references()` and `hasStoredPose()`
+  read the store, never a session field, so the hosted levels are held
+  once.
 - **A draft's newer text takes a hand that only KEPT its code** (PR #568
   review): `restoreLevels` moves the hand to the draft's text when the
   page changed that code in no live way (`liveText` null), before
-  `setBook`; a hand with live work keeps it. (M5d-2 had kept the older
+  the change; a hand with live work keeps it. (M5d-2 had kept the older
   rule, under which the hand's kept text always won.)
 - **`measurement()` is the HAND's**, not the book entry's: a code taken as
   a stored reference has none, even when the book keeps an earlier
@@ -94,7 +135,7 @@ sighting)` keeps the latest per code; `storedSightings()` lists them (the
   sit outside the AR overlay).
 - A stored code's sighting is tagged with its visit; the visit log reads
   only its own visit's, and `endVisit` empties the map anyway.
-- Pure state, no I/O: every method is synchronous and total.
+- No I/O: every method is synchronous and total (a dispatch is).
 
 ## Examples
 
@@ -110,6 +151,34 @@ codes.saveLevel(remintedLevel); // the settle's re-mint, measurement kept
 the hand's own measurement against the book's; a null level's empty
 hand; the draft restore into an empty hand, at a live text and over a code
 only kept at its hosted pose; the hand's text over a draft's; the re-mint;
-the close; stored poses, the references' order, the visit's sightings). Composed, through `wireCreatorSetup`: every creator suite, and
+the close; stored poses, the references' order, the visit's sightings;
+and the characterization pinned before the codes move into the store
+(plan 2026-10-20-1159 M3a): the hand's text winning in the book (an
+example and a property), live work winning over both restores (a
+property), the two baselines kept apart, the hosted texts read lazily
+(levels arriving late, a failed level read, a Finish taking them in), what
+a visit's end and a tour's close clear, the visit's codes and
+`measuredIn`, and `onIdsChanged` heard exactly when a code joins (examples
+and a property)), all unchanged through the move; a settle's codes as one
+step, its undo letting the hand go of the code it took back and keeping a
+hand of another code (plan M3b).
+`creator-codes-store.property.test.ts` - every observable of the facade
+(the hand, its measurement and sighting, the ids, the numbering, the
+references, both baselines, the sightings, the visit's codes, each code's
+text, membership, stored pose and `measuredIn`, the hosted texts and
+whether they are unreadable, `restoreInHand`'s answer, the notices)
+against the module as it was (`test-support/creator-codes-reference.ts`),
+after every step of any sequence of the page's calls - the tour
+document's own opens, closes, edits and undos, and later opens whose
+predecessors answer late, among them; seen red against a broken
+`withHand`, a stored sighting put first, and the hosted levels' session
+guard removed. With settles among the steps (plan M3b) too, compared the
+same way (seen red with the hand not following its own code) - but
+without an undo, which the module as it was cannot express (it held no
+history); the settle's undo is a property of its own on the store
+alone, for any book, hand and settle: each code's text from before the
+settle back, the hand let go of a code the undo changed and kept on any
+other (seen red with the undo's codes not applied, and with the hand not
+released). Composed, through `wireCreatorSetup`: every creator suite, and
 the sampled mutants (`scripts/fixtures/creator-setup.mutants.json`) whose
 text moved here.

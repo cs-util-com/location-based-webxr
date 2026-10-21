@@ -88,7 +88,8 @@ since the flows plan M6.
       milestone review #1).
   - `renderArStatus` also renders the visitor's scan card (`dom.scanCard`,
     `dom.scanCardLine`, optional; the owner's S1, polish round M4b): shown
-    while `scanCardShown` holds, carrying the visitor's sentence, with the
+    while `scanCardShown` holds (never for a tour not finished yet,
+    whose line says so), carrying the visitor's sentence, with the
     status line hidden meanwhile (kept under `?debug=1`, whose technical
     line the card does not carry); the live region is unchanged.
   - The render also writes `data-ar-state` (the controller status, for
@@ -145,6 +146,20 @@ entry; C7).
 - `#ar-status` and `#enter-ar` must stay DOM children of `#ar-root` (the
   DOM-overlay root; `tests/repo-config/hud-overlay-nesting.test.js`). The
   hint is hidden while a session is starting/running/stopping.
+- **A visitor of a tour not finished yet gets no Start** (`startWithheld`:
+  a tour open, its manifest settled, `tourUnfinished` per
+  `tour-unfinished.ts`): outside a session `#enter-ar` and `#ar-hint` are
+  hidden, and a tap that still arrives does nothing - no location request
+  (whose denial on a tour without codes sent the visitor to the browser's
+  settings), no empty AR session. The start page's sentence says why.
+  While the manifest is still being read the button shows, so a session
+  can still start on such a tour; its status line then says the tour is
+  not finished. During a session the button stays: it is the way out.
+  The button carries `data-start` (`withheld` / `offered`), which
+  `index.html` reads to hide "What happens?" (`#visitor-what`) as well:
+  it describes a session the visitor cannot start.
+  `renderArEntry` runs again when the tour's manifest settles
+  (`visitor-screen.ts` `tourChanged`).
 - The printed-size input is disabled during a session ONLY in author mode
   (DEC-F2).
 - A refused author pipeline keeps AR unstarted; the viewer pipeline is
@@ -153,7 +168,9 @@ entry; C7).
   tracking-quality phase is fed (flows plan M4).
 - On `running`, viewer mode installs the placement subscription
   (`ctx.placementUnsubscribe`) and attempts once; author mode renders the
-  readout instead.
+  readout instead. The subscription skips a dispatch that moved only the
+  creator's code state (`onlyCreatorCodesChanged`, `creator-codes-slice.ts`):
+  neither the placement nor the stations read it.
 - The runtime start is all-or-nothing (`startTourArRuntime`); its failure
   surfaces in the error box and disables back to `ready`.
 
@@ -188,7 +205,13 @@ hooks.renderArStatus = arEntry.renderArStatus;
 
 `playwright-tests/ar-mode.spec.js` - both modes booting to running, the
 frame count in the status line, the system session end + clean re-entry,
-the hint hidden during a session, the unsupported state without fakes.
+the hint hidden during a session, the unsupported state without fakes; a
+tour not finished yet: no Start and no location request, and a session
+started while its file was still being read says it is not finished.
+`ar-entry.test.ts` ("a visitor of a tour not finished yet gets no Start")
+pins the withheld button and hint (and its `data-start` mark), the tap
+that asks for nothing, the
+button while the manifest is pending, during a session and for a creator.
 `ar-entry.test.ts` drives the real `wireArEntry` through "Enter AR" and the
 session-end callback it hands the AR controller: the QR controller is
 disposed and the fused pose source dropped (QR near-frontal pose plan §64
