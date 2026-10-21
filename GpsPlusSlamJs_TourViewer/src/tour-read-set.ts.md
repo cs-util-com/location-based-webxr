@@ -24,6 +24,10 @@ which a visitor never sees.
     recorded frame (an earlier file's `captureSpots` named some, read as
     the tour's content until M1 of the debug-captures plan; the field is
     gone from the format).
+- `ACTIONS_SEGMENT`, `isActionEntryName(name)` - the recording's action
+  stream as the framework's parser reads it (it does not export its rule):
+  an `actions/` path segment, and for an action entry `.json`. Shared by
+  `tour-session.ts` (`hasRecording`) and `debug-captures.ts`.
 - `scanEntryNames(entryNames, manifest, wrap) -> string[]` - the walk, in
   archive order: the entries a RECORDING writes (`session.json`, anything
   under `actions/`, `frame-NNNNNN.<ext>` in `images/` or the legacy

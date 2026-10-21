@@ -56,8 +56,17 @@ const RECORDED_FRAME = new RegExp(
   String.raw`(^|/)(${SESSION_IMAGES_DIR}|${LEGACY_SESSION_IMAGES_DIR})/frame-\d+\.[A-Za-z0-9]+$`,
 );
 
-/** The recording's action stream: the walk itself. */
-const ACTION_ENTRY = /(^|\/)actions\//;
+/** The recording's action stream, the walk itself: an `actions/` path
+ *  SEGMENT, at the start or after a slash, so a sibling folder whose name
+ *  only ends in it (`myactions/`) is not it. The framework's parser
+ *  (`zip-reader.ts`) holds the same rule; it does not export it. */
+export const ACTIONS_SEGMENT = /(^|\/)actions\//;
+
+/** An action entry the framework's parser replays: under an `actions/`
+ *  segment, ending `.json`. */
+export function isActionEntryName(name: string): boolean {
+  return ACTIONS_SEGMENT.test(name) && name.endsWith(".json");
+}
 
 /**
  * The folders the Recorder's zip contributors add beside the recording:
@@ -75,7 +84,7 @@ function isRecordingEntry(name: string): boolean {
   return (
     name === "session.json" ||
     name.endsWith("/session.json") ||
-    ACTION_ENTRY.test(name) ||
+    ACTIONS_SEGMENT.test(name) ||
     RECORDED_FRAME.test(name) ||
     RECORDER_SCAN_FOLDER.test(name)
   );
@@ -90,7 +99,7 @@ function isRecordingEntry(name: string): boolean {
 export function recordingEntryNames(entryNames: readonly string[]): string[] {
   // No action stream, no walk: a session.json or frame-named image of the
   // tour's own is then just a file.
-  if (!entryNames.some((name) => ACTION_ENTRY.test(name))) return [];
+  if (!entryNames.some((name) => ACTIONS_SEGMENT.test(name))) return [];
   return entryNames.filter(isRecordingEntry);
 }
 

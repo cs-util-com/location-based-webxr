@@ -24,9 +24,10 @@ It says what it will take back.
   changed one code's saved text (null: only re-minted from this visit's
   own measurement, or re-applied after a failed Finish).
 - `settleUndoTarget(changes) -> string | null` - the settle step's name:
-  one code by its change ("the code's improvement", "the code's move"),
-  several by count ("the 2 codes' new positions"); null - no offer - when
-  no automatic change is among them.
+  one automatic change by its kind ("the code's improvement", "the
+  code's move"), several by their count ("the 2 codes' new positions");
+  a re-minted code (null) is not counted; null - no offer - when no
+  automatic change is among them.
 - `undoSettle({ tour, target, visit, settledVisit, written, log, changed,
 say })` - the run of a settle's offer: the document's undo, the
   `tourAuthoring/settleUndone` log (the visit of the tap, the visit whose

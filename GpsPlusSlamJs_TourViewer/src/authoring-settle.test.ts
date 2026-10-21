@@ -73,7 +73,7 @@ import { readCodeSpots } from "./level-spots.js";
 import { readPrintedText } from "./level-printed.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
-import { OUTCOME_HOLD_MS } from "./object-editing.js";
+import { NOT_BACKED_UP, OUTCOME_HOLD_MS } from "./object-editing.js";
 import { undoSettle } from "./creator-undo.js";
 import { UPLOAD_ASK_LABELS } from "./creator-handoff.js";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
@@ -2884,6 +2884,36 @@ describe(
         notes.slice(restoring).filter((n) => n.startsWith("Deleted")),
       ).toEqual([]);
       expect(list.lastModel?.note).toBe('Restored "Gate".');
+    });
+
+    // Why: the guard above keeps a late "Deleted ..." from overwriting
+    // the undo, but a write that did not land is the creator's to know
+    // whatever came after it: only the confirmation is dropped, never the
+    // warning that the device holds no backup copy.
+    it("still says a late delete's failed backup once the delete is no longer the last step", async () => {
+      const slow = slowDraftStore();
+      const a = await withHostedTour([hostedPin("h1", "Gate")], slow.store);
+      await slow.release();
+      const list = a.dom.objectList;
+      const notes: string[] = [];
+      const draw = list.render.bind(list);
+      list.render = (model: ObjectListModel) => {
+        notes.push(model.note);
+        draw(model);
+      };
+      slow.mode.refuse = true;
+      list.listHandlers!.remove("h1");
+      await flush();
+      a.dom.undoButton.click();
+      await flush();
+      await slow.release();
+      const restoring = notes.indexOf('Restoring "Gate"…');
+      expect(restoring).toBeGreaterThanOrEqual(0);
+      const after = notes.slice(restoring);
+      expect(after.filter((n) => n.startsWith("Deleted"))).toEqual([]);
+      expect(after).toContain(
+        `The delete of "Gate" could not be backed up: ${NOT_BACKED_UP}`,
+      );
     });
 
     // Why: on the page there is no strip (the AR controls are the

@@ -59,8 +59,8 @@ export type SettleCodeChange = "improvement" | "move" | null;
 
 /**
  * What the strip's Undo names a settle's step by, from the codes whose
- * saved text the step changed (each with how): one code by its change,
- * several by their count. Null - no offer - when no automatic change is
+ * saved text the step changed (each with how): one automatic change by
+ * its kind, several by their count (a re-minted code is not counted). Null - no offer - when no automatic change is
  * among them: Q-D's undo is the one of an automatic code change, and a
  * settle that only refined this visit's own measurement has nothing a
  * creator would recognise as a thing to take back.
@@ -68,12 +68,16 @@ export type SettleCodeChange = "improvement" | "move" | null;
 export function settleUndoTarget(
   changes: readonly SettleCodeChange[],
 ): string | null {
-  if (!changes.some((c) => c !== null)) return null;
-  if (changes.length === 1) {
-    const [only] = changes;
-    return only === "move" ? "the code's move" : "the code's improvement";
+  // Only the automatic changes count: a re-minted code beside them is the
+  // measurement refined, not a thing the creator would take back.
+  const automatic = changes.filter((c) => c !== null);
+  if (automatic.length === 0) return null;
+  if (automatic.length === 1) {
+    return automatic[0] === "move"
+      ? "the code's move"
+      : "the code's improvement";
   }
-  return `the ${String(changes.length)} codes' new positions`;
+  return `the ${String(automatic.length)} codes' new positions`;
 }
 
 /** What an undo from `before` to `after` put back: the codes whose saved

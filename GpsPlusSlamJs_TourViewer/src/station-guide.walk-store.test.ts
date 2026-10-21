@@ -23,6 +23,11 @@ import { walkOffered, walkStatus } from "./station-run";
 import { createTourViewerStore } from "./tour-viewer-session";
 import type { VisitorPosition } from "./visitor-position";
 import { quickArmed, walkCleared } from "./visitor-walk-slice";
+import {
+  LogLevel,
+  subscribeToLogs,
+  type LogEntry,
+} from "gps-plus-slam-app-framework/utils/logger";
 
 // The core's geodesy needs an activated store (the framework's factory).
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -314,6 +319,45 @@ describe("the station guide on the page's store (W4 M1)", () => {
     page.guide.tick();
     expect(page.dom.line.textContent).toBe("");
     expect(page.dom.skip.textContent).toBe("");
+  });
+
+  // Why (CI review): the guide runs on the camera frame, so a run read
+  // that finds no walk (a reset between the check and the read, which no
+  // writer does today) must never throw out of the frame loop and stop it
+  // for the session. It is logged once and the call reads as no run.
+  it("reads a walk gone between the guide's check and its read as no run: no throw, one logged error", () => {
+    const errors: LogEntry[] = [];
+    const unsubscribe = subscribeToLogs((entry) => {
+      if (entry.level === LogLevel.ERROR && entry.tag === "StationGuide") {
+        errors.push(entry);
+      }
+    });
+    try {
+      const page = onThePage([station("a", 0, 0), station("b", 30, 0)], "any");
+      page.move(10, 0);
+      page.guide.tick();
+      expect(page.dom.line.textContent).toMatch(/^2 stations to find/);
+      // From now on every second read of the store finds the walk gone:
+      // the guide's check sees it, the run's read right after does not.
+      const real = page.store.getState.bind(page.store);
+      let reads = 0;
+      page.store.getState = () => {
+        const state = real();
+        reads += 1;
+        return reads % 2 === 0
+          ? { ...state, visitorWalk: { ...state.visitorWalk, progress: null } }
+          : state;
+      };
+      for (let i = 0; i < 3; i += 1) {
+        page.move(10, 0);
+        expect(() => {
+          page.guide.tick();
+        }).not.toThrow();
+      }
+      expect(errors).toHaveLength(1);
+    } finally {
+      unsubscribe();
+    }
   });
 
   // Why (plan §3 M1): every guide call - a tick, a tap, a story's end -

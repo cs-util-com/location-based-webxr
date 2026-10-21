@@ -57,8 +57,10 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-media";
 
 import { driveFileId } from "gps-plus-slam-app-framework/utils/drive-file-id";
+import { isSessionJsonEntryName } from "gps-plus-slam-app-framework/storage/zip-reader";
 
 import { fileNameFromContentDisposition } from "./content-disposition.js";
+import { isActionEntryName } from "./tour-read-set.js";
 import {
   tourFileKey,
   tourIdFileKey,
@@ -689,12 +691,11 @@ async function buildSession(
       isImage: tourMediaTypeOfEntry(entry.filename)?.kind === "image",
     });
   }
-  // `includes`, not `startsWith`: the framework's parser tolerates a
-  // wrapping folder (`<name>/actions/…`) and this pre-check must not be
-  // stricter than the parser it guards (milestone review, finding 10).
-  const hasRecording = [...byName.keys()].some((name) =>
-    name.includes("actions/"),
-  );
+  // The framework parser's own rule: a wrapping folder
+  // (`<name>/actions/…`) is tolerated (milestone review, finding 10), a
+  // sibling folder whose name ends in it is not, so this pre-check is
+  // neither stricter nor looser than the parser it guards.
+  const hasRecording = [...byName.keys()].some(isActionEntryName);
   // Where `tour.json` was found, minus the file name: the prefix every
   // content entry of THIS archive shares (PR #435 review). Empty when the
   // zip is flat or carries no manifest yet.
@@ -775,10 +776,11 @@ async function buildSession(
       }
     },
     loadSessionMeta: async () => {
-      // `endsWith`, matching the framework's zip-coverage-embed tolerance
-      // for a wrapping folder (milestone review, finding 10).
+      // The framework's one rule for the session (a wrapping folder
+      // tolerated, milestone review finding 10; a look-alike such as
+      // `backup-session.json` is not it).
       const entry = [...byName.entries()].find(([name]) =>
-        name.endsWith("session.json"),
+        isSessionJsonEntryName(name),
       )?.[1];
       if (entry === undefined) return null;
       try {

@@ -441,11 +441,16 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     // tombstone for an object the file carries, the record gone for one
     // only this device had - as the desktop editor's.
     void gone.backedUp.then((ok) => {
-      // Said only while the delete is still the last step: the strip's
-      // Undo may have taken it back before its write landed, and its
-      // "Restoring ..." must not be overwritten by "Deleted ...".
+      // The confirmation only while the delete is still the last step:
+      // the strip's Undo may have taken it back before its write landed,
+      // and its "Restoring ..." must not be overwritten by "Deleted ...".
+      // A write that did not land is still said, without an Undo.
       const now = tour.state();
-      if (now.generation !== generation || now.revision !== revision) return;
+      if (now.generation !== generation || now.revision !== revision) {
+        if (!ok)
+          say(`The delete of ${name} could not be backed up: ${NOT_BACKED_UP}`);
+        return;
+      }
       // Undo is offered with the outcome either way: a delete the draft
       // did not record is still a delete in memory, and the next Finish.
       say(

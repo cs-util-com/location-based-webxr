@@ -33,7 +33,11 @@ the rules as pure transitions, applied by the page's store).
     rule does not allow returns the SAME progress object and no events, so
     a caller can tell an event from nothing.
   - `walkOffered(progress)`, `walkStatus(progress, id)` - the offer and
-    one status, as the run reads them.
+    one status, as the run reads them. The offered list (read-only) and a
+    by-id map of the stations are derived once per progress (a `WeakMap`
+    on its identity: a progress is never changed, only replaced by a step
+    that changes something), so a frame with nothing happening allocates
+    no list and looks a station up in constant time.
   - `stationRunOver(stations, { read, perform })` - the `StationRun`
     calls below over progress held elsewhere: `read()` the progress now,
     `perform(step)` apply one step there and return its events (the

@@ -311,6 +311,44 @@ describe("loadRecordingActions / loadSessionMeta", () => {
       ),
     });
     expect(wrapped.hasRecording).toBe(true);
+    // A sibling folder whose name only ends in it is not the stream the
+    // framework's parser replays, nor is a non-JSON file under actions/.
+    const sibling = await openTourSession("https://x/sibling.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({
+          "myactions/000001.json": "{}",
+          "actions/README.txt": "notes",
+        }),
+      ),
+    });
+    expect(sibling.hasRecording).toBe(false);
+  });
+
+  // Why: the framework reads `session.json` as a whole path segment
+  // (`isSessionJsonEntryName`); a look-alike sorting first
+  // (`backup-session.json`) is not the session, so its era is not the
+  // recording's.
+  it("reads session meta only from a session.json path segment", async () => {
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({
+          "backup-session.json": '{"version":1,"odomCoordVersion":1}',
+          "walk/session.json": '{"version":1,"odomCoordVersion":5}',
+          "walk/actions/000001.json": "{}",
+        }),
+      ),
+    });
+    await expect(session.loadSessionMeta()).resolves.toMatchObject({
+      odomCoordVersion: 5,
+    });
+    const only = await openTourSession("https://x/only.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({
+          "backup-session.json": '{"version":1,"odomCoordVersion":1}',
+        }),
+      ),
+    });
+    await expect(only.loadSessionMeta()).resolves.toBeNull();
   });
 
   it("returns null for a hand-built zip without a recording - nothing to bake, not an error", async () => {

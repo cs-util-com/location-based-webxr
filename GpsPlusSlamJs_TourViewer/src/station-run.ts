@@ -244,8 +244,27 @@ export function startWalk(route: WalkRoute, order: TourOrder): WalkProgress {
   };
 }
 
+/** What the run reads of a progress again and again (several times per
+ *  camera frame): derived once per progress. A progress is never changed,
+ *  only replaced by a step that changes something, so its identity keys
+ *  it; a replaced one is collected with its entry. */
+interface Derived {
+  readonly byId: ReadonlyMap<string, WalkStation>;
+  offered?: readonly string[];
+}
+const derived = new WeakMap<WalkProgress, Derived>();
+
+function derivedOf(p: WalkProgress): Derived {
+  let d = derived.get(p);
+  if (d === undefined) {
+    d = { byId: new Map(p.stations.map((s) => [s.id, s])) };
+    derived.set(p, d);
+  }
+  return d;
+}
+
 function stationOf(p: WalkProgress, id: string): WalkStation | undefined {
-  return p.stations.find((s) => s.id === id);
+  return derivedOf(p).byId.get(id);
 }
 
 function isDone(p: WalkProgress, id: string): boolean {
@@ -253,7 +272,13 @@ function isDone(p: WalkProgress, id: string): boolean {
 }
 
 /** The stations offered now, in list order; empty once complete. */
-export function walkOffered(p: WalkProgress): string[] {
+export function walkOffered(p: WalkProgress): readonly string[] {
+  const d = derivedOf(p);
+  d.offered ??= offeredOf(p);
+  return d.offered;
+}
+
+function offeredOf(p: WalkProgress): readonly string[] {
   const undone = p.stations.filter((s) => s.state !== "done").map((s) => s.id);
   switch (p.order) {
     case "any":

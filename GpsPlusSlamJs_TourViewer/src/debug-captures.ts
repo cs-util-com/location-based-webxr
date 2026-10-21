@@ -28,6 +28,7 @@ import {
   type ReplayedJoinState,
 } from "./capture-geo-join.js";
 import type { TourSession } from "./tour-session.js";
+import { ACTIONS_SEGMENT, isActionEntryName } from "./tour-read-set.js";
 
 /** One debug camera capture: its picture's entry and where it stands. */
 export interface DebugCapture {
@@ -71,27 +72,24 @@ export interface DebugCaptureOptions {
   readonly extentOf?: (state: PickTrackerState) => number;
 }
 
-/** An `actions/` path segment: at the start, or after a slash. */
-const ACTIONS_SEGMENT = /(^|\/)actions\//;
-
 /**
  * The folder the recording's action stream sits under, with its trailing
  * slash (`""` for a flat zip, `"mytour/"` for a re-zipped folder). A
  * capture's `imageFile` is relative to the recording, so its entry is
- * this folder plus that name. The action entries are found by the
- * framework parser's own rule (an `actions/` path ending `.json`), so this
- * reads the folder of exactly the stream that parser replays - cut at an
- * `actions/` path SEGMENT (`ACTIONS_SEGMENT`, `tour-read-set.ts`'s rule):
+ * this folder plus that name. The action entries are found by the same
+ * rule as the framework's parser (an `actions/` path SEGMENT, ending
+ * `.json`: `tour-read-set.ts` `isActionEntryName`), so this reads the
+ * folder of exactly the stream that parser replays:
  * a sibling folder whose name ends in it (`mytour/myactions/`) never
  * gives the folder.
  */
 function recordingFolderOf(entries: DebugCaptureSource["entries"]): string {
   const at = entries
     .map((e) => e.filename)
-    // The framework parser's selection, in its order...
-    .filter((name) => name.includes("actions/") && name.endsWith(".json"))
+    // The framework parser's selection, in its order: the first entry's
+    // folder.
+    .filter(isActionEntryName)
     .sort((a, b) => a.localeCompare(b))
-    // ...and of it, the first whose `actions/` is a path segment.
     .map((name) => ACTIONS_SEGMENT.exec(name))
     .find((match) => match !== null);
   return at === undefined

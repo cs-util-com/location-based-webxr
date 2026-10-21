@@ -114,10 +114,16 @@ describe("the Undo chip's words (MU)", () => {
   it("names a settle's step by its automatic code change, and offers none without one", () => {
     expect(settleUndoTarget(["improvement"])).toBe("the code's improvement");
     expect(settleUndoTarget(["move"])).toBe("the code's move");
+    // A re-minted code beside the automatic change is not counted: the
+    // chip names what the creator would recognise as taken back.
     expect(settleUndoTarget(["improvement", null])).toBe(
+      "the code's improvement",
+    );
+    expect(settleUndoTarget([null, "move"])).toBe("the code's move");
+    expect(settleUndoTarget(["improvement", "move", null])).toBe(
       "the 2 codes' new positions",
     );
-    expect(settleUndoTarget(["improvement", "move", null])).toBe(
+    expect(settleUndoTarget(["move", "move", "improvement"])).toBe(
       "the 3 codes' new positions",
     );
     expect(settleUndoTarget([null])).toBeNull();

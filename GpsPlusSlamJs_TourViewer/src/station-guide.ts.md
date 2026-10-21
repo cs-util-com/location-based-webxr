@@ -93,7 +93,10 @@ activateM)` (each tick, each offered station with a distance: the
     reader fetches the run anew rather than across a callback, so the
     run's view is never read with no walk. Nothing resets the walk behind
     the guide today: its own `guideTourChanged` is followed by the new
-    tour's walk in the same call's batch.
+    tour's walk in the same call's batch. Should a read still meet no walk,
+    it never throws out of the frame loop: the outermost guide call catches
+    it, drops its changes, shows nothing and logs one error per guide
+    (`station-guide.walk-store.test.ts`).
   - **The settle is an event:** once 6 s have passed since the last skip,
     the next render dispatches `skipSettled` (and the prefetch hears the
     skip's `onDone`); a find or another station done settles it at once,

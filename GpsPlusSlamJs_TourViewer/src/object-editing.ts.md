@@ -108,6 +108,9 @@ draft writes and history. Wired by `creator-setup.ts`, drawn by
   A delete's own outcome ("Deleted ...") is said only while the delete
   is still the document's last step: the strip's Undo may take it back
   before its draft write lands, and its note must not be overwritten.
+  A write that did not land is still said after that, without an Undo:
+  "The delete of <name> could not be backed up: <NOT_BACKED_UP>"
+  (`authoring-settle.test.ts`).
 - **An outcome is held against a selecting tap** (M4 review #6). In AR
   every tap on the scene is a select, which used to clear the note at once
   - before it could be read. A note now stands for `OUTCOME_HOLD_MS`

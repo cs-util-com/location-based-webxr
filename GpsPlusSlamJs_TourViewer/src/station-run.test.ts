@@ -6,7 +6,11 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-stations";
 
 import {
+  applyWalkStep,
   createStationRun,
+  startWalk,
+  walkOffered,
+  walkRoute,
   SKIP_SUGGEST_BASE_MS,
   SKIP_SUGGEST_SLOW_MPS,
   skipSuggestAfterMs,
@@ -515,5 +519,22 @@ describe("stationTitle (plan 2026-10-15-0348 M0: one rule for the visitor and th
     expect(stationTitle({})).toBe("the next station");
     expect(stationTitle({ title: "" })).toBe("the next station");
     expect(stationTitle({ title: " 	 " })).toBe("the next station");
+  });
+});
+
+describe("the walk's derived reads", () => {
+  // Why: the guide reads the offered list several times per camera frame
+  // (each station's arrival, the line, the skip), and a walk's progress is
+  // replaced only when a step changes something. Derived once per progress,
+  // a frame with nothing happening allocates no list; a step that changes
+  // the walk reads anew.
+  it("derives the offered list once per progress, and anew after a step that changes it", () => {
+    const p = startWalk(walkRoute([station("a"), station("b")]), "any");
+    const offered = walkOffered(p);
+    expect(walkOffered(p)).toBe(offered);
+    expect(offered).toEqual(["a", "b"]);
+    const { progress } = applyWalkStep(p, { kind: "skip", id: "a" });
+    expect(walkOffered(progress)).toEqual(["b"]);
+    expect(walkOffered(p)).toBe(offered);
   });
 });

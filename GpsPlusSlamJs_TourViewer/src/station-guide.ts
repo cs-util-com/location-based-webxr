@@ -134,6 +134,18 @@ import {
   type VisitorWalkState,
   type VisitorWalkStore,
 } from "./visitor-walk-slice.js";
+import { createLogger } from "gps-plus-slam-app-framework/utils/logger";
+
+const log = createLogger("StationGuide");
+
+/** The run was read with no walk: `liveRun` hands the run out only while
+ *  its walk exists, so this is a read held across a reset. A guide call
+ *  catches it (`inCall`) and reads as no run. */
+class RunReadWithoutWalk extends Error {
+  constructor() {
+    super("station-guide: the run was read with no walk");
+  }
+}
 
 /** The station line and the skip button, inside `#ar-root`. */
 export interface StationGuideDom {
@@ -406,6 +418,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  a tap) adds to them. */
   const pendingWalk: UnknownAction[] = [];
   let callDepth = 0;
+  /** A run read without a walk was logged (once per guide). */
+  let runReadLogged = false;
   /** The run's calls over the walk for the open tour's stations: a view
    *  (it holds the stations for the found radius), no state of its own;
    *  read through `liveRun`, which hands it out only while its walk
@@ -483,6 +497,16 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     callDepth += 1;
     try {
       body();
+    } catch (error) {
+      // The frame loop must never stop on it: the outermost call reads
+      // as no run (its changes dropped, nothing shown), logged once.
+      if (callDepth > 1 || !(error instanceof RunReadWithoutWalk)) throw error;
+      pendingWalk.length = 0;
+      hideAll();
+      if (!runReadLogged) {
+        runReadLogged = true;
+        log.error("the run was read with no walk", error);
+      }
     } finally {
       callDepth -= 1;
       if (callDepth === 0) commitWalk();
@@ -501,9 +525,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       read() {
         const progress = walk().progress;
         // `liveRun` hands the view out only while its walk exists.
-        if (progress === null) {
-          throw new Error("station-guide: the run was read with no walk");
-        }
+        if (progress === null) throw new RunReadWithoutWalk();
         return progress;
       },
       perform(step) {
