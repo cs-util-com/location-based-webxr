@@ -1828,10 +1828,38 @@
           gap: 8px;
         }
       }
+      /* The persistent Undo (W4 build plan MU): a quieter chip on its
+         own line above "New station here", in H1's dark card look. Its
+         label says what it takes back, so it gets the line's width and a
+         long pin text ends in an ellipsis rather than a second line (the
+         accessible name is the whole text). Disabled, it stays in place,
+         dimmed: the strip does not jump when an offer comes and goes. */
+      body[data-mode="creator"][data-ar-active="true"] #setup-undo {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        max-width: 100%;
+        min-height: 44px;
+        padding: 0 16px;
+        border: 1px solid rgb(255 255 255 / 30%);
+        border-radius: 999px;
+        background: rgb(20 22 26 / 66%);
+        color: #fff;
+        box-shadow: none;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: normal;
+        text-transform: none;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-undo:disabled {
+        opacity: 0.55;
+      }
       body[data-mode="creator"][data-ar-active="true"] #setup-pin[hidden],
       body[data-mode="creator"][data-ar-active="true"] #setup-photo[hidden],
       body[data-mode="creator"][data-ar-active="true"]
-        #setup-new-station[hidden] {
+        #setup-new-station[hidden],
+      body[data-mode="creator"][data-ar-active="true"] #setup-undo[hidden] {
         display: none;
       }
       /* "New station here" armed (D8): the accent ring says the next pin or
@@ -1859,6 +1887,13 @@
         line-height: 1.15;
         text-align: center;
       }
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls
+        #setup-undo-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       /* Typing a new pin's text: the field and its buttons take the row. */
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls:has(#pin-label:not([hidden]))
@@ -1868,7 +1903,10 @@
         #setup-photo,
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls:has(#pin-label:not([hidden]))
-        #setup-new-station {
+        #setup-new-station,
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls:has(#pin-label:not([hidden]))
+        #setup-undo {
         display: none;
       }
       body[data-mode="creator"][data-ar-active="true"] #pin-label {
@@ -3718,6 +3756,49 @@
                   hidden
                 ></p>
                 <div id="setup-controls" data-testid="setup-controls" hidden>
+                  <!-- The persistent Undo (W4 build plan MU): takes back
+                   the tour's last step when it is a delete or a settle's
+                   automatic code change, and says which (creator-undo.ts).
+                   FIRST, on its own line above "New station here": its
+                   label names what it takes back and needs the width, and
+                   the reading and focus order is the order on screen. -->
+                  <button
+                    type="button"
+                    id="setup-undo"
+                    class="btn btn--prose"
+                    data-testid="setup-undo"
+                    disabled
+                  >
+                    <!-- An arrow turning back. -->
+                    <svg
+                      class="chip-icon"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M9 14 4 9l5-5"
+                        fill="none"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                      <path
+                        d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"
+                        fill="none"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                    <span
+                      id="setup-undo-label"
+                      class="chip-label"
+                      data-testid="setup-undo-label"
+                      >Undo</span
+                    >
+                  </button>
                   <!-- "New station here" (owner decision D8 of the editor
                    round-2 plan): a toggle - the next pin or photo starts a
                    station of its own, even within the automatic radius of

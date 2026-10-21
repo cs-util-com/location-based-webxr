@@ -171,7 +171,9 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   `#setup-controls` (the code is measured on its own and its position
   decided by the settle: the measure button, the explicit replace and its
   confirm are gone, UI round 1, U3, and the move question since code book
-  plan M6), the placement controls `setup-pin` / `pin-label` / `pin-save` /
+  plan M6), first the strip's persistent Undo `setup-undo` (its label
+  `setup-undo-label`, W4 build plan MU, `creator-undo.ts`), then the
+  placement controls `setup-pin` / `pin-label` / `pin-save` /
   `pin-cancel` / `setup-photo`; then `setup-finish`, and LAST, outside
   the controls because it works on the page too, the object list
   `#object-list` (drawn by `object-list.ts`, M4; last so that in AR it
@@ -232,8 +234,8 @@ its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
 whole on the page), `object-list-heading`, `object-list-hint`, `object-list-note` and,
 beside it after a delete, `object-undo`; in AR the selected row's
 `object-close` - the chooser is gone since polish round M3),
-`setup-pin`, `pin-label`, `pin-save`, `pin-cancel`, `setup-photo`,
-`setup-finish`, `scan-escape`, `station-line`, `station-skip`, `scene-panel`
+`setup-undo`, `setup-undo-label`, `setup-pin`, `pin-label`, `pin-save`,
+`pin-cancel`, `setup-photo`, `setup-finish`, `scan-escape`, `station-line`, `station-skip`, `scene-panel`
 (owns `scene-title`, `scene-speaker`, `scene-image`, `scene-text`,
 `scene-status`, `scene-choices` with its `scene-choice` buttons,
 `scene-continue`), `scene-play-next`, `recording-block` (owns `recording-offer`
@@ -332,7 +334,8 @@ auto`) and their labels wrap inside the chip; up to 380 px the chips take a
   so it fit locally while a Linux browser's wider fallback pushed the row
   4 px off a 360 px screen (24 px at 320). `ar-layout.spec.js` checks the
   H1 HUD in a forced wide face at 412, 360, 320 and 915 px, both edges of
-  the row included.
+  the row included, and the Undo chip (its own line above "New station
+  here", a long label ending in an ellipsis) at 390 and 320 px.
 
 ## Tests
 

@@ -302,3 +302,60 @@ test("Delete offers Undo beside its outcome, which brings a hosted pin back; the
   await expect(page.getByTestId("object-undo")).toBeHidden();
   await expect(row(page, "Fixture pin")).toHaveCount(0);
 });
+
+test("in AR a delete is taken back by the strip's persistent Undo, which names it and outlives the note's hold", async ({
+  page,
+}) => {
+  // The persistent Undo (W4 build plan MU): the phone's only Undo used to
+  // be the note's, for 8 s. In AR the strip's Undo is the one Undo: the
+  // note says what happened, the strip says what it will take back, and it
+  // stays until the document moves on.
+  await openTour(page);
+  await enterArAndMeasure(page);
+  const chip = page.getByTestId("setup-undo");
+  await expect(chip).toBeDisabled();
+  await expect(chip).toHaveText("Undo");
+  await page.evaluate(
+    ([key, id]) => {
+      /** @type {any} */ (window)[key].pickId = id;
+      /** @type {any} */ (window)[key].tapXr();
+    },
+    [TEST_KEY, FIXTURE_PIN],
+  );
+  await page
+    .locator('[data-testid="object-row"][data-selected="true"]')
+    .getByTestId("object-delete")
+    .click();
+  await expect(page.getByTestId("object-list-note")).toHaveText(
+    /Deleted "Fixture pin"/,
+  );
+  await expect(page.getByTestId("object-undo")).toBeHidden();
+  await expect(chip).toBeEnabled();
+  await expect(chip).toHaveText('Undo: delete "Fixture pin"');
+  // The note's hold runs out; the strip's Undo stays.
+  await page.evaluate(
+    (key) => /** @type {any} */ (window)[key].fireTimers(),
+    TEST_KEY,
+  );
+  await expect(chip).toBeEnabled();
+
+  await chip.click();
+  await expect(page.getByTestId("object-list-note")).toHaveText(
+    /Restored "Fixture pin"/,
+  );
+  await expect(chip).toBeDisabled();
+  await expect(chip).toHaveText("Undo");
+  // Back in the tour: a tap selects it again.
+  await page.evaluate(
+    ([key, id]) => {
+      /** @type {any} */ (window)[key].pickId = id;
+      /** @type {any} */ (window)[key].tapXr();
+    },
+    [TEST_KEY, FIXTURE_PIN],
+  );
+  await expect(
+    page
+      .locator('[data-testid="object-row"][data-selected="true"]')
+      .getByTestId("object-title"),
+  ).toHaveText("Fixture pin");
+});

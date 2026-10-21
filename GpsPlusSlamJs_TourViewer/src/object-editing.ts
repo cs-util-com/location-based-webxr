@@ -27,6 +27,7 @@ import {
 import { Vector3, type Object3D } from "three";
 
 import type { CreatorObject } from "./creator-document.js";
+import type { UndoOffer } from "./creator-undo.js";
 import { objectListModel, type ObjectListView } from "./object-list.js";
 import {
   objectDeleted,
@@ -81,6 +82,10 @@ export interface ObjectEditingDeps {
   readonly syncPreviews: () => void;
   /** The panel should re-read state (placement count, Finish). */
   readonly renderAuthorReadout: () => void;
+  /** A delete was just taken: the AR strip's persistent Undo offers it
+   *  (W4 build plan MU, `creator-undo.ts`). Absent: only the note's
+   *  Undo offers it. */
+  readonly offerUndo?: (offer: UndoOffer) => void;
 }
 
 export interface ObjectEditing {
@@ -95,11 +100,14 @@ export interface ObjectEditing {
   objects(): AuthoringObject[];
   /** A tour closed or a visit ended: the selection and outcome go. */
   reset(): void;
+  /** Show `text` as the list's outcome, held as an action's is: what the
+   *  strip's Undo of a settle undid (`creator-undo.ts`). */
+  announce(text: string): void;
 }
 
 /** True on the page (Finish) and in AR (Done) alike (M3 review #12). */
 const SAVED_SUFFIX = "it goes into the zip when you save the tour.";
-const NOT_BACKED_UP =
+export const NOT_BACKED_UP =
   "this device could not save a backup copy - finish before closing the page.";
 
 /**
@@ -188,7 +196,9 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
         busy,
         locked: ctx.finishing,
         note,
-        undo: undoable !== null && !ctx.finishing,
+        // In AR the strip's persistent Undo is the one Undo (MU): the
+        // note says what happened, the strip takes it back.
+        undo: undoable !== null && !ctx.finishing && !deps.sessionLive(),
       }),
     );
   }
@@ -421,10 +431,21 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     // draft write settles.
     say(`Deleting ${name}…`);
     const deleted: DeletedObject = { object, hosted: found.hosted, name };
+    // The strip's Undo offers it now, while the document stands where the
+    // delete left it; the note's only beside its outcome.
+    deps.offerUndo?.({
+      target: `delete ${name}`,
+      run: () => undoDelete(deleted),
+    });
     // The draft's writes are the document's (`tour-document-draft.ts`): a
     // tombstone for an object the file carries, the record gone for one
     // only this device had - as the desktop editor's.
     void gone.backedUp.then((ok) => {
+      // Said only while the delete is still the last step: the strip's
+      // Undo may have taken it back before its write landed, and its
+      // "Restoring ..." must not be overwritten by "Deleted ...".
+      const now = tour.state();
+      if (now.generation !== generation || now.revision !== revision) return;
       // Undo is offered with the outcome either way: a delete the draft
       // did not record is still a delete in memory, and the next Finish.
       say(
@@ -435,7 +456,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
           generation,
           revision,
           run: () => {
-            undoDelete(deleted);
+            void undoDelete(deleted);
           },
         },
       );
@@ -473,17 +494,17 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
    * then the tombstone goes (`tour-document-draft.ts`), so an Undo cut
    * short leaves the object deleted rather than half restored.
    */
-  function undoDelete(deleted: DeletedObject): void {
-    if (refusedDuringFinish()) return;
+  function undoDelete(deleted: DeletedObject): Promise<boolean> | null {
+    if (refusedDuringFinish()) return null;
     const undone = tour.undo();
-    if (undone.kind === "nothing") return;
+    if (undone.kind === "nothing") return null;
     if (undone.kind === "refused") {
       say(
         undone.reason === "saving"
           ? "Wait until the zip is rebuilt, then try again."
           : `${deleted.name} cannot come back: its picture is no longer on this device.`,
       );
-      return;
+      return null;
     }
     arStore.dispatch(
       objectDeleteUndone({
@@ -497,12 +518,13 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     deps.syncPreviews();
     deps.renderAuthorReadout();
     say(`Restoring ${deleted.name}…`);
-    void undone.backedUp.then((ok) => {
+    return undone.backedUp.then((ok) => {
       say(
         ok
           ? `Restored ${deleted.name}.`
           : `Restored ${deleted.name}, but ${NOT_BACKED_UP}`,
       );
+      return ok;
     });
   }
 
@@ -537,6 +559,9 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
 
   return {
     render,
+    announce: (text) => {
+      say(text);
+    },
     select: selectObject,
     selected: () => selectedId,
     objects,
