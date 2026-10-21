@@ -108,6 +108,7 @@ walkOffered(store.getState().visitorWalk.progress!); // the rest
   the guide names too.
 - `station-run.differential.property.test.ts` - the run's calls through a
   store of this slice against the frozen run.
-- `station-guide.differential.property.test.ts`,
-  `station-guide.walk-store.test.ts` - the guide on this slice: the same
-  as before the move, events only, one batch per call.
+- `station-guide.walk-store.test.ts` - the guide on this slice: events
+  only, one batch per call (M1's guide-level differential against the
+  frozen guide was deleted in M2, which changes the guide's writes by
+  design).

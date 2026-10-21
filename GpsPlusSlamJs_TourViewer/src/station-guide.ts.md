@@ -117,8 +117,9 @@ activateM)` (each tick, each offered station with a distance: the
     M4 when a tap carries its action); `runView` (a view of the run's
     calls over the walk for the tour's stations, no state of its own); the
     call's pending changes (one call's, gone at its end).
-  - **The listeners stay callbacks**, each for its own reason (the
-    guide-level differential checks each fires as before):
+  - **The listeners stay callbacks**, each for its own reason (M1's
+    guide-level differential checked each fired as before; it was deleted
+    in M2's first commit, since M2 changes the guide's writes by design):
     - `onFound` and `onDone` fire once per transition, from its events
       (`onFound` again for a story the session's end cut short): they
       start and end a story and release the prefetch's media - players and
@@ -147,9 +148,9 @@ activateM)` (each tick, each offered station with a distance: the
     `ar-entry.ts`'s subscriber, which ticks the guide at once, so a
     station a find, skip or story's end newly offers (the next under fixed
     or branch order) is judged in the same frame rather than the next. The
-    visitor sees the same; `station-guide.differential.property.test.ts`
-    compares the settled page under the subscription and every single
-    call without it.
+    visitor sees the same; M1's guide-level differential compared the
+    settled page under the subscription and every single call without it
+    (deleted in M2: W4 build plan §10, the frozen copies' end of life).
 
 - **The wait for a heading is published** (D34): after each tick the guide
   sets the store's `headingPending` to `!headingReady && !run.isComplete()`
@@ -425,18 +426,11 @@ store.subscribe(() => guide.tick());
 
 ## Tests
 
-- `station-guide.differential.property.test.ts` (W4 M1) - against a frozen
-  copy of the guide and its run from before the walk moved into the store
-  (`test-support/frozen-m1/`): random any, fixed and branch tours, walks
-  under every kind of position, skip, undo, story-end and code-lock taps,
-  session ends, tour changes and the scan gate; the line, the button, every
-  callback, the HUD's targets, the breadcrumbs, presence, the heading wait
-  and the figure's pose equal after every call, and with the page's
-  re-entering subscription equal once the page settled - the live guide
-  settled before the frozen one's extra frames, which change nothing it
-  shows or decided (it may run ahead, never lag behind); coverage counts
-  include the skip clock running out on a walk ("Can't get there?" to
-  "Skip ...").
+- M1's guide-level differential (against a frozen copy of the guide from
+  before the walk moved into the store) proved the move behaviour-neutral
+  and was deleted in M2's first commit, because M2 changes the guide's
+  writes by design (W4 build plan §10). The run-level differential and its
+  frozen run stay until M4.
 - `station-guide.walk-store.test.ts` (W4 M1) - on the page's store: no walk
   dispatch over frames without an event; one batch per call, last, with the
   line already written from it, and none on a second tick with the same

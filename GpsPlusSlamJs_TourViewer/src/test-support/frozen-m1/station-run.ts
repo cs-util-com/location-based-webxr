@@ -3,11 +3,11 @@
  * copy of `src/station-run.ts` as it was before the walk's state moved into the
  * page's store (webxr commit 888c0d5e). Changed only where it must be:
  * its relative imports repointed, and the exports nobody imports dropped
- * (the dead-code check). The guide-level and run-level differentials
- * (`station-guide.differential.property.test.ts`,
- * `station-run.differential.property.test.ts`) drive it beside the live
- * module and require the same outputs. Never edit it to follow the live
- * code: a difference is what the oracle exists to find.
+ * (the dead-code check). The run-level differential
+ * (`station-run.differential.property.test.ts`) drives it beside the live
+ * module and requires the same outputs (the guide-level one and its frozen
+ * guide were deleted in M2; this copy goes in M4). Never edit its code to
+ * follow the live code: a difference is what the oracle exists to find.
  */
 /**
  * The visitor's station run (tour kit plan K4, §4.2): each station's state
