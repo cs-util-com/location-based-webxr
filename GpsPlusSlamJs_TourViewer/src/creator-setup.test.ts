@@ -2095,6 +2095,32 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
     expect(lastMeta(metaPuts).rejected).toEqual(["placed"]);
   });
 
+  // Why (plan M3b): with no code measured on this page, "Delete it"
+  // still writes the codes record - empty - over the rejected draft's, so
+  // the draft namespace keeps a codes file after the discard by design.
+  // What makes the old draft "gone" is that record's CONTENT, not its
+  // absence; the e2e "a draft is offered again after Not now, and gone
+  // after Delete it" asserts the same on real OPFS.
+  it("writes an empty codes record at Delete it when this page holds no code", async () => {
+    const { store, files, codesPuts } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: a, levels: [a, b] }),
+      [objectKey("placed")]: JSON.stringify(pin("placed")),
+    });
+    const { dom, setup } = wire(store);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden, "the draft is offered").toBe(false);
+
+    dom.draftDiscard.click();
+    await settle();
+    expect(lastCodes(codesPuts)).toEqual({ level: null, levels: [] });
+    expect(JSON.parse(String(files.get(CODES_KEY)))).toEqual({
+      level: null,
+      levels: [],
+    });
+  });
+
   // Why (plan M3b): the codes of a rejected draft go only once its
   // rejection LANDED - the meta is the commit point. A "Delete it" whose
   // commit is refused leaves the draft on disk, offered again, so its

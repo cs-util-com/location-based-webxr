@@ -2777,8 +2777,13 @@ test("a draft is offered again after Not now, and gone after Delete it", async (
   // life of the origin, which is the half no unit test can observe against a
   // real OPFS directory.
   //
-  // The end state is "the meta and nothing else", which no earlier state
-  // satisfies: before the tap the namespace also holds the object file.
+  // The end state is the meta and an EMPTY codes record, and nothing else,
+  // which no earlier state satisfies: before the tap the namespace also
+  // holds the object file, and the codes record still names the rejected
+  // draft's code. The codes record stays by design - "Delete it" writes
+  // this page's codes over the rejected draft's, none here - so the old
+  // draft's code being gone is asserted on the record's content, not on
+  // its absence.
   await expect
     .poll(
       () =>
@@ -2792,11 +2797,14 @@ test("a draft is offered again after Not now, and gone after Delete it", async (
           for await (const name of dir.keys()) {
             if (name.endsWith(".blob")) names.push(name);
           }
-          return names.sort().join(",");
+          const codes = names.includes("codes.blob")
+            ? await (await dir.getFileHandle("codes.blob")).getFile()
+            : null;
+          return `${names.sort().join(",")} ${codes === null ? "-" : await codes.text()}`;
         }, RANGES_ARCHIVE),
       { timeout: 10000 },
     )
-    .toBe("meta.blob");
+    .toBe('codes.blob,meta.blob {"level":null,"levels":[]}');
 
   // Gone for good. Waited on a POSITIVE signal rather than a sleep: the
   // repo forbids waitForTimeout, and beyond the rule, hidden-after-a-sleep
@@ -2999,11 +3007,25 @@ test("a pin placed BEFORE Delete it survives too: the discard rejects the old dr
           for await (const name of dir.keys()) {
             if (name.endsWith(".blob")) names.push(name);
           }
-          return names.sort().join(",");
+          // The codes record by its content: it stays after the discard by
+          // design ("Delete it" writes this page's codes over the rejected
+          // draft's), and what it must hold is the code THIS session
+          // measured - the hand - as the meta's own level field did before
+          // the codes had a record of their own.
+          let hand = "-";
+          if (names.includes("codes.blob")) {
+            const file = await (
+              await dir.getFileHandle("codes.blob")
+            ).getFile();
+            hand =
+              JSON.parse(await file.text()).level === null ? "none" : "kept";
+          }
+          return `${names.sort().join(",")} hand=${hand}`;
         }, RANGES_ARCHIVE),
       { timeout: 10000 },
     )
-    // The meta plus EXACTLY ONE object, which is the post-re-write state
+    // The meta, the codes record and EXACTLY ONE object, which is the
+    // post-re-write state
     // and no other. A COUNT threshold was the first attempt and it waited
     // for nothing: before the tap this namespace already holds three files
     // (the meta the second session's mint rewrote, plus both pins), so
@@ -3021,7 +3043,7 @@ test("a pin placed BEFORE Delete it survives too: the discard rejects the old dr
     // here because session one has already written the draft;
     // `expect(async () => {}).toPass()` is the form that retries through
     // throws.
-    .toMatch(/^meta\.blob,object%3A[^,]+\.blob$/);
+    .toMatch(/^codes\.blob,meta\.blob,object%3A[^,]+\.blob hand=kept$/);
   await page.reload();
   await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
   await page.getByTestId("open-button").click();
