@@ -8,28 +8,63 @@ get there", and when to suggest it. Pure; the caller supplies the clock,
 the distances and the scene ends. Plans:
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`,
 `GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md` (D16: arrival
-by the radius alone).
+by the radius alone),
+`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md` (M1:
+the rules as pure transitions, applied by the page's store).
 
 ## Public API
 
-- `createStationRun({ stations, order, nowMs }): StationRun`
+- **The rules as pure transitions** (W4 plan M1, §2.2): the page's store
+  applies them in its `visitorWalk` reducer (`visitor-walk-slice.ts`), so
+  the walk's state lives in the store and the rule once, here.
+  - `type WalkProgress` - `{ order, stations, branchCurrent }`: per
+    station in list order its status (`id`, `state`, `skipped`,
+    `focusedAtMs`, `focusDistanceM`) and the two tour facts the rules
+    read (`next`, a station of this tour or null; `stepless`); the offer
+    is derived, never stored. Plain, serializable data.
+  - `walkRoute(stations)` - those tour facts (`type WalkRoute`); a `next`
+    naming no station of the tour is null (the list successor then).
+  - `startWalk(route, order)` - every station waiting, `branch` at the
+    first.
+  - `applyWalkStep(progress, step): { progress, events }` - one
+    `type WalkStep`: `found` (an offered waiting station; the caller
+    judged the radius), `focus-distance` (the first distance of a clock
+    started without one), `finish`, `skip`, `unskip`, `focus`. A step its
+    rule does not allow returns the SAME progress object and no events, so
+    a caller can tell an event from nothing.
+  - `walkOffered(progress)`, `walkStatus(progress, id)` - the offer and
+    one status, as the run reads them. The offered list (read-only) and a
+    by-id map of the stations are derived once per progress (a `WeakMap`
+    on its identity: a progress is never changed, only replaced by a step
+    that changes something), so a frame with nothing happening allocates
+    no list and looks a station up in constant time.
+  - `stationRunOver(stations, { read, perform })` - the `StationRun`
+    calls below over progress held elsewhere: `read()` the progress now,
+    `perform(step)` apply one step there and return its events (the
+    guide's store, `station-guide.ts`). `observe` judges each offered
+    station's found radius here and performs `focus-distance` and
+    `found`.
+- `createStationRun({ stations, order, nowMs }): StationRun` - a thin
+  adapter holding one `WalkProgress` in its closure (the run's tests, the
+  sweeps, the prefetch sweep):
   - `offered()` - the offered station ids, in list order; empty once
     complete.
   - `status(id)` / `statuses()` - `{ id, state, skipped, focusedAtMs,
 focusDistanceM }`.
   - `isComplete()`.
-  - `observe({ distances, nowMs, accuracyM? }): StationEvent[]` -
+  - `observe({ distances, nowMs, precision? }): StationEvent[]` -
     horizontal distances from the phone's best position to the stations
     the caller can place (D16). A non-finite distance is not judged; the
-    caller passes none without a position. `accuracyM` is that position's
-    accuracy: above `ACCURACY_CEILING_M` (`tooWeakToGuide`,
-    `station-bands.ts`) nothing is judged, so the latch agrees with the
-    guide's "GPS too weak to guide you" (PR #640 review); absent or null
-    is judged by the radius alone. The guide passes the raw fixes'
-    accuracy for every position but one a code lined up, and null for that
-    one (`station-bands.ts` `judgedAccuracy`; M5c review #1): being
-    aligned alone earns no trust, since the library aligns a session from
-    its first fix.
+    caller passes none without a position. `precision` is that position's
+    (`PositionPrecision` of the framework's one rule,
+    `gps-plus-slam-app-framework/state/position-precision`): when it is
+    `tooWeak` - GPS above the ceiling, or `'none'` - nothing is judged, so
+    the latch agrees with the guide's "GPS too weak to guide you" (PR #640
+    review) and with its request for a code; absent, the distances are
+    judged by the radius alone (callers that judge no precision). A code's
+    position (`'code'`) is never too weak, whatever the raw fixes say (M5c
+    review #1): being aligned alone earns no trust, since the library
+    aligns a session from its first fix.
   - `finish(id, nowMs)` - the scene ended (found stations only).
   - `skip(id, nowMs)` - any offered station not done.
   - `skipSuggested(id, nowMs)` - an offered, unfound station whose clock ran
@@ -99,8 +134,18 @@ run.finish("gate", nowMs); // done, the next station offered
 
 ## Tests
 
+- `station-run.differential.property.test.ts` - random sequences of
+  observe, finish, skip, unskip and focus (ids the tour lacks, non-finite
+  distances and every precision included) over generated tours and the
+  three orders: the same events and the same view (offer, statuses,
+  completion, upcoming, suggestion) through this run - held in its
+  closure, and through a store of the walk's slice - as through the
+  frozen copy from before the transitions (`test-support/frozen-m1/`).
+- `visitor-walk-slice.test.ts` - each step's guard through the reducer.
+
 - `station-run.test.ts` - each transition, the radius alone (at the radius
-  yes, a centimetre beyond no), non-finite distances, the empty station, each order preset, the skip,
+  yes, a centimetre beyond no), non-finite distances, the empty station, each order preset (a branch
+  station whose next is itself, skipped, hands on: its next is read after it is done), the skip,
   the suggestion clock; properties: no deadlock and completion within one
   action per station for every preset, a done station never offered and
   never changed; `stationTitle`: the trimmed title, "Station N" by its

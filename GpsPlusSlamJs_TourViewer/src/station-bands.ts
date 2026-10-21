@@ -9,10 +9,20 @@
  * (`distanceMin` / `distanceMax`, absolute metres; DEC-H3 keeps one
  * hysteresis convention in this codebase, not a second fractional one).
  *
+ * How precise the position is - a code's, the GPS's with a number, or
+ * nothing to judge by - is the framework's one rule for every app
+ * (`gps-plus-slam-app-framework/state/position-precision`); these bands
+ * only read it.
+ *
  * Pure. `station-bands.sweep.test.ts` simulates visitors under the
  * framework's Gauss-Markov GPS noise model and records what the D16 rule
  * costs at each radius and accuracy.
  */
+
+import {
+  POSITION_PRECISION_CEILING_M,
+  type PositionPrecision,
+} from "gps-plus-slam-app-framework/state/position-precision";
 
 /** The radii a station is judged by, in horizontal metres. */
 export interface StationBands {
@@ -49,32 +59,17 @@ export const BAND_ACCURACY_FACTOR = 1.0;
 export const HUD_ARRIVAL_MIN_M = 1.5;
 export const HUD_ARRIVAL_BAND_M = 1.5;
 
-/**
- * Accuracies above this are clamped (and a missing or nonsense one reads as
- * this): 25 m, the typical geofence of GPS-only tour products (plan §2).
- * The clamp keeps the HUD's band finite; above it the station line says
- * the GPS is too weak and the run judges no arrival (`tooWeakToGuide`).
- */
-export const ACCURACY_CEILING_M = 25;
-
-/**
- * Whether a position is too weak to guide by: its accuracy is known and
- * above the ceiling. The station line says so and the run judges no
- * arrival on it - one rule, so the two agree (PR #640 review). D16 forbids
- * WIDENING the found radius by the accuracy, not refusing a fix the guide
- * itself calls unusable. Unknown (null) is not too weak; the guide passes
- * null for a position a code lined up (`judgedAccuracy`, M5c review #1).
- */
-export function tooWeakToGuide(accuracyM: number | null): boolean {
-  return accuracyM !== null && accuracyM > ACCURACY_CEILING_M;
-}
-
-/** A usable accuracy, or the ceiling. */
+/** A usable accuracy, or the precision rule's ceiling (25 m, the typical
+ *  geofence of GPS-only tour products): above it the band is clamped, so
+ *  the HUD's band stays finite, and a missing or nonsense one reads as it,
+ *  the widest band there is. Above the ceiling the position is too weak to
+ *  guide by (`PositionPrecision.tooWeak`): the station line says so and
+ *  the run judges no arrival. */
 function clampAccuracy(accuracyM: number | null): number {
   if (accuracyM === null || !Number.isFinite(accuracyM) || accuracyM <= 0) {
-    return ACCURACY_CEILING_M;
+    return POSITION_PRECISION_CEILING_M;
   }
-  return Math.min(accuracyM, ACCURACY_CEILING_M);
+  return Math.min(accuracyM, POSITION_PRECISION_CEILING_M);
 }
 
 /**
@@ -98,39 +93,26 @@ export function stationBands(
 }
 
 /**
- * The accuracy a position is judged by - the run's arrival and the line's
- * "GPS too weak" alike (`tooWeakToGuide`): the raw fixes' own (their median,
- * `visitor-position.ts`), unless a code lined the position up; then null,
- * unknown, since the fixes say nothing about a code's position (M5c review
- * #1: a one-code courtyard tour with a ±40 m Wi-Fi fix was never found).
- */
-export function judgedAccuracy(
-  rawAccuracyM: number | null,
-  codeLinedUp: boolean,
-): number | null {
-  return codeLinedUp ? null : rawAccuracyM;
-}
-
-/**
- * A station's bands at a position, by the same rule as `judgedAccuracy`
- * (PR #642 review: the prefetch, the HUD's band and the breadcrumbs' stop
- * read one rule with the run and the line):
- * - a position a CODE lined up takes the HUD's own band, whatever the fixes
- *   say: their accuracy says nothing about it, and `stationBands` would read
- *   that unknown accuracy as the ceiling, the widest band there is;
- * - any other takes the raw accuracy's (`stationBands`), an alignment no
- *   code lined up included: from the first fix the session holds one (the
+ * A station's bands at a position of this precision (PR #642 review: the
+ * prefetch, the HUD's band and the breadcrumbs' stop read one rule with
+ * the run and the line):
+ * - a position a CODE holds (`'code'`) takes the HUD's own band, whatever
+ *   the fixes say: their accuracy says nothing about it, and `stationBands`
+ *   would read the unknown as the ceiling, the widest band there is;
+ * - a GPS position takes its accuracy's (`stationBands`), an alignment no
+ *   code holds included: from the first fix the session holds one (the
  *   library's identity at the zero), so "aligned" alone says nothing about
- *   how good the position is.
+ *   how good the position is;
+ * - nothing to judge by (`'none'`) takes the widest, as an unknown
+ *   accuracy always has.
  */
 export function judgedStationBands(
   station: { readonly activateRadiusM: number; readonly foundRadiusM: number },
-  rawAccuracyM: number | null,
-  codeLinedUp: boolean,
+  precision: PositionPrecision,
 ): StationBands {
-  return codeLinedUp
+  return precision.source === "code"
     ? bandsWith(station, HUD_ARRIVAL_BAND_M)
-    : stationBands(station, rawAccuracyM);
+    : stationBands(station, precision.accuracyM);
 }
 
 function bandsWith(

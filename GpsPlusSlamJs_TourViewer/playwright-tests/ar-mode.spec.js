@@ -86,7 +86,7 @@ async function openAsVisitor(
   // `allStations`: every station's content shows (?allstations=1). The
   // page draws only the present station's content, and these fakes give
   // the station guide no camera pose unless a test sets one, so a test
-  // about the gate, the votes or the ring (not about presence, which
+  // about the gate or the votes (not about presence, which
   // stations.spec.js walks) turns it on to see the content it places.
   await page.goto(
     `/?qr=${encodeURIComponent(url)}${debug ? "&debug=1" : ""}${allStations ? "&allstations=1" : ""}`,
@@ -110,15 +110,19 @@ function drawnGroups(page) {
   });
 }
 
-/** The ring's photo planes: meshes standing directly in a station's group
- *  (a station's own items hang one level deeper, under its frame). */
-function ringPlanes(page) {
-  return page.evaluate(
-    () =>
-      /** @type {any} */ (window).__tourViewerTest.fakeScene.children
-        .flatMap((/** @type {any} */ g) => g.children)
-        .filter((/** @type {any} */ o) => o.isMesh === true).length,
-  );
+/** The photo planes standing in the fake scene, however deep: a
+ *  station's items hang under its frame (pins are sprites, not meshes). */
+function photoPlanes(page) {
+  return page.evaluate(() => {
+    /** @param {any} o @returns {number} */
+    const count = (o) =>
+      (o.isMesh === true ? 1 : 0) +
+      (o.children ?? []).reduce(
+        (/** @type {number} */ n, /** @type {any} */ c) => n + count(c),
+        0,
+      );
+    return count(/** @type {any} */ (window).__tourViewerTest.fakeScene);
+  });
 }
 
 /** Lock the fixture's code: arm the detection and feed frames until the
@@ -805,11 +809,16 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // The pin the hosted zip already carried SURVIVES the rebuild - the
   // whole reason the manifest is loaded at open (M3 review #5/#7).
   const manifest = worldManifest(rebuilt.entries["tour.json"]);
-  // The fixture's own pin SURVIVES the rebuild (M3 review #5/#7), and the
-  // two objects placed above are appended after it.
-  expect(manifest.objects).toHaveLength(3);
-  expect(manifest.objects[0]?.id).toBe("fixturepin01");
-  const [, pin, photo] = manifest.objects;
+  // The fixture's own pin and photos SURVIVE the rebuild, and the two
+  // objects placed above are appended after them.
+  expect(manifest.objects).toHaveLength(6);
+  expect(manifest.objects.slice(0, 4).map((o) => o.id)).toEqual([
+    "fixturepin01",
+    "fixturephoto1",
+    "fixturephoto2",
+    "fixturephoto3",
+  ]);
+  const [, , , , pin, photo] = manifest.objects;
   expect(pin?.kind).toBe("pin");
   expect(pin?.kind === "pin" ? pin.label : null).toBe("The old gate");
   // The pin keeps its place RELATIVE TO THE CODE (D10b): the visit settles
@@ -903,9 +912,13 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
 
   const second = await readDownloadedZip(page, 2);
   const secondManifest = worldManifest(second.entries["tour.json"]);
-  // The fixture's pin, batch one's pin and photo, batch two's pin.
+  // The fixture's pin and photos, batch one's pin and photo, batch two's
+  // pin.
   expect(secondManifest.objects.map((o) => o.kind)).toEqual([
     "pin",
+    "photo",
+    "photo",
+    "photo",
     "pin",
     "photo",
     "pin",
@@ -915,7 +928,9 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   );
   expect(labels).toEqual(["Fixture pin", "The old gate", "The second visit"]);
   // Batch one's photo bytes are still in the archive, not just its record.
-  const keptPhoto = secondManifest.objects.find((o) => o.kind === "photo");
+  const keptPhoto = secondManifest.objects.find(
+    (o) => o.kind === "photo" && !o.id.startsWith("fixturephoto"),
+  );
   expect(
     Array.from(
       second.entries[keptPhoto?.kind === "photo" ? keptPhoto.image : ""],
@@ -1339,123 +1354,55 @@ test("a failed finish says so with priority and can be retried; the panel shows 
   await expect(page.getByTestId("finish-download")).toBeEnabled();
 });
 
-test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", async ({
+test("a visitor of a zip without tour.json reads that the tour is not finished yet, a recording's or not", async ({
   page,
 }) => {
-  // Why this matters (geo-join plan Rev 2 §4 — the plan's own verification
-  // clause): the fake tour gains a REAL action stream (era-5 session.json,
-  // a zero, four consistent GPS↔odom pairs that solve a translation
-  // alignment, two captures after the zero), and the COMPOSED viewer loop
-  // must run the whole join — gates → chunked replay → decode → placement —
-  // and say so in the status line. The ring wording must NOT appear: a
-  // silent decline that still shows a ring is exactly the failure the
-  // taxonomy exists to make visible.
-  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await openAsVisitor(page, ARCHIVE, { debug: true });
-
-  await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
-
-  await page.evaluate(() => {
-    const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
-    store.dispatch({
-      type: "gpsData/setZeroPos",
-      payload: { lat: 47.5, lon: 8.7 },
+  // Why this matters: the printed code may point at the hosted file before
+  // its first Finish. A recording (an action stream, frames) and a zip of
+  // images alone are both tours not finished yet: the start page says so,
+  // and offers no Start - a Start asked for the location (whose denial, on
+  // a tour without codes, sent the visitor to the browser's settings) and
+  // opened an empty AR session.
+  await page.addInitScript(() => {
+    // A visitor the browser would ask: the first tap would be a location
+    // request.
+    /** @type {any} */ (window).__tourViewerTest.locationPermission = "prompt";
+  });
+  for (const archive of ["recording-tour.zip", "plain-tour.zip"]) {
+    await openAsVisitor(page, `http://127.0.0.1:5197/ranges-ok/${archive}`, {
+      debug: true,
     });
-    const pairs = [
-      { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
-      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
-      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
-    ];
-    for (const [i, p] of pairs.entries()) {
-      store.dispatch({
-        type: "gpsData/recordGpsEvent",
-        payload: {
-          odomPosition: p.odom,
-          odomRotation: [0, 0, 0, 1],
-          rawGpsPoint: {
-            id: `seed-${String(i)}`,
-            latitude: p.lat,
-            longitude: p.lon,
-            altitude: 400,
-            latLongAccuracy: 5,
-            timestamp: 1756150000000 + i * 1000,
-          },
-        },
-      });
-    }
-  });
-
-  // Guided-setup plan M5 (DEC-N3): the tour carries a measured code, so
-  // NOTHING is placed until it locks - not even with tracking ready. The
-  // gate's line stands alone (no coaching hint: "walk around" would
-  // contradict "stay at the code").
-  await forceTrackingReady(page);
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.emitFrames(2);
-  });
-  await expect(page.getByTestId("ar-status")).toContainText(
-    "Point the phone at the tour's code",
-  );
-  await expect(page.getByTestId("ar-status")).not.toContainText(
-    /capture spots|slowly look around|hold steady/,
-  );
-  expect(
-    await page.evaluate(
-      () =>
-        /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
-    ),
-  ).toBe(0);
-  await lockTheCode(page);
-  // Once locked, the ready trigger places the photos at their capture spots.
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("ar-status").textContent();
-      },
-      { timeout: 20000 },
-    )
-    .toMatch(/photos at capture spots \(4 fixes/);
-  await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
-
-  // Further locks AFTER the placement refine the alignment under the
-  // planes - they do not place a second time (review #4/#5). The photos are
-  // decoded after the line says they are placed (visitor plan M2: decoded
-  // when their station is drawn), so wait for them to stand first.
-  await expect.poll(() => drawnGroups(page)).toBeGreaterThan(0);
-  const planesBefore = await drawnGroups(page);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("ar-status").textContent();
-      },
-      { timeout: 20000 },
-    )
-    .toMatch(/Relocaliz/);
-  await expect(page.getByTestId("ar-status")).toContainText("capture spots");
-  const planesAfter = await page.evaluate(
-    () =>
-      /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
-  );
-  expect(planesAfter).toBe(planesBefore);
+    await expect(page.getByTestId("visitor-subline"), archive).toHaveText(
+      "This tour is not finished yet.",
+    );
+    await expect(page.getByTestId("enter-ar"), archive).toBeHidden();
+    await expect(page.getByTestId("ar-hint"), archive).toBeHidden();
+    expect(
+      await page.evaluate(() => {
+        const t = /** @type {any} */ (window).__tourViewerTest;
+        return {
+          locationRequests: t.locationRequests,
+          permissionRequests: t.geolocationPermissionRequests,
+          initAR: t.initARCalls.length,
+        };
+      }),
+      archive,
+    ).toEqual({ locationRequests: 0, permissionRequests: 0, initAR: 0 });
+  }
 });
 
-test("a tour whose photo spots were baked at its Finish places them without any recording (scan-pass S1)", async ({
+test("a tour.json carrying debug camera captures shows a visitor its own content and none of the frames", async ({
   page,
 }) => {
-  // Why this matters (scan-pass plan S1, S-D11): a published tour carries
-  // its photos' spots in tour.json and no walk at all, so the viewer must
-  // place from the baked spots - never replay the walk the copy kept for
-  // a co-author - and report the BAKED quality (7 fixes; the walk has
-  // none).
+  // Why this matters: the frames a recording captured by itself are debug
+  // data, shown only in the desktop editor's debug layer. This test once
+  // pinned the opposite (the visitor drew the frames a creator's open had
+  // baked into tour.json as `captureSpots`, "2 photos at their stations
+  // (7 fixes"); the field is gone from the format and the reader ignores
+  // it, so a file carrying it must show the visitor its pin and no frame,
+  // in every station.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
-  await openAsVisitor(page, ARCHIVE, { debug: true });
+  await openAsVisitor(page, ARCHIVE, { debug: true, allStations: true });
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   await page.evaluate(() => {
@@ -1476,23 +1423,44 @@ test("a tour whose photo spots were baked at its Finish places them without any 
       },
       { timeout: 20000 },
     )
-    // Baked photos keep their stations, so they are counted where they
-    // wait, drawn only while their station shows.
-    .toMatch(/2 photos at their stations \(7 fixes/);
-  await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
+    .toMatch(/1 placed object/);
+  // The pin's station is drawn, and no frame stands in any station.
+  await expect.poll(() => drawnGroups(page)).toBe(1);
+  expect(await photoPlanes(page)).toBe(0);
+  await expect(page.getByTestId("ar-status")).not.toContainText("photo");
   // A visitor's page decodes no photo for its hidden gallery at all
   // (follow-up F14), so the walk's frame is not read either.
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(0);
 });
 
-test("a tour with no recording and no printed codes says so, instead of scanning", async ({
+test("a visitor of a tour without stations reads that it is not finished, with whom to ask, and is never asked for its code", async ({
   page,
 }) => {
-  // Why this matters (feedback F3): the reporter's zip could not carry a
-  // code, and the old line promised one forever.
-  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
-  await openAsVisitor(page, ARCHIVE, { debug: true });
+  // Why this matters: a creator may hang the code and host the file before
+  // placing anything. The tour carries its code, but nothing to show: the
+  // scan card would ask for the code and hide the one sentence the visitor
+  // needs. The start page offers no Start for such a tour, so the session
+  // is one started while the file was still being read (a slow network).
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/unfinished-tour.zip";
+  /** @type {() => void} */
+  let release = () => undefined;
+  const held = new Promise((resolve) => {
+    release = () => resolve(undefined);
+  });
+  await page.route(ARCHIVE, async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto(`/?qr=${encodeURIComponent(ARCHIVE)}`);
   await enterAr(page);
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
+  release();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    { timeout: 15000 },
+  );
+  await seedAlignment(page);
   await forceTrackingReady(page);
   await expect
     .poll(
@@ -1500,35 +1468,30 @@ test("a tour with no recording and no printed codes says so, instead of scanning
         await page.evaluate(() => {
           /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
         });
-        return page.getByTestId("ar-status").textContent();
+        return page.getByTestId("ar-status").getAttribute("data-state");
       },
       { timeout: 20000 },
     )
-    .toMatch(/nothing to place/);
-  await expect(page.getByTestId("ar-status")).not.toContainText("Scanning");
-  // No measured code: the gate is waived and placing is by GPS - the
-  // escape never appears, even after the clock (M5, DEC-N4). The gate's
-  // line is the ONE "no code" line (M5 review #12).
-  await expect(page.getByTestId("ar-status")).toContainText(
-    "no measured code - placing by GPS",
+    .toBe("unfinished");
+  await expect(page.getByTestId("ar-status")).toHaveText(
+    "This tour is not finished yet. Questions about this tour? Contact its maker: guide@example.org",
   );
-  await expect(page.getByTestId("ar-status")).not.toContainText(
-    "no printed codes.",
-  );
+  await expect(page.getByTestId("ar-status")).toBeVisible();
+  await expect(page.getByTestId("scan-card")).toBeHidden();
+  // Out of the session, the page offers no Start again.
   await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.fireTimers();
+    /** @type {any} */ (window).__tourViewerTest.endXrSession();
   });
-  await expect(page.getByTestId("scan-escape")).toBeHidden();
+  await expect(page.getByTestId("enter-ar")).toBeHidden();
 });
 
-test("the visitor's content and ring wait for the lock; the escape after its clock places by GPS instead (M5, DEC-N3)", async ({
+test("the visitor's content waits for the lock; the escape after its clock places by GPS instead", async ({
   page,
 }) => {
   // Why this matters: the mandatory scan is the demo's claim. Before the
-  // lock nothing stands in the scene; after it the tour.json pin is placed
-  // and the ring follows the vote. A second visitor never locks: the clock
-  // (fired by the fake, no frames needed) offers the escape, which places
-  // by GPS and says so.
+  // lock nothing stands in the scene; after it the tour.json pin and photos
+  // are placed. A second visitor never locks: the clock (fired by the fake,
+  // no frames needed) offers the escape, which places by GPS and says so.
   await openAsVisitor(page, RANGES_ARCHIVE, { debug: true, allStations: true });
   await enterAr(page);
   await seedAlignment(page);
@@ -1544,22 +1507,10 @@ test("the visitor's content and ring wait for the lock; the escape after its clo
     ),
   ).toBe(0);
   await lockTheCode(page);
-  await expect(page.getByTestId("ar-status")).toContainText("1 placed object");
-  // The ring follows the VOTE (a few more frames past the lock).
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("ar-status").textContent();
-      },
-      { timeout: 20000 },
-    )
-    .toMatch(/photos in a ring/);
-  // The ring goes with the station nearest its code, the pin's: its three
-  // planes stand in that station's group, drawn once decoded.
-  await expect.poll(() => ringPlanes(page)).toBe(3);
+  await expect(page.getByTestId("ar-status")).toContainText("4 placed objects");
+  // The station's three photos stand in its one group with the pin, drawn
+  // once decoded.
+  await expect.poll(() => photoPlanes(page)).toBe(3);
   expect(await drawnGroups(page)).toBe(1);
   // The escape clock was cancelled by the lock: firing it changes nothing.
   await page.evaluate(() => {
@@ -1585,7 +1536,7 @@ test("the visitor's content and ring wait for the lock; the escape after its clo
   await expect(page.getByTestId("ar-status")).toContainText(
     "Placing by GPS (less accurate)",
   );
-  await expect(page.getByTestId("ar-status")).toContainText("1 placed object");
+  await expect(page.getByTestId("ar-status")).toContainText("4 placed objects");
 });
 
 for (const viewport of [
@@ -1692,35 +1643,13 @@ test("a visitor reads one plain sentence per state, never the debug readout (UI 
   }
 });
 
-test("a visitor's plain line says when a tour has nothing to show, and when GPS placed it (U1 milestone review #2, #4)", async ({
+test("a visitor's plain line says when GPS placed the tour", async ({
   page,
 }) => {
-  // Why this matters: the first plain line read "Placing the tour…"
-  // forever on a tour with no recording and no codes (the F3 case, now
-  // without ?debug=1), and the GPS escape needs its own honest sentence.
-  await openAsVisitor(page, PLAIN_ARCHIVE);
-  await enterAr(page);
-  await seedAlignment(page);
-  await forceTrackingReady(page);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("ar-status").getAttribute("data-state");
-      },
-      { timeout: 20000 },
-    )
-    .toBe("nothing");
-  await expect(page.getByTestId("ar-status")).toHaveText(
-    "This tour has nothing to show here.",
-  );
-
-  // A tour with a code, the visitor taking the GPS escape.
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.endXrSession();
-  });
+  // Why this matters: the GPS escape needs its own honest sentence on the
+  // plain line (without ?debug=1). The plain line of a tour not finished
+  // yet is asserted where such a session can still start: a Start tapped
+  // while the file was being read.
   await openAsVisitor(page, RANGES_ARCHIVE);
   await enterAr(page);
   await seedAlignment(page);
@@ -1749,18 +1678,20 @@ test("a visitor's plain line says when a tour has nothing to show, and when GPS 
   );
 });
 
-test("without a QR detector the photos still land at capture spots (review #2)", async ({
+test("without a QR detector the tour's content still stands at its stations", async ({
   page,
 }) => {
   // The join's old liveness guard was `qrController === null`, which is the
   // permanent state on a browser without BarcodeDetector - every decoded
-  // photo was thrown away. Liveness is the controller status now.
+  // photo was thrown away. Liveness is the controller status now. (Why
+  // the tour changed: this test placed the debug camera captures a
+  // tour.json carried, which a visitor no longer sees; the tour's own
+  // photos and pin stand without a detector the same way.)
   await page.addInitScript(() => {
     const seams = /** @type {any} */ (window).__tourViewerSeams;
     seams.createQrFrontEnd = () => null;
   });
-  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await openAsVisitor(page, ARCHIVE, { debug: true });
+  await openAsVisitor(page, RANGES_ARCHIVE, { debug: true, allStations: true });
   await enterAr(page);
   await seedAlignment(page);
   await forceTrackingReady(page);
@@ -1774,14 +1705,21 @@ test("without a QR detector the photos still land at capture spots (review #2)",
       },
       { timeout: 20000 },
     )
-    .toMatch(/photos at capture spots/);
+    .toMatch(/4 placed objects/);
+  // Its three photos decoded and stand.
+  await expect.poll(() => photoPlanes(page)).toBe(3);
 });
 
 test("a re-entered session places the tour again once ITS tracking is ready (review #12)", async ({
   page,
 }) => {
-  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await openAsVisitor(page, ARCHIVE, { debug: true });
+  // Every station drawn. (Why the tour changed: this test placed the
+  // debug camera captures a tour.json carried, which a visitor no longer
+  // sees; the tour's own content is placed per session the same way.)
+  await openAsVisitor(page, RANGES_ARCHIVE, {
+    debug: true,
+    allStations: true,
+  });
   for (const entry of [1, 2]) {
     await enterAr(page);
     await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
@@ -1799,7 +1737,7 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
         },
         { timeout: 20000 },
       )
-      .toMatch(/photos at capture spots/);
+      .toMatch(/4 placed objects/);
     // Drawn once decoded, after the line (visitor plan M2).
     await expect
       .poll(() => drawnGroups(page), { message: `entry ${String(entry)}` })
@@ -1817,14 +1755,13 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
   }
 });
 
-test("viewer mode relocalizes against the tour's level: budgeted votes, marker, image ring", async ({
+test("viewer mode relocalizes against the tour's level: budgeted votes, marker, the station's photos", async ({
   page,
 }) => {
   // Why this matters (QR-pose plan M4): the COMPOSED viewer loop — the
   // the zip-carried level resolved for the DETECTED code, the REAL vote
   // builder writing budgeted synthetic GPS events into the real store, and
-  // the visible payoff (glue marker + the tour's images ringed around the
-  // anchor). The budget is the guardrail: without it every locked frame
+  // the visible payoff (glue marker + the station's pin and photos). The budget is the guardrail: without it every locked frame
   // votes and a lingering visitor pins the alignment centroid.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
   // three REFUSES a child that is not an Object3D, leaving only this
@@ -1874,8 +1811,8 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
       { timeout: 20000 },
     )
     .toMatch(/the code holds the placement/i);
-  // The ring and the pin are drawn once decoded (one station, one group).
-  await expect.poll(() => ringPlanes(page)).toBe(3);
+  // The photos and the pin are drawn once decoded (one station, one group).
+  await expect.poll(() => photoPlanes(page)).toBe(3);
 
   const afterBudget = await page.evaluate(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;
@@ -1884,11 +1821,13 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
         t.alignmentStore.getState().gpsData.gpsEvents.gpsPositions.length,
       markerUpdates: t.qrDebugUpdates,
       groups: t.fakeScene.children.length,
-      planes: t.fakeScene.children
-        .flatMap((/** @type {any} */ g) => g.children)
-        .filter((/** @type {any} */ o) => o.isMesh === true).length,
       // The station's group -> the station's frame at its pose (tour
       // editor plan W3: playback as station groups) -> the station's items.
+      planes: t.fakeScene.children
+        .flatMap((/** @type {any} */ c) => (c.isGroup ? c.children : []))
+        .flatMap((/** @type {any} */ s) => (s.isGroup ? s.children : []))
+        .flatMap((/** @type {any} */ g) => (g.isGroup ? g.children : []))
+        .filter((/** @type {any} */ o) => o.isMesh === true).length,
       pinLabels: t.fakeScene.children
         .flatMap((/** @type {any} */ c) => (c.isGroup ? c.children : []))
         .flatMap((/** @type {any} */ s) => (s.isGroup ? s.children : []))
@@ -1900,9 +1839,8 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
   // authoring plan M2b; 16 per lock since owner decision D13) = 163.
   expect(afterBudget.gpsCount).toBe(163);
   expect(afterBudget.markerUpdates).toBeGreaterThan(0);
-  // One station drawn: the image ring (3 planes), placed once, with the
-  // station nearest its code, and that station's tour.json content placed
-  // after the lock (M5), in one group...
+  // One station drawn: its tour.json content placed after the lock, the
+  // three photos among it, in one group...
   expect(afterBudget.groups).toBe(1);
   expect(afterBudget.planes).toBe(3);
   // ...which really holds the fixture pin's label sprite: a label three
@@ -2082,6 +2020,8 @@ test("opening a tour shows the code and the link it carries, without asking agai
   // the code and the step the creator was on - back reset everything.
   await expect(link).toHaveAttribute("target", "_blank");
   await expect(link).toHaveAttribute("rel", /noopener/);
+  // A finished tour (it has a station): nothing to warn about.
+  await expect(page.getByTestId("visitor-link-note")).toBeHidden();
 
   // A SECOND tour replaces what the code carries (PR #434 review): the
   // panel used to re-open showing the previous tour's link, so the printed
@@ -2097,6 +2037,12 @@ test("opening a tour shows the code and the link it carries, without asking agai
   await expect
     .poll(async () => page.getByTestId("print-url-out").textContent())
     .toContain("plain-tour");
+  // A zip without tour.json is not finished: the creator is told what a
+  // visitor of this link reads now, and what finishes the tour.
+  await expect(page.getByTestId("visitor-link-note")).toBeVisible();
+  await expect(page.getByTestId("visitor-link-note")).toContainText(
+    '"This tour is not finished yet."',
+  );
 
   // Changing the code number re-renders rather than leaving a stale code
   // on screen claiming to be the new one (M3 review #8).
@@ -2831,8 +2777,13 @@ test("a draft is offered again after Not now, and gone after Delete it", async (
   // life of the origin, which is the half no unit test can observe against a
   // real OPFS directory.
   //
-  // The end state is "the meta and nothing else", which no earlier state
-  // satisfies: before the tap the namespace also holds the object file.
+  // The end state is the meta and an EMPTY codes record, and nothing else,
+  // which no earlier state satisfies: before the tap the namespace also
+  // holds the object file, and the codes record still names the rejected
+  // draft's code. The codes record stays by design - "Delete it" writes
+  // this page's codes over the rejected draft's, none here - so the old
+  // draft's code being gone is asserted on the record's content, not on
+  // its absence.
   await expect
     .poll(
       () =>
@@ -2846,11 +2797,14 @@ test("a draft is offered again after Not now, and gone after Delete it", async (
           for await (const name of dir.keys()) {
             if (name.endsWith(".blob")) names.push(name);
           }
-          return names.sort().join(",");
+          const codes = names.includes("codes.blob")
+            ? await (await dir.getFileHandle("codes.blob")).getFile()
+            : null;
+          return `${names.sort().join(",")} ${codes === null ? "-" : await codes.text()}`;
         }, RANGES_ARCHIVE),
       { timeout: 10000 },
     )
-    .toBe("meta.blob");
+    .toBe('codes.blob,meta.blob {"level":null,"levels":[]}');
 
   // Gone for good. Waited on a POSITIVE signal rather than a sleep: the
   // repo forbids waitForTimeout, and beyond the rule, hidden-after-a-sleep
@@ -3053,11 +3007,25 @@ test("a pin placed BEFORE Delete it survives too: the discard rejects the old dr
           for await (const name of dir.keys()) {
             if (name.endsWith(".blob")) names.push(name);
           }
-          return names.sort().join(",");
+          // The codes record by its content: it stays after the discard by
+          // design ("Delete it" writes this page's codes over the rejected
+          // draft's), and what it must hold is the code THIS session
+          // measured - the hand - as the meta's own level field did before
+          // the codes had a record of their own.
+          let hand = "-";
+          if (names.includes("codes.blob")) {
+            const file = await (
+              await dir.getFileHandle("codes.blob")
+            ).getFile();
+            hand =
+              JSON.parse(await file.text()).level === null ? "none" : "kept";
+          }
+          return `${names.sort().join(",")} hand=${hand}`;
         }, RANGES_ARCHIVE),
       { timeout: 10000 },
     )
-    // The meta plus EXACTLY ONE object, which is the post-re-write state
+    // The meta, the codes record and EXACTLY ONE object, which is the
+    // post-re-write state
     // and no other. A COUNT threshold was the first attempt and it waited
     // for nothing: before the tap this namespace already holds three files
     // (the meta the second session's mint rewrote, plus both pins), so
@@ -3075,7 +3043,7 @@ test("a pin placed BEFORE Delete it survives too: the discard rejects the old dr
     // here because session one has already written the draft;
     // `expect(async () => {}).toPass()` is the form that retries through
     // throws.
-    .toMatch(/^meta\.blob,object%3A[^,]+\.blob$/);
+    .toMatch(/^codes\.blob,meta\.blob,object%3A[^,]+\.blob hand=kept$/);
   await page.reload();
   await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
   await page.getByTestId("open-button").click();
@@ -3751,8 +3719,8 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
   // visitor without ?debug=1 sees no switch at all (nothing changes for
   // visitors); with it, the same switch and privacy line as the creator's,
   // and the recording holds the viewer's own log actions - which lock cast
-  // which votes, and what the ring was placed around - tagged tour-viewing
-  // for the Recorder's replay.
+  // which votes, and which station's content was drawn - tagged
+  // tour-viewing for the Recorder's replay.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
   await openAsVisitor(page, ARCHIVE);
   await expect(page.getByTestId("recording-block")).toBeHidden();
@@ -3801,8 +3769,8 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
   await page.evaluate((text) => {
     /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
   }, E2E_QR_TEXT);
-  // Frames until the budget is spent: the votes flowed, and the ring was
-  // placed at a voted lock (the relocalization e2e's path). Since M2b the
+  // Frames until the budget is spent: the votes flowed, and the content
+  // was placed at a voted lock (the relocalization e2e's path). The
   // spent-budget line is the code's hold ("Relocalized - the code holds the
   // placement for N s more"), as in the relocalization e2e.
   await expect
@@ -3816,9 +3784,9 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
       { timeout: 20000 },
     )
     .toMatch(/the code holds the placement/i);
-  // The ring (3 planes) and the fixture pin's label, in the one station's
+  // The three photos and the fixture pin's label, in the one station's
   // group.
-  await expect.poll(() => ringPlanes(page)).toBe(3);
+  await expect.poll(() => photoPlanes(page)).toBe(3);
   expect(await drawnGroups(page)).toBe(1);
 
   await page.evaluate(() => {
@@ -3866,12 +3834,13 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
     types.indexOf("tourViewing/votesCast"),
   );
   const placed = actions.filter((a) => a.type === "tourViewing/placed");
-  expect(placed.map((a) => a.payload.what)).toEqual(
-    expect.arrayContaining(["ring", "content"]),
-  );
-  const ring = placed.find((a) => a.payload.what === "ring");
-  expect(ring.payload.basis).toBe("code");
-  expect(ring.payload.code.text).toBe(E2E_QR_TEXT);
+  // The station's content, logged as drawn: its pin and three photos.
+  expect(placed.map((a) => a.payload.what)).toEqual(["content"]);
+  expect(placed[0].payload).toMatchObject({
+    basis: "geo",
+    count: 4,
+    station: "st-fixturepin01",
+  });
   expect(types).toContain("gpsData/resetGpsSessionData");
 });
 
@@ -3989,7 +3958,7 @@ test("a code hung far from its saved spot is ignored after a minute of walking: 
   await expect(status).not.toContainText("Relocaliz");
   await expect(status).not.toContainText("Point the phone");
   await expect(status).not.toContainText("Scan the code again");
-  await expect(status).toContainText("1 placed object");
+  await expect(status).toContainText("4 placed objects");
   // The votes are gone and the tour follows GPS.
   expect(await votesStored()).toBe(0);
   expect(await offFromGps(75)).toBeLessThan(2);

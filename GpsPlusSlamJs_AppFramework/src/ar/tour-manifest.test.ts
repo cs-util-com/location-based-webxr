@@ -199,8 +199,8 @@ describe('parseTourManifest', () => {
 });
 
 describe('the version policy (tour editor plan W3, D5)', () => {
-  it('is version 3, minor 0', () => {
-    expect([TOUR_MANIFEST_VERSION, TOUR_MANIFEST_MINOR]).toEqual([3, 0]);
+  it('is version 3, minor 1 (minor 1 adds the placed 3D model)', () => {
+    expect([TOUR_MANIFEST_VERSION, TOUR_MANIFEST_MINOR]).toEqual([3, 1]);
   });
 
   it.each([1, 2])(
@@ -228,7 +228,7 @@ describe('the version policy (tour editor plan W3, D5)', () => {
     }
   );
 
-  it('always writes version 3 at minor 0, with every station and its items', () => {
+  it('writes version 3 at minor 0 while the tour has no model, with every station and its items', () => {
     const written = JSON.parse(
       serializeTourManifest(parseTourManifest(tour()))
     ) as Record<string, unknown>;
@@ -351,6 +351,83 @@ describe('the version policy (tour editor plan W3, D5)', () => {
   });
 });
 
+describe('a placed 3D model (minor 1, a size in metres)', () => {
+  // Why: the model is the one item a 3.0 reader does not know, so a tour
+  // carrying one is written at minor 1 - a 3.0 reader then leaves the
+  // model out instead of refusing the tour - and a tour without one keeps
+  // minor 0, so every tour made before stays editable by a 3.0 reader. The size must come back exactly: it is the creator's
+  // number.
+  const model = {
+    id: 'm1',
+    kind: 'model',
+    asset: 'arch',
+    sizeM: 12.75,
+    label: 'The old arch',
+    createdAtIso: '2026-10-19T12:00:00.000Z',
+    pose: { position: [4, 0, -1], rotation: [0, 0.6, 0, 0.8] },
+  };
+  const withModel = () =>
+    tour({
+      assets: [{ id: 'arch', path: 'content/arch.glb' }],
+      stations: [station([pin, photo, model])],
+    });
+
+  it('writes a tour carrying a model at minor 1, and reads it back exactly', () => {
+    const manifest = parseTourManifest(withModel());
+    const json = serializeTourManifest(manifest);
+    expect(JSON.parse(json)).toMatchObject({ version: 3, minor: 1 });
+    const again = parseTourManifest(JSON.parse(json));
+    expect(again).toEqual({ ...manifest, minor: 1 });
+    expect(tourItems(again).find((i) => i.id === 'm1')).toEqual(model);
+  });
+
+  it('writes minor 0 again once the last model is gone', () => {
+    const manifest = parseTourManifest({ ...withModel(), minor: 1 });
+    const without = {
+      ...manifest,
+      stations: manifest.stations.map((s) => ({
+        ...s,
+        items: s.items.filter((i) => i.kind !== 'model'),
+      })),
+    };
+    expect(JSON.parse(serializeTourManifest(without))).toMatchObject({
+      minor: 0,
+    });
+  });
+
+  it("a newer minor's model beyond this reader's bound is left out", () => {
+    const manifest = parseTourManifest({
+      ...withModel(),
+      minor: TOUR_MANIFEST_MINOR + 1,
+      stations: [station([pin, { ...model, sizeM: 900 }])],
+    });
+    expect(tourItems(manifest).map((i) => i.id)).toEqual(['p1']);
+  });
+
+  // Why: items and assets share one id namespace - a model names an
+  // asset by id, so an item with an asset's id would make that reference
+  // ambiguous.
+  it('a model id may not be an asset id: one id namespace across items and assets', () => {
+    expect(() =>
+      parseTourManifest(
+        tour({
+          assets: [{ id: 'arch', path: 'content/arch.glb' }],
+          stations: [station([{ ...model, id: 'arch' }])],
+        })
+      )
+    ).toThrow(/"assets\[0\]\.id" "arch" is already an item id/);
+  });
+
+  it('the world view a draft keeps carries a model with its size', () => {
+    const { pose: _pose, ...fields } = model;
+    const world = { ...fields, geo: GEO, station: 'gate' };
+    expect(parseTourObject(world)).toEqual(world);
+    expect(() => parseTourObject({ ...world, sizeM: 0 })).toThrow(
+      /object\.sizeM/
+    );
+  });
+});
+
 describe('serializeTourManifest', () => {
   it('round-trips through parseTourManifest, every local pose exactly', () => {
     const manifest = parseTourManifest(tour());
@@ -401,71 +478,57 @@ describe('parseTourObject (the world view a draft keeps)', () => {
   });
 });
 
-describe('baked capture spots (scan-pass plan S1, S-D11)', () => {
-  // Why: a recorded photo's spot is computed ONCE, at the creator's Finish,
-  // so a visitor neither downloads the walk nor replays it. Since version 3
-  // a station holds it at a local pose (assigned in capture order). The
-  // field is the "baked" marker the viewer trusts instead of its live
-  // join, so a malformed one must be refused here, never placed at a
-  // guessed spot.
+describe("an earlier file's captureSpots (removed from the format)", () => {
+  // Why: the walk's camera captures are debug data, never tour content, and
+  // the field that once baked them into tour.json is gone from the format.
+  // A file that still carries it must open as if the field were any other
+  // unknown one (ignored, every station kept as written), and no write may
+  // carry it on: a stale field a later reader could trust again.
   const capture = {
     image: 'images/frame-0001.jpg',
-    station: 'gate',
+    station: 'walk-1',
     pose: { position: [2, 1.4, 0], rotation: [0, 0, 0, 1] },
   };
   const spots = { fixes: 46, gpsAccuracyMedianM: 3.5, captures: [capture] };
-
-  it('reads and round-trips the baked spots', () => {
-    const manifest = parseTourManifest(tour({ captureSpots: spots }));
-    expect(manifest.captureSpots).toEqual(spots);
-    expect(
-      parseTourManifest(JSON.parse(serializeTourManifest(manifest)))
-    ).toEqual(manifest);
+  // The empty station only the capture named, as the earlier bake wrote it.
+  const walkStation = station([], {
+    id: 'walk-1',
+    title: undefined,
+    steps: [],
   });
 
-  it('keeps an unknown median accuracy unknown (null), never a guessed number', () => {
+  it('reads a file that carries it without it, every station kept as written', () => {
     const manifest = parseTourManifest(
-      tour({ captureSpots: { ...spots, gpsAccuracyMedianM: null } })
-    );
-    expect(manifest.captureSpots?.gpsAccuracyMedianM).toBeNull();
-  });
-
-  it.each([
-    ['a path that escapes the zip', { ...capture, image: '../x.jpg' }],
-    ['an absolute path', { ...capture, image: '/images/x.jpg' }],
-    ['a type that is not an image', { ...capture, image: 'images/x.glb' }],
-    ['a type outside the allowlist', { ...capture, image: 'images/x.svg' }],
-    ['a station the tour does not have', { ...capture, station: 'nope' }],
-    ['no station', { ...capture, station: undefined }],
-    ['no pose', { ...capture, pose: undefined }],
-  ])('refuses a capture with %s', (_name, bad) => {
-    expect(() =>
-      parseTourManifest(tour({ captureSpots: { ...spots, captures: [bad] } }))
-    ).toThrow(TourManifestValidationError);
-  });
-
-  it.each([
-    ['no captures', { ...spots, captures: [] }],
-    ['the same photo twice', { ...spots, captures: [capture, capture] }],
-    ['a fix count that is not a positive integer', { ...spots, fixes: 0 }],
-    ['a negative accuracy', { ...spots, gpsAccuracyMedianM: -1 }],
-    ['an accuracy that is not a number', { ...spots, gpsAccuracyMedianM: '3' }],
-    ['captures that are not a list', { ...spots, captures: {} }],
-  ])('refuses spots with %s', (_name, bad) => {
-    expect(() => parseTourManifest(tour({ captureSpots: bad }))).toThrow(
-      TourManifestValidationError
-    );
-  });
-
-  it('a NEWER minor with spots this build cannot read opens without them, instead of failing the tour', () => {
-    // Why (S1 milestone review #8): additive revisions must degrade.
-    const read = parseTourManifest(
       tour({
-        minor: TOUR_MANIFEST_MINOR + 1,
-        captureSpots: { ...spots, captures: [{ image: 'images/x.heic' }] },
+        stations: [station([pin, photo]), walkStation],
+        captureSpots: spots,
       })
     );
-    expect(read.captureSpots).toBeUndefined();
+    expect('captureSpots' in manifest).toBe(false);
+    expect(manifest.stations.map((s) => s.id)).toEqual(['gate', 'walk-1']);
+    expect(manifest.stations[1]?.items).toEqual([]);
+  });
+
+  it('a malformed one no longer fails the tour: it is an unknown field', () => {
+    for (const bad of [
+      { ...spots, captures: [] },
+      { ...spots, captures: [{ ...capture, image: '../x.jpg' }] },
+      { ...spots, captures: [{ ...capture, station: 'nope' }] },
+      'not an object',
+    ]) {
+      expect(() =>
+        parseTourManifest(tour({ captureSpots: bad }))
+      ).not.toThrow();
+    }
+  });
+
+  it('is never written: a manifest object that still carries it is saved without it', () => {
+    const carried = {
+      ...parseTourManifest(tour()),
+      captureSpots: spots,
+    } as Parameters<typeof serializeTourManifest>[0];
+    const written = JSON.parse(serializeTourManifest(carried)) as object;
+    expect('captureSpots' in written).toBe(false);
   });
 });
 
@@ -619,5 +682,50 @@ describe('tour details (tour editor plan 2026-10-17-1816, W2, D15)', () => {
     expect(() =>
       serializeTourManifest({ ...manifest, cover: 'gone' })
     ).not.toThrow();
+  });
+});
+
+describe('a stable tour id (debug-captures plan, Q-I)', () => {
+  // Why: a tour opened from a FILE has no link to be known by, so a
+  // creator's draft was keyed by a fingerprint of the file's content -
+  // which a tour of authored files alone changes at every save, leaving
+  // the draft behind. An id the tour itself carries, written by every
+  // save, is a key that survives saves. Optional: a tour without one
+  // reads as before, and a bad one costs the id, never the tour.
+  it('reads and round-trips an id, at the minor the tour needs', () => {
+    const manifest = parseTourManifest(tour({ tourId: 'a1B2_c3-D4' }));
+    expect(manifest.tourId).toBe('a1B2_c3-D4');
+    const written = JSON.parse(serializeTourManifest(manifest)) as unknown;
+    // No minor of its own: a 3.0 or 3.1 reader ignores the field, and a
+    // writer of either keeps saving the tour (it only drops the id).
+    expect(written).toMatchObject({ tourId: 'a1B2_c3-D4', minor: 0 });
+    expect(parseTourManifest(written)).toEqual(manifest);
+  });
+
+  it('reads a tour without an id as none', () => {
+    const manifest = parseTourManifest(tour());
+    expect(manifest).not.toHaveProperty('tourId');
+    expect(JSON.parse(serializeTourManifest(manifest))).not.toHaveProperty(
+      'tourId'
+    );
+  });
+
+  it('reads an id that is not a short path-safe string as none, at every minor', () => {
+    for (const tourId of [42, '', 'has space', 'a/b', 'x'.repeat(65), null]) {
+      for (const minor of [0, TOUR_MANIFEST_MINOR + 1]) {
+        expect(parseTourManifest(tour({ minor, tourId }))).not.toHaveProperty(
+          'tourId'
+        );
+      }
+    }
+  });
+
+  it('the writer refuses an id its reader would drop: a programming error fails loud', () => {
+    const manifest = parseTourManifest(tour());
+    for (const tourId of ['', 'has space', 'x'.repeat(65)]) {
+      expect(() => serializeTourManifest({ ...manifest, tourId })).toThrow(
+        /"tourId" must be/
+      );
+    }
   });
 });

@@ -56,11 +56,11 @@ const DEGRADED_BAND_SPAN = 0.3; // → 0.6..0.9
 
 const HINTS: Record<OnboardingPhase, string> = {
   initializing:
-    'Starting up — point your device at the ground and hold steady.',
-  'ar-lost': 'Tracking lost — slowly look around to let it recover.',
+    'Starting up - point your device at the ground and hold steady.',
+  'ar-lost': 'Tracking lost - slowly look around to let it recover.',
   'move-around': 'Walk around a few steps so tracking can warm up.',
-  'almost-ready': 'Almost there — keep moving to sharpen the alignment.',
-  ready: 'Tracking is ready — you can place your anchor now.',
+  'almost-ready': 'Almost there - keep moving to sharpen the alignment.',
+  ready: 'Tracking is ready - you can place your anchor now.',
 };
 
 /**

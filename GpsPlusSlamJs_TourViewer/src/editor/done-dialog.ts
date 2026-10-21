@@ -4,7 +4,10 @@
  * where the changes are, how the tour at its link is updated (per host,
  * `tour-host.ts`), that a file at a link is public at once, and, while the
  * file still carries the walk, that the walk goes public with it unless it
- * is moved out ("Move the walk out", the page's `moveWalk`). The words are
+ * is moved out ("Move the debug data out", the page's `moveWalk`: the
+ * debug bundle of M2 of the debug-captures plan) - or, once a save as a new
+ * file left it out, that the opened file still carries it ("Save the debug
+ * data", the page's `saveDebugData`). The words are
  * pure (`doneWords`); the wiring takes structural elements, so its tests
  * run in node.
  *
@@ -40,6 +43,10 @@ export interface DoneFacts {
   /** The newest bytes still carry the walk recording; `unknown` when that
    *  could not be checked (the M4b milestone review #9: said as "may"). */
   readonly carriesWalk: boolean | "unknown";
+  /** A save as a new file left the opened file's walk out, and the opened
+   *  file can still give it ("Save the debug data", M2 of the
+   *  debug-captures plan): said only while the newest bytes carry none. */
+  readonly debugLeftOut: boolean;
   /** The Drive-mount tip's switch (`DRIVE_MOUNT_TIP_SHOWN`). */
   readonly driveMountTip: boolean;
 }
@@ -50,6 +57,9 @@ export interface DoneWords {
   readonly publicLine: string;
   /** Null when the file carries no walk. */
   readonly walk: string | null;
+  /** Null unless a save left the opened file's walk out (`debugLeftOut`)
+   *  and the newest bytes carry none. */
+  readonly debugSave: string | null;
   /** Null unless the switch is on, the host is Drive and the file was
    *  written in place. */
   readonly driveTip: string | null;
@@ -74,10 +84,15 @@ function whereLine(saved: DoneSaved): string {
 
 function walkLine(name: string, carries: boolean | "unknown"): string | null {
   if (carries === false) return null;
-  const moveOut = `Move the walk out to keep it to yourself: it goes into a separate file you keep, and ${name} keeps what visitors need.`;
+  const moveOut = `Move the debug data out to keep it to yourself: it goes into a separate file you keep, and ${name} keeps what visitors need.`;
   return carries === "unknown"
-    ? `Whether ${name} also carries your walk recording (the GPS track of your walk and the depth your phone measured) could not be checked. If it does and it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`
-    : `${name} also carries your walk recording: the GPS track of your walk and the depth your phone measured. If it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`;
+    ? `Whether ${name} also carries your debug data (the walk you recorded: the GPS track of your walk, the depth your phone measured and the camera captures it took by itself) could not be checked. If it does and it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`
+    : `${name} also carries your debug data, the walk you recorded: the GPS track of your walk, the depth your phone measured and the camera captures it took by itself. If it is the file at your tour's link, anyone with the link can download them too. ${moveOut}`;
+}
+
+function debugSaveLine(facts: DoneFacts): string | null {
+  if (!facts.debugLeftOut || facts.carriesWalk !== false) return null;
+  return `${facts.saved.name} leaves out your debug data, the walk you recorded: the GPS track of your walk, the depth your phone measured and the camera captures it took by itself. The file you opened still carries it, and it is saved from there. Save the debug data before you put this copy in place, to keep it in a separate file of your own - the tour does not need it.`;
 }
 
 /** The dialog's words for `facts`. */
@@ -88,6 +103,7 @@ export function doneWords(facts: DoneFacts): DoneWords {
     update: hostReplaceOnComputer(facts.host, name),
     publicLine: PUBLIC_LINE,
     walk: walkLine(name, facts.carriesWalk),
+    debugSave: debugSaveLine(facts),
     driveTip:
       facts.driveMountTip &&
       facts.host === "drive" &&
@@ -98,14 +114,46 @@ export function doneWords(facts: DoneFacts): DoneWords {
 }
 
 /** The move's button: idle, while it runs, and waiting for the second
- *  click - which takes a downloaded walk out of the tour (`confirm`), or
- *  downloads the tour without a walk already saved (`download`). */
+ *  click - which takes downloaded debug data out of the tour (`confirm`),
+ *  or downloads the tour without debug data already saved (`download`). */
 export const MOVE_LABELS = {
-  idle: "Move the walk out",
-  moving: "Moving the walk out…",
-  confirm: "Take the walk out of the tour",
-  download: "Download the tour without the walk",
+  idle: "Move the debug data out",
+  moving: "Moving the debug data out…",
+  confirm: "Take the debug data out of the tour",
+  download: "Download the tour without the debug data",
 } as const;
+
+/** "Save the debug data": idle, while it runs, and after a save landed
+ *  (another copy may be saved). */
+export const SAVE_DEBUG_LABELS = {
+  idle: "Save the debug data",
+  saving: "Saving the debug data…",
+  again: "Save the debug data again",
+} as const;
+
+/** What the page's save of the debug data came to: saved (under the name
+ *  it was saved as), refused in words, or nothing saved (a dismissed save
+ *  dialog, a download the browser did not start). */
+export type DebugSaveOutcome =
+  | { readonly kind: "saved"; readonly name: string }
+  | { readonly kind: "refused"; readonly reason: string }
+  | { readonly kind: "cancelled" };
+
+const NOTHING_SAVED = "Nothing was saved: the debug data's file was not saved.";
+
+/** What a save of the debug data came to, in words: the Done dialog's
+ *  status line, and the toast a lean download's "Save the debug data"
+ *  ends with (`edit-main.ts`). */
+export function debugSaveResultLine(outcome: DebugSaveOutcome): string {
+  switch (outcome.kind) {
+    case "saved":
+      return `The debug data is in ${outcome.name} - keep that file.`;
+    case "refused":
+      return outcome.reason;
+    case "cancelled":
+      return NOTHING_SAVED;
+  }
+}
 
 /** What the page's move came to: done (with where the changes are now),
  *  refused in words, nothing moved because the walk's file was not saved
@@ -138,7 +186,7 @@ export type WalkMoveOutcome =
   | { readonly kind: "cancelled" };
 
 const NOTHING_MOVED =
-  "Nothing was moved: the walk's file was not saved, so the tour keeps its walk.";
+  "Nothing was moved: the debug data's file was not saved, so the tour keeps it.";
 
 interface Listening {
   addEventListener(type: string, handler: () => void): void;
@@ -159,6 +207,12 @@ export interface DoneDialogDom {
   walkText: Text & Shown;
   moveButton: Pick<HTMLButtonElement, "textContent" | "disabled" | "hidden"> &
     Listening;
+  /** "Save the debug data" (`saveDebugData`). */
+  saveDebugButton: Pick<
+    HTMLButtonElement,
+    "textContent" | "disabled" | "hidden"
+  > &
+    Listening;
   moveStatus: Text;
   driveTip: Text & Shown;
   close: Pick<HTMLButtonElement, "focus" | "disabled"> & Listening;
@@ -166,17 +220,23 @@ export interface DoneDialogDom {
 
 export interface DoneDialogDeps {
   dom: DoneDialogDom;
-  /** Move the walk out (the page delivers both files, then commits).
+  /** Move the debug data out (the page delivers both files, then
+   *  commits).
    *  Called synchronously in the button's click: the page opens the
    *  browser's save dialog before its first await. */
   moveWalk: () => Promise<WalkMoveOutcome>;
+  /** Save the debug data of the opened file apart (the page asks where,
+   *  builds the bundle and writes it). Called synchronously in the click,
+   *  as `moveWalk`. */
+  saveDebugData: () => Promise<DebugSaveOutcome>;
   /** The dialog closed: the page gives focus back. */
   onClose: () => void;
 }
 
 export interface DoneDialog {
   open(facts: DoneFacts): void;
-  /** Close, unless a move runs (its files are being written: the page
+  /** Close, unless a move or a save of the debug data runs (its files are
+   *  being written: the page
    *  must not change under it, the M4b milestone review #1); `force`
    *  closes anyway, for a tour that is gone. */
   close(force?: boolean): void;
@@ -199,9 +259,14 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
     dom.host.value = facts.host;
     dom.update.textContent = words.update;
     dom.publicLine.textContent = words.publicLine;
-    dom.walk.hidden = words.walk === null && !moved;
-    dom.walkText.hidden = words.walk === null;
-    dom.walkText.textContent = words.walk ?? "";
+    const line = words.walk ?? words.debugSave;
+    dom.walk.hidden = line === null && !moved;
+    dom.walkText.hidden = line === null;
+    dom.walkText.textContent = line ?? "";
+    // The move for a file that carries the walk; the save for a copy that
+    // left it out (never both: `debugSave` needs a file without one).
+    if (words.walk === null) dom.moveButton.hidden = true;
+    dom.saveDebugButton.hidden = words.debugSave === null;
     dom.driveTip.hidden = words.driveTip === null;
     dom.driveTip.textContent = words.driveTip ?? "";
   }
@@ -210,6 +275,20 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
     dom.moveButton.disabled = false;
     dom.moveButton.hidden = false;
     dom.moveButton.textContent = label;
+  }
+
+  function saveButton(label: string): void {
+    dom.saveDebugButton.disabled = false;
+    dom.saveDebugButton.textContent = label;
+  }
+
+  function settleSave(outcome: DebugSaveOutcome): void {
+    dom.moveStatus.textContent = debugSaveResultLine(outcome);
+    saveButton(
+      outcome.kind === "saved"
+        ? SAVE_DEBUG_LABELS.again
+        : SAVE_DEBUG_LABELS.idle,
+    );
   }
 
   function close(force = false): void {
@@ -223,7 +302,7 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
     switch (outcome.kind) {
       case "moved":
         moved = true;
-        dom.moveStatus.textContent = `The walk is in ${outcome.walkName} - keep that file. ${outcome.tourName} no longer carries it.`;
+        dom.moveStatus.textContent = `The debug data is in ${outcome.walkName} - keep that file. ${outcome.tourName} no longer carries it.`;
         dom.moveButton.hidden = true;
         if (facts !== null) {
           facts = { ...facts, saved: outcome.saved, carriesWalk: false };
@@ -232,12 +311,12 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
         return;
       case "downloaded":
         pending = outcome.confirm;
-        dom.moveStatus.textContent = `The walk was downloaded as ${outcome.walkName}. Check that it is in your downloads, then take it out of the tour - until then the tour file keeps it.`;
+        dom.moveStatus.textContent = `The debug data was downloaded as ${outcome.walkName}. Check that it is in your downloads, then take it out of the tour - until then the tour file keeps it.`;
         button(MOVE_LABELS.confirm);
         return;
       case "walk-saved":
         pending = outcome.confirm;
-        dom.moveStatus.textContent = `The walk is in ${outcome.walkName} - keep that file. Now download the tour without it - until then the tour still carries it.`;
+        dom.moveStatus.textContent = `The debug data is in ${outcome.walkName} - keep that file. Now download the tour without it - until then the tour still carries it.`;
         button(MOVE_LABELS.download);
         return;
       case "refused":
@@ -278,8 +357,36 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
     }
     void started
       .then(settle, (err: unknown) => {
-        dom.moveStatus.textContent = `The walk was not moved: ${err instanceof Error ? err.message : String(err)}`;
+        dom.moveStatus.textContent = `The debug data was not moved: ${err instanceof Error ? err.message : String(err)}`;
         button(MOVE_LABELS.idle);
+      })
+      .finally(() => {
+        moving = false;
+        dom.close.disabled = false;
+      });
+  });
+  dom.saveDebugButton.addEventListener("click", () => {
+    if (moving || facts === null) return;
+    moving = true;
+    // The async-UI rule, as the move's: in progress while the opened file
+    // is read and the bundle written, then the durable end state.
+    dom.saveDebugButton.disabled = true;
+    dom.saveDebugButton.textContent = SAVE_DEBUG_LABELS.saving;
+    dom.close.disabled = true;
+    dom.moveStatus.textContent = "";
+    // Called here, in the click: the page's save dialog needs it.
+    let started: Promise<DebugSaveOutcome>;
+    try {
+      started = deps.saveDebugData();
+    } catch (err) {
+      started = Promise.reject(
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+    void started
+      .then(settleSave, (err: unknown) => {
+        dom.moveStatus.textContent = `The debug data was not saved: ${err instanceof Error ? err.message : String(err)}`;
+        saveButton(SAVE_DEBUG_LABELS.idle);
       })
       .finally(() => {
         moving = false;
@@ -297,6 +404,7 @@ export function wireDoneDialog(deps: DoneDialogDeps): DoneDialog {
         moved = false;
         pending = null;
         button(MOVE_LABELS.idle);
+        saveButton(SAVE_DEBUG_LABELS.idle);
         dom.moveStatus.textContent = "";
       }
       render();

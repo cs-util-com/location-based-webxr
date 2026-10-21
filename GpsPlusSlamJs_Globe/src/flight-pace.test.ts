@@ -109,6 +109,57 @@ describe("data that is there from the start (the property's shrunk case)", () =>
   });
 });
 
+describe("a progress that rises and falls back between two coarse frames (seed 769195592)", () => {
+  // Why: fast-check found this case against the property "stays within one
+  // coarse frame of a finer clock when signals land between frames". Its
+  // two signals say progress 1 from 6,337 ms and 0 again from 6,353 ms: a
+  // spike 16 ms long. The 16 ms clock reads it at 6,352 ms and ratchets it;
+  // the 48 ms clock reads 6,336 and 6,384 ms and never sees it, so the two
+  // fly different targets for the rest of the path (0.0211 apart against a
+  // bound of 0.0167). That is not a defect of the clock: it is given
+  // samples, and no sampled clock can act on a value it is never given.
+  // The bound's derivation ("each rise is acted on at most one coarse frame
+  // late") holds for a progress that does not fall - and the prefetch's
+  // never does (`cityLoadProgress`: fixed job totals, each job settled
+  // once). The ratchet still makes a fall harmless; this pins both halves.
+  const p: FlightPaceParams = { minMs: 2_000, capMs: 6_620, smoothingMs: 50 };
+  const spike = (t: number): number => (t >= 6_353 ? 0 : t >= 6_337 ? 1 : 0);
+  const held = (t: number): number => (t >= 6_337 ? 1 : 0);
+  const bound = (1 / p.minMs - 1 / p.capMs) * 48 + 1e-9;
+
+  function states(
+    progressAt: (t: number) => number,
+    frameMs: number,
+  ): FlightPaceState[] {
+    const out = [startPace(p)];
+    for (let t = frameMs; !out.at(-1)!.done; t += frameMs) {
+      out.push(stepPace(out.at(-1)!, progressAt(t), t, p));
+    }
+    return out;
+  }
+
+  function widestGap(progressAt: (t: number) => number): number {
+    const fine = new Map(states(progressAt, 16).map((s) => [s.elapsedMs, s.s]));
+    let gap = 0;
+    for (const state of states(progressAt, 48)) {
+      const other = fine.get(state.elapsedMs);
+      if (other !== undefined) gap = Math.max(gap, Math.abs(other - state.s));
+    }
+    return gap;
+  }
+
+  it("the coarse clock never reads the spike, so the two clocks part by more than one frame", () => {
+    expect(states(spike, 16).at(-1)!.progress).toBe(1);
+    expect(states(spike, 48).at(-1)!.progress).toBe(0);
+    expect(widestGap(spike)).toBeGreaterThan(bound);
+  });
+
+  it("the same rise, held, keeps them within one coarse frame", () => {
+    expect(states(held, 48).at(-1)!.progress).toBe(1);
+    expect(widestGap(held)).toBeLessThanOrEqual(bound);
+  });
+});
+
 describe("whole flights", () => {
   it("a cold flight on a dead network ends exactly at the cap", () => {
     const { endedAtMs, state } = fly(P, () => 0);

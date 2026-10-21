@@ -31,7 +31,12 @@
  * flicker behind the margin.
  */
 
-import { ACCURACY_CEILING_M, type StationBands } from "./station-bands.js";
+import {
+  POSITION_PRECISION_CEILING_M,
+  type PositionPrecision,
+} from "gps-plus-slam-app-framework/state/position-precision";
+
+import type { StationBands } from "./station-bands.js";
 
 /** One station as presence judges it, at one judged position. */
 export interface PresenceCandidate {
@@ -45,8 +50,8 @@ export interface PresenceCandidate {
 }
 
 /**
- * The takeover margin's floor (m): what a position a code lined up takes
- * (its accuracy is unknown, `judgedAccuracy`). Swept 0-3 m against the
+ * The takeover margin's floor (m): what a position a code holds takes
+ * (`'code'` precision: no number, `position-precision`). Swept 0-3 m against the
  * aligned position's jitter 0.05-0.5 m, the flicker counted directly
  * (`station-presence.sweep.test.ts`, the sidecar's Evidence): 0 flickers
  * where circles overlap; 0.5 m holds only while the jitter stays near 5 cm,
@@ -59,14 +64,15 @@ export interface PresenceCandidate {
 export const TAKEOVER_MARGIN_MIN_M = 1;
 
 /**
- * The takeover margin `m` (m) for a judged position: how much nearer a
- * neighbour must be than the present station before it takes over while
+ * The takeover margin `m` (m) for a judged position, by its precision
+ * (`gps-plus-slam-app-framework/state/position-precision`): how much nearer
+ * a neighbour must be than the present station before it takes over while
  * both circles hold the position.
- * - A code lined the position up: the floor (its accuracy is unknown).
- * - Otherwise the reported accuracy (the raw fixes', `judgedAccuracy`), at
- *   least `TAKEOVER_MARGIN_MIN_M`, at most the accuracy ceiling (above it
+ * - A code holds the position (`'code'`): the floor.
+ * - Otherwise the reported accuracy (the device fixes'), at least
+ *   `TAKEOVER_MARGIN_MIN_M`, at most the precision rule's ceiling (above it
  *   only the exit is judged, `presentAfterWeakFix`); a missing or nonsense
- *   one reads as the ceiling, as the bands' clamp reads it.
+ *   one (`'none'`) reads as the ceiling, as the bands' clamp reads it.
  *
  * The sweep's verdict: a margin must match the position's noise - no fixed
  * value in 0-3 m keeps a raw fix of 8-25 m from switching neighbours, while
@@ -80,23 +86,17 @@ export const TAKEOVER_MARGIN_MIN_M = 1;
  * No cap below the spacing: where the margin exceeds it (a GPS-only
  * museum) the position's noise, not the margin, is what fails.
  */
-export function takeoverMarginM(
-  judgedAccuracyM: number | null,
-  codeLinedUp: boolean,
-): number {
-  if (codeLinedUp) return TAKEOVER_MARGIN_MIN_M;
-  // A missing or nonsense raw accuracy reads as the ceiling, as the bands'
+export function takeoverMarginM(precision: PositionPrecision): number {
+  if (precision.source === "code") return TAKEOVER_MARGIN_MIN_M;
+  const accuracyM = precision.accuracyM;
+  // A missing or nonsense accuracy reads as the ceiling, as the bands'
   // clamp reads it (`station-bands.ts`; PR review N1).
-  if (
-    judgedAccuracyM === null ||
-    !Number.isFinite(judgedAccuracyM) ||
-    judgedAccuracyM <= 0
-  ) {
-    return ACCURACY_CEILING_M;
+  if (accuracyM === null || !Number.isFinite(accuracyM) || accuracyM <= 0) {
+    return POSITION_PRECISION_CEILING_M;
   }
   return Math.min(
-    Math.max(judgedAccuracyM, TAKEOVER_MARGIN_MIN_M),
-    ACCURACY_CEILING_M,
+    Math.max(accuracyM, TAKEOVER_MARGIN_MIN_M),
+    POSITION_PRECISION_CEILING_M,
   );
 }
 
@@ -134,8 +134,8 @@ export function nextPresentStation(
 }
 
 /**
- * The present station after a fix too weak to guide by (`tooWeakToGuide`,
- * above the accuracy ceiling; PR review S1): it never enters a station nor
+ * The present station after a fix too weak to guide by (a `'gps'`
+ * precision that is `tooWeak`, above the accuracy ceiling; PR review S1): it never enters a station nor
  * hands over to one, but it ends presence when even `accuracyM` nearer the
  * visitor the position would be past the present station's found exit
  * (`d - accuracy > foundExit`: an underpass fix that places the visitor

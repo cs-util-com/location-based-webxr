@@ -4,9 +4,8 @@
  * The store says WHICH (the present station, or every one under "show
  * all", `visitor-guide-slice.ts`); this module never reads the store.
  *
- * - **Parts.** A station holds named parts (its `tour.json` items, its walk
- *   photos, the ring around a code), each a recipe that decodes and places
- *   its objects under the station's group. Nothing is decoded until the
+ * - **Parts.** A station holds named parts (its `tour.json` items), each a
+ *   recipe that decodes and places its objects under the station's group. Nothing is decoded until the
  *   station is shown.
  * - **Shown.** A shown station renders its parts into a detached group;
  *   once every part settled, the group enters the scene at opacity 0 and
@@ -18,18 +17,14 @@
  *   frees every part (textures, materials, geometries). Shown again while it
  *   fades out, it fades back in without decoding again; shown again later,
  *   it decodes again, its files read from the archive once more.
- * - **Always shown.** Content no station holds (`alwaysShown`) stands
- *   whatever the page asks: it neither waits for a station's fade-out nor
- *   holds a station back, and it decodes in its own lane, so a long loose
- *   walk never delays the present station's content.
  * - **A part that throws** is left out and not built again for this table
  *   (a session): `onFailed` is said once.
  * - **Late renders are dropped.** A render that lands after its station was
  *   left (or the part replaced, or the table disposed) is disposed at once
  *   and never enters the scene.
- * - **One render at a time per lane**, in the order asked: "show all" on a
- *   long tour decodes one station's part after another, never every photo
- *   at once; the always-shown content has the second lane.
+ * - **One render at a time**, in the order asked: "show all" on a long
+ *   tour decodes one station's part after another, never every photo at
+ *   once.
  *
  * Fades advance on `update(nowMs)`: the page calls it on every store change
  * and camera frame, and `registerFrame` (the AR frame loop) calls it every
@@ -61,9 +56,6 @@ export interface RenderedPart {
 
 /** One station's part: a recipe run each time the station is shown. */
 export interface ContentPart {
-  /** What it places: the tour's own items, the walk's photos, or the ring
-   *  around a code. Counts are kept per kind. */
-  readonly kind: "content" | "capture-spots" | "ring";
   /** Decode and place under `parent` (the station's group). `alive()` turns
    *  false once the result would be dropped: a long decode may stop early. */
   render(parent: Object3D, alive: () => boolean): Promise<RenderedPart>;
@@ -88,9 +80,6 @@ export interface StationContentDeps {
   /** A part's render threw (a label or plane constructor): it is left out,
    *  for the table's life. */
   onFailed?(stationId: string, part: ContentPart, error: unknown): void;
-  /** Content no station holds: shown whatever `show` says, outside the
-   *  one-station-at-a-time rule, decoded in its own lane. Default: none. */
-  alwaysShown?(stationId: string): boolean;
 }
 
 export interface StationContent {
@@ -102,13 +91,13 @@ export interface StationContent {
   show(stationIds: ReadonlySet<string>): void;
   /** Advance the fades and let ready stations enter, at `nowMs`. */
   update(nowMs: number): void;
-  /** Whether any station holds a part of this kind. */
-  has(kind: ContentPart["kind"]): boolean;
-  /** Whether anything shown now (a shown station, or always-shown content)
-   *  holds a part: false while every part waits at a station not shown. */
+  /** Whether any station holds a part. */
+  has(): boolean;
+  /** Whether anything shown now (a shown station) holds a part: false
+   *  while every part waits at a station not shown. */
   showsAny(): boolean;
-  /** What stands, of this kind, for the stations shown now. */
-  shown(kind: ContentPart["kind"]): { count: number; skipped: string[] };
+  /** What stands for the stations shown now. */
+  shown(): { count: number; skipped: string[] };
   /** Take everything out and free it; later calls do nothing. */
   dispose(): void;
 }
@@ -128,8 +117,8 @@ export function contentStatus(
       readonly count: number;
       readonly skipped: number;
     } {
-  if (content === null || !content.has("content")) return { kind: "none" };
-  const shown = content.shown("content");
+  if (content === null || !content.has()) return { kind: "none" };
+  const shown = content.shown();
   return { kind: "placed", count: shown.count, skipped: shown.skipped.length };
 }
 
@@ -160,12 +149,15 @@ export function createStationContent(deps: StationContentDeps): StationContent {
   const fadeMs = deps.fadeMs ?? CONTENT_FADE_MS;
   const entries = new Map<string, Entry>();
   const renders = createKeyedChain();
-  const isAlways = (id: string): boolean => deps.alwaysShown?.(id) === true;
   /** Parts whose render threw: never built again by this table. */
   const failed = new WeakSet<ContentPart>();
   let wanted: ReadonlySet<string> = new Set();
-  const isWanted = (id: string): boolean => isAlways(id) || wanted.has(id);
+  const isWanted = (id: string): boolean => wanted.has(id);
   let disposed = false;
+  /** `show` is following the entries; an update asked meanwhile waits
+   *  for its end (`updateDue`). */
+  let following = false;
+  let updateDue = false;
   const unregisterFrame =
     deps.registerFrame?.(() => {
       update(deps.now());
@@ -214,14 +206,16 @@ export function createStationContent(deps: StationContentDeps): StationContent {
       !disposed && entry.token === token && entry.parts.get(key) === part;
     const counted = entry.phase === "loading";
     if (counted) entry.pending += 1;
-    const lane = isAlways(entry.id) ? "always" : "stations";
     void renders
-      .run(lane, async () => (alive() ? part.render(group, alive) : null))
+      .run("stations", async () => (alive() ? part.render(group, alive) : null))
       .catch((error: unknown): null => {
         // A part that could not be placed is left out for good (not built
-        // again on the next entry); the station shows the rest.
-        failed.add(part);
-        if (alive()) deps.onFailed?.(entry.id, part, error);
+        // again on the next entry); the station shows the rest. Not one
+        // whose station was left meanwhile: its throw may be the stop.
+        if (alive()) {
+          failed.add(part);
+          deps.onFailed?.(entry.id, part, error);
+        }
         return null;
       })
       .then((result) => {
@@ -248,7 +242,10 @@ export function createStationContent(deps: StationContentDeps): StationContent {
     entry.pending -= 1;
     if (entry.pending > 0 || entry.phase !== "loading") return;
     entry.phase = "ready";
-    update(deps.now());
+    // Inside `show` the stations after this one are not marked leaving
+    // yet: the update runs once `show` has followed every entry.
+    if (following) updateDue = true;
+    else update(deps.now());
   }
 
   function startLoading(entry: Entry): void {
@@ -309,14 +306,13 @@ export function createStationContent(deps: StationContentDeps): StationContent {
         setSubtreeOpacity(entry.group, entry.alpha);
       }
     }
-    // The next station enters only once the last one is gone; always-shown
-    // content neither waits nor holds a station back.
+    // The next station enters only once the last one is gone.
     const stationLeaving = [...entries.values()].some(
-      (entry) => entry.phase === "out" && !isAlways(entry.id),
+      (entry) => entry.phase === "out",
     );
     for (const entry of entries.values()) {
       if (entry.phase !== "ready" || entry.group === null) continue;
-      if (stationLeaving && !isAlways(entry.id)) continue;
+      if (stationLeaving) continue;
       setSubtreeOpacity(entry.group, 0);
       deps.scene.add(entry.group);
       entry.phase = "in";
@@ -341,6 +337,10 @@ export function createStationContent(deps: StationContentDeps): StationContent {
         teardown(entry);
         return;
       }
+      // A station that waits to enter (ready) waits for the new part too,
+      // and then fades in from 0 with it, rather than the part popping in
+      // at whatever opacity the fade reached.
+      if (part !== null && entry.phase === "ready") entry.phase = "loading";
       if (part !== null && entry.phase !== "idle") renderPart(entry, key, part);
       else follow(entry);
     },
@@ -353,24 +353,30 @@ export function createStationContent(deps: StationContentDeps): StationContent {
     show(stationIds) {
       if (disposed) return;
       wanted = new Set(stationIds);
-      for (const entry of entries.values()) follow(entry);
+      following = true;
+      try {
+        for (const entry of entries.values()) follow(entry);
+      } finally {
+        following = false;
+      }
+      if (updateDue) {
+        updateDue = false;
+        update(deps.now());
+      }
     },
     update,
-    has(kind) {
+    has() {
       for (const entry of entries.values()) {
-        for (const part of entry.parts.values()) {
-          if (part.kind === kind) return true;
-        }
+        if (entry.parts.size > 0) return true;
       }
       return false;
     },
-    shown(kind) {
+    shown() {
       let count = 0;
       const skipped: string[] = [];
       for (const entry of entries.values()) {
         if (!isWanted(entry.id)) continue;
-        for (const { part, result } of entry.rendered.values()) {
-          if (part.kind !== kind) continue;
+        for (const { result } of entry.rendered.values()) {
           count += result.count;
           skipped.push(...result.skipped);
         }

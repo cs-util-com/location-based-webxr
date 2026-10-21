@@ -383,6 +383,38 @@ describe("arButtonView", () => {
     );
   });
 
+  it("a visitor who left AR with progress goes 'Back to the tour' (W4 build plan M2, §1.8)", () => {
+    // Why: after leaving AR the start page shows the walk's progress, and
+    // the start goes back into the same walk; the same #enter-ar tap, so
+    // the session keeps its user activation. Without progress, or while
+    // the location is still asked, the button reads as before.
+    const idle = { pending: false, busy: false };
+    const noFinish = { running: false, failed: false };
+    expect(
+      arButtonView({ status: "ready" }, "visitor", idle, noFinish, true),
+    ).toEqual({ label: "Back to the tour", disabled: false });
+    expect(
+      arButtonView({ status: "ready" }, "visitor", idle, noFinish, false).label,
+    ).toBe("Start the tour");
+    expect(
+      arButtonView(
+        { status: "ready" },
+        "visitor",
+        { pending: true, busy: false },
+        noFinish,
+        true,
+      ).label,
+    ).toBe("Allow location");
+    expect(
+      arButtonView({ status: "ready" }, "creator", idle, noFinish, true).label,
+    ).toBe("Start creating");
+    // In AR the button is the way out, whatever the progress.
+    expect(
+      arButtonView({ status: "running" }, "visitor", idle, noFinish, true)
+        .label,
+    ).toBe("Exit AR");
+  });
+
   it("error state offers a plain retry; the reason is the status line's (UI round 1, U1, review F5)", () => {
     // Why: the label used to be "Retry - NotAllowedError: ..." - a browser
     // exception on the only button. The cause now reads in plain words in
