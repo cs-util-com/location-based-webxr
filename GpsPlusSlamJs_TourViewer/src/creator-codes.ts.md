@@ -63,6 +63,14 @@ actions and reads their selectors, and holds no state of its own.
     texts only, and a redo never re-takes a code the creator no longer
     holds (pinned in `authoring-settle.test.ts`, "restores the improved
     text at a redo of the settle, but not the hand").
+  - After such an undo the code keeps its BOOK measurement (the step
+    holds the texts only, and `handReleased` drops the hand's): it still
+    counts as changed live (`code-book.ts`'s `changedLive`), so a restored
+    draft's text for it does not win, and `visitCodes` still lists it for
+    the visit that measured it (a settle redone after a failed Finish
+    reads it). Pinned in `authoring-settle.test.ts`, "keeps the code's
+    book measurement after an undo of the settle, and the visit still
+    lists it".
 - The book of codes a Finish writes (M4c-1, `code-book.ts`):
   - `toWrite()` - every code this page took whose saved text differs from
     what the zip the Finish rebuilds from holds (the last Finish's text,

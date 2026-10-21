@@ -3302,6 +3302,36 @@ describe(
       expect(a.codes.measurement()).toBeNull();
     });
 
+    // Why this test matters (plan M3b): the undo takes the settle's text
+    // back and lets the hand go, but the code keeps its BOOK measurement
+    // (the step holds the texts only). So the code still counts as changed
+    // live - a draft restore does not overwrite it - and the visit that
+    // measured it still lists it for a settle redone after a failed
+    // Finish. Pinned, so the sidecar's statement of it stays true.
+    it("keeps the code's book measurement after an undo of the settle, and the visit still lists it", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      a.endVisit();
+      const visits = [0, 1, 2, 3, 4, 5].filter((v) =>
+        a.codes.measuredIn(stored.id, v),
+      );
+      expect(visits, "measured in a visit of this page").not.toEqual([]);
+      a.ctx.tourDocument.undo();
+      expect(a.codes.inHand()).toBeNull();
+      for (const v of visits) {
+        expect(a.codes.measuredIn(stored.id, v)).toBe(true);
+        expect(a.codes.visitCodes(v).map((c) => c.level.id)).toContain(
+          stored.id,
+        );
+      }
+      // Changed live: a restored draft's text for the code does not win.
+      a.codes.restoreLevels([{ id: stored.id, json: '{"from":"a draft"}' }]);
+      expect(a.codes.savedText(stored.id)).toBe(stored.json);
+    });
+
     // Why this test matters (plan M3b): what the undo puts back must reach
     // the draft too, or a reload after the undo restores the improved code
     // the creator took back. The codes record follows the undo and the
