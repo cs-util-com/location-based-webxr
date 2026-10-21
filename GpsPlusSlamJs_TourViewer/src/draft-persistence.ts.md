@@ -25,9 +25,9 @@ are the framework's.
   field by field: a `level` that does not read costs the measurement,
   never the walk (`null`); an entry of `levels` that does not read costs
   itself; a value without `levels` keeps its one `level` as the list.
-  With no codes file, `readDraftCodes` reads the same fields of the meta,
-  so a meta written before M3b (frozen as text in the tests) keeps its
-  measured code; a meta written since carries none.
+  With no codes file there are no codes: the code fields a meta written
+  before M3b carried are not read (plan M3b, D5: no old drafts to carry
+  over), so the codes have one source.
 - `writeDraftEdit(store, object, blob, seen)` (M6 E2p) - a placement or
   an edit, and, when `seen` is given, that version added to the object's
   base as seen hosted (`creator-draft.ts` passes the tour as opened). Both
@@ -229,8 +229,8 @@ if (store !== undefined) {
 contract. The codes (plan M3b moved their seeding from the meta to the
 codes record, each rule unchanged): an unreadable level costing the
 measurement and not the walk, the two shapes a level has, several codes
-kept, an unreadable entry costing itself, none without codes, and a meta
-written before the code book read for its one level. The ones that carry it: a corrupt record costing only itself, a
+kept, an unreadable entry costing itself, none without codes, and an
+older meta's code fields not read (D5; it still reads for its size). The ones that carry it: a corrupt record costing only itself, a
 photo record dropped with its missing bytes, no meta yielding nothing, and
 a property that the order is stable and is the order things were placed in.
 Plus the rejection set: an object the meta rejects is refused though its

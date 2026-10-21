@@ -350,11 +350,10 @@ export async function writeDraftCodes(
 }
 
 /**
- * The codes in a stored value (the codes file's, or an older meta's):
- * each field checked on its own, so a level that does not read costs the
- * measurement and an entry of `levels` that does not read costs itself. A
- * value without `levels` (an older meta, written before M4c-1) keeps its
- * one `level` as the list.
+ * The codes in the codes file's value: each field checked on its own, so a
+ * level that does not read costs the measurement and an entry of `levels`
+ * that does not read costs itself. A value without `levels` keeps its one
+ * `level` as the list.
  */
 function codesOf(value: unknown): DraftCodes {
   if (typeof value !== "object" || value === null) return NO_CODES;
@@ -371,16 +370,14 @@ function codesOf(value: unknown): DraftCodes {
 }
 
 /**
- * Read the draft's codes: the codes file, else (no such file) the codes an
- * older meta carried in its own fields - a draft left before the codes
- * had a file of their own keeps its measured code (code book plan M1's
- * frozen meta). None when neither reads.
+ * Read the draft's codes: the codes file only. The code fields an older
+ * meta carried are not read (debug-captures plan M3b, D5: no old drafts
+ * to carry over). None when the file is missing or does not read.
  */
 export async function readDraftCodes(
   store: DraftFileStore,
 ): Promise<DraftCodes> {
-  const text =
-    (await store.getText(CODES_KEY)) ?? (await store.getText(META_KEY));
+  const text = await store.getText(CODES_KEY);
   if (text === undefined) return NO_CODES;
   try {
     return codesOf(JSON.parse(text));

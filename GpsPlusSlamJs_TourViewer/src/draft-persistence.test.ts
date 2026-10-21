@@ -280,29 +280,24 @@ describe("the meta's own validation", () => {
   });
 });
 
-describe("a meta written before the code book (one level) stays readable (code book plan M1)", () => {
-  // Why: M4 writes several codes (`levels`); a draft a creator left behind
-  // before that must still restore its one measured code, its size, its
-  // rejections and its move answers. This is the meta EXACTLY as the
-  // creator setup writes it today (`recordMeta`), frozen as text.
-  const BEFORE_M4 =
-    '{"tourUrl":"https://h/t.zip","sizeM":0.2,"level":{"id":"a1b2c3d4e5f6","json":"{\\"version\\":1}"},"rejected":["gone"],"moveAnswers":[{"levelId":"a1b2c3d4e5f6","northM":40,"eastM":0,"answer":"not-now","savedKey":"k1"}]}';
+describe("the codes an older meta carried are not read (debug-captures plan M3b, D5)", () => {
+  // Why: the codes have a record of their own (`CODES_KEY`), and the
+  // phone's old meta fields are not read - no tours exist yet, so there
+  // is no old draft to carry over (D5). Reading them as a fallback was a
+  // second source of codes: after a claim of a rejected id rewrote the
+  // meta, an old draft's codes were lost anyway. A meta with code fields
+  // still reads for what the meta holds today, its size.
+  const BEFORE_M3B =
+    '{"tourUrl":"https://h/t.zip","sizeM":0.2,"level":{"id":"a1b2c3d4e5f6","json":"{\\"version\\":1}"},"levels":[{"id":"a1b2c3d4e5f6","json":"{\\"version\\":1}"}]}';
 
-  // Its move answers belong to the prompt M6 removed: they are ignored.
-  it("reads its level, size and rejections, ignoring the removed prompt's answers", async () => {
+  it("reads its size, and no codes", async () => {
     const store = memoryStore();
-    await store.put("meta", BEFORE_M4);
+    await store.put("meta", BEFORE_M3B);
+    await writeDraftObject(store, pin("a"));
     const read = await readDraft(store);
-    expect(read?.draft.level).toEqual({
-      id: "a1b2c3d4e5f6",
-      json: '{"version":1}',
-    });
     expect(read?.draft.sizeM).toBe(0.2);
-    // Since M4c-1 the codes are a list; the one level of an older meta is
-    // that list's only entry.
-    expect(read?.draft.levels).toEqual([
-      { id: "a1b2c3d4e5f6", json: '{"version":1}' },
-    ]);
+    expect(read?.draft.level).toBeNull();
+    expect(read?.draft.levels).toEqual([]);
   });
 });
 
