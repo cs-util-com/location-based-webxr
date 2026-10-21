@@ -22,6 +22,7 @@ import { wireStationGuide, type StationGuideDeps } from "./station-guide";
 import { walkOffered, walkStatus } from "./station-run";
 import { createTourViewerStore } from "./tour-viewer-session";
 import type { VisitorPosition } from "./visitor-position";
+import { quickArmed, walkCleared } from "./visitor-walk-slice";
 
 // The core's geodesy needs an activated store (the framework's factory).
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -79,7 +80,13 @@ function at(
 function onThePage(
   stations: readonly TourStation[],
   order: TourOrder,
-  options: { reenter?: boolean; endStory?: boolean } = {},
+  options: {
+    reenter?: boolean;
+    endStory?: boolean;
+    /** Another writer, called back from the guide mid-call. */
+    onFound?: (id: string) => void;
+    onVisitor?: () => void;
+  } = {},
 ) {
   const store = createTourViewerStore();
   let now = 1_000_000;
@@ -126,7 +133,11 @@ function onThePage(
     now: () => now,
     guideStore: logging,
     walkStore: logging,
-    onFound: (s) => found.push(s.id),
+    onFound: (s) => {
+      found.push(s.id);
+      options.onFound?.(s.id);
+    },
+    onVisitor: () => options.onVisitor?.(),
     ...(options.endStory === true
       ? {
           onEndStory: (id: string) => {
@@ -148,6 +159,26 @@ function onThePage(
       visitor = at(north, east, now, accuracyM);
     },
   };
+}
+
+/** Which steady states a page is in, counted into `steady`. */
+function countSteady(
+  page: ReturnType<typeof onThePage>,
+  steady: Record<
+    "armed" | "noteRunOut" | "weakGps" | "story" | "complete",
+    number
+  >,
+): void {
+  const state = page.store.getState().visitorWalk;
+  const line = page.dom.line.textContent;
+  const complete = line.startsWith("Tour complete");
+  const noteShown =
+    line.startsWith("Skipped ") || line.startsWith("Brought back ");
+  if (state.quickArmedId !== null) steady.armed += 1;
+  if (state.note !== null && !complete && !noteShown) steady.noteRunOut += 1;
+  if (line.includes("GPS too weak")) steady.weakGps += 1;
+  if (line.includes("its story is playing")) steady.story += 1;
+  if (complete) steady.complete += 1;
 }
 
 const walkActions = (types: readonly string[]) =>
@@ -217,6 +248,74 @@ describe("the station guide on the page's store (W4 M1)", () => {
     expect(page.dom.line.textContent).toBe(page.atBatch[0]!.line);
   });
 
+  // Why (W4 M1 review): the guide's walk is the store's as it is now with
+  // the call's pending changes over it - so a change another writer makes
+  // mid-call is in it at once, and what one call shows is what the store
+  // holds after it, never a copy taken before that change.
+  it("reads a change another writer makes mid-call at once: the call shows what the store holds after it", () => {
+    const other: { store?: ReturnType<typeof createTourViewerStore> } = {};
+    const page = onThePage([station("a", 0, 0), station("b", 30, 0)], "any", {
+      // Another writer asks the skip for b when a is found.
+      onFound: (id) => {
+        if (id === "a") other.store?.dispatch(quickArmed("b"));
+      },
+    });
+    other.store = page.store;
+    page.move(10, 0);
+    page.guide.tick();
+    // Into a's found radius: a is found, b is in focus, and armed.
+    page.move(1, 0);
+    page.guide.tick();
+    expect(page.store.getState().visitorWalk.quickArmedId).toBe("b");
+    expect(page.dom.skip.textContent).toBe("Skip B - I can't get there");
+  });
+
+  // Why (W4 M1 review): a walk reset behind the guide's back is no run. A
+  // walk started again for the same tour would drop every station the
+  // visitor found or skipped, silently; nothing resets it today.
+  it("starts no walk again when another writer resets it between calls: no run, nothing shown", () => {
+    const page = onThePage([station("a", 0, 0), station("b", 30, 0)], "any");
+    page.move(10, 0);
+    page.guide.tick();
+    page.move(1, 0);
+    page.guide.tick();
+    expect(page.found).toEqual(["a"]);
+    page.store.dispatch(walkCleared());
+    page.dispatched.length = 0;
+    page.move(1, 0);
+    page.guide.tick();
+    expect(walkActions(page.dispatched)).toEqual([]);
+    expect(page.store.getState().visitorWalk.progress).toBeNull();
+    expect(page.dom.line.textContent).toBe("");
+    expect(page.dom.skip.textContent).toBe("");
+  });
+
+  // Why (W4 M1 review): with no walk there is nothing offered, and an empty
+  // offer reads as "Tour complete". A walk another writer resets mid-call
+  // must read as no run, never as a tour the visitor finished.
+  it("writes no false 'Tour complete' when another writer resets the walk mid-call", () => {
+    const other: {
+      store?: ReturnType<typeof createTourViewerStore>;
+      reset: boolean;
+    } = { reset: false };
+    const page = onThePage([station("a", 0, 0), station("b", 30, 0)], "any", {
+      onVisitor: () => {
+        if (!other.reset) return;
+        other.reset = false;
+        other.store?.dispatch(walkCleared());
+      },
+    });
+    other.store = page.store;
+    page.move(10, 0);
+    page.guide.tick();
+    expect(page.dom.line.textContent).toMatch(/^2 stations to find/);
+    other.reset = true;
+    page.move(10, 0);
+    page.guide.tick();
+    expect(page.dom.line.textContent).toBe("");
+    expect(page.dom.skip.textContent).toBe("");
+  });
+
   // Why (plan §3 M1): every guide call - a tick, a tap, a story's end -
   // sends at most one walk dispatch, a batch, and sends it after every
   // other dispatch of that call. And a walk that has settled stays quiet:
@@ -281,20 +380,7 @@ describe("the station guide on the page's store (W4 M1)", () => {
             page.dispatched.length = 0;
             page.guide.tick();
             expect(walkActions(page.dispatched)).toEqual([]);
-            const state = page.store.getState().visitorWalk;
-            const line = page.dom.line.textContent;
-            if (state.quickArmedId !== null) steady.armed += 1;
-            if (
-              state.note !== null &&
-              !line.startsWith("Tour complete") &&
-              !line.startsWith("Skipped ") &&
-              !line.startsWith("Brought back ")
-            ) {
-              steady.noteRunOut += 1;
-            }
-            if (line.includes("GPS too weak")) steady.weakGps += 1;
-            if (line.includes("its story is playing")) steady.story += 1;
-            if (line.startsWith("Tour complete")) steady.complete += 1;
+            countSteady(page, steady);
           }
         },
       ),

@@ -72,10 +72,12 @@
  *   2026-10-21-1105, M1): the run's statuses, the last skip, the note and
  *   the skip's arm are `visitorWalk` (`visitor-walk-slice.ts`), whose
  *   reducer applies the run's rules. One call of the guide (a tick, a tap,
- *   a story's end) reads the store, applies its changes to a draft, and
- *   dispatches them as ONE batch at its very end, after the tick's reads
- *   and its other dispatches: a store subscriber that re-enters the guide
- *   (`ar-entry.ts` ticks it on every dispatch) sees one consistent walk.
+ *   a story's end) reads the store's walk with its own pending changes
+ *   over it, and dispatches them as ONE batch at its very end, after the
+ *   tick's reads and its other dispatches: a store subscriber that
+ *   re-enters the guide (`ar-entry.ts` ticks it on every dispatch) sees one
+ *   consistent walk. A walk another writer resets is no run: the guide
+ *   starts none again for the same tour.
  */
 
 import type {
@@ -99,7 +101,6 @@ import {
 import { judgedStationBands, type StationBands } from "./station-bands.js";
 import {
   applyWalkStep,
-  startWalk,
   stationRunOver,
   stationTitle,
   walkRoute,
@@ -250,10 +251,6 @@ export interface StationGuide {
  */
 export const SKIP_UNDO_MS = DEFAULT_TOAST_LINGER_MS;
 
-/** What the run reads while there is no walk at all (a defensive read of
- *  a walk reset elsewhere): nothing offered, nothing to judge. */
-const NO_PROGRESS = startWalk([], "any");
-
 /**
  * The oldest a device fix may be to stand in for the visitor's position
  * (no alignment, or one not ready; M5a review M3), against the fix's own Geolocation
@@ -353,17 +350,17 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   const walkStore: VisitorWalkStore =
     deps.walkStore ??
     configureStore({ reducer: { visitorWalk: visitorWalkReducer } });
-  /** The walk as this call sees it: the store's, plus the changes this
-   *  call made and has not dispatched yet (`pendingWalk`); null when
-   *  there are none. A nested call (a store subscriber's tick inside one,
-   *  a story ended from a tap) joins it. */
-  let draft: VisitorWalkState | null = null;
+  /** The changes this call made to the walk and has not dispatched yet:
+   *  they reach the store as one batch when the outermost call ends. A
+   *  nested call (a store subscriber's tick inside one, a story ended from
+   *  a tap) adds to them. */
   const pendingWalk: UnknownAction[] = [];
   let callDepth = 0;
-  /** The run's calls over the store's walk for the open tour's stations: a
-   *  view (it holds the stations for the found radius), no state of its
-   *  own; null while there is no walk. */
-  let run: StationRun | null = null;
+  /** The run's calls over the walk for the open tour's stations: a view
+   *  (it holds the stations for the found radius), no state of its own;
+   *  read through `liveRun`, which hands it out only while its walk
+   *  exists. */
+  let runView: StationRun | null = null;
   /** The open tour's stations the walk is for: the identity that tells
    *  another tour (D29-D32: the guide's own bookkeeping). */
   let runStations: readonly TourStation[] | null = null;
@@ -403,16 +400,30 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  once the code goes (a veto) and nothing else can judge, it ends. */
   let presentByCode = false;
 
-  /** The walk now, as this call sees it. */
+  /** The walk now, as this call sees it: the store's as it is now, with
+   *  this call's pending changes applied over it - what the store will
+   *  hold once they are dispatched. Read anew each time, so a change
+   *  another writer makes mid-call is part of it at once. */
   function walk(): VisitorWalkState {
-    return draft ?? walkStore.getState().visitorWalk;
+    return pendingWalk.reduce(
+      visitorWalkReducer,
+      walkStore.getState().visitorWalk,
+    );
   }
 
-  /** Apply one change to this call's walk; it reaches the store at the
-   *  call's end. */
+  /** One change to this call's walk; it reaches the store at the call's
+   *  end. */
   function change(action: UnknownAction): void {
-    draft = visitorWalkReducer(walk(), action);
     pendingWalk.push(action);
+  }
+
+  /** The run, while its walk exists; null with no walk - no tour, none
+   *  placed yet, or one another writer reset. The guide starts no walk
+   *  again for the same tour (a restart would drop the visitor's
+   *  progress), and every reader fetches the run anew rather than across
+   *  a callback, so the run's view never reads a walk that is gone. */
+  function liveRun(): StationRun | null {
+    return walk().progress === null ? null : runView;
   }
 
   /** One call of the guide's: its walk changes are dispatched together
@@ -429,7 +440,6 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   function commitWalk(): void {
-    draft = null;
     if (pendingWalk.length === 0) return;
     walkStore.dispatch(walkBatched(pendingWalk.splice(0)));
   }
@@ -438,7 +448,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  rule allows becomes one change; one it does not, nothing. */
   function runOver(stations: readonly TourStation[]): StationRun {
     return stationRunOver(stations, {
-      read: () => walk().progress ?? NO_PROGRESS,
+      read() {
+        const progress = walk().progress;
+        // `liveRun` hands the view out only while its walk exists.
+        if (progress === null) {
+          throw new Error("station-guide: the run was read with no walk");
+        }
+        return progress;
+      },
       perform(step) {
         const before = walk().progress;
         if (before === null) return [];
@@ -536,30 +553,26 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function currentRun(): StationRun | null {
     const tour = deps.tour();
     if (tour === null || tour.stations.length === 0) {
-      if (run !== null) tourChangePending = true;
+      if (runView !== null) tourChangePending = true;
       if (walk().progress !== null) change(walkCleared());
-      run = null;
+      runView = null;
       runStations = null;
       return null;
     }
-    // A walk reset behind the guide's back (only another tour resets it)
-    // starts again for the same stations, as no tour change.
-    if (tour.stations !== runStations || walk().progress === null) {
+    if (tour.stations !== runStations) {
       if (!deps.placementAllowed()) return null;
       // The page's first tour is no change: a "show all" set before the
       // first tick stays (PR review S5).
-      if (runStations !== null && tour.stations !== runStations) {
-        tourChangePending = true;
-      }
+      if (runStations !== null) tourChangePending = true;
       runStations = tour.stations;
       // A new walk: its last skip, note and arm start anew with it.
       change(
         walkStarted({ order: tour.order, route: walkRoute(tour.stations) }),
       );
-      run = runOver(tour.stations);
+      runView = runOver(tour.stations);
       rendered = null;
     }
-    return run;
+    return liveRun();
   }
 
   /** The phone's current best position (D16): the alignment's, else -
@@ -714,6 +727,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  none while the position is `unjudged`. */
   function approach(m: Measurement): void {
     const { distances } = m;
+    const run = liveRun();
     if (deps.onApproach === undefined || run === null || unjudged(m)) return;
     for (const id of run.offered()) {
       const d = distances.get(id);
@@ -726,10 +740,11 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** The offered station the skip and the line are about: the nearest
    *  one not yet found (the first in list order without a distance). */
   function focusStation(): string | null {
+    const run = liveRun();
     if (run === null) return null;
     const unfound = run
       .offered()
-      .filter((id) => run?.status(id)?.state !== "found");
+      .filter((id) => run.status(id)?.state !== "found");
     if (unfound.length === 0) return null;
     const distances = last?.distances ?? new Map<string, number>();
     return [...unfound].sort(
@@ -743,6 +758,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  is found already, so these are the stations whose content is hidden.
    *  None while the position is `unjudged`. */
   function hudTargets(): WayfindingTarget[] {
+    const run = liveRun();
     if (run === null || last === null || last.headingNue === null) return [];
     if (unjudged(last)) return [];
     const eyeHeight = last.headingNue[1];
@@ -773,6 +789,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   function lineText(): string {
+    const run = liveRun();
     if (run === null) return "";
     if (run.isComplete()) {
       const skipped = run.statuses().filter((s) => s.skipped).length;
@@ -842,10 +859,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (last === null) measure();
     // An unjudged position lays no trail: with no visitor there is none.
     deps.onGuide?.(unjudged(last!) ? null : last!.headingNue, guideTarget());
-    const upcoming = run?.upcoming() ?? null;
+    const upcoming = liveRun()?.upcoming() ?? null;
     const next = upcoming === null ? undefined : stationById(upcoming);
     if (next !== undefined) deps.onUpcoming?.(next);
-    if (run?.isComplete() === true) {
+    if (liveRun()?.isComplete() === true) {
       // Nothing left to point at, whichever action completed the tour.
       hud?.dispose();
       hud = null;
@@ -864,6 +881,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** What the skip button offers now. The station in focus starts its skip
    *  clock here, when it becomes the focus (K4 review R14). */
   function skipAction(): SkipAction | null {
+    const run = liveRun();
     if (run === null) return null;
     const focus = focusStation();
     // The skip clock starts with the first distance, sized by it (r881
@@ -914,9 +932,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** When no unfound station is offered: the found offered station whose
    *  story the visitor may end (the first in list order), else null. */
   function storyFocus(): string | null {
+    const run = liveRun();
     if (run === null) return null;
     return (
-      run.offered().find((id) => run?.status(id)?.state === "found") ?? null
+      run.offered().find((id) => run.status(id)?.state === "found") ?? null
     );
   }
 
@@ -939,6 +958,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   function ensureHud(): void {
+    const run = liveRun();
     if (hud !== null || run === null || run.isComplete()) return;
     hud = deps.startHud(hudTargets);
   }
@@ -948,6 +968,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const current = currentRun();
     // The scan gate is checked every tick, not only when the run was
     // created (K4 review R8): a later AR session waits behind its own.
+    // The run is fetched anew after each callback below (`liveRun`).
     if (current === null || !deps.placementAllowed()) {
       show(dom.line, "");
       show(dom.skip, "");
@@ -975,9 +996,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (m.headingNue !== null) deps.onVisitor?.(m.headingNue);
     approach(m);
     const judgement = judged(m);
-    if (judgement !== null) {
+    const run = liveRun();
+    if (judgement !== null && run !== null) {
       handle(
-        current.observe({
+        run.observe({
           distances: judgement.distances,
           nowMs: deps.now(),
           precision: judgement.precision,
@@ -987,7 +1009,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     render();
     publishPresence(m, judgement);
     // Stations still to point at, and no heading to point with (D34).
-    publishHeadingPending(!headingReady && !current.isComplete());
+    publishHeadingPending(!headingReady && liveRun()?.isComplete() === false);
   }
 
   /** The skip button's tap (`skipTapped`), inside its call. */
@@ -995,6 +1017,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     // The tap does what the label showed, for the station it named (R14):
     // a clock that ran out since, or a focus that moved, changes nothing.
     const action = rendered;
+    const run = liveRun();
     if (run === null || action === null) return;
     switch (action.kind) {
       case "ask-skip":
@@ -1035,6 +1058,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     },
     storyEnded(stationId) {
       inCall(() => {
+        const run = liveRun();
         if (run === null) return;
         handle(run.finish(stationId, deps.now()));
         if (walk().note !== null) change(noteCleared());

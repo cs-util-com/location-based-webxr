@@ -67,15 +67,33 @@ activateM)` (each tick, each offered station with a distance: the
   (`quickArmedId`, was `skipArmedFor`) are `visitorWalk`; the run's rules
   are applied by its reducer (`station-run.ts` `applyWalkStep`).
   - **One batch per call, at its very end.** `tick`, `skipTapped` and
-    `storyEnded` each read the walk, apply their changes to a draft
-    (`change`), and dispatch them as one `walkBatched` when the outermost
-    call ends (`inCall`) - after the tick's reads, its line and button,
-    and its own presence and heading dispatches. A nested call (the page's
-    subscriber ticking on a presence dispatch inside a tick, a story ended
-    from a tap) joins the draft; a subscriber woken by the batch ticks a
-    fresh call that finds nothing to change. So the guide never dispatches
-    the walk mid-tick, and never per frame: a tick with no event (no find,
-    no new focus, no settle) dispatches nothing.
+    `storyEnded` each queue their changes (`change`, `pendingWalk`) and
+    dispatch them as one `walkBatched` when the outermost call ends
+    (`inCall`) - after the tick's reads, its line and button, and its own
+    presence and heading dispatches. A nested call (the page's subscriber
+    ticking on a presence dispatch inside a tick, a story ended from a tap)
+    adds to the same queue. A subscriber woken by the batch ticks a fresh
+    call over the walk the batch left: it has nothing more to change
+    unless the batch newly offered a station, which that call then judges
+    in the same frame (the timing bullet below). So the guide never
+    dispatches the walk mid-tick, and never per frame: a tick with no event
+    (no find, no new focus, no settle) dispatches nothing.
+  - **The guide's walk is the store's, read anew** (`walk`): the store's
+    walk as it is now with the call's pending changes applied over it
+    (`pendingWalk.reduce(visitorWalkReducer, store walk)`) - exactly what
+    the store holds once the batch lands. No copy is kept, so a change
+    another writer makes mid-call (from a callback) is in the guide's walk
+    at once, and the guide never shows one walk while the store holds
+    another.
+  - **No walk is no run** (`liveRun`): a walk reset behind the guide's
+    back leaves the tour with no run - nothing shown, nothing judged -
+    until another tour. The guide does not start one again for the same
+    tour (that would drop every station the visitor found or skipped), and
+    no empty walk stands in (an empty offer reads as "Tour complete"). Each
+    reader fetches the run anew rather than across a callback, so the
+    run's view is never read with no walk. Nothing resets the walk behind
+    the guide today: its own `guideTourChanged` is followed by the new
+    tour's walk in the same call's batch.
   - **The settle is an event:** once 6 s have passed since the last skip,
     the next render dispatches `skipSettled` (and the prefetch hears the
     skip's `onDone`); a find or another station done settles it at once,
@@ -92,9 +110,9 @@ activateM)` (each tick, each offered station with a distance: the
     rules it alone applies); `runStations` (the identity that tells
     another tour); `tourChangePending` (one tick's note to its own end);
     `rendered` (what the button showed, so a tap does that, R14; goes in
-    M4 when a tap carries its action); `run` (a view of the run's calls
-    over the store's walk for the tour's stations, no state of its own);
-    the draft and its pending changes (one call's, gone at its end).
+    M4 when a tap carries its action); `runView` (a view of the run's
+    calls over the walk for the tour's stations, no state of its own); the
+    call's pending changes (one call's, gone at its end).
   - **The listeners stay callbacks**, fired by the guide from each
     transition's events, once per transition: `onFound`, `onDone` and
     `onUpcoming` start, end and read ahead a story (the story panel and
@@ -399,7 +417,10 @@ store.subscribe(() => guide.tick());
   line already written from it, and none on a second tick with the same
   inputs in every steady state (the skip asked, a note run out, GPS too
   weak, a story playing, the tour complete; each counted as reached); the
-  R9 property through the store with the subscription re-entering.
+  R9 property through the store with the subscription re-entering; another
+  writer mid-call (a skip armed from a callback is shown in that call) and
+  a walk reset behind the guide (no walk started again, nothing shown, no
+  false "Tour complete").
 - `station-guide.parity.test.ts` - also reproduces its golden through the
   page's store with the subscription re-entering (W4 M1).
 
