@@ -774,7 +774,7 @@ function liveWork(
   return { live, hand };
 }
 
-describe("creator-codes: live work wins over a draft restore (creator-codes.ts:227-235, :309-325)", () => {
+describe("creator-codes: live work wins over a draft restore", () => {
   // Why this test matters: a draft is offered after the tour opened, so a
   // code measured in this page since is newer than anything the draft
   // holds. Whatever the creator measured (and did not void by a new print
@@ -864,7 +864,7 @@ describe("creator-codes: two baselines, kept apart (code-book.ts:83-85, :199-219
   });
 });
 
-describe("creator-codes: the hosted baseline is read lazily (withHostedTexts, creator-codes.ts:188-190)", () => {
+describe("creator-codes: the hosted baseline is read lazily (withHostedTexts)", () => {
   // Why these tests matter: the tour's level files arrive AFTER the open
   // (archive-open.ts reads them beside tour.json), and this module holds
   // no copy of them before a Finish: each `toWrite`/`notHosted` reads
@@ -944,7 +944,7 @@ describe("creator-codes: the hosted baseline is read lazily (withHostedTexts, cr
   });
 });
 
-describe("creator-codes: what a visit's end and a tour's close clear (creator-codes.ts:329-340)", () => {
+describe("creator-codes: what a visit's end and a tour's close clear", () => {
   // Why these tests matter (plan M3a): the store splits this state into
   // a part cleared per visit and a part cleared per tour. Today
   // a visit's end clears ONLY the sightings (odometry does not carry
@@ -996,8 +996,8 @@ describe("creator-codes: what a visit's end and a tour's close clear (creator-co
   });
 
   // Why this test matters: today the close leaves the sightings to the
-  // visit's end (creator-codes.ts:334-336: a tour cannot close inside a
-  // visit), so the two resets do not overlap. Pinned so a reducer for the
+  // visit's end (a tour cannot close inside a visit), so the two resets
+  // do not overlap. Pinned so a reducer for the
   // close does not quietly take over the visit's part, or the reverse.
   it("leaves the sightings to the visit's end at a tour's close", () => {
     const ctx = createTourViewerSession();
@@ -1012,7 +1012,7 @@ describe("creator-codes: what a visit's end and a tour's close clear (creator-co
   });
 });
 
-describe("creator-codes: the measurements per measured code (visitCodes/measuredIn, creator-codes.ts:267-287, :307-308)", () => {
+describe("creator-codes: the measurements per measured code (visitCodes/measuredIn)", () => {
   // Why this test matters: the settle reads a visit's codes from here,
   // and the store will hold the per-code measurements in its own slice.
   // The rules: a measured code is listed once even when it was also

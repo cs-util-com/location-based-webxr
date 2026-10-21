@@ -72,7 +72,8 @@ M4 settles every code of the book, not only the one in hand.
   replace the tap-time ones
   in the tour document (`move`, the AR placement kept) and the code
   module's book, each settled object's draft
-  record and the meta are REWRITTEN (the per-object file design already
+  record and the draft's codes record are REWRITTEN (the settle writes
+  no meta: the codes have a record of their own since plan M3b) (the per-object file design already
   keys by id; no format change - so a page reload keeps the settled geo,
   while a killed tab keeps the tap-time geo, accepted in the plan), and
   `tourAuthoring/settled` is logged. The input carries the end alignment's

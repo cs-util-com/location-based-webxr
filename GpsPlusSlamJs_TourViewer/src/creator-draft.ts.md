@@ -149,7 +149,8 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   failure and does not spend the one warning. When the store is assigned,
   the in-memory placements the read did not return are written (after the
   read, so no branch deletes them), and a level measured before the open is
-  recorded in the meta even when an older draft is being offered.
+  recorded in the codes record (`writeCodes`, the offered draft's codes
+  re-stated after it) even when an older draft is being offered.
 - **A draft is OFFERED, never applied.** It can be days old and can be one
   the creator believes they discarded; restoring it silently would append
   content they did not ask for into a zip they are about to publish. Three
