@@ -35,7 +35,9 @@ import {
   timingsPath,
   recordStage,
   runStage,
+  signalLiveStages,
 } from './run-stage.mjs';
+import { STALL_ENV, STALL_EXIT } from './stall-watch.mjs';
 
 /** @typedef {import('./delta.mjs').TestCounts} TestCounts */
 
@@ -213,8 +215,11 @@ process.prependListener('exit', () => {
     clearLock(lockFile);
   }
 });
-for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
+for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM', 'SIGHUP'])) {
   process.on(signal, () => {
+    // A watched stage runs in a process group of its own on POSIX
+    // (run-stage.mjs), which this signal does not reach by itself.
+    signalLiveStages(signal);
     if (ownsLock) {
       clearLock(lockFile);
     }
@@ -246,6 +251,14 @@ let allRecorded = true;
 for (const stage of stages) {
   console.log(`\n▶ ${project.name} ${stage.name}`);
   const result = await runStage(project, stage.name, []);
+  if (result.exitCode === STALL_EXIT) {
+    // NAMED, like a queue timeout (75), so GATE-RC=124 is never read as a
+    // plain red test. A nested package gate passes its leaf's 124 through.
+    console.error(
+      `\n✖ gate STALLED at stage "${stage.name}" (exit ${STALL_EXIT}): a stage printed nothing for ${STALL_ENV} minutes and was killed - see the STALLED banner above. Not a red test; do not retry it away.`
+    );
+    process.exit(result.exitCode);
+  }
   if (result.exitCode !== 0) {
     console.error(
       `\n✖ gate failed at stage "${stage.name}" (exit ${result.exitCode})`

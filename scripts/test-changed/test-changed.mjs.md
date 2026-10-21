@@ -18,7 +18,10 @@
   [--dry-run]`. `--all` = full-cascade escape hatch (mandatory after
   changing the link-overridden sibling library, which this repo's git cannot
   see). `--ref` = diff base (default `HEAD`). `--dry-run` prints the
-  decision only. Exit code = the underlying gate's exit code.
+  decision only. Exit code = the underlying gate's exit code. A 124 is a
+  stage the watchdog killed for silence, and is named as one beside its
+  STALLED banner ([stall-watch.mjs](../test-timing/stall-watch.mjs.md)); a
+  75 is a queue timeout. Neither is a red test.
 - Invariants & assumptions:
   - Selection logic is pure and lives in `select.mjs` (see its sidecar for
     the guard rails); this shell only gathers `git diff --name-only <ref>` +

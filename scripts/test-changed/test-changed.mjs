@@ -43,6 +43,7 @@ import { fileURLToPath } from 'node:url';
 
 import { holdMachineSlotForProcess } from '../test-timing/machine-slot.mjs';
 import { SKIP_BROWSER_ENV } from '../test-timing/projects.mjs';
+import { STALL_ENV, STALL_EXIT } from '../test-timing/stall-watch.mjs';
 import { cascadeCommands, gateCommands, selectPackages } from './select.mjs';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -209,6 +210,12 @@ function run(command, extraEnv = {}) {
 function runInOrder(commands) {
   for (const { command, env } of commands) {
     const status = run(command, env);
+    if (status === STALL_EXIT) {
+      // NAMED, so GATE-RC=124 is never read as a plain red test.
+      console.error(
+        `\ntest-changed: ✖ STALLED (exit ${STALL_EXIT}): a stage printed nothing for ${STALL_ENV} minutes and was killed - see its STALLED banner above. Not a red test; do not retry it away.`
+      );
+    }
     if (status !== 0) {
       return status;
     }
