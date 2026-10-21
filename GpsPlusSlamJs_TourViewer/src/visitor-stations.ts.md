@@ -110,3 +110,31 @@ hooks.tickStations = stations.tick;
 - `viewer-content-alignment.test.ts` ("finds the station on the scanned
   code on the first voted lock"): the real station guide over the real
   placement, `stationPlacementAllowed` and `stationAlignmentSignals`.
+
+## The walk's sheet (visitor walk W4 build plan M2)
+
+- `deps.walk?: { dom: WalkSheetDom, toast: WalkToast, exitAr }` - wires
+  `walk-sheet.ts` and draws it after every tick, code lock, skip tap,
+  story change (`scene-view.ts` `onChange`) and sheet change, from
+  `walk-sheet-model.ts` over the guide's `view()`, the store's walk
+  (`selectWalkProgress`, `selectWalkSheet`) and the tour (the guide's own
+  reader, `guideTour`). Hidden while the guide does not run.
+- The story card's end control (`#walk-story-end`) is the guide's `end`
+  dom and taps like the skip button (`skipTapped`); "Keep listening"
+  calls `cancelAsk`; the completion card's "Exit AR" calls `exitAr`
+  (`main.ts`: a tap on `#enter-ar`, the session's one way out).
+- Toasts: the guide's note ("Skipped X." / "Brought back X.") once per
+  note, and `WELCOME_BACK` ("Welcome back - your progress is kept.") at
+  the first drawn sheet of an entry after leaving AR with progress.
+- `progressKept()` - the open tour has a walk with progress: the
+  progress's stations are the open tour's (a closed tour's walk stays in
+  the store until the guide's next run) and `walkHasProgress`. `stop()`
+  draws the away block on the start page from it (`awayModel`), or
+  hides it.
+- `walkShown()` - the last render drew the sheet (the guide runs, the
+  tour and its walk are known); `ar-entry.ts` then routes a placement wait
+  nowhere. When it flips, `walk.onShownChange` is called (main: the AR
+  status re-renders), since nothing else re-renders the status when the
+  guide starts after the code locked.
+- Tests: the models and the writer's pure half have their own unit tests;
+  this glue is driven by `playwright-tests/visitor-walk.spec.js`.

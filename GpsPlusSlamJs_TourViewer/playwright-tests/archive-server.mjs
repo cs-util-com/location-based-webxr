@@ -36,6 +36,11 @@
  *   kit plan K4): one at the fixture's printed code (a knight with a voice
  *   and a scene choice), one found by walking to it (a `.glb` model), one
  *   far away for the skip.
+ * - `/ranges-ok/walk-tour.zip` (any order) and
+ *   `/ranges-ok/walk-tour-fixed.zip` (fixed order) - the visitor walk W4
+ *   prototype's "Old town walk" (visitor walk W4 build plan M2): four
+ *   stations at the prototype's spots, each a story of auto-advancing
+ *   lines, for the sheet's and the layout's specs.
  *
  * Every `tour.json` here is version 3 (tour editor plan W3): stations at
  * geo poses, pins and photos as their items.
@@ -345,6 +350,91 @@ async function buildStationsZip() {
 }
 
 /**
+ * The prototype's "Old town walk" (visitor walk W4 build plan M2;
+ * `public/prototypes/visitor-walk-4-radar-and-list/`): its four stations
+ * at its spots (the prototype's x east, z south, here north and east),
+ * found within the prototype's radius, offered within 60 m, each a story
+ * of the prototype's lines that advance by themselves after 6 s (the
+ * fakes' timers, so a spec moves them on). The printed code is the
+ * stations tour's (2 m north, 1 m east).
+ */
+async function buildWalkZip(order) {
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+  await writer.add("session.json", new TextReader('{"kind":"e2e-walk"}'));
+  await writer.add(
+    await e2eQrLevelEntryName(),
+    new TextReader(
+      JSON.stringify({
+        version: 1,
+        qr: {
+          physicalSizeM: 0.2,
+          geo: {
+            lat: 47.5 + 2 * DEG_PER_M_LAT,
+            lon: 8.7 + 1 * DEG_PER_M_LON,
+            alt: 400,
+            rotation: MEASURED_CODE_ROTATION,
+          },
+        },
+      }),
+    ),
+  );
+  const geo = (north, east) => ({
+    lat: 47.5 + north * DEG_PER_M_LAT,
+    lon: 8.7 + east * DEG_PER_M_LON,
+    alt: 400,
+    headingDeg: 0,
+  });
+  const station = (id, title, north, east, radiusM, lines) => ({
+    id,
+    title,
+    geo: geo(north, east),
+    activateRadiusM: 60,
+    foundRadiusM: radiusM,
+    hint: "arrow",
+    items: [],
+    steps: lines.map((text, i) => ({
+      id: `${id}-${String(i)}`,
+      block: { kind: "text", text },
+      advance: { mode: "auto", afterS: 6 },
+    })),
+  });
+  await writer.add(
+    "tour.json",
+    new TextReader(
+      JSON.stringify({
+        version: 3,
+        minor: 0,
+        title: "Old town walk",
+        order,
+        assets: [],
+        stations: [
+          station("gate", "The gate", 28, 0, 10, [
+            "Until 1840 this gate was shut every night at dusk.",
+            "Traders who came late slept outside the walls, beside their carts.",
+            "Look up: the hinges of the old doors are still in the stone.",
+          ]),
+          station("well", "The well", 82, 34, 12, [
+            "Everyone came here - for water first, and for the news second.",
+            "The shaft is nineteen metres deep and was dug by hand.",
+            "In dry summers the queue reached the far end of the square.",
+          ]),
+          station("tower", "The tower", 170, -48, 12, [
+            "The watchman rang the bell for fire, for flood and for weddings.",
+            "Its stairs have 142 steps; the top ones are new.",
+          ]),
+          station("garden", "The garden", 240, 46, 14, [
+            "This garden was planted for medicine, not for beauty.",
+            "Every bed still grows a herb from the old list.",
+            "This is the last station - thank you for walking with us.",
+          ]),
+        ],
+      }),
+    ),
+  );
+  return writer.close();
+}
+
+/**
  * A tour zip that IS a recording (geo-join e2e): era-5 session.json plus an
  * action stream whose four consistent GPS↔odom pairs solve a clean
  * translation alignment ([+2 m N] and the 400 m altitude datum), and two
@@ -624,6 +714,8 @@ const plainZipBytes = await buildZip({ withLevel: false });
 const noGpsZipBytes = await buildZip({ needsNoGps: true });
 const recordingZipBytes = await buildRecordingZip();
 const stationsZipBytes = await buildStationsZip();
+const walkZipBytes = await buildWalkZip("any");
+const walkFixedZipBytes = await buildWalkZip("fixed");
 const sampleZipBytes = new Uint8Array(
   readFileSync(
     new URL("../public/samples/marienplatz-tour.zip", import.meta.url),
@@ -800,6 +892,14 @@ createServer((req, res) => {
   }
   if (url.pathname === "/ranges-ok/stations-tour.zip") {
     handleArchive(req, res, "ranges-ok", stationsZipBytes, '"e2e-stations-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/walk-tour.zip") {
+    handleArchive(req, res, "ranges-ok", walkZipBytes, '"e2e-walk-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/walk-tour-fixed.zip") {
+    handleArchive(req, res, "ranges-ok", walkFixedZipBytes, '"e2e-walk-f-v1"');
     return;
   }
   if (url.pathname === "/ranges-ok/sample-tour.zip") {

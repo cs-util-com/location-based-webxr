@@ -234,3 +234,31 @@ the session end; an unrecorded one asks for none. The pure pieces: `ar-mode.test
 - The runtime start also snapshots `ctx.frameEpochAtSessionStart` (code
   book plan M6 v5.1), next to `gpsSamplesAtSessionStart`
   (`ar-entry.test.ts`, "snapshots the odometry frame's epoch").
+
+## The walk's surfaces (visitor walk W4 build plan M2, §1.4)
+
+- `renderArStatus` splits the visitor's sentence
+  (`visitorStatusParts`, `statusSentence`) and, for a visitor, renders
+  `walk-status-routing.ts`'s route:
+  - the coach (`dom.coach`: `#walk-coach`, its `data-look` spinner, sway
+    or plain, and `#walk-coach-text`);
+  - the scan card's found look (`data-look="found"`, its title
+    `SCAN_CARD_FOUND_TITLE` "Code found - placing the tour…"; the scan
+    look keeps `SCAN_CARD_TITLE`); the card shows in either look and the
+    status line steps aside as before;
+  - news said once per entry through `deps.walk.toast` (in AR only);
+  - the peek's code line (`dom.codeTail`, `#walk-code-tail`).
+- `#ar-status` keeps the whole sentence and its `data-state`; the CSS
+  hides it visually for a visitor in AR without `?debug=1`.
+  `#ar-status-live` announces the whole sentence, as before.
+- `deps.walk.progressKept()` feeds the button's "Back to the tour"; the
+  toast is reset at the session's end. `deps.walk.sheetShown?()` (the
+  guide runs) lets a placement wait give way to the walk
+  (`walkStatusRouting`'s `walkShown`): a tour of stories places nothing,
+  so its sentence never leaves "locking".
+- Optional dom and deps: a harness without them renders as before.
+- Tests: `ar-entry.test.ts` "the walk's surfaces in AR" (the coach and
+  its spinner, the found look and back, a GPS placement's toast once and
+  the code line, no news before AR, a creator untouched, the toast reset
+  at the session's end, "Back to the tour", a placement wait giving way
+  to the shown walk).

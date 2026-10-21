@@ -32,30 +32,36 @@ const CODES_ONLY_NOTHING: Record<
     "The tour's code file could not be read, and without location nothing can place it.",
 };
 
-type VisitorStatusState =
-  | "before-ar"
-  | "checking"
-  | "starting"
-  | "stopping"
-  | "unsupported"
-  | "error"
-  | "no-tour"
-  | "unfinished"
-  | "scan"
-  | "measuring-code"
-  | "code-other-tour"
-  | "code-unusable"
-  | "code-moved"
-  | "locking"
-  | "warming-up"
-  | "placing"
-  | "placed"
-  | "to-station"
-  | "placed-gps"
-  | "tracking-lost"
-  | "finding-direction"
-  | "needs-code"
-  | "nothing";
+/** Every state the sentence names (`data-state`): listed once, so the
+ *  walk's routing of them (`walk-status-routing.ts`) and its test cover
+ *  each, and a new one cannot go unrouted. */
+export const VISITOR_STATUS_STATES = [
+  "before-ar",
+  "checking",
+  "starting",
+  "stopping",
+  "unsupported",
+  "error",
+  "no-tour",
+  "unfinished",
+  "scan",
+  "measuring-code",
+  "code-other-tour",
+  "code-unusable",
+  "code-moved",
+  "locking",
+  "warming-up",
+  "placing",
+  "placed",
+  "to-station",
+  "placed-gps",
+  "tracking-lost",
+  "finding-direction",
+  "needs-code",
+  "nothing",
+] as const;
+
+export type VisitorStatusState = (typeof VISITOR_STATUS_STATES)[number];
 
 export interface VisitorStatus {
   readonly state: VisitorStatusState;
@@ -68,13 +74,13 @@ const LOOK_AROUND = "Look around.";
 /** Placed, every piece of content waiting at a station the visitor is not
  *  at: nothing is in view to look at. */
 const TO_STATION = "Walk to a station to see its content.";
-const GPS_PLACED = "Tour placed by GPS (less exact)";
+export const GPS_PLACED = "Tour placed by GPS (less exact)";
 /** The one hint that can still help a tour no code lines up now. */
-const FIND_CODE = "Find the poster's code to line it up.";
+export const FIND_CODE = "Find the poster's code to line it up.";
 
 /** The guide waits for a heading (D34): the arrows, the breadcrumbs and a
  *  story's figure need one, and a few steps give it. */
-const WALK = "Walk a few steps so the guide knows the direction.";
+export const WALK = "Walk a few steps so the guide knows the direction.";
 
 /** Whether the line asks for a few steps (D34): the guide waits for a
  *  heading, tracking runs - not while it initializes (the coaching says
@@ -367,14 +373,27 @@ function withWalkRequest(
     : placing;
 }
 
+/** The visitor's status in its parts: the state's own sentence, and what
+ *  could not load (the walk routes them apart, `walk-status-routing.ts`). */
+export interface VisitorStatusParts extends VisitorStatus {
+  readonly notes: readonly string[];
+}
+
+/** The visitor's status for a state of the page, in its parts. */
+export function visitorStatusParts(input: ArStatusInput): VisitorStatusParts {
+  if (input.arStatus !== "running") {
+    return { ...beforeRunning(input.arStatus, input.arError), notes: [] };
+  }
+  return { ...runningSentence(input), notes: loadNotes(input) };
+}
+
+/** The parts as one sentence: the state's own, what could not load
+ *  after it. */
+export function statusSentence(parts: VisitorStatusParts): VisitorStatus {
+  return { state: parts.state, text: [parts.text, ...parts.notes].join(" ") };
+}
+
 /** The visitor's status for a state of the page. */
 export function visitorStatus(input: ArStatusInput): VisitorStatus {
-  if (input.arStatus !== "running") {
-    return beforeRunning(input.arStatus, input.arError);
-  }
-  const main = runningSentence(input);
-  const notes = loadNotes(input);
-  return notes.length === 0
-    ? main
-    : { state: main.state, text: [main.text, ...notes].join(" ") };
+  return statusSentence(visitorStatusParts(input));
 }

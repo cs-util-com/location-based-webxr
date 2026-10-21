@@ -5,11 +5,16 @@
  * last skip while it can still be undone (`lastSkip`, settled by
  * `skipSettled`), the one-line note of what just happened (`note`), and
  * the quick action's arm (`quickArmedId`, "Can't get there?" asked for one
- * station). The reducer applies the run's pure transitions
+ * station), and the sheet's peek or list (M2). The reducer applies the run's pure transitions
  * (`station-run.ts` `applyWalkStep`): one rule, in the store. The station
  * guide (`station-guide.ts`) dispatches only on events, never per frame,
  * and one call's changes as ONE batch (`walkBatched`) at its end, so a
  * store subscriber that re-enters the guide sees a consistent walk.
+ *
+ * The sheet (W4 build plan M2, §1.5, §1.6) is the visitor's choice, with
+ * two changes that follow the walk, here so they hold for every writer: a
+ * station found (its story starts) closes the list, and the walk's
+ * completion opens it once (`completionSeen`).
  *
  * The windows of the last skip and the note (6 s, `SKIP_UNDO_MS`) are read
  * over the page's time by their readers, through `selectUndoableSkip` and
@@ -29,6 +34,8 @@ import { DEFAULT_TOAST_LINGER_MS } from "gps-plus-slam-app-framework/utils/toast
 import {
   applyWalkStep,
   startWalk,
+  walkOffered,
+  walkStatus,
   type WalkProgress,
   type WalkRoute,
   type WalkStep,
@@ -70,13 +77,24 @@ export interface VisitorWalkState {
   /** The station the visitor asked to skip ("Can't get there?"); the next
    *  tap confirms. Null: not asked, or the focus moved since. */
   readonly quickArmedId: string | null;
+  /** The sheet: its peek, or the list pulled up (W4 build plan M2). */
+  readonly sheet: WalkSheet;
+  /** The walk is complete and its completion opened the list already:
+   *  the list opens once per completion, and a walk no longer complete
+   *  (a skip undone) may open it again when it completes again. */
+  readonly completionSeen: boolean;
 }
+
+/** The sheet's two states (W4 build plan §1.5, §1.6). */
+export type WalkSheet = "peek" | "list";
 
 const initialVisitorWalkState: VisitorWalkState = {
   progress: null,
   lastSkip: null,
   note: null,
   quickArmedId: null,
+  sheet: "peek",
+  completionSeen: false,
 };
 
 /** A new walk (another tour, or the first): everything starts anew. */
@@ -104,6 +122,8 @@ export const skipUndone = createAction<{
 export const noteCleared = createAction("visitorWalk/noteCleared");
 /** The quick action asked for this station, or for none. */
 export const quickArmed = createAction<string | null>("visitorWalk/quickArmed");
+/** The visitor opened or closed the list. */
+export const sheetSet = createAction<WalkSheet>("visitorWalk/sheetSet");
 /** One guide call's changes, applied in order as one dispatch. */
 export const walkBatched = createAction<readonly UnknownAction[]>(
   "visitorWalk/walkBatched",
@@ -113,7 +133,31 @@ export const walkBatched = createAction<readonly UnknownAction[]>(
 function stepped(state: VisitorWalkState, step: WalkStep): VisitorWalkState {
   if (state.progress === null) return state;
   const { progress } = applyWalkStep(state.progress, step);
-  return progress === state.progress ? state : { ...state, progress };
+  return progress === state.progress
+    ? state
+    : withSheetRules(step, { ...state, progress });
+}
+
+/** The sheet's two changes that follow the walk (W4): a find whose story
+ *  starts closes the list, and the completion opens it once. */
+function withSheetRules(
+  step: WalkStep,
+  state: VisitorWalkState & { readonly progress: WalkProgress },
+): VisitorWalkState {
+  const complete = walkOffered(state.progress).length === 0;
+  if (complete && !state.completionSeen) {
+    return { ...state, sheet: "list", completionSeen: true };
+  }
+  const next =
+    complete === state.completionSeen
+      ? state
+      : { ...state, completionSeen: complete };
+  const storyStarts =
+    step.kind === "found" &&
+    walkStatus(state.progress, step.id)?.state === "found";
+  return storyStarts && next.sheet !== "peek"
+    ? { ...next, sheet: "peek" }
+    : next;
 }
 
 /**
@@ -163,6 +207,11 @@ export function visitorWalkReducer(
   if (noteCleared.match(action)) {
     return state.note === null ? state : { ...state, note: null };
   }
+  if (sheetSet.match(action)) {
+    return state.sheet === action.payload
+      ? state
+      : { ...state, sheet: action.payload };
+  }
   if (quickArmed.match(action)) {
     return state.quickArmedId === action.payload
       ? state
@@ -192,6 +241,16 @@ export function selectUndoableSkip(
     return null;
   }
   return { id: skip.id, atMs: skip.atMs };
+}
+
+/** The open tour's walk; null: no tour, or none placed yet. */
+export function selectWalkProgress(state: WithWalk): WalkProgress | null {
+  return state.visitorWalk.progress;
+}
+
+/** The sheet: its peek, or the list pulled up (W4 build plan M2). */
+export function selectWalkSheet(state: WithWalk): WalkSheet {
+  return state.visitorWalk.sheet;
 }
 
 /** The note of what just happened while its moment lasts at `nowMs`

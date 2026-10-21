@@ -278,6 +278,35 @@ playing) are inside `#ar-root`: the visitor stays in AR the whole tour
 them. `#relocate-note` ("Test mode: this tour was moved to where you
 are.") shows only when the test switch `?relocate=here` moved the tour
 (`tour-relocation.ts`).
+The visitor's walk in AR (visitor walk W4 build plan
+`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
+M2; the prototype `public/prototypes/visitor-walk-4-radar-and-list/`),
+all inside `#ar-root`: `#station-line` is visually hidden since M2 (the
+hidden copy the tests and a screen reader read; the sheet shows it in two
+lines); `#walk-coach` (`walk-coach`, its `data-look` spinner, sway or
+plain, and `walk-coach-text`); `#walk-toast-root` (`walk-toast-root`; the
+toast element `#walk-toast` is created in it); and the sheet
+`#walk-sheet` (`walk-sheet`, `data-sheet` peek or list, `data-complete`),
+which owns the grab `walk-grab`, the peek `walk-peek` (`walk-segments`,
+`walk-peek-row`, `walk-eyebrow`, `walk-title`, `walk-distance`,
+`walk-tail`, `walk-code-tail`, and `#station-skip` as its quick action),
+the story card `walk-story` (`#scene-panel` and its parts, `walk-dots`,
+`walk-story-acts` with `#scene-continue`, `story-end` (`#walk-story-end`)
+and `keep-listening`, then `#scene-play-next`), and the list `walk-list`
+(`walk-list-title`, `walk-chip`, `walk-close`, the completion card
+`walk-done` with `walk-done-title` and `walk-done-text`, `walk-progress`,
+`walk-rows` whose rows carry `walk-row`, `data-state`, `data-id` and a
+`walk-row-sub`, and `walk-list-foot` with `walk-exit`). In AR a visitor's
+`#enter-ar` is W4's round Exit button at the top left and `#ar-status`
+is visually hidden (kept for `data-state` and `?debug=1`). The scan
+card's found look is `#scan-card[data-look="found"]` (a check in its
+animation's place). On the start page, `#walk-away` (`walk-away`,
+`walk-away-text`, `walk-away-segments`, `walk-away-rows` with
+`walk-away-row` items) shows the progress after leaving AR. The walk's
+colours are `--walk-*` tokens on `html`; design.css's `.radar`,
+`.toast` and `.hint` classes are not used (plan §1.2). The walk's
+surfaces set `font-variant-numeric: lining-nums`, since the app font's
+old-style numerals shrink a row's number and a distance next to W4's.
 `#ar-debug` (a `<pre>` in `#ar-root`, hidden unless `?debug=1`) holds the
 QR readout (QR near-frontal pose plan §66).
 Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,

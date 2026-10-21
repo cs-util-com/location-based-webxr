@@ -14,6 +14,7 @@ import { guideTourChanged } from "./visitor-guide-slice";
 import {
   quickArmed,
   noteCleared,
+  sheetSet,
   selectNote,
   selectUndoableSkip,
   SKIP_UNDO_MS,
@@ -82,6 +83,8 @@ describe("visitorWalkReducer", () => {
       lastSkip: null,
       note: null,
       quickArmedId: null,
+      sheet: "peek",
+      completionSeen: false,
     });
     expect(walkOffered(progress(started("any")))).toEqual(["a", "b", "c"]);
     expect(walkOffered(progress(started("fixed")))).toEqual(["a"]);
@@ -289,6 +292,116 @@ describe("visitorWalkReducer", () => {
     expect(
       visitorWalkReducer(none, walkStepped({ kind: "found", id: "a" })),
     ).toBe(none);
+  });
+});
+
+describe("the sheet (W4 build plan M2, §1.5, §1.6)", () => {
+  // Why these tests matter: the sheet's peek / list is UI state in the
+  // store (root CLAUDE.md, the Redux rule), and two of its changes follow
+  // the walk rather than a tap - a story starting closes the list, and the
+  // tour's completion opens it once (W4). Done in the reducer, they hold
+  // for every writer of the walk, and a repeated completion does not open
+  // the list again over the visitor's own close.
+  it("opens and closes on a tap, and the same state when it is already so", () => {
+    const peek = started("any");
+    const list = visitorWalkReducer(peek, sheetSet("list"));
+    expect(list.sheet).toBe("list");
+    expect(visitorWalkReducer(list, sheetSet("list"))).toBe(list);
+    expect(visitorWalkReducer(list, sheetSet("peek")).sheet).toBe("peek");
+    expect(visitorWalkReducer(peek, sheetSet("peek"))).toBe(peek);
+  });
+
+  it("a story starting (a station found) closes the list; a station without steps does not", () => {
+    const list = visitorWalkReducer(started("any"), sheetSet("list"));
+    expect(
+      visitorWalkReducer(list, walkStepped({ kind: "found", id: "a" })).sheet,
+    ).toBe("peek");
+    const stepless = visitorWalkReducer(
+      visitorWalkReducer(
+        undefined,
+        walkStarted({
+          order: "any",
+          route: walkRoute([station("a", { steps: [] }), station("b")]),
+        }),
+      ),
+      sheetSet("list"),
+    );
+    expect(
+      visitorWalkReducer(stepless, walkStepped({ kind: "found", id: "a" }))
+        .sheet,
+    ).toBe("list");
+    // A find the rule refuses changes nothing, the sheet included.
+    expect(
+      visitorWalkReducer(list, walkStepped({ kind: "found", id: "zz" })),
+    ).toBe(list);
+  });
+
+  it("the completion opens the list once; closed by the visitor it stays closed", () => {
+    let state = started("fixed", [station("a"), station("b")]);
+    state = visitorWalkReducer(state, walkStepped({ kind: "found", id: "a" }));
+    state = visitorWalkReducer(state, walkStepped({ kind: "finish", id: "a" }));
+    expect(state.sheet).toBe("peek");
+    expect(state.completionSeen).toBe(false);
+    state = visitorWalkReducer(state, walkStepped({ kind: "skip", id: "b" }));
+    expect(state.sheet).toBe("list");
+    expect(state.completionSeen).toBe(true);
+    state = visitorWalkReducer(state, sheetSet("peek"));
+    // Another change to a complete walk (a clock, a settle) opens nothing.
+    state = visitorWalkReducer(state, skipSettled());
+    expect(state.sheet).toBe("peek");
+  });
+
+  it("a completion undone and reached again opens the list again (once per completion)", () => {
+    let state = started("any", [station("a")]);
+    state = visitorWalkReducer(state, walkStepped({ kind: "skip", id: "a" }));
+    expect(state.sheet).toBe("list");
+    state = visitorWalkReducer(state, sheetSet("peek"));
+    state = visitorWalkReducer(state, walkStepped({ kind: "unskip", id: "a" }));
+    expect(state.completionSeen).toBe(false);
+    expect(state.sheet).toBe("peek");
+    state = visitorWalkReducer(state, walkStepped({ kind: "skip", id: "a" }));
+    expect(state.sheet).toBe("list");
+  });
+
+  it("a new walk starts on the peek", () => {
+    const list = visitorWalkReducer(started("any"), sheetSet("list"));
+    expect(
+      visitorWalkReducer(
+        list,
+        walkStarted({ order: "any", route: walkRoute(TOUR) }),
+      ).sheet,
+    ).toBe("peek");
+  });
+
+  it("over any sequence of steps the list is open after a completion unless closed since", () => {
+    const steps = fc.constantFrom(
+      ...["a", "b", "c"].flatMap((id) => [
+        walkStepped({ kind: "found", id }),
+        walkStepped({ kind: "finish", id }),
+        walkStepped({ kind: "skip", id }),
+        walkStepped({ kind: "unskip", id }),
+      ]),
+    );
+    fc.assert(
+      fc.property(
+        fc.constantFrom<TourOrder>("any", "fixed", "branch"),
+        fc.array(steps, { maxLength: 14 }),
+        (order, actions) => {
+          let state = started(order);
+          for (const action of actions) {
+            const before = state;
+            state = visitorWalkReducer(state, action);
+            const complete = walkOffered(progress(state)).length === 0;
+            const wasComplete = walkOffered(progress(before)).length === 0;
+            expect(state.completionSeen).toBe(complete);
+            // A completion just reached opens the list.
+            expect(complete && !wasComplete && state.sheet !== "list").toBe(
+              false,
+            );
+          }
+        },
+      ),
+    );
   });
 });
 

@@ -67,6 +67,8 @@ import {
 import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
 import { wireVisitorStations } from "./visitor-stations.js";
+import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
+import { createWalkToast } from "./walk-toast.js";
 import { relocationRequested } from "./tour-relocation.js";
 import { tourCodesUsable, wireVisitorScreen } from "./visitor-screen.js";
 import { wireVisitorStart } from "./visitor-start.js";
@@ -840,7 +842,17 @@ hooks.startScanGate = viewer.startScanGate;
 hooks.resetScanGate = viewer.resetScanGate;
 hooks.reconsiderScanGate = viewer.reconsiderScanGate;
 
-// The visitor's stations and their stories (tour kit plan K4).
+// The visitor's toast in AR (visitor walk W4 build plan M2, §1.4): the
+// framework's one toast, its news said once per AR entry.
+const walkToast = createWalkToast(
+  createToast(element("walk-toast-root"), {
+    className: "walk-toast",
+    id: "walk-toast",
+  }),
+);
+
+// The visitor's stations and their stories (tour kit plan K4), and the
+// walk's sheet (W4 build plan M2).
 const stations = wireVisitorStations({
   ctx,
   mode,
@@ -850,6 +862,8 @@ const stations = wireVisitorStations({
     guide: {
       line: element("station-line"),
       skip: element("station-skip"),
+      // The end of a story is the story card's control (W4).
+      end: element("walk-story-end"),
     },
     scene: {
       panel: element("scene-panel"),
@@ -869,6 +883,49 @@ const stations = wireVisitorStations({
   },
   now: () => Date.now(),
   schedule: (fn, ms) => seams.schedule(fn, ms),
+  walk: {
+    dom: {
+      doc: document,
+      root: element("walk-sheet"),
+      grab: element("walk-grab"),
+      peek: element("walk-peek"),
+      segments: element("walk-segments"),
+      eyebrow: element("walk-eyebrow"),
+      title: element("walk-title"),
+      distance: element("walk-distance"),
+      tail: element("walk-tail"),
+      quick: element("station-skip"),
+      story: element("walk-story"),
+      dots: element("walk-dots"),
+      storyEnd: element("walk-story-end"),
+      keepListening: element("walk-keep-listening"),
+      list: element("walk-list"),
+      listTitle: element("walk-list-title"),
+      chip: element("walk-chip"),
+      close: element("walk-close"),
+      done: element("walk-done"),
+      doneTitle: element("walk-done-title"),
+      doneText: element("walk-done-text"),
+      progress: element("walk-progress"),
+      rows: element("walk-rows"),
+      foot: element("walk-list-foot"),
+      exit: element("walk-exit"),
+      away: {
+        root: element("walk-away"),
+        text: element("walk-away-text"),
+        segments: element("walk-away-segments"),
+        rows: element("walk-away-rows"),
+      },
+    },
+    toast: walkToast,
+    // In AR the entry button is the way out (U2): the same teardown.
+    exitAr: () => {
+      element("enter-ar").click();
+    },
+    onShownChange: () => {
+      hooks.renderArStatus();
+    },
+  },
   // The test switch ?relocate=here (tour-relocation.ts, owner decision S-D9).
   ...(relocationRequested(location.search)
     ? {
@@ -924,8 +981,19 @@ const arEntry = wireArEntry({
     arStatusLive: element("ar-status-live"),
     scanCard: element("scan-card"),
     scanCardLine: element("scan-card-line"),
+    scanCardTitle: element("scan-card-title"),
+    coach: {
+      root: element("walk-coach"),
+      text: element("walk-coach-text"),
+    },
+    codeTail: element("walk-code-tail"),
   },
   hooks,
+  walk: {
+    toast: walkToast,
+    progressKept: () => mode === "visitor" && stations.progressKept(),
+    sheetShown: () => stations.walkShown(),
+  },
   ...(recordingPanel === null ? {} : { recording: recordingPanel }),
 });
 hooks.renderArStatus = arEntry.renderArStatus;

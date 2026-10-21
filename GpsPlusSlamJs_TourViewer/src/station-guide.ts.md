@@ -522,3 +522,27 @@ store.subscribe(() => guide.tick());
 - `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
   tracking-quality slice (L3).
 - `playwright-tests/stations.spec.js` - the whole flow on the page.
+
+## What the sheet reads (visitor walk W4 build plan M2)
+
+- `view(): GuideView | null` - `{ focusId, position, accuracyM,
+distances, quick, note }`: the line's station, how the position stands
+  (`GuidePositionKind`: pending, weak, none, distance - the same
+  classification `lineText` uses, `positionKind`), the fixes' accuracy
+  behind `weak`, every placeable station's distance, what the quick
+  action shows (`rendered`, so a tap does what the label showed) and the
+  note while its moment lasts. Null while the guide does not run.
+- `StationGuideDom.end?` - the story card's end control. Given, the
+  "End this story?" / "End this story" labels go there and the skip
+  button is hidden meanwhile; absent, the skip button carries them as
+  before.
+- `cancelAsk()` - "Keep listening": the ask is disarmed.
+- `completionLine(order, skipped)` exported: the completion card reuses
+  the line's words.
+- **No stale line while the scan gate is shut** (plan §10 follow-up):
+  `render()` hides the line, the skip button and the end control whenever
+  the guide does not run (`running()`: a live run and placement allowed),
+  and `view()` is null then.
+- Tests: `station-guide.view.test.ts` (the view per position kind, the
+  quick action, the note, the end control and Keep listening, the stale
+  line); `walk-sheet-model.property.test.ts` drives the real guide.

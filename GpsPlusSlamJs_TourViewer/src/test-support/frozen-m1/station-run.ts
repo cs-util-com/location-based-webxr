@@ -61,30 +61,12 @@ interface StationStatus {
   readonly focusDistanceM: number | null;
 }
 
-export type StationEvent =
+type StationEvent =
   | { readonly kind: "found"; readonly id: string }
   | { readonly kind: "done"; readonly id: string; readonly skipped: boolean }
   /** The offered set changed; the full new set. */
   | { readonly kind: "offered"; readonly ids: readonly string[] }
   | { readonly kind: "complete" };
-
-/**
- * A station's name - the package's one rule for it (plan 2026-10-15-0348
- * M0), for the visitor's lines and the editor's rail, map and warnings
- * alike: its trimmed title; an untitled (or blank) station is "Station N"
- * by its 1-based `number` in the story where the caller knows it, else
- * "the next station".
- */
-export function stationTitle(
-  station: Pick<TourStation, "title">,
-  number?: number,
-): string {
-  const title = station.title?.trim() ?? "";
-  if (title !== "") return title;
-  return number === undefined
-    ? "the next station"
-    : `Station ${String(number)}`;
-}
 
 /**
  * The skip suggestion's fixed allowance: time to read the line, turn

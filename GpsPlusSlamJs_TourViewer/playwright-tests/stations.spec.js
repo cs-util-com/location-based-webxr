@@ -112,8 +112,9 @@ test("a station tour: the visitor at the code finds the first station, its knigh
     )
     .toEqual({ elements: 1, plays: 2 }); // the unlock, then the voice
 
-  // While the story plays, the skip button can end it (K4 review R9).
-  await expect(page.getByTestId("station-skip")).toHaveText("End this story?");
+  // While the story plays, the story card can end it (K4 review R9; the
+  // control moved from the skip button to the card, W4 build plan M2).
+  await expect(page.getByTestId("story-end")).toHaveText("End this story?");
 
   // A scene choice.
   await page.getByTestId("scene-continue").click();

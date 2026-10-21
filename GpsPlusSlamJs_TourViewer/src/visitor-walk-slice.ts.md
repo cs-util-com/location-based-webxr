@@ -27,7 +27,11 @@ the chooser, the chosen target and the row arm here.
   - `note: { kind: "skipped" | "brought-back", id, atMs } | null` - the
     station line's lead ("Skipped X.", "Brought back X.");
   - `quickArmedId: string | null` - "Can't get there?" asked for this
-    station; the next tap confirms.
+    station; the next tap confirms;
+  - `sheet: "peek" | "list"` (`WalkSheet`, M2) - the sheet's peek, or the
+    list pulled up;
+  - `completionSeen: boolean` (M2) - the walk is complete and its
+    completion opened the list already.
 - Actions (all `visitorWalk/*`):
   - `walkStarted({ order, route })` - a new walk (`route` from
     `walkRoute(stations)`): everything else starts anew;
@@ -38,6 +42,8 @@ the chooser, the chosen target and the row arm here.
   - `skipUndone({ id, atMs })` - the last skip is gone, the bring back noted;
   - `noteCleared()`;
   - `quickArmed(id | null)`;
+  - `sheetSet("peek" | "list")` (M2) - the visitor opened or closed the
+    list;
   - `walkBatched(actions)` - one guide call's changes, applied in order as
     ONE dispatch;
   - and the guide slice's `guideTourChanged()` resets it too.
@@ -49,6 +55,8 @@ the chooser, the chosen target and the row arm here.
 - `selectUndoableSkip(state, nowMs)` - `{ id, atMs }` of the last skip
   while it can be undone at `nowMs` (not settled, inside its window),
   else null.
+- `selectWalkProgress(state)`, `selectWalkSheet(state)` (M2) - the walk
+  and the sheet, for `visitor-stations.ts`.
 - `selectNote(state, nowMs)` - the note while its window lasts at
   `nowMs`, else null. Both take the page's state (`{ visitorWalk }`), so
   the guide's button and line and any other view (the sheet of M2) read
@@ -75,6 +83,11 @@ the chooser, the chosen target and the row arm here.
   cannot reorder a recording (lessons-learned: never dispatch a persisted
   action from `store.subscribe`). A recording therefore replays no walk,
   as it replays no `visitorGuide`.
+- **The sheet's two rules live in the reducer** (M2, plan §1.5, §1.6):
+  the step that completes the walk opens the list, once per completion
+  (`completionSeen`; a skip undone makes the walk incomplete again, and
+  completing it again opens the list again); a station found closes the
+  list, so its story card takes the peek's place.
 - Plain, serializable data only; no three.js handles, no DOM, no timers.
 - **Defensive:** a step for an id the tour does not have, or before a walk
   started, changes nothing; `startWalk` reads only ids, `next` links that
@@ -105,7 +118,10 @@ walkOffered(store.getState().visitorWalk.progress!); // the rest
   persisted control action); the windows of `selectUndoableSkip` and
   `selectNote` (inside, at their end, settled, undone; a property over any
   time for the note) and `SKIP_UNDO_MS` as the toast linger, the one value
-  the guide names too.
+  the guide names too; the sheet (M2): `sheetSet`, the completion opening
+  the list once, a find closing it, and a property over random steps that
+  `completionSeen` follows completeness and a completion just reached
+  opens the list.
 - `station-run.differential.property.test.ts` - the run's calls through a
   store of this slice against the frozen run.
 - `station-guide.walk-store.test.ts` - the guide on this slice: events

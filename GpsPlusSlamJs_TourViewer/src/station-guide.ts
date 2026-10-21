@@ -139,6 +139,44 @@ import {
 export interface StationGuideDom {
   readonly line: Pick<HTMLElement, "textContent" | "hidden">;
   readonly skip: Pick<HTMLElement, "textContent" | "hidden">;
+  /** The story card's end control (W4 build plan M2, §1.5): when given,
+   *  "End this story?" and its confirm are written here and the skip
+   *  button stays hidden meanwhile; absent, the skip button carries them. */
+  readonly end?: Pick<HTMLElement, "textContent" | "hidden">;
+}
+
+/** What a tap on the skip button (or the story card's end control) does;
+ *  its label says which. */
+export interface SkipAction {
+  readonly kind: "ask-skip" | "skip" | "ask-end" | "end" | "undo";
+  readonly id: string;
+}
+
+/**
+ * The position the line speaks of (`lineText`), for the sheet's peek and
+ * rows (W4 build plan M2): no position yet (`pending`), GPS too weak to
+ * guide by (`weak`, with its accuracy), nothing vouching for it (`none`),
+ * or a distance.
+ */
+type GuidePositionKind = "pending" | "weak" | "none" | "distance";
+
+/** What the sheet reads of the guide (W4 build plan M2): the station the
+ *  line is about, the position's kind, every station's distance and the
+ *  quick action shown. */
+export interface GuideView {
+  /** The nearest offered station not yet found (the line's station);
+   *  null when none is (a story plays, or the tour is complete). */
+  readonly focusId: string | null;
+  readonly position: GuidePositionKind;
+  /** The fixes' accuracy behind `weak`, m; null otherwise. */
+  readonly accuracyM: number | null;
+  /** Every placeable station's horizontal distance, m (the measurement's). */
+  readonly distances: ReadonlyMap<string, number>;
+  /** What the skip button (or the card's end control) shows now. */
+  readonly quick: SkipAction | null;
+  /** What just happened ("Skipped The well."), while its moment lasts
+   *  (`selectNote`); null otherwise. W4 says it in a toast. */
+  readonly note: string | null;
 }
 
 /** The open tour's stations, as the guide reads them each tick. */
@@ -230,8 +268,13 @@ export interface StationGuide {
   codeLocked(): void;
   /** A station's story played to its end. */
   storyEnded(stationId: string): void;
-  /** The skip button. */
+  /** The skip button (or the story card's end control). */
   skipTapped(): void;
+  /** "Keep listening": the ask to end the story is taken back. */
+  cancelAsk(): void;
+  /** What the sheet reads (W4 build plan M2); null while the guide does
+   *  not run (no run, or the scan gate shut). */
+  view(): GuideView | null;
   /** The AR session ended: the HUD goes; the progress stays. */
   endSession(): void;
   /** A station's pose at the scene root, or null (no zero yet). */
@@ -307,12 +350,6 @@ interface Judgement {
   readonly precision: PositionPrecision;
 }
 
-/** What a tap on the skip button does (its label says which). */
-interface SkipAction {
-  readonly kind: "ask-skip" | "skip" | "ask-end" | "end" | "undo";
-  readonly id: string;
-}
-
 /**
  * The `count` items nearest by `distanceOf` (undefined: farthest), kept
  * in their own order; ties go to the earlier item. Exported for the HUD's
@@ -332,6 +369,23 @@ export function nearestOf<T>(
       .map((e) => e.index),
   );
   return items.filter((_, index) => keep.has(index));
+}
+
+/**
+ * The line once the tour is complete (the sheet's completion card names it
+ * too, W4 build plan M2). A branch tour ends with its path; the other
+ * branches' stations were never offered, so "every station" would be false
+ * (R16).
+ */
+export function completionLine(order: TourOrder, skipped: number): string {
+  if (order === "branch") {
+    return skipped === 0
+      ? "Tour complete - you reached the end of your path."
+      : `Tour complete - you reached the end of your path, ${String(skipped)} skipped.`;
+  }
+  return skipped === 0
+    ? "Tour complete - every station visited."
+    : `Tour complete - ${String(skipped)} skipped.`;
 }
 
 /** Whole metres: GPS-guided distances are not more precise than that. */
@@ -791,16 +845,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (run === null) return "";
     if (run.isComplete()) {
       const skipped = run.statuses().filter((s) => s.skipped).length;
-      // A branch tour ends with its path; the other branches' stations
-      // were never offered, so "every station" would be false (R16).
-      if (deps.tour()?.order === "branch") {
-        return skipped === 0
-          ? "Tour complete - you reached the end of your path."
-          : `Tour complete - you reached the end of your path, ${String(skipped)} skipped.`;
-      }
-      return skipped === 0
-        ? "Tour complete - every station visited."
-        : `Tour complete - ${String(skipped)} skipped.`;
+      return completionLine(deps.tour()?.order ?? "any", skipped);
     }
     const note = noteText();
     const lead = note === null ? "" : `${note} `;
@@ -813,32 +858,62 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const which = offered > 1 ? `${String(offered)} stations to find` : null;
     const waiting =
       which === null ? `Next: ${title}` : `${which} - nearest: ${title}`;
-    if (last === null) return `${lead}${waiting} - waiting for your position…`;
-    // Before the position: a fix too weak to guide by is what the visitor
-    // can act on (step into the open), with a position or still without.
-    const { precision } = last;
+    switch (positionKind(last, d)) {
+      case "pending":
+        return `${lead}${waiting} - waiting for your position…`;
+      case "weak":
+        return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(last!.precision.accuracyM!)}); step into the open.`;
+      case "none":
+        return `${lead}${which ?? `Next: ${title}`} - ${NO_PRECISION_HINT}`;
+      case "distance":
+        return `${lead}${waiting}, ${distanceText(d!)}`;
+    }
+  }
+
+  /**
+   * What the line says of the position, `d` being the focus's distance
+   * (the one rule of `lineText` and `view`):
+   * - no measurement yet: pending;
+   * - before the position, a fix too weak to guide by, which the visitor
+   *   can act on (step into the open), with a position or still without;
+   * - no position, or no distance yet (every station has a spot of its
+   *   own, version 3, D9: no distance means no session zero to measure it
+   *   in yet): pending;
+   * - no code and no accuracy speaks for the position (without location
+   *   once a code's trust ended): none - no distance that looks measured,
+   *   no "nearest" by that position, and the one thing that helps;
+   * - otherwise the distance.
+   */
+  function positionKind(
+    m: Measurement | null,
+    d: number | undefined,
+  ): GuidePositionKind {
+    if (m === null) return "pending";
+    const { precision } = m;
     if (
       precision.source === "gps" &&
       precision.tooWeak &&
       precision.accuracyM !== null
     ) {
-      return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(precision.accuracyM)}); step into the open.`;
+      return "weak";
     }
-    if (last.best === null) {
-      return `${lead}${waiting} - waiting for your position…`;
-    }
-    // Every station has a spot of its own (version 3, D9): no distance
-    // yet means no session zero to measure it in yet.
-    if (d === undefined) {
-      return `${lead}${waiting} - waiting for your position…`;
-    }
-    // No code and no accuracy speaks for the position (without location
-    // once a code's trust ended): no distance that looks measured, no
-    // "nearest" by that position, and the one thing that helps.
-    if (unjudged(last)) {
-      return `${lead}${which ?? `Next: ${title}`} - ${NO_PRECISION_HINT}`;
-    }
-    return `${lead}${waiting}, ${distanceText(d)}`;
+    if (m.best === null || d === undefined) return "pending";
+    if (unjudged(m)) return "none";
+    return "distance";
+  }
+
+  /** Whether the guide runs now: a run, and the scan gate open. */
+  function running(): boolean {
+    return liveRun() !== null && deps.placementAllowed();
+  }
+
+  /** Nothing to show: the line, the button and the card's end control go,
+   *  and a tap that still arrives does nothing. */
+  function hideAll(): void {
+    show(dom.line, "");
+    show(dom.skip, "");
+    if (dom.end !== undefined) show(dom.end, "");
+    rendered = null;
   }
 
   /** Write a text only when it changed (R13: the line is a polite live
@@ -853,6 +928,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   function render(): void {
+    // A tap or a story's end while the scan gate is shut (a later AR
+    // entry waiting behind its own scan) writes nothing (W4 build plan
+    // §10, the stale line): the next frame would only hide it again.
+    if (!running()) {
+      hideAll();
+      return;
+    }
     // A code lock can find a station before the guide has ticked at all.
     if (last === null) measure();
     // An unjudged position lays no trail: with no visitor there is none.
@@ -873,7 +955,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (skip !== null && deps.now() >= skip.atMs + SKIP_UNDO_MS) settleUndo();
     show(dom.line, lineText());
     rendered = skipAction();
-    show(dom.skip, rendered === null ? "" : skipLabel(rendered));
+    const label = rendered === null ? "" : skipLabel(rendered);
+    // The end control lives on the story card when the page has one.
+    const onCard =
+      dom.end !== undefined &&
+      (rendered?.kind === "ask-end" || rendered?.kind === "end");
+    show(dom.skip, onCard ? "" : label);
+    if (dom.end !== undefined) show(dom.end, onCard ? label : "");
   }
 
   /** What the skip button offers now. The station in focus starts its skip
@@ -968,8 +1056,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     // created (K4 review R8): a later AR session waits behind its own.
     // The run is fetched anew after each callback below (`liveRun`).
     if (current === null || !deps.placementAllowed()) {
-      show(dom.line, "");
-      show(dom.skip, "");
+      hideAll();
       deps.onGuide?.(null, null);
       publishPresence(null, null);
       publishHeadingPending(false);
@@ -1066,6 +1153,35 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     skipTapped() {
       inCall(skipTapped);
     },
+    cancelAsk() {
+      inCall(() => {
+        if (liveRun() === null) return;
+        disarm();
+        render();
+      });
+    },
+    view() {
+      if (!running()) return null;
+      const focusId = focusStation();
+      const distances = last?.distances ?? new Map<string, number>();
+      // Without a focus (a story plays, the tour is complete) any
+      // distance speaks for the position.
+      const d =
+        focusId !== null
+          ? distances.get(focusId)
+          : distances.size > 0
+            ? 0
+            : undefined;
+      const position = positionKind(last, d);
+      return {
+        focusId,
+        position,
+        accuracyM: position === "weak" ? last!.precision.accuracyM : null,
+        distances,
+        quick: rendered,
+        note: noteText(),
+      };
+    },
 
     endSession() {
       hud?.dispose();
@@ -1083,6 +1199,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       deps.onGuide?.(null, null);
       dom.line.hidden = true;
       dom.skip.hidden = true;
+      if (dom.end !== undefined) dom.end.hidden = true;
     },
     poseOf,
     figurePoseOf: (stationId) => (headingReady ? poseOf(stationId) : null),

@@ -89,6 +89,8 @@ function harness(
     request?: () => Promise<unknown>;
     copyText?: (text: string) => Promise<void>;
     meshCursor?: boolean;
+    progressKept?: boolean;
+    sheetShown?: () => boolean;
   } = {},
 ) {
   // The entry flags a running session on `document.body.dataset`; the
@@ -137,6 +139,25 @@ function harness(
     arStatusLive: el(),
     scanCard: el(),
     scanCardLine: el(),
+    scanCardTitle: el(),
+    coach: { root: el(), text: el() },
+    codeTail: el(),
+  };
+  /** What the walk's toast was asked to say, and its resets. */
+  const toasts: string[] = [];
+  const toastResets = vi.fn();
+  const said = new Set<string>();
+  const walkToast = {
+    say: (text: string) => toasts.push(text),
+    sayOnce: (text: string) => {
+      if (said.has(text)) return;
+      said.add(text);
+      toasts.push(text);
+    },
+    reset: () => {
+      said.clear();
+      toastResets();
+    },
   };
   const arStore = createTourViewerStore();
   const seams = {
@@ -190,6 +211,13 @@ function harness(
     ...(options.meshCursor === undefined
       ? {}
       : { meshCursor: options.meshCursor }),
+    walk: {
+      toast: walkToast,
+      progressKept: () => options.progressKept === true,
+      ...(options.sheetShown === undefined
+        ? {}
+        : { sheetShown: options.sheetShown }),
+    },
   });
   return {
     ctx,
@@ -200,6 +228,8 @@ function harness(
     arStore,
     seams,
     arController,
+    toasts,
+    toastResets,
     enabledConfig: () => enabled,
     meshSurface,
     setArStatus(status: string) {
@@ -1273,3 +1303,133 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     expect(h.dom.arStatus.textContent).not.toContain("Walk a few steps");
   });
 });
+
+describe("the walk's surfaces in AR (visitor walk W4 build plan M2, §1.4)", () => {
+  // Why: W4 has no status line over the camera. Each state of the
+  // visitor's sentence goes to one surface - the coach, the scan card,
+  // a toast said once, the peek's code line - and the sentence itself stays
+  // on #ar-status (data-state, the tests) and its live copy. A wrong route
+  // leaves the visitor without a word, or says news sixty times a second.
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function placedVisitor(gate: TourViewerSessionGate) {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.scanGate = gate;
+    h.ctx.stationContent = {
+      has: () => true,
+      shown: () => ({ count: 2, skipped: [] }),
+      showsAny: () => true,
+    } as never;
+    return h;
+  }
+
+  it("a short wait is the coach's, with its spinner, and the coach goes when the walk speaks", () => {
+    const h = harness({ arStatus: "starting" });
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("starting");
+    expect(h.dom.coach.root.hidden).toBe(false);
+    expect(h.dom.coach.root.dataset["look"]).toBe("spinner");
+    expect(h.dom.coach.text.textContent).toBe("Starting AR…");
+    // The sentence is still announced whole.
+    expect(h.dom.arStatusLive.textContent).toBe("Starting AR…");
+    const placed = placedVisitor({ kind: "passed", via: "code" });
+    placed.ctx.viewerLockedText = "c";
+    placed.ctx.viewerVotedLocks = 3;
+    placed.entry.renderArStatus();
+    expect(placed.dom.arStatus.dataset["state"]).toBe("placed");
+    expect(placed.dom.coach.root.hidden).toBe(true);
+    expect(placed.dom.coach.text.textContent).toBe("");
+  });
+
+  it("a code that passed the gate turns the card to its found look until the tour is placed", () => {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.scanGate = { kind: "passed", via: "code" };
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("locking");
+    expect(h.dom.scanCard.hidden).toBe(false);
+    expect(h.dom.scanCard.dataset["look"]).toBe("found");
+    expect(h.dom.scanCardTitle.textContent).toBe(
+      "Code found - placing the tour…",
+    );
+    expect(h.dom.scanCardLine.textContent).toBe("");
+    expect(h.dom.coach.root.hidden).toBe(true);
+    // The gate waiting again (a new entry) is the scan look, its title kept.
+    h.ctx.scanGate = { kind: "scanning", escapeOffered: false };
+    h.entry.renderArStatus();
+    expect(h.dom.scanCard.dataset["look"]).toBe("scan");
+    expect(h.dom.scanCardTitle.textContent).toBe(
+      "Scan the code again so the tour can start",
+    );
+  });
+
+  it("a GPS placement's reason is a toast said once per entry, its code request the peek's line", () => {
+    const h = placedVisitor({ kind: "passed", via: "skipped" });
+    h.entry.renderArStatus();
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("placed-gps");
+    expect(h.toasts).toEqual(["Tour placed by GPS (less exact)"]);
+    expect(h.dom.codeTail.hidden).toBe(false);
+    expect(h.dom.codeTail.textContent).toBe(
+      "Find the poster's code to line it up.",
+    );
+    expect(h.dom.coach.root.hidden).toBe(true);
+  });
+
+  it("news is said in AR only, never on the start page", () => {
+    const h = placedVisitor({ kind: "passed", via: "skipped" });
+    h.setArStatus("ready");
+    h.entry.renderArStatus();
+    expect(h.toasts).toEqual([]);
+    expect(h.dom.coach.root.hidden).toBe(true);
+  });
+
+  it("a creator keeps the line: no coach, no toast", () => {
+    const h = harness({ arStatus: "starting", mode: "creator" });
+    h.entry.renderArStatus();
+    expect(h.dom.coach.root.dataset["look"]).toBeUndefined();
+    expect(h.dom.coach.text.textContent).toBe("");
+    expect(h.toasts).toEqual([]);
+  });
+
+  it("the toast goes with the session, so the next entry may say its news again", async () => {
+    const h = harness({ arStatus: "ready" });
+    await h.enterAndEnd();
+    expect(h.toastResets).toHaveBeenCalledTimes(1);
+  });
+
+  it("a placement wait gives way to the walk once its sheet shows (a tour of stories places nothing)", () => {
+    // Why: `contentStatus` reads "placed" only when station content
+    // stands in the scene, so a tour whose stations hold only stories stays
+    // at "Code found - placing the tour…" for good; the found card would
+    // then stand over the walk the visitor is already on.
+    let sheet = false;
+    const h = harness({ arStatus: "running", sheetShown: () => sheet });
+    h.ctx.session = {} as never;
+    h.ctx.scanGate = { kind: "passed", via: "code" };
+    h.entry.renderArStatus();
+    expect(h.dom.scanCard.hidden).toBe(false);
+    sheet = true;
+    h.entry.renderArStatus();
+    // The sentence itself is kept (data-state, the live region).
+    expect(h.dom.arStatus.dataset["state"]).toBe("locking");
+    expect(h.dom.scanCard.hidden).toBe(true);
+    expect(h.dom.coach.root.hidden).toBe(true);
+  });
+
+  it("a visitor who left AR with progress is offered 'Back to the tour'", () => {
+    expect(harness({ progressKept: true }).dom.enterArButton.textContent).toBe(
+      "Back to the tour",
+    );
+    expect(harness({ progressKept: false }).dom.enterArButton.textContent).toBe(
+      "Start the tour",
+    );
+  });
+});
+
+type TourViewerSessionGate = ReturnType<
+  typeof createTourViewerSession
+>["scanGate"];
