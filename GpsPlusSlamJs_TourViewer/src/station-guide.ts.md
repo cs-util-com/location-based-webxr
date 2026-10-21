@@ -389,11 +389,17 @@ store.subscribe(() => guide.tick());
   session ends, tour changes and the scan gate; the line, the button, every
   callback, the HUD's targets, the breadcrumbs, presence, the heading wait
   and the figure's pose equal after every call, and with the page's
-  re-entering subscription equal once the page settled.
+  re-entering subscription equal once the page settled - the live guide
+  settled before the frozen one's extra frames, which change nothing it
+  shows or decided (it may run ahead, never lag behind); coverage counts
+  include the skip clock running out on a walk ("Can't get there?" to
+  "Skip ...").
 - `station-guide.walk-store.test.ts` (W4 M1) - on the page's store: no walk
   dispatch over frames without an event; one batch per call, last, with the
-  line already written from it; the R9 property through the store with the
-  subscription re-entering.
+  line already written from it, and none on a second tick with the same
+  inputs in every steady state (the skip asked, a note run out, GPS too
+  weak, a story playing, the tour complete; each counted as reached); the
+  R9 property through the store with the subscription re-entering.
 - `station-guide.parity.test.ts` - also reproduces its golden through the
   page's store with the subscription re-entering (W4 M1).
 

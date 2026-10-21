@@ -256,6 +256,22 @@ describe("createStationRun: offering", () => {
     expect(run.isComplete()).toBe(true);
   });
 
+  it("branch: a station whose next is itself, skipped, hands on to the next undone station; the tour goes on", () => {
+    // Why this test matters: the branch's next is read after the station
+    // is done. Read before, a station pointing at itself points at a
+    // station still undone - itself - which is done a moment later, and
+    // the tour reads complete with b never offered.
+    const run = createStationRun({
+      stations: [station("a", { next: "a" }), station("b")],
+      order: "branch",
+      nowMs: 0,
+    });
+    expect(run.offered()).toEqual(["a"]);
+    run.skip("a", 1);
+    expect(run.offered()).toEqual(["b"]);
+    expect(run.isComplete()).toBe(false);
+  });
+
   it("names the station that comes next while the current one's story plays (fixed and branch; R5)", () => {
     // Why this test matters (K4 review R5): under a fixed order the next
     // station is offered only once the current is done, so a prefetch keyed

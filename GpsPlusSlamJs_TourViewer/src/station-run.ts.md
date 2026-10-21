@@ -140,7 +140,8 @@ run.finish("gate", nowMs); // done, the next station offered
 - `visitor-walk-slice.test.ts` - each step's guard through the reducer.
 
 - `station-run.test.ts` - each transition, the radius alone (at the radius
-  yes, a centimetre beyond no), non-finite distances, the empty station, each order preset, the skip,
+  yes, a centimetre beyond no), non-finite distances, the empty station, each order preset (a branch
+  station whose next is itself, skipped, hands on: its next is read after it is done), the skip,
   the suggestion clock; properties: no deadlock and completion within one
   action per station for every preset, a done station never offered and
   never changed; `stationTitle`: the trimmed title, "Station N" by its

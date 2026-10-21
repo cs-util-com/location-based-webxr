@@ -58,14 +58,19 @@ function station(
   };
 }
 
-function at(north: number, east: number, nowMs: number): VisitorPosition {
+function at(
+  north: number,
+  east: number,
+  nowMs: number,
+  accuracyM = 4,
+): VisitorPosition {
   return {
     nue: [north, 401.5, east],
-    gpsPoints: fixesAt(4),
+    gpsPoints: fixesAt(accuracyM),
     fixNue: [north, 400, east],
     aligned: true,
     fixAtMs: nowMs,
-    fixAccuracyM: 4,
+    fixAccuracyM: accuracyM,
   };
 }
 
@@ -138,9 +143,9 @@ function onThePage(
     found,
     dispatched,
     atBatch,
-    move(north: number, east: number, dtMs = 1_000) {
+    move(north: number, east: number, dtMs = 1_000, accuracyM = 4) {
       now += dtMs;
-      visitor = at(north, east, now);
+      visitor = at(north, east, now, accuracyM);
     },
   };
 }
@@ -214,13 +219,17 @@ describe("the station guide on the page's store (W4 M1)", () => {
 
   // Why (plan §3 M1): every guide call - a tick, a tap, a story's end -
   // sends at most one walk dispatch, a batch, and sends it after every
-  // other dispatch of that call.
-  it("sends at most one walk batch per call, after the call's other dispatches, whatever the visitor does", () => {
+  // other dispatch of that call. And a walk that has settled stays quiet:
+  // a second tick on the same inputs dispatches nothing to the walk in any
+  // steady state (the skip asked, a note run out, GPS too weak, a story
+  // playing, the tour complete), each of which the walks reach.
+  it("sends at most one walk batch per call, after the call's other dispatches, and none on a repeated tick, whatever the visitor does", () => {
     const callArb = fc.oneof(
       fc.record({
         kind: fc.constant("move" as const),
         near: fc.integer({ min: -1, max: 2 }),
         dtMs: fc.constantFrom(0, 1_000, 7_000, 130_000),
+        accuracyM: fc.constantFrom(4, 4, 4, 40),
       }),
       fc.constant({ kind: "skip" as const }),
       fc.record({
@@ -228,6 +237,13 @@ describe("the station guide on the page's store (W4 M1)", () => {
         station: fc.integer({ min: 0, max: 2 }),
       }),
     );
+    const steady = {
+      armed: 0,
+      noteRunOut: 0,
+      weakGps: 0,
+      story: 0,
+      complete: 0,
+    };
     fc.assert(
       fc.property(
         fc.constantFrom<TourOrder>("any", "fixed", "branch"),
@@ -246,7 +262,7 @@ describe("the station guide on the page's store (W4 M1)", () => {
             page.dispatched.length = 0;
             if (call.kind === "move") {
               const [n, e] = spots[call.near] ?? [300, 300];
-              page.move(n + 1, e, call.dtMs);
+              page.move(n + 1, e, call.dtMs, call.accuracyM);
               page.guide.tick();
             } else if (call.kind === "skip") {
               page.guide.skipTapped();
@@ -259,11 +275,35 @@ describe("the station guide on the page's store (W4 M1)", () => {
               walk.length === 0 ||
                 page.dispatched.at(-1) === "visitorWalk/walkBatched",
             ).toBe(true);
+            // The page's next frame (a tap is not one), then a second on
+            // the same inputs: the walk has settled.
+            if (call.kind !== "move") page.guide.tick();
+            page.dispatched.length = 0;
+            page.guide.tick();
+            expect(walkActions(page.dispatched)).toEqual([]);
+            const state = page.store.getState().visitorWalk;
+            const line = page.dom.line.textContent;
+            if (state.quickArmedId !== null) steady.armed += 1;
+            if (
+              state.note !== null &&
+              !line.startsWith("Tour complete") &&
+              !line.startsWith("Skipped ") &&
+              !line.startsWith("Brought back ")
+            ) {
+              steady.noteRunOut += 1;
+            }
+            if (line.includes("GPS too weak")) steady.weakGps += 1;
+            if (line.includes("its story is playing")) steady.story += 1;
+            if (line.startsWith("Tour complete")) steady.complete += 1;
           }
         },
       ),
       { numRuns: 200 },
     );
+    // Not vacuous: every steady state was reached and ticked twice.
+    for (const [state, count] of Object.entries(steady)) {
+      expect(count, state).toBeGreaterThan(0);
+    }
   });
 
   // Why (K4 review R9, re-stated through the store): the existing property

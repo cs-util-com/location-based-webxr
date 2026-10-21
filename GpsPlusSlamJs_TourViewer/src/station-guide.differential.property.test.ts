@@ -21,11 +21,13 @@
  * shows. So the property runs twice: with no subscriber, comparing after
  * every single call, and with each guide's store ticking its guide on every
  * dispatch, as the page does, comparing after each step once the next
- * camera frames have settled the page. That is where the two may differ in
- * timing only: the live guide's walk is in the page's store, so its own
- * dispatches (a find, a skip, a story's end) re-tick it at once, and a
- * station offered by them - the next under fixed or branch order - is
- * judged in the same frame instead of the next. Under the subscription the
+ * camera frames have settled the page - and the live page must have
+ * settled before those frames: they change nothing it shows or decided, so
+ * it may run ahead of the frozen copy, never behind. That is where the two
+ * may differ in timing only: the live guide's walk is in the page's store,
+ * so its own dispatches (a find, a skip, a story's end) re-tick it at once,
+ * and a station offered by them - the next under fixed or branch order -
+ * is judged in the same frame instead of the next. Under the subscription the
  * hints a guide gives on every render (upcoming, approach, the figure's
  * turn, the breadcrumbs' calls) are compared as sets, since an extra tick
  * at the same instant repeats them; the events (found, done, a story's
@@ -324,6 +326,31 @@ function mostly(k: number): fc.Arbitrary<boolean> {
   return fc.integer({ min: 0, max: k }).map((x) => x > 0);
 }
 
+/** The HUD's targets as one guide shows them now (none while disposed). */
+function hudOf(r: ReturnType<typeof rig>): string[] {
+  const hud = r.log.huds.at(-1);
+  return hud === undefined || hud.disposed
+    ? []
+    : hud
+        .targets()
+        .map(
+          (t) =>
+            `${t.id ?? "?"}:${xyz([t.position.x, t.position.y, t.position.z])}:${String(t.distanceMin)}:${String(t.distanceMax)}`,
+        );
+}
+
+/** What one guide shows and decided since the last look, without
+ *  clearing it: the line, the button, each find and done, the HUD. */
+function shown(r: ReturnType<typeof rig>) {
+  return {
+    line: [r.dom.line.textContent, r.dom.line.hidden],
+    skip: [r.dom.skip.textContent, r.dom.skip.hidden],
+    found: [...r.log.found],
+    done: [...r.log.done],
+    hud: hudOf(r),
+  };
+}
+
 /** What a look at one guide shows; `asSets` for the per-render hints. */
 function look(r: ReturnType<typeof rig>, asSets: boolean, ids: string[]) {
   const set = (xs: string[]) => (asSets ? [...new Set(xs)].sort() : [...xs]);
@@ -341,15 +368,7 @@ function look(r: ReturnType<typeof rig>, asSets: boolean, ids: string[]) {
     lastGuide: r.log.guide.at(-1) ?? null,
     hudsStarted: r.log.huds.length,
     hudLive: hud === undefined ? null : !hud.disposed,
-    hud:
-      hud === undefined || hud.disposed
-        ? []
-        : hud
-            .targets()
-            .map(
-              (t) =>
-                `${t.id ?? "?"}:${xyz([t.position.x, t.position.y, t.position.z])}:${String(t.distanceMin)}:${String(t.distanceMax)}`,
-            ),
+    hud: hudOf(r),
     present: r.store.getState().visitorGuide.presentStationId,
     pending: r.store.getState().visitorGuide.headingPending,
     figures: ids.map((id) => r.guide.figurePoseOf(id) !== null),
@@ -401,7 +420,9 @@ const COVERAGE = {
   upcoming: (w: Look) => Number(w.upcoming.length > 0),
 } as const;
 type Look = ReturnType<typeof look>;
-type Coverage = Record<keyof typeof COVERAGE, number>;
+/** The counts of `COVERAGE`, and `ripened`: a move step that turned the
+ *  button from "Can't get there?" to "Skip ..." (the skip clock ran out). */
+type Coverage = Record<keyof typeof COVERAGE | "ripened", number>;
 
 function runCase(
   c: { specs: readonly Spec[]; order: TourOrder; steps: readonly Step[] },
@@ -427,7 +448,19 @@ function runCase(
     f(frozen.guide);
     f(live.guide);
   };
+  let lastSkip: unknown = null;
+  /** The world changed (a tour, the scan gate), or the session ended,
+   *  since the guides last ticked; true before their first tick. */
+  let unseen = true;
   c.steps.forEach((step, k) => {
+    if (step.kind === "move" || step.kind === "code-locked") unseen = false;
+    if (
+      step.kind === "tour" ||
+      step.kind === "placement" ||
+      step.kind === "end-session"
+    ) {
+      unseen = true;
+    }
     switch (step.kind) {
       case "move": {
         world.now += step.dtMs;
@@ -461,18 +494,42 @@ function runCase(
         break;
     }
     // Under the page's subscription the next camera frames tick too, until
-    // the page has settled: a chain of finds (stations without steps one
-    // after the other) can take a frame each.
+    // the frozen page has settled: a chain of finds (stations without steps
+    // one after the other) takes it a frame each. The live guide's own
+    // dispatches re-tick it at once, so it has settled already: those
+    // frames change nothing it shows or decided - it runs ahead of the
+    // frozen copy, never behind. What only the next frame can see is
+    // ticked first: a change of the world (a tour, the scan gate) or the
+    // session's end since the last tick, everything before the first tick,
+    // and a tap's render while the gate is shut or no tour is open (both
+    // guides draw the line from their last measurement; the frame hides it).
     if (reenter) {
+      if (unseen || !world.allowed || world.tour === null) {
+        both((g) => g.tick());
+        unseen = false;
+      }
+      const settled = shown(live);
       for (let frame = 0; frame < ids.length + 2; frame += 1) {
         both((g) => g.tick());
       }
+      expect(
+        shown(live),
+        `step ${String(k)} ${JSON.stringify(step)}: the live guide lagged`,
+      ).toEqual(settled);
     }
     const want = look(frozen, reenter, ids);
     const got = look(live, reenter, ids);
-    for (const key of Object.keys(COVERAGE) as (keyof Coverage)[]) {
+    for (const key of Object.keys(COVERAGE) as (keyof typeof COVERAGE)[]) {
       seen[key] += COVERAGE[key](want);
     }
+    if (
+      step.kind === "move" &&
+      lastSkip === "Can't get there?" &&
+      String(want.skip[0]).startsWith("Skip ")
+    ) {
+      seen.ripened += 1;
+    }
+    lastSkip = want.skip[0];
     expect(got, `step ${String(k)} ${JSON.stringify(step)}`).toEqual(want);
   });
 }
@@ -481,7 +538,7 @@ describe("the station guide against its frozen copy (W4 M1's differential)", () 
   for (const reenter of [false, true]) {
     it(`shows and decides the same after every step${reenter ? ", with the page's re-entering store subscription" : ""}`, () => {
       const seen = Object.fromEntries(
-        Object.keys(COVERAGE).map((key) => [key, 0]),
+        [...Object.keys(COVERAGE), "ripened"].map((key) => [key, 0]),
       ) as Coverage;
       let runs = 0;
       fc.assert(
