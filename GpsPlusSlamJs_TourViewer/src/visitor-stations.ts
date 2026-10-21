@@ -514,9 +514,11 @@ export function wireVisitorStations(deps: {
       // a session end keeps it for the next session (R15).
       prefetch.sync();
       // The sheet goes with the session; the progress shows on the start
-      // page, and the next entry welcomes the visitor back (W4, §1.8).
+      // page, and the next entry welcomes the visitor back (W4, §1.8) at
+      // the peek, as W4 does, even when the list was open on leaving.
       saidNote = null;
       arStore.dispatch(welcomeSet(keptWalk() !== null));
+      arStore.dispatch(sheetSet("peek"));
       renderSheet();
       renderAway();
     },

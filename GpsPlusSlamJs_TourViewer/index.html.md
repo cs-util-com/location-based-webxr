@@ -308,7 +308,8 @@ animation's place). On the start page, `#walk-away` (`walk-away`,
 `walk-away-text`, `walk-away-segments`, `walk-away-rows` with
 `walk-away-row` items) shows the progress after leaving AR, its
 segments in W4's paper colours (`--walk-away-found` #0f766e,
-`--walk-away-left` #ddd6c7). The walk's
+`--walk-away-left` #ddd6c7, also its rows' border, on rows of
+`--walk-away-row` #fff). The walk's
 colours are `--walk-*` tokens on `html`; design.css's `.radar`,
 `.toast` and `.hint` classes are not used (plan §1.2). The walk's
 surfaces set `font-variant-numeric: lining-nums`, since the app font's

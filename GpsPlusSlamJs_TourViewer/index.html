@@ -1661,6 +1661,7 @@
         /* The away block's segments on the start page (W4's paper). */
         --walk-away-found: #0f766e;
         --walk-away-left: #ddd6c7;
+        --walk-away-row: #fff;
       }
       .walk-sheet,
       .walk-coach,
@@ -2462,9 +2463,14 @@
         gap: 10px;
         min-height: 44px;
         padding: 10px 12px;
-        border: 1px solid var(--map-line);
+        /* W4's white cards on its paper line (not the page's map card). */
+        border: 1px solid var(--walk-away-left);
         border-radius: 12px;
-        background: var(--map-card);
+        background: var(--walk-away-row);
+      }
+      #walk-away-rows > li b {
+        font-size: 15px;
+        font-weight: 700;
       }
       #walk-away-rows > li span {
         color: var(--ink-dim);

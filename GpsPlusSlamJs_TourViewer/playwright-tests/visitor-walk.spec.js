@@ -2,6 +2,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  forceTrackingReady,
   installTourViewerArFakes,
   lockFixtureCode,
   seedAlignment,
@@ -24,6 +25,16 @@ const WALK_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/walk-tour.zip";
 /** The same walk in fixed order: one station offered at a time. */
 const FIXED_WALK_ARCHIVE =
   "http://127.0.0.1:5197/ranges-ok/walk-tour-fixed.zip";
+
+/** The stations tour (`stations.spec.js`): stations holding content
+ *  (a pin each at the gate and the well), and the same tour without its
+ *  printed code. */
+const STATIONS_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/stations-tour.zip";
+const NO_CODE_ARCHIVE =
+  "http://127.0.0.1:5197/ranges-ok/stations-tour-no-code.zip";
+
+/** The words the status says while the guide waits for a heading. */
+const WALK = "Walk a few steps so the guide knows the direction.";
 
 /** The prototype's stations: where each stands and its story's length. */
 const STATIONS = [
@@ -55,6 +66,58 @@ async function enterAtTheCode(page) {
   await standAt(page, 0, 0, 0);
   await lockFixtureCode(page);
   await expect(page.getByTestId("walk-sheet")).toBeVisible();
+}
+
+/** One tracking-quality report: "ok" through the shared fake, any other
+ *  state (`degraded`: running, no heading earned yet) here. */
+async function reportTracking(page, state) {
+  if (state === "ok") {
+    await forceTrackingReady(page);
+    return;
+  }
+  await page.evaluate((state) => {
+    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
+      type: "trackingQuality/reportUpdated",
+      payload: {
+        state,
+        confidence: 0.5,
+        subScores: {
+          convergence: 0.5,
+          residualConsensus: 0.5,
+          gpsAccuracy: 1,
+          coverage: 0.5,
+        },
+        diagnostics: {},
+      },
+    });
+  }, state);
+}
+
+/** The status's state once tracking reports `state` and a frame passes
+ *  (the fakes send frames without poses, so quality decays between
+ *  reports; each poll reports it again). */
+async function statusWith(page, state, expected) {
+  await expect
+    .poll(
+      async () => {
+        await reportTracking(page, state);
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        await reportTracking(page, state);
+        return page.getByTestId("ar-status").getAttribute("data-state");
+      },
+      { timeout: 20000 },
+    )
+    .toBe(expected);
+}
+
+/** Skip the scan by its escape: the tour is placed by GPS. */
+async function skipTheCode(page) {
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.fireTimers();
+  });
+  await page.getByTestId("scan-escape").click();
 }
 
 /** Fire the fakes' timers (a story's auto steps) n times. */
@@ -104,11 +167,16 @@ test("the peek names the nearest station; the list opens by the grab and by a dr
   );
   await expect(page.getByTestId("walk-segments").locator("i")).toHaveCount(4);
   await expect(page.getByTestId("walk-list")).toBeHidden();
-  // This tour's stations hold only stories, so nothing is placed and the
-  // sentence stays at "placing the tour"; the found card and the coach
-  // still give way to the walk.
+  // This tour's stations hold only stories, so no content stands; the
+  // running walk still makes it a placed tour (W4 M2 review), so neither
+  // the found card nor a placement wait stands over the walk, and the
+  // screen reader's copy says the same.
   await expect(page.locator("#scan-card")).toBeHidden();
+  await statusWith(page, "ok", "placed");
   await expect(page.getByTestId("walk-coach")).toBeHidden();
+  await expect(page.getByTestId("ar-status-live")).toHaveText(
+    "Tour placed. Look around.",
+  );
 
   // A tap on the grab opens the list: every station, the tour's title,
   // its order and the count.
@@ -211,15 +279,86 @@ test("a found station's story takes the peek's place with its dots, and its end 
   await expect(end).toHaveText("End this story?");
   await expect(page.getByTestId("keep-listening")).toBeHidden();
   await expect(story).toBeVisible();
-  // Two taps end it: the peek is back, naming the next station.
+  // The focus is not dropped with the hidden button (W4 M2 review): it
+  // moves to the end control beside it.
+  await expect(end).toBeFocused();
+  // Two taps end it: the peek is back, naming the next station, and the
+  // focus that sat on the card's end control is on the grab.
   await end.click();
   await end.click();
   await expect(story).toBeHidden();
+  await expect(page.getByTestId("walk-grab")).toBeFocused();
   await expect(page.getByTestId("walk-peek")).toBeVisible();
   await expect(page.getByTestId("walk-eyebrow")).toHaveText(
     "Next - station 2 of 4",
   );
   await expect(page.getByTestId("walk-title")).toHaveText("The well");
+});
+
+test("a running walk speaks as a placed tour: placed, placed by GPS with its request for steps, and finding the direction", async ({
+  page,
+}) => {
+  // Why this test matters (W4 build plan M2 review): a first fix for a
+  // tour of stories hid the placement wait under the sheet, and with it
+  // the request for steps and the GPS placement's reason; the hidden
+  // sentence and the live region stayed in the wait. These tours' stations
+  // hold content, so each path is the real one: the code (placed), the
+  // scan skipped while no heading is earned (placed by GPS, its toast,
+  // its request for steps on the coach and the code asked for in the
+  // peek), and a tour without a code (finding the direction).
+  await openTheWalk(page, STATIONS_ARCHIVE);
+  await enterAtTheCode(page);
+  await statusWith(page, "ok", "placed");
+  await expect(page.getByTestId("ar-status-live")).toHaveText(
+    "Tour placed. Look around.",
+  );
+  await expect(page.getByTestId("walk-coach")).toBeHidden();
+  await expect(page.locator("#scan-card")).toBeHidden();
+
+  await openTheWalk(page, STATIONS_ARCHIVE);
+  await page.getByTestId("enter-ar").click();
+  await seedAlignment(page);
+  await skipTheCode(page);
+  await statusWith(page, "degraded", "placed-gps");
+  await expect(page.getByTestId("ar-status-live")).toHaveText(
+    `Tour placed by GPS (less exact). ${WALK} Find the poster's code to line it up.`,
+  );
+  await expect(page.locator("#walk-toast")).toHaveText(
+    "Tour placed by GPS (less exact)",
+  );
+  await expect(page.getByTestId("walk-coach-text")).toHaveText(WALK);
+  await expect(page.getByTestId("walk-code-tail")).toHaveText(
+    "Find the poster's code to line it up.",
+  );
+
+  await openTheWalk(page, NO_CODE_ARCHIVE);
+  await page.getByTestId("enter-ar").click();
+  await seedAlignment(page);
+  await expect(page.getByTestId("walk-sheet")).toBeVisible();
+  await statusWith(page, "degraded", "finding-direction");
+  await expect(page.getByTestId("ar-status-live")).toHaveText(WALK);
+  await expect(page.getByTestId("walk-coach-text")).toHaveText(WALK);
+  // A walk earns the heading: the request goes.
+  await standAt(page, 2, 1, 1);
+  await statusWith(page, "ok", "placed");
+  await expect(page.getByTestId("walk-coach")).toBeHidden();
+});
+
+test("a tour of stories placed by GPS still asks for steps while no heading is earned", async ({
+  page,
+}) => {
+  // Why this test matters (W4 M2 review): the case the first fix broke -
+  // no content stands, so only the running walk makes the tour placed,
+  // and without it the request for steps never reached the visitor.
+  await openTheWalk(page);
+  await page.getByTestId("enter-ar").click();
+  await seedAlignment(page);
+  await skipTheCode(page);
+  await statusWith(page, "degraded", "placed-gps");
+  await expect(page.getByTestId("walk-coach-text")).toHaveText(WALK);
+  await expect(page.locator("#walk-toast")).toHaveText(
+    "Tour placed by GPS (less exact)",
+  );
 });
 
 test("the quick skip takes two taps and its undo one; each is said in a toast", async ({
@@ -300,6 +439,13 @@ test("leaving AR shows the progress on the start page; coming back is welcomed",
   await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
   await enterAtTheCode(page);
   await visit(page, STATIONS[0], 1);
+  // Leaving with the list open: the next entry starts at the peek, as
+  // W4's does (the side-by-side check, W4 M2 review).
+  await page.getByTestId("walk-grab").click();
+  await expect(page.getByTestId("walk-sheet")).toHaveAttribute(
+    "data-sheet",
+    "list",
+  );
   await page.getByTestId("enter-ar").click(); // in AR: the way out
   const away = page.getByTestId("walk-away");
   await expect(away).toBeVisible();
@@ -318,42 +464,81 @@ test("leaving AR shows the progress on the start page; coming back is welcomed",
   await expect(page.locator("#walk-toast")).toHaveText(
     "Welcome back - your progress is kept.",
   );
+  // The toast's root is hidden from a screen reader (its other words are
+  // announced elsewhere); the welcome has its own polite region.
+  await expect(page.getByTestId("walk-toast-root")).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
+  await expect(page.getByTestId("walk-live")).toHaveText(
+    "Welcome back - your progress is kept.",
+  );
+  await expect(page.getByTestId("walk-sheet")).toHaveAttribute(
+    "data-sheet",
+    "peek",
+  );
   await expect(page.getByTestId("walk-eyebrow")).toHaveText(
     "3 stations to find - nearest",
   );
 });
 
-test("the start says 'Starting AR…' in the coach, and a failed start can be tried again", async ({
-  page,
-}) => {
-  // Why this test matters (§1.4, the async-UI rule): the AR start takes a
-  // moment with nothing else on screen, so the coach says so with its
-  // spinner; a start that fails goes back to the page with "Try again",
-  // and the second try starts.
-  await openTheWalk(page);
-  await page.evaluate(() => {
-    const t = /** @type {any} */ (window).__tourViewerTest;
-    t.failNextInitAR = true;
+/** A visitor on the start page, ready to start: a fresh tour ("Start
+ *  the tour"), or back from AR with progress ("Back to the tour"). */
+const STARTS = [
+  {
+    name: "Start the tour",
+    ready: async (page) => {
+      await openTheWalk(page);
+    },
+  },
+  {
+    name: "Back to the tour",
+    ready: async (page) => {
+      await openTheWalk(page);
+      await enterAtTheCode(page);
+      await visit(page, STATIONS[0], 1);
+      await page.getByTestId("enter-ar").click(); // in AR: the way out
+      await expect(page.getByTestId("enter-ar")).toHaveText("Back to the tour");
+    },
+  },
+];
+
+for (const start of STARTS) {
+  test(`'${start.name}' says 'Starting AR…' in the coach, and a failed start can be tried again`, async ({
+    page,
+  }) => {
+    // Why this test matters (§1.4, the async-UI rule): the AR start takes
+    // a moment with nothing else on screen, so the coach says so with its
+    // spinner; a start that fails goes back to the page with "Try again",
+    // and the second try starts - from a fresh tour and from "Back to the
+    // tour" alike (W4 M2 review).
+    await start.ready(page);
+    await page.evaluate(() => {
+      const t = /** @type {any} */ (window).__tourViewerTest;
+      t.failNextInitAR = true;
+    });
+    await page.getByTestId("enter-ar").click();
+    await expect(page.getByTestId("enter-ar")).toHaveText("Try again");
+    await expect(page.getByTestId("walk-coach")).toBeHidden();
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__tourViewerTest.holdInitAR = true;
+    });
+    await page.getByTestId("enter-ar").click();
+    const coach = page.getByTestId("walk-coach");
+    await expect(coach).toBeVisible();
+    await expect(coach).toHaveAttribute("data-look", "spinner");
+    await expect(page.getByTestId("walk-coach-text")).toHaveText(
+      "Starting AR…",
+    );
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__tourViewerTest.releaseInitAR();
+    });
+    await expect(page.getByTestId("walk-coach-text")).not.toHaveText(
+      "Starting AR…",
+    );
+    await seedAlignment(page);
+    await standAt(page, 0, 0, 0);
+    await lockFixtureCode(page);
+    await expect(page.getByTestId("walk-sheet")).toBeVisible();
   });
-  await page.getByTestId("enter-ar").click();
-  await expect(page.getByTestId("enter-ar")).toHaveText("Try again");
-  await expect(page.getByTestId("walk-coach")).toBeHidden();
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.holdInitAR = true;
-  });
-  await page.getByTestId("enter-ar").click();
-  const coach = page.getByTestId("walk-coach");
-  await expect(coach).toBeVisible();
-  await expect(coach).toHaveAttribute("data-look", "spinner");
-  await expect(page.getByTestId("walk-coach-text")).toHaveText("Starting AR…");
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.releaseInitAR();
-  });
-  await expect(page.getByTestId("walk-coach-text")).not.toHaveText(
-    "Starting AR…",
-  );
-  await seedAlignment(page);
-  await standAt(page, 0, 0, 0);
-  await lockFixtureCode(page);
-  await expect(page.getByTestId("walk-sheet")).toBeVisible();
-});
+}

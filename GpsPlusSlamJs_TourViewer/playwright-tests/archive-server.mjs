@@ -36,6 +36,8 @@
  *   kit plan K4): one at the fixture's printed code (a knight with a voice
  *   and a scene choice), one found by walking to it (a `.glb` model), one
  *   far away for the skip.
+ * - `/ranges-ok/stations-tour-no-code.zip` - the same tour without its
+ *   printed code: only a walk gives the guide its heading.
  * - `/ranges-ok/walk-tour.zip` (any order) and
  *   `/ranges-ok/walk-tour-fixed.zip` (fixed order) - the visitor walk W4
  *   prototype's "Old town walk" (visitor walk W4 build plan M2): four
@@ -207,30 +209,34 @@ const DEG_PER_M_LON = 1.32966e-5;
  * walking), "The tower" 300 m east (skipped). The gate and the well each
  * hold one pin, so the e2e suite can see which station's content stands in
  * the scene (only the present one's).
+ * `withCode: false`: the same tour without its printed code (no level),
+ * so nothing but walking gives the guide a heading (visitor walk W4 build
+ * plan M2 review).
  */
-async function buildStationsZip() {
+async function buildStationsZip({ withCode = true } = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   await writer.add("session.json", new TextReader('{"kind":"e2e-stations"}'));
-  await writer.add(
-    await e2eQrLevelEntryName(),
-    new TextReader(
-      JSON.stringify({
-        version: 1,
-        qr: {
-          physicalSizeM: 0.2,
-          // Where the fakes' armed pose ([1, 1.5, -2] raw WebXR, so 2 m
-          // north and 1 m east) puts the code under the seeded alignment:
-          // its votes then agree with the walk instead of pulling it.
-          geo: {
-            lat: 47.5 + 2 * DEG_PER_M_LAT,
-            lon: 8.7 + 1 * DEG_PER_M_LON,
-            alt: 400,
-            rotation: MEASURED_CODE_ROTATION,
+  if (withCode)
+    await writer.add(
+      await e2eQrLevelEntryName(),
+      new TextReader(
+        JSON.stringify({
+          version: 1,
+          qr: {
+            physicalSizeM: 0.2,
+            // Where the fakes' armed pose ([1, 1.5, -2] raw WebXR, so 2 m
+            // north and 1 m east) puts the code under the seeded alignment:
+            // its votes then agree with the walk instead of pulling it.
+            geo: {
+              lat: 47.5 + 2 * DEG_PER_M_LAT,
+              lon: 8.7 + 1 * DEG_PER_M_LON,
+              alt: 400,
+              rotation: MEASURED_CODE_ROTATION,
+            },
           },
-        },
-      }),
-    ),
-  );
+        }),
+      ),
+    );
   await writer.add(
     "content/knight.png",
     new Uint8ArrayReader(TINY_PNG.slice()),
@@ -714,6 +720,7 @@ const plainZipBytes = await buildZip({ withLevel: false });
 const noGpsZipBytes = await buildZip({ needsNoGps: true });
 const recordingZipBytes = await buildRecordingZip();
 const stationsZipBytes = await buildStationsZip();
+const stationsNoCodeZipBytes = await buildStationsZip({ withCode: false });
 const walkZipBytes = await buildWalkZip("any");
 const walkFixedZipBytes = await buildWalkZip("fixed");
 const sampleZipBytes = new Uint8Array(
@@ -892,6 +899,16 @@ createServer((req, res) => {
   }
   if (url.pathname === "/ranges-ok/stations-tour.zip") {
     handleArchive(req, res, "ranges-ok", stationsZipBytes, '"e2e-stations-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/stations-tour-no-code.zip") {
+    handleArchive(
+      req,
+      res,
+      "ranges-ok",
+      stationsNoCodeZipBytes,
+      '"e2e-stations-nc-v1"',
+    );
     return;
   }
   if (url.pathname === "/ranges-ok/walk-tour.zip") {

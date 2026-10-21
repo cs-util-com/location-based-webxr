@@ -72,6 +72,25 @@ export function hideKeepingFocus(
   if (held) fallback.focus();
 }
 
+/**
+ * A focus loss to nowhere because the control that held it hid (itself or
+ * a parent) or left the page: the browser blurs a focused control the
+ * moment it is hidden, so a hide made elsewhere (the guide hides the
+ * story's end control before the sheet hides its card) is only seen here,
+ * at its `focusout`. A move to another control (`related` set) or a
+ * window blur over a control still shown is no such loss.
+ */
+export function focusLostToHiding(
+  target: {
+    readonly isConnected: boolean;
+    closest(selector: string): unknown;
+  } | null,
+  related: unknown,
+): boolean {
+  if (target === null || related !== null) return false;
+  return !target.isConnected || target.closest("[hidden]") !== null;
+}
+
 type El = HTMLElement;
 
 export interface WalkSheetDom {
@@ -212,6 +231,14 @@ export function wireWalkSheet(deps: {
   }
   dom.close.addEventListener("click", () => {
     deps.setSheet("peek");
+  });
+  // A control in the story card that hid with the focus (its end, the
+  // card itself) hands it to the grab; "Keep listening" hands it to the
+  // end control instead (`hideKeepingFocus` in `render`).
+  dom.story.addEventListener("focusout", (event) => {
+    if (event.target === dom.keepListening) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (focusLostToHiding(target, event.relatedTarget)) dom.grab.focus();
   });
   dom.keepListening.addEventListener("click", () => {
     deps.keepListening();

@@ -30,6 +30,11 @@ the seeded alignment, so its votes agree with the walk), "The well" 30 m
 north (a minimal `.glb` built here), "The tower" 300 m east (skipped).
 The gate and the well each hold one pin, so the suite sees which station's
 content stands in the scene (only the present one's).
+`/ranges-ok/stations-tour-no-code.zip` is the same stations tour without
+its printed code (no level): only a walk gives the guide its heading
+(`visitor-walk.spec.js`, the finding-direction path, W4 build plan M2
+review).
+
 `/ranges-ok/walk-tour.zip` (any order) and `/ranges-ok/walk-tour-fixed.zip`
 (fixed order) are the visitor walk W4 prototype's "Old town walk" (visitor
 walk W4 build plan M2, `visitor-walk.spec.js` and

@@ -2,6 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
+  focusLostToHiding,
   hideKeepingFocus,
   quickKind,
   sheetAfterDrag,
@@ -92,5 +93,32 @@ describe("hideKeepingFocus (W4 build plan M2 review)", () => {
     expect(keep.node.hidden).toBe(false);
     hideKeepingFocus(keep.node, true, end.node, null);
     expect(end.node.focused).toBe(0);
+  });
+});
+
+describe("focusLostToHiding (W4 build plan M2 review)", () => {
+  // Why: a browser blurs a focused control the moment it is hidden, before
+  // the sheet hides the card around it (the guide hides the story's end
+  // control first), so the sheet cannot see the focus at its own hide; it
+  // catches the loss itself. Only a loss to NOWHERE because the control
+  // (or a parent) hid counts: a tab to another control, or the window
+  // losing focus while the control still shows, must not move it.
+  const node = (hidden: boolean, hiddenParent = false, connected = true) => ({
+    hidden,
+    isConnected: connected,
+    closest: (selector: string) =>
+      selector === "[hidden]" && (hidden || hiddenParent) ? {} : null,
+  });
+
+  it("counts a loss to nowhere from a control that hid, itself or by a parent, or left the page", () => {
+    expect(focusLostToHiding(node(true), null)).toBe(true);
+    expect(focusLostToHiding(node(false, true), null)).toBe(true);
+    expect(focusLostToHiding(node(false, false, false), null)).toBe(true);
+  });
+
+  it("ignores a move to another control and a window blur over a control still shown", () => {
+    expect(focusLostToHiding(node(true), { id: "other" })).toBe(false);
+    expect(focusLostToHiding(node(false), null)).toBe(false);
+    expect(focusLostToHiding(null, null)).toBe(false);
   });
 });

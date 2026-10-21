@@ -18,6 +18,11 @@ import {
  * phone held sideways), the round Exit button, the peek's rows, the toast's
  * place clear of the radar's corner, the list's rows and the away block on
  * the start page - on phones, a phone held sideways and a desktop.
+ *
+ * Not pinned here, a field check on a phone instead: a TOUCH drag of the
+ * grab or the peek, and a drag the browser cancels (pointercancel, a
+ * scroll or a system gesture taking over). Playwright's mouse drives the
+ * same pointer events, but not a real touch's slop and cancellation.
  */
 
 const WALK_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/walk-tour.zip";
@@ -84,12 +89,31 @@ for (const viewport of VIEWPORTS) {
       expect(sheet.width).toBeCloseTo(width, 0);
       expect(sheet.x).toBeCloseTo((viewport.width - width) / 2, 0);
     }
-    // The grab is the sheet's top 22 px; the segments 6 px tall, 4 px
-    // apart, 16 px in from the sheet's sides; the peek's row at least
-    // 56 px tall (48 sideways).
+    // The grab is the sheet's top 22 px (its box: the layout is W4's);
+    // the segments 6 px tall, 4 px apart, 16 px in from the sheet's sides;
+    // the peek's row at least 56 px tall (48 sideways).
     const grab = await box(page, "walk-grab");
     expect(grab.y).toBeCloseTo(sheet.y + 1, 0); // under the 1 px border
     expect(grab.height).toBeCloseTo(22, 0);
+    // Its target is 44 px (W4 M2 review): 10 px above the sheet's edge
+    // and 10 px below the grab's box, a tap still lands on the grab.
+    expect(
+      await page.evaluate(
+        ({ x, ys }) =>
+          ys.map(
+            (y) =>
+              document.elementFromPoint(x, y)?.closest("#walk-grab") != null,
+          ),
+        {
+          x: grab.x + grab.width / 2,
+          ys: [grab.y - 10, grab.y + grab.height + 10],
+        },
+      ),
+    ).toEqual([true, true]);
+    await expect(page.getByTestId("walk-grab")).toHaveAttribute(
+      "aria-controls",
+      "walk-list",
+    );
     const segments = page.getByTestId("walk-segments").locator("i");
     const first = await segments.nth(0).boundingBox();
     const second = await segments.nth(1).boundingBox();
@@ -111,6 +135,21 @@ for (const viewport of VIEWPORTS) {
     expect(quick.y + quick.height).toBeLessThanOrEqual(row.y + row.height + 1);
     expect(quick.width).toBeLessThanOrEqual(row.width * 0.46 + 1);
     expect(quick.height).toBeGreaterThanOrEqual(44);
+    // ... on the title's line, 12 px after the title's column.
+    const title = await box(page, "walk-title");
+    expect(quick.y).toBeLessThanOrEqual(title.y + title.height);
+    expect(quick.y + quick.height).toBeGreaterThanOrEqual(title.y);
+    const column = await page
+      .getByTestId("walk-peek-row")
+      .locator(".walk-peek-main")
+      .boundingBox();
+    if (column === null) throw new Error("no title column");
+    expect(quick.x - (column.x + column.width)).toBeCloseTo(12, 0);
+    // The distance's figures are lining and of one width, as W4's.
+    await expect(page.getByTestId("walk-distance")).toHaveCSS(
+      "font-variant-numeric",
+      "lining-nums tabular-nums",
+    );
     // The round Exit button: 44 px, 12 px from the left, 30 px from the
     // top (10 sideways).
     const exit = await box(page, "enter-ar");
@@ -156,6 +195,21 @@ for (const viewport of VIEWPORTS) {
       if (r === null) continue; // scrolled out of the list's own view
       expect(r.height).toBeGreaterThanOrEqual(44);
     }
+    // The last row can be reached: scrolled into the list's view, it
+    // stands inside the sheet and the screen.
+    await rows.last().scrollIntoViewIfNeeded();
+    const last = await rows.last().boundingBox();
+    if (last === null) throw new Error("no last row");
+    expect(last.y + last.height).toBeLessThanOrEqual(
+      sheet.y + sheet.height + 0.5,
+    );
+    expect(last.y + last.height).toBeLessThanOrEqual(viewport.height + 0.5);
+    // The open sheet leaves the Exit button free.
+    const exitButton = await box(page, "enter-ar");
+    expect(
+      sheet.y >= exitButton.y + exitButton.height ||
+        sheet.x >= exitButton.x + exitButton.width,
+    ).toBe(true);
     // W4's figures are lining: the app font's old-style numerals would
     // shrink the rows' numbers.
     await expect(rows.first().locator(".walk-glyph")).toHaveCSS(
@@ -240,6 +294,11 @@ for (const viewport of VIEWPORTS) {
         : viewport.height * 0.66 + 1,
     );
     const dots = await box(page, "walk-dots");
+    // The dots stand 10 px under the story's text box, as W4's: the
+    // panel's empty status and choices take no row, and a one-line text
+    // keeps W4's two-line height (3em).
+    const text = await box(page, "scene-text");
+    expect(dots.y - (text.y + text.height)).toBeCloseTo(10, 0);
     const acts = await box(page, "walk-story-acts");
     expect(acts.y).toBeGreaterThanOrEqual(dots.y + dots.height);
     const go = await box(page, "scene-continue");
@@ -247,6 +306,50 @@ for (const viewport of VIEWPORTS) {
     expect(Math.abs(go.y - end.y)).toBeLessThanOrEqual(1);
     expect(end.x - (go.x + go.width)).toBeCloseTo(8, 0);
     expect(end.x + end.width).toBeLessThanOrEqual(sheet.x + sheet.width - 15);
+  });
+}
+
+for (const viewport of VIEWPORTS) {
+  const label = `${String(viewport.width)}x${String(viewport.height)}`;
+  test(`the away block's segments span it in W4's colours, inside the start's card, at ${label}`, async ({
+    page,
+  }) => {
+    // Why (W4 M2 review): the segments are the block's full width, found
+    // in W4's teal and the rest in its paper line (not the page's map
+    // colours); on a desktop the block stays in the start's left column.
+    await page.setViewportSize(viewport);
+    await installTourViewerArFakes(page);
+    await enterTheWalk(page);
+    await standAt(page, 26, 0, 1);
+    await expect(page.getByTestId("walk-story")).toBeVisible();
+    await page.getByTestId("enter-ar").click();
+    await expect(page.getByTestId("walk-away")).toBeVisible();
+    const away = await box(page, "walk-away");
+    const segments = await box(page, "walk-away-segments");
+    expect(segments.x).toBeCloseTo(away.x, 0);
+    expect(segments.width).toBeCloseTo(away.width, 0);
+    const cells = page.getByTestId("walk-away-segments").locator("i");
+    await expect(cells).toHaveCount(4);
+    await expect(cells.first()).toHaveCSS(
+      "background-color",
+      "rgb(15, 118, 110)",
+    );
+    await expect(cells.last()).toHaveCSS(
+      "background-color",
+      "rgb(221, 214, 199)",
+    );
+    // Its rows are W4's white cards on the paper line.
+    const row = page.getByTestId("walk-away-row").first();
+    await expect(row).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    await expect(row).toHaveCSS("border-top-color", "rgb(221, 214, 199)");
+    // ... their titles W4's 15 px bold, not the start page's small type.
+    await expect(row.locator("b")).toHaveCSS("font-size", "15px");
+    await expect(row.locator("b")).toHaveCSS("font-weight", "700");
+    const card = await page.locator("#visitor-screen").boundingBox();
+    if (card === null) throw new Error("no start card");
+    expect(away.x).toBeGreaterThanOrEqual(card.x - 0.5);
+    expect(away.x + away.width).toBeLessThanOrEqual(card.x + card.width + 0.5);
+    expect(away.x + away.width).toBeLessThanOrEqual(viewport.width + 0.5);
   });
 }
 

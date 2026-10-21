@@ -129,7 +129,7 @@ hooks.tickStations = stations.tick;
   render's words go out as ONE toast (`walk.toast.say(words)`).
 - **The store rule** (W4 build plan M2 review): the welcome waiting is
   walk state, in the slice (`welcomePending`, `welcomeSet`); `stop()`
-  arms it, the first drawn sheet says it and clears it. Two closure values
+  arms it, the first drawn sheet says it and clears it. `stop()` also closes the list (`sheetSet("peek")`): the next entry starts at the peek, as W4 does, whatever was open on leaving. Two closure values
   stay, argued as DOM resources rather than state: `saidNote` is the
   toast's dedup (like `walk-toast.ts`'s own, no view reads it), and
   `sheetShown` mirrors what the last render drew, read by the status and

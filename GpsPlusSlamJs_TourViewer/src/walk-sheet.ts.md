@@ -46,6 +46,12 @@ the peek into the store's `sheetSet`. A thin writer, wired by
   end control (`#walk-story-end`); when the story card closes with the
   focus inside it, to the grab. A focused element that hides drops the
   focus to the body, and a keyboard or switch user starts over.
+  - The browser blurs a focused control the moment it is hidden, and the
+    guide hides the story's end control before the sheet hides the card,
+    so the card's case is caught at its `focusout`:
+    `focusLostToHiding(target, related)` (exported, pure) counts only a
+    loss to nowhere from a control that hid (itself or a parent) or left
+    the page; a tab to another control or a window blur moves nothing.
 - **The grab's target is 44 px** around its 5 px pill: `.walk-grab::before`
   reaches 11 px above the sheet's edge and 11 px into the segments, so
   the layout is W4's unchanged. The grab carries `aria-controls="walk-list"`
@@ -69,7 +75,7 @@ view.render(model, { sheet: "peek", quick, position: "distance", story: null });
 ## Tests
 
 - `walk-sheet.test.ts` - `sheetAfterDrag` (a property over thresholds
-  16-40 px), `quickKind` and `hideKeepingFocus`.
+  16-40 px), `quickKind`, `hideKeepingFocus` and `focusLostToHiding`.
 - The DOM half is driven end to end by
   `playwright-tests/visitor-walk.spec.js` (open and close by tap and
   drag, the story card, the completion, the away block) and
