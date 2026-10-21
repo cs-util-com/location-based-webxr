@@ -248,6 +248,8 @@ const DOM_KEYS = [
   "pinCancel",
   "photoButton",
   "newStationButton",
+  "undoButton",
+  "undoLabel",
   "draftOffer",
   "draftOfferText",
   "draftRestore",
@@ -2618,6 +2620,9 @@ describe(
     it("offers Undo after deleting a hosted pin, and Undo brings it back to the list, the scene, the draft and the log", async () => {
       const { store, files } = memoryDraftStore();
       const a = await withHostedTour([hostedPin("h1", "Gate")], store);
+      // On the page: in AR the strip's persistent Undo takes the note's
+      // place (owner decision W-D4), so the note's Undo is the page's.
+      a.endVisit();
       const list = a.dom.objectList;
       list.listHandlers!.remove("h1");
       await flush();
@@ -2676,6 +2681,9 @@ describe(
         hostedPin("h1", "Gate"),
         hostedPin("h2", "Mill"),
       ]);
+      // On the page: in AR the strip's persistent Undo takes the note's
+      // place (owner decision W-D4), so the note's Undo is the page's.
+      a.endVisit();
       const list = a.dom.objectList;
       list.listHandlers!.remove("h1");
       await flush();
@@ -2693,8 +2701,129 @@ describe(
       expect(list.lastModel?.undo).toBe(false);
     });
 
+    // Why these tests matter (owner decision W-D4, Q-J): in AR the strip's
+    // Undo is the one Undo - persistent, where the note's went after its
+    // hold - and it takes back exactly the delete it names, through the
+    // same path as the note's (`undoDelete`: the list, the scene, the
+    // draft, the log).
+    it("offers a delete in AR in the strip's Undo, past the note's hold, and a tap brings the pin back to the list, the scene, the draft and the log", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = await withHostedTour([hostedPin("h1", "Gate")], store);
+      const list = a.dom.objectList;
+      list.listHandlers!.remove("h1");
+      await flush();
+      expect(a.dom.undoLabel.textContent).toBe('Undo: delete "Gate"');
+      expect(a.dom.undoButton.disabled).toBe(false);
+      // One Undo in AR: the note says what happened, the strip undoes it.
+      expect(list.lastModel?.note).toMatch(/^Deleted "Gate"/);
+      expect(list.lastModel?.undo).toBe(false);
+      a.fireTimers();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoButton.disabled, "past the note's hold").toBe(false);
+
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.ctx.tourDocument.deleted()).toEqual([]);
+      expect(a.ctx.placedPreviews.has("h1")).toBe(true);
+      expect(files.has(deletedKey("h1")), "the tombstone is gone").toBe(false);
+      expect(list.lastModel?.note).toMatch(/Restored "Gate"/);
+      expect(logged(a, "tourAuthoring/objectDeleteUndone")).toHaveLength(1);
+      // Single level: nothing further is offered.
+      expect(a.dom.undoButton.disabled).toBe(true);
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+    });
+
+    it("withdraws the strip's Undo of a delete once a later change is the last step, and a tap after an unrendered change takes back nothing", async () => {
+      const a = await withHostedTour([
+        hostedPin("h1", "Gate"),
+        hostedPin("h2", "Mill"),
+        hostedPin("h3", "Oak"),
+      ]);
+      const list = a.dom.objectList;
+      list.listHandlers!.editText("h3", "Barn");
+      await flush();
+      expect(a.dom.undoButton.disabled, "an edit is not offered").toBe(true);
+      list.listHandlers!.remove("h1");
+      await flush();
+      expect(a.dom.undoButton.disabled).toBe(false);
+      list.listHandlers!.editText("h2", "Later");
+      await flush();
+      expect(a.dom.undoButton.disabled).toBe(true);
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+
+      list.listHandlers!.remove("h2");
+      await flush();
+      expect(a.dom.undoLabel.textContent).toBe('Undo: delete "Later"');
+      const h3 = a.ctx.tourDocument
+        .objects()
+        .find((o) => o.object.id === "h3")!.object;
+      // A change that renders nothing, then the tap.
+      a.ctx.tourDocument.edit({ ...h3, label: "Shed" }, "a later change");
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.ctx.tourDocument.deleted()).toEqual(["h1", "h2"]);
+      expect(
+        a.ctx.tourDocument.objects().find((o) => o.object.id === "h3")?.object,
+      ).toMatchObject({ label: "Shed" });
+    });
+
+    // Why: the async-UI rule (root CLAUDE.md) for the strip's tap - the
+    // chip says it runs until the draft writes settle, then the note names
+    // what was undone, and a write that did not land is said.
+    it("shows Undoing… on the strip until the undo's draft writes land, then the outcome - and says so when they are refused", async () => {
+      const slow = slowDraftStore();
+      const a = await withHostedTour(
+        [hostedPin("h1", "Gate"), hostedPin("h2", "Mill")],
+        slow.store,
+      );
+      await slow.release();
+      const list = a.dom.objectList;
+      // Edited first, so the undo writes the pin's record back (a held
+      // write); a hosted pin as the file has it only drops its tombstone.
+      list.listHandlers!.editText("h1", "Gate 2");
+      await slow.release();
+      list.listHandlers!.remove("h1");
+      await slow.release();
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.dom.undoLabel.textContent).toBe("Undoing…");
+      expect(a.dom.undoButton.disabled).toBe(true);
+      await slow.release();
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+      expect(list.lastModel?.note).toBe('Restored "Gate 2".');
+
+      list.listHandlers!.editText("h2", "Mill 2");
+      await slow.release();
+      list.listHandlers!.remove("h2");
+      await slow.release();
+      slow.mode.refuse = true;
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.dom.undoLabel.textContent).toBe("Undoing…");
+      await slow.release();
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+      expect(list.lastModel?.note).toMatch(
+        /^Restored "Mill 2", but this device could not save a backup copy/,
+      );
+    });
+
+    // Why: on the page there is no strip (the AR controls are the
+    // session's), so the delete's outcome keeps its own Undo there.
+    it("keeps the note's Undo beside a delete's outcome on the page", async () => {
+      const a = await withHostedTour([hostedPin("h1", "Gate")]);
+      a.endVisit();
+      a.setup.renderAuthorReadout();
+      a.dom.objectList.listHandlers!.remove("h1");
+      await flush();
+      expect(a.dom.objectList.lastModel?.undo).toBe(true);
+      expect(a.dom.controls.hidden, "no strip on the page").toBe(true);
+    });
+
     it(`withdraws Undo after ${String(OUTCOME_HOLD_MS)} ms, and an expired Undo restores nothing`, async () => {
       const a = await withHostedTour([hostedPin("h1", "Gate")]);
+      // On the page: in AR the strip's persistent Undo takes the note's
+      // place (owner decision W-D4), so the note's Undo is the page's.
+      a.endVisit();
       const list = a.dom.objectList;
       list.listHandlers!.remove("h1");
       await flush();
@@ -3330,6 +3459,126 @@ describe(
       // Changed live: a restored draft's text for the code does not win.
       a.codes.restoreLevels([{ id: stored.id, json: '{"from":"a draft"}' }]);
       expect(a.codes.savedText(stored.id)).toBe(stored.json);
+    });
+
+    // Why these tests matter (owner decision W-D4, Q-J): the one-step undo
+    // of a settle (Q-D) had no button. The settle lands at the visit's
+    // end, so the strip offers it in the next visit, named by what it
+    // takes back, and ONE tap takes back the code's improvement, the
+    // station it took along and the pins it moved - and the hand lets go.
+    it("offers a settle's code improvement in the strip's Undo at the next visit, and one tap takes back the code, its station and the pins it moved", async () => {
+      const { a, stored, before, pins } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      const station = stationOf(a, "near").geo;
+      a.endVisit();
+      expect(codePosition(a)?.decision).toEqual({ kind: "replace" });
+      expect(a.codes.savedText(stored.id)).not.toBe(stored.json);
+      expect(stationOf(a, "near").geo).not.toEqual(station);
+      expect(pins()).not.toEqual(before);
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoLabel.textContent).toBe("Undo: the code's improvement");
+      expect(a.dom.undoButton.disabled).toBe(false);
+      const steps = a.ctx.tourDocument.state().past.length;
+
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.ctx.tourDocument.state().past.length, "one step").toBe(
+        steps - 1,
+      );
+      expect(a.codes.savedText(stored.id)).toBe(stored.json);
+      expect(stationOf(a, "near").geo).toEqual(station);
+      expect(pins()).toEqual(before);
+      expect(a.codes.inHand(), "the hand lets go").toBeNull();
+      expect(a.dom.objectList.lastModel?.note).toMatch(
+        /^Undone: the code's improvement - /,
+      );
+      expect(a.dom.undoButton.disabled).toBe(true);
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+      const log = a.dispatched.filter(
+        (x) => x.type === "tourAuthoring/settleUndone",
+      );
+      expect(log).toHaveLength(1);
+      expect(log[0]?.payload).toMatchObject({ levelIds: [stored.id] });
+    });
+
+    // Why (a defect the strip's Undo exposed, found while building it): the
+    // settle keeps what it decided per code for the Finish's result line,
+    // so after the creator took the improvement back the result still
+    // said "the code's saved position was improved by this walk" - a
+    // false statement about the zip they are about to publish.
+    it("says nothing of the improvement on the Finish's result once the strip's Undo took it back", async () => {
+      const { a } = await secondVisit({ yawDeg: 20, northM: 3, walkM: 30 });
+      a.endVisit();
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      a.dom.undoButton.click();
+      await flush();
+      a.endVisit();
+      await openFinishableTour(a);
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+      expect(a.dom.finishStatus.textContent).not.toMatch(/improved/);
+    });
+
+    it("withdraws the settle's Undo once the creator places something after it", async () => {
+      const { a } = await secondVisit({ yawDeg: 20, northM: 3, walkM: 30 });
+      a.endVisit();
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoButton.disabled).toBe(false);
+      await a.placePin("after", [1, 0, 1]);
+      expect(a.dom.undoButton.disabled).toBe(true);
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+    });
+
+    // Why: a visit that only measured a new code re-mints it through the
+    // end alignment - a refinement of its own measurement, no automatic
+    // change of a stored code (Q-D's scope) - so nothing is offered.
+    it("offers no Undo for a settle that only refined this visit's own measurement", async () => {
+      const a = authoring();
+      await a.mint();
+      await a.placePin("near", [2, 0, -1]);
+      const steps = a.ctx.tourDocument.state().past.length;
+      a.endVisit();
+      expect(
+        a.ctx.tourDocument.state().past.length,
+        "the settle took a step",
+      ).toBe(steps + 1);
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoButton.disabled).toBe(true);
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+    });
+
+    // Why: the async-UI rule for the settle's tap, success and failure.
+    it("shows Undoing… until a settle's undo is backed up, and says so when its draft writes are refused", async () => {
+      const slow = slowDraftStore();
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+        store: slow.store,
+      });
+      a.endVisit();
+      await slow.release();
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      slow.mode.refuse = true;
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.dom.undoLabel.textContent).toBe("Undoing…");
+      await slow.release();
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+      expect(a.codes.savedText(stored.id)).toBe(stored.json);
+      expect(a.dom.objectList.lastModel?.note).toMatch(
+        /^Undone: the code's improvement, but this device could not save a backup copy/,
+      );
     });
 
     // Why this test matters (plan M3b): what the undo puts back must reach

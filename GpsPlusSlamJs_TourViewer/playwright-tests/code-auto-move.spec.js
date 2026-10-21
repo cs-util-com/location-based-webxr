@@ -203,3 +203,25 @@ test("the moved spot survives a reload: the draft restores it and the Finish wri
     0.0003,
   );
 });
+
+test("the next visit's strip offers the automatic move in its Undo, and one tap takes it back", async ({
+  page,
+}) => {
+  // Owner decisions Q-D and W-D4 (Q-J): the settle's automatic code change
+  // is one undo step, and the strip's persistent Undo is its button. The
+  // settle lands at the visit's end, so the next visit offers it, named by
+  // what it takes back; the tap says what was undone.
+  await openFixtureTour(page);
+  await walkUnderShiftedGps(page);
+  await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("enter-ar").click();
+  const chip = page.getByTestId("setup-undo");
+  await expect(chip).toBeEnabled({ timeout: 10000 });
+  await expect(chip).toHaveText("Undo: the code's move");
+  await chip.click();
+  await expect(page.getByTestId("object-list-note")).toHaveText(
+    /^Undone: the code's move - the code and everything that moved with it are back where they were\./,
+  );
+  await expect(chip).toBeDisabled();
+  await expect(chip).toHaveText("Undo");
+});

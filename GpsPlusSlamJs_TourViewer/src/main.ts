@@ -646,6 +646,8 @@ const setup = wireCreatorSetup({
     pinCancel: element("pin-cancel"),
     photoButton: element("setup-photo"),
     newStationButton: element<HTMLButtonElement>("setup-new-station"),
+    undoButton: element<HTMLButtonElement>("setup-undo"),
+    undoLabel: element("setup-undo-label"),
     draftOffer: element("draft-offer"),
     draftOfferText: element("draft-offer-text"),
     draftRestore: element("draft-restore"),

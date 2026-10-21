@@ -60,6 +60,10 @@ author flag.
    of where it lands, else starts a new one there; "New station here" makes
    the next one start its own station even within that radius (for places
    closer together than any radius can separate; a second tap cancels it).
+   "Undo", above them, takes back the last delete, or the last automatic
+   change of a code's saved position together with the pins and stations
+   it moved, and says which ("Undo: delete "Gate"", "Undo: the code's
+   improvement"); it stays until something else changes the tour.
    "Finish"
    ends the session, and the same step then saves and shows:
    - **the rebuilt zip** - the page rebuilds the archive in the browser:

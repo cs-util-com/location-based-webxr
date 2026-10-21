@@ -13,7 +13,7 @@ M4 settles every code of the book, not only the one in hand.
 
 ## Public API
 
-- `wireCreatorSettle({ ctx, arStore, seams, previews, alignmentPicks, draft, codes, visitLog, pageId, summary?, alignmentInfo, sizeOf }): CreatorSettle` - `sizeOf(text)`: the size a
+- `wireCreatorSettle({ ctx, arStore, seams, previews, alignmentPicks, draft, codes, visitLog, pageId, summary?, alignmentInfo, sizeOf, offerUndo? }): CreatorSettle` - `sizeOf(text)`: the size a
   code is solved at (`creator-measuring.ts`); a replaced or moved stored
   code is re-minted at its sighting's size, not the field's (M4 milestone
   review #2)
@@ -45,6 +45,16 @@ M4 settles every code of the book, not only the one in hand.
   - `showSummary()` - the summary after Finish.
   - `endVisit()` / `reset()` - a visit ended (its refusal goes); a tour
     closed (its move boundaries and decisions go).
+  - `settleUndone(visit)` - the AR strip's Undo took `visit`'s settle
+    back (owner decision W-D4, `creator-undo.ts`): that settle's per-code
+    outcomes (the result line), move boundaries and applied decisions go,
+    so the Finish's result does not report a change the creator took back.
+- `offerUndo(target, visit)` (optional dep) - told right after a settle's
+  step when it changed a stored code automatically: each code of the step
+  (`nextStep(...).codes`) is named by the decision that changed it (an
+  applied `replace` an improvement, `move` a move, a code-spot undo a
+  move back, else null) and `settleUndoTarget` names the step; no
+  automatic change, no offer.
 
 ## Invariants & assumptions
 
