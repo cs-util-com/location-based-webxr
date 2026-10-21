@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vitest/config";
 
 // Vitest scoping for the landing page. Unit tests live under `src/` and
@@ -11,6 +12,14 @@ import { defineConfig } from "vitest/config";
 // globals, which keeps the suite fast and deterministic.
 export default defineConfig({
   test: {
+    // The shared fast-check time limit (every interruption is red), so a
+    // failing property cannot shrink for hours where testTimeout cannot reach:
+    // scripts/test-timing/fast-check-time-limit.mjs.md.
+    setupFiles: [
+      fileURLToPath(
+        new URL("../scripts/test-timing/fast-check-time-limit.mjs", import.meta.url)
+      ),
+    ],
     include: ["src/**/*.test.ts", "scripts/**/*.test.mjs"],
   },
 });

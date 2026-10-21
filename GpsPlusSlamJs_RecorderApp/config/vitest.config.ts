@@ -13,7 +13,18 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     // The jsdom Blob.stream() polyfill zip.js 2.9+ needs (see the file).
-    setupFiles: ['src/test-setup.ts'],
+    // The shared fast-check time limit (every interruption is red), so a
+    // failing property cannot shrink for hours where testTimeout cannot
+    // reach: scripts/test-timing/fast-check-time-limit.mjs.md.
+    setupFiles: [
+      'src/test-setup.ts',
+      fileURLToPath(
+        new URL(
+          '../../scripts/test-timing/fast-check-time-limit.mjs',
+          import.meta.url
+        )
+      ),
+    ],
     include: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
     // Suppress console.log/error output from tests to reduce noise.
     // Failing tests still show the assertion error and source context.
