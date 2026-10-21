@@ -284,24 +284,4 @@ describe("walkStatusRouting (§1.4)", () => {
   // while the guide already walks the visitor (found in the M2
   // side-by-side: the found card stood over the walk for good). Once the
   // sheet shows, the walk is what happens; the wait gives way to it.
-  it("a placement wait gives way to the walk once the sheet shows", () => {
-    const placing = parts("placing", "Placing the tour by GPS (less exact)…");
-    const locking = parts("locking", "Code found - placing the tour…");
-    expect(walkStatusRouting(placing, false, true)).toEqual(NONE);
-    expect(walkStatusRouting(locking, false, true)).toEqual(NONE);
-    // Before the sheet shows, the wait is said as before.
-    expect(walkStatusRouting(locking, false, false).scanCard).toBe("found");
-    expect(walkStatusRouting(placing, false).coach?.look).toBe("spinner");
-    // The other states do not depend on the sheet.
-    for (const state of [
-      "starting",
-      "warming-up",
-      "scan",
-      "code-moved",
-    ] as const) {
-      expect(walkStatusRouting(parts(state, "x"), false, true)).toEqual(
-        walkStatusRouting(parts(state, "x"), false, false),
-      );
-    }
-  });
 });

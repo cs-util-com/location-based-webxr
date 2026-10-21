@@ -32,7 +32,9 @@ unfinished?: { contact } }`.
   content error string, `stationsAwaitHeading?` (the visitor guide
   waits for a heading, D34; read only by `visitorStatus`) and
   `awayFromStations?` (the tour placed, every piece of its content waiting
-  at a station not shown now; read only by `visitorStatus`).
+  at a station not shown now; read only by `visitorStatus`) and
+  `walkRuns?` (the visitor's walk runs, its sheet shown: the tour counts
+  as placed; read only by `visitorStatus`).
 - `isPlacementReady(report): boolean` - the placement trigger (flows plan
   M4, DEC-F3): true when `computeOnboardingGuidance(report).phase ===
 "ready"`, i.e. the tracking-quality `ok` state. At the first GPS fix the

@@ -1658,6 +1658,9 @@
         --walk-surface-2: rgb(255 255 255 / 7%);
         --walk-line: rgb(255 255 255 / 15%);
         --walk-danger: #f87171;
+        /* The away block's segments on the start page (W4's paper). */
+        --walk-away-found: #0f766e;
+        --walk-away-left: #ddd6c7;
       }
       .walk-sheet,
       .walk-coach,
@@ -1881,6 +1884,7 @@
       }
       /* stylelint-enable no-descending-specificity */
       .walk-grab {
+        position: relative;
         display: block;
         flex: none;
         width: 100%;
@@ -1891,6 +1895,14 @@
         cursor: grab;
         touch-action: none;
         user-select: none;
+      }
+      /* A 44 px target around the 5 px pill (W4 M2 review): 11 px above
+         the sheet's edge and 11 px into the segments, clear of the peek's
+         row and its quick action. The layout stays W4's. */
+      .walk-grab::before {
+        position: absolute;
+        inset: -11px 0;
+        content: "";
       }
       .walk-grab .sheet-handle {
         display: block;
@@ -1989,7 +2001,8 @@
         color: var(--walk-accent);
         font-size: 17px;
         font-weight: 700;
-        font-variant-numeric: tabular-nums;
+        /* Both: a value set here replaces the sheet's inherited one. */
+        font-variant-numeric: lining-nums tabular-nums;
       }
       .walk-tail {
         margin: 3px 0 0;
@@ -2421,11 +2434,11 @@
       }
       .walk-away .walk-segments > i {
         height: 8px;
-        background: var(--map-line);
+        background: var(--walk-away-left);
       }
       .walk-away .walk-segments > i[data-s="found"],
       .walk-away .walk-segments > i[data-s="here"] {
-        background: var(--map-route);
+        background: var(--walk-away-found);
       }
       .walk-away .walk-segments > i[data-s="skipped"] {
         background: repeating-linear-gradient(
@@ -4546,7 +4559,20 @@
                 <span id="walk-coach-text" data-testid="walk-coach-text"></span>
               </div>
               <!-- The framework's toast is attached here while it shows. -->
-              <div id="walk-toast-root" data-testid="walk-toast-root"></div>
+              <!-- aria-hidden: its words are announced already, by
+                   #ar-status-live or #station-line, and the rest by
+                   #walk-live (walk-toast.ts.md). -->
+              <p
+                id="walk-live"
+                class="visually-hidden"
+                data-testid="walk-live"
+                aria-live="polite"
+              ></p>
+              <div
+                id="walk-toast-root"
+                data-testid="walk-toast-root"
+                aria-hidden="true"
+              ></div>
               <section
                 id="walk-sheet"
                 class="sheet walk-sheet"
@@ -4560,6 +4586,7 @@
                   id="walk-grab"
                   class="walk-grab"
                   data-testid="walk-grab"
+                  aria-controls="walk-list"
                   aria-expanded="false"
                   aria-label="Show all stations"
                 >

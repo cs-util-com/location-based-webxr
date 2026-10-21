@@ -12,8 +12,8 @@ import {
  * Why these tests matter (visitor walk W4 build plan M2, §3.1): the walk's
  * layout is W4's, and the design system zeroes paragraph and list margins,
  * so a port can lose every gap and still pass a test that asks only whether
- * an element is visible (the L5 lesson). These pin positions and gaps the
- * owner chose in the prototype (`public/prototypes/visitor-walk-4-radar-
+ * an element is visible (the L5 lesson). These pin positions and gaps of
+ * the chosen prototype (`public/prototypes/visitor-walk-4-radar-
  * and-list/`): the sheet at the bottom (a card at the bottom left of a
  * phone held sideways), the round Exit button, the peek's rows, the toast's
  * place clear of the radar's corner, the list's rows and the away block on

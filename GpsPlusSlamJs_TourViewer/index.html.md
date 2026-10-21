@@ -284,10 +284,14 @@ M2; the prototype `public/prototypes/visitor-walk-4-radar-and-list/`),
 all inside `#ar-root`: `#station-line` is visually hidden since M2 (the
 hidden copy the tests and a screen reader read; the sheet shows it in two
 lines); `#walk-coach` (`walk-coach`, its `data-look` spinner, sway or
-plain, and `walk-coach-text`); `#walk-toast-root` (`walk-toast-root`; the
-toast element `#walk-toast` is created in it); and the sheet
+plain, and `walk-coach-text`); `#walk-toast-root` (`walk-toast-root`,
+`aria-hidden="true"` since its words are announced already by
+`#ar-status-live` or `#station-line`; the toast element `#walk-toast` is
+created in it); `#walk-live` (`walk-live`, visually hidden, polite: the
+welcome back, the one toast text no other region announces); and the sheet
 `#walk-sheet` (`walk-sheet`, `data-sheet` peek or list, `data-complete`),
-which owns the grab `walk-grab`, the peek `walk-peek` (`walk-segments`,
+which owns the grab `walk-grab` (`aria-controls="walk-list"`, a 44 px
+target from `::before` around its 5 px pill), the peek `walk-peek` (`walk-segments`,
 `walk-peek-row`, `walk-eyebrow`, `walk-title`, `walk-distance`,
 `walk-tail`, `walk-code-tail`, and `#station-skip` as its quick action),
 the story card `walk-story` (`#scene-panel` and its parts, `walk-dots`,
@@ -302,11 +306,15 @@ is visually hidden (kept for `data-state` and `?debug=1`). The scan
 card's found look is `#scan-card[data-look="found"]` (a check in its
 animation's place). On the start page, `#walk-away` (`walk-away`,
 `walk-away-text`, `walk-away-segments`, `walk-away-rows` with
-`walk-away-row` items) shows the progress after leaving AR. The walk's
+`walk-away-row` items) shows the progress after leaving AR, its
+segments in W4's paper colours (`--walk-away-found` #0f766e,
+`--walk-away-left` #ddd6c7). The walk's
 colours are `--walk-*` tokens on `html`; design.css's `.radar`,
 `.toast` and `.hint` classes are not used (plan §1.2). The walk's
 surfaces set `font-variant-numeric: lining-nums`, since the app font's
-old-style numerals shrink a row's number and a distance next to W4's.
+old-style numerals shrink a row's number and a distance next to W4's;
+`.walk-distance` sets `lining-nums tabular-nums` together, since its own
+value replaces the inherited one.
 `#ar-debug` (a `<pre>` in `#ar-root`, hidden unless `?debug=1`) holds the
 QR readout (QR near-frontal pose plan §66).
 Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,

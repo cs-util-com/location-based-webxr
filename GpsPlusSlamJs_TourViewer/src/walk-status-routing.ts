@@ -91,25 +91,19 @@ function placedByGpsNews(text: string): string {
 /**
  * The route of one sentence. `scanShown`: the scan card shows now
  * (`scan-gate.ts` `scanCardShown`: a visitor's session waiting at the
- * gate); it then carries whatever the sentence says, as today.
- * `walkShown`: the sheet shows (the station guide runs). A placement
- * wait (`placing`, `locking`) then gives way to the walk: a tour whose
- * stations hold only stories places no content, so the sentence never
- * leaves the wait while the guide already walks the visitor.
+ * gate); it then carries whatever the sentence says, as today. (Once
+ * the walk runs the sentence itself is a placed one, `walkRuns` in
+ * `visitor-status.ts`, so no placement wait stands over the sheet.)
  */
 export function walkStatusRouting(
   status: VisitorStatusParts,
   scanShown: boolean,
-  walkShown = false,
 ): StatusRoute {
   const toasts = [...status.notes];
   const codeTail = status.text.includes(FIND_CODE);
   const route = ROUTE_OF[status.state];
   if (scanShown) {
     return { coach: null, scanCard: "scan", toasts, codeTail: false };
-  }
-  if (walkShown && (status.state === "placing" || status.state === "locking")) {
-    return { coach: null, scanCard: null, toasts, codeTail: false };
   }
   switch (route) {
     case "page":

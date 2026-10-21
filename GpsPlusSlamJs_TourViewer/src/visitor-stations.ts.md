@@ -125,15 +125,32 @@ hooks.tickStations = stations.tick;
   (`main.ts`: a tap on `#enter-ar`, the session's one way out).
 - Toasts: the guide's note ("Skipped X." / "Brought back X.") once per
   note, and `WELCOME_BACK` ("Welcome back - your progress is kept.") at
-  the first drawn sheet of an entry after leaving AR with progress.
+  the first drawn sheet of an entry after leaving AR with progress; one
+  render's words go out as ONE toast (`walk.toast.say(words)`).
+- **The store rule** (W4 build plan M2 review): the welcome waiting is
+  walk state, in the slice (`welcomePending`, `welcomeSet`); `stop()`
+  arms it, the first drawn sheet says it and clears it. Two closure values
+  stay, argued as DOM resources rather than state: `saidNote` is the
+  toast's dedup (like `walk-toast.ts`'s own, no view reads it), and
+  `sheetShown` mirrors what the last render drew, read by the status and
+  compared to call `onShownChange`.
+- **No sheet drawn inside a guide call**: a story's `onChange` fires from
+  inside one (a find starts the story) while the guide's view is half made
+  and its walk batch has not reached the store. `createCallGuard(render)`
+  (exported) wraps every guide call made here (`tick`, `codeLocked`,
+  `skipTapped`, `cancelAsk`, `storyEnded`, the stop's `stopAll` and
+  `endSession`); `request()` inside one defers the draw to the end of the
+  outermost call, once, and outside any call draws at once. A call that
+  throws still draws (try/finally). Tests: `visitor-stations.test.ts`
+  "createCallGuard".
 - `progressKept()` - the open tour has a walk with progress: the
   progress's stations are the open tour's (a closed tour's walk stays in
   the store until the guide's next run) and `walkHasProgress`. `stop()`
   draws the away block on the start page from it (`awayModel`), or
   hides it.
 - `walkShown()` - the last render drew the sheet (the guide runs, the
-  tour and its walk are known); `ar-entry.ts` then routes a placement wait
-  nowhere. When it flips, `walk.onShownChange` is called (main: the AR
+  tour and its walk are known); `ar-entry.ts` passes it to the status as
+  `walkRuns` (the tour reads as placed). When it flips, `walk.onShownChange` is called (main: the AR
   status re-renders), since nothing else re-renders the status when the
   guide starts after the code locked.
 - Tests: the models and the writer's pure half have their own unit tests;

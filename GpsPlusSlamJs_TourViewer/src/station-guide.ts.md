@@ -545,7 +545,10 @@ distances, quick, note }`: the line's station, how the position stands
 - **No stale line while the scan gate is shut** (plan §10 follow-up):
   `render()` hides the line, the skip button and the end control whenever
   the guide does not run (`running()`: a live run and placement allowed),
-  and `view()` is null then.
+  and `view()` is null then. That early return also skips, while the gate
+  is shut, the settle of a skip's leave timer and the next story's
+  prefetch: both happen at the first render after the gate opens. Timing
+  only - nothing is lost, the skip and the prefetch catch up then.
 - Tests: `station-guide.view.test.ts` (the view per position kind, the
   quick action, the note, the end control and Keep listening, the stale
   line); `walk-sheet-model.property.test.ts` drives the real guide.

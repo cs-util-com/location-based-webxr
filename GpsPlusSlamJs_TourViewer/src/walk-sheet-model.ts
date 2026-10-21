@@ -35,7 +35,7 @@ import type { WalkSheet } from "./visitor-walk-slice.js";
  * wide with 4 px gaps inside the narrowest sheet, a 360 px phone with
  * 16 px side padding (328 px: 47 x 3 + 46 x 4 = 325). The landscape card
  * (370 px less 32) holds 48. Reversed by a measurement on a narrower
- * phone, or by an owner's verdict that 3 px is too thin to read.
+ * phone, or by a phone test finding 3 px too thin to read.
  */
 export const WALK_SEGMENT_LIMIT = 47;
 

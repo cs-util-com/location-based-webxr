@@ -549,6 +549,66 @@ describe("visitorStatus - away from every station", () => {
   });
 });
 
+describe("visitorStatus - the walk runs (W4 build plan M2)", () => {
+  // Why: the guide runs only once the tour's zero is known, so its
+  // stations are placed - even when nothing else stands (a tour whose
+  // stations hold only stories places no content). Read as a placement
+  // wait, the walk request and a GPS placement's reason were lost under
+  // the sheet, and the hidden sentence and its live region said "placing
+  // the tour" for good.
+  const WALK = "Walk a few steps so the guide knows the direction.";
+  const tracking = {
+    phase: "move-around",
+    percentReady: 0.4,
+    hint: "Move the phone slowly.",
+  } as never;
+  const storiesOnly = { content: { kind: "none" } as const, walkRuns: true };
+
+  it("reads a code's placement as placed, and asks for steps while the guide waits for a heading", () => {
+    const byCode = {
+      ...storiesOnly,
+      gate: { kind: "passed", via: "code" } as const,
+      qr: qr(LINED_UP),
+      readiness: tracking,
+    };
+    expect(visitorStatus(input(byCode))).toEqual({
+      state: "placed",
+      text: "Tour placed. Look around.",
+    });
+    expect(
+      visitorStatus(input({ ...byCode, stationsAwaitHeading: true })),
+    ).toEqual({ state: "finding-direction", text: WALK });
+    // Before the walk runs, the same moment is still the wait.
+    expect(visitorStatus(input({ ...byCode, walkRuns: false })).state).toBe(
+      "locking",
+    );
+  });
+
+  it("keeps a GPS placement's reason and the walk request", () => {
+    expect(
+      visitorStatus(
+        input({
+          ...storiesOnly,
+          gate: { kind: "passed", via: "skipped" },
+          readiness: tracking,
+          stationsAwaitHeading: true,
+        }),
+      ),
+    ).toEqual({
+      state: "placed-gps",
+      text: `Tour placed by GPS (less exact). ${WALK} Find the poster's code to line it up.`,
+    });
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "skipped" },
+          readiness: tracking,
+        }),
+      ).state,
+    ).toBe("placing");
+  });
+});
+
 describe("visitorStatus - the guide waits for a heading (D34)", () => {
   const WALK = "Walk a few steps so the guide knows the direction.";
   const tracking = {

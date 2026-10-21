@@ -1,7 +1,12 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { quickKind, sheetAfterDrag, WALK_SHEET_DRAG_PX } from "./walk-sheet";
+import {
+  hideKeepingFocus,
+  quickKind,
+  sheetAfterDrag,
+  WALK_SHEET_DRAG_PX,
+} from "./walk-sheet";
 
 /**
  * Why these tests matter (visitor walk W4 build plan M2, §1.5): the list
@@ -44,5 +49,48 @@ describe("quickKind", () => {
     expect(quickKind({ kind: "ask-end", id: "a" })).toBeNull();
     expect(quickKind({ kind: "end", id: "a" })).toBeNull();
     expect(quickKind(null)).toBeNull();
+  });
+});
+
+describe("hideKeepingFocus (W4 build plan M2 review)", () => {
+  // Why: a keyboard or switch user's focus sits on "Keep listening" when
+  // it hides, or inside the story card when the card closes; a hidden
+  // focused element drops focus to the page's body, and the visitor starts
+  // over from the top. The focus moves to what takes its place.
+  function el(hidden: boolean) {
+    const node = {
+      hidden,
+      focused: 0,
+      contains: (other: unknown) => other === node || other === child,
+      focus: () => {
+        node.focused += 1;
+      },
+    };
+    const child = { inside: true };
+    return { node, child };
+  }
+
+  it("moves the focus to the fallback when the element that holds it hides", () => {
+    const keep = el(false);
+    const end = el(false);
+    hideKeepingFocus(keep.node, true, end.node, keep.node);
+    expect(keep.node.hidden).toBe(true);
+    expect(end.node.focused).toBe(1);
+    const card = el(false);
+    const grab = el(false);
+    hideKeepingFocus(card.node, true, grab.node, card.child);
+    expect(grab.node.focused).toBe(1);
+  });
+
+  it("leaves the focus alone elsewhere, when showing, and when already hidden", () => {
+    const keep = el(false);
+    const end = el(false);
+    hideKeepingFocus(keep.node, true, end.node, { elsewhere: true });
+    expect(keep.node.hidden).toBe(true);
+    hideKeepingFocus(keep.node, true, end.node, keep.node);
+    hideKeepingFocus(keep.node, false, end.node, keep.node);
+    expect(keep.node.hidden).toBe(false);
+    hideKeepingFocus(keep.node, true, end.node, null);
+    expect(end.node.focused).toBe(0);
   });
 });

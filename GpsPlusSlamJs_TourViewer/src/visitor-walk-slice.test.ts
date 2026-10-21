@@ -17,6 +17,7 @@ import {
   sheetSet,
   selectNote,
   selectUndoableSkip,
+  selectWelcomePending,
   SKIP_UNDO_MS,
   skipSettled,
   skipTaken,
@@ -26,6 +27,7 @@ import {
   walkCleared,
   walkStarted,
   walkStepped,
+  welcomeSet,
   type VisitorWalkState,
 } from "./visitor-walk-slice";
 
@@ -85,6 +87,7 @@ describe("visitorWalkReducer", () => {
       quickArmedId: null,
       sheet: "peek",
       completionSeen: false,
+      welcomePending: false,
     });
     expect(walkOffered(progress(started("any")))).toEqual(["a", "b", "c"]);
     expect(walkOffered(progress(started("fixed")))).toEqual(["a"]);
@@ -297,7 +300,7 @@ describe("visitorWalkReducer", () => {
 
 describe("the sheet (W4 build plan M2, §1.5, §1.6)", () => {
   // Why these tests matter: the sheet's peek / list is UI state in the
-  // store (root CLAUDE.md, the Redux rule), and two of its changes follow
+  // store (the project's Redux rule), and two of its changes follow
   // the walk rather than a tap - a story starting closes the list, and the
   // tour's completion opens it once (W4). Done in the reducer, they hold
   // for every writer of the walk, and a repeated completion does not open
@@ -509,5 +512,26 @@ describe("the walk's windows (selectUndoableSkip, selectNote)", () => {
   it("is the toast linger, the one value the guide names too", () => {
     expect(SKIP_UNDO_MS).toBe(DEFAULT_TOAST_LINGER_MS);
     expect(GUIDE_SKIP_UNDO_MS).toBe(SKIP_UNDO_MS);
+  });
+});
+
+describe("the welcome back (W4 build plan M2, §1.8)", () => {
+  // Why: leaving AR with progress arms one "Welcome back" for the next
+  // entry; it is walk state (a view's decision, not a DOM resource), so it
+  // lives in the store with the walk it belongs to, and a new walk or none
+  // forgets it.
+  it("is armed by leaving with progress, said once, and forgotten with the walk", () => {
+    let state = visitorWalkReducer(undefined, { type: "init" });
+    const wrap = () => ({ visitorWalk: state });
+    expect(selectWelcomePending(wrap())).toBe(false);
+    state = visitorWalkReducer(state, welcomeSet(true));
+    expect(selectWelcomePending(wrap())).toBe(true);
+    const same = visitorWalkReducer(state, welcomeSet(true));
+    expect(same).toBe(state);
+    state = visitorWalkReducer(state, welcomeSet(false));
+    expect(selectWelcomePending(wrap())).toBe(false);
+    state = visitorWalkReducer(state, welcomeSet(true));
+    state = visitorWalkReducer(state, walkCleared());
+    expect(selectWelcomePending(wrap())).toBe(false);
   });
 });

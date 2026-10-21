@@ -5,7 +5,8 @@
  * last skip while it can still be undone (`lastSkip`, settled by
  * `skipSettled`), the one-line note of what just happened (`note`), and
  * the quick action's arm (`quickArmedId`, "Can't get there?" asked for one
- * station), and the sheet's peek or list (M2). The reducer applies the run's pure transitions
+ * station), the sheet's peek or list, and a "Welcome back" waiting for the
+ * next AR entry (M2). The reducer applies the run's pure transitions
  * (`station-run.ts` `applyWalkStep`): one rule, in the store. The station
  * guide (`station-guide.ts`) dispatches only on events, never per frame,
  * and one call's changes as ONE batch (`walkBatched`) at its end, so a
@@ -83,6 +84,9 @@ export interface VisitorWalkState {
    *  the list opens once per completion, and a walk no longer complete
    *  (a skip undone) may open it again when it completes again. */
   readonly completionSeen: boolean;
+  /** The visitor left AR with progress: the next entry's first sheet says
+   *  "Welcome back", once (W4, §1.8). */
+  readonly welcomePending: boolean;
 }
 
 /** The sheet's two states (W4 build plan §1.5, §1.6). */
@@ -95,6 +99,7 @@ const initialVisitorWalkState: VisitorWalkState = {
   quickArmedId: null,
   sheet: "peek",
   completionSeen: false,
+  welcomePending: false,
 };
 
 /** A new walk (another tour, or the first): everything starts anew. */
@@ -124,6 +129,8 @@ export const noteCleared = createAction("visitorWalk/noteCleared");
 export const quickArmed = createAction<string | null>("visitorWalk/quickArmed");
 /** The visitor opened or closed the list. */
 export const sheetSet = createAction<WalkSheet>("visitorWalk/sheetSet");
+/** The welcome back armed (leaving AR with progress) or said. */
+export const welcomeSet = createAction<boolean>("visitorWalk/welcomeSet");
 /** One guide call's changes, applied in order as one dispatch. */
 export const walkBatched = createAction<readonly UnknownAction[]>(
   "visitorWalk/walkBatched",
@@ -212,6 +219,11 @@ export function visitorWalkReducer(
       ? state
       : { ...state, sheet: action.payload };
   }
+  if (welcomeSet.match(action)) {
+    return state.welcomePending === action.payload
+      ? state
+      : { ...state, welcomePending: action.payload };
+  }
   if (quickArmed.match(action)) {
     return state.quickArmedId === action.payload
       ? state
@@ -251,6 +263,11 @@ export function selectWalkProgress(state: WithWalk): WalkProgress | null {
 /** The sheet: its peek, or the list pulled up (W4 build plan M2). */
 export function selectWalkSheet(state: WithWalk): WalkSheet {
   return state.visitorWalk.sheet;
+}
+
+/** A "Welcome back" waits for the next entry's first sheet. */
+export function selectWelcomePending(state: WithWalk): boolean {
+  return state.visitorWalk.welcomePending;
 }
 
 /** The note of what just happened while its moment lasts at `nowMs`

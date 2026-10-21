@@ -849,6 +849,7 @@ const walkToast = createWalkToast(
     className: "walk-toast",
     id: "walk-toast",
   }),
+  element("walk-live"),
 );
 
 // The visitor's stations and their stories (tour kit plan K4), and the

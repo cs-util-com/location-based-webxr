@@ -145,7 +145,8 @@ export function wireArEntry(deps: {
   walk?: {
     toast: WalkToast;
     progressKept(): boolean;
-    /** The walk's sheet shows now (the station guide runs). */
+    /** The walk's sheet shows now (the station guide runs): the status
+     *  reads the tour as placed (`ArStatusInput.walkRuns`). */
     sheetShown?(): boolean;
   };
 }): ArEntry {
@@ -306,8 +307,8 @@ export function wireArEntry(deps: {
       if (dom.codeTail.textContent !== text) dom.codeTail.textContent = text;
     }
     // News is said in AR only: the toast's place is over the camera.
-    if (running)
-      for (const news of route.toasts) deps.walk?.toast.sayOnce(news);
+    // One render's news is one toast (a second would replace the first).
+    if (running) deps.walk?.toast.say([], route.toasts);
   }
 
   /** A visitor's tour that is not finished yet (`tour-unfinished.ts`),
@@ -400,6 +401,8 @@ export function wireArEntry(deps: {
         ctx.stationContent !== null &&
         !ctx.stationContent.showsAny() &&
         selectPresentStationId(arStore.getState()) === null,
+      // The walk's sheet shows: its stations are placed (W4 build plan M2).
+      walkRuns: deps.walk?.sheetShown?.() === true,
     };
     // A visitor reads one plain sentence (UI round 1, U1); the technical
     // line stays for the creator and for a visitor's `?debug=1`. The state
@@ -411,9 +414,7 @@ export function wireArEntry(deps: {
     dom.arStatus.textContent = line;
     const shown = scanWaitShown(input);
     // The walk's surfaces are a visitor's (a creator keeps the line).
-    const route = visitor
-      ? walkStatusRouting(parts, shown, deps.walk?.sheetShown?.() === true)
-      : null;
+    const route = visitor ? walkStatusRouting(parts, shown) : null;
     renderScanCard(shown, route?.scanCard === "found", plain.text);
     if (route !== null) renderWalkRoute(route, input.arStatus === "running");
     // The visitor's state machine only (a creator's would mislead), and

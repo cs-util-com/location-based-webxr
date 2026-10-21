@@ -12,7 +12,7 @@ peek's code line, or nowhere (the sheet already says it). Pure;
 
 ## Public API
 
-- `walkStatusRouting(status: VisitorStatusParts, scanShown: boolean, walkShown = false): StatusRoute`
+- `walkStatusRouting(status: VisitorStatusParts, scanShown: boolean): StatusRoute`
   - `coach: { text, look: "spinner" | "sway" | "plain" } | null`;
   - `scanCard: "scan" | "found" | null`;
   - `toasts: string[]` - news, each to be said once per AR entry;
@@ -38,12 +38,13 @@ peek's code line, or nowhere (the sheet already says it). Pure;
   - walk (placed, to-station, needs-code): nothing; the sheet speaks.
 - While the scan card shows (`scanShown`), it carries the whole sentence,
   as before W4.
-- Once the walk's sheet shows (`walkShown`), a placement wait (placing,
-  locking) routes nowhere: a tour whose stations hold only stories places
-  no content, so `contentStatus` never reads "placed" and the sentence
-  stays in its wait while the guide already walks the visitor. Without
-  this the found card (or the placing coach) would stand over the walk
-  for good. The scan card still wins over it (`scanShown` first).
+- No placement wait stands over the running walk: once the walk runs the
+  sentence itself is a placed one (`ArStatusInput.walkRuns`, read by
+  `visitor-status.ts`), so it routes as placed, placed-gps or
+  finding-direction, with their toast and request for steps. (An earlier
+  routing-only fix hid the wait here instead, which also silenced the
+  request for steps and the GPS placement's reason, and left the hidden
+  sentence and the live region in the wait.)
 - The sentence's notes (what could not load) are toasts on every route.
 - `#ar-status` keeps the whole sentence (`data-state`, the tests) and
   `#ar-status-live` keeps announcing it, whatever the route.

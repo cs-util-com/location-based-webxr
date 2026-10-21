@@ -12,6 +12,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MESH_DEPTH } from "./mesh-surface.js";
 import type { EnableGpsArConfig } from "gps-plus-slam-app-framework/ar";
+import { createWalkToast } from "./walk-toast.js";
 import { wireArEntry, type ArEntryDom } from "./ar-entry.js";
 import {
   createTourViewerSession,
@@ -146,19 +147,14 @@ function harness(
   /** What the walk's toast was asked to say, and its resets. */
   const toasts: string[] = [];
   const toastResets = vi.fn();
-  const said = new Set<string>();
-  const walkToast = {
-    say: (text: string) => toasts.push(text),
-    sayOnce: (text: string) => {
-      if (said.has(text)) return;
-      said.add(text);
+  // The walk's own toast over a stand-in of the framework's: `toasts` is
+  // what the screen showed, one entry per toast.
+  const walkToast = createWalkToast({
+    show: (text: string) => {
       toasts.push(text);
     },
-    reset: () => {
-      said.clear();
-      toastResets();
-    },
-  };
+    clear: toastResets,
+  });
   const arStore = createTourViewerStore();
   const seams = {
     stopCameraFrameCapture: () => undefined,
@@ -1401,23 +1397,48 @@ describe("the walk's surfaces in AR (visitor walk W4 build plan M2, §1.4)", () 
     expect(h.toastResets).toHaveBeenCalledTimes(1);
   });
 
-  it("a placement wait gives way to the walk once its sheet shows (a tour of stories places nothing)", () => {
+  it("a running walk is a placed tour: a tour of stories places nothing, yet its sentence moves on", () => {
     // Why: `contentStatus` reads "placed" only when station content
-    // stands in the scene, so a tour whose stations hold only stories stays
-    // at "Code found - placing the tour…" for good; the found card would
-    // then stand over the walk the visitor is already on.
+    // stands in the scene, so a tour whose stations hold only stories
+    // stayed at "Code found - placing the tour…" for good - the found card
+    // over the walk, the live region saying it - and once the sheet hid
+    // that wait, a GPS placement's reason went unsaid.
     let sheet = false;
     const h = harness({ arStatus: "running", sheetShown: () => sheet });
     h.ctx.session = {} as never;
     h.ctx.scanGate = { kind: "passed", via: "code" };
+    h.ctx.viewerLockedText = "c";
+    h.ctx.viewerVotedLocks = 3;
     h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("locking");
     expect(h.dom.scanCard.hidden).toBe(false);
     sheet = true;
     h.entry.renderArStatus();
-    // The sentence itself is kept (data-state, the live region).
-    expect(h.dom.arStatus.dataset["state"]).toBe("locking");
+    expect(h.dom.arStatus.dataset["state"]).toBe("placed");
+    expect(h.dom.arStatusLive.textContent).toBe("Tour placed. Look around.");
     expect(h.dom.scanCard.hidden).toBe(true);
     expect(h.dom.coach.root.hidden).toBe(true);
+    // Placed by GPS: its reason is the walk's news.
+    const gps = harness({ arStatus: "running", sheetShown: () => true });
+    gps.ctx.session = {} as never;
+    gps.ctx.scanGate = { kind: "passed", via: "skipped" };
+    gps.entry.renderArStatus();
+    expect(gps.dom.arStatus.dataset["state"]).toBe("placed-gps");
+    expect(gps.toasts).toEqual(["Tour placed by GPS (less exact)"]);
+  });
+
+  it("one render's news is ONE toast: a second would replace the first unread, and it would count as said", () => {
+    const h = placedVisitor({ kind: "passed", via: "skipped" });
+    h.ctx.stationContent = {
+      has: () => true,
+      shown: () => ({ count: 2, skipped: ["x"] }),
+      showsAny: () => true,
+    } as never;
+    h.entry.renderArStatus();
+    h.entry.renderArStatus();
+    expect(h.toasts).toEqual([
+      "Tour placed by GPS (less exact) 1 item could not load.",
+    ]);
   });
 
   it("a visitor who left AR with progress is offered 'Back to the tour'", () => {

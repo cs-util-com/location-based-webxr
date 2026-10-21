@@ -31,7 +31,11 @@ the chooser, the chosen target and the row arm here.
   - `sheet: "peek" | "list"` (`WalkSheet`, M2) - the sheet's peek, or the
     list pulled up;
   - `completionSeen: boolean` (M2) - the walk is complete and its
-    completion opened the list already.
+    completion opened the list already;
+  - `welcomePending: boolean` (M2 review) - the visitor left AR with
+    progress, and the next entry's first sheet says "Welcome back", once
+    (`welcomeSet(boolean)` arms or clears it; `selectWelcomePending`).
+    A new walk, a cleared one and another tour reset it.
 - Actions (all `visitorWalk/*`):
   - `walkStarted({ order, route })` - a new walk (`route` from
     `walkRoute(stations)`): everything else starts anew;

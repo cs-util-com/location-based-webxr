@@ -169,8 +169,10 @@ function gpsOnly(gate: ArStatusInput["gate"]): boolean {
   );
 }
 
+/** Placed: content stands, or the walk runs (its stations are placed by
+ *  the tour's zero, whether or not any content stands). */
 function isPlaced(input: ArStatusInput): boolean {
-  return input.content.kind === "placed";
+  return input.content.kind === "placed" || input.walkRuns === true;
 }
 
 /** Placed: through the code, or by GPS - with the one hint that can still

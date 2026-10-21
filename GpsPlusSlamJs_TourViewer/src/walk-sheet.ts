@@ -54,6 +54,24 @@ export function quickKind(
   }
 }
 
+/**
+ * Hide `el` (or show it); when it hides while it holds the focus (itself
+ * or a child), the focus moves to `fallback`, what takes its place: a
+ * focused element that hides drops the focus to the page's body, and a
+ * keyboard or switch user starts over from the top (W4 M2 review).
+ */
+export function hideKeepingFocus(
+  el: { hidden: HTMLElement["hidden"]; contains(other: never): boolean },
+  hidden: boolean,
+  fallback: { focus(): void },
+  active: unknown,
+): void {
+  if (el.hidden === hidden) return;
+  const held = hidden && active !== null && el.contains(active as never);
+  el.hidden = hidden;
+  if (held) fallback.focus();
+}
+
 type El = HTMLElement;
 
 export interface WalkSheetDom {
@@ -295,9 +313,15 @@ export function wireWalkSheet(deps: {
       if (dom.grab.getAttribute("aria-label") !== model.grabLabel) {
         dom.grab.setAttribute("aria-label", model.grabLabel);
       }
-      // The peek, or the story card in its place.
+      // The peek, or the story card in its place; a closing card hands
+      // its focus to the grab.
       setHidden(dom.peek, model.storyCard !== null);
-      setHidden(dom.story, model.storyCard === null);
+      hideKeepingFocus(
+        dom.story,
+        model.storyCard === null,
+        dom.grab,
+        dom.doc.activeElement,
+      );
       setData(dom.peek, "kind", model.peek.kind);
       setData(dom.peek, "position", extra.position);
       drawSegments(dom.segments, model.segments);
@@ -311,7 +335,14 @@ export function wireWalkSheet(deps: {
       drawDots(extra.story);
       const confirming = extra.quick?.kind === "end";
       setData(dom.storyEnd, "kind", confirming ? "end" : "ask");
-      setHidden(dom.keepListening, !confirming);
+      // "Keep listening" hides once tapped: the end control takes its
+      // focus.
+      hideKeepingFocus(
+        dom.keepListening,
+        !confirming,
+        dom.storyEnd,
+        dom.doc.activeElement,
+      );
       // The list.
       setHidden(dom.list, !list);
       setText(dom.listTitle, model.list.title);

@@ -5,7 +5,7 @@ import {
 } from "gps-plus-slam-app-framework/state";
 
 import { createTourViewerStore } from "./tour-viewer-session";
-import { stationAlignmentSignals } from "./visitor-stations";
+import { createCallGuard, stationAlignmentSignals } from "./visitor-stations";
 
 /**
  * Why these tests matter: the station guide trusts a position and judges
@@ -80,5 +80,46 @@ describe("stationAlignmentSignals", () => {
     expect(signals.trackingReady()).toBe(true);
     ctx.viewerVotedLocks = 0;
     expect(signals.trackingReady()).toBe(true);
+  });
+});
+
+describe("createCallGuard (W4 build plan M2 review)", () => {
+  // Why: a story's change (its `onChange`) can fire from inside a guide
+  // call - a find starts the story - and a sheet drawn then reads the
+  // guide's half-made view beside a store its batch has not reached yet.
+  // The render waits for the outermost call and happens once after it.
+  it("defers a render asked for inside a call until the outermost call ends, once", () => {
+    let renders = 0;
+    const guard = createCallGuard(() => {
+      renders += 1;
+    });
+    guard.request();
+    expect(renders).toBe(1);
+    guard.during(() => {
+      guard.request();
+      guard.during(() => {
+        guard.request();
+      });
+      expect(renders).toBe(1);
+    });
+    expect(renders).toBe(2);
+    guard.during(() => undefined);
+    expect(renders).toBe(2);
+  });
+
+  it("still ends the call and renders when the call throws", () => {
+    let renders = 0;
+    const guard = createCallGuard(() => {
+      renders += 1;
+    });
+    expect(() => {
+      guard.during(() => {
+        guard.request();
+        throw new Error("boom");
+      });
+    }).toThrow("boom");
+    expect(renders).toBe(1);
+    guard.request();
+    expect(renders).toBe(2);
   });
 });

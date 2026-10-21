@@ -40,6 +40,16 @@ the peek into the store's `sheetSet`. A thin writer, wired by
   end|ask on the story's end control, `data-state` and `data-id` on rows,
   `data-s` (on, now, off) and `data-timed` on the story's dots.
 - "Keep listening" shows only beside the confirm ("End this story" asked).
+- **Focus follows what takes a hidden control's place**
+  (`hideKeepingFocus(el, hidden, fallback, active)`, exported): when
+  "Keep listening" hides while focused, the focus moves to the story's
+  end control (`#walk-story-end`); when the story card closes with the
+  focus inside it, to the grab. A focused element that hides drops the
+  focus to the body, and a keyboard or switch user starts over.
+- **The grab's target is 44 px** around its 5 px pill: `.walk-grab::before`
+  reaches 11 px above the sheet's edge and 11 px into the segments, so
+  the layout is W4's unchanged. The grab carries `aria-controls="walk-list"`
+  beside `aria-expanded`.
 - The guide writes the labels of `#station-skip` and `#walk-story-end`;
   this module writes only their looks.
 
@@ -59,7 +69,7 @@ view.render(model, { sheet: "peek", quick, position: "distance", story: null });
 ## Tests
 
 - `walk-sheet.test.ts` - `sheetAfterDrag` (a property over thresholds
-  16-40 px) and `quickKind`.
+  16-40 px), `quickKind` and `hideKeepingFocus`.
 - The DOM half is driven end to end by
   `playwright-tests/visitor-walk.spec.js` (open and close by tap and
   drag, the story card, the completion, the away block) and

@@ -47,7 +47,9 @@ import { visitorStartView } from "./visitor-start.js";
 import {
   selectWalkProgress,
   selectWalkSheet,
+  selectWelcomePending,
   sheetSet,
+  welcomeSet,
 } from "./visitor-walk-slice.js";
 import {
   wireWalkSheet,
@@ -259,6 +261,10 @@ export function wireVisitorStations(deps: {
     now: deps.now,
     registerFrame: registerFrameUpdate,
   });
+  // The sheet is drawn after a guide call, never from inside one.
+  const calls = createCallGuard(() => {
+    renderSheet();
+  });
   const view = createSceneView({
     dom: dom.scene,
     // A getter: the open tour's assets, read when a step needs one.
@@ -281,11 +287,14 @@ export function wireVisitorStations(deps: {
     schedule: deps.schedule,
     objectUrls,
     onStoryEnd: (stationId) => {
-      guide.storyEnded(stationId);
+      calls.during(() => {
+        guide.storyEnded(stationId);
+      });
     },
-    // A story's step changed, or it ended: its dots and the peek follow.
+    // A story's step changed, or it ended: its dots and the peek follow,
+    // after the guide call it happened in (never a half-made view).
     onChange: () => {
-      renderSheet();
+      calls.request();
     },
   });
   /** The open tour's stations as the guide reads them. */
@@ -345,12 +354,13 @@ export function wireVisitorStations(deps: {
   poseOf = (id) => guide.figurePoseOf(id);
 
   const walk = deps.walk;
-  /** The note last said in the toast (it lasts 6 s in the store). */
+  /** The note last said in the toast (it lasts 6 s in the store): the
+   *  toast's dedup, a DOM resource like the toast's own (`walk-toast.ts`),
+   *  not walk state any view reads. */
   let saidNote: string | null = null;
-  /** The sheet shows (the last render drew it). */
+  /** What the last render drew (the sheet shown or not): a mirror of the
+   *  DOM, read by the status and compared to call `onShownChange`. */
   let sheetShown = false;
-  /** A visitor left AR with progress: the next entry says so, once. */
-  let welcomePending = false;
   const sheetView: WalkSheetView | null =
     walk === undefined
       ? null
@@ -362,7 +372,9 @@ export function wireVisitorStations(deps: {
             renderSheet();
           },
           keepListening: () => {
-            guide.cancelAsk();
+            calls.during(() => {
+              guide.cancelAsk();
+            });
             renderSheet();
           },
           exit: () => {
@@ -424,15 +436,20 @@ export function wireVisitorStations(deps: {
     });
     sheetView.renderAway(null);
     markShown(true);
-    // What a skip did is said once (W4: a toast, not the line).
+    // What a skip did is said once (W4: a toast, not the line), and the
+    // welcome back with it: one render's words are one toast.
+    const words: string[] = [];
     if (guideView.note !== saidNote) {
       saidNote = guideView.note;
-      if (guideView.note !== null) walk.toast.say(guideView.note);
+      if (guideView.note !== null) words.push(guideView.note);
     }
-    if (welcomePending) {
-      welcomePending = false;
-      walk.toast.say(WELCOME_BACK);
+    if (selectWelcomePending(state)) {
+      arStore.dispatch(welcomeSet(false));
+      words.push(WELCOME_BACK);
+      // Only the toast says it, and its root is aria-hidden.
+      walk.toast.announce(WELCOME_BACK);
     }
+    walk.toast.say(words);
   }
 
   /** Outside AR: the walk's progress on the start page (W4, §1.8). */
@@ -453,7 +470,9 @@ export function wireVisitorStations(deps: {
   /** A tap on the skip button or the story card's end control: the guide
    *  does what the label showed. */
   function quickTapped(): void {
-    guide.skipTapped();
+    calls.during(() => {
+      guide.skipTapped();
+    });
     renderSheet();
   }
 
@@ -468,7 +487,9 @@ export function wireVisitorStations(deps: {
 
   return {
     tick: () => {
-      guide.tick();
+      calls.during(() => {
+        guide.tick();
+      });
       // The figure shows only where its station's content does.
       stage.follow((id) => selectStationContentShown(arStore.getState(), id));
       renderSheet();
@@ -476,27 +497,64 @@ export function wireVisitorStations(deps: {
     loadContent: (path) => prefetch.load(path),
     // A lock only improved the position (D16): the guide re-judges now.
     codeLocked: () => {
-      guide.codeLocked();
+      calls.during(() => {
+        guide.codeLocked();
+      });
       renderSheet();
     },
     unlockAudio: () => {
       audio.unlock();
     },
     stop: () => {
-      view.stopAll();
-      guide.endSession();
+      calls.during(() => {
+        view.stopAll();
+        guide.endSession();
+      });
       // A tour close has already dropped the manifest: the cache goes now;
       // a session end keeps it for the next session (R15).
       prefetch.sync();
       // The sheet goes with the session; the progress shows on the start
       // page, and the next entry welcomes the visitor back (W4, §1.8).
       saidNote = null;
-      welcomePending = keptWalk() !== null;
+      arStore.dispatch(welcomeSet(keptWalk() !== null));
       renderSheet();
       renderAway();
     },
     progressKept: () => keptWalk() !== null,
     walkShown: () => sheetShown,
+  };
+}
+
+/**
+ * A render that waits for the calls in progress (W4 build plan M2 review):
+ * `request` inside `during` defers it to the end of the outermost call,
+ * once; outside any call it renders at once. A story's `onChange` fires
+ * from inside a guide call (a find starts the story), where the guide's
+ * view is half made and its walk batch has not reached the store yet.
+ */
+export function createCallGuard(render: () => void): {
+  during(call: () => void): void;
+  request(): void;
+} {
+  let depth = 0;
+  let pending = false;
+  return {
+    during(call) {
+      depth += 1;
+      try {
+        call();
+      } finally {
+        depth -= 1;
+        if (depth === 0 && pending) {
+          pending = false;
+          render();
+        }
+      }
+    },
+    request() {
+      if (depth > 0) pending = true;
+      else render();
+    },
   };
 }
 

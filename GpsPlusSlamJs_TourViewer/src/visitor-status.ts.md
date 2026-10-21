@@ -159,6 +159,13 @@ evaluations carry).
   sentence (`text`) and what could not load (`notes`) apart;
   `statusSentence(parts)` joins them; `visitorStatus(input)` is the two
   composed, its output unchanged (every existing test kept).
+- **The walk runs, so the tour is placed** (`input.walkRuns`, W4 build
+  plan M2 review): the guide runs only once the tour's zero is known, so
+  its stations are placed even when no content stands (a tour whose
+  stations hold only stories places none). `isPlaced` reads it with the
+  content's "placed", so the sentence leaves "placing"/"locking" for the
+  placed line, the GPS placement (`placed-gps`) or the request for steps
+  (`finding-direction`). Tests: "visitorStatus - the walk runs".
 - `GPS_PLACED`, `FIND_CODE`, `WALK` exported: the routing recognises the
   GPS placement's news, the code request (moved to the peek) and the
   request for steps (kept on the coach) by them.

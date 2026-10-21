@@ -253,12 +253,14 @@ the session end; an unrecorded one asks for none. The pure pieces: `ar-mode.test
   `#ar-status-live` announces the whole sentence, as before.
 - `deps.walk.progressKept()` feeds the button's "Back to the tour"; the
   toast is reset at the session's end. `deps.walk.sheetShown?()` (the
-  guide runs) lets a placement wait give way to the walk
-  (`walkStatusRouting`'s `walkShown`): a tour of stories places nothing,
-  so its sentence never leaves "locking".
+  guide runs) is the status input's `walkRuns`: a tour of stories places
+  no content, and the running walk makes its sentence a placed one (the
+  status, the hidden line and the live region alike). A render's news is
+  one toast (`toast.say([], route.toasts)`).
 - Optional dom and deps: a harness without them renders as before.
 - Tests: `ar-entry.test.ts` "the walk's surfaces in AR" (the coach and
   its spinner, the found look and back, a GPS placement's toast once and
   the code line, no news before AR, a creator untouched, the toast reset
-  at the session's end, "Back to the tour", a placement wait giving way
+  at the session's end, "Back to the tour", a running walk read as a
+  placed tour (live region and toast), one render's news as one toast; a placement wait giving way
   to the shown walk).

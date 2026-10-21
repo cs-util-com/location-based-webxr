@@ -104,6 +104,12 @@ export interface ArStatusInput {
    *  not shown now (`StationContent.showsAny` false): nothing is in view,
    *  so the visitor's line asks for a station. Absent: false. */
   awayFromStations?: boolean;
+  /** The visitor's walk runs (its sheet shows, W4 build plan M2): the
+   *  guide runs only once the tour's zero is known, so its stations are
+   *  placed and the tour counts as placed, even with no content standing
+   *  (a tour whose stations hold only stories places none). Absent:
+   *  false. */
+  walkRuns?: boolean;
 }
 
 /** The content segment: how many of the tour's objects stand. */
