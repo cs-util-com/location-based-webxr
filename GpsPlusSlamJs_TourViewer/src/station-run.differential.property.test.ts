@@ -4,8 +4,9 @@
  * §3 M1): random sequences of observe, finish, skip, unskip and focus over
  * generated tours (`next` links with cycles, stations without steps) and
  * the three orders give the same events, statuses, offers, completion,
- * upcoming station and skip suggestion through the live run as through a
- * frozen copy of the run from before its rules became pure transitions
+ * upcoming station and skip suggestion through the live run - held in
+ * its closure, and with its progress in a store of the walk's slice - as
+ * through a frozen copy of the run from before its rules became pure transitions
  * (`test-support/frozen-m1/station-run.ts`).
  *
  * Why it matters: the run's rules move into the store, and the
@@ -14,6 +15,7 @@
  * recomputed at another moment, a clock started twice) shows as the first
  * call that differs.
  */
+import { configureStore } from "@reduxjs/toolkit";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type {
@@ -22,8 +24,19 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-stations";
 import type { PositionPrecision } from "gps-plus-slam-app-framework/state/position-precision";
 
-import { createStationRun, type StationRun } from "./station-run";
+import {
+  applyWalkStep,
+  createStationRun,
+  stationRunOver,
+  walkRoute,
+  type StationRun,
+} from "./station-run";
 import { createStationRun as createFrozenRun } from "./test-support/frozen-m1/station-run";
+import {
+  visitorWalkReducer,
+  walkStarted,
+  walkStepped,
+} from "./visitor-walk-slice";
 
 type Call =
   | {
@@ -198,8 +211,36 @@ function call(
   }
 }
 
+/**
+ * The run with its progress in a store of the walk's slice: every step
+ * goes through the reducer, every read comes from the store, so the slice
+ * applies the rules and the adapter only names them.
+ */
+function runThroughTheSlice(
+  stations: readonly TourStation[],
+  order: TourOrder,
+): StationRun {
+  const store = configureStore({
+    reducer: { visitorWalk: visitorWalkReducer },
+  });
+  store.dispatch(walkStarted({ order, route: walkRoute(stations) }));
+  const progress = () => {
+    const p = store.getState().visitorWalk.progress;
+    if (p === null) throw new Error("no walk");
+    return p;
+  };
+  return stationRunOver(stations, {
+    read: progress,
+    perform(step) {
+      const { events } = applyWalkStep(progress(), step);
+      store.dispatch(walkStepped(step));
+      return events;
+    },
+  });
+}
+
 describe("the station run against its frozen copy (W4 M1's run-level differential)", () => {
-  it("gives the same events and the same view after every call, in every order", () => {
+  it("gives the same events and the same view after every call, in every order, held in a closure and through the walk's slice", () => {
     /** Each event kind seen, and an unskip that brought a station back. */
     const seen = {
       found: 0,
@@ -217,14 +258,19 @@ describe("the station run against its frozen copy (W4 M1's run-level differentia
         let nowMs = 5_000_000;
         const frozen = createFrozenRun({ stations, order, nowMs });
         const live = createStationRun({ stations, order, nowMs });
+        const slice = runThroughTheSlice(stations, order);
         expect(view(live, ids, nowMs)).toEqual(view(frozen, ids, nowMs));
+        expect(view(slice, ids, nowMs)).toEqual(view(frozen, ids, nowMs));
         sequence.forEach((c, k) => {
           if (c.kind === "wait") nowMs += c.ms;
           const want = call(frozen, c, ids, nowMs);
           const got = call(live, c, ids, nowMs);
+          const viaSlice = call(slice, c, ids, nowMs);
           const at = `call ${String(k)} ${JSON.stringify(c)}`;
           expect(got, at).toEqual(want);
+          expect(viaSlice, at).toEqual(want);
           expect(view(live, ids, nowMs), at).toEqual(view(frozen, ids, nowMs));
+          expect(view(slice, ids, nowMs), at).toEqual(view(frozen, ids, nowMs));
           if (!Array.isArray(want)) return;
           if (c.kind === "unskip" && want.length > 0) seen.unskip += 1;
           for (const e of want as {
@@ -242,5 +288,5 @@ describe("the station run against its frozen copy (W4 M1's run-level differentia
     for (const [kind, count] of Object.entries(seen)) {
       expect(count, kind).toBeGreaterThan(50);
     }
-  });
+  }, 120_000);
 });

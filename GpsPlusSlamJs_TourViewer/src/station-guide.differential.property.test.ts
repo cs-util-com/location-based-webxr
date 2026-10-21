@@ -20,11 +20,16 @@
  * (`ar-entry.ts`: every dispatch ticks the guide), which a bare store never
  * shows. So the property runs twice: with no subscriber, comparing after
  * every single call, and with each guide's store ticking its guide on every
- * dispatch, as the page does, comparing after each step plus the next
- * frame's tick. Under the subscription the hints a guide gives on every
- * render (upcoming, approach, the figure's turn, the breadcrumbs' calls)
- * are compared as sets, since an extra tick at the same instant repeats
- * them; the events (found, done, a story's end) are compared exactly.
+ * dispatch, as the page does, comparing after each step once the next
+ * camera frames have settled the page. That is where the two may differ in
+ * timing only: the live guide's walk is in the page's store, so its own
+ * dispatches (a find, a skip, a story's end) re-tick it at once, and a
+ * station offered by them - the next under fixed or branch order - is
+ * judged in the same frame instead of the next. Under the subscription the
+ * hints a guide gives on every render (upcoming, approach, the figure's
+ * turn, the breadcrumbs' calls) are compared as sets, since an extra tick
+ * at the same instant repeats them; the events (found, done, a story's
+ * end) are compared exactly, in order.
  */
 import { configureStore } from "@reduxjs/toolkit";
 import fc from "fast-check";
@@ -40,7 +45,10 @@ import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization
 
 import { wireStationGuide, type StationGuideDeps } from "./station-guide";
 import { wireStationGuide as wireFrozenGuide } from "./test-support/frozen-m1/station-guide";
-import { createTourViewerStore } from "./tour-viewer-session";
+import {
+  createTourViewerStore,
+  type TourViewerStore,
+} from "./tour-viewer-session";
 import {
   visitorGuideReducer,
   type VisitorGuideStore,
@@ -361,13 +369,15 @@ function frozenStore(): GuideStore {
   return configureStore({ reducer: { visitorGuide: visitorGuideReducer } });
 }
 
-/** The page's own store, as `visitor-stations.ts` hands it to the guide. */
-function liveStore(): GuideStore {
+/** The page's own store, as `visitor-stations.ts` hands it to the guide:
+ *  its presence and its walk. */
+function liveStore(): TourViewerStore {
   return createTourViewerStore();
 }
 
-function wireLive(store: GuideStore): Wire {
-  return (deps) => wireStationGuide({ ...deps, guideStore: store });
+function wireLive(store: TourViewerStore): Wire {
+  return (deps) =>
+    wireStationGuide({ ...deps, guideStore: store, walkStore: store });
 }
 
 /** What the frozen guide was seen doing, over every run: each must be
@@ -450,8 +460,14 @@ function runCase(
         world.allowed = step.allowed;
         break;
     }
-    // Under the page's subscription the next camera frame ticks too.
-    if (reenter) both((g) => g.tick());
+    // Under the page's subscription the next camera frames tick too, until
+    // the page has settled: a chain of finds (stations without steps one
+    // after the other) can take a frame each.
+    if (reenter) {
+      for (let frame = 0; frame < ids.length + 2; frame += 1) {
+        both((g) => g.tick());
+      }
+    }
     const want = look(frozen, reenter, ids);
     const got = look(live, reenter, ids);
     for (const key of Object.keys(COVERAGE) as (keyof Coverage)[]) {
@@ -481,6 +497,6 @@ describe("the station guide against its frozen copy (W4 M1's differential)", () 
       for (const [key, count] of Object.entries(seen)) {
         expect(count, key).toBeGreaterThan(0);
       }
-    });
+    }, 120_000);
   }
 });

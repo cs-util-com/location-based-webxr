@@ -75,7 +75,9 @@ VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
 - The breadcrumbs (`breadcrumbs.ts`) follow the guide's `onGuide`, one
   trail for the page.
 - The guide's `guideStore` is `arStore`: the present station lands in its
-  `visitorGuide` slice (visitor plan 2026-10-18-2349 M1). The station
+  `visitorGuide` slice (visitor plan 2026-10-18-2349 M1). Its `walkStore`
+  is `arStore` too: the visitor's walk lives in its `visitorWalk` slice
+  (`visitor-walk-slice.ts`, W4 build plan 2026-10-21-1105 M1). The station
   content draws by it (`viewer-placement.ts`, M2), and each `tick` hands
   the stage `selectStationContentShown` (`stage.follow`): the figure fades
   with its station. The stage's fade runs on `deps.now` and the AR frame

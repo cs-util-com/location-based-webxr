@@ -9,7 +9,9 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`,
 `GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md` (D9, D16),
 `GpsPlusSlamJs_Docs/docs/2026-10-18-2349-visitor-station-content-at-radius-plan.md`
-(M1: the present station).
+(M1: the present station),
+`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md` (M1:
+the walk's state in the page's store).
 
 ## Public API
 
@@ -42,7 +44,10 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
   `startHud(getTargets)`, `now()`, `fixMaxAgeMs?` (default
   `FIX_MAX_AGE_MS`, 5 s), `guideStore?` (the page's store with the
   `visitorGuide` slice, `visitor-guide-slice.ts`: the present station is
-  dispatched there; absent, none is judged),
+  dispatched there; absent, none is judged), `walkStore?` (the page's store
+  with the `visitorWalk` slice, `visitor-walk-slice.ts`: the walk lives
+  there; absent, the guide makes an internal store of that slice alone, so
+  it behaves the same without the page),
   `onFound(station)`, `onEndStory?(stationId)` (R9), `onVisitor?(nue)`, `onApproach?(station, distanceM,
 activateM)` (each tick, each offered station with a distance: the
   prefetch), `onDone?(stationId)` (a story's end or a skip: the prefetch may
@@ -55,6 +60,55 @@ activateM)` (each tick, each offered station with a distance: the
   only from that first readiness on.
 
 ## Invariants & assumptions
+
+- **The walk lives in the page's store** (W4 plan M1, §2.2): the run's
+  statuses and skip clocks (`progress`), the last skip (`lastSkip`, was
+  `undoable`), the line's note (`note`) and the skip button's ask
+  (`quickArmedId`, was `skipArmedFor`) are `visitorWalk`; the run's rules
+  are applied by its reducer (`station-run.ts` `applyWalkStep`).
+  - **One batch per call, at its very end.** `tick`, `skipTapped` and
+    `storyEnded` each read the walk, apply their changes to a draft
+    (`change`), and dispatch them as one `walkBatched` when the outermost
+    call ends (`inCall`) - after the tick's reads, its line and button,
+    and its own presence and heading dispatches. A nested call (the page's
+    subscriber ticking on a presence dispatch inside a tick, a story ended
+    from a tap) joins the draft; a subscriber woken by the batch ticks a
+    fresh call that finds nothing to change. So the guide never dispatches
+    the walk mid-tick, and never per frame: a tick with no event (no find,
+    no new focus, no settle) dispatches nothing.
+  - **The settle is an event:** once 6 s have passed since the last skip,
+    the next render dispatches `skipSettled` (and the prefetch hears the
+    skip's `onDone`); a find or another station done settles it at once,
+    as before. The note's 6 s are read over `now` (`noteText`), no timer.
+  - **Another tour:** `walkStarted` resets the walk (its last skip, note
+    and ask with it); no tour, `walkCleared`. The guide slice's
+    `guideTourChanged` resets the walk too, and is dispatched before the
+    batch, so the new walk lands after it.
+  - **What stays in the closure, and why** (the Redux rule): the HUD
+    handle (a resource); `last` and the pose cache (derived data, rebuilt
+    every tick); `trackedHeading` / `headingReady` (a latch only the guide
+    reads; its visible effect is the store's `headingPending`);
+    `replayFound` and `presentByCode` (the guide's own bookkeeping of
+    rules it alone applies); `runStations` (the identity that tells
+    another tour); `tourChangePending` (one tick's note to its own end);
+    `rendered` (what the button showed, so a tap does that, R14; goes in
+    M4 when a tap carries its action); `run` (a view of the run's calls
+    over the store's walk for the tour's stations, no state of its own);
+    the draft and its pending changes (one call's, gone at its end).
+  - **The listeners stay callbacks**, fired by the guide from each
+    transition's events, once per transition: `onFound`, `onDone` and
+    `onUpcoming` start, end and read ahead a story (the story panel and
+    the prefetch hold players and fetched assets, resources the store must
+    not hold); a store subscriber instead would fire again on every
+    re-entered dispatch. The guide-level differential checks each fires as
+    before.
+  - **Timing under the page's subscription:** the walk's own batch wakes
+    `ar-entry.ts`'s subscriber, which ticks the guide at once, so a
+    station a find, skip or story's end newly offers (the next under fixed
+    or branch order) is judged in the same frame rather than the next. The
+    visitor sees the same; `station-guide.differential.property.test.ts`
+    compares the settled page under the subscription and every single
+    call without it.
 
 - **The wait for a heading is published** (D34): after each tick the guide
   sets the store's `headingPending` to `!headingReady && !run.isComplete()`
@@ -327,6 +381,21 @@ store.subscribe(() => guide.tick());
 ```
 
 ## Tests
+
+- `station-guide.differential.property.test.ts` (W4 M1) - against a frozen
+  copy of the guide and its run from before the walk moved into the store
+  (`test-support/frozen-m1/`): random any, fixed and branch tours, walks
+  under every kind of position, skip, undo, story-end and code-lock taps,
+  session ends, tour changes and the scan gate; the line, the button, every
+  callback, the HUD's targets, the breadcrumbs, presence, the heading wait
+  and the figure's pose equal after every call, and with the page's
+  re-entering subscription equal once the page settled.
+- `station-guide.walk-store.test.ts` (W4 M1) - on the page's store: no walk
+  dispatch over frames without an event; one batch per call, last, with the
+  line already written from it; the R9 property through the store with the
+  subscription re-entering.
+- `station-guide.parity.test.ts` - also reproduces its golden through the
+  page's store with the subscription re-entering (W4 M1).
 
 - `station-guide.property.test.ts` - stories that never end, stations
   nobody reaches, random orders and `next` links (cycles included): the

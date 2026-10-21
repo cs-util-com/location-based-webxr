@@ -128,7 +128,10 @@ lives here.
   `NullStorageBackend` as before.
   It also mounts the visitor's guide state (`visitorGuide`,
   `visitor-guide-slice.ts`: the present station and "show all", visitor
-  plan 2026-10-18-2349 M1; not persisted), the tour document
+  plan 2026-10-18-2349 M1; not persisted), the visitor's walk
+  (`visitorWalk`, `visitor-walk-slice.ts`: the run's progress, the last
+  skip, the note and the skip's arm, visitor walk W4 build plan
+  2026-10-21-1105 M1; not persisted), the tour document
   (`tourDocument`, `tour-document.ts`, D29-D31; not persisted) and the
   creator's code state (`creatorCodes`, `creator-codes-slice.ts`,
   debug-captures plan M3a; not persisted) and returns `listenToDocument`, its own listener

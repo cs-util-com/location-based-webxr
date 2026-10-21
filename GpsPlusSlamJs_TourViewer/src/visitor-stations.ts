@@ -258,6 +258,8 @@ export function wireVisitorStations(deps: {
     // The present station (visitor plan 2026-10-18-2349 M1): judged here,
     // drawn per station from M2 on.
     guideStore: arStore,
+    // The visitor's walk (W4 build plan M1): in the page's store too.
+    walkStore: arStore,
     onFound: (station) => {
       view.offer(station);
     },

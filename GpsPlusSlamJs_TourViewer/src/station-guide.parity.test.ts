@@ -197,11 +197,12 @@ function runStream(s: Scenario, reenter = false): TickRecord[] {
   const rng = mulberry32(
     [...s.name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7),
   );
-  const store = reenter
-    ? createTourViewerStore()
-    : configureStore({
-        reducer: { visitorGuide: visitorGuideReducer },
-      });
+  const pageStore = reenter ? createTourViewerStore() : null;
+  const store =
+    pageStore ??
+    configureStore({
+      reducer: { visitorGuide: visitorGuideReducer },
+    });
   const points: GpsPoint[] = [];
   let now = T0;
   let current: TickInput = s.input(0);
@@ -243,6 +244,7 @@ function runStream(s: Scenario, reenter = false): TickRecord[] {
     },
     now: () => now,
     guideStore: store,
+    ...(pageStore === null ? {} : { walkStore: pageStore }),
     onFound: (st) => found.push(st.id),
     onDone: (id) => done.push(id),
     onApproach: (st, d, activateM) =>
