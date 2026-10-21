@@ -121,7 +121,9 @@ type DocumentRename =
 /**
  * A settle's changes, collected before they reach the document and then
  * taken as ONE step with the codes the settle re-minted (plan M3b, Q-D):
- * one undo takes the whole settle back, and the draft follows it once.
+ * one undo takes the whole settle back, and the draft follows it in one
+ * write round (still several writes: the records, the settings, the
+ * codes - not one atomic backup).
  * The settle reads the document through it as its changes so far leave
  * it - the station rule reads the frames as they stand when an object
  * moves - and nothing reaches the store before `commit`. Synchronous: the

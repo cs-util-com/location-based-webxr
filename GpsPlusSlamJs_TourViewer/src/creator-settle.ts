@@ -934,7 +934,7 @@ export function wireCreatorSettle(deps: {
     // visit's correction says nothing about it (as the code move's `stay`).
     // Every move and the codes re-minted reach the document as ONE step at
     // the end (plan M3b, Q-D): one undo takes the settle back, and the
-    // draft follows it once.
+    // draft follows it in one write round (several writes, not atomic).
     const batch = ctx.tourDocument.settleBatch();
     const settling = new Set(plan.stations.map((s) => s.id));
     const stay = batch

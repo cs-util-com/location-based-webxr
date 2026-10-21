@@ -3198,10 +3198,10 @@ describe(
 
     // Why this test matters (plan M3b, Q-D): the settle moved
     // each station and object as a document action of its own - one undo
-    // step and one draft backup each - so an undo took back the last
-    // station only, and a crash between two backups left half a settle on
-    // disk. One settle is one step and one backup.
-    it("takes one undo step and one draft backup for a settle that improves a code and moves its stations", async () => {
+    // step and one draft write round each - so an undo took back the last
+    // station only. One settle is one step and one write round (still
+    // several writes, so not crash-atomic).
+    it("takes one undo step and one draft write round for a settle that improves a code and moves its stations", async () => {
       const { a, stored } = await secondVisit({
         yawDeg: 20,
         northM: 3,

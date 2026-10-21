@@ -235,7 +235,11 @@ M4 settles every code of the book, not only the one in hand.
       moves before it left it), and reaches the document with the codes
       the settle re-minted as ONE `settleApplied` at the end
       (`codes.applySettle`): one undo takes the whole settle back, the
-      codes' improved texts included, and the draft follows it once. The
+      codes' improved texts included, and the draft follows it in one
+      write round. That round is still several writes (each moved
+      object's record, the settings record, the codes record), so a
+      crash inside it can leave part of the settle on disk; what the step
+      removed is the write round per station and object. The
       automatic code spots' undo and confirmation stay saved before the
       settle reads the codes (`saveLevel`), outside that step.
     - **The draft keeps the station's move** (tour editor plan §19 #1):
