@@ -11,8 +11,9 @@ entries(), total() }`: a ring of the newest `capacity` events, each
     null when absent). `entries()` is oldest first; `total()` counts every
     event ever logged. RangeError for a capacity that is not a positive
     integer, or an empty kind.
-  - `debugExportText({ device, live, recording, events })` -> the export as
-    JSON text, tagged `format: "globe-debug/1"`; a non-finite number is
+  - `debugExportText({ device, live, recording, events, link })` -> the
+    export as JSON text, tagged `format: "globe-debug/1"`, `link` (a URL
+    or null) right after the tag; a non-finite number is
     written as its name ("NaN", "Infinity"), never silently as null.
 - Invariants: bounded memory whatever the session's length; a full ring of
   500 events exports under 100 KB (tested). Dependency-free (`node --test`).

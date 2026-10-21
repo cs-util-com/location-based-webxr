@@ -1,9 +1,13 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
+import { TOUR_ID_PATTERN } from "gps-plus-slam-app-framework/ar/tour-archive";
+
 import {
   isTourFileKey,
+  newTourId,
   tourFileKey,
+  tourIdFileKey,
   tourSeriesFileKey,
   type TourFileKeyEntry,
 } from "./tour-file-key.js";
@@ -152,5 +156,34 @@ describe("the series key (tour kit plan K1, the K0 review's R7 follow-up)", () =
       { filename: "manifest.sig.json", uncompressedSize: 150, crc32: 8 },
     ];
     expect(await tourFileKey(withList)).toBe(await tourFileKey(recorded));
+  });
+});
+
+describe("the tour id key (debug-captures plan, Q-I)", () => {
+  // Why this matters: a tour of the tour kit's files alone is keyed by
+  // every entry, so each save gave it a new key and left the draft behind.
+  // A tour that carries its own id in tour.json is keyed by that id: every
+  // save writes the same one, so a file saved from this tour opens under
+  // the key its draft is kept by.
+  it("is a file key carrying the id, apart from content and series keys", async () => {
+    const key = tourIdFileKey("a1B2c3D4e5F6");
+    expect(key).toBe("local-file:tour:a1B2c3D4e5F6");
+    expect(isTourFileKey(key)).toBe(true);
+    expect(key).not.toBe(tourSeriesFileKey("a1B2c3D4e5F6"));
+    expect(await tourFileKey(ENTRIES)).not.toBe(key);
+  });
+
+  it("mints ids the manifest accepts, a different one each time (property)", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 2, max: 40 }), (n) => {
+        const ids = Array.from({ length: n }, () => newTourId());
+        expect(new Set(ids).size).toBe(n);
+        for (const id of ids) {
+          expect(id).toMatch(TOUR_ID_PATTERN);
+          expect(id).toMatch(/^[0-9a-f]{32}$/);
+        }
+      }),
+      { numRuns: 20 },
+    );
   });
 });

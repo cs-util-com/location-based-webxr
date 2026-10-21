@@ -11,6 +11,10 @@
  * rebuild can never disagree. Blobs (a photo's picture) are never state:
  * the page keeps them in a side table keyed by id.
  *
+ * It also holds the tour's codes (`codes`, debug-captures plan M3a): the
+ * code book (`code-book.ts`, whose rules only its reducers apply) and the
+ * hosted level texts it is judged against, held per open.
+ *
  * @see tour-document.ts.md
  */
 
@@ -22,6 +26,7 @@ import {
   type PayloadAction,
 } from "@reduxjs/toolkit";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
@@ -35,7 +40,26 @@ import {
   tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { hostedObjects, objectContentKey } from "./authoring-draft.js";
+import {
+  afterFinish,
+  codesNotHosted,
+  codesToWrite,
+  liveText,
+  withDraft,
+  withHand,
+  withHosted,
+  withMeasurement,
+  withoutMeasurement,
+  withReference,
+  withSaved,
+  type CodeBook,
+  type LevelText,
+  type TourCode,
+} from "./code-book.js";
+import { newObjectId } from "./content-placement.js";
 import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
+import { horizontalM } from "./move-with-code.js";
+import { stationHolding } from "./station-assign.js";
 import {
   authoringObjects,
   deleteObject,
@@ -53,8 +77,16 @@ import {
   type DetailsForm,
   type TourDetailFields,
 } from "./tour-details-form.js";
-import type { CaptureSpotsInWorld } from "./tour-content.js";
+import {
+  automaticStationFrame,
+  objectAssetIds,
+  routedTo,
+  stepAssetIds,
+} from "./tour-content.js";
 import { sameJson } from "./same-json.js";
+import type { CodeMeasurement } from "./visit-settle.js";
+
+export type { LevelText } from "./code-book.js";
 
 /** A station without its items: what the document edits of a station
  *  (its pose, D17); the items stay with the written tour. */
@@ -79,12 +111,40 @@ export interface TourDocumentView {
   readonly details: TourDetailFields;
 }
 
+/** A code's saved text a step sets (plan M3b): `to`, while the code still
+ *  holds `from` - the codes take no step of their own, so a code changed
+ *  since is newer work than the step, and the step leaves it. */
+interface StepCode {
+  readonly id: string;
+  readonly from: string | null;
+  readonly to: string | null;
+}
+
 /** One step of the history: the view to go back (or forward) to, and the
- *  edit in words ("the move of "Fountain""). */
+ *  edit in words ("the move of "Fountain""); `codes`, the saved texts it
+ *  sets (a settle's improved codes, plan M3b, Q-D). */
 interface TourHistoryStep {
   readonly view: TourDocumentView;
   readonly what: string;
+  readonly codes?: readonly StepCode[];
 }
+
+/** One change of a settle (`settleApplied`, plan M3b), in the settle's own
+ *  order - the station rule reads the frames as they stand when an object
+ *  moves: a station's frame moved, its items rigidly with it (as
+ *  `stationMoved`), or an object moved (as `moved`; a station it starts
+ *  takes `newStationId`). */
+export type SettleChange =
+  | {
+      readonly kind: "station";
+      readonly stationId: string;
+      readonly geo: QrGeoPose;
+    }
+  | {
+      readonly kind: "object";
+      readonly object: TourObject;
+      readonly newStationId: string;
+    };
 
 /** Who holds a page's one save slot: an explicit Save, the autosave, or
  *  a step of the walk's move. */
@@ -188,6 +248,12 @@ export interface TourDocumentState {
    *  An authoring flag of the page, not of the tour - no edit, no undo
    *  step, no draft write; gone with the tour (`opened`, `closed`). */
   readonly newStationArmed: boolean;
+  /** The tour's codes and the hosted texts they are judged against
+   *  (debug-captures plan M3a): no history step and no draft write, and
+   *  not reset by `opened` or `closed` - the levels and `tour.json` are
+   *  read concurrently, so either may land first. Their own actions write
+   *  them; the book goes at a tour's close (`codesForgotten`). */
+  readonly codes: DocumentCodes;
 }
 
 /** How many steps are kept: enough for a working session, bounded. */
@@ -224,6 +290,186 @@ function saveWith(
   return { ...merged, status };
 }
 
+// --- the codes (debug-captures plan M3a) -----------------------------------
+
+/** One parsed level of the open tour, by id. */
+interface ParsedLevel {
+  readonly id: string;
+  readonly level: QrLevel;
+}
+
+/** The open tour's level files as its zip holds them, for one open. */
+interface HostedLevels {
+  /** The open they belong to (the page's open counter): an answer of an
+   *  older open is dropped, a newer open's replaces them. */
+  readonly session: number;
+  /** Each level's file text by id, in the zip's order, parseable or not;
+   *  null until they arrived, and after their read failed. */
+  readonly texts: readonly LevelText[] | null;
+  /** The levels that parsed, in the zip's order (plan M3b): the viewer's
+   *  level source, the numbering's order and the hosted poses the codes
+   *  read; null until they arrived. Their own action (`levelsParsed`): the
+   *  parse and the texts are two answers of one read. */
+  readonly parsed: readonly ParsedLevel[] | null;
+  /** Their read failed: they never come for this open. Every saved code
+   *  then counts as one to write and one the draft keeps (there is no
+   *  hosted text to compare with). */
+  readonly unreadable: boolean;
+}
+
+/** The codes of the tour the creator edits (`code-book.ts`'s book) and the
+ *  hosted texts they are judged against. */
+interface DocumentCodes {
+  /** Every code this page took, in the order it took them: its saved
+   *  text, its hosted text from the first Finish on, its measurement in
+   *  this page, and what this page's last Finish wrote. */
+  readonly book: readonly TourCode[];
+  readonly hosted: HostedLevels;
+}
+
+const NO_HOSTED: Omit<HostedLevels, "session"> = {
+  texts: null,
+  parsed: null,
+  unreadable: false,
+};
+
+const NO_CODES: DocumentCodes = {
+  book: [],
+  hosted: { session: 0, ...NO_HOSTED },
+};
+
+/** The book as a map, one per array (the state is immutable, so a book
+ *  array is built into a map once however often it is read). */
+const bookMaps = new WeakMap<readonly TourCode[], CodeBook>();
+function bookOf(codes: DocumentCodes): CodeBook {
+  let book = bookMaps.get(codes.book);
+  if (book === undefined) {
+    book = new Map(codes.book.map((c) => [c.levelId, c]));
+    bookMaps.set(codes.book, book);
+  }
+  return book;
+}
+
+const hostedMaps = new WeakMap<
+  readonly LevelText[],
+  ReadonlyMap<string, string>
+>();
+
+/** The open tour's level texts by id as they arrived; null before they
+ *  arrived and when their read failed. The same map until they change. */
+export function hostedLevelTexts(
+  state: TourDocumentState,
+): ReadonlyMap<string, string> | null {
+  const texts = state.codes.hosted.texts;
+  if (texts === null) return null;
+  let map = hostedMaps.get(texts);
+  if (map === undefined) {
+    map = new Map(texts.map((l) => [l.id, l.json]));
+    hostedMaps.set(texts, map);
+  }
+  return map;
+}
+
+const parsedMaps = new WeakMap<
+  readonly ParsedLevel[],
+  ReadonlyMap<string, QrLevel>
+>();
+
+/** The open tour's parsed levels by id, in the zip's order; null before
+ *  they arrived. The same map until they change. */
+export function hostedLevels(
+  state: TourDocumentState,
+): ReadonlyMap<string, QrLevel> | null {
+  const parsed = state.codes.hosted.parsed;
+  if (parsed === null) return null;
+  let map = parsedMaps.get(parsed);
+  if (map === undefined) {
+    map = new Map(parsed.map((l) => [l.id, l.level]));
+    parsedMaps.set(parsed, map);
+  }
+  return map;
+}
+
+/** The open tour's levels could not be read: they never come. */
+export function hostedLevelsUnreadable(state: TourDocumentState): boolean {
+  return state.codes.hosted.unreadable;
+}
+
+/** Every code this page took, in the order it took them. */
+export function documentCodes(state: TourDocumentState): readonly TourCode[] {
+  return state.codes.book;
+}
+
+/** The book's saved level text for `levelId` (what the next Finish
+ *  writes); null when the book does not hold the code. */
+export function codeSavedText(
+  state: TourDocumentState,
+  levelId: string,
+): string | null {
+  return bookOf(state.codes).get(levelId)?.saved ?? null;
+}
+
+/** The code's saved text when this page changed it live (`liveText`),
+ *  judged against the hosted texts as they stand; null otherwise. */
+export function codeLiveText(
+  state: TourDocumentState,
+  levelId: string,
+): string | null {
+  return liveText(
+    bookOf(state.codes),
+    levelId,
+    hostedLevelTexts(state) ?? undefined,
+  );
+}
+
+/** The book with the hosted texts filled in (the Finish's baseline). */
+function withHostedTexts(state: TourDocumentState): CodeBook {
+  return withHosted(bookOf(state.codes), hostedLevelTexts(state) ?? new Map());
+}
+
+/** The codes a Finish writes now: every code whose saved text differs from
+ *  what the zip it rebuilds from holds (the last Finish's text, else the
+ *  hosted one), in the order they were taken. */
+export function levelsToWrite(state: TourDocumentState): LevelText[] {
+  return codesToWrite(withHostedTexts(state));
+}
+
+/** The codes the draft keeps: every code whose saved text the HOSTED zip
+ *  does not hold yet, a Finish's among them. */
+export function levelsNotHosted(state: TourDocumentState): LevelText[] {
+  return codesNotHosted(withHostedTexts(state));
+}
+
+/** `before` with the codes' book changed to `book`, the code in hand's
+ *  text winning for its own code (`withHand`). */
+function withBook(
+  before: TourDocumentState,
+  book: CodeBook,
+  hand: LevelText | null,
+): TourDocumentState {
+  return {
+    ...before,
+    codes: { ...before.codes, book: [...withHand(book, hand).values()] },
+  };
+}
+
+/** `before` with the hosted levels of `session` changed by `change`,
+ *  unless they are an older open's: a newer open starts from none, the
+ *  same open keeps what `change` does not name. */
+function withHostedLevels(
+  before: TourDocumentState,
+  session: number,
+  change: Partial<Omit<HostedLevels, "session">>,
+): TourDocumentState {
+  const was = before.codes.hosted;
+  if (session < was.session) return before;
+  const base = session === was.session ? was : { ...NO_HOSTED, session };
+  return {
+    ...before,
+    codes: { ...before.codes, hosted: { ...base, ...change, session } },
+  };
+}
+
 export const initialTourDocumentState: TourDocumentState = {
   generation: 0,
   opened: null,
@@ -242,6 +488,7 @@ export const initialTourDocumentState: TourDocumentState = {
   position: 0,
   save: IDLE,
   newStationArmed: false,
+  codes: NO_CODES,
 };
 
 // --- the pure rules ---------------------------------------------------------
@@ -251,14 +498,23 @@ export function framesOf(manifest: TourManifest): StationFrame[] {
   return manifest.stations.map(({ items: _items, ...frame }) => frame);
 }
 
+/** The frames of the stations this page created (the station rule, "New
+ *  station here"): the document's frames the tour as OPENED lacks. What a
+ *  draft keeps whole, so a reload brings a pin's station back with it. */
+export function createdStationFrames(state: TourDocumentState): StationFrame[] {
+  const opened = new Set((state.opened?.stations ?? []).map((s) => s.id));
+  return state.stations.filter((f) => !opened.has(f.id));
+}
+
 /**
  * `written` with the document's station frames: each frame carries the
  * written items of its station (none for a station the file lacks); a
- * frame the file lacks is kept only while an edit names it (an undo
- * brought back an object whose emptied station a save dropped - it comes
- * back where it stood, M5a review M2); a written station no frame names
- * (an automatic one a save added after the step went back) follows, so
- * its items keep their home until a write prunes it.
+ * frame the file lacks is kept only while an edit names it (a station a
+ * placement started, or an undo brought back an object whose emptied
+ * station a save dropped - it comes back where it stood, M5a review M2); a
+ * written station no frame names (an automatic one a save added after the
+ * step went back) follows, so its items keep their home until a write
+ * prunes it.
  */
 function withFrames(
   written: TourManifest,
@@ -363,9 +619,10 @@ export function pinTextChange(
 
 /** What a move of an object to `lat`/`lon` on the map would change
  *  (`moveObjectTo`: its height and facing kept): the object before and
- *  after (`moved`, to dispatch), `too-far` beyond its station's reach
- *  (`objectFits`), or `missing` for an id the tour does not carry.
- *  Throws for a position nobody can draw, as `moveObjectTo` does. */
+ *  after (`moved`, to dispatch), or `missing` for an id the tour does not
+ *  carry. No move is too far: one beyond its station's found radius
+ *  re-runs the station rule (`moved`). Throws for a position nobody can
+ *  draw, as `moveObjectTo` does. */
 export function objectMoveChange(
   state: TourDocumentState,
   id: string,
@@ -377,12 +634,10 @@ export function objectMoveChange(
       readonly before: TourObject;
       readonly after: TourObject;
     }
-  | { readonly kind: "too-far" }
   | { readonly kind: "missing" } {
   const found = documentObjects(state).find((o) => o.object.id === id);
   if (found === undefined) return { kind: "missing" };
   const after = moveObjectTo(found.object, lat, lon);
-  if (!objectFits(state, after)) return { kind: "too-far" };
   return { kind: "moved", before: found.object, after };
 }
 
@@ -406,34 +661,41 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
   );
 }
 
+/**
+ * The assets the undo and redo steps' views name - their stations' steps,
+ * their objects and their covers: a write keeps them (`keepAssets`), so
+ * a step back across a save finds them. Without it a cover image no step
+ * uses was dropped (with its file) by the save after a cover change, and
+ * the undo of that change had no image to show. Kept until the history no
+ * longer names them (a new edit drops the redo steps, the bound the
+ * oldest).
+ */
+export function historyAssetIds(state: TourDocumentState): Set<string> {
+  const ids = new Set<string>();
+  for (const { view } of [...state.past, ...state.future]) {
+    for (const frame of view.stations) {
+      for (const id of stepAssetIds(frame)) ids.add(id);
+    }
+    for (const object of view.objects) {
+      for (const id of objectAssetIds(object)) ids.add(id);
+    }
+    if (view.details.cover !== undefined) ids.add(view.details.cover);
+  }
+  return ids;
+}
+
 /** The manifest a write carries now (the Finish's rule,
- *  `finishedManifest`): what a save would write, without the zip.
- *  `captureSpots` is the save's own input (the walk's photo spots, which
- *  a page decides once per open, `captureSpotsForRebuild`): given the same,
- *  this is the manifest the save writes (the r875 milestone review #7). */
-export function manifestToWrite(
-  state: TourDocumentState,
-  captureSpots?: CaptureSpotsInWorld,
-  stationRule?: {
-    /** The id a new automatic station gets (a preview's own names). */
-    readonly newStationId?: () => string;
-    /** The automatic stations' radius. */
-    readonly radiusM?: number;
-  },
-): TourManifest | null {
+ *  `finishedManifest`): what a save would write, without the zip - the
+ *  same manifest (the r875 milestone review #7). The stations are the
+ *  document's as they are: a write assigns nothing. */
+export function manifestToWrite(state: TourDocumentState): TourManifest | null {
   const base = manifestNow(state);
   if (base === null) return null;
   return finishedManifest({
     manifest: base,
     placed: state.placed,
     deleted: state.deleted,
-    ...(captureSpots === undefined ? {} : { captureSpots }),
-    ...(stationRule?.newStationId === undefined
-      ? {}
-      : { newStationId: stationRule.newStationId }),
-    ...(stationRule?.radiusM === undefined
-      ? {}
-      : { radiusM: stationRule.radiusM }),
+    keepAssets: historyAssetIds(state),
   });
 }
 
@@ -451,24 +713,26 @@ export function unsavedEntries(state: TourDocumentState): EditEntry[] {
 // words by asking the same guard first.
 
 /** Whether `geo` fits the frame of the station `stationId` names, as the
- *  format bounds it (`TOUR_ITEM_MAX_OFFSET_M` per axis); true for a
- *  station the document does not carry (a write recreates that one where
- *  the object stands, `tour-content.ts`). Module-private: a page asks
- *  `objectFits` or `canPlace`. */
+ *  format bounds it (`TOUR_ITEM_MAX_OFFSET_M` per axis); false for a
+ *  station the document does not carry - no object may name one (every
+ *  object belongs to one of the document's stations). Module-private: a
+ *  page asks `objectFits` or `canPlace`. */
 function fitsStation(
   geo: TourObject["geo"],
-  stationId: string | undefined,
+  stationId: string,
   stations: readonly StationFrame[],
 ): boolean {
   const station = stations.find((s) => s.id === stationId);
-  if (station === undefined) return true;
+  if (station === undefined) return false;
   return localPoseOf(geo, station.geo).position.every(
     (v) => Math.abs(v) <= TOUR_ITEM_MAX_OFFSET_M,
   );
 }
 
 /** Whether `object` fits its station's frame - its own, or, without one,
- *  the station the document's object of that id stands in. */
+ *  the station the document's object of that id stands in. An object no
+ *  station holds yet (a new one naming none) fits: the station rule seats
+ *  it (`placed`). One naming a station the document lacks does not. */
 export function objectFits(
   state: TourDocumentState,
   object: TourObject,
@@ -477,19 +741,119 @@ export function objectFits(
     object.station ??
     documentObjects(state).find((o) => o.object.id === object.id)?.object
       .station;
+  if (home === undefined) return true;
   return fitsStation(object.geo, home, state.stations);
 }
 
-/** Whether `object` may be placed: an id the tour does not carry, at a
- *  spot its station can carry. */
+/** What a placement or a move hands the station rule: the id a station the
+ *  rule starts gets - minted outside the reducer (by the caller, or the
+ *  action's `prepare`), so the reducer stays pure - and, for "New station
+ *  here", that the object starts its own station even within another's
+ *  radius. */
+interface Seating {
+  readonly newStationId: string;
+  readonly newStation?: boolean;
+}
+
+/**
+ * The station rule (everything belongs to a station): `object`
+ * (naming no station) joins the nearest station of the document whose OWN
+ * found radius holds it (`stationHolding`: inclusive, a tie to the earlier
+ * station) and whose frame can carry it (`fitsStation`: a found radius
+ * has no upper bound, the format's reach does), or starts a new automatic one anchored where it stands
+ * (`automaticStationFrame`, 25 m / 50 m) under `seating.newStationId`;
+ * "New station here" starts one in any case. The stations read are
+ * `manifestNow`'s - the tour as the next write starts from it. Null when
+ * the id is taken (two stations under one id would merge their items) or
+ * no tour is open.
+ */
+function seatByRule(
+  state: TourDocumentState,
+  object: TourObject,
+  seating: Seating,
+): { object: TourObject; stations: readonly StationFrame[] } | null {
+  const base = manifestNow(state);
+  if (base === null) return null;
+  if (seating.newStation !== true) {
+    const frames = framesOf(base);
+    const holder = stationHolding(
+      base.stations.filter((s) => fitsStation(object.geo, s.id, frames)),
+      object.geo,
+    );
+    if (holder !== null) {
+      // A station the file carries that the document dropped since (it
+      // emptied after it was written) comes back with the object: every
+      // object names one of the document's frames.
+      const written = base.stations.find((s) => s.id === holder);
+      const known = state.stations.some((f) => f.id === holder);
+      return {
+        object: { ...object, station: holder },
+        stations:
+          known || written === undefined
+            ? state.stations
+            : [
+                ...state.stations,
+                ...framesOf({ ...base, stations: [written] }),
+              ],
+      };
+    }
+  }
+  const id = seating.newStationId;
+  if (base.stations.some((s) => s.id === id)) return null;
+  return {
+    object: { ...object, station: id },
+    stations: [...state.stations, automaticStationFrame(id, object.geo)],
+  };
+}
+
+/**
+ * `state`'s frames without those of `candidates` that are now EMPTY
+ * AUTOMATIC stations: no object of the document names them, and nothing
+ * else keeps them - no title, no story steps, no route from another
+ * station. Such a station existed only for its
+ * elements; left behind, a visitor's guide would still lead to it.
+ * The same array when nothing goes.
+ */
+function withoutEmptied(
+  state: TourDocumentState,
+  candidates: Iterable<string | undefined>,
+): readonly StationFrame[] {
+  const ids = new Set([...candidates].filter((id) => id !== undefined));
+  if (ids.size === 0) return state.stations;
+  const named = new Set(documentObjects(state).map((o) => o.object.station));
+  const routed = new Set(state.stations.flatMap(routedTo));
+  const gone = (frame: StationFrame): boolean =>
+    ids.has(frame.id) &&
+    !named.has(frame.id) &&
+    (frame.title ?? "").trim() === "" &&
+    frame.steps.length === 0 &&
+    !routed.has(frame.id);
+  return state.stations.some(gone)
+    ? state.stations.filter((f) => !gone(f))
+    : state.stations;
+}
+
+/** Why `object` may not be placed, or null when it may: an id the tour
+ *  deleted (its tombstone would hide the placement, and leave a station
+ *  started for it empty), an id the tour carries, or a spot its station
+ *  cannot carry. */
+export function placeRefusal(
+  state: TourDocumentState,
+  object: TourObject,
+): "deleted" | "exists" | "too-far" | null {
+  if (state.deleted.includes(object.id)) return "deleted";
+  if (documentObjects(state).some((o) => o.object.id === object.id)) {
+    return "exists";
+  }
+  return objectFits(state, object) ? null : "too-far";
+}
+
+/** Whether `object` may be placed (`placeRefusal` names none). */
 export function canPlace(
   state: TourDocumentState,
   object: TourObject,
 ): boolean {
-  return (
-    documentObjects(state).every((o) => o.object.id !== object.id) &&
-    objectFits(state, object)
-  );
+  return placeRefusal(state, object) === null;
 }
 
 /** Whether an undo or a redo may run: not while a rebuild is queued or
@@ -653,6 +1017,20 @@ function stepCrossesInPlaceSave(
   );
 }
 
+/** Whether a frame both lists carry differs between them: a station
+ *  MOVED. A station the rule started or dropped is no move - the
+ *  objects it holds are the record of it. */
+function framesMoved(
+  a: readonly StationFrame[],
+  b: readonly StationFrame[],
+): boolean {
+  const byId = new Map(b.map((f) => [f.id, f]));
+  return a.some((f) => {
+    const other = byId.get(f.id);
+    return other !== undefined && !sameJson(f, other);
+  });
+}
+
 /** The document moved to `view` (an undo or a redo step). */
 function goTo(
   state: TourDocumentState,
@@ -663,7 +1041,7 @@ function goTo(
   const detailsMoved = DETAIL_FIELDS.some(
     (f) => view.details[f] !== state.details[f],
   );
-  const stationsMoved = !sameJson(view.stations, state.stations);
+  const stationsMoved = framesMoved(view.stations, state.stations);
   return {
     ...state,
     ...contentAt(state.written, view),
@@ -680,6 +1058,43 @@ function goTo(
   };
 }
 
+/** `state` with each of `codes` at its `to` text where it still holds its
+ *  `from` one, and the codes that moved. */
+function codesAt(
+  state: TourDocumentState,
+  codes: readonly StepCode[],
+): { readonly state: TourDocumentState; readonly moved: StepCode[] } {
+  const book = new Map(bookOf(state.codes));
+  const moved: StepCode[] = [];
+  for (const code of codes) {
+    const now = book.get(code.id);
+    if (now === undefined || now.saved !== code.from) continue;
+    book.set(code.id, { ...now, saved: code.to });
+    moved.push(code);
+  }
+  if (moved.length === 0) return { state, moved };
+  return {
+    state: { ...state, codes: { ...state.codes, book: [...book.values()] } },
+    moved,
+  };
+}
+
+/** The step back to `state` from a step named `what`: its view, and the
+ *  codes the step moved, set again to the texts they had. */
+function wayBack(
+  state: TourDocumentState,
+  what: string,
+  moved: readonly StepCode[],
+): TourHistoryStep {
+  const view = viewOf(state);
+  if (moved.length === 0) return { view, what };
+  return {
+    view,
+    what,
+    codes: moved.map((c) => ({ id: c.id, from: c.to, to: c.from })),
+  };
+}
+
 /** A step from one end of the history to the other. */
 function step(
   state: TourDocumentState,
@@ -688,8 +1103,9 @@ function step(
   const target = nextStep(state, which);
   if (target === undefined || state.written === null) return state;
   const crosses = stepCrossesInPlaceSave(state, which);
-  const here: TourHistoryStep = { view: viewOf(state), what: target.what };
-  const moved = goTo(state, target.view);
+  const codes = codesAt(goTo(state, target.view), target.codes ?? []);
+  const here = wayBack(state, target.what, codes.moved);
+  const moved = codes.state;
   const from = which === "undo" ? state.past : state.future;
   const to = which === "undo" ? state.future : state.past;
   const rest = from.slice(0, -1);
@@ -714,6 +1130,48 @@ interface TourRestore {
   /** Station poses: each frame of that id moves there (D17), before the
    *  objects - whose spots the moved frames carry - are put back. */
   readonly stations?: readonly StationPose[];
+  /** Whole frames of stations a page created that the document lacks (a
+   *  draft keeps them, so a reload brings a pin's station back with it):
+   *  added after the poses, before the objects. */
+  readonly createdStations?: readonly StationFrame[];
+  /** The objects were made in ANOTHER document (work carried into a tour
+   *  just opened): the station each named is not this tour's, so each is
+   *  seated afresh by the station rule against the opened tour's
+   *  stations. */
+  readonly rerun?: boolean;
+}
+
+/** `TourRestore` as the reducer reads it: with one minted id per object,
+ *  for a station the rule may start for it (`prepare` mints them). */
+interface TourRestorePayload extends TourRestore {
+  readonly what: string;
+  readonly newStationIds: readonly string[];
+}
+
+/** A placement as the reducer reads it (`Seating` minted by `prepare`). */
+interface PlacedPayload extends Seating {
+  readonly object: TourObject;
+  readonly what: string;
+}
+
+/** What a page dispatches for a placement or a move: the id is minted
+ *  for it when absent. */
+interface SeatingInput {
+  readonly object: TourObject;
+  readonly what: string;
+  readonly newStationId?: string;
+  readonly newStation?: boolean;
+}
+
+/** `input` with a station id minted for the rule when it carries none
+ *  (`newObjectId`: outside the reducer, so the reducer stays pure). */
+function prepareSeating(input: SeatingInput): { payload: PlacedPayload } {
+  return {
+    payload: {
+      ...input,
+      newStationId: input.newStationId ?? newObjectId(),
+    },
+  };
 }
 
 /** The written save that landed: the manifest the zip carries, the
@@ -737,68 +1195,273 @@ function slotKept(save: TourSaveStatus): TourSaveStatus {
   return saveWith(IDLE, { by: save.by });
 }
 
-/** A new version of an object (or a new one): one entry per id. */
+/**
+ * A new version of an object (or a new one): one entry per id, with the
+ * station frames `stations` (the one a placement or a move started), and
+ * then without the station it left if that is now an empty automatic one
+ * (`withoutEmptied`) - all one step.
+ */
 function putObject(
   before: TourDocumentState,
-  action: PayloadAction<{ object: TourObject; what: string }>,
+  object: TourObject,
+  what: string,
+  stations: readonly StationFrame[] = before.stations,
+  left?: string,
 ): TourDocumentState {
   if (before.written === null) return before;
-  const { object, what } = action.payload;
   // A pending object put again unchanged (an AR settle re-poses every
   // object of a visit) is no step: it would withdraw a delete's Undo.
   const pending = before.placed.find((p) => p.object.id === object.id);
   if (
     pending !== undefined &&
+    stations === before.stations &&
     objectContentKey(pending.object) === objectContentKey(object)
   ) {
     return before;
   }
+  const placed = upsertPlaced(before.placed, { object });
   return edited(
     before,
-    { placed: upsertPlaced(before.placed, { object }) },
+    {
+      placed,
+      stations: withoutEmptied({ ...before, placed, stations }, [left]),
+    },
     what,
   );
+}
+
+/** `object` naming no station: what the station rule seats. */
+function unseated(object: TourObject): TourObject {
+  const { station: _station, ...rest } = object;
+  return rest;
+}
+
+/** Whether a move of `object` to its new spot keeps it in its station
+ *  `frame`: the station's own found radius holds the spot; or the object
+ *  stood outside that radius already, and the move takes it no farther
+ *  from the anchor (strict: a centimetre farther runs the rule) and into
+ *  no other station's radius - a station whose radius held the old spot
+ *  too (radii overlap) is not one it moved into. */
+function keepsHome(
+  state: TourDocumentState,
+  frame: StationFrame,
+  object: TourObject,
+): boolean {
+  if (stationHolding([frame], object.geo) !== null) return true;
+  const was = documentObjects(state).find((o) => o.object.id === object.id)
+    ?.object.geo;
+  if (was === undefined) return false;
+  if (horizontalM(frame.geo, object.geo) > horizontalM(frame.geo, was)) {
+    return false;
+  }
+  const base = manifestNow(state);
+  if (base === null) return false;
+  const movedInto = base.stations.filter(
+    (s) => stationHolding([s], was) === null,
+  );
+  return stationHolding(movedInto, object.geo) === null;
+}
+
+/** The station the document's object `id` stands in, if any. */
+function homeOf(state: TourDocumentState, id: string): string | undefined {
+  return documentObjects(state).find((o) => o.object.id === id)?.object.station;
+}
+
+/** `stationMoved`'s rule: the frame of `stationId` at `geo`, its items
+ *  rigidly with it, as one step; `before` for a station it lacks. */
+function stationMove(
+  before: TourDocumentState,
+  stationId: string,
+  geo: QrGeoPose,
+  what: string,
+): TourDocumentState {
+  const frame = before.stations.find((s) => s.id === stationId);
+  if (frame === undefined) return before;
+  let placed = before.placed;
+  for (const { object } of documentObjects(before)) {
+    if (object.station !== stationId) continue;
+    const moved: TourObject = {
+      ...object,
+      geo: itemGeoPose(localPoseOf(object.geo, frame.geo), geo),
+    };
+    placed = upsertPlaced(placed, { object: moved });
+  }
+  return edited(
+    before,
+    {
+      placed,
+      stations: before.stations.map((s) =>
+        s.id === stationId ? { ...s, geo } : s,
+      ),
+      touched: { ...before.touched, stations: true },
+      stationsRecorded: true,
+    },
+    what,
+  );
+}
+
+/** `moved`'s rule: the object at its new spot, keeping its station or
+ *  seated anew (see `moved`), as one step; `before` for an unknown id. */
+function objectMove(
+  before: TourDocumentState,
+  { object, what, newStationId }: PlacedPayload,
+): TourDocumentState {
+  const home = homeOf(before, object.id);
+  const frame = before.stations.find((s) => s.id === home);
+  if (home === undefined || frame === undefined) return before;
+  const kept = { ...object, station: home };
+  if (keepsHome(before, frame, object) && objectFits(before, kept)) {
+    return putObject(before, kept, what);
+  }
+  const seated = seatByRule(before, unseated(object), { newStationId });
+  if (seated === null) return before;
+  return putObject(before, seated.object, what, seated.stations, home);
+}
+
+/** What a settle hands the document (`settleApplied`). */
+interface SettleApplied {
+  readonly changes: readonly SettleChange[];
+  /** The codes it re-minted or improved, saved in this order. */
+  readonly codes: readonly LevelText[];
+  /** The code in hand after them (its text wins, `withHand`). */
+  readonly hand: LevelText | null;
+  readonly what: string;
+}
+
+/** A settle's changes and codes as ONE step (plan M3b, Q-D): each change
+ *  by its own rule in order, then the codes saved, the hand's text
+ *  winning; the step keeps each code's earlier text, so its undo puts it
+ *  back. `before` when it moves nothing and changes no saved text. */
+function applySettle(
+  before: TourDocumentState,
+  { changes, codes, hand, what }: SettleApplied,
+): TourDocumentState {
+  if (before.written === null) return before;
+  let moved = before;
+  for (const change of changes) {
+    moved =
+      change.kind === "station"
+        ? stationMove(moved, change.stationId, change.geo, what)
+        : objectMove(moved, {
+            object: change.object,
+            what,
+            newStationId: change.newStationId,
+          });
+  }
+  const was = bookOf(before.codes);
+  let book = was;
+  for (const level of codes) book = withSaved(book, level);
+  const coded = withBook(before, book, hand).codes;
+  // Undone: each code back from its new text to the one it had.
+  const stepCodes = coded.book.flatMap((code): StepCode[] => {
+    const earlier = was.get(code.levelId)?.saved ?? null;
+    return code.saved === earlier
+      ? []
+      : [{ id: code.levelId, from: code.saved, to: earlier }];
+  });
+  if (moved === before && stepCodes.length === 0) return before;
+  const after = edited(
+    before,
+    {
+      placed: moved.placed,
+      stations: moved.stations,
+      touched: moved.touched,
+      stationsRecorded: moved.stationsRecorded,
+      codes: coded,
+    },
+    what,
+  );
+  if (stepCodes.length === 0) return after;
+  const past = [...after.past];
+  const last = past.pop();
+  if (last !== undefined) past.push({ ...last, codes: stepCodes });
+  return { ...after, past };
 }
 
 const tourDocumentSlice = createSlice({
   name: "tourDocument",
   initialState: initialTourDocumentState,
   reducers: {
-    /** A tour opened: everything before it is gone. */
-    opened(state, action: PayloadAction<{ manifest: TourManifest }>) {
-      const { manifest } = action.payload;
+    /** A tour opened: everything before it is gone. A tour without an id
+     *  of its own takes `newTourId` (debug-captures plan, Q-I): minted here once, by the page that opens it (a reducer draws
+     *  no random numbers), so every write carries it and a file saved from
+     *  this tour is known by it (`tour-file-key.ts`). `opened` stays the
+     *  file's tour as read (the draft's hosted comparisons read it). */
+    opened(
+      state,
+      action: PayloadAction<{ manifest: TourManifest; newTourId?: string }>,
+    ) {
+      const { manifest, newTourId } = action.payload;
+      // `opened` stays the file's tour as read; the writes start from
+      // `written`, which carries the id.
+      const written =
+        manifest.tourId === undefined && newTourId !== undefined
+          ? { ...manifest, tourId: newTourId }
+          : manifest;
       return {
         ...initialTourDocumentState,
         generation: state.generation + 1,
         save: slotKept(state.save),
+        codes: plain(state).codes,
         opened: manifest,
-        written: manifest,
+        written,
         stations: framesOf(manifest),
         needsNoGps: manifest.needsNoGps === true,
         details: detailsOf(manifest),
       };
     },
     /** A new object (placed in AR, or on the map): not for an id the
-     *  tour carries, nor beyond its station's reach (`canPlace`). */
-    placed(state, action: PayloadAction<{ object: TourObject; what: string }>) {
-      const before = plain(state);
-      if (!canPlace(before, action.payload.object)) return before;
-      return putObject(before, action);
+     *  tour carries, nor naming a station the document lacks or beyond its
+     *  reach (`canPlace`). One naming no station is seated by the station
+     *  rule (`seatByRule`): the station that holds it, or a new one
+     *  anchored at it under the payload's `newStationId` - always one
+     *  under "New station here" (`newStation`). */
+    placed: {
+      reducer(state, action: PayloadAction<PlacedPayload>) {
+        const before = plain(state);
+        const { object, what } = action.payload;
+        if (!canPlace(before, object)) return before;
+        if (
+          action.payload.newStation !== true &&
+          object.station !== undefined
+        ) {
+          return putObject(before, object, what);
+        }
+        const seated = seatByRule(before, unseated(object), action.payload);
+        if (seated === null) return before;
+        return putObject(before, seated.object, what, seated.stations);
+      },
+      prepare: prepareSeating,
     },
-    /** A pin's text edited (`objectFits`, as a move). */
+    /** A pin's text edited (`objectFits`): it keeps its station. One
+     *  naming no station, of an id the document lacks, changes nothing: it
+     *  would be an object in no station. */
     edited(state, action: PayloadAction<{ object: TourObject; what: string }>) {
       const before = plain(state);
-      if (!objectFits(before, action.payload.object)) return before;
-      return putObject(before, action);
+      const { object, what } = action.payload;
+      if (!objectFits(before, object)) return before;
+      const station = object.station ?? homeOf(before, object.id);
+      if (station === undefined) return before;
+      return putObject(before, { ...object, station }, what);
     },
-    /** An object moved (on the map, or in AR): not beyond its station's
-     *  reach (`objectFits`). */
-    moved(state, action: PayloadAction<{ object: TourObject; what: string }>) {
-      const before = plain(state);
-      if (!objectFits(before, action.payload.object)) return before;
-      return putObject(before, action);
+    /** An object moved (on the map, or in AR). Within its station's own
+     *  found radius and the format's reach it keeps its station (whose
+     *  anchor stays put), and so does one already outside that radius
+     *  moved no farther out (`keepsHome`); otherwise the station rule
+     *  runs again (`seatByRule`): it joins the station holding its new
+     *  spot, or starts one there under the payload's `newStationId`, and
+     *  the station it left goes when that leaves it an empty automatic
+     *  one. An unknown id changes nothing. */
+    moved: {
+      reducer(state, action: PayloadAction<PlacedPayload>) {
+        return objectMove(plain(state), action.payload);
+      },
+      prepare: prepareSeating,
     },
-    /** An object deleted: its entry goes, a written one gets a tombstone. */
+    /** An object deleted: its entry goes, a written one gets a tombstone;
+     *  the station it leaves goes too when that leaves it an empty
+     *  automatic one (`withoutEmptied`) - in the same step, so an undo
+     *  brings both back. */
     deleted(state, action: PayloadAction<{ id: string; what: string }>) {
       const before = plain(state);
       const found = documentObjects(before).find(
@@ -806,9 +1469,14 @@ const tourDocumentSlice = createSlice({
       );
       if (found === undefined) return before;
       const gone = deleteObject(before, found);
+      const after = { ...before, placed: gone.placed, deleted: gone.deleted };
       return edited(
         before,
-        { placed: gone.placed, deleted: gone.deleted },
+        {
+          placed: gone.placed,
+          deleted: gone.deleted,
+          stations: withoutEmptied(after, [found.object.station]),
+        },
         action.payload.what,
       );
     },
@@ -822,31 +1490,15 @@ const tourDocumentSlice = createSlice({
         what: string;
       }>,
     ) {
-      const before = plain(state);
       const { stationId, geo, what } = action.payload;
-      const frame = before.stations.find((s) => s.id === stationId);
-      if (frame === undefined) return before;
-      let placed = before.placed;
-      for (const { object } of documentObjects(before)) {
-        if (object.station !== stationId) continue;
-        const moved: TourObject = {
-          ...object,
-          geo: itemGeoPose(localPoseOf(object.geo, frame.geo), geo),
-        };
-        placed = upsertPlaced(placed, { object: moved });
-      }
-      return edited(
-        before,
-        {
-          placed,
-          stations: before.stations.map((s) =>
-            s.id === stationId ? { ...s, geo } : s,
-          ),
-          touched: { ...before.touched, stations: true },
-          stationsRecorded: true,
-        },
-        what,
-      );
+      return stationMove(plain(state), stationId, geo, what);
+    },
+    /** A settle (plan M3b, Q-D): its station and object moves in its own
+     *  order and the codes it re-minted, as ONE step - its undo takes them
+     *  all back, each code's earlier text included (`applySettle`). The
+     *  hand is named after the codes, as every code action names it. */
+    settleApplied(state, action: PayloadAction<SettleApplied>) {
+      return applySettle(plain(state), action.payload);
     },
     /** The setting turned on or off; nothing before an open (an undo
      *  could never take the step back: a step needs a written file). */
@@ -893,53 +1545,98 @@ const tourDocumentSlice = createSlice({
       const before = plain(state);
       return canStep(before) ? step(before, "redo") : before;
     },
-    /** A draft's work put back: one step to undo. */
-    restored(state, action: PayloadAction<TourRestore & { what: string }>) {
-      const plainBefore = plain(state);
-      const work = action.payload;
-      const poses = new Map((work.stations ?? []).map((p) => [p.id, p.geo]));
-      // The frames first: the objects' spots stand in them.
-      const before: TourDocumentState = {
-        ...plainBefore,
-        stations: plainBefore.stations.map((s) => {
+    /** A draft's work put back: one step to undo. The frames first (the
+     *  poses, then the created stations the document lacks), then each
+     *  object: in its own station when the document carries it and it
+     *  fits there, else seated by the station rule under its minted id (a
+     *  station a draft no longer has, or work carried into another tour,
+     *  `rerun`); then the deletions. A station this leaves an empty
+     *  automatic one goes (`withoutEmptied`). */
+    restored: {
+      reducer(state, action: PayloadAction<TourRestorePayload>) {
+        const plainBefore = plain(state);
+        if (plainBefore.written === null) return plainBefore;
+        const work = action.payload;
+        const poses = new Map((work.stations ?? []).map((p) => [p.id, p.geo]));
+        const posed = plainBefore.stations.map((s) => {
           const geo = poses.get(s.id);
           return geo === undefined ? s : { ...s, geo };
-        }),
-      };
-      let placed = before.placed;
-      let deleted = before.deleted;
-      for (const object of work.objects) {
-        // A draft written before far moves were refused may offer one; it
-        // would make every save fail (the M5a milestone review L1).
-        if (!objectFits(before, object)) continue;
-        placed = upsertPlaced(placed, { object });
-      }
-      for (const id of work.deleted) {
-        const found = documentObjects({ ...before, placed, deleted }).find(
-          (o) => o.object.id === id,
+        });
+        const known = new Set(posed.map((f) => f.id));
+        const created: StationFrame[] = [];
+        for (const frame of work.createdStations ?? []) {
+          if (known.has(frame.id)) continue;
+          known.add(frame.id);
+          created.push(frame);
+        }
+        let next: TourDocumentState = {
+          ...plainBefore,
+          stations: [...posed, ...created],
+        };
+        /** Stations an object or a delete may have left empty. */
+        const left: (string | undefined)[] = created.map((f) => f.id);
+        for (const [i, given] of work.objects.entries()) {
+          // The deletion of its id would hide it (as for a placement,
+          // `canPlace`), and a station started for it would stand empty.
+          if (next.deleted.includes(given.id)) continue;
+          const home = homeOf(next, given.id);
+          left.push(home);
+          const named = work.rerun === true ? undefined : given.station;
+          const own = named ?? (work.rerun === true ? undefined : home);
+          const object =
+            own === undefined ? unseated(given) : { ...given, station: own };
+          const newStationId = work.newStationIds[i];
+          const seated =
+            own !== undefined && objectFits(next, object)
+              ? { object, stations: next.stations }
+              : newStationId === undefined
+                ? null
+                : seatByRule(next, unseated(given), { newStationId });
+          if (seated === null) continue;
+          next = {
+            ...next,
+            stations: seated.stations,
+            placed: upsertPlaced(next.placed, { object: seated.object }),
+          };
+        }
+        for (const id of work.deleted) {
+          const found = documentObjects(next).find((o) => o.object.id === id);
+          if (found === undefined) continue;
+          left.push(found.object.station);
+          const gone = deleteObject(next, found);
+          next = { ...next, placed: gone.placed, deleted: gone.deleted };
+        }
+        return edited(
+          plainBefore,
+          {
+            placed: next.placed,
+            deleted: next.deleted,
+            stations: withoutEmptied(next, left),
+            ...(work.stations === undefined ? {} : { stationsRecorded: true }),
+            ...(work.needsNoGps === undefined
+              ? {}
+              : { needsNoGps: work.needsNoGps }),
+            ...(work.details === undefined
+              ? {}
+              : { details: work.details, detailsRecorded: true }),
+          },
+          work.what,
         );
-        if (found === undefined) continue;
-        const gone = deleteObject({ placed, deleted }, found);
-        placed = gone.placed;
-        deleted = gone.deleted;
-      }
-      return edited(
-        plainBefore,
-        {
-          placed,
-          deleted,
-          ...(work.stations === undefined
-            ? {}
-            : { stations: before.stations, stationsRecorded: true }),
-          ...(work.needsNoGps === undefined
-            ? {}
-            : { needsNoGps: work.needsNoGps }),
-          ...(work.details === undefined
-            ? {}
-            : { details: work.details, detailsRecorded: true }),
+      },
+      prepare(
+        input: TourRestore & {
+          readonly what: string;
+          readonly newStationIds?: readonly string[];
         },
-        work.what,
-      );
+      ): { payload: TourRestorePayload } {
+        return {
+          payload: {
+            ...input,
+            newStationIds:
+              input.newStationIds ?? input.objects.map(() => newObjectId()),
+          },
+        };
+      },
     },
     /** A rebuild was queued: undo and redo wait until it ends. */
     saveStarted(state, action: PayloadAction<{ generation: number }>) {
@@ -959,9 +1656,18 @@ const tourDocumentSlice = createSlice({
       const { written, appliedDeletions, stationsAtStart, generation } =
         action.payload;
       if (generation !== before.generation) return before;
-      const unmoved = sameJson(before.stations, stationsAtStart);
-      // A frame moved while the write ran stays the document's: what the
-      // file holds is read through it, as `documentObjects` will read it.
+      // A station started while the write ran (a pin placed meanwhile) is
+      // not a moved frame: the write lacks it, and it stays the
+      // document's beside the written ones - or its pin would name nothing.
+      const atStart = new Set(stationsAtStart.map((f) => f.id));
+      const startedSince = before.stations.filter((f) => !atStart.has(f.id));
+      const unmoved = sameJson(
+        before.stations.filter((f) => atStart.has(f.id)),
+        stationsAtStart,
+      );
+      // A frame moved (or dropped) while the write ran stays the
+      // document's: what the file holds is read through it, as
+      // `documentObjects` will read it.
       const pending = pendingAfterRebuild(
         before,
         unmoved ? written : withFrames(written, before.stations, before.placed),
@@ -972,7 +1678,9 @@ const tourDocumentSlice = createSlice({
         written,
         placed: pending.placed,
         deleted: pending.deleted,
-        stations: unmoved ? framesOf(written) : before.stations,
+        stations: unmoved
+          ? [...framesOf(written), ...startedSince]
+          : before.stations,
         // An in-place write names its view once it arrives
         // (`saveDelivered`); a download leaves no in-place file.
         save: saveWith(
@@ -1093,7 +1801,180 @@ const tourDocumentSlice = createSlice({
         ...initialTourDocumentState,
         generation: state.generation + 1,
         save: slotKept(state.save),
+        codes: plain(state).codes,
       };
+    },
+    // --- the codes (debug-captures plan M3a) -------------------------------
+    // No history step, no draft write, and not reset by `opened` or
+    // `closed`: the hosted levels are held per open (`levelsArrived`), and
+    // the book goes at a tour's close (`codesForgotten`). Each change of the
+    // book names the code in hand after it (`hand`), whose text wins for
+    // its own code (`withHand`); `creatorCodes` takes the hand from the same
+    // action.
+    /** `level` taken in hand with its measurement (null: a stored
+     *  reference, saved and taken as one); no level: the hand empties, and
+     *  the book is as it was. */
+    codeTaken(
+      state,
+      action: PayloadAction<{
+        level: LevelText | null;
+        measurement: CodeMeasurement | null;
+      }>,
+    ) {
+      const before = plain(state);
+      const { level, measurement } = action.payload;
+      if (level === null) return before;
+      const book = bookOf(before.codes);
+      return withBook(
+        before,
+        measurement === null
+          ? withReference(withSaved(book, level), level.id)
+          : withMeasurement(book, level, measurement),
+        level,
+      );
+    },
+    /** A restored draft's level taken into the empty hand, at the text the
+     *  page gives (its live text where it has one, `codeLiveText`). */
+    codeTakenFromDraft(state, action: PayloadAction<{ level: LevelText }>) {
+      const before = plain(state);
+      const { level } = action.payload;
+      return withBook(
+        before,
+        withReference(withSaved(bookOf(before.codes), level), level.id),
+        level,
+      );
+    },
+    /** Nothing in hand (a new print size): the code it held (`levelId`) is
+     *  measured again, so its measurement goes and its saved text falls
+     *  back to the zip's. */
+    codeLetGo(state, action: PayloadAction<{ levelId: string | null }>) {
+      const before = plain(state);
+      const { levelId } = action.payload;
+      if (levelId === null) return before;
+      return withBook(
+        before,
+        withoutMeasurement(bookOf(before.codes), levelId),
+        null,
+      );
+    },
+    /** A code not in hand measured again: its measurement is dropped and
+     *  its saved text falls back to the zip's. */
+    codeMeasurementDropped(
+      state,
+      action: PayloadAction<{ levelId: string; hand: LevelText | null }>,
+    ) {
+      const before = plain(state);
+      const { levelId, hand } = action.payload;
+      return withBook(
+        before,
+        withoutMeasurement(bookOf(before.codes), levelId),
+        hand,
+      );
+    },
+    /** A code re-minted by the settle: saved; `hand` takes it only if it
+     *  already held that code. */
+    codeSaved(
+      state,
+      action: PayloadAction<{ level: LevelText; hand: LevelText | null }>,
+    ) {
+      const before = plain(state);
+      const { level, hand } = action.payload;
+      return withBook(before, withSaved(bookOf(before.codes), level), hand);
+    },
+    /** A restored draft's codes, saved and taken as references; a code
+     *  changed live in this page keeps its live text (`withDraft`, judged
+     *  against the hosted texts as they stand). */
+    codesRestored(
+      state,
+      action: PayloadAction<{
+        levels: readonly LevelText[];
+        hand: LevelText | null;
+      }>,
+    ) {
+      const before = plain(state);
+      const { levels, hand } = action.payload;
+      return withBook(
+        before,
+        withDraft(
+          bookOf(before.codes),
+          levels,
+          hostedLevelTexts(before) ?? undefined,
+        ),
+        hand,
+      );
+    },
+    /** A Finish wrote `written`: the hosted texts enter the book, and each
+     *  written text is what the next Finish builds on. */
+    codesFinished(
+      state,
+      action: PayloadAction<{
+        written: readonly LevelText[];
+        hand: LevelText | null;
+      }>,
+    ) {
+      const before = plain(state);
+      const { written, hand } = action.payload;
+      return withBook(
+        before,
+        afterFinish(withHostedTexts(before), written),
+        hand,
+      );
+    },
+    /** The hand lets go of `levelIds` (an undo took their saved texts
+     *  back): the book is as it is; `creatorCodes` empties a hand that
+     *  holds one of them. */
+    handReleased(
+      state,
+      _action: PayloadAction<{ levelIds: readonly string[] }>,
+    ) {
+      return plain(state);
+    },
+    /** A tour closed: its book goes (the hosted levels are the open's,
+     *  `levelsCleared`). */
+    codesForgotten(state) {
+      const before = plain(state);
+      if (before.codes.book.length === 0) return before;
+      return { ...before, codes: { ...before.codes, book: [] } };
+    },
+    /** The open `session`'s level files arrived (`TourSession.levelTexts`):
+     *  in either order with `opened`, and dropped for an older open. */
+    levelsArrived(
+      state,
+      action: PayloadAction<{ session: number; texts: readonly LevelText[] }>,
+    ) {
+      const { session, texts } = action.payload;
+      return withHostedLevels(plain(state), session, {
+        texts,
+        unreadable: false,
+      });
+    },
+    /** The open `session`'s level files could not be read: they never
+     *  come. */
+    levelsUnreadable(state, action: PayloadAction<{ session: number }>) {
+      return withHostedLevels(plain(state), action.payload.session, {
+        texts: null,
+        unreadable: true,
+      });
+    },
+    /** A tour closed, and `session` opens next: no level texts yet (a
+     *  newer open has no parsed levels either). */
+    levelsCleared(state, action: PayloadAction<{ session: number }>) {
+      return withHostedLevels(plain(state), action.payload.session, {
+        texts: null,
+        unreadable: false,
+      });
+    },
+    /** The open `session`'s levels as they parsed, in the zip's order
+     *  (null: none, the tour closing); dropped for an older open. */
+    levelsParsed(
+      state,
+      action: PayloadAction<{
+        session: number;
+        levels: readonly ParsedLevel[] | null;
+      }>,
+    ) {
+      const { session, levels } = action.payload;
+      return withHostedLevels(plain(state), session, { parsed: levels });
     },
   },
 });
@@ -1114,11 +1995,26 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.moved,
   tourDocumentActions.deleted,
   tourDocumentActions.stationMoved,
+  tourDocumentActions.settleApplied,
   tourDocumentActions.settingsChanged,
   tourDocumentActions.detailsChanged,
   tourDocumentActions.undone,
   tourDocumentActions.redone,
   tourDocumentActions.restored,
+);
+
+/** Whether `action` changes the codes a draft keeps (plan M3b): the
+ *  book's saved texts or the code in hand. Not a tour's close
+ *  (`codesForgotten`): the closed tour's codes stay in its draft. */
+export const isCodeChange = isAnyOf(
+  tourDocumentActions.codeTaken,
+  tourDocumentActions.codeTakenFromDraft,
+  tourDocumentActions.codeLetGo,
+  tourDocumentActions.codeMeasurementDropped,
+  tourDocumentActions.codeSaved,
+  tourDocumentActions.codesRestored,
+  tourDocumentActions.codesFinished,
+  tourDocumentActions.handReleased,
 );
 
 /** The slice inside a store's state. */

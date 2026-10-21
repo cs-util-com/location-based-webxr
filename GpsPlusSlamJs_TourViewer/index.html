@@ -1462,8 +1462,11 @@
       }
 
       /* A phone without AR loses "What happens?": it describes a session
-         this phone cannot start (V4's recovery states). */
+         this phone cannot start (V4's recovery states). So does a tour
+         not finished yet, whose Start is withheld (`ar-entry.ts`). */
       body[data-mode="visitor"]:has(#enter-ar[data-ar-state="unsupported"])
+        #visitor-what,
+      body[data-mode="visitor"]:has(#enter-ar[data-start="withheld"])
         #visitor-what {
         display: none;
       }
@@ -1825,10 +1828,38 @@
           gap: 8px;
         }
       }
+      /* The persistent Undo (W4 build plan MU): a quieter chip on its
+         own line above "New station here", in H1's dark card look. Its
+         label says what it takes back, so it gets the line's width and a
+         long pin text ends in an ellipsis rather than a second line (the
+         accessible name is the whole text). Disabled, it stays in place,
+         dimmed: the strip does not jump when an offer comes and goes. */
+      body[data-mode="creator"][data-ar-active="true"] #setup-undo {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        max-width: 100%;
+        min-height: 44px;
+        padding: 0 16px;
+        border: 1px solid rgb(255 255 255 / 30%);
+        border-radius: 999px;
+        background: rgb(20 22 26 / 66%);
+        color: #fff;
+        box-shadow: none;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: normal;
+        text-transform: none;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-undo:disabled {
+        opacity: 0.55;
+      }
       body[data-mode="creator"][data-ar-active="true"] #setup-pin[hidden],
       body[data-mode="creator"][data-ar-active="true"] #setup-photo[hidden],
       body[data-mode="creator"][data-ar-active="true"]
-        #setup-new-station[hidden] {
+        #setup-new-station[hidden],
+      body[data-mode="creator"][data-ar-active="true"] #setup-undo[hidden] {
         display: none;
       }
       /* "New station here" armed (D8): the accent ring says the next pin or
@@ -1856,6 +1887,13 @@
         line-height: 1.15;
         text-align: center;
       }
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls
+        #setup-undo-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       /* Typing a new pin's text: the field and its buttons take the row. */
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls:has(#pin-label:not([hidden]))
@@ -1865,7 +1903,10 @@
         #setup-photo,
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls:has(#pin-label:not([hidden]))
-        #setup-new-station {
+        #setup-new-station,
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls:has(#pin-label:not([hidden]))
+        #setup-undo {
         display: none;
       }
       body[data-mode="creator"][data-ar-active="true"] #pin-label {
@@ -3198,6 +3239,14 @@
                     hidden
                     >Try this tour as a visitor on this phone</a
                   >
+                  <!-- Shown while the hosted file is not finished yet: what
+                   a visitor reads then (main.ts, tour-unfinished.ts). -->
+                  <p
+                    id="visitor-link-note"
+                    class="hint--dim"
+                    data-testid="visitor-link-note"
+                    hidden
+                  ></p>
                 </div>
               </details>
             </li>
@@ -3359,8 +3408,8 @@
             <!-- What the published copy carries (scan-pass plan S1, S-D10),
              chosen BEFORE AR (UI round 1, U2, review #6: the Finish's
              rebuild reads it, so it cannot follow the Finish), shown only
-             for a tour that carries a walk; unticked, Finish leaves it
-             out. -->
+             for a tour that carries a walk; unticked (the default, debug
+             captures plan M2, E2), Finish leaves it out. -->
             <label
               class="switch"
               id="keep-scan-row"
@@ -3369,8 +3418,8 @@
             >
               <input type="checkbox" id="keep-scan" data-testid="keep-scan" />
               <span class="switch-track"></span>
-              Keep the walk recording in the tour file (for a co-author;
-              visitors never need it)
+              Keep the debug data in the tour file (for a co-author; visitors
+              never need it)
             </label>
             <div id="recording-block" data-testid="recording-block" hidden>
               <!-- A recording a killed tab left unsaved (M1b,
@@ -3707,6 +3756,49 @@
                   hidden
                 ></p>
                 <div id="setup-controls" data-testid="setup-controls" hidden>
+                  <!-- The persistent Undo (W4 build plan MU): takes back
+                   the tour's last step when it is a delete or a settle's
+                   automatic code change, and says which (creator-undo.ts).
+                   FIRST, on its own line above "New station here": its
+                   label names what it takes back and needs the width, and
+                   the reading and focus order is the order on screen. -->
+                  <button
+                    type="button"
+                    id="setup-undo"
+                    class="btn btn--prose"
+                    data-testid="setup-undo"
+                    disabled
+                  >
+                    <!-- An arrow turning back. -->
+                    <svg
+                      class="chip-icon"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M9 14 4 9l5-5"
+                        fill="none"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                      <path
+                        d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"
+                        fill="none"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                    <span
+                      id="setup-undo-label"
+                      class="chip-label"
+                      data-testid="setup-undo-label"
+                      >Undo</span
+                    >
+                  </button>
                   <!-- "New station here" (owner decision D8 of the editor
                    round-2 plan): a toggle - the next pin or photo starts a
                    station of its own, even within the automatic radius of
@@ -3952,6 +4044,32 @@
               >
                 Save the tour zip again
               </button>
+              <!-- The debug data the Finish left out of the tour file
+               (debug-captures plan M2, E2): saved apart on a tap, above the
+               replace steps, from the bytes the Finish read
+               (creator-debug-save.ts). -->
+              <div id="debug-save" data-testid="debug-save" hidden>
+                <p
+                  id="debug-save-text"
+                  class="step-copy"
+                  data-testid="debug-save-text"
+                ></p>
+                <button
+                  type="button"
+                  id="debug-save-btn"
+                  class="btn btn--prose"
+                  data-testid="debug-save-btn"
+                >
+                  Save the debug data
+                </button>
+                <p
+                  id="debug-save-status"
+                  class="step-copy hint--dim"
+                  data-testid="debug-save-status"
+                  role="status"
+                  aria-live="polite"
+                ></p>
+              </div>
               <!-- The summary after Finish (authoring plan 2026-09-28-0953 §3.3,
                M3b): each code's verdict, then a map of the visits, the
                codes with their facing lines, and the pins and photos -

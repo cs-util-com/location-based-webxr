@@ -168,7 +168,7 @@ describe('the globe package stays servable to the no-build globe lab', () => {
 
 /**
  * THE TERRAIN LAB (terrain plan 2026-09-27-0605 §9, findings 2 and 5) is
- * served the Osm library (`/osm-lib/`) and OsmDemo's heightfield (`/osm/`),
+ * served the Osm library (`/osm-lib/`, its heightfield too since 2026-10-06) and OsmDemo's terrain texture (`/osm/`),
  * and imports them from a module Worker, where no import map applies: so
  * nothing bare may appear in their graphs at all. Neither package depends on
  * the design system, so their own gates never load the lab; this is the
@@ -213,7 +213,7 @@ describe('the terrain lab served modules stay servable inside a worker', () => {
       expect.arrayContaining([
         'GpsPlusSlamJs_Osm/src/elevation/terrarium.ts',
         'GpsPlusSlamJs_Osm/src/mesh/enu.ts',
-        'GpsPlusSlamJs_OsmDemo/src/heightfield.ts',
+        'GpsPlusSlamJs_Osm/src/elevation/heightfield.ts',
         'GpsPlusSlamJs_OsmDemo/src/terrain-texture.ts',
       ])
     );

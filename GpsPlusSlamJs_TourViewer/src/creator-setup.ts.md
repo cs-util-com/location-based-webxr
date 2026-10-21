@@ -51,6 +51,13 @@ The on-device draft (second testing session, F13) is `creator-draft.ts`
 since the code book plan's M2 split; its sidecar holds the rules that
 were here. What stays is the Finish's side:
 
+- **The draft follows the delivered file** (debug-captures plan, Q-I): for
+  a tour opened from a FILE, the hand-off's `onDelivered` takes the draft
+  to the key the delivered file opens under (`tourFileKeyOfFile`,
+  `draft.follow`) - a new key only after the first save of a tour without
+  an id; a link's tour keeps its link's key. A move that did not land
+  (false, or a failed key) says once that no backup is kept
+  (`draft.warnNoBackup`, r901 review #7), while the same tour is open.
 - **The Finish's file** (what it writes, the baked photo spots, the walk
   left out, the listed series continued): `creator-finish.ts`, its rules
   in `finish-rebuild.ts` (M6 E0, shared with the desktop editor).
@@ -80,7 +87,7 @@ were here. What stays is the Finish's side:
     `draft-store-root.ts`'s `openDraftStore(navigator, key)`. The object
     list's four draft writes are `draft-actions.ts`'s `draftObjectWrites`
     over the creator draft (M6 E2c).
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; newStationButton?; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; stationChip?; }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; newStationButton?; undoButton?; undoLabel?; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; stationChip?; }`
     - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
       `object-list.ts` view (`bind`, `render`); `main.ts` builds it over
       `#object-list` inside the panel.
@@ -90,6 +97,14 @@ were here. What stays is the Finish's side:
     - `newStationButton` (optional; owner decision D8 of `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`) -
       "New station here", `#setup-new-station` after "Take a photo";
       handled by `creator-placement.ts`; absent (node tests), no chip.
+    - `undoButton`, `undoLabel` (optional; W4 build plan MU) - the
+      strip's persistent Undo, `#setup-undo` first in `#setup-controls`,
+      and its label; wired by `creator-undo.ts` (offers from the object
+      editing's delete and the settle's automatic code change; rendered
+      with the readout, reset with the tour; the last settle's offer is
+      withdrawn when a failed Finish forgets that settle, and its undo
+      says the next Finish saves it once a Finish wrote the change);
+      absent (node tests), a detached stand-in.
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not
@@ -132,7 +147,13 @@ were here. What stays is the Finish's side:
   - `CreatorSetup.renderAuthorReadout()` - the measuring readout
     (`authorStatusLine`) joined with the setup hint once measured
     (`setupHint`); a persistent pipeline error (`ctx.authorErrorText`) has
-    priority. No-op in visitor mode.
+    priority. No-op in visitor mode. A creator's store subscription
+    re-renders it on every dispatch except one that moved only the
+    creator's code state (`onlyCreatorCodesChanged`) and none of what the
+    readout reads of it: the hand, its measurement, and which code the
+    visit has seen. A held code's sightings dispatch about once per stable
+    QR frame; a new pose of the same code, or a stored code's sighting, is
+    shown at the next dispatch (as before the codes lived in the store).
   - `CreatorSetup.startAuthorPipeline(): boolean` - validates the printed
     size (opening step 2 when it is unusable), creates the author tracking
     controller into `ctx.qrController`; false keeps AR unstarted.
@@ -190,6 +211,11 @@ were here. What stays is the Finish's side:
   here); `finishReadiness` gates the button from the readout.
 - **Hand-off and the Drive steps:** `creator-handoff.ts` (split out in
   the code book plan's M2; its sidecar holds what was here).
+- **Save the debug data** (debug-captures plan M2): `creator-debug-save.ts`,
+  wired before the Finish, which tells it of each file and the bytes it
+  read (`debugSave`); `resetFinishStep` resets it with the hand-off. Its
+  elements are `debugSave`, `debugSaveText`, `debugSaveButton` and
+  `debugSaveStatus` of `CreatorSetupDom`.
 - **Placement (M4, DEC-N9):** the gate, the pin and the photo are
   `creator-placement.ts` (its sidecar holds the rules that were here).
   The outcome of a placement is `ctx.placementNote`, shown until

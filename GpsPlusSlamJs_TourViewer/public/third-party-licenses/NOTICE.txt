@@ -1,0 +1,54 @@
+Tour Viewer
+Copyright 2026 cs-util-com
+
+This product includes software developed at cs-util-com
+(https://github.com/cs-util-com/location-based-webxr).
+
+The app bundles the following third-party libraries. Each one's own
+licence file ships with the app, verbatim, as
+third-party-licenses/<name>-LICENSE.txt (public/ in the source), and a
+library's own NOTICE file as third-party-licenses/<name>-NOTICE.txt; the
+name is the npm name with "@" dropped and "/" written as "-". This NOTICE
+ships with the app as third-party-licenses/NOTICE.txt.
+
+- Three.js (npm: three, https://threejs.org/) - MIT License
+- 3d-tiles-renderer (npm: 3d-tiles-renderer,
+  https://github.com/NASA-AMMOS/3DTilesRendererJS) - Apache License 2.0,
+  Copyright 2020 California Institute of Technology; drawn in through the
+  workspace's globe package (gps-plus-slam-globe) for the 3D editor. The
+  bundled copy is MODIFIED: version 0.5.3 with the workspace's
+  patches/3d-tiles-renderer@0.5.3.patch applied.
+- Leaflet (npm: leaflet, https://leafletjs.com/) - BSD 2-Clause License
+- Redux Toolkit (npm: @reduxjs/toolkit, https://redux-toolkit.js.org/) - MIT
+  License
+- Redux (npm: redux, https://redux.js.org/) - MIT License
+- Redux Thunk (npm: redux-thunk, https://github.com/reduxjs/redux-thunk) -
+  MIT License
+- Reselect (npm: reselect, https://github.com/reduxjs/reselect) - MIT
+  License
+- Immer (npm: immer, https://github.com/immerjs/immer) - MIT License
+- zip.js (npm: @zip.js/zip.js, https://gildas-lormeau.github.io/zip.js/) -
+  BSD 3-Clause License
+- node-qrcode (npm: qrcode, https://github.com/soldair/node-qrcode) - MIT
+  License
+- dijkstrajs (npm: dijkstrajs, https://github.com/tcort/dijkstrajs) - MIT
+  License; drawn in by node-qrcode.
+- H3 (npm: h3-js, https://github.com/uber/h3-js) - Apache License 2.0,
+  Copyright 2017-2021 Uber Technologies, Inc.; its NOTICE ships too.
+- noble-curves (npm: @noble/curves, https://paulmillr.com/noble/) - MIT
+  License
+- noble-hashes (npm: @noble/hashes, https://paulmillr.com/noble/) - MIT
+  License
+- glMatrix (npm: gl-matrix, https://glmatrix.net/) - MIT License
+- Sentry JavaScript SDK core (npm: @sentry/core,
+  https://github.com/getsentry/sentry-javascript) - MIT License
+
+Several of these reach the app through the App Framework
+(gps-plus-slam-app-framework, Apache License 2.0), which has its own
+NOTICE.
+
+The build tools (Vite and Rolldown, both MIT License) emit a few lines
+of their own into the bundle: a module runtime, a dynamic-import preload
+helper and a modulepreload polyfill. That generated glue is neither a
+copy nor a substantial portion of either tool, so no licence file ships
+for it.

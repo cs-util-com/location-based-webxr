@@ -92,7 +92,10 @@ export function startGlobeClock(
   const { startMs, scale } = setting;
   const origin = startMs ?? epochMs;
   const effective = scale ?? (startMs === null ? 1 : 0);
-  const driftRate = Math.min(effective, 1);
+  // The drift never runs faster than real time (a fast clock would strobe
+  // the clouds), and runs in real time while the hour is held: a link pins
+  // the sun, not the clouds (round-5 plan C1; `cloudDrift=0` stills them).
+  const driftRate = effective === 0 ? 1 : Math.min(effective, 1);
   return {
     setting,
     scale: effective,
