@@ -14,6 +14,7 @@
  * that had the symptom. Only the device (QR controller, reticle, camera)
  * is stood in.
  */
+import { isAnyOf } from "@reduxjs/toolkit";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { objectContentKey } from "./authoring-draft.js";
 import {
@@ -51,7 +52,7 @@ import {
   createTourViewerStore,
   endQrPipeline,
 } from "./tour-viewer-session.js";
-import { isDocumentEdit } from "./tour-document.js";
+import { isCodeChange, isDocumentEdit } from "./tour-document.js";
 import { mintPin, objectPoseNue } from "./content-placement.js";
 import {
   deletedKey,
@@ -3211,8 +3212,12 @@ describe(
       await a.placePin("this visit", [3, 0, -2]);
       const past = a.ctx.tourDocument.state().past.length;
       let follows = 0;
+      // Counted with the draft listener's own predicate
+      // (`creator-document.ts`): the draft follows an edit OR a change of
+      // the codes, so a code saved apart from the settle's step is a
+      // second write round as well.
       a.ctx.store.listenToDocument({
-        predicate: isDocumentEdit,
+        predicate: isAnyOf(isDocumentEdit, isCodeChange),
         effect: () => {
           follows += 1;
         },
