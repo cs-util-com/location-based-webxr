@@ -116,10 +116,13 @@ DOM glue, its own module since the flows plan M6.
   review #4); the level texts, the parsed levels and that failure go into
   the tour document as `levelsArrived` / `levelsParsed` /
   `levelsUnreadable` with this open's generation (`currentLevels` is a
-  view of the parsed ones, plan M3b), and the teardown's `levelsCleared`
-  hands them to the open
-  that runs it (debug-captures plan M3a: an older open's late answer is
-  dropped in the store too);
+  view of the parsed ones, plan M3b), and the teardown dispatches
+  `levelsParsed(null)` and `levelsCleared` itself, handing them to the
+  open that runs it (debug-captures plan M3a: an older open's late answer
+  is dropped in the store too; the teardown of a late integrity failure
+  runs inside the same open, so its own `levelsParsed(null)` is what takes
+  the removed tour's parsed levels away, pinned in
+  `archive-open-file.test.ts`);
   `teardownSession` clears tour state ONLY when a tour was open at its
   start (scan-to-open plan §9 #1): with none, nothing tour-scoped exists,
   and the creator's pre-open work (a measured level, placements, the

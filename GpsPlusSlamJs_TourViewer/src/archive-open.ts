@@ -164,9 +164,15 @@ export function wireArchiveOpen(deps: {
     if (closing === null) return;
     // The viewer pipeline's level source and the placed planes belong to the
     // closing tour — a newly opened tour must not relocalize against them.
-    ctx.currentLevels = null;
-    // The hosted texts are held per open in the store (debug-captures
-    // plan M3a): the open that runs this teardown holds them from here.
+    // The parsed levels and the hosted texts are held per open in the
+    // store (debug-captures plan M3a, M3b): the open that runs this
+    // teardown holds them from here.
+    ctx.store.dispatch(
+      tourDocumentActions.levelsParsed({
+        session: ctx.openGeneration,
+        levels: null,
+      }),
+    );
     ctx.store.dispatch(
       tourDocumentActions.levelsCleared({ session: ctx.openGeneration }),
     );

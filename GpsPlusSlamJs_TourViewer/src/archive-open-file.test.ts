@@ -443,6 +443,22 @@ describe("a late integrity failure (tour kit plan K1, §8 D3)", () => {
     expect(ctx.contentError).toBe(dom.errorBox.textContent);
   });
 
+  // Why (debug-captures plan M3b): the parsed levels live in the store per
+  // open, and this teardown runs inside the SAME open, so nothing but the
+  // teardown's own `levelsParsed(null)` takes them away - left, the viewer
+  // would relocalize against the removed tour's codes.
+  it("takes the removed tour's parsed levels away too", async () => {
+    const { ctx, dom, session, report } = await openedFile();
+    await vi.waitFor(() => {
+      expect(ctx.currentLevels).not.toBeNull();
+    });
+    report(new TourIntegrityError("hash-mismatch", "bad bytes"), session);
+    await vi.waitFor(() => {
+      expect(dom.errorBox.textContent).toMatch(/content was removed/);
+    });
+    expect(ctx.currentLevels).toBeNull();
+  });
+
   it("ignores a failure reported by a tour that is no longer open", async () => {
     const { ctx, dom, report } = await openedFile();
     const stale = fakeSession("local-file:old");
