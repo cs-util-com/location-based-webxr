@@ -12,7 +12,8 @@
  * store subscriber that re-enters the guide sees a consistent walk.
  *
  * The windows of the last skip and the note (6 s, `SKIP_UNDO_MS`) are read
- * over the page's time by their readers; no timer lives here.
+ * over the page's time by their readers, through `selectUndoableSkip` and
+ * `selectNote`; no timer lives here.
  *
  * Not recorded: no `visitorWalk/*` action is among the page's persisted
  * prefixes (`tour-viewer-session.ts`), so a dispatch from the store's
@@ -23,6 +24,7 @@
 
 import { createAction, type UnknownAction } from "@reduxjs/toolkit";
 import type { TourOrder } from "gps-plus-slam-app-framework/ar/tour-stations";
+import { DEFAULT_TOAST_LINGER_MS } from "gps-plus-slam-app-framework/utils/toast-core";
 
 import {
   applyWalkStep,
@@ -32,6 +34,17 @@ import {
   type WalkStep,
 } from "./station-run.js";
 import { guideTourChanged } from "./visitor-guide-slice.js";
+
+/**
+ * How long a skip can be undone (K4 review R14): the framework's toast
+ * linger (6 s), so it reads like every other transient message. Argued,
+ * not measured: 3 s is about the time to read "Skipped X. Next: Y, 80 m"
+ * (8 words at 4 words a second) and react; 10 s would hold the next
+ * station's skip back that long. Reversed by a field test showing stray
+ * skips noticed later than 6 s, or visitors waiting on the undo. The
+ * note's window too. Here, not in the guide, which imports this slice.
+ */
+export const SKIP_UNDO_MS = DEFAULT_TOAST_LINGER_MS;
 
 /** The last skip (K4 review R14): undoable until it settles. */
 interface LastSkip {
@@ -160,6 +173,30 @@ export function visitorWalkReducer(
 
 /** What the guide needs of the page's store. */
 export interface VisitorWalkStore {
-  getState(): { readonly visitorWalk: VisitorWalkState };
+  getState(): WithWalk;
   dispatch(action: UnknownAction): unknown;
+}
+
+type WithWalk = { readonly visitorWalk: VisitorWalkState };
+
+/** The last skip while it can be undone at `nowMs`: not settled, and
+ *  inside its window (`SKIP_UNDO_MS`); null otherwise. The settle itself
+ *  is an event (`skipSettled`): past the window an unsettled skip is still
+ *  in the state until its reader settles it. */
+export function selectUndoableSkip(
+  state: WithWalk,
+  nowMs: number,
+): { readonly id: string; readonly atMs: number } | null {
+  const skip = state.visitorWalk.lastSkip;
+  if (skip === null || skip.settled || nowMs >= skip.atMs + SKIP_UNDO_MS) {
+    return null;
+  }
+  return { id: skip.id, atMs: skip.atMs };
+}
+
+/** The note of what just happened while its moment lasts at `nowMs`
+ *  (`SKIP_UNDO_MS`), else null. */
+export function selectNote(state: WithWalk, nowMs: number): WalkNote | null {
+  const note = state.visitorWalk.note;
+  return note === null || nowMs >= note.atMs + SKIP_UNDO_MS ? null : note;
 }

@@ -43,6 +43,16 @@ the chooser, the chosen target and the row arm here.
   - and the guide slice's `guideTourChanged()` resets it too.
 - `interface VisitorWalkStore` - what the guide needs of a store
   (`getState`, `dispatch`).
+- `SKIP_UNDO_MS` - the last skip's and the note's window (6 s, the
+  framework toast's linger; argued, not measured). Here rather than in the
+  guide, which imports this slice; `station-guide.ts` re-exports it.
+- `selectUndoableSkip(state, nowMs)` - `{ id, atMs }` of the last skip
+  while it can be undone at `nowMs` (not settled, inside its window),
+  else null.
+- `selectNote(state, nowMs)` - the note while its window lasts at
+  `nowMs`, else null. Both take the page's state (`{ visitorWalk }`), so
+  the guide's button and line and any other view (the sheet of M2) read
+  the same windows.
 
 ## Invariants & assumptions
 
@@ -51,14 +61,14 @@ the chooser, the chosen target and the row arm here.
   second settle, an id the tour lacks, a step without a walk, an empty
   batch), and the guide dispatches only what changed something, never per
   frame.
-- **One batch per guide call** (`walkBatched`): the guide applies its
-  changes to a draft of this state and dispatches them together at the end
-  of the call, so a store subscriber that re-enters the guide
+- **One batch per guide call** (`walkBatched`): the guide queues its
+  changes, reads this state with them applied over it, and dispatches them
+  together at the end of the call, so a store subscriber that re-enters the guide
   (`ar-entry.ts` ticks it on every dispatch) never sees half a tick. A
   batch equals its actions applied in sequence.
 - **No timer.** The windows of the last skip and the note (6 s,
-  `SKIP_UNDO_MS` of `station-guide.ts`) are read over the page's time by
-  the guide; only the settle is an event (`skipSettled`, dispatched once
+  `SKIP_UNDO_MS`) are read over the page's time by their readers
+  (`selectUndoableSkip`, `selectNote`); only the settle is an event (`skipSettled`, dispatched once
   when the 6 s have passed, or when the tour moves on).
 - **Not persisted:** `visitorWalk/*` is not among the page's persisted
   prefixes, so the guide's dispatch from inside the store's subscriber
@@ -92,7 +102,10 @@ walkOffered(store.getState().visitorWalk.progress!); // the rest
   the arm), the same state when nothing changes, the resets (a new walk,
   no tour, another tour), a batch equal to its sequence; the page's store
   mounts it and never writes `visitorWalk/*` into a recording (against a
-  persisted control action).
+  persisted control action); the windows of `selectUndoableSkip` and
+  `selectNote` (inside, at their end, settled, undone; a property over any
+  time for the note) and `SKIP_UNDO_MS` as the toast linger, the one value
+  the guide names too.
 - `station-run.differential.property.test.ts` - the run's calls through a
   store of this slice against the frozen run.
 - `station-guide.differential.property.test.ts`,

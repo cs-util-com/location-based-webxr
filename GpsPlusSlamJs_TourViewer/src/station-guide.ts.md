@@ -97,7 +97,11 @@ activateM)` (each tick, each offered station with a distance: the
   - **The settle is an event:** once 6 s have passed since the last skip,
     the next render dispatches `skipSettled` (and the prefetch hears the
     skip's `onDone`); a find or another station done settles it at once,
-    as before. The note's 6 s are read over `now` (`noteText`), no timer.
+    as before. The note's 6 s are read over `now` through the slice's
+    `selectNote` (`noteText`), no timer; the button's undo through
+    `selectUndoableSkip`. The settle and a tap on the undo the button
+    showed act on the skip still unsettled (`unsettledSkip`), so a skip's
+    `onDone` is held back and delivered by the same rule, once.
   - **Another tour:** `walkStarted` resets the walk (its last skip, note
     and ask with it); no tour, `walkCleared`. The guide slice's
     `guideTourChanged` resets the walk too, and is dispatched before the
@@ -113,13 +117,32 @@ activateM)` (each tick, each offered station with a distance: the
     M4 when a tap carries its action); `runView` (a view of the run's
     calls over the walk for the tour's stations, no state of its own); the
     call's pending changes (one call's, gone at its end).
-  - **The listeners stay callbacks**, fired by the guide from each
-    transition's events, once per transition: `onFound`, `onDone` and
-    `onUpcoming` start, end and read ahead a story (the story panel and
-    the prefetch hold players and fetched assets, resources the store must
-    not hold); a store subscriber instead would fire again on every
-    re-entered dispatch. The guide-level differential checks each fires as
-    before.
+  - **The listeners stay callbacks**, each for its own reason (the
+    guide-level differential checks each fires as before):
+    - `onFound` and `onDone` fire once per transition, from its events
+      (`onFound` again for a story the session's end cut short): they
+      start and end a story and release the prefetch's media - players and
+      fetched assets, resources the store must not hold - and a store
+      subscriber would fire again on every re-entered dispatch.
+    - `onUpcoming` fires on every render while a story plays under a fixed
+      or branch order, not once: the prefetch joins a request it has made
+      already (`request`), so a repeat costs nothing, and the station it
+      names is derived from the walk, no state of its own.
+    - `onApproach` fires every tick with each offered station's distance:
+      per-frame data from the measurement, which in the store would be a
+      dispatch every frame (plan §4, store churn).
+    - `onVisitor` hands the stage the camera position every tick with a
+      heading: per-frame pose data the stage applies to its figure, a
+      three.js object.
+    - `onGuide` hands the breadcrumbs their visitor and target every
+      render: per-frame data for a scene object, derived from the walk and
+      the measurement.
+    - `onEndStory` is a command, not state: the guide asks the story panel
+      to stop a player only it holds, and the panel answers through
+      `storyEnded`.
+    - `startHud` creates a resource (the HUD, which the guide disposes)
+      whose targets the HUD reads on its own frame (`hudTargets`), derived
+      from the walk and the measurement.
   - **Timing under the page's subscription:** the walk's own batch wakes
     `ar-entry.ts`'s subscriber, which ticks the guide at once, so a
     station a find, skip or story's end newly offers (the next under fixed
@@ -330,8 +353,10 @@ activateM)` (each tick, each offered station with a distance: the
     (`rendered`): a clock that ran out since, or a focus that moved,
     changes nothing;
   - a skip can be undone for `SKIP_UNDO_MS` (6 s, the framework toast's
-    linger; argued, not measured): the button reads "Undo: bring back
-    <title>", the line "Skipped <title>." (the confirmation); the undo
+    linger; argued, not measured; defined by the walk slice and
+    re-exported here; the button reads its window through
+    `selectUndoableSkip`): the button reads "Undo: bring back <title>",
+    the line "Skipped <title>." (the confirmation); the undo
     brings the station back to the order ("Brought back <title>.") with a
     fresh clock. The prefetch hears of a skip (`onDone`) only once it can
     no longer be undone, or when the tour moves on (a find or another

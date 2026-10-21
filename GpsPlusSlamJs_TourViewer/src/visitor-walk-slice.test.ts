@@ -1,16 +1,22 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type {
   TourOrder,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-stations";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
+import { DEFAULT_TOAST_LINGER_MS } from "gps-plus-slam-app-framework/utils/toast-core";
 
+import { SKIP_UNDO_MS as GUIDE_SKIP_UNDO_MS } from "./station-guide";
 import { walkOffered, walkRoute, walkStatus } from "./station-run";
 import { createTourViewerStore } from "./tour-viewer-session";
 import { guideTourChanged } from "./visitor-guide-slice";
 import {
   quickArmed,
   noteCleared,
+  selectNote,
+  selectUndoableSkip,
+  SKIP_UNDO_MS,
   skipSettled,
   skipTaken,
   skipUndone,
@@ -323,5 +329,72 @@ describe("the page's store and the walk", () => {
     expect(backend.written.filter((t) => t.startsWith("visitorWalk/"))).toEqual(
       [],
     );
+  });
+});
+
+describe("the walk's windows (selectUndoableSkip, selectNote)", () => {
+  // Why (W4 M1 review): the undo's and the note's 6 s are read by more
+  // than the guide - the sheet of M2 reads the same windows - so they are
+  // selectors of the slice, over the page's time, with no timer.
+  it("offers the last skip's undo until it settles or its window ends", () => {
+    const at = 10_000;
+    const skipped = visitorWalkReducer(
+      started("any"),
+      skipTaken({ id: "a", atMs: at }),
+    );
+    const root = (visitorWalk: VisitorWalkState) => ({ visitorWalk });
+    expect(selectUndoableSkip(root(started("any")), at)).toBeNull();
+    expect(selectUndoableSkip(root(skipped), at)).toEqual({
+      id: "a",
+      atMs: at,
+    });
+    expect(
+      selectUndoableSkip(root(skipped), at + SKIP_UNDO_MS - 1),
+    ).toMatchObject({ id: "a" });
+    expect(selectUndoableSkip(root(skipped), at + SKIP_UNDO_MS)).toBeNull();
+    const settled = visitorWalkReducer(skipped, skipSettled());
+    expect(selectUndoableSkip(root(settled), at)).toBeNull();
+    const undone = visitorWalkReducer(
+      skipped,
+      skipUndone({ id: "a", atMs: at + 1 }),
+    );
+    expect(selectUndoableSkip(root(undone), at + 1)).toBeNull();
+  });
+
+  it("shows the note inside its window only, for a skip and a bring back alike", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 1e9 }),
+        fc.integer({ min: -1_000, max: 2 * SKIP_UNDO_MS }),
+        fc.boolean(),
+        (atMs, sinceMs, undo) => {
+          const skipped = visitorWalkReducer(
+            started("any"),
+            skipTaken({ id: "a", atMs }),
+          );
+          const state = undo
+            ? visitorWalkReducer(skipped, skipUndone({ id: "a", atMs }))
+            : skipped;
+          const note = selectNote({ visitorWalk: state }, atMs + sinceMs);
+          expect(note).toEqual(
+            sinceMs >= SKIP_UNDO_MS
+              ? null
+              : { kind: undo ? "brought-back" : "skipped", id: "a", atMs },
+          );
+        },
+      ),
+    );
+    const cleared = visitorWalkReducer(
+      visitorWalkReducer(started("any"), skipTaken({ id: "a", atMs: 0 })),
+      noteCleared(),
+    );
+    expect(selectNote({ visitorWalk: cleared }, 0)).toBeNull();
+  });
+
+  // Why: the window is the framework's toast linger (6 s), one value for
+  // the guide, which still names it, and the slice.
+  it("is the toast linger, the one value the guide names too", () => {
+    expect(SKIP_UNDO_MS).toBe(DEFAULT_TOAST_LINGER_MS);
+    expect(GUIDE_SKIP_UNDO_MS).toBe(SKIP_UNDO_MS);
   });
 });

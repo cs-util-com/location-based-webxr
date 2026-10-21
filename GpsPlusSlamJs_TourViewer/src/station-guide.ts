@@ -87,7 +87,6 @@ import type {
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 import { formatDistance } from "gps-plus-slam-app-framework/utils/format-distance";
-import { DEFAULT_TOAST_LINGER_MS } from "gps-plus-slam-app-framework/utils/toast-core";
 import { configureStore, type UnknownAction } from "@reduxjs/toolkit";
 import { Vector3 } from "three";
 
@@ -121,6 +120,9 @@ import type { VisitorPosition } from "./visitor-position.js";
 import {
   noteCleared,
   quickArmed,
+  selectNote,
+  selectUndoableSkip,
+  SKIP_UNDO_MS,
   skipSettled,
   skipTaken,
   skipUndone,
@@ -241,15 +243,9 @@ export interface StationGuide {
   figurePoseOf(stationId: string): StagePose | null;
 }
 
-/**
- * How long a skip can be undone (K4 review R14): the framework's toast
- * linger (6 s), so it reads like every other transient message. Argued,
- * not measured: 3 s is about the time to read "Skipped X. Next: Y, 80 m"
- * (8 words at 4 words a second) and react; 10 s would hold the next
- * station's skip back that long. Reversed by a field test showing stray
- * skips noticed later than 6 s, or visitors waiting on the undo.
- */
-export const SKIP_UNDO_MS = DEFAULT_TOAST_LINGER_MS;
+/** How long a skip can be undone, and its note shows (K4 review R14):
+ *  the walk slice's window, named here too for the guide's readers. */
+export { SKIP_UNDO_MS } from "./visitor-walk-slice.js";
 
 /**
  * The oldest a device fix may be to stand in for the visitor's position
@@ -466,18 +462,20 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     });
   }
 
-  /** The last skip while it can still be undone (R14); its "done" reaches
-   *  the prefetch only when the moment passes or the tour moves on. */
-  function undoableSkip(): { id: string; atMs: number } | null {
+  /** The last skip not settled yet (R14): its "done" reaches the prefetch
+   *  only when it settles - its moment passed, or the tour moved on. What
+   *  the button offers is `selectUndoableSkip`, its window; this is what
+   *  the settle and a tap on the undo the button showed act on. */
+  function unsettledSkip(): { id: string; atMs: number } | null {
     const skip = walk().lastSkip;
     return skip === null || skip.settled ? null : skip;
   }
 
   /** The note of what just happened ("Skipped the well."), while its
-   *  moment lasts (R14): read over the page's time, no timer. */
+   *  moment lasts (R14, `selectNote`): read over the page's time. */
   function noteText(): string | null {
-    const note = walk().note;
-    if (note === null || deps.now() >= note.atMs + SKIP_UNDO_MS) return null;
+    const note = selectNote({ visitorWalk: walk() }, deps.now());
+    if (note === null) return null;
     const title = stationTitle(stationById(note.id) ?? {});
     return note.kind === "skipped"
       ? `Skipped ${title}.`
@@ -701,7 +699,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         if (station !== undefined) deps.onFound(station);
       } else if (event.kind === "done") {
         // A skip that can still be undone reaches the prefetch later.
-        if (event.skipped && undoableSkip()?.id === event.id) continue;
+        if (event.skipped && unsettledSkip()?.id === event.id) continue;
         settleUndo();
         deps.onDone?.(event.id);
       }
@@ -710,7 +708,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
 
   /** The last skip can no longer be undone: tell the prefetch it is done. */
   function settleUndo(): void {
-    const skip = undoableSkip();
+    const skip = unsettledSkip();
     if (skip === null) return;
     change(skipSettled());
     deps.onDone?.(skip.id);
@@ -871,7 +869,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       ensureHud();
     }
     // The settle is an event: once, when the undo's moment has passed.
-    const skip = undoableSkip();
+    const skip = unsettledSkip();
     if (skip !== null && deps.now() >= skip.atMs + SKIP_UNDO_MS) settleUndo();
     show(dom.line, lineText());
     rendered = skipAction();
@@ -893,7 +891,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       run.focus(focus, deps.now(), focusDistance);
     }
     // A skip that can still be undone: the button undoes it (R14).
-    const skip = undoableSkip();
+    const skip = selectUndoableSkip({ visitorWalk: walk() }, deps.now());
     if (skip !== null) return { kind: "undo", id: skip.id };
     const story = focus === null ? storyFocus() : null;
     const target = focus ?? story;
@@ -1041,7 +1039,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         handle(run.finish(action.id, deps.now()));
         break;
       case "undo":
-        if (undoableSkip()?.id !== action.id) break;
+        if (unsettledSkip()?.id !== action.id) break;
         change(skipUndone({ id: action.id, atMs: deps.now() }));
         handle(run.unskip(action.id, deps.now()));
         break;
