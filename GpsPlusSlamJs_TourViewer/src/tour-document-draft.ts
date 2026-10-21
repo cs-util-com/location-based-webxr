@@ -224,7 +224,7 @@ export interface TourCodesRecord {
 }
 
 /** The codes record as the document holds it now, with `hand` in hand. */
-export function codesRecord(
+function codesRecord(
   state: TourDocumentState,
   hand: LevelText | null,
 ): TourCodesRecord {

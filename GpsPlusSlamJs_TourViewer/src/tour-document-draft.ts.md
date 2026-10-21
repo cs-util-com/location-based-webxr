@@ -21,11 +21,11 @@ createdStations? }` (`stations`: `StationPose[]`, each station's
 - `TourDocumentDraft` - `DraftObjectWrites` (`draft-actions.ts`) plus
   `saveSettings(record)`, and `saveCodes(codes)` for a page that keeps a
   codes record (the phone's; the desktop measures no code and has none).
-- `TourCodesRecord` `{ level, levels }` and `codesRecord(state, hand)`
-  (plan M3b) - the codes a draft keeps: the code in hand (the page's,
-  not the document's, so the caller names it) and `levelsNotHosted`, the
-  hand's code among them; written as `draft-persistence.ts`'s
-  `CODES_KEY` file.
+- `TourCodesRecord` `{ level, levels }` (plan M3b) - the codes a draft
+  keeps: the code in hand (the page's, not the document's, so the caller
+  names it) and `levelsNotHosted`, the hand's code among them; written as
+  `draft-persistence.ts`'s `CODES_KEY` file. Built inside the module
+  (`codesRecord(state, hand)`, not exported).
 - `SETTINGS_KEY` (`"settings"`) - the record's file in a draft
   namespace, on both pages; `readDraft` skips it.
 - `parseSettingsRecord(text)` - a stored record, or undefined when it does

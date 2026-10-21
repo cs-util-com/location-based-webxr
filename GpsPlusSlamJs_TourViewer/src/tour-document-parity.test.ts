@@ -17,8 +17,10 @@
  * What is compared:
  * - the manifest the save wrote (`tour.json` as serialized), and
  * - the draft's records as a later open reads them (`readDraft`): each
- *   object's content and each deletion's id - not the meta, which carries
- *   page-specific fields (the phone's code level and printed size).
+ *   object's content and each deletion's id - not the meta (the phone's
+ *   printed size) nor the codes record, which are the phone's alone. A
+ *   tour's level files are compared on their own (a save keeps them byte
+ *   for byte).
  *
  * What is NOT driven here, on purpose: the phone's AR geometry (where a
  * reticle tap lands, a code's re-measure). Its placement, move and
@@ -101,6 +103,18 @@ async function tourFile(): Promise<File> {
   return new File([zip], "tour.zip", { type: "application/zip" });
 }
 
+/** A level file's text for a code standing at `geo`. */
+function levelAt(geo: QrGeoPose): string {
+  return JSON.stringify({
+    version: 1,
+    qr: {
+      text: "https://example.invalid/?qr=station",
+      physicalSizeM: 0.16,
+      geo,
+    },
+  });
+}
+
 /** One browser's draft namespaces, in memory: both pages' stores. */
 function memoryStores(): (key: string) => Promise<DraftFileStore> {
   const spaces = new Map<string, Map<string, Blob | string>>();
@@ -171,9 +185,15 @@ interface Page {
   /** A note to `lat`/`lon`, height and facing kept (the phone: as its AR
    *  move leaves the page's lists). */
   move(id: string, lat: number, lon: number): Promise<void>;
-  /** A station moved rigidly to `geo`, its items with it (D17; the phone:
-   *  as its re-measured code leaves the page's manifest and lists). */
+  /** A station moved rigidly to `geo`, its items with it (D17), by a code
+   *  (the phone: as its settle moves it once the station's code was
+   *  re-measured, the code's new text in the same step; the desktop
+   *  measures no code and moves the station alone). */
   moveStation(stationId: string, geo: QrGeoPose): Promise<void>;
+  /** Take back the document's last step (the desktop's undo; the phone:
+   *  the document's undo, which its Undo button runs - offered there only
+   *  after a delete today). */
+  undo(): Promise<void>;
   setNeedsNoGps(on: boolean): Promise<void>;
   setDetails(change: DetailsChange): Promise<void>;
   /** Save (the desktop) or Finish (the phone): the manifest written. */
@@ -297,6 +317,10 @@ async function desktopPage(
     },
     moveStation: (stationId, geo) => {
       editor.moveStation(stationId, geo);
+      return draft.idle();
+    },
+    undo: () => {
+      editor.undo();
       return draft.idle();
     },
     setNeedsNoGps: (on) => {
@@ -443,6 +467,9 @@ async function phonePage(
   ctx.session = session;
   ctx.tourManifestStatus = "settled";
   ctx.tourDocument.open(manifest);
+  // The zip's level files, as `archive-open.ts` installs them for the open.
+  ctx.currentLevels = await session.loadQrLevels();
+  ctx.currentLevelTexts = session.levelTexts();
   let draftKey: string | null = null;
   const setup = wireCreatorSetup({
     ctx,
@@ -528,9 +555,21 @@ async function phonePage(
       await flush();
     },
     moveStation: async (stationId, geo) => {
-      // As `creator-settle.ts`'s `moveStationsAlong` moves it once its
-      // code was re-measured in AR (the geo is what the AR path computed).
-      ctx.tourDocument.moveStation(stationId, geo, "a station");
+      // As `creator-settle.ts`'s settle moves it once its code was
+      // re-measured in AR (`moveStationsAlong`; the geo is what the AR path
+      // computed): the move staged in the settle's batch, then the batch
+      // and the code's re-minted text applied as one step of the document.
+      const batch = ctx.tourDocument.settleBatch();
+      batch.moveStation(stationId, geo);
+      setup.codes.applySettle(
+        batch,
+        [{ id: `code-${stationId}`, json: levelAt(geo) }],
+        "the settle of this visit",
+      );
+      await flush();
+    },
+    undo: async () => {
+      ctx.tourDocument.undo();
       await flush();
     },
     setNeedsNoGps: () =>
@@ -856,6 +895,34 @@ const ROWS: readonly Row[] = [
     },
   },
   {
+    // Why (plan M3b, Q-D): the phone's settle moves a station and saves
+    // its code's new text as ONE step, so one undo takes the move back
+    // whole - the station and its items where the opened tour has them,
+    // as the desktop's undo of its move leaves them.
+    name: "edit a pin, move a station by a code, undo the move, save",
+    records: false,
+    run: async (p) => {
+      await p.edit("a", "The gate");
+      await p.moveStation("st-a", {
+        lat: NORTH,
+        lon: 9.0503,
+        alt: 340,
+        rotation: [0, 0, 0, 1],
+      });
+      await p.undo();
+      return p;
+    },
+    each: ({ written }) => {
+      expect(stationHolding(written, "a")?.geo).toEqual(
+        stationHolding(tourOf(OPENED), "a")?.geo,
+      );
+      expect(itemsByStation(written)).toEqual({
+        opened: [["a"], ["b"], ["f"]],
+        added: [],
+      });
+    },
+  },
+  {
     // Why (owner decision D8 of the editor round-2 plan): the phone's
     // "New station here" goes through the document's own path; the
     // desktop's "+" in the tree and "Move to a new station" come with the
@@ -1129,6 +1196,47 @@ describe("the parity contract: an earlier file carrying debug camera captures", 
         ...tourOf(OPENED).stations.map((st) => st.id),
         "walk-1",
       ]);
+    }
+  }, 60_000);
+});
+
+describe("the parity contract: a save keeps the tour's level files as they are (plan M3b)", () => {
+  // Why this test matters: a level file is a printed code's measured pose.
+  // The phone's Finish writes one only when this page changed that code
+  // (`codesToWrite`); the desktop measures no code and writes none. A save
+  // that wrote one again would change bytes a diff or a later check
+  // reads, and one that dropped it would strand the printed code. So after
+  // an edit, both pages' saves hand each `qr/*.json` back byte for byte.
+  // The text is not in `JSON.stringify`'s own form, so a file written
+  // again from the parsed level shows.
+  const LEVEL =
+    '{ "version": 1,\n  "qr": { "text": "https://example.invalid/?qr=q1",' +
+    ' "physicalSizeM": 0.16,\n    "geo": { "lat": 48.52, "lon": 9.05,' +
+    ' "alt": 340, "rotation": [0, 0, 0, 1] } } }\n';
+
+  async function fileWithLevel(): Promise<File> {
+    const zip = await packFilesAsZip([
+      { path: "tour.json", data: serializeTourManifest(tourOf(OPENED)) },
+      { path: "content/f.jpg", data: "f" },
+      { path: "qr/q1.json", data: LEVEL },
+    ]);
+    return new File([zip], "tour.zip", { type: "application/zip" });
+  }
+
+  it("the desktop's download and the phone's Finish keep qr/q1.json byte for byte", async () => {
+    const file = await fileWithLevel();
+    const desktop = await desktopPage(file, memoryStores());
+    await desktop.edit("a", "The gate");
+    const downloaded = (await desktop.download()).file;
+    const phone = await phonePage(file, memoryStores());
+    await phone.edit("a", "The gate");
+    await phone.save();
+    for (const [page, saved] of [
+      ["desktop", downloaded],
+      ["phone", phone.lastFinished()],
+    ] as const) {
+      const reopened = await openTourFile(saved);
+      expect(await reopened.loadEntryText("qr/q1.json"), page).toBe(LEVEL);
     }
   }, 60_000);
 });

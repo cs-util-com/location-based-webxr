@@ -159,6 +159,13 @@ after every step of any sequence of the page's calls - the tour
 document's own opens, closes, edits and undos, and later opens whose
 predecessors answer late, among them; seen red against a broken
 `withHand`, a stored sighting put first, and the hosted levels' session
-guard removed. Composed, through `wireCreatorSetup`: every creator suite, and
+guard removed. With settles among the steps (plan M3b) too, compared the
+same way (seen red with the hand not following its own code) - but
+without an undo, which the module as it was cannot express (it held no
+history); the settle's undo is a property of its own on the store
+alone, for any book, hand and settle: each code's text from before the
+settle back, the hand let go of a code the undo changed and kept on any
+other (seen red with the undo's codes not applied, and with the hand not
+released). Composed, through `wireCreatorSetup`: every creator suite, and
 the sampled mutants (`scripts/fixtures/creator-setup.mutants.json`) whose
 text moved here.

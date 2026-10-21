@@ -4,7 +4,9 @@
  * `codes` and the page's `creatorCodes` slice now, whose reducers apply
  * `code-book.ts`'s rules. Its reference model is the module as it was
  * before the move - closure state over the same rules
- * (`test-support/creator-codes-reference.ts`).
+ * (`test-support/creator-codes-reference.ts`). A settle's codes (plan
+ * M3b) are compared with it too; their undo, which it cannot express, is
+ * a property of its own on the store alone.
  */
 
 import fc from "fast-check";
@@ -97,7 +99,8 @@ type Op =
       levels: { id: string; v: number }[];
     }
   | { kind: "renamed"; n: number }
-  | { kind: "tourLevels"; ids: { id: string; geo: boolean }[] };
+  | { kind: "tourLevels"; ids: { id: string; geo: boolean }[] }
+  | { kind: "settle"; levels: { id: string; v: number }[] };
 
 const id = fc.constantFrom(...IDS);
 const v = fc.nat(3);
@@ -151,6 +154,16 @@ const op: fc.Arbitrary<Op> = fc.oneof(
   }),
 );
 
+/** The steps above with settles among them (plan M3b), and no undo: the
+ *  closure module cannot say what an undo of a settle does (see below). */
+const opWithSettle: fc.Arbitrary<Op> = fc.oneof(
+  { arbitrary: op.filter((o) => o.kind !== "undone"), weight: 4 },
+  {
+    arbitrary: fc.record({ kind: fc.constant("settle" as const), levels }),
+    weight: 1,
+  },
+);
+
 /** What the page does around the codes, each side its own way. */
 interface Page {
   /** The open tour's level files arrived (null: they could not be read). */
@@ -162,6 +175,12 @@ interface Page {
   /** A tour document action that is not a code action: the store's
    *  side dispatches it, the closure module never saw one. */
   document(act: (ctx: TourViewerSession) => void): void;
+  /** A settle re-minted `levels` (`creator-settle.ts`, through
+   *  `applySettle`). */
+  settle(
+    codes: CreatorCodes,
+    levels: readonly { id: string; json: string }[],
+  ): void;
 }
 
 type Apply = {
@@ -266,6 +285,14 @@ const APPLY: Apply = {
   },
   // Handled by the caller: both sides read the same plain field.
   tourLevels: () => undefined,
+  // Its answer is not compared: the store's names the document's step,
+  // the closure module held no document.
+  settle: (codes, o, page) => {
+    page.settle(
+      codes,
+      o.levels.map((l) => ({ id: l.id, json: text(l.id, l.v) })),
+    );
+  },
 };
 
 function apply(codes: CreatorCodes, o: Op, page: Page): unknown {
@@ -299,6 +326,122 @@ function observe(codes: CreatorCodes): unknown {
   };
 }
 
+/**
+ * Runs `ops` on the store's codes and on the closure module's, and
+ * compares every observable after every step. `openAtStart` opens a tour
+ * before the first step (a settle runs only in a visit of an open tour).
+ */
+function compareWithReference(ops: readonly Op[], openAtStart: boolean): void {
+  const ctx = createTourViewerSession();
+  if (openAtStart) ctx.tourDocument.open(tourOf([]));
+  const model = {
+    currentLevels: null as ReadonlyMap<string, QrLevel> | null,
+    currentLevelTexts: null as ReadonlyMap<string, string> | null,
+    levelsUnreadable: false,
+  };
+  /** A settle runs only in a visit of an open tour: both sides skip one
+   *  the page could not start, the same precondition read for both. */
+  const tourOpen = (): boolean => ctx.tourDocument.manifest() !== null;
+  // The store's side: the session's level fields (each write a dispatch
+  // for the running open), and an older open's late answer dispatched for
+  // its own open, as archive-open does.
+  const storePage: Page = {
+    levels: (texts) => {
+      if (texts === null) {
+        ctx.currentLevelTexts = null;
+        ctx.levelsUnreadable = true;
+      } else {
+        ctx.currentLevelTexts = texts;
+      }
+    },
+    nextOpen: () => {
+      ctx.openGeneration += 1;
+      ctx.currentLevelTexts = null;
+    },
+    late: (texts) => {
+      const session = ctx.openGeneration - 1;
+      ctx.store.dispatch(
+        texts === null
+          ? tourDocumentActions.levelsUnreadable({ session })
+          : tourDocumentActions.levelsArrived({
+              session,
+              texts: [...texts].map(([key, json]) => ({
+                id: key,
+                json,
+              })),
+            }),
+      );
+    },
+    document: (act) => {
+      act(ctx);
+    },
+    settle: (codes, levels) => {
+      if (!tourOpen()) return;
+      codes.applySettle(ctx.tourDocument.settleBatch(), levels, "the settle");
+    },
+  };
+  // The closure module's side: plain fields. An open's answer is its last
+  // one (archive-open gives each open one; the property may give several),
+  // a new open starts with none - texts and parsed levels alike, as
+  // archive-open's teardown clears both (the store's parsed levels are held
+  // per open since plan M3b) - and an older open's late answer was dropped
+  // by archive-open's own guard. A settle saves its codes in the module
+  // and commits nothing: the module held no document.
+  const modelPage: Page = {
+    levels: (texts) => {
+      model.currentLevelTexts = texts;
+      model.levelsUnreadable = texts === null;
+    },
+    nextOpen: () => {
+      model.currentLevels = null;
+      model.currentLevelTexts = null;
+      model.levelsUnreadable = false;
+    },
+    late: () => undefined,
+    document: () => undefined,
+    settle: (codes, levels) => {
+      if (!tourOpen()) return;
+      codes.applySettle({ commit: () => null }, levels, "the settle");
+    },
+  };
+  let heard = 0;
+  let modelHeard = 0;
+  const codes = wireCreatorCodes({
+    ctx,
+    onIdsChanged: () => {
+      heard += 1;
+    },
+  });
+  const reference = wireReferenceCodes({
+    ctx: model,
+    onIdsChanged: () => {
+      modelHeard += 1;
+    },
+  });
+  for (const [step, o] of ops.entries()) {
+    if (o.kind === "tourLevels") {
+      const tour = new Map(o.ids.map((l) => [l.id, tourLevel(l.id, l.geo)]));
+      ctx.currentLevels = tour;
+      model.currentLevels = tour;
+    }
+    const answer = apply(codes, o, storePage);
+    const modelAnswer = apply(reference, o, modelPage);
+    const where = `after step ${String(step)} (${o.kind})`;
+    expect(answer, `${where}: the call's answer`).toEqual(modelAnswer);
+    expect(observe(codes), where).toEqual(observe(reference));
+    expect(ctx.levelsUnreadable, `${where}: levels unreadable`).toBe(
+      model.levelsUnreadable,
+    );
+    expect(heard, `${where}: the print panel's notices`).toBe(modelHeard);
+    expect(
+      ctx.currentLevelTexts === null ? null : [...ctx.currentLevelTexts],
+      `${where}: the hosted texts`,
+    ).toEqual(
+      model.currentLevelTexts === null ? null : [...model.currentLevelTexts],
+    );
+  }
+}
+
 describe("creator-codes: the store keeps every rule of the codes as they were", () => {
   // Why this test matters: the move into the store spreads one closure's
   // rules over two slices and a facade - the hand's text winning, live
@@ -312,108 +455,97 @@ describe("creator-codes: the store keeps every rule of the codes as they were", 
   // whose predecessors answer late: the codes must survive the first, and
   // an older open's answer must never land (the store's session guard).
   it("reads exactly as the closure module did after every step, for any sequence (model-based property)", () => {
+    expect.hasAssertions();
     fc.assert(
       fc.property(fc.array(op, { maxLength: 30 }), (ops) => {
-        const ctx = createTourViewerSession();
-        const model = {
-          currentLevels: null as ReadonlyMap<string, QrLevel> | null,
-          currentLevelTexts: null as ReadonlyMap<string, string> | null,
-          levelsUnreadable: false,
-        };
-        // The store's side: the session's level fields (each write a
-        // dispatch for the running open), and an older open's late answer
-        // dispatched for its own open, as archive-open does.
-        const storePage: Page = {
-          levels: (texts) => {
-            if (texts === null) {
-              ctx.currentLevelTexts = null;
-              ctx.levelsUnreadable = true;
-            } else {
-              ctx.currentLevelTexts = texts;
-            }
-          },
-          nextOpen: () => {
-            ctx.openGeneration += 1;
-            ctx.currentLevelTexts = null;
-          },
-          late: (texts) => {
-            const session = ctx.openGeneration - 1;
-            ctx.store.dispatch(
-              texts === null
-                ? tourDocumentActions.levelsUnreadable({ session })
-                : tourDocumentActions.levelsArrived({
-                    session,
-                    texts: [...texts].map(([key, json]) => ({
-                      id: key,
-                      json,
-                    })),
-                  }),
-            );
-          },
-          document: (act) => {
-            act(ctx);
-          },
-        };
-        // The closure module's side: plain fields. An open's answer is its
-        // last one (archive-open gives each open one; the property may give
-        // several), a new open starts with none - texts and parsed levels
-        // alike, as archive-open's teardown clears both (the store's parsed
-        // levels are held per open since plan M3b) - and an older open's
-        // late answer was dropped by archive-open's own guard.
-        const modelPage: Page = {
-          levels: (texts) => {
-            model.currentLevelTexts = texts;
-            model.levelsUnreadable = texts === null;
-          },
-          nextOpen: () => {
-            model.currentLevels = null;
-            model.currentLevelTexts = null;
-            model.levelsUnreadable = false;
-          },
-          late: () => undefined,
-          document: () => undefined,
-        };
-        let heard = 0;
-        let modelHeard = 0;
-        const codes = wireCreatorCodes({
-          ctx,
-          onIdsChanged: () => {
-            heard += 1;
-          },
-        });
-        const reference = wireReferenceCodes({
-          ctx: model,
-          onIdsChanged: () => {
-            modelHeard += 1;
-          },
-        });
-        for (const [step, o] of ops.entries()) {
-          if (o.kind === "tourLevels") {
-            const tour = new Map(
-              o.ids.map((l) => [l.id, tourLevel(l.id, l.geo)]),
-            );
-            ctx.currentLevels = tour;
-            model.currentLevels = tour;
-          }
-          const answer = apply(codes, o, storePage);
-          const modelAnswer = apply(reference, o, modelPage);
-          const where = `after step ${String(step)} (${o.kind})`;
-          expect(answer, `${where}: the call's answer`).toEqual(modelAnswer);
-          expect(observe(codes), where).toEqual(observe(reference));
-          expect(ctx.levelsUnreadable, `${where}: levels unreadable`).toBe(
-            model.levelsUnreadable,
-          );
-          expect(heard, `${where}: the print panel's notices`).toBe(modelHeard);
-          expect(
-            ctx.currentLevelTexts === null ? null : [...ctx.currentLevelTexts],
-            `${where}: the hosted texts`,
-          ).toEqual(
-            model.currentLevelTexts === null
-              ? null
-              : [...model.currentLevelTexts],
-          );
-        }
+        compareWithReference(ops, false);
       }),
+      { numRuns: 300 },
+    );
+  });
+});
+
+describe("creator-codes: a settle's codes (plan M3b, Q-D)", () => {
+  // Why this test matters: a settle saves its re-minted codes through the
+  // document's one compound step now, not through the book's own action.
+  // The closure module expresses that half - a settle reads as its codes
+  // saved in order, the hand taking a code's new text only if it held that
+  // code, the print panel told once - so the sequences above, settles
+  // among them, are compared with it after every step. A tour is open from
+  // the start, so most settles run.
+  //
+  // It cannot express the settle's UNDO: the module as it was held no
+  // history, and an undo that left its codes as they were is the bug the
+  // compound step fixes. So these sequences undo nothing, and the undo has
+  // its own property, below, on the store alone.
+  it("reads exactly as the closure module did with settles among the steps (model-based property)", () => {
+    expect.hasAssertions();
+    fc.assert(
+      fc.property(fc.array(opWithSettle, { maxLength: 30 }), (ops) => {
+        compareWithReference(ops, true);
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  // Why this test matters: an undo of a settle must take back each code's
+  // text with the moves, and the hand - whose text wins at every change
+  // of the book - must let go of a code the undo took back, or it would
+  // put the settle's text back at the next write. A hand on a code the
+  // settle did not change is live work the undo says nothing about. Tested
+  // directly, for any book, hand and settle, against the texts the store
+  // held before the settle: the closure module cannot say it (above).
+  it("an undo of a settle puts back each code's text from before it and lets the hand go of the codes it changed (property)", () => {
+    const level = fc.record({ id, v });
+    fc.assert(
+      fc.property(
+        fc.array(level, { maxLength: 4 }),
+        fc.option(level, { nil: null }),
+        fc.array(level, { minLength: 1, maxLength: 3 }),
+        (saved, held, settled) => {
+          const ctx = createTourViewerSession();
+          const codes = wireCreatorCodes({
+            ctx,
+            onIdsChanged: () => undefined,
+          });
+          ctx.tourDocument.open(tourOf([]));
+          for (const l of saved) {
+            codes.saveLevel({ id: l.id, json: text(l.id, l.v) });
+          }
+          if (held !== null) {
+            codes.setInHand(
+              { id: held.id, json: text(held.id, held.v) },
+              measurement(held.id, 0),
+            );
+          }
+          const texts = () => IDS.map((c) => codes.savedText(c));
+          const was = texts();
+          const hand = codes.inHand();
+          const measured = codes.measurement();
+          codes.applySettle(
+            ctx.tourDocument.settleBatch(),
+            settled.map((l) => ({ id: l.id, json: text(l.id, l.v) })),
+            "the settle",
+          );
+          const changed: string[] = IDS.filter(
+            (c, i) => codes.savedText(c) !== was[i],
+          );
+          const undone = ctx.tourDocument.undo();
+          expect(
+            undone.kind,
+            "a settle that changed nothing took no step",
+          ).toBe(changed.length === 0 ? "nothing" : "undone");
+          expect(texts(), "each code's text from before the settle").toEqual(
+            was,
+          );
+          // The hand lets go of a code the undo changed, and keeps any other.
+          const letGo = hand !== null && changed.includes(hand.id);
+          expect(codes.inHand(), letGo ? "the hand let go" : "kept").toEqual(
+            letGo ? null : hand,
+          );
+          expect(codes.measurement()).toEqual(letGo ? null : measured);
+        },
+      ),
       { numRuns: 300 },
     );
   });

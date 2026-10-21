@@ -498,7 +498,11 @@ store.dispatch(tourDocumentActions.undone());
   a radius and into another's, the only pin's delete dropping its
   station); "a pin that starts its own station" is a by-design row (the desktop lacks it until the 3D editor),
   and the harness accepts a by-design row on either page lacking the
-  operation.
+  operation. The phone moves a station as its settle does (plan M3b):
+  the move and its code's new text as one step, which one undo takes back
+  as the desktop's undo of its move does (a row, seen red with the
+  phone's undo skipped). Both pages' saves keep a tour's `qr/*.json`
+  byte for byte (seen red with either page writing the level again).
 - `tour-document.test.ts` also carries a placed 3D model (format minor 1)
   through a pin edit, its station's move and a save: its asset, its size in
   metres and its local pose come back exactly, and the write is at minor 1.
