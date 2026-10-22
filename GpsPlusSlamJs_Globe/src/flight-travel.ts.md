@@ -58,7 +58,8 @@ towards the Earth's centre first, then bending".
   - `diveArcRad`: the dive's own ground track from the start (or the bend)
     down.
   - `landingM` is the law's landing (a hold that stops short of it passes
-    the real one). A start at the landing's altitude is a level pan.
+    the real one). A start at the landing's altitude (within 1e-9 in the
+    altitude's logarithm) is a level pan.
   - RangeError for altitudes that are not positive or an arc that is not
     finite.
 
@@ -124,6 +125,15 @@ Each one is tested (`flight-travel.test.ts`).
   ends exactly, its view the travel or the law, the steeper (held at the
   horizon floor or straight down where those bind).
 - A pan at the landing's altitude looks as the landing does (45 degrees).
+- A level pan starts at the start's own altitude and ends exactly at the
+  landing's, and its length is the CF1 measure's (so a pan over no ground
+  still has one). It used to hold the landing's altitude from its first
+  instant: a replan in a flight's last fraction of a millisecond, within
+  1e-9 of the landing, moved the camera by up to 1e-9 of its altitude at
+  once (2e-5 m at 20 km), which the replan property's velocity check read
+  as a jump of 0.095 m/ms (seed 100066, about 8 seeds in 1,000). The
+  replan's example is pinned in `flight-replan.test.ts`, the pan's in
+  `flight-travel.test.ts`.
 - The target stays on screen through the bend, at most 17.8 degrees from the
   view's centre for landings 2-12 km. Swept the bend at 30, 100 and 300 km:
   17.8, 17.7 and 17.6 degrees worst (the 25-landing floor keeps high

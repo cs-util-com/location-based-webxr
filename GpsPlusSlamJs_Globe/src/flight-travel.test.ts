@@ -245,6 +245,29 @@ describe("planTravel", () => {
     }
   });
 
+  // WHY (the replan property's seed 100066): a start within 1e-9 of the
+  // landing in the altitude's logarithm is a level pan, and the pan held
+  // the LANDING's altitude from its first instant, so a replan in a
+  // flight's last fraction of a millisecond moved the camera by up to 1e-9
+  // of its altitude at once (2e-5 m at 20 km): a jump the replan's velocity
+  // check read as 0.095 m/ms. The pan starts at the start's altitude, ends
+  // exactly at the landing's, and has a length even over no ground.
+  it("pans from the start's altitude to the landing's when they are a hair apart", () => {
+    const h1 = 20 * KM;
+    for (const h0 of [h1 * (1 + 9e-10), h1 * (1 - 9e-10)]) {
+      for (const arc of [0, 1e-12, 1e-6]) {
+        const tag = `h0 ${h0}, arc ${arc}`;
+        const curve = planTravel(h0, h1, arc, { landingM: h1 });
+        expect(curve.length, tag).toBeGreaterThan(0);
+        expect(curve.at(0).h, tag).toBe(h0);
+        expect(curve.at(curve.length).h, tag).toBe(h1);
+        const mid = curve.at(curve.length / 2).h;
+        expect(mid, tag).toBeGreaterThanOrEqual(Math.min(h0, h1));
+        expect(mid, tag).toBeLessThanOrEqual(Math.max(h0, h1));
+      }
+    }
+  });
+
   // The replans match speeds in this measure (flight-replan's speedAt).
   it("measures its length as the flight's speed criterion does", () => {
     for (const { name, h0, h1, arc } of cases) {

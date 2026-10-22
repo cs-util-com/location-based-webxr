@@ -356,22 +356,37 @@ function clampPitch(deg: number, h: number, meteorDeg = 90): number {
 /**
  * A pan at the landing's altitude (a replan that is already there): the view
  * looks by the law of its landing (its landing angle there), as the flight
- * ends.
+ * ends. It starts at the start's own altitude, a hair (`dw`, under 1e-9 in
+ * the altitude's logarithm) from the landing's, and reaches the landing's
+ * at its end: held at the landing's from the start, a replan in a flight's
+ * last fraction of a millisecond moved the camera by up to 1e-9 of its
+ * altitude at once (the replan property's seed 100066). Its length is the
+ * CF1 measure's, so a pan over no ground still has one.
  */
 function levelPan(
   arcRad: number,
+  h0: number,
   h1: number,
   landingM: number,
   meteorDeg: number,
   landDeg?: number,
 ): TravelCurve {
-  const length = (Math.abs(arcRad) * FLIGHT_TRAVEL.radiusM) / h1;
+  const dw = Math.log(h1) - Math.log(h0);
+  const length = Math.hypot(
+    dw,
+    (Math.abs(arcRad) * FLIGHT_TRAVEL.radiusM) / h1,
+  );
   return {
     length,
     diveArcRad: 0,
     at: (s) => {
       const share = length > 0 ? Math.min(1, Math.max(0, s / length)) : 1;
-      return { share, angle: share * arcRad, residualLeft: 1 - share, h: h1 };
+      return {
+        share,
+        angle: share * arcRad,
+        residualLeft: 1 - share,
+        h: share >= 1 ? h1 : h0 * Math.exp(dw * share),
+      };
     },
     pitchAt: () =>
       clampPitch(travelLawDeg(h1, landingM, meteorDeg, landDeg), h1, meteorDeg),
@@ -408,7 +423,7 @@ export function planTravel(
   const meteorDeg = options.meteorDeg ?? 90;
   const landDeg = options.meteorLandDeg;
   if (Math.abs(dw) < 1e-9) {
-    return levelPan(arcRad, h1, options.landingM, meteorDeg, landDeg);
+    return levelPan(arcRad, h0, h1, options.landingM, meteorDeg, landDeg);
   }
   const R = FLIGHT_TRAVEL.radiusM;
   const bend = bendAltitudeM(options.landingM);
