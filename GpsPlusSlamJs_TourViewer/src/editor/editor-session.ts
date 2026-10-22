@@ -430,7 +430,7 @@ export function createEditorSession(input: {
   readonly store?: TourViewerStore;
 }): EditorSession {
   const { session, levels } = input;
-  const store = input.store ?? createTourViewerStore();
+  const store: TourViewerStore = input.store ?? createTourViewerStore();
   // A tour without an id of its own is given one, once (Q-I).
   store.dispatch(
     tourDocumentActions.opened({

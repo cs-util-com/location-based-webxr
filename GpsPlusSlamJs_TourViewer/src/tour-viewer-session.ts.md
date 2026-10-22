@@ -115,7 +115,12 @@ lives here.
   a fresh `createTourViewerStore()` when absent, for tests that need no
   other). The session object is never spread or copied: two of its fields
   are accessors.
-- `createTourViewerStore(recording?)` - with the creator's troubleshooting
+- `createTourViewerStore(recording?, pageReducers?)` - `pageReducers` are
+  one page's own slices beside the shared ones (the desktop editor's
+  `editorView`), so the phone's store never names them; a key one of the
+  store's own slices has throws, naming it (the framework refuses its own
+  keys). `TourViewerStore` is the store without page slices.
+  With the creator's troubleshooting
   recording (`authoring-recording.ts`; authoring recording plan
   2026-09-28-0953, M1a) the store writes into its backend under its
   `persistWhile` gate, which REPLACES the `isRecording` gate, and numbers

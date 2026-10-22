@@ -19,7 +19,10 @@ import {
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { openTourFile, type TourSession } from "./tour-session.js";
-import { createTourViewerStore } from "./tour-viewer-session.js";
+import {
+  createTourViewerStore,
+  type TourViewerStore,
+} from "./tour-viewer-session.js";
 import {
   selectTourDocument,
   tourDocumentActions,
@@ -48,7 +51,7 @@ function pin(id: string, label = `pin ${id}`): TourObject {
 
 async function opened(objects: readonly TourObject[]): Promise<{
   session: TourSession;
-  store: ReturnType<typeof createTourViewerStore>;
+  store: TourViewerStore;
 }> {
   const manifest = tourOf(objects);
   const zip = await packFilesAsZip([
@@ -62,15 +65,13 @@ async function opened(objects: readonly TourObject[]): Promise<{
   return { session, store };
 }
 
-function doc(
-  store: ReturnType<typeof createTourViewerStore>,
-): TourDocumentState {
+function doc(store: TourViewerStore): TourDocumentState {
   return selectTourDocument(store.getState());
 }
 
 function savesOf(
   session: TourSession,
-  store: ReturnType<typeof createTourViewerStore>,
+  store: TourViewerStore,
 ): ReturnType<typeof createTourSaves> {
   return createTourSaves({
     tour: session,
@@ -80,11 +81,7 @@ function savesOf(
   });
 }
 
-function rename(
-  store: ReturnType<typeof createTourViewerStore>,
-  id: string,
-  label: string,
-): void {
+function rename(store: TourViewerStore, id: string, label: string): void {
   store.dispatch(
     tourDocumentActions.edited({ object: pin(id, label), what: label }),
   );

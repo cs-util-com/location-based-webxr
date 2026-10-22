@@ -17,7 +17,10 @@ import type { QrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-bud
 import type { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
-import { createListenerMiddleware } from "@reduxjs/toolkit";
+import {
+  createListenerMiddleware,
+  type ReducersMapObject,
+} from "@reduxjs/toolkit";
 import {
   createSlamAppStore,
   qrDetectedReducer,
@@ -105,26 +108,44 @@ type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
  * `creatorCodes` is the creator's code in hand and its visit's sightings
  * (`creator-codes-slice.ts`, debug-captures plan M3a), not written into
  * the recording either.
+ *
+ * `pageReducers` are one page's own slices beside these (the desktop
+ * editor's `editorView`): only the page that passes them has them, so the
+ * phone's store never names an editor slice. A key one of the store's own
+ * slices has throws (it would silently replace that slice); the
+ * framework's own keys are refused by `createSlamAppStore`.
  */
-export function createTourViewerStore(recording?: {
-  storageBackend: StorageBackend;
-  persistWhile: () => boolean;
-}) {
+export function createTourViewerStore<
+  Page extends ReducersMapObject = Record<never, never>,
+>(
+  recording?: {
+    storageBackend: StorageBackend;
+    persistWhile: () => boolean;
+  },
+  pageReducers?: Page,
+) {
   const documentListener = createListenerMiddleware<{
     tourDocument: TourDocumentState;
     creatorCodes: CreatorCodesState;
   }>();
+  const own = {
+    qrDetected: qrDetectedReducer,
+    tourDocument: tourDocumentReducer,
+    visitorGuide: visitorGuideReducer,
+    creatorCodes: creatorCodesReducer,
+  };
+  const clash = Object.keys(pageReducers ?? {}).filter((key) => key in own);
+  if (clash.length > 0) {
+    throw new Error(
+      `createTourViewerStore: the page's slices ${clash.join(", ")} would replace the store's own`,
+    );
+  }
   const store = createSlamAppStore({
     storageBackend: recording?.storageBackend ?? new NullStorageBackend(),
     ...(recording === undefined
       ? {}
       : { persistWhile: recording.persistWhile, continuousActionIndex: true }),
-    extraReducers: {
-      qrDetected: qrDetectedReducer,
-      tourDocument: tourDocumentReducer,
-      visitorGuide: visitorGuideReducer,
-      creatorCodes: creatorCodesReducer,
-    },
+    extraReducers: { ...own, ...pageReducers } as typeof own & Page,
     extraMiddleware: [documentListener.middleware],
     // Beyond the framework's built-ins (GPS with its paired poses, the
     // recording lifecycle, diagnostics): the QR detections the votes and
@@ -141,7 +162,9 @@ export function createTourViewerStore(recording?: {
     listenToDocument: documentListener.startListening,
   });
 }
-export type TourViewerStore = ReturnType<typeof createTourViewerStore>;
+export type TourViewerStore = ReturnType<
+  typeof createTourViewerStore<Record<never, never>>
+>;
 
 /** The page's store as the session reaches it: the tour document with its
  *  codes, and the creator's code state (`creatorCodes`). */

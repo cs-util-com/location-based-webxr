@@ -1777,6 +1777,49 @@ test("edits survive a closed tab: the same file reopened offers them, and Restor
   await expect(next.locator("#save-status")).toHaveText("2 changes not saved");
 });
 
+test("a station renamed through the editor session survives a closed tab: the draft offers it, and Restore brings it back", async ({
+  page,
+  context,
+}) => {
+  // Why: a station's name is a tour-level edit no object's record names,
+  // so only the draft's whole stations bring it back after a reload. No
+  // control of this page renames a station yet; the dev server's hook
+  // reaches the editor session the way a later view will.
+  const buffer = await editorTour({ station: true });
+  await page.goto("/edit.html");
+  await openThroughChooser(page, buffer, "editor-fixture.zip");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  const outcome = await page.evaluate(() => {
+    // @ts-expect-error - the editor's dev-only test hook.
+    const hook = window.__tourEditor;
+    const result = hook.editor().editStation("gate", {
+      title: "The east gate",
+    });
+    hook.edited();
+    return result.kind;
+  });
+  expect(outcome).toBe("edited");
+  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await backedUp(page);
+  await page.close();
+  const next = await newEditorPage(context);
+  await openThroughChooser(next, buffer, "editor-fixture.zip");
+  const offer = next.locator(".toast.draft-offer");
+  await expect(offer).toContainText("a station");
+  await offer.locator("button", { hasText: "Restore" }).click();
+  await expect(offer).toHaveCount(0);
+  await expect(next.locator("#save-status")).toHaveText("1 change not saved");
+  const title = await next.evaluate(
+    () =>
+      // @ts-expect-error - the editor's dev-only test hook.
+      window.__tourEditor
+        .editor()
+        .model()
+        .items.find((i) => i.id === "station:gate")?.title,
+  );
+  expect(title).toBe("The east gate");
+});
+
 test("Not now keeps the earlier edits for the next open, and Delete it throws them away", async ({
   page,
   context,
