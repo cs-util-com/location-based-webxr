@@ -60,6 +60,12 @@ the map page's own code nor the phone's pages hold any of it.
   (idempotent; a step that fails leaves the rest to run), and so
   does a failure before the first frame, so a failed open leaves no
   canvas, renderer, listener or credits behind.
+- **The WebGL context is given back:** `renderer.dispose()` does not free
+  the context, so the renderer's undo step also calls
+  `forceContextLoss()`; the code face's texture is made per view
+  (`createCodeFace`) and disposed with it, so nothing keeps an old
+  renderer alive. Browsers keep about 16 contexts per page; before this,
+  every switch to 3D kept one.
 - **The frame loop never freezes silently:** an error in a frame stops
   the loop; before the first frame the open rejects with
   it, after it `events.failed()` is called.
@@ -94,5 +100,7 @@ selection and the save status kept, and nothing asking for the globe's
 imagery; and a 3D view whose code cannot load landing back on the map,
 said; a later open that shows the view taking the earlier failure's
 line away; a first frame that fails landing on the map, said, with no
-canvas and no credits left. `editor3d-lazy.test.ts` checks no page loads it before an
+canvas and no credits left; and twenty switches to 3D and back without
+the browser's "too many active WebGL contexts" warning and with no canvas
+left. `editor3d-lazy.test.ts` checks no page loads it before an
 `import()` runs.

@@ -38,6 +38,7 @@ import {
 } from "./editor3d-camera.js";
 import {
   createBillboard,
+  createCodeFace,
   createCodeSquare,
   resizeBillboard,
 } from "./editor3d-marks.js";
@@ -191,6 +192,10 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
   };
   undo.push(() => {
     renderer.dispose();
+    // dispose() keeps the WebGL context: without this every open would
+    // hold one more, up to the browser's limit, which then drops the
+    // oldest (the lost-context listener is gone by now).
+    renderer.forceContextLoss();
     renderer.domElement.remove();
   });
   /** True once the first frame is drawn and the view is handed out. */
@@ -247,6 +252,9 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       fovDeg: EDITOR_CAMERA.fovDeg,
     });
 
+    // The codes' printed face, this view's own: freed after the layer.
+    const codeFace = createCodeFace();
+    undo.push(() => codeFace.dispose());
     const layer = createStationsLayer({
       parent: scene,
       ellipsoid,
@@ -261,7 +269,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       loadGlbModel,
       makeBillboard: (number, title, selected) =>
         createBillboard(number, title, selected, billboardView()),
-      makeCodeSquare: createCodeSquare,
+      makeCodeSquare: (sizeM) => createCodeSquare(sizeM, codeFace),
     });
     undo.push(() => layer.dispose());
     layer.setTour(manifest, levels);

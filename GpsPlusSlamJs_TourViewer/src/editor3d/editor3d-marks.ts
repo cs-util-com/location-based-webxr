@@ -113,11 +113,13 @@ export function resizeBillboard(
   sprite.scale.set((h * BILLBOARD_W) / BILLBOARD_H, h, 1);
 }
 
-let codeTexture: THREE.CanvasTexture | null = null;
-
-/** The code's printed face, drawn once and shared by every square. */
-function codeFace(): THREE.CanvasTexture {
-  if (codeTexture !== null) return codeTexture;
+/**
+ * A code's printed face, for every square of one 3D view: the view owns it
+ * and disposes it with itself. (Never module-wide: a texture outlives its
+ * renderer's disposal by holding the renderer through its dispose
+ * listener, and with it a WebGL context per view.)
+ */
+export function createCodeFace(): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
   canvas.width = 128;
   canvas.height = 128;
@@ -140,20 +142,23 @@ function codeFace(): THREE.CanvasTexture {
     ctx.fillRect(84, 84, 10, 10);
     ctx.fillRect(104, 92, 10, 10);
   }
-  codeTexture = new THREE.CanvasTexture(canvas);
-  codeTexture.colorSpace = THREE.SRGBColorSpace;
-  return codeTexture;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
-/** A printed code's square, `sizeM` on a side, its face +z. The face
- *  texture is shared: freeing a square leaves it. */
-export function createCodeSquare(sizeM: number): THREE.Object3D {
+/** A printed code's square, `sizeM` on a side, its face +z, drawn with
+ *  `faceTexture` (`createCodeFace`), which is shared: freeing a square leaves it. */
+export function createCodeSquare(
+  sizeM: number,
+  faceTexture: THREE.Texture,
+): THREE.Object3D {
   const square = new THREE.Group();
   square.name = "code";
   const plane = new THREE.PlaneGeometry(sizeM, sizeM);
   const face = new THREE.Mesh(
     plane,
-    new THREE.MeshBasicMaterial({ map: codeFace() }),
+    new THREE.MeshBasicMaterial({ map: faceTexture }),
   );
   face.position.z = 0.004;
   const back = new THREE.Mesh(

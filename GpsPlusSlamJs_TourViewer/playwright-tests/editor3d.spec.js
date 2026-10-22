@@ -284,3 +284,34 @@ test("a 3D view whose first frame fails lands back on the map, said, with nothin
   await expect(page.locator("#view3d canvas")).toHaveCount(0);
   await expect(page.locator("#view3d-credits")).toBeEmpty();
 });
+
+// Why: each open makes a WebGL renderer, and a renderer's dispose() does
+// not give its context back; anything still holding the renderer (the
+// code squares' shared face texture did, through its dispose listener)
+// keeps it alive too. A creator switching back and forth would reach the
+// browser's limit (16 in Chromium), which then drops the oldest context -
+// the map's markers or the next 3D view among them. Twenty switches must
+// never warn of too many contexts.
+test("switching to 3D and back twenty times keeps the browser's WebGL contexts free", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  /** @type {string[]} */
+  const warnings = [];
+  page.on("console", (message) => {
+    if (/too many active webgl contexts/i.test(message.text())) {
+      warnings.push(message.text());
+    }
+  });
+  await answerHosts(page);
+  await openSample(page);
+  const button = page.locator("#view-switch");
+  for (let i = 0; i < 20; i++) {
+    await button.click();
+    await expect(button).toHaveText("Map view", { timeout: 60_000 });
+    await button.click();
+    await expect(button).toHaveText("3D view");
+  }
+  expect(warnings).toEqual([]);
+  await expect(page.locator("#view3d canvas")).toHaveCount(0);
+});
