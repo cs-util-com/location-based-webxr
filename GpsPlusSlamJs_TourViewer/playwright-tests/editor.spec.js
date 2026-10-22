@@ -17,6 +17,7 @@ import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-i
 
 import { worldManifest } from "./ar-fakes.js";
 import { inOwnStation } from "./v3-fixture.mjs";
+import { useWideFont } from "./wide-font.js";
 
 /**
  * Why these tests matter (Tour Viewer M6 E1): the desktop editor opens a
@@ -325,6 +326,8 @@ for (const viewport of [
     page,
   }) => {
     await page.setViewportSize(viewport);
+    // The bar must fit a wide platform face too, not only this machine's.
+    await useWideFont(page);
     await page.goto("/edit.html");
     await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
     // The open is async ("Opening…"): measure once the tour is drawn.
@@ -340,14 +343,15 @@ for (const viewport of [
     expect(rail.width).toBe(
       viewport.collapsed ? 58 : viewport.width <= 980 ? 252 : 304,
     );
-    // Every top-bar control inside the window (E2a review #11): the bar
-    // is fixed, so the page's scroll width cannot see an overflow.
+    // Every top-bar control inside the bar, and so the window (E2a review
+    // #11): the bar is fixed, so the page's scroll width cannot see an
+    // overflow.
     for (const control of await page
       .locator("#topbar button, #save-status")
       .all()) {
       if (!(await control.isVisible())) continue;
       const b = await box(control);
-      expect(b.x + b.width).toBeLessThanOrEqual(viewport.width);
+      expect(b.x + b.width).toBeLessThanOrEqual(top.x + top.width);
     }
     // Nothing wider than the window.
     expect(
@@ -1281,6 +1285,11 @@ test("the file chooser can be reached and opened from the keyboard", async ({
   // Why (PR #612 review): the chooser was a styled span in a label around
   // a hidden input, none of which is in the tab order, so a keyboard user
   // could open only the sample.
+  // Listening from before the page loads: Playwright starts catching file
+  // choosers when the first listener is added, asynchronously, and under
+  // load an Enter pressed right after it opened a chooser it had not yet
+  // caught (2 of 16 runs beside the layout tests, none of 48 so).
+  const chooser = page.waitForEvent("filechooser");
   await page.goto("/edit.html");
   // The button answers once the page script is wired; before, Enter on a
   // button inside a label does nothing.
@@ -1288,7 +1297,6 @@ test("the file chooser can be reached and opened from the keyboard", async ({
   const choose = page.locator("#choose-btn");
   await choose.focus();
   await expect(choose).toBeFocused();
-  const chooser = page.waitForEvent("filechooser");
   await page.keyboard.press("Enter");
   await (
     await chooser
