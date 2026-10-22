@@ -9,7 +9,7 @@ import { clearSessionDisposers } from "gps-plus-slam-app-framework/ar/session-di
 import { createWayfindingHud } from "gps-plus-slam-app-framework/visualization/wayfinding-hud";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 
-import { startWalkHuds, type WalkHudLook } from "./walk-hud";
+import { startWalkHuds, WALK_HUD_LOOKS, type WalkHudLook } from "./walk-hud";
 
 /**
  * Why this measurement matters: the walk marks the station it is about in
@@ -83,7 +83,8 @@ function rig(targets: WayfindingTarget[], fps: number) {
         distanceMin: 5,
         distanceMax: 7,
         hudDistance: HUD_DISTANCE,
-        indicatorColor: look === "focus" ? "#fb923c" : "#f3f5f7",
+        // The shipped looks: the focus at its 1.25 scale is what is measured.
+        ...WALK_HUD_LOOKS[look],
       }),
     targets: () => targets,
     focusId: () => focus,

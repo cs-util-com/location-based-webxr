@@ -137,18 +137,39 @@ for (const viewport of VIEWPORTS) {
   // sideways - a phone pans a page that is wider than the screen under a
   // swipe meant for the sheet. The framework's window-sized canvas, laid
   // out at the overlay root's place, made the page wider than the window.
+  // The page must not scroll down either (a sideways phone's header once
+  // pushed the AR overlay below the fold), in every state the walk's
+  // controls take: the peek, the list, a row's armed Skip, the quick
+  // action's full-width undo and the complete tour's foot.
   test(`in AR the page does not scroll sideways and every control of the walk is on the screen at ${label}`, async ({
     page,
   }) => {
     await page.setViewportSize(viewport);
     await installTourViewerArFakes(page);
     await enterTheWalk(page);
-    const overflowX = await page.evaluate(
-      () =>
-        document.documentElement.scrollWidth -
-        document.documentElement.clientWidth,
-    );
-    expect(overflowX).toBeLessThanOrEqual(0);
+    /** @param {string} state */
+    const pageFits = async (state) => {
+      const o = await page.evaluate(() => {
+        const d = document.documentElement;
+        return {
+          x: d.scrollWidth - d.clientWidth,
+          y: d.scrollHeight - d.clientHeight,
+          scrolled: window.scrollX + window.scrollY,
+        };
+      });
+      expect(o.x, `${state}: sideways overflow`).toBeLessThanOrEqual(0);
+      expect(o.y, `${state}: downward overflow`).toBeLessThanOrEqual(0);
+      expect(o.scrolled, `${state}: page scrolled`).toBe(0);
+    };
+    /** @param {{ x: number, y: number, width: number, height: number }} b
+     *  @param {string} id */
+    const onScreen = (b, id) => {
+      expect(b.x, id).toBeGreaterThanOrEqual(0);
+      expect(b.y, id).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.width, id).toBeLessThanOrEqual(viewport.width + 0.5);
+      expect(b.y + b.height, id).toBeLessThanOrEqual(viewport.height + 0.5);
+    };
+    await pageFits("the peek");
     for (const id of [
       "enter-ar",
       "walk-radar",
@@ -157,24 +178,61 @@ for (const viewport of VIEWPORTS) {
       "station-skip",
       "walk-precision",
     ]) {
-      const b = await box(page, id);
-      expect(b.x, id).toBeGreaterThanOrEqual(0);
-      expect(b.y, id).toBeGreaterThanOrEqual(0);
-      expect(b.x + b.width, id).toBeLessThanOrEqual(viewport.width + 0.5);
-      expect(b.y + b.height, id).toBeLessThanOrEqual(viewport.height + 0.5);
+      onScreen(await box(page, id), id);
     }
-    // The list open: its close button and its first row on the screen.
+    // The list open: its close button, its title, its first row and that
+    // row's Skip on the screen.
     await page.getByTestId("walk-grab").click();
     for (const id of ["walk-close", "walk-list-title"]) {
-      const b = await box(page, id);
-      expect(b.y, id).toBeGreaterThanOrEqual(0);
-      expect(b.y + b.height, id).toBeLessThanOrEqual(viewport.height + 0.5);
+      onScreen(await box(page, id), id);
     }
-    const row = await boxOf(page.getByTestId("walk-row").first());
-    expect(row.y + row.height).toBeLessThanOrEqual(viewport.height + 0.5);
+    onScreen(await boxOf(page.getByTestId("walk-row").first()), "first row");
+    onScreen(
+      await boxOf(walkRowControl(page, "The gate", "act")),
+      "a row's Skip",
+    );
+    await pageFits("the list");
+    // A row's Skip armed: its confirm and Cancel on the screen.
+    await walkRowControl(page, "The gate", "act").click();
+    onScreen(
+      await boxOf(walkRowControl(page, "The gate", "confirm")),
+      "the confirm",
+    );
+    onScreen(await boxOf(walkRowControl(page, "The gate", "cancel")), "Cancel");
+    await pageFits("a row armed");
+    await walkRowControl(page, "The gate", "cancel").click();
+    // The quick action wrapped to its own line, full width: its undo.
+    await page.getByTestId("walk-close").click();
+    await page.getByTestId("station-skip").click();
+    await walkRowControl(page, "The gate", "confirm").click();
+    await page.getByTestId("walk-close").click();
+    const quick = page.getByTestId("station-skip");
+    await expect(quick).toHaveAttribute("data-kind", "undo");
+    onScreen(await box(page, "station-skip"), "the quick action's undo");
+    expect((await box(page, "station-skip")).width).toBeCloseTo(
+      (await box(page, "walk-peek-row")).width,
+      0,
+    );
+    await pageFits("the quick action's undo");
+    // The tour complete: the list's foot shows and its button is on the
+    // screen (scrolled into the list's view, never the page's; the foot's
+    // bottom padding may lie in the list's scrolled-off part).
+    await page.getByTestId("walk-grab").click();
+    for (const title of ["The well", "The tower", "The garden"]) {
+      await walkRowControl(page, title, "act").click();
+      await walkRowControl(page, title, "confirm").click();
+    }
+    await expect(page.getByTestId("walk-sheet")).toHaveAttribute(
+      "data-complete",
+      "true",
+    );
+    await page.getByTestId("walk-exit").scrollIntoViewIfNeeded();
+    await expect(page.getByTestId("walk-list-foot")).toBeVisible();
+    onScreen(await box(page, "walk-exit"), "the foot's Exit AR");
+    await pageFits("the tour complete");
   });
 
-  // Why this test matters (§1.7, the prototype's "on the way"): the
+  // Why this test matters (the prototype's "on the way"): the
   // pill stands at 42 % of the height, 8 px in from the edge on its
   // station's side; sideways the left one starts right of the sheet's
   // card, which would cover it.

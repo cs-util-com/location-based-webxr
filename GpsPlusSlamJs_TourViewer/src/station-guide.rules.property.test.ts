@@ -62,7 +62,9 @@ function station(i: number, north: number, east: number): TourStation {
   };
 }
 
-type Precision = "gps" | "weak" | "none";
+/** A fix within the ceiling, a weak one, none, or a lined-up code that
+ *  holds the position (no device fix at all). */
+type Precision = "gps" | "weak" | "none" | "code";
 
 function harness(stations: TourStation[], order: TourOrder) {
   let now = 1_000;
@@ -77,10 +79,11 @@ function harness(stations: TourStation[], order: TourOrder) {
     fixAtMs: null,
     fixAccuracyM: null,
   };
-  // R-2's clock, kept here from the harness's own inputs and not from
-  // the guide or the slice: no distance is shown without GPS within the
-  // ceiling (no code holds the position here); a guess comes back once
-  // the distance has been back, unbroken, for the hold.
+  // The no-guess clock, kept here from the harness's own inputs and not
+  // from the guide or the slice: no distance is shown without GPS within
+  // the ceiling or a lined-up code; a guess comes back once a GPS distance
+  // has been back, unbroken, for the hold, and at once when the distance
+  // is a code's.
   const r2 = { noDistance: false, backAtMs: null as number | null };
   const store = createTourViewerStore();
   const dom = {
@@ -94,7 +97,7 @@ function harness(stations: TourStation[], order: TourOrder) {
     placementAllowed: () => true,
     zero: () => zero,
     visitor: () => visitor,
-    codeLinedUp: () => false,
+    codeLinedUp: () => precision === "code",
     alignmentReady: () => true,
     trackingReady: () => true,
     startHud: () => ({ dispose: () => undefined }),
@@ -123,7 +126,10 @@ function harness(stations: TourStation[], order: TourOrder) {
       fixAtMs: now,
       fixAccuracyM: accuracyM,
     };
-    if (precision !== "gps") {
+    if (precision === "code") {
+      r2.noDistance = false;
+      r2.backAtMs = null;
+    } else if (precision !== "gps") {
       r2.noDistance = true;
       r2.backAtMs = null;
     } else if (r2.noDistance) {
@@ -183,7 +189,7 @@ const opArb = fc.oneof(
   fc.record({ kind: fc.constant("far" as const) }),
   fc.record({
     kind: fc.constant("precision" as const),
-    p: fc.constantFrom<Precision>("gps", "weak", "none"),
+    p: fc.constantFrom<Precision>("gps", "weak", "none", "code"),
   }),
   fc.record({
     kind: fc.constant("wait" as const),
@@ -323,13 +329,17 @@ describe("the walk's rules over random walks", () => {
           expect(h.dom.line.textContent).toMatch(/^Tour complete/);
         },
       ),
-      { numRuns: 300 },
+      { numRuns: 600 },
     );
     // Not vacuous: the no-guess condition was reached and checked often.
-    // The count depends on the random walks: 91 to 199 over 21 seeds
-    // (2026-10-22), so the floor sits well under the lowest; it guards
-    // against the condition never being reached, not against a number.
-    expect(r2Checks).toBeGreaterThan(30);
+    // The count depends on the random walks. With a code among the
+    // precisions it ends the condition at once, so 300 walks reached it
+    // 75 to 197 times over 24 seeds (mean 115, sd 29) - a floor of 60
+    // there would fail about one run in thirty; 600 walks reach it 167 to
+    // 299 times over 22 seeds (mean 239, sd 34), five deviations above
+    // the floor (2026-10-22). It guards against the condition never or
+    // rarely being reached, not against a number.
+    expect(r2Checks).toBeGreaterThan(60);
   });
 
   // R9 re-stated over the story card and R-2's three tap paths: "Can't get
@@ -340,7 +350,7 @@ describe("the walk's rules over random walks", () => {
     fc.assert(
       fc.property(
         tourArb,
-        fc.constantFrom<Precision>("gps", "weak", "none"),
+        fc.constantFrom<Precision>("gps", "weak", "none", "code"),
         fc.array(fc.constantFrom("quick", "row"), {
           minLength: 5,
           maxLength: 5,
