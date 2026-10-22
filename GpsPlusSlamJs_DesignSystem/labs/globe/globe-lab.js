@@ -170,7 +170,7 @@ import { GLOBE_ALBEDO } from "../terrain/terrain-globe-colour.js";
 import {
   SYNTHETIC_HEIGHTS_URL,
   installSyntheticHeights,
-} from "../globe-terrain/synthetic-heights.js";
+} from "/globe/test-utils/synthetic-heights.js";
 import { geolocationPermissionState } from "/fw/sensors/permission-state.js";
 import { createGlobeAtmosphere } from "./globe-atmosphere.js";
 import {

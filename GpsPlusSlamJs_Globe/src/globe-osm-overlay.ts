@@ -75,23 +75,90 @@ export function osmCredit(attributionHtml: string): GlobeCredit {
   return { short: "OpenStreetMap", full, href };
 }
 
+/** When the map is asked for: the height and speed band, and the coarsest zoom. */
+export interface OsmGateLimits {
+  readonly minZoom: number;
+  readonly maxAboveGroundM: number;
+  readonly onBelowAboveGroundM: number;
+  readonly maxSpeedMps: number;
+  readonly onBelowSpeedMps: number;
+}
+
+/** The band `osmOverlayActive` reads. */
+export type OsmActiveLimits = Omit<OsmGateLimits, "minZoom">;
+
+const isLimit = (v: unknown): v is number => typeof v === "number" && v > 0;
+
+const LIMIT_KEYS = [
+  "minZoom",
+  "maxAboveGroundM",
+  "onBelowAboveGroundM",
+  "maxSpeedMps",
+  "onBelowSpeedMps",
+] as const;
+
+/** RangeError unless both limits are > 0 and on again is at most off. */
+function checkBand(on: unknown, off: unknown, what: string): void {
+  if (!isLimit(on) || !isLimit(off) || on > off) {
+    throw new RangeError(
+      `the map's ${what} limits must be > 0 and on again at most off, got ${String(on)} and ${String(off)}`,
+    );
+  }
+}
+
+/**
+ * The gate's limits: `GLOBE_OSM`'s (the flight's), with the caller's in
+ * their place. Every height and speed > 0 (+Infinity opens it), each
+ * "on again" limit at most its "off" limit, `minZoom` an integer in
+ * [0, `maxZoom`]. RangeError otherwise.
+ */
+export function osmGateLimits(
+  limits: Partial<OsmGateLimits>,
+  maxZoom: number,
+): OsmGateLimits {
+  const out: Record<(typeof LIMIT_KEYS)[number], number> = {
+    minZoom: GLOBE_OSM.minZoom,
+    maxAboveGroundM: GLOBE_OSM.maxAboveGroundM,
+    onBelowAboveGroundM: GLOBE_OSM.onBelowAboveGroundM,
+    maxSpeedMps: GLOBE_OSM.maxSpeedMps,
+    onBelowSpeedMps: GLOBE_OSM.onBelowSpeedMps,
+  };
+  for (const key of LIMIT_KEYS) {
+    const v = limits[key];
+    if (v !== undefined) out[key] = v;
+  }
+  checkBand(out.onBelowAboveGroundM, out.maxAboveGroundM, "height");
+  checkBand(out.onBelowSpeedMps, out.maxSpeedMps, "speed");
+  if (
+    !(Number.isInteger(out.minZoom) && out.minZoom >= 0) ||
+    !(out.minZoom <= maxZoom)
+  ) {
+    throw new RangeError(
+      `the map's coarsest zoom must be an integer in [0, ${maxZoom}], got ${String(out.minZoom)}`,
+    );
+  }
+  return Object.freeze(out);
+}
+
 /**
  * Whether the camera may ask for tiles, given whether it could (`wasActive`,
  * false by default): low and slow, both known. Off above
  * `maxAboveGroundM` or `maxSpeedMps`; on only below `onBelowAboveGroundM`
- * and `onBelowSpeedMps`; between the two, as it was.
+ * and `onBelowSpeedMps`; between the two, as it was. The limits are
+ * `GLOBE_OSM`'s unless the caller's (checked by `osmGateLimits`).
  */
 export function osmOverlayActive(
   { aboveGroundM, speedMps }: { aboveGroundM: number; speedMps: number },
   wasActive = false,
+  limits: OsmActiveLimits = GLOBE_OSM,
 ): boolean {
   if (typeof aboveGroundM !== "number" || typeof speedMps !== "number") {
     return false;
   }
   const height = wasActive
-    ? GLOBE_OSM.maxAboveGroundM
-    : GLOBE_OSM.onBelowAboveGroundM;
-  const speed = wasActive ? GLOBE_OSM.maxSpeedMps : GLOBE_OSM.onBelowSpeedMps;
+    ? limits.maxAboveGroundM
+    : limits.onBelowAboveGroundM;
+  const speed = wasActive ? limits.maxSpeedMps : limits.onBelowSpeedMps;
   // NaN compares false: an unknown height or speed is off.
   return aboveGroundM <= height && speedMps <= speed;
 }
@@ -337,6 +404,7 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
     return range.join("_");
   }
 
+  /** The library's level for a region: only once ready (its image source). */
   private levelOf(range: number[], level?: number): number {
     return level ?? base.calculateLevel.call(this, range);
   }
@@ -346,17 +414,29 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
     return (this.locked.get(this.key(range)) ?? 0) > 0;
   }
 
-  /** Whether the gate would let a region through now. */
+  /** Whether the gate would let a region through now (never before ready). */
   wanted(range: number[], level?: number): boolean {
-    return this.gate(range, this.levelOf(range, level));
+    return this.isReady && this.gate(range, this.levelOf(range, level));
   }
 
   hasContent(range: number[], level?: number): boolean {
+    if (!this.isLocked(range)) return false;
     const l = this.levelOf(range, level);
-    return this.isLocked(range) && base.hasContent.call(this, range, l);
+    return base.hasContent.call(this, range, l);
   }
 
+  /**
+   * Locks a region through the gate. Before the overlay is ready (the
+   * library's plugin processes the relief's loaded tiles before it
+   * initialises its overlays, and the level needs the image source the
+   * overlay's init sets up), turned away like a gated lock: the
+   * re-evaluation picks the tile up later.
+   */
   lockTexture(range: number[], level?: number): Promise<unknown> {
+    if (!this.isReady) {
+      this.gatedLocks++;
+      return Promise.resolve(null);
+    }
     const l = this.levelOf(range, level);
     this.finestLevel = Math.max(this.finestLevel ?? l, l);
     if (!this.gate(range, l)) {
@@ -370,10 +450,10 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
   }
 
   releaseTexture(range: number[], level?: number): void {
-    const l = this.levelOf(range, level);
     const k = this.key(range);
     const n = this.locked.get(k) ?? 0;
     if (n === 0) return;
+    const l = this.levelOf(range, level);
     if (n === 1) this.locked.delete(k);
     else this.locked.set(k, n - 1);
     base.releaseTexture.call(this, range, l);
@@ -394,7 +474,7 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
   /**
    * Locks the gate let through and turned away, regions locked now, and the
    * finest level a lock asked for (null before the first): under
-   * `GLOBE_OSM.minZoom`, the relief tree is too coarse for the map.
+   * the coarsest zoom in force, the relief tree is too coarse for the map.
    */
   stats(): {
     locks: number;
@@ -518,8 +598,9 @@ const FADED = Symbol("globe-osm-fade");
  * into every relief material, those loaded already and those to come.
  * Off until `setEnabled(true)`. `update(pose)` each frame: the gate's
  * camera, the active rule, the fade's switch, and every `reevaluateMs`
- * the tiles gated at load. RangeError from `osmCredit` or the overlay for
- * a bad attribution or url.
+ * the tiles gated at load. `limits` replace the flight's (`GLOBE_OSM`)
+ * for the band and the coarsest zoom. RangeError from `osmCredit`,
+ * `osmGateLimits` or the overlay for a bad attribution, limit or url.
  */
 export function createGlobeOsmOverlay({
   url,
@@ -527,18 +608,21 @@ export function createGlobeOsmOverlay({
   maxZoom,
   renderer,
   fadeM = GLOBE_OSM.fadeM,
+  limits: callerLimits = {},
 }: {
   url: string;
   attribution: string;
   maxZoom: number;
   renderer: THREE.WebGLRenderer;
   fadeM?: number;
+  limits?: Partial<OsmGateLimits>;
 }) {
   if (!(Number.isFinite(fadeM) && fadeM > 0)) {
     throw new RangeError(
       `the fade distance must be finite and > 0, got ${fadeM}`,
     );
   }
+  const limits = osmGateLimits(callerLimits, maxZoom);
   const credit = osmCredit(attribution);
   const uniforms: OsmFadeUniforms = {
     uOsmFadeM: { value: fadeM },
@@ -552,7 +636,7 @@ export function createGlobeOsmOverlay({
   const camera = new THREE.Vector3();
   let unpatched = 0;
   const gate = (range: number[], level: number): boolean => {
-    if (!terrain || !active || level < GLOBE_OSM.minZoom) return false;
+    if (!terrain || !active || level < limits.minZoom) return false;
     if (ceiling.waitMs() > 0) return false;
     const { ellipsoid } = terrain.tiles;
     const ground = terrain.plugin;
@@ -600,6 +684,8 @@ export function createGlobeOsmOverlay({
   let lastNow: number | null = null;
   return {
     credit,
+    /** The limits in force (the caller's over `GLOBE_OSM`). */
+    limits,
     overlay,
     plugin,
     uniforms,
@@ -629,6 +715,7 @@ export function createGlobeOsmOverlay({
         osmOverlayActive(
           { aboveGroundM: pose.aboveGroundM, speedMps: pose.speedMps },
           active,
+          limits,
         );
       // Requests follow `active` at once; the drawn map fades over rampMs.
       uniforms.uOsmOn.value = rampOsmOn(

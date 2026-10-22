@@ -18,7 +18,16 @@
   - `osmCredit(attributionHtml)`: the framework's `OSM_TILE_ATTRIBUTION`
     as a `GlobeCredit` (`short` "OpenStreetMap", `full` its text,
     `href` its link). RangeError without an https link.
-  - `osmOverlayActive({ aboveGroundM, speedMps }, wasActive = false)`:
+  - `osmGateLimits(limits, maxZoom)` -> `OsmGateLimits` (frozen): the
+    gate's `minZoom`, `maxAboveGroundM`, `onBelowAboveGroundM`,
+    `maxSpeedMps`, `onBelowSpeedMps`, the caller's over `GLOBE_OSM`'s.
+    RangeError for a height or speed that is not > 0 (+Infinity opens
+    it), an "on again" limit above its "off" limit, or a `minZoom` that
+    is not an integer in [0, `maxZoom`]. An editor looking at a place
+    from above wants the map far higher than a flight does, and its
+    camera jumps across the place, so speed means nothing there.
+  - `osmOverlayActive({ aboveGroundM, speedMps }, wasActive = false,
+limits = GLOBE_OSM)`: the limits below are the defaults;
     with hysteresis (G1 review L2): off above 200 m over the ground or 50
     m/s; on only at or below 180 m and 45 m/s; between the two it keeps
     `wasActive`. False for anything unknown (NaN). Without the band a
@@ -45,14 +54,22 @@
     (which fetches) reaches the library only through `gate(range,
 level)`; a region counts as content only while locked; a release
     unlocks only what was locked; every `fetch` waits for the ceiling.
+    Until the overlay is ready (`isReady`, set by its own init) a lock
+    is turned away like a gated one (counted in `gatedLocks`), and
+    `wanted` and `hasContent` are false, without asking the library: the
+    library's plugin, registered on a relief with tiles loaded already,
+    processes those tiles BEFORE it initialises its overlays (0.5.3,
+    `init`), and their locks asked for a level that reads the image
+    source only the overlay's init sets up (an uncaught TypeError). The
+    re-evaluation picks those tiles up once the overlay is ready.
     `isLocked`, `wanted`, `stats()`. RangeError for a url without
     `{z}/{x}/{y}`, TypeError without a gate.
   - `reevaluateGatedTiles(plugin, overlay, { limit })`: tiles whose map
     was gated when they loaded and that the gate lets through now are
     locked, fetched and drawn the way the plugin's own retry does; at most
     `limit` per call.
-  - `createGlobeOsmOverlay({ url, attribution, maxZoom, renderer, fadeM? })`
-    -> `{ credit, overlay, plugin, uniforms, attach(terrain),
+  - `createGlobeOsmOverlay({ url, attribution, maxZoom, renderer, fadeM?,
+limits? })` -> `{ credit, limits, overlay, plugin, uniforms, attach(terrain),
 setEnabled(on), setFadeM(m), update(pose), stats() }`:
     - `attach` registers the plugin (tile splitting off, so the relief's
       mesh is not refined for the map) on the relief's tiles and patches
@@ -74,10 +91,11 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
     `osm-tiles.ts` (DEC-H3, held by `tests/repo-config/osm-tile-url-copies.test.js`).
     The Globe package depends on neither the framework nor the Osm
     library; the globe lab passes them.
-  - A tile is asked for only when ALL hold: the overlay is enabled, the
-    rule is active (on below 180 m and 45 m/s, kept until above 200 m or
-    50 m/s),
-    the level the overlay picks for the relief tile is 15 or finer, the
+  - A tile is asked for only when ALL hold: the overlay is ready and
+    enabled, the rule is active (by default on below 180 m and 45 m/s,
+    kept until above 200 m or 50 m/s; the caller's `limits` otherwise),
+    the level the overlay picks for the relief tile is `minZoom` (15) or
+    finer, the
     tile's region comes within the fade distance of the camera, and the
     ceiling has room. Off, nothing new is asked for and the fade's
     switch hides what is drawn.
@@ -152,7 +170,11 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
   through the library class, the finest level asked for, the fetch held
   to the ceiling, the
   re-evaluation over a fake of the plugin's state and a guard on its
-  private methods), `globe-osm-overlay.property.test.ts` (random bursts:
+  private methods, a lock before the overlay is ready turned away without
+  the library (red first: the TypeError) with a guard on the plugin's
+  init order in its source, the caller's limits through `osmGateLimits`,
+  the active rule and the factory's frame loop and gate over a really
+  initialised overlay), `globe-osm-overlay.property.test.ts` (random bursts:
   no sliding minute above the ceiling, no request dropped). The design
   system's `labs/globe/globe-editor-blocks.smoke.spec.mjs` counts the
   requests against a fake tile server on the real page: none by default,

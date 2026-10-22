@@ -26,6 +26,7 @@ import {
   createGlobeOsmOverlay,
   createRequestCeiling,
   osmCredit,
+  osmGateLimits,
   osmOverlayActive,
   patchOsmFade,
   rampOsmOn,
@@ -140,6 +141,74 @@ describe("osmOverlayActive", () => {
         speedMps: 0,
       }),
     ).toBe(false);
+  });
+
+  // Why: an editor that looks at the ground from above wants the map
+  // much higher than a flight does (it is the map of the place being
+  // edited, not a texture under a passing camera), and its camera jumps
+  // across the place, so speed is no sign of flying there. The limits are
+  // the caller's, with the same band rule; open speed limits never turn
+  // the map off, but an unknown speed still does.
+  it("takes the caller's limits, open speed limits included", () => {
+    const limits = {
+      maxAboveGroundM: 1250,
+      onBelowAboveGroundM: 1125,
+      maxSpeedMps: Number.POSITIVE_INFINITY,
+      onBelowSpeedMps: Number.POSITIVE_INFINITY,
+    };
+    const on = (aboveGroundM: number, speedMps: number, was: boolean) =>
+      osmOverlayActive({ aboveGroundM, speedMps }, was, limits);
+    expect(on(1100, 5_000, false)).toBe(true);
+    expect(on(1200, 0, false)).toBe(false);
+    expect(on(1200, 0, true)).toBe(true);
+    expect(on(1250.1, 0, true)).toBe(false);
+    expect(on(10, Number.NaN, true)).toBe(false);
+  });
+});
+
+describe("osmGateLimits", () => {
+  // Why: the defaults are the flight's limits; a caller replaces any of
+  // them, and a set that would switch the map on above where it switches
+  // off (a band upside down), or a limit that is no height or speed at
+  // all, is refused where it is made rather than silently never drawing.
+  it("fills the defaults and keeps the caller's", () => {
+    expect(osmGateLimits({}, 19)).toEqual({
+      minZoom: 15,
+      maxAboveGroundM: 200,
+      onBelowAboveGroundM: 180,
+      maxSpeedMps: 50,
+      onBelowSpeedMps: 45,
+    });
+    expect(
+      osmGateLimits(
+        {
+          minZoom: 14,
+          maxAboveGroundM: 1250,
+          onBelowAboveGroundM: 1125,
+          maxSpeedMps: Number.POSITIVE_INFINITY,
+          onBelowSpeedMps: Number.POSITIVE_INFINITY,
+        },
+        19,
+      ),
+    ).toMatchObject({ minZoom: 14, maxAboveGroundM: 1250 });
+  });
+
+  it("refuses a band upside down, a limit that is not > 0, or a zoom out of range", () => {
+    const bad = [
+      { onBelowAboveGroundM: 250 },
+      { maxSpeedMps: 40 },
+      { maxAboveGroundM: 0 },
+      { onBelowSpeedMps: Number.NaN },
+      { maxAboveGroundM: "200" as unknown as number },
+      { minZoom: 14.5 },
+      { minZoom: -1 },
+      { minZoom: 20 },
+    ];
+    for (const limits of bad) {
+      expect(() => osmGateLimits(limits, 19), JSON.stringify(limits)).toThrow(
+        RangeError,
+      );
+    }
   });
 });
 
@@ -360,11 +429,59 @@ function gatedOverlay(gate: (range: number[], level: number) => boolean) {
   const has = vi.spyOn(proto, "hasContent").mockImplementation(() => true);
   // The level the library picks needs its initialised image source.
   vi.spyOn(proto, "calculateLevel").mockImplementation(() => 16);
+  // As after the library's own init (which needs a network in Node).
+  (overlay as unknown as { isReady: boolean }).isReady = true;
   return { overlay, lock, release, has };
 }
 
 describe("GatedOsmOverlay", () => {
   const R = [0.5, 0.5, 0.50001, 0.50001];
+
+  // Why: the library's plugin, registered on a relief that has tiles
+  // already, processes those tiles BEFORE it initialises its overlays
+  // (0.5.3, `init`), and a tile's processing awaits `whenReady()`, which is
+  // still null then, so it goes on to lock the region at once. The lock
+  // asks the library for the region's level, which reads the image source
+  // the overlay sets up only in its own init: an uncaught TypeError the
+  // moment the map was attached to a relief already on screen. Until the
+  // overlay is ready a lock is turned away like a gated one (the
+  // re-evaluation picks the tile up once it is), and nothing reaches the
+  // library.
+  it("turns a lock away, and never reaches the library, until the overlay is ready", async () => {
+    const overlay = new GatedOsmOverlay({
+      url: TEMPLATE,
+      maxZoom: 19,
+      gate: () => true,
+      ceiling: createRequestCeiling(150),
+    });
+    expect(() => overlay.lockTexture(R)).not.toThrow();
+    expect(await overlay.lockTexture(R)).toBeNull();
+    expect(overlay.hasContent(R)).toBe(false);
+    expect(overlay.wanted(R)).toBe(false);
+    expect(() => overlay.releaseTexture(R)).not.toThrow();
+    expect(overlay.stats()).toMatchObject({
+      locks: 0,
+      gatedLocks: 2,
+      lockedRegions: 0,
+      finestLevel: null,
+    });
+  });
+
+  // Why: the order the readiness guard above exists for, read from the
+  // library's own source: a version that initialises its overlays first
+  // would make the guard dead code, and one that moved the processing
+  // elsewhere must be looked at again.
+  it("finds the plugin processing loaded tiles before it initialises its overlays", () => {
+    const src = readFileSync(join(LIBRARY, "ImageOverlayPlugin.js"), "utf8");
+    const init = src.slice(src.indexOf("\tinit( tiles ) {"));
+    const processed = init.indexOf(
+      "this._processTileModel( scene, tile, true );",
+    );
+    const initialised = init.indexOf("this._initOverlay( overlay );");
+    expect(processed).toBeGreaterThan(0);
+    expect(initialised).toBeGreaterThan(processed);
+    expect(src).toContain("if ( ! overlay.isReady ) {");
+  });
 
   // Why: the plugin locks every relief tile's region as it starts to load,
   // and a lock FETCHES. A region the gate refuses must not reach the
@@ -622,5 +739,58 @@ describe("createGlobeOsmOverlay's update", () => {
     expect(at(210, 550).active).toBe(false);
     expect(osm.uniforms.uOsmOn.value).toBeCloseTo(0.5, 6);
     expect(at(190, 1_000)).toEqual({ active: false, on: 0 });
+  });
+
+  // Why: the caller's limits must be what the frame loop and the gate
+  // use, not only what the helpers accept: a camera 1100 m over the
+  // ground, moving fast, has the map with an editor's limits, and the
+  // coarsest level asked for is the caller's. The overlay is initialised
+  // for real here (an XYZ source needs no network to init), so the gate
+  // sees the library's own projection and levels.
+  it("runs the caller's limits in the frame loop and the gate", async () => {
+    const osm = createGlobeOsmOverlay({
+      url: TEMPLATE,
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      renderer: {} as THREE.WebGLRenderer,
+      fadeM: 1600,
+      limits: {
+        minZoom: 14,
+        maxAboveGroundM: 1250,
+        onBelowAboveGroundM: 1125,
+        maxSpeedMps: Number.POSITIVE_INFINITY,
+        onBelowSpeedMps: Number.POSITIVE_INFINITY,
+      },
+    });
+    expect(osm.limits).toMatchObject({ minZoom: 14, maxAboveGroundM: 1250 });
+    await (osm.overlay as unknown as { init(): Promise<unknown> }).init();
+    osm.attach({
+      tiles: {
+        group: new THREE.Group(),
+        ellipsoid: WGS84_ELLIPSOID,
+        registerPlugin: () => {},
+        forEachLoadedModel: () => {},
+        addEventListener: () => {},
+      },
+      plugin: { sampleCartographicElevation: () => null },
+    });
+    osm.setEnabled(true);
+    const lat = 48.137 * DEG;
+    const lon = 11.575 * DEG;
+    const position = WGS84_ELLIPSOID.getCartographicToPosition(
+      lat,
+      lon,
+      1100,
+      new THREE.Vector3(),
+    );
+    osm.update({ position, aboveGroundM: 1100, speedMps: 900, nowMs: 0 });
+    expect(osm.stats().active).toBe(true);
+    const range = (
+      osm.overlay.projection as {
+        fromCartographicToNormalizedRange(r: number[]): number[];
+      }
+    ).fromCartographicToNormalizedRange([lon, lat, lon + 1e-5, lat + 1e-5]);
+    expect(osm.overlay.wanted(range, 14)).toBe(true);
+    expect(osm.overlay.wanted(range, 13)).toBe(false);
   });
 });

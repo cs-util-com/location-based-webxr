@@ -21,7 +21,7 @@ const LUCERNE = { lat: 47.0502, lng: 8.3093 };
 /**
  * A summit of the synthetic heights (about 2,148 m), the ground falling
  * away within 412 m on every side (a grid search over the field's formula,
- * `synthetic-heights.js`).
+ * the Globe package's `src/test-utils/synthetic-heights.ts`).
  */
 const SUMMIT = { lat: 46.9185, lng: 8.136 };
 /** Near Pilatus: the slope below the summit, about 1.7 km up. */

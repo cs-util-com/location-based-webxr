@@ -5,7 +5,8 @@
   "description": "The globe intro's code (W7 phase 1): an Earth drawn from open imagery with 3d-tiles-renderer, served no-build to the design system's globe lab, and the 3D editor's building blocks, which a Vite app imports from gps-plus-slam-globe/editor (TypeScript source, built by the app). Private; OsmDemo consumes it in phase 5.",
   "type": "module",
   "exports": {
-    "./editor": "./src/globe-editor.ts"
+    "./editor": "./src/globe-editor.ts",
+    "./test-utils/synthetic-heights": "./src/test-utils/synthetic-heights.ts"
   },
   "scripts": {
     "test": "node ../scripts/test-timing/run-gate.mjs",

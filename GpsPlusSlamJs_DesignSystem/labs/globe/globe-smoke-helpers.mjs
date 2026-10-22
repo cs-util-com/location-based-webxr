@@ -271,7 +271,7 @@ const isOverpassHost = (url) =>
  * requests are answered too): Overpass with `overpass` (an Overpass JSON
  * object, every tile the same), every height tile (Mapterhorn or the AWS
  * bucket) with the relief's synthetic tile generated in the page
- * (`../globe-terrain/synthetic-heights.js`), so the city and the relief read
+ * (the Globe package's `src/test-utils/synthetic-heights.ts`), so the city and the relief read
  * the same numbers. Returns the requests seen. (Moved from
  * `globe-city.smoke.spec.mjs` when a second spec needed it, round-4 plan
  * 2026-10-11-0122.)
@@ -321,7 +321,7 @@ export async function routeCityFixture(context, page, overpass) {
           for (const b of bytes) s += String.fromCharCode(b);
           return btoa(s);
         },
-        [z, x, y, "/labs/globe-terrain/synthetic-heights.js"],
+        [z, x, y, "/globe/test-utils/synthetic-heights.js"],
       );
       return route.fulfill({
         status: 200,
