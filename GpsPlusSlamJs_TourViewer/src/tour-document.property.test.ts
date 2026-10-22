@@ -421,25 +421,34 @@ function reloadedFromDraft(state: TourDocumentState): TourDocumentState {
     JSON.stringify(settingsRecord(state)),
     OPENED,
   );
-  expect(record).toBeDefined();
+  if (record === undefined) throw new Error("the settings record did not read");
   return reduce(
     opened,
     act.restored({
       objects: state.placed.map((p) => p.object),
       deleted: [...state.deleted],
-      needsNoGps: record?.needsNoGps ?? false,
-      ...(record?.details === undefined ? {} : { details: record.details }),
-      ...(record?.stations === undefined ? {} : { stations: record.stations }),
-      ...(record?.createdStations === undefined
+      needsNoGps: record.needsNoGps,
+      ...(record.details === undefined ? {} : { details: record.details }),
+      ...(record.stations === undefined ? {} : { stations: record.stations }),
+      ...(record.createdStations === undefined
         ? {}
         : { createdStations: record.createdStations }),
-      ...(record?.frames === undefined ? {} : { frames: record.frames }),
-      ...(record?.order === undefined ? {} : { order: record.order }),
-      ...(record?.deletedStations === undefined
+      ...(record.frames === undefined ? {} : { frames: record.frames }),
+      ...(record.order === undefined ? {} : { order: record.order }),
+      ...(record.deletedStations === undefined
         ? {}
         : { deletedStations: record.deletedStations }),
       what: "restore",
     }),
+  );
+}
+
+/** Where the document a reload brings back first differs from `state`'s
+ *  (`difference`'s path; null when alike). */
+function reloadDrift(state: TourDocumentState): string | null {
+  return difference(
+    renamed(manifestToWrite(reloadedFromDraft(state))!),
+    renamed(manifestToWrite(state)!),
   );
 }
 
@@ -468,10 +477,7 @@ describe("tour document (properties)", () => {
     fc.assert(
       fc.property(fc.array(noSave, { maxLength: 20 }), (ops) => {
         const state = ops.reduce(apply, opened);
-        expectAlike(
-          manifestToWrite(reloadedFromDraft(state))!,
-          manifestToWrite(state)!,
-        );
+        expect(reloadDrift(state)).toBeNull();
       }),
       { numRuns: 300 },
     );
@@ -489,10 +495,7 @@ describe("tour document (properties)", () => {
       { kind: "delete", id: "b" },
     ];
     const state = ops.reduce(apply, opened);
-    expectAlike(
-      manifestToWrite(reloadedFromDraft(state))!,
-      manifestToWrite(state)!,
-    );
+    expect(reloadDrift(state)).toBeNull();
   });
 
   it("a photo moved into a neighbour's station, then the stations reordered, comes back from the draft the same", () => {
@@ -508,10 +511,7 @@ describe("tour document (properties)", () => {
       { kind: "reorder" },
     ];
     const state = ops.reduce(apply, opened);
-    expectAlike(
-      manifestToWrite(reloadedFromDraft(state))!,
-      manifestToWrite(state)!,
-    );
+    expect(reloadDrift(state)).toBeNull();
   });
 
   it("any sequence followed by undoing everything gives back the tour as opened", () => {
