@@ -4,7 +4,9 @@
  * dragged, the walk's flags, the card's last outcome line, Done's and the
  * file picker's in-progress states, whether a save waits to be
  * delivered again, and the view switch: the map or the 3D view, and the
- * 3D view's load and why it last failed. The tour itself is `tourDocument`'s; this slice holds
+ * 3D view's load and why it last failed, and the 3D view's shell: the
+ * tree's folds, the docks' folds, the layers turned off and the debug
+ * readout. The tour itself is `tourDocument`'s; this slice holds
  * what the page's chrome reads, so any view of the page (the map page,
  * a 3D view) reads one copy.
  *
@@ -45,6 +47,23 @@ export interface EditorMessage {
 export type View3dFailure =
   "chunk" | "webgl" | "context-lost" | "empty" | "error";
 
+/** The 3D view's tree's sections, each open or folded to its header. */
+export type TreeSection = "stations" | "codes" | "layers";
+/** The 3D view's two docks: the tree (left) and the inspector (right). */
+export type ShellDock = "tree" | "inspector";
+/** What the 3D view can show or hide. */
+export type ShellLayer = "codes" | "names" | "walk" | "depth" | "buildings";
+
+const TREE_SECTIONS: readonly string[] = ["stations", "codes", "layers"];
+const SHELL_DOCKS: readonly string[] = ["tree", "inspector"];
+const SHELL_LAYERS: readonly string[] = [
+  "codes",
+  "names",
+  "walk",
+  "depth",
+  "buildings",
+];
+
 export interface EditorViewState {
   /** The selected item's id (the model's: `station:<id>` for a station). */
   readonly selected: string | null;
@@ -70,6 +89,18 @@ export interface EditorViewState {
   readonly view3dLoad: "idle" | "loading" | "failed";
   /** Why the last load failed, exactly while `view3dLoad` is `failed`. */
   readonly view3dFailure: View3dFailure | null;
+  /** The 3D view's tree: the stations it lists the items of (unfolded),
+   *  by id, in the order they were unfolded; an id the tour no longer
+   *  has is ignored by the tree. */
+  readonly openStations: readonly string[];
+  /** The tree's sections: open, or folded to their header. */
+  readonly openSections: Readonly<Record<TreeSection, boolean>>;
+  /** A dock folded to its header. */
+  readonly foldedDocks: Readonly<Record<ShellDock, boolean>>;
+  /** The layers the creator turned off. */
+  readonly hiddenLayers: readonly ShellLayer[];
+  /** The bottom bar's debug readout shows. */
+  readonly readout: boolean;
 }
 
 export const initialEditorViewState: EditorViewState = {
@@ -85,6 +116,11 @@ export const initialEditorViewState: EditorViewState = {
   viewMode: "2d",
   view3dLoad: "idle",
   view3dFailure: null,
+  openStations: [],
+  openSections: { stations: true, codes: true, layers: true },
+  foldedDocks: { tree: false, inspector: false },
+  hiddenLayers: [],
+  readout: false,
 };
 
 /** Whether `spot` is a spot a map can draw: finite numbers. */
@@ -160,6 +196,41 @@ const editorViewSlice = createSlice({
       state.viewMode = "2d";
       state.view3dLoad = "failed";
       state.view3dFailure = action.payload.reason;
+    },
+    /** A station of the tree unfolded (its items listed) or folded. */
+    stationFolded(state, action: PayloadAction<{ id: string; open: boolean }>) {
+      const { id, open } = action.payload;
+      if (typeof id !== "string" || id === "") return;
+      const at = state.openStations.indexOf(id);
+      if (open && at < 0) state.openStations.push(id);
+      if (!open && at >= 0) state.openStations.splice(at, 1);
+    },
+    sectionFolded(
+      state,
+      action: PayloadAction<{ section: TreeSection; open: boolean }>,
+    ) {
+      const { section, open } = action.payload;
+      if (TREE_SECTIONS.includes(section)) state.openSections[section] = open;
+    },
+    dockFolded(
+      state,
+      action: PayloadAction<{ dock: ShellDock; folded: boolean }>,
+    ) {
+      const { dock, folded } = action.payload;
+      if (SHELL_DOCKS.includes(dock)) state.foldedDocks[dock] = folded;
+    },
+    layerShown(
+      state,
+      action: PayloadAction<{ layer: ShellLayer; shown: boolean }>,
+    ) {
+      const { layer, shown } = action.payload;
+      if (!SHELL_LAYERS.includes(layer)) return;
+      const hidden = state.hiddenLayers.filter((l) => l !== layer);
+      if (!shown) hidden.push(layer);
+      state.hiddenLayers = hidden;
+    },
+    readoutShown(state, action: PayloadAction<{ shown: boolean }>) {
+      state.readout = action.payload.shown;
     },
     /** The map asked for (or the tour closed): any load is left, and the
      *  last failure is forgotten. */

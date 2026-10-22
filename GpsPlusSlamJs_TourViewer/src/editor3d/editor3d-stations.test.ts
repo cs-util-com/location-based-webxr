@@ -334,6 +334,93 @@ describe("createStationsLayer", () => {
     expect(layer.stats().codes).toBe(2);
   });
 
+  // Why: a click on an item's row or a code's row flies the camera there,
+  // so the layer must say where each stands in the world - an item at its
+  // pose in its station's frame (x north, y up, z east there; the world
+  // is x east, y up, z south), whether or not its station draws its items
+  // now - and must say nothing for an id the tour does not have.
+  it("says where an item and a code stand, drawn or not", () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const turned = station("t", 0, 0, [photo("p2")]);
+    layer.setTour(
+      manifest([
+        station("a", 0, 0, [photo("p1")]),
+        {
+          ...turned,
+          geo: {
+            ...turned.geo,
+            // A quarter turn about up: the station's north looks east.
+            rotation: [0, -Math.SQRT1_2, 0, Math.SQRT1_2],
+          },
+        },
+      ]),
+      new Map([
+        [
+          "c1",
+          {
+            qr: {
+              geo: {
+                lat: ZERO.lat,
+                lon: ZERO.lng,
+                alt: 517 + N,
+                headingDeg: 0,
+              },
+            },
+          } as QrLevel,
+        ],
+      ]),
+    );
+    const a = layer.pointOf("a")!;
+    // The photo's pose is 1 m north and 1.5 m up of its station.
+    const p1 = layer.itemPointOf("p1")!;
+    expect(p1.x - a.x).toBeCloseTo(0, 3);
+    expect(p1.y - a.y).toBeCloseTo(1.5, 3);
+    expect(p1.z - a.z).toBeCloseTo(-1, 3);
+    // In the turned station, 1 m along its north is 1 m east.
+    const p2 = layer.itemPointOf("p2")!;
+    expect(p2.x - a.x).toBeCloseTo(1, 3);
+    expect(p2.z - a.z).toBeCloseTo(0, 3);
+    const c1 = layer.codePointOf("c1")!;
+    expect(c1.y - a.y).toBeCloseTo(2, 3);
+    expect(layer.itemPointOf("gone")).toBeNull();
+    expect(layer.codePointOf("gone")).toBeNull();
+  });
+
+  // Why: the layer chips turn the station names (billboards and their
+  // poles) and the codes off and on again; a station rendered while its
+  // name is off must stay without a billboard too.
+  it("hides the names and the codes, and shows them again", () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    layer.setTour(
+      manifest([station("a", 0, 0)]),
+      new Map([
+        [
+          "c1",
+          {
+            qr: {
+              geo: {
+                lat: ZERO.lat,
+                lon: ZERO.lng,
+                alt: 517 + N,
+                headingDeg: 0,
+              },
+            },
+          } as QrLevel,
+        ],
+      ]),
+    );
+    layer.setShown({ names: false, codes: false });
+    layer.update(view(0, 0, null));
+    expect(layer.billboardOf("a")?.visible).toBe(false);
+    expect(layer.codesVisible()).toBe(false);
+    layer.setShown({ names: true, codes: true });
+    layer.update(view(0, 0, null));
+    expect(layer.billboardOf("a")?.visible).toBe(true);
+    expect(layer.codesVisible()).toBe(true);
+  });
+
   it("takes everything out of the scene when disposed", () => {
     const { d, parent } = deps();
     const layer = createStationsLayer(d);

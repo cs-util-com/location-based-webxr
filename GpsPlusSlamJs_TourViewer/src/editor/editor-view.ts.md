@@ -34,7 +34,18 @@ chrome reads, one copy for every view of the page.
     shows);
   - `view3dFailure` - why the last load or the shown view failed
     (`View3dFailure`: `chunk`, `webgl`, `context-lost`, `empty`, `error`),
-    or null.
+    or null;
+  - the 3D view's shell (`editor-shell/`):
+    - `openStations` - the tree's unfolded stations, by id, in the order
+      they were unfolded (an id the tour no longer has is ignored by the
+      tree);
+    - `openSections` - `TreeSection` (`stations`, `codes`, `layers`) to
+      open, all open at start;
+    - `foldedDocks` - `ShellDock` (`tree`, `inspector`) to folded, none
+      at start;
+    - `hiddenLayers` - the `ShellLayer`s turned off (`codes`, `names`,
+      `walk`, `depth`, `buildings`), none at start;
+    - `readout` - the bottom bar's debug readout shows.
 - `editorViewActions`:
   - `selected({ id })`;
   - `busyChanged({ busy })`, `doneBusyChanged({ busy })`,
@@ -46,7 +57,11 @@ chrome reads, one copy for every view of the page.
     `view3dRequested()` (loading; nothing while loading or shown),
     `view3dShown()` (only while loading), `view3dFailed({ reason })` (only
     while loading or shown: back on the map, the reason kept),
-    `view2dRequested()` (the map, idle, no reason).
+    `view2dRequested()` (the map, idle, no reason);
+  - the shell's: `stationFolded({ id, open })` (an empty id ignored, no
+    id twice), `sectionFolded({ section, open })`,
+    `dockFolded({ dock, folded })`, `layerShown({ layer, shown })` (each
+    ignoring a key it does not know), `readoutShown({ shown })`.
 - `editorViewReducer`, `selectEditorView(root)`.
 - `View3dFailure` - the reasons the 3D view did not show.
 - `EditorMessage` - the card line's shape (`MapSpot` and `EditorMoving`, the drag's, are module-private).
@@ -94,7 +109,9 @@ selectEditorView(store.getState()).moving; // { id: "a", drop: {...} }
 marker being dragged and only for a drawable spot (another marker's late
 event, NaN, Infinity and a drop after the drag ended all ignored); each
 flag set on its own, and `selected` keeping the line; the view switch's
-fields through each action, and late or doubled actions ignored; the slice mounted
+fields through each action, and late or doubled actions ignored; the
+shell's folds, layers and readout, with unknown keys and empty ids
+ignored; the slice mounted
 beside the shared ones by `createTourViewerStore`, a colliding key
 refused, and the phone's store without it.
 `editor-view.property.test.ts`: any run of the view actions keeps the

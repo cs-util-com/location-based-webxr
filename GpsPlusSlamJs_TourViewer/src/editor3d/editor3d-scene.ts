@@ -13,6 +13,13 @@
  * whenever the document changes - and the selection from `editorView`; it
  * writes nothing.
  *
+ * The page's shell drives the camera through the view: a flight to a
+ * station, an item or a code (`flyTo`), Frame (`frame`), Top view
+ * (`setTop`), zoom steps and north up (`editor3d-flight.ts`'s flights,
+ * which any drag of the creator's cuts short), and shows or hides the
+ * station names and the codes (`setLayers`); it reads the compass, the
+ * tilt and the debug figures from `readout`.
+ *
  * `openEditor3d` resolves once the first frame is drawn. It rejects with
  * an error whose `reason` is `empty` (nothing with a position to show) or
  * `webgl` (no WebGL); a context lost later is reported through
@@ -29,7 +36,7 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 import { loadGlbModel } from "../glb-model.js";
 import { createPinLabel } from "../pin-label.js";
 import { manifestToWrite, type TourDocumentState } from "../tour-document.js";
-import type { EditorViewState } from "../editor/editor-view.js";
+import type { EditorViewState, ShellLayer } from "../editor/editor-view.js";
 import {
   EDITOR_CAMERA,
   EDITOR_CLIP,
@@ -42,7 +49,21 @@ import {
   createCodeSquare,
   resizeBillboard,
 } from "./editor3d-marks.js";
-import { createStationsLayer } from "./editor3d-stations.js";
+import {
+  FLIGHT,
+  clampedPose,
+  flightGoal,
+  frameDistanceM,
+  orbitPoseBetween,
+  orbitPoseOf,
+  orbitPosition,
+  tourFrame,
+  type OrbitPose,
+} from "./editor3d-flight.js";
+import {
+  DEFAULT_CODE_SIZE_M,
+  createStationsLayer,
+} from "./editor3d-stations.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
 import { tourCentre } from "./editor3d-tour-root.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
@@ -83,6 +104,39 @@ export interface Editor3dView {
   /** Move the orbit to `m` from its centre, keeping its tilt and heading
    *  (the page's checks), within the orbit's limits. */
   setDistance(m: number): void;
+  /** Fly to the page's selection (`station:<id>`, an item's id or a
+   *  code's level id): a station framed, an item or a code brought to a
+   *  working distance. False for one the tour has no place for. */
+  flyTo(selection: string): boolean;
+  /** Fit the selection (null: the whole tour) into the view. */
+  frame(selection: string | null): void;
+  /** Look straight down (the left button then pans like a map), or go
+   *  back to the tilt from before. */
+  setTop(on: boolean): void;
+  /** One zoom step in (1) or out (-1). */
+  zoom(step: 1 | -1): void;
+  /** Turn the view north up. */
+  northUp(): void;
+  /** What the shell shows of the camera and the drawing. */
+  readout(): Editor3dReadout;
+  /** The layers turned off (the station names and the codes are drawn
+   *  here; the others have nothing to draw yet). */
+  setLayers(hidden: readonly ShellLayer[]): void;
+  /** Where the selection stands in the world (the page's checks). */
+  pointOf(selection: string): readonly [number, number, number] | null;
+}
+
+/** The camera and the drawing, for the shell's compass, view line and
+ *  debug readout. */
+export interface Editor3dReadout {
+  /** Degrees from straight down. */
+  readonly tiltDeg: number;
+  /** The bearing the camera looks toward (degrees clockwise from north). */
+  readonly headingDeg: number;
+  readonly top: boolean;
+  readonly drawCalls: number;
+  /** The mean time between the last frames (ms). */
+  readonly frameMs: number;
 }
 
 export interface Editor3dStats {
@@ -97,6 +151,12 @@ export interface Editor3dStats {
   readonly shown: readonly string[];
   readonly renders: number;
   readonly osm: Record<string, unknown>;
+  /** The orbit's centre in the world (m). */
+  readonly target: readonly [number, number, number];
+  readonly distanceM: number;
+  /** A flight is under way. */
+  readonly flying: boolean;
+  readonly top: boolean;
   /** Each station's drawn height and the drawn ground under it (m over
    *  the ellipsoid; null where no ground has loaded). */
   readonly ground: readonly {
@@ -115,6 +175,8 @@ function failure(
 }
 
 const BACKGROUND = 0x232427;
+/** The size an item is framed by (m): about a pin or a photo. */
+const ITEM_RADIUS_M = 1.6;
 const DEG = Math.PI / 180;
 
 function createRenderer(): THREE.WebGLRenderer {
@@ -318,6 +380,98 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     canvas.addEventListener("webglcontextlost", onLost);
     undo.push(() => canvas.removeEventListener("webglcontextlost", onLost));
 
+    // The shell's flights (`editor3d-flight.ts`): the orbit is placed by
+    // the flight while one runs, and any drag of the creator's ends it.
+    let flight: {
+      readonly from: OrbitPose;
+      readonly to: OrbitPose;
+      readonly startMs: number;
+      readonly ms: number;
+    } | null = null;
+    const poseNow = (): OrbitPose =>
+      orbitPoseOf(camera.position, controls.target);
+    /** OrbitControls keeps a little momentum after a drag; a flight drops
+     *  it, or the orbit would drift on from where the flight ended. */
+    const dropMomentum = () => {
+      const inner = controls as unknown as {
+        _sphericalDelta?: THREE.Spherical;
+        _panOffset?: THREE.Vector3;
+      };
+      inner._sphericalDelta?.set(0, 0, 0);
+      inner._panOffset?.set(0, 0, 0);
+    };
+    const placeOrbit = (pose: OrbitPose) => {
+      controls.target.copy(pose.target);
+      orbitPosition(pose, camera.position);
+      camera.lookAt(pose.target);
+    };
+    const fly = (goal: Partial<OrbitPose>, ms: number) => {
+      dropMomentum();
+      const from = poseNow();
+      const to = clampedPose({ ...from, ...goal });
+      flight = { from, to, startMs: performance.now(), ms };
+    };
+    const stepFlight = (now: number) => {
+      if (flight === null) return false;
+      const k = (now - flight.startMs) / flight.ms;
+      placeOrbit(orbitPoseBetween(flight.from, flight.to, k));
+      if (k >= 1) {
+        flight = null;
+        controls.update();
+      }
+      return true;
+    };
+    const endFlight = () => {
+      flight = null;
+    };
+    controls.addEventListener("start", endFlight);
+    undo.push(() => {
+      controls.removeEventListener("start", endFlight);
+    });
+
+    // Top view: straight down, the left button pans like a map and the
+    // right one tilts; the tilt from before is kept to go back to.
+    let top = false;
+    let topFrom: number = FLIGHT.untopPolarRad;
+    const topControls = (on: boolean) => {
+      controls.mouseButtons.LEFT = on ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+      controls.mouseButtons.RIGHT = on ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
+      controls.touches.ONE = on ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
+      controls.screenSpacePanning = on;
+    };
+
+    /** Where the selection stands, and the size a flight frames it by. */
+    const placeOf = (
+      selection: string,
+    ): {
+      at: THREE.Vector3;
+      radiusM: number;
+      kind: "station" | "item";
+    } | null => {
+      if (selection.startsWith("station:")) {
+        const id = selection.slice("station:".length);
+        const at = layer.pointOf(id);
+        const radiusM = layer.radiusOf(id);
+        return at === null || radiusM === null
+          ? null
+          : { at, radiusM, kind: "station" };
+      }
+      const item = layer.itemPointOf(selection);
+      if (item !== null)
+        return { at: item, radiusM: ITEM_RADIUS_M, kind: "item" };
+      const code = layer.codePointOf(selection);
+      if (code === null) return null;
+      const printM =
+        deps.levels().get(selection)?.qr.physicalSizeM ?? DEFAULT_CODE_SIZE_M;
+      return {
+        at: code,
+        radiusM: Math.max(ITEM_RADIUS_M, printM),
+        kind: "item",
+      };
+    };
+
+    const frameTimes: number[] = [];
+    let lastFrameAt: number | null = null;
     let frames = 0;
     let standing = 1;
     const ecef = new THREE.Vector3();
@@ -333,7 +487,17 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       return ground.groundAt(at.lat, at.lon);
     };
     const frame = (now: number) => {
-      controls.update();
+      if (lastFrameAt !== null) {
+        frameTimes.push(now - lastFrameAt);
+        if (frameTimes.length > 60) frameTimes.shift();
+      }
+      lastFrameAt = now;
+      if (!stepFlight(now)) controls.update();
+      // A tilt by hand leaves Top view.
+      if (top && flight === null && cam.tiltDeg() > 3) {
+        top = false;
+        topControls(false);
+      }
       standing = morphStanding(cam.tiltDeg());
       const planes = editorClipPlanes({
         ellipsoid,
@@ -395,6 +559,101 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           .add(new THREE.Vector3().setFromSpherical(spherical));
         controls.update();
       },
+      flyTo(selection) {
+        const place = placeOf(selection);
+        if (place === null) return false;
+        fly(flightGoal(poseNow(), place), FLIGHT.flyMs);
+        return true;
+      },
+      frame(selection) {
+        const polarRad = Math.min(poseNow().polarRad, FLIGHT.flatCapRad);
+        if (selection === null) {
+          const points = (tourNow?.stations ?? []).flatMap((s) => {
+            const at = layer.pointOf(s.id);
+            return at === null ? [] : [{ at, radiusM: s.foundRadiusM }];
+          });
+          for (const id of deps.levels().keys()) {
+            const at = layer.codePointOf(id);
+            if (at !== null) points.push({ at, radiusM: 0 });
+          }
+          const whole = tourFrame(points);
+          if (whole === null) return;
+          fly(
+            {
+              target: whole.centre,
+              distanceM: frameDistanceM(whole.radiusM),
+              polarRad,
+            },
+            FLIGHT.frameMs,
+          );
+          return;
+        }
+        const place = placeOf(selection);
+        if (place === null) return;
+        const radiusM =
+          place.kind === "station"
+            ? place.radiusM * FLIGHT.stationMargin
+            : place.radiusM;
+        fly(
+          {
+            target: place.at,
+            distanceM: frameDistanceM(radiusM),
+            polarRad,
+          },
+          FLIGHT.frameMs,
+        );
+      },
+      setTop(on) {
+        if (on === top) return;
+        top = on;
+        topControls(on);
+        if (on) {
+          const polar = poseNow().polarRad;
+          topFrom = polar > 0.1 ? polar : FLIGHT.untopPolarRad;
+          fly({ polarRad: FLIGHT.topPolarRad }, FLIGHT.topMs);
+        } else {
+          fly({ polarRad: topFrom }, FLIGHT.topMs);
+        }
+      },
+      zoom(step) {
+        const { distanceM } = poseNow();
+        fly(
+          {
+            distanceM:
+              step > 0
+                ? distanceM / FLIGHT.zoomStep
+                : distanceM * FLIGHT.zoomStep,
+          },
+          FLIGHT.zoomMs,
+        );
+      },
+      northUp() {
+        fly({ azimuthRad: 0 }, FLIGHT.turnMs);
+      },
+      readout() {
+        const pose = poseNow();
+        const mean =
+          frameTimes.length === 0
+            ? 0
+            : frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
+        return {
+          tiltDeg: cam.tiltDeg(),
+          headingDeg: (((-pose.azimuthRad / DEG) % 360) + 360) % 360,
+          top,
+          drawCalls: renderer.info.render.calls,
+          frameMs: mean,
+        };
+      },
+      setLayers(hidden) {
+        layer.setShown({
+          names: !hidden.includes("names"),
+          codes: !hidden.includes("codes"),
+        });
+      },
+      pointOf(selection) {
+        const place = placeOf(selection);
+        return place === null ? null : [place.at.x, place.at.y, place.at.z];
+      },
       setDistance(m) {
         const offset = camera.position.clone().sub(controls.target);
         offset.setLength(
@@ -416,6 +675,10 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           standing,
           ...layer.stats(),
           osm: ground.osm.stats(),
+          target: [controls.target.x, controls.target.y, controls.target.z],
+          distanceM: camera.position.distanceTo(controls.target),
+          flying: flight !== null,
+          top,
           ground: (now?.stations ?? []).map((s) => ({
             id: s.id,
             drawnM: s.geo.alt - undulationAt(s.geo),

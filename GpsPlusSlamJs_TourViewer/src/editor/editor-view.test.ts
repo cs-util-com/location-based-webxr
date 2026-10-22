@@ -18,6 +18,16 @@ import {
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import { tourDocumentReducer } from "../tour-document.js";
 
+/** The 3D view's shell at the start: every station folded, every section
+ *  open, both docks unfolded, every layer shown, no debug readout. */
+const SHELL_START = {
+  openStations: [],
+  openSections: { stations: true, codes: true, layers: true },
+  foldedDocks: { tree: false, inspector: false },
+  hiddenLayers: [],
+  readout: false,
+};
+
 describe("editorView", () => {
   it("starts with nothing selected, nothing in flight and no walk", () => {
     expect(initialEditorViewState).toEqual({
@@ -33,6 +43,7 @@ describe("editorView", () => {
       viewMode: "2d",
       view3dLoad: "idle",
       view3dFailure: null,
+      ...SHELL_START,
     });
   });
 
@@ -85,6 +96,7 @@ describe("editorView", () => {
       viewMode: "2d",
       view3dLoad: "idle",
       view3dFailure: null,
+      ...SHELL_START,
     });
     // Selecting another item keeps the line: the page clears it itself.
     expect(reduce(state, act.selected({ id: null })).message).toEqual(
@@ -190,6 +202,80 @@ describe("the view switch's state", () => {
       act.view3dRequested(),
       act.view3dShown(),
       act.view2dRequested(),
+    ].reduce(reduce, before);
+    expect(after).toEqual(before);
+  });
+});
+
+describe("the 3D view's shell state", () => {
+  // Why: the tree's folds, the docks, the layers and the readout are the
+  // page's chrome, read by every view of the page from one copy. Each
+  // setter must change only what it names, a second unfold must not list
+  // a station twice, and an id or a name nobody has must change nothing,
+  // so a stale click cannot leave the state in a shape the tree cannot
+  // draw back.
+  it("unfolds a station once and folds it again", () => {
+    let state = reduce(
+      initialEditorViewState,
+      act.stationFolded({ id: "a", open: true }),
+    );
+    state = reduce(state, act.stationFolded({ id: "b", open: true }));
+    state = reduce(state, act.stationFolded({ id: "a", open: true }));
+    expect(state.openStations).toEqual(["a", "b"]);
+    state = reduce(state, act.stationFolded({ id: "a", open: false }));
+    expect(state.openStations).toEqual(["b"]);
+    // Folding a station that is not open, or an empty id: nothing.
+    expect(reduce(state, act.stationFolded({ id: "z", open: false }))).toBe(
+      state,
+    );
+    expect(reduce(state, act.stationFolded({ id: "", open: true }))).toBe(
+      state,
+    );
+  });
+
+  it("sets a section, a dock, a layer and the readout each on its own", () => {
+    let state = reduce(
+      initialEditorViewState,
+      act.sectionFolded({ section: "codes", open: false }),
+    );
+    state = reduce(state, act.dockFolded({ dock: "tree", folded: true }));
+    state = reduce(state, act.layerShown({ layer: "names", shown: false }));
+    state = reduce(state, act.layerShown({ layer: "names", shown: false }));
+    state = reduce(state, act.readoutShown({ shown: true }));
+    expect(state).toEqual({
+      ...initialEditorViewState,
+      openSections: { stations: true, codes: false, layers: true },
+      foldedDocks: { tree: true, inspector: false },
+      hiddenLayers: ["names"],
+      readout: true,
+    });
+    state = reduce(state, act.layerShown({ layer: "names", shown: true }));
+    expect(state.hiddenLayers).toEqual([]);
+  });
+
+  it("ignores a section, a dock or a layer it does not know", () => {
+    const unknown = [
+      act.sectionFolded({ section: "x" as never, open: false }),
+      act.dockFolded({ dock: "x" as never, folded: true }),
+      act.layerShown({ layer: "x" as never, shown: false }),
+    ];
+    expect(unknown.reduce(reduce, initialEditorViewState)).toEqual(
+      initialEditorViewState,
+    );
+  });
+
+  it("keeps the shell's state through the view switch and a selection", () => {
+    const before = [
+      act.stationFolded({ id: "a", open: true }),
+      act.dockFolded({ dock: "inspector", folded: true }),
+      act.layerShown({ layer: "codes", shown: false }),
+    ].reduce(reduce, initialEditorViewState);
+    const after = [
+      act.view3dRequested(),
+      act.view3dShown(),
+      act.selected({ id: "station:a" }),
+      act.view2dRequested(),
+      act.selected({ id: null }),
     ].reduce(reduce, before);
     expect(after).toEqual(before);
   });

@@ -30,6 +30,12 @@ size, facing as printed.
   - `stats()` - `{ stations, codes, shown, renders }`;
   - `pointOf(id)`, `billboardOf(id)`, `photoPlanes(id)`, `models(id)` - for
     the tests and the page's checks;
+  - for the flights: `radiusOf(id)` (a station's found radius),
+    `itemPointOf(id)` (an item's place in the world, its station drawn or
+    not), `codePointOf(levelId)` (a code's centre); each null for an id
+    the tour does not have;
+  - `setShown({ names, codes })` - the billboards and poles, and the code
+    squares, off or on (the layer chips); `codesVisible()`;
   - `dispose()` - everything out of the scene and freed.
 
 ## Invariants & assumptions
@@ -69,6 +75,7 @@ store): each station at its drawn height where it stands; only the near
 and selected stations rendered, and what leaves freed; a billboard per
 station rising with the morph; photos flat looking down and upright
 tilted; a model at its size and pose; a model that cannot be read left
-out; every code as a square of its printed size; everything removed on
+out; every code as a square of its printed size; where an item and a
+code stand, drawn or not; names and codes hidden and shown; everything removed on
 dispose; `codeQuaternionNue` for a heading and a full rotation. Real
 drawing and real ground: `playwright-tests/editor3d.spec.js`.

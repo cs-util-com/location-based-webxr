@@ -29,6 +29,25 @@ the map page's own code nor the phone's pages hold any of it.
   (the page's checks: the orbit's tilt, its distance and heading kept);
   `setDistance(m)` (the orbit's distance within its limits, its tilt and
   heading kept).
+- The shell's commands on `Editor3dView` (`editor3d-flight.ts` flies
+  each):
+  - `flyTo(selection)` - a station framed, an item or a code brought to a
+    working distance; false for a selection the tour has no place for;
+  - `frame(selection | null)` - the selection, or the whole tour (every
+    station's circle and every code), fitted into the view;
+  - `setTop(on)` - straight down, the left button panning like a map and
+    the right one tilting; off goes back to the tilt from before, and a
+    tilt by hand of more than 3 degrees leaves it;
+  - `zoom(1 | -1)` - one step of 1.6 in or out; `northUp()`;
+  - `readout()` - `Editor3dReadout`: `tiltDeg`, `headingDeg` (the bearing
+    the camera looks toward), `top`, `drawCalls`, `frameMs` (the mean of
+    the last 60 frames);
+  - `setLayers(hidden)` - the station names and the codes off or on (the
+    other layers have nothing drawn yet);
+  - `pointOf(selection)` - where it stands in the world (the page's
+    checks).
+- `stats()` also carries the orbit's `target`, `distanceM`, whether a
+  flight is `flying`, and `top`.
 - Types `Editor3dDeps`, `Editor3dStats` (the store it takes is structural:
   `getState()` with `tourDocument` and `editorView`, and `subscribe`).
 
@@ -44,7 +63,11 @@ the map page's own code nor the phone's pages hold any of it.
 - **Reads, never writes:** the tour is what a save would write now
   (`manifestToWrite`), read again only when the document changes (never
   per frame); the selection is read each frame for near-K.
-- **Each frame:** the controls, the morph from the tilt, the clip planes
+- **Flights:** while one runs it places the orbit each frame in place of
+  the controls (their momentum dropped first, or the orbit would drift on
+  from where the flight ends); the controls' `start` (any drag, wheel or
+  touch by the creator) ends it where it is.
+- **Each frame:** the flight or the controls, the morph from the tilt, the clip planes
   from the camera's own ECEF point and its clearance over the ground under
   it and under its target (the camera's point is a vector of its own: the
   ground samples reuse a scratch vector, and sharing it put the clip
@@ -102,5 +125,7 @@ said; a later open that shows the view taking the earlier failure's
 line away; a first frame that fails landing on the map, said, with no
 canvas and no credits left; and twenty switches to 3D and back without
 the browser's "too many active WebGL contexts" warning and with no canvas
-left. `editor3d-lazy.test.ts` checks no page loads it before an
+left. `playwright-tests/editor3d-shell.spec.js` drives the shell's
+commands: a card's flight ending at its station, Frame, Top view, the
+zoom steps, north up and the layer chips. `editor3d-lazy.test.ts` checks no page loads it before an
 `import()` runs.

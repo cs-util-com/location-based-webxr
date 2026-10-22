@@ -12,6 +12,11 @@
  * lie flat face up and stand up again, and the billboards and their poles
  * rise. Models keep their pose.
  *
+ * The layer chips turn the station names (billboards and poles) and the
+ * codes off and on (`setShown`); the camera's flights ask where a
+ * station, an item or a code stands (`pointOf`, `itemPointOf`,
+ * `codePointOf`), drawn or not.
+ *
  * Read-only: nothing here edits the tour. The page hands the tour
  * (`setTour`) when the document changes and the camera (`update`) each
  * frame. A station's items are rendered when it enters the near set and
@@ -30,6 +35,7 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
+  objectPoseNue,
   renderTourStation,
   type RenderedTourObjects,
 } from "../content-placement.js";
@@ -219,6 +225,10 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   const stations = new Map<string, StationEntry>();
   let assets = new Map<string, string>();
   let codes: THREE.Group[] = [];
+  /** Each code's point in the world, by its level id. */
+  let codePoints = new Map<string, THREE.Vector3>();
+  let shownNames = true;
+  let shownCodes = true;
   let shown = new Set<string>();
   let renders = 0;
 
@@ -327,10 +337,16 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   const setCodes = (levels: ReadonlyMap<string, QrLevel>) => {
     for (const code of codes) freeObject(code);
     codes = [];
-    for (const level of levels.values()) {
+    codePoints = new Map();
+    for (const [levelId, level] of levels) {
       const geo = level.qr.geo;
       if (geo === undefined) continue;
       const root = rootAt(geo);
+      root.visible = shownCodes;
+      codePoints.set(
+        levelId,
+        new THREE.Vector3(0, geo.alt, 0).applyMatrix4(root.matrixWorld),
+      );
       const square = deps.makeCodeSquare(
         level.qr.physicalSizeM ?? DEFAULT_CODE_SIZE_M,
       );
@@ -355,7 +371,11 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     }
     const rise = BILLBOARD_BASE_M + BILLBOARD_LIFT_M * view.standing;
     entry.billboard.position.copy(entry.point).setY(entry.point.y + rise);
-    entry.content?.pole.scale.set(1, rise, 1);
+    entry.billboard.visible = shownNames;
+    if (entry.content !== null) {
+      entry.content.pole.scale.set(1, rise, 1);
+      entry.content.pole.visible = shownNames;
+    }
   };
 
   return {
@@ -435,6 +455,41 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     /** A station's point in the world, or null. */
     pointOf(id: string): THREE.Vector3 | null {
       return stations.get(id)?.point.clone() ?? null;
+    },
+    /** A station's found radius (m), or null. */
+    radiusOf(id: string): number | null {
+      return stations.get(id)?.station.foundRadiusM ?? null;
+    },
+    /** Where an item of the tour stands in the world (its pose in its
+     *  station's frame), whether its station draws its items now or not;
+     *  null for an id no station holds. */
+    itemPointOf(id: string): THREE.Vector3 | null {
+      for (const entry of stations.values()) {
+        const item = entry.station.items.find((i) => i.id === id);
+        if (item === undefined) continue;
+        const { geo } = entry.station;
+        const frame = objectPoseNue(geo, { lat: geo.lat, lon: geo.lon });
+        return new THREE.Vector3(...item.pose.position)
+          .applyQuaternion(new THREE.Quaternion(...frame.rotationNue))
+          .add(new THREE.Vector3(...frame.positionNue))
+          .applyMatrix4(entry.root.matrixWorld);
+      }
+      return null;
+    },
+    /** Where a code with a position stands in the world, or null. */
+    codePointOf(levelId: string): THREE.Vector3 | null {
+      return codePoints.get(levelId)?.clone() ?? null;
+    },
+    /** The layer chips: the station names (billboards and their poles)
+     *  and the codes shown or hidden. */
+    setShown(layers: { readonly names: boolean; readonly codes: boolean }) {
+      shownNames = layers.names;
+      shownCodes = layers.codes;
+      for (const code of codes) code.visible = shownCodes;
+    },
+    /** Whether the codes show (the page's checks). */
+    codesVisible(): boolean {
+      return shownCodes;
     },
     billboardOf(id: string): THREE.Sprite | null {
       return stations.get(id)?.billboard ?? null;
