@@ -501,29 +501,3 @@ function holdLine(
       return "The code's hold has ended - GPS places the tour now. Scan the code again to hold it.";
   }
 }
-
-/**
- * Ring positions (GPS-world NUE) for the tour's image planes around the
- * relocalized code (QD-3) — placed ONCE at the scene root in raw NUE (the
- * framework's built-once parenting rule), at the anchor's height.
- * V1 deviation, deliberate: recording zips carry no per-image GPS (images
- * store odom pose only), so the ring around the anchor is the honest
- * placement until a capture-time geo join exists.
- */
-export function imagePlaneRingNue(
-  centerNue: readonly [number, number, number],
-  count: number,
-  radiusM = 1.5,
-): [number, number, number][] {
-  const [n, u, e] = centerNue;
-  const positions: [number, number, number][] = [];
-  for (let i = 0; i < count; i += 1) {
-    const angle = (2 * Math.PI * i) / Math.max(1, count);
-    positions.push([
-      n + radiusM * Math.cos(angle),
-      u,
-      e + radiusM * Math.sin(angle),
-    ]);
-  }
-  return positions;
-}

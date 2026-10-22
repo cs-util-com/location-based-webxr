@@ -52,8 +52,7 @@ export interface ReplayRecordingOptions {
    * wants the result but no way to act on it (PR #378 review). The
    * TourViewer already checks a generation token inside `onChunk` — and
    * could only use it to skip a status label, so a replay whose AR session
-   * had ended kept dispatching to a store nobody would read. Same shape as
-   * the abort seam added to `decodeJoinedPoses`, whose own comment names it.
+   * had ended kept dispatching to a store nobody would read.
    *
    * The returned state is PARTIAL by construction; a caller that aborts is
    * expected to discard it, which is why this is a separate hook rather than
@@ -64,9 +63,9 @@ export interface ReplayRecordingOptions {
   /**
    * Called after EACH dispatched action with the state it produced. For a
    * caller that needs the state as it stood at a moment of the recording,
-   * not only at its end: the Tour Viewer places a recorded photo through the
-   * first settled alignment after it was taken (scan-pass plan S-D11). Keep
-   * it cheap: it runs once per action.
+   * not only at its end: the Tour Viewer places a camera capture through
+   * the first settled alignment after it was taken (scan-pass plan S-D11).
+   * Keep it cheap: it runs once per action.
    */
   readonly onAction?: (
     action: RecordedAction,

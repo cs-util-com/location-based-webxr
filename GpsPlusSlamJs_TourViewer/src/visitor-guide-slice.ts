@@ -24,7 +24,8 @@ import {
   type UnknownAction,
 } from "@reduxjs/toolkit";
 
-import { tooWeakToGuide } from "./station-bands.js";
+import type { PositionPrecision } from "gps-plus-slam-app-framework/state/position-precision";
+
 import {
   nextPresentStation,
   presentAfterWeakFix,
@@ -48,15 +49,14 @@ export interface VisitorGuideState {
 }
 
 /** One judged position, as presence reads it: every station's candidate
- *  (null: nothing may be judged, presence holds), the judged accuracy
- *  (`judgedAccuracy`: null for a position a code lined up) and whether a
- *  code lined it up, which set the margin (`takeoverMarginM`). An accuracy
- *  too weak to guide by (`tooWeakToGuide`) only ends presence
- *  (`presentAfterWeakFix`). */
+ *  (null: nothing may be judged, presence holds) and the position's
+ *  precision (`gps-plus-slam-app-framework/state/position-precision`),
+ *  which sets the margin (`takeoverMarginM`). A GPS position too weak to
+ *  guide by only ends presence (`presentAfterWeakFix`); nothing to judge
+ *  by (`'none'`) holds it. */
 export interface PresenceJudgement {
   readonly candidates: readonly PresenceCandidate[] | null;
-  readonly accuracyM: number | null;
-  readonly codeLinedUp: boolean;
+  readonly precision: PositionPrecision;
 }
 
 const initialVisitorGuideState: VisitorGuideState = {
@@ -71,18 +71,23 @@ export function presenceAfter(
   state: VisitorGuideState,
   judgement: PresenceJudgement,
 ): string | null {
-  const { accuracyM } = judgement;
-  if (accuracyM !== null && tooWeakToGuide(accuracyM)) {
-    return presentAfterWeakFix(
-      state.presentStationId,
-      judgement.candidates,
-      accuracyM,
-    );
+  const { precision } = judgement;
+  // `tooWeak` on 'none' is a fail-safe, not a GPS verdict: nothing to
+  // judge by holds, as no position does.
+  if (precision.source === "none") return state.presentStationId;
+  if (precision.tooWeak) {
+    return precision.accuracyM === null
+      ? state.presentStationId
+      : presentAfterWeakFix(
+          state.presentStationId,
+          judgement.candidates,
+          precision.accuracyM,
+        );
   }
   return nextPresentStation(
     state.presentStationId,
     judgement.candidates,
-    takeoverMarginM(accuracyM, judgement.codeLinedUp),
+    takeoverMarginM(precision),
   );
 }
 

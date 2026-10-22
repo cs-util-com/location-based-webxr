@@ -406,9 +406,17 @@ function outputs(seed: number): Output {
  */
 function legacyPlan(
   plan: ReturnType<typeof planVisitSettle>,
-): Omit<NonNullable<ReturnType<typeof planVisitSettle>>, "levels"> | null {
+): Omit<
+  NonNullable<ReturnType<typeof planVisitSettle>>,
+  "levels" | "stations"
+> | null {
   if (plan === null) return null;
-  const { levels, ...legacy } = plan;
+  const { levels, stations, ...legacy } = plan;
+  // The frozen visits started no station (the field came later): none
+  // may be settled.
+  if (stations.length > 0) {
+    throw new Error("one code: a station settled though none was given");
+  }
   const expected =
     plan.level === null || plan.levelAlignment === null
       ? []

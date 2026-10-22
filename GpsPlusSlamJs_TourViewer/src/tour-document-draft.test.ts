@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   followDocument,
+  parseSettingsRecord,
   settingsRecord,
   type TourDocumentDraft,
 } from "./tour-document-draft.js";
@@ -26,6 +27,7 @@ import {
   tourDocumentReducer as reduce,
   type TourDocumentState,
 } from "./tour-document.js";
+import { routedTo } from "./tour-content.js";
 import { tourOf } from "./test-support/v3-tour.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 
@@ -328,5 +330,201 @@ describe("followDocument, the station poses (review #1)", () => {
     });
     expect(settingsRecord(after).stations?.[0]?.geo).toEqual(geo);
     expect(calls.filter((c) => c.startsWith("saveSettings"))).toHaveLength(1);
+  });
+});
+
+/**
+ * Why: a station the station rule started is the document's from that
+ * moment, and the objects' records only name it. The settings record keeps
+ * its whole frame, so a reload brings the station back where it stood -
+ * and a record whose frames do not read loses only them (the objects that
+ * named them are seated by the rule), never the setting beside them.
+ */
+describe("followDocument, the stations this page created", () => {
+  const far: TourObject = {
+    ...pin("far"),
+    geo: { lat: 48.53, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+  };
+
+  it("a placement that starts a station writes its whole frame; one that joins a station writes none", () => {
+    const joined = writesFor(
+      opened,
+      act.placed({ object: pin("near"), what: "p", newStationId: "unused" }),
+    );
+    expect(settingsRecord(joined.after)).toEqual({ needsNoGps: false });
+    expect(joined.calls.filter((c) => c.startsWith("saveSettings"))).toEqual(
+      [],
+    );
+    const started = writesFor(
+      opened,
+      act.placed({ object: far, what: "p", newStationId: "made" }),
+    );
+    const record = settingsRecord(started.after);
+    expect(record.createdStations).toEqual([
+      started.after.stations.find((f) => f.id === "made"),
+    ]);
+    expect(
+      started.calls.filter((c) => c.startsWith("saveSettings")),
+    ).toHaveLength(1);
+    // Read back from disk as the frame it was.
+    expect(parseSettingsRecord(JSON.stringify(record))).toEqual(record);
+  });
+
+  // Why: the created frames were read as one list, so one broken frame
+  // (a hand-edited record, a frame of a newer build) lost every station
+  // this browser made, and the objects in them were seated anew.
+  it("a broken created frame among good ones costs only itself; a repeated id keeps the first", () => {
+    const started = writesFor(
+      opened,
+      act.placed({ object: far, what: "p", newStationId: "made" }),
+    );
+    const frame = settingsRecord(started.after).createdStations![0]!;
+    const other = { ...frame, id: "made2", next: "made" };
+    const record = {
+      needsNoGps: false,
+      createdStations: [
+        frame,
+        { ...frame, id: "broken", foundRadiusM: -1 },
+        other,
+        { ...frame, id: "made", title: "A second made" },
+      ],
+    };
+    expect(parseSettingsRecord(JSON.stringify(record))).toEqual({
+      needsNoGps: false,
+      createdStations: [frame, other],
+    });
+  });
+
+  // Why: each frame's routes were read against stand-ins for EVERY stored
+  // id, the frames that then failed to read among them. A frame routing
+  // to a sibling that does not read therefore read fine, the sibling was
+  // dropped, and the document kept a route to a station it no longer
+  // carried, which reached the written tour.json. A frame whose route
+  // names a lost sibling is lost with it (its objects are seated by the
+  // station rule as they come back), and so is one routing to that frame:
+  // no surviving frame routes to a station the record lost.
+  it("a frame routing to a created sibling that does not read is lost with it, and so is a frame routing to it", () => {
+    const started = writesFor(
+      opened,
+      act.placed({ object: far, what: "p", newStationId: "made" }),
+    );
+    const frame = settingsRecord(started.after).createdStations![0]!;
+    // B's latitude is stored as a string: B does not read.
+    const b = { ...frame, id: "b", geo: { ...frame.geo, lat: "48.53" } };
+    // A's quiz sends a right answer to B.
+    const a = {
+      ...frame,
+      id: "a",
+      steps: [
+        {
+          id: "q",
+          block: {
+            kind: "quiz",
+            question: "Which way?",
+            points: 1,
+            answer: { type: "number", value: 1, tolerance: 0 },
+            route: { correct: "b" },
+          },
+          advance: { mode: "tap" },
+        },
+      ],
+    };
+    // C goes on to A.
+    const c = { ...frame, id: "c", next: "a" };
+    const parsed = parseSettingsRecord(
+      JSON.stringify({ needsNoGps: false, createdStations: [frame, a, b, c] }),
+    );
+    expect(parsed).toEqual({ needsNoGps: false, createdStations: [frame] });
+    const kept = new Set(parsed?.createdStations?.map((f) => f.id));
+    for (const f of parsed?.createdStations ?? []) {
+      for (const target of routedTo(f)) expect(kept.has(target)).toBe(true);
+    }
+  });
+
+  it("a record whose created frames do not read keeps the rest", () => {
+    const started = writesFor(
+      opened,
+      act.placed({ object: far, what: "p", newStationId: "made" }),
+    );
+    const record = settingsRecord(started.after);
+    const broken = {
+      ...record,
+      createdStations: [{ ...record.createdStations![0]!, foundRadiusM: -1 }],
+    };
+    expect(parseSettingsRecord(JSON.stringify(broken))).toEqual({
+      needsNoGps: false,
+    });
+    expect(
+      parseSettingsRecord(
+        JSON.stringify({ ...record, createdStations: "not a list" }),
+      ),
+    ).toEqual({ needsNoGps: false });
+  });
+});
+
+describe("followDocument, the codes record (plan M3b)", () => {
+  // Why these tests matter: the draft's codes moved out of the phone's meta
+  // into a record the document's listener writes. It must follow every
+  // change of the codes the draft keeps - the code in hand and the codes
+  // the hosted zip does not hold - and only those, and a page that keeps
+  // no codes record (the desktop's) must get no codes write.
+  const a1 = { id: "a", json: "a-1" };
+  const a2 = { id: "a", json: "a-2" };
+  const codesOpened = reduce(
+    opened,
+    act.codeTaken({ level: a1, measurement: null }),
+  );
+
+  function codeWrites(
+    steps: readonly {
+      action: Parameters<typeof reduce>[1];
+      hand: { id: string; json: string } | null;
+    }[],
+    withCodes = true,
+  ): string[] {
+    const { draft, calls } = recordingDraft();
+    const tracked: TourDocumentDraft = withCodes
+      ? {
+          ...draft,
+          saveCodes: (codes) => {
+            calls.push(`saveCodes ${JSON.stringify(codes)}`);
+            return Promise.resolve(true);
+          },
+        }
+      : draft;
+    let state = codesOpened;
+    let hand: { id: string; json: string } | null = a1;
+    for (const step of steps) {
+      const next = reduce(state, step.action);
+      followDocument(tracked, state, next, () => undefined, {
+        before: hand,
+        after: step.hand,
+      });
+      state = next;
+      hand = step.hand;
+    }
+    return calls.filter((c) => c.startsWith("saveCodes"));
+  }
+
+  it("writes the record when a code's text or the hand changes, and nothing for the same codes", () => {
+    expect(
+      codeWrites([
+        { action: act.codeSaved({ level: a2, hand: a2 }), hand: a2 },
+        { action: act.codeSaved({ level: a2, hand: a2 }), hand: a2 },
+        { action: act.handReleased({ levelIds: ["a"] }), hand: null },
+      ]),
+    ).toEqual([
+      `saveCodes ${JSON.stringify({ level: a2, levels: [a2] })}`,
+      `saveCodes ${JSON.stringify({ level: null, levels: [a2] })}`,
+    ]);
+  });
+
+  it("writes no codes for a draft that keeps none", () => {
+    expect(
+      codeWrites(
+        [{ action: act.codeSaved({ level: a2, hand: a2 }), hand: a2 }],
+        false,
+      ),
+    ).toEqual([]);
   });
 });

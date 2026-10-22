@@ -22,7 +22,7 @@ one whose size cannot be read, is not shown.
 - One cap for every decode path of a tour image: the story panel's picture
   (`scene-view.ts` via `visitor-stations.ts`) and the archive gallery
   (`archive-open.ts`) ask here; a figure (`station-prefetch.ts`
-  `decodeFigure`), the photo planes and the ring (`decodeFrameTexture`'s
+  `decodeFigure`), the photo planes (`decodeFrameTexture`'s
   `maxPixels`) and a model's textures (`checkGlbInert`) hold the same cap
   on their own paths.
 

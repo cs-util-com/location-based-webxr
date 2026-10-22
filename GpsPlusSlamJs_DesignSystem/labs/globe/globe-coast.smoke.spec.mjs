@@ -16,7 +16,12 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { luminance, meanOf, routeCityData } from "./globe-smoke-helpers.mjs";
+import {
+  luminance,
+  meanOf,
+  plainGlobe,
+  routeCityData,
+} from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 
@@ -50,10 +55,10 @@ async function holdOverCoast(page, context, altKm, straightDown = true) {
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
-  const hash = `at=${COAST.latitude},${COAST.longitude}&spinMs=0&turnMs=0&${NOON}&cloudDrift=0&cloudOpacity=0&stars=0&atmo=0&diveMs=1000&handOver=0&handOverKm=${altKm}${straightDown ? "&pitchLow=90" : ""}`;
+  const hash = `at=${COAST.latitude},${COAST.longitude}&spinMs=0&turnMs=0&${NOON}&cloudDrift=0&cloudOpacity=0&stars=0&atmo=0&diveMs=1000&landKm=${altKm}${straightDown ? "&pitchLow=90" : ""}`;
   // The pin press starts the arrival prefetch: its city data is answered here.
   await routeCityData(page);
-  await page.goto(`/labs/globe/#${hash}`);
+  await page.goto(`/labs/globe/#${plainGlobe(hash)}`);
   await page.waitForFunction(() => window.__globeLab?.ready, null, {
     timeout: 60_000,
   });
@@ -89,7 +94,9 @@ async function holdOverCoast(page, context, altKm, straightDown = true) {
       return performance.now() - w.__coastSince >= 1000;
     },
     null,
-    { timeout: 90_000, polling: 100 },
+    // Frame-bound (the helpers' RELIEF_SETTLE_MS says why): the 50 km view
+    // timed out at 90 s on r802-era runs and with the B-spline.
+    { timeout: 240_000, polling: 100 },
   );
   return { errors, hash };
 }
@@ -163,9 +170,9 @@ for (const altKm of [150, 50]) {
     page,
     context,
   }) => {
-    // Well under a 5 min runaway bound: a view settles in 30-50 s under
-    // SwiftShader; the waits above cap it.
-    test.setTimeout(120_000);
+    // A view settles in 30-50 s under SwiftShader, more at 50 km and on a
+    // slower day (the settle wait above caps it).
+    test.setTimeout(360_000);
     const { errors, hash } = await holdOverCoast(page, context, altKm);
     const state = await page.evaluate(() => window.__globeLab.state());
     const { height } = await page.evaluate(() => ({
