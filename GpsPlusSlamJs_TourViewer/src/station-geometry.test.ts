@@ -105,22 +105,37 @@ describe("heights (the file holds ellipsoidal altitudes)", () => {
     ).toBeCloseTo(575, 9);
   });
 
-  it("keeps the height above the ground over random ground heights (property)", () => {
-    // Ground from a sea-level coast to an alpine pass, items up to 50 m
-    // above or 5 m below it (a basement); the height above the ground is
-    // what a creator set, so it must survive any change of the ground.
+  it("an item dragged step by step over modelled terrain keeps its height above it, and comes back to its altitude (property)", () => {
+    // Not the formula restated: a terrain of its own (a coast-to-pass
+    // slope with hills on it, from below sea level to about 2800 m) and a drag
+    // of up to 30 moves, each asking only the ground under the item before
+    // and after it, as the editor will. The height a creator set must
+    // hold at every step, and dragging back to the start must give the
+    // altitude it started at - neither holds for a rule that drifts or
+    // loses the height on one step.
+    const ground = (x: number): number =>
+      -50 + x * 0.3 + 120 * Math.sin(x / 70) + 15 * Math.cos(x / 9);
     fc.assert(
       fc.property(
-        fc.double({ min: -50, max: 3000, noNaN: true }),
-        fc.double({ min: -50, max: 3000, noNaN: true }),
+        fc.double({ min: 0, max: 9000, noNaN: true }),
+        fc.array(fc.double({ min: 0, max: 9000, noNaN: true }), {
+          minLength: 1,
+          maxLength: 30,
+        }),
         fc.double({ min: -5, max: 50, noNaN: true }),
-        (groundBefore, groundAfter, above) => {
-          const alt = altKeepingHeight({
-            alt: groundBefore + above,
-            groundBefore,
-            groundAfter,
-          });
-          expect(Math.abs(alt - groundAfter - above)).toBeLessThan(1e-6);
+        (start, path, above) => {
+          let x = start;
+          let alt = ground(start) + above;
+          for (const next of [...path, start]) {
+            alt = altKeepingHeight({
+              alt,
+              groundBefore: ground(x),
+              groundAfter: ground(next),
+            });
+            x = next;
+            expect(Math.abs(alt - ground(x) - above)).toBeLessThan(1e-6);
+          }
+          expect(Math.abs(alt - (ground(start) + above))).toBeLessThan(1e-6);
         },
       ),
     );

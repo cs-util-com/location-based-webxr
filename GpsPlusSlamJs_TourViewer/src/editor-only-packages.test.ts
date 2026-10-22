@@ -1,8 +1,8 @@
 /**
  * The 3D editor's heavy packages stay on the editor's pages.
  *
- * Why this test matters: the globe, the 3D tiles renderer and the geoid
- * table are megabytes a visitor scanning a printed code on a phone must
+ * Why this test matters: the globe, the 3D tiles renderer and the OSM
+ * package (its geoid table among it) are megabytes a visitor scanning a printed code on a phone must
  * never download. One import of them from a module the visitor's or the
  * phone creator's page reaches would put them on that page silently, and
  * every other test would still pass. The dependency rules
@@ -21,7 +21,7 @@ const SRC = dirname(fileURLToPath(import.meta.url));
 
 /** The packages only the editor's pages may import, by specifier. */
 const EDITOR_ONLY =
-  /^(gps-plus-slam-globe|3d-tiles-renderer|gps-plus-slam-osm\/elevation\/egm96)(\/|$)/;
+  /^(gps-plus-slam-globe|3d-tiles-renderer|gps-plus-slam-osm)(\/|$)/;
 
 /** The folders whose modules may import them. */
 const EDITOR_DIRS = ["editor", "editor3d"];
@@ -85,7 +85,11 @@ describe("the editor's heavy packages", () => {
         ].join("\n"),
       ).filter((spec) => EDITOR_ONLY.test(spec)),
     ).toHaveLength(5);
-    expect(EDITOR_ONLY.test("gps-plus-slam-osm/tiles")).toBe(false);
+    // The whole OSM package, not only its geoid table: no part of it is
+    // a visitor's yet, and a part is carved out only with a reason.
+    expect(EDITOR_ONLY.test("gps-plus-slam-osm")).toBe(true);
+    expect(EDITOR_ONLY.test("gps-plus-slam-osm/tiles")).toBe(true);
+    expect(EDITOR_ONLY.test("gps-plus-slam-osmosis")).toBe(false);
     expect(EDITOR_ONLY.test("gps-plus-slam-globetrotter")).toBe(false);
   });
 });
