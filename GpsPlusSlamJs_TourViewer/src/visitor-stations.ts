@@ -246,7 +246,7 @@ export function wireVisitorStations(deps: {
     /** The radar and the precision chip (W4 build plan M3); absent: none.
      *  Its canvas is an element: its size is observed. */
     radar?: WalkRadarDom & { readonly canvas: Element };
-    /** The focus's edge pill (W4 build plan M5); absent: none. */
+    /** The focus's edge pill; absent: none. */
     edgePill?: WalkEdgePillDom;
   };
 }): VisitorStations {

@@ -11,6 +11,14 @@ it comes back as a code's. Without the hold a
 fix flickering around the 25 m ceiling would flip "nearest: <title>",
 the trail and the HUD's focus with every reading.
 
+So the hold applies to a GPS distance only. When a code holds the
+position and its camera pose drops for a moment, the guess goes for the
+drop and comes back on the tick the code's distance returns, with no
+hold. Before 2026-10-22 a code's return waited out the full hold like a
+fix's; the second sweep below is why that changed. The rules property
+(`station-guide.rules.property.test.ts`) draws a code's return among its
+precisions and mirrors the skip in its own clock.
+
 ## Public API
 
 - `WALK_NO_GUESS_HOLD_MS = 3_000` - the shipped hold.
@@ -76,7 +84,7 @@ only withheld the guess for a hold after each. The second sweep in
 grace (a distance gone for less than G still counts as shown: 0, 0.5, 1,
 2 s) with a code's return skipping the hold or keeping it, measuring the
 focus changes a minute, the share without a guess, and the share of time
-a station is named while no distance is shown (against R-2's rule):
+a station is named while no distance is shown (against the rule above):
 
 - code pose drops:
   - grace 0, code holds (before): 3.60 / 10.7 % / 0 %

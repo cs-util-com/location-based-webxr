@@ -687,7 +687,7 @@ describe("the walk's rules in the sheet", () => {
     });
   });
 
-  // Why (§1.1): while tracking is lost the guide cannot tell where the
+  // Why: while tracking is lost the guide cannot tell where the
   // visitor is, so a row offers no Skip and no confirm (an armed row
   // asks again once tracking is back); what undoes a skip - the undo and
   // Bring back - stays, since taking a skip back needs no position.

@@ -293,7 +293,7 @@ export interface GuideView {
   /** What just happened ("Skipped The well."), while its moment lasts
    *  (`selectNote`); null otherwise. W4 says it in a toast. */
   readonly note: string | null;
-  /** Tracking is lost (the store's `trackingLost`, §1.1): no skip is
+  /** Tracking is lost (the store's `trackingLost`): no skip is
    *  offered - the quick action shows only an undo, the rows no Skip and
    *  no confirm - while the undo and Bring back stay. */
   readonly trackingLost: boolean;
@@ -1094,7 +1094,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const kind = positionKind(last, d);
     const chosen = walk().chosenId === focus;
     // "nearest" is a distance's ranking: without one the focus is named
-    // as the one left (R-2 covers two or more left to find).
+    // as the one left (with two or more to find no station is guessed).
     const waiting =
       which === null || (!chosen && kind !== "distance")
         ? `Next: ${title}`
@@ -1289,7 +1289,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (run === null) return null;
     const skip = selectUndoableSkip({ visitorWalk: walk() }, deps.now());
     if (skip !== null) return { kind: "undo", id: skip.id };
-    // Tracking lost: no skip is offered (§1.1), only its undo.
+    // Tracking lost: no skip is offered, only its undo.
     if (trackingLost()) return null;
     const focus = focusStation();
     if (focus === null) {
@@ -1489,7 +1489,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function skipTapped(action: SkipAction | null): void {
     const run = liveRun();
     if (run === null || action === null) return;
-    // A tap that arrives while tracking is lost skips nothing (§1.1).
+    // A tap that arrives while tracking is lost skips nothing.
     if (
       (action.kind === "ask-skip" || action.kind === "skip") &&
       trackingLost()
@@ -1530,7 +1530,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function rowTapped(id: string, tap: WalkRowTap): void {
     const run = liveRun();
     if (run === null) return;
-    // While tracking is lost a row offers no Skip and no confirm (§1.1);
+    // While tracking is lost a row offers no Skip and no confirm;
     // a tap that still arrives changes nothing.
     if ((tap === "skip" || tap === "confirm") && trackingLost()) return;
     const w = walk();

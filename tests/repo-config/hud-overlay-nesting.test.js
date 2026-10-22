@@ -96,7 +96,7 @@ const APP_OVERLAY_CONTRACTS = [
       'walk-radar-wrap',
       'walk-radar',
       'walk-precision',
-      // The focus's edge pill (W4 build plan M5).
+      // The focus's edge pill.
       'walk-edge-pill',
     ],
   },

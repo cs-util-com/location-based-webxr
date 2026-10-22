@@ -65,7 +65,7 @@ async function openTheWalk(page, archive = WALK_ARCHIVE) {
 /** Start AR at the code: aligned, standing at the zero, the code locked,
  *  the tracking reported (the fakes deliver no poses, so without one the
  *  walk reads tracking lost and offers no skip); then, unless `guess` is
- *  false, wait for R-2's hold (M4) so the peek names a station. */
+ *  false, wait out the hold after a missing distance so the peek names a station. */
 async function enterAtTheCode(page, { guess = true } = {}) {
   await page.getByTestId("enter-ar").click();
   await seedAlignment(page);

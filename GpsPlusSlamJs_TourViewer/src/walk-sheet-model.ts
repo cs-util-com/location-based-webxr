@@ -268,7 +268,7 @@ function rowActions(
       undoLeftMs: null,
     };
   }
-  // Tracking lost: no Skip and no confirm (§1.1); an armed row asks
+  // Tracking lost: no Skip and no confirm; an armed row asks
   // again once tracking is back.
   if ((state !== "next" && state !== "left") || view.trackingLost) {
     return { action: null, confirm: null, undoLeftMs: null };
@@ -401,7 +401,7 @@ function peekOf(
   }
   const chosen = view.chosenId === focus.id;
   // "nearest" is a distance's ranking: without one the focus is the one
-  // left to find (R-2 covers two or more), named "Next".
+  // left to find (with two or more none is guessed), named "Next".
   const several =
     offered.length > 1 && (chosen || view.position === "distance");
   const number = input.stations.findIndex((s) => s.id === focus.id) + 1;

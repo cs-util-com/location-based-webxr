@@ -195,7 +195,7 @@ hooks.tickStations = stations.tick;
   `visitor-stations.test.ts`; the composition
   in `playwright-tests/visitor-walk.spec.js`.
 
-## The scene cues (visitor walk W4 build plan M5)
+## The walk's scene cues
 
 - The guide's HUD is two HUDs (`walk-hud.ts` `startWalkHuds`): its
   `startHud(getTargets, focusId)` starts the focus's look and the

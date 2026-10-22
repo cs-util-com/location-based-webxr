@@ -430,7 +430,7 @@ describe("the focus in the scene", () => {
 });
 
 describe("while tracking is lost", () => {
-  // Why (§1.1): with tracking lost the guide cannot tell where the visitor
+  // Why: with tracking lost the guide cannot tell where the visitor
   // is; a skip then would be made blind, so the quick action and a row's
   // Skip and confirm are not offered and a tap that still arrives changes
   // nothing. What takes a skip back stays: the undo and Bring back.

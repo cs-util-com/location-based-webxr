@@ -459,7 +459,7 @@ test("?debug=1 reads the radar's draw time and the frame time", async ({
 test("the edge pill names the focus off screen on its side, says when it is behind, and goes in view or with the list open", async ({
   page,
 }) => {
-  // Why this test matters (§1.7, the prototype's "on the way" and "behind
+  // Why this test matters (the prototype's "on the way" and "behind
   // you"): the station the walk is about can leave the screen when the
   // visitor turns; the pill at that edge names it and its distance, and
   // says "behind you" once it is. It goes when the station is back in
@@ -501,7 +501,7 @@ test("the edge pill names the focus off screen on its side, says when it is behi
 test("the focus is marked in the scene: its own HUD, a beacon and a ring that follow it", async ({
   page,
 }) => {
-  // Why this test matters (§1.7): the walk's focus is drawn apart from
+  // Why this test matters: the walk's focus is drawn apart from
   // the other stations - its HUD marker in the focus's look, a beacon
   // over it and a ring on the ground where it is found. A cue left on a
   // station the walk is no longer about is a wrong instruction, so the

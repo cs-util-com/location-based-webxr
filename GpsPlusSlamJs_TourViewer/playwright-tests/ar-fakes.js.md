@@ -89,8 +89,8 @@ camera, so `installTourViewerArFakes(page)` installs
   gate's escape clock (the `schedule` seam), so a spec fires it
   without waiting. The stations (tour kit plan K4): `createWayfindingHud`
   keeps every start in `huds` (`{ getTargets, look, disposed }`) and
-  counts `hudStarts`; the walk starts two (visitor walk W4 build plan
-  M5, the focus's look first), kept as `hudPair`, and `hud` reads the
+  counts `hudStarts`; the walk starts two (the focus's look
+  first), kept as `hudPair`, and `hud` reads the
   pair as the one HUD a spec asserts on (`getTargets` the pair's targets
   together, the focus's first; `disposed` once both are); `createAudioElement` returns a fake element
   that records every source it is asked to play in `audioPlays` and counts

@@ -2,10 +2,8 @@
 
 ## Purpose
 
-The focus's edge pill (visitor walk W4 build plan
-`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
-M5, §1.7; the radar-and-list prototype's "on the way" and "behind you"
-states): while the station the walk is about lies off screen, a small
+The focus's edge pill (the radar-and-list prototype's "on the way" and
+"behind you" states): while the station the walk is about lies off screen, a small
 pill at the screen's edge on its side names it and its distance - "The
 well - 34 m", plus ", behind you" once it is behind the visitor. Only the
 focus gets one; the HUD's edge arrows still mark the nearest stations.

@@ -2,9 +2,8 @@
 
 ## Purpose
 
-The walk's focus in the scene (visitor walk W4 build plan
-`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
-M5, §1.7; the radar-and-list prototype's scene cues): a thin orange
+The walk's focus in the scene (the radar-and-list prototype's scene
+cues): a thin orange
 beacon standing over the station the walk is about, so it can be told
 from afar between roofs and trees, and a ring on the ground at its found
 radius, so the visitor sees where it will be found. Both follow the focus
