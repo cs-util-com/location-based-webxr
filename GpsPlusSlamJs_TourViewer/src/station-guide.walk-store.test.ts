@@ -20,7 +20,10 @@ import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
 import { wireStationGuide, type StationGuideDeps } from "./station-guide";
 import { walkOffered, walkStatus } from "./station-run";
-import { createTourViewerStore } from "./tour-viewer-session";
+import {
+  createTourViewerStore,
+  type TourViewerStore,
+} from "./tour-viewer-session";
 import type { VisitorPosition } from "./visitor-position";
 import { quickArmed, walkCleared } from "./visitor-walk-slice";
 
@@ -253,7 +256,7 @@ describe("the station guide on the page's store (W4 M1)", () => {
   // mid-call is in it at once, and what one call shows is what the store
   // holds after it, never a copy taken before that change.
   it("reads a change another writer makes mid-call at once: the call shows what the store holds after it", () => {
-    const other: { store?: ReturnType<typeof createTourViewerStore> } = {};
+    const other: { store?: TourViewerStore } = {};
     const page = onThePage([station("a", 0, 0), station("b", 30, 0)], "any", {
       // Another writer asks the skip for b when a is found.
       onFound: (id) => {
@@ -295,7 +298,7 @@ describe("the station guide on the page's store (W4 M1)", () => {
   // must read as no run, never as a tour the visitor finished.
   it("writes no false 'Tour complete' when another writer resets the walk mid-call", () => {
     const other: {
-      store?: ReturnType<typeof createTourViewerStore>;
+      store?: TourViewerStore;
       reset: boolean;
     } = { reset: false };
     const page = onThePage([station("a", 0, 0), station("b", 30, 0)], "any", {
