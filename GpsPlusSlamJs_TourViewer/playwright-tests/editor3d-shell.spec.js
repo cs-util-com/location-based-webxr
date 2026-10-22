@@ -1,7 +1,13 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
-import { answerHosts, openSample, view3d } from "./editor3d-fixture.js";
+import {
+  answerHosts,
+  keepRejections,
+  openSample,
+  rejections,
+  view3d,
+} from "./editor3d-fixture.js";
 
 /**
  * Why these tests matter: the 3D view's studio shell is a layout over the
@@ -270,6 +276,10 @@ test("the top bar's Top view and the zoom buttons drive the camera", async ({
 }) => {
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
+  // Top view and the zoom steps bring the map's tiles in: each one the
+  // hosts answer must decode (a fixture tile that did not left the
+  // browser rejecting every one, unseen).
+  await keepRejections(page);
   await open3d(page);
   const settled = async () => {
     await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
@@ -299,4 +309,6 @@ test("the top bar's Top view and the zoom buttons drive the camera", async ({
   await expect(page.locator("#shell-calls")).toBeHidden();
   await page.locator("#shell-debug").click();
   await expect(page.locator("#shell-calls")).toContainText("draw calls");
+  expect((await view3d(page)).osm.requests).toBeGreaterThan(0);
+  expect(await rejections(page)).toEqual([]);
 });

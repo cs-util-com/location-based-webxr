@@ -1,13 +1,15 @@
 // @ts-check
 import { expect } from "@playwright/test";
 
-import { terrariumPng } from "../../scripts/e2e/terrarium-png.mjs";
+import {
+  encodeRgbPng,
+  terrariumPng,
+} from "../../scripts/e2e/terrarium-png.mjs";
 
-/** 1x1 grey PNG: a map tile the page can decode. */
-const MAP_TILE = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mN4+vQpAAWwAteyYcjKAAAAAElFTkSuQmCC",
-  "base64",
-);
+/** A 1x1 grey PNG: a map tile the page can decode. Encoded here, not
+ *  pasted: a hand-copied one carried a broken checksum, so the browser
+ *  refused every map tile the tests answered. */
+const MAP_TILE = encodeRgbPng(1, 1, [128, 128, 128]);
 
 /** The sample square's ground over sea level (m): Mapterhorn there, to
  *  within a metre. A flat relief at it puts the sample's stations on the
@@ -41,6 +43,32 @@ export async function answerHosts(page) {
     return route.abort();
   });
   return imagery;
+}
+
+/**
+ * Keep every promise the page leaves rejected, from before its first
+ * script runs. The map's and the relief's tiles are decoded inside the
+ * tiles library, off the page's own code: a tile that cannot be decoded
+ * shows nowhere but here. Read the list with `rejections(page)`.
+ * @param {import("@playwright/test").Page} page
+ */
+export async function keepRejections(page) {
+  await page.addInitScript(() => {
+    const seen = /** @type {string[]} */ ([]);
+    /** @type {any} */ (window).__rejections = seen;
+    addEventListener("unhandledrejection", (event) => {
+      seen.push(String(event.reason?.message ?? event.reason));
+    });
+  });
+}
+
+/**
+ * The rejections `keepRejections` kept so far.
+ * @param {import("@playwright/test").Page} page
+ * @returns {Promise<string[]>}
+ */
+export function rejections(page) {
+  return page.evaluate(() => /** @type {any} */ (window).__rejections ?? []);
 }
 
 /**
