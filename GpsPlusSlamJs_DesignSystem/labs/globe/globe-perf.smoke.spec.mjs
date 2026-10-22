@@ -24,8 +24,21 @@ import { expect, test } from "@playwright/test";
 
 import { bootGlobe } from "./globe-smoke-helpers.mjs";
 
+// `reliefNear=3`: the recorder times the relief's height steps (E changes),
+// and at the default E 1 (true heights, city plan 2026-10-05-0040 §11 D-K1)
+// there are none to time.
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&reliefHeights=synthetic";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&reliefHeights=synthetic&reliefNear=3";
+/**
+ * The recorder's paths cross the band in seconds; with round 6's gate and
+ * sharp takeover (bandGate, bandSharp, plan 2026-10-04-1050 G6-1) the
+ * relief waits for a refined view, which SwiftShader does not reach inside
+ * such a path, so the band never moved and the recorder had no edge or
+ * relief raycast to count (red since round 6, found by the full run of
+ * 2026-10-05). These smokes test the recorder, so they pin the band's old
+ * hand-over; the gate and the takeover are globe-handover.smoke's.
+ */
+const OLD_BAND = "bandGate=0&bandSharp=0";
 
 /** Boots with the recorder and waits for its API. */
 async function bootPerf(page, hash) {
@@ -83,7 +96,7 @@ test("a frame-stepped path through the band records each event where it must occ
   test.setTimeout(900_000);
   const errors = await bootPerf(
     page,
-    `${BASE}&relief=1&perf=1&perfStep=1&perfSteps=8&perfSettleS=20&perfPlace=alps`,
+    `${BASE}&${OLD_BAND}&relief=1&perf=1&perfStep=1&perfSteps=8&perfSettleS=20&perfPlace=alps`,
   );
   const out = await runToEnd(page, 840_000);
   expect(errors).toEqual([]);
@@ -326,7 +339,7 @@ test("a zoom driven through the controls flies the path and counts their raycast
   test.setTimeout(600_000);
   const errors = await bootPerf(
     page,
-    `${BASE}&relief=1&perf=1&perfDrive=controls&perfSpeed=1&perfPlace=alps`,
+    `${BASE}&${OLD_BAND}&relief=1&perf=1&perfDrive=controls&perfSpeed=1&perfPlace=alps`,
   );
   const out = await runToEnd(page, 540_000);
   expect(errors).toEqual([]);

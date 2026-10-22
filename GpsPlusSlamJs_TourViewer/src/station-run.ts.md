@@ -18,18 +18,19 @@ by the radius alone).
   - `status(id)` / `statuses()` - `{ id, state, skipped, focusedAtMs,
 focusDistanceM }`.
   - `isComplete()`.
-  - `observe({ distances, nowMs, accuracyM? }): StationEvent[]` -
+  - `observe({ distances, nowMs, precision? }): StationEvent[]` -
     horizontal distances from the phone's best position to the stations
     the caller can place (D16). A non-finite distance is not judged; the
-    caller passes none without a position. `accuracyM` is that position's
-    accuracy: above `ACCURACY_CEILING_M` (`tooWeakToGuide`,
-    `station-bands.ts`) nothing is judged, so the latch agrees with the
-    guide's "GPS too weak to guide you" (PR #640 review); absent or null
-    is judged by the radius alone. The guide passes the raw fixes'
-    accuracy for every position but one a code lined up, and null for that
-    one (`station-bands.ts` `judgedAccuracy`; M5c review #1): being
-    aligned alone earns no trust, since the library aligns a session from
-    its first fix.
+    caller passes none without a position. `precision` is that position's
+    (`PositionPrecision` of the framework's one rule,
+    `gps-plus-slam-app-framework/state/position-precision`): when it is
+    `tooWeak` - GPS above the ceiling, or `'none'` - nothing is judged, so
+    the latch agrees with the guide's "GPS too weak to guide you" (PR #640
+    review) and with its request for a code; absent, the distances are
+    judged by the radius alone (callers that judge no precision). A code's
+    position (`'code'`) is never too weak, whatever the raw fixes say (M5c
+    review #1): being aligned alone earns no trust, since the library
+    aligns a session from its first fix.
   - `finish(id, nowMs)` - the scene ended (found stations only).
   - `skip(id, nowMs)` - any offered station not done.
   - `skipSuggested(id, nowMs)` - an offered, unfound station whose clock ran

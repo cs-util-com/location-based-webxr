@@ -33,6 +33,7 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import {
+  CODES_KEY,
   deletedKey,
   META_KEY,
   objectKey,
@@ -134,6 +135,10 @@ const DOM_KEYS = [
   "objectList",
   "keepScanRow",
   "keepScanInput",
+  "debugSave",
+  "debugSaveText",
+  "debugSaveButton",
+  "debugSaveStatus",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {
@@ -163,22 +168,30 @@ function memoryStore(
   files: Map<string, unknown>;
   putKeys: string[];
   metaPuts: string[];
+  /** Every codes record written (`CODES_KEY`), in order. */
+  codesPuts: string[];
   releaseHeldPut: () => void;
   releaseHeldKeys: () => void;
 } {
   const files = new Map<string, unknown>(Object.entries(seed));
   const putKeys: string[] = [];
   const metaPuts: string[] = [];
+  const codesPuts: string[] = [];
   let held: (() => void) | null = null;
   let released = false;
   const heldByKey: (() => void)[] = [];
   let refusedRemoves = 0;
   const refuses =
     options.failKeys ?? ((): boolean => options.putFails === true);
+  const recordPut = (key: string, data: unknown): void => {
+    putKeys.push(key);
+    if (typeof data !== "string") return;
+    if (key === META_KEY) metaPuts.push(data);
+    if (key === CODES_KEY) codesPuts.push(data);
+  };
   const store: DraftFileStore = {
     put: (key: string, data: unknown) => {
-      putKeys.push(key);
-      if (key === META_KEY && typeof data === "string") metaPuts.push(data);
+      recordPut(key, data);
       // A store that REFUSES, as the real one does on a quota wall or a
       // revoked directory handle: `put` reports false rather than throwing.
       if (refuses(key)) return Promise.resolve(false);
@@ -234,6 +247,7 @@ function memoryStore(
     files,
     putKeys,
     metaPuts,
+    codesPuts,
     releaseHeldPut: () => {
       released = true;
       held?.();
@@ -310,6 +324,9 @@ function wire(
     onCodesChanged?: () => void;
     /** A store per draft namespace (by its key); `store` otherwise. */
     storeFor?: (key: string) => DraftFileStore;
+    /** One store for the session and the AR side, as the page wires it
+     *  (`main.ts`): the codes' dispatches then reach the subscriptions. */
+    oneStore?: boolean;
   } = {},
 ) {
   let opens = 0;
@@ -320,15 +337,18 @@ function wire(
   worldGroup.rotation.y = ((options.worldGroupYawDeg ?? 0) * Math.PI) / 180;
   worldGroup.updateMatrixWorld();
   const dom = fakeDom();
-  const ctx = createTourViewerSession();
+  const pageStore =
+    options.oneStore === true ? createTourViewerStore() : undefined;
+  const ctx = createTourViewerSession(pageStore);
   // Everything a placement needs beyond the store: a measured level, a
   // live session, a reticle with a surface, and an aligned AR state.
   if (options.placeable === true) {
     ctx.reticle = fakeReticle() as never;
   }
-  const arStore = (
-    options.placeable === true ? alignedArStore() : createTourViewerStore()
-  ) as { dispatched?: unknown[] };
+  const arStore = (pageStore ??
+    (options.placeable === true
+      ? alignedArStore()
+      : createTourViewerStore())) as { dispatched?: unknown[] };
   const setup = wireCreatorSetup({
     ctx,
     mode: "creator",
@@ -369,7 +389,13 @@ function wire(
   if (options.placeable === true) {
     setup.codes.setInHand({ id: "lvl", json: "{}" }, null);
   }
-  return { dom, ctx, setup, dispatched: arStore.dispatched ?? [] };
+  return {
+    dom,
+    ctx,
+    setup,
+    pageStore,
+    dispatched: arStore.dispatched ?? [],
+  };
 }
 
 /**
@@ -1200,8 +1226,8 @@ describe("work made before the tour's draft opened reaches it", () => {
   it("records a level measured before the open, even beside an older draft", async () => {
     // The offer branch wrote no meta: an older draft waiting to be restored
     // left this session's measurement only in memory.
-    const { store, metaPuts } = memoryStore({
-      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+    const { store, codesPuts } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
       [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
     });
     const { dom, setup } = wire(store, { placeable: true });
@@ -1209,7 +1235,7 @@ describe("work made before the tour's draft opened reaches it", () => {
     setup.presentDraftForTour(TOUR);
     await settle();
     expect(dom.draftOffer.hidden, "the older draft is offered").toBe(false);
-    const last = JSON.parse(String(metaPuts.at(-1))) as {
+    const last = JSON.parse(String(codesPuts.at(-1))) as {
       level: { id: string } | null;
     };
     expect(last.level?.id).toBe("fresh");
@@ -1220,11 +1246,8 @@ describe("work made before the tour's draft opened reaches it", () => {
   // about a code the creator did not get back.
   it("Restore beside a code measured here does not claim the draft's position came back", async () => {
     const { store } = memoryStore({
-      [META_KEY]: JSON.stringify({
-        tourUrl: TOUR,
-        sizeM: 0.16,
-        level: { id: "old", json: "{}" },
-      }),
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: { id: "old", json: "{}" } }),
     });
     const { ctx, dom, setup } = wire(store);
     setup.codes.setInHand({ id: "fresh", json: "{}" }, null);
@@ -1418,6 +1441,12 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
   // no representation at all, so a crash brought the object back.
   const HOSTED = pin("hosted");
   const EDITED: TourObject = { ...pin("hosted"), label: "the new text" };
+  /** `object` as the document holds it: in the station it stands in
+   *  (every object names its station). */
+  const inItsStation = (object: TourObject): TourObject => ({
+    ...object,
+    station: stationIdOf("hosted"),
+  });
 
   it("offers an edit of a hosted object as a change, and restores it in place of the hosted one", async () => {
     const { store, files } = memoryStore({
@@ -1434,7 +1463,9 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     expect(dom.draftOfferText.textContent).toContain("1 change");
     expect(files.has(objectKey("hosted")), "and it is not swept").toBe(true);
     dom.draftRestore.click();
-    expect(ctx.tourDocument.entries().map((p) => p.object)).toEqual([EDITED]);
+    expect(ctx.tourDocument.entries().map((p) => p.object)).toEqual([
+      inItsStation(EDITED),
+    ]);
   });
 
   it("offers a deletion the hosted zip has not seen, and restores it as a tombstone", async () => {
@@ -1561,7 +1592,9 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
 
     dom.draftDiscard.click();
     await settle();
-    expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(LIVE);
+    expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(
+      inItsStation(LIVE),
+    );
     expect(rejectedOf(files.get(META_KEY) as string)).not.toContain("hosted");
   });
 
@@ -1593,7 +1626,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     await settle();
     expect(disk.files.has(deletedKey("hosted"))).toBe(false);
     expect(JSON.parse(String(disk.files.get(objectKey("hosted"))))).toEqual(
-      LIVE,
+      inItsStation(LIVE),
     );
 
     // The reload: the edit is offered as the change it is, never a delete.
@@ -1657,7 +1690,9 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
 
     expect(files.has(objectKey("hosted"))).toBe(true);
     // The live edit's content, not the spent draft's (M4 review #2).
-    expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(EDITED);
+    expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(
+      inItsStation(EDITED),
+    );
     const meta = JSON.parse(String(files.get(META_KEY))) as {
       rejected?: string[];
     };
@@ -1822,31 +1857,41 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   // write before the offer is answered wrote only this page's codes - so
   // the offered draft's measured code was gone from disk, and a reload
   // offered the objects without it (Finish refused until the creator
-  // walked back to the poster).
-  it("keeps the offered draft's code in a meta written before the offer is answered", async () => {
+  // walked back to the poster). The codes live in the draft's codes record
+  // now (plan M3b); the rule is the same: a write before the offer is
+  // answered keeps the offered draft's code on disk.
+  it("keeps the offered draft's code on disk through a write made before the offer is answered", async () => {
     const level = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
     const { store, files } = memoryStore({
       ...DISCARDED_ON_DISK,
-      [META_KEY]: JSON.stringify({
-        tourUrl: TOUR,
-        sizeM: 0.16,
-        level,
-        levels: [level],
-        rejected: ["hosted"],
-      }),
+      [CODES_KEY]: JSON.stringify({ level, levels: [level] }),
     });
     const second = await reopen(store);
     second.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
     await settle();
-    const meta = JSON.parse(String(files.get(META_KEY))) as {
+    const codes = JSON.parse(String(files.get(CODES_KEY))) as {
       level: unknown;
       levels: unknown;
     };
-    expect(meta.level).toEqual(level);
-    expect(meta.levels).toEqual([level]);
+    expect(codes.level).toEqual(level);
+    expect(codes.levels).toEqual([level]);
     const third = await reopen(store);
     third.dom.draftRestore.click();
     expect(third.setup.codes.inHand()).toEqual(level);
+    // The edit above writes the meta only, so it cannot tell whether a
+    // write made before the offer is answered keeps the offered code. A
+    // write of the CODES on that page does: a measurement there re-states
+    // the offered draft's code after its own. (The third page's restore
+    // writes the codes too; it lands first, so the file read below is the
+    // second page's.)
+    await settle();
+    const other = { id: "ccccccccccc3", json: '{"c":1}' };
+    second.setup.codes.setInHand(other, null);
+    await settle();
+    expect(JSON.parse(String(files.get(CODES_KEY)))).toEqual({
+      level: other,
+      levels: [other, level],
+    });
   });
 
   it("does not bring back a rejected file the sweep could not remove, when a crash follows the claim", async () => {
@@ -1956,12 +2001,8 @@ describe("the print step hears codes a draft restores (follow-up F16)", () => {
   it("tells the page when a restored draft brings codes back", async () => {
     const a = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
     const { store } = memoryStore({
-      [META_KEY]: JSON.stringify({
-        tourUrl: TOUR,
-        sizeM: 0.16,
-        level: a,
-        levels: [a],
-      }),
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: a, levels: [a] }),
     });
     let heard = 0;
     const { dom, setup } = wire(store, {
@@ -1983,17 +2024,13 @@ describe("a draft with several codes (code book plan M4c-1)", () => {
   // Why this test matters: a draft kept ONE level, the code in hand, so a
   // crash after measuring a second code lost the first one's measurement.
   // A restored draft's codes all go back into the code book, and the next
-  // meta write keeps them all.
-  it("restores every code a draft kept, and the next meta write keeps them", async () => {
+  // write of the draft's codes keeps them all.
+  it("restores every code a draft kept, and the next write of its codes keeps them", async () => {
     const a = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
     const b = { id: "bbbbbbbbbbb2", json: '{"b":1}' };
-    const { store, files } = memoryStore({
-      [META_KEY]: JSON.stringify({
-        tourUrl: TOUR,
-        sizeM: 0.16,
-        level: b,
-        levels: [a, b],
-      }),
+    const { store, codesPuts } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: b, levels: [a, b] }),
     });
     const { dom, setup } = wire(store);
     setup.presentDraftForTour(TOUR);
@@ -2002,16 +2039,255 @@ describe("a draft with several codes (code book plan M4c-1)", () => {
     dom.draftRestore.click();
     await settle();
     expect(setup.codes.inHand()).toEqual(b);
-    // The tour opened again: with a code in hand its meta is re-stated.
+    // The tour opened again: with a code in hand its codes are re-stated.
     setup.presentDraftForTour(TOUR);
     await settle();
-    const meta = JSON.parse(String(files.get(META_KEY))) as {
+    // The last write, not the file: the file was seeded with them.
+    const codes = JSON.parse(String(codesPuts.at(-1))) as {
       level: unknown;
       levels: unknown;
     };
-    expect(meta.level).toEqual(b);
-    expect(meta.levels).toEqual([a, b]);
+    expect(codes.level).toEqual(b);
+    expect(codes.levels).toEqual([a, b]);
   });
+});
+
+describe("the waiting draft's codes and the spent rule (characterization, codes-in-store plan M3a)", () => {
+  // Why these tests matter: plan 2026-10-20-1159 M3a moves the codes into
+  // the store and names this state as the draft's, not the code book's:
+  // the stored draft's codes while nobody answered its offer (the open's
+  // holder in creator-draft.ts) and the spent rule's reads of the hosted
+  // codes. Pinned against the code before the move, and kept through it:
+  // M3b moved the codes from the meta into the draft's codes record
+  // (`CODES_KEY`), so only where they are seeded and read changed. A
+  // wrong turn in either loses a measured poster from disk, or keeps a
+  // spent draft offered forever.
+  const HOSTED = pin("hosted");
+  const PUBLISHED = tourOf([HOSTED]);
+  const a = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
+  const b = { id: "bbbbbbbbbbb2", json: '{"b":1}' };
+  const lastMeta = (metaPuts: readonly string[]) =>
+    JSON.parse(String(metaPuts.at(-1))) as {
+      rejected: readonly string[];
+    };
+  const lastCodes = (codesPuts: readonly string[]) =>
+    JSON.parse(String(codesPuts.at(-1))) as {
+      level: unknown;
+      levels: unknown;
+    };
+
+  // Why: every write of the codes re-states the waiting draft's codes
+  // AFTER this page's, and a code this page holds under the same id is
+  // newer and wins. "Delete it" rejects them with the draft: the meta it
+  // commits rejects the draft's ids, and the codes written after it name
+  // this page's codes only, so the rejected measurement is not offered
+  // again.
+  it("re-states the waiting draft's codes after this page's, the page's winning, until Delete it rejects them", async () => {
+    const { store, metaPuts, codesPuts } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: a, levels: [a, b] }),
+      [objectKey("placed")]: JSON.stringify(pin("placed")),
+    });
+    const { dom, setup } = wire(store);
+    const liveA = { id: a.id, json: '{"a":"live"}' };
+    // Taken before the open: a write of the codes follows the read.
+    setup.codes.setInHand(liveA, null);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden, "the draft is offered").toBe(false);
+    const offered = lastCodes(codesPuts);
+    expect(offered.level, "the hand outranks the stored level").toEqual(liveA);
+    expect(offered.levels).toEqual([liveA, b]);
+
+    dom.draftDiscard.click();
+    await settle();
+    const discarded = lastCodes(codesPuts);
+    expect(discarded.level).toEqual(liveA);
+    expect(discarded.levels, "the rejected draft's code b is gone").toEqual([
+      liveA,
+    ]);
+    expect(lastMeta(metaPuts).rejected).toEqual(["placed"]);
+  });
+
+  // Why (plan M3b): with no code measured on this page, "Delete it"
+  // still writes the codes record - empty - over the rejected draft's, so
+  // the draft namespace keeps a codes file after the discard by design.
+  // What makes the old draft "gone" is that record's CONTENT, not its
+  // absence; the e2e "a draft is offered again after Not now, and gone
+  // after Delete it" asserts the same on real OPFS.
+  it("writes an empty codes record at Delete it when this page holds no code", async () => {
+    const { store, files, codesPuts } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: a, levels: [a, b] }),
+      [objectKey("placed")]: JSON.stringify(pin("placed")),
+    });
+    const { dom, setup } = wire(store);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden, "the draft is offered").toBe(false);
+
+    dom.draftDiscard.click();
+    await settle();
+    expect(lastCodes(codesPuts)).toEqual({ level: null, levels: [] });
+    expect(JSON.parse(String(files.get(CODES_KEY)))).toEqual({
+      level: null,
+      levels: [],
+    });
+  });
+
+  // Why (plan M3b): the codes of a rejected draft go only once its
+  // rejection LANDED - the meta is the commit point. A "Delete it" whose
+  // commit is refused leaves the draft on disk, offered again, so its
+  // codes stay on disk and a later write of the codes still re-states
+  // them; before, the refused discard had forgotten them, and the next
+  // write dropped the draft's measured code.
+  it("keeps the waiting draft's codes when Delete it does not land", async () => {
+    let refuseMeta = false;
+    const { store, files, codesPuts } = memoryStore(
+      {
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+        [CODES_KEY]: JSON.stringify({ level: a, levels: [a, b] }),
+        [objectKey("placed")]: JSON.stringify(pin("placed")),
+      },
+      { failKeys: (key) => refuseMeta && key === META_KEY },
+    );
+    const { dom, setup } = wire(store);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden, "the draft is offered").toBe(false);
+    refuseMeta = true;
+    dom.draftDiscard.click();
+    await settle();
+    expect(codesPuts, "nothing written over the draft's codes").toEqual([]);
+    expect(JSON.parse(String(files.get(CODES_KEY)))).toEqual({
+      level: a,
+      levels: [a, b],
+    });
+    const liveC = { id: "ccccccccccc3", json: '{"c":1}' };
+    setup.codes.setInHand(liveC, null);
+    await settle();
+    expect(lastCodes(codesPuts)).toEqual({
+      level: liveC,
+      levels: [liveC, a, b],
+    });
+  });
+
+  // Why: "Not now" is not "Delete it": the draft is offered again at the
+  // next open, so a write made meanwhile - here a claim of an id the disk
+  // rejects - must leave its measured code on disk.
+  it("keeps re-stating them after Not now", async () => {
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({
+        tourUrl: TOUR,
+        sizeM: 0.16,
+        rejected: ["hosted"],
+      }),
+      [CODES_KEY]: JSON.stringify({ level: a, levels: [a] }),
+      [objectKey("placed")]: JSON.stringify(pin("placed")),
+    });
+    const page = wire(store);
+    page.ctx.tourDocument.open(PUBLISHED);
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(page.dom.draftOffer.hidden, "the draft is offered").toBe(false);
+    page.dom.draftDismiss.click();
+    page.dom.objectList.listHandlers!.editText("hosted", "a new text");
+    await settle();
+    const meta = JSON.parse(String(files.get(META_KEY))) as {
+      rejected: readonly string[];
+    };
+    const codes = JSON.parse(String(files.get(CODES_KEY))) as {
+      level: unknown;
+      levels: unknown;
+    };
+    expect(codes.level).toEqual(a);
+    expect(codes.levels).toEqual([a]);
+    expect(meta.rejected, "the claim took the id back").not.toContain("hosted");
+    // The claim above writes the meta only, so it cannot tell whether
+    // "Not now" let go of the draft's codes. A write of the CODES does: it
+    // must still re-state the offered draft's code after this page's.
+    const other = { id: "ccccccccccc3", json: '{"c":1}' };
+    page.setup.codes.setInHand(other, null);
+    await settle();
+    expect(JSON.parse(String(files.get(CODES_KEY)))).toEqual({
+      level: other,
+      levels: [other, a],
+    });
+  });
+
+  /** The open tour's zip as `hostedLevelJson` reads it: `qr/<id>.json`
+   *  entries, each read by `read`. */
+  function hostedZip(
+    ids: readonly string[],
+    read: (filename: string) => Promise<string>,
+  ): never {
+    return {
+      entries: ids.map((id) => ({ filename: `qr/${id}.json` })),
+      loadEntryText: read,
+    } as never;
+  }
+
+  // Why: the spent rule reads, per draft code, what the HOSTED zip stores
+  // - its content, not the presence of the id (`hostedLevelJson`). A
+  // draft whose objects and code the zip holds as they are is spent: its
+  // ids are rejected at the commit point and none of its codes is
+  // re-stated, so the next open offers nothing.
+  it("treats a draft whose code the hosted zip holds as it is as spent, rejecting its ids and re-stating none of its codes", async () => {
+    const { store, files, metaPuts, codesPuts } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: a, levels: [a] }),
+      [objectKey("hosted")]: JSON.stringify(HOSTED),
+    });
+    const { ctx, dom, setup } = wire(store);
+    ctx.tourDocument.open(PUBLISHED);
+    ctx.session = hostedZip([a.id], () => Promise.resolve(a.json));
+    dom.draftOffer.hidden = true;
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden, "a spent draft is never offered").toBe(true);
+    expect(lastMeta(metaPuts).rejected).toEqual(["hosted"]);
+    const codes = lastCodes(codesPuts);
+    expect(codes.level).toBeNull();
+    expect(codes.levels).toEqual([]);
+    expect(files.has(objectKey("hosted"))).toBe(false);
+  });
+
+  // Why: anything short of the same content is not proof the code reached
+  // the file visitors get - a re-measure keeps its id (the id hashes the
+  // printed text), and an unreadable entry proves nothing (the safe
+  // direction is to KEEP the draft, `hostedLevelJson`). Each case offers
+  // the draft, with its code, and deletes nothing.
+  it.each([
+    [
+      "holds another text for it",
+      hostedZip([a.id], () => Promise.resolve('{"a":"older"}')),
+    ],
+    ["does not hold it", hostedZip([], () => Promise.resolve(a.json))],
+    [
+      "cannot read it",
+      hostedZip([a.id], () => Promise.reject(new Error("range read failed"))),
+    ],
+  ])(
+    "keeps and offers a draft when the hosted zip %s",
+    async (_case, session) => {
+      const { store, files, metaPuts } = memoryStore({
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+        [CODES_KEY]: JSON.stringify({ level: a, levels: [a] }),
+        [objectKey("hosted")]: JSON.stringify(HOSTED),
+      });
+      const { ctx, dom, setup } = wire(store);
+      ctx.tourDocument.open(PUBLISHED);
+      ctx.session = session;
+      dom.draftOffer.hidden = true;
+      setup.presentDraftForTour(TOUR);
+      await settle();
+      expect(dom.draftOffer.hidden, "the draft is offered").toBe(false);
+      expect(metaPuts, "no commit point: nothing is rejected").toEqual([]);
+      expect(files.has(objectKey("hosted"))).toBe(true);
+      dom.draftRestore.click();
+      expect(setup.codes.inHand()).toEqual(a);
+    },
+  );
 });
 
 describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", () => {
@@ -2425,6 +2701,51 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
 
     expect(storedPose(files), "the pose is still the draft's").toEqual(MOVED);
   });
+
+  it("keeps the stored draft's created stations through a live write before it is restored", async () => {
+    // Why: a placement beyond every station's radius starts a station the
+    // opened tour lacks, and the draft keeps it whole (`createdStations`)
+    // so a reload puts the pin back in THAT station. A live write before
+    // the offer is answered ("Not now", or working on) rewrote the record
+    // from the page's own document, which knows only ITS created
+    // stations - the stored ones were gone from disk, and the next
+    // reload's Restore seated the pins by the rule under new ids.
+    const far = (id: string, lat: number): TourObject => ({
+      ...pin(id),
+      geo: { ...pin(id).geo, lat },
+    });
+    const stationOf = (page: ReturnType<typeof wire>, id: string) =>
+      page.ctx.tourDocument.objects().find((o) => o.object.id === id)?.object
+        .station;
+    const createdIds = (files: Map<string, unknown>) =>
+      (
+        JSON.parse(String(files.get(SETTINGS_KEY))) as {
+          createdStations?: { id: string }[];
+        }
+      ).createdStations?.map((f) => f.id) ?? [];
+    const { store, files } = memoryStore(metaOnly());
+    const first = await opened(store);
+    first.ctx.tourDocument.place(far("far1", 47.51), {}, "a pin");
+    await settle();
+    const s1 = stationOf(first, "far1");
+    expect(s1, "the pin started a station").toBeDefined();
+    expect(createdIds(files)).toEqual([s1]);
+
+    // A reload: the offer stands unanswered while a new pin starts another
+    // station - a live write of the settings record.
+    const second = await opened(store);
+    expect(second.dom.draftOffer.hidden, "the pin is offered").toBe(false);
+    second.ctx.tourDocument.place(far("far3", 47.52), {}, "a pin");
+    await settle();
+    const s3 = stationOf(second, "far3");
+    expect([...createdIds(files)].sort()).toEqual([s1, s3].sort());
+
+    // Another reload, and Restore: the first pin is back in its station.
+    const third = await opened(store);
+    third.dom.draftRestore.click();
+    await settle();
+    expect(stationOf(third, "far1")).toBe(s1);
+  });
 });
 
 // Why (owner decision D8 of the editor round-2 plan, 2026-10-18): places
@@ -2562,5 +2883,91 @@ describe("'New station here' (D8)", () => {
     dom.newStationButton.click();
     setup.endAuthorVisit();
     expect(ctx.tourDocument.newStationArmed()).toBe(false);
+  });
+});
+
+// (Tests that the status line said the bake at open - that it ran, and a
+// decline - stood here: the open bakes no walk any more, so the line has
+// nothing to say about it.)
+
+describe("the readout and a dispatch that changed only the creator's code state (r902 review #1)", () => {
+  // Why these tests matter: on the phone a held code's sightings reach the
+  // store about once per stable QR frame - the code in hand's and every
+  // stored code's - and each dispatch ran this readout in full (the size
+  // offer, the buttons, the object list, the refusal judge). Of that state
+  // the readout reads only the hand, its measurement and WHICH code the
+  // visit has seen (the entry hint), so a dispatch that changed nothing
+  // else of the store and none of those must not run it. The status line
+  // is the probe: every render writes it.
+  const UNTOUCHED = "(not rendered)";
+  const sighting = (levelId: string, x: number) => ({
+    text: `code ${levelId}`,
+    levelId,
+    odomPose: {
+      position: [x, 0, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    },
+  });
+
+  function wired() {
+    const wiring = wire(memoryStore().store, { oneStore: true });
+    const store = wiring.pageStore;
+    if (store === undefined) throw new Error("the harness made no store");
+    const rendered = (act: () => void): boolean => {
+      wiring.dom.status.textContent = UNTOUCHED;
+      act();
+      return wiring.dom.status.textContent !== UNTOUCHED;
+    };
+    return { ...wiring, store, rendered };
+  }
+
+  it("does not re-render for the same code seen again, nor for a stored code's sighting", () => {
+    const { setup, rendered } = wired();
+    setup.codes.setSighting(sighting("lvl", 0));
+    expect(
+      rendered(() => {
+        setup.codes.setSighting(sighting("lvl", 1));
+      }),
+    ).toBe(false);
+    expect(
+      rendered(() => {
+        setup.codes.noteStoredSighting("lvl", 0, sighting("lvl", 2));
+      }),
+    ).toBe(false);
+  });
+
+  it("re-renders when the visit sees a code first, another code, or none any more", () => {
+    const { setup, rendered } = wired();
+    expect(
+      rendered(() => {
+        setup.codes.setSighting(sighting("lvl", 0));
+      }),
+    ).toBe(true);
+    expect(
+      rendered(() => {
+        setup.codes.setSighting(sighting("other", 0));
+      }),
+    ).toBe(true);
+    expect(
+      rendered(() => {
+        setup.codes.endVisit();
+      }),
+    ).toBe(true);
+  });
+
+  it("re-renders for the hand, and for any dispatch that is not the codes' alone", () => {
+    const { setup, store, rendered } = wired();
+    expect(
+      rendered(() => {
+        setup.codes.setInHand({ id: "lvl", json: "{}" }, null);
+      }),
+    ).toBe(true);
+    // A dispatch no reducer answers changes nothing at all: it rendered
+    // before the codes moved into the store, and still does.
+    expect(
+      rendered(() => {
+        store.dispatch({ type: "test/unanswered" });
+      }),
+    ).toBe(true);
   });
 });

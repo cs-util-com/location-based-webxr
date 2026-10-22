@@ -19,6 +19,9 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
+  parseTourManifest,
+  serializeTourManifest,
+  tourItems,
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -44,6 +47,7 @@ import {
   DRAFT_BASE_MAX_KEYS,
   withBaseKey,
 } from "./authoring-draft.js";
+import { finishedManifest } from "./finish-rebuild.js";
 import { asHosted, tourOf } from "./test-support/v3-tour.js";
 
 function pin(id: string): TourObject {
@@ -347,6 +351,30 @@ describe("contentEntriesToRemove (a deleted photo takes its jpg with it)", () =>
       ),
     ).toEqual(["mytour/content/p1.jpg"]);
     expect(contentEntriesToRemove([photo("p1")], [], "")).toEqual([]);
+  });
+
+  // Why: placed 3D models (format minor 1) name a SHARED model asset, not a
+  // file of their own. Deleting one model must never remove that asset's
+  // file - the other model still draws from it - and the tour written
+  // after the delete must still name a model asset that exists.
+  it("removes no file when one of two models sharing an asset is deleted, and the rebuilt tour still validates", () => {
+    const model = (id: string, lat: number): TourObject => ({
+      id,
+      kind: "model",
+      asset: "statue",
+      sizeM: 4,
+      createdAtIso: "2026-10-19T00:00:00.000Z",
+      geo: { lat, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+    });
+    const both = [model("m1", 48.52), model("m2", 48.5201)];
+    const manifest = tourOf(both, {
+      assets: [{ id: "statue", path: "content/statue.glb", kind: "model" }],
+    });
+    expect(contentEntriesToRemove(both, ["m1"], "mytour/")).toEqual([]);
+    const written = finishedManifest({ manifest, placed: [], deleted: ["m1"] });
+    const read = parseTourManifest(JSON.parse(serializeTourManifest(written)));
+    expect(tourItems(read).map((i) => i.id)).toEqual(["m2"]);
+    expect(read.assets.map((a) => a.path)).toEqual(["content/statue.glb"]);
   });
 });
 
