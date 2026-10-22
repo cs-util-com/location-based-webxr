@@ -21,7 +21,22 @@ AR (tour editor plan 2026-10-17-1816, W1).
 - `#view3d` - the 3D view's box over the map, hidden until the view
   shows (`src/editor3d/editor3d-scene.ts` puts its canvas in it), with its
   credits line `#view3d-credits` (Mapterhorn, its elevation data,
-  OpenStreetMap).
+  OpenStreetMap). Inside it the studio shell's parts
+  (`src/editor/editor-shell/editor-shell.ts`): the tree dock
+  `#shell-tree` (`#tree-stations`, `#tree-fold`, `#tree-body`), the
+  inspector dock `#shell-inspector` (`#inspector-head`,
+  `#inspector-body`, hidden without a selection), the map controls
+  `#map-controls` (`#compass` with `#compass-needle`, `#zoom-in`,
+  `#zoom-out`) and the help `#shell-help`.
+- `#shell-bar` - the 3D view's bottom bar: `#shell-view`, `#shell-hint`,
+  the debug readout (`#shell-history`, `#shell-calls`, `#shell-frame`)
+  and its toggle `#shell-debug`. Hidden on the map.
+- `body[data-view]` - `3d` while the 3D view shows, else `2d`: the
+  shell's stylesheet (`src/editor/editor-shell/editor-shell.css`, the
+  page's second link) dresses the top bar dark, places the view between
+  a 40 px top bar and the 24 px bottom bar, and hides the rail, the card,
+  the debug panel and the off-screen chip; the studio's controls
+  (`.studio`) and `#shell-bar` show only then.
 - `#debug-panel` - shown for every open tour: the debug layer's "Show
   debug data" switch (`#debug-switch` around `#debug-data-input`,
   ticked; shown only while the layer has a source - the tour's walk or
@@ -37,7 +52,12 @@ AR (tour editor plan 2026-10-17-1816, W1).
   unticked; hidden for a file opened for writing, which keeps its walk), `#save-status`,
   `#save-btn` (Save downloads the tour, M6 E2a), `#done-btn` ("Done",
   W2), "Open another tour"; first of them, after the spacer, `#view-switch`
-  ("3D view", the view switch: `src/editor/view-switch.ts`).
+  ("3D view", the view switch: `src/editor/view-switch.ts`). The 3D
+  view's studio controls sit in it too, hidden on the map: the pencil
+  (`#studio-details`), Undo and Redo (`#studio-undo`, `#studio-redo`)
+  after the title, and Frame, Top view and Help (`#studio-frame`,
+  `#studio-top`, `#studio-help`) before the switch; their icons are
+  `<i data-icon>` slots the shell fills.
 - `#rail` - the codes, pins and photos (`src/editor/editor-rail.ts`).
 - `#card`, `#offscreen-chip` - the card beside the selected marker
   (`src/editor/editor-card.ts`).
@@ -104,4 +124,5 @@ back: the editor's paper, not the browser's plain page),
 markers, the card beside its marker, a capped photo, a refused non-tour,
 the layout at three viewports, the details dialog, the fine print, Done
 and the walk's move), `playwright-tests/editor3d.spec.js` (the 3D view
-and back).
+and back), `playwright-tests/editor3d-shell.spec.js` (the studio shell's
+layout at four viewports and its tree clicks).

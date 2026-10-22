@@ -8,6 +8,9 @@
          arrives with the module, so the page painted unstyled until then
          (tour editor plan 2026-10-17-1816, W1). -->
     <link rel="stylesheet" href="/src/editor/editor.css" />
+    <!-- The 3D view's studio shell (editor-shell.ts): applied while the
+         3D view shows. -->
+    <link rel="stylesheet" href="/src/editor/editor-shell/editor-shell.css" />
   </head>
   <body>
     <div id="map" aria-label="Tour map"></div>
@@ -17,7 +20,124 @@
          panels stay above it; the credits are the relief's and the map's. -->
     <div id="view3d" aria-label="The tour in 3D" hidden>
       <p class="view3d-credits" id="view3d-credits"></p>
+      <!-- The studio shell's docks over the scene (editor-shell.ts): the
+           tree at the left, the selection's inspector at the right. -->
+      <aside class="dock" id="shell-tree" aria-label="Stations and codes">
+        <div class="dhead">
+          <button
+            class="sech"
+            id="tree-stations"
+            type="button"
+            title="Fold or unfold the stations"
+          ></button>
+          <span class="sp"></span>
+          <button class="ib" id="tree-fold" type="button"></button>
+        </div>
+        <div class="dbody" id="tree-body"></div>
+      </aside>
+      <aside
+        class="dock"
+        id="shell-inspector"
+        aria-label="The selection"
+        hidden
+      >
+        <div class="dhead" id="inspector-head"></div>
+        <div class="dbody" id="inspector-body"></div>
+      </aside>
+      <div id="map-controls">
+        <div class="pill">
+          <button
+            id="compass"
+            type="button"
+            title="Turn north up"
+            aria-label="Turn north up"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+              <g id="compass-needle">
+                <path d="M12 3 15 12H9z" fill="#e5483f" />
+                <path d="M12 21 9 12h6z" fill="#9aa0a6" />
+              </g>
+            </svg>
+          </button>
+        </div>
+        <div class="pill">
+          <button
+            id="zoom-in"
+            type="button"
+            title="Zoom in"
+            aria-label="Zoom in"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+          <button
+            id="zoom-out"
+            type="button"
+            title="Zoom out"
+            aria-label="Zoom out"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M5 12h14" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div id="shell-help" role="note" aria-label="Keyboard and mouse">
+        <span>Mouse</span
+        ><span
+          >left orbit, right pan, wheel zoom; in the top view left pans and
+          right tilts</span
+        >
+        <span>Touch</span
+        ><span>one finger orbits; two fingers pinch and pan</span>
+        <span>Select</span
+        ><span
+          >click a station card, an item or a code; click it again to
+          deselect</span
+        >
+        <span><kbd>T</kbd></span
+        ><span>top view on / off</span> <span><kbd>F</kbd></span
+        ><span>frame the selection, <kbd>Home</kbd> the tour</span>
+        <span><kbd>Esc</kbd></span
+        ><span>deselect</span> <span><kbd>Ctrl</kbd>+<kbd>Z</kbd></span
+        ><span>undo, add <kbd>Shift</kbd> to redo</span>
+      </div>
     </div>
+
+    <!-- The 3D view's bottom bar (editor-shell.ts): the view, a hint, and
+         the debug readout behind its toggle. -->
+    <footer id="shell-bar" aria-label="The 3D view's status">
+      <div id="shell-view"></div>
+      <div id="shell-hint"></div>
+      <div id="shell-history" class="mono dbg"></div>
+      <div id="shell-calls" class="mono dbg"></div>
+      <div id="shell-frame" class="mono dbg wide"></div>
+      <button
+        id="shell-debug"
+        type="button"
+        aria-pressed="false"
+        title="Show or hide the debug readout (history, draw calls, frame time)"
+      >
+        debug
+      </button>
+    </footer>
 
     <!-- The debug layer (debug-capture-layer.ts): the walk's camera
          captures on the map, for a tour whose file carries a walk or with
@@ -62,7 +182,71 @@
           <div class="tour-file" id="tour-file"></div>
         </div>
       </div>
+      <!-- The 3D view's studio controls (editor-shell.ts); the map page
+           hides them. -->
+      <div class="studio grp">
+        <button
+          class="tbtn"
+          id="studio-details"
+          type="button"
+          title="Tour details: name, cover, description"
+          aria-label="Tour details"
+        >
+          <i data-icon="pencil"></i>
+        </button>
+        <button
+          class="tbtn"
+          id="studio-undo"
+          type="button"
+          aria-label="Undo"
+          disabled
+        >
+          <i data-icon="undo"></i><span class="lbl">Undo</span>
+        </button>
+        <button
+          class="tbtn"
+          id="studio-redo"
+          type="button"
+          aria-label="Redo"
+          disabled
+        >
+          <i data-icon="redo"></i><span class="lbl">Redo</span>
+        </button>
+      </div>
       <div class="topbar-spacer"></div>
+      <div class="studio grp">
+        <button
+          class="tbtn"
+          id="studio-frame"
+          type="button"
+          aria-label="Frame"
+          title="Frame the selection, or the whole tour (F; Home frames the tour)"
+        >
+          <i data-icon="frame"></i><span class="lbl">Frame</span><kbd>F</kbd>
+        </button>
+        <button
+          class="tbtn"
+          id="studio-top"
+          type="button"
+          aria-label="Top view"
+          aria-pressed="false"
+          title="Look straight down (T)"
+        >
+          <i data-icon="top"></i><span class="lbl">Top view</span><kbd>T</kbd>
+        </button>
+      </div>
+      <div class="studio grp" id="studio-help-group">
+        <button
+          class="tbtn"
+          id="studio-help"
+          type="button"
+          aria-label="Keyboard and mouse"
+          aria-expanded="false"
+          title="Keyboard and mouse"
+        >
+          <i data-icon="help"></i>
+        </button>
+      </div>
       <!-- The view switch: the map or the 3D view of the same tour; it says
            when the 3D view loads and why it could not open. -->
       <button class="btn" id="view-switch" type="button">3D view</button>

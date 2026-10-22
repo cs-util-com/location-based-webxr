@@ -50,7 +50,7 @@ export type View3dFailure =
 /** The 3D view's tree's sections, each open or folded to its header. */
 export type TreeSection = "stations" | "codes" | "layers";
 /** The 3D view's two docks: the tree (left) and the inspector (right). */
-export type ShellDock = "tree" | "inspector";
+type ShellDock = "tree" | "inspector";
 /** What the 3D view can show or hide. */
 export type ShellLayer = "codes" | "names" | "walk" | "depth" | "buildings";
 

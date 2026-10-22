@@ -32,7 +32,7 @@ export interface InspectorPosition {
   readonly headingDeg: number | null;
 }
 
-export interface StationInspector {
+interface StationInspector {
   readonly kind: "station";
   readonly title: string;
   readonly sub: string;
@@ -43,7 +43,7 @@ export interface StationInspector {
   readonly position: InspectorPosition;
 }
 
-export interface ItemInspector {
+interface ItemInspector {
   readonly kind: "item";
   readonly itemKind: TourItem["kind"];
   readonly title: string;
@@ -60,7 +60,7 @@ export interface ItemInspector {
   readonly headingDeg: number | null;
 }
 
-export interface CodeInspector {
+interface CodeInspector {
   readonly kind: "code";
   readonly title: string;
   readonly sub: string;

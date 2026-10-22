@@ -128,6 +128,8 @@ import { noGpsWarnings } from "./no-gps-check.js";
 import { revealPadding, type Box } from "./popover-place.js";
 import { createStatusLines } from "./status-lines.js";
 import { createViewSwitch, type View3dHandle } from "./view-switch.js";
+import { createEditorShell } from "./editor-shell/editor-shell.js";
+import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
   Editor3dStats,
@@ -459,6 +461,9 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
         view3d: () => Editor3dStats | null;
         view3dTilt: (deg: number) => void;
         view3dDistance: (m: number) => void;
+        view3dPointOf: (
+          selection: string,
+        ) => readonly [number, number, number] | null;
       };
     }
   ).__tourEditor = {
@@ -474,6 +479,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     view3dDistance: (m) => {
       shown3d?.setDistance(m);
     },
+    view3dPointOf: (selection) => shown3d?.pointOf(selection) ?? null,
   };
 }
 
@@ -1150,14 +1156,18 @@ const details = wireDetailsDialog({
   },
 });
 
-tourName.addEventListener("click", () => {
+/** The tour's details dialog: from the tour's name, and from the 3D
+ *  view's pencil. */
+function openDetails(): void {
   if (editor === null || ui().busy) return;
   // Typing in the card is committed first: the dialog shows the tour as it
   // stands.
   card.commit();
   details.open();
   releaseOutside = holdOutside(element("details-modal"));
-});
+}
+
+tourName.addEventListener("click", openDetails);
 
 /** Where a key goes to a field's own undo (typing in the card, a dialog,
  *  the search): the page's undo stays out of it. */
@@ -2703,6 +2713,46 @@ element("open-fineprint").textContent = saveFinePrint(
  */
 const view3dBox = element("view3d");
 let view3dFailureToast: HTMLElement | null = null;
+
+/** A content entry of the open tour, from the copy the page reads now. */
+function readContent(name: string): Promise<Blob> {
+  const open = photos.current() ?? session;
+  if (open === null) return Promise.reject(new Error("no tour is open"));
+  return open.loadContentEntry(name);
+}
+
+/** The open tour's codes for the 3D view's tree and inspector: the
+ *  phone's numbering and lines, and each one's stored position and print
+ *  size as opened. */
+function shellCodes(): InspectorCode[] {
+  return (model?.items ?? [])
+    .filter((item) => item.kind === "code")
+    .map((item) => {
+      const qr = openedLevels.get(item.id)?.qr;
+      return {
+        id: item.id,
+        title: item.title,
+        meta: item.meta,
+        geo: qr?.geo ?? null,
+        printSizeM: qr?.physicalSizeM ?? null,
+      };
+    });
+}
+
+/** The 3D view's studio shell (`editor-shell/`): the tree, the inspector,
+ *  the map controls and the bottom bar, while the 3D view shows. Its
+ *  selection is the page's (`select`), so the map follows it. */
+const shell = createEditorShell({
+  store,
+  select: (id) => {
+    select(id);
+  },
+  step: runStep,
+  openDetails,
+  codes: shellCodes,
+  loadPicture: readContent,
+  dialogOpen,
+});
 const viewSwitch = createViewSwitch({
   button: element<HTMLButtonElement>("view-switch"),
   store,
@@ -2720,11 +2770,7 @@ const viewSwitch = createViewSwitch({
       credits: element("view3d-credits"),
       store,
       levels: () => openedLevels,
-      loadContent: (name) => {
-        const open = photos.current() ?? session;
-        if (open === null) return Promise.reject(new Error("no tour is open"));
-        return open.loadContentEntry(name);
-      },
+      loadContent: readContent,
       events,
     });
     shown3d = view;
@@ -2743,6 +2789,11 @@ const viewSwitch = createViewSwitch({
   },
   onShown: (on) => {
     view3dBox.hidden = !on;
+    // The page's look follows the view: the studio's dark shell in 3D
+    // (`editor-shell.css`), the paper map page otherwise.
+    document.body.dataset["view"] = on ? "3d" : "2d";
+    if (on && shown3d !== null) shell.show(shown3d);
+    else shell.hide();
     if (on) {
       view3dFailureToast?.remove();
       view3dFailureToast = null;

@@ -477,12 +477,23 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   switch is off while no tour is open. The 3D
   view reads the tour from the store and the codes the open read
   (`openedLevels`); it edits nothing.
+- **The 3D view's studio shell** (`editor-shell/editor-shell.ts`): made
+  once at start; the switch's `onShown` sets `body[data-view]` (`3d` or
+  `2d`, which the shell's stylesheet follows) and shows the shell over
+  the shown view or hides it. Its selection is the page's `select` (so
+  the map's markers follow), Undo and Redo are `runStep`, the pencil is
+  `openDetails` (the tour's name opens the same dialog), its pictures
+  and the scene's content are read through `readContent` (the copy the
+  page reads now), and its codes come from `shellCodes` (the model's
+  codes with their stored position and print size as opened).
 - **The dev server's test hook** `window.__tourEditor` (`{ editor(),
-edited(), view3d(), view3dTilt(deg), view3dDistance(m) }`): an e2e reaches the editor session's edits no control of
+edited(), view3d(), view3dTilt(deg), view3dDistance(m),
+view3dPointOf(selection) }`): an e2e reaches the editor session's edits no control of
   this page offers yet, then `edited()` follows them as an edit made here
   would (refresh, autosave told); `view3d()` is the shown 3D view's
   `stats()` (null on the map), `view3dTilt(deg)` tilts its orbit and
-  `view3dDistance(m)` moves it in or out. Guarded by `import.meta.env.DEV &&
+  `view3dDistance(m)` moves it in or out, `view3dPointOf(selection)` says
+  where a selection stands in its world. Guarded by `import.meta.env.DEV &&
 !import.meta.env.VITEST`, so a production build strips it.
 
 - Once everything is wired the page sets `body[data-editor="ready"]`;
@@ -518,4 +529,5 @@ tour's walk) and `editor-entry.spec.js` (the
 tab, and sees the draft offer the change and Restore bring it back (seen
 red with the settings record's stations left out). The chrome state's
 slice: `editor-view.test.ts`. The 3D view's switch, its loading and
-failure states and the selection kept: `editor3d.spec.js`.
+failure states and the selection kept: `editor3d.spec.js`; the studio
+shell's layout and its tree clicks: `editor3d-shell.spec.js`.

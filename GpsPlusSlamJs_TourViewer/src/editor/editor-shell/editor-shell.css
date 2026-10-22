@@ -1,0 +1,1062 @@
+/*
+ * The 3D view's shell (`editor-shell.ts`): the chosen studio prototype's
+ * (`public/prototypes/editor3d-1-studio-r3/`) dark top bar, docks, map
+ * controls and bottom bar. Applied while `body[data-view="3d"]`: the map
+ * page keeps its own look (`editor.css`), and the shell's own parts are
+ * hidden there.
+ */
+:root {
+  --s-bg0: #18191c;
+  --s-bg1: #1f2023;
+  --s-bg2: #26282c;
+  --s-bg3: #2f3136;
+  --s-bg4: #383a40;
+  --s-line: #313338;
+  --s-line2: #3c3f46;
+  --s-text: #d9dbe0;
+  --s-muted: #8a8f99;
+  --s-dim: #646973;
+  --s-accent: #e9a23b;
+  --s-accent-bg: rgb(233 162 59 / 14%);
+  --s-accent-line: rgb(233 162 59 / 55%);
+  --s-accent-text: #f3c47e;
+  --s-danger: #d97d79;
+  --s-ax-e: #e0575b;
+  --s-ax-n: #4f8fe8;
+  --s-ax-u: #67bb57;
+  --s-mono:
+    "Cascadia Mono", "Cascadia Code", consolas, "SF Mono", ui-monospace, menlo,
+    monospace;
+  --s-sans:
+    "Segoe UI", system-ui, -apple-system, "Helvetica Neue", arial, sans-serif;
+  --s-top-h: 40px;
+  --s-bar-h: 24px;
+}
+
+/* The studio's parts exist only in the 3D view. */
+body:not([data-view="3d"]) .studio,
+body:not([data-view="3d"]) #shell-bar {
+  display: none !important;
+}
+
+/* What belongs to the map is not shown over the 3D view. */
+body[data-view="3d"] :is(#rail, #card, #debug-panel, #offscreen-chip) {
+  display: none !important;
+}
+
+svg.i {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* --- the top bar ---------------------------------------------------------- */
+body[data-view="3d"] #topbar {
+  inset: 0 0 auto;
+  height: var(--s-top-h);
+  gap: 6px;
+  padding: 0 8px;
+  border: 0;
+  border-bottom: 1px solid var(--s-line);
+  border-radius: 0;
+  background: var(--s-bg1);
+  backdrop-filter: none;
+  box-shadow: none;
+  color: var(--s-text);
+  font: 12px/1.4 var(--s-sans);
+  color-scheme: dark;
+  min-width: 0;
+}
+
+body[data-view="3d"] #topbar .brand {
+  gap: 8px;
+  height: 24px;
+  padding-right: 10px;
+  margin-right: 2px;
+  border-right: 1px solid var(--s-line);
+  flex: 0 1 auto;
+}
+
+body[data-view="3d"] #topbar .brand-mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--s-accent);
+  color: #1c1c1c;
+  font: 700 11px/1 var(--s-sans);
+}
+
+body[data-view="3d"] #topbar .tour-file {
+  display: none;
+}
+
+body[data-view="3d"] #topbar .brand-text {
+  overflow: hidden;
+}
+
+body[data-view="3d"] #topbar .tour-name {
+  max-width: min(260px, 100%);
+  margin-left: -3px;
+  padding: 2px 5px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--s-muted);
+  font: 12px/1.4 var(--s-sans);
+  text-decoration: none;
+}
+
+body[data-view="3d"] #topbar .tour-name:hover {
+  border-color: var(--s-line2);
+  background: var(--s-bg2);
+  color: var(--s-text);
+}
+
+.grp {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 26px;
+  padding: 0 6px;
+  border-right: 1px solid var(--s-line);
+}
+
+.tbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--s-text);
+  white-space: nowrap;
+}
+
+.tbtn:hover:not(:disabled) {
+  background: var(--s-bg3);
+}
+
+.tbtn:disabled {
+  color: var(--s-dim);
+  cursor: default;
+}
+
+.tbtn.on {
+  border-color: var(--s-accent-line);
+  background: var(--s-accent-bg);
+  color: var(--s-accent-text);
+}
+
+.tbtn kbd {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--s-dim);
+  font: 10px var(--s-mono);
+}
+
+/* The page's own controls, in the studio's dress. */
+body[data-view="3d"] #topbar .btn {
+  min-height: 0;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--s-line2);
+  border-radius: 4px;
+  background: var(--s-bg2);
+  color: var(--s-text);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+body[data-view="3d"] #topbar .btn:hover:not(:disabled) {
+  background: var(--s-bg3);
+  border-color: var(--s-line2);
+}
+
+body[data-view="3d"] #topbar .btn.primary {
+  border-color: var(--s-accent);
+  background: var(--s-accent);
+  color: #1c1c1c;
+  font-weight: 600;
+}
+
+body[data-view="3d"] #topbar .btn.primary:hover:not(:disabled) {
+  background: #f0b257;
+}
+
+body[data-view="3d"] #save-status {
+  padding: 2px 8px;
+  background: var(--s-bg2);
+  color: var(--s-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+body[data-view="3d"] #save-status[data-state="pending"],
+body[data-view="3d"] #save-status[data-state="saving"] {
+  background: var(--s-accent-bg);
+  color: var(--s-accent-text);
+}
+
+body[data-view="3d"] #save-status[data-state="error"] {
+  background: rgb(217 125 121 / 16%);
+  color: #f0a8a5;
+}
+
+body[data-view="3d"] .keep-walk {
+  color: var(--s-muted);
+  font-size: 11px;
+}
+
+/* --- the viewport and its docks ------------------------------------------ */
+body[data-view="3d"] #view3d {
+  inset: var(--s-top-h) 0 var(--s-bar-h);
+  overflow: hidden;
+  color: var(--s-text);
+  font: 12px/1.4 var(--s-sans);
+  color-scheme: dark;
+}
+
+body[data-view="3d"] #toasts {
+  bottom: calc(var(--s-bar-h) + 18px);
+}
+
+.dock {
+  position: absolute;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - 10px);
+  border: 1px solid var(--s-line);
+  border-top: 0;
+  background: rgb(31 32 35 / 97%);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 35%);
+}
+
+#shell-tree {
+  left: 0;
+  width: 272px;
+  max-height: calc(100% - 150px);
+  border-left: 0;
+  border-radius: 0 0 8px;
+}
+
+#shell-inspector {
+  right: 0;
+  width: 290px;
+  max-height: calc(100% - 96px);
+  border-right: 0;
+  border-radius: 0 0 0 8px;
+}
+
+.dhead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 5px 0 12px;
+}
+
+#inspector-head {
+  padding-left: 8px;
+}
+
+.dock:not(.collapsed) .dhead {
+  border-bottom: 1px solid var(--s-line);
+}
+
+.dhead .sp {
+  flex: 1;
+}
+
+.dbody {
+  min-height: 0;
+  overflow: auto;
+}
+
+.dock.collapsed .dbody {
+  display: none;
+}
+
+.ib {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--s-muted);
+}
+
+.ib:hover {
+  background: var(--s-bg3);
+  color: var(--s-text);
+}
+
+/* The tree: the stations' story cards. */
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 4px;
+}
+
+.card {
+  overflow: hidden;
+  border: 1px solid var(--s-line2);
+  border-radius: 6px;
+  background: var(--s-bg2);
+}
+
+.card:hover {
+  border-color: #4a4e56;
+}
+
+.card.ctx {
+  border-color: var(--s-accent-line);
+}
+
+.card.sel {
+  border-color: var(--s-accent);
+  box-shadow: 0 0 0 1px var(--s-accent);
+}
+
+.hero {
+  position: relative;
+  height: 62px;
+  background: #33363c center / cover no-repeat;
+  cursor: pointer;
+  user-select: none;
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgb(10 11 13 / 8%) 0%,
+    rgb(10 11 13 / 30%) 42%,
+    rgb(10 11 13 / 86%) 100%
+  );
+}
+
+.hero > * {
+  position: absolute;
+  z-index: 1;
+}
+
+.hero .n {
+  top: 6px;
+  left: 7px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgb(20 21 24 / 78%);
+  color: #e6f0fa;
+  font: 600 10px var(--s-mono);
+}
+
+.card.sel .hero .n {
+  background: var(--s-accent);
+  color: #1c1c1c;
+}
+
+.hero .tw {
+  top: 4px;
+  right: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: rgb(20 21 24 / 60%);
+  color: #e8eaee;
+}
+
+.hero .tw:hover {
+  background: rgb(60 63 70 / 90%);
+}
+
+.hero .nm {
+  right: 9px;
+  bottom: 19px;
+  left: 9px;
+  overflow: hidden;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 70%);
+  white-space: nowrap;
+}
+
+.hero .ds {
+  right: 9px;
+  bottom: 5px;
+  left: 9px;
+  overflow: hidden;
+  color: rgb(230 232 236 / 80%);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero.nodesc .nm {
+  bottom: 7px;
+}
+
+.kids {
+  padding: 3px 0 4px;
+}
+
+.kid,
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.kid {
+  padding: 0 8px 0 12px;
+}
+
+.row {
+  padding: 0 10px 0 14px;
+}
+
+.kid:hover {
+  background: var(--s-bg3);
+}
+
+.row:hover {
+  background: var(--s-bg2);
+}
+
+.kid.sel,
+.row.sel {
+  background: var(--s-accent-bg);
+}
+
+.kid.sel::before,
+.row.sel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--s-accent);
+}
+
+.kid .nm,
+.row .nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kid.sel .nm,
+.row.sel .nm {
+  color: #fff;
+}
+
+.kid.empty {
+  height: auto;
+  padding: 4px 10px 4px 12px;
+  color: var(--s-dim);
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.ic {
+  display: inline-flex;
+  color: var(--s-muted);
+}
+
+.ic.pin {
+  color: #e07a6e;
+}
+
+.ic.photo {
+  color: #c9a66b;
+}
+
+.ic.model {
+  color: #a3b1c2;
+}
+
+.ic.code {
+  color: #b9c2cf;
+}
+
+.ic.station {
+  color: #8db8e3;
+}
+
+/* A section's header folds its section (the whole header is the button). */
+.sech {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--s-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.sech:hover {
+  color: var(--s-text);
+}
+
+.sech svg {
+  width: 13px;
+  height: 13px;
+  color: var(--s-dim);
+}
+
+.sech .count {
+  color: var(--s-dim);
+  font: 10px var(--s-mono);
+  letter-spacing: 0;
+}
+
+.sec {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  margin-top: 4px;
+  padding: 0 10px 0 9px;
+}
+
+/* The layers: pill toggle buttons with a dot. */
+.layers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 10px 10px 12px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 3px 10px 3px 8px;
+  border: 1px solid var(--s-line2);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 3%);
+  color: var(--s-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.chip i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #5a5e66;
+}
+
+.chip.on {
+  border-color: var(--s-accent-line);
+  background: var(--s-accent-bg);
+  color: var(--s-text);
+}
+
+.chip.on i {
+  background: var(--s-accent);
+}
+
+.chip:hover {
+  border-color: #5a5e66;
+}
+
+/* The inspector: the selection's fields, read-only. */
+.hic {
+  display: inline-flex;
+  justify-content: center;
+  width: 22px;
+}
+
+.ttl {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 5px;
+  color: #f0f1f3;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sub {
+  padding: 6px 12px 2px;
+  color: var(--s-dim);
+  font-size: 11px;
+}
+
+.isec {
+  margin-top: 4px;
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--s-line);
+}
+
+.f {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  margin: 3px 0;
+}
+
+.f.top {
+  align-items: start;
+}
+
+.f > label {
+  overflow: hidden;
+  color: var(--s-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.f.top > label {
+  padding-top: 3px;
+}
+
+.num {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 24px;
+  border: 1px solid var(--s-line);
+  border-radius: 3px;
+}
+
+.num .val {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 4px;
+  color: var(--s-muted);
+  font: 11px var(--s-mono);
+  white-space: nowrap;
+}
+
+.num .unit {
+  padding-right: 6px;
+  color: var(--s-dim);
+  font: 10.5px var(--s-mono);
+}
+
+.vec {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.ax {
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  padding: 0 5px;
+  border-right: 1px solid var(--s-line2);
+  font: 600 10px var(--s-mono);
+}
+
+.ax.e {
+  color: var(--s-ax-e);
+}
+
+.ax.n {
+  color: var(--s-ax-n);
+}
+
+.ax.u {
+  color: var(--s-ax-u);
+}
+
+.ro-text {
+  padding: 3px 0;
+  overflow-wrap: anywhere;
+  color: var(--s-text);
+}
+
+.note {
+  margin: 3px 0 2px;
+  color: var(--s-dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.note.pad {
+  padding: 4px 12px 10px;
+}
+
+.thumb {
+  width: 54px;
+  height: 32px;
+  border: 1px solid var(--s-line2);
+  border-radius: 4px;
+  background: #33363c center / cover no-repeat;
+}
+
+.disc {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-top: 1px solid var(--s-line);
+  background: transparent;
+  color: var(--s-muted);
+  text-align: left;
+}
+
+.disc:hover {
+  background: var(--s-bg2);
+  color: var(--s-text);
+}
+
+.disc .lab {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.disc .sum {
+  min-width: 0;
+  overflow: hidden;
+  margin-left: auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--s-dim);
+  font: 10.5px var(--s-mono);
+}
+
+.disc svg {
+  transition: transform 0.15s;
+}
+
+.disc.open svg {
+  transform: rotate(90deg);
+}
+
+.pos {
+  padding: 2px 12px 10px;
+}
+
+/* --- the map controls: white pills, 38 px buttons ------------------------- */
+#map-controls {
+  position: absolute;
+  bottom: 14px;
+  left: 12px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.pill {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow:
+    0 1px 2px rgb(60 64 67 / 25%),
+    0 2px 8px rgb(60 64 67 / 15%);
+}
+
+.pill button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: none;
+  background: #fff;
+  color: #5f6670;
+}
+
+.pill button:hover {
+  background: #f1f3f4;
+  color: #1f2328;
+}
+
+.pill button + button {
+  border-top: 1px solid #e4e7eb;
+}
+
+/* --- the help popover ---------------------------------------------------- */
+#shell-help {
+  position: absolute;
+  top: 46px;
+  right: 8px;
+  z-index: 30;
+  display: none;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 5px 10px;
+  width: 300px;
+  max-width: calc(100% - 16px);
+  padding: 10px 12px;
+  border: 1px solid var(--s-line2);
+  border-radius: 6px;
+  background: rgb(31 32 35 / 98%);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 40%);
+  color: var(--s-muted);
+  font-size: 11.5px;
+}
+
+#shell-help.show {
+  display: grid;
+}
+
+#shell-help > span:nth-child(odd) {
+  white-space: nowrap;
+}
+
+#shell-help kbd {
+  padding: 0 4px;
+  border: 1px solid var(--s-line2);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: var(--s-bg2);
+  color: var(--s-text);
+  font: 10px var(--s-mono);
+}
+
+/* --- the bottom bar ------------------------------------------------------- */
+#shell-bar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  height: var(--s-bar-h);
+  min-width: 0;
+  border-top: 1px solid var(--s-line);
+  background: var(--s-bg1);
+  color: var(--s-muted);
+  font: 11px/1.4 var(--s-sans);
+}
+
+#shell-bar > div {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  overflow: hidden;
+  padding: 0 10px;
+  border-right: 1px solid var(--s-line);
+  white-space: nowrap;
+}
+
+#shell-view {
+  color: var(--s-text);
+  font-weight: 500;
+}
+
+#shell-bar .mono {
+  font: 10.5px var(--s-mono);
+}
+
+#shell-hint {
+  display: block !important;
+  flex: 1;
+  min-width: 0;
+  line-height: 23px;
+  text-overflow: ellipsis;
+}
+
+#shell-bar .dbg {
+  display: none !important;
+}
+
+#shell-bar.debug .dbg {
+  display: flex !important;
+}
+
+#shell-debug {
+  flex: none;
+  height: 100%;
+  padding: 0 9px;
+  border: 0;
+  border-left: 1px solid var(--s-line);
+  background: transparent;
+  color: var(--s-dim);
+  font: 10px var(--s-mono);
+}
+
+#shell-debug:hover {
+  background: var(--s-bg2);
+  color: var(--s-text);
+}
+
+#shell-bar.debug #shell-debug {
+  color: var(--s-accent-text);
+}
+
+/* --- narrow windows ------------------------------------------------------- */
+/* Between a tablet and a desktop the page's own controls share the bar:
+ * Undo and Redo lose their words and the key hints go, so the tour's name
+ * keeps room; "Open another tour" says "Open". */
+@media (width <= 980px) {
+  body[data-view="3d"] :is(#studio-undo, #studio-redo) .lbl,
+  body[data-view="3d"] .tbtn kbd {
+    display: none;
+  }
+
+  body[data-view="3d"] .label-long {
+    display: none;
+  }
+
+  body[data-view="3d"] .label-short {
+    display: inline;
+  }
+}
+
+@media (width <= 820px) {
+  .tbtn .lbl,
+  .tbtn kbd {
+    display: none;
+  }
+
+  body[data-view="3d"] #topbar {
+    gap: 2px;
+    padding: 0 4px;
+  }
+
+  body[data-view="3d"] #topbar .brand {
+    min-width: 0;
+    padding-right: 6px;
+  }
+
+  body[data-view="3d"] #topbar .tour-name {
+    min-width: 0;
+    max-width: min(34vw, 100%);
+  }
+
+  .grp {
+    padding: 0 3px;
+  }
+
+  .tbtn {
+    padding: 0 6px;
+  }
+
+  body[data-view="3d"] #topbar #view-switch {
+    font-size: 0;
+  }
+
+  body[data-view="3d"] #topbar #view-switch::after {
+    content: attr(data-short) / "";
+    font-size: 12px;
+  }
+
+  #shell-tree {
+    width: min(272px, 56vw);
+  }
+
+  #shell-inspector {
+    width: min(290px, 60vw);
+  }
+
+  #shell-hint,
+  #shell-bar .dbg.wide {
+    display: none !important;
+  }
+}
+
+/* A phone: every control stays inside the top bar - the help (keys and
+ * a mouse) and the pencil (the tour's name opens the same details) go,
+ * the save status shows as a dot (its words stay its name), and Done and
+ * Open show as icons. */
+@media (width <= 720px) {
+  body[data-view="3d"] :is(#studio-help-group, #studio-details) {
+    display: none;
+  }
+
+  body[data-view="3d"] #save-status {
+    flex: none;
+    width: 10px;
+    max-width: none;
+    height: 10px;
+    padding: 0;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--s-dim);
+    font-size: 0;
+  }
+
+  body[data-view="3d"] #save-status[data-state="pending"],
+  body[data-view="3d"] #save-status[data-state="saving"] {
+    background: var(--s-accent);
+  }
+
+  body[data-view="3d"] #save-status[data-state="error"] {
+    background: var(--s-danger);
+  }
+
+  body[data-view="3d"] #topbar :is(#done-btn, #open-another) {
+    width: 28px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  body[data-view="3d"] #topbar :is(#done-btn, #open-another) > * {
+    display: none;
+  }
+
+  body[data-view="3d"] #topbar :is(#done-btn, #open-another)::before {
+    content: "";
+    width: 16px;
+    height: 16px;
+    background: currentcolor;
+    mask: var(--icon) center / 16px no-repeat;
+  }
+
+  body[data-view="3d"] #done-btn {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 8.5l3.2 3.2L13 4.8'/%3E%3C/svg%3E");
+  }
+
+  body[data-view="3d"] #open-another {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linejoin='round'%3E%3Cpath d='M2 4.5a1 1 0 0 1 1-1h3.2l1.4 1.6H13a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z'/%3E%3C/svg%3E");
+  }
+}

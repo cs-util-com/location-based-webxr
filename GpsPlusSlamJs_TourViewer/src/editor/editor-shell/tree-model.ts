@@ -20,7 +20,7 @@ import type {
 } from "../editor-view.js";
 
 /** A layer chip's words. */
-export const LAYER_LABELS: Readonly<Record<ShellLayer, string>> = {
+const LAYER_LABELS: Readonly<Record<ShellLayer, string>> = {
   walk: "Walk",
   depth: "Depth points",
   codes: "Codes",
@@ -29,7 +29,7 @@ export const LAYER_LABELS: Readonly<Record<ShellLayer, string>> = {
 };
 
 /** An item of a station, as its card lists it. */
-export interface TreeChild {
+interface TreeChild {
   readonly id: string;
   readonly kind: TourItem["kind"];
   /** Text, never markup: it comes from a file anyone can write. */
@@ -57,14 +57,14 @@ export interface TreeCard {
   readonly children: readonly TreeChild[];
 }
 
-export interface TreeCode {
+interface TreeCode {
   readonly id: string;
   readonly title: string;
   readonly meta: string;
   readonly selected: boolean;
 }
 
-export interface TreeChip {
+interface TreeChip {
   readonly layer: ShellLayer;
   readonly label: string;
   readonly on: boolean;
