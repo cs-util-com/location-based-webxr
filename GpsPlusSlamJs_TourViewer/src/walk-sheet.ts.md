@@ -95,7 +95,7 @@ view.render(model, { sheet: "peek", quick, position: "distance", story: null });
   190, not 340 back. Shown again after a hide, it starts at its angle.
 - The rows' redraw key leaves the arrows out: an angle changes every
   frame, so the arrows turn in place while the rows rebuild only when
-  something else changed.
+  something else changed (the sub lines and the names too, below).
 - Tests: `setArrow` in `walk-sheet.test.ts`; the page in
   `playwright-tests/visitor-walk.spec.js`.
 
@@ -113,9 +113,15 @@ view.render(model, { sheet: "peek", quick, position: "distance", story: null });
   container by delegation (the rows are rebuilt on a change); `rowTapOf`
   maps a control's `data-tap` to the guide's tap (`undo` is a bring back).
 - **The redraw key** (`rowsDrawKey`, exported, pure) leaves out the
-  arrow's angle and the undo's time left: both change every frame. The
-  undo's bar runs down by its own CSS animation from the share left when
-  the row was drawn (`--walk-undo-from`, `--walk-undo-ms`).
+  arrow's angle and the undo's time left (both change every frame), and
+  the sub line and the title button's accessible name (the metres and
+  the direction word change as the visitor walks). `drawRows` writes
+  those four in place on every render (each only on a change), so a
+  row is rebuilt - its buttons replaced, a tap in flight and the focus
+  lost - only when its title, state or controls changed. The undo's bar
+  runs down by its own CSS animation from the share left when the row
+  was drawn (`--walk-undo-from`, `--walk-undo-ms`); under
+  `prefers-reduced-motion` it stands still at that share.
 - **The focus after a row tap:** the tapped control is rebuilt or gone,
   so the focus goes to what took its place (`focusAfterTap`, exported,
   pure): Skip to its confirm, the confirm to the undo, Cancel and a bring
@@ -123,9 +129,21 @@ view.render(model, { sheet: "peek", quick, position: "distance", story: null });
 - **The quick action hides while the list is open** (W4; CSS on
   `data-sheet="list"`): the rows carry Skip, its confirm and the undo. A
   focus it held when it opened the list goes to the armed row's confirm,
-  else to the close button.
+  else (the chooser, no row armed) to the first row's Skip, else to the
+  close button.
 - `WalkSheetDom.hint` (`#walk-hint`) - the list's hint while no station is
   guessed (R-2), between the progress line and the rows; hidden otherwise.
+  While it shows, every row's Skip carries `aria-describedby="walk-hint"`,
+  so a screen reader hears the chooser's question with the control that
+  answers it.
+- **Reduced motion:** every animated rule of the walk's CSS is named by
+  its own selector in the walk's `prefers-reduced-motion` block (a
+  shorter selector loses to the animated rule's specificity, which left
+  the coach's spinner running); `walk-sheet.test.ts` holds the two lists
+  together.
 - Tests: `rowsDrawKey`, `rowTapOf` and `focusAfterTap` in
-  `walk-sheet.test.ts`; the page in `playwright-tests/visitor-walk.spec.js`
+  `walk-sheet.test.ts`, with the reduced-motion guard over the walk's CSS;
+  the page in `playwright-tests/visitor-walk.spec.js` (a row kept, with
+  its focus, through a walk that changes its metres; the chooser's
+  focus and description)
   and `playwright-tests/visitor-walk-layout.spec.js`.

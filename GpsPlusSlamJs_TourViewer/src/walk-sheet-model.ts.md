@@ -22,8 +22,10 @@ the station guide's `view()` and the tour; the DOM writer is
     playing), `sheet: "peek" | "list"`.
   - `peek: { kind, eyebrow, title, distance, tail }`:
     - `walk`: eyebrow "Next - station N of M" (fixed and branch), "N
-      stations to find - nearest" (several offered; "- your choice" for
-      the visitor's chosen target, R-4) or "Next"; the
+      stations to find - nearest" (several offered and a distance shown;
+      "- your choice" for the visitor's chosen target, R-4, in any
+      state) or "Next" (one offered, or no distance to rank by: the one
+      left to find); the
       distance ("N m") only while the position vouches for one; the tail
       "Waiting for your position…", "GPS too weak to guide you (±N m);
       step into the open." or "Scan one of the tour's codes so the guide
@@ -64,6 +66,8 @@ chosen, choosable, mainLabel }` with
     <title>", the last skip inside its window, with `undoLeftMs` for its
     bar), each with its `ariaLabel` naming the station; null otherwise and
     while the row's `confirm` ("Skip <title> - I can't get there") shows;
+    while tracking is lost (the view's `trackingLost`) no row has a Skip
+    or a confirm, the undo and Bring back staying;
     `chosen` (the orange edge); `choosable` (a waiting station of a tour
     with a choice: its title button reads "<title>: <sub>. Guide me
     here", `mainLabel`).
@@ -119,8 +123,11 @@ model.peek; // { kind: "walk", eyebrow: "3 stations to find - nearest", ... }
   chip, the progress line, the completion card, the story card, branch
   listing, the away model; M4: the peek with no station guessed per
   no-distance state and the hold, the hint per position and chooser, the
-  rows' actions (Skip, confirm, undo with its time, Bring back), the
-  chosen target in the peek and its row, the completion's bring back.
+  rows' actions (Skip, confirm, undo with its time, Bring back) and,
+  under tracking lost, no Skip and no confirm with the undo and Bring
+  back kept; one station left without a distance named "Next", never
+  "nearest"; the chosen target in the peek and its row, the completion's
+  bring back.
 - `walk-sheet-model.property.test.ts` - the real guide on the page's
   store, random steps and measurements: the peek agrees with the hidden
   line, the named station is offered and waiting, the distance matches,

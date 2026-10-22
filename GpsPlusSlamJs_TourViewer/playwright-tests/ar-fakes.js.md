@@ -88,8 +88,11 @@ camera, so `installTourViewerArFakes(page)` installs
   `timers` + `fireTimers()` are the scan
   gate's escape clock (the `schedule` seam), so a spec fires it
   without waiting. The stations (tour kit plan K4): `createWayfindingHud`
-  keeps the page's targets getter as `hud` (`{ getTargets, disposed }`)
-  and counts `hudStarts`; `createAudioElement` returns a fake element
+  keeps every start in `huds` (`{ getTargets, look, disposed }`) and
+  counts `hudStarts`; the walk starts two (visitor walk W4 build plan
+  M5, the focus's look first), kept as `hudPair`, and `hud` reads the
+  pair as the one HUD a spec asserts on (`getTargets` the pair's targets
+  together, the focus's first; `disposed` once both are); `createAudioElement` returns a fake element
   that records every source it is asked to play in `audioPlays` and counts
   `audioElements`; `loadGlbModel` is NOT faked (the real GLTF loader
   parses the fixture's minimal `.glb`). The troubleshooting recording's depth (authoring
@@ -153,9 +156,8 @@ These moved here from `object-editing.spec.js` so that
 
 - `lockFixtureCode(page)` arms the fixture's code and feeds frames until
   the gate reports that the CODE passed it (`data-gate="passed-code"`).
-  The walk specs (visitor walk W4 build plan M2) share it; `stations.spec.js`
-  and `ar-mode.spec.js` still have their own `lockTheCode` copies (a
-  follow-up).
+  Every spec that locks the fixture code uses it (the walk specs,
+  `stations.spec.js` and `ar-mode.spec.js`).
 - The AR start's switches (W4 build plan M2): `holdInitAR = true` holds the
   next initAR until `releaseInitAR()` (the coach's "Starting AR…" stays
   up); `failNextInitAR = true` rejects the next initAR once (the start

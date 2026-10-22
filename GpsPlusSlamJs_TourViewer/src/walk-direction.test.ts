@@ -20,8 +20,8 @@ import {
  * flickering while the visitor turns slowly across a threshold.
  */
 
-describe("walkDirection - the thresholds (W4's dirWord)", () => {
-  it("ships W4's 28° and 140° with a 5° hysteresis", () => {
+describe("walkDirection - the thresholds", () => {
+  it("ships the prototype's 28° and 140° with a 5° hysteresis", () => {
     expect(WALK_AHEAD_DEG).toBe(28);
     expect(WALK_BEHIND_DEG).toBe(140);
     expect(WALK_DIRECTION_HYSTERESIS_DEG).toBe(5);
@@ -108,7 +108,7 @@ describe("walkDirection - the hysteresis band", () => {
   });
 });
 
-describe("walkDirectionPhrase / walkDirectionTail - the words (W4)", () => {
+describe("walkDirectionPhrase / walkDirectionTail - the words", () => {
   it("says the row's words and the peek's sentence", () => {
     expect(walkDirectionPhrase("ahead")).toBe("ahead");
     expect(walkDirectionPhrase("left")).toBe("to your left");

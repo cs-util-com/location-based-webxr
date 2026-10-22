@@ -76,6 +76,7 @@ import type { Object3D } from "three";
 import { ndcOfTargetRay, pickObject } from "./object-pick.js";
 import type { AudioElementLike } from "./scene-audio.js";
 import { HUD_ARRIVAL_BAND_M, HUD_ARRIVAL_MIN_M } from "./station-bands.js";
+import { WALK_HUD_LOOKS, type WalkHudLook } from "./walk-hud.js";
 
 import type {
   LocationPermission,
@@ -230,6 +231,10 @@ export interface TourViewerSeams {
    */
   createWayfindingHud(options: {
     getTargets: () => WayfindingTarget[];
+    /** The walk's two looks (`walk-hud.ts`): the focus in the walk's
+     *  orange at 1.25 times the size, the others in its white; without
+     *  one, the framework's accent at its size. */
+    look?: WalkHudLook;
   }): { dispose(): void } | null;
   /** A station's `.glb` (already checked inert by the tour session, K0's
    *  `checkGlbInert`) as a three scene: three's GLTFLoader, loaded on first
@@ -354,7 +359,7 @@ export const realSeams: TourViewerSeams = {
     };
   },
   encodeFrameJpeg: (image) => encodeRgbaAsJpeg(image),
-  createWayfindingHud: ({ getTargets }) => {
+  createWayfindingHud: ({ getTargets, look }) => {
     const camera = getCamera();
     if (!camera) return null;
     return createWayfindingHud({
@@ -363,6 +368,7 @@ export const realSeams: TourViewerSeams = {
       // Each station target carries its own band; these are the floors.
       distanceMin: HUD_ARRIVAL_MIN_M,
       distanceMax: HUD_ARRIVAL_MIN_M + HUD_ARRIVAL_BAND_M,
+      ...(look === undefined ? {} : WALK_HUD_LOOKS[look]),
     });
   },
   loadGlbModel: async (blob) => {

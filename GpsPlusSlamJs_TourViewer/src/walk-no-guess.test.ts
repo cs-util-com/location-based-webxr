@@ -37,6 +37,29 @@ describe("noGuessStep", () => {
     expect(noGuessStep(c, true, 99_999)).toBe(c);
   });
 
+  // Why: a code session drops its pose for under a second now and then;
+  // with the hold its return withheld the guess for 3 s after every drop.
+  // A code's distance does not flicker around a ceiling as a weak fix
+  // does, so its return gives the guess back at once.
+  it("a distance coming back as a code's gives the guess back at once; a GPS return keeps the hold", () => {
+    const dropped = noGuessStep(NO_GUESS_START, false, 0);
+    expect(
+      noGuessStep(dropped, true, 400, WALK_NO_GUESS_HOLD_MS, true),
+    ).toEqual(NO_GUESS_START);
+    expect(
+      noGuessStep(dropped, true, 400, WALK_NO_GUESS_HOLD_MS, false),
+    ).toEqual({ noGuess: true, backAtMs: 400 });
+    // A hold already running ends on the code's first tick too.
+    const holding = noGuessStep(dropped, true, 400);
+    expect(
+      noGuessStep(holding, true, 500, WALK_NO_GUESS_HOLD_MS, true),
+    ).toEqual(NO_GUESS_START);
+    // Without a distance the code changes nothing: the guess still goes.
+    expect(
+      noGuessStep(NO_GUESS_START, false, 0, WALK_NO_GUESS_HOLD_MS, true),
+    ).toEqual({ noGuess: true, backAtMs: null });
+  });
+
   it("a clock that is no number changes nothing", () => {
     const c = noGuessStep(NO_GUESS_START, false, 0);
     expect(noGuessStep(c, true, Number.NaN)).toBe(c);

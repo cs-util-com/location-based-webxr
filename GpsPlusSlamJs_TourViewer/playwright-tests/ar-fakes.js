@@ -177,12 +177,17 @@ export async function installTourViewerArFakes(page, options = {}) {
         /** Photos "encoded" by the fake (a 3-byte stand-in per capture). */
         encodedFrames: 0,
         /** The stations' HUD (tour kit plan K4): the targets getter the
-         *  page handed the last HUD it started, how many it started, and
-         *  whether that one was disposed. */
+         *  page handed the last HUD it started (the walk's two together),
+         *  how many it started, and whether that one was disposed. */
         hud: /** @type {null | { getTargets: () => any[], disposed: boolean }} */ (
           null
         ),
         hudStarts: 0,
+        /** Every HUD the page started, with its look, and the HUDs of the
+         *  last start (the walk starts two together). */
+        huds: /** @type {{ getTargets: () => any[], look: string | null, disposed: boolean }[]} */ ([]),
+        hudPair:
+          /** @type {{ getTargets: () => any[], look: string | null, disposed: boolean }[]} */ ([]),
         /** Every source the stories' one audio element was asked to play
          *  (K4), and how many audio elements the page made. */
         audioPlays: /** @type {string[]} */ ([]),
@@ -509,10 +514,28 @@ export async function installTourViewerArFakes(page, options = {}) {
         },
         // The stations' HUD (K4): no camera here, so the spec reads the
         // targets the page would point at.
+        // The walk runs two HUDs, the focus's and the others' (their
+        // `look`): each start is kept in `test.huds`, and `test.hud` reads
+        // as the one HUD a spec asserts on - the targets of the HUDs of the
+        // last start together, the focus's first, disposed once all are.
         createWayfindingHud: (options) => {
           test.hudStarts += 1;
-          const handle = { getTargets: options.getTargets, disposed: false };
-          test.hud = handle;
+          const handle = {
+            getTargets: options.getTargets,
+            look: options.look ?? null,
+            disposed: false,
+          };
+          // A start with the focus's look begins a new pair.
+          if (handle.look !== "others") test.hudPair = [];
+          test.hudPair.push(handle);
+          test.huds.push(handle);
+          const pair = test.hudPair;
+          test.hud = {
+            getTargets: () => pair.flatMap((h) => h.getTargets()),
+            get disposed() {
+              return pair.every((h) => h.disposed);
+            },
+          };
           return {
             dispose() {
               handle.disposed = true;
@@ -937,7 +960,7 @@ export async function finishAndDownload(page, index) {
 /**
  * Lock the fixture's printed code: arm the detection and feed frames until
  * the gate reports that the CODE passed it (a GPS-only pass also reads
- * "placing"). The walk specs share it (visitor walk W4 build plan M2).
+ * "placing"). Every spec that locks the code uses this one.
  *
  * @param {import("@playwright/test").Page} page
  */

@@ -16,7 +16,6 @@ import {
 import { walkOffered, walkStatus } from "./station-run";
 import { createTourViewerStore } from "./tour-viewer-session";
 import type { VisitorPosition } from "./visitor-position";
-import { walkNoGuess } from "./visitor-walk-slice";
 import { WALK_NO_GUESS_HOLD_MS } from "./walk-no-guess";
 
 /**
@@ -28,7 +27,8 @@ import { WALK_NO_GUESS_HOLD_MS } from "./walk-no-guess";
  * the walk never deadlocks, it is complete exactly when nothing is
  * offered, a found station never becomes unfound, at most one target is
  * chosen and only a waiting offered one, an any-order tour names no
- * station while R-2 holds, and every tour completes within two taps per
+ * station while R-2 holds (its condition derived here, from the
+ * harness's own clock), and every tour completes within two taps per
  * station through the story card and the three tap paths of R-2.
  */
 
@@ -77,6 +77,11 @@ function harness(stations: TourStation[], order: TourOrder) {
     fixAtMs: null,
     fixAccuracyM: null,
   };
+  // R-2's clock, kept here from the harness's own inputs and not from
+  // the guide or the slice: no distance is shown without GPS within the
+  // ceiling (no code holds the position here); a guess comes back once
+  // the distance has been back, unbroken, for the hold.
+  const r2 = { noDistance: false, backAtMs: null as number | null };
   const store = createTourViewerStore();
   const dom = {
     line: { textContent: "", hidden: true },
@@ -118,6 +123,16 @@ function harness(stations: TourStation[], order: TourOrder) {
       fixAtMs: now,
       fixAccuracyM: accuracyM,
     };
+    if (precision !== "gps") {
+      r2.noDistance = true;
+      r2.backAtMs = null;
+    } else if (r2.noDistance) {
+      r2.backAtMs ??= now;
+      if (now - r2.backAtMs >= WALK_NO_GUESS_HOLD_MS) {
+        r2.noDistance = false;
+        r2.backAtMs = null;
+      }
+    }
     guide.tick();
   }
   const walk = () => store.getState().visitorWalk;
@@ -142,6 +157,9 @@ function harness(stations: TourStation[], order: TourOrder) {
       place();
     },
     complete: () => walkOffered(progress()).length === 0,
+    /** No distance shown, or not yet back for the hold (the harness's
+     *  own clock). */
+    withoutDistance: () => r2.noDistance,
   };
 }
 
@@ -215,8 +233,10 @@ function apply(
   }
 }
 
-describe("the walk's rules over random walks (W4 build plan M4)", () => {
-  it("no deadlock, complete exactly when nothing is offered, found never reverts, one chosen target at most, no guess in R-2", () => {
+describe("the walk's rules over random walks", () => {
+  // How often the no-guess condition held at a check, over all runs.
+  let r2Checks = 0;
+  it("no deadlock, complete exactly when nothing is offered, found never reverts, one chosen target at most, no guess without a distance", () => {
     fc.assert(
       fc.property(
         tourArb,
@@ -250,9 +270,28 @@ describe("the walk's rules over random walks (W4 build plan M4)", () => {
                   walkStatus(p, chosen)?.state === "waiting"),
               JSON.stringify(w),
             ).toBe(true);
-            expect(!walkNoGuess(w) || h.guide.view()?.focusId === null).toBe(
-              true,
+            // R-2, derived here: an any-order tour with two or more
+            // stations to find, no chosen target, and no distance shown
+            // (or not yet back for the hold) guesses no station - no focus,
+            // and a line that names none (a note of a skip may lead it).
+            const toFind = walkOffered(p).filter(
+              (id) => walkStatus(p, id)?.state !== "found",
             );
+            const noGuess =
+              order === "any" &&
+              toFind.length >= 2 &&
+              chosen === null &&
+              h.withoutDistance();
+            const line = h.dom.line.textContent.replace(
+              /^(Skipped|Brought back) S\d+\. /,
+              "",
+            );
+            if (noGuess) r2Checks += 1;
+            expect(
+              noGuess ? (h.guide.view()?.focusId ?? null) : null,
+              line,
+            ).toBeNull();
+            expect(noGuess && /\bS\d+\b/.test(line), line).toBe(false);
           };
           check();
           for (const op of ops) {
@@ -286,6 +325,8 @@ describe("the walk's rules over random walks (W4 build plan M4)", () => {
       ),
       { numRuns: 300 },
     );
+    // Not vacuous: the no-guess condition was reached and checked often.
+    expect(r2Checks).toBeGreaterThan(100);
   });
 
   // R9 re-stated over the story card and R-2's three tap paths: "Can't get

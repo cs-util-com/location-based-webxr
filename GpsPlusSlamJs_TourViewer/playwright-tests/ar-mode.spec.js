@@ -5,6 +5,7 @@ import {
   enterArAndMeasure,
   forceTrackingReady,
   installTourViewerArFakes,
+  lockFixtureCode,
   openFixtureTour,
   seedAlignment,
   tapFinish,
@@ -123,27 +124,6 @@ function photoPlanes(page) {
       );
     return count(/** @type {any} */ (window).__tourViewerTest.fakeScene);
   });
-}
-
-/** Lock the fixture's code: arm the detection and feed frames until the
- *  gate reports the lock (M5 - nothing is placed before it). */
-async function lockTheCode(page) {
-  await page.evaluate((text) => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
-  }, E2E_QR_TEXT);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("ar-status").getAttribute("data-gate");
-      },
-      { timeout: 20000 },
-    )
-    // The CODE passed the gate (U1 milestone review #9: the visitor's state
-    // alone also reads "placing" after a GPS-only pass).
-    .toBe("passed-code");
 }
 
 /**
@@ -268,7 +248,7 @@ test("a visitor who refuses the location starts the tour on codes alone: no loca
   await expect(page.getByTestId("scan-escape")).toBeHidden();
   // ...and the code places the tour on its own: the visitor's state reaches
   // "placed", not only the gate (M1b-1 review #4).
-  await lockTheCode(page);
+  await lockFixtureCode(page);
   await expect
     .poll(
       async () => {
@@ -316,7 +296,7 @@ test("a visitor of a tour that needs no GPS is never asked for the location and 
     permissionRequests: 0,
     gpsWatch: false,
   });
-  await lockTheCode(page);
+  await lockFixtureCode(page);
 });
 
 test("a visitor who dismissed the location prompt is offered it once more before a codes-only start (M1b-1 review #3)", async ({
@@ -1412,7 +1392,7 @@ test("a tour.json carrying debug camera captures shows a visitor its own content
     });
   });
   await forceTrackingReady(page);
-  await lockTheCode(page);
+  await lockFixtureCode(page);
   await expect
     .poll(
       async () => {
@@ -1506,7 +1486,7 @@ test("the visitor's content waits for the lock; the escape after its clock place
         /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
     ),
   ).toBe(0);
-  await lockTheCode(page);
+  await lockFixtureCode(page);
   await expect(page.getByTestId("ar-status")).toContainText("4 placed objects");
   // The station's three photos stand in its one group with the pin, drawn
   // once decoded.
@@ -1588,7 +1568,7 @@ for (const viewport of [
       Math.abs(skipBox.x + skipBox.width / 2 - viewport.width / 2),
     ).toBeLessThan(1);
     // The code is read: the card closes by itself, the line comes back.
-    await lockTheCode(page);
+    await lockFixtureCode(page);
     await expect(card).toBeHidden();
     await expect(page.getByTestId("ar-status")).toBeVisible();
   });
@@ -1612,7 +1592,7 @@ test("a visitor reads one plain sentence per state, never the debug readout (UI 
   await expect(status).toHaveText(
     "Point your phone at the tour's code (on the poster).",
   );
-  await lockTheCode(page);
+  await lockFixtureCode(page);
   await expect
     .poll(
       async () => {
@@ -1725,7 +1705,7 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
     await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
     await seedAlignment(page);
     // Each session has its own gate: the code locks anew (M5).
-    await lockTheCode(page);
+    await lockFixtureCode(page);
     await forceTrackingReady(page);
     await expect
       .poll(

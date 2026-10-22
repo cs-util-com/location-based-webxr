@@ -194,3 +194,24 @@ hooks.tickStations = stations.tick;
 - Tests: `walkDirectionsOf` and `walkDebugLines` in
   `visitor-stations.test.ts`; the composition
   in `playwright-tests/visitor-walk.spec.js`.
+
+## The scene cues (visitor walk W4 build plan M5)
+
+- The guide's HUD is two HUDs (`walk-hud.ts` `startWalkHuds`): its
+  `startHud(getTargets, focusId)` starts the focus's look and the
+  others' through the seam `createWayfindingHud({ getTargets, look })`.
+- The focus's beacon and ring (`walk-focus-cues.ts`) are drawn from the
+  guide's `onFocusCue`, beside the breadcrumbs; the guide sends null
+  without a focus and at the session's end.
+- `walk.edgePill?: WalkEdgePillDom` - the focus's edge pill
+  (`walk-edge-pill.ts`), rendered with the sheet (`renderPill`): the
+  focus's `stationTitle`, its distance only while the guide's
+  `position` is `distance`, its angle and word from the same
+  `walkDirectionsOf` the sheet reads (one memory, so the pill's "behind
+  you" and the row's agree), the field of view by `walkRadarFovDeg`
+  (the seam `xrProjection0`, the window's aspect), the list open and a
+  story playing; null whenever the sheet is hidden.
+- Tests: the modules' own; the composition in
+  `playwright-tests/visitor-walk-radar.spec.js` (the pill's text and
+  side, the HUD pair, the cues) and `visitor-walk-layout.spec.js` (the
+  pill's place).

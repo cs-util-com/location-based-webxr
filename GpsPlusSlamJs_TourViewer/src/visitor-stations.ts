@@ -33,6 +33,8 @@ import {
 import { pictureProblem } from "./image-cap.js";
 import { createKeyedChain } from "./keyed-chain.js";
 import { createBreadcrumbTrail } from "./breadcrumbs.js";
+import { createWalkFocusCues } from "./walk-focus-cues.js";
+import { startWalkHuds } from "./walk-hud.js";
 import { gateAllowsPlacement } from "./scan-gate.js";
 import { createSceneAudio } from "./scene-audio.js";
 import { createSceneStage } from "./scene-stage.js";
@@ -73,6 +75,13 @@ import {
 } from "./walk-sheet-model.js";
 import type { WalkToast } from "./walk-toast.js";
 import { createWalkDirections } from "./walk-direction.js";
+import {
+  wireWalkEdgePill,
+  type WalkEdgePillDom,
+  type WalkEdgePillView,
+} from "./walk-edge-pill.js";
+import { walkRadarFovDeg } from "./walk-radar-model.js";
+import { stationTitle } from "./station-run.js";
 import { createRollingWindow, type RollingWindow } from "./rolling-window.js";
 import {
   sampleFrameTimes,
@@ -237,6 +246,8 @@ export function wireVisitorStations(deps: {
     /** The radar and the precision chip (W4 build plan M3); absent: none.
      *  Its canvas is an element: its size is observed. */
     radar?: WalkRadarDom & { readonly canvas: Element };
+    /** The focus's edge pill (W4 build plan M5); absent: none. */
+    edgePill?: WalkEdgePillDom;
   };
 }): VisitorStations {
   const { ctx, arStore, seams, dom } = deps;
@@ -291,6 +302,8 @@ export function wireVisitorStations(deps: {
   const breadcrumbs = createBreadcrumbTrail({
     getScene: () => seams.getScene(),
   });
+  // The focus's beacon and ring, in the scene beside the breadcrumbs.
+  const focusCues = createWalkFocusCues({ getScene: () => seams.getScene() });
   // The guide is created below; the stage reads its poses late. The
   // figure's pose waits for a heading (`figurePoseOf`, r881 re-review
   // M-B): the stage parks the figure and the story says so.
@@ -374,7 +387,14 @@ export function wireVisitorStations(deps: {
       });
     },
     ...stationAlignmentSignals(ctx, arStore),
-    startHud: (getTargets) => seams.createWayfindingHud({ getTargets }),
+    // Two HUDs: the focus in the walk's orange, larger, the others white
+    // (`walk-hud.ts`).
+    startHud: (getTargets, focusId) =>
+      startWalkHuds({
+        create: (options) => seams.createWayfindingHud(options),
+        targets: getTargets,
+        focusId,
+      }),
     now: deps.now,
     // The present station (visitor plan 2026-10-18-2349 M1): judged here,
     // drawn per station from M2 on.
@@ -408,6 +428,9 @@ export function wireVisitorStations(deps: {
     },
     onGuide: (visitor, target) => {
       breadcrumbs.update(visitor, target);
+    },
+    onFocusCue: (cue) => {
+      focusCues.update(cue);
     },
   });
   poseOf = (id) => guide.figurePoseOf(id);
@@ -458,6 +481,8 @@ export function wireVisitorStations(deps: {
             }).observe(radarDom.canvas);
           },
         });
+  const pillView: WalkEdgePillView | null =
+    walk?.edgePill === undefined ? null : wireWalkEdgePill(walk.edgePill);
   /** The frame-time sampler of this AR session: registered with the
    *  session's first radar render, since a session's end clears the
    *  frame loop's callbacks (`resetWebXRState`). */
@@ -527,6 +552,7 @@ export function wireVisitorStations(deps: {
     if (guideView === null || tour === null || progress === null) {
       sheetView.render(null, NO_SHEET);
       radarView?.render(null);
+      pillView?.render(null);
       markShown(false);
       return;
     }
@@ -535,6 +561,7 @@ export function wireVisitorStations(deps: {
     view.holdStep(guideView.end?.kind === "end");
     const playing = view.playing();
     const sheet = selectWalkSheet(state);
+    const directions = walkDirectionsOf(guideView, chip, directionMemory);
     const model = walkSheetModel({
       stations: tour.stations,
       order: tour.order,
@@ -543,7 +570,7 @@ export function wireVisitorStations(deps: {
       view: guideView,
       story: playing === null ? null : { stationId: playing },
       sheet,
-      directions: walkDirectionsOf(guideView, chip, directionMemory),
+      directions,
     });
     // The radar draws the list's stations (its branch rule too).
     if (radarView !== null) sampleFrames();
@@ -566,6 +593,7 @@ export function wireVisitorStations(deps: {
           ? null
           : { stationId: playing, progress: view.progress() },
     });
+    renderPill(guideView, tour, directions, sheet === "list", playing !== null);
     sheetView.renderAway(null);
     markShown(true);
     // What a skip did is said once (W4: a toast, not the line), and the
@@ -582,6 +610,40 @@ export function wireVisitorStations(deps: {
       walk.toast.announce(WELCOME_BACK);
     }
     walk.toast.say(words);
+  }
+
+  /** The focus's edge pill: its title, its distance while the guide shows
+   *  one, and its direction (the words' memory, as the sheet's). */
+  function renderPill(
+    guideView: GuideView,
+    tour: StationTour,
+    directions: ReadonlyMap<string, WalkSheetDirection>,
+    listOpen: boolean,
+    storyPlaying: boolean,
+  ): void {
+    if (pillView === null || win === null) return;
+    const id = guideView.focusId;
+    const station =
+      id === null ? undefined : tour.stations.find((s) => s.id === id);
+    if (id === null || station === undefined) {
+      pillView.render(null);
+      return;
+    }
+    const direction = directions.get(id);
+    const d = guideView.distances.get(id);
+    pillView.render({
+      title: stationTitle(station),
+      distanceM:
+        guideView.position === "distance" && d !== undefined ? d : null,
+      angleDeg: direction?.angleDeg ?? null,
+      word: direction?.word ?? null,
+      fovDeg: walkRadarFovDeg(
+        seams.xrProjection0(),
+        win.innerWidth / win.innerHeight,
+      ),
+      listOpen,
+      storyPlaying,
+    });
   }
 
   /** Outside AR: the walk's progress on the start page (W4, §1.8). */

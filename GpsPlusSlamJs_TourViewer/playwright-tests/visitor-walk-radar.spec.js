@@ -455,3 +455,105 @@ test("?debug=1 reads the radar's draw time and the frame time", async ({
     writeFileSync(out, `${(await debug.textContent()) ?? ""}\n`);
   }
 });
+
+test("the edge pill names the focus off screen on its side, says when it is behind, and goes in view or with the list open", async ({
+  page,
+}) => {
+  // Why this test matters (§1.7, the prototype's "on the way" and "behind
+  // you"): the station the walk is about can leave the screen when the
+  // visitor turns; the pill at that edge names it and its distance, and
+  // says "behind you" once it is. It goes when the station is back in
+  // view, and while the list is up (the list names it already). The gate
+  // stands 28 m north of the code, and is the focus.
+  await openTour(page, WALK_ARCHIVE);
+  await enterAtTheCode(page);
+  const pill = page.getByTestId("walk-edge-pill");
+  const text = page.getByTestId("walk-edge-pill-text");
+  await faceBearing(page, 0);
+  await expect(page.getByTestId("walk-tail")).toHaveText("Ahead.");
+  await expect(pill).toBeHidden();
+  const metres = (
+    await page.getByTestId("walk-distance-text").textContent()
+  )?.trim();
+  // Facing east, the gate is to the left: the pill on the left.
+  await faceBearing(page, 90);
+  await expect(pill).toBeVisible();
+  await expect(pill).toHaveAttribute("data-side", "left");
+  await expect(text).toHaveText(`The gate - ${String(metres)}`);
+  // Facing west, on the right.
+  await faceBearing(page, 270);
+  await expect(pill).toHaveAttribute("data-side", "right");
+  await expect(text).toHaveText(`The gate - ${String(metres)}`);
+  // Facing south it is behind, and the pill keeps its side.
+  await faceBearing(page, 180);
+  await expect(text).toHaveText(`The gate - ${String(metres)}, behind you`);
+  await expect(pill).toHaveAttribute("data-side", "right");
+  // The list up: no pill; closed again: back.
+  await page.getByTestId("walk-grab").click();
+  await expect(pill).toBeHidden();
+  await page.getByTestId("walk-close").click();
+  await expect(pill).toBeVisible();
+  // In view again: gone.
+  await faceBearing(page, 0);
+  await expect(pill).toBeHidden();
+});
+
+test("the focus is marked in the scene: its own HUD, a beacon and a ring that follow it", async ({
+  page,
+}) => {
+  // Why this test matters (§1.7): the walk's focus is drawn apart from
+  // the other stations - its HUD marker in the focus's look, a beacon
+  // over it and a ring on the ground where it is found. A cue left on a
+  // station the walk is no longer about is a wrong instruction, so the
+  // cues move with the focus and go with the session.
+  await openTour(page, WALK_ARCHIVE);
+  await enterAtTheCode(page);
+  const huds = () =>
+    page.evaluate(() => {
+      const t = /** @type {any} */ (window).__tourViewerTest;
+      return t.hudPair.map((h) => ({
+        look: h.look,
+        ids: h.getTargets().map((x) => x.id),
+      }));
+    });
+  const cues = () =>
+    page.evaluate(() => {
+      const t = /** @type {any} */ (window).__tourViewerTest;
+      return t.fakeScene.children
+        .filter(
+          (c) => c.name === "walk-focus-beacon" || c.name === "walk-focus-ring",
+        )
+        .map((c) => ({
+          name: c.name,
+          north: Math.round(c.position.x),
+          east: Math.round(c.position.z),
+        }));
+    });
+  await expect.poll(huds).toEqual([
+    { look: "focus", ids: ["gate"] },
+    { look: "others", ids: ["well", "tower", "garden"] },
+  ]);
+  await expect
+    .poll(async () => (await cues()).map((c) => c.name).sort())
+    .toEqual(["walk-focus-beacon", "walk-focus-ring"]);
+  const gate = await cues();
+  expect(gate.every((c) => c.north === 28 && c.east === 0)).toBe(true);
+  // At the gate it is found; the walk moves on to the well, its cues
+  // with it.
+  await standAt(page, 28, 0, 1);
+  await expect
+    .poll(async () => (await huds())[0])
+    .toEqual({
+      look: "focus",
+      ids: ["well"],
+    });
+  await expect.poll(cues).toEqual(
+    expect.arrayContaining([
+      { name: "walk-focus-beacon", north: 82, east: 34 },
+      { name: "walk-focus-ring", north: 82, east: 34 },
+    ]),
+  );
+  // The exit takes every cue with it.
+  await page.getByTestId("enter-ar").click();
+  await expect.poll(async () => (await cues()).length).toBe(0);
+});

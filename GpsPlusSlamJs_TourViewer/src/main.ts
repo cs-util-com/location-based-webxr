@@ -944,6 +944,11 @@ const stations = wireVisitorStations({
       chip: element("walk-precision"),
       chipText: element("walk-precision-text"),
     },
+    edgePill: {
+      root: element("walk-edge-pill"),
+      text: element("walk-edge-pill-text"),
+      arrow: svgElement("walk-edge-pill-arrow"),
+    },
   },
   // The test switch ?relocate=here (tour-relocation.ts, owner decision S-D9).
   ...(relocationRequested(location.search)

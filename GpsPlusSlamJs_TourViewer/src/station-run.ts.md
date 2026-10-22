@@ -159,3 +159,7 @@ run.finish("gate", nowMs); // done, the next station offered
   place, "the next station" without one (a blank title included).
 - `station-run.sweep.test.ts` - the suggestion clock over distance, speed,
   detour and set-off time.
+- `station-run.store.property.test.ts` - the run held in its closure
+  (`createStationRun`) against the run over a store of the walk's slice
+  (`stationRunOver` with the reducer): the same events and the same view
+  after every call over random tours, sequences and all three orders.

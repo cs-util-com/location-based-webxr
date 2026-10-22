@@ -13,8 +13,9 @@ import {
   type StationTour,
 } from "./station-guide";
 import { createTourViewerStore } from "./tour-viewer-session";
-import { selectHeadingPending } from "./visitor-guide-slice";
+import { selectHeadingPending, trackingLostSet } from "./visitor-guide-slice";
 import type { VisitorPosition } from "./visitor-position";
+import type { WalkFocusCue } from "./walk-focus-cues";
 import { WALK_NO_GUESS_HOLD_MS } from "./walk-no-guess";
 
 /**
@@ -66,7 +67,7 @@ const ANY: StationTour = {
 
 function harness(tour: StationTour, options: { end?: boolean } = {}) {
   let now = 1_000;
-  const lined = false;
+  let lined = false;
   let playing: string | null = null;
   let visitor: VisitorPosition = {
     nue: [0, 401.5, 0],
@@ -77,8 +78,12 @@ function harness(tour: StationTour, options: { end?: boolean } = {}) {
     fixAccuracyM: 4,
   };
   const store = createTourViewerStore();
-  const huds: { getTargets: () => WayfindingTarget[]; disposed: boolean }[] =
-    [];
+  const huds: {
+    getTargets: () => WayfindingTarget[];
+    focusId: (() => string | null) | undefined;
+    disposed: boolean;
+  }[] = [];
+  const cues: (WalkFocusCue | null)[] = [];
   const crumbs: (string | null)[] = [];
   const faced: number[] = [];
   const dones: string[] = [];
@@ -107,8 +112,8 @@ function harness(tour: StationTour, options: { end?: boolean } = {}) {
     codeLinedUp: () => lined,
     alignmentReady: () => true,
     trackingReady: () => !lined,
-    startHud: (getTargets) => {
-      const h = { getTargets, disposed: false };
+    startHud: (getTargets, focusId) => {
+      const h = { getTargets, focusId, disposed: false };
       huds.push(h);
       return { dispose: () => (h.disposed = true) };
     },
@@ -129,6 +134,7 @@ function harness(tour: StationTour, options: { end?: boolean } = {}) {
     onVisitor: () => faced.push(tick),
     onGuide: (from, target) =>
       crumbs.push(target === null || from === null ? null : target.id),
+    onFocusCue: (cue) => cues.push(cue),
   });
   const walk = () => store.getState().visitorWalk;
   const place = (
@@ -154,6 +160,7 @@ function harness(tour: StationTour, options: { end?: boolean } = {}) {
     walk,
     huds,
     crumbs,
+    cues,
     faced,
     dones,
     undones,
@@ -165,6 +172,8 @@ function harness(tour: StationTour, options: { end?: boolean } = {}) {
      *  it and no fix states an accuracy, as after a frame change). */
     unvouched: (north: number, east: number) => place(north, east, null),
     advance: (ms: number) => (now += ms),
+    /** Whether a code holds the alignment (its precision is a code's). */
+    lined: (v: boolean) => (lined = v),
     view: () => guide.view()!,
     targets: () =>
       huds
@@ -180,7 +189,7 @@ function harness(tour: StationTour, options: { end?: boolean } = {}) {
   };
 }
 
-describe("R-0 and R-2: no distance shown, nothing shows one, and no station is guessed", () => {
+describe("no distance shown: nothing shows one, and no station is guessed", () => {
   it("too-weak GPS: no HUD targets, no 'nearest', no trail, no focus - and the guess back after the hold", () => {
     const h = harness(ANY);
     h.at(0, 0);
@@ -212,6 +221,30 @@ describe("R-0 and R-2: no distance shown, nothing shows one, and no station is g
     expect(h.crumbs.at(-1)).toBe("well");
   });
 
+  // Why: a code session drops its pose for under a second now and then.
+  // With the hold, every drop withheld the guess for 3 s after it; a
+  // code's distance does not flicker around a ceiling, so its return
+  // names the station again at once (walk-no-guess.sweep.test.ts).
+  it("a code's distance coming back after a drop names the station again at once", () => {
+    const h = harness(ANY);
+    h.lined(true);
+    h.unvouched(0, 0);
+    expect(h.view().focusId).toBe("well");
+    expect(h.store.getState().visitorGuide.precisionKind).toBe("code");
+    // The pose drops: nothing vouches for the position.
+    h.lined(false);
+    h.advance(300);
+    h.unvouched(0, 0);
+    expect(h.view().focusId).toBeNull();
+    h.lined(true);
+    h.advance(300);
+    h.unvouched(0, 0);
+    expect(h.view().focusId).toBe("well");
+    expect(h.dom.line.textContent).toBe(
+      "3 stations to find - nearest: WELL, 30 m",
+    );
+  });
+
   it("'none': no station named, the quick action names none, and the figure holds its turn", () => {
     const h = harness(ANY);
     h.at(0, 0);
@@ -227,7 +260,32 @@ describe("R-0 and R-2: no distance shown, nothing shows one, and no station is g
     expect(h.targets()).toEqual([]);
   });
 
-  it("fixed order keeps its station and its skip under too-weak GPS (W-D3 is any order only)", () => {
+  // Why: "nearest" claims a distance that ranked the stations. With one
+  // station left to find (a found station's story still playing beside
+  // it) the guide names it without a distance as the one left, never as
+  // the nearest by a position nobody vouches for.
+  it("one station left to find and no distance: the line says 'Next', not 'nearest'", () => {
+    const h = harness({
+      stations: [station("here", 0, 0), station("well", 0, 30)],
+      order: "any",
+    });
+    h.at(0, 0);
+    expect(h.found).toEqual(["here"]);
+    expect(h.dom.line.textContent).toBe(
+      "2 stations to find - nearest: WELL, 30 m",
+    );
+    h.unvouched(0, 0);
+    expect(h.view().focusId).toBe("well");
+    expect(h.dom.line.textContent).toBe(
+      "Next: WELL - scan one of the tour's codes so the guide knows where you are.",
+    );
+    h.at(0, 0, 40);
+    expect(h.dom.line.textContent).toBe(
+      "Next: WELL - GPS too weak to guide you (±40 m); step into the open.",
+    );
+  });
+
+  it("fixed order keeps its station and its skip under too-weak GPS (the no-guess rule is any order only)", () => {
     const h = harness({ stations: ANY.stations, order: "fixed" });
     h.at(0, 0, 40);
     expect(h.view().focusId).toBe("gate");
@@ -238,8 +296,8 @@ describe("R-0 and R-2: no distance shown, nothing shows one, and no station is g
   });
 });
 
-describe("R-2's taps: the list opens, armed or to choose", () => {
-  it("outside R-2 'Can't get there?' arms the focus's row; its confirm is the second tap", () => {
+describe("'Can't get there?' opens the list, armed or to choose", () => {
+  it("with a station guessed 'Can't get there?' arms the focus's row; its confirm is the second tap", () => {
     const h = harness(ANY);
     h.at(0, 0);
     h.tapQuick();
@@ -250,7 +308,7 @@ describe("R-2's taps: the list opens, armed or to choose", () => {
     expect(h.walk().rowArmedId).toBeNull();
   });
 
-  it("in R-2 it opens the chooser: a row's Skip acts on one tap; outside it, a row asks first", () => {
+  it("with no station guessed it opens the chooser: a row's Skip acts on one tap; outside it, a row asks first", () => {
     const h = harness(ANY);
     h.at(0, 0);
     h.guide.rowTapped("tower", "skip");
@@ -266,7 +324,7 @@ describe("R-2's taps: the list opens, armed or to choose", () => {
     expect(h.walk().chooser).toBe(false);
   });
 
-  it("an armed row survives a degradation into R-2, and its confirm still applies", () => {
+  it("an armed row survives the position degrading until no station is guessed, and its confirm still applies", () => {
     const h = harness(ANY);
     h.at(0, 0);
     h.guide.rowTapped("gate", "skip");
@@ -321,7 +379,102 @@ describe("R-2's taps: the list opens, armed or to choose", () => {
   });
 });
 
-describe("R-3: a skipped station comes back at any time", () => {
+describe("the focus in the scene", () => {
+  // Why: the HUD marks the focus in its own look and the scene stands a
+  // beacon and a ring at it; both must follow the guide's focus - the
+  // nearest, or the chosen station - and the beacon and the ring must go
+  // whenever no station is guessed or no distance is shown, as every
+  // other distance cue does (a beacon is a claim of where to walk).
+  it("hands the HUD the guide's focus as it is now", () => {
+    const h = harness(ANY);
+    h.at(0, 0);
+    const focusNow = h.huds.at(-1)!.focusId!;
+    expect(focusNow()).toBe("well");
+    h.guide.rowTapped("tower", "choose");
+    expect(focusNow()).toBe("tower");
+    h.unvouched(0, 0);
+    h.guide.rowTapped("tower", "choose");
+    expect(focusNow()).toBeNull();
+  });
+
+  it("puts the cue at the focus with its found radius and distance, and takes it away without a guess or a distance", () => {
+    const h = harness(ANY);
+    h.at(0, 0);
+    expect(h.cues.at(-1)).toMatchObject({
+      id: "well",
+      eye: [0, 401.5, 0],
+      foundM: 5,
+    });
+    const cue = h.cues.at(-1)!;
+    expect(cue.at[0]).toBeCloseTo(0, 1);
+    expect(cue.at[2]).toBeCloseTo(30, 1);
+    expect(cue.distanceM).toBeCloseTo(30, 1);
+    h.guide.rowTapped("gate", "choose");
+    expect(h.cues.at(-1)?.id).toBe("gate");
+    h.guide.rowTapped("gate", "choose");
+    // Too weak: no distance is shown, no beacon either (fixed order too).
+    h.at(0, 0, 40);
+    expect(h.cues.at(-1)).toBeNull();
+    h.unvouched(0, 0);
+    expect(h.cues.at(-1)).toBeNull();
+    const fixed = harness({ stations: ANY.stations, order: "fixed" });
+    fixed.at(0, 0);
+    expect(fixed.cues.at(-1)?.id).toBe("gate");
+    fixed.at(0, 0, 40);
+    expect(fixed.cues.at(-1)).toBeNull();
+    // The session's end takes it away.
+    fixed.at(0, 0);
+    fixed.guide.endSession();
+    expect(fixed.cues.at(-1)).toBeNull();
+  });
+});
+
+describe("while tracking is lost", () => {
+  // Why (§1.1): with tracking lost the guide cannot tell where the visitor
+  // is; a skip then would be made blind, so the quick action and a row's
+  // Skip and confirm are not offered and a tap that still arrives changes
+  // nothing. What takes a skip back stays: the undo and Bring back.
+  it("hides the quick action and refuses a row's Skip and confirm; the undo and Bring back stay", () => {
+    const h = harness(ANY);
+    h.at(0, 0);
+    h.guide.rowTapped("gate", "skip");
+    h.store.dispatch(trackingLostSet(true));
+    h.at(0, 0);
+    expect(h.view().trackingLost).toBe(true);
+    expect(h.dom.skip.hidden).toBe(true);
+    expect(skipActionOf(h.dom.skip)).toBeNull();
+    h.guide.skipTapped({ dataset: { action: "ask-skip" } });
+    expect(h.walk().sheet).toBe("peek");
+    h.guide.rowTapped("gate", "confirm");
+    h.guide.rowTapped("tower", "skip");
+    expect(h.walk().progress?.stations.some((s) => s.skipped)).toBe(false);
+    expect(h.walk().rowArmedId).toBe("gate");
+    // Back: the armed row's confirm applies again.
+    h.store.dispatch(trackingLostSet(false));
+    h.at(0, 0);
+    expect(h.dom.skip.hidden).toBe(false);
+    h.guide.rowTapped("gate", "confirm");
+    expect(h.walk().progress?.stations[0]?.skipped).toBe(true);
+    // Lost again inside the undo's window: the undo stays and acts.
+    h.store.dispatch(trackingLostSet(true));
+    h.at(0, 0);
+    expect(skipActionOf(h.dom.skip)).toEqual({ kind: "undo", id: "gate" });
+    h.tapQuick();
+    expect(h.walk().progress?.stations[0]?.skipped).toBe(false);
+    // ... and Bring back after it.
+    h.store.dispatch(trackingLostSet(false));
+    h.at(0, 0);
+    h.guide.rowTapped("gate", "skip");
+    h.guide.rowTapped("gate", "confirm");
+    h.advance(SKIP_UNDO_MS);
+    h.store.dispatch(trackingLostSet(true));
+    h.at(0, 0);
+    h.guide.rowTapped("gate", "bring");
+    expect(h.walk().progress?.stations[0]?.skipped).toBe(false);
+  });
+});
+
+describe("a skipped station comes back at any time", () => {
   // Why (§1.9 R-3): the old guide overwrote the last
   // skip on a second one inside its 6 s window without settling it, so
   // the first never reached the prefetch as done.
@@ -383,7 +536,7 @@ describe("R-3: a skipped station comes back at any time", () => {
   });
 });
 
-describe("R-4: choose a target", () => {
+describe("choosing a target", () => {
   it("the chosen station is the focus, whatever the precision, until it is found", () => {
     const h = harness(ANY);
     h.at(0, 0);
@@ -421,7 +574,7 @@ describe("R-4: choose a target", () => {
   });
 });
 
-describe("R-5: 'End this story?' on the story card whenever a story plays", () => {
+describe("'End this story?' on the story card whenever a story plays", () => {
   it("with stations still to find, the card's control asks, confirms, and 'Keep listening' takes it back", () => {
     const h = harness(
       { stations: [station("here", 0, 0), ...ANY.stations], order: "any" },

@@ -62,15 +62,17 @@ async function openTheWalk(page, archive = WALK_ARCHIVE) {
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
 }
 
-/** Start AR at the code: aligned, standing at the zero, the code locked;
- *  then, unless `guess` is false, wait for R-2's hold (M4) so the peek
- *  names a station. */
+/** Start AR at the code: aligned, standing at the zero, the code locked,
+ *  the tracking reported (the fakes deliver no poses, so without one the
+ *  walk reads tracking lost and offers no skip); then, unless `guess` is
+ *  false, wait for R-2's hold (M4) so the peek names a station. */
 async function enterAtTheCode(page, { guess = true } = {}) {
   await page.getByTestId("enter-ar").click();
   await seedAlignment(page);
   await standAt(page, 0, 0, 0);
   await lockFixtureCode(page);
   await expect(page.getByTestId("walk-sheet")).toBeVisible();
+  await trackingOk(page);
   if (guess) await waitForTheGuess(page);
 }
 
@@ -193,6 +195,11 @@ test("the peek names the nearest station; the list opens by the grab and by a dr
   await statusWith(page, "ok", "placed");
   await expect(page.getByTestId("walk-coach")).toBeHidden();
   await expect(page.getByTestId("ar-status-live")).toHaveText(
+    "Tour placed. Look around.",
+  );
+  // The status's own sentence too: never "placing the tour" for a tour
+  // whose stations hold only stories.
+  await expect(page.getByTestId("ar-status")).toHaveText(
     "Tour placed. Look around.",
   );
 
@@ -460,6 +467,59 @@ test("'Can't get there?' opens the list on its row; the confirm skips, the row's
   await expect(quick).toHaveText("Can't get there?");
 });
 
+test("a row's metres change in place as the visitor walks: the row and the focus on it survive", async ({
+  page,
+}) => {
+  // Why this test matters: the sheet redraws on every guide call, and a
+  // row rebuilt for a new metre or direction word drops a tap in flight
+  // and the keyboard's or screen reader's focus. The sub line and the
+  // title's accessible name are written in place; the row is the same
+  // element after the walk.
+  await openTheWalk(page);
+  await enterAtTheCode(page);
+  await page.getByTestId("walk-grab").click();
+  const row = page.getByTestId("walk-row").filter({ hasText: "The well" });
+  const sub = row.getByTestId("walk-row-sub");
+  const main = row.getByTestId("walk-row-main");
+  await expect(sub).toHaveText(/^89 m/);
+  await main.focus();
+  await row.evaluate((li) => {
+    li.dataset["kept"] = "yes";
+  });
+  await standAt(page, 6, 0, 1);
+  await expect(sub).toHaveText(/^83 m/);
+  await expect(main).toHaveAttribute("aria-label", /^The well: 83 m/);
+  await expect(row).toHaveAttribute("data-kept", "yes");
+  await expect(main).toBeFocused();
+});
+
+test("while tracking is lost no skip is offered, and it comes back with the tracking", async ({
+  page,
+}) => {
+  // Why this test matters: with tracking lost the guide cannot tell where
+  // the visitor is, so the peek's quick action and the rows' Skip are
+  // hidden (a skip made then would be made blind); they return with the
+  // tracking.
+  await openTheWalk(page);
+  await enterAtTheCode(page);
+  const quick = page.getByTestId("station-skip");
+  await expect(quick).toHaveText("Can't get there?");
+  await page.getByTestId("walk-grab").click();
+  await expect(walkRowControl(page, "The gate", "act")).toHaveText("Skip");
+  await reportArTracking(page, false);
+  await expect(page.getByTestId("walk-precision-text")).toHaveText(
+    "Paused - tracking lost",
+  );
+  await expect(walkRowControl(page, "The gate", "act")).toHaveCount(0);
+  await page.getByTestId("walk-close").click();
+  await expect(quick).toBeHidden();
+  await trackingOk(page);
+  await expect(page.getByTestId("walk-precision-text")).toHaveText(
+    "Placed by a code",
+  );
+  await expect(quick).toHaveText("Can't get there?");
+});
+
 test("a chosen target leads the peek, the line and its row until it is tapped again", async ({
   page,
 }) => {
@@ -558,6 +618,16 @@ test("with no position the walk names no station: the chooser asks which one, an
   );
   await expect(page.getByTestId("walk-hint")).toHaveText(
     "Your position is unknown, so the guide can't tell which station is nearest. Which one can't you reach?",
+  );
+  // The hint is the question the rows answer: the list opens on the first
+  // row's Skip, and each Skip is described by the hint, so a screen
+  // reader hears the question with the control.
+  const firstSkip = walkRowControl(page, "The gate", "act");
+  await expect(firstSkip).toBeFocused();
+  await expect(firstSkip).toHaveAttribute("aria-describedby", "walk-hint");
+  await expect(walkRowControl(page, "The tower", "act")).toHaveAttribute(
+    "aria-describedby",
+    "walk-hint",
   );
   // No row is the next one, and none shows a distance (R-0).
   const rows = page.getByTestId("walk-row");

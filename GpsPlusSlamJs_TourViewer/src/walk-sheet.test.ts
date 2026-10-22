@@ -59,7 +59,7 @@ describe("quickKind", () => {
   });
 });
 
-describe("hideKeepingFocus (W4 build plan M2 review)", () => {
+describe("hideKeepingFocus", () => {
   // Why: a keyboard or switch user's focus sits on "Keep listening" when
   // it hides, or inside the story card when the card closes; a hidden
   // focused element drops focus to the page's body, and the visitor starts
@@ -102,7 +102,7 @@ describe("hideKeepingFocus (W4 build plan M2 review)", () => {
   });
 });
 
-describe("focusLostToHiding (W4 build plan M2 review)", () => {
+describe("focusLostToHiding", () => {
   // Why: a browser blurs a focused control the moment it is hidden, before
   // the sheet hides the card around it (the guide hides the story's end
   // control first), so the sheet cannot see the focus at its own hide; it
@@ -129,7 +129,7 @@ describe("focusLostToHiding (W4 build plan M2 review)", () => {
   });
 });
 
-describe("setArrow (the direction arrows, W4 build plan M3)", () => {
+describe("setArrow (the direction arrows)", () => {
   // Why: an arrow's angle moves with every camera frame; it must turn in
   // place and write its style only when the whole degree changed, and an
   // arrow without an angle (no heading, no distance shown) is hidden.
@@ -215,7 +215,7 @@ describe("setArrow (the direction arrows, W4 build plan M3)", () => {
   });
 });
 
-describe("the rows' controls (W4 build plan M4, §1.6)", () => {
+describe("the rows' controls", () => {
   const row = (over: Partial<WalkRow> = {}): WalkRow => ({
     id: "well",
     number: 2,
@@ -233,10 +233,13 @@ describe("the rows' controls (W4 build plan M4, §1.6)", () => {
   });
 
   // Why: the sheet redraws on every camera frame; a redraw rebuilds the
-  // rows' buttons, restarts the undo's bar and moves the focus. The arrow
-  // and the undo's time left change every frame, so they must not redraw
-  // the rows - while the undo appearing or going, or any text, must.
-  it("the redraw key ignores the arrow and the undo's time left, not the undo itself", () => {
+  // rows' buttons, restarts the undo's bar and drops a tap in flight and
+  // the keyboard's or screen reader's focus. The arrow, the undo's time
+  // left, and the sub line with the accessible name it feeds (the metres
+  // and the direction word change as the visitor walks) are written in
+  // place, so they must not redraw the rows - while the undo appearing or
+  // going, the title, the state or the controls must.
+  it("the redraw key ignores the arrow, the undo's time left and the sub line, not the undo itself", () => {
     const undo = row({
       action: { kind: "undo", label: "Undo", ariaLabel: "Undo" },
       undoLeftMs: 5_000,
@@ -248,8 +251,24 @@ describe("the rows' controls (W4 build plan M4, §1.6)", () => {
     expect(rowsDrawKey([{ ...undo, undoLeftMs: null }])).not.toBe(
       rowsDrawKey([undo]),
     );
-    expect(rowsDrawKey([row({ sub: "47 m" })])).not.toBe(rowsDrawKey([row()]));
+    expect(
+      rowsDrawKey([
+        row({
+          sub: "47 m, behind you",
+          mainLabel: "The well: 47 m. Guide me here",
+        }),
+      ]),
+    ).toBe(rowsDrawKey([row()]));
+    expect(rowsDrawKey([row({ title: "The old well" })])).not.toBe(
+      rowsDrawKey([row()]),
+    );
+    expect(rowsDrawKey([row({ state: "skipped" })])).not.toBe(
+      rowsDrawKey([row()]),
+    );
     expect(rowsDrawKey([row({ chosen: true })])).not.toBe(rowsDrawKey([row()]));
+    expect(rowsDrawKey([row({ confirm: "Skip The well" })])).not.toBe(
+      rowsDrawKey([row()]),
+    );
   });
 
   it("a control's data-tap is the guide's row tap; the undo is a bring back", () => {

@@ -373,9 +373,13 @@
          the whole panel a screen height down, below the edge of the DOM
          overlay - every control unreachable (owner's r750 field test;
          the RecorderApp's #app > canvas rule, app.css). The XR layer
-         draws the camera; this canvas only needs to exist. */
+         draws the camera; this canvas only needs to exist. Fixed, not
+         absolute: a window-sized box laid out at #ar-root's offset made
+         the page wider than the window (17 px on a phone), and a page
+         wider than the screen pans under a swipe meant for the sheet; a
+         fixed box adds nothing to the page's scrollable width. */
       #ar-root > canvas {
-        position: absolute;
+        position: fixed;
         top: 0;
         left: 0;
         pointer-events: none;
@@ -1872,6 +1876,51 @@
       .walk-radar-wrap[data-mode="frozen"] .walk-radar-canvas {
         filter: grayscale(1) brightness(0.85);
       }
+
+      /* The focus's edge pill (W4 build plan M5, the prototype's "on the
+         way" and "behind you"): at 42 % of the height, 8 px in from the
+         edge on the station's side, its chevron pointing out. Never a
+         tap target: the HUD's markers and the list are. */
+      body[data-mode="visitor"][data-ar-active="true"]
+        .walk-edge-pill:not([hidden]) {
+        position: fixed;
+        top: 42%;
+        z-index: 14;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        max-width: 44vw;
+        padding: 7px 11px;
+        border: 1px solid rgb(251 146 60 / 70%);
+        border-radius: 999px;
+        background: rgb(10 14 19 / 72%);
+        color: var(--walk-ink);
+        font-family: system-ui, sans-serif;
+        font-size: 13px;
+        font-weight: 600;
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      .walk-edge-pill[hidden] {
+        display: none;
+      }
+      .walk-edge-pill span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .walk-edge-pill svg {
+        flex: none;
+        width: 14px;
+        height: 14px;
+        color: var(--walk-accent);
+      }
+      .walk-edge-pill[data-side="left"] {
+        left: calc(8px + env(safe-area-inset-left));
+      }
+      .walk-edge-pill[data-side="right"] {
+        right: calc(8px + env(safe-area-inset-right));
+        flex-direction: row-reverse;
+      }
       .walk-precision {
         display: flex;
         gap: 6px;
@@ -2611,6 +2660,10 @@
           .walk-coach:not([hidden]) {
           top: 50%;
           left: 60%;
+        }
+        /* The left pill clears the sheet's card. */
+        .walk-edge-pill[data-side="left"] {
+          left: calc(50vw + 10px);
         }
         body[data-mode="visitor"][data-ar-active="true"] #walk-toast-root {
           top: calc(14px + env(safe-area-inset-top));
@@ -4845,6 +4898,35 @@
                     data-testid="walk-precision-text"
                   ></span>
                 </p>
+              </div>
+              <!-- The focus's edge pill (W4 build plan M5): the station the
+               walk is about, named at the screen's edge on its side while
+               it is off screen. aria-hidden: the peek's line says the same,
+               and a pill that comes and goes with every turn would be
+               read out each time. -->
+              <div
+                id="walk-edge-pill"
+                class="walk-edge-pill"
+                data-testid="walk-edge-pill"
+                data-side="left"
+                aria-hidden="true"
+                hidden
+              >
+                <svg viewBox="0 0 14 14" aria-hidden="true">
+                  <path
+                    id="walk-edge-pill-arrow"
+                    d="M9 2L4 7l5 5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span
+                  id="walk-edge-pill-text"
+                  data-testid="walk-edge-pill-text"
+                ></span>
               </div>
               <!-- The framework's toast is attached here while it shows. -->
               <!-- aria-hidden: its words are announced already, by

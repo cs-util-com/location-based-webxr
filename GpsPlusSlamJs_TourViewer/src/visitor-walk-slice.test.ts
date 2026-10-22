@@ -308,7 +308,7 @@ describe("visitorWalkReducer", () => {
   });
 });
 
-describe("the sheet (W4 build plan M2, §1.5, §1.6)", () => {
+describe("the sheet", () => {
   // Why these tests matter: the sheet's peek / list is UI state in the
   // store (the project's Redux rule), and two of its changes follow
   // the walk rather than a tap - a story starting closes the list, and the
@@ -525,7 +525,7 @@ describe("the walk's windows (selectUndoableSkip, selectNote)", () => {
   });
 });
 
-describe("the welcome back (W4 build plan M2, §1.8)", () => {
+describe("the welcome back", () => {
   // Why: leaving AR with progress arms one "Welcome back" for the next
   // entry; it is walk state (a view's decision, not a DOM resource), so it
   // lives in the store with the walk it belongs to, and a new walk or none
@@ -546,7 +546,7 @@ describe("the welcome back (W4 build plan M2, §1.8)", () => {
   });
 });
 
-describe("the walk's rules of M4 (W4 build plan §1.9 R-1 to R-4)", () => {
+describe("the walk's rules: the focus, no guess, the arms, the choice", () => {
   const near = (pairs: Record<string, number>) =>
     new Map(Object.entries(pairs));
 
@@ -587,7 +587,7 @@ describe("the walk's rules of M4 (W4 build plan §1.9 R-1 to R-4)", () => {
     expect(walkFocus(started("any"), near({}))).toBe("a");
   });
 
-  it("walkNoGuess: R-2's condition - any order, two or more to find, no choice, no distance", () => {
+  it("walkNoGuess: no station guessed - any order, two or more to find, no choice, no distance", () => {
     const blind = visitorWalkReducer(started("any"), noGuessSet(true));
     expect(walkNoGuess(blind)).toBe(true);
     expect(walkNoGuess(started("any"))).toBe(false);

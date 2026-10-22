@@ -71,8 +71,8 @@ function input(over: Partial<WalkRadarInput> = {}): WalkRadarInput {
 const blip = (m: ReturnType<typeof walkRadarModel>, id: string) =>
   m.blips.find((b) => b.id === id);
 
-describe("walkPrecisionChip - the chip's words (§1.3)", () => {
-  it("says each precision in W4's words", () => {
+describe("walkPrecisionChip - the chip's words", () => {
+  it("says each precision in the prototype's words", () => {
     expect(walkPrecisionChip("code", 1)).toBe("Placed by a code");
     expect(walkPrecisionChip("gps", 7.6)).toBe("GPS - about 8 m");
     expect(walkPrecisionChip("weak", 40)).toBe("GPS - about 40 m, too weak");
@@ -98,7 +98,7 @@ describe("walkRadarFovDeg - the cone's width", () => {
   // camera's VERTICAL field of view (three.js `fov`), so its cone is the
   // horizontal one at the screen's aspect - about 32° on a portrait phone,
   // 82° sideways. Read as horizontal, the cone drew twice W4's width.
-  it("falls back to W4's camera before the first XR frame: 64° (44° when not taller than wide) vertical, at the screen's aspect", () => {
+  it("falls back to the prototype's camera before the first XR frame: 64° (44° when not taller than wide) vertical, at the screen's aspect", () => {
     const h = (vDeg: number, aspect: number): number =>
       (2 * Math.atan(Math.tan((vDeg * Math.PI) / 360) * aspect) * 180) /
       Math.PI;
@@ -124,7 +124,7 @@ describe("walkRadarFovDeg - the cone's width", () => {
 });
 
 describe("walkRadarRings - the scale rings", () => {
-  it("draws W4's 25 m and 100 m rings at 300 m, the outer one labelled", () => {
+  it("draws the prototype's 25 m and 100 m rings at 300 m, the outer one labelled", () => {
     expect(walkRadarRings(300)).toEqual([
       { m: 25, label: null },
       { m: 100, label: "100 m" },
@@ -184,7 +184,7 @@ describe("walkRadarModel - the geometry", () => {
     );
   });
 
-  it("labels no station's distance in any state (R-0)", () => {
+  it("labels no station's distance in any state", () => {
     // The model has no text for a station but its tour number.
     for (const kind of ["code", "gps", "weak", "none", "lost"] as const) {
       const m = walkRadarModel(input({ kind, accuracyM: 8 }));
@@ -244,7 +244,7 @@ describe("walkRadarModel - the blips' looks", () => {
   });
 });
 
-describe("walkRadarModel - the visitor's mark by precision (§1.2)", () => {
+describe("walkRadarModel - the visitor's mark by precision", () => {
   it("code: a pin", () => {
     expect(walkRadarModel(input()).visitor).toEqual({ kind: "pin" });
   });
@@ -398,7 +398,7 @@ describe("walkRadarModel - its guards", () => {
     );
   });
 
-  it("treats a field of view that is no angle as W4's fallback on a square screen", () => {
+  it("treats a field of view that is no angle as the prototype's fallback on a square screen", () => {
     const m = walkRadarModel(input({ fovDeg: Number.NaN }));
     expect(m.cone).toBeCloseTo((22 * Math.PI) / 180, 9);
   });

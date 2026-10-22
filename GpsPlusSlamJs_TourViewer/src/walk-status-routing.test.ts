@@ -164,7 +164,7 @@ const ROUTES: Record<
   },
 };
 
-describe("walkStatusRouting (§1.4)", () => {
+describe("walkStatusRouting", () => {
   it("routes every state the sentence has", () => {
     expect(Object.keys(ROUTES).sort()).toEqual(
       [...VISITOR_STATUS_STATES].sort(),

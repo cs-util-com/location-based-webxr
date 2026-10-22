@@ -263,8 +263,10 @@ inside `#ar-root`, so the marker is composited over the camera for the
 whole recorded session and shows on the page too; `ar-layout.spec.js`
 measures the overlay with it visible.
 The framework's AR canvas (window-sized, `#ar-root`'s first child after
-`initAR`) is taken out of the flow (`#ar-root > canvas { position: absolute }`,
-the RecorderApp's rule): in the flow it pushed the whole panel a screen
+`initAR`) is taken out of the flow (`#ar-root > canvas { position: fixed }`;
+absolute, the RecorderApp's rule, left it at `#ar-root`'s offset and the
+page 17 px wider than a phone's window, pinned by
+`visitor-walk-layout.spec.js`): in the flow it pushed the whole panel a screen
 height down, below the overlay's edge (owner's r750 field test;
 `playwright-tests/ar-layout.spec.js` pins every panel control on screen at
 360x640, 360x800 and 390x844). `#size-offer` is the panel's FIRST child,
@@ -409,4 +411,34 @@ the size default.
   inside `#walk-distance`; `.walk-arrow` 15 px (13 px in a row), hidden
   without `data-deg`; reduced motion stops the chip's pending pulse and
   the arrows' turn transition.
+- Pinned by `playwright-tests/visitor-walk-layout.spec.js`.
+
+## Reduced motion
+
+- One `@media (prefers-reduced-motion: reduce)` block stills every
+  animation of the walk: the coach's spinner and sway, the timed story
+  dot, the chip's pending pulse, the toast, and the undo bar (held at its
+  start width, `--walk-undo-from`). Each animated rule is named there by
+  its OWN selector: a shorter one loses to the animated rule's
+  specificity, which is how the spinner and the toast kept moving until
+  the M5 step. `walk-sheet.test.ts` holds the animated rules and the
+  stilled ones together.
+
+## The focus's edge pill (visitor walk W4 build plan M5)
+
+- `#walk-edge-pill` (hidden until it shows; `data-side` left or right;
+  `aria-hidden="true"`: the peek says the same, and a pill coming and
+  going with each turn would be read out each time) holds the chevron
+  `svg` with its path `#walk-edge-pill-arrow` (redrawn per side by
+  `walk-edge-pill.ts`) and `#walk-edge-pill-text`. Inside `#ar-root`
+  (`hud-overlay-nesting.test.js`).
+- Place (the prototype's): fixed, its top at 42 % of the height, 8 px from
+  the edge on its side (the safe-area inset added), at most 44 vw, the
+  chevron first on the left and last on the right (`row-reverse`), 6 px
+  apart; a phone held sideways puts the left pill at 50 vw + 10 px, right
+  of the sheet's card. `pointer-events: none`, z-index 14 (under the
+  radar's 20).
+- Look: the prototype's background `rgb(10 14 19 / 72%)`, a 1 px border
+  of the walk's accent at 70 %, the chevron in `--walk-accent`, 13 px
+  semibold text cut with an ellipsis.
 - Pinned by `playwright-tests/visitor-walk-layout.spec.js`.

@@ -4,11 +4,12 @@ import { expect, test } from "@playwright/test";
 import {
   forceTrackingReady,
   installTourViewerArFakes,
+  lockFixtureCode,
+  reportArTracking,
   seedAlignment,
   standAt,
   walkRowControl,
 } from "./ar-fakes.js";
-import { E2E_QR_TEXT } from "./qr-fixture.mjs";
 
 /**
  * The visitor's stations (tour kit plan K4) end to end, through the AR
@@ -24,6 +25,13 @@ const STATIONS_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/stations-tour.zip";
 test.beforeEach(async ({ page }) => {
   await installTourViewerArFakes(page);
 });
+
+/** The AR session's tracking, with a pose: the fakes deliver none, so
+ *  without one the walk reads tracking lost and offers no skip. */
+async function trackingOk(page) {
+  await reportArTracking(page, true);
+  await forceTrackingReady(page);
+}
 
 /** Open the stations tour as a visitor and start AR on an aligned store. */
 async function startTheTour(page) {
@@ -43,26 +51,6 @@ async function startTheTour(page) {
   await seedAlignment(page);
 }
 
-/** Lock the fixture's printed code until the gate reports it. */
-async function lockTheCode(page) {
-  await page.evaluate((text) => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
-  }, E2E_QR_TEXT);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("ar-status").getAttribute("data-gate");
-      },
-      { timeout: 20000 },
-    )
-    // The CODE passed the gate (U1 milestone review #9: the visitor's state
-    // alone also reads "placing" after a GPS-only pass).
-    .toBe("passed-code");
-}
-
 test("a station tour: the visitor at the code finds the first station, its knight speaks and asks, a walk finds the next, the last is skipped", async ({
   page,
 }) => {
@@ -73,7 +61,8 @@ test("a station tour: the visitor at the code finds the first station, its knigh
   // when each module's own tests pass.
   await startTheTour(page);
   await standAt(page, 0, 0, 0);
-  await lockTheCode(page);
+  await lockFixtureCode(page);
+  await trackingOk(page);
 
   // The lock passed the gate; the visitor stands inside "The gate"'s
   // radius, so it is found (D16: by the radius, never by the lock): its
@@ -220,7 +209,7 @@ test("leaving AR stops the story but keeps the progress, and the cut-short story
   // a fixed-order tour could never get past that station.
   await startTheTour(page);
   await standAt(page, 0, 0, 0);
-  await lockTheCode(page);
+  await lockFixtureCode(page);
   await expect(page.getByTestId("scene-title")).toHaveText("The gate");
 
   await page.evaluate(() => {
@@ -237,7 +226,7 @@ test("leaving AR stops the story but keeps the progress, and the cut-short story
   await standAt(page, 0, 0, 10);
   await expect(page.getByTestId("station-line")).toBeHidden();
   await expect(page.getByTestId("scene-panel")).toBeHidden();
-  await lockTheCode(page);
+  await lockFixtureCode(page);
   // The next GPS fix (on a phone, the next camera frame) re-judges.
   await standAt(page, 0, 0, 11);
   await expect(page.getByTestId("scene-panel")).toBeVisible();
@@ -302,7 +291,8 @@ test("without location, a station is reached by its radius on the code-placed po
       orientation: { x: 0, y: 0, z: 0, w: 1 },
     };
   });
-  await lockTheCode(page);
+  await lockFixtureCode(page);
+  await trackingOk(page);
   await expect(page.getByTestId("scene-title")).toHaveText("The gate");
   await page.getByTestId("scene-continue").click();
   await page.getByTestId("scene-choices").getByText("Yes").click();
@@ -353,7 +343,7 @@ test("only the present station's content stands in the scene: walking from the g
   // fails here through the real page.
   await startTheTour(page);
   await standAt(page, 0, 0, 0);
-  await lockTheCode(page);
+  await lockFixtureCode(page);
   await expect
     .poll(() => contentGroups(page))
     .toEqual(["station-content:gate"]);
@@ -430,7 +420,7 @@ test("?allstations=1 shows every station's content at once", async ({
   await button.click();
   await seedAlignment(page);
   await standAt(page, 0, 0, 0);
-  await lockTheCode(page);
+  await lockFixtureCode(page);
   await expect
     .poll(async () => {
       await page.evaluate(() => {
@@ -471,7 +461,7 @@ test("the gate's content stands with its station: in the gate's group there, fad
   // what it draws.
   await startTheTour(page);
   await standAt(page, 0, 0, 0);
-  await lockTheCode(page);
+  await lockFixtureCode(page);
   await expect
     .poll(async () => {
       await page.evaluate(() => {

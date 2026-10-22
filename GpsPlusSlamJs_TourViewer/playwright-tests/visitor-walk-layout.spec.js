@@ -2,6 +2,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  faceBearing,
   forceTrackingReady,
   installTourViewerArFakes,
   lockFixtureCode,
@@ -69,6 +70,9 @@ async function enterTheWalk(page, archive = WALK_ARCHIVE) {
   await standAt(page, 0, 0, 0);
   await lockFixtureCode(page);
   await expect(page.getByTestId("walk-sheet")).toBeVisible();
+  // A pose (the fakes deliver none): without it the walk reads tracking
+  // lost and offers no skip.
+  await trackingOk(page);
   // R-2's hold (M4): the peek names a station once the distance held.
   await waitForTheGuess(page);
 }
@@ -128,7 +132,89 @@ async function boxOf(locator) {
 for (const viewport of VIEWPORTS) {
   const label = `${String(viewport.width)}x${String(viewport.height)}`;
 
-  test(`the walk's sheet, its peek and the Exit button sit where W4 puts them at ${label}`, async ({
+  // Why this test matters: in AR every control of the walk must be on the
+  // screen without scrolling the page, and the page must not scroll
+  // sideways - a phone pans a page that is wider than the screen under a
+  // swipe meant for the sheet. The framework's window-sized canvas, laid
+  // out at the overlay root's place, made the page wider than the window.
+  test(`in AR the page does not scroll sideways and every control of the walk is on the screen at ${label}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await installTourViewerArFakes(page);
+    await enterTheWalk(page);
+    const overflowX = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(overflowX).toBeLessThanOrEqual(0);
+    for (const id of [
+      "enter-ar",
+      "walk-radar",
+      "walk-grab",
+      "walk-peek",
+      "station-skip",
+      "walk-precision",
+    ]) {
+      const b = await box(page, id);
+      expect(b.x, id).toBeGreaterThanOrEqual(0);
+      expect(b.y, id).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.width, id).toBeLessThanOrEqual(viewport.width + 0.5);
+      expect(b.y + b.height, id).toBeLessThanOrEqual(viewport.height + 0.5);
+    }
+    // The list open: its close button and its first row on the screen.
+    await page.getByTestId("walk-grab").click();
+    for (const id of ["walk-close", "walk-list-title"]) {
+      const b = await box(page, id);
+      expect(b.y, id).toBeGreaterThanOrEqual(0);
+      expect(b.y + b.height, id).toBeLessThanOrEqual(viewport.height + 0.5);
+    }
+    const row = await boxOf(page.getByTestId("walk-row").first());
+    expect(row.y + row.height).toBeLessThanOrEqual(viewport.height + 0.5);
+  });
+
+  // Why this test matters (§1.7, the prototype's "on the way"): the
+  // pill stands at 42 % of the height, 8 px in from the edge on its
+  // station's side; sideways the left one starts right of the sheet's
+  // card, which would cover it.
+  test(`the edge pill sits at 42 % of the height, 8 px from its edge, clear of the sheet, at ${label}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await installTourViewerArFakes(page);
+    await enterTheWalk(page);
+    const pill = page.getByTestId("walk-edge-pill");
+    // Facing east, the gate (north) is to the left.
+    await faceBearing(page, 90);
+    await expect(pill).toHaveAttribute("data-side", "left");
+    const left = await box(page, "walk-edge-pill");
+    expect(left.y).toBeCloseTo(viewport.height * 0.42, 0);
+    if (sideways(viewport)) {
+      expect(left.x).toBeCloseTo(viewport.width / 2 + 10, 0);
+      const sheet = await box(page, "walk-sheet");
+      expect(left.x).toBeGreaterThan(sheet.x + sheet.width);
+    } else {
+      expect(left.x).toBeCloseTo(8, 0);
+    }
+    expect(left.width).toBeLessThanOrEqual(viewport.width * 0.44 + 0.5);
+    // Its chevron first, pointing out, 6 px before the words.
+    const arrow = await boxOf(pill.locator("svg"));
+    const words = await box(page, "walk-edge-pill-text");
+    expect(arrow.x).toBeLessThan(words.x);
+    expect(words.x - (arrow.x + arrow.width)).toBeCloseTo(6, 0);
+    // Facing west, on the right: the chevron after the words.
+    await faceBearing(page, 270);
+    await expect(pill).toHaveAttribute("data-side", "right");
+    const right = await box(page, "walk-edge-pill");
+    expect(right.x + right.width).toBeCloseTo(viewport.width - 8, 0);
+    expect(right.y).toBeCloseTo(viewport.height * 0.42, 0);
+    const arrowR = await boxOf(pill.locator("svg"));
+    const wordsR = await box(page, "walk-edge-pill-text");
+    expect(arrowR.x - (wordsR.x + wordsR.width)).toBeCloseTo(6, 0);
+  });
+
+  test(`the walk's sheet, its peek and the Exit button sit where the prototype puts them at ${label}`, async ({
     page,
   }) => {
     await page.setViewportSize(viewport);
@@ -314,7 +400,9 @@ for (const viewport of VIEWPORTS) {
     );
   });
 
-  test(`the coach stands where W4 centres it at ${label}`, async ({ page }) => {
+  test(`the coach stands centred (at 60 % across in landscape, beside the sheet) at ${label}`, async ({
+    page,
+  }) => {
     await page.setViewportSize(viewport);
     await installTourViewerArFakes(page);
     await openTheWalk(page);
@@ -372,7 +460,7 @@ for (const viewport of VIEWPORTS) {
 
 for (const viewport of VIEWPORTS) {
   const label = `${String(viewport.width)}x${String(viewport.height)}`;
-  test(`the list's hint, a row's title, action, confirm and undo bar sit where W4 puts them at ${label}`, async ({
+  test(`the list's hint, a row's title, action, confirm and undo bar sit where the prototype puts them at ${label}`, async ({
     page,
   }) => {
     // Why (W4 build plan M4, §1.6, §3.1): the rows' controls are W4's - a
@@ -451,7 +539,7 @@ for (const viewport of VIEWPORTS) {
     expect(undo.width).toBeLessThanOrEqual(170 + 0.5);
   });
 
-  test(`the away block's segments span it in W4's colours, inside the start's card, at ${label}`, async ({
+  test(`the away block's segments span it in the walk's colours, inside the start's card, at ${label}`, async ({
     page,
   }) => {
     // Why (W4 M2 review): the segments are the block's full width, found

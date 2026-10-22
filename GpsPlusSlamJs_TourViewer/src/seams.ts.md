@@ -29,11 +29,15 @@ createAudioElement; xrProjection0 }`
     `walkRadarFovDeg`), its fallback W4's camera (64 deg vertical on a
     screen taller than wide, else 44 deg) at the screen's aspect.
     Not faked in the e2e: no camera, so the fallback cone.
-  - `createWayfindingHud({ getTargets })` (tour kit plan K4) - the
+  - `createWayfindingHud({ getTargets, look? })` (tour kit plan K4) - the
     framework's wayfinding HUD over the session camera (`getCamera()`),
     null while there is none; the station targets carry their own arrival
     band, and the HUD-level band is `station-bands.ts`'s floors (1.5 m /
-    3.0 m). The e2e fake records the targets getter instead.
+    3.0 m). `look` (visitor walk W4 build plan M5) spreads
+    `walk-hud.ts`'s `WALK_HUD_LOOKS[look]` (the focus orange and 1.25
+    times the size, the others white); without one the framework's
+    defaults. The e2e fake records the targets getter and the look
+    instead.
   - `loadGlbModel(blob)` (K4) - three's `GLTFLoader`, imported on first
     use (a visitor without a model never downloads it), `parseAsync` with
     no path, no DRACO, KTX2 or meshopt decoder: the tour session already

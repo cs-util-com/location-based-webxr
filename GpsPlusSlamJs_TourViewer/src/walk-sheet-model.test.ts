@@ -93,6 +93,7 @@ function view(over: Partial<GuideView> = {}): GuideView {
     chooser: false,
     undo: null,
     note: null,
+    trackingLost: false,
     ...over,
   };
 }
@@ -110,7 +111,7 @@ function input(over: Partial<WalkSheetInput> = {}): WalkSheetInput {
   };
 }
 
-describe("the peek (§1.5)", () => {
+describe("the peek", () => {
   it("any order, several offered: 'N stations to find - nearest', the title and the distance", () => {
     const m = walkSheetModel(input());
     expect(m.peek).toEqual({
@@ -166,7 +167,7 @@ describe("the peek (§1.5)", () => {
     });
   });
 
-  it("nothing vouches for the position, several offered: no station named (W4 'Position unknown')", () => {
+  it("nothing vouches for the position, several offered: no station named ('Position unknown')", () => {
     const m = walkSheetModel(
       input({
         view: view({
@@ -200,6 +201,32 @@ describe("the peek (§1.5)", () => {
       title: "The well",
       tail: "Scan one of the tour's codes so the guide knows where you are.",
     });
+  });
+
+  // Why: "nearest" is a distance's ranking. With one station left to
+  // find (a found one still offered beside it) and no distance, the peek
+  // names it as the one left, as the guide's line does.
+  it("one left to find and no distance: 'Next', never 'nearest'", () => {
+    const oneLeft = walk("any", [
+      ...done("gate"),
+      { kind: "found", id: "well" },
+      ...done("tower"),
+    ]);
+    const peek = (over: Partial<GuideView>) =>
+      walkSheetModel(
+        input({
+          progress: oneLeft,
+          view: view({ focusId: "garden", ...over }),
+        }),
+      ).peek.eyebrow;
+    expect(peek({})).toBe("2 stations to find - nearest");
+    expect(peek({ position: "none" })).toBe("Next");
+    expect(peek({ position: "weak", precision: "weak", accuracyM: 40 })).toBe(
+      "Next",
+    );
+    expect(peek({ position: "none", chosenId: "garden" })).toBe(
+      "2 stations to find - your choice",
+    );
   });
 
   it("a story playing with nothing unfound offered: 'Station found', its title", () => {
@@ -257,7 +284,7 @@ describe("the peek (§1.5)", () => {
   });
 });
 
-describe("the story card's place (§1.5)", () => {
+describe("the story card's place", () => {
   it("takes the peek's place while a story plays, and gives it back with the list open", () => {
     const playing = input({
       progress: walk("any", [{ kind: "found", id: "gate" }]),
@@ -269,7 +296,7 @@ describe("the story card's place (§1.5)", () => {
   });
 });
 
-describe("the segments and the rows (§1.5, §1.6)", () => {
+describe("the segments and the rows", () => {
   it("one per station in tour order: found, here, skipped, next, left", () => {
     const m = walkSheetModel(
       input({
@@ -364,7 +391,7 @@ describe("the segments and the rows (§1.5, §1.6)", () => {
   });
 });
 
-describe("the direction words and arrows (M3, §1.5, §1.6)", () => {
+describe("the direction words and arrows", () => {
   // Why: with a heading the peek says which way the focus is and the rows
   // which way each station is, in the one direction rule's words
   // (`walk-direction.ts`), with an arrow turned to the station; without a
@@ -401,7 +428,7 @@ describe("the direction words and arrows (M3, §1.5, §1.6)", () => {
     expect(m.list.rows[2]).toMatchObject({ sub: "120 m", arrowDeg: null });
   });
 
-  it("no direction where no distance is shown (R-0)", () => {
+  it("no direction where no distance is shown", () => {
     for (const position of ["weak", "none", "pending"] as const) {
       const m = walkSheetModel(
         input({ directions, view: view({ position, accuracyM: 40 }) }),
@@ -413,7 +440,7 @@ describe("the direction words and arrows (M3, §1.5, §1.6)", () => {
   });
 });
 
-describe("the list's header and progress line (§1.6)", () => {
+describe("the list's header and progress line", () => {
   it("the tour's title, the order chip and the grab's name", () => {
     expect(walkSheetModel(input()).list).toMatchObject({
       title: "Old town walk",
@@ -458,7 +485,7 @@ describe("the list's header and progress line (§1.6)", () => {
   });
 });
 
-describe("the completion card (§1.6)", () => {
+describe("the completion card", () => {
   const all = [
     ...done("gate"),
     ...done("well"),
@@ -519,7 +546,7 @@ describe("the completion card (§1.6)", () => {
   });
 });
 
-describe("leaving AR (§1.8)", () => {
+describe("leaving AR", () => {
   it("progress exists once a station is found, done or skipped", () => {
     expect(walkHasProgress(null)).toBe(false);
     expect(walkHasProgress(walk("any"))).toBe(false);
@@ -557,7 +584,7 @@ describe("leaving AR (§1.8)", () => {
   });
 });
 
-describe("the walk's rules in the sheet (W4 build plan M4, §1.5, §1.6, §1.9)", () => {
+describe("the walk's rules in the sheet", () => {
   // Why: with no station guessed (R-2) the peek names none and says what
   // the position is doing, in the chip's words where W4 had none.
   it("the peek with no station guessed: the position's state under each no-distance kind and the hold", () => {
@@ -658,6 +685,40 @@ describe("the walk's rules in the sheet (W4 build plan M4, §1.5, §1.6, §1.9)"
       label: "Skip",
       ariaLabel: "Skip The tower",
     });
+  });
+
+  // Why (§1.1): while tracking is lost the guide cannot tell where the
+  // visitor is, so a row offers no Skip and no confirm (an armed row
+  // asks again once tracking is back); what undoes a skip - the undo and
+  // Bring back - stays, since taking a skip back needs no position.
+  it("tracking lost: no Skip and no confirm on any row; the undo and Bring back stay", () => {
+    const m = walkSheetModel(
+      input({
+        progress: walk("any", [
+          ...done("gate"),
+          { kind: "skip", id: "tower" },
+          { kind: "skip", id: "garden" },
+        ]),
+        view: view({
+          trackingLost: true,
+          rowArmedId: "well",
+          undo: { id: "garden", leftMs: 2_500 },
+        }),
+      }),
+    );
+    const [gate, well, tower, garden] = m.list.rows;
+    expect(gate).toMatchObject({ action: null, confirm: null });
+    expect(well).toMatchObject({ action: null, confirm: null });
+    expect(tower!.action?.kind).toBe("bring");
+    expect(garden!.action?.kind).toBe("undo");
+    const plain = walkSheetModel(input({ view: view({ trackingLost: true }) }))
+      .list.rows;
+    expect(plain.map((r) => r.action?.kind ?? null)).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ]);
   });
 
   // Why (R-4): the chosen target is the peek's, marked on its row, and

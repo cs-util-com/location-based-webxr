@@ -549,7 +549,7 @@ describe("visitorStatus - away from every station", () => {
   });
 });
 
-describe("visitorStatus - the walk runs (W4 build plan M2)", () => {
+describe("visitorStatus - the walk runs", () => {
   // Why: the guide runs only once the tour's zero is known, so its
   // stations are placed - even when nothing else stands (a tour whose
   // stations hold only stories places no content). Read as a placement

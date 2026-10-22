@@ -657,7 +657,7 @@ const EXCEPTION: readonly Scenario[] = [
   },
 ];
 
-describe("the station guide's precision parity oracle (frozen before M2's switch)", () => {
+describe("the station guide's precision parity oracle (frozen before the guide moved into the walk's store)", () => {
   const runs = Object.fromEntries(
     [...PARITY, ...EXCEPTION].map((s) => [s.name, runWithSides(s)]),
   );
@@ -818,7 +818,7 @@ describe("the station guide's precision parity oracle (frozen before M2's switch
   // of its no-distance states, the exempt fields really differ there, and
   // a tick with a distance and R-2 over is held to every field (the test
   // above).
-  it("M4's exception applies field by field, on ticks that reach it", () => {
+  it("the golden's no-guess exception applies field by field, on ticks that reach it", () => {
     const frozen = JSON.parse(readFileSync(GOLDEN, "utf8")) as Record<
       string,
       TickRecord[]

@@ -113,7 +113,12 @@ import { configureStore, type UnknownAction } from "@reduxjs/toolkit";
 import { Vector3 } from "three";
 
 import { cameraHeadingDeg } from "./camera-heading.js";
-import { NO_GUESS_START, noGuessStep } from "./walk-no-guess.js";
+import type { WalkFocusCue } from "./walk-focus-cues.js";
+import {
+  NO_GUESS_START,
+  noGuessStep,
+  WALK_NO_GUESS_HOLD_MS,
+} from "./walk-no-guess.js";
 import { objectPoseNue } from "./content-placement.js";
 import type { StagePose } from "./scene-stage.js";
 import {
@@ -288,6 +293,10 @@ export interface GuideView {
   /** What just happened ("Skipped The well."), while its moment lasts
    *  (`selectNote`); null otherwise. W4 says it in a toast. */
   readonly note: string | null;
+  /** Tracking is lost (the store's `trackingLost`, §1.1): no skip is
+   *  offered - the quick action shows only an undo, the rows no Skip and
+   *  no confirm - while the undo and Bring back stay. */
+  readonly trackingLost: boolean;
 }
 
 /** The open tour's stations, as the guide reads them each tick. */
@@ -324,8 +333,14 @@ export interface StationGuideDeps {
    *  the report, so a heading only a code gave goes with the code. */
   trackingReady(): boolean;
   /** Start the HUD for this AR session; null while it cannot (no camera
-   *  yet). The guide retries on the next tick. */
-  startHud(getTargets: () => WayfindingTarget[]): { dispose(): void } | null;
+   *  yet). The guide retries on the next tick. `getTargets` and `focusId`
+   *  are polled per frame: the targets, and the station the walk is about
+   *  now (the view's `focusId`; the page marks it in its own look,
+   *  `walk-hud.ts`). */
+  startHud(
+    getTargets: () => WayfindingTarget[],
+    focusId: () => string | null,
+  ): { dispose(): void } | null;
   now(): number;
   /** The oldest a device fix may be to stand in for the position (no
    *  alignment, or one not ready; ms, on `now`'s clock); default
@@ -375,6 +390,11 @@ export interface StationGuideDeps {
       readonly stopM: number;
     } | null,
   ): void;
+  /** The focus in the scene (its beacon and ring, `walk-focus-cues.ts`):
+   *  at every render while a station is in focus, a heading was earned
+   *  and a distance is shown (a code's, or GPS within the ceiling); null
+   *  otherwise, and when the guide stops or the session ends. */
+  onFocusCue?(cue: WalkFocusCue | null): void;
 }
 
 export interface StationGuide {
@@ -838,8 +858,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  not lost (the store's `trackingLost`); otherwise it holds the last
    *  such geometry - never one a too-weak fix put there. */
   function keepSnapshot(m: Measurement, kind: WalkPrecisionKind): void {
-    const lost = deps.guideStore?.getState().visitorGuide.trackingLost === true;
-    if (lost || (kind !== "code" && kind !== "gps")) return;
+    if (trackingLost() || (kind !== "code" && kind !== "gps")) return;
     snapshot = {
       distances: m.distances,
       bearings: m.bearings,
@@ -997,14 +1016,17 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     return kind === "code" || kind === "gps";
   }
 
-  /** R-2: enter at once without a distance, leave after the hold
-   *  (`walk-no-guess.ts`); the store hears only a change. */
+  /** R-2: enter at once without a distance, leave after the hold, or at
+   *  once when the distance is a code's (`walk-no-guess.ts`); the store
+   *  hears only a change. */
   function updateNoGuess(m: Measurement): void {
     const before = walk().noGuess;
     const next = noGuessStep(
       { noGuess: before, backAtMs: noGuessBackAtMs },
       distanceShown(m),
       deps.now(),
+      WALK_NO_GUESS_HOLD_MS,
+      precisionKind(m) === "code",
     );
     noGuessBackAtMs = next.backAtMs;
     if (next.noGuess !== before) change(noGuessSet(next.noGuess));
@@ -1069,10 +1091,15 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const station = stationById(focus)!;
     const title = stationTitle(station);
     const d = last?.distances.get(focus);
-    const pick = walk().chosenId === focus ? "your choice" : "nearest";
+    const kind = positionKind(last, d);
+    const chosen = walk().chosenId === focus;
+    // "nearest" is a distance's ranking: without one the focus is named
+    // as the one left (R-2 covers two or more left to find).
     const waiting =
-      which === null ? `Next: ${title}` : `${which} - ${pick}: ${title}`;
-    switch (positionKind(last, d)) {
+      which === null || (!chosen && kind !== "distance")
+        ? `Next: ${title}`
+        : `${which} - ${chosen ? "your choice" : "nearest"}: ${title}`;
+    switch (kind) {
       case "pending":
         return `${lead}${waiting} - waiting for your position…`;
       case "weak":
@@ -1149,6 +1176,12 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     return m!.precision.source === "code" ? "code" : "gps";
   }
 
+  /** Tracking is lost (the store's `trackingLost`, published from the
+   *  readiness phase); false without a guide store. */
+  function trackingLost(): boolean {
+    return deps.guideStore?.getState().visitorGuide.trackingLost === true;
+  }
+
   /** Whether the guide runs now: a run, and the scan gate open. */
   function running(): boolean {
     return liveRun() !== null && deps.placementAllowed();
@@ -1157,6 +1190,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** Nothing to show: the line, the button and the card's end control go,
    *  and a tap that still arrives does nothing (they carry no action). */
   function hideAll(): void {
+    deps.onFocusCue?.(null);
     show(dom.line, "");
     showControl(dom.skip, null);
     if (dom.end !== undefined) showControl(dom.end, null);
@@ -1200,6 +1234,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (last === null) measure();
     // An unjudged position lays no trail: with no visitor there is none.
     deps.onGuide?.(unjudged(last!) ? null : last!.headingNue, guideTarget());
+    deps.onFocusCue?.(focusCue());
     const upcoming = liveRun()?.upcoming() ?? null;
     const next = upcoming === null ? undefined : stationById(upcoming);
     if (next !== undefined) deps.onUpcoming?.(next);
@@ -1254,6 +1289,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (run === null) return null;
     const skip = selectUndoableSkip({ visitorWalk: walk() }, deps.now());
     if (skip !== null) return { kind: "undo", id: skip.id };
+    // Tracking lost: no skip is offered (§1.1), only its undo.
+    if (trackingLost()) return null;
     const focus = focusStation();
     if (focus === null) {
       return walkNoGuess(walk()) ? { kind: "ask-skip", id: null } : null;
@@ -1322,10 +1359,34 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     };
   }
 
+  /** The focus's beacon and ring (`onFocusCue`): a focus, a heading,
+   *  and a distance shown - the scene claims no place to walk to that the
+   *  guide does not show a distance for. */
+  function focusCue(): WalkFocusCue | null {
+    const focus = focusStation();
+    if (focus === null || last === null || last.headingNue === null) {
+      return null;
+    }
+    if (!distanceShown(last)) return null;
+    const pose = poseOf(focus);
+    const station = stationById(focus);
+    const distanceM = last.distances.get(focus);
+    if (pose === null || station === undefined || distanceM === undefined) {
+      return null;
+    }
+    return {
+      id: focus,
+      at: pose.positionNue,
+      eye: last.headingNue,
+      foundM: bandsOf(station, last).foundM,
+      distanceM,
+    };
+  }
+
   function ensureHud(): void {
     const run = liveRun();
     if (hud !== null || run === null || run.isComplete()) return;
-    hud = deps.startHud(hudTargets);
+    hud = deps.startHud(hudTargets, focusStation);
   }
 
   /** One tick (`tick`), inside its call. */
@@ -1428,6 +1489,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function skipTapped(action: SkipAction | null): void {
     const run = liveRun();
     if (run === null || action === null) return;
+    // A tap that arrives while tracking is lost skips nothing (§1.1).
+    if (
+      (action.kind === "ask-skip" || action.kind === "skip") &&
+      trackingLost()
+    ) {
+      return;
+    }
     switch (action.kind) {
       case "ask-skip":
         openToSkip();
@@ -1462,6 +1530,9 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function rowTapped(id: string, tap: WalkRowTap): void {
     const run = liveRun();
     if (run === null) return;
+    // While tracking is lost a row offers no Skip and no confirm (§1.1);
+    // a tap that still arrives changes nothing.
+    if ((tap === "skip" || tap === "confirm") && trackingLost()) return;
     const w = walk();
     switch (tap) {
       case "skip":
@@ -1564,6 +1635,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
                 leftMs: Math.max(0, undoable.atMs + SKIP_UNDO_MS - deps.now()),
               },
         note: noteText(),
+        trackingLost: trackingLost(),
       };
     },
 
@@ -1587,6 +1659,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       publishHeadingPending(false);
       publishPrecision("pending");
       deps.onGuide?.(null, null);
+      deps.onFocusCue?.(null);
       dom.line.hidden = true;
       dom.skip.hidden = true;
       delete dom.skip.dataset["action"];

@@ -375,6 +375,13 @@ activateM)` (each tick, each offered station with a distance: the
     fresh clock. The prefetch hears of a skip (`onDone`) only once it can
     no longer be undone, or when the tour moves on (a find or another
     station done). The notes go after the same 6 s.
+- **While tracking is lost** (the store's `visitorGuide.trackingLost`,
+  read by `trackingLost()`; the view's `trackingLost`): no skip is
+  offered - the quick action shows only an undo of the last skip, the
+  rows no Skip and no confirm (`walk-sheet-model.ts`) - and a tap that
+  still arrives (`skipTapped` with an ask or a skip, `rowTapped` with
+  skip or confirm) changes nothing. The undo and Bring back stay, and an
+  armed row keeps its arm and asks again once tracking is back.
 - **Ending a story (K4 review R9; R-5 from M4):** whenever a found station
   is offered (the one playing first, `storyPlaying`), the story card's end
   control (or, without one, the skip button while it has nothing else to
@@ -398,8 +405,13 @@ activateM)` (each tick, each offered station with a distance: the
   without a distance (R-2): "N stations to find - waiting for your
   position…", "... - GPS too weak ...", "... - scan one of the tour's
   codes ...", and "... - waiting for a steady position…" during the
-  hold; a chosen target is named in every state ("N stations to find -
-  your choice: <title>, N m" or "... - your choice: <title> - scan ..."),
+  hold (left at once when the distance comes back as a code's: a code
+  session's sub-second pose drops would otherwise withhold the guess for
+  a hold after each, `walk-no-guess.ts`); a chosen target is named in
+  every state ("N stations to find - your choice: <title>, N m" or "... -
+  your choice: <title> - scan ..."); without a distance a focus that is
+  not chosen is the one left to find and is named "Next: <title> - ..."
+  ("nearest" is a distance's ranking, never said without one),
   "Station found - its story is
   playing.", "Tour complete - every station visited." or "- N skipped.";
   under branch order "Tour complete - you reached the end of your path."
@@ -448,21 +460,28 @@ store.subscribe(() => guide.tick());
 - M1's guide-level differential (against a frozen copy of the guide from
   before the walk moved into the store) proved the move behaviour-neutral
   and was deleted in M2's first commit, because M2 changes the guide's
-  writes by design (W4 build plan §10). The run-level differential and its
+  writes by design (W4 build plan §10). The run-level differential's
   frozen run went in M4, whose bring back and branch return change the
-  run by design.
+  run by design; its closure-against-store comparison is kept in
+  `station-run.store.property.test.ts`.
 - `station-guide.rules.test.ts` (M4) - R-0 and R-2 per no-distance state
   (too weak, `'none'`, the hold), fixed order unchanged; the three tap
   paths, an armed row surviving a degradation, a story's end clearing the
   end's ask but never a row's arm, a found station never skipped from a
-  row; R-3 (a second skip settling the first, `onUndone` only after the
-  window, a complete tour brought back); R-4 (the chosen target in every
-  precision, named under `'none'`, not offered under fixed order); R-5.
+  row; a code's distance naming the station again at once after a drop;
+  one station left without a distance named "Next", not "nearest"; under
+  tracking lost the quick action hidden and a row's Skip and confirm
+  refused, the undo and Bring back kept; R-3 (a second skip settling the
+  first, `onUndone` only after the window, a complete tour brought back);
+  R-4 (the chosen target in every precision, named under `'none'`, not
+  offered under fixed order); R-5.
 - `station-guide.rules.property.test.ts` (M4) - over random tours,
   orders and sequences of visits, precision changes, waits, quick, end
   and row taps: no deadlock, complete exactly when nothing is offered, a
   found station never reverts, at most one chosen target and only a
-  waiting offered one, no focus while R-2 holds; and every tour completes
+  waiting offered one, and while R-2's condition holds - derived in the
+  harness from its own precision inputs and hold clock, never from the
+  slice's `walkNoGuess` - no focus and a line naming no station; and every tour completes
   within two taps per station over the three tap paths.
 - `station-guide.walk-store.test.ts` (W4 M1) - on the page's store: no walk
   dispatch over frames without an event; one batch per call, last, with the

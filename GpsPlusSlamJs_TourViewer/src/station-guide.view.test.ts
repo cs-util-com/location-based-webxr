@@ -117,7 +117,7 @@ function harness(
   };
 }
 
-describe("the guide's view (W4 build plan M2)", () => {
+describe("the guide's view", () => {
   // Why this test matters: the peek and the hidden line must name the same
   // station and say the same thing about the position; the view is that
   // shared answer, so the sheet never re-derives (and drifts from) the
@@ -204,7 +204,7 @@ describe("the guide's view (W4 build plan M2)", () => {
   });
 });
 
-describe("the end control on the story card (W4 build plan M2, §1.5)", () => {
+describe("the end control on the story card", () => {
   // Why this test matters: from M2 the end control lives on the story card,
   // and only there; the card's button asks, a second tap ends, and "Keep
   // listening" takes the ask back - while the peek's quick action stays
@@ -242,7 +242,7 @@ describe("the end control on the story card (W4 build plan M2, §1.5)", () => {
   });
 });
 
-describe("a call while the scan gate is shut (plan §10 follow-up)", () => {
+describe("a call while the scan gate is shut", () => {
   // Why this test matters: a story's end or a tap that lands while the
   // gate is shut (a later AR entry waiting behind its own scan) wrote the
   // line and the button from the last measurement until the next frame

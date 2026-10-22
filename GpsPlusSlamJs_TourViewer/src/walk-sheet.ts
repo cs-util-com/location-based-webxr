@@ -98,18 +98,23 @@ export function focusLostToHiding(
 }
 
 /**
- * The rows' redraw key: everything a row shows but its arrow's angle and
- * its undo's time left, which change with every frame - the arrow turns
- * in place and the undo's bar runs on its own animation, so a redraw (the
- * row's buttons rebuilt, the bar restarted, the focus moved) happens only
- * when what the row says or offers changed.
+ * The rows' redraw key: everything a row shows but what changes as the
+ * visitor walks - its arrow's angle and its undo's time left (every
+ * frame), its sub line and the title button's accessible name (the metres
+ * and the direction word). The arrow turns in place, the undo's bar runs
+ * on its own animation and the sub line and the name are written in
+ * place, so a redraw (the row's buttons rebuilt, the bar restarted, a tap
+ * in flight and the focus lost) happens only when the row's title, state
+ * or controls changed.
  */
 export function rowsDrawKey(rows: readonly WalkRow[]): string {
   return JSON.stringify(
-    rows.map(({ arrowDeg: _a, undoLeftMs, ...row }) => ({
-      ...row,
-      undo: undoLeftMs !== null,
-    })),
+    rows.map(
+      ({ arrowDeg: _a, sub: _s, mainLabel: _m, undoLeftMs, ...row }) => ({
+        ...row,
+        undo: undoLeftMs !== null,
+      }),
+    ),
   );
 }
 
@@ -293,8 +298,9 @@ export function wireWalkSheet(deps: {
   const { dom } = deps;
   /** What each list was last drawn from: a redraw only on a change. */
   const drawn = new Map<El, string>();
-  /** The rows' arrows as last built, in the rows' order. */
-  let rowArrows: SVGElement[] = [];
+  /** What each row writes in place, as last built, in the rows' order:
+   *  its arrow, its sub line's text and its title button (its name). */
+  let rowParts: { arrow: SVGElement; subText: El; main: El }[] = [];
   /** The row control last tapped: the redraw it causes hands the focus
    *  on (`focusAfterTap`). */
   let focusTap: { id: string; tap: string } | null = null;
@@ -405,11 +411,12 @@ export function wireWalkSheet(deps: {
   }
 
   function drawRows(rows: readonly WalkRow[]): void {
-    // The arrows turn in place (below); everything else redraws the rows.
+    // The arrows, the sub lines and the names are written in place
+    // (below); everything else redraws the rows.
     const key = rowsDrawKey(rows);
     if (drawn.get(dom.rows) !== key) {
       drawn.set(dom.rows, key);
-      rowArrows = [];
+      rowParts = [];
       const active = dom.doc.activeElement;
       const held =
         focusTap !== null && active !== null && dom.rows.contains(active);
@@ -418,8 +425,13 @@ export function wireWalkSheet(deps: {
     }
     focusTap = null;
     rows.forEach((row, i) => {
-      const arrow = rowArrows[i];
-      if (arrow !== undefined) setArrow(arrow, row.arrowDeg);
+      const parts = rowParts[i];
+      if (parts === undefined) return;
+      setArrow(parts.arrow, row.arrowDeg);
+      setText(parts.subText, row.sub);
+      if (parts.main.getAttribute("aria-label") !== row.mainLabel) {
+        parts.main.setAttribute("aria-label", row.mainLabel);
+      }
     });
   }
 
@@ -466,7 +478,6 @@ export function wireWalkSheet(deps: {
         // The title is "Guide me here" where a target can be chosen (R-4).
         const main = button("walk-row-main", "choose", "");
         main.dataset["testid"] = "walk-row-main";
-        main.setAttribute("aria-label", row.mainLabel);
         if (row.choosable)
           main.setAttribute("aria-pressed", String(row.chosen));
         else (main as HTMLButtonElement).disabled = true;
@@ -475,9 +486,9 @@ export function wireWalkSheet(deps: {
         const sub = dom.doc.createElement("small");
         sub.dataset["testid"] = "walk-row-sub";
         const arrow = createArrow(dom.doc);
-        rowArrows.push(arrow);
+        // Its text and the title's name are written by `drawRows`.
         const subText = dom.doc.createElement("span");
-        subText.textContent = row.sub;
+        rowParts.push({ arrow, subText, main });
         sub.append(arrow, subText);
         main.append(title, sub);
         li.append(glyph, main);
@@ -624,14 +635,28 @@ export function wireWalkSheet(deps: {
       }
       // The quick action hides while the list is open (W4; the CSS): a
       // focus it held when it opened the list goes to the armed row's
-      // confirm, else to the list's close button.
+      // confirm; in the chooser (the hint asks which station) to the
+      // first row's Skip, the question's first answer; else to the list's
+      // close button.
       const fromQuick = list && dom.doc.activeElement === dom.quick;
       drawRows(model.list.rows);
+      const hinted = model.list.hint !== null && dom.hint.id !== "";
+      // While the hint shows, each Skip is described by it: a screen
+      // reader hears the question with the control that answers it.
+      for (const skip of dom.rows.querySelectorAll<HTMLElement>(
+        'button[data-tap="skip"]',
+      )) {
+        if (hinted) skip.setAttribute("aria-describedby", dom.hint.id);
+        else skip.removeAttribute("aria-describedby");
+      }
       if (fromQuick) {
         const confirm = dom.rows.querySelector<HTMLElement>(
           'button[data-tap="confirm"]',
         );
-        (confirm ?? dom.close).focus();
+        const firstSkip = hinted
+          ? dom.rows.querySelector<HTMLElement>('button[data-tap="skip"]')
+          : null;
+        (confirm ?? firstSkip ?? dom.close).focus();
       }
     },
     renderAway(model) {
