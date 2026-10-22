@@ -25,7 +25,8 @@
     browser suite holds the slot for its whole run; to let other sessions in
     between files, run it file by file. `GATE_SLOT_DIR=off` switches the
     slot off for one run.
-  - It calls `forwardSignalsToStages()` before the stage runs: a watched
+  - It calls `forwardSignalsToStages()` after taking the slot and before
+    the stage runs (its handlers are prepended ahead of the slot's): a watched
     stage sits in a process group of its own on POSIX, which a Ctrl-C or
     SIGTERM sent to this wrapper would not reach (see `run-stage.mjs.md`).
   - A leading literal `--` (pnpm forwarding style)

@@ -140,43 +140,86 @@ function withBinPath(env, root) {
  */
 const liveGroups = new Map();
 
+/** @param {number} pid @returns {boolean} is that process group still there? */
+function groupAlive(pid) {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Blocks the thread for `ms`: for the exit path, where nothing async runs. */
+function blockFor(/** @type {number} */ ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 /**
- * Sends `signal` to every live stage's process group (POSIX). The gate's
- * signal handlers call it before they exit, and the `exit` hook below
- * forwards SIGTERM to any group nobody signalled yet.
+ * Sends `signal` to the given live stage groups (POSIX), then SIGKILL to any
+ * group still there after STALL_KILL_GRACE_MS. SYNCHRONOUS, because it runs
+ * on the way out (a signal handler that exits next, or the `exit` hook),
+ * where no timer fires: a stage group that ignores the signal, such as a
+ * worker wedged in a loop or one that traps it, would otherwise outlive the
+ * gate.
  *
  * @param {NodeJS.Signals} signal
+ * @param {(state: { signalled: boolean }) => boolean} [which]
  */
-export function signalLiveStages(signal) {
+function endLiveStages(signal, which = () => true) {
+  /** @type {number[]} */
+  const sent = [];
   for (const [pid, state] of liveGroups) {
+    if (!which(state)) continue;
     state.signalled = true;
     try {
       process.kill(-pid, signal);
+      sent.push(pid);
     } catch {
       // Already gone.
+    }
+  }
+  for (let waited = 0; waited < STALL_KILL_GRACE_MS; waited += 100) {
+    if (!sent.some(groupAlive)) return;
+    blockFor(100);
+  }
+  for (const pid of sent.filter(groupAlive)) {
+    try {
+      process.kill(-pid, 'SIGKILL');
+    } catch {
+      // Gone between the check and the kill.
     }
   }
 }
 
+/**
+ * Forwards `signal` to every live stage's process group (POSIX), escalating
+ * to SIGKILL after the grace. The gates' signal handlers call it before they
+ * exit; the `exit` hook below does the same with SIGTERM for any group nobody
+ * signalled yet (an exit for any other reason).
+ *
+ * @param {NodeJS.Signals} signal
+ */
+export function signalLiveStages(signal) {
+  endLiveStages(signal);
+}
+
 process.on('exit', () => {
-  for (const [pid, state] of liveGroups) {
-    if (state.signalled) continue;
-    try {
-      process.kill(-pid, 'SIGTERM');
-    } catch {
-      // Already gone.
-    }
-  }
+  endLiveStages('SIGTERM', (state) => !state.signalled);
 });
 
 /**
  * Exit with 130 on SIGINT, SIGTERM or SIGHUP, after forwarding the signal to
  * the live stage groups. For an entry point that has no handlers of its own
  * (timed-stage.mjs); run-gate.mjs forwards in its own handlers.
+ *
+ * PREPENDED: the machine slot (`holdMachineSlotForProcess`) registers its own
+ * SIGINT/SIGTERM handler first, and that one exits at once, so a handler
+ * added after it would never run.
  */
 export function forwardSignalsToStages() {
   for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM', 'SIGHUP'])) {
-    process.on(signal, () => {
+    process.prependListener(signal, () => {
       signalLiveStages(signal);
       process.exit(130);
     });
@@ -218,18 +261,10 @@ async function killStageTree(pid) {
   }
   const state = liveGroups.get(pid);
   if (state) state.signalled = true;
-  const groupAlive = () => {
-    try {
-      process.kill(-pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  for (let waited = 0; waited < STALL_KILL_GRACE_MS && groupAlive(); waited += 100) {
+  for (let waited = 0; waited < STALL_KILL_GRACE_MS && groupAlive(pid); waited += 100) {
     await delay(100);
   }
-  if (groupAlive()) {
+  if (groupAlive(pid)) {
     try {
       process.kill(-pid, 'SIGKILL');
     } catch {

@@ -2,15 +2,15 @@
 // which no pure test reaches. A silent stage must be killed with its whole
 // process tree, including a forked grandchild (a vitest worker busy in a
 // shrink is exactly such a grandchild), and must exit 124 with the banner; a
-// slow stage that keeps talking must never be killed. On POSIX a SIGTERM to
+// slow stage that keeps talking must never be killed. On POSIX a signal to
 // the gate must reach the stage's own process group too, since the stage
-// runs detached there. Real processes, a tiny limit and a short poll; it runs
+// runs detached there, and before the machine slot's own handler exits. Real processes, a tiny limit and a short poll; it runs
 // on Windows locally and on Linux in CI.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -120,20 +120,58 @@ describe('the stage watchdog, end to end', () => {
     expect(code).toBe(0);
   }, 30_000);
 
+  // The driver takes the machine slot first, as every gate does, and the
+  // slot's own SIGINT/SIGTERM handler exits at once: the forwarding must run
+  // before it (the stage receives the SIGINT that was sent, not the exit
+  // hook's SIGTERM), and a stage that traps the signal must still end, by
+  // the SIGKILL after the grace.
   it.skipIf(process.platform === 'win32')(
-    'forwards a SIGTERM to the gate to the detached stage group (POSIX)',
+    'forwards a SIGINT to the gate to the detached stage group, then SIGKILLs a stage that ignores it (POSIX)',
     async () => {
       const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
       dirs.push(dir);
       const pidFile = path.join(dir, 'grandchild.pid');
       // A limit far beyond the test: only the signal can end the stage.
-      const { child, done } = drive('silent', '30', pidFile);
+      const { child, done } = drive('stubborn', '30', pidFile);
       const grandchild = await readPid(pidFile);
-      leftovers.push(grandchild);
-      child.kill('SIGTERM');
-      await done;
+      const stage = await readPid(`${pidFile}.stage`);
+      leftovers.push(grandchild, stage);
+      child.kill('SIGINT');
+      const { code } = await done;
+      expect(code).toBe(130);
+      expect(readFileSync(`${pidFile}.signals`, 'utf8').split('\n')[0]).toBe('SIGINT');
+      expect(await gone(stage)).toBe(true);
       expect(await gone(grandchild)).toBe(true);
     },
     30_000
   );
+});
+
+// Why: every gate takes the machine slot before it runs a stage, and the
+// slot's SIGINT/SIGTERM handler exits at once. A forwarding handler added
+// after it never runs, on any platform; this checks the ORDER where the
+// POSIX test above cannot run (Windows), in a child process so the test
+// worker's own listeners are untouched.
+describe('signal forwarding order', { timeout: 30_000 }, () => {
+  it("runs before the machine slot's exiting handler", () => {
+    const slotUrl = pathToFileURL(fileURLToPath(new URL('./machine-slot.mjs', import.meta.url))).href;
+    const stageUrl = pathToFileURL(fileURLToPath(new URL('./run-stage.mjs', import.meta.url))).href;
+    const script = [
+      `const { holdMachineSlotForProcess } = await import(${JSON.stringify(slotUrl)});`,
+      `const { forwardSignalsToStages } = await import(${JSON.stringify(stageUrl)});`,
+      `await holdMachineSlotForProcess('order probe');`,
+      'forwardSignalsToStages();',
+      "for (const signal of ['SIGINT', 'SIGTERM']) {",
+      '  const first = String(process.listeners(signal)[0]);',
+      "  console.log(signal + '=' + (first.includes('signalLiveStages') ? 'forward' : 'other'));",
+      '}',
+    ].join('\n');
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      encoding: 'utf8',
+      env: { ...process.env, GATE_SLOT_DIR: 'off' },
+    });
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('SIGINT=forward');
+    expect(result.stdout).toContain('SIGTERM=forward');
+  });
 });

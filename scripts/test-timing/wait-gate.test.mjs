@@ -6,7 +6,15 @@
 // machine slot's holder and the action instead of a bare "quiet", and must
 // refuse a longer window that does not say which long run it is for.
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,13 +22,16 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { REMIND_EVERY_MS } from './machine-slot.mjs';
+import { watchLine } from './stall-watch.mjs';
 import {
+  ALREADY_DONE_EXIT,
   QUIET_EXIT,
+  USAGE_EXIT,
   decideWait,
   gateRc,
   parseWaitArgs,
   quietReport,
-  quietWindowMs,
+  quietWindow,
 } from './wait-gate.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./wait-gate.mjs', import.meta.url));
@@ -54,19 +65,31 @@ describe('parseWaitArgs', () => {
   });
 });
 
-describe('quietWindowMs', () => {
+describe('quietWindow', () => {
   it('is the watchdog limit plus 5 min: 25 min by default', () => {
-    expect(quietWindowMs({}, null)).toBe(25 * 60_000);
-    expect(quietWindowMs({ GATE_STALL_MIN: '30' }, null)).toBe(35 * 60_000);
+    expect(quietWindow({}, null, '')).toEqual({ ms: 25 * 60_000, basis: 'env' });
+    expect(quietWindow({ GATE_STALL_MIN: '30' }, null, '').ms).toBe(35 * 60_000);
   });
 
   it('falls back to the default limit when the watch is off or malformed', () => {
-    expect(quietWindowMs({ GATE_STALL_MIN: 'off' }, null)).toBe(25 * 60_000);
-    expect(quietWindowMs({ GATE_STALL_MIN: '-1' }, null)).toBe(25 * 60_000);
+    expect(quietWindow({ GATE_STALL_MIN: 'off' }, null, '').ms).toBe(25 * 60_000);
+    expect(quietWindow({ GATE_STALL_MIN: '-1' }, null, '').ms).toBe(25 * 60_000);
   });
 
   it('takes the named override as given', () => {
-    expect(quietWindowMs({ GATE_STALL_MIN: '30' }, 90)).toBe(90 * 60_000);
+    expect(quietWindow({ GATE_STALL_MIN: '30' }, 90, '')).toEqual({ ms: 90 * 60_000, basis: 'named' });
+  });
+
+  // Why: the wait runs in its own shell, so its GATE_STALL_MIN need not be
+  // the gate's. A gate run with a 40 min limit, waited on with a 25 min
+  // window, would be reported quiet while the watchdog was still entitled to
+  // wait; so the gate's own statement in the log wins over this environment.
+  it("takes the limit the gate wrote into its log over the wait's own", () => {
+    const log = `queued\n${watchLine({ GATE_STALL_MIN: '40' })}\nstage output\n`;
+    expect(quietWindow({ GATE_STALL_MIN: '10' }, null, log)).toEqual({ ms: 45 * 60_000, basis: 'log' });
+    const off = `${watchLine({ GATE_STALL_MIN: 'off' })}\n`;
+    expect(quietWindow({ GATE_STALL_MIN: '10' }, null, off)).toEqual({ ms: 25 * 60_000, basis: 'log-off' });
+    expect(quietWindow({}, 90, log).basis).toBe('named');
   });
 
   // Why: a gate queued for the machine slot prints nothing but the slot's
@@ -74,7 +97,7 @@ describe('quietWindowMs', () => {
   // window, a long queue would read as a hang and the waiter would return
   // "quiet" on a healthy gate. The default window must leave a wide margin.
   it('is far longer than the gap between two queue reminders', () => {
-    expect(quietWindowMs({}, null)).toBeGreaterThanOrEqual(4 * REMIND_EVERY_MS);
+    expect(quietWindow({}, null, '').ms).toBeGreaterThanOrEqual(4 * REMIND_EVERY_MS);
   });
 });
 
@@ -104,7 +127,13 @@ describe('gateRc and decideWait', () => {
 });
 
 describe('quietReport', () => {
-  const base = { log: 'g.log', silentMs: 26 * 60_000, quietMs: 25 * 60_000, nowMs: Date.UTC(2026, 9, 21, 18, 0) };
+  const base = {
+    log: 'g.log',
+    silentMs: 26 * 60_000,
+    window: { ms: 25 * 60_000, basis: /** @type {const} */ ('log') },
+    longRun: null,
+    nowMs: Date.UTC(2026, 9, 21, 18, 0),
+  };
   const holder = {
     pid: 16292,
     token: 't',
@@ -135,6 +164,31 @@ describe('quietReport', () => {
     expect(text).not.toContain('taskkill');
   });
 
+  // Why: the report must not claim more than it knows. Only when the gate's
+  // own log states a live watchdog limit is "a hang inside a stage would have
+  // been killed already" true.
+  it('says where the hang can be only as far as the log shows it', () => {
+    const slot = { dir: null, present: false, existing: null };
+    const known = quietReport({ ...base, slot, platform: 'win32' });
+    expect(known).toContain('its log says so');
+    expect(known).toContain('outside a stage');
+    const off = quietReport({ ...base, window: { ms: 25 * 60_000, basis: 'log-off' }, slot, platform: 'win32' });
+    expect(off).toContain('watchdog is off');
+    expect(off).not.toContain('its log says so');
+    const env = quietReport({ ...base, window: { ms: 25 * 60_000, basis: 'env' }, slot, platform: 'win32' });
+    expect(env).toContain("does not say the gate's watchdog limit");
+    expect(env).not.toContain('its log says so');
+    const named = quietReport({
+      ...base,
+      window: { ms: 60 * 60_000, basis: 'named' },
+      longRun: 'seed sweep',
+      slot,
+      platform: 'win32',
+    });
+    expect(named).toContain('"seed sweep"');
+    expect(named).not.toContain('its log says so');
+  });
+
   it('says so when the slot is off, free, or has no record', () => {
     expect(quietReport({ ...base, slot: { dir: null, present: false, existing: null }, platform: 'win32' })).toContain('Machine slot: off');
     expect(quietReport({ ...base, slot: { dir: 'd', present: false, existing: null }, platform: 'win32' })).toContain('Machine slot: free');
@@ -142,7 +196,7 @@ describe('quietReport', () => {
   });
 });
 
-describe('the CLI', () => {
+describe('the CLI', { timeout: 30_000 }, () => {
   /** @type {string[]} */
   const dirs = [];
   afterEach(() => {
@@ -152,27 +206,87 @@ describe('the CLI', () => {
   /**
    * @param {string[]} args
    * @param {Record<string, string>} env
+   * @param {() => void} [onWaiting] - called once the wait has said it waits
    * @returns {Promise<{ code: number | null, out: string }>}
    */
-  const run = (args, env) =>
+  const run = (args, env, onWaiting) =>
     new Promise((resolve) => {
       const child = spawn(process.execPath, [SCRIPT, ...args], {
         env: { ...process.env, WAIT_GATE_POLL_MS: '50', ...env },
       });
       let out = '';
-      child.stdout.on('data', (chunk) => (out += chunk));
+      child.stdout.on('data', (chunk) => {
+        out += chunk;
+        if (onWaiting && out.includes('wait-gate: waiting on')) {
+          onWaiting();
+          onWaiting = undefined;
+        }
+      });
       child.stderr.on('data', (chunk) => (out += chunk));
       child.on('exit', (code) => resolve({ code, out }));
     });
 
-  it('returns with the gate exit code once the GATE-RC line is there', async () => {
+  /** @returns {string} a fresh temp dir, removed after the test */
+  const tempDir = () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'wait-gate-'));
     dirs.push(dir);
-    const log = path.join(dir, 'g.log');
-    writeFileSync(log, 'stage output\nGATE-RC=124\n');
-    const { code, out } = await run([log], { GATE_SLOT_DIR: 'off' });
+    return dir;
+  };
+
+  /** Sets a file's mtime `minutes` before the moment it was written. */
+  const age = (/** @type {string} */ file, /** @type {number} */ minutes) => {
+    const then = (statSync(file).mtimeMs - minutes * 60_000) / 1000;
+    utimesSync(file, then, then);
+  };
+
+  it('returns with the gate exit code once the GATE-RC line is there', async () => {
+    const log = path.join(tempDir(), 'g.log');
+    writeFileSync(log, 'stage output\n');
+    // Appended only once the wait runs: a line already there is refused.
+    const { code, out } = await run([log], { GATE_SLOT_DIR: 'off' }, () =>
+      appendFileSync(log, 'GATE-RC=124\n')
+    );
     expect(code).toBe(124);
     expect(out).toContain('wait-gate: GATE-RC=124');
+  });
+
+  // Why: a GATE-RC line already in the log when the wait starts belongs to a
+  // run that has finished: this one between two waits, or an earlier run
+  // whose log was reused. Returning its code could pass a gate that never
+  // ran; the wait names the code and both readings, and returns its own exit.
+  it('refuses a log that already holds a GATE-RC line, naming its code', async () => {
+    const log = path.join(tempDir(), 'g.log');
+    writeFileSync(log, 'stage output\nGATE-RC=0\n');
+    const { code, out } = await run([log], { GATE_SLOT_DIR: 'off' });
+    expect(code).toBe(ALREADY_DONE_EXIT);
+    expect(out).toContain('already holds GATE-RC=0');
+    expect(out).not.toContain('wait-gate: GATE-RC=0 (');
+  });
+
+  // Why: a harness cuts a background wait after about 30 min, and the wait
+  // is started again. Counting the silence from each start would mean a
+  // window of 30 min or more could never be reached; it counts from the
+  // log's own last change.
+  it('counts the silence from the log, so a re-armed wait on a quiet log returns at once', async () => {
+    const log = path.join(tempDir(), 'g.log');
+    writeFileSync(log, 'stage output, then nothing\n');
+    age(log, 61);
+    const { code, out } = await run([log, '--long-run', 'seed sweep', '--quiet-min', '60'], {
+      GATE_SLOT_DIR: 'off',
+    });
+    expect(code).toBe(QUIET_EXIT);
+    expect(out).toContain('has not changed for 61.');
+  });
+
+  it("sizes the window from the gate's log line, not from its own environment", async () => {
+    const log = path.join(tempDir(), 'g.log');
+    // The gate ran with a 1 min limit (window 6 min); the wait's own env says
+    // 20 (window 25). Quiet for 7 min is past the first and short of the second.
+    writeFileSync(log, `${watchLine({ GATE_STALL_MIN: '1' })}\n`);
+    age(log, 7);
+    const { code, out } = await run([log], { GATE_SLOT_DIR: 'off', GATE_STALL_MIN: '20' });
+    expect(code).toBe(QUIET_EXIT);
+    expect(out).toContain('its log says so');
   });
 
   it('returns QUIET with the slot holder when a named window passes', async () => {
@@ -198,7 +312,9 @@ describe('the CLI', () => {
 
   it('refuses an unnamed longer window with a usage error', async () => {
     const { code, out } = await run(['g.log', '--quiet-min', '60'], { GATE_SLOT_DIR: 'off' });
-    expect(code).toBe(2);
+    // Not 2, which a gate itself can return (a lint or tsc failure).
+    expect(code).toBe(USAGE_EXIT);
+    expect(USAGE_EXIT).toBe(64);
     expect(out).toContain('--long-run and --quiet-min go together');
   });
 });

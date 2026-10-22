@@ -125,6 +125,35 @@ export function shouldReportSilence(longestMs, limitMs) {
 }
 
 /**
+ * The line a gate writes into its log at the start: the watchdog limit its
+ * unfiltered stages run with. wait-gate.mjs reads it back (parseWatchLine) to
+ * size its quiet window from the gate's limit rather than its own env.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {string}
+ */
+export function watchLine(env) {
+  const limitMs = stallLimitMs({}, env);
+  return limitMs === null
+    ? `stage watchdog: off (${STALL_ENV}=off)`
+    : `stage watchdog: ${limitMs / 60_000} min (${STALL_ENV}; a stage silent that long is killed, exit ${STALL_EXIT})`;
+}
+
+/**
+ * @param {string} text - a gate log
+ * @returns {{ minutes: number } | { off: true } | null} the last watchLine's
+ *   statement, or null when the log carries none
+ */
+export function parseWatchLine(text) {
+  const matches = [
+    ...text.matchAll(/^stage watchdog: (?:(\d+(?:\.\d+)?) min \(|(off) \()/gm),
+  ];
+  const last = matches.at(-1);
+  if (!last) return null;
+  return last[2] === 'off' ? { off: true } : { minutes: Number(last[1]) };
+}
+
+/**
  * @param {string} stageName
  * @param {number} longestMs
  * @param {number} durationMs
@@ -154,9 +183,11 @@ export function stallMessage(stageName, silentMs, kill) {
     `✖ STALLED: stage "${stageName}" printed nothing for ${min} min - ${outcome}.`,
     '  Not counted as a red test, and not a failing property still shrinking (those stop at the',
     '  fast-check time limit): a real hang - a test or tool call that never returns, a deadlock or',
-    '  a stuck worker. To see which file: re-run that stage on its own, keeping CI=1; for a vitest',
-    `  stage add a per-file reporter (pnpm run test:unit -- --reporter=verbose; set ${STALL_ENV}=<minutes>`,
-    '  to watch that filtered run too). Do not retry it away: a second stall is a bug to file.',
+    '  a stuck worker. To see which file: re-run that stage on its own, keeping CI=1;',
+    '  for a vitest stage, with a per-file reporter, the machine slot and the watch:',
+    `  GATE_SLOT=take ${STALL_ENV}=<minutes> pnpm run test:unit --reporter=verbose`,
+    '  (a filtered run skips the slot and the watch unless asked). Do not retry it away: a second',
+    '  stall is a bug to file.',
     `  ${STALL_ENV}=<minutes> changes the limit, ${STALL_ENV}=off switches the watch off.`,
   ].join('\n');
 }

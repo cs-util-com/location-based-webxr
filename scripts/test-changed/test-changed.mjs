@@ -46,7 +46,11 @@ import { fileURLToPath } from 'node:url';
 
 import { holdMachineSlotForProcess } from '../test-timing/machine-slot.mjs';
 import { SKIP_BROWSER_ENV } from '../test-timing/projects.mjs';
-import { STALL_ENV, STALL_EXIT } from '../test-timing/stall-watch.mjs';
+import {
+  STALL_ENV,
+  STALL_EXIT,
+  watchLine,
+} from '../test-timing/stall-watch.mjs';
 import {
   cascadeCommands,
   describeRun,
@@ -137,6 +141,10 @@ if (linkOverride) {
 if (!dryRun) {
   await holdMachineSlotForProcess(`test:changed in ${WORKSPACE_ROOT}`);
 }
+
+// The watchdog limit every stage of this run gets, for whoever waits on its
+// log (wait-gate.mjs sizes its quiet window from it, not from its own env).
+console.log(watchLine(process.env));
 
 if (runAll) {
   if (dryRun) {

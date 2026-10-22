@@ -35,7 +35,15 @@
   default).
 - `stallMessage(stageName, silentMs, kill)` - the banner; `kill` is
   `{ killed: true }` or `{ killed: false, error }`, and a failed kill is
-  never reported as a kill.
+  never reported as a kill. To find the file it gives the command that works
+  for a vitest stage: `GATE_SLOT=take GATE_STALL_MIN=<minutes> pnpm run
+  test:unit --reporter=verbose` (a filtered run skips the slot and the watch
+  unless asked).
+- `watchLine(env)` / `parseWatchLine(text)` - the line a gate writes at its
+  start, `stage watchdog: 20 min (GATE_STALL_MIN; ...)` or `stage watchdog:
+  off (GATE_STALL_MIN=off)`, and its parse (the last whole line wins, null
+  when there is none). `run-gate.mjs` and `test-changed.mjs` write it;
+  `wait-gate.mjs` reads it.
 - Constants: `STALL_EXIT`, `STALL_ENV`, `STALL_POLL_ENV`,
   `DEFAULT_STALL_MIN`, `STALL_POLL_MS`, `STALL_KILL_GRACE_MS`.
 
@@ -74,13 +82,14 @@
 ```bash
 GATE_STALL_MIN=30 pnpm run test:changed      # a longer limit for a loaded machine
 GATE_STALL_MIN=off pnpm test                 # no watch at all
-GATE_STALL_MIN=40 pnpm run test:unit src/x   # opt a filtered run in
+GATE_SLOT=take GATE_STALL_MIN=40 pnpm run test:unit src/x   # opt a filtered run in
 ```
 
 ## Tests
 
 - `stall-watch.test.mjs` - the limit's precedence, the filtered opt-in,
-  nested gates, the clock, the calibration threshold, the banner wording.
+  nested gates, the clock, the calibration threshold, the banner wording,
+  the watch line and its parse.
 - `stall-watch.property.test.mjs` - the clock never stalls while chunks
   arrive closer than the limit, and always does after a full limit of
   silence.

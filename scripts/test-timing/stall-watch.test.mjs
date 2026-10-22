@@ -12,12 +12,14 @@ import {
   DEFAULT_STALL_MIN,
   STALL_EXIT,
   STALL_POLL_MS,
+  parseWatchLine,
   shouldReportSilence,
   silenceClock,
   silenceLine,
   stallLimitMs,
   stallMessage,
   stallPollMs,
+  watchLine,
 } from './stall-watch.mjs';
 
 const DEFAULT_MS = DEFAULT_STALL_MIN * 60_000;
@@ -128,7 +130,13 @@ describe('stallMessage', () => {
     expect(text).toContain('not a failing property still shrinking');
     expect(text).toContain('a real hang');
     expect(text).toContain('keeping CI=1');
-    expect(text).toContain('--reporter=verbose');
+    // The reader must be told the command that works: a filtered run skips
+    // the machine slot unless asked, and pnpm forwards the reporter flag
+    // without a separating "--".
+    expect(text).toContain('for a vitest stage');
+    expect(text).toContain('GATE_SLOT=take');
+    expect(text).toContain('pnpm run test:unit --reporter=verbose');
+    expect(text).not.toContain('test:unit -- ');
     expect(text).toContain('Do not retry it away');
     // An earlier wording said this; with the property limit in place a
     // stall is no longer a test failure in disguise, but it is not a pass.
@@ -140,5 +148,39 @@ describe('stallMessage', () => {
     expect(text).not.toContain('was killed');
     expect(text).toContain('killing its process tree FAILED (EPERM)');
     expect(text).toContain('may still be running');
+  });
+});
+
+// Why: the gate's waiter sizes its quiet window from the limit the GATE ran
+// with, not from its own environment, so the gate writes that limit into its
+// log and the waiter reads it back. One format, written and parsed here.
+describe('watchLine and parseWatchLine', () => {
+  it('states the effective limit, and reads it back', () => {
+    expect(watchLine({})).toBe(
+      'stage watchdog: 20 min (GATE_STALL_MIN; a stage silent that long is killed, exit 124)'
+    );
+    expect(parseWatchLine(watchLine({}))).toEqual({ minutes: 20 });
+    expect(parseWatchLine(watchLine({ GATE_STALL_MIN: '7.5' }))).toEqual({ minutes: 7.5 });
+  });
+
+  it('states and reads a switched-off watch', () => {
+    expect(watchLine({ GATE_STALL_MIN: 'OFF' })).toBe('stage watchdog: off (GATE_STALL_MIN=off)');
+    expect(parseWatchLine(watchLine({ GATE_STALL_MIN: 'off' }))).toEqual({ off: true });
+  });
+
+  it('a malformed value states the default it falls back to', () => {
+    expect(parseWatchLine(watchLine({ GATE_STALL_MIN: 'soon' }))).toEqual({ minutes: 20 });
+  });
+
+  it('takes the LAST whole line, and nothing when there is none', () => {
+    const log = [
+      'x',
+      watchLine({ GATE_STALL_MIN: '30' }),
+      'y',
+      watchLine({ GATE_STALL_MIN: '9' }),
+    ].join('\n');
+    expect(parseWatchLine(log)).toEqual({ minutes: 9 });
+    expect(parseWatchLine('echo stage watchdog: 3 min (x)\n')).toBeNull();
+    expect(parseWatchLine('')).toBeNull();
   });
 });

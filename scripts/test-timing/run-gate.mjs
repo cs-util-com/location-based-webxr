@@ -37,7 +37,7 @@ import {
   runStage,
   signalLiveStages,
 } from './run-stage.mjs';
-import { STALL_ENV, STALL_EXIT } from './stall-watch.mjs';
+import { STALL_ENV, STALL_EXIT, watchLine } from './stall-watch.mjs';
 
 /** @typedef {import('./delta.mjs').TestCounts} TestCounts */
 
@@ -119,6 +119,10 @@ function printSummaryTable() {
 // than waits, so the two cannot deadlock. A nested run (the cascade's package
 // gates) inherits the holder's token and re-enters at once.
 await holdMachineSlotForProcess(`pnpm test in ${project.name}`);
+
+// The watchdog limit this run's stages get, for whoever waits on its log
+// (wait-gate.mjs sizes its quiet window from it).
+console.log(watchLine(process.env));
 
 /**
  * ONE GATE RUN PER WORKING TREE — see gate-lock.mjs for why this is a refusal
@@ -215,8 +219,11 @@ process.prependListener('exit', () => {
     clearLock(lockFile);
   }
 });
+// PREPENDED: the machine slot registered its own SIGINT/SIGTERM handler
+// first, and that one exits at once; this one must forward to the stages
+// and free the tree lock before it.
 for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM', 'SIGHUP'])) {
-  process.on(signal, () => {
+  process.prependListener(signal, () => {
     // A watched stage runs in a process group of its own on POSIX
     // (run-stage.mjs), which this signal does not reach by itself.
     signalLiveStages(signal);

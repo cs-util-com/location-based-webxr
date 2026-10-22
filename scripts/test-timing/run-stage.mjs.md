@@ -17,8 +17,11 @@
   - `WORKSPACE_ROOT`, `projectRoot(project)`, `timingsPath(project)`.
   - `forwardSignalsToStages()` - for a process that runs stages (the CLI
     wrappers): forwards SIGINT, SIGTERM and SIGHUP to every live stage's
-    process group, then exits 130. `signalLiveStages(signal)` does the
-    forwarding alone, for a caller with its own handlers (`run-gate.mjs`).
+    process group, then exits 130. Its handlers are PREPENDED, because the
+    machine slot (`holdMachineSlotForProcess`) registers a SIGINT/SIGTERM
+    handler first that exits at once, even with `GATE_SLOT_DIR=off`.
+    `signalLiveStages(signal)` does the forwarding alone, for a caller with
+    its own (also prepended) handlers (`run-gate.mjs`).
 - Invariants & assumptions:
   - Recording NEVER fails the gate: all timing errors are warnings; the
     spawned command's exit code is returned untouched.
@@ -58,7 +61,10 @@
     group of its own, and the group gets SIGTERM, then SIGKILL after a 5 s
     grace. Because that group is out of reach of a signal sent to the gate,
     the gate forwards SIGINT, SIGTERM and SIGHUP to it, and an exit hook sends
-    SIGTERM to any group still alive when the parent exits. A failed kill is
+    SIGTERM to any group nobody signalled when the parent exits for another
+    reason. Both escalate to SIGKILL for a group still there after the 5 s
+    grace, synchronously (a blocking wait), since nothing async runs on the
+    way out: a stage that traps or ignores the signal still ends. A failed kill is
     named in the banner (its processes may still run) and the stage still
     returns 124.
 - Examples: `await runStage(project, 'test:unit', ['src/foo.test.ts'])` runs
@@ -69,4 +75,6 @@
   inspecting the generated md (pilot-verified approach). The watchdog's
   spawning half is covered end to end by `stall-watch.integration.test.mjs`
   (a silent fixture stage with a forked grandchild, a stage that keeps
-  talking, and on POSIX a SIGTERM forwarded to the stage's group).
+  talking, and on POSIX a SIGINT forwarded to the stage's group ahead of
+  the slot's handler, then a SIGKILL for a stage that traps it; the order of
+  the handlers is also checked on Windows).

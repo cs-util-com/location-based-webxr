@@ -50,6 +50,10 @@
     its `format` stage. The run prints ONE line (`describeRun`) naming what
     it saw and everything it runs, so a run that covers less than the full
     gate says so.
+  - It writes its watchdog limit (`watchLine`, e.g. `stage watchdog: 20
+    min (...)`) right after taking the slot, dry run included, for the waiter
+    on its log ([wait-gate.mjs](../test-timing/wait-gate.mjs.md)); pinned by
+    `test-changed.test.mjs`.
   - Warns when `pnpm-workspace.yaml` contains a `gps-plus-slam-js: link:`
     override — library changes are invisible to selection then.
   - Package dirs are parsed from `pnpm-workspace.yaml` (plain `- Name` list,
@@ -61,5 +65,6 @@
   `check:deadcode` and the Tour Viewer gate with its dependents; edit only
   a Globe sidecar → repo-config and the Globe's `format`.
 - Tests: decision logic in `select.test.mjs` / `select.property.test.mjs`;
+  the watch line in `test-changed.test.mjs`;
   the thin shell is verified by `--dry-run` runs against the live tree (see
   the speedup plan's Phase B acceptance).
