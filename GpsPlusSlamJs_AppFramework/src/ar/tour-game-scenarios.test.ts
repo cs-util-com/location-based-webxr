@@ -18,8 +18,10 @@ import {
   chooseOption,
   inventory,
   nextAvailableStep,
+  optionDisplay,
   startNextRound,
   startRun,
+  stepAfter,
   type TourGame,
   type TourGameOption,
   type TourGameRunState,
@@ -63,6 +65,17 @@ function pick(
   return result.state;
 }
 
+/** A first-state quiz answer that must be accepted. */
+function answered(
+  game: TourGame,
+  outcomes: Parameters<typeof answerQuiz>[2],
+  correct: boolean
+): TourGameRunState {
+  const result = answerQuiz(game, startRun(game), outcomes, correct);
+  if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.reason)}`);
+  return result.state;
+}
+
 /** The ids of the steps a station's scene plays, in order, with no
  *  choice in between (a straight scene). */
 function playedSteps(
@@ -73,7 +86,7 @@ function playedSteps(
   const out: string[] = [];
   for (let i = nextAvailableStep(game, state, steps, 0); i >= 0;) {
     out.push(steps[i]!.id);
-    i = nextAvailableStep(game, state, steps, i + 1);
+    i = nextAvailableStep(game, state, steps, stepAfter(steps, i));
   }
   return out;
 }
@@ -152,13 +165,13 @@ describe('a key behind a quiz', () => {
   };
 
   it('keeps the tower closed after a wrong answer, the key greyed', () => {
-    const s = answerQuiz(game, startRun(game), quiz, false);
+    const s = answered(game, quiz, false);
     expect(stationsAvailable(game, s)).toEqual(['well']);
     expect(inventory(game, s).labels[0]?.shown).toBe('greyed');
   });
 
   it('opens the tower and lights the key after a right answer', () => {
-    const s = answerQuiz(game, startRun(game), quiz, true);
+    const s = answered(game, quiz, true);
     expect(stationsAvailable(game, s)).toEqual(['well', 'tower']);
     expect(inventory(game, s).labels[0]?.shown).toBe('held');
     const tower = game.stations[1]!;
@@ -217,6 +230,11 @@ describe('a merchant selling a sword for 2 coins', () => {
     expect(availability(game, startRun(game), buy)).toEqual({
       available: false,
       reason: { kind: 'floor', counter: 'coins', need: 2 },
+    });
+    // Coins are not secret, so the visitor sees the price.
+    expect(optionDisplay(game, startRun(game), buy)).toEqual({
+      shown: 'greyed',
+      needs: [{ counter: 'coins', need: 2 }],
     });
   });
 

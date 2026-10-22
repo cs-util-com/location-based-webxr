@@ -2,11 +2,14 @@
  * Why this test matters: the examples pin single rules; these properties
  * pin what must hold under ANY sequence a visitor can produce. Random
  * games (including undeclared names, zero and fractional adds) and random
- * sequences of chosen options, quiz outcomes and new rounds must never
- * push a counter below its floor or off the integers, a refused option
- * must change nothing, a new round must keep exactly the collectible
- * labels and counters, and the inventory must list every label once and
- * show it exactly by whether it is held and secret.
+ * sequences of chosen options, quiz answers and new rounds must never
+ * push a counter below its floor or off the integers, choosing or
+ * answering must never change the state it is given, a new round must
+ * keep exactly the collectible labels and counters, and the inventory
+ * must list every label once and show it exactly by held, keep and
+ * secret. A greyed option's needs must be exactly what it takes: meeting
+ * all of them makes the option available, leaving any one out does not,
+ * and only a secret or something the game cannot read ever hides one.
  */
 
 import fc from 'fast-check';
@@ -14,9 +17,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   answerQuiz,
-  availability,
   chooseOption,
   inventory,
+  optionDisplay,
   startNextRound,
   startRun,
   type TourGame,
@@ -37,7 +40,7 @@ const game: fc.Arbitrary<TourGame> = fc
     labels: fc.subarray([...LABEL_IDS]),
     counters: fc.subarray([...COUNTER_IDS]),
     keeps: fc.array(keep, { minLength: 5, maxLength: 5 }),
-    secret: fc.array(fc.boolean(), { minLength: 3, maxLength: 3 }),
+    secret: fc.array(fc.boolean(), { minLength: 5, maxLength: 5 }),
     floors: fc.array(fc.integer({ min: -3, max: 3 }), {
       minLength: 2,
       maxLength: 2,
@@ -60,6 +63,7 @@ const game: fc.Arbitrary<TourGame> = fc
       keep: keeps[3 + i]!,
       start: floors[i]! + above[i]!,
       floor: floors[i]!,
+      secret: secret[3 + i]!,
     })),
     stations: [],
   }));
@@ -129,15 +133,19 @@ const action: fc.Arbitrary<Action> = fc.oneof(
 
 function step(g: TourGame, s: TourGameRunState, a: Action): TourGameRunState {
   if (a.kind === 'round') return startNextRound(g, s);
-  if (a.kind === 'quiz') {
-    const outcomes = a.correct ? { correct: a.effects } : { wrong: a.effects };
-    return answerQuiz(g, s, outcomes, a.correct);
-  }
-  const result = chooseOption(g, s, {
-    id: 'o',
-    requires: a.requires,
-    effects: a.effects,
-  });
+  const result =
+    a.kind === 'quiz'
+      ? answerQuiz(
+          g,
+          s,
+          a.correct ? { correct: a.effects } : { wrong: a.effects },
+          a.correct
+        )
+      : chooseOption(g, s, {
+          id: 'o',
+          requires: a.requires,
+          effects: a.effects,
+        });
   return result.ok ? result.state : s;
 }
 
@@ -153,6 +161,51 @@ function problems(g: TourGame, s: TourGameRunState): string[] {
   const sorted = [...new Set(s.labels)].sort();
   if (sorted.join() !== s.labels.join()) out.push(`labels ${s.labels.join()}`);
   return out;
+}
+
+const reached = (g: TourGame, actions: readonly Action[]): TourGameRunState =>
+  actions.reduce((acc, a) => step(g, acc, a), startRun(g));
+
+type Need =
+  | { readonly has: string }
+  | { readonly lacks: string }
+  | { readonly counter: string; readonly need: number };
+
+/** The state with the given needs met: labels given or taken away,
+ *  counters raised by what is missing. */
+function meeting(
+  s: TourGameRunState,
+  needs: readonly Need[]
+): TourGameRunState {
+  const labels = new Set(s.labels);
+  const counters = { ...s.counters };
+  for (const n of needs) {
+    if ('has' in n) labels.add(n.has);
+    else if ('lacks' in n) labels.delete(n.lacks);
+    else counters[n.counter] = (counters[n.counter] ?? 0) + n.need;
+  }
+  return { round: s.round, labels: [...labels].sort(), counters };
+}
+
+/** Every name a target uses, with the kind it is used as. */
+function namesOf(target: {
+  requires: readonly TourGameCondition[];
+  effects: readonly TourGameEffect[];
+}): { name: string; kind: 'label' | 'counter' }[] {
+  const label = (name: string) => ({ name, kind: 'label' as const });
+  const counter = (name: string) => ({ name, kind: 'counter' as const });
+  return [
+    ...target.requires.map((c) =>
+      'has' in c
+        ? label(c.has)
+        : 'lacks' in c
+          ? label(c.lacks)
+          : counter(c.counter)
+    ),
+    ...target.effects.map((e) =>
+      'set' in e ? label(e.set) : 'clear' in e ? label(e.clear) : counter(e.add)
+    ),
+  ];
 }
 
 describe('tour game rules - properties', () => {
@@ -171,22 +224,21 @@ describe('tour game rules - properties', () => {
     );
   });
 
-  // Choosing never mutates the state it is given, and it refuses exactly
-  // when availability says the option is unavailable: the two cannot
-  // drift apart.
-  it('refuses exactly what availability refuses, and never mutates the state', () => {
+  // The rules return new states; a view that keeps the old one (to undo,
+  // or to show "before") must be able to trust it.
+  it('never mutates the state it is given, chosen or answered', () => {
     fc.assert(
       fc.property(
         game,
         fc.array(action, { maxLength: 10 }),
         fc.array(condition, { maxLength: 2 }),
         effects,
-        (g, before, requires, fx) => {
-          const s = before.reduce((acc, a) => step(g, acc, a), startRun(g));
+        fc.boolean(),
+        (g, before, requires, fx, correct) => {
+          const s = reached(g, before);
           const copy = JSON.parse(JSON.stringify(s)) as TourGameRunState;
-          const result = chooseOption(g, s, { id: 'o', requires, effects: fx });
-          const option = { id: 'o', requires, effects: fx };
-          expect(result.ok).toBe(availability(g, s, option).available);
+          chooseOption(g, s, { id: 'o', requires, effects: fx });
+          answerQuiz(g, s, { correct: fx, wrong: fx }, correct);
           expect(s).toEqual(copy);
         }
       ),
@@ -197,7 +249,7 @@ describe('tour game rules - properties', () => {
   it('keeps exactly the collectible labels and counters in a new round', () => {
     fc.assert(
       fc.property(game, fc.array(action, { maxLength: 20 }), (g, actions) => {
-        const s = actions.reduce((acc, a) => step(g, acc, a), startRun(g));
+        const s = reached(g, actions);
         const next = startNextRound(g, s);
         const collectible = new Set(
           g.labels.filter((l) => l.keep === 'collectible').map((l) => l.id)
@@ -216,24 +268,113 @@ describe('tour game rules - properties', () => {
     );
   });
 
-  it('lists every label once, in order, shown exactly by held and secret', () => {
+  it('lists every label once, in order, shown exactly by held, keep and secret', () => {
     fc.assert(
       fc.property(game, fc.array(action, { maxLength: 20 }), (g, actions) => {
-        const s = actions.reduce((acc, a) => step(g, acc, a), startRun(g));
+        const s = reached(g, actions);
         const listed = inventory(g, s);
         expect(listed.labels.map((l) => l.id)).toEqual(
           g.labels.map((l) => l.id)
         );
         for (const l of listed.labels) {
           const held = s.labels.includes(l.id);
+          const missing = l.secret || l.keep === 'round' ? 'hidden' : 'greyed';
           expect(l.held).toBe(held);
-          expect(l.shown).toBe(held ? 'held' : l.secret ? 'hidden' : 'greyed');
+          expect(l.shown).toBe(held ? 'held' : missing);
         }
-        expect(listed.counters.map((c) => [c.id, c.value])).toEqual(
-          g.counters.map((c) => [c.id, s.counters[c.id]])
+        expect(listed.counters.map((c) => [c.id, c.value, c.shown])).toEqual(
+          g.counters.map((c) => [
+            c.id,
+            s.counters[c.id],
+            c.secret === true ? 'hidden' : 'value',
+          ])
         );
       }),
       { numRuns: 300 }
     );
+  });
+
+  // The needs a greyed option lists are what the view tells the visitor
+  // ("needs 2 coins and the red key"): they must be enough and each one
+  // necessary, or the visitor is told a wrong price.
+  it('lists needs that are enough together and each one necessary', () => {
+    let greyed = 0;
+    fc.assert(
+      fc.property(
+        game,
+        fc.array(action, { maxLength: 10 }),
+        fc.array(condition, { maxLength: 3 }),
+        effects,
+        (g, before, requires, fx) => {
+          const s = reached(g, before);
+          const target = { id: 'o', requires, effects: fx };
+          const shown = optionDisplay(g, s, target);
+          if (shown.shown !== 'greyed') return;
+          greyed += 1;
+          expect(shown.needs.length).toBeGreaterThan(0);
+          expect(chooseOption(g, meeting(s, shown.needs), target).ok).toBe(
+            true
+          );
+          shown.needs.forEach((_, k) => {
+            const allBut = shown.needs.filter((__, j) => j !== k);
+            expect(chooseOption(g, meeting(s, allBut), target).ok).toBe(false);
+          });
+        }
+      ),
+      { numRuns: 400 }
+    );
+    expect(greyed).toBeGreaterThan(0);
+  });
+
+  // Hiding is reserved for the creator's secrets and the creator's
+  // mistakes; anything else blocked must be greyed with its price.
+  it('hides an option only for a secret or a name or number the game cannot read', () => {
+    let hidden = 0;
+    fc.assert(
+      fc.property(
+        game,
+        fc.array(action, { maxLength: 10 }),
+        fc.array(condition, { maxLength: 3 }),
+        effects,
+        (g, before, requires, fx) => {
+          const s = reached(g, before);
+          const target = { requires, effects: fx };
+          const shown = optionDisplay(g, s, target);
+          const secrets = new Set(
+            [...g.labels, ...g.counters]
+              .filter((d) => d.secret === true)
+              .map((d) => d.id)
+          );
+          const needs = shown.shown === 'greyed' ? shown.needs : [];
+          const secretNeeds = needs.filter((n) =>
+            secrets.has('has' in n ? n.has : 'lacks' in n ? n.lacks : n.counter)
+          );
+          expect(secretNeeds).toEqual([]);
+          if (shown.shown !== 'hidden') return;
+          hidden += 1;
+          const declared = {
+            label: new Set(g.labels.map((l) => l.id)),
+            counter: new Set(g.counters.map((c) => c.id)),
+          };
+          const used = namesOf(target);
+          const secret = [...g.labels, ...g.counters].some(
+            (d) => d.secret === true && used.some((u) => u.name === d.id)
+          );
+          const unreadable =
+            used.some((u) => !declared[u.kind].has(u.name)) ||
+            fx.some(
+              (e) => 'add' in e && (!Number.isInteger(e.by) || e.by === 0)
+            ) ||
+            requires.some((c) =>
+              'has' in c
+                ? requires.some((d) => 'lacks' in d && d.lacks === c.has)
+                : false
+            );
+          expect(secret || unreadable).toBe(true);
+        }
+      ),
+      { numRuns: 400 }
+    );
+    expect(hidden).toBeGreaterThan(0);
   });
 });

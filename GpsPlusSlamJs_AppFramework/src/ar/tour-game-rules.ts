@@ -12,12 +12,16 @@
  *   game does not declare never holds (`lacks` included), so a typo hides
  *   content instead of revealing it.
  * - Effects apply in order: `set` and `clear` a label (idempotent), `add`
- *   a non-zero integer to a counter. A CHOSEN option is all or nothing: if
- *   the whole list would end any counter below its floor, or an effect
- *   names something the game cannot apply, the option is unavailable and
- *   nothing changes. A QUIZ outcome is forced (the visitor answered): it
- *   clamps at the floor and skips what it cannot apply, so a cost never
- *   greys out an answer and gives it away.
+ *   a non-zero integer to a counter. An OPTION - a scene choice's option or
+ *   a quiz answer alike - is all or nothing: if the whole list would end
+ *   any counter it changes below its floor, or an effect names something
+ *   the game cannot apply, the option is unavailable and nothing changes.
+ * - An unavailable option is shown GREYED with what it needs when every
+ *   label and counter blocking it is visible, and HIDDEN when any of them
+ *   is `secret` (or the game cannot read what blocks it).
+ * - A scene continues after a step at `stepAfter`: an option's `goto` (the
+ *   first step with that id), else the next step; a `goto` naming no step
+ *   ends the scene.
  *
  * Pure and dependency-free: every function takes the game and a run state
  * and returns a new state; nothing is cached, so a condition is always
@@ -35,7 +39,8 @@ interface TourGameLabel {
   /** Shown in the inventory. */
   readonly name: string;
   readonly keep: TourGameKeep;
-  /** Not listed in the inventory until held. Default false. */
+  /** Not listed in the inventory until held, and an option it blocks is
+   *  hidden rather than greyed. Default false. */
   readonly secret?: boolean;
 }
 
@@ -45,8 +50,11 @@ interface TourGameCounter {
   readonly keep: TourGameKeep;
   /** The value a run (and, for a round counter, each round) starts at. */
   readonly start: number;
-  /** The lowest value the counter may take. */
+  /** The lowest value the counter may take (the parser fills in 0). */
   readonly floor: number;
+  /** Not shown in the inventory, and an option it blocks is hidden rather
+   *  than greyed. Default false. */
+  readonly secret?: boolean;
 }
 
 /** A state, judged while it lasts. */
@@ -142,13 +150,27 @@ export type TourGameChoice =
   | { readonly ok: true; readonly state: TourGameRunState }
   | { readonly ok: false; readonly reason: TourGameBlock };
 
+/** One thing a greyed option needs: a label held, a label gone, or `need`
+ *  more of a counter. */
+type TourGameNeed =
+  | { readonly has: string }
+  | { readonly lacks: string }
+  | { readonly counter: string; readonly need: number };
+
+/** How an option shows: takeable, greyed with every need, or hidden. */
+export type TourGameDisplay =
+  | { readonly shown: 'available' }
+  | { readonly shown: 'greyed'; readonly needs: readonly TourGameNeed[] }
+  | { readonly shown: 'hidden' };
+
 interface TourGameInventoryLabel {
   readonly id: string;
   readonly name: string;
   readonly keep: TourGameKeep;
   readonly secret: boolean;
   readonly held: boolean;
-  /** `greyed`: not held; `hidden`: not held and secret. */
+  /** `greyed`: a collectible not held; `hidden`: not held, and secret or
+   *  a round label. */
   readonly shown: 'held' | 'greyed' | 'hidden';
 }
 
@@ -156,7 +178,10 @@ interface TourGameInventoryCounter {
   readonly id: string;
   readonly name: string;
   readonly keep: TourGameKeep;
+  readonly secret: boolean;
   readonly value: number;
+  /** `hidden` for a secret counter. */
+  readonly shown: 'value' | 'hidden';
 }
 
 export interface TourGameInventory {
@@ -284,31 +309,26 @@ export function startRun(game: TourGame): TourGameRunState {
   return { round: 1, labels: [], counters: countersOf(game, (c) => c.start) };
 }
 
-/**
- * Whether a station, item, step or option is available now, and if not,
- * why: the first failing requirement, else (for an option) the first
- * effect the game cannot apply, else the first counter its effects would
- * end below the floor, with how much is missing.
- */
-export function availability(
+interface TourGameTarget {
+  readonly requires?: readonly TourGameCondition[];
+  readonly effects?: readonly TourGameEffect[];
+}
+
+/** Every reason the target is unavailable now, in this order: the failing
+ *  requirements, the effects the game cannot apply, then each counter the
+ *  effects' RESULT would end below its floor. Empty when available. */
+function blocksOf(
   game: TourGame,
   state: TourGameRunState,
-  target: {
-    readonly requires?: readonly TourGameCondition[];
-    readonly effects?: readonly TourGameEffect[];
-  }
-): TourGameAvailability {
-  const condition = failingCondition(game, state, target.requires);
-  if (condition !== undefined) {
-    return { available: false, reason: { kind: 'requires', condition } };
-  }
+  target: TourGameTarget
+): TourGameBlock[] {
+  const out: TourGameBlock[] = (target.requires ?? [])
+    .filter((condition) => !conditionHolds(game, state, condition))
+    .map((condition) => ({ kind: 'requires', condition }));
   const effects = target.effects ?? [];
-  const invalid = effects.find((e) => !isApplicable(game, e));
-  if (invalid !== undefined) {
-    return {
-      available: false,
-      reason: { kind: 'invalid-effect', effect: invalid },
-    };
+  for (const effect of effects) {
+    if (!isApplicable(game, effect))
+      out.push({ kind: 'invalid-effect', effect });
   }
   const { counters } = applyRaw(game, state, effects);
   // Only the counters this option changes: a counter already below its
@@ -318,17 +338,128 @@ export function availability(
     if (!touched.has(counter.id)) continue;
     const value = counters.get(counter.id) ?? counter.start;
     if (value < counter.floor) {
-      return {
-        available: false,
-        reason: {
-          kind: 'floor',
-          counter: counter.id,
-          need: counter.floor - value,
-        },
-      };
+      out.push({
+        kind: 'floor',
+        counter: counter.id,
+        need: counter.floor - value,
+      });
     }
   }
-  return { available: true };
+  return out;
+}
+
+/**
+ * Whether a station, item, step or option is available now, and if not,
+ * why: the first failing requirement, else (for an option) the first
+ * effect the game cannot apply, else the first counter its effects would
+ * end below the floor, with how much is missing.
+ */
+export function availability(
+  game: TourGame,
+  state: TourGameRunState,
+  target: TourGameTarget
+): TourGameAvailability {
+  const [reason] = blocksOf(game, state, target);
+  return reason === undefined
+    ? { available: true }
+    : { available: false, reason };
+}
+
+/** What a block asks of the visitor, or undefined when it must hide the
+ *  option: it names a secret, or something the game cannot read (an
+ *  undeclared name, an effect it cannot apply, a requirement that is no
+ *  whole number). */
+function needOf(
+  game: TourGame,
+  state: TourGameRunState,
+  block: TourGameBlock
+): TourGameNeed | undefined {
+  if (block.kind === 'invalid-effect') return undefined;
+  if (block.kind === 'floor') {
+    return counterOf(game, block.counter)?.secret === true
+      ? undefined
+      : { counter: block.counter, need: block.need };
+  }
+  const c = block.condition;
+  if ('has' in c) return labelNeed(game, c.has, { has: c.has });
+  if ('lacks' in c) return labelNeed(game, c.lacks, { lacks: c.lacks });
+  const counter = counterOf(game, c.counter);
+  if (counter === undefined || counter.secret === true) return undefined;
+  if (!Number.isInteger(c.atLeast)) return undefined;
+  return { counter: c.counter, need: c.atLeast - valueOf(state, counter) };
+}
+
+/** A label condition's need, unless the label is undeclared or secret. */
+function labelNeed(
+  game: TourGame,
+  id: string,
+  need: TourGameNeed
+): TourGameNeed | undefined {
+  const label = labelOf(game, id);
+  return label === undefined || label.secret === true ? undefined : need;
+}
+
+/** Add a need, one entry per label condition and per counter (the larger
+ *  shortfall: meeting it meets both). */
+function addNeed(needs: TourGameNeed[], need: TourGameNeed): void {
+  const same = (n: TourGameNeed): boolean =>
+    'counter' in need
+      ? 'counter' in n && n.counter === need.counter
+      : 'has' in need
+        ? 'has' in n && n.has === need.has
+        : 'lacks' in n && n.lacks === need.lacks;
+  const at = needs.findIndex(same);
+  if (at < 0) needs.push(need);
+  else if ('counter' in need) {
+    const old = needs[at]!;
+    if ('counter' in old && need.need > old.need) needs[at] = need;
+  }
+}
+
+/** A list that both has and lacks one label can never hold. */
+function contradicts(
+  requires: readonly TourGameCondition[] | undefined
+): boolean {
+  const list = requires ?? [];
+  return list.some(
+    (c) => 'has' in c && list.some((d) => 'lacks' in d && d.lacks === c.has)
+  );
+}
+
+/**
+ * How an option (a choice's option or a quiz answer) shows now: available;
+ * greyed with every need when each label and counter blocking it is
+ * visible; hidden when any of them is secret, when the game cannot read
+ * what blocks it, or when its requirement contradicts itself (no need
+ * would ever be enough).
+ */
+export function optionDisplay(
+  game: TourGame,
+  state: TourGameRunState,
+  target: TourGameTarget
+): TourGameDisplay {
+  const blocks = blocksOf(game, state, target);
+  if (blocks.length === 0) return { shown: 'available' };
+  if (contradicts(target.requires)) return { shown: 'hidden' };
+  const needs: TourGameNeed[] = [];
+  for (const block of blocks) {
+    const need = needOf(game, state, block);
+    if (need === undefined) return { shown: 'hidden' };
+    addNeed(needs, need);
+  }
+  return { shown: 'greyed', needs };
+}
+
+/** Take an option: all or nothing. */
+function take(
+  game: TourGame,
+  state: TourGameRunState,
+  target: TourGameTarget
+): TourGameChoice {
+  const verdict = availability(game, state, target);
+  if (!verdict.available) return { ok: false, reason: verdict.reason };
+  const { labels, counters } = applyRaw(game, state, target.effects ?? []);
+  return { ok: true, state: stateFrom(game, state.round, labels, counters) };
 }
 
 /** Pick a scene choice's option: all or nothing (see the module comment). */
@@ -337,39 +468,48 @@ export function chooseOption(
   state: TourGameRunState,
   option: TourGameOption
 ): TourGameChoice {
-  const verdict = availability(game, state, option);
-  if (!verdict.available) return { ok: false, reason: verdict.reason };
-  const { labels, counters } = applyRaw(game, state, option.effects ?? []);
-  return { ok: true, state: stateFrom(game, state.round, labels, counters) };
+  return take(game, state, option);
 }
 
-/** Apply a quiz answer's outcome: forced, so clamped at each floor, and an
- *  effect the game cannot apply is skipped. */
+/** Give a quiz answer, right or wrong: the outcome is an option like any
+ *  other, all or nothing, so an answer whose cost the visitor cannot pay
+ *  is refused and changes nothing. */
 export function answerQuiz(
   game: TourGame,
   state: TourGameRunState,
   outcomes: TourGameQuizOutcomes,
   correct: boolean
-): TourGameRunState {
+): TourGameChoice {
   const effects = (correct ? outcomes.correct : outcomes.wrong) ?? [];
-  const { labels, counters } = applyRaw(game, state, effects);
-  for (const counter of game.counters) {
-    const value = counters.get(counter.id) ?? counter.start;
-    counters.set(counter.id, Math.max(counter.floor, value));
+  return take(game, state, { effects });
+}
+
+/** Where a scene continues after step `from`: the option's `goto` (the
+ *  first step with that id), else the next step; -1 when the scene ends,
+ *  which a `goto` naming no step and a `from` that is no step index do. */
+export function stepAfter(
+  steps: readonly TourGameStep[],
+  from: number,
+  option?: { readonly goto?: string }
+): number {
+  if (!Number.isInteger(from) || from < 0 || from >= steps.length) return -1;
+  if (option?.goto !== undefined) {
+    return steps.findIndex((s) => s.id === option.goto);
   }
-  return stateFrom(game, state.round, labels, counters);
+  return from + 1 < steps.length ? from + 1 : -1;
 }
 
 /** The first step at or after `from` whose requirements hold now, or -1
- *  (the scene ends). A step whose requirement fails is passed over. */
+ *  (the scene ends). A step whose requirement fails is passed over; a
+ *  `from` below 0 (the scene has ended) or NaN stays -1. */
 export function nextAvailableStep(
   game: TourGame,
   state: TourGameRunState,
   steps: readonly TourGameStep[],
   from: number
 ): number {
-  if (Number.isNaN(from)) return -1;
-  for (let i = Math.max(0, Math.ceil(from)); i < steps.length; i += 1) {
+  if (!(from >= 0)) return -1;
+  for (let i = Math.ceil(from); i < steps.length; i += 1) {
     if (failingCondition(game, state, steps[i]!.requires) === undefined) {
       return i;
     }
@@ -378,7 +518,8 @@ export function nextAvailableStep(
 }
 
 /** Every label (in declaration order) and every counter, as the
- *  inventory shows them. */
+ *  inventory shows them: a collectible not held greyed unless secret, a
+ *  round label only while held, a counter's value unless secret. */
 export function inventory(
   game: TourGame,
   state: TourGameRunState
@@ -387,21 +528,27 @@ export function inventory(
     labels: game.labels.map((label) => {
       const held = isHeld(state, label.id);
       const secret = label.secret === true;
+      const missing = secret || label.keep === 'round' ? 'hidden' : 'greyed';
       return {
         id: label.id,
         name: label.name,
         keep: label.keep,
         secret,
         held,
-        shown: held ? 'held' : secret ? 'hidden' : 'greyed',
+        shown: held ? 'held' : missing,
       };
     }),
-    counters: game.counters.map((counter) => ({
-      id: counter.id,
-      name: counter.name,
-      keep: counter.keep,
-      value: valueOf(state, counter),
-    })),
+    counters: game.counters.map((counter) => {
+      const secret = counter.secret === true;
+      return {
+        id: counter.id,
+        name: counter.name,
+        keep: counter.keep,
+        secret,
+        value: valueOf(state, counter),
+        shown: secret ? 'hidden' : 'value',
+      };
+    }),
   };
 }
 

@@ -4,22 +4,25 @@
  * independent witness. On small random tours an exhaustive search plays
  * EVERY walk of up to three rounds with the rules themselves - visiting
  * stations in any order, skipping or leaving them, picking every option
- * that can be picked, answering every quiz right and wrong - and records
- * what is ever shown. Two promises are held to it:
+ * that can be picked, answering every quiz right and wrong, following
+ * every `goto` (backwards and to no step too) - and records what is ever
+ * shown. Two promises are held to it:
  *
  * - sound: whatever the check calls unreachable or never available is
  *   never reached by any walk (a false alarm would teach creators to
  *   ignore the checks);
- * - no missed softlock: every choice some walk reaches with nothing to
- *   pick is reported as one that may trap the visitor.
+ * - no missed softlock: every choice or quiz some walk reaches with
+ *   nothing to pick is reported as one that may trap the visitor.
  *
- * Counters used to vacuity-guard both: a property that never meets an
- * unreachable station or a stuck choice proves nothing.
+ * Counts per cause guard both against vacuity: a property that never
+ * meets a cause proves nothing about it.
  *
  * Parameters (each a choice of this test, not of the rules): up to 4
- * stations of up to 3 steps, 3 labels, 2 counters, forward-only `goto`s
- * (so a walk is finite), rounds capped at 3. More rounds or stations can
- * only let walks reach more, which can only expose an unsound report.
+ * stations of up to 3 steps, 3 labels, 2 counters, rounds capped at 3, and
+ * walk states with a counter above COUNTER_CAP dropped so that loops keep
+ * the search finite. Dropping states only removes walks, so it can hide a
+ * broken promise but never invent one; more rounds, stations or a higher
+ * cap can only let walks reach more.
  */
 
 import fc from 'fast-check';
@@ -33,6 +36,7 @@ import {
   nextAvailableStep,
   startNextRound,
   startRun,
+  stepAfter,
   type TourGame,
   type TourGameCondition,
   type TourGameEffect,
@@ -41,6 +45,7 @@ import {
 } from './tour-game-rules';
 
 const MAX_ROUNDS = 3;
+const COUNTER_CAP = 20;
 const LABEL_IDS = ['a', 'b', 'c'];
 const COUNTER_IDS = ['x', 'y'];
 
@@ -70,17 +75,15 @@ const effect: fc.Arbitrary<TourGameEffect> = fc.oneof(
 );
 const effects = fc.array(effect, { maxLength: 2 });
 
-/** A step of index `i` among `count`: a choice may jump forward only. */
+/** A step of index `i` among `count`: a choice may jump to any step of
+ *  its station, itself and earlier ones included, or to no step. */
 function stepAt(i: number, count: number): fc.Arbitrary<TourGameStep> {
   const id = `st${String(i)}`;
-  const later = Array.from(
-    { length: count - i - 1 },
-    (_, k) => `st${String(i + 1 + k)}`
-  );
-  const goto =
-    later.length === 0
-      ? fc.constant(undefined)
-      : fc.option(fc.constantFrom(...later), { nil: undefined });
+  const targets = [
+    ...Array.from({ length: count }, (_, k) => `st${String(k)}`),
+    'nope',
+  ];
+  const goto = fc.option(fc.constantFrom(...targets), { nil: undefined });
   const option = (o: number) =>
     fc
       .record({ requires, effects, goto })
@@ -173,8 +176,9 @@ interface Seen {
   stations: Set<string>;
   items: Set<string>;
   steps: Set<string>;
+  /** Options picked, and quiz outcomes taken (`<step>/correct`). */
   options: Set<string>;
-  /** Choices some walk reached with no option available. */
+  /** Choices and quizzes some walk reached with nothing to pick. */
   stuck: Set<string>;
 }
 
@@ -248,31 +252,38 @@ function sceneMoves(
   seen.steps.add(ref);
   // Leaving a scene part-way is always possible (the station's skip).
   push({ run: w.run, done: finished(w, si), at: null });
-  if (step.kind === 'content') push(enter(game, w, si, i + 1));
+  if (step.kind === 'content') {
+    push(enter(game, w, si, stepAfter(st.steps, i)));
+    return;
+  }
+  let any = false;
+  const taken = (run: TourGameRunState, key: string, from: number) => {
+    any = true;
+    seen.options.add(`${ref}/${key}`);
+    push(enter(game, { ...w, run }, si, from));
+  };
   if (step.kind === 'quiz') {
     for (const correct of [true, false]) {
-      const run = answerQuiz(game, w.run, step.outcomes, correct);
-      push(enter(game, { ...w, run }, si, i + 1));
+      const result = answerQuiz(game, w.run, step.outcomes, correct);
+      if (result.ok) {
+        const key = correct ? 'correct' : 'wrong';
+        taken(result.state, key, stepAfter(st.steps, i));
+      }
     }
-  }
-  if (step.kind !== 'choice') return;
-  let any = false;
-  for (const option of step.options) {
-    const result = chooseOption(game, w.run, option);
-    if (!result.ok) continue;
-    any = true;
-    seen.options.add(`${ref}/${option.id}`);
-    const target =
-      option.goto === undefined
-        ? i + 1
-        : st.steps.findIndex((s) => s.id === option.goto);
-    push(enter(game, { ...w, run: result.state }, si, target));
+  } else {
+    for (const option of step.options) {
+      const result = chooseOption(game, w.run, option);
+      if (result.ok) {
+        taken(result.state, option.id, stepAfter(st.steps, i, option));
+      }
+    }
   }
   if (!any) seen.stuck.add(ref);
 }
 
-/** Every walk of up to MAX_ROUNDS rounds, by the rules themselves. */
-function exhaustive(game: TourGame): Seen {
+/** Every walk of up to MAX_ROUNDS rounds, by the rules themselves, short
+ *  of walks whose counters climb above `cap`. */
+function exhaustive(game: TourGame, cap = COUNTER_CAP): Seen {
   const seen: Seen = {
     stations: new Set(),
     items: new Set(),
@@ -285,6 +296,7 @@ function exhaustive(game: TourGame): Seen {
     { run: startRun(game), done: game.stations.map(() => false), at: null },
   ];
   const push: Push = (w) => {
+    if (Object.values(w.run.counters).some((v) => v > cap)) return;
     const key = JSON.stringify(w);
     if (visited.has(key)) return;
     visited.add(key);
@@ -304,8 +316,9 @@ function refKey(at: {
   item?: string;
   step?: string;
   option?: string;
+  outcome?: string;
 }): string {
-  return [at.station, at.item ?? at.step, at.option]
+  return [at.station, at.item ?? at.step, at.option ?? at.outcome]
     .filter((p) => p !== undefined)
     .join('/');
 }
@@ -344,23 +357,67 @@ function violations(
   return out;
 }
 
+/** The causes a run of the property must meet at least once each. */
+const GUARDED_CAUSES = [
+  'unreachable:label-never-set',
+  'unreachable:label-set-only-by-unreachable-content',
+  'unreachable:counter-out-of-reach',
+  'unreachable:contradiction',
+  'unreachable:unknown-name',
+  'unreachable:scene-flow',
+  'option-never-available:floor',
+  'option-never-available:counter-out-of-reach',
+  'stuck',
+] as const;
+
 describe('tour game check - against an exhaustive walk search', () => {
   it('never reports reachable content, and never misses a stuck choice', () => {
-    let unreachableSeen = 0;
-    let stuckSeen = 0;
+    const met = new Map<string, number>();
+    const count = (key: string, n = 1) => met.set(key, (met.get(key) ?? 0) + n);
     fc.assert(
       fc.property(tour, (game) => {
         const seen = exhaustive(game);
         const findings = checkTourGame(game);
-        unreachableSeen += findings.filter(
-          (f) => f.kind === 'unreachable'
-        ).length;
-        stuckSeen += seen.stuck.size;
+        for (const f of findings) {
+          if (f.kind === 'unreachable' || f.kind === 'option-never-available')
+            count(`${f.kind}:${f.because.kind}`);
+        }
+        count('stuck', seen.stuck.size);
         expect(violations(findings, seen)).toEqual([]);
       }),
-      { numRuns: 250 }
+      { numRuns: 1000 }
     );
-    expect(unreachableSeen).toBeGreaterThan(0);
-    expect(stuckSeen).toBeGreaterThan(0);
+    expect(
+      GUARDED_CAUSES.filter((cause) => (met.get(cause) ?? 0) === 0)
+    ).toEqual([]);
+  });
+
+  // The rules end a scene on a goto naming no step; a walk that instead
+  // restarted the scene would replay the payout and reach the gate the
+  // check calls out of reach.
+  it('agrees with the walks on a goto naming no step', () => {
+    const game: TourGame = {
+      labels: [],
+      counters: [{ id: 'x', name: 'x', keep: 'round', start: 0, floor: 0 }],
+      stations: [
+        {
+          id: 's0',
+          steps: [
+            {
+              id: 'c',
+              kind: 'choice',
+              options: [
+                { id: 'k', effects: [{ add: 'x', by: 1 }], goto: 'nope' },
+                { id: 'leave' },
+              ],
+            },
+          ],
+        },
+        { id: 'gate', requires: [{ counter: 'x', atLeast: 2 }], steps: [] },
+      ],
+    };
+    const findings = checkTourGame(game);
+    expect(findings.map((f) => f.kind)).toContain('unreachable');
+    expect(violations(findings, exhaustive(game))).toEqual([]);
   });
 });

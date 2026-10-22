@@ -22,50 +22,56 @@
  *   (nothing is held at the start); `atLeast n` - `max(c) >= n`. A list
  *   could hold when each condition could and it does not both have and
  *   lack one label.
- * - An option could be available when its list could hold, its effects
- *   can be applied, and for each counter its effects lower by a net d,
- *   `max(c) - d >= floor`.
+ * - An option - a choice's option or a quiz outcome - could be available
+ *   when its list could hold, its effects can be applied, and for each
+ *   counter its effects lower by a net d, `max(c) - d >= floor`.
  * - Reachable: a station whose list could hold; its items whose list could
- *   hold; its steps the scene flow reaches (a step with a requirement may
- *   be passed over; a choice continues through each option that could be
- *   available) whose list could hold; the options of reachable choices
- *   that could be available. Sources of effects: those options and both
- *   outcomes of every reachable quiz.
+ *   hold; its steps the scene flow reaches (`stepAfter` of the rules: a
+ *   step with a requirement may be passed over; a choice or quiz continues
+ *   through each option that could be available, a `goto` naming no step
+ *   ending the scene) whose list could hold; the options of reachable
+ *   steps that could be available, which are the sources of effects.
  *
  * So everything reported `unreachable` or `option-never-available` is
  * unreachable in every walk of every round; content may be called
  * reachable that no walk reaches (two round labels one choice gives
  * exclusively). Only the outermost unreachable thing is reported: the
- * steps and items of an unreachable station are not listed again.
+ * steps and items of an unreachable station are not listed again. A tour
+ * whose declarations the rules could read differently (a name declared
+ * twice, a counter starting below its floor or at no whole number) gets
+ * its structural findings and no reachability verdict at all.
  *
- * `choice-may-softlock` is the opposite trade: a reachable choice with no
- * FREE option (no requirement, effects that apply, no counter going down;
- * or a pair of otherwise free options requiring `has L` and `lacks L`) MAY
- * leave the visitor with nothing to pick. It never misses such a choice,
- * and the cure - one free option such as "leave" - is always cheap.
+ * `choice-may-softlock` is the opposite trade: a reachable choice or quiz
+ * with no FREE option (no requirement, effects that apply, no counter
+ * going down; or a pair of otherwise free options requiring `has L` and
+ * `lacks L`) MAY leave the visitor with nothing to pick. It never misses
+ * such a step, and the cure - one free option such as "leave" - is always
+ * cheap.
  *
  * Pure and dependency-free; findings come in declaration order,
- * structural first.
+ * structural first. The input is a parsed game: every array present.
  *
  * @see tour-game-check.ts.md
  */
 
-import type {
-  TourGame,
-  TourGameCondition,
-  TourGameEffect,
-  TourGameOption,
-  TourGameStation,
-  TourGameStep,
+import {
+  stepAfter,
+  type TourGame,
+  type TourGameCondition,
+  type TourGameEffect,
+  type TourGameOption,
+  type TourGameStation,
+  type TourGameStep,
 } from './tour-game-rules.js';
 
 /** Where a finding sits: a station, and in it an item, or a step and one
- *  of its options. */
+ *  of its options (a choice's by id, a quiz's by outcome). */
 interface TourGameRef {
   readonly station: string;
   readonly item?: string;
   readonly step?: string;
   readonly option?: string;
+  readonly outcome?: 'correct' | 'wrong';
 }
 
 /** Why something is unreachable or never available. `max` is the check's
@@ -128,10 +134,19 @@ type TourGameFinding =
 /** Every finding for this game: structural first, then reachability. */
 export function checkTourGame(game: TourGame): TourGameFinding[] {
   const names = new Names(game);
-  return [
-    ...structuralFindings(game, names),
-    ...reachabilityFindings(game, names),
-  ];
+  const structural = structuralFindings(game, names);
+  if (structural.some(isMisreadDeclaration)) return structural;
+  return [...structural, ...reachabilityFindings(game, names)];
+}
+
+/** A declaration the rules could read differently from this check: no
+ *  reachability verdict is sound until it is fixed. */
+function isMisreadDeclaration(finding: TourGameFinding): boolean {
+  return (
+    finding.kind === 'duplicate-name' ||
+    finding.kind === 'start-below-floor' ||
+    (finding.kind === 'bad-number' && 'counter' in finding.at)
+  );
 }
 
 // --- names --------------------------------------------------------------
@@ -389,16 +404,48 @@ function netAdds(effects: readonly TourGameEffect[]): Map<string, number> {
   return net;
 }
 
-function optionCause(
-  option: TourGameOption,
+/** Something a visitor takes at a step: a choice's option, or a quiz's
+ *  outcome (answering right or wrong). */
+interface Answer {
+  /** Where a finding about it points, beside its step. */
+  readonly ref:
+    { readonly option: string } | { readonly outcome: 'correct' | 'wrong' };
+  readonly requires: readonly TourGameCondition[] | undefined;
+  readonly effects: readonly TourGameEffect[];
+  /** The choice's option, for its `goto`; a quiz continues at the next
+   *  step. */
+  readonly option: TourGameOption | undefined;
+}
+
+function answersOf(step: TourGameStep): Answer[] {
+  if (step.kind === 'choice') {
+    return step.options.map((option) => ({
+      ref: { option: option.id },
+      requires: option.requires,
+      effects: option.effects ?? [],
+      option,
+    }));
+  }
+  if (step.kind === 'quiz') {
+    return (['correct', 'wrong'] as const).map((outcome) => ({
+      ref: { outcome },
+      requires: undefined,
+      effects: step.outcomes[outcome] ?? [],
+      option: undefined,
+    }));
+  }
+  return [];
+}
+
+function answerCause(
+  answer: Answer,
   bounds: Bounds,
   names: Names
 ): TourGameCause | null {
-  const effects = option.effects ?? [];
   return (
-    listCause(option.requires, bounds, names) ??
-    effectsCause(effects, names) ??
-    floorCause(effects, bounds, names)
+    listCause(answer.requires, bounds, names) ??
+    effectsCause(answer.effects, names) ??
+    floorCause(answer.effects, bounds, names)
   );
 }
 
@@ -444,6 +491,12 @@ interface Flow {
   readonly sources: readonly Source[];
 }
 
+interface FlowContext {
+  readonly steps: readonly TourGameStep[];
+  readonly bounds: Bounds;
+  readonly names: Names;
+}
+
 /** The scene flow of a reachable station under the bounds. */
 function sceneFlow(
   station: TourGameStation,
@@ -451,12 +504,7 @@ function sceneFlow(
   names: Names
 ): Flow {
   const steps = station.steps;
-  const ctx: FlowContext = {
-    steps,
-    indexOf: firstIndexOf(steps),
-    bounds,
-    names,
-  };
+  const ctx: FlowContext = { steps, bounds, names };
   const edges = new Map<number, number[]>();
   const arrived = new Set<number>();
   const reached = new Set<number>();
@@ -478,23 +526,8 @@ function sceneFlow(
   return { arrived, reached, sources };
 }
 
-interface FlowContext {
-  readonly steps: readonly TourGameStep[];
-  readonly indexOf: ReadonlyMap<string, number>;
-  readonly bounds: Bounds;
-  readonly names: Names;
-}
-
-/** Each step id's first index (a duplicate id resolves to the first). */
-function firstIndexOf(steps: readonly TourGameStep[]): Map<string, number> {
-  const indexOf = new Map<string, number>();
-  steps.forEach((s, i) => {
-    if (!indexOf.has(s.id)) indexOf.set(s.id, i);
-  });
-  return indexOf;
-}
-
-/** Whether step i could play, and the steps the flow may continue at. */
+/** Whether step i could play, and the steps the flow may continue at
+ *  (by the rules' `stepAfter`; -1, the scene ending, is no step). */
 function successors(
   i: number,
   ctx: FlowContext
@@ -502,29 +535,17 @@ function successors(
   const step = ctx.steps[i]!;
   const next: number[] = [];
   // A step with a requirement may be passed over.
-  if ((step.requires?.length ?? 0) > 0) next.push(i + 1);
+  if ((step.requires?.length ?? 0) > 0) next.push(stepAfter(ctx.steps, i));
   const plays = listCause(step.requires, ctx.bounds, ctx.names) === null;
-  if (plays && step.kind !== 'choice') next.push(i + 1);
-  if (plays && step.kind === 'choice') {
-    next.push(...choiceTargets(step.options, i, ctx));
+  if (plays && step.kind === 'content') next.push(stepAfter(ctx.steps, i));
+  if (plays) {
+    for (const answer of answersOf(step)) {
+      if (answerCause(answer, ctx.bounds, ctx.names) === null) {
+        next.push(stepAfter(ctx.steps, i, answer.option));
+      }
+    }
   }
-  return { plays, next: next.filter((j) => j < ctx.steps.length) };
-}
-
-/** Where a playing choice continues: through each option that could be
- *  available, to its `goto` (an unknown one goes nowhere), else the next
- *  step. */
-function choiceTargets(
-  options: readonly TourGameOption[],
-  i: number,
-  ctx: FlowContext
-): number[] {
-  return options.flatMap((option) => {
-    if (optionCause(option, ctx.bounds, ctx.names) !== null) return [];
-    if (option.goto === undefined) return [i + 1];
-    const target = ctx.indexOf.get(option.goto);
-    return target === undefined ? [] : [target];
-  });
+  return { plays, next: next.filter((j) => j >= 0) };
 }
 
 /** Whether step i lies on a loop of the flow's edges. */
@@ -544,21 +565,17 @@ function onLoop(
   return false;
 }
 
-/** The effect lists a playing step can apply: its options that could be
- *  available, or both outcomes of a quiz. */
+/** The effect lists a playing step can apply: its options (or quiz
+ *  outcomes) that could be available. */
 function sourcesOf(
   step: TourGameStep,
   repeatable: boolean,
   bounds: Bounds,
   names: Names
 ): Source[] {
-  if (step.kind === 'quiz') {
-    return effectListsOf(step).map((effects) => ({ effects, repeatable }));
-  }
-  if (step.kind !== 'choice') return [];
-  return step.options
-    .filter((option) => optionCause(option, bounds, names) === null)
-    .map((option) => ({ effects: option.effects ?? [], repeatable }));
+  return answersOf(step)
+    .filter((answer) => answerCause(answer, bounds, names) === null)
+    .map((answer) => ({ effects: answer.effects, repeatable }));
 }
 
 /** The bounds the sources imply. */
@@ -597,17 +614,25 @@ function sameBounds(a: Bounds, b: Bounds): boolean {
   return true;
 }
 
-/** The fixpoint: bounds grow until nothing new becomes reachable. */
+/**
+ * The fixpoint: bounds grow until nothing new becomes reachable. Every
+ * condition only gets easier as the bounds grow, so the set of sources
+ * only grows, and the bounds are a function of it: a pass that changes
+ * them adds a source or makes one repeatable, at most twice per source.
+ * The pass cap follows from that count (plus slack). Reaching it would
+ * mean a defect in this argument; the result is then the TOP bounds -
+ * every declared label could be held, no counter has a bound - never
+ * bounds cut short, which could call reachable content unreachable and
+ * miss a choice that traps.
+ */
 function fixpoint(game: TourGame, names: Names): Bounds {
+  const answers = game.stations.reduce(
+    (n, s) => n + s.steps.reduce((m, step) => m + answersOf(step).length, 0),
+    0
+  );
+  const cap = 2 * answers + game.labels.length + 2;
   let bounds = boundsFrom(names, []);
-  // Each round either adds a label, raises a bound, or ends; the cap only
-  // guards against a defect in that argument.
-  const cap =
-    4 +
-    game.labels.length +
-    game.counters.length * 64 +
-    game.stations.reduce((n, s) => n + s.steps.length * 8, 0);
-  for (let round = 0; round < cap; round += 1) {
+  for (let pass = 0; pass < cap; pass += 1) {
     const sources = game.stations.flatMap((station) =>
       listCause(station.requires, bounds, names) === null
         ? sceneFlow(station, bounds, names).sources
@@ -617,32 +642,32 @@ function fixpoint(game: TourGame, names: Names): Bounds {
     if (sameBounds(next, bounds)) return bounds;
     bounds = next;
   }
-  return bounds;
+  return {
+    labels: names.labels,
+    max: new Map([...names.counters.keys()].map((id) => [id, Infinity])),
+  };
 }
 
 /** A free option: no requirement, effects that apply, no counter down. */
-function isFreeOfCost(option: TourGameOption, names: Names): boolean {
-  const effects = option.effects ?? [];
+function isFreeOfCost(answer: Answer, names: Names): boolean {
   return (
-    effects.every((e) => names.unknownIn(e) === undefined && !isBadAdd(e)) &&
-    [...netAdds(effects).values()].every((d) => d >= 0)
+    answer.effects.every(
+      (e) => names.unknownIn(e) === undefined && !isBadAdd(e)
+    ) && [...netAdds(answer.effects).values()].every((d) => d >= 0)
   );
 }
 
-function hasFreeOption(
-  options: readonly TourGameOption[],
-  names: Names
-): boolean {
-  const costFree = options.filter((o) => isFreeOfCost(o, names));
-  if (costFree.some((o) => (o.requires?.length ?? 0) === 0)) return true;
-  const single = (o: TourGameOption): TourGameCondition | undefined =>
-    o.requires?.length === 1 ? o.requires[0] : undefined;
-  return costFree.some((o) => {
-    const c = single(o);
+function hasFreeOption(answers: readonly Answer[], names: Names): boolean {
+  const costFree = answers.filter((a) => isFreeOfCost(a, names));
+  if (costFree.some((a) => (a.requires?.length ?? 0) === 0)) return true;
+  const single = (a: Answer): TourGameCondition | undefined =>
+    a.requires?.length === 1 ? a.requires[0] : undefined;
+  return costFree.some((a) => {
+    const c = single(a);
     if (c === undefined || !('has' in c) || !names.labels.has(c.has))
       return false;
-    return costFree.some((p) => {
-      const d = single(p);
+    return costFree.some((b) => {
+      const d = single(b);
       return d !== undefined && 'lacks' in d && d.lacks === c.has;
     });
   });
@@ -680,18 +705,19 @@ function stationFindings(
         out.push({ kind: 'unreachable', at, because: stepCause });
       return;
     }
-    if (step.kind !== 'choice') return;
-    for (const option of step.options) {
-      const why = optionCause(option, bounds, names);
+    if (step.kind === 'content') return;
+    const answers = answersOf(step);
+    for (const answer of answers) {
+      const why = answerCause(answer, bounds, names);
       if (why !== null) {
         out.push({
           kind: 'option-never-available',
-          at: { ...at, option: option.id },
+          at: { ...at, ...answer.ref },
           because: why,
         });
       }
     }
-    if (!hasFreeOption(step.options, names)) {
+    if (!hasFreeOption(answers, names)) {
       out.push({ kind: 'choice-may-softlock', at });
     }
   });

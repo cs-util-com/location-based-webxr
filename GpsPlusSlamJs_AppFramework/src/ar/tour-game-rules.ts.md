@@ -16,10 +16,13 @@ are `tour-game-check.ts`.
 ## Model
 
 - **Label** `{ id, name, keep, secret? }` - `keep` is `"collectible"`
-  (survives a new round) or `"round"` (forgotten by it); `secret` labels
-  are hidden in the inventory until held.
-- **Counter** `{ id, name, keep, start, floor }` - an integer that never
-  goes below `floor`.
+  (survives a new round) or `"round"` (forgotten by it); a `secret` label
+  is hidden in the inventory until held, and an option it blocks is hidden
+  rather than greyed.
+- **Counter** `{ id, name, keep, start, floor, secret? }` - an integer that
+  never goes below `floor`. `floor` is REQUIRED here: the parser fills in
+  the format's default (0) before calling these rules. A `secret` counter
+  is not shown in the inventory, and an option it blocks is hidden.
 - Labels and counters share one id namespace (the check reports a clash).
 - **Condition** (a state): `{ has }`, `{ lacks }`, `{ counter, atLeast }`.
   A list holds when ALL hold; empty or absent always holds.
@@ -29,7 +32,11 @@ are `tour-game-check.ts`.
 - **Where they sit:** `requires` on a station, an item, a step and a choice
   option; `effects` on a choice option; `outcomes: { correct?, wrong? }` on
   a quiz step. A choice option's `goto` names a step of the same station
-  (absent: the next step).
+  (absent: the next step; one naming no step ends the scene).
+- **An option** is a choice's option or a quiz answer (its outcome's
+  effects): both are all or nothing, and both show by the same display
+  rule. Stations, items and scene steps are not options: one whose
+  requirement fails is simply absent (passed over, for a step).
 - **Run state** `{ round, labels, counters }` - JSON-safe: `labels` sorted
   and unique, `counters` an id-to-integer record.
 
@@ -43,16 +50,37 @@ are `tour-game-check.ts`.
   (`"invalid-effect"`), or the first counter whose floor the effects'
   RESULT would break (`"floor"`, with `need`, how much is missing). Use it
   for stations, items, steps and options alike.
+- `optionDisplay(game, state, { requires?, effects? })` - how an option
+  shows: `{ shown: "available" }`; `{ shown: "greyed", needs }` when every
+  label and counter blocking it is visible, `needs` listing each in order
+  (`{ has }`, `{ lacks }`, or `{ counter, need }` - one entry per counter,
+  the larger of its requirement's and its cost's shortfall); or
+  `{ shown: "hidden" }` when any blocking label or counter is `secret`,
+  when what blocks it cannot be read (an undeclared name, an effect the
+  game cannot apply, a requirement that is no whole number), or when the
+  requirement both has and lacks one label (no need would be enough). A
+  secret that does not block the option hides nothing.
 - `chooseOption(game, state, option)` - all or nothing: `{ ok: true, state }`
   or `{ ok: false, reason }` with the state untouched.
-- `answerQuiz(game, state, outcomes, correct)` - a forced outcome: each
-  counter clamps at its floor, an effect the game cannot apply is skipped.
+- `answerQuiz(game, state, outcomes, correct)` - the same for a quiz
+  answer: the outcome is applied all or nothing, so an answer whose cost
+  the visitor cannot pay is refused (`{ ok: false, reason }`) - never
+  clamped - and a counter the outcome does not touch is left as it is.
+- `stepAfter(steps, from, option?)` - where a scene continues after step
+  `from`: the option's `goto` (the first step with that id, backwards
+  too), else the next step; -1 (the scene ends) after the last step, for a
+  `goto` naming no step, and for a `from` that is no step index. The one
+  definition the check and its exhaustive test use too.
 - `nextAvailableStep(game, state, steps, from)` - the first index at or
   after `from` whose requirements hold now, or -1 (the scene ends); a
-  `from` below 0 starts at 0, NaN gives -1.
+  negative `from` (an ended scene, as `stepAfter` reports it) or NaN stays
+  -1. Continue a scene with
+  `nextAvailableStep(game, state, steps, stepAfter(steps, i, option))`.
 - `inventory(game, state)` - every label in declaration order with `held`,
-  `keep`, `secret` and `shown` (`"held"`, `"greyed"`, or `"hidden"` when
-  not held and secret), and every counter with its value.
+  `keep`, `secret` and `shown`: `"held"`; a collectible not held
+  `"greyed"`, or `"hidden"` when secret; a round label not held always
+  `"hidden"` (shown while held, never greyed). Every counter with its
+  value, `secret` and `shown` (`"value"`, or `"hidden"` when secret).
 - `startNextRound(game, state)` - round + 1; exactly the held collectible
   labels and the collectible counters' values kept; round counters at
   `start`; labels the game no longer declares dropped.
@@ -60,8 +88,9 @@ are `tour-game-check.ts`.
 Exported types: `TourGame`, `TourGameStation`, `TourGameStep`,
 `TourGameOption`, `TourGameCondition`, `TourGameEffect`,
 `TourGameQuizOutcomes`, `TourGameRunState`, `TourGameAvailability`,
-`TourGameChoice`, `TourGameInventory`. The element types (label, counter,
-item, block reason, inventory entries) are not exported until a consumer
+`TourGameDisplay`, `TourGameChoice`, `TourGameInventory`. The element
+types (label, counter, item, block reason, need, inventory entries) are
+not exported until a consumer
 needs to name one (dead-code rule); `TourGame['labels'][number]` reaches
 them meanwhile.
 
@@ -79,6 +108,9 @@ them meanwhile.
 - A counter missing from a state reads as its `start` (a state saved
   before the counter existed).
 - Nothing is cached: every answer is judged at the moment of the call.
+- **Parsed input expected:** the game's `labels`, `counters` and
+  `stations` arrays (and each station's `steps`) must be present; the
+  tour parser guarantees that, and a missing array throws.
 
 ## Example
 
@@ -96,17 +128,25 @@ const buy = {
 const r = chooseOption(game, startRun(game), buy); // ok, coins 0, sword held
 availability(game, r.ok ? r.state : startRun(game), buy);
 // { available: false, reason: { kind: 'requires', condition: { lacks: 'sword' } } }
+optionDisplay(game, { round: 1, labels: [], counters: { coins: 1 } }, buy);
+// { shown: 'greyed', needs: [{ counter: 'coins', need: 1 }] }
 ```
 
 ## Tests
 
 - `tour-game-rules.test.ts` - each rule by its smallest example.
 - `tour-game-rules.property.test.ts` - under random games (with undeclared
-  names, zero and fractional adds) and random sequences of choices, quiz
-  outcomes and rounds: no floor ever broken, counters stay integers,
-  labels sorted and unique; a refused option changes nothing; a new round
-  keeps exactly the collectibles; the inventory lists every label once,
-  shown exactly by held and secret.
+  names, zero and fractional adds, secret labels and counters) and random
+  sequences of choices, quiz answers and rounds: no floor ever broken,
+  counters stay integers, labels sorted and unique; choosing or answering
+  never mutates its input; a new round keeps exactly the collectibles; the
+  inventory lists every label once, shown exactly by held, keep and
+  secret; a greyed option's needs are enough together and each one
+  necessary, never name a secret, and an option is hidden only for a
+  secret or something unreadable. Deliberate defects each caught
+  (2026-10-22): a secret label ignored by the display, the smaller of two
+  counter shortfalls kept, a quiz answer applied without its floor, a
+  round label greyed.
 - `tour-game-scenarios.test.ts` - four tours walked end to end: a path
   choice, a key behind a quiz, a merchant with a coin floor, a collectible
   set over two rounds with gated scene steps.

@@ -4,8 +4,9 @@
  * can be picked, what an answer changes, and what a new round keeps. Each
  * rule is pinned by the smallest example that would break if the rule
  * were misread: the floor judged on a whole effect list, a refused option
- * that changes nothing, a typo that hides content instead of revealing it,
- * a quiz outcome that clamps instead of refusing.
+ * or quiz answer that changes nothing, a typo that hides content instead
+ * of revealing it, a blocked option greyed with what it needs unless a
+ * secret blocks it, and a scene that ends on a jump to no step.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -16,8 +17,10 @@ import {
   chooseOption,
   inventory,
   nextAvailableStep,
+  optionDisplay,
   startNextRound,
   startRun,
+  stepAfter,
   type TourGame,
   type TourGameRunState,
   type TourGameStep,
@@ -289,37 +292,183 @@ describe('answerQuiz', () => {
 
   it('applies the outcome of a right or a wrong answer', () => {
     const s = startRun(GAME);
-    expect(answerQuiz(GAME, s, quiz, true)).toEqual(
-      withState(['red-key'], { coins: 2, stars: 1 })
-    );
+    expect(answerQuiz(GAME, s, quiz, true)).toEqual({
+      ok: true,
+      state: withState(['red-key'], { coins: 2, stars: 1 }),
+    });
     expect(
       answerQuiz(GAME, withState([], { coins: 3, stars: 1 }), quiz, false)
-    ).toEqual(withState([], { coins: 1, stars: 1 }));
+    ).toEqual({ ok: true, state: withState([], { coins: 1, stars: 1 }) });
   });
 
-  // A quiz outcome is forced (the visitor answered); greying an answer by
-  // its cost would give the answer away, so the cost clamps at the floor.
-  it('clamps a forced cost at the floor instead of refusing', () => {
+  // A quiz answer is an option like any other: one whose cost the
+  // visitor cannot pay is unavailable and changes nothing - it is never
+  // clamped at the floor.
+  it('refuses an answer whose cost the visitor cannot pay, changing nothing', () => {
     const s = withState([], { coins: 1, stars: 1 });
-    expect(answerQuiz(GAME, s, quiz, false)).toEqual(
-      withState([], { coins: 0, stars: 1 })
-    );
+    expect(answerQuiz(GAME, s, quiz, false)).toEqual({
+      ok: false,
+      reason: { kind: 'floor', counter: 'coins', need: 1 },
+    });
+    expect(s).toEqual(withState([], { coins: 1, stars: 1 }));
   });
 
-  it('skips an effect it cannot apply and keeps the rest', () => {
-    const s = startRun(GAME);
+  it('refuses an outcome with an effect it cannot apply', () => {
     const result = answerQuiz(
       GAME,
-      s,
+      startRun(GAME),
       { correct: [{ set: 'nope' }, { set: 'north' }] },
       true
     );
-    expect(result.labels).toEqual(['north']);
+    expect(result).toEqual({
+      ok: false,
+      reason: { kind: 'invalid-effect', effect: { set: 'nope' } },
+    });
+  });
+
+  // A counter already below its floor (a malformed state) is left alone
+  // by an answer that does not touch it: nothing lifts it to the floor.
+  it('leaves a counter the outcome does not touch as it is', () => {
+    const s = withState([], { coins: -2, stars: 1 });
+    expect(answerQuiz(GAME, s, { correct: [{ set: 'north' }] }, true)).toEqual({
+      ok: true,
+      state: withState(['north'], { coins: -2, stars: 1 }),
+    });
   });
 
   it('changes nothing for an outcome with no effects', () => {
     const s = startRun(GAME);
-    expect(answerQuiz(GAME, s, {}, false)).toEqual(s);
+    expect(answerQuiz(GAME, s, {}, false)).toEqual({ ok: true, state: s });
+  });
+});
+
+describe('optionDisplay', () => {
+  const SECRETS: TourGame = {
+    labels: [
+      { id: 'red-key', name: 'Red key', keep: 'collectible' },
+      { id: 'crown', name: 'Crown', keep: 'collectible', secret: true },
+    ],
+    counters: [
+      { id: 'coins', name: 'Coins', keep: 'round', start: 0, floor: 0 },
+      {
+        id: 'karma',
+        name: 'Karma',
+        keep: 'round',
+        start: 0,
+        floor: 0,
+        secret: true,
+      },
+    ],
+    stations: [],
+  };
+  const none = startRun(SECRETS);
+
+  it('shows an option the visitor can take as available', () => {
+    expect(optionDisplay(SECRETS, none, {})).toEqual({ shown: 'available' });
+  });
+
+  // The visitor learns the price: every visible thing that blocks the
+  // option is listed, so the view can say "needs 2 coins and the red key".
+  it('greys an option blocked only by visible names, listing every need', () => {
+    expect(
+      optionDisplay(SECRETS, none, {
+        requires: [{ has: 'red-key' }, { counter: 'coins', atLeast: 2 }],
+      })
+    ).toEqual({
+      shown: 'greyed',
+      needs: [{ has: 'red-key' }, { counter: 'coins', need: 2 }],
+    });
+    const held = withState(['red-key'], { coins: 0, karma: 0 });
+    expect(
+      optionDisplay(SECRETS, held, { requires: [{ lacks: 'red-key' }] })
+    ).toEqual({ shown: 'greyed', needs: [{ lacks: 'red-key' }] });
+  });
+
+  // A requirement and a cost on one counter are one need: the larger
+  // shortfall, since meeting it meets both.
+  it('merges a requirement and a cost on one counter into the larger need', () => {
+    const s = withState([], { coins: 1, karma: 0 });
+    expect(
+      optionDisplay(SECRETS, s, {
+        requires: [{ counter: 'coins', atLeast: 3 }],
+        effects: [{ add: 'coins', by: -2 }],
+      })
+    ).toEqual({ shown: 'greyed', needs: [{ counter: 'coins', need: 2 }] });
+    expect(
+      optionDisplay(SECRETS, s, {
+        requires: [{ counter: 'coins', atLeast: 2 }],
+        effects: [{ add: 'coins', by: -4 }],
+      })
+    ).toEqual({ shown: 'greyed', needs: [{ counter: 'coins', need: 3 }] });
+  });
+
+  it('hides an option when any label or counter blocking it is secret', () => {
+    expect(
+      optionDisplay(SECRETS, none, {
+        requires: [{ has: 'red-key' }, { has: 'crown' }],
+      })
+    ).toEqual({ shown: 'hidden' });
+    expect(
+      optionDisplay(SECRETS, none, { effects: [{ add: 'karma', by: -1 }] })
+    ).toEqual({ shown: 'hidden' });
+    expect(
+      optionDisplay(SECRETS, none, {
+        requires: [{ counter: 'karma', atLeast: 1 }],
+      })
+    ).toEqual({ shown: 'hidden' });
+  });
+
+  // A secret that does NOT block the option reveals nothing, so it does
+  // not hide it.
+  it('greys an option whose secret condition holds and a visible one fails', () => {
+    const s = withState(['crown'], { coins: 0, karma: 0 });
+    expect(
+      optionDisplay(SECRETS, s, {
+        requires: [{ has: 'crown' }, { has: 'red-key' }],
+      })
+    ).toEqual({ shown: 'greyed', needs: [{ has: 'red-key' }] });
+  });
+
+  // A typo hides content: an undeclared name, an effect the game cannot
+  // apply, or a requirement that is no whole number never greys.
+  it('hides an option blocked by something the game cannot read', () => {
+    for (const target of [
+      { requires: [{ has: 'red-kee' }] },
+      { requires: [{ counter: 'coins', atLeast: 1.5 }] },
+      { effects: [{ add: 'coins', by: 0 }] },
+      { effects: [{ set: 'nope' }] },
+    ]) {
+      expect(optionDisplay(SECRETS, none, target)).toEqual({
+        shown: 'hidden',
+      });
+    }
+  });
+});
+
+describe('stepAfter', () => {
+  const steps: TourGameStep[] = [
+    { id: 'a', kind: 'content' },
+    { id: 'b', kind: 'content' },
+    { id: 'b', kind: 'content' },
+  ];
+
+  it('continues at the next step, and ends after the last', () => {
+    expect(stepAfter(steps, 0)).toBe(1);
+    expect(stepAfter(steps, 2)).toBe(-1);
+  });
+
+  it('follows a goto to the first step with that id, backwards too', () => {
+    expect(stepAfter(steps, 0, { goto: 'b' })).toBe(1);
+    expect(stepAfter(steps, 2, { goto: 'a' })).toBe(0);
+  });
+
+  // A jump to no step must end the scene, never restart it: a restart
+  // would replay the choice and pay its effects again.
+  it('ends the scene on a goto naming no step, and for a from that is no step', () => {
+    expect(stepAfter(steps, 0, { goto: 'nope' })).toBe(-1);
+    for (const from of [-1, 3, 0.5, Number.NaN]) {
+      expect(stepAfter(steps, from)).toBe(-1);
+    }
   });
 });
 
@@ -338,12 +487,15 @@ describe('nextAvailableStep', () => {
     expect(nextAvailableStep(GAME, held, steps, 1)).toBe(1);
   });
 
+  // -1 is "the scene has ended" everywhere, so feeding stepAfter's -1
+  // back in must keep the scene ended rather than start it again.
   it('returns -1 at the end, and for a start that is no index', () => {
     const s = startRun(GAME);
     expect(nextAvailableStep(GAME, s, steps, 3)).toBe(-1);
     expect(nextAvailableStep(GAME, s, [steps[1]!], 0)).toBe(-1);
     expect(nextAvailableStep(GAME, s, steps, Number.NaN)).toBe(-1);
-    expect(nextAvailableStep(GAME, s, steps, -4)).toBe(0);
+    expect(nextAvailableStep(GAME, s, steps, -1)).toBe(-1);
+    expect(nextAvailableStep(GAME, s, steps, -4)).toBe(-1);
   });
 });
 
@@ -378,10 +530,57 @@ describe('inventory', () => {
         },
       ],
       counters: [
-        { id: 'coins', name: 'Coins', keep: 'round', value: 2 },
-        { id: 'stars', name: 'Stars', keep: 'collectible', value: 1 },
+        {
+          id: 'coins',
+          name: 'Coins',
+          keep: 'round',
+          secret: false,
+          value: 2,
+          shown: 'value',
+        },
+        {
+          id: 'stars',
+          name: 'Stars',
+          keep: 'collectible',
+          secret: false,
+          value: 1,
+          shown: 'value',
+        },
       ],
     });
+  });
+
+  // A round label (a path) says nothing a visitor can act on while not
+  // held, so it is shown while held and never greyed.
+  it('hides a round label that is not held, and shows it while held', () => {
+    const labels = inventory(GAME, startRun(GAME)).labels;
+    expect(labels[2]).toMatchObject({ id: 'north', shown: 'hidden' });
+  });
+
+  it('hides a secret counter, value and all', () => {
+    const game: TourGame = {
+      ...GAME,
+      counters: [
+        {
+          id: 'karma',
+          name: 'Karma',
+          keep: 'round',
+          start: 3,
+          floor: 0,
+          secret: true,
+        },
+      ],
+    };
+    expect(inventory(game, startRun(game)).counters).toEqual([
+      {
+        id: 'karma',
+        name: 'Karma',
+        keep: 'round',
+        secret: true,
+        value: 3,
+        shown: 'hidden',
+      },
+    ]);
   });
 
   it('shows a secret label once it is held', () => {

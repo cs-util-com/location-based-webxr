@@ -529,6 +529,187 @@ describe('checkTourGame - reachability', () => {
     });
   });
 
+  // A jump to no step ends the scene (stepAfter): the payout cannot
+  // repeat, so a requirement of two is truly out of reach. The exhaustive
+  // walk in the property test agrees on this very tour.
+  it('ends a scene on a goto naming no step, so its payout counts once', () => {
+    const game: TourGame = {
+      labels: [],
+      counters: COINS,
+      stations: [
+        giver('a', [
+          choiceStep('c', [
+            { id: 'k', effects: [{ add: 'coins', by: 1 }], goto: 'nope' },
+            LEAVE,
+          ]),
+        ]),
+        { id: 'gate', requires: [{ counter: 'coins', atLeast: 2 }], steps: [] },
+      ],
+    };
+    expect(checkTourGame(game)).toEqual([
+      {
+        kind: 'unknown-step',
+        step: 'nope',
+        at: { station: 'a', step: 'c', option: 'k' },
+      },
+      {
+        kind: 'unreachable',
+        at: { station: 'gate' },
+        because: {
+          kind: 'counter-out-of-reach',
+          counter: 'coins',
+          atLeast: 2,
+          max: 1,
+        },
+      },
+    ]);
+  });
+
+  // A chain the fixpoint climbs one option per pass: the bound must come
+  // from the fixpoint itself, never from where a pass cap cut it off.
+  it('climbs a long chain of options to its end, whatever its length', () => {
+    for (const n of [1, 50, 100, 300]) {
+      const options = Array.from({ length: n }, (_, k) => ({
+        id: `o${String(k)}`,
+        requires: [{ counter: 'coins', atLeast: k }],
+        effects: [{ add: 'coins', by: 1 }],
+      }));
+      const game: TourGame = {
+        labels: [],
+        counters: COINS,
+        stations: [
+          giver('a', [choiceStep('c', [...options, LEAVE])]),
+          {
+            id: 'gate',
+            requires: [{ counter: 'coins', atLeast: n }],
+            steps: [],
+          },
+        ],
+      };
+      expect(checkTourGame(game)).toEqual([]);
+    }
+  });
+
+  // A tour the rules would read differently from the check (a counter
+  // declared twice, a start below its floor, a start that is no whole
+  // number) gets its structural finding and NO reachability verdict: a
+  // verdict on a misread tour could call reachable content unreachable.
+  it('gives no reachability verdict on a tour with malformed declarations', () => {
+    const twice: TourGame = {
+      labels: [],
+      counters: [
+        ...COINS,
+        { id: 'coins', name: 'Coins', keep: 'round', start: 5, floor: 0 },
+      ],
+      stations: [
+        { id: 'gate', requires: [{ counter: 'coins', atLeast: 5 }], steps: [] },
+      ],
+    };
+    expect(checkTourGame(twice)).toEqual([
+      { kind: 'duplicate-name', name: 'coins' },
+    ]);
+    const below: TourGame = {
+      labels: [],
+      counters: [
+        { id: 'coins', name: 'Coins', keep: 'round', start: -2, floor: 0 },
+      ],
+      stations: [
+        {
+          id: 'a',
+          steps: [{ id: 'q', kind: 'quiz', outcomes: {} }],
+        },
+        { id: 'gate', requires: [{ counter: 'coins', atLeast: 0 }], steps: [] },
+      ],
+    };
+    expect(checkTourGame(below)).toEqual([
+      { kind: 'start-below-floor', counter: 'coins' },
+    ]);
+    const fractional: TourGame = {
+      labels: [],
+      counters: [
+        { id: 'coins', name: 'Coins', keep: 'round', start: 0.5, floor: 0 },
+      ],
+      stations: [
+        { id: 'gate', requires: [{ counter: 'coins', atLeast: 1 }], steps: [] },
+      ],
+    };
+    expect(checkTourGame(fractional)).toEqual([
+      { kind: 'bad-number', field: 'start', at: { counter: 'coins' } },
+    ]);
+  });
+
+  // A quiz answer is an option: one whose cost the tour can never pay is
+  // never available - and the quiz then gives its answer away.
+  it('reports a quiz outcome whose cost the tour can never pay', () => {
+    const game: TourGame = {
+      labels: [],
+      counters: COINS,
+      stations: [
+        {
+          id: 'a',
+          steps: [
+            {
+              id: 'q',
+              kind: 'quiz',
+              outcomes: { wrong: [{ add: 'coins', by: -2 }] },
+            },
+          ],
+        },
+      ],
+    };
+    expect(checkTourGame(game)).toEqual([
+      {
+        kind: 'option-never-available',
+        at: { station: 'a', step: 'q', outcome: 'wrong' },
+        because: { kind: 'floor', counter: 'coins', max: 0 },
+      },
+    ]);
+  });
+
+  // A quiz neither of whose outcomes can be taken stops the scene there:
+  // the steps after it are never reached, and the quiz may trap.
+  it('stops the scene flow at a quiz no outcome of which can be taken', () => {
+    const game: TourGame = {
+      labels: [],
+      counters: COINS,
+      stations: [
+        {
+          id: 'a',
+          steps: [
+            {
+              id: 'q',
+              kind: 'quiz',
+              outcomes: {
+                correct: [{ add: 'coins', by: -1 }],
+                wrong: [{ add: 'coins', by: -1 }],
+              },
+            },
+            { id: 'after', kind: 'content' },
+          ],
+        },
+      ],
+    };
+    const floor = { kind: 'floor', counter: 'coins', max: 0 } as const;
+    expect(checkTourGame(game)).toEqual([
+      {
+        kind: 'option-never-available',
+        at: { station: 'a', step: 'q', outcome: 'correct' },
+        because: floor,
+      },
+      {
+        kind: 'option-never-available',
+        at: { station: 'a', step: 'q', outcome: 'wrong' },
+        because: floor,
+      },
+      { kind: 'choice-may-softlock', at: { station: 'a', step: 'q' } },
+      {
+        kind: 'unreachable',
+        at: { station: 'a', step: 'after' },
+        because: { kind: 'scene-flow' },
+      },
+    ]);
+  });
+
   it('counts both outcomes of a reachable quiz as sources', () => {
     const game: TourGame = {
       labels: LABELS,
@@ -654,6 +835,60 @@ describe('checkTourGame - softlocks', () => {
       ],
     };
     expect(checkTourGame(game)).toEqual([]);
+  });
+
+  // A condition on an undeclared label never holds, `lacks` included, so
+  // the pair that is free for a declared label is stuck for a typo.
+  it('does not accept a has/lacks pair of an undeclared label as free', () => {
+    const game: TourGame = {
+      labels: [],
+      counters: [],
+      stations: [
+        giver('a', [
+          choiceStep('c', [
+            { id: 'with', requires: [{ has: 'zz' }] },
+            { id: 'without', requires: [{ lacks: 'zz' }] },
+          ]),
+        ]),
+      ],
+    };
+    expect(checkTourGame(game)).toContainEqual({
+      kind: 'choice-may-softlock',
+      at: { station: 'a', step: 'c' },
+    });
+  });
+
+  // A quiz with one free outcome can always be answered that way.
+  it('warns about a reachable quiz only when no outcome is free', () => {
+    const quiz = (correct: number, wrong: number): TourGame => ({
+      labels: [],
+      counters: COINS,
+      stations: [
+        giver('farm', [
+          choiceStep('c', [
+            { id: 'k', effects: [{ add: 'coins', by: 3 }] },
+            LEAVE,
+          ]),
+        ]),
+        {
+          id: 'a',
+          steps: [
+            {
+              id: 'q',
+              kind: 'quiz',
+              outcomes: {
+                correct: [{ add: 'coins', by: correct }],
+                wrong: [{ add: 'coins', by: wrong }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(checkTourGame(quiz(1, -1))).toEqual([]);
+    expect(checkTourGame(quiz(-1, -1))).toEqual([
+      { kind: 'choice-may-softlock', at: { station: 'a', step: 'q' } },
+    ]);
   });
 
   it('does not warn about a choice that is never reached', () => {
