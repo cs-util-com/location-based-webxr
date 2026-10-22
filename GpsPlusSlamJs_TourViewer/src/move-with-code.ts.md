@@ -36,6 +36,9 @@ landmarks (D19). Pure.
   codes than to this one (a tie goes to this code). Notes that belong to
   another code nearby stay with it: moving them dragged them up to 10 m
   off it in the sweep, and moving only the nearer ones was never worse.
+  Since every object stands in a station, the creator's settle applies it
+  to STATIONS by their anchor (`station-code-move.ts`), never to a single
+  object.
 
 ## Invariants & assumptions
 

@@ -44,9 +44,11 @@ import {
 } from "./finish-guard.js";
 
 import { wireCreatorHandoff } from "./creator-handoff.js";
+import { wireCreatorDebugSave } from "./creator-debug-save.js";
 import type { TourHost } from "./tour-host.js";
 import { wireCreatorCodes, type CreatorCodes } from "./creator-codes.js";
 import { wireCreatorDraft } from "./creator-draft.js";
+import { tourFileKeyOfFile } from "./tour-session.js";
 import { wireCreatorPreviews } from "./creator-previews.js";
 import { wireCreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import {
@@ -56,11 +58,10 @@ import {
 import { wireCreatorMeasuring } from "./creator-measuring.js";
 import { wireCreatorSettle } from "./creator-settle.js";
 import { wireCreatorFinish } from "./creator-finish.js";
-import {
-  reticleNueOf,
-  walkPhotosPending,
-  wireCreatorStations,
-} from "./creator-stations.js";
+import { reticleNueOf, wireCreatorStations } from "./creator-stations.js";
+import { undoSettle, wireCreatorUndo } from "./creator-undo.js";
+import type { CreatorUndoDom, UndoOffer } from "./creator-undo.js";
+import { settleUndone } from "./tour-authoring-actions.js";
 import { visitorPosition } from "./visitor-position.js";
 
 import { newObjectId } from "./content-placement.js";
@@ -96,6 +97,10 @@ import {
 } from "./tour-viewer-session.js";
 import type { Wizard } from "./wizard.js";
 import { writeSideM } from "./printed-side.js";
+import {
+  onlyCreatorCodesChanged,
+  type CreatorCodesState,
+} from "./creator-codes-slice.js";
 
 /** What a Done says while a code is being measured (PR #598 review); the
  *  save then starts by itself (r837 review #2). */
@@ -135,6 +140,12 @@ export interface CreatorSetupDom {
   replaceHelpDrive: HTMLElement;
   /** Step 6's Drive address button (`creator-handoff.ts`). */
   replaceDriveCopy: HTMLButtonElement;
+  /** Step 6's "Save the debug data" (`creator-debug-save.ts`): its block,
+   *  line, button and status. */
+  debugSave: HTMLElement;
+  debugSaveText: HTMLElement;
+  debugSaveButton: HTMLButtonElement;
+  debugSaveStatus: HTMLElement;
   /** The question after a download-only Finish (F19, `creator-handoff.ts`). */
   uploadAsk: HTMLElement;
   uploadAskText: HTMLElement;
@@ -148,9 +159,9 @@ export interface CreatorSetupDom {
   printPanel: HTMLDetailsElement;
   status: HTMLElement;
   finishButton: HTMLButtonElement;
-  /** "Keep the walk recording in the zip" (scan-pass plan S1, S-D10):
+  /** "Keep the debug data in the tour file" (scan-pass plan S1, S-D10):
    *  shown beside Finish only for a tour that carries entries visitors
-   *  never read; unticked, the Finish leaves them out. */
+   *  never read; unticked (the default), the Finish leaves them out. */
   keepScanRow: HTMLElement;
   keepScanInput: HTMLInputElement;
   /** Step 5 on the page (outside the overlay): where the download lands. */
@@ -167,6 +178,10 @@ export interface CreatorSetupDom {
    *  `creator-placement.ts`). Absent in the node tests that do not need
    *  it. */
   newStationButton?: NonNullable<CreatorPlacementDom["newStationButton"]>;
+  /** The strip's persistent Undo and its label (W4 build plan MU,
+   *  `creator-undo.ts`). Absent in the node tests that do not need it. */
+  undoButton?: HTMLButtonElement;
+  undoLabel?: Pick<HTMLElement, "textContent">;
   /** The "unsaved work is still on this device" offer (F13). */
   draftOffer: HTMLElement;
   draftOfferText: HTMLElement;
@@ -229,6 +244,21 @@ export interface CreatorSetup {
    *  document, saved by the next Finish like any other. Null when taken
    *  (or the same name), else why not, in words (over 80 characters). */
   renameTour: (name: string) => string | null;
+}
+
+/** The strip's Undo elements, or inert stand-ins for the node tests that
+ *  build the setup without them. */
+function undoChip(
+  dom: Pick<CreatorSetupDom, "undoButton" | "undoLabel">,
+): CreatorUndoDom {
+  return {
+    button: dom.undoButton ?? {
+      disabled: true,
+      hidden: true,
+      addEventListener: () => undefined,
+    },
+    label: dom.undoLabel ?? { textContent: "" },
+  };
 }
 
 export function wireCreatorSetup(deps: {
@@ -320,6 +350,7 @@ export function wireCreatorSetup(deps: {
   ctx.tourDocument.follow({
     ...draftObjectWrites(draft),
     saveSettings: (settings) => draft.saveSettings(settings),
+    saveCodes: (record) => draft.saveCodes(record),
   });
   /** The placed objects' previews and the earlier visits' frame
    *  (`creator-previews.ts`). */
@@ -394,13 +425,43 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout: () => {
       renderAuthorReadout();
     },
+    offerUndo: (offer) => {
+      undo.offer(offer);
+    },
   });
+
+  /** The strip's persistent Undo (W4 build plan MU): a delete or a
+   *  settle's automatic code change, while it is the document's last step. */
+  const undo = wireCreatorUndo({
+    tour: ctx.tourDocument,
+    dom: undoChip(dom),
+    locked: () => ctx.finishing,
+    // Object mode: the selected object's actions take the strip's place.
+    hidden: () => editing.selected() !== null,
+  });
+  /** The last settle's offer, by its visit: a failed Finish that forgets
+   *  that settle withdraws it (`withdrawUndo`). */
+  let settleOffer: { visit: number; offer: UndoOffer } | null = null;
 
   if (creator) {
     // Alignment arrives via GPS dispatches, not via controller state - the
     // readout must follow the store, or "waiting for GPS alignment" sticks.
     // So does the zero, which the previews from geo wait for.
+    let seen = arStore.getState();
     arStore.subscribe(() => {
+      const before = seen;
+      seen = arStore.getState();
+      // A held code's sightings dispatch about once per stable QR frame.
+      // Of the creator's code state the readout reads the hand, its
+      // measurement and which code the visit has seen (the entry hint); a
+      // dispatch that moved only the rest is shown at the next one, as it
+      // was while the codes lived outside the store (r902 review #1).
+      if (
+        onlyCreatorCodesChanged(before, seen) &&
+        sameForTheReadout(before.creatorCodes, seen.creatorCodes)
+      ) {
+        return;
+      }
       alignmentPicks.sync();
       if (
         previews.waitingForZero() &&
@@ -410,6 +471,19 @@ export function wireCreatorSetup(deps: {
       }
       renderAuthorReadout();
     });
+  }
+
+  /** Whether the readout reads the same of the creator's code state in
+   *  both (see the subscription above). */
+  function sameForTheReadout(
+    a: CreatorCodesState,
+    b: CreatorCodesState,
+  ): boolean {
+    return (
+      a.hand === b.hand &&
+      a.handMeasurement === b.handMeasurement &&
+      (a.visitSighting?.levelId ?? null) === (b.visitSighting?.levelId ?? null)
+    );
   }
 
   function authorAlignmentInfo(): MintAlignmentInfo {
@@ -510,6 +584,7 @@ export function wireCreatorSetup(deps: {
     // earlier objects' frame).
     settle.judgeOnNewFix();
     editing.render();
+    undo.render();
     renderSelectionMark();
     // F11: the AR controls belong to the AR session. On the setup page they
     // were a row of greyed-out buttons under "AR not supported", which is
@@ -651,8 +726,8 @@ export function wireCreatorSetup(deps: {
   }
 
   /** The creator's stations in AR (tour editor plan W3 "AR authoring"):
-   *  the open one's line and ring, read from the working copy through the
-   *  Finish's own writer - no state of their own. */
+   *  the open one's line and ring, read from the tour document's stations
+   *  as the next write carries them - no state of their own. */
   const stations = wireCreatorStations({
     tour: ctx.tourDocument,
     dom: { chip: dom.stationChip ?? { textContent: "", hidden: true } },
@@ -663,14 +738,13 @@ export function wireCreatorSetup(deps: {
         gpsPositions: [],
       }).nue,
     reticleNue: () => reticleNueOf(ctx.reticle),
-    walkPhotosPending: () =>
-      walkPhotosPending(
-        ctx.session,
-        ctx.tourDocument.manifest(),
-        ctx.walkDecidedFor,
-      ),
     zero: () => selectZeroReference(arStore.getState()),
     scene: () => (creator && sessionLive() ? seams.getScene() : null),
+    // On the creator's own line, which the AR overlay shows.
+    reportError: (message) => {
+      ctx.placementNote = message;
+      renderAuthorReadout();
+    },
   });
 
   /** Placing a pin or a photo in AR (`creator-placement.ts`). */
@@ -734,6 +808,42 @@ export function wireCreatorSetup(deps: {
     ...(deps.summary === undefined ? {} : { summary: deps.summary }),
     alignmentInfo: () => authorAlignmentInfo(),
     sizeOf: (text) => measuring.sizeOf(text),
+    offerUndo: (target, settledVisit) => {
+      // The Finishes so far: one more by the tap means the zip has it.
+      const finishesAtOffer = settle.finishesWritten();
+      const offer: UndoOffer = {
+        target,
+        run: () =>
+          undoSettle({
+            tour: ctx.tourDocument,
+            target,
+            visit: ctx.arSessionGeneration,
+            settledVisit,
+            written: () => settle.finishesWritten() > finishesAtOffer,
+            log: (payload) => arStore.dispatch(settleUndone(payload)),
+            changed: () => {
+              // What that settle decided per code goes with it: the
+              // Finish's result line must not report it.
+              settle.settleUndone(settledVisit);
+              previews.sync();
+              // The earlier visits' objects are drawn through the codes'
+              // stored poses, which the undo changed.
+              settle.placeEarlierObjects();
+              renderAuthorReadout();
+            },
+            say: (text) => {
+              editing.announce(text);
+            },
+          }),
+      };
+      settleOffer = { visit: settledVisit, offer };
+      undo.offer(offer);
+    },
+    withdrawUndo: (visit) => {
+      if (settleOffer?.visit !== visit) return;
+      undo.withdraw(settleOffer.offer);
+      settleOffer = null;
+    },
   });
 
   /** What the save guard reads (`finish-guard.ts`). */
@@ -768,7 +878,32 @@ export function wireCreatorSetup(deps: {
     ...(deps.host === undefined ? {} : { host: deps.host }),
     // A yes to "did you upload it?" (F19) is noted in the draft.
     onUploaded: (written) => draft.uploaded(written),
+    // A tour opened from a FILE is known by its file's key, and the first
+    // save that wrote the tour's own id gives the saved file another one
+    // (Q-I): the draft follows the file the creator now has. A link's
+    // tour keeps its link's key. The old key's draft stays as it was, so a
+    // copy that did not land loses nothing the opened file offers.
+    onDelivered: (rebuilt) => {
+      const session = ctx.session;
+      if (session === null || !session.fromFile) return;
+      const saved = new File([rebuilt.blob], rebuilt.filename, {
+        type: "application/zip",
+      });
+      // A move that did not land leaves the saved file without the draft
+      // it should offer: said as "no backup" (r901 review #7), for this
+      // tour only.
+      void tourFileKeyOfFile(saved)
+        .then((key) => (ctx.session === session ? draft.follow(key) : true))
+        .catch(() => false)
+        .then((followed) => {
+          if (!followed && ctx.session === session) draft.warnNoBackup();
+        });
+    },
   });
+
+  /** The debug data a Finish left out, saved apart on a tap in the Done
+   *  step (`creator-debug-save.ts`). */
+  const debugSave = wireCreatorDebugSave({ ctx, seams, dom });
 
   /** Finish: the rebuilt zip and what it changes (`creator-finish.ts`). */
   const finish = wireCreatorFinish({
@@ -783,6 +918,7 @@ export function wireCreatorSetup(deps: {
     handoff,
     previews,
     draft,
+    debugSave,
     sessionLive,
     render: () => {
       renderAuthorReadout();
@@ -875,8 +1011,11 @@ export function wireCreatorSetup(deps: {
       // The download button, its line and the replace steps
       // (`creator-handoff.ts`).
       handoff.reset();
+      // ... and the debug data's offer, with the bytes it kept.
+      debugSave.reset();
       // A "keep the walk" given for the closing tour is not given for the
-      // next one (S1 milestone review #9).
+      // next one (S1 milestone review #9): the next open sets its own
+      // default (`creator-finish.ts`).
       dom.keepScanInput.checked = false;
       // The rebuilt zip belonged to the tour that just closed, so the block
       // offering it goes away with it (M3 review #6) - otherwise a newly
@@ -888,6 +1027,9 @@ export function wireCreatorSetup(deps: {
       // The closing tour's previews, photo bytes and list (M4).
       previews.reset();
       editing.reset();
+      // A step of the closing tour is nothing to take back in the next.
+      undo.reset();
+      settleOffer = null;
       // The summary and the visits belonged to the closing tour (M3b).
       deps.summary?.hide();
       visitLog.clear();

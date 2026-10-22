@@ -104,13 +104,15 @@ function runningButtonView(
 function readyButtonView(
   mode: ViewerMode,
   location: { pending: boolean; busy: boolean },
+  progressKept: boolean,
 ): ArButtonView {
   if (mode === "creator") return { label: "Start creating", disabled: false };
   if (location.busy) {
     return { label: "Getting your location…", disabled: true };
   }
+  if (location.pending) return { label: "Allow location", disabled: false };
   return {
-    label: location.pending ? "Allow location" : "Start the tour",
+    label: progressKept ? "Back to the tour" : "Start the tour",
     disabled: false,
   };
 }
@@ -131,6 +133,9 @@ export function arButtonView(
     running: false,
     failed: false,
   },
+  /** A visitor left AR with progress on the open tour (W4 build plan M2,
+   *  §1.8): the start goes "Back to the tour". */
+  progressKept = false,
 ): ArButtonView {
   switch (state.status) {
     case "unsupported":
@@ -140,7 +145,7 @@ export function arButtonView(
         ? { label: COPY_LINK_LABELS.idle, disabled: false }
         : STATIC_BUTTON_VIEWS.unsupported;
     case "ready":
-      return readyButtonView(mode, location);
+      return readyButtonView(mode, location, progressKept);
     case "running":
       return runningButtonView(mode, finish);
     case "error":

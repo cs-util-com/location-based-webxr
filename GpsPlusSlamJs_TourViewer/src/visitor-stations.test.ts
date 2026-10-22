@@ -5,7 +5,13 @@ import {
 } from "gps-plus-slam-app-framework/state";
 
 import { createTourViewerStore } from "./tour-viewer-session";
-import { stationAlignmentSignals } from "./visitor-stations";
+import {
+  createCallGuard,
+  stationAlignmentSignals,
+  walkDebugLines,
+  walkDirectionsOf,
+} from "./visitor-stations";
+import { createWalkDirections } from "./walk-direction";
 
 /**
  * Why these tests matter: the station guide trusts a position and judges
@@ -80,5 +86,123 @@ describe("stationAlignmentSignals", () => {
     expect(signals.trackingReady()).toBe(true);
     ctx.viewerVotedLocks = 0;
     expect(signals.trackingReady()).toBe(true);
+  });
+});
+
+describe("createCallGuard (W4 build plan M2 review)", () => {
+  // Why: a story's change (its `onChange`) can fire from inside a guide
+  // call - a find starts the story - and a sheet drawn then reads the
+  // guide's half-made view beside a store its batch has not reached yet.
+  // The render waits for the outermost call and happens once after it.
+  it("defers a render asked for inside a call until the outermost call ends, once", () => {
+    let renders = 0;
+    const guard = createCallGuard(() => {
+      renders += 1;
+    });
+    guard.request();
+    expect(renders).toBe(1);
+    guard.during(() => {
+      guard.request();
+      guard.during(() => {
+        guard.request();
+      });
+      expect(renders).toBe(1);
+    });
+    expect(renders).toBe(2);
+    guard.during(() => undefined);
+    expect(renders).toBe(2);
+  });
+
+  it("still ends the call and renders when the call throws", () => {
+    let renders = 0;
+    const guard = createCallGuard(() => {
+      renders += 1;
+    });
+    expect(() => {
+      guard.during(() => {
+        guard.request();
+        throw new Error("boom");
+      });
+    }).toThrow("boom");
+    expect(renders).toBe(1);
+    guard.request();
+    expect(renders).toBe(2);
+  });
+});
+
+describe("walkDirectionsOf (W4 build plan M3, §1.5)", () => {
+  // Why: the peek and the rows say which way each station is only with a
+  // heading and a position to point from (a code's or GPS); the angle is
+  // the station's bearing from the camera's, positive to the right; and
+  // the words keep their hysteresis across renders but start anew once
+  // the directions lapse (a frozen radar, a lost heading).
+  const view = (headingDeg: number | null) => ({
+    headingDeg,
+    bearings: new Map([
+      ["a", 10],
+      ["b", 100],
+      ["c", 350],
+      ["d", 190],
+    ]),
+  });
+
+  it("measures each station from the camera's heading", () => {
+    const m = walkDirectionsOf(view(0), "gps", createWalkDirections());
+    expect([...m]).toEqual([
+      ["a", { word: "ahead", angleDeg: 10 }],
+      ["b", { word: "right", angleDeg: 100 }],
+      ["c", { word: "ahead", angleDeg: -10 }],
+      ["d", { word: "behind", angleDeg: -170 }],
+    ]);
+    expect(
+      walkDirectionsOf(view(90), "code", createWalkDirections()).get("a"),
+    ).toEqual({ word: "left", angleDeg: -80 });
+  });
+
+  it("says nothing without a heading or a position to point from", () => {
+    const memory = createWalkDirections();
+    expect(walkDirectionsOf(view(null), "gps", memory).size).toBe(0);
+    for (const chip of ["weak", "none", "lost", "pending"] as const) {
+      expect(walkDirectionsOf(view(0), chip, memory).size).toBe(0);
+    }
+  });
+
+  it("holds a word by its hysteresis, and forgets it once they lapse", () => {
+    const memory = createWalkDirections();
+    // 30 deg: "right" from cold; held at 26 (inside the 5 deg band).
+    const at = (deg: number) => ({
+      headingDeg: 0,
+      bearings: new Map([["a", deg]]),
+    });
+    expect(walkDirectionsOf(at(30), "gps", memory).get("a")?.word).toBe(
+      "right",
+    );
+    expect(walkDirectionsOf(at(26), "gps", memory).get("a")?.word).toBe(
+      "right",
+    );
+    walkDirectionsOf(at(26), "lost", memory);
+    expect(walkDirectionsOf(at(26), "gps", memory).get("a")?.word).toBe(
+      "ahead",
+    );
+  });
+});
+
+describe("walkDebugLines (the ?debug=1 readout, W4 build plan M3)", () => {
+  // Why this test matters: the radar and its frame line are the visitor
+  // walk's; a creator with ?debug=1 has no radar, and two lines reading
+  // "-" for ever would be dead weight in the readout the creator works by.
+  const radar = { drawStats: () => ({ mean: 0.5, worst: 1, count: 3 }) };
+  const frames = { summary: () => ({ mean: 16, worst: 20, count: 9 }) };
+
+  it("a visitor's radar reads its draw and frame lines", () => {
+    expect(walkDebugLines("visitor", radar, frames, 0)).toEqual([
+      "radar draw: 0.50 ms mean, 1.00 ms worst (3 in 2 s)",
+      "frame: 16.0 ms mean, 20.0 ms worst (9 in 2 s)",
+    ]);
+  });
+
+  it("a creator, or a page without a radar, reads none", () => {
+    expect(walkDebugLines("creator", radar, frames, 0)).toEqual([]);
+    expect(walkDebugLines("visitor", null, frames, 0)).toEqual([]);
   });
 });

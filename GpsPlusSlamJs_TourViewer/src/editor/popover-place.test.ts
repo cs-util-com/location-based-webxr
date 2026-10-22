@@ -83,6 +83,91 @@ describe("placePopover", () => {
     }
   });
 
+  // Why (r901 review #4): the debug panel sits in the window's lower
+  // right corner, where a card near the edge lands too; with the panel on
+  // top it covered the card's buttons, and a z-index swap only trades
+  // which of the two is hidden. The card moves up, clear of the panel.
+  const PANEL = { left: 936, top: 700, right: 1268, bottom: 772 };
+
+  it("moves up, clear of a box it must not cover, and keeps its arrow at the marker", () => {
+    const p = placePopover({
+      anchor: { x: 1100, y: 760 },
+      lift: 24,
+      gap: 30,
+      size: SIZE,
+      free: FREE,
+      avoid: PANEL,
+    });
+    expect(p).toMatchObject({ visible: true, side: "left" });
+    if (!p.visible) throw new Error("hidden");
+    expect(p.y + SIZE.height).toBeLessThanOrEqual(PANEL.top);
+    // Clamped to the card's edge, the arrow still points down its side.
+    expect(p.arrow).toBe(SIZE.height - 28);
+    // Without the box the card sits over it, as it did.
+    const before = placePopover({
+      anchor: { x: 1100, y: 760 },
+      lift: 24,
+      gap: 30,
+      size: SIZE,
+      free: FREE,
+    });
+    expect(before.visible && before.y + SIZE.height > PANEL.top).toBe(true);
+  });
+
+  it("leaves a card that does not reach the box where it was", () => {
+    const input = {
+      anchor: { x: 600, y: 400 },
+      lift: 24,
+      gap: 30,
+      size: SIZE,
+      free: FREE,
+    };
+    expect(placePopover({ ...input, avoid: PANEL })).toEqual(
+      placePopover(input),
+    );
+  });
+
+  it("never covers the box when the card fits above it, and stays inside the free area (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 330, max: 1268 }),
+        fc.integer({ min: 80, max: 788 }),
+        fc.integer({ min: 200, max: 360 }),
+        fc.integer({ min: 120, max: 400 }),
+        fc.integer({ min: 40, max: 200 }),
+        fc.integer({ min: 120, max: 360 }),
+        (x, y, width, height, panelHeight, panelWidth) => {
+          const avoid = {
+            left: FREE.right - panelWidth,
+            top: FREE.bottom - 16 - panelHeight,
+            right: FREE.right,
+            bottom: FREE.bottom - 16,
+          };
+          const p = placePopover({
+            anchor: { x, y },
+            lift: 0,
+            gap: 30,
+            size: { width, height },
+            free: FREE,
+            avoid,
+          });
+          expect(p.visible).toBe(true);
+          if (!p.visible) return;
+          expect(p.x).toBeGreaterThanOrEqual(FREE.left);
+          expect(p.y).toBeGreaterThanOrEqual(FREE.top);
+          expect(p.y + height).toBeLessThanOrEqual(FREE.bottom + 1);
+          const covers =
+            p.x < avoid.right &&
+            p.x + width > avoid.left &&
+            p.y < avoid.bottom &&
+            p.y + height > avoid.top;
+          const fitsAbove = avoid.top - 8 - height >= FREE.top;
+          expect(fitsAbove && covers).toBe(false);
+        },
+      ),
+    );
+  });
+
   it("always lies inside the free area when shown (property)", () => {
     fc.assert(
       fc.property(

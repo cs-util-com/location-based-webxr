@@ -16,6 +16,10 @@ export default defineConfig({
       'scripts/e2e/**/*.test.mjs',
     ],
     environment: 'node',
+    // The shared fast-check time limit (every interruption is red), so a
+    // failing property cannot shrink for hours where testTimeout cannot
+    // reach: scripts/test-timing/fast-check-time-limit.mjs.md.
+    setupFiles: ['scripts/test-timing/fast-check-time-limit.mjs'],
     // One worker runs many files instead of one process per file. Measured
     // 2026-09-30 (with tests/repo-config/tracked-tree.js): per run 79 -> 24
     // processes and ~22 -> ~10 CPU-s on a quiet machine (~33 -> ~17 beside a

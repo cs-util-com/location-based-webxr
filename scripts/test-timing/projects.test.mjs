@@ -100,6 +100,20 @@ describe('projects.mjs config invariants', () => {
       }
     }
   );
+
+  // Why: the stage watchdog skips a nestedGate row and watches its leaves
+  // one level down. A row that spawns a whole package gate without the flag
+  // would be watched twice and could kill a healthy gate from above, naming
+  // the row instead of the leaf; a leaf with the flag would not be watched.
+  it.each(PROJECTS.map((p) => [p.name, p]))(
+    '%s: exactly the rows that run a package gate are marked nestedGate',
+    (_name, project) => {
+      for (const stage of project.stages) {
+        const runsPackageGate = /^pnpm --filter \S+ test$/.test(stage.command);
+        expect(Boolean(stage.nestedGate), stage.name).toBe(runsPackageGate);
+      }
+    }
+  );
 });
 
 describe('check:cycles reaches the worker subgraphs', () => {
@@ -282,6 +296,19 @@ describe('browser-stage exclusion (DEC-G2)', () => {
     expect(stages.indexOf('build:framework')).toBeLessThan(
       stages.indexOf('typecheck')
     );
+  });
+
+  it('TourViewer builds the OSM package before it reads a dist', () => {
+    // Its 3D editor imports gps-plus-slam-osm (the geoid, the relief's
+    // constants), resolved through `exports` -> dist with no tsconfig
+    // `paths`, exactly as OsmDemo does: without the stage first, its
+    // typecheck reads whatever dist a sibling gate left behind.
+    const stages = gateStages(getProject('GpsPlusSlamJs_TourViewer'), {
+      skipBrowser: true,
+    }).map((s) => s.name);
+    expect(stages).toContain('build:osm');
+    expect(stages.indexOf('build:osm')).toBeLessThan(stages.indexOf('typecheck'));
+    expect(stages.indexOf('build:osm')).toBeLessThan(stages.indexOf('test:unit'));
   });
 
   it('leaves the full stage list untouched when the mode is off', () => {

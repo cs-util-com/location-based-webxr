@@ -19,6 +19,7 @@ This is the **B3** primitive of the in-zip backfill (O3 — in-zip rewrite): it 
 - **Pure transform, no I/O side effects.** It does not touch the filesystem — the caller (RecorderApp backfill, B4) owns the safe write-then-verify-then-overwrite protocol around it.
 - **Byte-preserving.** A wrapper over `rebuildZipWithEntries` (see [zip-rebuild.ts](zip-rebuild.ts.md)) since 2026-09-08 - the package's ONE re-emit loop (DEC-H3); store mode, every non-`session.json` entry byte-identical, directory entries dropped. The rebuild throws on failure; this wrapper turns that into its own skip-and-return-input contract, because a backfill over many recordings wants "left untouched", not an exception per file.
 - **Idempotent.** A zip already carrying `h3Cells` is returned unchanged, so re-running the upgrade is a no-op and new recordings (which already have the field) are skipped. It does **not** overwrite existing cells.
+- **The session entry is picked by `isSessionJsonEntryName`** (`zip-reader.ts`): the path segment rule the metadata readers use, so the entry rewritten here is the one they read. A wrapping folder or `./session.json` still qualifies; a look-alike (`backup-session.json`) does not. A bare suffix match used to write the coverage into such a look-alike when it sorted first, where no reader ever looked.
 - **Defensive.** Missing, malformed, or non-object `session.json` returns the input untouched rather than writing over a broken recording. The non-object case is separate on purpose: `JSON.parse` SUCCEEDS on `3`, `"text"`, `null` and `[1,2]`, so those are neither missing nor unparseable - and merging into one would spread it into a fresh object and overwrite whatever the file actually held.
 
 ## Examples
@@ -34,4 +35,4 @@ if (result === zipBlob) {
 
 ## Tests
 
-- `zip-coverage-embed.test.ts` — embeds into a legacy `produceTestZip` and reads the fields back via `loadSessionMetadataFromBlob`; asserts every non-session entry is byte-identical (open-reader byte map); idempotent on an already-embedded zip (same reference, original cells preserved, not overwritten); returns the input untouched for absent and malformed `session.json` (hand-crafted zips).
+- `zip-coverage-embed.test.ts` — embeds into a legacy `produceTestZip` and reads the fields back via `loadSessionMetadataFromBlob`; asserts every non-session entry is byte-identical (open-reader byte map); idempotent on an already-embedded zip (same reference, original cells preserved, not overwritten); returns the input untouched for absent and malformed `session.json` (hand-crafted zips); embeds into `session.json`, not into a `backup-session.json` sorted before it.

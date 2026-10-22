@@ -23,6 +23,10 @@ far the visitor is from each offered station. Plan:
     distance (K4 review R5; the guide's `onUpcoming`);
   - `done(stationId)` - the media only done stations need may be
     released;
+  - `undone(stationId)` - a done station was brought back (visitor walk
+    W4 build plan M4, R-3): it counts as not done again, so its media are
+    not releasable for it, and a path released meanwhile is read again on
+    its next approach (it is no longer held, so `approach` asks anew);
   - `load(path)` - the story's read: the cache, a read in flight, or a
     fresh read (kept only while a station asked for it);
   - `heldBytes()`; `sync()` - drop everything now if the tour changed or
@@ -111,7 +115,9 @@ const blob = await prefetch.load(asset.path); // a hit when it was prefetched
   kept, a failed read not kept, never a video (R3), offline not retried for
   the same station (R4), a shared asset held until both stations are done
   (R11), kept across a session end and dropped at a tour close (R15), the
-  budget and its release order, a full budget not re-read, a tour change.
+  budget and its release order, a full budget not re-read, a station
+  brought back not released first and a released one read again (seen
+  red before `undone`), a tour change.
 - `station-prefetch.property.test.ts` - random approaches, dones, answers
   and failures: in budget, one read per path at a time, no retry for a
   station a read failed for.

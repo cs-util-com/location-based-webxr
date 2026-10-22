@@ -1,0 +1,1415 @@
+<!doctype html>
+<!-- Prototype W4 - Radar and list (the visitor's walk in AR). Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<title>Visitor walk W4</title>
+<style>
+:root{
+  --accent:#fb923c;      /* the next station */
+  --accent-ink:#1f1105;
+  --found:#2dd4bf;       /* found */
+  --brand:#0f766e;
+  --skip:#9aa4ae;        /* skipped */
+  --left:#f3f5f7;        /* still to find */
+  --gps:#93c5fd;
+  --weak:#fbbf24;
+  --ink:#f3f5f7;
+  --muted:#b3bcc6;
+  --surface:rgba(12,16,21,.80);
+  --surface-2:rgba(255,255,255,.07);
+  --line:rgba(255,255,255,.15);
+  --danger:#f87171;
+  --paper:#f5f1e8;--paper-ink:#17191c;--paper-muted:#5c605d;--paper-line:#ddd6c7;--paper-accent:#c2410c;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --radar:132px;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{font:15px/1.4 var(--sans);background:#101317;color:var(--ink);overflow:hidden;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+.sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* ---------- prototype label (also opens the state switcher) ---------- */
+.proto-label{position:fixed;z-index:80;top:calc(3px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);font:600 11px/1 var(--sans);letter-spacing:.02em;padding:5px 10px;border-radius:999px;background:rgba(0,0,0,.6);color:#fff;border:1px solid rgba(255,255,255,.18);white-space:nowrap;cursor:pointer}
+
+/* ---------- device ---------- */
+.device{position:fixed;inset:0;overflow:hidden;background:#000;container-type:size}
+#cam{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;transition:filter .5s}
+.device[data-phase=lost] #cam{filter:blur(3px) brightness(.7) saturate(.6)}
+.device[data-phase=starting] #cam,.device[data-phase=away] #cam{filter:brightness(.35) blur(2px)}
+.vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 42%,transparent 55%,rgba(0,0,0,.38) 100%)}
+
+/* ---------- top: exit, note ---------- */
+.topbar{position:absolute;z-index:20;top:calc(30px + env(safe-area-inset-top));left:calc(12px + env(safe-area-inset-left));display:flex;gap:8px}
+.round{appearance:none;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:rgba(10,14,19,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);color:#fff;display:grid;place-items:center;cursor:pointer;padding:0}
+.round svg{width:16px;height:16px}
+.round.info{font:700 16px/1 Georgia,serif;font-style:italic}
+
+/* ---------- the radar ---------- */
+.radar-wrap{position:absolute;z-index:20;top:calc(30px + env(safe-area-inset-top));right:calc(12px + env(safe-area-inset-right));width:var(--radar);display:flex;flex-direction:column;align-items:flex-end;gap:6px;transition:opacity .4s,transform .4s}
+.device:not([data-phase=walk]):not([data-phase=lost]) .radar-wrap{opacity:0;transform:scale(.9);pointer-events:none}
+.radar{appearance:none;display:block;width:var(--radar);height:var(--radar);padding:0;border:0;border-radius:50%;background:transparent;cursor:pointer;-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);box-shadow:0 6px 18px rgba(0,0,0,.28)}
+.radar canvas{display:block;width:100%;height:100%;border-radius:50%;transition:filter .5s}
+.radar-wrap.frozen canvas{filter:grayscale(1) brightness(.85)}
+.prec{display:flex;align-items:center;gap:6px;width:max-content;max-width:calc(var(--radar) + 36px);text-align:right;font-size:12px;font-weight:600;line-height:1.2;padding:5px 9px;border-radius:14px;background:rgba(10,14,19,.72);border:1px solid var(--line)}
+.prec i{flex:none;width:10px;height:10px;border-radius:50%;background:var(--gps);box-shadow:0 0 0 3px rgba(147,197,253,.25)}
+.prec[data-k=code] i{border-radius:2px;background:#fff;box-shadow:0 0 0 2px var(--found)}
+.prec[data-k=weak]{border-color:rgba(251,191,36,.55)}
+.prec[data-k=weak] i{background:var(--weak);box-shadow:0 0 0 4px rgba(251,191,36,.25)}
+.prec[data-k=none] i,.prec[data-k=lost] i{background:#6b7480;box-shadow:none}
+.prec[data-k=pending] i{background:transparent;border:2px solid var(--gps);box-shadow:none;animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{transform:scale(.6);opacity:.5}}
+
+/* ---------- coach line (tracking, direction) ---------- */
+.coach{position:absolute;z-index:15;left:50%;top:44%;transform:translate(-50%,-50%);width:max-content;max-width:min(320px,calc(100cqw - 40px));text-align:center;font-size:15px;font-weight:600;line-height:1.35;padding:12px 16px;border-radius:16px;background:rgba(10,14,19,.66);border:1px solid var(--line);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);transition:opacity .35s}
+.coach .spin{display:block;width:26px;height:26px;margin:0 auto 8px;border-radius:50%;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;animation:spin 0.9s linear infinite}
+.coach .sway{display:block;width:34px;height:34px;margin:0 auto 6px}
+.coach .sway rect{animation:sway 2.2s ease-in-out infinite;transform-origin:17px 30px;transform-box:view-box}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes sway{0%,100%{transform:rotate(-14deg)}50%{transform:rotate(14deg)}}
+
+/* ---------- the scan card (S1, as the app took it) ---------- */
+.scan{position:absolute;inset:0;z-index:12;display:grid;place-items:center;pointer-events:none}
+.card{width:min(74cqw,286px);margin-top:-6cqh;padding:12px 18px 16px;border-radius:24px;text-align:center;background:rgba(10,15,20,.42);border:1px solid rgba(255,255,255,.22);box-shadow:0 12px 32px rgba(0,0,0,.16);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);transition:border-color .3s,background .3s}
+.card svg{width:150px;height:112px;display:block;margin:0 auto 6px}
+.card h2{margin:0;font-size:16px;font-weight:650;line-height:1.3;text-shadow:0 1px 3px rgba(0,0,0,.45)}
+.card p{margin:5px 0 0;font-size:13px;line-height:1.35;opacity:.9;text-shadow:0 1px 3px rgba(0,0,0,.45)}
+.card.ok{border-color:rgba(74,222,128,.8);background:rgba(8,40,22,.5)}
+.card .ph{animation:aPhone 4.2s cubic-bezier(.45,.05,.3,1) infinite;transform-box:fill-box;transform-origin:50% 50%}
+.card.ok .ph{animation:none;opacity:0}
+.card .bigok{opacity:0}
+.card.ok .bigok{opacity:1}
+@keyframes aPhone{0%{transform:translate(58px,26px) rotate(14deg);opacity:0}14%{opacity:1}42%,80%{transform:none;opacity:1}94%,100%{transform:translate(58px,26px) rotate(14deg);opacity:0}}
+.escape{position:absolute;left:50%;bottom:calc(26px + env(safe-area-inset-bottom));transform:translateX(-50%);pointer-events:auto;appearance:none;min-height:44px;font-weight:600;font-size:14px;color:#fff;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:10px 16px;cursor:pointer;white-space:nowrap}
+
+/* ---------- edge marker for the next station off screen ---------- */
+.edge{position:absolute;z-index:14;top:42%;display:flex;align-items:center;gap:6px;max-width:44cqw;padding:7px 11px;border-radius:999px;background:rgba(10,14,19,.72);border:1px solid rgba(251,146,60,.7);font-size:13px;font-weight:600;white-space:nowrap;pointer-events:none;transition:opacity .3s}
+.edge span{overflow:hidden;text-overflow:ellipsis}
+.edge svg{flex:none;width:14px;height:14px}
+.edge.l{left:calc(8px + env(safe-area-inset-left))}
+.edge.r{right:calc(8px + env(safe-area-inset-right));flex-direction:row-reverse}
+
+/* ---------- toast ---------- */
+.toast{position:absolute;z-index:30;left:50%;top:calc(84px + env(safe-area-inset-top));transform:translate(-50%,-8px);opacity:0;max-width:calc(100cqw - 32px - var(--radar));transition:opacity .3s,transform .3s;background:rgba(12,17,22,.84);border:1px solid var(--line);padding:9px 14px;border-radius:14px;font-size:13.5px;font-weight:600;pointer-events:none;display:flex;align-items:center;gap:8px}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--found)}
+@container (max-width:520px){ .toast{left:calc(12px + env(safe-area-inset-left));transform:translate(0,-8px);top:calc(84px + env(safe-area-inset-top))} .toast.show{transform:none} }
+
+/* ---------- the sheet: peek (progress + next) and list ---------- */
+.sheet{position:absolute;z-index:25;left:0;right:0;bottom:0;display:flex;flex-direction:column;max-height:66cqh;background:var(--surface);-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);border-top:1px solid var(--line);border-radius:22px 22px 0 0;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -10px 30px rgba(0,0,0,.25);transition:transform .35s cubic-bezier(.2,.8,.2,1),opacity .35s}
+.device:not([data-phase=walk]):not([data-phase=lost]) .sheet{transform:translateY(110%);opacity:0;pointer-events:none}
+.grab{appearance:none;display:block;width:100%;height:22px;border:0;background:transparent;cursor:grab;padding:0;touch-action:none}
+.grab::before{content:"";display:block;width:40px;height:5px;margin:8px auto 0;border-radius:3px;background:rgba(255,255,255,.4)}
+.peek{padding:0 16px 12px;cursor:pointer;touch-action:none}
+.segs{display:flex;gap:4px;margin:2px 0 10px}
+.segs i{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.22);position:relative;overflow:hidden}
+.segs i[data-s=found],.segs i[data-s=here]{background:var(--found)}
+.segs i[data-s=skipped]{background:repeating-linear-gradient(135deg,var(--skip) 0 3px,rgba(154,164,174,.35) 3px 6px)}
+.segs i[data-s=next]{background:var(--accent)}
+.segs i[data-s=later]{background:rgba(255,255,255,.14)}
+.peek-row{display:flex;align-items:center;gap:12px;min-height:56px}
+.pm{flex:1;min-width:0}
+.eyebrow{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ptitle{display:flex;align-items:baseline;gap:10px;margin-top:2px}
+.ptitle b{font-size:21px;font-weight:700;line-height:1.15;letter-spacing:-.01em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pdist{flex:none;display:inline-flex;align-items:center;gap:4px;font-size:17px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+.pdist svg{width:15px;height:15px;transition:transform .3s}
+.ptail{margin:3px 0 0;font-size:13.5px;color:var(--muted);line-height:1.35}
+.peek[data-k=weak] .ptail{color:#fde68a}
+.peek[data-k=none] .ptail,.peek[data-k=pending] .ptail{color:#dbe2ea}
+.qs{flex:none;appearance:none;min-height:44px;max-width:46%;padding:9px 13px;border-radius:14px;border:1px solid rgba(255,255,255,.3);background:var(--surface-2);font-size:13.5px;font-weight:600;line-height:1.2;cursor:pointer;text-align:center}
+.peek-row{flex-wrap:wrap}
+.qs[data-k=suggested],.qs[data-k=undo]{flex-basis:100%;max-width:none;margin-top:2px}
+.qs[data-k=suggested]{border-color:var(--accent);background:rgba(251,146,60,.16);color:#fed7aa}
+.qs[data-k=undo]{border-color:var(--found);background:rgba(45,212,191,.14)}
+.tapped{animation:tapflash .45s ease}
+@keyframes tapflash{40%{transform:scale(.95);box-shadow:0 0 0 6px rgba(255,255,255,.25)}}
+
+/* the story card takes the peek's place while a story plays */
+.story{padding:0 16px 14px}
+.story .eyebrow{color:var(--found)}
+.story h3{margin:2px 0 6px;font-size:20px;line-height:1.15}
+.story blockquote{margin:0;font-size:15.5px;line-height:1.45;min-height:3em}
+.story .dots{display:flex;gap:5px;margin:10px 0 10px}
+.story .dots i{width:22px;height:4px;border-radius:2px;background:rgba(255,255,255,.22);overflow:hidden;position:relative}
+.story .dots i.on{background:var(--found)}
+.story .dots i.now::after{content:"";position:absolute;inset:0;background:var(--found);transform-origin:left;transform:scaleX(var(--p,0))}
+.story .acts{display:flex;gap:8px;flex-wrap:wrap}
+.btn{appearance:none;min-height:44px;padding:10px 16px;border-radius:14px;border:1px solid rgba(255,255,255,.28);background:var(--surface-2);font-size:14px;font-weight:600;cursor:pointer;line-height:1.2}
+.btn.primary{background:var(--found);border-color:var(--found);color:#04201c}
+.btn.warn{background:rgba(248,113,113,.16);border-color:var(--danger);color:#fecaca}
+.btn.wide{flex:1}
+
+/* the list */
+.listwrap{display:grid;grid-template-rows:0fr;transition:grid-template-rows .35s cubic-bezier(.2,.8,.2,1);min-height:0}
+.sheet.open .listwrap{grid-template-rows:1fr;flex:1 1 auto}
+.list{overflow:hidden;min-height:0;display:flex;flex-direction:column}
+.sheet.open .list{overflow-y:auto;overscroll-behavior:contain}
+.lhead{display:flex;align-items:center;gap:10px;padding:4px 16px 8px;border-top:1px solid var(--line)}
+.lhead h2{margin:8px 0 0;font-size:16px;flex:1}
+.lhead .chip{font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:4px 8px;border-radius:999px;background:rgba(255,255,255,.1);color:var(--muted);margin-top:8px}
+.lprog{padding:0 16px 8px;font-size:13.5px;color:var(--muted)}
+.lprog b{color:var(--ink)}
+.hint{margin:0 16px 10px;padding:10px 12px;border-radius:12px;background:rgba(147,197,253,.10);border:1px solid rgba(147,197,253,.35);font-size:13.5px;line-height:1.4}
+.done-card{margin:4px 16px 10px;padding:14px;border-radius:16px;background:rgba(45,212,191,.12);border:1px solid rgba(45,212,191,.45);display:flex;gap:12px;align-items:center}
+.done-card svg{flex:none;width:40px;height:40px}
+.done-card b{display:block;font-size:17px}
+.done-card span{font-size:13.5px;color:var(--muted)}
+.rows{list-style:none;margin:0;padding:0 8px 8px}
+.row{display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:6px 10px;padding:6px 8px;border-radius:14px}
+.row + .row{margin-top:2px}
+.row[data-state=next]{background:rgba(251,146,60,.10)}
+.row.chosen{box-shadow:inset 3px 0 0 var(--accent)}
+.glyph{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800;border:2px solid var(--left);color:var(--left);justify-self:center}
+.row[data-state=next] .glyph{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.row[data-state=found] .glyph,.row[data-state=here] .glyph{background:var(--found);border-color:var(--found);color:#04201c}
+.row[data-state=skipped] .glyph{border-style:dashed;border-color:var(--skip);color:var(--skip)}
+.row[data-state=later] .glyph{border-color:rgba(255,255,255,.3);color:rgba(255,255,255,.5);width:24px;height:24px;font-size:11px}
+.rm{appearance:none;display:block;min-height:44px;padding:4px 0;border:0;background:transparent;text-align:left;cursor:pointer;min-width:0}
+.rm:disabled{cursor:default}
+.rm b{display:block;font-size:15.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row[data-state=skipped] .rm b,.row[data-state=later] .rm b{color:var(--muted);font-weight:600}
+.rm small{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);margin-top:1px}
+.rm small svg{flex:none;width:13px;height:13px}
+.rm em{font-style:normal;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);margin-left:6px}
+.ra{appearance:none;min-height:44px;min-width:44px;padding:8px 13px;border-radius:12px;border:1px solid rgba(255,255,255,.28);background:var(--surface-2);font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.ra[data-k=bring]{border-color:var(--found);color:#99f6e4}
+.ra[data-k=undo]{border-color:var(--found);background:rgba(45,212,191,.14);white-space:normal;max-width:170px;text-align:center}
+.confirm{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;padding:2px 0 6px 44px}
+.confirm .btn{font-size:13.5px}
+.undobar{grid-column:2/-1;height:3px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden}
+.undobar i{display:block;height:100%;background:var(--found);transform-origin:left}
+.lfoot{display:flex;gap:8px;padding:6px 16px 14px}
+
+/* ---------- away (left AR) ---------- */
+.away{position:absolute;inset:0;z-index:40;background:var(--paper);color:var(--paper-ink);overflow-y:auto;display:grid;align-content:center;padding:calc(48px + env(safe-area-inset-top)) 22px calc(24px + env(safe-area-inset-bottom))}
+.away-in{max-width:420px;width:100%;margin:0 auto;display:grid;gap:16px}
+.away h1{margin:0;font-size:28px;line-height:1.1}
+.away p{margin:0;color:var(--paper-muted)}
+.away .segs i{background:var(--paper-line);height:8px}
+.away .segs i[data-s=found]{background:var(--brand)}
+.away .segs i[data-s=skipped]{background:repeating-linear-gradient(135deg,#9aa4ae 0 3px,#d9dde1 3px 6px)}
+.away ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.away li{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;background:#fff;border:1px solid var(--paper-line);border-radius:12px}
+.away li span{color:var(--paper-muted);font-size:14px}
+.away .big{appearance:none;border:0;border-radius:16px;background:var(--paper-accent);color:#fff;font-size:17px;font-weight:700;padding:16px 20px;min-height:52px;cursor:pointer}
+
+/* ---------- design note ---------- */
+.note{position:absolute;inset:0;z-index:50;background:rgba(0,0,0,.55);display:grid;place-items:center;padding:calc(20px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom))}
+.note-in{width:min(520px,100%);max-height:100%;overflow-y:auto;background:#151a20;border:1px solid var(--line);border-radius:18px;padding:18px 18px 8px;font-size:14px;line-height:1.5}
+.note-in h2{margin:0 0 8px;font-size:18px}
+.note-in h3{margin:16px 0 4px;font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)}
+.note-in p,.note-in ul{margin:0 0 8px}
+.note-in ul{padding-left:18px}
+.note-in .close{position:sticky;bottom:0;display:block;width:100%;margin:10px 0 10px}
+.legend{display:grid;grid-template-columns:30px 1fr;gap:6px 10px;align-items:center;margin:6px 0 8px}
+.legend .glyph{width:24px;height:24px;font-size:11px}
+.legend .g-next{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.legend .g-found{background:var(--found);border-color:var(--found);color:#04201c}
+.legend .g-skip{border-style:dashed;border-color:var(--skip);color:var(--skip)}
+
+/* ---------- demo panel (not part of the design) ---------- */
+.demo{position:fixed;z-index:90;top:calc(28px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);width:min(340px,calc(100vw - 20px));max-height:calc(100vh - 60px);overflow-y:auto;background:rgba(14,18,23,.94);border:1px solid rgba(255,255,255,.16);border-radius:14px;font-size:13px;color:#e8edf2;box-shadow:0 8px 24px rgba(0,0,0,.4);padding:10px}
+.demo h4{margin:10px 2px 4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#a9b4bf}
+.demo .grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.demo button{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:#fff;border-radius:9px;padding:7px 8px;text-align:left;cursor:pointer;font-size:12.5px;min-height:34px}
+.demo button.on{background:#0f766e;border-color:#14b8a6}
+.demo button.primary{background:#ea580c;border-color:#ea580c;font-weight:700;text-align:center}
+.demo .status{font-size:12px;color:#a9b4bf;padding:6px 2px 0;min-height:16px}
+.demo .about{margin:0 0 6px;line-height:1.45;color:#c6d0da}
+@media (min-width:960px) and (min-height:720px){
+  body{display:flex;align-items:center;justify-content:center;gap:40px;padding:30px;background:radial-gradient(1200px 700px at 30% 20%,#26303a,#12151a)}
+  .device{position:relative;inset:auto;flex:none;width:390px;height:min(844px,calc(100vh - 60px));border-radius:46px;border:12px solid #0a0c0f;box-shadow:0 0 0 2px #2d333b,0 40px 90px rgba(0,0,0,.6)}
+  .demo{position:static;transform:none;width:340px;max-height:min(844px,calc(100vh - 60px));display:block!important}
+  .proto-label{left:20px;transform:none;top:16px;font-size:12px}
+}
+
+/* ---------- phone landscape ---------- */
+@container (orientation:landscape) and (max-height:520px){
+  .radar-wrap{--radar:108px;top:calc(10px + env(safe-area-inset-top))}
+  .topbar{top:calc(10px + env(safe-area-inset-top))}
+  .sheet{left:calc(10px + env(safe-area-inset-left));right:auto;bottom:calc(10px + env(safe-area-inset-bottom));width:min(370px,48cqw);max-height:calc(100cqh - 74px);border-radius:20px;border:1px solid var(--line);padding-bottom:0}
+  .peek-row{min-height:48px}
+  .ptitle b{font-size:19px}
+  .coach{top:50%;left:60%}
+  .card{display:grid;grid-template-columns:112px 1fr;column-gap:14px;align-items:center;text-align:left;width:min(62cqw,420px);margin-top:-4cqh;padding:10px 18px 10px 10px}
+  .card svg{width:112px;height:84px;margin:0;grid-row:1/3}
+  .escape{bottom:calc(14px + env(safe-area-inset-bottom))}
+  .edge.l{left:calc(50cqw + 10px)}
+  .toast{left:auto;right:calc(130px + env(safe-area-inset-right));transform:translate(0,-8px);top:calc(14px + env(safe-area-inset-top));max-width:40cqw}
+  .toast.show{transform:none}
+  .away{padding-top:calc(20px + env(safe-area-inset-top))}
+}
+@media (prefers-reduced-motion:reduce){
+  .card .ph,.coach .spin,.coach .sway rect,.prec[data-k=pending] i{animation:none}
+  .sheet,.listwrap{transition:none}
+}
+</style>
+<script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+</script>
+</head>
+<body>
+<button class="proto-label" id="protoLabel" type="button" aria-controls="demo" aria-expanded="false">Prototype W4 - Radar and list</button>
+
+<main class="device" id="device" data-phase="walk">
+  <canvas id="cam" aria-label="Simulated camera view of an old town street"></canvas>
+  <div class="vignette"></div>
+
+  <div class="coach" id="coach" role="status" aria-live="polite" hidden></div>
+
+  <div class="scan" id="scan" hidden>
+    <div class="card" id="scanCard" role="status" aria-live="polite">
+      <svg viewBox="0 0 160 120" aria-hidden="true">
+        <rect x="34" y="16" width="72" height="96" rx="4" fill="#000" opacity=".2"/>
+        <rect x="30" y="12" width="72" height="96" rx="4" fill="#fbf9f3"/>
+        <g fill="#1c232b"><path fill-rule="evenodd" d="M42 22h14v14H42zM46 26v6h6v-6zM76 22h14v14H76zM80 26v6h6v-6zM42 56h14v14H42zM46 60v6h6v-6z"/><path d="M60 22h4v4h-4zM66 28h4v4h-4zM60 40h6v4h-6zM70 46h4v6h-4zM60 56h4v4h-4zM66 62h8v4h-8zM78 56h4v4h-4zM84 62h6v6h-6z"/></g>
+        <rect x="44" y="80" width="44" height="5" rx="2.5" fill="#c9c2b4"/>
+        <g class="ph"><rect x="36" y="4" width="60" height="100" rx="11" fill="rgba(12,18,24,.28)" stroke="#fff" stroke-width="3"/><path d="M40 28v-8h8M84 20h8v8M92 64v8h-8M48 72h-8v-8" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></g>
+        <g class="bigok"><circle cx="80" cy="60" r="30" fill="#22c55e"/><path d="M67 61l9 9 17-19" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></g>
+      </svg>
+      <h2 id="scanTitle">Scan the code again so the tour can start</h2>
+      <p id="scanLine">Point your phone at the tour's code (on the poster).</p>
+    </div>
+    <button class="escape" id="escapeBtn" type="button" hidden>Continue with GPS only (less accurate)</button>
+  </div>
+
+  <div class="topbar">
+    <button class="round" id="exitBtn" type="button" aria-label="Exit AR"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></button>
+    <button class="round info" id="infoBtn" type="button" aria-label="Design note">i</button>
+  </div>
+
+  <div class="radar-wrap" id="radarWrap">
+    <button class="radar" id="radarBtn" type="button" aria-label="Stations around you - open the list"><canvas id="radar"></canvas></button>
+    <div class="prec" id="prec" data-k="gps"><i></i><span id="precText"></span></div>
+  </div>
+
+  <div class="edge" id="edge" hidden><svg viewBox="0 0 14 14" aria-hidden="true"><path id="edgeArrow" d="M9 2L4 7l5 5" fill="none" stroke="#fb923c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="edgeText"></span></div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"><i></i><span id="toastText"></span></div>
+
+  <section class="sheet" id="sheet" aria-label="Tour progress">
+    <button class="grab" id="grab" type="button" aria-label="Show all stations" aria-expanded="false"></button>
+    <div class="peek" id="peek" data-k="gps">
+      <div class="segs" id="segs" aria-hidden="true"></div>
+      <div class="peek-row">
+        <div class="pm">
+          <div class="eyebrow" id="pEyebrow"></div>
+          <div class="ptitle"><b id="pTitle"></b><span class="pdist" id="pDist"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="pArrow" d="M8 2l5 11-5-3-5 3z" fill="currentColor"/></svg><span id="pDistT"></span></span></div>
+          <p class="ptail" id="pTail"></p>
+        </div>
+        <button class="qs" id="quickSkip" type="button"></button>
+      </div>
+      <p class="sr" id="line" aria-live="polite"></p>
+    </div>
+    <div class="story" id="story" hidden>
+      <div class="eyebrow">Station found - its story is playing.</div>
+      <h3 id="sTitle"></h3>
+      <blockquote id="sLine"></blockquote>
+      <div class="dots" id="sDots"></div>
+      <div class="acts" id="sActs">
+        <button class="btn primary" id="sNext" type="button">Next</button>
+        <button class="btn" id="sEnd" type="button">End this story?</button>
+      </div>
+    </div>
+    <div class="listwrap"><div class="list" id="list">
+      <div class="lhead"><h2>Old town walk</h2><span class="chip" id="orderChip">Any order</span><button class="round" id="closeList" type="button" aria-label="Close the list" style="margin-top:8px;width:40px;height:40px;min-width:44px;min-height:44px"><svg viewBox="0 0 16 16"><path d="M3 6l5 5 5-5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+      <div class="done-card" id="doneCard" hidden><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="19" fill="#2dd4bf"/><path d="M11 21l6 6 12-13" fill="none" stroke="#04201c" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b id="doneTitle"></b><span id="doneText"></span></div></div>
+      <div class="lprog" id="lprog"></div>
+      <p class="hint" id="hint" hidden></p>
+      <ul class="rows" id="rows"></ul>
+      <div class="lfoot" id="lfoot" hidden><button class="btn wide" id="exitDone" type="button">Exit AR</button></div>
+    </div></div>
+  </section>
+
+  <section class="away" id="away" hidden aria-label="Outside AR">
+    <div class="away-in">
+      <h1>Old town walk</h1>
+      <p id="awayText">You left AR. Your progress stays on this phone.</p>
+      <div class="segs" id="awaySegs" aria-hidden="true"></div>
+      <ul id="awayList"></ul>
+      <button class="big" id="backBtn" type="button">Back to the tour</button>
+    </div>
+  </section>
+
+  <section class="note" id="note" hidden role="dialog" aria-modal="true" aria-labelledby="noteTitle">
+    <div class="note-in">
+      <h2 id="noteTitle">W4 - Radar and list</h2>
+      <p><b>The idea.</b> A small radar in the corner answers "where": every station around you, heading-up, the next one in orange. A sheet at the bottom answers "what is left, and what do I choose": its peek is one progress bar and the next station; pulled up it is a row per station, each with its own Skip and Bring back. The same four glyphs mean the same thing in both places.</p>
+      <div class="legend">
+        <span class="glyph g-next">2</span><span>the next station (the nearest, or the one you chose)</span>
+        <span class="glyph">3</span><span>still to find</span>
+        <span class="glyph g-found">1</span><span>found</span>
+        <span class="glyph g-skip">4</span><span>skipped (Bring back stays offered)</span>
+      </div>
+      <h3>Precision, shown not told</h3>
+      <ul>
+        <li><b>Code:</b> you are a sharp pin with a ring - "Placed by a code", no number.</li>
+        <li><b>GPS:</b> you are a soft blue blur as wide as the accuracy on the radar's scale - "GPS - about 8 m".</li>
+        <li><b>GPS too weak (above 25 m):</b> the blur turns amber and swallows the nearby stations, which fade; nothing is found until it shrinks.</li>
+        <li><b>No trusted position:</b> the radar freezes and goes grey where it last was, with a "?" for you, no orange station, no distances.</li>
+        <li><b>No direction yet:</b> stations become rings at their distance - how far, not which way.</li>
+      </ul>
+      <h3>The skip, when nothing vouches for the position</h3>
+      <p><b>Any-order tour:</b> "Can't get there?" names no station. It opens the list with a line saying the guide cannot tell which station is nearest, and every remaining row carries its own Skip. The visitor names the station; the untrusted position never does. <b>Fixed-order tour:</b> the order names the station, so the two-tap skip stays exactly as today ("Skip The well - I can't get there") and needs no position.</p>
+      <p>Why: skipping "the nearest" by a position nobody vouches for can skip the very station the visitor is standing at, and the radar has just said it does not know where they are. A list makes the choice the visitor's at the cost of one more look.</p>
+      <h3>What it trades away</h3>
+      <ul>
+        <li>An instrument is always on screen: the radar takes a corner of the camera and asks the visitor to read a map, if a tiny one.</li>
+        <li>Two places to look (radar up, sheet down) instead of one; the world itself carries little (only the HUD's markers).</li>
+        <li>For a fixed-order tour most of the list is "Later": it is simple, but it says less than a single "Next" line would.</li>
+      </ul>
+      <h3>Text proposals (changed or new)</h3>
+      <ul>
+        <li>The station line keeps its words but is split: "3 stations to find - nearest" over "The well" and "46 m"; the full sentence stays for screen readers.</li>
+        <li>New: "Guide me here" (tap a row in an any-order tour to choose the next station; today the guide always takes the nearest), shown as "your choice".</li>
+        <li>New: per-row "Skip" and "Bring back"; Bring back stays offered after the 6 s undo, also after the tour is complete (today only within 6 s).</li>
+        <li>New: "Your position is unknown, so the guide can't tell which station is nearest. Which one can't you reach?"</li>
+        <li>New precision labels: "Placed by a code", "GPS - about 8 m", "GPS - about 40 m, too weak", "Position unknown", "Finding your position...", "Paused - tracking lost".</li>
+        <li>"End this story?" is always on the story card (today only when no other station is offered), with "Keep listening" beside its confirm.</li>
+        <li>On the completion card: "3 of 4 found. A skipped station can still be brought back." or "Thank you for walking with us." under the real line.</li>
+        <li>Outside AR: "You left AR. Your progress stays on this phone.", "Back to the tour"; on return: "Welcome back - your progress is kept."</li>
+        <li>Row words: "Found", "Skipped", "Later", "You are here", "Distance unknown", "ahead / to your left / to your right / behind you".</li>
+        <li>The framework's "Tracking lost - slowly look around to let it recover." keeps its words with a hyphen in place of the dash.</li>
+      </ul>
+      <button class="btn primary close" id="noteClose" type="button">Close</button>
+    </div>
+  </section>
+</main>
+
+<aside class="demo" id="demo" hidden aria-label="Prototype controls">
+  <p class="about"><b>W4 - Radar and list.</b> Drag the camera to turn. Every state is a button below; "Play the walk" runs the whole tour in about 2 minutes. Not part of the design.</p>
+  <div class="grid">
+    <button id="tourAny" type="button" class="on">Any-order tour</button>
+    <button id="tourFixed" type="button">Fixed-order tour</button>
+  </div>
+  <div class="grid" style="margin-top:5px">
+    <button class="primary" id="playBtn" type="button" style="grid-column:1/-1">Play the walk</button>
+    <button id="walkBtn" type="button">Hold to walk</button>
+    <button id="motionBtn" type="button">Use phone motion</button>
+    <button id="ffBtn" type="button" style="grid-column:1/-1">Fast-forward the skip clock (2 min)</button>
+  </div>
+  <div class="status" id="dStatus"></div>
+  <div id="stateBtns"></div>
+</aside>
+
+<script type="module">
+import * as THREE from 'three';
+
+const $ = (s) => document.querySelector(s);
+const device = $('#device');
+const now = () => performance.now();
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ======================================================================
+   The sample tour (fictional). x = east, z = south, metres.
+   ====================================================================== */
+const STATIONS = [
+  { id: 'gate', n: 1, title: 'The gate', x: 0, z: -28, r: 10, color: 0xc2410c, story: [
+    'Until 1840 this gate was shut every night at dusk.',
+    'Traders who came late slept outside the walls, beside their carts.',
+    'Look up: the hinges of the old doors are still in the stone.'] },
+  { id: 'well', n: 2, title: 'The well', x: 34, z: -82, r: 12, color: 0x0e7490, story: [
+    'Everyone came here - for water first, and for the news second.',
+    'The shaft is nineteen metres deep and was dug by hand.',
+    'In dry summers the queue reached the far end of the square.'] },
+  { id: 'tower', n: 3, title: 'The tower', x: -48, z: -170, r: 12, color: 0x7c3aed, story: [
+    'The watchman rang the bell for fire, for flood and for weddings.',
+    'Its stairs have 142 steps; the top ones are new.'] },
+  { id: 'garden', n: 4, title: 'The garden', x: 46, z: -240, r: 14, color: 0x15803d, story: [
+    'This garden was planted for medicine, not for beauty.',
+    'Every bed still grows a herb from the old list.',
+    'This is the last station - thank you for walking with us.'] },
+];
+const byId = (id) => STATIONS.find((s) => s.id === id);
+const START = { x: 1.2, z: 7 };
+const POSTER = { x: 2.6, z: 1.6 };
+const ACCURACY_CEILING_M = 25;
+const SKIP_UNDO_MS = 6000;               // the guide's SKIP_UNDO_MS
+const SKIP_SUGGEST_BASE_MS = 120000;     // 2 min plus 1 s per 0.5 m (station-run.ts)
+const FADE_MS = 400;                     // CONTENT_FADE_MS
+const RADAR_RANGE_M = 300;
+
+/* ======================================================================
+   The model
+   ====================================================================== */
+function freshState(tour) {
+  const st = {};
+  for (const s of STATIONS) st[s.id] = { state: 'waiting', skipped: false };
+  return {
+    tour, phase: 'walk', prec: 'gps', acc: 8, heading: true,
+    st, story: null, armed: null, undo: null, note: null, choice: null,
+    chooseSkip: false, sheet: false, completeShown: false,
+    focusSince: {}, focusDist: {}, present: null, burst: null,
+    pos: { ...START }, yaw: 0, yawTarget: null, pitch: -0.04,
+    frozen: { pos: { ...START }, yaw: 0 }, scanSince: now(), auto: null,
+    storyMs: 4200,
+  };
+}
+let userTour = 'any';
+let S = freshState(userTour);
+
+const dist = (s, p = S.pos) => Math.hypot(s.x - p.x, s.z - p.z);
+const allDone = () => STATIONS.every((s) => S.st[s.id].state === 'done');
+const skippedCount = () => STATIONS.filter((s) => S.st[s.id].skipped).length;
+const foundCount = () => STATIONS.filter((s) => S.st[s.id].state !== 'waiting' && !S.st[s.id].skipped).length;
+function offered() {
+  const notDone = STATIONS.filter((s) => S.st[s.id].state !== 'done');
+  return S.tour === 'fixed' ? notDone.slice(0, 1) : notDone;
+}
+const unfoundOffered = () => offered().filter((s) => S.st[s.id].state === 'waiting');
+/** A position the guide may judge by: a code's, or GPS within the ceiling. */
+const judged = () => S.phase === 'walk' && (S.prec === 'code' || S.prec === 'gps');
+/** A position with a distance worth showing (weak GPS shows one, marked). */
+const hasPos = () => S.phase === 'walk' && (S.prec === 'code' || S.prec === 'gps' || S.prec === 'weak');
+const anyChoice = () => S.tour === 'any' && unfoundOffered().length > 1;
+
+/** The design's focus: the chosen station, else the order's, else the nearest. None under 'none' in an any-order tour. */
+function focusId() {
+  const off = unfoundOffered();
+  if (!off.length) return null;
+  if (S.tour === 'fixed' || off.length === 1) return off[0].id;
+  if (S.choice && off.some((s) => s.id === S.choice)) return S.choice;
+  if (S.prec === 'none') return null;
+  if (S.phase === 'lost') return off.reduce((a, b) => (dist(a, S.frozen.pos) <= dist(b, S.frozen.pos) ? a : b)).id;
+  if (!hasPos()) return off[0].id;
+  return off.reduce((a, b) => (dist(a) <= dist(b) ? a : b)).id;
+}
+function suggestMs(id) { return SKIP_SUGGEST_BASE_MS + ((S.focusDist[id] ?? 0) / 0.5) * 1000; }
+function suggested(id) { return id != null && S.focusSince[id] != null && now() - S.focusSince[id] > suggestMs(id); }
+
+/** Bearing of a point relative to where the camera looks: radians, + = right. */
+function relAngle(p, from = S.pos, yaw = camYaw()) {
+  const dx = p.x - from.x, dz = p.z - from.z;
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  return Math.atan2(dx * rx + dz * rz, dx * fx + dz * fz);
+}
+const yawToward = (p, from = S.pos) => Math.atan2(-(p.x - from.x), -(p.z - from.z));
+function dirWord(a) {
+  const d = Math.abs(a) * 180 / Math.PI;
+  if (d < 28) return 'ahead';
+  if (d > 140) return 'behind you';
+  return a > 0 ? 'to your right' : 'to your left';
+}
+const metres = (d) => `${Math.round(d)} m`;
+
+/** The station line, word for word as the guide writes it today (station-guide.ts lineText). */
+function lineText() {
+  if (S.phase !== 'walk' && S.phase !== 'lost') return '';
+  if (allDone()) { const k = skippedCount(); return k === 0 ? 'Tour complete - every station visited.' : `Tour complete - ${k} skipped.`; }
+  const lead = S.note ? `${S.note.text} ` : '';
+  const off = unfoundOffered();
+  if (!off.length) return `${lead}Station found - its story is playing.`;
+  const f = focusId() ?? off.reduce((a, b) => (dist(a) <= dist(b) ? a : b)).id;
+  const title = byId(f).title;
+  const which = offered().length > 1 ? `${offered().length} stations to find` : null;
+  const waiting = which === null ? `Next: ${title}` : `${which} - ${S.choice === f ? 'you chose' : 'nearest'}: ${title}`;
+  if (S.prec === 'pending' || S.phase === 'lost') return `${lead}${waiting} - waiting for your position…`;
+  if (S.prec === 'weak') return `${lead}${waiting} - GPS too weak to guide you (±${S.acc} m); step into the open.`;
+  if (S.prec === 'none') return `${lead}${which ?? `Next: ${title}`} - scan one of the tour's codes so the guide knows where you are.`;
+  return `${lead}${waiting}, ${metres(dist(byId(f)))}`;
+}
+
+/** Each row's state, shared by the radar and the list. */
+function rowState(s) {
+  const t = S.st[s.id];
+  if (t.skipped) return 'skipped';
+  if (t.state === 'found') return 'here';
+  if (t.state === 'done') return 'found';
+  if (!offered().includes(s)) return 'later';
+  return focusId() === s.id ? 'next' : 'left';
+}
+
+/* ---------- actions ---------- */
+let toastTimer = 0;
+function toast(text) {
+  $('#toastText').textContent = text;
+  const t = $('#toast'); t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+function note(text) { S.note = { text, until: now() + SKIP_UNDO_MS }; toast(text); }
+function startStory(id) {
+  S.st[id].state = 'found';
+  S.story = { id, i: 0, t0: now(), endArm: false };
+  S.burst = { id, t: now() };
+  if (S.choice === id) S.choice = null;
+  S.armed = null; S.sheet = false; S.chooseSkip = false;
+}
+function advanceStory() {
+  if (!S.story) return;
+  const s = byId(S.story.id);
+  S.story.i++; S.story.t0 = now(); S.story.endArm = false;
+  if (S.story.i >= s.story.length) finishStory();
+}
+function finishStory() {
+  if (!S.story) return;
+  S.st[S.story.id].state = 'done';
+  S.story = null;
+}
+function skip(id) {
+  const t = S.st[id];
+  if (t.state !== 'waiting') return;
+  t.state = 'done'; t.skipped = true;
+  S.undo = { id, until: now() + SKIP_UNDO_MS };
+  if (S.choice === id) S.choice = null;
+  S.armed = null; S.chooseSkip = false;
+  note(`Skipped ${byId(id).title}.`);
+}
+function bringBack(id) {
+  const t = S.st[id];
+  if (!t.skipped) return;
+  t.state = 'waiting'; t.skipped = false;
+  delete S.focusSince[id];
+  if (S.undo?.id === id) S.undo = null;
+  S.completeShown = false;
+  note(`Brought back ${byId(id).title}.`);
+}
+function quickSkipAction() {
+  if (S.phase !== 'walk' || allDone()) return null;
+  if (S.undo) return { k: 'undo', id: S.undo.id, label: `Undo: bring back ${byId(S.undo.id).title}` };
+  if (!unfoundOffered().length) return null;
+  const f = focusId();
+  if (f && suggested(f) && hasPos()) return { k: 'suggested', id: f, label: `Skip ${byId(f).title} - I can't get there` };
+  return { k: 'ask', label: "Can't get there?" };
+}
+function onQuickSkip() {
+  const a = quickSkipAction();
+  if (!a) return;
+  if (a.k === 'undo') bringBack(a.id);
+  else if (a.k === 'suggested') skip(a.id);
+  else if (S.prec === 'none' && anyChoice()) { S.sheet = true; S.chooseSkip = true; S.armed = null; }
+  else { S.armed = focusId(); S.sheet = true; }
+  ui();
+}
+
+/* ======================================================================
+   The faked AR camera: a procedural old town
+   ====================================================================== */
+const canvas = $('#cam');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+const SKY = new THREE.Color('#c4d7e6');
+scene.background = SKY;
+scene.fog = new THREE.Fog(SKY, 60, 330);
+const camera = new THREE.PerspectiveCamera(64, 1, 0.1, 900);
+camera.rotation.order = 'YXZ';
+scene.add(new THREE.HemisphereLight(0xeef4ff, 0x6d6252, 1.25));
+const sun = new THREE.DirectionalLight(0xfff0d4, 1.7); sun.position.set(-70, 120, 50); scene.add(sun);
+
+function rng(seed) { let s = seed >>> 0; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; }
+const rand = rng(20261021);
+const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), lam(0x8d8678));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const STREETS = [
+  { x0: -6, x1: 6, z0: -300, z1: 40 },
+  { x0: -100, x1: 100, z0: -88, z1: -76 },
+  { x0: -100, x1: 100, z0: -176, z1: -164 },
+  { x0: -100, x1: 100, z0: -248, z1: -232 },
+];
+const SQUARES = [{ x: 34, z: -82, r: 20 }, { x: -48, z: -172, r: 18 }, { x: 46, z: -242, r: 24 }, { x: 0, z: 4, r: 12 }, { x: 0, z: -30, r: 9 }];
+const streetMat = lam(0x63625f), squareMat = lam(0xa49a88), kerbMat = lam(0xb9b0a0);
+for (const r of STREETS) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(r.x1 - r.x0, r.z1 - r.z0), streetMat);
+  m.rotation.x = -Math.PI / 2; m.position.set((r.x0 + r.x1) / 2, 0.02, (r.z0 + r.z1) / 2); scene.add(m);
+}
+for (const q of SQUARES) {
+  const m = new THREE.Mesh(new THREE.CircleGeometry(q.r, 40), squareMat);
+  m.rotation.x = -Math.PI / 2; m.position.set(q.x, 0.03, q.z); scene.add(m);
+}
+// paving lines along the main street
+{
+  const g = new THREE.BoxGeometry(0.15, 0.02, 1.2), m = lam(0xe8e2d4);
+  const inst = new THREE.InstancedMesh(g, m, 120); let i = 0; const o = new THREE.Object3D();
+  for (let z = 30; z > -290 && i < 120; z -= 4) { o.position.set(0, 0.04, z); o.updateMatrix(); inst.setMatrixAt(i++, o.matrix); }
+  inst.count = i; scene.add(inst);
+}
+
+function facadeTexture(floors) {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 128, 128);
+  const fh = 128 / (floors + 0.3);
+  for (let f = 0; f < floors; f++) for (let w = 0; w < 3; w++) {
+    g.fillStyle = f === 0 && w === 1 ? '#3b2f28' : '#46525c';
+    const x = 14 + w * 38, y = 128 - (f + 1) * fh + fh * 0.22;
+    g.fillRect(x, y, 22, f === 0 && w === 1 ? fh * 0.78 : fh * 0.5);
+  }
+  g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(0, 120, 128, 8);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const FACADES = [0xe8d8bf, 0xd9b99a, 0xc9d1c3, 0xe5c7a8, 0xd2c1b0, 0xbfa58c, 0xe9e1cf, 0xcaa588];
+const inStreet = (x, z, pad) => STREETS.some((r) => x > r.x0 - pad && x < r.x1 + pad && z > r.z0 - pad && z < r.z1 + pad);
+const inSquare = (x, z, pad) => SQUARES.some((q) => Math.hypot(q.x - x, q.z - z) < q.r + pad);
+{
+  const byFloors = { 2: [], 3: [], 4: [] };
+  for (let x = -110; x <= 110; x += 13) for (let z = 36; z >= -320; z -= 13) {
+    const w = 10 + rand() * 2.6, d = 10 + rand() * 2.6;
+    if (inStreet(x, z, w / 2 + 1.2) || inSquare(x, z, w / 2 + 2)) continue;
+    if (Math.hypot(x + 52, z + 184) < 14) continue;
+    const floors = 2 + Math.floor(rand() * 3);
+    byFloors[floors].push({ x, z, w, d, h: floors * 3.5 + 1.2, c: FACADES[Math.floor(rand() * FACADES.length)] });
+  }
+  const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, 0);
+  const roofGeo = new THREE.ConeGeometry(0.75, 1, 4); roofGeo.rotateY(Math.PI / 4); roofGeo.translate(0, 0.5, 0);
+  const o = new THREE.Object3D(), col = new THREE.Color();
+  for (const f of [2, 3, 4]) {
+    const list = byFloors[f];
+    const mat = new THREE.MeshLambertMaterial({ map: facadeTexture(f) });
+    const inst = new THREE.InstancedMesh(geo, mat, list.length);
+    const roofs = new THREE.InstancedMesh(roofGeo, lam(0x9c4a32), list.length);
+    list.forEach((b, i) => {
+      o.position.set(b.x, 0, b.z); o.scale.set(b.w, b.h, b.d); o.rotation.set(0, 0, 0); o.updateMatrix(); inst.setMatrixAt(i, o.matrix);
+      inst.setColorAt(i, col.setHex(b.c));
+      o.position.set(b.x, b.h, b.z); o.scale.set(b.w * 1.02, 3 + (i % 3), b.d * 1.02); o.updateMatrix(); roofs.setMatrixAt(i, o.matrix);
+      roofs.setColorAt(i, col.setHex([0x9c4a32, 0x7f3b2a, 0x6b4a3a, 0x8a5a44][i % 4]));
+    });
+    scene.add(inst, roofs);
+  }
+}
+// trees
+{
+  const spots = [];
+  for (let z = 20; z > -290; z -= 17) { spots.push([-10, z + rand() * 4], [10, z + rand() * 4]); }
+  for (let i = 0; i < 14; i++) { const a = rand() * 6.28, r = 7 + rand() * 13; spots.push([46 + Math.cos(a) * r, -242 + Math.sin(a) * r]); }
+  const keep = spots.filter(([x, z]) => !SQUARES.slice(0, 2).some((q) => Math.hypot(q.x - x, q.z - z) < q.r - 3) && !(Math.abs(z + 30) < 6) && !(z > -4 && z < 12));
+  const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.13, 0.19, 2.4).translate(0, 1.2, 0), lam(0x5b4330), keep.length);
+  const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.35, 1).translate(0, 3.3, 0), lam(0x4f7d3a), keep.length);
+  const o = new THREE.Object3D(), col = new THREE.Color();
+  keep.forEach(([x, z], i) => {
+    const s = 0.75 + rand() * 0.35; o.position.set(x, 0, z); o.scale.set(s, s, s); o.rotation.y = rand() * 6; o.updateMatrix();
+    trunk.setMatrixAt(i, o.matrix); crown.setMatrixAt(i, o.matrix); crown.setColorAt(i, col.setHex([0x4f7d3a, 0x5f8f43, 0x47703a][i % 3]));
+  });
+  scene.add(trunk, crown);
+}
+// landmarks: the gate's arch, the well, the tower, the garden's hedges, a closed road
+{
+  const stone = lam(0xb5a488);
+  for (const x of [-7.6, 7.6]) { const p = new THREE.Mesh(new THREE.BoxGeometry(2.4, 8, 2.4), stone); p.position.set(x, 4, -32); scene.add(p); }
+  const lint = new THREE.Mesh(new THREE.BoxGeometry(17.6, 2.2, 2.6), stone); lint.position.set(0, 9, -32); scene.add(lint);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(18.4, 0.5, 3), lam(0x9a8a70)); cap.position.set(0, 10.35, -32); scene.add(cap);
+  const well = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.5, 1, 20), stone); well.position.set(34, 0.5, -84); scene.add(well);
+  const water = new THREE.Mesh(new THREE.CircleGeometry(1.15, 20), lam(0x203a44)); water.rotation.x = -Math.PI / 2; water.position.set(34, 0.95, -84); scene.add(water);
+  for (const dx of [-1.3, 1.3]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.6, 0.2), lam(0x5b4330)); p.position.set(34 + dx, 1.8, -84); scene.add(p); }
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.2, 4), lam(0x7f3b2a)); roof.rotation.y = Math.PI / 4; roof.position.set(34, 3.6, -84); scene.add(roof);
+  const tower = new THREE.Mesh(new THREE.BoxGeometry(9, 34, 9), lam(0xcdb99a)); tower.position.set(-52, 17, -184); scene.add(tower);
+  const troof = new THREE.Mesh(new THREE.ConeGeometry(7.2, 9, 4), lam(0x5d6b70)); troof.rotation.y = Math.PI / 4; troof.position.set(-52, 38.5, -184); scene.add(troof);
+  const hedge = lam(0x3f6b32);
+  for (const [x, z, w, d] of [[46, -228, 30, 1], [46, -256, 30, 1], [31, -242, 1, 28], [61, -242, 1, 28]]) {
+    const h = new THREE.Mesh(new THREE.BoxGeometry(w, 1.1, d), hedge); h.position.set(x, 0.55, z); scene.add(h);
+  }
+  // the closed road (west arm towards the tower)
+  const c = document.createElement('canvas'); c.width = 64; c.height = 8; const g = c.getContext('2d');
+  for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#fff' : '#d62828'; g.fillRect(i * 8, 0, 8, 8); }
+  const stripe = new THREE.CanvasTexture(c); stripe.colorSpace = THREE.SRGBColorSpace;
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.35, 13), new THREE.MeshLambertMaterial({ map: stripe }));
+  bar.position.set(-13, 1.0, -170); scene.add(bar);
+  for (const z of [-176, -164]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.1, 0.2), lam(0x333333)); leg.position.set(-13, 0.55, z); scene.add(leg); }
+  const sc = document.createElement('canvas'); sc.width = 256; sc.height = 96; const sg = sc.getContext('2d');
+  sg.fillStyle = '#d62828'; sg.fillRect(0, 0, 256, 96); sg.fillStyle = '#fff'; sg.font = 'bold 34px sans-serif'; sg.textAlign = 'center'; sg.fillText('ROAD CLOSED', 128, 64);
+  const st = new THREE.CanvasTexture(sc); st.colorSpace = THREE.SRGBColorSpace;
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1), new THREE.MeshBasicMaterial({ map: st }));
+  sign.position.set(-12.8, 1.9, -170); sign.rotation.y = Math.PI / 2; scene.add(sign);
+}
+// the poster with the tour's code, at the start
+{
+  const c = document.createElement('canvas'); c.width = 192; c.height = 256; const g = c.getContext('2d');
+  g.fillStyle = '#fbf9f3'; g.fillRect(0, 0, 192, 256);
+  g.fillStyle = '#1c232b'; g.font = 'bold 17px sans-serif'; g.textAlign = 'center'; g.fillText('OLD TOWN WALK', 96, 30);
+  g.fillStyle = '#c2410c'; g.font = '600 13px sans-serif'; g.fillText('AR tour - start here', 96, 50);
+  const r = rng(7); g.fillStyle = '#1c232b';
+  for (let y = 0; y < 21; y++) for (let x = 0; x < 21; x++) {
+    const fin = (x < 7 && y < 7) || (x > 13 && y < 7) || (x < 7 && y > 13);
+    if (fin) continue; if (r() < 0.47) g.fillRect(33 + x * 6, 66 + y * 6, 6, 6);
+  }
+  for (const [fx, fy] of [[0, 0], [14, 0], [0, 14]]) { g.fillRect(33 + fx * 6, 66 + fy * 6, 42, 42); g.fillStyle = '#fbf9f3'; g.fillRect(39 + fx * 6, 72 + fy * 6, 30, 30); g.fillStyle = '#1c232b'; g.fillRect(45 + fx * 6, 78 + fy * 6, 18, 18); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 1.0), new THREE.MeshBasicMaterial({ map: t }));
+  board.position.set(POSTER.x, 1.45, POSTER.z); scene.add(board);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.1, 0.06), lam(0x2b2f33)); back.position.set(POSTER.x, 1.45, POSTER.z - 0.04); scene.add(back);
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.95, 0.08), lam(0x2b2f33)); post.position.set(POSTER.x, 0.47, POSTER.z - 0.04); scene.add(post);
+}
+
+/* ---------- each station's content (only inside its radius, one at a time) ---------- */
+function signTexture(s) {
+  const c = document.createElement('canvas'); c.width = 320; c.height = 200; const g = c.getContext('2d');
+  g.fillStyle = 'rgba(255,255,255,.95)'; g.beginPath(); g.roundRect(0, 0, 320, 200, 22); g.fill();
+  g.fillStyle = '#' + s.color.toString(16).padStart(6, '0'); g.fillRect(0, 0, 12, 200);
+  g.fillStyle = '#1c232b'; g.font = 'bold 40px sans-serif'; g.fillText(s.title, 30, 72);
+  g.fillStyle = '#5b6570'; g.font = '24px sans-serif'; g.fillText(`Station ${s.n} of ${STATIONS.length}`, 30, 116);
+  g.fillText('Listen to the story', 30, 156);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const content = {};
+for (const s of STATIONS) {
+  const grp = new THREE.Group(); grp.position.set(s.x, 0, s.z);
+  const mats = [];
+  const m = (c) => { const mm = new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 0 }); mats.push(mm); return mm; };
+  const fig = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.85, 4, 10), m(s.color)); body.position.y = 0.95;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 16, 12), m(0xe8c4a0)); head.position.y = 1.72;
+  const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 0.16, 14), m(0x2b2f33)); hat.position.y = 1.9;
+  fig.add(body, head, hat); fig.position.set(1.4, 0, 0); grp.add(fig);
+  const signMat = new THREE.MeshBasicMaterial({ map: signTexture(s), transparent: true, opacity: 0, side: THREE.DoubleSide }); mats.push(signMat);
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.0), signMat); sign.position.set(-1.0, 1.75, 0); grp.add(sign);
+  const postM = m(0x3a3f45); const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.25, 0.06), postM); post.position.set(-1.0, 0.62, 0); grp.add(post);
+  grp.visible = false; scene.add(grp);
+  content[s.id] = { grp, mats, fig, sign, op: 0, from: 0, to: 0, t0: 0 };
+}
+
+/* ---------- the HUD's markers: the nearest five hidden stations ---------- */
+const marks = {};
+const beaconMat = new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.28, depthWrite: false });
+for (const s of STATIONS) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false });
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.6), mat); gem.scale.y = 1.4;
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 22, 6, 1, true), beaconMat); beacon.position.y = 15;
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(s.r - 0.35, s.r, 72), ringMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06;
+  const grp = new THREE.Group(); grp.position.set(s.x, 0, s.z); gem.position.y = 3.6; grp.add(gem, beacon, ring); scene.add(grp);
+  marks[s.id] = { grp, gem, beacon, ring, mat, ringMat };
+}
+
+/* ---------- camera control: drag, keys, phone motion ---------- */
+let drag = null, motion = null, walkHeld = false;
+const keys = new Set();
+function camYaw() { return motion ? motion.yaw + motion.offset : S.yaw; }
+canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const k = 0.0055;
+  if (motion) motion.offset += (e.clientX - drag.x) * k; else { S.yaw += (e.clientX - drag.x) * k; S.yawTarget = null; }
+  S.pitch = Math.max(-0.7, Math.min(0.6, S.pitch + (e.clientY - drag.y) * k));
+  drag = { x: e.clientX, y: e.clientY };
+});
+const endDrag = () => { drag = null; };
+canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
+addEventListener('keydown', (e) => { if (['KeyW', 'ArrowUp', 'KeyS', 'ArrowDown', 'KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'].includes(e.code)) keys.add(e.code); });
+addEventListener('keyup', (e) => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+async function enableMotion() {
+  try {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      const r = await DeviceOrientationEvent.requestPermission(); if (r !== 'granted') throw new Error('refused');
+    }
+    if (typeof DeviceOrientationEvent === 'undefined') throw new Error('none');
+    motion = { yaw: S.yaw, offset: 0, pitch: 0, base: null };
+    addEventListener('deviceorientation', (e) => {
+      if (e.alpha == null) return;
+      const a = e.alpha * Math.PI / 180;
+      if (motion.base == null) motion.base = a - S.yaw;
+      motion.yaw = a - motion.base;
+      if (e.beta != null) S.pitch = Math.max(-0.7, Math.min(0.6, (e.beta - 90) * Math.PI / 180));
+    });
+    $('#motionBtn').classList.add('on'); $('#motionBtn').textContent = 'Phone motion on';
+  } catch { $('#motionBtn').textContent = 'No phone motion here'; }
+}
+
+/* ======================================================================
+   The simulation (runs every frame)
+   ====================================================================== */
+function lerpAngle(a, b, k) { let d = ((b - a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; return a + d * k; }
+function sim(dt, t) {
+  // movement: the scripted walk, the hold-to-walk button, the keys
+  if (S.auto) {
+    const a = S.auto, dx = a.x - S.pos.x, dz = a.z - S.pos.z, d = Math.hypot(dx, dz);
+    const stepM = a.speed * dt;
+    if (d <= stepM) { S.pos.x = a.x; S.pos.z = a.z; const r = a.resolve; S.auto = null; r(); }
+    else { S.pos.x += dx / d * stepM; S.pos.z += dz / d * stepM; S.yawTarget = yawToward(a, S.pos); }
+  } else if (S.phase === 'walk' || S.phase === 'lost') {
+    let f = 0; if (walkHeld || keys.has('KeyW') || keys.has('ArrowUp')) f = 4; if (keys.has('KeyS') || keys.has('ArrowDown')) f = -2;
+    if (keys.has('KeyA') || keys.has('ArrowLeft')) { S.yaw += 1.6 * dt; S.yawTarget = null; }
+    if (keys.has('KeyD') || keys.has('ArrowRight')) { S.yaw -= 1.6 * dt; S.yawTarget = null; }
+    if (f) { const y = camYaw(); S.pos.x += -Math.sin(y) * f * dt; S.pos.z += -Math.cos(y) * f * dt; S.walked = (S.walked ?? 0) + Math.abs(f * dt); }
+    // a few steps earn a heading
+    if (!S.heading && S.prec === 'gps' && (S.walked ?? 0) > 8) S.heading = true;
+  }
+  if (S.yawTarget != null && !drag) S.yaw = lerpAngle(S.yaw, S.yawTarget, 1 - Math.exp(-dt * 2.6));
+  if (S.phase === 'warming' && !REDUCE) S.yaw += Math.sin(t / 700) * 0.12 * dt;
+
+  // the scan: a code is seen when the camera faces the poster from close by (free mode only)
+  if (S.phase === 'scan' && !playing) {
+    const a = Math.abs(relAngle(POSTER)), d = dist(POSTER);
+    if (a < 0.2 && d < 7) { S.seen = (S.seen ?? 0) + dt; if (S.seen > 1.0) codeSeen(); } else S.seen = 0;
+  }
+
+  if (S.phase === 'walk') {
+    // found: inside the radius, on a position the guide may judge by
+    const cut = STATIONS.find((s) => S.st[s.id].state === 'found');
+    if (cut && judged() && !S.story) startStory(cut.id);
+    if (judged() && !S.story) {
+      for (const s of unfoundOffered()) if (dist(s) <= s.r) { startStory(s.id); break; }
+    }
+    // the focus's skip clock starts at its first distance
+    const f = focusId();
+    if (f && hasPos() && S.focusSince[f] == null) { S.focusSince[f] = t; S.focusDist[f] = dist(byId(f)); }
+    if (S.story && !S.story.endArm && t - S.story.t0 > S.storyMs) advanceStory();
+    if (S.undo && t >= S.undo.until) S.undo = null;
+    if (S.note && t >= S.note.until) S.note = null;
+    if (allDone() && !S.completeShown) { S.completeShown = true; S.sheet = true; S.armed = null; S.chooseSkip = false; }
+  }
+  if (S.prec !== 'none' && S.phase !== 'lost') { S.frozen.pos.x = S.pos.x; S.frozen.pos.z = S.pos.z; S.frozen.yaw = camYaw(); }
+
+  // presence: the one station whose content shows (any station, any state)
+  if (S.phase === 'walk' || S.phase === 'lost') {
+    if (judged()) {
+      const cur = S.present ? byId(S.present) : null;
+      if (cur && dist(cur) > cur.r + 3) S.present = null;
+      if (!S.present) { const inside = STATIONS.filter((s) => dist(s) <= s.r).sort((a, b) => dist(a) - dist(b)); S.present = inside[0]?.id ?? null; }
+    } else if (S.prec === 'weak' && S.present) {
+      const cur = byId(S.present); if (dist(cur) - S.acc > cur.r + 3) S.present = null;
+    } else if (S.prec === 'pending') S.present = null;
+  } else S.present = null;
+
+  // fades: one station group in the scene at a time
+  const leaving = STATIONS.some((s) => s.id !== S.present && content[s.id].op > 0.001);
+  for (const s of STATIONS) {
+    const c = content[s.id];
+    const want = s.id === S.present && !(leaving && c.op === 0) ? 1 : 0;
+    if (want !== c.to) { c.from = c.op; c.to = want; c.t0 = t; }
+    const k = Math.min(1, (t - c.t0) / FADE_MS);
+    c.op = c.from + (c.to - c.from) * k;
+    c.grp.visible = c.op > 0.001;
+    if (c.grp.visible) { for (const mm of c.mats) mm.opacity = c.op; c.fig.rotation.y = Math.atan2(S.pos.x - (s.x + 1.4), S.pos.z - s.z); c.sign.rotation.y = Math.atan2(S.pos.x - (s.x - 1), S.pos.z - s.z); }
+  }
+
+  // markers: the five nearest unfound offered stations, only with a heading and a position
+  const showMarks = S.phase === 'walk' && S.heading && (S.prec === 'code' || S.prec === 'gps' || S.prec === 'weak');
+  const targets = showMarks ? unfoundOffered().sort((a, b) => dist(a) - dist(b)).slice(0, 5).map((s) => s.id) : [];
+  const fid = focusId();
+  for (const s of STATIONS) {
+    const mk = marks[s.id], on = targets.includes(s.id);
+    mk.grp.visible = on;
+    if (!on) continue;
+    const isF = s.id === fid, weak = S.prec === 'weak';
+    mk.mat.color.setHex(isF ? 0xfb923c : 0xffffff);
+    mk.mat.opacity = weak ? 0.4 : (isF ? 0.95 : 0.7);
+    mk.gem.scale.setScalar(isF ? 1.25 : 0.85); mk.gem.scale.y *= 1.4;
+    mk.gem.position.y = 3.6 + Math.sin(t / 600 + s.n) * 0.25; mk.gem.rotation.y = t / 900;
+    mk.beacon.visible = isF && !weak; mk.ring.visible = isF; mk.ringMat.opacity = weak ? 0.2 : 0.55;
+    const far = Math.max(1, dist(s) / 40); mk.gem.scale.multiplyScalar(Math.min(4, far));
+  }
+}
+
+/* ======================================================================
+   The radar
+   ====================================================================== */
+const radar = $('#radar');
+const COL = { next: '#fb923c', left: '#f3f5f7', found: '#2dd4bf', here: '#2dd4bf', skipped: '#9aa4ae', later: 'rgba(255,255,255,.45)' };
+function hfov() { return 2 * Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect); }
+function drawRadar(t) {
+  const w = radar.clientWidth; if (!w) return;
+  const dpr = Math.min(devicePixelRatio, 2), px = Math.round(w * dpr);
+  if (radar.width !== px) { radar.width = px; radar.height = px; }
+  const g = radar.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, w);
+  const c = w / 2, R = w / 2 - 4;
+  const map = (d) => R * Math.sqrt(Math.min(d, RADAR_RANGE_M) / RADAR_RANGE_M);
+  const frozen = S.prec === 'none' || S.phase === 'lost';
+  const pos = frozen ? S.frozen.pos : S.pos, yaw = frozen ? S.frozen.yaw : camYaw();
+  const circle = (x, y, r) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); };
+
+  circle(c, c, R + 3); g.fillStyle = 'rgba(10,14,19,.68)'; g.fill();
+  g.lineWidth = 1.5; g.strokeStyle = 'rgba(255,255,255,.28)'; g.stroke();
+  g.lineWidth = 1; g.strokeStyle = 'rgba(255,255,255,.12)';
+  for (const m of [25, 100]) { circle(c, c, map(m)); g.stroke(); }
+  g.fillStyle = 'rgba(255,255,255,.5)'; g.font = `600 ${Math.max(9, w * 0.075)}px system-ui,sans-serif`; g.textAlign = 'center';
+  g.textAlign = 'left'; g.fillText('100 m', c + map(100) * 0.72 + 1, c + map(100) * 0.72 + 2); g.textAlign = 'center';
+
+  // north tick on the rim
+  const na = relAngle({ x: pos.x, z: pos.z - 10 }, pos, yaw);
+  g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `700 ${Math.max(9, w * 0.072)}px system-ui,sans-serif`;
+  g.fillText('N', c + Math.sin(na) * (R - 7), c - Math.cos(na) * (R - 7) + 3.5);
+
+  if (S.prec === 'pending' && S.phase === 'walk') {
+    const p = (t % 1600) / 1600;
+    for (const k of [0, 0.5]) { const q = (p + k) % 1; circle(c, c, 6 + q * (R - 8)); g.strokeStyle = `rgba(147,197,253,${0.7 * (1 - q)})`; g.lineWidth = 2; g.stroke(); }
+    circle(c, c, 4); g.fillStyle = '#fff'; g.fill();
+    return;
+  }
+  const live = !frozen;
+  // the view cone
+  if (live && S.heading) {
+    const half = hfov() / 2;
+    const grd = g.createRadialGradient(c, c, 0, c, c, R);
+    grd.addColorStop(0, 'rgba(255,255,255,.26)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.beginPath(); g.moveTo(c, c); g.arc(c, c, R, -Math.PI / 2 - half, -Math.PI / 2 + half); g.closePath(); g.fillStyle = grd; g.fill();
+  }
+  // where you are, as precisely as it is known
+  if (live && (S.prec === 'gps' || S.prec === 'weak')) {
+    const weak = S.prec === 'weak', rr = Math.max(7, map(S.acc));
+    const rgb = weak ? '251,191,36' : '147,197,253';
+    const grd = g.createRadialGradient(c, c, 0, c, c, rr * 1.15);
+    grd.addColorStop(0, `rgba(${rgb},.55)`); grd.addColorStop(0.75, `rgba(${rgb},.28)`); grd.addColorStop(1, `rgba(${rgb},0)`);
+    circle(c, c, rr * 1.15); g.fillStyle = grd; g.fill();
+    g.setLineDash([3, 3]); circle(c, c, rr); g.strokeStyle = `rgba(${rgb},.85)`; g.lineWidth = 1.2; g.stroke(); g.setLineDash([]);
+  }
+
+  const fid = focusId();
+  // stations
+  for (const s of STATIONS) {
+    const rs = rowState(s);
+    const d = dist(s, pos), a = relAngle(s, pos, yaw);
+    let col = COL[rs];
+    if (frozen) col = rs === 'found' || rs === 'here' ? '#b9c1c9' : '#8b949d';
+    const alpha = live && S.prec === 'weak' ? 0.5 : 1;
+    if (live && !S.heading) {
+      // no direction yet: how far, not which way
+      if (rs === 'found' || rs === 'skipped') continue;
+      g.globalAlpha = rs === 'next' ? 0.95 : 0.5; g.setLineDash([4, 4]); circle(c, c, Math.max(6, map(d))); g.strokeStyle = col; g.lineWidth = rs === 'next' ? 2.2 : 1.2; g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
+      continue;
+    }
+    const pr = Math.min(map(d), R - 8), x = c + Math.sin(a) * pr, y = c - Math.cos(a) * pr;
+    g.globalAlpha = alpha;
+    const big = rs === 'next' && live;
+    const rad = big ? 8.5 : rs === 'later' ? 3.5 : 6.5;
+    if (big && !REDUCE) { const q = (t % 1400) / 1400; circle(x, y, rad + q * 9); g.strokeStyle = `rgba(251,146,60,${0.6 * (1 - q)})`; g.lineWidth = 2; g.stroke(); }
+    if (S.burst?.id === s.id && t - S.burst.t < 1600) { const q = (t - S.burst.t) / 1600; circle(x, y, rad + q * 22); g.strokeStyle = `rgba(45,212,191,${1 - q})`; g.lineWidth = 3; g.stroke(); }
+    circle(x, y, rad);
+    if (rs === 'skipped') { g.setLineDash([2.5, 2]); g.strokeStyle = col; g.lineWidth = 1.6; g.stroke(); g.setLineDash([]); g.beginPath(); g.moveTo(x - 3.5, y + 3.5); g.lineTo(x + 3.5, y - 3.5); g.stroke(); }
+    else if (rs === 'left' && live) { g.fillStyle = 'rgba(10,14,19,.85)'; g.fill(); g.strokeStyle = col; g.lineWidth = 2; g.stroke(); }
+    else if (rs === 'later') { g.fillStyle = col; g.fill(); }
+    else if (frozen && (rs === 'left' || rs === 'next')) { g.fillStyle = 'rgba(10,14,19,.85)'; g.fill(); g.strokeStyle = col; g.lineWidth = 1.6; g.stroke(); }
+    else { g.fillStyle = col; g.fill(); }
+    if (rs === 'found' || rs === 'here') { g.beginPath(); g.moveTo(x - 3, y); g.lineTo(x - 0.8, y + 2.3); g.lineTo(x + 3.2, y - 2.4); g.strokeStyle = '#04201c'; g.lineWidth = 1.8; g.stroke(); }
+    else if (rs !== 'later' && rs !== 'skipped') { g.fillStyle = rs === 'next' && live ? '#1f1105' : col; g.font = `800 ${big ? 10 : 8.5}px system-ui,sans-serif`; g.textAlign = 'center'; g.fillText(String(s.n), x, y + (big ? 3.6 : 3)); }
+    g.globalAlpha = 1;
+    // the next station off screen: an arc on the rim at its bearing
+    if (big && Math.abs(a) > hfov() / 2) { g.beginPath(); g.arc(c, c, R + 1, a - Math.PI / 2 - 0.22, a - Math.PI / 2 + 0.22); g.strokeStyle = '#fb923c'; g.lineWidth = 3.5; g.stroke(); }
+  }
+  // you
+  if (frozen) {
+    circle(c, c, 9); g.fillStyle = '#4b535c'; g.fill(); g.fillStyle = '#e5e9ee'; g.font = `800 12px system-ui,sans-serif`; g.textAlign = 'center'; g.fillText('?', c, c + 4.2);
+  } else if (S.prec === 'code') {
+    circle(c, c, 7.5); g.strokeStyle = '#2dd4bf'; g.lineWidth = 2.2; g.stroke(); circle(c, c, 4); g.fillStyle = '#fff'; g.fill();
+  } else {
+    const j = REDUCE ? 0 : (S.prec === 'weak' ? 2.2 : 0.9);
+    circle(c + Math.sin(t / 530) * j, c + Math.cos(t / 710) * j, 4); g.fillStyle = S.prec === 'weak' ? 'rgba(255,255,255,.75)' : '#fff'; g.fill();
+  }
+}
+
+/* ======================================================================
+   The page layer
+   ====================================================================== */
+const setText = (el, v) => { if (el.textContent !== v) el.textContent = v; };
+const ARROW = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l5 11-5-3-5 3z" fill="currentColor"/></svg>';
+function buildRows() {
+  const ul = $('#rows'); ul.innerHTML = '';
+  for (const s of STATIONS) {
+    const li = document.createElement('li'); li.className = 'row'; li.dataset.id = s.id;
+    li.innerHTML = `<span class="glyph" aria-hidden="true">${s.n}</span>
+      <button class="rm" type="button"><b>${s.title}</b><small>${ARROW}<span></span></small></button>
+      <button class="ra" type="button"></button>
+      <div class="confirm" hidden><button class="btn warn" type="button" data-a="confirm"></button><button class="btn" type="button" data-a="cancel">Cancel</button></div>
+      <div class="undobar" hidden><i></i></div>`;
+    li.querySelector('.rm').addEventListener('click', () => { if (!anyChoice() || S.st[s.id].state !== 'waiting') return; S.choice = S.choice === s.id ? null : s.id; ui(); });
+    li.querySelector('.ra').addEventListener('click', () => {
+      const k = li.querySelector('.ra').dataset.k;
+      if (k === 'skip') S.armed = S.armed === s.id ? null : s.id;
+      else if (k === 'undo' || k === 'bring') bringBack(s.id);
+      ui();
+    });
+    li.querySelector('[data-a=confirm]').addEventListener('click', () => { skip(s.id); ui(); });
+    li.querySelector('[data-a=cancel]').addEventListener('click', () => { S.armed = null; ui(); });
+    ul.appendChild(li);
+  }
+}
+function segsHtml(el) {
+  if (el.children.length !== STATIONS.length) el.innerHTML = STATIONS.map(() => '<i></i>').join('');
+  STATIONS.forEach((s, i) => { const v = rowState(s); if (el.children[i].dataset.s !== v) el.children[i].dataset.s = v; });
+}
+function precInfo() {
+  if (S.phase === 'lost') return ['lost', 'Paused - tracking lost'];
+  switch (S.prec) {
+    case 'code': return ['code', 'Placed by a code'];
+    case 'gps': return ['gps', `GPS - about ${S.acc} m`];
+    case 'weak': return ['weak', `GPS - about ${S.acc} m, too weak`];
+    case 'none': return ['none', 'Position unknown'];
+    default: return ['pending', 'Finding your position…'];
+  }
+}
+function peekModel() {
+  const off = unfoundOffered(), n = offered().length;
+  if (allDone()) { const k = skippedCount(); return { k: 'done', eyebrow: 'Old town walk', title: 'Tour complete', tail: k ? `${k} skipped.` : 'Every station visited.' }; }
+  if (!off.length) return { k: 'story', eyebrow: 'Station found', title: S.story ? byId(S.story.id).title : '', tail: 'Its story is playing.' };
+  if (S.prec === 'none' && anyChoice() && !S.choice) return { k: 'none', eyebrow: 'Position unknown', title: `${n} stations to find`, tail: "Scan one of the tour's codes so the guide knows where you are." };
+  const f = byId(focusId());
+  const eyebrow = S.tour === 'fixed' ? `Next - station ${f.n} of ${STATIONS.length}` : (n > 1 ? `${n} stations to find - ${S.choice === f.id ? 'your choice' : 'nearest'}` : 'Next');
+  const m = { k: S.prec, eyebrow, title: f.title, dist: null, tail: '' };
+  if (S.prec === 'pending' || S.phase === 'lost') m.tail = 'Waiting for your position…';
+  else if (S.prec === 'weak') { m.tail = `GPS too weak to guide you (±${S.acc} m); step into the open.`; m.dist = `~${metres(dist(f))}`; }
+  else if (S.prec === 'none') m.tail = "Scan one of the tour's codes so the guide knows where you are.";
+  else {
+    m.dist = metres(dist(f));
+    if (!S.heading) m.tail = '';
+    else { const w = dirWord(relAngle(f)); m.tail = w[0].toUpperCase() + w.slice(1) + '.'; m.angle = relAngle(f); }
+  }
+  return m;
+}
+function coachText() {
+  switch (S.phase) {
+    case 'starting': return ['spin', 'Starting AR…'];
+    case 'warming': return ['sway', 'Move the phone slowly so it can see the surroundings.'];
+    case 'lost': return ['sway', 'Tracking lost - slowly look around to let it recover.'];
+    case 'walk': if (!S.heading && S.prec !== 'none' && S.prec !== 'pending') return ['', 'Walk a few steps so the guide knows the direction.']; return null;
+    default: return null;
+  }
+}
+const SWAY = '<svg class="sway" viewBox="0 0 34 34" aria-hidden="true"><rect x="11" y="4" width="12" height="22" rx="3" fill="none" stroke="#fff" stroke-width="2.4"/></svg>';
+let lastCoach = '';
+function ui() {
+  device.dataset.phase = S.phase; device.dataset.prec = S.prec; device.dataset.tour = S.tour;
+  // coach
+  const co = coachText(), coEl = $('#coach');
+  const coKey = co ? co.join('|') : '';
+  if (coKey !== lastCoach) { lastCoach = coKey; if (co) coEl.innerHTML = (co[0] === 'spin' ? '<span class="spin"></span>' : co[0] === 'sway' ? SWAY : '') + `<span>${co[1]}</span>`; }
+  coEl.hidden = !co;
+  // scan card
+  const scanOn = S.phase === 'scan' || S.phase === 'code-seen';
+  $('#scan').hidden = !scanOn;
+  if (scanOn) {
+    const ok = S.phase === 'code-seen';
+    $('#scanCard').classList.toggle('ok', ok);
+    setText($('#scanTitle'), ok ? 'Code found - placing the tour…' : 'Scan the code again so the tour can start');
+    $('#scanLine').hidden = ok;
+    $('#escapeBtn').hidden = ok || now() - S.scanSince < 10000;
+  }
+  // radar and precision
+  const [pk, pt] = precInfo();
+  $('#prec').dataset.k = pk; setText($('#precText'), pt);
+  $('#radarWrap').classList.toggle('frozen', S.prec === 'none' || S.phase === 'lost');
+  // sheet
+  const sheet = $('#sheet');
+  sheet.classList.toggle('open', S.sheet);
+  $('#grab').setAttribute('aria-expanded', String(S.sheet));
+  $('#grab').setAttribute('aria-label', S.sheet ? 'Hide the list' : 'Show all stations');
+  segsHtml($('#segs'));
+  const storyOn = !!S.story && !S.sheet;
+  $('#story').hidden = !storyOn; $('#peek').hidden = storyOn;
+  const m = peekModel(), peek = $('#peek');
+  peek.dataset.k = m.k;
+  setText($('#pEyebrow'), m.eyebrow); setText($('#pTitle'), m.title); setText($('#pTail'), m.tail);
+  $('#pDist').hidden = !m.dist; if (m.dist) setText($('#pDistT'), m.dist);
+  $('#pArrow').parentNode.style.display = m.angle == null ? 'none' : '';
+  if (m.angle != null) $('#pArrow').parentNode.style.transform = `rotate(${m.angle}rad)`;
+  setText($('#line'), lineText());
+  const qa = quickSkipAction(), qs = $('#quickSkip');
+  qs.hidden = !qa || S.sheet; if (qa) { qs.dataset.k = qa.k; setText(qs, qa.label); }
+  // story card
+  if (S.story) {
+    const s = byId(S.story.id);
+    setText($('#sTitle'), s.title); setText($('#sLine'), s.story[S.story.i] ?? '');
+    const dots = $('#sDots'); if (dots.children.length !== s.story.length) dots.innerHTML = s.story.map(() => '<i></i>').join('');
+    [...dots.children].forEach((d, i) => { d.className = i < S.story.i ? 'on' : i === S.story.i ? 'now' : ''; });
+    const cur = dots.children[S.story.i]; if (cur) cur.style.setProperty('--p', S.story.endArm ? 0 : Math.min(1, (now() - S.story.t0) / S.storyMs).toFixed(3));
+    const acts = $('#sActs');
+    if (S.story.endArm) { if (acts.dataset.m !== 'arm') { acts.dataset.m = 'arm'; acts.innerHTML = `<button class="btn warn wide" type="button" id="sEndNow"></button><button class="btn" type="button" id="sKeep">Keep listening</button>`; $('#sEndNow').onclick = () => { finishStory(); ui(); }; $('#sKeep').onclick = () => { S.story.endArm = false; S.story.t0 = now(); ui(); }; } setText($('#sEndNow'), `End the story of ${s.title} now`); }
+    else if (acts.dataset.m !== 'idle') { acts.dataset.m = 'idle'; acts.innerHTML = `<button class="btn primary" id="sNext" type="button">Next</button><button class="btn" id="sEnd" type="button">End this story?</button>`; $('#sNext').onclick = () => { advanceStory(); ui(); }; $('#sEnd').onclick = () => { if (S.story) S.story.endArm = true; ui(); }; }
+  }
+  // list
+  setText($('#orderChip'), S.tour === 'fixed' ? 'In order' : 'Any order');
+  const left = STATIONS.length - foundCount() - skippedCount();
+  const lp = `<b>${foundCount()} of ${STATIONS.length} found</b>${skippedCount() ? ` - ${skippedCount()} skipped` : ''}${left ? ` - ${left} to find` : ''}`;
+  if ($('#lprog').innerHTML !== lp) $('#lprog').innerHTML = lp;
+  $('#doneCard').hidden = !allDone(); $('#lfoot').hidden = !allDone();
+  setText($('#doneTitle'), allDone() ? lineText() : '');
+  setText($('#doneText'), allDone() ? (skippedCount() ? `${foundCount()} of ${STATIONS.length} found. A skipped station can still be brought back.` : 'Thank you for walking with us.') : '');
+  $('#lprog').hidden = allDone();
+  peek.querySelector('.peek-row').hidden = allDone() && S.sheet;
+  const hint = $('#hint');
+  const showHint = S.prec === 'none' && anyChoice() && !allDone();
+  hint.hidden = !showHint;
+  if (showHint) setText(hint, S.chooseSkip ? "Your position is unknown, so the guide can't tell which station is nearest. Which one can't you reach?" : "Your position is unknown - scan one of the tour's codes, or pick a station below.");
+  const fidNow = focusId();
+  for (const li of $('#rows').children) {
+    const s = byId(li.dataset.id), rs = rowState(s), t = S.st[s.id];
+    if (li.dataset.state !== rs) li.dataset.state = rs;
+    li.classList.toggle('chosen', S.choice === s.id && rs === 'next');
+    const rm = li.querySelector('.rm'), sub = li.querySelector('small span'), arr = li.querySelector('small svg');
+    let subT = '', ang = null;
+    if (rs === 'found') subT = 'Found';
+    else if (rs === 'here') subT = 'You are here - its story is playing';
+    else if (rs === 'skipped') subT = 'Skipped';
+    else if (rs === 'later') subT = 'Later';
+    else if (S.prec === 'none') subT = 'Distance unknown';
+    else if (S.prec === 'pending' || S.phase === 'lost') subT = 'Waiting for your position…';
+    else if (!S.heading) subT = metres(dist(s));
+    else { ang = relAngle(s); subT = `${S.prec === 'weak' ? '~' : ''}${metres(dist(s))} - ${dirWord(ang)}`; }
+    if (anyChoice() && (rs === 'next' || rs === 'left')) subT += S.choice === s.id ? ' - your choice' : '';
+    setText(sub, subT);
+    arr.style.display = ang == null ? 'none' : ''; if (ang != null) arr.style.transform = `rotate(${ang}rad)`;
+    const choosable = anyChoice() && t.state === 'waiting';
+    rm.disabled = !choosable;
+    rm.setAttribute('aria-label', choosable ? `${s.title}: ${subT}. Guide me here` : `${s.title}: ${subT}`);
+    const ra = li.querySelector('.ra'), conf = li.querySelector('.confirm'), ub = li.querySelector('.undobar');
+    let k = null, label = '';
+    if (S.undo?.id === s.id) { k = 'undo'; label = `Undo: bring back ${s.title}`; }
+    else if (rs === 'skipped') { k = 'bring'; label = 'Bring back'; }
+    else if ((rs === 'next' || rs === 'left') && S.phase === 'walk') { k = 'skip'; label = 'Skip'; }
+    ra.hidden = !k || S.armed === s.id; if (k) { ra.dataset.k = k; setText(ra, label); ra.setAttribute('aria-label', k === 'skip' ? `Skip ${s.title}` : label === 'Bring back' ? `Bring back ${s.title}` : label); }
+    conf.hidden = S.armed !== s.id; if (S.armed === s.id) setText(conf.querySelector('[data-a=confirm]'), `Skip ${s.title} - I can't get there`);
+    ub.hidden = S.undo?.id !== s.id; if (S.undo?.id === s.id) ub.firstChild.style.transform = `scaleX(${Math.max(0, (S.undo.until - now()) / SKIP_UNDO_MS).toFixed(3)})`;
+  }
+  // edge marker: the next station when it is off screen
+  const edge = $('#edge');
+  const ef = fidNow ? byId(fidNow) : null;
+  const edgeOn = ef && S.phase === 'walk' && S.heading && hasPos() && !S.sheet && !S.story && Math.abs(relAngle(ef)) > hfov() / 2 * 0.92;
+  edge.hidden = !edgeOn;
+  if (edgeOn) {
+    const a = relAngle(ef), right = a > 0, behind = Math.abs(a) > 2.4;
+    edge.className = `edge ${right ? 'r' : 'l'}`;
+    $('#edgeArrow').setAttribute('d', right ? 'M5 2l5 5-5 5' : 'M9 2L4 7l5 5');
+    setText($('#edgeText'), `${ef.title} - ${metres(dist(ef))}${behind ? ', behind you' : ''}`);
+  }
+  // away
+  $('#away').hidden = S.phase !== 'away';
+  if (S.phase === 'away') {
+    segsHtml($('#awaySegs'));
+    const al = STATIONS.map((s) => { const rs = rowState(s); return `<li><b>${s.title}</b><span>${rs === 'found' || rs === 'here' ? 'Found' : rs === 'skipped' ? 'Skipped' : 'To find'}</span></li>`; }).join('');
+    if ($('#awayList').innerHTML !== al) $('#awayList').innerHTML = al;
+  }
+  // demo status
+  setText($('#dStatus'), playing ? `Playing the walk - ${S.tour === 'fixed' ? 'fixed' : 'any'}-order tour` : `State: ${current} - ${S.tour}-order tour`);
+}
+
+/* ---------- wiring ---------- */
+$('#quickSkip').addEventListener('click', (e) => { e.stopPropagation(); onQuickSkip(); });
+$('#radarBtn').addEventListener('click', () => { S.sheet = !S.sheet; if (!S.sheet) { S.armed = null; S.chooseSkip = false; } ui(); });
+$('#closeList').addEventListener('click', () => { S.sheet = false; S.armed = null; S.chooseSkip = false; ui(); });
+{
+  let y0 = null, moved = false;
+  const down = (e) => { if (e.target.closest('button') && e.target.closest('button').id !== 'grab') return; y0 = e.clientY; moved = false; };
+  const move = (e) => { if (y0 == null) return; const dy = e.clientY - y0; if (Math.abs(dy) > 24) { moved = true; S.sheet = dy < 0; if (!S.sheet) { S.armed = null; S.chooseSkip = false; } y0 = null; ui(); } };
+  const up = () => { if (y0 != null && !moved) { S.sheet = !S.sheet; if (!S.sheet) { S.armed = null; S.chooseSkip = false; } ui(); } y0 = null; };
+  for (const el of [$('#grab'), $('#peek')]) { el.addEventListener('pointerdown', down); el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); }
+}
+$('#exitBtn').addEventListener('click', () => { cancelPlay(); leaveAr(); });
+$('#exitDone').addEventListener('click', () => { cancelPlay(); leaveAr(); });
+$('#backBtn').addEventListener('click', () => backToAr());
+$('#infoBtn').addEventListener('click', () => { $('#note').hidden = false; $('#noteClose').focus(); });
+$('#noteClose').addEventListener('click', () => { $('#note').hidden = true; });
+$('#note').addEventListener('click', (e) => { if (e.target.id === 'note') $('#note').hidden = true; });
+$('#escapeBtn').addEventListener('click', () => { S.phase = 'walk'; S.prec = 'gps'; S.acc = 9; S.heading = false; toast('Tour placed by GPS (less exact)'); ui(); });
+// A story cut short by leaving keeps its station 'found'; it plays again on the next judged position (R8).
+function leaveAr() { S.phase = 'away'; S.story = null; S.sheet = false; S.armed = null; S.auto = null; S.present = null; ui(); }
+async function backToAr() {
+  S.phase = 'starting'; ui();
+  await sleep(900); if (S.phase !== 'starting') return;
+  S.phase = 'walk'; S.prec = 'pending'; toast('Welcome back - your progress is kept.'); ui();
+  await sleep(2200); if (S.phase === 'walk' && S.prec === 'pending') { S.prec = 'gps'; S.acc = 8; ui(); }
+}
+function codeSeen() {
+  S.phase = 'code-seen'; S.seen = 0; ui();
+  setTimeout(() => { if (S.phase === 'code-seen') { S.phase = 'walk'; S.prec = 'code'; S.heading = true; ui(); } }, 1400);
+}
+
+/* ======================================================================
+   States (the plan's §2) and the scripted walk
+   ====================================================================== */
+let current = 'guided-gps';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function setup(o) {
+  const tour = o.tour ?? userTour;
+  S = freshState(tour);
+  S.phase = o.phase ?? 'walk'; S.prec = o.prec ?? 'gps'; S.acc = o.acc ?? 8; S.heading = o.heading ?? true;
+  S.pos = { x: o.pos[0], z: o.pos[1] };
+  for (const id of o.done ?? []) S.st[id].state = 'done';
+  for (const id of o.skipped ?? []) { S.st[id].state = 'done'; S.st[id].skipped = true; }
+  const face = typeof o.face === 'string' ? byId(o.face) : o.face;
+  S.yaw = (o.yaw != null) ? o.yaw : face ? yawToward(face) + (o.off ?? 0) : 0;
+  S.frozen = { pos: { ...S.pos }, yaw: S.yaw };
+  S.sheet = !!o.sheet; S.choice = o.choice ?? null; S.armed = o.armed ?? null; S.chooseSkip = !!o.chooseSkip;
+  if (allDone()) S.completeShown = true;
+  for (const s of STATIONS) { const c = content[s.id]; c.op = 0; c.from = 0; c.to = 0; c.grp.visible = false; }
+  $('#toast').classList.remove('show');
+  syncTourButtons();
+}
+const STATES = {
+  'ar-starting':        () => setup({ phase: 'starting', pos: [START.x, START.z], face: POSTER, off: 0.3 }),
+  'tracking-not-ready': () => setup({ phase: 'warming', pos: [START.x, START.z], face: POSTER, off: 0.4 }),
+  'tracking-lost':      () => setup({ phase: 'lost', prec: 'gps', acc: 8, pos: [0, -52], done: ['gate'], face: 'well' }),
+  'waiting-position':   () => setup({ prec: 'pending', pos: [0, -2], face: 'gate' }),
+  'scan-prompt':        () => { setup({ phase: 'scan', pos: [START.x, START.z], face: POSTER, off: 0.45 }); S.scanSince = now(); },
+  'scan-escape':        () => { setup({ phase: 'scan', pos: [START.x, START.z], face: POSTER, off: 0.45 }); S.scanSince = now() - 10500; },
+  'code-seen':          () => setup({ phase: 'code-seen', pos: [START.x, START.z], face: POSTER }),
+  'finding-direction':  () => setup({ prec: 'gps', acc: 9, heading: false, pos: [0, -4], face: 'gate', off: 0.5 }),
+  'guided-code':        () => setup({ prec: 'code', pos: [0, -4], face: 'gate' }),
+  'guided-gps':         () => setup({ prec: 'gps', acc: 8, pos: [0, -56], done: ['gate'], face: 'well' }),
+  'gps-too-weak':       () => setup({ prec: 'weak', acc: 40, pos: [0, -112], done: ['gate', 'well'], face: 'tower' }),
+  'no-position':        () => setup({ tour: 'any', prec: 'none', pos: [0, -56], done: ['gate'], face: 'well' }),
+  'no-position-skip':   () => setup({ tour: 'any', prec: 'none', pos: [0, -56], done: ['gate'], face: 'well', sheet: true, chooseSkip: true }),
+  'no-position-fixed':  () => setup({ tour: 'fixed', prec: 'none', pos: [0, -56], done: ['gate'], face: 'well', sheet: true, armed: 'well' }),
+  'on-the-way':         () => setup({ prec: 'gps', acc: 6, pos: [4, -82], done: ['gate'], face: 'well', off: 0.12 }),
+  'behind-you':         () => setup({ prec: 'gps', acc: 7, pos: [0, -60], done: ['gate'], yaw: Math.PI * 0.95 }),
+  'arriving':           () => setup({ prec: 'gps', acc: 6, pos: [23.5, -81], done: ['gate'], face: 'well', off: 0.18 }),
+  'story-playing':      () => { setup({ prec: 'gps', acc: 6, pos: [27, -81], done: ['gate'], face: 'well', off: 0.18 }); startStory('well'); S.story.i = 1; S.burst = null; },
+  'story-end-ask':      () => { setup({ prec: 'gps', acc: 7, pos: [40, -237], done: ['gate', 'well'], skipped: ['tower'], face: 'garden', off: 0.15 }); startStory('garden'); S.story.endArm = true; S.burst = null; },
+  'list-any':           () => setup({ tour: 'any', prec: 'gps', acc: 7, pos: [0, -60], done: ['gate'], skipped: ['tower'], face: 'well', sheet: true }),
+  'list-fixed':         () => setup({ tour: 'fixed', prec: 'gps', acc: 7, pos: [0, -60], done: ['gate'], face: 'well', sheet: true }),
+  'choose-target':      () => setup({ tour: 'any', prec: 'gps', acc: 7, pos: [0, -60], done: ['gate'], face: 'garden', sheet: true, choice: 'garden' }),
+  'skip-ask':           () => setup({ prec: 'gps', acc: 7, pos: [0, -60], done: ['gate'], face: 'well', sheet: true, armed: 'well' }),
+  'skip-suggested':     () => { setup({ prec: 'gps', acc: 8, pos: [0, -168], done: ['gate', 'well'], face: 'tower' }); S.focusSince.tower = now() - 400000; S.focusDist.tower = 90; },
+  'skip-undo':          () => { setup({ prec: 'gps', acc: 8, pos: [0, -172], done: ['gate', 'well'], face: 'garden' }); S.st.tower.state = 'done'; S.st.tower.skipped = true; S.undo = { id: 'tower', until: now() + SKIP_UNDO_MS }; note('Skipped The tower.'); },
+  'brought-back':       () => { setup({ prec: 'gps', acc: 8, pos: [0, -168], done: ['gate', 'well'], face: 'tower' }); note('Brought back The tower.'); },
+  'tour-complete':      () => setup({ prec: 'gps', acc: 7, pos: [52, -230], done: ['gate', 'well', 'garden'], skipped: ['tower'], face: 'garden', off: 2.2, sheet: true }),
+  'left-ar':            () => setup({ phase: 'away', prec: 'gps', pos: [0, -100], done: ['gate', 'well'], face: 'tower' }),
+  'back-in-ar':         () => { setup({ prec: 'pending', pos: [0, -100], done: ['gate', 'well'], face: 'tower' }); toast('Welcome back - your progress is kept.'); },
+};
+const GROUPS = [
+  ['1. AR starts', ['ar-starting', 'tracking-not-ready', 'tracking-lost']],
+  ['2. Position and code', ['waiting-position', 'scan-prompt', 'scan-escape', 'code-seen', 'finding-direction']],
+  ['3. Precision', ['guided-code', 'guided-gps', 'gps-too-weak', 'no-position', 'no-position-skip', 'no-position-fixed']],
+  ['4. On the way', ['on-the-way', 'behind-you']],
+  ['5. Arriving', ['arriving', 'story-playing', 'story-end-ask']],
+  ['6. Can\'t get there', ['skip-ask', 'skip-suggested', 'skip-undo', 'brought-back']],
+  ['7. Order and progress', ['list-any', 'list-fixed', 'choose-target']],
+  ['8-9. End, leaving', ['tour-complete', 'left-ar', 'back-in-ar']],
+];
+function goto(name) {
+  if (!STATES[name]) throw new Error(`Unknown state: ${name}`);
+  cancelPlay();
+  current = name;
+  STATES[name]();
+  buildRows();
+  ui();
+  for (const b of document.querySelectorAll('[data-state-btn]')) b.classList.toggle('on', b.dataset.stateBtn === name);
+  return name;
+}
+
+let playing = false, playToken = 0;
+const CANCEL = Symbol('cancel');
+function cancelPlay() { playToken++; playing = false; if (S.auto) { const r = S.auto.reject; S.auto = null; r?.(CANCEL); } $('#playBtn').textContent = 'Play the walk'; }
+async function play() {
+  goto('ar-starting');
+  const my = ++playToken; playing = true; current = 'playing';
+  $('#playBtn').textContent = 'Stop';
+  const live = () => { if (my !== playToken) throw CANCEL; };
+  const wait = async (ms) => { await sleep(ms); live(); };
+  const walk = async (x, z, speed = 6) => { live(); await new Promise((res, rej) => { S.auto = { x, z, speed, resolve: res, reject: rej }; }); live(); };
+  const turn = async (p, ms = 900) => { S.yawTarget = yawToward(p); await wait(ms); };
+  const tap = async (el, fn) => { live(); el?.classList.add('tapped'); await wait(420); el?.classList.remove('tapped'); fn(); ui(); };
+  const until = async (cond, maxMs = 30000) => { const t0 = now(); while (!cond()) { await wait(120); if (now() - t0 > maxMs) break; } };
+  try {
+    S.storyMs = 3000;
+    await wait(1400);
+    S.phase = 'warming'; ui(); await wait(2400);
+    S.phase = 'scan'; S.scanSince = now(); ui(); await turn(POSTER, 2000);
+    S.phase = 'code-seen'; ui(); await wait(1300);
+    S.phase = 'walk'; S.prec = 'code'; S.heading = true; ui(); await wait(1200);
+    await turn(byId('gate'), 900);
+    await walk(0.3, -19.5, 5.5);
+    await until(() => S.story?.id === 'gate', 6000);
+    await until(() => !S.story, 15000);
+    // the code's trust ends; for a few seconds nothing vouches for the position
+    S.prec = 'none'; ui();
+    await walk(0, -40, 3);
+    await wait(900);
+    S.prec = 'gps'; S.acc = 8; ui();
+    await walk(0, -80, 6);
+    await walk(23, -82, 6);
+    await until(() => S.story?.id === 'well', 6000);
+    await until(() => !S.story, 15000);
+    S.acc = 6;
+    await walk(0, -82, 6);
+    // under the arcades the GPS is too weak for a moment
+    await walk(0, -120, 6);
+    S.prec = 'weak'; S.acc = 40; ui();
+    await walk(0, -142, 3.5);
+    S.prec = 'gps'; S.acc = 9; ui();
+    await walk(0, -168, 6);
+    await turn(byId('tower'), 1300);
+    await wait(900);
+    // the road to the tower is closed: the skip is suggested (clock fast-forwarded)
+    S.focusSince.tower = now() - suggestMs('tower') - 1; ui();
+    await wait(1800);
+    await tap($('#quickSkip'), () => onQuickSkip());
+    await wait(1800);
+    await walk(0, -200, 6);
+    S.sheet = true; ui(); await wait(2600); S.sheet = false; ui();
+    await walk(0, -240, 7);
+    await walk(36, -240, 6);
+    await until(() => S.story?.id === 'garden', 6000);
+    await wait(2200);
+    await tap($('#sEnd'), () => { if (S.story) S.story.endArm = true; });
+    await wait(1300);
+    await tap($('#sEndNow'), () => finishStory());
+    await until(() => allDone(), 3000);
+    playing = false; current = 'tour-complete'; $('#playBtn').textContent = 'Play the walk'; ui();
+    return 'tour-complete';
+  } catch (e) {
+    if (e === CANCEL) return 'cancelled';
+    playing = false; throw e;
+  }
+}
+
+/* ---------- demo panel ---------- */
+function syncTourButtons() { $('#tourAny').classList.toggle('on', S.tour === 'any'); $('#tourFixed').classList.toggle('on', S.tour === 'fixed'); }
+{
+  const box = $('#stateBtns');
+  for (const [label, names] of GROUPS) {
+    const h = document.createElement('h4'); h.textContent = label; box.appendChild(h);
+    const grid = document.createElement('div'); grid.className = 'grid';
+    for (const n of names) { const b = document.createElement('button'); b.type = 'button'; b.textContent = n; b.dataset.stateBtn = n; b.addEventListener('click', () => { goto(n); if (!matchMedia('(min-width: 960px) and (min-height: 720px)').matches) setDemo(false); }); grid.appendChild(b); }
+    box.appendChild(grid);
+  }
+}
+$('#tourAny').addEventListener('click', () => { userTour = 'any'; goto(current === 'playing' ? 'guided-gps' : (current === 'no-position-fixed' ? 'no-position-skip' : current === 'list-fixed' ? 'list-any' : current)); });
+$('#tourFixed').addEventListener('click', () => { userTour = 'fixed'; goto(current === 'playing' ? 'guided-gps' : (['no-position', 'no-position-skip'].includes(current) ? 'no-position-fixed' : ['list-any', 'choose-target'].includes(current) ? 'list-fixed' : current)); });
+$('#playBtn').addEventListener('click', () => { if (playing) { cancelPlay(); ui(); } else { if (!matchMedia('(min-width: 960px) and (min-height: 720px)').matches) setDemo(false); play().catch((e) => console.error(e)); } });
+const holdOn = (e) => { e.preventDefault(); walkHeld = true; }, holdOff = () => { walkHeld = false; };
+$('#walkBtn').addEventListener('pointerdown', holdOn); $('#walkBtn').addEventListener('pointerup', holdOff); $('#walkBtn').addEventListener('pointerleave', holdOff); $('#walkBtn').addEventListener('pointercancel', holdOff);
+$('#motionBtn').addEventListener('click', enableMotion);
+$('#ffBtn').addEventListener('click', () => { const f = focusId(); if (f) { S.focusSince[f] = now() - suggestMs(f) - 1; ui(); } });
+const demo = $('#demo'), label = $('#protoLabel');
+function setDemo(open) { demo.hidden = !open; label.setAttribute('aria-expanded', String(open)); }
+label.addEventListener('click', () => setDemo(demo.hidden));
+if (location.hash.includes('states') || matchMedia('(min-width: 960px) and (min-height: 720px)').matches) setDemo(true);
+
+/* ---------- frame loop ---------- */
+function resize() {
+  const w = device.clientWidth, h = device.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.fov = w < h ? 64 : 44;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(device);
+resize();
+let last = now(), lastUi = 0;
+function loop() {
+  const t = now(), dt = Math.min(0.1, (t - last) / 1000); last = t;
+  sim(dt, t);
+  camera.position.set(S.pos.x, 1.6 + (S.auto && !REDUCE ? Math.sin(t / 160) * 0.025 : 0), S.pos.z);
+  camera.rotation.set(S.pitch, camYaw(), 0);
+  renderer.render(scene, camera);
+  drawRadar(t);
+  if (t - lastUi > 150) { ui(); lastUi = t; }
+  requestAnimationFrame(loop);
+}
+
+/**
+ * Test hook. goto(name) rebuilds one state from scratch (the tour, the
+ * station states, the position, the camera, the sheet) and lets the faked
+ * walk run live from there; it cancels a running play. states() lists every
+ * name goto takes. play() starts the scripted walk from AR start and
+ * resolves "tour-complete" when the tour ends (about 2 minutes), or
+ * "cancelled" if goto or Stop interrupts it. snapshot() reports the model
+ * (phase, precision, station states, the line) for assertions. Nothing here
+ * talks to the real app.
+ */
+window.__visitorWalk = {
+  goto, play,
+  states: () => Object.keys(STATES),
+  snapshot: () => ({ state: current, tour: S.tour, phase: S.phase, prec: S.prec, complete: allDone(), line: lineText(), stations: Object.fromEntries(STATIONS.map((s) => [s.id, rowState(s)])) }),
+};
+const initial = (location.hash.match(/state=([\w-]+)/) || [])[1];
+goto(initial && STATES[initial] ? initial : 'guided-gps');
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

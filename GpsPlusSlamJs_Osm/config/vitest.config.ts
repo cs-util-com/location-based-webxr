@@ -1,7 +1,19 @@
+import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // The shared fast-check time limit (every interruption is red), so a
+    // failing property cannot shrink for hours where testTimeout cannot reach:
+    // scripts/test-timing/fast-check-time-limit.mjs.md.
+    setupFiles: [
+      fileURLToPath(
+        new URL(
+          "../../scripts/test-timing/fast-check-time-limit.mjs",
+          import.meta.url,
+        ),
+      ),
+    ],
     globals: true,
     // Pure-data package: no DOM, no jsdom. Anything that needs a browser API
     // (OPFS, Worker) lives in the consumer's bridge, not here — see the plan's

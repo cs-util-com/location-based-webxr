@@ -14,6 +14,7 @@
  * that had the symptom. Only the device (QR controller, reticle, camera)
  * is stood in.
  */
+import { isAnyOf } from "@reduxjs/toolkit";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { objectContentKey } from "./authoring-draft.js";
 import {
@@ -50,11 +51,17 @@ import {
   createTourViewerSession,
   createTourViewerStore,
   endQrPipeline,
+  type TourViewerStore,
 } from "./tour-viewer-session.js";
+import {
+  isCodeChange,
+  isDocumentEdit,
+  tourDocumentActions,
+} from "./tour-document.js";
 import { mintPin, objectPoseNue } from "./content-placement.js";
 import {
   deletedKey,
-  META_KEY,
+  CODES_KEY,
   objectKey,
   readDraft,
   visitKey,
@@ -67,7 +74,8 @@ import { readCodeSpots } from "./level-spots.js";
 import { readPrintedText } from "./level-printed.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
-import { OUTCOME_HOLD_MS } from "./object-editing.js";
+import { NOT_BACKED_UP, OUTCOME_HOLD_MS } from "./object-editing.js";
+import { undoSettle } from "./creator-undo.js";
 import { UPLOAD_ASK_LABELS } from "./creator-handoff.js";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 import {
@@ -242,6 +250,8 @@ const DOM_KEYS = [
   "pinCancel",
   "photoButton",
   "newStationButton",
+  "undoButton",
+  "undoLabel",
   "draftOffer",
   "draftOfferText",
   "draftRestore",
@@ -254,6 +264,10 @@ const DOM_KEYS = [
   "objectList",
   "keepScanRow",
   "keepScanInput",
+  "debugSave",
+  "debugSaveText",
+  "debugSaveButton",
+  "debugSaveStatus",
 ] as const;
 
 function el() {
@@ -429,7 +443,7 @@ function authoring(
       dispatched.push(action);
       return real.dispatch(action as never);
     },
-  } as unknown as ReturnType<typeof createTourViewerStore>;
+  } as unknown as TourViewerStore;
 
   const scene = new Group();
   const world = new Group();
@@ -862,10 +876,10 @@ describe(
         String(files.get(objectKey(pin.id))),
       ) as TourObject;
       expect(onDisk.geo).toEqual(pin.geo);
-      const meta = JSON.parse(String(files.get(META_KEY))) as {
+      const codes = JSON.parse(String(files.get(CODES_KEY))) as {
         level: { json: string };
       };
-      expect(meta.level.json).toBe(a.codes.inHand()!.json);
+      expect(codes.level.json).toBe(a.codes.inHand()!.json);
     });
   },
 );
@@ -1414,6 +1428,128 @@ async function finished(ctx: {
 }
 
 describe(
+  "a station started in a visit settles with it",
+  { timeout: SLOW_MS },
+  () => {
+    // Why these tests matter: a station is anchored where its first item
+    // stood at the tap, through the alignment at the tap; the visit's
+    // settle then moves the item by the visit's correction. Left behind,
+    // the anchor sits off the item it was started for (by the size of the
+    // correction), and a correction near the found radius pushes the item
+    // out of its own station. Through the real setup: the station is
+    // re-posed with the visit's objects, and no item moves twice.
+    /** The pin labelled `label` and the station frame it stands in. */
+    function pinAndStation(a: ReturnType<typeof authoring>, label: string) {
+      const pin = a.ctx.tourDocument
+        .objects()
+        .find(
+          (o) => o.object.kind === "pin" && o.object.label === label,
+        )!.object;
+      const station = a.ctx.tourDocument
+        .state()
+        .stations.find((f) => f.id === pin.station)!;
+      return { pin, station };
+    }
+
+    // A shift and a turn of the size a settle corrects in the field; the
+    // anchor must follow at any size, so no value of either would change
+    // the verdict (the planner's own tests sweep both past the radius).
+    for (const [name, end] of [
+      // 10 m north and 1 m up: the anchor takes its item's height too.
+      ["a 10 m correction", yawAlignment(0, [10, 401, 0])],
+      ["a 10 degree correction", yawAlignment(10, [0, 400, 0])],
+    ] as const) {
+      it(`keeps the visit's station anchored at its first item after ${name}`, async () => {
+        const a = authoring();
+        await a.placePin("first", [12, 0, -5]);
+        await a.placePin("second", [20, 0, 3]);
+        const tap = pinAndStation(a, "first");
+        expect(pinAndStation(a, "second").station.id).toBe(tap.station.id);
+        a.setAlignment([...end]);
+
+        a.endVisit();
+
+        const { pin, station } = pinAndStation(a, "first");
+        expect(
+          worldOf(pin.geo).distanceTo(worldOf(tap.pin.geo)),
+          "the settle moved the item",
+        ).toBeGreaterThan(1);
+        expect(station.id).toBe(tap.station.id);
+        expect(station.geo).toMatchObject({
+          lat: pin.geo.lat,
+          lon: pin.geo.lon,
+          alt: pin.geo.alt,
+        });
+        // The second item stands where the settle puts it - once, not
+        // also shifted by its station's move - and still in the station.
+        const second = pinAndStation(a, "second");
+        expect(second.station.id).toBe(station.id);
+        expect(
+          worldOf(second.pin.geo).distanceTo(
+            new Vector3(
+              ...throughAlignment(
+                { position: [20, 0, 3], rotation: [0, 0, 0, 1] },
+                [...end],
+              )!.position,
+            ),
+          ),
+        ).toBeLessThan(1e-3);
+        expect(a.ctx.tourDocument.state().stations).toHaveLength(1);
+      });
+    }
+
+    it("leaves a station an earlier visit started where that visit settled it", async () => {
+      const a = authoring();
+      await a.placePin("first", [12, 0, -5]);
+      a.endVisit();
+      const before = pinAndStation(a, "first").station.geo;
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [10, 400, 0]));
+      await a.placePin("later", [40, 0, 40]);
+      a.endVisit();
+      expect(pinAndStation(a, "first").station.geo).toEqual(before);
+    });
+
+    it("leaves an item of the visit's station that this visit did not place where it stood", async () => {
+      // Why: the settle moves the visit's station rigidly with its items
+      // and then puts back only this visit's items at their settled
+      // spots. An item that joined the station from earlier work (moved
+      // into its radius here, a restored draft) is no item of this visit:
+      // the visit's correction says nothing about where it stands, so it
+      // must not be shifted with the station.
+      const a = authoring();
+      await a.placePin("old", [12, 0, -5]);
+      a.endVisit();
+      a.beginVisit();
+      await a.placePin("first", [40, 0, 40]);
+      const started = pinAndStation(a, "first").station.id;
+      const old = pinAndStation(a, "old").pin;
+      const near = pinAndStation(a, "first").pin.geo;
+      a.ctx.tourDocument.move(
+        { ...old, geo: { ...old.geo, lat: near.lat + 0.00003, lon: near.lon } },
+        "a note",
+      );
+      const joined = pinAndStation(a, "old");
+      expect(joined.station.id, "it joined the visit's station").toBe(started);
+      a.setAlignment(yawAlignment(0, [10, 401, 0]));
+
+      a.endVisit();
+
+      const after = pinAndStation(a, "old");
+      expect(after.station.id).toBe(started);
+      expect(
+        worldOf(after.pin.geo).distanceTo(worldOf(joined.pin.geo)),
+        "not shifted by the station's settle",
+      ).toBeLessThan(1e-3);
+      expect(
+        worldOf(pinAndStation(a, "first").pin.geo).distanceTo(worldOf(near)),
+        "the visit's own item did settle",
+      ).toBeGreaterThan(1);
+    });
+  },
+);
+
+describe(
   "each visit settles once, and what arrives late joins its visit's settle (M2c review #1, #6)",
   { timeout: SLOW_MS },
   () => {
@@ -1843,7 +1979,7 @@ describe(
       await flush();
       const savedA = () =>
         (
-          JSON.parse(String(files.get(META_KEY))) as {
+          JSON.parse(String(files.get(CODES_KEY))) as {
             levels: { id: string; json: string }[];
           }
         ).levels[0]!;
@@ -2102,6 +2238,19 @@ describe(
         zero: ZERO,
         nowIso: "2026-09-29T10:00:00.000Z",
       })!;
+    }
+
+    /** A photo the hosted zip carries, by the zero. */
+    function hostedPhoto(id: string): TourObject {
+      return {
+        id,
+        kind: "photo",
+        image: `content/${id}.jpg`,
+        imageWidth: 4,
+        imageHeight: 3,
+        createdAtIso: "2026-09-29T10:00:00.000Z",
+        geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 400, rotation: [0, 0, 0, 1] },
+      };
     }
 
     /** A creator in AR with a hosted tour open whose zip carries `objects`. */
@@ -2486,6 +2635,9 @@ describe(
     it("offers Undo after deleting a hosted pin, and Undo brings it back to the list, the scene, the draft and the log", async () => {
       const { store, files } = memoryDraftStore();
       const a = await withHostedTour([hostedPin("h1", "Gate")], store);
+      // On the page: in AR the strip's persistent Undo takes the note's
+      // place (W4 build plan MU), so the note's Undo is the page's.
+      a.endVisit();
       const list = a.dom.objectList;
       list.listHandlers!.remove("h1");
       await flush();
@@ -2544,6 +2696,9 @@ describe(
         hostedPin("h1", "Gate"),
         hostedPin("h2", "Mill"),
       ]);
+      // On the page: in AR the strip's persistent Undo takes the note's
+      // place (W4 build plan MU), so the note's Undo is the page's.
+      a.endVisit();
       const list = a.dom.objectList;
       list.listHandlers!.remove("h1");
       await flush();
@@ -2561,8 +2716,224 @@ describe(
       expect(list.lastModel?.undo).toBe(false);
     });
 
+    // Why these tests matter (W4 build plan MU): in AR the strip's
+    // Undo is the one Undo - persistent, where the note's went after its
+    // hold - and it takes back exactly the delete it names, through the
+    // same path as the note's (`undoDelete`: the list, the scene, the
+    // draft, the log).
+    it("offers a delete in AR in the strip's Undo, past the note's hold, and a tap brings the pin back to the list, the scene, the draft and the log", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = await withHostedTour([hostedPin("h1", "Gate")], store);
+      const list = a.dom.objectList;
+      list.listHandlers!.remove("h1");
+      await flush();
+      expect(a.dom.undoLabel.textContent).toBe('Undo: delete "Gate"');
+      expect(a.dom.undoButton.disabled).toBe(false);
+      // One Undo in AR: the note says what happened, the strip undoes it.
+      expect(list.lastModel?.note).toMatch(/^Deleted "Gate"/);
+      expect(list.lastModel?.undo).toBe(false);
+      a.fireTimers();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoButton.disabled, "past the note's hold").toBe(false);
+
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.ctx.tourDocument.deleted()).toEqual([]);
+      expect(a.ctx.placedPreviews.has("h1")).toBe(true);
+      expect(files.has(deletedKey("h1")), "the tombstone is gone").toBe(false);
+      expect(list.lastModel?.note).toMatch(/Restored "Gate"/);
+      expect(logged(a, "tourAuthoring/objectDeleteUndone")).toHaveLength(1);
+      // Single level: nothing further is offered.
+      expect(a.dom.undoButton.disabled).toBe(true);
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+    });
+
+    it("withdraws the strip's Undo of a delete once a later change is the last step, and a tap after an unrendered change takes back nothing", async () => {
+      const a = await withHostedTour([
+        hostedPin("h1", "Gate"),
+        hostedPin("h2", "Mill"),
+        hostedPin("h3", "Oak"),
+      ]);
+      const list = a.dom.objectList;
+      list.listHandlers!.editText("h3", "Barn");
+      await flush();
+      expect(a.dom.undoButton.disabled, "an edit is not offered").toBe(true);
+      list.listHandlers!.remove("h1");
+      await flush();
+      expect(a.dom.undoButton.disabled).toBe(false);
+      list.listHandlers!.editText("h2", "Later");
+      await flush();
+      expect(a.dom.undoButton.disabled).toBe(true);
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+
+      list.listHandlers!.remove("h2");
+      await flush();
+      expect(a.dom.undoLabel.textContent).toBe('Undo: delete "Later"');
+      const h3 = a.ctx.tourDocument
+        .objects()
+        .find((o) => o.object.id === "h3")!.object;
+      // A change that renders nothing, then the tap.
+      a.ctx.tourDocument.edit({ ...h3, label: "Shed" }, "a later change");
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.ctx.tourDocument.deleted()).toEqual(["h1", "h2"]);
+      expect(
+        a.ctx.tourDocument.objects().find((o) => o.object.id === "h3")?.object,
+      ).toMatchObject({ label: "Shed" });
+    });
+
+    // Why: the async-UI rule (root CLAUDE.md) for the strip's tap - the
+    // chip says it runs until the draft writes settle, then the note names
+    // what was undone, and a write that did not land is said.
+    it("shows Undoing… on the strip until the undo's draft writes land, then the outcome - and says so when they are refused", async () => {
+      const slow = slowDraftStore();
+      const a = await withHostedTour(
+        [hostedPin("h1", "Gate"), hostedPin("h2", "Mill")],
+        slow.store,
+      );
+      await slow.release();
+      const list = a.dom.objectList;
+      // Edited first, so the undo writes the pin's record back (a held
+      // write); a hosted pin as the file has it only drops its tombstone.
+      list.listHandlers!.editText("h1", "Gate 2");
+      await slow.release();
+      list.listHandlers!.remove("h1");
+      await slow.release();
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.dom.undoLabel.textContent).toBe("Undoing…");
+      expect(a.dom.undoButton.disabled).toBe(true);
+      await slow.release();
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+      expect(list.lastModel?.note).toBe('Restored "Gate 2".');
+
+      list.listHandlers!.editText("h2", "Mill 2");
+      await slow.release();
+      list.listHandlers!.remove("h2");
+      await slow.release();
+      slow.mode.refuse = true;
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.dom.undoLabel.textContent).toBe("Undoing…");
+      await slow.release();
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+      expect(list.lastModel?.note).toMatch(
+        /^Restored "Mill 2", but this device could not save a backup copy/,
+      );
+    });
+
+    // Why: the document refuses an undo that brings back a photo whose
+    // picture is not on this device (a Finish wrote the delete, and the
+    // picture was never read). Through the strip the note must say why,
+    // and the chip stays as it was - still offering the delete.
+    it("says why the strip's Undo cannot bring back a deleted photo whose picture is gone, and keeps offering it", async () => {
+      const a = await withHostedTour([hostedPhoto("f1")]);
+      // The picture is never read: the zip's entry does not load.
+      (
+        a.ctx.session as unknown as { loadContentEntry: () => Promise<Blob> }
+      ).loadContentEntry = () => Promise.reject(new Error("not cached"));
+      a.dom.objectList.listHandlers!.remove("f1");
+      await flush();
+      expect(a.dom.undoLabel.textContent).toBe("Undo: delete the photo");
+      // A Finish wrote the delete: the file no longer carries the photo.
+      const doc = a.ctx.tourDocument;
+      const generation = doc.saveStarted();
+      doc.saved({
+        generation,
+        written: tourOf([]),
+        appliedDeletions: ["f1"],
+        stationsAtStart: doc.state().stations,
+      });
+      doc.saveEnded(generation);
+      a.setup.renderAuthorReadout();
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.dom.objectList.lastModel?.note).toBe(
+        "the photo cannot come back: its picture is no longer on this device.",
+      );
+      expect(a.ctx.placedPreviews.has("f1"), "still deleted").toBe(false);
+      expect(a.dom.undoButton.disabled).toBe(false);
+      expect(a.dom.undoLabel.textContent).toBe("Undo: delete the photo");
+    });
+
+    // Why: the strip offers a delete at once, before its draft write
+    // landed. A tap then says "Restoring ..."; the delete's own outcome,
+    // arriving later, must not overwrite that with "Deleted ..." - the
+    // creator would read that the pin is gone when it is back.
+    it("does not let a delete's late outcome overwrite the strip's undo of it", async () => {
+      const slow = slowDraftStore();
+      const a = await withHostedTour([hostedPin("h1", "Gate")], slow.store);
+      await slow.release();
+      const list = a.dom.objectList;
+      // Every note the list is drawn with, in order.
+      const notes: string[] = [];
+      const draw = list.render.bind(list);
+      list.render = (model: ObjectListModel) => {
+        notes.push(model.note);
+        draw(model);
+      };
+      list.listHandlers!.remove("h1");
+      await flush();
+      expect(list.lastModel?.note).toBe('Deleting "Gate"…');
+      a.dom.undoButton.click();
+      await flush();
+      await slow.release();
+      expect(a.ctx.tourDocument.deleted()).toEqual([]);
+      const restoring = notes.indexOf('Restoring "Gate"…');
+      expect(restoring, "the undo said it runs").toBeGreaterThanOrEqual(0);
+      expect(
+        notes.slice(restoring).filter((n) => n.startsWith("Deleted")),
+      ).toEqual([]);
+      expect(list.lastModel?.note).toBe('Restored "Gate".');
+    });
+
+    // Why: the guard above keeps a late "Deleted ..." from overwriting
+    // the undo, but a write that did not land is the creator's to know
+    // whatever came after it: only the confirmation is dropped, never the
+    // warning that the device holds no backup copy.
+    it("still says a late delete's failed backup once the delete is no longer the last step", async () => {
+      const slow = slowDraftStore();
+      const a = await withHostedTour([hostedPin("h1", "Gate")], slow.store);
+      await slow.release();
+      const list = a.dom.objectList;
+      const notes: string[] = [];
+      const draw = list.render.bind(list);
+      list.render = (model: ObjectListModel) => {
+        notes.push(model.note);
+        draw(model);
+      };
+      slow.mode.refuse = true;
+      list.listHandlers!.remove("h1");
+      await flush();
+      a.dom.undoButton.click();
+      await flush();
+      await slow.release();
+      const restoring = notes.indexOf('Restoring "Gate"…');
+      expect(restoring).toBeGreaterThanOrEqual(0);
+      const after = notes.slice(restoring);
+      expect(after.filter((n) => n.startsWith("Deleted"))).toEqual([]);
+      expect(after).toContain(
+        `The delete of "Gate" could not be backed up: ${NOT_BACKED_UP}`,
+      );
+    });
+
+    // Why: on the page there is no strip (the AR controls are the
+    // session's), so the delete's outcome keeps its own Undo there.
+    it("keeps the note's Undo beside a delete's outcome on the page", async () => {
+      const a = await withHostedTour([hostedPin("h1", "Gate")]);
+      a.endVisit();
+      a.setup.renderAuthorReadout();
+      a.dom.objectList.listHandlers!.remove("h1");
+      await flush();
+      expect(a.dom.objectList.lastModel?.undo).toBe(true);
+      expect(a.dom.controls.hidden, "no strip on the page").toBe(true);
+    });
+
     it(`withdraws Undo after ${String(OUTCOME_HOLD_MS)} ms, and an expired Undo restores nothing`, async () => {
       const a = await withHostedTour([hostedPin("h1", "Gate")]);
+      // On the page: in AR the strip's persistent Undo takes the note's
+      // place (W4 build plan MU), so the note's Undo is the page's.
+      a.endVisit();
       const list = a.dom.objectList;
       list.listHandlers!.remove("h1");
       await flush();
@@ -2701,8 +3072,16 @@ describe(
       accuracyM?: number;
       /** The stored level as a build before F2 wrote it: no printed text. */
       storedWithoutText?: boolean;
+      /** A draft store, the tour's draft opened on it before the mint. */
+      store?: DraftFileStore;
     }) {
-      const a = authoring();
+      const a = authoring(
+        opts.store === undefined ? {} : { store: opts.store },
+      );
+      if (opts.store !== undefined) {
+        a.setup.presentDraftForTour("https://example.test/tour.zip");
+        await flush();
+      }
       await a.mint();
       await a.placePin("near", [2, 0, -1]);
       await a.placePin("far", [60, 0, 0]);
@@ -2922,6 +3301,43 @@ describe(
       expect(a.dom.finishStatus.textContent).not.toMatch(/disagree by about/);
     });
 
+    // Why this test matters: a station this visit started stands at its
+    // first item, which the settle put through this visit's alignment -
+    // the improved code's already. Taken along by the code as well, it
+    // would move off its items, which the settle puts back.
+    it("leaves a station this visit started at its first item, though the improved code reaches it", async () => {
+      const { a } = await secondVisit({ yawDeg: 20, northM: 3, walkM: 30 });
+      // About 28 m from the code and 29 m from the near pin's station: a
+      // station of its own, within the code's reach.
+      await a.placePin("new", [-28, 0, -12]);
+
+      a.endVisit();
+      expect(codePosition(a)?.decision).toEqual({ kind: "replace" });
+      expect(codePosition(a)?.applied).toBe(true);
+      const pin = a.ctx.tourDocument
+        .objects()
+        .find(
+          (o) => o.object.kind === "pin" && o.object.label === "new",
+        )!.object;
+      const station = a.ctx.tourDocument
+        .state()
+        .stations.find((f) => f.id === pin.station)!;
+      const near = a.ctx.tourDocument
+        .objects()
+        .find(
+          (o) => o.object.kind === "pin" && o.object.label === "near",
+        )!.object;
+      expect(station.id).not.toBe(near.station);
+      expect(station.geo).toMatchObject({
+        lat: pin.geo.lat,
+        lon: pin.geo.lon,
+        alt: pin.geo.alt,
+      });
+      expect(codePosition(a)?.movedWithCode.map((m) => m.id)).toEqual([
+        near.id,
+      ]);
+    });
+
     it("says nothing of a turn when the visit fits the code within the threshold", async () => {
       const { a } = await secondVisit({ yawDeg: 20, northM: 3, walkM: 10 });
       await openFinishableTour(a);
@@ -2984,6 +3400,340 @@ describe(
       // ...and the pin 60 m away keeps its GPS position (the owner's 40 m).
       expect(after.get("far")).toEqual(before.get("far"));
       expect(codePosition(a)?.movedWithCode).toHaveLength(1);
+    });
+
+    /** The station frame the pin labelled `label` stands in. */
+    function stationOf(a: ReturnType<typeof authoring>, label: string) {
+      const pin = a.ctx.tourDocument
+        .entries()
+        .find((p) => p.object.kind === "pin" && p.object.label === label)!;
+      return a.ctx.tourDocument
+        .state()
+        .stations.find((s) => s.id === pin.object.station)!;
+    }
+
+    // Why these tests matter (characterization before the codes move into
+    // the store, plan 2026-10-20-1159 M3a/M3b): a settle that improves a
+    // code saves the code in the code book (`saveLevel`,
+    // creator-settle.ts:1028-1031) and moves the stations it takes along
+    // through the document (`moveStationsAlong`, :1385-1398), whose undo
+    // history the code book is not part of. An undo of that settle's last
+    // step puts the station back - that half holds today and must keep
+    // holding.
+    it("an undo of the settle's station move puts the station back", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      const before = stationOf(a, "near").geo;
+      a.endVisit();
+      expect(codePosition(a)?.applied).toBe(true);
+      expect(a.codes.savedText(stored.id), "the code improved").not.toBe(
+        stored.json,
+      );
+      expect(stationOf(a, "near").geo, "the code took it along").not.toEqual(
+        before,
+      );
+      expect(a.ctx.tourDocument.undo().kind).toBe("undone");
+      expect(stationOf(a, "near").geo).toEqual(before);
+    });
+
+    // Why this test matters (plan M3b, Q-D): the settle moved
+    // each station and object as a document action of its own - one undo
+    // step and one draft write round each - so an undo took back the last
+    // station only. One settle is one step and one write round (still
+    // several writes, so not crash-atomic).
+    it("takes one undo step and one draft write round for a settle that improves a code and moves its stations", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      // A pin of this visit too: the settle re-poses it besides the
+      // station the improved code takes along.
+      await a.placePin("this visit", [3, 0, -2]);
+      const past = a.ctx.tourDocument.state().past.length;
+      let follows = 0;
+      // Counted with the draft listener's own predicate
+      // (`creator-document.ts`): the draft follows an edit OR a change of
+      // the codes, so a code saved apart from the settle's step is a
+      // second write round as well.
+      a.ctx.store.listenToDocument({
+        predicate: isAnyOf(isDocumentEdit, isCodeChange),
+        effect: () => {
+          follows += 1;
+        },
+      });
+      a.endVisit();
+      expect(a.codes.savedText(stored.id), "the code improved").not.toBe(
+        stored.json,
+      );
+      expect(a.ctx.tourDocument.state().past.length - past).toBe(1);
+      expect(follows, "the draft follows the settle once").toBe(1);
+    });
+
+    // Was today's split, a known divergence until M3b: the same undo left
+    // the improved code in place, so the station was back at the old
+    // code's spot while the code book still held - and the next Finish
+    // wrote - the new one. The code in hand's text wins in the book
+    // (`withHand`), so nothing short of the undo itself can put the
+    // earlier text back. M3b's one-step settle with its undo listener
+    // turned this row green; the marker came off, the assertion stayed.
+    it("an undo of the settle's station move takes the code's improvement back too", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      a.endVisit();
+      expect(a.codes.savedText(stored.id)).not.toBe(stored.json);
+      a.ctx.tourDocument.undo();
+      a.setup.renderAuthorReadout();
+      expect(a.codes.savedText(stored.id)).toBe(stored.json);
+    });
+
+    // Why this test matters (plan M3b): the hand held the improved text,
+    // and the hand's text wins at every later change of the book - so an
+    // undo that only put the book back would see the improvement return
+    // at the next write. The undo makes the hand let go of the code it
+    // took back, its measurement with it, and the earlier text stays at
+    // the next render and in what the next Finish and the draft write.
+    it("lets the hand go of the code an undo of the settle took back, and the earlier text stays", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      a.endVisit();
+      expect(a.codes.inHand()?.id).toBe(stored.id);
+      a.ctx.tourDocument.undo();
+      expect(a.codes.inHand()).toBeNull();
+      expect(a.codes.measurement()).toBeNull();
+      a.setup.renderAuthorReadout();
+      a.codes.finished([]);
+      expect(a.codes.savedText(stored.id)).toBe(stored.json);
+      for (const written of [a.codes.toWrite(), a.codes.notHosted()]) {
+        expect(written.find((l) => l.id === stored.id)?.json).toBe(stored.json);
+      }
+    });
+
+    // Why this test matters (plan M3b): a redo of the settle's step puts
+    // the improved text back, but NOT the hand. Intended: the undo let the
+    // hand go of the code (its measurement too), and the step keeps the
+    // codes' texts only - the hand is the creator's live state, and a redo
+    // never re-takes a code the creator no longer holds. Pinned so a
+    // change that makes the redo re-take it is a decision, not an accident.
+    it("restores the improved text at a redo of the settle, but not the hand", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      a.endVisit();
+      const improved = a.codes.savedText(stored.id);
+      expect(improved).not.toBe(stored.json);
+      a.ctx.tourDocument.undo();
+      expect(a.codes.inHand()).toBeNull();
+      a.ctx.store.dispatch(tourDocumentActions.redone());
+      expect(a.codes.savedText(stored.id), "the text is redone").toBe(improved);
+      expect(a.codes.inHand(), "the hand stays empty").toBeNull();
+      expect(a.codes.measurement()).toBeNull();
+    });
+
+    // Why this test matters (plan M3b): the undo takes the settle's text
+    // back and lets the hand go, but the code keeps its BOOK measurement
+    // (the step holds the texts only). So the code still counts as changed
+    // live - a draft restore does not overwrite it - and the visit that
+    // measured it still lists it for a settle redone after a failed
+    // Finish. Pinned, so the sidecar's statement of it stays true.
+    it("keeps the code's book measurement after an undo of the settle, and the visit still lists it", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      a.endVisit();
+      const visits = [0, 1, 2, 3, 4, 5].filter((v) =>
+        a.codes.measuredIn(stored.id, v),
+      );
+      expect(visits, "measured in a visit of this page").not.toEqual([]);
+      a.ctx.tourDocument.undo();
+      expect(a.codes.inHand()).toBeNull();
+      for (const v of visits) {
+        expect(a.codes.measuredIn(stored.id, v)).toBe(true);
+        expect(a.codes.visitCodes(v).map((c) => c.level.id)).toContain(
+          stored.id,
+        );
+      }
+      // Changed live: a restored draft's text for the code does not win.
+      a.codes.restoreLevels([{ id: stored.id, json: '{"from":"a draft"}' }]);
+      expect(a.codes.savedText(stored.id)).toBe(stored.json);
+    });
+
+    // Why these tests matter (W4 build plan MU): the one-step undo
+    // of a settle (Q-D) had no button. The settle lands at the visit's
+    // end, so the strip offers it in the next visit, named by what it
+    // takes back, and ONE tap takes back the code's improvement, the
+    // station it took along and the pins it moved - and the hand lets go.
+    it("offers a settle's code improvement in the strip's Undo at the next visit, and one tap takes back the code, its station and the pins it moved", async () => {
+      const { a, stored, before, pins } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      const station = stationOf(a, "near").geo;
+      const settledIn = a.ctx.arSessionGeneration;
+      a.endVisit();
+      expect(codePosition(a)?.decision).toEqual({ kind: "replace" });
+      expect(a.codes.savedText(stored.id)).not.toBe(stored.json);
+      expect(stationOf(a, "near").geo).not.toEqual(station);
+      expect(pins()).not.toEqual(before);
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoLabel.textContent).toBe("Undo: the code's improvement");
+      expect(a.dom.undoButton.disabled).toBe(false);
+      const steps = a.ctx.tourDocument.state().past.length;
+
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.ctx.tourDocument.state().past.length, "one step").toBe(
+        steps - 1,
+      );
+      expect(a.codes.savedText(stored.id)).toBe(stored.json);
+      expect(stationOf(a, "near").geo).toEqual(station);
+      expect(pins()).toEqual(before);
+      expect(a.codes.inHand(), "the hand lets go").toBeNull();
+      expect(a.dom.objectList.lastModel?.note).toBe(
+        "Undone: the code's improvement - the code and everything that moved with it are back where they were.",
+      );
+      expect(a.dom.undoButton.disabled).toBe(true);
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+      const log = a.dispatched.filter(
+        (x) => x.type === "tourAuthoring/settleUndone",
+      );
+      expect(log).toHaveLength(1);
+      // A replay pairs the undo with the `settled` action it takes back:
+      // the visit that settled, beside the visit the tap was made in.
+      expect(settledIn).not.toBe(a.ctx.arSessionGeneration);
+      expect(log[0]?.payload).toMatchObject({
+        levelIds: [stored.id],
+        settledVisitIndex: settledIn,
+        arVisitIndex: a.ctx.arSessionGeneration,
+      });
+    });
+
+    // Why: the settle keeps what it decided per code for the Finish's
+    // result line, and an undo of the settle takes that with it - or after
+    // the creator took the improvement back the result would still say
+    // "the code's saved position was improved by this walk", a false
+    // statement about the zip they are about to publish.
+    it("says nothing of the improvement on the Finish's result once the strip's Undo took it back", async () => {
+      /** The Finish's result line after the settle, the undo tapped or not. */
+      const finishLine = async (tap: boolean) => {
+        const { a } = await secondVisit({ yawDeg: 20, northM: 3, walkM: 30 });
+        a.endVisit();
+        a.beginVisit();
+        a.setup.renderAuthorReadout();
+        if (tap) a.dom.undoButton.click();
+        await flush();
+        a.endVisit();
+        await openFinishableTour(a);
+        a.ctx.tourManifestStatus = "settled";
+        a.dom.finishButton.click();
+        await finished(a.ctx);
+        expect(a.ctx.finishError).toBeNull();
+        return a.dom.finishStatus.textContent;
+      };
+      // The control: without the tap the line does report it.
+      expect(await finishLine(false)).toMatch(/improved/);
+      expect(await finishLine(true)).not.toMatch(/improved/);
+    });
+
+    it("withdraws the settle's Undo once the creator places something after it", async () => {
+      const { a } = await secondVisit({ yawDeg: 20, northM: 3, walkM: 30 });
+      a.endVisit();
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoButton.disabled).toBe(false);
+      await a.placePin("after", [1, 0, 1]);
+      expect(a.dom.undoButton.disabled).toBe(true);
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+    });
+
+    // Why: a visit that only measured a new code re-mints it through the
+    // end alignment - a refinement of its own measurement, no automatic
+    // change of a stored code (Q-D's scope) - so nothing is offered.
+    it("offers no Undo for a settle that only refined this visit's own measurement", async () => {
+      const a = authoring();
+      await a.mint();
+      await a.placePin("near", [2, 0, -1]);
+      const steps = a.ctx.tourDocument.state().past.length;
+      a.endVisit();
+      expect(
+        a.ctx.tourDocument.state().past.length,
+        "the settle took a step",
+      ).toBe(steps + 1);
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoButton.disabled).toBe(true);
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+    });
+
+    // Why: the async-UI rule for the settle's tap, success and failure.
+    it("shows Undoing… until a settle's undo is backed up, and says so when its draft writes are refused", async () => {
+      const slow = slowDraftStore();
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+        store: slow.store,
+      });
+      a.endVisit();
+      await slow.release();
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      slow.mode.refuse = true;
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.dom.undoLabel.textContent).toBe("Undoing…");
+      await slow.release();
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+      expect(a.codes.savedText(stored.id)).toBe(stored.json);
+      expect(a.dom.objectList.lastModel?.note).toMatch(
+        /^Undone: the code's improvement, but this device could not save a backup copy/,
+      );
+    });
+
+    // Why this test matters (plan M3b): what the undo puts back must reach
+    // the draft too, or a reload after the undo restores the improved code
+    // the creator took back. The codes record follows the undo and the
+    // hand letting go: it keeps the earlier text, and names no hand.
+    it("writes the earlier text into the draft's codes at an undo of the settle", async () => {
+      const { store, files } = memoryDraftStore();
+      const { a, stored } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+        store,
+      });
+      a.endVisit();
+      await flush();
+      const codes = () =>
+        JSON.parse(String(files.get(CODES_KEY))) as {
+          level: { id: string; json: string } | null;
+          levels: { id: string; json: string }[];
+        };
+      const improved = codes().levels.find((l) => l.id === stored.id)?.json;
+      expect(improved, "the settle wrote the improved code").not.toBe(
+        stored.json,
+      );
+      a.ctx.tourDocument.undo();
+      await flush();
+      expect(codes().level).toBeNull();
+      expect(codes().levels.find((l) => l.id === stored.id)?.json).toBe(
+        stored.json,
+      );
     });
 
     // Why this test matters (code book plan M4b, the owner's choice after
@@ -4063,10 +4813,10 @@ describe(
       expect(second.id).not.toBe(first.id);
       a.endVisit();
       await flush();
-      const meta = JSON.parse(String(files.get(META_KEY))) as {
+      const codes = JSON.parse(String(files.get(CODES_KEY))) as {
         levels: { id: string }[];
       };
-      expect(meta.levels.map((l) => l.id)).toEqual([first.id, second.id]);
+      expect(codes.levels.map((l) => l.id)).toEqual([first.id, second.id]);
     });
 
     // Why this test matters (code book plan M4e, found by the two-code
@@ -4166,10 +4916,10 @@ describe(
       );
       a.endVisit();
       await flush();
-      const meta = JSON.parse(String(files.get(META_KEY))) as {
+      const codes = JSON.parse(String(files.get(CODES_KEY))) as {
         levels: { id: string; json: string }[];
       };
-      const settledA = meta.levels.find((l) => l.id === first.id)!;
+      const settledA = codes.levels.find((l) => l.id === first.id)!;
       // Re-minted through A's own pick: where it was measured.
       expect(
         codeWorldOf(settledA.json).distanceTo(codeWorldOf(first.json)),
@@ -4741,6 +5491,121 @@ describe(
       expect(spotsOf(a).copies).toEqual([original]);
     });
 
+    // Why (the strip's Undo): the confirmation writes the code book with
+    // no step of its own, so the document's last step is still the move.
+    // Its undo would take back the move's stations and objects but not the
+    // code, which no longer holds the text the move set - and say the code
+    // is back. The offer goes instead.
+    it("withdraws the strip's Undo of a move once a later visit's confirmation rewrote the code", async () => {
+      const { a, original } = await storedCode();
+      await visitSeeing(a, 30);
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoLabel.textContent).toBe("Undo: the code's move");
+      a.endVisit();
+      const sameDayMs = Date.now();
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        vi.setSystemTime(sameDayMs + 25 * 3_600_000);
+        await visitSeeing(a, 30);
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(spotsOf(a).copies, "confirmed").toEqual([original]);
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoButton.disabled).toBe(true);
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+    });
+
+    // Why: a Finish that already wrote the change into the zip keeps it
+    // there - the undo changes the tour on this device, until the next
+    // Finish saves it. The note says so, or the creator would think the
+    // saved zip is already back.
+    it("says the undo is saved at the next Finish when a Finish already wrote the change", async () => {
+      const a = authoring();
+      await openFinishableTour(a);
+      await a.mint();
+      a.endVisit();
+      await visitSeeing(a, 30);
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoLabel.textContent).toBe("Undo: the code's move");
+      a.dom.undoButton.click();
+      await flush();
+      expect(a.dom.objectList.lastModel?.note).toBe(
+        "Undone: the code's move - the code and everything that moved with it are back where they were. The next Finish saves this in the zip.",
+      );
+    });
+
+    // Why: defensive wording - an undo of a settle that took back none of
+    // the codes it named (one changed between the chip's check and the
+    // document's undo) must not say the code is back.
+    it("says the code keeps its newer position when an undo of a settle took back none of its codes", async () => {
+      const { a } = await storedCode();
+      await visitSeeing(a, 30);
+      const level = a.codes.inHand()!;
+      a.codes.saveLevel({ id: level.id, json: `${level.json} ` });
+      const said: string[] = [];
+      await undoSettle({
+        tour: a.ctx.tourDocument,
+        target: "the code's move",
+        visit: a.ctx.arSessionGeneration,
+        settledVisit: a.ctx.arSessionGeneration,
+        written: () => false,
+        log: () => undefined,
+        changed: () => undefined,
+        say: (text) => said.push(text),
+      });
+      expect(said).toEqual([
+        "Undone: the code's move - the stations and objects it moved are back, but the code changed since and keeps its newer position.",
+      ]);
+    });
+
+    // Why: a failed Finish forgets its visit's settle, which settles again
+    // at the visit's end and re-applies the decisions it made. The first
+    // settle's offer must go with the unsettle (its records are re-applied,
+    // not taken back), and the re-settle is no new automatic change to
+    // offer - an Undo of it would drop the first settle's line while the
+    // change stays in the document.
+    it("withdraws a settle's Undo when a failed Finish unsettles it, and offers none for the re-settle", async () => {
+      const { store } = memoryDraftStore();
+      const a = authoring({ store });
+      await openFinishableTour(a);
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      await a.mint();
+      a.endVisit();
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [30, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      walkThrough(a, 30);
+      (
+        a.ctx.session as unknown as { readWholeArchive: () => Promise<Blob> }
+      ).readWholeArchive = () => Promise.reject(new Error("offline"));
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).not.toBeNull();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoButton.disabled, "withdrawn with the unsettle").toBe(
+        true,
+      );
+      a.endVisit();
+      await flush();
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.undoButton.disabled, "no offer for the re-settle").toBe(
+        true,
+      );
+      expect(a.dom.undoLabel.textContent).toBe("Undo");
+    });
+
     // Why (M6 milestone review #4; D19, §7j #12): a real move leaves the
     // pins where they are, and is the visit log's boundary for the code.
     it("a move takes no pin along and marks the move in the visit log", async () => {
@@ -4824,9 +5689,19 @@ describe(
       return photo;
     }
 
+    /** A pin a metre from the camera, placed before anything is armed:
+     *  the station the rule alone would seat the photo in. */
+    async function stationNearby(a: ReturnType<typeof authoring>) {
+      await a.placePin("Nearby", [1, 0, 0]);
+      const station = a.ctx.tourDocument.entries().at(-1)!.object.station;
+      expect(station).toBeDefined();
+      return station;
+    }
+
     it("an armed photo starts its own station; the arm goes at the tap, not at the encode's end", async () => {
       const a = authoring();
       await a.mint();
+      const nearby = await stationNearby(a);
       a.dom.newStationButton.click();
       expect(a.ctx.tourDocument.newStationArmed()).toBe(true);
       a.encodes.hold = true;
@@ -4836,6 +5711,7 @@ describe(
       for (const land of a.encodes.waiting.splice(0)) land();
       await flush();
       expect(lastPhoto(a).station).toBeDefined();
+      expect(lastPhoto(a).station).not.toBe(nearby);
       expect(a.ctx.placementNote).toMatch(/^Photo placed/);
       expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
     });
@@ -4843,6 +5719,7 @@ describe(
     it("armed at the tap, the photo starts its station even when the AR visit ends during its encode", async () => {
       const a = authoring();
       await a.mint();
+      const nearby = await stationNearby(a);
       a.dom.newStationButton.click();
       a.encodes.hold = true;
       a.tapPhoto(CAMERA);
@@ -4850,6 +5727,7 @@ describe(
       for (const land of a.encodes.waiting.splice(0)) land();
       await flush();
       expect(lastPhoto(a).station).toBeDefined();
+      expect(lastPhoto(a).station).not.toBe(nearby);
       expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
     });
 
@@ -4862,12 +5740,18 @@ describe(
       expect(a.ctx.tourDocument.newStationArmed()).toBe(true);
       for (const land of a.encodes.waiting.splice(0)) land();
       await flush();
-      expect(lastPhoto(a).station).toBeUndefined();
+      // The photo is seated by the station rule (every object names a
+      // station), and the arm still waits.
+      const photoStation = lastPhoto(a).station;
+      expect(photoStation).toBeDefined();
       expect(a.ctx.tourDocument.newStationArmed()).toBe(true);
+      // A few metres from the photo, where the rule alone would put the pin
+      // into the photo's station: the arm makes it start its own.
       await a.placePin("Next", [3, 0, 1]);
       const next = a.ctx.tourDocument.entries().at(-1)!.object;
       expect(next.kind).toBe("pin");
       expect(next.station).toBeDefined();
+      expect(next.station).not.toBe(photoStation);
       expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
     });
 

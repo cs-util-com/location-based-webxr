@@ -18,6 +18,14 @@ into the build, so a branch preview serves it at
   plan 2026-10-17-1816, W3): each station has its own geo pose and an
   empty `items` list (the story places no pins or photos), so a build
   from before version 3 refuses it with "update the app".
+- Each station's `alt` is ELLIPSOIDAL, as a phone's GPS reports it: the
+  ground there plus the geoid's undulation N (EGM96, 45.68 m at the
+  square). The ground was measured from Mapterhorn's z14 tile
+  14/8718/5685 (fetched 2026-10-22, Terrarium-decoded, bilinear between
+  pixel centres): 515.83 m at the column, 514.17 m at the gate, 516.23 m
+  at the steps, so `alt` is 561.5, 559.9 and 561.9 m. The 3D editor draws
+  a station at alt - N over the relief's orthometric heights; with the
+  earlier 519 m every station stood about 42 m under the drawn ground.
 - Every asset is generated here, so there is nothing to license: a
   pixel-art knight PNG (24 x 40 cells, 8 px each), a three-note fanfare WAV
   (16 kHz mono), and an arch GLB (two pillars and a lintel, one grey
@@ -34,7 +42,9 @@ commit the zip. To try it anywhere, open
 ## Tests
 
 `src/sample-tour.test.ts` reads the COMMITTED zip through the viewer's own
-parsers and checks (a valid version 2 tour, three geo stations 20-40 m
-apart at Marienplatz, every named asset present, allowed, within the image
+parsers and checks (a valid version 3 tour, three geo stations 20-40 m
+apart at Marienplatz, each within 0.5, 1 and 2 m of the measured ground as
+the 3D editor draws it (the Globe's `drawnHeightM` with the Osm library's
+`egm96Geoid`), every named asset present, allowed, within the image
 cap and inert, entries uncompressed); `playwright-tests/sample-tour.spec.js`
 opens it through the real page.

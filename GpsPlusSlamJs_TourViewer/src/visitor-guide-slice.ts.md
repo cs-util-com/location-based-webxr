@@ -20,14 +20,22 @@ when the answer changes.
 showAllContent: boolean; headingPending: boolean }`, null/false/false at
   the start.
 - Actions:
-  - `presenceJudged({ candidates, accuracyM, codeLinedUp })` - a judged
-    position (`type PresenceJudgement`; `accuracyM` is the judged accuracy,
-    null for a code's position). `presentStationId` becomes:
-    - above the accuracy ceiling (`tooWeakToGuide`):
+  - `presenceJudged({ candidates, precision })` - a judged position
+    (`type PresenceJudgement`; `precision` is the framework's
+    `PositionPrecision`). `presentStationId` becomes:
+    - nothing to judge by (`'none'`): unchanged (the shared
+      position-precision plan's §12, S3; a station a code made present is
+      ended by the guide when the code goes). In the guide today this hold
+      is never reached: a presence alive when `'none'` starts was made by
+      a code and ends at once, and a GPS-made presence needs a stored
+      device accuracy, which then never goes away (so `'none'` never
+      follows it);
+    - a `tooWeak` GPS precision (above the ceiling):
       `presentAfterWeakFix(present, candidates, accuracyM)` - the exit only,
-      never an entry or a takeover (PR review S1);
+      never an entry or a takeover (PR review S1); unchanged without a
+      number;
     - otherwise `nextPresentStation(present, candidates,
-takeoverMarginM(accuracyM, codeLinedUp))`;
+takeoverMarginM(precision))`;
     - null candidates hold.
   - `presenceCleared()` - the AR session ended, or a code's station lost
     its code with nothing else to judge by (`station-guide.ts`);
@@ -64,7 +72,10 @@ takeoverMarginM(accuracyM, codeLinedUp))`;
 
 ```ts
 store.dispatch(
-  presenceJudged({ candidates, accuracyM: null, codeLinedUp: true }),
+  presenceJudged({
+    candidates,
+    precision: { source: "code", accuracyM: null, tooWeak: false },
+  }),
 );
 selectStationContentShown(store.getState(), "s2");
 ```
@@ -72,7 +83,22 @@ selectStationContentShown(store.getState(), "s2");
 ## Tests
 
 - `visitor-guide-slice.test.ts` - the page's store carries the slice; the
-  rule with the margin of the judged accuracy; a fix too weak to guide by
-  only ends presence; hold and clear; "show all" and the tour change; the
+  rule with the margin of the judged precision; a fix too weak to guide by
+  only ends presence; nothing to judge by (`'none'`) holds; hold and clear; "show all" and the tour change; the
   heading wait; the URL flag (only `1` counts).
 - `station-guide.test.ts` ("the present station") - the guide's dispatches.
+
+## The precision events (visitor walk W4 build plan M3)
+
+- `WalkPrecisionKind = "pending" | "code" | "gps" | "weak" | "none"` and
+  `WalkChipKind = WalkPrecisionKind | "lost"`.
+- State `precisionKind` (default `pending`) and `trackingLost` (false),
+  both reset by `guideTourChanged`.
+- Actions `precisionKindSet(kind)` (the station guide, on a change) and
+  `trackingLostSet(lost)` (`ar-entry.ts`, on a change of the visitor's
+  `ar-lost` readiness).
+- Selectors `selectPrecisionKind`, `selectWalkChipKind` (`lost` while
+  the tracking is lost, else the precision kind) - the chip's and the
+  radar's kind.
+- Events only: the radar's geometry, which changes every frame, is never
+  here (the store rule).

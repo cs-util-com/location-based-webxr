@@ -8,7 +8,10 @@ thin band lying on the ground around the station's anchor, R metres out.
 
 ## Public API
 
-- `createStationRing() -> StationRing`
+- `createStationRing(look?) -> StationRing` - `look`: `{ colour?, opacity?,
+name? }`, defaults the creator's ring (`#f2971f`, 0.7,
+  `STATION_RING_NAME`); the visitor's focus ring (`walk-focus-cues.ts`)
+  passes the walk's orange, 0.55 and its own name.
   - `show(parent, centre, radiusM)` - lay the ring at `centre`
     (`[north, up, east]` in the scene's GPS-world NUE; `up` is the ground)
     with radius `radiusM`, under `parent`. Moves it on a new centre,
@@ -48,7 +51,7 @@ ring.hide();
 ## Tests
 
 - `station-ring.test.ts` - flat at the centre with the radius inside the
-  band; moves, rebuilds and re-parents with one ring at a time; hides
+  band; a given colour, opacity and name, and the defaults without; moves, rebuilds and re-parents with one ring at a time; hides
   from a parent without parent links and on bad input; shows the same
   ring again after a hide; never hit by a ray.
 - Through `creator-stations.test.ts` and

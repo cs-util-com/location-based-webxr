@@ -36,7 +36,10 @@ async function flush(): Promise<void> {
   }
 }
 
-function wired(outcome: { delivered: boolean }) {
+function wired(
+  outcome: { delivered: boolean },
+  onDelivered?: (rebuilt: { blob: Blob; filename: string }) => void,
+) {
   const ctx = createTourViewerSession();
   ctx.session = {
     archive: { url: "https://example.test/tour.zip", size: 1 },
@@ -64,9 +67,36 @@ function wired(outcome: { delivered: boolean }) {
     seams: { downloadZip: () => Promise.resolve(outcome.delivered) },
     dom: dom as never,
     render: () => undefined,
+    ...(onDelivered === undefined ? {} : { onDelivered }),
   });
   return { ctx, dom, handoff };
 }
+
+describe("a save that delivered tells the page which file it was (debug-captures plan, Q-I)", () => {
+  // Why: the file a Finish saved of a tour opened from a file opens under
+  // the tour's own id from then on, and the page moves the draft there -
+  // but only for a file the creator actually has. A save that did not
+  // deliver (a dismissed picker) or that ended after the tour closed
+  // must not move anything.
+  it("hands over each delivered file, and none that was not", async () => {
+    const outcome = { delivered: false };
+    const heard: string[] = [];
+    const { ctx, handoff } = wired(outcome, (rebuilt) => {
+      heard.push(rebuilt.filename);
+    });
+    handoff.save();
+    await flush();
+    expect(heard).toEqual([]);
+    outcome.delivered = true;
+    handoff.save();
+    await flush();
+    expect(heard).toEqual(["tour.zip"]);
+    handoff.save();
+    ctx.openGeneration += 1;
+    await flush();
+    expect(heard).toEqual(["tour.zip"]);
+  });
+});
 
 describe("the hand-off's status line", () => {
   // Why (F4 milestone review #4b): the Finish's result sentences - the

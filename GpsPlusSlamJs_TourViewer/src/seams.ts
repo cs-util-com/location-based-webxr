@@ -33,7 +33,6 @@ import {
   type HitTestReticleHandle,
   type SelectTargetRay,
 } from "gps-plus-slam-app-framework/ar";
-import { createTextSprite } from "gps-plus-slam-app-framework/visualization/text-sprite";
 import { createWayfindingHud } from "gps-plus-slam-app-framework/visualization/wayfinding-hud";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 import {
@@ -73,9 +72,12 @@ import {
 import type { DepthSamplerConfig } from "gps-plus-slam-app-framework/ar/depth-sampler";
 import type { Object3D } from "three";
 
+import { loadGlbModel } from "./glb-model.js";
 import { ndcOfTargetRay, pickObject } from "./object-pick.js";
+import { createPinLabel } from "./pin-label.js";
 import type { AudioElementLike } from "./scene-audio.js";
 import { HUD_ARRIVAL_BAND_M, HUD_ARRIVAL_MIN_M } from "./station-bands.js";
+import { WALK_HUD_LOOKS, type WalkHudLook } from "./walk-hud.js";
 
 import type {
   LocationPermission,
@@ -230,6 +232,10 @@ export interface TourViewerSeams {
    */
   createWayfindingHud(options: {
     getTargets: () => WayfindingTarget[];
+    /** The walk's two looks (`walk-hud.ts`): the focus in the walk's
+     *  orange at 1.25 times the size, the others in its white; without
+     *  one, the framework's accent at its size. */
+    look?: WalkHudLook;
   }): { dispose(): void } | null;
   /** A station's `.glb` (already checked inert by the tour session, K0's
    *  `checkGlbInert`) as a three scene: three's GLTFLoader, loaded on first
@@ -238,6 +244,12 @@ export interface TourViewerSeams {
   /** The page's one audio element for the stories (unlocked by the start
    *  tap, `scene-audio.ts`). A seam so the e2e records what played. */
   createAudioElement(): AudioElementLike;
+  /** The session camera's `P[0]` (`2*atan(1/P[0])` is its horizontal
+   *  field of view: the radar's view cone, visitor walk W4 build plan M3),
+   *  or null while there is no camera. WebXR owns that projection during
+   *  an immersive session (`getIntrinsics`' precedent). A seam: the e2e
+   *  has no camera, and the radar draws its fallback cone. */
+  xrProjection0(): number | null;
 }
 
 /** A captured photo, encoded. */
@@ -348,7 +360,7 @@ export const realSeams: TourViewerSeams = {
     };
   },
   encodeFrameJpeg: (image) => encodeRgbaAsJpeg(image),
-  createWayfindingHud: ({ getTargets }) => {
+  createWayfindingHud: ({ getTargets, look }) => {
     const camera = getCamera();
     if (!camera) return null;
     return createWayfindingHud({
@@ -357,36 +369,14 @@ export const realSeams: TourViewerSeams = {
       // Each station target carries its own band; these are the floors.
       distanceMin: HUD_ARRIVAL_MIN_M,
       distanceMax: HUD_ARRIVAL_MIN_M + HUD_ARRIVAL_BAND_M,
+      ...(look === undefined ? {} : WALK_HUD_LOOKS[look]),
     });
   },
-  loadGlbModel: async (blob) => {
-    const { GLTFLoader } =
-      await import("three/examples/jsm/loaders/GLTFLoader.js");
-    const gltf = await new GLTFLoader().parseAsync(
-      await blob.arrayBuffer(),
-      "",
-    );
-    return gltf.scene;
-  },
+  loadGlbModel,
   createAudioElement: () => new Audio(),
-  createLabel: (text) => {
-    // A canvas wide enough for a short label at a readable size, the sprite
-    // scaled to the same 2:1 aspect (the wayfinding HUD's recipe); the
-    // defaults (a 64 px square, a 48 px glyph) are for single characters
-    // and clipped every word (M4 review #5). Transparent, no depth write:
-    // the pill's surround must not paint a black square over the camera.
-    const sprite = createTextSprite({
-      text,
-      background: "pill",
-      canvasWidth: 512,
-      canvasHeight: 256,
-      font: "bold 56px sans-serif",
-      transparent: true,
-      depthWrite: false,
-      scale: { x: 0.6, y: 0.3, z: 1 },
-    });
-    return { object: sprite.sprite, dispose: () => sprite.dispose() };
-  },
+  xrProjection0: () => getCamera()?.projectionMatrix.elements[0] ?? null,
+  // The one recipe the 3D editor shares (`pin-label.ts`).
+  createLabel: createPinLabel,
   queryGeolocationPermission: async () => {
     try {
       const status = await navigator.permissions.query({
