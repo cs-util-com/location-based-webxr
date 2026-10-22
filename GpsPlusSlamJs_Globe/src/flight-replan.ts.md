@@ -169,6 +169,30 @@ Each one is tested.
     the time left, and allows the positions' float64 resolution over that
     step (near the landing the camera is all but at rest, and 1e-9 m over
     1e-4 ms read as a 33 % jump of nothing).
+  - So the check also holds the POSITION continuous to a few float64
+    units at the Earth's radius, far below its own millimetre: a jump of
+    d reads as a velocity of d / step. That is how it found the travel
+    curve's level pan holding the landing's altitude from its first
+    instant (`flight-travel.ts.md`): a replan in a flight's last fraction
+    of a millisecond, within 1e-9 of its landing (the same course, the
+    landing unchanged or nearly), moved the camera by up to 1e-9 of its
+    altitude at once, 2e-5 m at 20 km, read as 0.095 m/ms against a camera
+    all but at rest (seed 100066; about 8 seeds in 1,000, every one in the
+    last 0.3 ms with equal landings, which fast-check draws at the bounds).
+    The pan now starts at the camera's altitude. The counterexample is
+    pinned in `flight-replan.test.ts` (red before the fix with the
+    property's own numbers).
+  - Still open after that fix, found by a sweep that draws the last 1.5 ms
+    on purpose (6 of 40,000 draws there, 3 of them at the float64 noise
+    level; 1 of 120,000 over the property's own generator, also noise): a
+    replan of the same course with 1-1.5 ms left brakes
+    over about 1 ms, and its path's own start pitch (45.06-45.24 against
+    the camera's 45) blends out over a fifth of that, so the camera swings
+    round its view faster than the join, also about 1 ms long, absorbs; at
+    a 1 km landing the join's floor also stops its correction (0.077 m/ms
+    against a bound of 0.0038). And a replan exactly at the landing (from
+    rest, a step of 1e-6 ms) can start 5-8 float64 units from the landed
+    camera against the check's 4. Neither is decided yet.
 - The view keeps turning across a replan (its turn rate within 20 %): the
   pitch blends the start's offset from the law, not the law itself (CF3
   review finding 5: every replan froze the turn).

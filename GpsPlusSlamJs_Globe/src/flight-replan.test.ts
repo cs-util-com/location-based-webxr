@@ -723,6 +723,60 @@ describe("retargetFlight", () => {
   });
 });
 
+describe("a replan of the same course in a flight's last fraction of a millisecond (seed 100066)", () => {
+  // Why: fast-check found this against the property "starts exactly where
+  // the camera was, with no jump in its velocity" (about 8 seeds in 1,000,
+  // and its shrinking never ended). A replan 0.21 ms before the end of a
+  // 15 s flight, to the same place, its landing 2e-5 m higher: the camera
+  // is within 1e-9 of the new landing in the altitude's logarithm, so the
+  // travel curve is a level pan. That pan flew AT the landing from its
+  // first instant, so the camera moved by 2e-5 m at the replan: a jump far
+  // below the position check's millimetre, but over the velocity check's
+  // 2e-4 ms step a speed of 0.095 m/ms against a camera all but at rest.
+  // The pan now starts at the camera's altitude and reaches the landing at
+  // its end (flight-travel.test.ts pins the pan itself).
+  const pose = orbitPose(WGS84_ELLIPSOID, { lat: 0, lng: 0 });
+  const cam = obliqueCamera(WGS84_ELLIPSOID, pose, 3_000 * KM, 90);
+  const first = startFlight(
+    WGS84_ELLIPSOID,
+    { pose, distanceM: cam.position.length(), quaternion: cam.quaternion },
+    pose,
+    { landingM: 19_999.99939393797, durationMs: 15_000 },
+    0,
+  );
+  const atMs = 0.999986 * first.endsAtMs;
+  const second = retargetFlight(first, atMs, pose, {
+    landingM: 19_999.99941393935,
+  });
+
+  it("starts at the camera's altitude, not at the new landing's", () => {
+    const before = flightFrameAt(first, atMs).altitudeM;
+    expect(flightFrameAt(second, atMs).altitudeM).toBeCloseTo(before, 9);
+    expect(flightFrameAt(second, second.endsAtMs).altitudeM).toBe(
+      19_999.99941393935,
+    );
+  });
+
+  it("has no jump in its velocity, measured as the property measures it", () => {
+    const p = flightCameraAt(first, atMs).position;
+    const h = Math.min(
+      0.25,
+      (second.join?.spanMs ?? 250) / 1_000,
+      (first.endsAtMs - atMs) / 1_000,
+    );
+    const before = p
+      .clone()
+      .sub(flightCameraAt(first, atMs - h).position)
+      .divideScalar(h);
+    const after = flightCameraAt(second, atMs + h)
+      .position.sub(p)
+      .divideScalar(h);
+    const scale = Math.max(before.length(), after.length(), 1e-6);
+    const resolution = (4 * p.length() * Number.EPSILON) / h;
+    expect(after.sub(before).length()).toBeLessThan(0.05 * scale + resolution);
+  });
+});
+
 describe("clearedLandingM", () => {
   const bern = orbitPose(WGS84_ELLIPSOID, BERN).direction;
   /**
