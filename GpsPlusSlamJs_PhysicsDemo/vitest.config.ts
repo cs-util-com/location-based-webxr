@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 // Vitest scoping for the persistent-anchor starter.
@@ -10,6 +11,14 @@ import { defineConfig } from 'vitest/config';
 // test:e2e`).
 export default defineConfig({
   test: {
+    // The shared fast-check time limit (every interruption is red), so a
+    // failing property cannot shrink for hours where testTimeout cannot reach:
+    // scripts/test-timing/fast-check-time-limit.mjs.md.
+    setupFiles: [
+      fileURLToPath(
+        new URL('../scripts/test-timing/fast-check-time-limit.mjs', import.meta.url)
+      ),
+    ],
     include: ['src/**/*.test.ts'],
   },
 });

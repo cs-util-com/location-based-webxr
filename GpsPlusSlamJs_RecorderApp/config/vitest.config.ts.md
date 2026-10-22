@@ -14,6 +14,11 @@ Vitest configuration for unit testing with V8 coverage.
 | `coverage.provider` | `v8`               | V8 coverage engine       |
 | `coverage.reporter` | `text, json, html` | Coverage output formats  |
 
+## Setup files
+
+- `src/test-setup.ts` - the jsdom `Blob.stream()` polyfill.
+- `../../scripts/test-timing/fast-check-time-limit.mjs` - the workspace's shared fast-check time limit, so a failing property cannot shrink for hours (see its sidecar); `src/fast-check-time-limit.test.ts` reads it in this package's run.
+
 ## Path Alias
 
 - `@app/*` → `src/*`
