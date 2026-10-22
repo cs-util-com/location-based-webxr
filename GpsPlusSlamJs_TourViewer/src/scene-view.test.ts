@@ -87,6 +87,7 @@ function harness(
   const { dom, lastChoices } = fakeDom();
   const timers: { fn: () => void; ms: number; cancelled: boolean }[] = [];
   const ended: string[] = [];
+  const changes = { count: 0 };
   const urls = { created: [] as string[], revoked: [] as string[] };
   const audio = {
     play: vi.fn(overrides.play ?? (() => Promise.resolve())),
@@ -130,8 +131,11 @@ function harness(
     onStoryEnd: (id) => {
       ended.push(id);
     },
+    onChange: () => {
+      changes.count += 1;
+    },
   });
-  return { view, dom, timers, ended, urls, audio, stage, lastChoices };
+  return { view, dom, timers, ended, urls, audio, stage, lastChoices, changes };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -543,5 +547,106 @@ describe("createSceneView", () => {
     expect(h.stage.clear).toHaveBeenCalled();
     h.view.continueTapped();
     expect(h.ended).toEqual([]);
+  });
+});
+
+describe("the story card's dots and its redraw", () => {
+  // Why these tests matter: the story card in the sheet draws a dot per
+  // step and fills the current one over an auto step's timer, so the view
+  // says where the story is; and the sheet redraws when a story starts,
+  // moves on or ends, which only the view knows.
+  it("says the step, the count and the auto step's time, and nothing without a story", () => {
+    const h = harness();
+    expect(h.view.progress()).toBeNull();
+    h.view.offer(
+      station("s", [
+        { ...tap("a", "One"), advance: { mode: "auto", afterS: 4 } },
+        tap("b", "Two"),
+        tap("c", "Three"),
+      ]),
+    );
+    expect(h.view.progress()).toEqual({ index: 0, count: 3, autoMs: 4000 });
+    h.view.continueTapped();
+    expect(h.view.progress()).toEqual({ index: 1, count: 3, autoMs: null });
+    h.view.continueTapped();
+    h.view.continueTapped();
+    expect(h.view.progress()).toBeNull();
+  });
+
+  // Why this test matters: while the visitor is
+  // asked whether to end the story, the step must not move on under the
+  // question; "Keep listening" starts the step's timer again from its
+  // full length, and the dots show it (no timed fill while held).
+  it("a held step stops its timer; released, it runs again from the start", () => {
+    const h = harness();
+    h.view.offer(
+      station("s", [
+        { ...tap("a", "One"), advance: { mode: "auto", afterS: 4 } },
+        tap("b", "Two"),
+      ]),
+    );
+    const first = h.timers.at(-1)!;
+    h.view.holdStep(true);
+    expect(first.cancelled).toBe(true);
+    expect(h.view.progress()).toEqual({ index: 0, count: 2, autoMs: null });
+    h.view.holdStep(true);
+    expect(h.timers.filter((t) => !t.cancelled)).toEqual([]);
+    h.view.holdStep(false);
+    const again = h.timers.at(-1)!;
+    expect(again).not.toBe(first);
+    expect(again).toMatchObject({ ms: 4000, cancelled: false });
+    expect(h.view.progress()).toEqual({ index: 0, count: 2, autoMs: 4000 });
+    again.fn();
+    expect(h.dom.text.textContent).toBe("Two");
+    // A tap step has no timer to hold or start.
+    const scheduled = h.timers.length;
+    h.view.holdStep(true);
+    h.view.holdStep(false);
+    expect(h.timers.length).toBe(scheduled);
+  });
+
+  it("a hold set with no story is dropped when the next story starts", () => {
+    const h = harness();
+    h.view.holdStep(true);
+    h.view.offer(
+      station("s", [
+        { ...tap("a", "One"), advance: { mode: "auto", afterS: 2 } },
+      ]),
+    );
+    expect(h.timers.at(-1)).toMatchObject({ ms: 2000, cancelled: false });
+  });
+
+  it("has no dots for a scene with a choice", () => {
+    const h = harness();
+    h.view.offer(
+      station("s", [
+        tap("a", "One"),
+        {
+          id: "c",
+          block: {
+            kind: "choice",
+            prompt: "Which?",
+            options: [{ id: "x", label: "X", goto: "a" }],
+          },
+          advance: { mode: "tap" },
+        },
+      ]),
+    );
+    expect(h.view.progress()).toBeNull();
+  });
+
+  it("asks for a redraw when a story starts, moves on, ends, and when everything stops", () => {
+    const h = harness();
+    h.view.offer(station("s", [tap("a", "One"), tap("b", "Two")]));
+    const started = h.changes.count;
+    expect(started).toBeGreaterThan(0);
+    h.view.continueTapped();
+    expect(h.changes.count).toBeGreaterThan(started);
+    const moved = h.changes.count;
+    h.view.continueTapped();
+    expect(h.changes.count).toBeGreaterThan(moved);
+    const ended = h.changes.count;
+    h.view.stopAll();
+    expect(h.changes.count).toBeGreaterThan(ended);
   });
 });

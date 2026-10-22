@@ -57,9 +57,15 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-media";
 
 import { driveFileId } from "gps-plus-slam-app-framework/utils/drive-file-id";
+import { isSessionJsonEntryName } from "gps-plus-slam-app-framework/storage/zip-reader";
 
 import { fileNameFromContentDisposition } from "./content-disposition.js";
-import { tourFileKey, tourSeriesFileKey } from "./tour-file-key.js";
+import { isActionEntryName } from "./tour-read-set.js";
+import {
+  tourFileKey,
+  tourIdFileKey,
+  tourSeriesFileKey,
+} from "./tour-file-key.js";
 import {
   checkArchiveCopy,
   integrityIdentity,
@@ -189,7 +195,7 @@ export interface TourSession {
    * The recording's action stream, range-streamed and parsed — the input
    * to the capture-geo join's gates and replay. NULL when the archive has
    * no readable action stream (a hand-built zip is a normal tour): null
-   * means "keep the ring", never an error.
+   * means "no walk to bake", never an error.
    */
   loadRecordingActions(): Promise<readonly RecordedAction[] | null>;
   /**
@@ -203,8 +209,9 @@ export interface TourSession {
    * content. NULL when the archive has none (every recorder zip); a
    * manifest that exists but is broken REJECTS, the framework's rule for
    * this file (unlike a single bad level, it is the whole placement).
-   * `options.onDropped` hears each detail the reader left out (the
-   * desktop editor says them, M4a review #6).
+   * `options.onDropped` hears each detail, station description and
+   * station card image the reader left out (the desktop editor says
+   * them, M4a review #6).
    */
   loadTourManifest(
     options?: TourManifestReadOptions,
@@ -482,9 +489,10 @@ export function tourFileKeyOfFile(
   return fileKeyOf(file, { ...DEFAULT_ARCHIVE_LIMITS, ...limits });
 }
 
-/** The file's content key, from its central directory (walked under the
- *  same entry cap as any open). A file that is not a zip fails here, in
- *  plain words. */
+/** The file's key, from its central directory (walked under the same
+ *  entry cap as any open): a listed tour's series id, else the tour's own
+ *  id from its `tour.json` (debug-captures plan, Q-I), else its content
+ *  key. A file that is not a zip fails here, in plain words. */
 async function fileKeyOf(file: File, limits: ArchiveLimits): Promise<string> {
   const reader = new ZipReader(
     new ByteSourceReader(
@@ -495,9 +503,9 @@ async function fileKeyOf(file: File, limits: ArchiveLimits): Promise<string> {
   try {
     const entries = await listZipEntriesCapped(reader, limits.maxEntries);
     const seriesId = await seriesIdOf(entries, file.size, limits);
-    return seriesId === null
-      ? await tourFileKey(entries)
-      : tourSeriesFileKey(seriesId);
+    if (seriesId !== null) return tourSeriesFileKey(seriesId);
+    const tourId = await tourIdOf(entries, file.size, limits);
+    return tourId === null ? await tourFileKey(entries) : tourIdFileKey(tourId);
   } catch (err) {
     if (err instanceof ArchiveLimitError) throw err;
     throw new Error(
@@ -534,6 +542,37 @@ async function seriesIdOf(
       limits.maxTextEntryBytes,
     );
     return parseSignedTourManifest(await blob.text()).seriesId;
+  } catch (err) {
+    if (err instanceof ArchiveLimitError) throw err;
+    return null;
+  }
+}
+
+/**
+ * The tour's own id in a file's `tour.json`, or null without a readable
+ * one (debug-captures plan, Q-I). Read under the text cap with a budget of
+ * its own, as the series id is; a `tour.json` that does not parse falls
+ * back to the content key, and the open then reports it.
+ */
+async function tourIdOf(
+  entries: readonly Entry[],
+  archiveSize: number,
+  limits: ArchiveLimits,
+): Promise<string | null> {
+  const name = tourManifestEntryOf(entries.map((e) => e.filename));
+  const entry = entries.find((e) => e.filename === name);
+  if (entry === undefined || entry.directory) return null;
+  const budget = DecompressionBudget.forArchive(archiveSize, limits);
+  try {
+    const blob = await readZipEntryBlob(
+      entry,
+      budget,
+      "application/json",
+      limits.maxTextEntryBytes,
+    );
+    return (
+      parseTourManifest(JSON.parse(await blob.text()) as unknown).tourId ?? null
+    );
   } catch (err) {
     if (err instanceof ArchiveLimitError) throw err;
     return null;
@@ -653,12 +692,11 @@ async function buildSession(
       isImage: tourMediaTypeOfEntry(entry.filename)?.kind === "image",
     });
   }
-  // `includes`, not `startsWith`: the framework's parser tolerates a
-  // wrapping folder (`<name>/actions/…`) and this pre-check must not be
-  // stricter than the parser it guards (milestone review, finding 10).
-  const hasRecording = [...byName.keys()].some((name) =>
-    name.includes("actions/"),
-  );
+  // The framework parser's own rule: a wrapping folder
+  // (`<name>/actions/…`) is tolerated (milestone review, finding 10), a
+  // sibling folder whose name ends in it is not, so this pre-check is
+  // neither stricter nor looser than the parser it guards.
+  const hasRecording = [...byName.keys()].some(isActionEntryName);
   // Where `tour.json` was found, minus the file name: the prefix every
   // content entry of THIS archive shares (PR #435 review). Empty when the
   // zip is flat or carries no manifest yet.
@@ -739,10 +777,11 @@ async function buildSession(
       }
     },
     loadSessionMeta: async () => {
-      // `endsWith`, matching the framework's zip-coverage-embed tolerance
-      // for a wrapping folder (milestone review, finding 10).
+      // The framework's one rule for the session (a wrapping folder
+      // tolerated, milestone review finding 10; a look-alike such as
+      // `backup-session.json` is not it).
       const entry = [...byName.entries()].find(([name]) =>
-        name.endsWith("session.json"),
+        isSessionJsonEntryName(name),
       )?.[1];
       if (entry === undefined) return null;
       try {

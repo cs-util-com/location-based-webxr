@@ -18,7 +18,11 @@
      The F0 doc first read this as a colour-space step; the range
      conversion is the cause (a 20-degree shift, Sahara for Alps).
 - Public API:
-  - `GLOBE_TERRAIN`: `programKey` (shared by every terrain tile's lit
+  - `GLOBE_TERRAIN`: `maxZoom` 12 (the finest Terrarium zoom the relief
+    loads, its default; the globe's city samples its heights at it from the
+    same source, globe city plan 2026-10-05-0040 §12.4 R13), `tileDimension`
+    256 (the height tiles' size by default, AWS Terrarium's; Mapterhorn
+    passes 512) and `maxTileDimension` 4096, `programKey` (shared by every terrain tile's lit
     material), `halfFloatStepM(h)` (the step R16F stores at `h` metres:
     0.5 m at 1,000 m, 2 m at 4,000 m, 8 m at 8,848 m), `errorTarget`
     (2, set on the tiles after the plugin registers, since the library's
@@ -26,13 +30,17 @@
     over the Alps: 2 draws what 1 draws, mean 0.12 levels and 95th
     percentile 0 at 30 km, for 9.9 MiB of heights a phone descent against
     11.5; 4, at 7.7 MiB, differs by 42 levels).
-    `cacheBytes` 64 MB and `cacheFloorBytes` 48 MB: the relief's own tile
-    cache (`createGlobeTerrain` gives its renderer a new `LRUCache` with
-    the library's unload order). The library shares one cache between
+    The relief's own tile cache, budgeted per tile format and device
+    class (`reliefCacheBudget`, `globe-relief-cache.ts`; 64/48 MB for
+    256 px heights on a phone, the F1 budget; the constants `cacheBytes`
+    and `cacheFloorBytes` were removed in the G1 review, M1, so there is
+    one home for the number): `createGlobeTerrain` gives its renderer a
+    new `LRUCache` with the library's unload order. The library shares one cache between
     renderers by default and the globe caps it at 64 MB; in the altitude
     band both carriers loaded into it, it filled and refused every request
     (at 1,900 km the relief never settled, the globe's loaded tiles fell
-    from 178 to 70). In the band both caches are resident: up to 128 MB.
+    from 178 to 70). In the band both caches are resident: the globe's 64 MB plus the
+    relief's budget (128 MB together for AWS on a phone).
     Its own download, parse and node queues too, with the library's limits
     and order: with the shared ones a relief not updated outside the band
     kept jobs in the parse queue ahead of the globe's tiles (at 1,900 km
@@ -72,9 +80,61 @@
     side of the altitude band's dither (`globe-surface-material.ts`). With
     `detail` (`globe-detail.ts`'s uniforms, one object for every tile) the
     detail factor multiplies the imagery right after `map_fragment`; a
-    missing or doubled anchor then throws, naming it.
-  - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom?, lazyHeightScale? })`
-    -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), heightScaleStats(), dispose() }`
+    missing or doubled anchor then throws, naming it. The detail reads the
+    geodetic normal `vGeoNormal`, which the globe's surface hook declares;
+    under a template without that hook (an app's own plain ground) the
+    copy declares it in both shaders and sets it from the object normal
+    after `beginnormal_vertex`, as the surface hook does, so the varying
+    is declared once either way. The copy carries
+    `own`'s defines in a fresh object next to the standard material's (G0
+    spikes 2026-10-17, Q5): a second overlay through the library's
+    `ImageOverlayPlugin` declares its layers under the `LAYER_COUNT`
+    define, and without it the shader failed to compile and the relief
+    vanished; the plugin writes later layer changes to the mesh's material,
+    which is this copy.
+  - `finestElevationAt(plugin, lat, lon)` (radians): the drawn height at a
+    place from the relief's FINEST source level only (z12, the landing's own
+    read, round-4 plan 2026-10-11-0122 DEC-R4-1), null where that tile's
+    heights are not loaded; the plugin's own sampler falls back to coarser
+    levels, hundreds of metres off in the Alps, which would revise a
+    landing for nothing. Reads the plugin's private `_maxSourceLevel`,
+    `_tiling` and `_gridCache` (as `globe-height-keeper.ts` does); null, never
+    a throw, if they change (`globe-terrain.finest.test.ts` checks the real
+    plugin has them).
+  - `createGlobeTerrain({ url, imagery, template, heightScale, device, maxZoom?, tileDimension?, lazyHeightScale?, keepHeightsBytes?, cache?, ancestorFallback?, meshMaxLevel? })`
+    -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), heightScaleStats(), heightKeeperStats(), reliefCache(), reliefFallback(), dispose() }`
+    (G1 step 2 and review M2: `ancestorFallback` true draws a tile `url`
+    answers 404 for from the same source's nearest ancestor, cropped and
+    upsampled to `tileDimension` (`installReliefFallback`,
+    `globe-relief-fallback.ts`, which also says what a failed tile draws
+    without it; Mapterhorn's z13-14 exist only under national models, and
+    over the ocean nothing finer than about z5), and `reliefFallback()`
+    its counts, null without it; `meshMaxLevel` the relief tree's deepest
+    level, at most `GLOBE_TERRAIN.maxMeshLevel` 24: the library builds its
+    tree to the overlay tiling's `maxLevel` when that is deeper than its own
+    source levels, so the overlay the plugin reads carries it, and the tree
+    refines that deep only near the camera; the G0 spikes measured z14 at
+    level 17, about 6.5 m between vertices, against the default level 15,
+    25.5 m; `reliefTerrainOptions(source, device)` from
+    `globe-relief-source.ts` gives `url`, `maxZoom`, `tileDimension`,
+    `ancestorFallback`, `device` and `cache` together; RangeError for a
+    mesh level that is not an integer 0-24)
+    (`device` the device class, REQUIRED (G1 review M3): the cache
+    defaults to `reliefCacheBudget(tileDimension, device)`, so a 512 px
+    source is never squeezed into the 256 px budget (review M1: with the
+    old 64 MB default Mapterhorn stalled again however it was set up);
+    `cache` the app's own `{ maxBytes, minBytes }` in its place; `reliefCache()` the cache's state from
+    `watchReliefCache`: bytes used and allowed, its refusals and whether
+    it is `stalled`, full and turning tiles away, which the G0 spikes found
+    happening silently with 512 px heights, and which G2 must act on, not
+    only show (`globe-relief-cache.ts.md`); RangeError for an impossible
+    budget or a missing or unknown device class, even with `cache` given)
+    (the decoded heights its tiles release are kept within
+    `keepHeightsBytes`, `GLOBE_TERRAIN.keepHeightsBytes` 16 MiB by default
+    and 0 for none, so a return into the band finds them;
+    `globe-height-keeper.ts`, owner decision 2026-10-04 DEC-N1;
+    `heightKeeperStats()` gives its counters, and `dispose` gives the grids
+    back)
     (a change of `plugin.heightScale` refreshes only the bounding volumes
     that are read, `globe-lazy-height-scale.ts`, and `heightScaleStats()`
     gives its counters; the library walked its whole never-pruned tree on
@@ -84,14 +144,16 @@
     `plugin.sampleCartographicElevation(lat, lon)` the library's drawn
     height at a place from the finest loaded tile, null where none is, which
     the globe lab's per-frame clearance reads): the library's
-    `TerrariumMeshPlugin` on `url` (Terrarium encoded; `maxZoom` 12 by
-    default), the imagery through `geographicOverlay`, and on every
+    `TerrariumMeshPlugin` on `url` (Terrarium encoded; `maxZoom`
+    `GLOBE_TERRAIN.maxZoom` by default), the imagery through `geographicOverlay`, and on every
     `load-model` the half-float heights and the lit copy; on
     `dispose-model` the copy is retired (`globe-warm-material.ts`: the
     last one stays alive, so the relief's program outlives a release). The caller adds `tiles.group` to
     its scene, sets the camera and resolution and calls `tiles.update()`.
-    RangeError for an empty url or a height scale that is not finite and
-    at least 0; Error if the library stops exporting the plugin (0.5.3
+    RangeError for an empty url, a height scale that is not finite and
+    at least 0, or a `tileDimension` that is not a power of two from 1 to
+    4096 (G0 spikes 2026-10-17, Q1: a 512 px Mapterhorn tile read as 256 px
+    is a quarter of it per level); Error if the library stops exporting the plugin (0.5.3
     ships it without typings, so it is read off the plugins entry at
     runtime). The tile meshes are found by `tileMeshes` from
     `globe-surface.ts` (one implementation, DEC-H3).
@@ -116,6 +178,7 @@
     imagery: globe.overlay,
     template: globe.template,
     heightScale: 1,
+    device: "phone",
   });
   scene.add(terrain.tiles.group);
   terrain.tiles.setCamera(camera);
@@ -126,8 +189,13 @@
 - Tests: `globe-terrain.test.ts` (the range conversion and its size at
   46.5 N; the overlay adapter's calls; the half-float upload and its
   steps; the box from normals; the lit material's maps, hooks, UV patch
-  and key; the fade side; the detail patch's place, shared uniforms and
-  refused anchor; the factory on a simulated tile load and dispose, its
+  and key; the overlay plugin's defines carried; the tile size passed
+  through and refused; the tree deepened by `meshMaxLevel`; a 404 walked
+  up the source's own pyramid through the real plugin and image source;
+  the cache budgeted by tile size and device, the app's own taken, a
+  missing device refused, and a full cache seen stalling; the fade side; the detail patch's place, shared uniforms and
+  refused anchor, its geodetic normal declared once with and without the
+  globe's hook on three's real shader; the factory on a simulated tile load and dispose, its
   detail on and off; refusals; the library guard). The GPU side (heights read back with the extension
   hidden, the look against the globe at noon, dusk and night, the data
   budget, the seam scan) is the design system's

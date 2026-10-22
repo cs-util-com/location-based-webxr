@@ -18,6 +18,18 @@ export function isPlayableInK4(step: TourStep): boolean {
   return step.block.kind !== "quiz";
 }
 
+/**
+ * How many steps a choice-free scene shows (the story card's dots): its playable steps, quizzes left out. Null for a scene
+ * with a choice, whose path - and so its number of steps - the visitor's
+ * answers decide.
+ */
+export function playableStepCount(steps: readonly TourStep[]): number | null {
+  const playable = steps.filter(isPlayableInK4);
+  return playable.some((s) => s.block.kind === "choice")
+    ? null
+    : playable.length;
+}
+
 export interface ScenePlayer {
   /** The step showing, or null once the scene ended. */
   current(): TourStep | null;

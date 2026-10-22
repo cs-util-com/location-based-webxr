@@ -111,6 +111,33 @@ export async function readZipEntries(data: ZipSource): Promise<Entry[]> {
 }
 
 /**
+ * An `actions/` path SEGMENT: at the start, or after a slash. A wrapping
+ * folder (`mytour/actions/000001.json`, what re-zipping a folder produces)
+ * reads; a sibling whose name only ends in it (`myactions/`,
+ * `old-actions/`) is never replayed into the action stream.
+ */
+const ACTIONS_SEGMENT = /(?:^|\/)actions\//;
+
+/** An action JSON entry name: under an `actions/` segment, ending `.json`. */
+function isActionEntryName(filename: string): boolean {
+  return ACTIONS_SEGMENT.test(filename) && filename.endsWith('.json');
+}
+
+/** `session.json` as a whole path segment, at the root or in a wrapping
+ *  folder (`./session.json` included); a look-alike such as
+ *  `backup-session.json` is not the session. */
+const SESSION_JSON_ENTRY = /(?:^|\/)session\.json$/;
+
+/**
+ * Is `filename` a recording's `session.json`? The ONE rule for every
+ * reader and writer of it (`zip-coverage-embed` rewrites the entry this
+ * picks), so they never disagree about which file is the session.
+ */
+export function isSessionJsonEntryName(filename: string): boolean {
+  return SESSION_JSON_ENTRY.test(filename);
+}
+
+/**
  * Extract the numeric index from an action filename.
  * Filenames are zero-padded like "000001.json" or "actions/000001.json".
  *
@@ -233,12 +260,7 @@ export async function loadActionsFromEntries(
 ): Promise<ZipActionEntry[]> {
   // Filter to action JSON files only
   const actionEntries = entries
-    .filter(
-      (e) =>
-        !e.directory &&
-        e.filename.includes('actions/') &&
-        e.filename.endsWith('.json')
-    )
+    .filter((e) => !e.directory && isActionEntryName(e.filename))
     .sort((a, b) => a.filename.localeCompare(b.filename));
 
   const results: ZipActionEntry[] = [];
@@ -297,7 +319,7 @@ async function extractSessionMetadataFromReader(
     const entries = await reader.getEntries();
 
     const sessionEntry = entries.find(
-      (e): e is FileEntry => !e.directory && e.filename.endsWith('session.json')
+      (e): e is FileEntry => !e.directory && isSessionJsonEntryName(e.filename)
     );
 
     if (!sessionEntry) {
@@ -454,10 +476,7 @@ export async function loadGpsPathFromBlob(
 
     const actionEntries = entries
       .filter(
-        (e): e is FileEntry =>
-          !e.directory &&
-          e.filename.includes('actions/') &&
-          e.filename.endsWith('.json')
+        (e): e is FileEntry => !e.directory && isActionEntryName(e.filename)
       )
       .sort((a, b) => a.filename.localeCompare(b.filename));
 

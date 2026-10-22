@@ -6,13 +6,20 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-stations";
 
 import {
+  applyWalkStep,
   createStationRun,
+  startWalk,
+  walkOffered,
+  walkRoute,
   SKIP_SUGGEST_BASE_MS,
   SKIP_SUGGEST_SLOW_MPS,
   skipSuggestAfterMs,
   stationTitle,
 } from "./station-run";
-import { ACCURACY_CEILING_M } from "./station-bands";
+import {
+  POSITION_PRECISION_CEILING_M,
+  type PositionPrecision,
+} from "gps-plus-slam-app-framework/state/position-precision";
 
 /**
  * Why these tests matter: the station run is the tour's whole game state on
@@ -102,6 +109,15 @@ describe("createStationRun: states", () => {
     ]);
   });
 
+  /** A GPS position's precision at this accuracy. */
+  function gps(accuracyM: number): PositionPrecision {
+    return {
+      source: "gps",
+      accuracyM,
+      tooWeak: accuracyM > POSITION_PRECISION_CEILING_M,
+    };
+  }
+
   // Why (PR #640 review): D16 forbids WIDENING the radius by the accuracy,
   // not judging on a fix the guide itself calls too weak. A ±500 m
   // cold-start fix inside a 10 m station latched "found" while the line
@@ -114,11 +130,11 @@ describe("createStationRun: states", () => {
       nowMs: 0,
     });
     expect(
-      run.observe({ distances: at({ a: 3 }), nowMs: 1, accuracyM: 500 }),
+      run.observe({ distances: at({ a: 3 }), nowMs: 1, precision: gps(500) }),
     ).toEqual([]);
     expect(run.status("a")?.state).toBe("waiting");
     expect(
-      run.observe({ distances: at({ a: 3 }), nowMs: 2, accuracyM: 5 }),
+      run.observe({ distances: at({ a: 3 }), nowMs: 2, precision: gps(5) }),
     ).toEqual([{ kind: "found", id: "a" }]);
   });
 
@@ -130,21 +146,40 @@ describe("createStationRun: states", () => {
         order: "fixed",
         nowMs: 0,
       });
-      run.observe({ distances: at({ a: 3 }), nowMs: 1, accuracyM });
+      run.observe({
+        distances: at({ a: 3 }),
+        nowMs: 1,
+        precision: gps(accuracyM),
+      });
       expect(run.status("a")?.state).toBe(
-        accuracyM <= ACCURACY_CEILING_M ? "found" : "waiting",
+        accuracyM <= POSITION_PRECISION_CEILING_M ? "found" : "waiting",
       );
     },
   );
 
-  it("judges an unknown accuracy (a position by a code alone) by the radius alone (D16)", () => {
+  // Changed (shared position-precision plan, M2): the run reads the
+  // framework's precision. A code's position (no number) is judged by the
+  // radius alone, as an unknown accuracy was; nothing to judge by
+  // (`'none'`) judges nothing, as a fix too weak to guide by.
+  it("judges a code's position by the radius alone (D16), and nothing on no precision at all", () => {
     const run = createStationRun({
       stations: [station("a")],
       order: "fixed",
       nowMs: 0,
     });
     expect(
-      run.observe({ distances: at({ a: 4 }), nowMs: 1, accuracyM: null }),
+      run.observe({
+        distances: at({ a: 4 }),
+        nowMs: 1,
+        precision: { source: "none", accuracyM: null, tooWeak: true },
+      }),
+    ).toEqual([]);
+    expect(
+      run.observe({
+        distances: at({ a: 4 }),
+        nowMs: 2,
+        precision: { source: "code", accuracyM: null, tooWeak: false },
+      }),
     ).toEqual([{ kind: "found", id: "a" }]);
   });
 
@@ -223,6 +258,22 @@ describe("createStationRun: offering", () => {
     expect(run.offered()).toEqual(["d"]);
     run.skip("d", 4);
     expect(run.isComplete()).toBe(true);
+  });
+
+  it("branch: a station whose next is itself, skipped, hands on to the next undone station; the tour goes on", () => {
+    // Why this test matters: the branch's next is read after the station
+    // is done. Read before, a station pointing at itself points at a
+    // station still undone - itself - which is done a moment later, and
+    // the tour reads complete with b never offered.
+    const run = createStationRun({
+      stations: [station("a", { next: "a" }), station("b")],
+      order: "branch",
+      nowMs: 0,
+    });
+    expect(run.offered()).toEqual(["a"]);
+    run.skip("a", 1);
+    expect(run.offered()).toEqual(["b"]);
+    expect(run.isComplete()).toBe(false);
   });
 
   it("names the station that comes next while the current one's story plays (fixed and branch; R5)", () => {
@@ -317,6 +368,59 @@ describe("skip suggestion clock", () => {
       // Only a skipped station comes back.
       expect(run.unskip("b", 3)).toEqual([]);
     }
+  });
+
+  // Why this test matters: under
+  // branch order bringing a station back used to set the path to it and
+  // forget the station the path was on, so the walk went on at the
+  // brought-back station's `next` and the abandoned one was never offered
+  // again. The path now returns to where it was.
+  it("branch: a station brought back is offered, then the path resumes at the station it left", () => {
+    const run = createStationRun({
+      stations: [
+        station("a", { next: "c" }),
+        station("b", { next: "d" }),
+        station("c", { next: "e" }),
+        station("d"),
+        station("e"),
+      ],
+      order: "branch",
+      nowMs: 0,
+    });
+    run.skip("a", 1);
+    expect(run.offered()).toEqual(["c"]);
+    run.unskip("a", 2);
+    expect(run.offered()).toEqual(["a"]);
+    run.skip("a", 3);
+    expect(run.offered()).toEqual(["c"]);
+    run.skip("c", 4);
+    expect(run.offered()).toEqual(["e"]);
+    // Two brought back in a row return in turn: c, then a, then e - never
+    // c's next (e) straight after c, nor a's list successor b.
+    run.unskip("a", 5);
+    run.unskip("c", 6);
+    expect(run.offered()).toEqual(["c"]);
+    run.observe({ distances: at({ c: 1 }), nowMs: 7 });
+    run.finish("c", 8);
+    expect(run.offered()).toEqual(["a"]);
+    run.skip("a", 9);
+    expect(run.offered()).toEqual(["e"]);
+  });
+
+  it("branch: a station brought back after the path ended ends it again once done", () => {
+    const run = createStationRun({
+      stations: [station("a", { next: "c" }), station("b"), station("c")],
+      order: "branch",
+      nowMs: 0,
+    });
+    run.skip("a", 1);
+    run.skip("c", 2);
+    expect(run.isComplete()).toBe(true);
+    run.unskip("a", 3);
+    expect(run.offered()).toEqual(["a"]);
+    // Not on to a's next (c, done) and its successor b: the path had ended.
+    expect(run.skip("a", 4).at(-1)).toEqual({ kind: "complete" });
+    expect(run.offered()).toEqual([]);
   });
 
   it("scales with the distance at the offer: a slow walker's time plus a fixed allowance", () => {
@@ -468,5 +572,22 @@ describe("stationTitle (plan 2026-10-15-0348 M0: one rule for the visitor and th
     expect(stationTitle({})).toBe("the next station");
     expect(stationTitle({ title: "" })).toBe("the next station");
     expect(stationTitle({ title: " 	 " })).toBe("the next station");
+  });
+});
+
+describe("the walk's derived reads", () => {
+  // Why: the guide reads the offered list several times per camera frame
+  // (each station's arrival, the line, the skip), and a walk's progress is
+  // replaced only when a step changes something. Derived once per progress,
+  // a frame with nothing happening allocates no list; a step that changes
+  // the walk reads anew.
+  it("derives the offered list once per progress, and anew after a step that changes it", () => {
+    const p = startWalk(walkRoute([station("a"), station("b")]), "any");
+    const offered = walkOffered(p);
+    expect(walkOffered(p)).toBe(offered);
+    expect(offered).toEqual(["a", "b"]);
+    const { progress } = applyWalkStep(p, { kind: "skip", id: "a" });
+    expect(walkOffered(progress)).toEqual(["b"]);
+    expect(walkOffered(p)).toBe(offered);
   });
 });

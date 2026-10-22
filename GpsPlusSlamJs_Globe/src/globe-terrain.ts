@@ -36,14 +36,46 @@ import {
 } from "./globe-detail.js";
 import { litCopy, tileMeshes } from "./globe-surface.js";
 import {
+  type HeightKeeper,
+  installHeightKeeper,
+} from "./globe-height-keeper.js";
+import {
   installLazyHeightScale,
   type LazyHeightScale,
 } from "./globe-lazy-height-scale.js";
+import {
+  type ReliefCacheBudget,
+  type ReliefCacheState,
+  type ReliefDeviceClass,
+  checkReliefCacheBudget,
+  reliefCacheBudget,
+  watchReliefCache,
+} from "./globe-relief-cache.js";
+import { installReliefFallback } from "./globe-relief-fallback.js";
 import { createMaterialRetirer } from "./globe-warm-material.js";
 
 export const GLOBE_TERRAIN = Object.freeze({
   /** The program key shared by every terrain tile's lit material. */
   programKey: "globe-terrain-lit",
+  /**
+   * The finest Terrarium zoom the relief loads (its default `maxZoom`). The
+   * globe's city samples its heights at this zoom from the same source, so
+   * the city and the relief read the same numbers (globe city plan
+   * 2026-10-05-0040 §12.4 R13); the lab passes it to the city's worker.
+   */
+  maxZoom: 12,
+  /**
+   * The height tiles' size in pixels by default (AWS Terrarium's). A
+   * source with another size passes `tileDimension` (Mapterhorn: 512);
+   * a power of two from 1 to `maxTileDimension`, as XYZ tiles are.
+   */
+  tileDimension: 256,
+  maxTileDimension: 4096,
+  /**
+   * The deepest relief tree level `meshMaxLevel` may ask for: 24 is about
+   * 5 cm between vertices at the equator, far past any height source.
+   */
+  maxMeshLevel: 24,
   /**
    * The tiles' error target, picked by the look on real heights over the
    * Alps (review 2026-10-02-1235 major 4): 2 draws what the library's default 1 draws
@@ -52,14 +84,11 @@ export const GLOBE_TERRAIN = Object.freeze({
    */
   errorTarget: 2,
   /**
-   * The relief's own tile cache, the globe's phone budget (cap and the
-   * floor the library evicts down to). Its own: the library shares one
-   * cache between renderers by default, the globe caps that at 64 MB, and
-   * in the altitude band the two carriers filled it and it refused every
-   * request (F1). In the band both are resident: up to twice this.
+   * The decoded heights kept past their tiles (owner decision 2026-10-04,
+   * DEC-N1; `globe-height-keeper.ts`): a source grid is 258 x 258 floats,
+   * about 266 KB, so this keeps about 60 of them, a descent's worth.
    */
-  cacheBytes: 64 * 1024 * 1024,
-  cacheFloorBytes: 48 * 1024 * 1024,
+  keepHeightsBytes: 16 * 1024 * 1024,
   /** One half-float step at `heightM` (10 mantissa bits). */
   halfFloatStepM: (heightM: number): number =>
     heightM === 0 ? 0 : 2 ** (Math.floor(Math.log2(Math.abs(heightM))) - 10),
@@ -258,6 +287,9 @@ const SEA_CLAMPED_DISPLACEMENT = /* glsl */ `
 transformed += normalize( objectNormal ) * ( max( texture2D( displacementMap, vDisplacementMapUv ).x, 0.0 ) * displacementScale + displacementBias );
 #endif`;
 
+/** The detail's geodetic normal, as the globe's surface hook declares it. */
+const GEO_NORMAL_VARYING = "\nvarying vec3 vGeoNormal;";
+
 /** `source` with `code` after `anchor`, which must occur exactly once. */
 function after(source: string, anchor: string, code: string): string {
   const parts = source.split(anchor);
@@ -322,6 +354,22 @@ export function litTerrainMaterial(
     );
     if (detail) {
       Object.assign(shader.uniforms, detail);
+      // The detail reads the geodetic normal the globe's surface hook
+      // declares; under a template without that hook (an app's own plain
+      // ground) the relief declares it itself, the same way: the object
+      // normal is the ellipsoid's (`globe-surface-material.ts`).
+      if (!shader.fragmentShader.includes(GEO_NORMAL_VARYING)) {
+        shader.vertexShader = after(
+          after(shader.vertexShader, "#include <common>", GEO_NORMAL_VARYING),
+          "#include <beginnormal_vertex>",
+          "\nvGeoNormal = objectNormal;",
+        );
+        shader.fragmentShader = after(
+          shader.fragmentShader,
+          "#include <common>",
+          GEO_NORMAL_VARYING,
+        );
+      }
       let fs = shader.fragmentShader;
       fs = after(fs, "#include <common>", DETAIL_DECLARATIONS);
       fs = after(fs, "#include <map_fragment>", DETAIL_FRAGMENT);
@@ -330,6 +378,13 @@ export function litTerrainMaterial(
     shader.fragmentShader = `#define GLOBE_FADE_SIDE 1\n${shader.fragmentShader}`;
   };
   lit.customProgramCacheKey = () => GLOBE_TERRAIN.programKey;
+  // The tile's defines too (G0 spikes 2026-10-17, Q5): an image overlay
+  // plugin's hook declares its layers under `LAYER_COUNT`, a define on the
+  // material; without it the shader does not compile and the relief
+  // vanishes. A copy of its own: the plugin writes later layer changes to
+  // the material the mesh wears, this one. Defines are part of three's
+  // program key, so the shared key above still tells the programs apart.
+  lit.defines = { ...lit.defines, ...own.defines };
   lit.map = own.map ?? null;
   lit.displacementMap = own.displacementMap ?? null;
   lit.displacementScale = own.displacementScale ?? 1;
@@ -349,9 +404,82 @@ interface TerrariumMeshPluginInstance {
   sampleCartographicElevation(lat: number, lon: number): number | null;
 }
 
+/** The plugin's private state `finestElevationAt` reads (0.5.3). */
+interface FinestInternals {
+  _maxSourceLevel?: unknown;
+  _tiling?: {
+    projection: {
+      isCartographic?: boolean;
+      fromCartographicToNormalized(
+        lon: number,
+        lat: number,
+        target: [number, number],
+      ): [number, number];
+    };
+    getTileAtPoint(
+      nx: number,
+      ny: number,
+      level: number,
+      normalized: boolean,
+    ): [number, number];
+  } | null;
+  _gridCache: { get(x: number, y: number, level: number): unknown };
+}
+
+/**
+ * Whether the plugin's finest source level holds the heights at a place
+ * (the plugin's own walk, at that level only); false where its private
+ * state is not as 0.5.3 has it (a library change), never a throw.
+ */
+function finestGridLoaded(p: FinestInternals, lat: number, lon: number) {
+  const level = p._maxSourceLevel;
+  const tiling = p._tiling;
+  if (
+    typeof level !== "number" ||
+    level < 0 ||
+    !tiling?.projection.isCartographic
+  ) {
+    return false;
+  }
+  try {
+    const [nx, ny] = tiling.projection.fromCartographicToNormalized(
+      lon,
+      lat,
+      [0, 0],
+    );
+    const [x, y] = tiling.getTileAtPoint(nx, ny, level, true);
+    const grid = p._gridCache.get(x, y, level);
+    return Boolean(grid) && !(grid instanceof Promise);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The drawn height (m, the height scale applied) at a geodetic latitude and
+ * longitude (radians) from the relief's FINEST source level only (z12, the
+ * landing's own read: round-4 plan 2026-10-11-0122 DEC-R4-1), or null
+ * where that tile's heights are not loaded. The plugin's own
+ * `sampleCartographicElevation` falls back to coarser levels, whose heights
+ * in the Alps differ by hundreds of metres: a landing revised by them
+ * would replan for nothing, then again. Reads the plugin's private tiling
+ * and grid cache (as `globe-height-keeper.ts` does); null if they are not
+ * there (a library change), so the landing is then never revised.
+ */
+export function finestElevationAt(
+  plugin: TerrariumMeshPluginInstance,
+  lat: number,
+  lon: number,
+): number | null {
+  return finestGridLoaded(plugin as unknown as FinestInternals, lat, lon)
+    ? plugin.sampleCartographicElevation(lat, lon)
+    : null;
+}
+
 type TerrariumMeshPluginConstructor = new (options: {
   url: string;
   maxZoom?: number;
+  tileDimension?: number;
   overlay?: TerrainImagery;
   applyOverlayTexture?: boolean;
   heightScale?: number;
@@ -360,6 +488,69 @@ type TerrariumMeshPluginConstructor = new (options: {
 const terrariumRuntime: unknown = (plugins as Record<string, unknown>)[
   "TerrariumMeshPlugin"
 ];
+
+const isTileDimension = (n: number): boolean =>
+  Number.isInteger(n) &&
+  n >= 1 &&
+  n <= GLOBE_TERRAIN.maxTileDimension &&
+  (n & (n - 1)) === 0;
+
+/** `createGlobeTerrain`'s refusals (RangeError), in one place. */
+function checkTerrainOptions(
+  url: string,
+  heightScale: number,
+  tileDimension: number,
+  meshMaxLevel: number | undefined,
+): void {
+  if (typeof url !== "string" || url.length === 0) {
+    throw new RangeError("the terrain needs a tile url");
+  }
+  if (!(heightScale >= 0 && Number.isFinite(heightScale))) {
+    throw new RangeError(
+      `the height scale must be finite and >= 0, got ${heightScale}`,
+    );
+  }
+  if (!isTileDimension(tileDimension)) {
+    throw new RangeError(
+      `the tile size must be a power of two from 1 to ${GLOBE_TERRAIN.maxTileDimension} px, got ${tileDimension}`,
+    );
+  }
+  if (
+    meshMaxLevel !== undefined &&
+    !(
+      Number.isInteger(meshMaxLevel) &&
+      meshMaxLevel >= 0 &&
+      meshMaxLevel <= GLOBE_TERRAIN.maxMeshLevel
+    )
+  ) {
+    throw new RangeError(
+      `the mesh level must be an integer from 0 to ${GLOBE_TERRAIN.maxMeshLevel}, got ${meshMaxLevel}`,
+    );
+  }
+}
+
+/**
+ * `overlay` with its tiling's `maxLevel` raised to at least `level`: the
+ * library's terrain plugin builds its tree to the overlay tiling's
+ * `maxLevel` when that is deeper than its own source levels (read once,
+ * in its root load), so the relief's mesh refines to `level` near the
+ * camera. Everything else is the overlay's own.
+ */
+function deeperTree(overlay: TerrainImagery, level: number): TerrainImagery {
+  return {
+    get tiling() {
+      const tiling = overlay.tiling as { maxLevel?: number } | null;
+      return Object.create(tiling ?? null, {
+        maxLevel: { value: Math.max(tiling?.maxLevel ?? 0, level) },
+      }) as unknown;
+    },
+    init: () => overlay.init(),
+    hasContent: (range, l) => overlay.hasContent(range, l),
+    lockTexture: (range, l) => overlay.lockTexture(range, l),
+    getTexture: (range, l) => overlay.getTexture(range, l),
+    releaseTexture: (range, l) => overlay.releaseTexture(range, l),
+  };
+}
 
 /** The relief carrier, as `createGlobeTerrain` returns it. */
 export interface GlobeTerrain {
@@ -376,21 +567,59 @@ export interface GlobeTerrain {
   litTiles(): number;
   /** The deferred height-scale refresh's counters (`installLazyHeightScale`). */
   heightScaleStats(): ReturnType<LazyHeightScale["stats"]>;
+  /** The kept heights' counters (`installHeightKeeper`). */
+  heightKeeperStats(): ReturnType<HeightKeeper["stats"]>;
+  /**
+   * The fallback's counters (`installReliefFallback`): tiles its source
+   * answered 404 for and drew from their nearest ancestor, and tiles that
+   * failed; null without `ancestorFallback`.
+   */
+  reliefFallback(): { fallbacks: number; failures: number } | null;
+  /**
+   * The relief cache now: bytes used and allowed, and whether it is full
+   * and turning tiles away (`watchReliefCache`): a stalled cache stops
+   * the relief refining, with nothing else on the page saying so.
+   */
+  reliefCache(): ReliefCacheState;
   dispose(): void;
 }
 
 /**
+ * The relief cache's budget: the app's own, else the device's for the
+ * tile size. The device class is checked either way, so a missing one is
+ * caught before an app's own budget hides it. RangeError for a bad budget
+ * or device class.
+ */
+function terrainCacheBudget(
+  tileDimension: number,
+  device: ReliefDeviceClass,
+  own: ReliefCacheBudget | undefined,
+): ReliefCacheBudget {
+  const deviceBudget = reliefCacheBudget(tileDimension, device);
+  const budget = own ?? deviceBudget;
+  checkReliefCacheBudget(budget);
+  return budget;
+}
+
+/**
  * The library's terrain tiles (`TerrariumMeshPlugin` on `url`, Terrarium
- * encoded, up to `maxZoom`) with the plate-carree `imagery` through
- * `geographicOverlay`, and on every tile it loads: heights as R16F
- * (`useHalfFloatHeights`) and the globe's lit copy of `template` over the
- * tile's box (`litTerrainMaterial`). The caller adds `tiles.group` to its
+ * encoded, up to `maxZoom`, tiles of `tileDimension` px) with the
+ * plate-carree `imagery` through `geographicOverlay`, and on every tile
+ * it loads: heights as R16F (`useHalfFloatHeights`) and the globe's lit
+ * copy of `template` over the tile's box (`litTerrainMaterial`). The caller adds `tiles.group` to its
  * scene and calls `tiles.update()`. A height-scale step refreshes only the
  * bounding volumes that are read (`installLazyHeightScale`) unless
  * `lazyHeightScale` is false, which keeps the library's whole-tree step (the
- * before case of a frame-time comparison). RangeError for an empty url or a
- * height scale that is not finite and >= 0; Error if the library stops
- * exporting the plugin.
+ * before case of a frame-time comparison). The relief has a tile cache of
+ * its own (the library's shared one, capped at the globe's 64 MB, filled
+ * with both carriers in the altitude band and refused every request, F1):
+ * `cache` if given, else `reliefCacheBudget(tileDimension, device)`, so a
+ * 512 px source gets a 512 px budget (G1 review M1). `ancestorFallback`
+ * draws a tile the source answers 404 for from its nearest ancestor
+ * (`installReliefFallback`). RangeError for an empty url, a height scale
+ * that is not finite and >= 0, a tile size that is not a power of two up
+ * to `GLOBE_TERRAIN.maxTileDimension`, a bad budget or device class;
+ * Error if the library stops exporting the plugin.
  */
 export function createGlobeTerrain(options: {
   url: string;
@@ -398,24 +627,32 @@ export function createGlobeTerrain(options: {
   template: THREE.MeshStandardMaterial;
   heightScale: number;
   maxZoom?: number;
+  tileDimension?: number;
   lazyHeightScale?: boolean;
+  keepHeightsBytes?: number;
+  /** Who the default budget is for; required, never guessed (G1 review M3). */
+  device: ReliefDeviceClass;
+  /** A budget of the app's own (the lab's setting) in place of the device's. */
+  cache?: ReliefCacheBudget;
+  ancestorFallback?: boolean;
+  meshMaxLevel?: number;
 }): GlobeTerrain {
   const {
     url,
     imagery,
     template,
     heightScale,
-    maxZoom = 12,
+    maxZoom = GLOBE_TERRAIN.maxZoom,
+    tileDimension = GLOBE_TERRAIN.tileDimension,
     lazyHeightScale: lazy = true,
+    keepHeightsBytes = GLOBE_TERRAIN.keepHeightsBytes,
+    device,
+    cache: ownBudget,
+    ancestorFallback = false,
+    meshMaxLevel,
   } = options;
-  if (typeof url !== "string" || url.length === 0) {
-    throw new RangeError("the terrain needs a tile url");
-  }
-  if (!(heightScale >= 0 && Number.isFinite(heightScale))) {
-    throw new RangeError(
-      `the height scale must be finite and >= 0, got ${heightScale}`,
-    );
-  }
+  checkTerrainOptions(url, heightScale, tileDimension, meshMaxLevel);
+  const budget = terrainCacheBudget(tileDimension, device, ownBudget);
   if (typeof terrariumRuntime !== "function") {
     throw new Error(
       "3d-tiles-renderer no longer exports TerrariumMeshPlugin from its plugins entry",
@@ -425,17 +662,32 @@ export function createGlobeTerrain(options: {
   const plugin = new Plugin({
     url,
     maxZoom,
-    overlay: geographicOverlay(imagery),
+    tileDimension,
+    overlay:
+      meshMaxLevel === undefined
+        ? geographicOverlay(imagery)
+        : deeperTree(geographicOverlay(imagery), meshMaxLevel),
     applyOverlayTexture: true,
     heightScale,
   });
+  // Where the source answers 404, its nearest ancestor (G1 review M2).
+  const fallback = ancestorFallback
+    ? installReliefFallback(
+        plugin as unknown as Parameters<typeof installReliefFallback>[0],
+        { tileDimension },
+      )
+    : null;
   const tiles = new TilesRenderer();
   const cache = new LRUCache();
   // The library's unload order (least recently used, deepest first).
   cache.unloadPriorityCallback = tiles.lruCache.unloadPriorityCallback;
-  cache.maxBytesSize = GLOBE_TERRAIN.cacheBytes;
-  cache.minBytesSize = GLOBE_TERRAIN.cacheFloorBytes;
+  cache.maxBytesSize = budget.maxBytes;
+  cache.minBytesSize = budget.minBytes;
   tiles.lruCache = cache;
+  // Its refusals kept, so a full cache is seen (G0 spikes: it stalled silently).
+  const cacheWatch = watchReliefCache(
+    tiles as unknown as Parameters<typeof watchReliefCache>[0],
+  );
   // Its own queues too, with the library's limits and order: the shared
   // ones held a relief not updated outside the band in front of the
   // globe's tiles (F1).
@@ -457,6 +709,10 @@ export function createGlobeTerrain(options: {
   // An E step refreshes only the volumes that are read, not the whole tree
   // (globe-lazy-height-scale.ts; perf plan 2026-10-03-2017 H1).
   const lazyHeightScale = lazy ? installLazyHeightScale(tiles, plugin) : null;
+  // A return into the band finds its decoded heights (DEC-N1).
+  const heightKeeper = installHeightKeeper(plugin, {
+    maxBytes: keepHeightsBytes,
+  });
   const owned = new Set<THREE.Material>();
   const detail = createGlobeDetailUniforms();
   // The last retired lit material stays alive, so the relief's program
@@ -493,8 +749,14 @@ export function createGlobeTerrain(options: {
         deferredRefreshes: 0,
         scaleChanges: 0,
       },
+    heightKeeperStats: () => heightKeeper.stats(),
+    reliefCache: () => cacheWatch.state(),
+    reliefFallback: () => fallback?.stats() ?? null,
     litTiles: () => owned.size,
     dispose() {
+      cacheWatch.dispose();
+      fallback?.dispose();
+      heightKeeper.dispose();
       for (const lit of owned) lit.dispose();
       owned.clear();
       retirer.dispose();

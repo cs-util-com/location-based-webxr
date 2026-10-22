@@ -144,7 +144,7 @@ import {
   heightfieldFrom,
   TERRAIN_EXTENT_M,
   type Heightfield,
-} from "./heightfield.js";
+} from "gps-plus-slam-osm";
 import { createTerrainCycle } from "./terrain-cycle.js";
 import { questBeaconPlacements } from "./quest-beacon-placement.js";
 import { fixedScale, heatColour } from "./heat-colours.js";

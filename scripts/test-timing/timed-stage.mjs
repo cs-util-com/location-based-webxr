@@ -11,7 +11,11 @@ import {
   stageRunTakesSlot,
 } from './machine-slot.mjs';
 import { getStage, resolveProject, PROJECTS } from './projects.mjs';
-import { runStage, WORKSPACE_ROOT } from './run-stage.mjs';
+import {
+  forwardSignalsToStages,
+  runStage,
+  WORKSPACE_ROOT,
+} from './run-stage.mjs';
 
 const [stageName, ...forwardedArgs] = process.argv.slice(2);
 if (!stageName) {
@@ -41,6 +45,10 @@ if (slotRule.take) {
 } else if (resolveSlotDir(process.env) !== null) {
   console.error(slotRule.reason);
 }
+
+// A watched stage runs in a process group of its own on POSIX
+// (run-stage.mjs), out of reach of a Ctrl-C or SIGTERM sent to this one.
+forwardSignalsToStages();
 
 const { exitCode } = await runStage(project, stageName, forwardedArgs);
 process.exit(exitCode);

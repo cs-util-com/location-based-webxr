@@ -10,17 +10,15 @@ import { createStationContent, type ContentPart } from "./station-content.js";
  * renders, not the handful the example tests walk. Over generated
  * sequences it holds that:
  * - while the page shows one station at most (presence, never "show all"),
- *   at most one station's group stands in the scene besides the
- *   always-shown content;
+ *   at most one station's group stands in the scene;
  * - every render's result is disposed at most once, and exactly once after
  *   the table is disposed;
  * - once a fade has ended, every material is back at its own opacity and
  *   its own transparent flag;
  * - once every render has landed and every fade ended, each station the
- *   page shows last that still has a part stands in the scene, and so does
- *   the always-shown content with a part: a table that hides content
- *   holds the first three promises trivially, so this one makes them mean
- *   something.
+ *   page shows last that still has a part stands in the scene: a table that
+ *   hides content holds the first three promises trivially, so this one
+ *   makes them mean something.
  */
 
 const FADE = 400;
@@ -30,14 +28,13 @@ async function flush(): Promise<void> {
   for (let i = 0; i < 30; i += 1) await Promise.resolve();
 }
 const STATIONS = ["a", "b", "c"] as const;
-const LOOSE = "loose";
 
 type Op =
   | { kind: "show"; id: (typeof STATIONS)[number] | null }
   | { kind: "show-all" }
   | {
       kind: "part";
-      id: (typeof STATIONS)[number] | typeof LOOSE;
+      id: (typeof STATIONS)[number];
       key: "x" | "y";
       remove: boolean;
       ownOpacity: number;
@@ -55,7 +52,7 @@ const op = (allowShowAll: boolean): fc.Arbitrary<Op> =>
     ...(allowShowAll ? [fc.constant({ kind: "show-all" as const })] : []),
     fc.record({
       kind: fc.constant("part" as const),
-      id: fc.constantFrom(...STATIONS, LOOSE),
+      id: fc.constantFrom(...STATIONS),
       key: fc.constantFrom("x" as const, "y" as const),
       remove: fc.boolean(),
       ownOpacity: fc.constantFrom(1, 0.7),
@@ -76,7 +73,6 @@ interface Made {
 
 function partOf(made: Made[], ownOpacity: number, delay: number): ContentPart {
   return {
-    kind: "content",
     async render(parent) {
       for (let i = 0; i < delay; i += 1) await Promise.resolve();
       const material = new MeshBasicMaterial({
@@ -107,18 +103,16 @@ async function run(ops: readonly Op[], presenceOnly: boolean): Promise<void> {
     scene,
     now: () => clock.ms,
     fadeMs: FADE,
-    alwaysShown: (id) => id === LOOSE,
   });
-  const stationGroups = () =>
-    scene.children.filter((g) => g.name !== `station-content:${LOOSE}`).length;
+  const stationGroups = () => scene.children.length;
   // Every station starts with a part, so presence changes always move
   // groups (a sequence that never sets one would test nothing).
-  for (const id of [...STATIONS, LOOSE]) {
+  for (const id of STATIONS) {
     content.setPart(id, "x", partOf(made, 1, 1));
   }
   /** The model: the part keys each station holds, and what the page shows. */
   const keys = new Map<string, Set<string>>(
-    [...STATIONS, LOOSE].map((id) => [id, new Set(["x"])]),
+    STATIONS.map((id) => [id, new Set(["x"])]),
   );
   let shown = new Set<string>();
   for (const step of ops) {
@@ -154,7 +148,7 @@ async function run(ops: readonly Op[], presenceOnly: boolean): Promise<void> {
   }
   if (presenceOnly) expect(stationGroups()).toBeLessThanOrEqual(1);
   const standing = new Set(scene.children.map((g) => g.name));
-  for (const id of [...shown, LOOSE]) {
+  for (const id of shown) {
     if (keys.get(id)!.size === 0) continue;
     expect(standing.has(`station-content:${id}`)).toBe(true);
   }
@@ -169,7 +163,7 @@ async function run(ops: readonly Op[], presenceOnly: boolean): Promise<void> {
 }
 
 describe("station content: properties over generated sequences", () => {
-  it("presence only: one station group at a time besides the always-shown content; the shown station stands; every result disposed once; materials restored", async () => {
+  it("presence only: one station group at a time; the shown station stands; every result disposed once; materials restored", async () => {
     let runs = 0;
     await fc.assert(
       fc.asyncProperty(

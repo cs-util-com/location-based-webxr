@@ -33,8 +33,11 @@
 //   dependents run via `--filter "...<name>" --filter "!<name>"` with
 //   GATE_SKIP_BROWSER_STAGES set; --workspace-concurrency=1 throughout
 //   (parallel gates would race e2e ports);
-// - the root repo-config tests always run first: they are seconds-cheap and
-//   guard the root config this selection logic itself depends on.
+// - the root repo-config tests run in every package-mode run: they are
+//   seconds-cheap and guard the root config this selection logic itself
+//   depends on (after the framework build when one runs, see select.mjs);
+// - a narrowed change (select.mjs.md "Narrowed changes") runs only what can
+//   read it, and the run prints ONE line naming everything it runs.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -43,7 +46,18 @@ import { fileURLToPath } from 'node:url';
 
 import { holdMachineSlotForProcess } from '../test-timing/machine-slot.mjs';
 import { SKIP_BROWSER_ENV } from '../test-timing/projects.mjs';
-import { cascadeCommands, gateCommands, selectPackages } from './select.mjs';
+import {
+  STALL_EXIT,
+  STALL_SUMMARY,
+  watchLine,
+} from '../test-timing/stall-watch.mjs';
+import {
+  cascadeCommands,
+  describeRun,
+  docOnlyDirs,
+  gateCommands,
+  selectPackages,
+} from './select.mjs';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -128,6 +142,10 @@ if (!dryRun) {
   await holdMachineSlotForProcess(`test:changed in ${WORKSPACE_ROOT}`);
 }
 
+// The watchdog limit every stage of this run gets, for whoever waits on its
+// log (wait-gate.mjs sizes its quiet window from it, not from its own env).
+console.log(watchLine(process.env, { watched: !process.stdout.isTTY }));
+
 if (runAll) {
   if (dryRun) {
     console.log('test-changed: --all ⇒ full cascade (pnpm test)');
@@ -156,11 +174,8 @@ if (selection.mode === 'all') {
 }
 
 const names = selection.packages.map(packageName);
-console.log(
-  names.length === 0
-    ? `test-changed: no package changes vs ${ref} — running repo-config tests only`
-    : `test-changed: changed vs ${ref}: ${selection.packages.join(', ')} (+ dependents)`
-);
+const docOnlyNames = docOnlyDirs(selection.docsOnly ?? []).map(packageName);
+console.log(describeRun(selection, ref));
 if (dryRun) {
   process.exit(0);
 }
@@ -209,6 +224,12 @@ function run(command, extraEnv = {}) {
 function runInOrder(commands) {
   for (const { command, env } of commands) {
     const status = run(command, env);
+    if (status === STALL_EXIT) {
+      // NAMED, so GATE-RC=124 is never read as a plain red test.
+      console.error(
+        `\ntest-changed: ✖ STALLED (exit ${STALL_EXIT}): ${STALL_SUMMARY}`
+      );
+    }
     if (status !== 0) {
       return status;
     }
@@ -217,7 +238,11 @@ function runInOrder(commands) {
 }
 
 const status = runInOrder(
-  gateCommands(names, { skipBrowserEnv: SKIP_BROWSER_ENV })
+  gateCommands(names, {
+    skipBrowserEnv: SKIP_BROWSER_ENV,
+    rootChecks: selection.rootChecks ?? [],
+    docOnlyNames,
+  })
 );
 
 if (status === 0 && names.length > 0) {
