@@ -31,8 +31,10 @@ are `tour-game-check.ts`.
   set or clear of the same label wins.
 - **Where they sit:** `requires` on a station, an item, a step and a choice
   option; `effects` on a choice option; `outcomes: { correct?, wrong? }` on
-  a quiz step. A choice option's `goto` names a step of the same station
-  (absent: the next step; one naming no step ends the scene).
+  a quiz step, and `typed: true` on a quiz answered by typing (text,
+  code, number) rather than by picking an option. A choice option's `goto`
+  names a step of the same station (absent: the next step; one naming no
+  step ends the scene).
 - **An option** is a choice's option or a quiz answer (its outcome's
   effects): both are all or nothing, and both show by the same display
   rule. Stations, items and scene steps are not options: one whose
@@ -59,7 +61,15 @@ are `tour-game-check.ts`.
   when what blocks it cannot be read (an undeclared name, an effect the
   game cannot apply, a requirement that is no whole number), or when the
   requirement both has and lacks one label (no need would be enough). A
-  secret that does not block the option hides nothing.
+  secret that does not block the option hides nothing. For a choice quiz,
+  call it per answer with that answer's outcome (`{ effects:
+outcomes.correct }` or `.wrong`).
+- `quizInputDisplay(game, state, outcomes)` - a TYPED quiz's single input,
+  judged on both outcomes together (the outcome is known only after
+  submitting): `available` only when either outcome could be paid; else
+  `hidden` when either outcome would be hidden, else `greyed` with both
+  outcomes' needs merged (per counter the larger shortfall, so meeting
+  the needs makes both payable).
 - `chooseOption(game, state, option)` - all or nothing: `{ ok: true, state }`
   or `{ ok: false, reason }` with the state untouched.
 - `answerQuiz(game, state, outcomes, correct)` - the same for a quiz
@@ -146,7 +156,10 @@ optionDisplay(game, { round: 1, labels: [], counters: { coins: 1 } }, buy);
   secret or something unreadable. Deliberate defects each caught
   (2026-10-22): a secret label ignored by the display, the smaller of two
   counter shortfalls kept, a quiz answer applied without its floor, a
-  round label greyed.
+  round label greyed. A typed quiz's input is offered exactly when both
+  outcomes are accepted, and its greyed needs are enough together and each
+  necessary for both (a defect that never greys the input was caught, 5 of
+  5 seeds).
 - `tour-game-scenarios.test.ts` - four tours walked end to end: a path
   choice, a key behind a quiz, a merchant with a coin floor, a collectible
   set over two rounds with gated scene steps.

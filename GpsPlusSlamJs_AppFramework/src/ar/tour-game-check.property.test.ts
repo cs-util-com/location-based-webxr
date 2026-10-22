@@ -36,6 +36,7 @@ import {
   nextAvailableStep,
   startNextRound,
   startRun,
+  optionDisplay,
   stepAfter,
   type TourGame,
   type TourGameCondition,
@@ -114,12 +115,20 @@ function stepAt(i: number, count: number): fc.Arbitrary<TourGameStep> {
         ...(r.length === 0 ? {} : { requires: r }),
         options,
       })),
-    fc.record({ requires, correct: effects, wrong: effects }).map((q) => ({
-      id,
-      kind: 'quiz' as const,
-      ...(q.requires.length === 0 ? {} : { requires: q.requires }),
-      outcomes: { correct: q.correct, wrong: q.wrong },
-    }))
+    fc
+      .record({
+        requires,
+        correct: effects,
+        wrong: effects,
+        typed: fc.boolean(),
+      })
+      .map((q) => ({
+        id,
+        kind: 'quiz' as const,
+        ...(q.requires.length === 0 ? {} : { requires: q.requires }),
+        ...(q.typed ? { typed: true } : {}),
+        outcomes: { correct: q.correct, wrong: q.wrong },
+      }))
   );
 }
 
@@ -154,13 +163,14 @@ const tour: fc.Arbitrary<TourGame> = fc
       minLength: 2,
       maxLength: 2,
     }),
+    secret: fc.array(fc.boolean(), { minLength: 2, maxLength: 2 }),
     stations: fc
       .integer({ min: 1, max: 4 })
       .chain((n) =>
         fc.tuple(...Array.from({ length: n }, (_, s) => station(s)))
       ),
   })
-  .map(({ keeps, starts, stations }) => ({
+  .map(({ keeps, starts, secret, stations }) => ({
     labels: LABEL_IDS.map((id, i) => ({ id, name: id, keep: keeps[i]! })),
     counters: COUNTER_IDS.map((id, i) => ({
       id,
@@ -168,6 +178,7 @@ const tour: fc.Arbitrary<TourGame> = fc
       keep: keeps[3 + i]!,
       start: starts[i]!,
       floor: 0,
+      ...(secret[i]! ? { secret: true } : {}),
     })),
     stations,
   }));
@@ -180,6 +191,9 @@ interface Seen {
   options: Set<string>;
   /** Choices and quizzes some walk reached with nothing to pick. */
   stuck: Set<string>;
+  /** Choice quizzes some walk reached showing one outcome's answers and
+   *  the other's greyed: the quiz gave its answer away. */
+  gaveAway: Set<string>;
 }
 
 interface Walk {
@@ -263,11 +277,28 @@ function sceneMoves(
     push(enter(game, { ...w, run }, si, from));
   };
   if (step.kind === 'quiz') {
-    for (const correct of [true, false]) {
-      const result = answerQuiz(game, w.run, step.outcomes, correct);
-      if (result.ok) {
-        const key = correct ? 'correct' : 'wrong';
-        taken(result.state, key, stepAfter(st.steps, i));
+    const results = [true, false].map((correct) =>
+      answerQuiz(game, w.run, step.outcomes, correct)
+    );
+    // A typed input is one box: usable only when either outcome can be
+    // paid. A choice quiz offers each outcome's answers on their own.
+    const open = step.typed === true ? results.every((r) => r.ok) : true;
+    results.forEach((result, k) => {
+      if (open && result.ok) {
+        taken(
+          result.state,
+          k === 0 ? 'correct' : 'wrong',
+          stepAfter(st.steps, i)
+        );
+      }
+    });
+    if (step.typed !== true) {
+      const shown = [step.outcomes.correct, step.outcomes.wrong].map(
+        (effects) =>
+          optionDisplay(game, w.run, { effects: effects ?? [] }).shown
+      );
+      if (shown.includes('available') && shown.includes('greyed')) {
+        seen.gaveAway.add(ref);
       }
     }
   } else {
@@ -290,6 +321,7 @@ function exhaustive(game: TourGame, cap = COUNTER_CAP): Seen {
     steps: new Set(),
     options: new Set(),
     stuck: new Set(),
+    gaveAway: new Set(),
   };
   const visited = new Set<string>();
   const queue: Walk[] = [
@@ -354,6 +386,19 @@ function violations(
   for (const ref of seen.stuck) {
     if (!softlocks.has(ref)) out.push(`stuck choice not reported: ${ref}`);
   }
+  // Giving the answer away is reported as the warning, or - when one
+  // outcome can never be paid - as that outcome never being available.
+  const warned = new Set(
+    findings.flatMap((f) =>
+      f.kind === 'quiz-may-give-answer-away' ||
+      (f.kind === 'option-never-available' && f.at.outcome !== undefined)
+        ? [refKey({ station: f.at.station, step: f.at.step })]
+        : []
+    )
+  );
+  for (const ref of seen.gaveAway) {
+    if (!warned.has(ref)) out.push(`answer given away, not reported: ${ref}`);
+  }
   return out;
 }
 
@@ -368,6 +413,8 @@ const GUARDED_CAUSES = [
   'option-never-available:floor',
   'option-never-available:counter-out-of-reach',
   'stuck',
+  'gave-away',
+  'quiz-may-give-answer-away',
 ] as const;
 
 describe('tour game check - against an exhaustive walk search', () => {
@@ -381,8 +428,10 @@ describe('tour game check - against an exhaustive walk search', () => {
         for (const f of findings) {
           if (f.kind === 'unreachable' || f.kind === 'option-never-available')
             count(`${f.kind}:${f.because.kind}`);
+          if (f.kind === 'quiz-may-give-answer-away') count(f.kind);
         }
         count('stuck', seen.stuck.size);
+        count('gave-away', seen.gaveAway.size);
         expect(violations(findings, seen)).toEqual([]);
       }),
       { numRuns: 1000 }

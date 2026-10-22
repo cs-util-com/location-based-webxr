@@ -19,6 +19,9 @@
  * - An unavailable option is shown GREYED with what it needs when every
  *   label and counter blocking it is visible, and HIDDEN when any of them
  *   is `secret` (or the game cannot read what blocks it).
+ * - A TYPED quiz (text, code, number) has one input for both outcomes: it
+ *   is judged on both together, available only when either could be paid,
+ *   else greyed or hidden as a whole (`quizInputDisplay`).
  * - A scene continues after a step at `stepAfter`: an option's `goto` (the
  *   first step with that id), else the next step; a `goto` naming no step
  *   ends the scene.
@@ -103,6 +106,9 @@ export type TourGameStep =
       readonly kind: 'quiz';
       readonly requires?: readonly TourGameCondition[];
       readonly outcomes: TourGameQuizOutcomes;
+      /** Answered by typing (text, code, number) rather than by picking
+       *  an option: one input for both outcomes. Default false. */
+      readonly typed?: boolean;
     };
 
 /** A placed item (pin, photo, model) as the rules see it. */
@@ -448,6 +454,31 @@ export function optionDisplay(
     addNeed(needs, need);
   }
   return { shown: 'greyed', needs };
+}
+
+/**
+ * How a typed quiz's input (text, code, number) shows now. The outcome is
+ * known only once the visitor submits, so the input is judged on both
+ * outcomes together: available when either could be paid; otherwise
+ * hidden when either outcome is hidden, else greyed with both outcomes'
+ * needs merged (per counter the larger shortfall).
+ */
+export function quizInputDisplay(
+  game: TourGame,
+  state: TourGameRunState,
+  outcomes: TourGameQuizOutcomes
+): TourGameDisplay {
+  const verdicts = [outcomes.correct, outcomes.wrong].map((effects) =>
+    optionDisplay(game, state, { effects: effects ?? [] })
+  );
+  if (verdicts.some((v) => v.shown === 'hidden')) return { shown: 'hidden' };
+  const needs: TourGameNeed[] = [];
+  for (const v of verdicts) {
+    if (v.shown === 'greyed') for (const n of v.needs) addNeed(needs, n);
+  }
+  return needs.length === 0
+    ? { shown: 'available' }
+    : { shown: 'greyed', needs };
 }
 
 /** Take an option: all or nothing. */

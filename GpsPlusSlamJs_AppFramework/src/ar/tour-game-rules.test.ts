@@ -18,6 +18,7 @@ import {
   inventory,
   nextAvailableStep,
   optionDisplay,
+  quizInputDisplay,
   startNextRound,
   startRun,
   stepAfter,
@@ -442,6 +443,72 @@ describe('optionDisplay', () => {
         shown: 'hidden',
       });
     }
+  });
+});
+
+// A typed answer (text, code, number) is one input box whose outcome is
+// unknown until the visitor submits: it can be offered only when either
+// outcome could be paid, and greyed or hidden as a whole otherwise.
+describe('quizInputDisplay', () => {
+  const GAME2: TourGame = {
+    labels: [],
+    counters: [
+      { id: 'coins', name: 'Coins', keep: 'round', start: 0, floor: 0 },
+      {
+        id: 'karma',
+        name: 'Karma',
+        keep: 'round',
+        start: 0,
+        floor: 0,
+        secret: true,
+      },
+    ],
+    stations: [],
+  };
+  const at = (coins: number): TourGameRunState =>
+    withState([], { coins, karma: 0 });
+
+  it('offers the input when either outcome could be paid', () => {
+    const outcomes = {
+      correct: [{ add: 'coins', by: 1 }],
+      wrong: [{ add: 'coins', by: -2 }],
+    };
+    expect(quizInputDisplay(GAME2, at(2), outcomes)).toEqual({
+      shown: 'available',
+    });
+  });
+
+  it('greys the whole input when one outcome cannot be paid, saying what it needs', () => {
+    const outcomes = { wrong: [{ add: 'coins', by: -2 }] };
+    expect(quizInputDisplay(GAME2, at(1), outcomes)).toEqual({
+      shown: 'greyed',
+      needs: [{ counter: 'coins', need: 1 }],
+    });
+  });
+
+  // Meeting the larger shortfall meets both outcomes' costs.
+  it('merges both outcomes needs into the larger one per counter', () => {
+    const outcomes = {
+      correct: [{ add: 'coins', by: -1 }],
+      wrong: [{ add: 'coins', by: -3 }],
+    };
+    expect(quizInputDisplay(GAME2, at(0), outcomes)).toEqual({
+      shown: 'greyed',
+      needs: [{ counter: 'coins', need: 3 }],
+    });
+  });
+
+  it('hides the whole input when a secret blocks either outcome', () => {
+    const outcomes = {
+      correct: [{ add: 'coins', by: -1 }],
+      wrong: [{ add: 'karma', by: -1 }],
+    };
+    expect(quizInputDisplay(GAME2, at(0), outcomes)).toEqual({
+      shown: 'hidden',
+    });
+    expect(
+      quizInputDisplay(GAME2, at(0), { wrong: [{ set: 'nope' }] })
+    ).toEqual({ shown: 'hidden' });
   });
 });
 

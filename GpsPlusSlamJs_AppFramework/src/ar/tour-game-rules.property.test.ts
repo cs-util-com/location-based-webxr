@@ -20,6 +20,7 @@ import {
   chooseOption,
   inventory,
   optionDisplay,
+  quizInputDisplay,
   startNextRound,
   startRun,
   type TourGame,
@@ -319,6 +320,44 @@ describe('tour game rules - properties', () => {
             const allBut = shown.needs.filter((__, j) => j !== k);
             expect(chooseOption(g, meeting(s, allBut), target).ok).toBe(false);
           });
+        }
+      ),
+      { numRuns: 400 }
+    );
+    expect(greyed).toBeGreaterThan(0);
+  });
+
+  // A typed answer's input is one box for two possible outcomes: offered
+  // only when both could be paid, and a greyed box's needs must be
+  // exactly what makes both payable.
+  it('offers a typed input only when both outcomes can be paid, with needs that are exact', () => {
+    let greyed = 0;
+    fc.assert(
+      fc.property(
+        game,
+        fc.array(action, { maxLength: 10 }),
+        effects,
+        effects,
+        (g, before, correct, wrong) => {
+          const s = reached(g, before);
+          const outcomes = { correct, wrong };
+          const both = (at: TourGameRunState) =>
+            answerQuiz(g, at, outcomes, true).ok &&
+            answerQuiz(g, at, outcomes, false).ok;
+          const shown = quizInputDisplay(g, s, outcomes);
+          expect(shown.shown === 'available').toBe(both(s));
+          const needs = shown.shown === 'greyed' ? shown.needs : [];
+          if (needs.length > 0) greyed += 1;
+          expect(needs.length === 0 || both(meeting(s, needs))).toBe(true);
+          const partial = needs.map((_, k) =>
+            both(
+              meeting(
+                s,
+                needs.filter((__, j) => j !== k)
+              )
+            )
+          );
+          expect(partial.filter(Boolean)).toEqual([]);
         }
       ),
       { numRuns: 400 }

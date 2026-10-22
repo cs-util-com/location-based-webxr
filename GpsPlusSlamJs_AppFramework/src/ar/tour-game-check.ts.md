@@ -40,6 +40,21 @@ Findings (`kind`, with where -
   tour can never pay is never available, and the quiz then gives its
   answer away); `because` as above, or `floor` (with the bound `max`).
 - `choice-may-softlock` - a reachable choice or quiz with no free option.
+  A typed quiz (`typed: true`) is ONE option with two outcomes: it can be
+  answered only when both could be paid (so one outcome the tour can never
+  pay closes it, reported on that outcome, and stops the scene flow), and
+  it is free only when neither outcome costs.
+- `quiz-may-give-answer-away` (with `counter`) - a reachable choice quiz
+  (not typed) whose two outcomes could each be paid but change a VISIBLE
+  counter by different nets, the lower one negative. Then at some value of
+  that counter the dearer outcome's answers are greyed beside the
+  cheaper's, which shows the visitor which answer is right. The remedy
+  the view should suggest: equal costs on both outcomes. It does not fire
+  for a typed quiz (one input for both), for a secret counter (the answers
+  are hidden, not greyed - though hiding the dearer outcome's answers
+  singles out the right ones as well, so that case is a known gap), or
+  when one outcome can never be paid (that is
+  `option-never-available`, the "always" case).
 
 **No reachability verdict on a misread tour:** while any `duplicate-name`,
 `start-below-floor` or counter `bad-number` (`start` or `floor`) finding
@@ -82,6 +97,13 @@ them.
   `has L` and `lacks L` of a DECLARED label counts as free together. The
   warning never misses a choice or quiz some walk reaches with nothing to
   pick, and may warn about one that never is.
+- **Giving the answer away:** with both outcomes payable at the bound, a
+  visible counter with nets `a != b`, `min(a, b) < 0`, has values in
+  `[floor, max(c)]` where the cheaper outcome is payable and the dearer is
+  not (the bound guarantees one), so the warning is an over-approximation
+  like the softlock one: it never misses a quiz some walk reaches showing
+  one outcome's answers available and the other's greyed (that walk's
+  state lies in the range), and may warn about one no walk reaches so.
 - **The fixpoint ends:** every condition only gets easier as the bounds
   grow, so the set of sources only grows and the bounds are a function of
   it; a pass that changes them adds a source or makes one repeatable, at
@@ -111,8 +133,11 @@ checkTourGame({
   has/lacks pair is free, but not for an undeclared label; a quiz with one
   free outcome cannot trap), a `goto` naming no step, a chain of options
   the fixpoint climbs one per pass (1 to 300 long), the malformed
-  declarations that suppress the reachability verdict, and the known
-  limitation.
+  declarations that suppress the reachability verdict, the known
+  limitation, typed quizzes against choice quizzes (one unpayable outcome
+  closes a typed input; any cost may trap it), and the give-away warning
+  with its near misses (equal costs, upward costs, typed, secret counter,
+  an outcome never payable).
 - `tour-game-check.property.test.ts` - on random small tours (any `goto`,
   backwards, to itself or to no step) an exhaustive search plays every
   walk of up to three rounds with the rules themselves, dropping walk
@@ -122,12 +147,22 @@ checkTourGame({
   reaches with nothing to pick is reported. 1000 runs; guarded against
   vacuity per cause (each `unreachable` cause, `floor` and
   `counter-out-of-reach` options, stuck steps all occur). The walk of the
-  `goto`-to-no-step tour is pinned beside it.
+  `goto`-to-no-step tour is pinned beside it. The tours also carry typed
+  quizzes (answered only when both outcomes are payable) and secret
+  counters, and a third promise is held: every choice quiz a walk reaches
+  with one outcome available and the other greyed is reported as
+  `quiz-may-give-answer-away` or as an outcome never available (guarded:
+  both the walk state and the warning occur).
 - Parameters swept locally (2026-10-22), green throughout: the counter
   cap 5-50 against rounds 2-4 (600 runs each), up to 6 stations of up to
   5 steps (300 runs), the chain length 1-2000 (2000 takes 1.6 s). Mutants
   caught: `onLoop` always false (8 of 8 seeds at 1000 runs, 4 of 8 at
   250 - why the run count is 1000), no softlock for a quiz, a pass cap cut
   short returning its bounds (the chain test; the property at caps 1-2).
-  The TOP fallback stays green at caps 2-5.
+  The TOP fallback stays green at caps 2-5. With typed quizzes and the
+  give-away promise added: green at counter caps 5/20/40 against rounds
+  2-4 (1000 runs; cap 40 with 4 rounds takes 17 s); mutants caught 5 of 5
+  seeds each: no give-away warning (property and unit), a typed quiz
+  treated as a choice quiz (property and unit), the warning firing on a
+  secret counter (unit only - over-warning breaks no promise).
 - `tour-game-scenarios.test.ts` - the four scenario tours are clean.

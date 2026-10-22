@@ -46,7 +46,15 @@
  * going down; or a pair of otherwise free options requiring `has L` and
  * `lacks L`) MAY leave the visitor with nothing to pick. It never misses
  * such a step, and the cure - one free option such as "leave" - is always
- * cheap.
+ * cheap. A typed quiz is one option with two outcomes: open only when both
+ * could be paid, free only when neither costs.
+ *
+ * `quiz-may-give-answer-away` makes the same trade: a reachable choice
+ * quiz (not typed) whose outcomes could each be paid but cost differently
+ * on a visible counter, so at some value of it one outcome's answers are
+ * greyed beside the other's and show which is right. It never misses a
+ * quiz some walk reaches in that state (or the case where one outcome can
+ * never be paid, which `option-never-available` reports instead).
  *
  * Pure and dependency-free; findings come in declaration order,
  * structural first. The input is a parsed game: every array present.
@@ -129,7 +137,13 @@ type TourGameFinding =
       readonly at: TourGameRef;
       readonly because: TourGameCause;
     }
-  | { readonly kind: 'choice-may-softlock'; readonly at: TourGameRef };
+  | { readonly kind: 'choice-may-softlock'; readonly at: TourGameRef }
+  | {
+      readonly kind: 'quiz-may-give-answer-away';
+      readonly at: TourGameRef;
+      /** The visible counter its outcomes cost differently on. */
+      readonly counter: string;
+    };
 
 /** Every finding for this game: structural first, then reachability. */
 export function checkTourGame(game: TourGame): TourGameFinding[] {
@@ -404,49 +418,124 @@ function netAdds(effects: readonly TourGameEffect[]): Map<string, number> {
   return net;
 }
 
-/** Something a visitor takes at a step: a choice's option, or a quiz's
- *  outcome (answering right or wrong). */
-interface Answer {
-  /** Where a finding about it points, beside its step. */
+/** One way an answer can turn out, and where a finding about it points
+ *  beside its step. */
+interface Branch {
   readonly ref:
     { readonly option: string } | { readonly outcome: 'correct' | 'wrong' };
-  readonly requires: readonly TourGameCondition[] | undefined;
   readonly effects: readonly TourGameEffect[];
+}
+
+/** Something a visitor takes at a step: a choice's option (one branch),
+ *  a choice quiz's outcome (one branch: its answers are offered on their
+ *  own), or a typed quiz's input (two branches: right and wrong share one
+ *  input, which is open only when both could be paid). */
+interface Answer {
+  readonly requires: readonly TourGameCondition[] | undefined;
+  readonly branches: readonly Branch[];
   /** The choice's option, for its `goto`; a quiz continues at the next
    *  step. */
   readonly option: TourGameOption | undefined;
 }
 
+function quizBranch(
+  step: Extract<TourGameStep, { kind: 'quiz' }>,
+  outcome: 'correct' | 'wrong'
+): Branch {
+  return { ref: { outcome }, effects: step.outcomes[outcome] ?? [] };
+}
+
 function answersOf(step: TourGameStep): Answer[] {
   if (step.kind === 'choice') {
     return step.options.map((option) => ({
-      ref: { option: option.id },
       requires: option.requires,
-      effects: option.effects ?? [],
+      branches: [{ ref: { option: option.id }, effects: option.effects ?? [] }],
       option,
     }));
   }
-  if (step.kind === 'quiz') {
-    return (['correct', 'wrong'] as const).map((outcome) => ({
-      ref: { outcome },
-      requires: undefined,
-      effects: step.outcomes[outcome] ?? [],
-      option: undefined,
-    }));
-  }
-  return [];
+  if (step.kind !== 'quiz') return [];
+  const branches = [quizBranch(step, 'correct'), quizBranch(step, 'wrong')];
+  return step.typed === true
+    ? [{ requires: undefined, branches, option: undefined }]
+    : branches.map((b) => ({
+        requires: undefined,
+        branches: [b],
+        option: undefined,
+      }));
 }
 
+/** Why one branch's effects could never be applied, or null. */
+function branchCause(
+  effects: readonly TourGameEffect[],
+  bounds: Bounds,
+  names: Names
+): TourGameCause | null {
+  return effectsCause(effects, names) ?? floorCause(effects, bounds, names);
+}
+
+/** Why the answer could never be taken (every branch must be payable),
+ *  or null when it could. */
 function answerCause(
   answer: Answer,
   bounds: Bounds,
   names: Names
 ): TourGameCause | null {
-  return (
-    listCause(answer.requires, bounds, names) ??
-    effectsCause(answer.effects, names) ??
-    floorCause(answer.effects, bounds, names)
-  );
+  const listed = listCause(answer.requires, bounds, names);
+  if (listed !== null) return listed;
+  for (const b of answer.branches) {
+    const why = branchCause(b.effects, bounds, names);
+    if (why !== null) return why;
+  }
+  return null;
+}
+
+/** An answer that could never be taken, reported on each branch at fault
+ *  (every branch, when its requirement is). */
+function neverAvailable(
+  answer: Answer,
+  at: TourGameRef,
+  bounds: Bounds,
+  names: Names
+): TourGameFinding[] {
+  const listed = listCause(answer.requires, bounds, names);
+  return answer.branches.flatMap((b): TourGameFinding[] => {
+    const why = listed ?? branchCause(b.effects, bounds, names);
+    return why === null
+      ? []
+      : [
+          {
+            kind: 'option-never-available',
+            at: { ...at, ...b.ref },
+            because: why,
+          },
+        ];
+  });
+}
+
+/**
+ * The visible counter a choice quiz's outcomes cost differently on, if
+ * any: with both outcomes payable at some point, some value of it pays
+ * the cheaper outcome and not the dearer one, so the dearer one's
+ * answers are greyed beside the other's and the quiz gives its answer
+ * away. An outcome that can never be paid is left to
+ * `option-never-available` (the quiz ALWAYS gives it away); a typed quiz
+ * shows one input for both, and a secret counter hides rather than greys.
+ */
+function giveAwayCounter(
+  step: TourGameStep,
+  bounds: Bounds,
+  names: Names
+): string | undefined {
+  if (step.kind !== 'quiz' || step.typed === true) return undefined;
+  const lists = [step.outcomes.correct ?? [], step.outcomes.wrong ?? []];
+  if (lists.some((e) => branchCause(e, bounds, names) !== null))
+    return undefined;
+  const [right, wrong] = lists.map(netAdds);
+  return [...names.counters.values()].find((counter) => {
+    const a = right!.get(counter.id) ?? 0;
+    const b = wrong!.get(counter.id) ?? 0;
+    return counter.secret !== true && a !== b && Math.min(a, b) < 0;
+  })?.id;
 }
 
 /** The first effect the game cannot apply, as a cause; else null. */
@@ -565,8 +654,8 @@ function onLoop(
   return false;
 }
 
-/** The effect lists a playing step can apply: its options (or quiz
- *  outcomes) that could be available. */
+/** The effect lists a playing step can apply: every branch of its
+ *  options (or quiz outcomes, or typed input) that could be available. */
 function sourcesOf(
   step: TourGameStep,
   repeatable: boolean,
@@ -575,7 +664,9 @@ function sourcesOf(
 ): Source[] {
   return answersOf(step)
     .filter((answer) => answerCause(answer, bounds, names) === null)
-    .map((answer) => ({ effects: answer.effects, repeatable }));
+    .flatMap((answer) =>
+      answer.branches.map((b) => ({ effects: b.effects, repeatable }))
+    );
 }
 
 /** The bounds the sources imply. */
@@ -648,12 +739,13 @@ function fixpoint(game: TourGame, names: Names): Bounds {
   };
 }
 
-/** A free option: no requirement, effects that apply, no counter down. */
+/** A free option: no requirement, and on every branch effects that apply
+ *  and no counter down. */
 function isFreeOfCost(answer: Answer, names: Names): boolean {
-  return (
-    answer.effects.every(
-      (e) => names.unknownIn(e) === undefined && !isBadAdd(e)
-    ) && [...netAdds(answer.effects).values()].every((d) => d >= 0)
+  return answer.branches.every(
+    ({ effects }) =>
+      effects.every((e) => names.unknownIn(e) === undefined && !isBadAdd(e)) &&
+      [...netAdds(effects).values()].every((d) => d >= 0)
   );
 }
 
@@ -708,17 +800,14 @@ function stationFindings(
     if (step.kind === 'content') return;
     const answers = answersOf(step);
     for (const answer of answers) {
-      const why = answerCause(answer, bounds, names);
-      if (why !== null) {
-        out.push({
-          kind: 'option-never-available',
-          at: { ...at, ...answer.ref },
-          because: why,
-        });
-      }
+      out.push(...neverAvailable(answer, at, bounds, names));
     }
     if (!hasFreeOption(answers, names)) {
       out.push({ kind: 'choice-may-softlock', at });
+    }
+    const counter = giveAwayCounter(step, bounds, names);
+    if (counter !== undefined) {
+      out.push({ kind: 'quiz-may-give-answer-away', at, counter });
     }
   });
   return out;
