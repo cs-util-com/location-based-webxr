@@ -100,6 +100,20 @@ describe('projects.mjs config invariants', () => {
       }
     }
   );
+
+  // Why: the stage watchdog skips a nestedGate row and watches its leaves
+  // one level down. A row that spawns a whole package gate without the flag
+  // would be watched twice and could kill a healthy gate from above, naming
+  // the row instead of the leaf; a leaf with the flag would not be watched.
+  it.each(PROJECTS.map((p) => [p.name, p]))(
+    '%s: exactly the rows that run a package gate are marked nestedGate',
+    (_name, project) => {
+      for (const stage of project.stages) {
+        const runsPackageGate = /^pnpm --filter \S+ test$/.test(stage.command);
+        expect(Boolean(stage.nestedGate), stage.name).toBe(runsPackageGate);
+      }
+    }
+  );
 });
 
 describe('check:cycles reaches the worker subgraphs', () => {
