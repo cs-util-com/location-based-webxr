@@ -23,7 +23,7 @@ size, facing as printed.
   for a square whose printed face is +z: its full rotation when it has
   one, else the vertical poster of its heading (+x along the heading by
   `localPlaneToEnu`, +y up, the face at heading + 90 degrees).
-- `createStationsLayer(deps)` -> `StationsLayer`:
+- `createStationsLayer(deps)` -> the layer:
   - `setTour(manifest, levels)` - when the document changes; a station
     whose place in the list and record are unchanged is not rebuilt;
   - `update(view)` - each frame: near-K (`nearStations`), the morph;

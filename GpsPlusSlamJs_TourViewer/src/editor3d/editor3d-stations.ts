@@ -454,5 +454,3 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     },
   };
 }
-
-export type StationsLayer = ReturnType<typeof createStationsLayer>;

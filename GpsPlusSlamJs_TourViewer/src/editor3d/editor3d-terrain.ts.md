@@ -16,14 +16,14 @@ near the camera under the editor's own gate, and the credits both need.
 - `DESKTOP_MIN_WIDTH_PX` - 768; `reliefDeviceClass(widthPx)` -> `"desktop"`
   wider than 768 px (tablets included), `"phone"` otherwise and for a
   width that is not finite and > 0.
-- `EditorCredit` - the globe's credit shape (`short`, full text, `href`).
 - `createEditorTerrain({ renderer, centre, device })` -> `EditorTerrain`:
   - `terrain` - the globe's `GlobeTerrain`;
   - `worldFromEcef` - ECEF to the world (x east, y up, z south at
     `centre`, the ellipsoid's point of the centre at the origin), also
     decomposed into the tiles' group;
   - `osm` - the attached, enabled map overlay;
-  - `credits` - the heights' sources, then the map's;
+  - `credits` - the heights' sources, then the map's (the globe's credit
+    shape: `short`, full text, `href`);
   - `groundAt(latRad, lonRad)` - the drawn ground (m over the ellipsoid),
     null where none is loaded;
   - `update(camera, renderer, nowMs)` - per frame: the map's gate from the

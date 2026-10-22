@@ -24,7 +24,8 @@ the map page's own code nor the phone's pages hold any of it.
   standing, the stations layer's counts, the map's stats, and each
   station's drawn height and the drawn ground under it); `setTilt(deg)`
   (the page's checks: the orbit's tilt, its distance and heading kept).
-- Types `Editor3dStore`, `Editor3dDeps`, `Editor3dStats`.
+- Types `Editor3dDeps`, `Editor3dStats` (the store it takes is structural:
+  `getState()` with `tourDocument` and `editorView`, and `subscribe`).
 
 ## Invariants & assumptions
 

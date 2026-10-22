@@ -47,7 +47,7 @@ import { tourCentre } from "./editor3d-tour-root.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 
 /** The store, as the 3D view reads it. */
-export interface Editor3dStore {
+interface Editor3dStore {
   getState(): {
     readonly tourDocument: TourDocumentState;
     readonly editorView: EditorViewState;
