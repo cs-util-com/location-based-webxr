@@ -5,6 +5,10 @@
 // and reported as a warning — the underlying command's exit code is always
 // what the caller gets (recording must never break the gate).
 //
+// It also runs the no-output watchdog (stall-watch.mjs): an unfiltered leaf
+// stage that prints nothing for GATE_STALL_MIN minutes (default 20) is killed
+// with its whole process tree and returns STALL_EXIT (124).
+//
 // Adapted from the GpsPlusSlamJs pilot: every entry point takes the
 // ProjectConfig resolved by the calling shell instead of a module-level
 // single-project constant.
@@ -27,6 +31,16 @@ import { computeDelta } from './delta.mjs';
 import { machineFingerprint, machineLabel } from './machine.mjs';
 import { parsePlaywrightCounts, parseVitestCounts } from './reporter-parse.mjs';
 import { buildStageCommand, decideRecording } from './stage-args.mjs';
+import {
+  STALL_EXIT,
+  STALL_KILL_GRACE_MS,
+  shouldReportSilence,
+  silenceClock,
+  silenceLine,
+  stallLimitMs,
+  stallMessage,
+  stallPollMs,
+} from './stall-watch.mjs';
 import { gateBaseCommand, getStage, stageOrder } from './projects.mjs';
 import {
   LOWERED_MARKER_ENV,
@@ -116,20 +130,179 @@ function withBinPath(env, root) {
 }
 
 /**
+ * Process groups of the stages running right now, POSIX only: a watched
+ * stage runs `detached` there, in a group of its own, so the watchdog can
+ * kill the whole tree. That also takes it out of the terminal's group, so a
+ * Ctrl-C or a SIGTERM to the gate no longer reaches it on its own; these are
+ * the groups `signalLiveStages` forwards to.
+ *
+ * @type {Map<number, { signalled: boolean }>}
+ */
+const liveGroups = new Map();
+
+/** @param {number} pid @returns {boolean} is that process group still there? */
+function groupAlive(pid) {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Blocks the thread for `ms`: for the exit path, where nothing async runs. */
+function blockFor(/** @type {number} */ ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Sends `signal` to the given live stage groups (POSIX), then SIGKILL to any
+ * group still there after STALL_KILL_GRACE_MS. SYNCHRONOUS, because it runs
+ * on the way out (a signal handler that exits next, or the `exit` hook),
+ * where no timer fires: a stage group that ignores the signal, such as a
+ * worker wedged in a loop or one that traps it, would otherwise outlive the
+ * gate.
+ *
+ * @param {NodeJS.Signals} signal
+ * @param {(state: { signalled: boolean }) => boolean} [which]
+ */
+function endLiveStages(signal, which = () => true) {
+  /** @type {number[]} */
+  const sent = [];
+  for (const [pid, state] of liveGroups) {
+    if (!which(state)) continue;
+    state.signalled = true;
+    try {
+      process.kill(-pid, signal);
+      sent.push(pid);
+    } catch {
+      // Already gone.
+    }
+  }
+  for (let waited = 0; waited < STALL_KILL_GRACE_MS; waited += 100) {
+    if (!sent.some(groupAlive)) return;
+    blockFor(100);
+  }
+  for (const pid of sent.filter(groupAlive)) {
+    try {
+      process.kill(-pid, 'SIGKILL');
+    } catch {
+      // Gone between the check and the kill.
+    }
+  }
+}
+
+/**
+ * Forwards `signal` to every live stage's process group (POSIX), escalating
+ * to SIGKILL after the grace. The gates' signal handlers call it before they
+ * exit; the `exit` hook below does the same with SIGTERM for any group nobody
+ * signalled yet (an exit for any other reason).
+ *
+ * @param {NodeJS.Signals} signal
+ */
+export function signalLiveStages(signal) {
+  endLiveStages(signal);
+}
+
+process.on('exit', () => {
+  endLiveStages('SIGTERM', (state) => !state.signalled);
+});
+
+/**
+ * Exit with 130 on SIGINT, SIGTERM or SIGHUP, after forwarding the signal to
+ * the live stage groups. For an entry point that has no handlers of its own
+ * (timed-stage.mjs); run-gate.mjs forwards in its own handlers.
+ *
+ * PREPENDED: the machine slot (`holdMachineSlotForProcess`) registers its own
+ * SIGINT/SIGTERM handler first, and that one exits at once, so a handler
+ * added after it would never run.
+ */
+export function forwardSignalsToStages() {
+  for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM', 'SIGHUP'])) {
+    process.prependListener(signal, () => {
+      signalLiveStages(signal);
+      process.exit(130);
+    });
+  }
+}
+
+/** @param {number} ms */
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Kills a stalled stage's whole process tree: the shell, pnpm, vitest and its
+ * forked workers. Killing only the shell would orphan a busy worker.
+ *
+ * - Windows: `taskkill /T /F` walks the tree by parent pid.
+ * - POSIX: SIGTERM to the stage's process group, then SIGKILL once the group
+ *   is still there after STALL_KILL_GRACE_MS. The grace lets Playwright close
+ *   the browsers it starts in groups of their own, which a SIGKILL to this
+ *   group would orphan.
+ *
+ * @param {number | undefined} pid
+ * @returns {Promise<{ killed: true } | { killed: false, error: string }>}
+ */
+async function killStageTree(pid) {
+  if (pid === undefined) return { killed: false, error: 'no pid' };
+  if (process.platform === 'win32') {
+    try {
+      execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+        stdio: 'ignore',
+      });
+      return { killed: true };
+    } catch (error) {
+      return { killed: false, error: String(error) };
+    }
+  }
+  try {
+    process.kill(-pid, 'SIGTERM');
+  } catch (error) {
+    return { killed: false, error: String(error) };
+  }
+  const state = liveGroups.get(pid);
+  if (state) state.signalled = true;
+  for (let waited = 0; waited < STALL_KILL_GRACE_MS && groupAlive(pid); waited += 100) {
+    await delay(100);
+  }
+  if (groupAlive(pid)) {
+    try {
+      process.kill(-pid, 'SIGKILL');
+    } catch {
+      // Gone between the check and the kill.
+    }
+  }
+  return { killed: true };
+}
+
+/**
+ * @typedef {{ stageName: string, limitMs: number, pollMs: number, longestMs?: number }} StageWatch
+ */
+
+/**
  * @param {string} command
  * @param {string} cwd
  * @param {NodeJS.ProcessEnv} env
  * @param {number | null} priority - OS priority for the stage's process tree,
  *   or null to inherit (see stage-priority.mjs)
+ * @param {StageWatch | null} [watch] - the silence watch, or null for none;
+ *   `longestMs` is filled in when the stage ends
  * @returns {Promise<number>}
  */
-function execShell(command, cwd, env, priority) {
+function execShell(command, cwd, env, priority, watch = null) {
+  // The watch has to SEE the output, so it pipes and re-emits it. Only when
+  // our own stdout is not a terminal: the child then already sees a non-TTY,
+  // so piping changes nothing it can observe (colours, live progress UIs).
+  const piped = watch !== null && !process.stdout.isTTY;
+  // POSIX: a group of its own, so a kill reaches every process in the tree.
+  // Never on Windows, where `detached` opens a new console instead.
+  const ownGroup = piped && process.platform !== 'win32';
   return new Promise((resolve) => {
     const child = spawnAtPriority(
       ({ lowered }) =>
         spawn(command, {
           shell: true,
-          stdio: 'inherit',
+          stdio: piped ? ['inherit', 'pipe', 'pipe'] : 'inherit',
+          detached: ownGroup,
           cwd,
           // The marker tells the Playwright configs the stage really runs
           // lowered, so they may move the GPU work into the browser process.
@@ -139,16 +312,80 @@ function execShell(command, cwd, env, priority) {
       priority,
       os
     );
+    if (ownGroup && child.pid !== undefined) {
+      liveGroups.set(child.pid, { signalled: false });
+    }
+    /** @type {ReturnType<typeof silenceClock> | null} */
+    let clock = null;
+    /** @type {ReturnType<typeof setInterval> | null} */
+    let timer = null;
+    /** The kill and its banner, once the watch fired. @type {Promise<unknown> | null} */
+    let stall = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let exitCap = null;
+    let settled = false;
+    /** @param {number} code */
+    const finish = (code) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearInterval(timer);
+      if (exitCap) clearTimeout(exitCap);
+      if (child.pid !== undefined) liveGroups.delete(child.pid);
+      if (watch && clock) watch.longestMs = clock.longest(Date.now());
+      // A stalled stage's shell exits as soon as the kill lands, before the
+      // banner is printed: the banner must come before the caller's verdict.
+      if (stall !== null) void stall.then(() => resolve(STALL_EXIT));
+      else resolve(code);
+    };
+    if (piped && watch) {
+      const silence = silenceClock(watch.limitMs, Date.now());
+      clock = silence;
+      child.stdout?.on('data', (chunk) => {
+        silence.heard(Date.now());
+        process.stdout.write(chunk);
+      });
+      child.stderr?.on('data', (chunk) => {
+        silence.heard(Date.now());
+        process.stderr.write(chunk);
+      });
+      timer = setInterval(() => {
+        const { silentMs, stalled } = silence.check(Date.now());
+        if (!stalled || stall !== null) return;
+        if (timer) clearInterval(timer);
+        stall = killStageTree(child.pid).then((kill) => {
+          console.error(stallMessage(watch.stageName, silentMs, kill));
+          // A failed kill may never produce an `exit`: do not wait for one.
+          // A landed kill produces it at once; the cap only bounds the wait.
+          if (!kill.killed) finish(STALL_EXIT);
+          else exitCap = setTimeout(() => finish(STALL_EXIT), 10_000);
+        });
+      }, watch.pollMs);
+    }
     child.on('error', (error) => {
       console.error(
         `test-timing: failed to spawn stage command: ${String(error)}`
       );
-      resolve(1);
+      finish(1);
     });
-    child.on('exit', (code, signal) => resolve(code ?? (signal ? 1 : 0)));
+    child.on('exit', (code, signal) => {
+      // The kill's verdict wins over whatever status the dying shell left.
+      const status = code ?? (signal ? 1 : 0);
+      if (!piped) {
+        finish(status);
+        return;
+      }
+      // Piped output can still be in flight when the process exits: wait for
+      // the streams to close, so the stage's last lines come before the next
+      // stage's first, but never longer than a moment, since a descendant
+      // that outlives the shell can hold the pipe open.
+      const drained = setTimeout(() => finish(status), 2_000);
+      child.on('close', () => {
+        clearTimeout(drained);
+        finish(status);
+      });
+    });
   });
 }
-
 /**
  * @param {'vitest' | 'playwright'} kind
  * @param {string} file
@@ -309,14 +546,36 @@ export async function runStage(project, stageName, forwardedArgs) {
     }
   }
 
+  // The no-output watchdog (stall-watch.mjs): unfiltered leaf stages only,
+  // unless a filtered run opts in through GATE_STALL_MIN.
+  const limitMs = stallLimitMs(stage, process.env, {
+    filtered: decision.extraArgs.length > 0,
+  });
+  /** @type {StageWatch | null} */
+  const watch =
+    limitMs === null
+      ? null
+      : {
+          stageName: `${project.name} ${stageName}`,
+          limitMs,
+          pollMs: stallPollMs(process.env),
+        };
   const start = performance.now();
   const exitCode = await execShell(
     command,
     root,
     env,
-    stageSpawnPriority(stage, { platform: process.platform, env })
+    stageSpawnPriority(stage, { platform: process.platform, env }),
+    watch
   );
   const durationMs = Math.round(performance.now() - start);
+  if (
+    watch?.longestMs !== undefined &&
+    exitCode !== STALL_EXIT &&
+    shouldReportSilence(watch.longestMs, watch.limitMs)
+  ) {
+    console.log(silenceLine(watch.stageName, watch.longestMs, durationMs));
+  }
 
   let recorded = false;
   /** @type {TestCounts | null} */

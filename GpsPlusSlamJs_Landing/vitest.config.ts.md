@@ -11,4 +11,8 @@
   cover; tests run in the default node environment — modules that touch
   browser APIs take them as injected seams instead of globals (see
   `src/theme.ts`, `src/scene/scene-controller.ts`).
+- **Setup:** `setupFiles` lists the workspace's shared fast-check time
+  limit (`../scripts/test-timing/fast-check-time-limit.mjs`, see its
+  sidecar), so a failing property cannot shrink for hours;
+  `src/fast-check-time-limit.test.ts` reads it in this package's run.
 - **Tests:** governs every `*.test.ts` in `src/`.

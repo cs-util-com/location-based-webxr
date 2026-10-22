@@ -31,6 +31,17 @@
     overrides, and says so. Added 2026-08-20 after three cascades were lost to
     concurrent runs whose failures all looked like flaky tests.
   - Fail-fast: a red stage stops the gate exactly like the old `&&` chain.
+  - **A stalled stage (exit 124) is named as one**, beside its STALLED
+    banner, so `GATE-RC=124` is never read as a plain red test: it is a
+    hang the watchdog ended ([stall-watch.mjs](stall-watch.mjs.md)), and a
+    nested package gate passes its leaf's 124 through to the cascade. Its
+    SIGINT/SIGTERM/SIGHUP handlers forward the signal to the live stage's
+    process group first (POSIX; see `run-stage.mjs.md`), and are PREPENDED:
+    the machine slot's own handler, registered earlier, exits at once.
+  - **It states its watchdog limit at the start** (`watchLine` in
+    `stall-watch.mjs`, e.g. `stage watchdog: 20 min (...)`), so a waiter
+    sizes its quiet window from the limit this run has, not from its own
+    shell ([wait-gate.mjs](wait-gate.mjs.md)).
   - The `total` row is only written when EVERY stage recorded (never on CI
     or partially filtered runs); its test count sums the count-bearing
     stages.

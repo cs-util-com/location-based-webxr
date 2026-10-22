@@ -33,6 +33,12 @@
     (content-hashed, so a cached run formats exactly what an uncached one
     would; gate-speed plan 2026-10-04, G5). ESLint's cache is not used: it
     is unsafe with typed rules. Both are pinned in `projects.test.mjs`.
+  - `nestedGate: true` marks a root cascade row that spawns a whole package
+    gate (`packageGateStage`); the stage watchdog skips it and watches the
+    leaves, so a stall names the leaf. `stallMinutes` is a stage's own
+    silence limit (none today; `GATE_STALL_MIN` wins). See
+    [stall-watch.mjs](stall-watch.mjs.md). `projects.test.mjs` pins that
+    exactly the package-gate rows carry the flag.
   - Commands run with cwd = the package dir and the package + workspace-root
     `node_modules/.bin` on PATH.
   - knip cannot see binaries referenced only here — keep root `knip.json`
