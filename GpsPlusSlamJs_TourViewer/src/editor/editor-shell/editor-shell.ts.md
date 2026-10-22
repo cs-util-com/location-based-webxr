@@ -71,7 +71,9 @@ view shows.
   - at 940 px every studio button is its icon, the view switch says its
     short word and the gaps narrow;
   - at 820 px the docks shrink to 56 % and 60 % of the width where that
-    is less, and the hint goes;
+    is less, and the hint goes; a folded tree's head ends where the
+    inspector begins (156 px at 390), so the inspector never covers its
+    fold arrow;
   - at 720 px the help, the pencil and the mark go (the tour's name opens
     the same details), the save status is a dot (its words stay its name
     and title), and Done and Open are icons;

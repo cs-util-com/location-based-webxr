@@ -1088,6 +1088,12 @@ body[data-view="3d"] #toasts {
     width: min(272px, 56vw);
   }
 
+  /* Folded, the tree's head ends where the inspector begins: on a phone
+   * the two would overlap, and the inspector would cover the fold arrow. */
+  #shell-tree.collapsed {
+    width: min(272px, 56vw, 100vw - min(290px, 60vw));
+  }
+
   #shell-inspector {
     width: min(290px, 60vw);
   }

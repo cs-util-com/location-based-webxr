@@ -177,7 +177,10 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await page.setViewportSize(phone);
   await open3d(page);
   await expectFrame(page, phone);
-  await expectTree(page, Math.min(272, 0.56 * 390), false);
+  // Folded, the tree's head keeps clear of where the inspector opens, so
+  // its fold arrow can still be tapped while a selection shows.
+  const phoneHead = Math.min(272, 0.56 * 390, 390 - Math.min(290, 0.6 * 390));
+  await expectTree(page, phoneHead, false);
   await expect(page.locator("#shell-inspector")).toBeHidden();
   await page.locator("#tree-fold").click();
   await expectTree(page, Math.min(272, 0.56 * 390), true);
@@ -186,7 +189,9 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   expect(phoneInspector.x + phoneInspector.width).toBeCloseTo(390, 0);
   expect(phoneInspector.y).toBe(40);
   expect(phoneInspector.width).toBeCloseTo(Math.min(290, 0.6 * 390), 0);
-  await expectTree(page, Math.min(272, 0.56 * 390), false);
+  await expectTree(page, phoneHead, false);
+  const phoneFold = await box(page.locator("#tree-fold"));
+  expect(phoneFold.x + phoneFold.width).toBeLessThanOrEqual(phoneInspector.x);
 
   // A phone in landscape (under 900 px): still one dock at a time;
   // unfolding the tree folds the inspector to its head.
