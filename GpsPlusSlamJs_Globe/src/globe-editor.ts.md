@@ -8,7 +8,13 @@
   - The relief: `createGlobeTerrain`, `GLOBE_TERRAIN`, `GlobeTerrain`
     (`globe-terrain.ts`: `device` (required), `tileDimension`, `cache`,
     `ancestorFallback`,
-    `meshMaxLevel`, `reliefCache()`, `reliefFallback()`).
+    `meshMaxLevel`, `reliefCache()`, `reliefFallback()`), and
+    `plainImagery` (`globe-plain-imagery.ts`: an imagery that draws none,
+    for an app that must not load the globe's whole-Earth imagery).
+  - The frame and the clip planes: `worldFromEcefAt`, `ecefPoseOf`,
+    `applyEcefPose`, `EcefPose` (`globe-frame.ts`: the local world at a
+    place, x east, y up, z south) and `clipPlanes`, `reliefClearanceM`,
+    `GLOBE_CLIP` (`globe-camera.ts`).
   - Its sources: `RELIEF_SOURCES`, `awsTerrariumRelief`,
     `mapterhornRelief`, `reliefCredits`, `reliefTerrainOptions`,
     `vertexSpacingM`, `meshLevelForSpacing` (`globe-relief-source.ts`).
@@ -22,8 +28,9 @@
     (`globe-ground-hit.ts`).
   - First person: `GLOBE_EYE`, `eyeNearM`, `eyeClipPlanes`,
     `nearestItemDistanceM`, `applyEyeControls` (`globe-eye-camera.ts`).
-  - The OSM map: `createGlobeOsmOverlay`, `GLOBE_OSM`, `osmCredit`, the
-    types `GlobeOsmOverlay`, `OsmCameraPose`, `OsmOverlayTerrain`
+  - The OSM map: `createGlobeOsmOverlay`, `GLOBE_OSM`, `osmCredit`,
+    `osmGateLimits`, the types `GlobeOsmOverlay`, `OsmCameraPose`,
+    `OsmOverlayTerrain`, `OsmGateLimits`
     (`globe-osm-overlay.ts`; pass the framework's `osm-tiles.ts`
     constants; it draws only where the relief reaches z15, so with the
     denser mesh).
@@ -34,7 +41,8 @@
     the design system's dev server, types stripped); the globe lab imports
     the first-person, picking and OSM blocks through it, which is what
     proves the entry loads in a browser.
-  - The package's one export (`package.json` `exports`: `./editor`), as
+  - The package's app export (`package.json` `exports`: `./editor`; the
+    other, `./test-utils/synthetic-heights`, is test support), as
     TypeScript source: a Vite app depends on `gps-plus-slam-globe`
     (`workspace:*`), imports `gps-plus-slam-globe/editor`, and builds it
     (the Tour Viewer's `src/globe-dependency.test.ts` builds an entry

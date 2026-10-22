@@ -13,7 +13,9 @@
  * left to do, and moves the walk out (`done-dialog.ts`). A tour whose file
  * carries a walk shows its debug camera captures on the map once it has
  * opened (`debug-capture-layer.ts`; debug data, never the tour's
- * content), behind a "Show debug data" switch. Linked from the
+ * content), behind a "Show debug data" switch. The view switch opens the
+ * same tour in 3D over the map (`view-switch.ts`; the 3D view's code,
+ * `src/editor3d/`, is a dynamic import made only then). Linked from the
  * setup page's "You already have a tour?" box and its step 5 on a device
  * without AR.
  *
@@ -125,6 +127,12 @@ import {
 import { noGpsWarnings } from "./no-gps-check.js";
 import { revealPadding, type Box } from "./popover-place.js";
 import { createStatusLines } from "./status-lines.js";
+import { createViewSwitch, type View3dHandle } from "./view-switch.js";
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import type {
+  Editor3dStats,
+  Editor3dView,
+} from "../editor3d/editor3d-scene.js";
 import {
   createSaveTarget,
   holdEditorDraftLock,
@@ -345,6 +353,10 @@ let letGo: Promise<void> = Promise.resolve();
 /** Toasts about this file that mean nothing once another tour is open. */
 const fileToasts: HTMLElement[] = [];
 let editor: EditorSession | null = null;
+/** The open tour's codes as opened (the 3D view draws them; read-only). */
+let openedLevels: ReadonlyMap<string, QrLevel> = new Map();
+/** The 3D view while it shows (the view switch holds its handle too). */
+let shown3d: Editor3dView | null = null;
 /** The open tour's draft key: its opened file's, then the key of each
  *  in-place write that landed (M6 E2c) and of a download whose key differs
  *  (the first save that wrote the tour's own id, Q-I). */
@@ -444,6 +456,9 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
       __tourEditor?: {
         editor: () => EditorSession | null;
         edited: () => void;
+        view3d: () => Editor3dStats | null;
+        view3dTilt: (deg: number) => void;
+        view3dDistance: (m: number) => void;
       };
     }
   ).__tourEditor = {
@@ -451,6 +466,13 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     edited: () => {
       refresh();
       autosave.changed();
+    },
+    view3d: () => shown3d?.stats() ?? null,
+    view3dTilt: (deg) => {
+      shown3d?.setTilt(deg);
+    },
+    view3dDistance: (m) => {
+      shown3d?.setDistance(m);
     },
   };
 }
@@ -601,7 +623,9 @@ function viewOf(item: EditorItem): CardView {
 
 function showCard(): void {
   const item = model?.items.find((i) => i.id === ui().selected) ?? null;
-  if (item === null) {
+  // The card points at a marker of the map: not over the 3D view, whose
+  // panels come later. The selection stays (the store's).
+  if (item === null || ui().viewMode === "3d") {
     card.hide();
     return;
   }
@@ -1460,6 +1484,8 @@ function dropTour(reason: string): void {
   details.close();
   // Closed even while a move runs: its tour is gone.
   done.close(true);
+  viewSwitch.close();
+  viewSwitch.setEnabled(false);
   select(null);
   const open = session;
   session = null;
@@ -1585,10 +1611,13 @@ async function openFile(
   setBusy(false, "");
   details.close();
   done.close(true);
+  // The 3D view showed the tour that goes now.
+  viewSwitch.close();
   linkHost = null;
   select(null);
   const previous = session;
   session = outcome.session;
+  viewSwitch.setEnabled(true);
   void previous?.close().catch(() => undefined);
   resetEditing();
   leaveFile();
@@ -1613,6 +1642,7 @@ async function openFile(
     store,
   });
   model = editor.model();
+  openedLevels = outcome.levels;
   // The debug data switch only for a tour that carries a walk (S-D10:
   // the saved copy leaves it out unless asked, E2 plan review #4), and
   // unticked (M2 of the debug-captures plan, E2): the walk is saved apart.
@@ -2662,6 +2692,67 @@ doneButton.addEventListener("click", () => {
 element("open-fineprint").textContent = saveFinePrint(
   window as unknown as PickerWindow,
 );
+
+/**
+ * The view switch (`view-switch.ts`): the 3D view over the map. Its code
+ * is imported here, at the click, never before; it reads the tour and the
+ * selection from the store, and its photos and models from the copy the
+ * page reads now. A failure is said and kept until closed (the async-UI
+ * rule: the creator asked for something that did not happen), or until a
+ * later open shows the view: then it says what is no longer so.
+ */
+const view3dBox = element("view3d");
+let view3dFailureToast: HTMLElement | null = null;
+const viewSwitch = createViewSwitch({
+  button: element<HTMLButtonElement>("view-switch"),
+  store,
+  open: async (events) => {
+    // A module that does not arrive is the connection's (`chunk`).
+    const { openEditor3d } =
+      await import("../editor3d/editor3d-scene.js").catch((error: unknown) => {
+        throw Object.assign(
+          new Error(`the 3D view did not load: ${String(error)}`),
+          { reason: "chunk" },
+        );
+      });
+    const view = await openEditor3d({
+      container: view3dBox,
+      credits: element("view3d-credits"),
+      store,
+      levels: () => openedLevels,
+      loadContent: (name) => {
+        const open = photos.current() ?? session;
+        if (open === null) return Promise.reject(new Error("no tour is open"));
+        return open.loadContentEntry(name);
+      },
+      events,
+    });
+    shown3d = view;
+    const handle: View3dHandle = {
+      dispose: () => {
+        if (shown3d === view) shown3d = null;
+        view.dispose();
+      },
+    };
+    return handle;
+  },
+  say: (text) => {
+    view3dFailureToast?.remove();
+    view3dFailureToast = toast(text, undefined, null);
+    fileToasts.push(view3dFailureToast);
+  },
+  onShown: (on) => {
+    view3dBox.hidden = !on;
+    if (on) {
+      view3dFailureToast?.remove();
+      view3dFailureToast = null;
+    }
+    // The card and its chip belong to the map; back on it, they return.
+    showCard();
+  },
+});
+// Nothing to show in 3D until a tour is open.
+viewSwitch.setEnabled(session !== null);
 
 // Everything above is wired: the open dialog's controls answer from here
 // on (a keyboard press before the module ran would go nowhere - the e2e

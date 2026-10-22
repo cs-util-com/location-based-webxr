@@ -88,7 +88,7 @@ test("a relief cache too small for the view reads stalled; one with room does no
   expect(roomy.cache.stalled).toBe(false);
 });
 
-/** The synthetic heights' surface (`../globe-terrain/synthetic-heights.js`, seaM 0). */
+/** The synthetic heights' surface (the Globe package's `src/test-utils/synthetic-heights.ts`, seaM 0). */
 const syntheticHeightM = (lat, lng) =>
   Math.max(
     0,
@@ -155,7 +155,7 @@ async function routeHeightHosts(context, page) {
           x,
           y,
           mapterhorn ? 512 : 256,
-          "/labs/globe-terrain/synthetic-heights.js",
+          "/globe/test-utils/synthetic-heights.js",
         ],
       );
       return route.fulfill({

@@ -734,11 +734,18 @@ function framed(state: TourDocumentState): TourManifest | null {
       );
 }
 
-/** The tour's objects now, each with this page's entry for it. */
+/** The tour's objects now, each with this page's entry for it. `hosted`
+ *  is whether the written FILE holds the object, not the framed tour: one
+ *  moved out of a station that was then deleted is still in the file (in
+ *  the station's written items), so its delete needs a tombstone - the
+ *  draft and the rebuild know a delete by its tombstone alone. */
 export function documentObjects(state: TourDocumentState): AuthoringObject[] {
   const base = framed(state);
-  if (base === null) return [];
-  return authoringObjects(tourObjects(base), state.placed, state.deleted);
+  if (base === null || state.written === null) return [];
+  const inFile = new Set(tourObjects(state.written).map((o) => o.id));
+  return authoringObjects(tourObjects(base), state.placed, state.deleted).map(
+    (o) => (o.hosted || !inFile.has(o.object.id) ? o : { ...o, hosted: true }),
+  );
 }
 
 /** The details as shown and written: a cover whose image is gone (a
@@ -2071,7 +2078,15 @@ function stationsReorder(
   ) {
     return before;
   }
-  const frames = allFrames(before);
+  // A written station no frame lists and nothing stands in any more (an
+  // emptied automatic one, which the next write leaves out) stays unlisted:
+  // listed back as a frame it would order the items moved out of it ahead
+  // of their new station's own, which a reload from the draft does not.
+  const own = new Set(before.stations.map((f) => f.id));
+  const named = new Set(documentObjects(before).map((o) => o.object.station));
+  const frames = allFrames(before).filter(
+    (f) => own.has(f.id) || named.has(f.id),
+  );
   const byId = new Map(frames.map((f) => [f.id, f]));
   const listed = new Set(order);
   return edited(

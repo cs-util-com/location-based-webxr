@@ -35,7 +35,9 @@ import {
   timingsPath,
   recordStage,
   runStage,
+  signalLiveStages,
 } from './run-stage.mjs';
+import { STALL_EXIT, STALL_SUMMARY, watchLine } from './stall-watch.mjs';
 
 /** @typedef {import('./delta.mjs').TestCounts} TestCounts */
 
@@ -117,6 +119,10 @@ function printSummaryTable() {
 // than waits, so the two cannot deadlock. A nested run (the cascade's package
 // gates) inherits the holder's token and re-enters at once.
 await holdMachineSlotForProcess(`pnpm test in ${project.name}`);
+
+// The watchdog limit this run's stages get, for whoever waits on its log
+// (wait-gate.mjs sizes its quiet window from it).
+console.log(watchLine(process.env, { watched: !process.stdout.isTTY }));
 
 /**
  * ONE GATE RUN PER WORKING TREE — see gate-lock.mjs for why this is a refusal
@@ -213,8 +219,14 @@ process.prependListener('exit', () => {
     clearLock(lockFile);
   }
 });
-for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
-  process.on(signal, () => {
+// PREPENDED: the machine slot registered its own SIGINT/SIGTERM handler
+// first, and that one exits at once; this one must forward to the stages
+// and free the tree lock before it.
+for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM', 'SIGHUP'])) {
+  process.prependListener(signal, () => {
+    // A watched stage runs in a process group of its own on POSIX
+    // (run-stage.mjs), which this signal does not reach by itself.
+    signalLiveStages(signal);
     if (ownsLock) {
       clearLock(lockFile);
     }
@@ -246,6 +258,14 @@ let allRecorded = true;
 for (const stage of stages) {
   console.log(`\n▶ ${project.name} ${stage.name}`);
   const result = await runStage(project, stage.name, []);
+  if (result.exitCode === STALL_EXIT) {
+    // NAMED, like a queue timeout (75), so GATE-RC=124 is never read as a
+    // plain red test. A nested package gate passes its leaf's 124 through.
+    console.error(
+      `\n✖ gate STALLED at stage "${stage.name}" (exit ${STALL_EXIT}): ${STALL_SUMMARY}`
+    );
+    process.exit(result.exitCode);
+  }
   if (result.exitCode !== 0) {
     console.error(
       `\n✖ gate failed at stage "${stage.name}" (exit ${result.exitCode})`

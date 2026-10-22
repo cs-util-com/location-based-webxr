@@ -405,7 +405,7 @@
     grid of factors to the tiles; it applies at the next pin press.
   - `landKm` goes up to 5,000 km since F1, so a smoke can hold inside
     the band. `reliefHeights=synthetic` serves heights generated
-    in the page (`../globe-terrain/synthetic-heights.js`; the smokes),
+    in the page (the Globe package's `src/test-utils/synthetic-heights.ts`; the smokes),
     otherwise the live Terrarium tiles, credited in the credits line.
   - The relief's source (G1 step 2, read at start; tour editor plan
     `2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md` §13):

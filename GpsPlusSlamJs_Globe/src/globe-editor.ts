@@ -11,6 +11,14 @@ export {
   createGlobeTerrain,
   type GlobeTerrain,
 } from "./globe-terrain.js";
+export { plainImagery } from "./globe-plain-imagery.js";
+export {
+  applyEcefPose,
+  ecefPoseOf,
+  worldFromEcefAt,
+  type EcefPose,
+} from "./globe-frame.js";
+export { GLOBE_CLIP, clipPlanes, reliefClearanceM } from "./globe-camera.js";
 export {
   RELIEF_SOURCES,
   awsTerrariumRelief,
@@ -58,7 +66,9 @@ export {
   GLOBE_OSM,
   createGlobeOsmOverlay,
   osmCredit,
+  osmGateLimits,
   type GlobeOsmOverlay,
+  type OsmGateLimits,
   type OsmCameraPose,
   type OsmOverlayTerrain,
 } from "./globe-osm-overlay.js";

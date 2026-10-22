@@ -10,7 +10,7 @@ import { GLOBE_TERRAIN, createGlobeTerrain } from "/globe/globe-terrain.js";
 import {
   SYNTHETIC_HEIGHTS_URL,
   installSyntheticHeights,
-} from "./synthetic-heights.js";
+} from "/globe/test-utils/synthetic-heights.js";
 import {
   TERRARIUM_ATTRIBUTION,
   TERRARIUM_URL_TEMPLATE,

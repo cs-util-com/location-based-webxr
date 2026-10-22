@@ -18,6 +18,10 @@ AR (tour editor plan 2026-10-17-1816, W1).
 ## Structure
 
 - `#map` - the full-window map (`src/editor/editor-map.ts`).
+- `#view3d` - the 3D view's box over the map, hidden until the view
+  shows (`src/editor3d/editor3d-scene.ts` puts its canvas in it), with its
+  credits line `#view3d-credits` (Mapterhorn, its elevation data,
+  OpenStreetMap).
 - `#debug-panel` - shown for every open tour: the debug layer's "Show
   debug data" switch (`#debug-switch` around `#debug-data-input`,
   ticked; shown only while the layer has a source - the tour's walk or
@@ -32,7 +36,8 @@ AR (tour editor plan 2026-10-17-1816, W1).
   the tour file" switch (`#keep-walk`, only for a tour carrying a walk,
   unticked; hidden for a file opened for writing, which keeps its walk), `#save-status`,
   `#save-btn` (Save downloads the tour, M6 E2a), `#done-btn` ("Done",
-  W2), "Open another tour".
+  W2), "Open another tour"; first of them, after the spacer, `#view-switch`
+  ("3D view", the view switch: `src/editor/view-switch.ts`).
 - `#rail` - the codes, pins and photos (`src/editor/editor-rail.ts`).
 - `#card`, `#offscreen-chip` - the card beside the selected marker
   (`src/editor/editor-card.ts`).
@@ -84,6 +89,10 @@ AR (tour editor plan 2026-10-17-1816, W1).
 - The visitor page never imports `src/editor/` (dependency-cruiser rule
   `viewer-not-to-editor`), so a visitor never downloads the editor's
   Leaflet.
+- The 3D view's modules load only by the switch's `import()`:
+  `src/editor3d-lazy.test.ts` reads a production build and fails when any
+  page loads the globe, the tile renderer, the elevation package or
+  `src/editor3d/` before an `import()` runs.
 
 ## Tests
 
@@ -94,4 +103,5 @@ back: the editor's paper, not the browser's plain page),
 `playwright-tests/editor.spec.js` (the real file chooser, the rail and the
 markers, the card beside its marker, a capped photo, a refused non-tour,
 the layout at three viewports, the details dialog, the fine print, Done
-and the walk's move).
+and the walk's move), `playwright-tests/editor3d.spec.js` (the 3D view
+and back).

@@ -356,6 +356,43 @@ for (const viewport of [
   });
 }
 
+for (const width of [720, 721, 768]) {
+  test(`the view switch's label fits the top bar at ${width} px: its short word at 720 and below, its full label above`, async ({
+    page,
+  }) => {
+    // Why: the switch's short word is a width rule; just above it the full
+    // label must still leave every top-bar control inside the window, and
+    // at it the short word must show (a rule off by one pixel either way
+    // pushes a control out, or shortens a label that had room).
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/edit.html");
+    await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+    const button = page.locator("#view-switch");
+    await expect(button).toBeVisible();
+    const label = await button.evaluate((el) => ({
+      fontSize: getComputedStyle(el).fontSize,
+      after: getComputedStyle(el, "::after").content,
+    }));
+    if (width <= 720) {
+      expect(label.fontSize).toBe("0px");
+      expect(label.after).not.toBe("none");
+    } else {
+      expect(label.fontSize).not.toBe("0px");
+      expect(label.after).toBe("none");
+    }
+    for (const control of await page
+      .locator("#topbar button, #save-status")
+      .all()) {
+      if (!(await control.isVisible())) continue;
+      const b = await box(control);
+      expect(b.x + b.width).toBeLessThanOrEqual(width);
+    }
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+  });
+}
+
 test("the sample tour opens with its story's stations on the map", async ({
   page,
 }) => {

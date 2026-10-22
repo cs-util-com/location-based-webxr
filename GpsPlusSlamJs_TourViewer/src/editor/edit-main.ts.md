@@ -462,10 +462,27 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   page reads the same copy. Kept here on purpose: `moved` (the notes
   moved since the last save, a `Set` only the card reads) and everything
   imperative above.
+- **The 3D view** (`#view-switch`, `view-switch.ts`): the button opens
+  the 3D view over the map by a dynamic `import()` of
+  `../editor3d/editor3d-scene.js`, so the page's own code holds none of
+  it, and closes it again. While it loads the button says so and the map
+  stays; once it shows, `#view3d` is unhidden and the card hides (it
+  points at a map marker); back on the map the card shows again for the
+  same selection. A failure (its code, no WebGL, nothing placed, a lost
+  context, an error) lands on the map with a toast saying why; an import
+  that does not arrive is tagged `chunk` here, so only it speaks of the
+  connection. The failure's toast stays until closed, or until a later
+  open shows the view. Opening another tour
+  or closing this one closes the 3D view (`viewSwitch.close()`); the
+  switch is off while no tour is open. The 3D
+  view reads the tour from the store and the codes the open read
+  (`openedLevels`); it edits nothing.
 - **The dev server's test hook** `window.__tourEditor` (`{ editor(),
-edited() }`): an e2e reaches the editor session's edits no control of
+edited(), view3d(), view3dTilt(deg), view3dDistance(m) }`): an e2e reaches the editor session's edits no control of
   this page offers yet, then `edited()` follows them as an edit made here
-  would (refresh, autosave told). Guarded by `import.meta.env.DEV &&
+  would (refresh, autosave told); `view3d()` is the shown 3D view's
+  `stats()` (null on the map), `view3dTilt(deg)` tilts its orbit and
+  `view3dDistance(m)` moves it in or out. Guarded by `import.meta.env.DEV &&
 !import.meta.env.VITEST`, so a production build strips it.
 
 - Once everything is wired the page sets `body[data-editor="ready"]`;
@@ -500,4 +517,5 @@ tour's walk) and `editor-entry.spec.js` (the
 `editor.spec.js` also renames a station through the test hook, closes the
 tab, and sees the draft offer the change and Restore bring it back (seen
 red with the settings record's stations left out). The chrome state's
-slice: `editor-view.test.ts`.
+slice: `editor-view.test.ts`. The 3D view's switch, its loading and
+failure states and the selection kept: `editor3d.spec.js`.

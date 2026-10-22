@@ -287,6 +287,9 @@ const SEA_CLAMPED_DISPLACEMENT = /* glsl */ `
 transformed += normalize( objectNormal ) * ( max( texture2D( displacementMap, vDisplacementMapUv ).x, 0.0 ) * displacementScale + displacementBias );
 #endif`;
 
+/** The detail's geodetic normal, as the globe's surface hook declares it. */
+const GEO_NORMAL_VARYING = "\nvarying vec3 vGeoNormal;";
+
 /** `source` with `code` after `anchor`, which must occur exactly once. */
 function after(source: string, anchor: string, code: string): string {
   const parts = source.split(anchor);
@@ -351,6 +354,22 @@ export function litTerrainMaterial(
     );
     if (detail) {
       Object.assign(shader.uniforms, detail);
+      // The detail reads the geodetic normal the globe's surface hook
+      // declares; under a template without that hook (an app's own plain
+      // ground) the relief declares it itself, the same way: the object
+      // normal is the ellipsoid's (`globe-surface-material.ts`).
+      if (!shader.fragmentShader.includes(GEO_NORMAL_VARYING)) {
+        shader.vertexShader = after(
+          after(shader.vertexShader, "#include <common>", GEO_NORMAL_VARYING),
+          "#include <beginnormal_vertex>",
+          "\nvGeoNormal = objectNormal;",
+        );
+        shader.fragmentShader = after(
+          shader.fragmentShader,
+          "#include <common>",
+          GEO_NORMAL_VARYING,
+        );
+      }
       let fs = shader.fragmentShader;
       fs = after(fs, "#include <common>", DETAIL_DECLARATIONS);
       fs = after(fs, "#include <map_fragment>", DETAIL_FRAGMENT);

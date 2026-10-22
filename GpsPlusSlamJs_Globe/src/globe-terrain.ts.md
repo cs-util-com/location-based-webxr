@@ -80,7 +80,12 @@
     side of the altitude band's dither (`globe-surface-material.ts`). With
     `detail` (`globe-detail.ts`'s uniforms, one object for every tile) the
     detail factor multiplies the imagery right after `map_fragment`; a
-    missing or doubled anchor then throws, naming it. The copy carries
+    missing or doubled anchor then throws, naming it. The detail reads the
+    geodetic normal `vGeoNormal`, which the globe's surface hook declares;
+    under a template without that hook (an app's own plain ground) the
+    copy declares it in both shaders and sets it from the object normal
+    after `beginnormal_vertex`, as the surface hook does, so the varying
+    is declared once either way. The copy carries
     `own`'s defines in a fresh object next to the standard material's (G0
     spikes 2026-10-17, Q5): a second overlay through the library's
     `ImageOverlayPlugin` declares its layers under the `LAYER_COUNT`
@@ -189,7 +194,8 @@
   up the source's own pyramid through the real plugin and image source;
   the cache budgeted by tile size and device, the app's own taken, a
   missing device refused, and a full cache seen stalling; the fade side; the detail patch's place, shared uniforms and
-  refused anchor; the factory on a simulated tile load and dispose, its
+  refused anchor, its geodetic normal declared once with and without the
+  globe's hook on three's real shader; the factory on a simulated tile load and dispose, its
   detail on and off; refusals; the library guard). The GPU side (heights read back with the extension
   hidden, the look against the globe at noon, dusk and night, the data
   budget, the seam scan) is the design system's

@@ -6,7 +6,7 @@
  * Nothing leaves 127.0.0.1: Overpass answers with a grid of fixture buildings
  * around the target, and every height tile (the prefetch's and the city
  * worker's) is the synthetic Terrarium tile the relief draws in smokes
- * (`../globe-terrain/synthetic-heights.js`), generated in the page, so the
+ * (the Globe package's `src/test-utils/synthetic-heights.ts`), generated in the page, so the
  * city and the relief read the same numbers.
  */
 import { expect, test } from "@playwright/test";

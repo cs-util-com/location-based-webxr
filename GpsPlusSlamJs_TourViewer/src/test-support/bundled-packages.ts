@@ -82,6 +82,73 @@ export async function appModuleIds(): Promise<string[]> {
   );
 }
 
+/** A chunk of a build, as the closure reads it (paths with `/`). */
+export interface BuiltChunk {
+  readonly fileName: string;
+  /** The entry's input name (`main`, `edit`, ...) for an entry chunk. */
+  readonly entry: string | null;
+  /** The chunks it imports statically, and by `import()`. */
+  readonly imports: readonly string[];
+  readonly dynamicImports: readonly string[];
+  readonly moduleIds: readonly string[];
+  /** The chunk's code, unminified. */
+  readonly code: string;
+}
+
+/** The chunks of this app's own production build, written nowhere. */
+export async function appChunks(): Promise<BuiltChunk[]> {
+  const result = await build({
+    configFile: `${APP_ROOT}vite.config.ts`,
+    root: APP_ROOT,
+    logLevel: "silent",
+    build: { write: false, minify: false },
+  });
+  const chunks: BuiltChunk[] = [];
+  for (const out of Array.isArray(result) ? result : [result]) {
+    if (!("output" in out)) throw new Error("expected a build, not a watcher");
+    for (const item of out.output) {
+      if (item.type !== "chunk") continue;
+      chunks.push({
+        fileName: item.fileName,
+        entry: item.isEntry ? item.name : null,
+        imports: item.imports,
+        dynamicImports: item.dynamicImports,
+        moduleIds: item.moduleIds.map((id) => id.replaceAll("\\", "/")),
+        code: item.code,
+      });
+    }
+  }
+  return chunks;
+}
+
+/**
+ * The module ids a page loads before any `import()` runs: its entry
+ * chunk's and every chunk it imports statically, transitively. A chunk
+ * reached only by `import()` is not in it. Error for an entry the build
+ * does not have.
+ */
+export function staticClosure(
+  chunks: readonly BuiltChunk[],
+  entry: string,
+): Set<string> {
+  const byName = new Map(chunks.map((c) => [c.fileName, c]));
+  const start = chunks.find((c) => c.entry === entry);
+  if (start === undefined) throw new Error(`the build has no entry ${entry}`);
+  const ids = new Set<string>();
+  const seen = new Set<string>();
+  const queue = [start];
+  for (let chunk = queue.pop(); chunk !== undefined; chunk = queue.pop()) {
+    if (seen.has(chunk.fileName)) continue;
+    seen.add(chunk.fileName);
+    for (const id of chunk.moduleIds) ids.add(id);
+    for (const next of chunk.imports) {
+      const found = byName.get(next);
+      if (found !== undefined) queue.push(found);
+    }
+  }
+  return ids;
+}
+
 /** The npm package under `node_modules` a module id belongs to, or null. */
 export function packageOf(id: string): string | null {
   const match = /.*\/node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(id);

@@ -33,7 +33,6 @@ import {
   type HitTestReticleHandle,
   type SelectTargetRay,
 } from "gps-plus-slam-app-framework/ar";
-import { createTextSprite } from "gps-plus-slam-app-framework/visualization/text-sprite";
 import { createWayfindingHud } from "gps-plus-slam-app-framework/visualization/wayfinding-hud";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 import {
@@ -73,7 +72,9 @@ import {
 import type { DepthSamplerConfig } from "gps-plus-slam-app-framework/ar/depth-sampler";
 import type { Object3D } from "three";
 
+import { loadGlbModel } from "./glb-model.js";
 import { ndcOfTargetRay, pickObject } from "./object-pick.js";
+import { createPinLabel } from "./pin-label.js";
 import type { AudioElementLike } from "./scene-audio.js";
 import { HUD_ARRIVAL_BAND_M, HUD_ARRIVAL_MIN_M } from "./station-bands.js";
 import { WALK_HUD_LOOKS, type WalkHudLook } from "./walk-hud.js";
@@ -371,35 +372,11 @@ export const realSeams: TourViewerSeams = {
       ...(look === undefined ? {} : WALK_HUD_LOOKS[look]),
     });
   },
-  loadGlbModel: async (blob) => {
-    const { GLTFLoader } =
-      await import("three/examples/jsm/loaders/GLTFLoader.js");
-    const gltf = await new GLTFLoader().parseAsync(
-      await blob.arrayBuffer(),
-      "",
-    );
-    return gltf.scene;
-  },
+  loadGlbModel,
   createAudioElement: () => new Audio(),
   xrProjection0: () => getCamera()?.projectionMatrix.elements[0] ?? null,
-  createLabel: (text) => {
-    // A canvas wide enough for a short label at a readable size, the sprite
-    // scaled to the same 2:1 aspect (the wayfinding HUD's recipe); the
-    // defaults (a 64 px square, a 48 px glyph) are for single characters
-    // and clipped every word (M4 review #5). Transparent, no depth write:
-    // the pill's surround must not paint a black square over the camera.
-    const sprite = createTextSprite({
-      text,
-      background: "pill",
-      canvasWidth: 512,
-      canvasHeight: 256,
-      font: "bold 56px sans-serif",
-      transparent: true,
-      depthWrite: false,
-      scale: { x: 0.6, y: 0.3, z: 1 },
-    });
-    return { object: sprite.sprite, dispose: () => sprite.dispose() };
-  },
+  // The one recipe the 3D editor shares (`pin-label.ts`).
+  createLabel: createPinLabel,
   queryGeolocationPermission: async () => {
     try {
       const status = await navigator.permissions.query({
